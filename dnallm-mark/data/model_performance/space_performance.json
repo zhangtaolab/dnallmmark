@@ -1,0 +1,1850 @@
+{
+    "info": {
+        "name": "SPACE",
+        "size (M)": 589,
+        "type": "DL",
+        "tokenizer": "one-hot",
+        "mean_token_len": 1,
+        "architecture": "CNN+Transformer (MoE)",
+        "series": "SPACE",
+        "context_len (bp)": 196608,
+        "species": "human+mouse",
+        "huggingface": "yangyz1230/space",
+        "modelscope": "lgq12697/space"
+    },
+    "performance": {
+        "GUE__emp_H3": {
+            "dataset": {
+                "species": "Microbe",
+                "type": "binary",
+                "labels": 2,
+                "train": 11971,
+                "test": 1497,
+                "dev": 1497,
+                "length": 500,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 35913,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 6.942,
+                "FLOPs": 796067880735744.0,
+                "loss": 0.3425894677639007,
+                "accuracy": 0.8563794255177021,
+                "precision": 0.8565840938722294,
+                "recall": 0.8622047244094488,
+                "f1": 0.8593852190974494,
+                "mcc": 0.7126466616767073,
+                "auroc": 0.935267912939454,
+                "auprc": 0.9350802275504276,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__emp_H3K14ac": {
+            "dataset": {
+                "species": "Microbe",
+                "type": "binary",
+                "labels": 2,
+                "train": 26438,
+                "test": 3305,
+                "dev": 3305,
+                "length": 500,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 79314,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 13.7926,
+                "FLOPs": 1758119006840832.0,
+                "loss": 0.5955119729042053,
+                "accuracy": 0.6877458396369137,
+                "precision": 0.7299382716049383,
+                "recall": 0.7367601246105919,
+                "f1": 0.7333333333333333,
+                "mcc": 0.3567331089663904,
+                "auroc": 0.7488047609258293,
+                "auprc": 0.8034737666134959,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__emp_H3K36me3": {
+            "dataset": {
+                "species": "Microbe",
+                "type": "binary",
+                "labels": 2,
+                "train": 27904,
+                "test": 3488,
+                "dev": 3488,
+                "length": 500,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 83712,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 14.4683,
+                "FLOPs": 1855607563616256.0,
+                "loss": 0.5873317122459412,
+                "accuracy": 0.7038417431192661,
+                "precision": 0.7142857142857143,
+                "recall": 0.7415368081676518,
+                "f1": 0.7276562088056947,
+                "mcc": 0.4037083100174544,
+                "auroc": 0.7728935775156407,
+                "auprc": 0.7820749698055605,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__emp_H3K4me1": {
+            "dataset": {
+                "species": "Microbe",
+                "type": "binary",
+                "labels": 2,
+                "train": 25341,
+                "test": 3168,
+                "dev": 3168,
+                "length": 500,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 76023,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 13.1905,
+                "FLOPs": 1685168838503424.0,
+                "loss": 0.6221126914024353,
+                "accuracy": 0.6691919191919192,
+                "precision": 0.6680606377417668,
+                "recall": 0.755765819041987,
+                "f1": 0.709211986681465,
+                "mcc": 0.3323437323898778,
+                "auroc": 0.7192216389528057,
+                "auprc": 0.7216305728520365,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__emp_H3K79me3": {
+            "dataset": {
+                "species": "Microbe",
+                "type": "binary",
+                "labels": 2,
+                "train": 23069,
+                "test": 2884,
+                "dev": 2884,
+                "length": 500,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 69207,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 13.1485,
+                "FLOPs": 1534081525410816.0,
+                "loss": 0.4955272078514099,
+                "accuracy": 0.7888349514563107,
+                "precision": 0.7998741346758967,
+                "recall": 0.8137003841229193,
+                "f1": 0.8067280228498889,
+                "mcc": 0.5741588545895266,
+                "auroc": 0.8600709261759527,
+                "auprc": 0.8689112446227855,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__emp_H3K9ac": {
+            "dataset": {
+                "species": "Microbe",
+                "type": "binary",
+                "labels": 2,
+                "train": 22224,
+                "test": 2779,
+                "dev": 2779,
+                "length": 500,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 66672,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 11.6633,
+                "FLOPs": 1477889280884736.0,
+                "loss": 0.5538364052772522,
+                "accuracy": 0.7355163727959698,
+                "precision": 0.7562254259501966,
+                "recall": 0.7607119314436388,
+                "f1": 0.7584620440354913,
+                "mcc": 0.4662311314582273,
+                "auroc": 0.804939162810911,
+                "auprc": 0.8264024088526684,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__emp_H4": {
+            "dataset": {
+                "species": "Microbe",
+                "type": "binary",
+                "labels": 2,
+                "train": 11679,
+                "test": 1461,
+                "dev": 1461,
+                "length": 500,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 35037,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 6.5314,
+                "FLOPs": 776649969017856.0,
+                "loss": 0.3026985824108124,
+                "accuracy": 0.8884325804243669,
+                "precision": 0.8751974723538705,
+                "recall": 0.8683385579937304,
+                "f1": 0.8717545239968528,
+                "mcc": 0.7730479208696232,
+                "auroc": 0.9447373132168037,
+                "auprc": 0.9155003209922484,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__emp_H4ac": {
+            "dataset": {
+                "species": "Microbe",
+                "type": "binary",
+                "labels": 2,
+                "train": 27275,
+                "test": 3410,
+                "dev": 3410,
+                "length": 500,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 81825,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 14.667,
+                "FLOPs": 1813779253785600.0,
+                "loss": 0.6509501338005066,
+                "accuracy": 0.6733137829912024,
+                "precision": 0.6890666666666667,
+                "recall": 0.7087218869994515,
+                "f1": 0.6987560843699296,
+                "mcc": 0.3422490559594476,
+                "auroc": 0.7329450302633748,
+                "auprc": 0.7470198900042506,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__EPI_GM12878": {
+            "dataset": {
+                "species": "Microbe",
+                "type": "binary",
+                "labels": 2,
+                "train": 10000,
+                "test": 2000,
+                "dev": 2000,
+                "length": 5001,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 30000,
+                "batch_size": 21,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 10.3384,
+                "FLOPs": 6543238256640000.0,
+                "loss": 0.3966266810894012,
+                "accuracy": 0.8705,
+                "precision": 0.8500517063081696,
+                "recall": 0.8782051282051282,
+                "f1": 0.8638991066736732,
+                "mcc": 0.7408093878190997,
+                "auroc": 0.9377821557097874,
+                "auprc": 0.9260418711755696,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__fungi_species_20": {
+            "dataset": {
+                "species": "Animals",
+                "type": "multiclass",
+                "labels": 20,
+                "train": 8000,
+                "test": 1000,
+                "dev": 1000,
+                "length": 10000,
+                "metric": "mcc"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 24000,
+                "batch_size": 10,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 6.3668,
+                "FLOPs": 1.0472029249536e+16,
+                "loss": 0.2293440848588943,
+                "accuracy": 0.901,
+                "precision": 0.9035710093771476,
+                "recall": 0.901,
+                "f1": 0.9004632046079752,
+                "mcc": 0.8960451188126898,
+                "auroc": 0.9961294736842106,
+                "auprc": 0.9405333320362383,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__human_tf_0": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 32378,
+                "test": 1000,
+                "dev": 1000,
+                "length": 101,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 97134,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 4.0864,
+                "FLOPs": 2153127210964992.0,
+                "loss": 0.4581880271434784,
+                "accuracy": 0.77,
+                "precision": 0.7567084078711985,
+                "recall": 0.8181818181818182,
+                "f1": 0.7862453531598513,
+                "mcc": 0.5400712261961076,
+                "auroc": 0.8636263520629848,
+                "auprc": 0.8708873134997333,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__mouse_1": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 53952,
+                "test": 6745,
+                "dev": 6745,
+                "length": 101,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 161856,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 29.2762,
+                "FLOPs": 3587658688972800.0,
+                "loss": 0.3245132863521576,
+                "accuracy": 0.887175685693106,
+                "precision": 0.8944211157768446,
+                "recall": 0.8793866116189915,
+                "f1": 0.8868401486988847,
+                "mcc": 0.7744761126647509,
+                "auroc": 0.958588511769641,
+                "auprc": 0.9633319527121114,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__mouse_4": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 15064,
+                "test": 1883,
+                "dev": 1883,
+                "length": 101,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 45192,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 8.0487,
+                "FLOPs": 1001751445610496.0,
+                "loss": 0.6170393228530884,
+                "accuracy": 0.6919808815719597,
+                "precision": 0.7313953488372092,
+                "recall": 0.6431492842535788,
+                "f1": 0.6844396082698585,
+                "mcc": 0.3890695110424371,
+                "auroc": 0.7685800314092351,
+                "auprc": 0.7972874283715299,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__prom_300_all": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 47356,
+                "test": 5920,
+                "dev": 5920,
+                "length": 300,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 142068,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 25.6433,
+                "FLOPs": 3149159682576384.0,
+                "loss": 0.1867134273052215,
+                "accuracy": 0.941722972972973,
+                "precision": 0.9386172006745362,
+                "recall": 0.9446707399864224,
+                "f1": 0.9416342412451362,
+                "mcc": 0.8834650775268936,
+                "auroc": 0.9855168760623296,
+                "auprc": 0.9847218882461164,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__prom_core_all": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 47356,
+                "test": 5920,
+                "dev": 5920,
+                "length": 70,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 142068,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 25.8136,
+                "FLOPs": 3149159682576384.0,
+                "loss": 0.4875290691852569,
+                "accuracy": 0.7940878378378379,
+                "precision": 0.7995234853641934,
+                "recall": 0.7885196374622356,
+                "f1": 0.793983437552814,
+                "mcc": 0.5882517504213304,
+                "auroc": 0.8750322300304785,
+                "auprc": 0.8739825951469941,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__virus_covid": {
+            "dataset": {
+                "species": "Microbe",
+                "type": "multiclass",
+                "labels": 9,
+                "train": 73335,
+                "test": 9168,
+                "dev": 9166,
+                "length": 999,
+                "metric": "mcc"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 220005,
+                "batch_size": 108,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 39.142,
+                "FLOPs": 9302137869358080.0,
+                "loss": 1.1877607107162476,
+                "accuracy": 0.5775692777656557,
+                "precision": 0.582732626257065,
+                "recall": 0.5753915133051329,
+                "f1": 0.5762214063542709,
+                "mcc": 0.5238416626453597,
+                "auroc": 0.8988873066114054,
+                "auprc": 0.6654542772783203,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "GUE__virus_species_40": {
+            "dataset": {
+                "species": "Microbe",
+                "type": "multiclass",
+                "labels": 25,
+                "train": 4000,
+                "test": 500,
+                "dev": 500,
+                "length": 5000,
+                "metric": "mcc"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 12000,
+                "batch_size": 21,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 2.624,
+                "FLOPs": 2617300389888000.0,
+                "loss": 1.6972757577896118,
+                "accuracy": 0.406,
+                "precision": 0.3902663951965561,
+                "recall": 0.4059999999999999,
+                "f1": 0.364441139437793,
+                "mcc": 0.384997909987457,
+                "auroc": 0.9262916666666666,
+                "auprc": 0.4356852919267884,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "NT_downstream_tasks__enhancers": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 30000,
+                "test": 3000,
+                "dev": 0,
+                "length": 400,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 90000,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 12.1829,
+                "FLOPs": 1994990929920000.0,
+                "loss": 0.4182162284851074,
+                "accuracy": 0.8126666666666666,
+                "precision": 0.7643916913946588,
+                "recall": 0.8864418444597385,
+                "f1": 0.8209050350541747,
+                "mcc": 0.6343499430222604,
+                "auroc": 0.8958655408799128,
+                "auprc": 0.8719208535327012,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "NT_downstream_tasks__H3K27ac": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 30000,
+                "test": 1616,
+                "dev": 0,
+                "length": 1000,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 90000,
+                "batch_size": 108,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 6.413,
+                "FLOPs": 3952458270720000.0,
+                "loss": 0.4532411396503448,
+                "accuracy": 0.781559405940594,
+                "precision": 0.7798277982779828,
+                "recall": 0.7846534653465347,
+                "f1": 0.7822331893892659,
+                "mcc": 0.563129593892927,
+                "auroc": 0.8684090407803157,
+                "auprc": 0.8666130404606871,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "NT_downstream_tasks__H3K27me3": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 30000,
+                "test": 3000,
+                "dev": 0,
+                "length": 1000,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 90000,
+                "batch_size": 108,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 12.3726,
+                "FLOPs": 3952458270720000.0,
+                "loss": 0.4439866244792938,
+                "accuracy": 0.798,
+                "precision": 0.7380568974771873,
+                "recall": 0.9209645010046884,
+                "f1": 0.8194278903456496,
+                "mcc": 0.6154286842857812,
+                "auroc": 0.8798707171845075,
+                "auprc": 0.8488832520204763,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "NT_downstream_tasks__H3K4me2": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 30000,
+                "test": 2138,
+                "dev": 0,
+                "length": 1000,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 90000,
+                "batch_size": 108,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 9.1447,
+                "FLOPs": 3952458270720000.0,
+                "loss": 0.4015524983406067,
+                "accuracy": 0.8376987839101965,
+                "precision": 0.8223214285714285,
+                "recall": 0.8615528531337698,
+                "f1": 0.8414801279122888,
+                "mcc": 0.676167507275403,
+                "auroc": 0.9119710945683304,
+                "auprc": 0.9066414306572051,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "NT_downstream_tasks__H3K9me3": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 27438,
+                "test": 850,
+                "dev": 0,
+                "length": 1000,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 82314,
+                "batch_size": 108,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 3.5166,
+                "FLOPs": 3614918334400512.0,
+                "loss": 0.5356959700584412,
+                "accuracy": 0.7564705882352941,
+                "precision": 0.7454954954954955,
+                "recall": 0.7788235294117647,
+                "f1": 0.761795166858458,
+                "mcc": 0.5134545322996039,
+                "auroc": 0.8357923875432526,
+                "auprc": 0.8208741443051986,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "NT_downstream_tasks__splice_sites_acceptors": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 30000,
+                "test": 3000,
+                "dev": 0,
+                "length": 600,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 90000,
+                "batch_size": 108,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 12.329,
+                "FLOPs": 3952458270720000.0,
+                "loss": 0.2951938211917877,
+                "accuracy": 0.9006666666666666,
+                "precision": 0.9028062970568104,
+                "recall": 0.8942372881355932,
+                "f1": 0.8985013623978202,
+                "mcc": 0.8012821384397747,
+                "auroc": 0.9647462072798,
+                "auprc": 0.9664367327704324,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "NT_downstream_tasks__splice_sites_all": {
+            "dataset": {
+                "species": "Animals",
+                "type": "multiclass",
+                "labels": 3,
+                "train": 30000,
+                "test": 3000,
+                "dev": 0,
+                "length": 600,
+                "metric": "mcc"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 90000,
+                "batch_size": 108,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 13.1688,
+                "FLOPs": 3952459929600000.0,
+                "loss": 0.3902211487293243,
+                "accuracy": 0.872,
+                "precision": 0.8724490961956964,
+                "recall": 0.8722548928913123,
+                "f1": 0.8723365691836816,
+                "mcc": 0.8079016403973923,
+                "auroc": 0.9674663642662816,
+                "auprc": 0.9439751892191514,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "NT_downstream_tasks__splice_sites_donors": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 30000,
+                "test": 3000,
+                "dev": 0,
+                "length": 600,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 90000,
+                "batch_size": 108,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 12.7731,
+                "FLOPs": 3952458270720000.0,
+                "loss": 0.2521902024745941,
+                "accuracy": 0.919,
+                "precision": 0.9198913781398508,
+                "recall": 0.9155405405405406,
+                "f1": 0.917710802573654,
+                "mcc": 0.8379702396624866,
+                "auroc": 0.97357774715505,
+                "auprc": 0.9761279693476508,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "plant-genomic-benchmark__poly_a.arabidopsis_thaliana": {
+            "dataset": {
+                "species": "Plants",
+                "type": "binary",
+                "labels": 2,
+                "train": 170835,
+                "test": 30384,
+                "dev": 0,
+                "length": 400,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 512505,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 130.292,
+                "FLOPs": 1.136047585042944e+16,
+                "loss": 0.6401417851448059,
+                "accuracy": 0.6662388098999473,
+                "precision": 0.3898305084745763,
+                "recall": 0.0022709320695102,
+                "f1": 0.0045155590458427,
+                "mcc": 0.0052863825968443,
+                "auroc": 0.5184690732517925,
+                "auprc": 0.3447175612072467,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "plant-genomic-benchmark__promoter_strength.leaf": {
+            "dataset": {
+                "species": "Plants",
+                "type": "regression",
+                "labels": 1,
+                "train": 58179,
+                "test": 7154,
+                "dev": 6825,
+                "length": 170,
+                "metric": "spearmanr"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 174537,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 29.295,
+                "FLOPs": 3868882693327872.0,
+                "loss": 1.0875420570373535,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.7844778551411292,
+                "mse": 1.0875420434766894,
+                "r2": 0.604
+            }
+        },
+        "plant-genomic-benchmark__terminator_strength.leaf": {
+            "dataset": {
+                "species": "Plants",
+                "type": "regression",
+                "labels": 1,
+                "train": 43294,
+                "test": 5309,
+                "dev": 4806,
+                "length": 170,
+                "metric": "spearmanr"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 129882,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 20.6077,
+                "FLOPs": 2879035516680192.0,
+                "loss": 0.5417508482933044,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.6672227278046031,
+                "mse": 0.5417508707251226,
+                "r2": 0.39
+            }
+        },
+        "PDLLMs_datasets__plant-multi-species-core-promoters": {
+            "dataset": {
+                "species": "Plants",
+                "type": "binary",
+                "labels": 2,
+                "train": 66560,
+                "test": 8320,
+                "dev": 8320,
+                "length": 300,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 199680,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 36.598,
+                "FLOPs": 4420633901912064.0,
+                "loss": 0.5057900547981262,
+                "accuracy": 0.7614182692307693,
+                "precision": 0.7345266335993099,
+                "recall": 0.81875,
+                "f1": 0.7743548937137661,
+                "mcc": 0.5263078575739363,
+                "auroc": 0.8412670465051775,
+                "auprc": 0.8235744684276216,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "PDLLMs_datasets__plant-multi-species-H3K27ac": {
+            "dataset": {
+                "species": "Plants",
+                "type": "binary",
+                "labels": 2,
+                "train": 81920,
+                "test": 10240,
+                "dev": 10240,
+                "length": 2000,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 245760,
+                "batch_size": 54,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 45.2282,
+                "FLOPs": 2.1481705758053376e+16,
+                "loss": 0.5573903918266296,
+                "accuracy": 0.7228515625,
+                "precision": 0.7065532223026793,
+                "recall": 0.7623046875,
+                "f1": 0.7333709131905298,
+                "mcc": 0.4470971555905925,
+                "auroc": 0.8018777656555176,
+                "auprc": 0.8053854243787563,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "PDLLMs_datasets__plant-multi-species-H3K27me3": {
+            "dataset": {
+                "species": "Plants",
+                "type": "binary",
+                "labels": 2,
+                "train": 79748,
+                "test": 9968,
+                "dev": 9968,
+                "length": 2000,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 239244,
+                "batch_size": 54,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 44.421,
+                "FLOPs": 2.090964016191283e+16,
+                "loss": 0.5716703534126282,
+                "accuracy": 0.7000401284109149,
+                "precision": 0.6822002923976608,
+                "recall": 0.7489967897271268,
+                "f1": 0.7140397857689365,
+                "mcc": 0.4020119457871574,
+                "auroc": 0.7770593628342639,
+                "auprc": 0.7752603312285795,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "PDLLMs_datasets__plant-multi-species-H3K4me3": {
+            "dataset": {
+                "species": "Plants",
+                "type": "binary",
+                "labels": 2,
+                "train": 81920,
+                "test": 10240,
+                "dev": 10240,
+                "length": 2000,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 245760,
+                "batch_size": 54,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 45.933,
+                "FLOPs": 2.1483017233514496e+16,
+                "loss": 0.4103474617004394,
+                "accuracy": 0.8451171875,
+                "precision": 0.8701298701298701,
+                "recall": 0.811328125,
+                "f1": 0.8397008287851223,
+                "mcc": 0.6918158760688322,
+                "auroc": 0.9049962615966796,
+                "auprc": 0.900297924526328,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "PDLLMs_datasets__plant-multi-species-lncRNAs": {
+            "dataset": {
+                "species": "Plants",
+                "type": "binary",
+                "labels": 2,
+                "train": 40248,
+                "test": 5032,
+                "dev": 5028,
+                "length": 2000,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 120744,
+                "batch_size": 54,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 21.1344,
+                "FLOPs": 1.0549246314157056e+16,
+                "loss": 0.6456528902053833,
+                "accuracy": 0.7498011137629276,
+                "precision": 0.7359398496240601,
+                "recall": 0.8655818889281924,
+                "f1": 0.7955136540962289,
+                "mcc": 0.4891947667152782,
+                "auroc": 0.8142110533736554,
+                "auprc": 0.8242796935480794,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "PDLLMs_datasets__plant-multi-species-open-chromatin": {
+            "dataset": {
+                "species": "Plants",
+                "type": "multiclass",
+                "labels": 3,
+                "train": 118800,
+                "test": 14850,
+                "dev": 14850,
+                "length": 3000,
+                "metric": "mcc"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 356400,
+                "batch_size": 36,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 67.9218,
+                "FLOPs": 4.654056208361472e+16,
+                "loss": 0.9605274200439452,
+                "accuracy": 0.5504377104377104,
+                "precision": 0.559941228510071,
+                "recall": 0.5504377104377105,
+                "f1": 0.549463612522996,
+                "mcc": 0.328875729073723,
+                "auroc": 0.7358920926436078,
+                "auprc": 0.5938995989126957,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "PDLLMs_datasets__plant-multi-species-sequence-conservation": {
+            "dataset": {
+                "species": "Plants",
+                "type": "binary",
+                "labels": 2,
+                "train": 56320,
+                "test": 7040,
+                "dev": 7040,
+                "length": 1000,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 168960,
+                "batch_size": 108,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 29.3056,
+                "FLOPs": 7392019206509568.0,
+                "loss": 0.4293591380119324,
+                "accuracy": 0.8015625,
+                "precision": 0.816771113100567,
+                "recall": 0.7775568181818182,
+                "f1": 0.7966817057196914,
+                "mcc": 0.6038213330810852,
+                "auroc": 0.8852629858600207,
+                "auprc": 0.8833427210420718,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "PlantCAD2_fine_tuning_tasks__cross_species_leaf_absolute_translation": {
+            "dataset": {
+                "species": "Plants",
+                "type": "regression",
+                "labels": 1,
+                "train": 21894,
+                "test": 39035,
+                "dev": 5492,
+                "length": 500,
+                "metric": "spearmanr"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 22.9038,
+                "FLOPs": 1455810170720256.0,
+                "loss": 0.418107807636261,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.2976695270980478,
+                "mse": 0.4181077860657228,
+                "r2": 0.053
+            }
+        },
+        "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation": {
+            "dataset": {
+                "species": "Plants",
+                "type": "binary",
+                "labels": 2,
+                "train": 21894,
+                "test": 39035,
+                "dev": 5492,
+                "length": 500,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 23.2603,
+                "FLOPs": 1455811381260288.0,
+                "loss": 0.6103252172470093,
+                "accuracy": 0.6788055353241078,
+                "precision": 0.7176644493717664,
+                "recall": 0.8249787595581988,
+                "f1": 0.7675889328063241,
+                "mcc": 0.2624944035974498,
+                "auroc": 0.6893869711714888,
+                "auprc": 0.7935870972699781,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "Deep4mC_datasets__C.elegans_4mC": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 84927,
+                "test": 36399,
+                "dev": 0,
+                "length": 41,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 254781,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 151.3313,
+                "FLOPs": 5647553323812864.0,
+                "loss": 0.5794158577919006,
+                "accuracy": 0.7477883400186823,
+                "precision": 0.7378804663185103,
+                "recall": 0.7686136600912138,
+                "f1": 0.7529335773495532,
+                "mcc": 0.4960070973484073,
+                "auroc": 0.8252728281779762,
+                "auprc": 0.8175628252313791,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "Deep4mC_datasets__D.melanogaster_4mC": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 126467,
+                "test": 54201,
+                "dev": 0,
+                "length": 41,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 379401,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 226.0486,
+                "FLOPs": 8409219268101120.0,
+                "loss": 0.4908373355865478,
+                "accuracy": 0.7950738007380074,
+                "precision": 0.7718141337231041,
+                "recall": 0.8378597785977859,
+                "f1": 0.803482014897645,
+                "mcc": 0.5923202362133205,
+                "auroc": 0.8737806504541061,
+                "auprc": 0.8556007654719893,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "Deep4mC_datasets__E.coli_4mC": {
+            "dataset": {
+                "species": "Microbe",
+                "type": "binary",
+                "labels": 2,
+                "train": 8682,
+                "test": 3722,
+                "dev": 0,
+                "length": 41,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 26046,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 15.7697,
+                "FLOPs": 577283875421184.0,
+                "loss": 0.4481902420520782,
+                "accuracy": 0.8317656543939801,
+                "precision": 0.2857142857142857,
+                "recall": 0.0064516129032258,
+                "f1": 0.0126182965299684,
+                "mcc": 0.0196403738588036,
+                "auroc": 0.6576960085716366,
+                "auprc": 0.2557285022582283,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "iDNA_ABF_datasets__5mC": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 2344,
+                "test": 2344,
+                "dev": 0,
+                "length": 41,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 7032,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 10.0363,
+                "FLOPs": 155875291324416.0,
+                "loss": 0.723322868347168,
+                "accuracy": 0.5,
+                "precision": 0.5,
+                "recall": 1.0,
+                "f1": 0.6666666666666666,
+                "mcc": 0.0,
+                "auroc": 0.427486415100933,
+                "auprc": 0.4405566600227513,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "iDNA_ABF_datasets__6mA": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 18336,
+                "test": 18334,
+                "dev": 0,
+                "length": 41,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 55008,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 76.3534,
+                "FLOPs": 1219338456367104.0,
+                "loss": 0.4922872185707092,
+                "accuracy": 0.7971528308061525,
+                "precision": 0.8028685790527018,
+                "recall": 0.7877168102978074,
+                "f1": 0.7952205275039921,
+                "mcc": 0.5944115220392368,
+                "auroc": 0.8782327032371428,
+                "auprc": 0.88463937410512,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "iPro-WAEL_datasets__Promoter_R_capsulatus": {
+            "dataset": {
+                "species": "Microbe",
+                "type": "binary",
+                "labels": 2,
+                "train": 7407,
+                "test": 3176,
+                "dev": 0,
+                "length": 40,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 22221,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 13.6274,
+                "FLOPs": 492496760899584.0,
+                "loss": 0.6911706328392029,
+                "accuracy": 0.5426771653543307,
+                "precision": 0.5341535850657616,
+                "recall": 0.7805331680099195,
+                "f1": 0.6342569269521411,
+                "mcc": 0.0886945787561173,
+                "auroc": 0.5480242952388286,
+                "auprc": 0.5403638272940445,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "Genomic_Benchmarks__coding": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 75000,
+                "test": 25000,
+                "dev": 0,
+                "length": 200,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 225000,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 104.7554,
+                "FLOPs": 4987477324800000.0,
+                "loss": 0.2449419498443603,
+                "accuracy": 0.90968,
+                "precision": 0.9061062648691516,
+                "recall": 0.91408,
+                "f1": 0.9100756670649144,
+                "mcc": 0.8193917274619429,
+                "auroc": 0.9694628672,
+                "auprc": 0.9680782126228318,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "Genomic_Benchmarks__human_vs_worm": {
+            "dataset": {
+                "species": "Animals",
+                "type": "binary",
+                "labels": 2,
+                "train": 75000,
+                "test": 25000,
+                "dev": 0,
+                "length": 200,
+                "metric": "f1"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 225000,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 104.3116,
+                "FLOPs": 4862125394703360.0,
+                "loss": 0.1281664967536926,
+                "accuracy": 0.95648,
+                "precision": 0.9607558139534884,
+                "recall": 0.95184,
+                "f1": 0.956277125864009,
+                "mcc": 0.9129993138664856,
+                "auroc": 0.9919617408,
+                "auprc": 0.9917482820120928,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "Genomic_Benchmarks__regulatory_region_type": {
+            "dataset": {
+                "species": "Animals",
+                "type": "multiclass",
+                "labels": 3,
+                "train": 150000,
+                "test": 57713,
+                "dev": 0,
+                "length": 802,
+                "metric": "mcc"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 450000,
+                "batch_size": 108,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 240.2846,
+                "FLOPs": 1.976190440200704e+16,
+                "loss": 0.1931466162204742,
+                "accuracy": 0.9253201185174916,
+                "precision": 0.9267289229859484,
+                "recall": 0.927511252073063,
+                "f1": 0.9270668297525344,
+                "mcc": 0.8876993749041467,
+                "auroc": 0.9883678877832344,
+                "auprc": 0.9791006670256004,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "BEND__CpG_methylation": {
+            "dataset": {
+                "species": "Animals",
+                "type": "multilabel",
+                "labels": 7,
+                "train": 743095,
+                "test": 109717,
+                "dev": 106227,
+                "length": 512,
+                "metric": "AUPRC"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 2229285,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 460.8945,
+                "FLOPs": 4.941480078692352e+16,
+                "loss": 0.1858972907066345,
+                "accuracy": 0.8944466217632636,
+                "precision": 0.954894908607532,
+                "recall": 0.971042104469134,
+                "f1": 0.9628785977875408,
+                "mcc": 0.7500295586561041,
+                "auroc": 0.9568704860173304,
+                "auprc": 0.9899764081341303,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        }
+    }
+}

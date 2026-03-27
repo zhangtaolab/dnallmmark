@@ -1,0 +1,311 @@
+/* ========================================
+   DNALLM Mark Task Page Styles
+   ======================================== */
+
+/* Task Controls */
+.task-controls {
+  display: flex;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 200px;
+}
+
+.control-group label {
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+
+.form-select {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-light);
+  background: var(--color-bg-white);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-size: var(--font-base);
+  min-width: 220px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.form-select:hover {
+  border-color: var(--color-border-medium);
+}
+
+.form-select:focus {
+  outline: none;
+  border-color: var(--color-accent-teal);
+  box-shadow: 0 0 0 3px var(--color-accent-teal-bg);
+}
+
+/* Sort Toggle */
+.sort-toggle {
+  display: flex;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-light);
+  overflow: hidden;
+}
+
+.sort-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 10px 16px;
+  border: none;
+  background: var(--color-bg-white);
+  color: var(--color-text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border-right: 1px solid var(--color-border-light);
+}
+
+.sort-btn:last-child {
+  border-right: none;
+}
+
+.sort-btn:hover {
+  background: var(--color-hover);
+}
+
+.sort-btn.active {
+  background: var(--color-accent-teal-bg);
+  color: var(--color-accent-teal);
+}
+
+.sort-icon {
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-bold);
+}
+
+/* Task Info Banner */
+.task-info-banner {
+  background: var(--color-bg-gray-50);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+}
+
+.task-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.info-label {
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-medium);
+}
+
+.info-value {
+  font-size: var(--font-base);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Chart Legend for Task Page */
+.chart-legend-custom {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  max-height: 500px;
+  overflow-y: auto;
+  min-width: 250px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.legend-item:last-child {
+  border-bottom: none;
+}
+
+.legend-rank {
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-muted);
+  min-width: 24px;
+  text-align: center;
+}
+
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.legend-label {
+  font-size: var(--font-sm);
+  color: var(--color-text-primary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.legend-value {
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  min-width: 60px;
+  text-align: right;
+}
+
+/* Leaderboard Controls */
+.leaderboard-controls {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+/* Model Info in Table */
+.model-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.model-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-base);
+  flex-shrink: 0;
+}
+
+.model-name {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.model-size {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+/* Rank Badges */
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.rank-1 {
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  color: #FFFFFF;
+}
+
+.rank-2 {
+  background: linear-gradient(135deg, #C0C0C0, #808080);
+  color: #FFFFFF;
+}
+
+.rank-3 {
+  background: linear-gradient(135deg, #CD7F32, #8B4513);
+  color: #FFFFFF;
+}
+
+.rank-default {
+  background: var(--color-bg-gray-100);
+  color: var(--color-text-secondary);
+}
+
+/* Value Displays */
+.rank-value {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.flops-value {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-size: var(--font-sm);
+  color: var(--color-text-secondary);
+}
+
+.top-count {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-accent-teal);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .task-controls {
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  .control-group {
+    width: 100%;
+  }
+
+  .form-select {
+    width: 100%;
+    min-width: auto;
+  }
+
+  .sort-toggle {
+    width: 100%;
+  }
+
+  .sort-btn {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .task-info-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-sm);
+  }
+
+  .chart-content-flex {
+    flex-direction: column;
+  }
+
+  .chart-legend-custom {
+    max-height: 200px;
+    min-width: auto;
+  }
+
+  .arena-table {
+    font-size: var(--font-xs);
+  }
+
+  .arena-table th,
+  .arena-table td {
+    padding: 8px var(--spacing-sm);
+  }
+}

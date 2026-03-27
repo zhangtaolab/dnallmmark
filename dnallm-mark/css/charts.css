@@ -1,0 +1,218 @@
+/* ========================================
+   Design Arena Chart Styles
+   图表样式
+   ======================================== */
+
+/* ===== 图表容器 ===== */
+.chart-container {
+  margin-bottom: var(--spacing-lg);
+}
+
+.chart-wrapper {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.chart-header {
+  margin-bottom: var(--spacing-lg);
+  text-align: center;
+}
+
+.chart-header h3 {
+  font-size: 20px;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.chart-header p {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+/* ===== 图表画布包装器 ===== */
+.chart-content-flex {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.chart-canvas-wrapper {
+  flex: 1;
+  height: 550px;
+  background: var(--color-bg-white);
+}
+
+/* 自定义图例样式 - 放在图表右侧 */
+.chart-legend-custom {
+  width: 360px;
+  min-width: 360px;
+  height: 550px;
+  padding: 16px 12px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 12px;
+  align-content: start;
+  overflow-y: auto;
+  border-left: 1px solid var(--color-border-light);
+  background: var(--color-bg-gray-50);
+  border-top-right-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+}
+
+.chart-legend-custom .legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: #292C33;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chart-legend-custom .legend-color {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chart-legend-custom .legend-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== 响应式图表 ===== */
+@media (max-width: var(--breakpoint-md)) {
+  .chart-content-flex {
+    flex-direction: column;
+  }
+
+  .chart-canvas-wrapper {
+    height: 300px;
+    width: 100%;
+  }
+
+  .chart-legend-custom {
+    width: 100%;
+    min-width: 100%;
+    height: auto;
+    max-height: none;
+    grid-template-columns: repeat(3, 1fr);
+    border-left: none;
+    border-top: 1px solid var(--color-border-light);
+    border-radius: 0;
+    margin-top: var(--spacing-md);
+  }
+
+  .chart-wrapper {
+    padding: var(--spacing-md);
+  }
+
+  .chart-header h3 {
+    font-size: 16px;
+  }
+
+  .chart-header p {
+    font-size: 11px;
+  }
+}
+
+/* ===== 图例样式 ===== */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  justify-content: center;
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--color-bg-gray-50);
+  border-radius: var(--radius-md);
+}
+
+.legend-title {
+  font-size: 14px;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-primary);
+  margin-right: var(--spacing-md);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+/* ===== 高亮区域样式 ===== */
+.highlight-quadrant {
+  position: absolute;
+  background: rgba(232, 245, 233, 0.3);
+  border: 1px dashed #52C41A;
+  border-radius: var(--radius-md);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ===== 特殊标注样式 ===== */
+.chart-annotation {
+  position: absolute;
+  font-size: 11px;
+  color: var(--color-primary);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-light);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* ===== 工具提示自定义样式 ===== */
+#chartjs-tooltip {
+  opacity: 1;
+  position: absolute;
+  background: var(--color-primary);
+  color: var(--color-text-white);
+  border-radius: var(--radius-md);
+  pointer-events: none;
+  transform: translate(-50%, 0);
+  transition: all 0.1s ease;
+  padding: 12px;
+  font-size: 12px;
+  z-index: 1000;
+  box-shadow: var(--shadow-lg);
+}
+
+#chartjs-tooltip .tooltip-title {
+  font-weight: var(--font-weight-medium);
+  margin-bottom: var(--spacing-xs);
+  font-size: 13px;
+}
+
+#chartjs-tooltip .tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: 4px;
+}
+
+#chartjs-tooltip .tooltip-label {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+#chartjs-tooltip .tooltip-value {
+  font-weight: var(--font-weight-medium);
+}

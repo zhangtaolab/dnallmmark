@@ -1,0 +1,125 @@
+/* ========================================
+   Design Arena Typography System
+   精确提取自源码
+   ======================================== */
+
+/* ===== Logo 字体 ===== */
+.logo {
+  font-family: var(--font-display);
+  font-size: var(--font-lg);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.2;
+  letter-spacing: -1.08px;
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+/* ===== 主标题 ===== */
+h1 {
+  font-family: var(--font-display);
+  font-size: var(--font-3xl);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-tight);
+  letter-spacing: -0.4px;
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-md);
+}
+
+/* ===== 副标题 ===== */
+h2 {
+  font-family: var(--font-display);
+  font-size: var(--font-xl);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-tight);
+  letter-spacing: -0.24px;
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-sm);
+}
+
+/* ===== 小节标题 ===== */
+h3 {
+  font-family: var(--font-display);
+  font-size: var(--font-md);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-normal);
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-sm);
+}
+
+/* ===== 正文 ===== */
+p {
+  font-family: var(--font-body);
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-md);
+}
+
+/* ===== 小文字 ===== */
+small {
+  font-family: var(--font-body);
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-muted);
+}
+
+/* ===== 导航链接 ===== */
+.nav-link {
+  font-family: var(--font-body);
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+  transition: color var(--transition-fast);
+}
+
+.nav-link:hover {
+  color: var(--color-accent-teal);
+}
+
+/* ===== 按钮文字 ===== */
+.btn-text {
+  font-family: var(--font-body);
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  color: var(--color-primary);
+}
+
+/* ===== 表格文字 ===== */
+.table-header {
+  font-family: var(--font-body);
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-normal);
+  color: var(--color-primary);
+}
+
+.table-cell {
+  font-family: var(--font-body);
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-loose);
+  color: var(--color-text-primary);
+}
+
+/* ===== 标签文字 ===== */
+.tag-text {
+  font-family: var(--font-body);
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+
+/* ===== 说明文字 ===== */
+.caption {
+  font-family: var(--font-body);
+  font-size: var(--font-xs);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-muted);
+  letter-spacing: -0.2px;
+}

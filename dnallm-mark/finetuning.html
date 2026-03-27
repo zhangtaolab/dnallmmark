@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="DNALLM Mark - Fine-tuning Results">
+  <title>DNALLM Mark | Fine-tuning Results</title>
+
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧬</text></svg>">
+
+  <link rel="stylesheet" href="./css/styles.css">
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="navbar-logo">
+      <a href="/" class="logo">DNALLM Mark</a>
+    </div>
+    <ul class="navbar-nav">
+      <li><a href="/" class="nav-link">Leaderboards</a></li>
+      <li><a href="/task.html" class="nav-link">Task Benchmark</a></li>
+    </ul>
+  </nav>
+  <div class="hero-container"></div>
+
+  <main class="content">
+    <div class="model-selector-wrapper" style="margin-bottom: 24px;">
+      <label for="model-select">Select Model:</label>
+      <select id="model-select">
+        <option value="">-- All Models --</option>
+      </select>
+    </div>
+
+    <div class="leaderboard-container"></div>
+    <div class="modal-container"></div>
+  </main>
+
+  <footer style="text-align: center; padding: 32px; margin-top: 48px; border-top: 1px solid var(--color-border-light); color: var(--color-text-secondary);">
+    <p>&copy; 2026 DNALLM Mark. All rights reserved.</p>
+  </footer>
+
+  <script type="module" src="./js/finetuning.js"></script>
+</body>
+</html>

@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale 1.0">
+  <meta name="description" content="DNALLM Mark - Task Benchmark Comparison">
+  <title>DNALLM Mark | Task Benchmarks (Mockup)</title>
+
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+
+  <link rel="stylesheet" href="./css/styles.css">
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="navbar-logo">
+      <a href="/" class="logo">DNALLM Mark</a>
+    </div>
+    <ul class="navbar-nav">
+      <li><a href="/" class="nav-link">Leaderboards</a></li>
+      <li><a href="/finetuning.html" class="nav-link">Fine-tuning</a></li>
+      <li><a href="/models.html" class="nav-link">Models</a></li>
+      <li><a href="/datasets.html" class="nav-link">Datasets</a></li>
+      <li><a href="/submit.html" class="nav-link">Submit</a></li>
+    </ul>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <h1>Task Benchmarks</h1>
+    <p class="hero-subtitle">Compare model performance across individual benchmark tasks</p>
+  </section>
+
+  <!-- Main Content -->
+  <main class="content">
+
+    <!-- Control Panel -->
+    <div class="task-controls" style="
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      padding: 24px;
+      background: #FFFFFF;
+      border-radius: 8px;
+      margin: 16px 24px;
+      box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      border: 1px solid #E9ECEF;
+    ">
+      <!-- Task Selector -->
+      <div class="control-group" style="display: flex; align-items: center; gap: 8px;">
+        <label for="task-select" style="
+          font-size: 14px;
+          font-weight: 500;
+          color: #292C33;
+          white-space: nowrap;
+        ">Select Task:</label>
+        <select id="task-select" style="
+          padding: 8px 12px;
+          border: 1px solid #E9ECEF;
+          border-radius: 6px;
+          font-size: 14px;
+          min-width: 280px;
+          background: #FFFFFF;
+          color: #292C33;
+          cursor: pointer;
+        ">
+          <option value="">-- Choose a benchmark task --</option>
+          <option value="Genomic_Benchmarks__human_vs_worm" selected>Genomic Benchmarks: Human vs Worm</option>
+          <option value="Genomic_Benchmarks__coding">Genomic Benchmarks: Coding</option>
+          <option value="Genomic_Benchmarks__regulatory_region_type">Genomic Benchmarks: Regulatory Region Type</option>
+          <option value="GUE__emp_H3">GUE: Histone H3</option>
+          <option value="GUE__emp_H3K14ac">GUE: Histone H3K14ac</option>
+          <option value="GUE__emp_H3K36me3">GUE: Histone H3K36me3</option>
+          <option value="BEND__CpG_methylation">BEND: CpG Methylation</option>
+          <option value="Deep4mC_datasets__E.coli_4mC">Deep4mC: E.coli 4mC</option>
+        </select>
+      </div>
+
+      <!-- Metric Selector -->
+      <div class="control-group" style="display: flex; align-items: center; gap: 8px;">
+        <label for="metric-select" style="
+          font-size: 14px;
+          font-weight: 500;
+          color: #292C33;
+          white-space: nowrap;
+        ">Rank by Metric:</label>
+        <select id="metric-select" style="
+          padding: 8px 12px;
+          border: 1px solid #E9ECEF;
+          border-radius: 6px;
+          font-size: 14px;
+          min-width: 160px;
+          background: #FFFFFF;
+          color: #292C33;
+          cursor: pointer;
+        ">
+          <option value="f1" selected>F1 Score ↑</option>
+          <option value="accuracy">Accuracy ↑</option>
+          <option value="mcc">MCC ↑</option>
+          <option value="auroc">AUROC ↑</option>
+          <option value="auprc">AUPRC ↑</option>
+          <option value="precision">Precision ↑</option>
+          <option value="recall">Recall ↑</option>
+          <option value="loss">Loss ↓</option>
+          <option value="runtime">Runtime ↓</option>
+          <option value="FLOPs">FLOPs ↓</option>
+        </select>
+      </div>
+
+      <!-- Sort Direction -->
+      <div class="control-group" style="display: flex; align-items: center; gap: 8px; margin-left: auto;">
+        <label for="sort-direction" style="
+          font-size: 14px;
+          font-weight: 500;
+          color: #292C33;
+          white-space: nowrap;
+        ">Sort:</label>
+        <button class="btn btn-sm active" style="padding: 6px 12px;">
+          <span>↓ Descending</span>
+        </button>
+        <button class="btn btn-sm" style="padding: 6px 12px;">
+          <span>↑ Ascending</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Task Info Banner -->
+    <div class="task-info-banner" style="
+      background: #DDEFEF;
+      border: 1px solid #568788;
+      border-radius: 8px;
+      padding: 16px 24px;
+      margin: 0 24px 24px 24px;
+      display: flex;
+      gap: 24px;
+      align-items: center;
+    ">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 11px; color: #265354; font-weight: 500; text-transform: uppercase;">Species</span>
+        <span style="font-size: 14px; color: #265354; font-weight: 600;">Animals</span>
+      </div>
+      <div style="width: 1px; height: 32px; background: #568788; opacity: 0.5;"></div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 11px; color: #265354; font-weight: 500; text-transform: uppercase;">Task Type</span>
+        <span style="font-size: 14px; color: #265354; font-weight: 600;">Binary Classification</span>
+      </div>
+      <div style="width: 1px; height: 32px; background: #568788; opacity: 0.5;"></div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 11px; color: #265354; font-weight: 500; text-transform: uppercase;">Labels</span>
+        <span style="font-size: 14px; color: #265354; font-weight: 600;">2</span>
+      </div>
+      <div style="width: 1px; height: 32px; background: #568788; opacity: 0.5;"></div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 11px; color: #265354; font-weight: 500; text-transform: uppercase;">Sequence Length</span>
+        <span style="font-size: 14px; color: #265354; font-weight: 600;">200 bp</span>
+      </div>
+      <div style="width: 1px; height: 32px; background: #568788; opacity: 0.5;"></div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 11px; color: #265354; font-weight: 500; text-transform: uppercase;">Default Metric</span>
+        <span style="font-size: 14px; color: #265354; font-weight: 600;">F1 Score</span>
+      </div>
+    </div>
+
+    <!-- Horizontal Bar Chart -->
+    <div class="chart-container">
+      <div class="chart-wrapper">
+        <div class="chart-header">
+          <h3>Model Performance Comparison</h3>
+          <p>Horizontal bar chart showing model rankings by selected metric (F1 Score)</p>
+        </div>
+        <div class="chart-content-flex" style="
+          display: flex;
+          align-items: stretch;
+          gap: 0;
+        ">
+          <div class="chart-canvas-wrapper" style="
+            flex: 1;
+            height: 600px;
+            background: #FFFFFF;
+            position: relative;
+          ">
+            <canvas id="barChart"></canvas>
+
+            <!-- Mock chart overlay for visualization -->
+            <div style="
+              position: absolute;
+              top: 0; left: 0; right: 0; bottom: 0;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-around;
+              padding: 20px 80px 20px 20px;
+              pointer-events: none;
+            ">
+              <!-- Mock bars representing model performance -->
+              <div style="display: flex; align-items: center; gap: 12px; height: 40px;">
+                <div style="width: 120px; text-align: right; font-size: 11px; color: #595F6E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">MistralDNA-422m</div>
+                <div style="flex: 1; height: 20px; background: linear-gradient(90deg, #F97316 0%, #F97316 95%); border-radius: 4px 0 0 4px; position: relative;">
+                  <span style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: white; font-size: 11px; font-weight: 600;">0.951</span>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px; height: 40px;">
+                <div style="width: 120px; text-align: right; font-size: 11px; color: #595F6E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Evo2-1b-Base</div>
+                <div style="flex: 1; height: 20px; background: linear-gradient(90deg, #06B6D4 0%, #06B6D4 81%); border-radius: 4px 0 0 4px; position: relative;">
+                  <span style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: white; font-size: 11px; font-weight: 600;">0.771</span>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px; height: 40px;">
+                <div style="width: 120px; text-align: right; font-size: 11px; color: #595F6E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">SPACE</div>
+                <div style="flex: 1; height: 20px; background: linear-gradient(90deg, #8B5CF6 0%, #8B5CF6 75%); border-radius: 4px 0 0 4px; position: relative;">
+                  <span style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: white; font-size: 11px; font-weight: 600;">0.742</span>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px; height: 40px;">
+                <div style="width: 120px; text-align: right; font-size: 11px; color: #595F6E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">DNABERT-2</div>
+                <div style="flex: 1; height: 20px; background: linear-gradient(90deg, #10B981 0%, #10B981 68%); border-radius: 4px 0 0 4px; position: relative;">
+                  <span style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: white; font-size: 11px; font-weight: 600;">0.698</span>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px; height: 40px;">
+                <div style="width: 120px; text-align: right; font-size: 11px; color: #595F6E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">HyenaDNA</div>
+                <div style="flex: 1; height: 20px; background: linear-gradient(90deg, #EF4444 0%, #EF4444 62%); border-radius: 4px 0 0 4px; position: relative;">
+                  <span style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: white; font-size: 11px; font-weight: 600;">0.634</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Legend -->
+          <div id="custom-legend" class="chart-legend-custom" style="
+            width: 280px;
+            min-width: 280px;
+            padding: 16px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow-y: auto;
+            border-left: 1px solid #E9ECEF;
+            background: #F9FAFB;
+            border-top-right-radius: 8px;
+            border-bottom-right-radius: 8px;
+          ">
+            <div style="font-size: 11px; font-weight: 600; color: #292C33; text-transform: uppercase; margin-bottom: 8px;">Model Legend</div>
+            <!-- Legend items -->
+            <div class="legend-item" style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #292C33;">
+              <div class="legend-color" style="width: 10px; height: 10px; border-radius: 50%; background-color: #F97316; flex-shrink: 0;"></div>
+              <span class="legend-label" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">MistralDNA-422m-Hg38</span>
+            </div>
+            <div class="legend-item" style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #292C33;">
+              <div class="legend-color" style="width: 10px; height: 10px; border-radius: 50%; background-color: #06B6D4; flex-shrink: 0;"></div>
+              <span class="legend-label" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Evo2-1b-Base</span>
+            </div>
+            <div class="legend-item" style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #292C33;">
+              <div class="legend-color" style="width: 10px; height: 10px; border-radius: 50%; background-color: #8B5CF6; flex-shrink: 0;"></div>
+              <span class="legend-label" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">SPACE</span>
+            </div>
+            <div class="legend-item" style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #292C33;">
+              <div class="legend-color" style="width: 10px; height: 10px; border-radius: 50%; background-color: #10B981; flex-shrink: 0;"></div>
+              <span class="legend-label" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">DNABERT-2-117M</span>
+            </div>
+            <div class="legend-item" style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #292C33;">
+              <div class="legend-color" style="width: 10px; height: 10px; border-radius: 50%; background-color: #EF4444; flex-shrink: 0;"></div>
+              <span class="legend-label" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">HyenaDNA-Large</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Leaderboard Table -->
+    <div class="leaderboard-container" style="
+      background: #FFFFFF;
+      border: 1px solid #E9ECEF;
+      border-radius: 8px;
+      padding: 24px;
+      margin: 0 24px 48px 24px;
+      box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    ">
+      <div class="leaderboard-header" style="
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid #E9ECEF;
+      ">
+        <div class="leaderboard-title">
+          <h3 style="margin: 0; font-size: 18px; font-weight: 500; color: #292C33;">Performance Rankings</h3>
+          <small style="color: #595F6E; font-size: 12px;">Updated: March 14, 2026</small>
+        </div>
+        <div style="font-size: 12px; color: #595F6E;">
+          Sorted by: <strong style="color: #265354;">F1 Score (Descending)</strong>
+        </div>
+      </div>
+
+      <div class="table-wrapper" style="overflow-x: auto;">
+        <table class="arena-table">
+          <thead>
+            <tr>
+              <th style="width: 60px;">Rank</th>
+              <th>Model</th>
+              <th style="width: 100px;">Size (M)</th>
+              <th style="width: 100px;">F1 Score</th>
+              <th style="width: 100px;">Accuracy</th>
+              <th style="width: 100px;">MCC</th>
+              <th style="width: 100px;">AUROC</th>
+              <th style="width: 100px;">FLOPs (P)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="cursor: pointer; transition: background 0.15s;">
+              <td>
+                <span class="rank-badge rank-1" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; font-weight: 600; font-size: 13px; background: linear-gradient(135deg, #FFD700, #FFA500); color: white;">1</span>
+              </td>
+              <td>
+                <div class="model-info" style="display: flex; align-items: center; gap: 8px;">
+                  <div class="model-icon" style="width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; background: rgba(249, 115, 22, 0.1); color: #F97316;">M</div>
+                  <div>
+                    <div class="model-name" style="font-weight: 500; color: #292C33; font-size: 14px;">MistralDNA-422m-Hg38</div>
+                    <small class="model-size" style="color: #595F6E; font-size: 11px;">419M • BPE • 10.2K bp</small>
+                  </div>
+                </div>
+              </td>
+              <td style="font-size: 13px; color: #595F6E;">419</td>
+              <td><span class="score-value" style="font-weight: 500; color: #265354; font-size: 13px;">0.9507</span></td>
+              <td style="font-size: 13px; color: #595F6E;">0.9502</td>
+              <td style="font-size: 13px; color: #595F6E;">0.9006</td>
+              <td style="font-size: 13px; color: #595F6E;">0.9882</td>
+              <td><span class="flops-value" style="font-size: 13px; color: #595F6E;">5.92</span></td>
+            </tr>
+            <tr style="cursor: pointer; transition: background 0.15s;">
+              <td>
+                <span class="rank-badge rank-2" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; font-weight: 600; font-size: 13px; background: linear-gradient(135deg, #C0C0C0, #A0A0A0); color: white;">2</span>
+              </td>
+              <td>
+                <div class="model-info" style="display: flex; align-items: center; gap: 8px;">
+                  <div class="model-icon" style="width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; background: rgba(6, 182, 212, 0.1); color: #06B6D4;">E</div>
+                  <div>
+                    <div class="model-name" style="font-weight: 500; color: #292C33; font-size: 14px;">Evo2-1b-Base</div>
+                    <small class="model-size" style="color: #595F6E; font-size: 11px;">1,108M • Single • 8.2K bp</small>
+                  </div>
+                </div>
+              </td>
+              <td style="font-size: 13px; color: #595F6E;">1,108</td>
+              <td><span class="score-value" style="font-weight: 500; color: #265354; font-size: 13px;">0.7713</span></td>
+              <td style="font-size: 13px; color: #595F6E;">0.7759</td>
+              <td style="font-size: 13px; color: #595F6E;">0.5523</td>
+              <td style="font-size: 13px; color: #595F6E;">0.8578</td>
+              <td><span class="flops-value" style="font-size: 13px; color: #595F6E;">238.31</span></td>
+            </tr>
+            <tr style="cursor: pointer; transition: background 0.15s;">
+              <td>
+                <span class="rank-badge rank-3" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; font-weight: 600; font-size: 13px; background: linear-gradient(135deg, #CD7F32, #B87333); color: white;">3</span>
+              </td>
+              <td>
+                <div class="model-info" style="display: flex; align-items: center; gap: 8px;">
+                  <div class="model-icon" style="width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; background: rgba(139, 92, 246, 0.1); color: #8B5CF6;">S</div>
+                  <div>
+                    <div class="model-name" style="font-weight: 500; color: #292C33; font-size: 14px;">SPACE</div>
+                    <small class="model-size" style="color: #595F6E; font-size: 11px;">589M • BPE • 4.0K bp</small>
+                  </div>
+                </div>
+              </td>
+              <td style="font-size: 13px; color: #595F6E;">589</td>
+              <td><span class="score-value" style="font-weight: 500; color: #265354; font-size: 13px;">0.7420</span></td>
+              <td style="font-size: 13px; color: #595F6E;">0.7520</td>
+              <td style="font-size: 13px; color: #595F6E;">0.5120</td>
+              <td style="font-size: 13px; color: #595F6E;">0.8234</td>
+              <td><span class="flops-value" style="font-size: 13px; color: #595F6E;">45.67</span></td>
+            </tr>
+            <tr style="cursor: pointer; transition: background 0.15s; background: #F9FAFB;">
+              <td>
+                <span class="rank-badge rank-default" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; font-weight: 600; font-size: 13px; background: #E5E7EB; color: #595F6E;">4</span>
+              </td>
+              <td>
+                <div class="model-info" style="display: flex; align-items: center; gap: 8px;">
+                  <div class="model-icon" style="width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; background: rgba(16, 185, 129, 0.1); color: #10B981;">D</div>
+                  <div>
+                    <div class="model-name" style="font-weight: 500; color: #292C33; font-size: 14px;">DNABERT-2-117M</div>
+                    <small class="model-size" style="color: #595F6E; font-size: 11px;">117M • 6-mer • 512 bp</small>
+                  </div>
+                </div>
+              </td>
+              <td style="font-size: 13px; color: #595F6E;">117</td>
+              <td><span class="score-value" style="font-weight: 500; color: #265354; font-size: 13px;">0.6980</span></td>
+              <td style="font-size: 13px; color: #595F6E;">0.7012</td>
+              <td style="font-size: 13px; color: #595F6E;">0.4234</td>
+              <td style="font-size: 13px; color: #595F6E;">0.7654</td>
+              <td><span class="flops-value" style="font-size: 13px; color: #595F6E;">12.34</span></td>
+            </tr>
+            <tr style="cursor: pointer; transition: background 0.15s;">
+              <td>
+                <span class="rank-badge rank-default" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; font-weight: 600; font-size: 13px; background: #E5E7EB; color: #595F6E;">5</span>
+              </td>
+              <td>
+                <div class="model-info" style="display: flex; align-items: center; gap: 8px;">
+                  <div class="model-icon" style="width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; background: rgba(239, 68, 68, 0.1); color: #EF4444;">H</div>
+                  <div>
+                    <div class="model-name" style="font-weight: 500; color: #292C33; font-size: 14px;">HyenaDNA-Large</div>
+                    <small class="model-size" style="color: #595F6E; font-size: 11px;">267M • Single • 64.0K bp</small>
+                  </div>
+                </div>
+              </td>
+              <td style="font-size: 13px; color: #595F6E;">267</td>
+              <td><span class="score-value" style="font-weight: 500; color: #265354; font-size: 13px;">0.6340</span></td>
+              <td style="font-size: 13px; color: #595F6E;">0.6456</td>
+              <td style="font-size: 13px; color: #595F6E;">0.3234</td>
+              <td style="font-size: 13px; color: #595F6E;">0.7123</td>
+              <td><span class="flops-value" style="font-size: 13px; color: #595F6E;">89.45</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer style="text-align: center; padding: 32px; margin-top: 48px; border-top: 1px solid #E9ECEF; color: #595F6E;">
+    <p>&copy; 2026 DNALLM Mark. All rights reserved.</p>
+    <div style="display: flex; justify-content: center; gap: 16px; margin-top: 16px;">
+      <a href="/about" style="color: #595F6E; font-size: 14px;">Methodology</a>
+      <a href="/blog" style="color: #595F6E; font-size: 14px;">Blog</a>
+      <a href="https://discord.com/invite/Bw9Ajcb3pR" target="_blank" rel="noopener noreferrer" style="color: #595F6E; font-size: 14px;">Discord</a>
+    </div>
+  </footer>
+</body>
+</html>

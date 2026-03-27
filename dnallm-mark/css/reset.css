@@ -1,0 +1,91 @@
+/* ========================================
+   Design Arena Reset Styles
+   ======================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--font-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-white);
+}
+
+/* 移除列表样式 */
+ul,
+ol {
+  list-style: none;
+}
+
+/* 移除链接下划线 */
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* 移除按钮默认样式 */
+button {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* 移除图片默认样式 */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* 移除表格默认样式 */
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+/* 移除输入框默认样式 */
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+}
+
+/* 移除标题默认样式 */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* 移除段落默认样式 */
+p {
+  margin: 0;
+}

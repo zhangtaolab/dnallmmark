@@ -1,0 +1,54 @@
+/* ========================================
+   Design Arena Main Stylesheet
+   主样式入口文件
+   ======================================== */
+
+/* CSS 变量系统 */
+@import url('./variables.css');
+
+/* 重置样式 */
+@import url('./reset.css');
+
+/* 排版系统 */
+@import url('./typography.css');
+
+/* 布局样式 */
+@import url('./layout.css');
+
+/* 组件样式 */
+@import url('./components.css');
+
+/* 图表样式 */
+@import url('./charts.css');
+
+/* ===== 全局样式 ===== */
+body {
+  background: var(--color-bg-white);
+  color: var(--color-text-primary);
+  min-height: 100vh;
+}
+
+/* ===== 响应式设计 ===== */
+@media (max-width: var(--breakpoint-md)) {
+  /* 移动端特定样式 */
+  body {
+    font-size: 13px;
+  }
+}
+
+/* ===== 打印样式 ===== */
+@media print {
+  .navbar,
+  .category-nav {
+    display: none;
+  }
+  
+  .leaderboard {
+    border: 1px solid #000;
+  }
+  
+  .arena-table th,
+  .arena-table td {
+    border: 1px solid #000;
+  }
+}

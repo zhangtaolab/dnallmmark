@@ -1,0 +1,1109 @@
+{
+    "plant-dnamamba2-BPE": {
+        "model": {
+            "name": "PlantDNAMamba2-BPE",
+            "size (M)": 370,
+            "type": "CLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 2000,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 446.0,
+            "sum_minmax": 11.228287810518147,
+            "sum_zscore": 12.311107593494924,
+            "sum_robust": 8.202631838855524,
+            "avg_raw": 0.7481546975879707,
+            "avg_rank": 6.384615384615385,
+            "top1_count": 0,
+            "top3_count": 4,
+            "top5_count": 7,
+            "top8_count": 9,
+            "top10_count": 10,
+            "sum_PFLOPs": 268.245859277482,
+            "avg_PFLOPs": 20.634296867498616,
+            "rank": 1
+        }
+    },
+    "agro-nucleotide-transformer-1b": {
+        "model": {
+            "name": "AgroNT",
+            "size (M)": 985,
+            "type": "MLM",
+            "tokenizer": "6-mer",
+            "context_len (bp)": 6000,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 445.0,
+            "sum_minmax": 11.423944921578153,
+            "sum_zscore": 12.412012241155944,
+            "sum_robust": 8.228617514966684,
+            "avg_raw": 0.7728497785165149,
+            "avg_rank": 6.461538461538462,
+            "top1_count": 3,
+            "top3_count": 4,
+            "top5_count": 7,
+            "top8_count": 8,
+            "top10_count": 10,
+            "sum_PFLOPs": 796.193555579523,
+            "avg_PFLOPs": 61.24565812150177,
+            "rank": 2
+        }
+    },
+    "Omni-DNA-700M": {
+        "model": {
+            "name": "Omni-DNA-700m",
+            "size (M)": 617,
+            "type": "CLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 1500,
+            "species": "multi-species"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 418.0,
+            "sum_minmax": 11.446174458020243,
+            "sum_zscore": 13.120873908495534,
+            "sum_robust": 8.64541433078572,
+            "avg_raw": 0.7305839480842187,
+            "avg_rank": 8.538461538461538,
+            "top1_count": 4,
+            "top3_count": 4,
+            "top5_count": 6,
+            "top8_count": 7,
+            "top10_count": 11,
+            "sum_PFLOPs": 983.4403752487158,
+            "avg_PFLOPs": 75.6492596345166,
+            "rank": 3
+        }
+    },
+    "nucleotide-transformer-v2-500m-multi-species": {
+        "model": {
+            "name": "NT-v2-500m-Multi",
+            "size (M)": 494,
+            "type": "MLM",
+            "tokenizer": "6-mer",
+            "context_len (bp)": 6000,
+            "species": "multi-species"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 416.0,
+            "sum_minmax": 11.115157361967844,
+            "sum_zscore": 10.994490832890362,
+            "sum_robust": 6.549927356562808,
+            "avg_raw": 0.7507296837576054,
+            "avg_rank": 8.692307692307692,
+            "top1_count": 0,
+            "top3_count": 3,
+            "top5_count": 4,
+            "top8_count": 8,
+            "top10_count": 11,
+            "sum_PFLOPs": 397.6026963779359,
+            "avg_PFLOPs": 30.58482279830276,
+            "rank": 4
+        }
+    },
+    "plant-dnamamba-6mer": {
+        "model": {
+            "name": "PlantDNAMamba-6mer",
+            "size (M)": 94,
+            "type": "CLM",
+            "tokenizer": "6-mer",
+            "context_len (bp)": 2000,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 414.0,
+            "sum_minmax": 10.861417005638433,
+            "sum_zscore": 10.618477538886578,
+            "sum_robust": 6.648909979388474,
+            "avg_raw": 0.7436544494420345,
+            "avg_rank": 8.846153846153847,
+            "top1_count": 0,
+            "top3_count": 1,
+            "top5_count": 2,
+            "top8_count": 6,
+            "top10_count": 7,
+            "sum_PFLOPs": 72.53586379427789,
+            "avg_PFLOPs": 5.5796818303290685,
+            "rank": 5
+        }
+    },
+    "PlantCaduceus_l32": {
+        "model": {
+            "name": "PlantCAD-l32",
+            "size (M)": 225,
+            "type": "MLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 512,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 413.0,
+            "sum_minmax": 10.659020092546381,
+            "sum_zscore": 10.096332728053794,
+            "sum_robust": 6.538332086531371,
+            "avg_raw": 0.7128490607681148,
+            "avg_rank": 8.923076923076923,
+            "top1_count": 2,
+            "top3_count": 4,
+            "top5_count": 6,
+            "top8_count": 10,
+            "top10_count": 10,
+            "sum_PFLOPs": 3585.414625985581,
+            "avg_PFLOPs": 275.80112507581396,
+            "rank": 6
+        }
+    },
+    "GenomeOcean-500M": {
+        "model": {
+            "name": "GenomeOcean-500m",
+            "size (M)": 535,
+            "type": "CLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 5120,
+            "species": "microbiome"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 409.0,
+            "sum_minmax": 10.822431458946443,
+            "sum_zscore": 10.733205715115666,
+            "sum_robust": 6.607639017338148,
+            "avg_raw": 0.7363322619450032,
+            "avg_rank": 9.23076923076923,
+            "top1_count": 0,
+            "top3_count": 2,
+            "top5_count": 4,
+            "top8_count": 7,
+            "top10_count": 8,
+            "sum_PFLOPs": 426.07408729876073,
+            "avg_PFLOPs": 32.77492979221236,
+            "rank": 7
+        }
+    },
+    "PlantCAD2-Small-l24-d0768": {
+        "model": {
+            "name": "PlantCAD2-Small",
+            "size (M)": 176,
+            "type": "MLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 8192,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 388.0,
+            "sum_minmax": 10.015929789565542,
+            "sum_zscore": 7.624274411418689,
+            "sum_robust": 4.8530000452317354,
+            "avg_raw": 0.6918593881852609,
+            "avg_rank": 10.846153846153847,
+            "top1_count": 0,
+            "top3_count": 4,
+            "top5_count": 6,
+            "top8_count": 8,
+            "top10_count": 9,
+            "sum_PFLOPs": 1492.6808499361046,
+            "avg_PFLOPs": 114.82160384123881,
+            "rank": 8
+        }
+    },
+    "plant-dnagemma-BPE": {
+        "model": {
+            "name": "PlantDNAGemma-BPE",
+            "size (M)": 152,
+            "type": "CLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 2000,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 376.0,
+            "sum_minmax": 10.447717897893796,
+            "sum_zscore": 9.403391216909045,
+            "sum_robust": 5.137937962113236,
+            "avg_raw": 0.7279266672490269,
+            "avg_rank": 11.76923076923077,
+            "top1_count": 2,
+            "top3_count": 4,
+            "top5_count": 4,
+            "top8_count": 4,
+            "top10_count": 5,
+            "sum_PFLOPs": 134.31021727452364,
+            "avg_PFLOPs": 10.331555174963357,
+            "rank": 9
+        }
+    },
+    "GENERanno-prokaryote-0.5b-base": {
+        "model": {
+            "name": "GENERanno-Prok",
+            "size (M)": 493,
+            "type": "MLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 8192,
+            "species": "prokaryote"
+        },
+        "performance": {
+            "samples": 11,
+            "rank_score": 360.0,
+            "sum_minmax": 9.012618359573365,
+            "sum_zscore": 9.50159735269047,
+            "sum_robust": 6.605194820631333,
+            "avg_raw": 0.7359686205077467,
+            "avg_rank": 8.272727272727273,
+            "top1_count": 0,
+            "top3_count": 3,
+            "top5_count": 5,
+            "top8_count": 9,
+            "top10_count": 10,
+            "sum_PFLOPs": 1730.9663727675725,
+            "avg_PFLOPs": 133.15125944365943,
+            "rank": 10
+        }
+    },
+    "GENERanno-eukaryote-0.5b-base": {
+        "model": {
+            "name": "GENERanno-Euk",
+            "size (M)": 493,
+            "type": "MLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 8192,
+            "species": "eukaryote"
+        },
+        "performance": {
+            "samples": 11,
+            "rank_score": 347.0,
+            "sum_minmax": 9.13512847966242,
+            "sum_zscore": 9.262004472607739,
+            "sum_robust": 6.123754180588973,
+            "avg_raw": 0.7596134088735854,
+            "avg_rank": 9.454545454545455,
+            "top1_count": 2,
+            "top3_count": 3,
+            "top5_count": 4,
+            "top8_count": 5,
+            "top10_count": 6,
+            "sum_PFLOPs": 1716.7535312955724,
+            "avg_PFLOPs": 132.05796394581327,
+            "rank": 11
+        }
+    },
+    "plant-nucleotide-transformer-6mer": {
+        "model": {
+            "name": "PlantNT-6mer",
+            "size (M)": 96,
+            "type": "MLM",
+            "tokenizer": "6-mer",
+            "context_len (bp)": 2000,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 337.0,
+            "sum_minmax": 10.038256128585386,
+            "sum_zscore": 7.346224674800896,
+            "sum_robust": 3.4744318028603445,
+            "avg_raw": 0.7250766316356512,
+            "avg_rank": 14.76923076923077,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 1,
+            "top8_count": 2,
+            "top10_count": 3,
+            "sum_PFLOPs": 78.4499402010839,
+            "avg_PFLOPs": 6.034610784698762,
+            "rank": 12
+        }
+    },
+    "plant-dnamodernbert-singlebase": {
+        "model": {
+            "name": "PlantDNAModernBERT-Single",
+            "size (M)": 111,
+            "type": "MLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 2000,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 324.0,
+            "sum_minmax": 9.380854839349226,
+            "sum_zscore": 4.990879425338986,
+            "sum_robust": 1.962466536722279,
+            "avg_raw": 0.6836872730334267,
+            "avg_rank": 15.76923076923077,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 1,
+            "top8_count": 2,
+            "top10_count": 2,
+            "sum_PFLOPs": 803.2456805372422,
+            "avg_PFLOPs": 61.78812927209555,
+            "rank": 13
+        }
+    },
+    "PlantCAD2-Medium-l48-d1024": {
+        "model": {
+            "name": "PlantCAD2-Medium",
+            "size (M)": 621,
+            "type": "MLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 8192,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 319.0,
+            "sum_minmax": 8.958443416239476,
+            "sum_zscore": 3.9417847493546567,
+            "sum_robust": 2.234988530377957,
+            "avg_raw": 0.6712686267730922,
+            "avg_rank": 16.153846153846153,
+            "top1_count": 0,
+            "top3_count": 1,
+            "top5_count": 2,
+            "top8_count": 5,
+            "top10_count": 7,
+            "sum_PFLOPs": 5320.432916347245,
+            "avg_PFLOPs": 409.2640704882496,
+            "rank": 14
+        }
+    },
+    "plant-dnabert-6mer": {
+        "model": {
+            "name": "PlantDNABERT-6mer",
+            "size (M)": 89,
+            "type": "MLM",
+            "tokenizer": "6-mer",
+            "context_len (bp)": 2000,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 312.0,
+            "sum_minmax": 9.355053321664007,
+            "sum_zscore": 4.722880409420858,
+            "sum_robust": 2.024160451099288,
+            "avg_raw": 0.703462931250435,
+            "avg_rank": 16.692307692307693,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 1,
+            "top8_count": 1,
+            "top10_count": 2,
+            "sum_PFLOPs": 61.74462365565696,
+            "avg_PFLOPs": 4.749586435050535,
+            "rank": 15
+        }
+    },
+    "prokbert-mini": {
+        "model": {
+            "name": "ProkBERT-Mini",
+            "size (M)": 21,
+            "type": "MLM",
+            "tokenizer": "overlapped 6-mer",
+            "context_len (bp)": 1027,
+            "species": "microbiome"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 312.0,
+            "sum_minmax": 9.04254166048676,
+            "sum_zscore": 4.050548872725343,
+            "sum_robust": 1.3967119641324401,
+            "avg_raw": 0.6549556965981063,
+            "avg_rank": 16.692307692307693,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 2,
+            "top8_count": 4,
+            "top10_count": 4,
+            "sum_PFLOPs": 67.84380097812864,
+            "avg_PFLOPs": 5.21875392139451,
+            "rank": 16
+        }
+    },
+    "plant-dnamamba-BPE": {
+        "model": {
+            "name": "PlantDNAMamba-BPE",
+            "size (M)": 97,
+            "type": "CLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 2000,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 310.0,
+            "sum_minmax": 9.51729951599261,
+            "sum_zscore": 5.617000010179395,
+            "sum_robust": 2.192407039276856,
+            "avg_raw": 0.7152675863237445,
+            "avg_rank": 16.846153846153847,
+            "top1_count": 0,
+            "top3_count": 1,
+            "top5_count": 2,
+            "top8_count": 2,
+            "top10_count": 2,
+            "sum_PFLOPs": 72.53586379427789,
+            "avg_PFLOPs": 5.5796818303290685,
+            "rank": 17
+        }
+    },
+    "PlantBiMoE": {
+        "model": {
+            "name": "PlantBiMoE",
+            "size (M)": 116,
+            "type": "MLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 32768,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 305.0,
+            "sum_minmax": 9.401572377654686,
+            "sum_zscore": 5.184096651681495,
+            "sum_robust": 1.700825493806284,
+            "avg_raw": 0.6893109306114767,
+            "avg_rank": 17.23076923076923,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 1,
+            "top10_count": 2,
+            "sum_PFLOPs": 374.72826633793227,
+            "avg_PFLOPs": 28.82525125676402,
+            "rank": 18
+        }
+    },
+    "DNABERT-2-117M": {
+        "model": {
+            "name": "DNABERT-2",
+            "size (M)": 117,
+            "type": "MLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 10000,
+            "species": "multi-species"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 270.0,
+            "sum_minmax": 8.56589760438164,
+            "sum_zscore": 2.0540234361861267,
+            "sum_robust": -0.02126654858738214,
+            "avg_raw": 0.6776134604075081,
+            "avg_rank": 19.923076923076923,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 1,
+            "top10_count": 1,
+            "sum_PFLOPs": 93.79235505537793,
+            "avg_PFLOPs": 7.214796542721379,
+            "rank": 19
+        }
+    },
+    "gpn-brassicales": {
+        "model": {
+            "name": "GPN",
+            "size (M)": 66,
+            "type": "MLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 512,
+            "species": "brassicales"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 265.0,
+            "sum_minmax": 8.7627027960796,
+            "sum_zscore": 2.5379309916055344,
+            "sum_robust": -0.1676010597770231,
+            "avg_raw": 0.6723800146176866,
+            "avg_rank": 20.307692307692307,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 271.3901301912914,
+            "avg_PFLOPs": 20.87616386086857,
+            "rank": 20
+        }
+    },
+    "MutBERT-Multi": {
+        "model": {
+            "name": "MutBERT-Multi",
+            "size (M)": 85,
+            "type": "MLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 510,
+            "species": "vertebrate"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 247.0,
+            "sum_minmax": 7.8035982710079175,
+            "sum_zscore": -0.14903298950932156,
+            "sum_robust": -1.537475916930179,
+            "avg_raw": 0.6233744019209093,
+            "avg_rank": 21.692307692307693,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 505.76615649247793,
+            "avg_PFLOPs": 38.905088960959844,
+            "rank": 21
+        }
+    },
+    "plant-genomic-jamba": {
+        "model": {
+            "name": "Plant-Genomic-Jamba",
+            "size (M)": 49,
+            "type": "CLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 6000,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 246.0,
+            "sum_minmax": 7.706170136955711,
+            "sum_zscore": -0.7535075475151983,
+            "sum_robust": -1.5929829689811186,
+            "avg_raw": 0.6431691843113091,
+            "avg_rank": 21.76923076923077,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 1,
+            "sum_PFLOPs": 257.4984443647887,
+            "avg_PFLOPs": 19.807572643445287,
+            "rank": 22
+        }
+    },
+    "Mistral-DNA-v1-422M-hg38": {
+        "model": {
+            "name": "MistralDNA-422m-Hg38",
+            "size (M)": 419,
+            "type": "CLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 10240,
+            "species": "human"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 231.0,
+            "sum_minmax": 8.213419452836476,
+            "sum_zscore": 0.5136382886351838,
+            "sum_robust": -2.8532872835910954,
+            "avg_raw": 0.7001763631550244,
+            "avg_rank": 22.923076923076923,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 1,
+            "top10_count": 1,
+            "sum_PFLOPs": 53.75292314723942,
+            "avg_PFLOPs": 4.13484024209534,
+            "rank": 23
+        }
+    },
+    "borzoi-replicate-0": {
+        "model": {
+            "name": "Borzoi-0",
+            "size (M)": 186,
+            "type": "DL",
+            "tokenizer": "one-hot",
+            "context_len (bp)": 536576,
+            "species": "human+mouse"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 230.0,
+            "sum_minmax": 7.838890028894733,
+            "sum_zscore": -0.8227127733799067,
+            "sum_robust": -2.602223854406783,
+            "avg_raw": 0.6954096341362097,
+            "avg_rank": 23.0,
+            "top1_count": 0,
+            "top3_count": 1,
+            "top5_count": 1,
+            "top8_count": 1,
+            "top10_count": 3,
+            "sum_PFLOPs": 21.838860447369985,
+            "avg_PFLOPs": 1.6799123421053834,
+            "rank": 24
+        }
+    },
+    "GROVER": {
+        "model": {
+            "name": "GROVER",
+            "size (M)": 87,
+            "type": "MLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 2040,
+            "species": "human"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 211.0,
+            "sum_minmax": 7.596138551550117,
+            "sum_zscore": -1.7739751363656124,
+            "sum_robust": -3.5226364742316125,
+            "avg_raw": 0.6705627332384942,
+            "avg_rank": 24.46153846153846,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 1,
+            "top10_count": 1,
+            "sum_PFLOPs": 78.3554221553495,
+            "avg_PFLOPs": 6.027340165796115,
+            "rank": 25
+        }
+    },
+    "plant-dnagpt-BPE": {
+        "model": {
+            "name": "PlantDNAGPT-BPE",
+            "size (M)": 92,
+            "type": "CLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 2000,
+            "species": "plants"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 209.0,
+            "sum_minmax": 7.801886188697216,
+            "sum_zscore": -1.114099242394882,
+            "sum_robust": -3.2889031104552298,
+            "avg_raw": 0.6693426993671677,
+            "avg_rank": 24.615384615384617,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 71.5324857092997,
+            "avg_PFLOPs": 5.502498900715362,
+            "rank": 26
+        }
+    },
+    "megaDNA_updated": {
+        "model": {
+            "name": "MegaDNA",
+            "size (M)": 146,
+            "type": "CLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 98304,
+            "species": "bacteriophage"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 187.0,
+            "sum_minmax": 7.499766785436483,
+            "sum_zscore": -1.4723555811104718,
+            "sum_robust": -3.8212047358162553,
+            "avg_raw": 0.6257358197297361,
+            "avg_rank": 26.307692307692307,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 31.994358567450625,
+            "avg_PFLOPs": 2.4611045051885094,
+            "rank": 27
+        }
+    },
+    "gena-lm-bigbird-base-t2t": {
+        "model": {
+            "name": "Gena-LM-BigBird-T2T",
+            "size (M)": 114,
+            "type": "MLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 36000,
+            "species": "human"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 181.0,
+            "sum_minmax": 7.161388020245852,
+            "sum_zscore": -2.964767615699692,
+            "sum_robust": -5.509795995715591,
+            "avg_raw": 0.6530964972677076,
+            "avg_rank": 26.76923076923077,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 47.1420570063744,
+            "avg_PFLOPs": 3.6263120774134157,
+            "rank": 28
+        }
+    },
+    "caduceus-ps_seqlen-131k_d_model-256_n_layer-16": {
+        "model": {
+            "name": "Caduceus-PS-131k",
+            "size (M)": 8,
+            "type": "MLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 131072,
+            "species": "human"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 180.0,
+            "sum_minmax": 6.678836162199702,
+            "sum_zscore": -4.569660708775415,
+            "sum_robust": -5.467038029417217,
+            "avg_raw": 0.6045002594282048,
+            "avg_rank": 26.846153846153847,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 123.0183162088704,
+            "avg_PFLOPs": 9.462947400682339,
+            "rank": 29
+        }
+    },
+    "flashzoi-replicate-0": {
+        "model": {
+            "name": "Flashzoi-0",
+            "size (M)": 197,
+            "type": "DL",
+            "tokenizer": "one-hot",
+            "context_len (bp)": 536576,
+            "species": "human+mouse"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 177.0,
+            "sum_minmax": 6.999059292968134,
+            "sum_zscore": -3.852277893237602,
+            "sum_robust": -4.906895577497865,
+            "avg_raw": 0.6712313801460537,
+            "avg_rank": 27.076923076923077,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 2,
+            "sum_PFLOPs": 19.286905650137857,
+            "avg_PFLOPs": 1.4836081269336814,
+            "rank": 30
+        }
+    },
+    "hyenadna-large-1m-seqlen-hf": {
+        "model": {
+            "name": "HyenaDNA-Large",
+            "size (M)": 7,
+            "type": "CLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 1048576,
+            "species": "human"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 176.0,
+            "sum_minmax": 6.8948336678108415,
+            "sum_zscore": -3.6454424916494252,
+            "sum_robust": -5.548199836307259,
+            "avg_raw": 0.6285820217432965,
+            "avg_rank": 27.153846153846153,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 27.713525146127147,
+            "avg_PFLOPs": 2.131809626625165,
+            "rank": 31
+        }
+    },
+    "Jamba-DNA-v1-114M-hg38": {
+        "model": {
+            "name": "JambaDNA-114m-Hg38",
+            "size (M)": 112,
+            "type": "CLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 102400,
+            "species": "human"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 174.0,
+            "sum_minmax": 7.16662565887875,
+            "sum_zscore": -3.373682813909871,
+            "sum_robust": -5.386715943699279,
+            "avg_raw": 0.667202780209177,
+            "avg_rank": 27.307692307692307,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 1,
+            "top10_count": 1,
+            "sum_PFLOPs": 43.421227493769216,
+            "avg_PFLOPs": 3.340094422597632,
+            "rank": 32
+        }
+    },
+    "OmniNA-220m": {
+        "model": {
+            "name": "OmniNA-220m",
+            "size (M)": 301,
+            "type": "CLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 3000,
+            "species": "multi-species"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 171.0,
+            "sum_minmax": 7.165879678908313,
+            "sum_zscore": -3.2934675355522,
+            "sum_robust": -5.679878116957903,
+            "avg_raw": 0.6647010853175677,
+            "avg_rank": 27.53846153846154,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 219.36965329236787,
+            "avg_PFLOPs": 16.87458871479753,
+            "rank": 33
+        }
+    },
+    "space": {
+        "model": {
+            "name": "SPACE",
+            "size (M)": 589,
+            "type": "DL",
+            "tokenizer": "one-hot",
+            "context_len (bp)": 196608,
+            "species": "human+mouse"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 163.0,
+            "sum_minmax": 6.754964733875065,
+            "sum_zscore": -4.681654085016888,
+            "sum_robust": -5.5455680464608985,
+            "avg_raw": 0.6603770250737464,
+            "avg_rank": 28.153846153846153,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 1,
+            "top10_count": 1,
+            "sum_PFLOPs": 31.22982047100211,
+            "avg_PFLOPs": 2.402293882384778,
+            "rank": 34
+        }
+    },
+    "caduceus-ph_seqlen-131k_d_model-256_n_layer-16": {
+        "model": {
+            "name": "Caduceus-PH-131k",
+            "size (M)": 8,
+            "type": "MLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 131072,
+            "species": "human"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 155.0,
+            "sum_minmax": 6.279762728408987,
+            "sum_zscore": -5.864793692023863,
+            "sum_robust": -6.424100662595138,
+            "avg_raw": 0.6005155149846204,
+            "avg_rank": 28.76923076923077,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 61.5091581044352,
+            "avg_PFLOPs": 4.731473700341169,
+            "rank": 35
+        }
+    },
+    "gena-lm-bert-large-t2t": {
+        "model": {
+            "name": "Gena-LM-Large-T2T",
+            "size (M)": 337,
+            "type": "MLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 4500,
+            "species": "human"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 144.0,
+            "sum_minmax": 6.530568181550537,
+            "sum_zscore": -5.17542901007661,
+            "sum_robust": -7.450437442166499,
+            "avg_raw": 0.6302486625425667,
+            "avg_rank": 29.615384615384617,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 159.9049303839314,
+            "avg_PFLOPs": 12.300379260302416,
+            "rank": 36
+        }
+    },
+    "enformer-official-rough": {
+        "model": {
+            "name": "Enformer",
+            "size (M)": 251,
+            "type": "DL",
+            "tokenizer": "one-hot",
+            "context_len (bp)": 196608,
+            "species": "human+mouse"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 84.0,
+            "sum_minmax": 4.241363218791258,
+            "sum_zscore": -14.480948039986327,
+            "sum_robust": -14.70123789533852,
+            "avg_raw": 0.6030466160431536,
+            "avg_rank": 34.23076923076923,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 34.406600863610876,
+            "avg_PFLOPs": 2.6466616048931444,
+            "rank": 37
+        }
+    },
+    "evo2_1b_base": {
+        "model": {
+            "name": "Evo2-1b-Base",
+            "size (M)": 1108,
+            "type": "CLM",
+            "tokenizer": "singlebase",
+            "context_len (bp)": 8192,
+            "species": "multi-species"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 78.0,
+            "sum_minmax": 2.3004423575754176,
+            "sum_zscore": -21.974514508351515,
+            "sum_robust": -46.03253568126495,
+            "avg_raw": 0.47737078073817263,
+            "avg_rank": 34.69230769230769,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 3613.11762393322,
+            "avg_PFLOPs": 277.93212491794,
+            "rank": 38
+        }
+    },
+    "Mistral-DNA-v1-417M-Athaliana": {
+        "model": {
+            "name": "MistralDNA-417m-Ath",
+            "size (M)": 419,
+            "type": "CLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 10240,
+            "species": "athaliana"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 57.0,
+            "sum_minmax": 2.3849264008795745,
+            "sum_zscore": -21.566255211303083,
+            "sum_robust": -39.10299097200524,
+            "avg_raw": 0.5135173990810211,
+            "avg_rank": 36.30769230769231,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 53.75292314723942,
+            "avg_PFLOPs": 4.13484024209534,
+            "rank": 39
+        }
+    },
+    "Mistral-DNA-v1-138M-virus": {
+        "model": {
+            "name": "MistralDNA-138m-Virus",
+            "size (M)": 135,
+            "type": "CLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 1024,
+            "species": "virus"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 25.0,
+            "sum_minmax": 0.7146150772975466,
+            "sum_zscore": -28.32916867906428,
+            "sum_robust": -53.7518980891111,
+            "avg_raw": 0.44020486545381704,
+            "avg_rank": 38.76923076923077,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 25.975440777314304,
+            "avg_PFLOPs": 1.9981108290241774,
+            "rank": 40
+        }
+    },
+    "ModernBERT-DNA-v1-37M-hg38": {
+        "model": {
+            "name": "ModernBERTDNA-37m-Hg38",
+            "size (M)": 37,
+            "type": "MLM",
+            "tokenizer": "BPE",
+            "context_len (bp)": 10240,
+            "species": "human"
+        },
+        "performance": {
+            "samples": 13,
+            "rank_score": 20.0,
+            "sum_minmax": 0.9426457330815048,
+            "sum_zscore": -27.17902996672508,
+            "sum_robust": -53.47403876430618,
+            "avg_raw": 0.46528716184195135,
+            "avg_rank": 39.15384615384615,
+            "top1_count": 0,
+            "top3_count": 0,
+            "top5_count": 0,
+            "top8_count": 0,
+            "top10_count": 0,
+            "sum_PFLOPs": 55.66979034403891,
+            "avg_PFLOPs": 4.28229156492607,
+            "rank": 41
+        }
+    }
+}
