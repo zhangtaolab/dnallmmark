@@ -65,34 +65,33 @@ class TaskBenchmark {
   }
 
   async loadTaskFiles() {
-    // Fetch the list of task files from the server
+    // Extract unique tasks from all model performance files
     try {
-      const response = await fetch('./data/task_performance/');
-      if (!response.ok) {
-        throw new Error('Failed to load task files list');
-      }
-      const html = await response.text();
+      // Load models_comparison to get model list
+      const comparisonData = await DataAPI.loadModelsComparison();
+      const modelNames = Object.keys(comparisonData);
+      const taskSet = new Set();
 
-      // Parse HTML to extract file names
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-      const links = doc.querySelectorAll('a');
-
-      this.state.taskFiles = Array.from(links)
-        .map(link => {
-          const href = link.getAttribute('href');
-          if (href && href.endsWith('_task_performance.json')) {
-            return href;
+      // Iterate through all models and collect unique task names
+      for (const modelName of modelNames) {
+        try {
+          const perfData = await DataAPI.loadModelPerformance(modelName);
+          if (perfData && perfData.performance) {
+            Object.keys(perfData.performance).forEach(taskName => {
+              if (taskName && taskName !== 'info') {
+                taskSet.add(taskName);
+              }
+            });
           }
-          return null;
-        })
-        .filter(Boolean)
-        .sort();
+        } catch (e) {
+          console.warn(`Failed to load performance for ${modelName}`);
+        }
+      }
 
-      console.log(`Found ${this.state.taskFiles.length} task files`);
+      this.state.taskFiles = Array.from(taskSet).sort();
+      console.log(`Found ${this.state.taskFiles.length} tasks from model performance files`);
     } catch (error) {
       console.error('Error loading task files:', error);
-      // Fallback: use a predefined list if directory listing fails
       this.state.taskFiles = [];
     }
   }
@@ -106,24 +105,50 @@ class TaskBenchmark {
       return;
     }
 
-    const options = this.state.taskFiles.map(file => {
-      // Extract readable task name from filename
-      const taskName = file.replace('_task_performance.json', '').replace(/__/g, ' - ');
-      return `<option value="${file}">${taskName}</option>`;
+    const options = this.state.taskFiles.map(taskName => {
+      // Format task name for display (replace underscores with spaces)
+      const displayName = taskName.replace(/_/g, ' ');
+      return `<option value="${taskName}">${displayName}</option>`;
     });
 
     taskSelect.innerHTML = '<option value="">Select a task...</option>' + options.join('');
   }
 
-  async loadTaskData(fileName) {
+  async loadTaskData(taskName) {
     try {
-      const response = await fetch(`./data/task_performance/${fileName}`);
-      if (!response.ok) {
-        throw new Error(`Failed to load task: ${fileName}`);
+      const comparisonData = await DataAPI.loadModelsComparison();
+      const taskData = {
+        task: taskName,
+        info: null,
+        performance: {}
+      };
+
+      // Load performance data for this task from all models
+      for (const modelName of Object.keys(comparisonData)) {
+        try {
+          const perfData = await DataAPI.loadModelPerformance(modelName);
+          if (perfData && perfData.performance && perfData.performance[taskName]) {
+            const taskPerf = perfData.performance[taskName];
+            taskData.performance[modelName] = {
+              model: perfData.info,
+              performance: taskPerf.performance
+            };
+            // Extract task info from first model that has it
+            if (!taskData.info && taskPerf.dataset) {
+              taskData.info = taskPerf.dataset;
+            }
+          }
+        } catch (e) {
+          console.warn(`No performance data for ${modelName} on task ${taskName}`);
+        }
       }
-      const data = await response.json();
-      this.state.taskData = data;
-      return data;
+
+      if (Object.keys(taskData.performance).length === 0) {
+        throw new Error(`No performance data found for task: ${taskName}`);
+      }
+
+      this.state.taskData = taskData;
+      return taskData;
     } catch (error) {
       console.error('Error loading task data:', error);
       throw error;
@@ -409,8 +434,8 @@ class TaskBenchmark {
     });
   }
 
-  async handleTaskChange(fileName) {
-    if (!fileName) {
+  async handleTaskChange(taskName) {
+    if (!taskName) {
       this.state.taskData = null;
       this.state.models = [];
       this.state.currentMetric = null;
@@ -431,7 +456,7 @@ class TaskBenchmark {
     }
 
     try {
-      const taskData = await this.loadTaskData(fileName);
+      const taskData = await this.loadTaskData(taskName);
       this.renderTaskInfo(taskData);
       this.populateMetricDropdown(taskData);
       await this.handleMetricChange(this.state.currentMetric);
