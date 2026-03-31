@@ -14,6 +14,7 @@
   <!-- Styles -->
   <link rel="stylesheet" href="./css/styles.css">
   <link rel="stylesheet" href="./css/task.css">
+  <link rel="stylesheet" href="./css/loading.css">
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -43,7 +44,7 @@
       <div class="control-group">
         <label for="task-select">Select Task</label>
         <select id="task-select" class="form-select">
-          <option value="">Loading tasks...</option>
+          <option value="">Select a task...</option>
         </select>
       </div>
 
@@ -145,6 +146,22 @@
     </div>
   </main>
 
+  <!-- Loading Overlay -->
+  <div id="task-loading" class="task-loading-overlay">
+    <div class="task-loading-content">
+      <div class="task-loading-spinner"></div>
+      <div class="task-loading-text">
+        Loading <span id="loading-task-name" class="task-loading-task-name">Task</span>...
+      </div>
+      <div id="loading-status" class="task-loading-status">
+        Downloading data...
+      </div>
+      <div id="loading-error" class="task-loading-error">
+        <button id="loading-retry" class="task-loading-retry">Retry</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Footer -->
   <footer style="text-align: center; padding: 32px; margin-top: 48px; border-top: 1px solid var(--color-border-light); color: var(--color-text-secondary);">
     <p>&copy; 2026 DNALLM Mark. All rights reserved.</p>
@@ -156,6 +173,7 @@
   </footer>
 
   <!-- JavaScript -->
+  <script type="module" src="./js/task-loader.js"></script>
   <script type="module" src="./js/task.js"></script>
 </body>
 </html>

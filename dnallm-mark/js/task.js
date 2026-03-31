@@ -4,13 +4,102 @@
 
 import DataAPI from './data.js';
 
+/**
+ * LoadingController - Manages loading overlay UI
+ * Controls visibility, text updates, and error states
+ */
+class LoadingController {
+  constructor() {
+    this.overlay = document.getElementById('task-loading');
+    this.taskNameEl = document.getElementById('loading-task-name');
+    this.statusEl = document.getElementById('loading-status');
+    this.errorEl = document.getElementById('loading-error');
+    this.retryBtn = document.getElementById('loading-retry');
+    
+    this.retryCallback = null;
+    
+    // Bind retry button click
+    this.retryBtn.addEventListener('click', () => {
+      if (this.retryCallback) {
+        this.retryCallback();
+      }
+    });
+  }
+
+  /**
+   * Show loading overlay for network fetch
+   * @param {string} taskName - Name of task being loaded
+   */
+  show(taskName) {
+    this.taskNameEl.textContent = taskName;
+    this.statusEl.textContent = 'Downloading data...';
+    this.statusEl.className = 'task-loading-status loading';
+    this.errorEl.classList.remove('visible');
+    this.retryBtn.disabled = true;
+    this.overlay.classList.add('active');
+  }
+
+  /**
+   * Show loading overlay for cache read (faster)
+   * @param {string} taskName - Name of task being loaded
+   */
+  showCached(taskName) {
+    this.taskNameEl.textContent = taskName;
+    this.statusEl.textContent = 'Loading from cache...';
+    this.statusEl.className = 'task-loading-status cached';
+    this.errorEl.classList.remove('visible');
+    this.overlay.classList.add('active');
+    
+    // Auto-hide after short delay since cache is fast
+    setTimeout(() => this.hide(), 300);
+  }
+
+  /**
+   * Hide loading overlay
+   */
+  hide() {
+    this.overlay.classList.remove('active');
+    
+    // Reset state after animation completes
+    setTimeout(() => {
+      this.statusEl.className = 'task-loading-status';
+      this.statusEl.textContent = '';
+      this.errorEl.classList.remove('visible');
+    }, 300);
+  }
+
+  /**
+   * Show error state with retry option
+   * @param {string} message - Error message
+   * @param {Function} retryCallback - Function to call on retry
+   */
+  showError(message, retryCallback) {
+    this.statusEl.textContent = message || 'Failed to load task data';
+    this.statusEl.className = 'task-loading-status error';
+    this.errorEl.classList.add('visible');
+    this.retryBtn.disabled = false;
+    this.retryCallback = retryCallback;
+  }
+
+  /**
+   * Update status text
+   * @param {string} message - Status message
+   */
+  updateStatus(message) {
+    this.statusEl.textContent = message;
+  }
+}
+
+// Create global instance
+window.loadingController = new LoadingController();
+
 class TaskBenchmark {
   constructor() {
     this.state = {
       currentTask: null,
       currentMetric: null,
       sortDirection: 'desc',
-      taskFiles: [],
+      taskList: [],
       taskData: null,
       models: [],
       chart: null
@@ -20,6 +109,10 @@ class TaskBenchmark {
     this.ascendingMetrics = new Set([
       'FLOPs', 'runtime', 'loss', 'mse', 'MAE'
     ]);
+
+    // Use global instances from task-loader.js
+    this.loader = window.taskLoader;
+    this.loading = window.loadingController;
 
     this.init();
   }
@@ -36,21 +129,25 @@ class TaskBenchmark {
     console.log('Setting up Task Benchmark...');
 
     try {
-      await this.loadTaskFiles();
+      // Initialize task loader and load lightweight task index (~5KB)
+      this.state.taskList = await this.loader.initialize();
+      
+      // Render UI immediately
       this.renderHero();
       this.populateTaskDropdown();
       this.bindEvents();
 
-      // Randomly select a task on first load
-      if (this.state.taskFiles.length > 0) {
-        const randomTask = this.state.taskFiles[Math.floor(Math.random() * this.state.taskFiles.length)];
-        document.getElementById('task-select').value = randomTask;
-        await this.handleTaskChange(randomTask);
+      // Auto-select first task
+      if (this.state.taskList.length > 0) {
+        const firstTask = this.state.taskList[0];
+        document.getElementById('task-select').value = firstTask.id;
+        await this.handleTaskChange(firstTask.id);
       }
 
       console.log('Task Benchmark setup complete!');
     } catch (error) {
       console.error('Failed to setup task benchmark:', error);
+      alert('Initialization failed. Please refresh the page and try again.');
     }
   }
 
@@ -64,98 +161,22 @@ class TaskBenchmark {
     document.querySelector('.hero-container').innerHTML = heroHTML;
   }
 
-  async loadTaskFiles() {
-    // Extract unique tasks from all model performance files
-    try {
-      // Load models_comparison to get model list
-      const comparisonData = await DataAPI.loadModelsComparison();
-      const modelNames = Object.keys(comparisonData);
-      const taskSet = new Set();
-
-      // Iterate through all models and collect unique task names
-      for (const modelName of modelNames) {
-        try {
-          const perfData = await DataAPI.loadModelPerformance(modelName);
-          if (perfData && perfData.performance) {
-            Object.keys(perfData.performance).forEach(taskName => {
-              if (taskName && taskName !== 'info') {
-                taskSet.add(taskName);
-              }
-            });
-          }
-        } catch (e) {
-          console.warn(`Failed to load performance for ${modelName}`);
-        }
-      }
-
-      this.state.taskFiles = Array.from(taskSet).sort();
-      console.log(`Found ${this.state.taskFiles.length} tasks from model performance files`);
-    } catch (error) {
-      console.error('Error loading task files:', error);
-      this.state.taskFiles = [];
-    }
-  }
-
   populateTaskDropdown() {
     const taskSelect = document.getElementById('task-select');
     if (!taskSelect) return;
 
-    if (this.state.taskFiles.length === 0) {
+    if (this.state.taskList.length === 0) {
       taskSelect.innerHTML = '<option value="">No tasks found</option>';
       return;
     }
 
-    const options = this.state.taskFiles.map(taskName => {
-      // Format task name for display (replace underscores with spaces)
-      const displayName = taskName.replace(/_/g, ' ');
-      return `<option value="${taskName}">${displayName}</option>`;
+    const options = this.state.taskList.map(task => {
+      const displayName = task.displayName || task.name || task.id;
+      return `<option value="${task.id}">${displayName}</option>`;
     });
 
     taskSelect.innerHTML = '<option value="">Select a task...</option>' + options.join('');
   }
-
-  async loadTaskData(taskName) {
-    try {
-      const comparisonData = await DataAPI.loadModelsComparison();
-      const taskData = {
-        task: taskName,
-        info: null,
-        performance: {}
-      };
-
-      // Load performance data for this task from all models
-      for (const modelName of Object.keys(comparisonData)) {
-        try {
-          const perfData = await DataAPI.loadModelPerformance(modelName);
-          if (perfData && perfData.performance && perfData.performance[taskName]) {
-            const taskPerf = perfData.performance[taskName];
-            taskData.performance[modelName] = {
-              model: perfData.info,
-              performance: taskPerf.performance
-            };
-            // Extract task info from first model that has it
-            if (!taskData.info && taskPerf.dataset) {
-              taskData.info = taskPerf.dataset;
-            }
-          }
-        } catch (e) {
-          console.warn(`No performance data for ${modelName} on task ${taskName}`);
-        }
-      }
-
-      if (Object.keys(taskData.performance).length === 0) {
-        throw new Error(`No performance data found for task: ${taskName}`);
-      }
-
-      this.state.taskData = taskData;
-      return taskData;
-    } catch (error) {
-      console.error('Error loading task data:', error);
-      throw error;
-    }
-  }
-
-
 
   populateMetricDropdown(taskData) {
     const metricSelect = document.getElementById('metric-select');
@@ -434,34 +455,63 @@ class TaskBenchmark {
     });
   }
 
-  async handleTaskChange(taskName) {
-    if (!taskName) {
-      this.state.taskData = null;
-      this.state.models = [];
-      this.state.currentMetric = null;
-
-      // Reset dropdowns
-      document.getElementById('metric-select').innerHTML = '<option value="">Select a task first</option>';
-      document.getElementById('leaderboard-body').innerHTML = `
-        <tr>
-          <td colspan="6" style="text-align: center; padding: 40px;">Select a task to view rankings</td>
-        </tr>
-      `;
-      document.getElementById('task-info-banner').style.display = 'none';
-
-      if (this.state.chart) {
-        this.state.chart.destroy();
-      }
+  async handleTaskChange(taskId) {
+    if (!taskId) {
+      this.resetUI();
       return;
     }
 
+    const taskInfo = this.state.taskList.find(t => t.id === taskId);
+    if (!taskInfo) {
+      console.error('Task not found:', taskId);
+      return;
+    }
+
+    const displayName = taskInfo.displayName || taskInfo.name || taskId;
+    
+    // Show loading overlay
+    this.loading.show(displayName);
+
     try {
-      const taskData = await this.loadTaskData(taskName);
+      // Load task data with caching and preloading
+      const taskData = await this.loader.loadTask(taskId);
+      
+      // Update state
+      this.state.currentTask = taskId;
+      this.state.taskData = taskData;
+      
+      // Render task data
       this.renderTaskInfo(taskData);
       this.populateMetricDropdown(taskData);
-      await this.handleMetricChange(this.state.currentMetric);
+      await this.handleMetricChange(this.state.currentMetric || taskData.info?.metric || 'f1');
+      
+      // Hide loading overlay
+      this.loading.hide();
+      
     } catch (error) {
-      console.error('Error handling task change:', error);
+      console.error('Error loading task:', error);
+      this.loading.showError(
+        `Failed to load task: ${error.message}`,
+        () => this.handleTaskChange(taskId) // Retry callback
+      );
+    }
+  }
+
+  resetUI() {
+    this.state.taskData = null;
+    this.state.models = [];
+    this.state.currentMetric = null;
+    
+    document.getElementById('metric-select').innerHTML = '<option value="">Select a task first</option>';
+    document.getElementById('leaderboard-body').innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align: center; padding: 40px;">Select a task to view rankings</td>
+      </tr>
+    `;
+    document.getElementById('task-info-banner').style.display = 'none';
+    
+    if (this.state.chart) {
+      this.state.chart.destroy();
     }
   }
 
