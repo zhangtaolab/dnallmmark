@@ -356,6 +356,8 @@ class TaskBenchmark {
         indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
+        barPercentage: 0.6,
+        categoryPercentage: 0.7,
         plugins: {
           legend: {
             display: false
@@ -383,8 +385,20 @@ class TaskBenchmark {
             grid: { color: '#E0E0E0', borderDash: [5, 5], drawBorder: false }
           },
           y: {
-            ticks: { color: '#595F6E' },
+            ticks: { 
+              color: '#595F6E',
+              autoSkip: false,
+              maxRotation: 0,
+              font: {
+                size: 11
+              }
+            },
             grid: { color: '#E0E0E0', borderDash: [5, 5], drawBorder: false }
+          }
+        },
+        layout: {
+          padding: {
+            left: 20
           }
         }
       }

@@ -88,6 +88,19 @@
   font-weight: var(--font-weight-bold);
 }
 
+/* Chart Canvas Wrapper for Task Page */
+.chart-canvas-wrapper {
+  flex: 1;
+  height: 650px;
+  background: var(--color-bg-white);
+  padding-left: 10px;
+}
+
+/* Horizontal bar chart Y-axis label fix */
+.chart-canvas-wrapper canvas {
+  max-width: 100% !important;
+}
+
 /* Task Info Banner */
 .task-info-banner {
   background: var(--color-bg-gray-50);
