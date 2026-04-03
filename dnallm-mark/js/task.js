@@ -356,8 +356,8 @@ class TaskBenchmark {
         indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
-        barPercentage: 0.6,
-        categoryPercentage: 0.7,
+        barPercentage: 0.8,
+        categoryPercentage: 0.8,
         plugins: {
           legend: {
             display: false
