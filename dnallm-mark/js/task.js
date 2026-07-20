@@ -197,7 +197,13 @@ class TaskBenchmark {
       .map(([key, _]) => key);
 
     // Determine default metric
-    const defaultMetric = taskData.info?.metric || 'accuracy';
+    const metricMap = {
+      pearsonr: 'pearson_r',
+      spearmanr: 'spearman_r',
+    };
+
+    const rawMetric = taskData.info?.metric || 'accuracy';
+    const defaultMetric = metricMap[rawMetric] || rawMetric;
 
     // Build metric options with sort direction indicators
     const options = availableMetrics.map(metric => {
