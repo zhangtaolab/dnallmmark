@@ -15,7 +15,8 @@ class DNALLMMark {
       models: [],
       filteredModels: [],
       sortAscending: false,
-      chart: null
+      chart: null,
+      xAxisLog: false
     };
 
     this.init();
@@ -150,7 +151,16 @@ class DNALLMMark {
     const range = max - min;
 
     if (axis === 'x') {
-      // X axis (Sum PFLOPs) - typically smaller values
+      if (this.state.xAxisLog) {
+        // X axis (Sum PFLOPs) - log10 scale, min must be > 0
+        const safeMin = min > 0 && isFinite(min) ? min : 1;
+        const safeMax = max > safeMin ? max : safeMin * 10;
+        return {
+          min: Math.pow(10, Math.floor(Math.log10(safeMin))),
+          max: Math.pow(10, Math.ceil(Math.log10(safeMax)))
+        };
+      }
+      // Linear scale - nice rounded limits
       const xStep = Math.max(10, Math.pow(10, Math.floor(Math.log10(range || 1))));
       const niceMin = Math.floor(min / xStep) * xStep;
       const niceMax = Math.ceil(max / xStep) * xStep;
@@ -210,7 +220,18 @@ class DNALLMMark {
     if (chartTitle) chartTitle.textContent = arenaTitles[this.state.currentArena];
     if (chartDescription) chartDescription.textContent = arenaDescriptions[this.state.currentArena];
 
-    const datasets = this.state.filteredModels.map(model => ({
+    // Sync X scale switch state
+    const scaleSwitch = document.getElementById('x-scale-toggle');
+    if (scaleSwitch) {
+      scaleSwitch.querySelectorAll('button').forEach(btn => {
+        const isLog = btn.dataset.scale === 'log';
+        btn.classList.toggle('active', isLog === this.state.xAxisLog);
+      });
+    }
+
+    const datasets = this.state.filteredModels
+      .filter(model => !this.state.xAxisLog || (model.performance?.sum_PFLOPs || 0) > 0)
+      .map(model => ({
       label: model.id,
       data: [{
         x: model.performance?.sum_PFLOPs || 0,
@@ -227,16 +248,39 @@ class DNALLMMark {
       pointHoverBorderColor: '#FFFFFF'
     }));
 
-    const allScores = this.state.filteredModels.map(m => m.performance?.sum_PFLOPs || 0);
+    const allScores = this.state.filteredModels
+      .map(m => m.performance?.sum_PFLOPs || 0)
+      .filter(v => v > 0);
     const allRanks = this.state.filteredModels.map(m => m.performance?.rank_score || 0);
-    const minScore = Math.min(...allScores) || 0;
-    const maxScore = Math.max(...allScores) || 0;
+    const minScore = allScores.length ? Math.min(...allScores) : 0;
+    const maxScore = allScores.length ? Math.max(...allScores) : 0;
     const minRank = Math.min(...allRanks) || 0;
     const maxRank = Math.max(...allRanks) || 0;
 
     // Calculate smart axis limits
     const xLimits = this.calculateAxisLimits(minScore, maxScore, 'x');
     const yLimits = this.calculateAxisLimits(minRank, maxRank, 'y');
+
+    const isLog = this.state.xAxisLog;
+    const xScale = {
+      type: isLog ? 'logarithmic' : 'linear',
+      position: 'bottom',
+      title: {
+        display: true,
+        text: isLog ? 'Sum PFLOPs (log10, lower = faster)' : 'Sum PFLOPs (lower = faster)',
+        color: '#595F6E'
+      },
+      ticks: isLog ? {
+        color: '#595F6E',
+        callback: (value) => {
+          const log = Math.log10(value);
+          return Number.isInteger(log) ? value.toLocaleString() : null;
+        }
+      } : { color: '#595F6E' },
+      grid: { color: '#E0E0E0', borderDash: [5, 5], drawBorder: false },
+      min: xLimits.min,
+      max: xLimits.max
+    };
 
     const config = {
       type: 'scatter',
@@ -277,19 +321,7 @@ class DNALLMMark {
           }
         },
         scales: {
-          x: {
-            type: 'linear',
-            position: 'bottom',
-            title: {
-              display: true,
-              text: 'Sum PFLOPs (lower = faster)',
-              color: '#595F6E'
-            },
-            ticks: { color: '#595F6E' },
-            grid: { color: '#E0E0E0', borderDash: [5, 5], drawBorder: false },
-            min: xLimits.min,
-            max: xLimits.max
-          },
+          x: xScale,
           y: {
             type: 'linear',
             title: {
@@ -418,6 +450,15 @@ class DNALLMMark {
   }
 
   bindEvents() {
+    document.getElementById('x-scale-toggle')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-scale]');
+      if (!btn) return;
+      const isLog = btn.dataset.scale === 'log';
+      if (isLog === this.state.xAxisLog) return;
+      this.state.xAxisLog = isLog;
+      this.renderScatterChart();
+    });
+
     document.querySelector('.category-nav-container').addEventListener('click', (e) => {
       const tag = e.target.closest('.category-nav .tag');
       if (tag) {

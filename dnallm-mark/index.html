@@ -50,6 +50,12 @@
         <div class="chart-content-flex">
           <div class="chart-canvas-wrapper">
             <canvas id="scatterChart"></canvas>
+            <div class="x-axis-controls">
+              <div class="scale-switch" id="x-scale-toggle" role="group" aria-label="X axis scale">
+                <button type="button" class="tag active" data-scale="linear">Linear</button>
+                <button type="button" class="tag" data-scale="log">log<sub>10</sub></button>
+              </div>
+            </div>
           </div>
           <div id="custom-legend" class="chart-legend-custom"></div>
         </div>

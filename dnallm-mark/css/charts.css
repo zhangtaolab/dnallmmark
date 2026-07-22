@@ -21,6 +21,22 @@
   text-align: center;
 }
 
+.x-axis-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--spacing-sm, 8px);
+}
+
+.scale-switch {
+  display: inline-flex;
+  gap: var(--spacing-xs, 4px);
+}
+
+.scale-switch .tag {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
 .chart-header h3 {
   font-size: 20px;
   font-weight: var(--font-weight-medium);
