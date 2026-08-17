@@ -324,7 +324,8 @@ def main():
             k: v for k, v in model_data.get("info", {}).items()
             if k in [
                 "name", "size (M)", "type",
-                "tokenizer", "context_len (bp)", "species",
+                "tokenizer", "series",
+                "context_len (bp)", "species",
             ]
         }
 
