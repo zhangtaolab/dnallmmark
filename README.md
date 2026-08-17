@@ -31,7 +31,7 @@ DNALLM-Mark is a centralized evaluation system designed to assess and compare th
 - **Transformer-based**: DNABERT series, PlantDNA series, MistralDNA, OmniNA
 - **Mamba/SSM-based**: PlantDNA Mamba series, Caduceus, HyenaDNA
 - **CNN-based**: GPN, SPACE, DeepSEA derivatives
-- **Hybrid Architectures**: Borzoi, Enformer, GenomeOcean
+- **Hybrid Architectures**: Borzoi, Enformer, GenomeOcean, PlantHelixSeek
 
 [SEE ALL MODELS](#supported-model-architectures)
 
