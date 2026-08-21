@@ -10,258 +10,6 @@
         "metric": "spearmanr"
     },
     "performance": {
-        "DNABERT-2-117M": {
-            "model": {
-                "name": "DNABERT-2",
-                "size (M)": 117,
-                "type": "MLM",
-                "tokenizer": "BPE",
-                "mean_token_len": 6,
-                "architecture": "Bert",
-                "series": "DNABERT",
-                "context_len (bp)": 10000,
-                "species": "multi-species",
-                "huggingface": "zhihan1996/DNABERT-2-117M",
-                "modelscope": "lgq12697/DNABERT-2-117M"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 24,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 8.0691,
-                "FLOPs": 4355644814691840.0,
-                "loss": 0.4114507436752319,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.326210539500131,
-                "mse": 0.4114507431929705,
-                "r2": 0.068
-            }
-        },
-        "GENERanno-eukaryote-0.5b-base": {
-            "model": {
-                "name": "GENERanno-Euk",
-                "size (M)": 493,
-                "type": "MLM",
-                "tokenizer": "singlebase",
-                "mean_token_len": 1,
-                "architecture": "Generanno",
-                "series": "GenerTeam",
-                "context_len (bp)": 8192,
-                "species": "eukaryote",
-                "huggingface": "GenerTeam/GENERanno-eukaryote-0.5b-base",
-                "modelscope": "lgq12697/GENERanno-eukaryote-0.5b-base"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 6,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 54.3512,
-                "FLOPs": 9.762699591062784e+16,
-                "loss": 0.3547129333019256,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.4803673329162379,
-                "mse": 0.3547129510069646,
-                "r2": 0.197
-            }
-        },
-        "GENERanno-prokaryote-0.5b-base": {
-            "model": {
-                "name": "GENERanno-Prok",
-                "size (M)": 493,
-                "type": "MLM",
-                "tokenizer": "singlebase",
-                "mean_token_len": 1,
-                "architecture": "Generanno",
-                "series": "GenerTeam",
-                "context_len (bp)": 8192,
-                "species": "prokaryote",
-                "huggingface": "GenerTeam/GENERanno-prokaryote-0.5b-base",
-                "modelscope": "lgq12697/GENERanno-prokaryote-0.5b-base"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 6,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 52.9294,
-                "FLOPs": 9.762699591062784e+16,
-                "loss": 0.3877774178981781,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.3919007380159945,
-                "mse": 0.3877774203146041,
-                "r2": 0.122
-            }
-        },
-        "GROVER": {
-            "model": {
-                "name": "GROVER",
-                "size (M)": 87,
-                "type": "MLM",
-                "tokenizer": "BPE",
-                "mean_token_len": 4,
-                "architecture": "Bert",
-                "series": "GROVER",
-                "context_len (bp)": 2040,
-                "species": "human",
-                "huggingface": "PoetschLab/GROVER",
-                "modelscope": "lgq12697/GROVER"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 128,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 5.566,
-                "FLOPs": 4405405125053952.0,
-                "loss": 0.4129583537578583,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.318598540622204,
-                "mse": 0.412958388362356,
-                "r2": 0.065
-            }
-        },
-        "GenomeOcean-500M": {
-            "model": {
-                "name": "GenomeOcean-500m",
-                "size (M)": 535,
-                "type": "CLM",
-                "tokenizer": "BPE",
-                "mean_token_len": 6,
-                "architecture": "Mistral",
-                "series": "GenomeOcean",
-                "context_len (bp)": 5120,
-                "species": "microbiome",
-                "huggingface": "DOEJGI/GenomeOcean-500M",
-                "modelscope": "lgq12697/GenomeOcean-500M"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 32,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 10.402,
-                "FLOPs": 2.015920142283571e+16,
-                "loss": 0.4094708561897278,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.3217324129457271,
-                "mse": 0.4094708649943179,
-                "r2": 0.073
-            }
-        },
-        "Jamba-DNA-v1-114M-hg38": {
-            "model": {
-                "name": "JambaDNA-114m-Hg38",
-                "size (M)": 112,
-                "type": "CLM",
-                "tokenizer": "BPE",
-                "mean_token_len": 6,
-                "architecture": "Jamba",
-                "series": "RaphaelMourad",
-                "context_len (bp)": 102400,
-                "species": "human",
-                "huggingface": "RaphaelMourad/Jamba-DNA-v1-114M-hg38",
-                "modelscope": "lgq12697/Jamba-DNA-v1-114M-hg38"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 8,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 26.6193,
-                "FLOPs": 2075764227489792.0,
-                "loss": 0.4313271939754486,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.2459588652893808,
-                "mse": 0.4313271729146638,
-                "r2": 0.023
-            }
-        },
         "Mistral-DNA-v1-138M-virus": {
             "model": {
                 "name": "MistralDNA-138m-Virus",
@@ -288,7 +36,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 15.8063,
+                "runtime": 496.0699,
                 "FLOPs": 1252908055904256.0,
                 "loss": 0.4420066773891449,
                 "accuracy": "",
@@ -330,7 +78,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 1.5648,
+                "runtime": 688.9303,
                 "FLOPs": 2592891812560896.0,
                 "loss": 0.4468876421451568,
                 "accuracy": "",
@@ -372,7 +120,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 23.3332,
+                "runtime": 695.5482,
                 "FLOPs": 2592891812560896.0,
                 "loss": 0.438266396522522,
                 "accuracy": "",
@@ -414,7 +162,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 5.6796,
+                "runtime": 203.7722,
                 "FLOPs": 2590597431765504.0,
                 "loss": 0.4412156343460083,
                 "accuracy": "",
@@ -456,7 +204,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 49.8333,
+                "runtime": 1314.8843,
                 "FLOPs": 1.863940544665805e+16,
                 "loss": 0.5616312623023987,
                 "accuracy": "",
@@ -498,7 +246,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 16.8474,
+                "runtime": 551.5623,
                 "FLOPs": 4.653927453052109e+16,
                 "loss": 0.4588184356689453,
                 "accuracy": "",
@@ -514,313 +262,19 @@
                 "r2": -0.039
             }
         },
-        "OmniNA-220m": {
+        "DNABERT-2-117M": {
             "model": {
-                "name": "OmniNA-220m",
-                "size (M)": 301,
-                "type": "CLM",
+                "name": "DNABERT-2",
+                "size (M)": 117,
+                "type": "MLM",
                 "tokenizer": "BPE",
                 "mean_token_len": 6,
-                "architecture": "Llama",
-                "series": "OmniNA",
-                "context_len (bp)": 3000,
+                "architecture": "Bert",
+                "series": "DNABERT",
+                "context_len (bp)": 10000,
                 "species": "multi-species",
-                "huggingface": "XLS/OmniNA-220m",
-                "modelscope": "lgq12697/OmniNA-220m"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 8,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 19.2513,
-                "FLOPs": 1.0281770131193856e+16,
-                "loss": 0.4252324104309082,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.2588096153455921,
-                "mse": 0.4252324264371742,
-                "r2": 0.037
-            }
-        },
-        "PlantBiMoE": {
-            "model": {
-                "name": "PlantBiMoE",
-                "size (M)": 116,
-                "type": "MLM",
-                "tokenizer": "singlebase",
-                "mean_token_len": 1,
-                "architecture": "BiMamba+MoE",
-                "series": "PlantBiMoE",
-                "context_len (bp)": 32768,
-                "species": "plants",
-                "huggingface": "plant-llms/PlantBiMoE",
-                "modelscope": "lgq12697/PlantBiMoE"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 32,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 9.9791,
-                "FLOPs": 1.7929326997730304e+16,
-                "loss": 0.3503773212432861,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.4815053147107007,
-                "mse": 0.3503773124231784,
-                "r2": 0.207
-            }
-        },
-        "PlantCAD2-Medium-l48-d1024": {
-            "model": {
-                "name": "PlantCAD2-Medium",
-                "size (M)": 621,
-                "type": "MLM",
-                "tokenizer": "singlebase",
-                "mean_token_len": 1,
-                "architecture": "Caduceus",
-                "series": "PlantCAD",
-                "context_len (bp)": 8192,
-                "species": "plants",
-                "huggingface": "kuleshov-group/PlantCAD2-Medium-l48-d1024",
-                "modelscope": "lgq12697/PlantCAD2-Medium-l48-d1024"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 8,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 120.3519,
-                "FLOPs": 2.554751582445404e+17,
-                "loss": 0.320981502532959,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.5442511043134477,
-                "mse": 0.320981508741829,
-                "r2": 0.273
-            }
-        },
-        "PlantCAD2-Small-l24-d0768": {
-            "model": {
-                "name": "PlantCAD2-Small",
-                "size (M)": 176,
-                "type": "MLM",
-                "tokenizer": "singlebase",
-                "mean_token_len": 1,
-                "architecture": "Caduceus",
-                "series": "PlantCAD",
-                "context_len (bp)": 8192,
-                "species": "plants",
-                "huggingface": "kuleshov-group/PlantCAD2-Small-l24-d0768",
-                "modelscope": "lgq12697/PlantCAD2-Small-l24-d0768"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 32,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 19.9061,
-                "FLOPs": 7.14158582147113e+16,
-                "loss": 0.3282568156719208,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.5514902501403728,
-                "mse": 0.3282568368081769,
-                "r2": 0.257
-            }
-        },
-        "PlantCaduceus_l32": {
-            "model": {
-                "name": "PlantCAD-l32",
-                "size (M)": 225,
-                "type": "MLM",
-                "tokenizer": "singlebase",
-                "mean_token_len": 1,
-                "architecture": "Caduceus",
-                "series": "PlantCAD",
-                "context_len (bp)": 512,
-                "species": "plants",
-                "huggingface": "kuleshov-group/PlantCaduceus_l32",
-                "modelscope": "lgq12697/PlantCaduceus_l32"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 12,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 70.6719,
-                "FLOPs": 1.7154849968297165e+17,
-                "loss": 0.3115869760513305,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.5847143312804383,
-                "mse": 0.3115869538084603,
-                "r2": 0.294
-            }
-        },
-        "agro-nucleotide-transformer-1b": {
-            "model": {
-                "name": "AgroNT",
-                "size (M)": 985,
-                "type": "MLM",
-                "tokenizer": "6-mer",
-                "mean_token_len": 6,
-                "architecture": "ESM",
-                "series": "Nucleotide Transformer",
-                "context_len (bp)": 6000,
-                "species": "plants",
-                "huggingface": "InstaDeepAI/agro-nucleotide-transformer-1b",
-                "modelscope": "lgq12697/agro-nucleotide-transformer-1b"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 6,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 62.3602,
-                "FLOPs": 3.7308522271563e+16,
-                "loss": 0.380648672580719,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.4506560502689951,
-                "mse": 0.3806486351015146,
-                "r2": 0.138
-            }
-        },
-        "borzoi-replicate-0": {
-            "model": {
-                "name": "Borzoi-0",
-                "size (M)": 186,
-                "type": "DL",
-                "tokenizer": "one-hot",
-                "mean_token_len": 1,
-                "architecture": "U-Net+Transformer",
-                "series": "Borzoi",
-                "context_len (bp)": 536576,
-                "species": "human+mouse",
-                "huggingface": "johahi/borzoi-replicate-0",
-                "modelscope": "lgq12697/borzoi-replicate-0"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 96,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 9.0032,
-                "FLOPs": 1185895807589376.0,
-                "loss": 0.427637904882431,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.2928418618136645,
-                "mse": 0.4276379097604453,
-                "r2": 0.032
-            }
-        },
-        "caduceus-ph_seqlen-131k_d_model-256_n_layer-16": {
-            "model": {
-                "name": "Caduceus-PH-131k",
-                "size (M)": 8,
-                "type": "MLM",
-                "tokenizer": "singlebase",
-                "mean_token_len": 1,
-                "architecture": "Caduceus",
-                "series": "Caduceus",
-                "context_len (bp)": 131072,
-                "species": "human",
-                "huggingface": "kuleshov-group/caduceus-ph_seqlen-131k_d_model-256_n_layer-16",
-                "modelscope": "lgq12697/caduceus-ph_seqlen-131k_d_model-256_n_layer-16"
+                "huggingface": "zhihan1996/DNABERT-2-117M",
+                "modelscope": "lgq12697/DNABERT-2-117M"
             },
             "parameters": {
                 "epochs": 3,
@@ -834,9 +288,9 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 14.6877,
-                "FLOPs": 2942979941030400.0,
-                "loss": 0.4148665070533752,
+                "runtime": 295.9352,
+                "FLOPs": 4355644814691840.0,
+                "loss": 0.4114507436752319,
                 "accuracy": "",
                 "precision": "",
                 "recall": "",
@@ -845,51 +299,9 @@
                 "auroc": "",
                 "auprc": "",
                 "pearson_r": "",
-                "spearman_r": 0.2881648562359528,
-                "mse": 0.4148664893748188,
-                "r2": 0.061
-            }
-        },
-        "caduceus-ps_seqlen-131k_d_model-256_n_layer-16": {
-            "model": {
-                "name": "Caduceus-PS-131k",
-                "size (M)": 8,
-                "type": "MLM",
-                "tokenizer": "singlebase",
-                "mean_token_len": 1,
-                "architecture": "Caduceus",
-                "series": "Caduceus",
-                "context_len (bp)": 131072,
-                "species": "human",
-                "huggingface": "kuleshov-group/caduceus-ps_seqlen-131k_d_model-256_n_layer-16",
-                "modelscope": "lgq12697/caduceus-ps_seqlen-131k_d_model-256_n_layer-16"
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 24,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 29.5025,
-                "FLOPs": 5885959882060800.0,
-                "loss": 0.4062914252281189,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.3200624371529955,
-                "mse": 0.40629145156371,
-                "r2": 0.08
+                "spearman_r": 0.326210539500131,
+                "mse": 0.4114507431929705,
+                "r2": 0.068
             }
         },
         "enformer-official-rough": {
@@ -918,7 +330,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 13.2715,
+                "runtime": 227.2143,
                 "FLOPs": 1591080150786048.0,
                 "loss": 0.6495015621185303,
                 "accuracy": "",
@@ -960,7 +372,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 51.1405,
+                "runtime": 1135.2654,
                 "FLOPs": 1.7287398434115072e+17,
                 "loss": 0.5586954355239868,
                 "accuracy": "",
@@ -1002,7 +414,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 1.7184,
+                "runtime": 101.215,
                 "FLOPs": 891828194909184.0,
                 "loss": 0.4521926343441009,
                 "accuracy": "",
@@ -1044,7 +456,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 13.012,
+                "runtime": 607.6278,
                 "FLOPs": 7698741038770176.0,
                 "loss": 0.4225487411022186,
                 "accuracy": "",
@@ -1086,7 +498,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 7.9154,
+                "runtime": 292.628,
                 "FLOPs": 2173299774524928.0,
                 "loss": 0.4335020780563354,
                 "accuracy": "",
@@ -1100,6 +512,48 @@
                 "spearman_r": 0.2449371491634374,
                 "mse": 0.4335020761337562,
                 "r2": 0.018
+            }
+        },
+        "GENERanno-eukaryote-0.5b-base": {
+            "model": {
+                "name": "GENERanno-Euk",
+                "size (M)": 493,
+                "type": "MLM",
+                "tokenizer": "singlebase",
+                "mean_token_len": 1,
+                "architecture": "Generanno",
+                "series": "GenerTeam",
+                "context_len (bp)": 8192,
+                "species": "eukaryote",
+                "huggingface": "GenerTeam/GENERanno-eukaryote-0.5b-base",
+                "modelscope": "lgq12697/GENERanno-eukaryote-0.5b-base"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 6,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 2618.1809,
+                "FLOPs": 9.762699591062784e+16,
+                "loss": 0.3547129333019256,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.4803673329162379,
+                "mse": 0.3547129510069646,
+                "r2": 0.197
             }
         },
         "gpn-brassicales": {
@@ -1128,7 +582,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 4.1587,
+                "runtime": 283.023,
                 "FLOPs": 1.2985029700383744e+16,
                 "loss": 0.3664997518062591,
                 "accuracy": "",
@@ -1142,6 +596,48 @@
                 "spearman_r": 0.4251862789522569,
                 "mse": 0.3664997604842806,
                 "r2": 0.17
+            }
+        },
+        "GROVER": {
+            "model": {
+                "name": "GROVER",
+                "size (M)": 87,
+                "type": "MLM",
+                "tokenizer": "BPE",
+                "mean_token_len": 4,
+                "architecture": "Bert",
+                "series": "GROVER",
+                "context_len (bp)": 2040,
+                "species": "human",
+                "huggingface": "PoetschLab/GROVER",
+                "modelscope": "lgq12697/GROVER"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 128,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 143.3298,
+                "FLOPs": 4405405125053952.0,
+                "loss": 0.4129583537578583,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.318598540622204,
+                "mse": 0.412958388362356,
+                "r2": 0.065
             }
         },
         "hyenadna-large-1m-seqlen-hf": {
@@ -1212,7 +708,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 7.6456,
+                "runtime": 360.5801,
                 "FLOPs": 2107469089529856.0,
                 "loss": 0.4112077057361603,
                 "accuracy": "",
@@ -1268,6 +764,384 @@
                 "spearman_r": 0.3982726675927752,
                 "mse": 0.3747886712070162,
                 "r2": 0.151
+            }
+        },
+        "space": {
+            "model": {
+                "name": "SPACE",
+                "size (M)": 589,
+                "type": "DL",
+                "tokenizer": "one-hot",
+                "mean_token_len": 1,
+                "architecture": "CNN+Transformer (MoE)",
+                "series": "SPACE",
+                "context_len (bp)": 196608,
+                "species": "human+mouse",
+                "huggingface": "yangyz1230/space",
+                "modelscope": "lgq12697/space"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 467.0021,
+                "FLOPs": 1455810170720256.0,
+                "loss": 0.418107807636261,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.2976695270980478,
+                "mse": 0.4181077860657228,
+                "r2": 0.053
+            }
+        },
+        "borzoi-replicate-0": {
+            "model": {
+                "name": "Borzoi-0",
+                "size (M)": 186,
+                "type": "DL",
+                "tokenizer": "one-hot",
+                "mean_token_len": 1,
+                "architecture": "U-Net+Transformer",
+                "series": "Borzoi",
+                "context_len (bp)": 536576,
+                "species": "human+mouse",
+                "huggingface": "johahi/borzoi-replicate-0",
+                "modelscope": "lgq12697/borzoi-replicate-0"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 96,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 196.2015,
+                "FLOPs": 1185895807589376.0,
+                "loss": 0.427637904882431,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.2928418618136645,
+                "mse": 0.4276379097604453,
+                "r2": 0.032
+            }
+        },
+        "caduceus-ps_seqlen-131k_d_model-256_n_layer-16": {
+            "model": {
+                "name": "Caduceus-PS-131k",
+                "size (M)": 8,
+                "type": "MLM",
+                "tokenizer": "singlebase",
+                "mean_token_len": 1,
+                "architecture": "Caduceus",
+                "series": "Caduceus",
+                "context_len (bp)": 131072,
+                "species": "human",
+                "huggingface": "kuleshov-group/caduceus-ps_seqlen-131k_d_model-256_n_layer-16",
+                "modelscope": "lgq12697/caduceus-ps_seqlen-131k_d_model-256_n_layer-16"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 24,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 786.7681,
+                "FLOPs": 5885959882060800.0,
+                "loss": 0.4062914252281189,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.3200624371529955,
+                "mse": 0.40629145156371,
+                "r2": 0.08
+            }
+        },
+        "GENERanno-prokaryote-0.5b-base": {
+            "model": {
+                "name": "GENERanno-Prok",
+                "size (M)": 493,
+                "type": "MLM",
+                "tokenizer": "singlebase",
+                "mean_token_len": 1,
+                "architecture": "Generanno",
+                "series": "GenerTeam",
+                "context_len (bp)": 8192,
+                "species": "prokaryote",
+                "huggingface": "GenerTeam/GENERanno-prokaryote-0.5b-base",
+                "modelscope": "lgq12697/GENERanno-prokaryote-0.5b-base"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 6,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 2556.8123,
+                "FLOPs": 9.762699591062784e+16,
+                "loss": 0.3877774178981781,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.3919007380159945,
+                "mse": 0.3877774203146041,
+                "r2": 0.122
+            }
+        },
+        "OmniNA-220m": {
+            "model": {
+                "name": "OmniNA-220m",
+                "size (M)": 301,
+                "type": "CLM",
+                "tokenizer": "BPE",
+                "mean_token_len": 6,
+                "architecture": "Llama",
+                "series": "OmniNA",
+                "context_len (bp)": 3000,
+                "species": "multi-species",
+                "huggingface": "XLS/OmniNA-220m",
+                "modelscope": "lgq12697/OmniNA-220m"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 8,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 1117.5528,
+                "FLOPs": 1.0281770131193856e+16,
+                "loss": 0.4252324104309082,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.2588096153455921,
+                "mse": 0.4252324264371742,
+                "r2": 0.037
+            }
+        },
+        "PlantBiMoE": {
+            "model": {
+                "name": "PlantBiMoE",
+                "size (M)": 116,
+                "type": "MLM",
+                "tokenizer": "singlebase",
+                "mean_token_len": 1,
+                "architecture": "BiMamba+MoE",
+                "series": "PlantBiMoE",
+                "context_len (bp)": 32768,
+                "species": "plants",
+                "huggingface": "plant-llms/PlantBiMoE",
+                "modelscope": "lgq12697/PlantBiMoE"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 32,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 756.9266,
+                "FLOPs": 1.7929326997730304e+16,
+                "loss": 0.3503773212432861,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.4815053147107007,
+                "mse": 0.3503773124231784,
+                "r2": 0.207
+            }
+        },
+        "PlantCAD2-Medium-l48-d1024": {
+            "model": {
+                "name": "PlantCAD2-Medium",
+                "size (M)": 621,
+                "type": "MLM",
+                "tokenizer": "singlebase",
+                "mean_token_len": 1,
+                "architecture": "Caduceus",
+                "series": "PlantCAD",
+                "context_len (bp)": 8192,
+                "species": "plants",
+                "huggingface": "kuleshov-group/PlantCAD2-Medium-l48-d1024",
+                "modelscope": "lgq12697/PlantCAD2-Medium-l48-d1024"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 8,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 6776.9018,
+                "FLOPs": 2.554751582445404e+17,
+                "loss": 0.320981502532959,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.5442511043134477,
+                "mse": 0.320981508741829,
+                "r2": 0.273
+            }
+        },
+        "PlantCAD2-Small-l24-d0768": {
+            "model": {
+                "name": "PlantCAD2-Small",
+                "size (M)": 176,
+                "type": "MLM",
+                "tokenizer": "singlebase",
+                "mean_token_len": 1,
+                "architecture": "Caduceus",
+                "series": "PlantCAD",
+                "context_len (bp)": 8192,
+                "species": "plants",
+                "huggingface": "kuleshov-group/PlantCAD2-Small-l24-d0768",
+                "modelscope": "lgq12697/PlantCAD2-Small-l24-d0768"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 32,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 1678.7037,
+                "FLOPs": 7.14158582147113e+16,
+                "loss": 0.3282568156719208,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.5514902501403728,
+                "mse": 0.3282568368081769,
+                "r2": 0.257
+            }
+        },
+        "PlantCaduceus_l32": {
+            "model": {
+                "name": "PlantCAD-l32",
+                "size (M)": 225,
+                "type": "MLM",
+                "tokenizer": "singlebase",
+                "mean_token_len": 1,
+                "architecture": "Caduceus",
+                "series": "PlantCAD",
+                "context_len (bp)": 512,
+                "species": "plants",
+                "huggingface": "kuleshov-group/PlantCaduceus_l32",
+                "modelscope": "lgq12697/PlantCaduceus_l32"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 12,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 3895.3425,
+                "FLOPs": 1.7154849968297165e+17,
+                "loss": 0.3115869760513305,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.5847143312804383,
+                "mse": 0.3115869538084603,
+                "r2": 0.294
             }
         },
         "plant-dnabert-6mer": {
@@ -1396,6 +1270,48 @@
                 "r2": 0.143
             }
         },
+        "plant-dnamamba2-BPE": {
+            "model": {
+                "name": "PlantDNAMamba2-BPE",
+                "size (M)": 370,
+                "type": "CLM",
+                "tokenizer": "BPE",
+                "mean_token_len": 6,
+                "architecture": "Mamba2",
+                "series": "PDLLMs",
+                "context_len (bp)": 2000,
+                "species": "plants",
+                "huggingface": "",
+                "modelscope": ""
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 64,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 1242.1436,
+                "FLOPs": 1.294016039691264e+16,
+                "loss": 0.3849507868289947,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.4336830623906468,
+                "mse": 0.3849507742847086,
+                "r2": 0.128
+            }
+        },
         "plant-dnamamba-6mer": {
             "model": {
                 "name": "PlantDNAMamba-6mer",
@@ -1480,48 +1396,6 @@
                 "r2": 0.143
             }
         },
-        "plant-dnamamba2-BPE": {
-            "model": {
-                "name": "PlantDNAMamba2-BPE",
-                "size (M)": 370,
-                "type": "CLM",
-                "tokenizer": "BPE",
-                "mean_token_len": 6,
-                "architecture": "Mamba2",
-                "series": "PDLLMs",
-                "context_len (bp)": 2000,
-                "species": "plants",
-                "huggingface": "",
-                "modelscope": ""
-            },
-            "parameters": {
-                "epochs": 3,
-                "steps": 65682,
-                "batch_size": 64,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 2e-05,
-                "warmup": 0.1,
-                "lr_scheduler_type": "linear",
-                "bf16": true,
-                "fp16": false
-            },
-            "performance": {
-                "runtime": 5.6027,
-                "FLOPs": 1.294016039691264e+16,
-                "loss": 0.3849507868289947,
-                "accuracy": "",
-                "precision": "",
-                "recall": "",
-                "f1": "",
-                "mcc": "",
-                "auroc": "",
-                "auprc": "",
-                "pearson_r": "",
-                "spearman_r": 0.4336830623906468,
-                "mse": 0.3849507742847086,
-                "r2": 0.128
-            }
-        },
         "plant-dnamodernbert-singlebase": {
             "model": {
                 "name": "PlantDNAModernBERT-Single",
@@ -1590,7 +1464,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 4.6464,
+                "runtime": 1710.247,
                 "FLOPs": 1.0467453058495488e+16,
                 "loss": 0.4331293106079101,
                 "accuracy": "",
@@ -1604,6 +1478,48 @@
                 "spearman_r": 0.4134462548215594,
                 "mse": 0.4331292805236629,
                 "r2": 0.019
+            }
+        },
+        "PlantHelixSeek": {
+            "model": {
+                "name": "PlantHelixSeek",
+                "size (M)": 470,
+                "type": "MLM",
+                "tokenizer": "singlebase",
+                "mean_token_len": 1,
+                "architecture": "HelixSeek",
+                "series": "PlantHelixSeek",
+                "context_len (bp)": 8192,
+                "species": "plants",
+                "huggingface": "",
+                "modelscope": ""
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 876,
+                "batch_size": 3,
+                "gradient_accumulation_steps": 5,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 1118.1107,
+                "FLOPs": 4.8330008791969304e+16,
+                "loss": 0.32795801758766174,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.5269241624324996,
+                "mse": 0.328003321122776,
+                "r2": 0.257
             }
         },
         "plant-nucleotide-transformer-6mer": {
@@ -1674,7 +1590,7 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 1.4023,
+                "runtime": 63.1465,
                 "FLOPs": 4048181598809088.0,
                 "loss": 0.4412900805473327,
                 "accuracy": "",
@@ -1690,24 +1606,24 @@
                 "r2": 0.001
             }
         },
-        "space": {
+        "agro-nucleotide-transformer-1b": {
             "model": {
-                "name": "SPACE",
-                "size (M)": 589,
-                "type": "DL",
-                "tokenizer": "one-hot",
-                "mean_token_len": 1,
-                "architecture": "CNN+Transformer (MoE)",
-                "series": "SPACE",
-                "context_len (bp)": 196608,
-                "species": "human+mouse",
-                "huggingface": "yangyz1230/space",
-                "modelscope": "lgq12697/space"
+                "name": "AgroNT",
+                "size (M)": 985,
+                "type": "MLM",
+                "tokenizer": "6-mer",
+                "mean_token_len": 6,
+                "architecture": "ESM",
+                "series": "Nucleotide Transformer",
+                "context_len (bp)": 6000,
+                "species": "plants",
+                "huggingface": "InstaDeepAI/agro-nucleotide-transformer-1b",
+                "modelscope": "lgq12697/agro-nucleotide-transformer-1b"
             },
             "parameters": {
                 "epochs": 3,
                 "steps": 65682,
-                "batch_size": 96,
+                "batch_size": 6,
                 "gradient_accumulation_steps": 1,
                 "learning_rate": 2e-05,
                 "warmup": 0.1,
@@ -1716,9 +1632,9 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 22.9038,
-                "FLOPs": 1455810170720256.0,
-                "loss": 0.418107807636261,
+                "runtime": 7211.6401,
+                "FLOPs": 3.7308522271563e+16,
+                "loss": 0.380648672580719,
                 "accuracy": "",
                 "precision": "",
                 "recall": "",
@@ -1727,30 +1643,30 @@
                 "auroc": "",
                 "auprc": "",
                 "pearson_r": "",
-                "spearman_r": 0.2976695270980478,
-                "mse": 0.4181077860657228,
-                "r2": 0.053
+                "spearman_r": 0.4506560502689951,
+                "mse": 0.3806486351015146,
+                "r2": 0.138
             }
         },
-        "PlantHelixSeek": {
+        "caduceus-ph_seqlen-131k_d_model-256_n_layer-16": {
             "model": {
-                "name": "PlantHelixSeek",
-                "size (M)": 470,
+                "name": "Caduceus-PH-131k",
+                "size (M)": 8,
                 "type": "MLM",
                 "tokenizer": "singlebase",
                 "mean_token_len": 1,
-                "architecture": "HelixSeek",
-                "series": "PlantHelixSeek",
-                "context_len (bp)": 8192,
-                "species": "plants",
-                "huggingface": "https://huggingface.co/zhangtaolab/PlantHelixSeek",
-                "modelscope": "https://modelscope.cn/models/zhangtaolab/PlantHelixSeek"
+                "architecture": "Caduceus",
+                "series": "Caduceus",
+                "context_len (bp)": 131072,
+                "species": "human",
+                "huggingface": "kuleshov-group/caduceus-ph_seqlen-131k_d_model-256_n_layer-16",
+                "modelscope": "lgq12697/caduceus-ph_seqlen-131k_d_model-256_n_layer-16"
             },
             "parameters": {
                 "epochs": 3,
-                "steps": 876,
-                "batch_size": 3,
-                "gradient_accumulation_steps": 5,
+                "steps": 65682,
+                "batch_size": 24,
+                "gradient_accumulation_steps": 1,
                 "learning_rate": 2e-05,
                 "warmup": 0.1,
                 "lr_scheduler_type": "linear",
@@ -1758,9 +1674,9 @@
                 "fp16": false
             },
             "performance": {
-                "runtime": 1118.1107,
-                "FLOPs": 9.315018245511578e+16,
-                "loss": 0.32795801758766174,
+                "runtime": 464.175,
+                "FLOPs": 2942979941030400.0,
+                "loss": 0.4148665070533752,
                 "accuracy": "",
                 "precision": "",
                 "recall": "",
@@ -1769,9 +1685,93 @@
                 "auroc": "",
                 "auprc": "",
                 "pearson_r": "",
-                "spearman_r": 0.5269241624324996,
-                "mse": 0.328003321122776,
-                "r2": 0.257
+                "spearman_r": 0.2881648562359528,
+                "mse": 0.4148664893748188,
+                "r2": 0.061
+            }
+        },
+        "GenomeOcean-500M": {
+            "model": {
+                "name": "GenomeOcean-500m",
+                "size (M)": 535,
+                "type": "CLM",
+                "tokenizer": "BPE",
+                "mean_token_len": 6,
+                "architecture": "Mistral",
+                "series": "GenomeOcean",
+                "context_len (bp)": 5120,
+                "species": "microbiome",
+                "huggingface": "DOEJGI/GenomeOcean-500M",
+                "modelscope": "lgq12697/GenomeOcean-500M"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 32,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 437.5167,
+                "FLOPs": 2.015920142283571e+16,
+                "loss": 0.4094708561897278,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.3217324129457271,
+                "mse": 0.4094708649943179,
+                "r2": 0.073
+            }
+        },
+        "Jamba-DNA-v1-114M-hg38": {
+            "model": {
+                "name": "JambaDNA-114m-Hg38",
+                "size (M)": 112,
+                "type": "CLM",
+                "tokenizer": "BPE",
+                "mean_token_len": 6,
+                "architecture": "Jamba",
+                "series": "RaphaelMourad",
+                "context_len (bp)": 102400,
+                "species": "human",
+                "huggingface": "RaphaelMourad/Jamba-DNA-v1-114M-hg38",
+                "modelscope": "lgq12697/Jamba-DNA-v1-114M-hg38"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 65682,
+                "batch_size": 8,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": true,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 1633.5953,
+                "FLOPs": 2075764227489792.0,
+                "loss": 0.4313271939754486,
+                "accuracy": "",
+                "precision": "",
+                "recall": "",
+                "f1": "",
+                "mcc": "",
+                "auroc": "",
+                "auprc": "",
+                "pearson_r": "",
+                "spearman_r": 0.2459588652893808,
+                "mse": 0.4313271729146638,
+                "r2": 0.023
             }
         }
     }
