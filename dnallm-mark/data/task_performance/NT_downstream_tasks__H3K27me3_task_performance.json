@@ -262,6 +262,48 @@
                 "r2": ""
             }
         },
+        "CrossDNA_8.1M": {
+            "model": {
+                "name": "CrossDNA_8.1M",
+                "size (M)": 8.1,
+                "type": "MLM",
+                "tokenizer": "singlebase",
+                "mean_token_len": 1,
+                "architecture": "CNN+Transformer",
+                "series": "CrossDNA",
+                "context_len (bp)": 102400,
+                "species": "human",
+                "huggingface": "chengCCC/CrossDNA_pretrain",
+                "modelscope": "lgq12697/CrossDNA_pretrain"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 0,
+                "batch_size": 42,
+                "gradient_accumulation_steps": 2,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": false,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 676.7299,
+                "FLOPs": 4398802384680000.0,
+                "loss": 0.47509121894836426,
+                "accuracy": 0.7753333333333333,
+                "precision": 0.7219512195121951,
+                "recall": 0.8921634293369055,
+                "f1": 0.7980826842420611,
+                "mcc": 0.5669454591947725,
+                "auroc": 0.8562390914291023,
+                "auprc": 0.8176234018821238,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
         "DNABERT-2-117M": {
             "model": {
                 "name": "DNABERT-2",
@@ -766,6 +808,48 @@
                 "r2": ""
             }
         },
+        "CrossDNA_71.6M": {
+            "model": {
+                "name": "CrossDNA_71.6M",
+                "size (M)": 71.6,
+                "type": "MLM",
+                "tokenizer": "singlebase",
+                "mean_token_len": 1,
+                "architecture": "CNN+Transformer",
+                "series": "CrossDNA",
+                "context_len (bp)": 102400,
+                "species": "human",
+                "huggingface": "chengCCC/CrossDNA_pretrain",
+                "modelscope": "lgq12697/CrossDNA_pretrain"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 0,
+                "batch_size": 18,
+                "gradient_accumulation_steps": 2,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": false,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 1564.5206,
+                "FLOPs": 3.874978129284e+16,
+                "loss": 0.46146801114082336,
+                "accuracy": 0.784,
+                "precision": 0.7275175013462574,
+                "recall": 0.9048894842598795,
+                "f1": 0.8065671641791045,
+                "mcc": 0.5859541662935693,
+                "auroc": 0.8675960054241182,
+                "auprc": 0.8373716708132213,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
         "space": {
             "model": {
                 "name": "SPACE",
@@ -928,6 +1012,48 @@
                 "mcc": 0.5743753352997608,
                 "auroc": 0.8497809507851504,
                 "auprc": 0.8077699716831621,
+                "pearson_r": "",
+                "spearman_r": "",
+                "mse": "",
+                "r2": ""
+            }
+        },
+        "CrossDNA_519M": {
+            "model": {
+                "name": "CrossDNA_519M",
+                "size (M)": 519,
+                "type": "MLM",
+                "tokenizer": "singlebase",
+                "mean_token_len": 1,
+                "architecture": "CNN+Transformer",
+                "series": "CrossDNA",
+                "context_len (bp)": 102400,
+                "species": "human",
+                "huggingface": "chengCCC/CrossDNA_pretrain",
+                "modelscope": "lgq12697/CrossDNA_pretrain"
+            },
+            "parameters": {
+                "epochs": 3,
+                "steps": 0,
+                "batch_size": 2,
+                "gradient_accumulation_steps": 2,
+                "learning_rate": 2e-05,
+                "warmup": 0.1,
+                "lr_scheduler_type": "linear",
+                "bf16": false,
+                "fp16": false
+            },
+            "performance": {
+                "runtime": 12819.0383,
+                "FLOPs": 2.8083593374596e+17,
+                "loss": 0.7897167205810547,
+                "accuracy": 0.785,
+                "precision": 0.7241014799154334,
+                "recall": 0.9176155391828533,
+                "f1": 0.8094534711964549,
+                "mcc": 0.5917913444130996,
+                "auroc": 0.8621109970839365,
+                "auprc": 0.8194905132568846,
                 "pearson_r": "",
                 "spearman_r": "",
                 "mse": "",
