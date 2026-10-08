@@ -29,7 +29,7 @@ Every number on the public leaderboard is correct and reproducible from code tha
 - [ ] Unit tests for the data-processing scripts (`script/`)
 - [ ] GitHub Actions CI running the test suite
 - [ ] Recompute leaderboard data after fixes, with before/after comparison notes
-- [ ] Pre-release hygiene: revoke leaked Zenodo token (`README.md:116`), decide on LICENSE
+- [ ] Pre-release hygiene: secret-hygiene decision recorded (Zenodo preview link at `README.md:116` is intentional dataset sharing — kept; scan for any OTHER secrets), LICENSE (default MIT per README badge, maintainer may override)
 - [ ] Adapt pipeline to dnallm dev branch (v0.7.1): resolve API/config-schema deltas, imports and dry-run pass
 - [ ] Build reproducible local GPU pipeline environment (uv/venv; dnallm from git dev; pinned torch/transformers)
 - [ ] Small end-to-end validation: at least one model×dataset fine-tune run against dnallm dev produces a valid performance JSON
@@ -47,7 +47,7 @@ Every number on the public leaderboard is correct and reproducible from code tha
 
 - Brownfield repo mapped 2026-10-08 at commit `a44d310` (7 docs in `.planning/codebase/`)
 - Known findings from the map (input to the review, not its conclusion):
-  - Leaked Zenodo token in `README.md:116` — needs manual revocation, cannot be fixed by code
+  - Zenodo preview link + token in `README.md:116` — **decided 2026-10-08: intentional dataset-sharing mechanism, kept as-is** (record-scoped, read-only; see Phase 1 CONTEXT.md D-08)
   - `finetuning.js` / `models.js` / `datasets.js` / `submit.js` abort rendering in `setup()` because `renderNavbar()` targets a nonexistent `.navbar-container` — 3 production pages render partially or not at all
   - `submit.html` missing while `js/submit.js` (300 lines) and its nav link exist — submission feature unreachable
   - Species-as-dataset bug: `dnallmmark_pipeline.py:1229` treats species as a dataset key

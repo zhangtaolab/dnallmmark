@@ -18,7 +18,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [ ] **REL-02**: Dependency manifests for the offline/data chain, version-pinned (`pandas>=2.2,<3.0`); GPU pipeline dependencies in a separate group that CI never installs
 - [ ] **REL-03**: README reproducibility section — literal copy-pasteable commands from repo root (install → data → aggregate → serve)
 - [ ] **REL-04**: Single-command data-regeneration chain (`make data` or equivalent) replacing the undocumented 3-step CWD-sensitive procedure
-- [ ] **REL-05**: Leaked Zenodo token (`README.md:116`) revoked before any public visibility — revocation evidence recorded, full-history secret scan (e.g., gitleaks) clean, token removed from the README
+- [ ] **REL-05**: Secret hygiene settled per maintainer decision (2026-10-08 discuss) — the Zenodo record-19135551 preview link + token at `README.md:116` is the intentional dataset-sharing mechanism (record-scoped, read-only) and stays as-is; a full-history secret scan confirms no OTHER secrets exist beyond this known-intentional link
 
 ### Correctness Fixes
 
