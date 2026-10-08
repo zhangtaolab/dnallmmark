@@ -110,7 +110,34 @@ The FIX-05 determinism fix in plan 01-03 intentionally changes derived-file byte
 4. **`tasks.json` BEND__CpG_methylation metric value** "auprc" becomes "AUPRC" (the faithful projection of the current source files).
 5. **`generatedAt` field removed** from `tasks.json` (planner decision per the phase research: no frontend consumer reads it; Phase 5 introduces an authoritative data-version stamp).
 
-Any value difference beyond this inventory in plan 01-03's migration halts per the D-06 discipline (re-investigate before accepting).
+Any value difference beyond this inventory in plan 01-03's migration halts per the D-06 discipline (re-investigate before accepting). Migration outcome note: only the microbe pair and a fourth, investigated pair actually swapped — see the Post-fix migration record below.
+
+### Post-fix migration record (data-v1 to deterministic generators)
+
+The one-time migration was executed on 2026-10-08 (plan 01-03, FIX-05) after the determinism edits landed: `sorted()` directory iteration in both Python generators, `sort_keys=True` on all four `json.dump` calls, and removal of the `generatedAt` live-clock stamp. Every value difference against the `data-v1` baseline was gated through `baseline/compare.py --summary-json` (complete, untruncated per-diff inventory over all 52 file pairs) and falls inside the classes above:
+
+| File | Observed diffs | Counts |
+|------|----------------|--------|
+| `models_comparison.json` | FLOAT_ULP on `/performance/sum_zscore` only | 41 |
+| `models_comparison_animal.json` | FLOAT_ULP on `/performance/sum_zscore` only | 40 |
+| `models_comparison_plant.json` | FLOAT_ULP on `sum_zscore` (42) + one exact-tie rank swap (2) | 44 |
+| `models_comparison_microbe.json` | FLOAT_ULP on `sum_zscore` (41) + one exact-tie rank swap (2) | 43 |
+| `tasks.json` | `/generatedAt` MISSING_IN_REGEN (1) + BEND__CpG_methylation metric-casing VALUE (1) | 2 |
+| `task_performance/*.json` (47 files) | VALUES IDENTICAL | 0 |
+
+- Maximum `sum_zscore` relative difference observed: 5.98e-14 (within the 1e-12 tolerance; the sorted iteration order changes float-summation order, which is the intended fix). All raw, MinMax, robust, `rank_score`, top-K, FLOPs and samples fields are bit-identical.
+- Run-twice determinism proven: the full three-script chain was rerun and all 52 outputs are byte-identical (`sha256sum -c` clean). The pre-fix generators could not guarantee this across machines (listdir order) or days (date stamp).
+
+**D-06 investigation: a fourth exact-tie pair.** The gate initially flagged the plant-file pair `caduceus-ph_seqlen-131k_d_model-256_n_layer-16` ↔ `space` (ranks 37↔36) as outside the enumerated inventory. Investigation (2026-10-08):
+
+- Both models carry `rank_score = 116.0` exactly in the committed AND regenerated plant files — an exact tie on both sides; only the rank ordinals swap, and both models' `sum_zscore` values differ only within the ULP band.
+- A complete census of the committed comparison files finds **six** exact-tie groups: the three pre-documented pairs (global 1232.0 and 749.0; microbe 448.0), this plant pair (116.0), and two more (animal 583.0 MutBERT-Multi ↔ borzoi-replicate-0; plant 54.0 ModernBERT-DNA-v1-37M-hg38 ↔ evo2_1b_base).
+- `sorted()` resolves every tie alphabetically by filename. The migration flips exactly the groups whose committed order disagrees with alphabetical order (microbe 448.0 and plant 116.0); the other four groups were already alphabetical and do not move — which is why the two global pairs, pre-documented as expected swaps, in fact do **not** swap.
+- The plan 01-01 pin-validation evidence could not expose the plant 116.0 pair: it ran the pre-fix generator, whose tie order follows the validating machine's `os.listdir` order, and on that machine `space_performance.json` (readdir index 15) precedes `caduceus-ph_…` (index 20) — coincidentally matching the committed order. The sorted migration surfaces every tie whose committed order disagrees with alphabetical, i.e. the fix working as designed.
+
+Verdict: same root cause and failure class as the pre-documented pairs, mechanism empirically confirmed on both file sides; documented, not escalated (the same D-06 path the third pair took in `baseline/PIN-VALIDATION.md`).
+
+**Stamp-drop decision (`generatedAt`).** The `tasks.json` generation-date field was dropped rather than derived from inputs or made a CLI argument: no frontend consumer reads it (verified by grep across `dnallm-mark/js/` and the HTML pages during planning), an input-derived stamp is unstable across clones (git does not preserve mtimes; `task_performance` files carry no dates), and a live clock guarantees cross-day byte instability by construction. Phase 5 reintroduces an authoritative generation date as the changelogged data-version stamp (DATA-02/DATA-06); until then `tasks.json` carries `version`, `count` and `tasks` only.
 
 ## Maintainability findings (non-graded, D-04)
 

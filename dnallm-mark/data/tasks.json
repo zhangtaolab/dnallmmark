@@ -1,6 +1,5 @@
 {
   "version": "1.0.0",
-  "generatedAt": "2026-03-31",
   "count": 47,
   "tasks": [
     {
@@ -11,7 +10,7 @@
       "type": "multilabel",
       "labels": 7,
       "length": 512,
-      "metric": "auprc",
+      "metric": "AUPRC",
       "fileName": "BEND__CpG_methylation_task_performance.json"
     },
     {
