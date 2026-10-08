@@ -23,15 +23,24 @@ function generateTaskIndex() {
   
   const tasks = files.map(file => {
     const filePath = path.join(TASK_PERFORMANCE_DIR, file);
-    const content = fs.readFileSync(filePath, 'utf8');
-    const data = JSON.parse(content);
-    
+    let data;
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      data = JSON.parse(content);
+    } catch (e) {
+      // Per-file skip (same convention as script/get_task_performance.py):
+      // one malformed task file logs a [Skip] line and is left out of the
+      // index instead of aborting the whole build.
+      console.warn(`  [Skip] Failed to read file ${file}: ${e.message}`);
+      return null;
+    }
+
     // Extract task ID from filename
     const taskId = file.replace('_task_performance.json', '');
-    
+
     // Format display name (replace underscores with spaces)
     const displayName = taskId.replace(/_/g, ' ');
-    
+
     return {
       id: taskId,
       name: taskId,
@@ -43,7 +52,7 @@ function generateTaskIndex() {
       metric: data.info?.metric || 'accuracy',
       fileName: file
     };
-  });
+  }).filter(task => task !== null);
   
   const index = {
     version: '1.0.0',
