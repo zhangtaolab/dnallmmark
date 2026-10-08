@@ -451,20 +451,24 @@ A ~60-line recursive walker: parse both files → compare dicts as key-sets → 
 | A7 | gitleaks allowlist `condition = "AND"` behaves on global allowlists as on per-rule allowlists | REL-05 config | Low — verify on first scan run; tune regex if the token fires through (Pitfall 8) |
 | A8 | `pipeline` group contents (torch, transformers; dnallm deferred to Phase 3) keep `uv lock` resolvable | pyproject skeleton | Low — if torch resolution stalls locking, move pipeline group to a documented `requirements-pipeline.txt` instead; CI boundary unchanged |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`generatedAt` handling in tasks.json (FIX-05 scope decision)**
    - What we know: it is the only cross-day nondeterminism left; Phase 5's TEST-07 drift job regenerates + `git diff --exit-code` — impossible with a live date stamp.
    - Recommendation: make it derived-from-inputs or CLI-injectable now (part of FIX-05), not later.
+   - **RESOLVED (2026-10-08, phase planning):** DROP the field — plan 01-03 task 1 (PLANNER DECISION per Pitfall 6: no frontend consumer reads it, input-derived stamps are unstable across clones, and Phase 5 reintroduces an authoritative changelogged data_version stamp per DATA-02/DATA-06).
 2. **Data-terms license choice for derived data (CC-BY-4.0 vs "MIT for everything we produce")**
    - What we know: D-10 locks MIT for code and requires a separate data statement; wording/choice of the data license is open.
    - Recommendation: CC-BY-4.0 for derived aggregates (community standard for datasets), stated in README + LICENSE-adjacent DATA notice; confirm with user at execution (A2/A1).
+   - **RESOLVED (2026-10-08, phase planning):** CC BY 4.0 for repo-produced derived aggregates — plan 01-03 task 2 (README License section, stated separately from the MIT code license per D-10, with the upstream-terms disclaimer verified via git ls-files).
 3. **Commit `.python-version` or rely on `requires-python`?**
    - What we know: `.gitignore:7` currently ignores it; uv convention is to commit it for contributor pinning.
    - Recommendation: commit it (`3.13`) and drop the ignore line — one less way environments drift.
+   - **RESOLVED (2026-10-08, phase planning):** commit it — plan 01-01 task 2 commits `.python-version` (single line `3.13`) and deletes `.gitignore:7` in the same commit as pyproject.toml (Pitfall 1).
 4. **Does the `metric` casing mismatch (`auprc` vs `AUPRC`) break the BEND task page render?**
    - What we know: `tasks.json` (committed) says lowercase; regenerated output says uppercase; frontend consumers unverified this session.
    - Recommendation: assign to the frontend audit agent as a seed finding with a browser check; regeneration under FIX-05 reconciles the data side either way.
+   - **RESOLVED (2026-10-08, phase planning):** routed as an AUDIT-01 frontend seed finding with a browser/static check of the task-page metric lookup — plan 01-02 tasks 1-2 (seed entered in task 1, frontend agent instructed in task 2); the data side reconciles via plan 01-03's regeneration, with the `auprc` vs `AUPRC` VALUE diff pre-documented in the migration inventory.
 
 ## Environment Availability
 
