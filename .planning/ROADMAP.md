@@ -12,7 +12,7 @@ This is a hardening milestone over an existing, working platform — not a build
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Audit & Release Foundations** - Findings report over all three subsystems, pre-fix baseline frozen (`data-v1`), LICENSE + pinned manifests, deterministic generators, leaked Zenodo token revoked
+- [ ] **Phase 1: Audit & Release Foundations** - Findings report over all three subsystems, pre-fix baseline frozen (`data-v1`), LICENSE + pinned manifests, deterministic generators, secret-hygiene decision applied (intentional Zenodo preview link kept; scan confirms no other secrets)
 - [ ] **Phase 2: Data Contracts & Test Harness** - Four JSON Schemas, CPU-only unit/golden/determinism tests over the data chain, and a single-command Makefile — locked before any number moves
 - [ ] **Phase 3: Pipeline Adaptation to dnallm Dev** - Pipeline adapted to dnallm dev (v0.7.1), GPU environment reproducibly buildable on the GB10 machine, one end-to-end fine-tune run emitting schema-valid output
 - [ ] **Phase 4: Correctness Fixes** - Every page renders (navbar fix), species-grouping fixed test-first in the adapted pipeline, submission flow restored, escaping at touched DOM-build sites
@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. The pre-fix state is recoverable and diffable — a `data-v1` git tag and golden baseline outputs of the current data chain exist — before any result-affecting fix lands
   3. Running the data-regeneration chain twice from a clean checkout produces byte-identical derived JSON
   4. A fresh contributor can install the CPU-only data-chain dependencies from version-pinned manifests (`pandas>=2.2,<3.0`), with GPU pipeline dependencies isolated in a separate group CI never installs
-  5. The repo is publishable: a LICENSE file exists with data licensing declared separately, and the leaked Zenodo token is revoked with revocation evidence recorded and a full-history secret scan clean
+  5. The repo is publishable: a LICENSE file exists with data licensing declared separately, and the secret-hygiene decision (2026-10-08) is applied — the intentional Zenodo record-19135551 preview link at `README.md:116` stays as-is while a full-history secret scan confirms no OTHER secrets exist beyond that known-intentional link
 **Plans**: TBD
 
 ### Phase 2: Data Contracts & Test Harness
