@@ -81,26 +81,6 @@ Thumbs.db
 *.log
 *.bak
 
-# Project specific
-dnallm/models/downloads/
-dnallm/data/cache/
-dnallm/ui/tmp/
-
-# Jupyter Notebook tmp files
-.ipynb_checkpoints/
-*.output.txt
-example/notebooks/*/output*/
-example/notebooks/*/*.pdf
-example/notebooks/*/results*/
-
-# Marimo cache
-.marimo-cache/
-.marimo-env/
-example/marimo/*/__marimo__/
-
-# Mkdocs cache
-site
-
 # MyPy cache
 .mypy_cache/
 
@@ -108,21 +88,10 @@ results/
 
 .ruff_cache/
 
-test/inference/pdf/
-tests/inference/pdf/demo_attention_pdf.pdf
-tests/inference/pdf/demo_bars_pdf.pdf
-tests/inference/pdf/demo_curves_pdf.pdf
-tests/inference/pdf/demo_embeddings_pdf.pdf
-tests/inference/pdf/demo_scatter_pdf.pdf
-tests/inference/pdf/format_compatibility_test_pdf.pdf
-
-
+# Project specific (benchmark data — downloaded/produced by the pipeline, never committed)
 datasets/
 models/
 finetuned/
-.DS_Store
-Arena/
-instruct/
 
 # Worktrees
 .worktrees/
