@@ -300,6 +300,14 @@ dnallmmark/
 ├── script/                   # Data processing scripts
 │   ├── summarize_comparison.py  # Generate summary comparison data
 │   └── get_task_performance.py  # Generate per-dataset performance data
+├── baseline/                 # Reproducibility baseline (JSON comparator + SHA256 manifests + pin-validation evidence)
+├── AUDIT.md                  # Published audit report (findings, migration records, secret-scan evidence)
+├── LICENSE                   # MIT license (code)
+├── pyproject.toml            # Dependency groups (data / dev / pipeline)
+├── uv.lock                   # Committed lockfile for the data chain
+├── requirements.txt          # pip export of the data group
+├── .python-version           # Interpreter pin (3.13)
+├── .gitleaks.toml            # Secret-scan config (narrow allowlist for the intentional sharing link)
 └── README.md
 ```
 
@@ -308,6 +316,12 @@ dnallmmark/
 - **Issues**: [GitHub Issues](https://github.com/zhangtaolab/dnallmmark/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/zhangtaolab/dnallmmark/discussions)
 - **Discord**: [Join our community](https://discord.com/invite/Bw9Ajcb3pR)
+
+## 📄 License
+
+- **Code** in this repository is licensed under the [MIT License](LICENSE) (see the badge at the top of this page).
+- **Derived leaderboard aggregates** produced by this repository (`dnallm-mark/data/model_performance/`, `dnallm-mark/data/task_performance/`, `models_comparison*.json`, and `tasks.json`) are offered under the [Creative Commons Attribution 4.0 International License (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
+- **Upstream datasets are not redistributed by this repository.** The benchmark datasets are downloaded from the Zenodo record linked in the [Datasets and Models Preparation](#datasets-and-models-preparation) section (the repository tracks only JSON metadata and derived aggregate results) and remain under their original terms; the CC BY 4.0 statement above covers only the repository-produced aggregates.
 
 ## 📖 Citation
 
