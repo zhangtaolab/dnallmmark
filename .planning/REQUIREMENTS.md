@@ -9,7 +9,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 
 ### Systematic Audit
 
-- [ ] **AUDIT-01**: Severity-graded findings report covering all three subsystems (pipeline, data scripts, frontend), every finding with `file:line` evidence and a recommended fix
+- [x] **AUDIT-01**: Severity-graded findings report covering all three subsystems (pipeline, data scripts, frontend), every finding with `file:line` evidence and a recommended fix
 - [x] **AUDIT-02**: Pre-fix baseline captured — golden outputs of the current data chain plus a `data-v1` git tag — before any result-affecting fix lands, so number changes are attributable
 
 ### Release Foundations
@@ -90,7 +90,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUDIT-01 | Phase 1 | Pending |
+| AUDIT-01 | Phase 1 | Complete |
 | AUDIT-02 | Phase 1 | Complete |
 | REL-01 | Phase 1 | Pending |
 | REL-02 | Phase 1 | Complete |

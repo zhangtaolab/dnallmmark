@@ -33,13 +33,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. A fresh contributor can install the CPU-only data-chain dependencies from version-pinned manifests (`pandas>=2.2,<3.0`), with GPU pipeline dependencies isolated in a separate group CI never installs
   5. The repo is publishable: a LICENSE file exists with data licensing declared separately, and the secret-hygiene decision (2026-10-08) is applied — the intentional Zenodo record-19135551 preview link at `README.md:116` stays as-is while a full-history secret scan confirms no OTHER secrets exist beyond that known-intentional link
 
-**Plans**: 1/3 plans executed
+**Plans**: 2/3 plans executed
 Plans:
 **Wave 1**
 - [x] 01-01-PLAN.md — Freeze data-v1 baseline (comparator + SHA256 manifest + tag) and pin the data-chain environment (pyproject/uv.lock/requirements + pin validation)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 01-02-PLAN.md — Three-subsystem systematic audit with parallel review agents and verified, severity-graded findings published as AUDIT.md
+- [x] 01-02-PLAN.md — Three-subsystem systematic audit with parallel review agents and verified, severity-graded findings published as AUDIT.md
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 01-03-PLAN.md — FIX-05 deterministic generators + one-time attributed data migration, LICENSE + data terms, gitleaks full-history scan with narrow allowlist
@@ -120,7 +120,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Audit & Release Foundations | 1/3 | In Progress | - |
+| 1. Audit & Release Foundations | 2/3 | In Progress | - |
 | 2. Data Contracts & Test Harness | 0/TBD | Not started | - |
 | 3. Pipeline Adaptation to dnallm Dev | 0/TBD | Not started | - |
 | 4. Correctness Fixes | 0/TBD | Not started | - |

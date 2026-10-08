@@ -4,16 +4,16 @@ milestone: v0.7.1
 current_phase: 01
 current_phase_name: Audit & Release Foundations
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-10-08T14:09:27.343Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-10-08T14:33:54.539Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 01 execution started
-state_head: 53cd7f67fe67f051e1e9dca0228a339b733e59a2
+state_head: 1295f9e35257bade6a45de81bdf4d727aa2636bb
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 ## Current Position
 
 Phase: 01 (Audit & Release Foundations) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 01 execution started
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01 P01 | 9 min | 2 tasks | 8 files |
+| Phase 01 P02 | 15 min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,9 @@ Recent decisions affecting current work:
 - [Phase 01]: Dependency pins: floor bounds pandas>=2.2,<3.0 + numpy>=2.0,<3 in pyproject, exactness from committed uv.lock (pandas 2.3.3 / numpy 2.5.3); pipeline GPU group never CI-installed
 - [Phase 01]: Pin validation (D-06) discharged: all regeneration diffs root-caused (sum_zscore ULP <=2.4e-14, exact-tie rank swaps incl. investigated third microbe pair at 448.0, tasks.json metric-casing + generatedAt); pins authoritative
 - [Phase 01]: baseline/compare.py --summary-json is the machine-readable migration-gate contract consumed by plan 01-03 (complete untruncated diff inventory)
+- [Phase 01]: Audit grading: both pipeline producer defects P0 (species-as-dataset, batch config leak) — committed leaderboard intact but unreproducible from committed code; aggregation math independently recomputed correct (42/42)
+- [Phase 01]: AUDIT.md migration inventory pre-documents THREE exact-tie rank pairs (PIN-VALIDATION's investigated microbe pair included, not just the plan's literal two) — baseline evidence is authoritative for the D-06 gate
+- [Phase 01]: Frontend audit verified via headless-chromium DOM dumps; interaction-dependent claims recorded static-verified-only — 15 findings routed to Phase 4 scope with file:line evidence
 
 ### Pending Todos
 
@@ -95,6 +99,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T14:09:27.328Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-10-08T14:33:54.523Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
