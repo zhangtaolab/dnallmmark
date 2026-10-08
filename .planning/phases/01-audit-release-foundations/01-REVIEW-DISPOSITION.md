@@ -29,7 +29,7 @@ findings:
     title: "Dataset species labels contradict the datasets' own identity (fungi → Animals, human cell line → Microbe)"
   - id: WR-07
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Documented output filenames are plural; the generator writes singular (AUD-19 persists in reviewed files)"
   - id: WR-08
     severity: warning
@@ -63,7 +63,7 @@ findings:
     severity: info
     disposition: fixed
     title: "`.gitignore` carries upstream-dnallm rules for paths that do not exist here"
-open: 1
+open: 0
 total: 15
 recorded: 2026-10-08T16:04:17.317Z
 ---
@@ -78,7 +78,7 @@ recorded: 2026-10-08T16:04:17.317Z
 | WR-04 | warning | fixed | 01-REVIEW-FIX.md |
 | WR-05 | warning | skipped | 01-REVIEW-FIX.md |
 | WR-06 | warning | skipped | 01-REVIEW-FIX.md |
-| WR-07 | warning | open | - |
+| WR-07 | warning | fixed | 01-REVIEW-FIX.md (commit a8854b7; hand-reconciled — fixer shortened the title) |
 | WR-08 | warning | fixed | 01-REVIEW-FIX.md |
 | WR-09 | warning | fixed | 01-REVIEW-FIX.md |
 | IN-01 | info | fixed | 01-REVIEW-FIX.md |
