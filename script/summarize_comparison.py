@@ -31,8 +31,8 @@ Output files
 All outputs are written to ``dnallm-mark/data/``:
 
 - ``models_comparison.json``           — all tasks, all models.
-- ``models_comparison_animals.json``   — only tasks whose dataset species is "animal".
-- ``models_comparison_plants.json``    — only tasks whose dataset species is "plant".
+- ``models_comparison_animal.json``     — only tasks whose dataset species is "animal".
+- ``models_comparison_plant.json``      — only tasks whose dataset species is "plant".
 - ``models_comparison_microbe.json``   — only tasks whose dataset species is "microbe".
 
 Each file contains a dict keyed by model alias, sorted by ``rank_score`` descending::

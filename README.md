@@ -245,8 +245,8 @@ python ../../script/summarize_comparison.py
 
 This will generate:
 - `models_comparison.json` - Overall comparison across all tasks with Rank Score, Sum MinMax, Top counts, and efficiency metrics
-- `models_comparison_animals.json` - Comparison filtered by animal species
-- `models_comparison_plants.json` - Comparison filtered by plant species
+- `models_comparison_animal.json` - Comparison filtered by animal species
+- `models_comparison_plant.json` - Comparison filtered by plant species
 - `models_comparison_microbe.json` - Comparison filtered by microbe species
 
 **Output fields:**
