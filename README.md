@@ -1,7 +1,7 @@
 # DNALLM-Mark
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 
 DNALLM-Mark is a comprehensive benchmark platform for evaluating DNA Large Language Models (LLMs) across various genomic prediction tasks. It provides standardized evaluation metrics, interactive leaderboards, and reproducible benchmarks to advance DNA language model research.
 
@@ -85,7 +85,7 @@ DNALLM-Mark is a centralized evaluation system designed to assess and compare th
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.13+ (data toolchain — see `.python-version`; the GPU pipeline has its own requirements)
 - Node.js 18+ (for web interface)
 - Git
 
