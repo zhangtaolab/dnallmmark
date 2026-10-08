@@ -86,7 +86,7 @@ DNALLM-Mark is a centralized evaluation system designed to assess and compare th
 ### Prerequisites
 
 - Python 3.13+ (data toolchain — see `.python-version`; the GPU pipeline has its own requirements)
-- Node.js 18+ (for web interface)
+- Node.js 18+ (only for the task-index generator `scripts/generate-tasks-index.js` and the optional `npx http-server` fallback — the web interface itself is static and needs no Node)
 - Git
 
 ### Clone the Repository
@@ -275,6 +275,18 @@ This will generate `task_performance/{dataset_name}_task_performance.json` for e
 - `info` - Dataset metadata (species, type, labels, train/test/dev sizes, etc.)
 - `performance` - Per-model performance metrics for this specific dataset/task
 
+### Generate Task Index
+
+Regenerate the lightweight task index (`dnallm-mark/data/tasks.json`) consumed by the task benchmark page. Unlike the two Python generators above, this one is **not** CWD-sensitive — it resolves paths relative to its own location, so run it from the repo root:
+
+```bash
+node scripts/generate-tasks-index.js
+```
+
+This rewrites `tasks.json` from the `task_performance/` files. Regenerate it whenever `task_performance/` changes — otherwise the task page serves a stale index (missing or outdated task entries).
+
+> **Note:** the full regeneration chain is: (1) `cd dnallm-mark/data && python ../../script/get_task_performance.py`, (2) `python ../../script/summarize_comparison.py` (same CWD), (3) `node scripts/generate-tasks-index.js` (repo root). Shipping only a partial chain leaves derived files inconsistent with `model_performance/`.
+
 ## 📁 Project Structure
 
 ```
@@ -293,6 +305,7 @@ dnallmmark/
 │   └── data/                 # Data directory
 │       ├── model_performance/  # Input: per-model JSON files
 │       ├── task_performance/   # Generated: per-dataset JSON files
+│       ├── tasks.json          # Generated: task index (scripts/generate-tasks-index.js)
 │       └── models_comparison*.json  # Generated: summary comparison files
 ├── pipeline/                 # Fine-tuning pipeline
 │   ├── datasets/             # Datasets directory
@@ -304,9 +317,11 @@ dnallmmark/
 │   ├── dnallmmark_pipeline.py  # Training script
 │   ├── finetune_config.yaml  # Training script
 │   └── finetune_config_with_head.yaml  # Configuration file with specific head
-├── script/                   # Data processing scripts
+├── script/                   # Data processing scripts (Python — run from dnallm-mark/data/)
 │   ├── summarize_comparison.py  # Generate summary comparison data
 │   └── get_task_performance.py  # Generate per-dataset performance data
+├── scripts/                  # One-off generators (Node — run from repo root)
+│   └── generate-tasks-index.js  # Regenerate data/tasks.json task index
 ├── baseline/                 # Reproducibility baseline (JSON comparator + SHA256 manifests + pin-validation evidence)
 ├── AUDIT.md                  # Published audit report (findings, migration records, secret-scan evidence)
 ├── LICENSE                   # MIT license (code)
