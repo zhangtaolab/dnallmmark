@@ -10,12 +10,12 @@ Requirements for the hardening release. Each maps to roadmap phases.
 ### Systematic Audit
 
 - [ ] **AUDIT-01**: Severity-graded findings report covering all three subsystems (pipeline, data scripts, frontend), every finding with `file:line` evidence and a recommended fix
-- [ ] **AUDIT-02**: Pre-fix baseline captured — golden outputs of the current data chain plus a `data-v1` git tag — before any result-affecting fix lands, so number changes are attributable
+- [x] **AUDIT-02**: Pre-fix baseline captured — golden outputs of the current data chain plus a `data-v1` git tag — before any result-affecting fix lands, so number changes are attributable
 
 ### Release Foundations
 
 - [ ] **REL-01**: LICENSE file present (explicit code license; data licensing declared separately)
-- [ ] **REL-02**: Dependency manifests for the offline/data chain, version-pinned (`pandas>=2.2,<3.0`); GPU pipeline dependencies in a separate group that CI never installs
+- [x] **REL-02**: Dependency manifests for the offline/data chain, version-pinned (`pandas>=2.2,<3.0`); GPU pipeline dependencies in a separate group that CI never installs
 - [ ] **REL-03**: README reproducibility section — literal copy-pasteable commands from repo root (install → data → aggregate → serve)
 - [ ] **REL-04**: Single-command data-regeneration chain (`make data` or equivalent) replacing the undocumented 3-step CWD-sensitive procedure
 - [ ] **REL-05**: Secret hygiene settled per maintainer decision (2026-10-08 discuss) — the Zenodo record-19135551 preview link + token at `README.md:116` is the intentional dataset-sharing mechanism (record-scoped, read-only) and stays as-is; a full-history secret scan confirms no OTHER secrets exist beyond this known-intentional link
@@ -91,9 +91,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | AUDIT-01 | Phase 1 | Pending |
-| AUDIT-02 | Phase 1 | Pending |
+| AUDIT-02 | Phase 1 | Complete |
 | REL-01 | Phase 1 | Pending |
-| REL-02 | Phase 1 | Pending |
+| REL-02 | Phase 1 | Complete |
 | REL-05 | Phase 1 | Pending |
 | FIX-05 | Phase 1 | Pending |
 | REL-04 | Phase 2 | Pending |

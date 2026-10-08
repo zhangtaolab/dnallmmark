@@ -13,6 +13,14 @@ dnallmmark/                       # Repository root
 ├── README.md                     # Main docs: setup, pipeline usage, data format, project structure
 ├── start-server.sh               # Executable launcher: serves dnallm-mark/ on http://localhost:8080
 ├── .gitignore                    # Ignores pipeline/datasets, pipeline/models, pipeline/finetuned, .planning/, etc.
+├── pyproject.toml                # PEP 621 + PEP 735 dependency groups (data/dev/pipeline) — plan 01-01
+├── uv.lock                       # Committed uv lockfile (exact resolution, single numpy/pandas pin)
+├── requirements.txt              # Generated: uv export of the data group (exact pins + hashes)
+├── .python-version               # Single line "3.13" — contributor interpreter pin (D-07)
+├── baseline/                     # Pre-fix data baseline tooling (plan 01-01)
+│   ├── compare.py                # Order-insensitive JSON value comparator (--summary-json machine mode)
+│   ├── data-v1.sha256            # SHA256 manifest of the 52 derived outputs at tag data-v1
+│   └── PIN-VALIDATION.md         # Empirical pin-validation evidence (D-05/D-06)
 ├── benchmark/
 │   └── demo.png                  # Leaderboard screenshot used in README
 ├── dnallm-mark/                  # Static web leaderboard (the deployable site)
@@ -80,6 +88,11 @@ dnallmmark/                       # Repository root
 **`script/` and `scripts/`:**
 - Purpose: Offline JSON transformation scripts (Python in `script/`, Node in `scripts/`)
 - Note the inconsistent naming (singular vs plural) — both exist; Python scripts go in `script/`, Node scripts in `scripts/` to match current convention
+
+**`baseline/`:**
+- Purpose: Pre-fix derived-data baseline tooling (plan 01-01, AUDIT-02/REL-02) — comparator, SHA256 manifest, pin-validation evidence
+- Contains: `compare.py` (order-insensitive JSON value comparator; exit 0/1/2; `--summary-json` emits the complete untruncated diff inventory consumed by the plan 01-03 migration gate), `data-v1.sha256` (52 entries), `PIN-VALIDATION.md`
+- Key relation: annotated git tag `data-v1` freezes the byte state; recover any file via `git show data-v1:<path>` and verify with the manifest
 
 ## Key File Locations
 
