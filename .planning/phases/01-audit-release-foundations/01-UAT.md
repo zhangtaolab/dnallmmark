@@ -3,7 +3,7 @@ status: testing
 phase: 01-audit-release-foundations
 source: [01-VERIFICATION.md]
 started: 2026-10-08T15:30:49Z
-updated: 2026-10-08T15:30:49Z
+updated: 2026-10-08T17:09:06.139Z
 ---
 
 ## Current Test
@@ -34,7 +34,7 @@ expected: A reviewer agrees the "risks corrupting published numbers on regenerat
 result: [pending]
 
 ### 4. Six flagged must-NOT prohibitions
-expected: Reviewer confirms the recorded evidence (spot-checked reproductions, grep sweeps, independent migration-gate re-run, .gitleaks.toml inspection) satisfies each must-NOT: (1) no unreproducible graded findings in AUDIT.md; (2) no secret material quoted in AUDIT.md; (3) no derived-value changes beyond the documented migration inventory; (4) no license claims over upstream datasets; (5) gitleaks allowlist not widened beyond the single record-scoped entry; (6) no secret values in committed evidence.
+expected: Reviewer confirms the recorded evidence (spot-checked reproductions, grep sweeps, independent migration-gate re-run, .gitleaks.toml inspection, gitleaks two-scan re-run with the anchored config) satisfies each must-NOT: (1) no unreproducible graded findings in AUDIT.md; (2) no secret material quoted in AUDIT.md; (3) no derived-value changes beyond the documented migration inventory — including accepting the 47 post-phase IN-04 displayName whitespace collapses in tasks.json (documented with exact before/after counts in 01-REVIEW-FIX.md; re-verified 2026-10-08T17:01Z as display-only, all leaderboard numbers unchanged); (4) no license claims over upstream datasets; (5) gitleaks allowlist not widened beyond the single record-scoped entry; (6) no secret values in committed evidence.
 result: [pending]
 
 ## Summary
