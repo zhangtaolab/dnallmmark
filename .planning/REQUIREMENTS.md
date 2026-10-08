@@ -52,6 +52,12 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [ ] **EXT-01**: New-model onboarding process documented and validated end-to-end (register in `models_info.json` → pipeline quirks → run → copy performance JSON → regenerate → appears on leaderboard)
 - [ ] **EXT-02**: New-dataset onboarding process documented and validated end-to-end (register in `datasets_info.json` → metric mapping → run → regenerate)
 
+### Pipeline & Environment (dnallm dev)
+
+- [ ] **PIPE-01**: Pipeline code adapted to dnallm dev branch (v0.7.1, local clone `/home/forrest/Github/DNALLM` @ `c99fa9d`) — API/config-schema deltas resolved; imports and dry-run pass
+- [ ] **PIPE-02**: Local GPU pipeline environment reproducibly buildable (uv/venv on the NVIDIA GB10 aarch64 machine; dnallm installed from the local git dev clone; torch/transformers pinned per dnallm 0.7.1 bounds) with documented setup commands
+- [ ] **PIPE-03**: Small end-to-end validation — at least one model×dataset fine-tune run completes against dnallm dev and produces a structurally valid `{model}_performance.json`
+
 ## v2 Requirements
 
 Deferred to post-release. Tracked, not in current roadmap.
@@ -74,6 +80,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | Git history rewrite to purge leaked token | Post-revocation it protects nothing; breaks SHAs/forks |
 | Full Datasheets for all 50 datasets | Weeks of work on murky licenses; provenance table suffices |
 | Framework migration / bundler / pipeline rewrite | Hard constraint: vanilla no-build MPA; surgical fixes only |
+| Full benchmark re-run against dnallm dev | Extensive GPU time; adaptation validated with one model×dataset pair (PIPE-03) |
 | Actually adding new models/datasets this milestone | Mechanism only (EXT-01/02); new entries require GPU runs and arrive later |
 
 ## Traceability
@@ -85,10 +92,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | (to be filled by roadmap) | | |
 
 **Coverage:**
-- v1 requirements: 27 total
+- v1 requirements: 30 total
 - Mapped to phases: 0
-- Unmapped: 27 ⚠️ (roadmap pending)
+- Unmapped: 30 ⚠️ (roadmap pending)
 
 ---
 *Requirements defined: 2026-10-08*
-*Last updated: 2026-10-08 after initial definition (ModelScope-default download links applied per user adjustment)*
+*Last updated: 2026-10-08 after dnallm-dev adaptation additions (PIPE-01..03, per user; local clone verified at v0.7.1)*

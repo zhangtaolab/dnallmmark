@@ -30,12 +30,16 @@ Every number on the public leaderboard is correct and reproducible from code tha
 - [ ] GitHub Actions CI running the test suite
 - [ ] Recompute leaderboard data after fixes, with before/after comparison notes
 - [ ] Pre-release hygiene: revoke leaked Zenodo token (`README.md:116`), decide on LICENSE
+- [ ] Adapt pipeline to dnallm dev branch (v0.7.1): resolve API/config-schema deltas, imports and dry-run pass
+- [ ] Build reproducible local GPU pipeline environment (uv/venv; dnallm from git dev; pinned torch/transformers)
+- [ ] Small end-to-end validation: at least one model×dataset fine-tune run against dnallm dev produces a valid performance JSON
 
 ### Out of Scope
 
 - Deep security hardening (CSP, SRI on CDN scripts) — correctness/maintainability prioritized this milestone; only token revocation is required pre-release
 - Frontend E2E/smoke tests (Playwright-level) — regression prevention scoped to data scripts + CI by decision
-- New benchmark features (new models, datasets, UI capabilities) — hardening milestone, not expansion
+- New benchmark entries (actually adding new models/datasets) — mechanism only this milestone (EXT-01/02); hardening, not expansion
+- Full benchmark re-run against dnallm dev — needs extensive GPU time; this milestone validates adaptation with one model×dataset pair
 - Pipeline rewrite/modularization — fixes stay surgical, minimal diff
 - Framework migration (React/Vue/bundler) — vanilla no-build MPA is a hard constraint
 
@@ -51,6 +55,7 @@ Every number on the public leaderboard is correct and reproducible from code tha
   - Duplicate, divergent aggregation logic in `js/data.js:recalculateComparison()` (uncalled, returns placeholders) vs the authoritative `script/summarize_comparison.py`
   - No tests, no `requirements.txt`/`pyproject.toml`, no CI, no LICENSE
 - Repo: `https://github.com/zhangtaolab/dnallmmark` — target is public release; code must withstand external scrutiny (paper/community use)
+- Upstream DNALLM framework moved: dev branch at v0.7.1 (local clone `/home/forrest/Github/DNALLM`, commit `c99fa9d`, 2026-10-08). The pipeline was written against an older dnallm and must be adapted. Local machine is an NVIDIA GB10 (Grace Blackwell, aarch64, CUDA) — the pipeline environment builds here
 - Data regeneration is a manual 3-step chain run from `dnallm-mark/data/` (`get_task_performance.py` → `summarize_comparison.py` → `generate-tasks-index.js`), documented only in README — stale derived files are undetectable today
 - `.planning/` is currently gitignored (`.gitignore:90`)
 
@@ -70,6 +75,7 @@ Every number on the public leaderboard is correct and reproducible from code tha
 | Regression prevention = data-script unit tests + GitHub Actions CI | Highest value per cost; pipeline needs GPU, frontend tests deferred | — Pending |
 | Allow data recomputation after fixes, documented with comparisons | Correctness over number stability — the species fix intentionally changes aggregates | — Pending |
 | Priority: correctness first, maintainability second; security limited to token revocation | User prioritization for this milestone | — Pending |
+| Adapt to dnallm dev (v0.7.1) with local GPU env + one-pair validation; full benchmark re-run deferred | Upstream moved; local GB10 machine + local DNALLM clone make adaptation verifiable now | — Pending |
 
 ## Evolution
 
