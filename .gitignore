@@ -4,7 +4,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-.python-version
 build/
 develop-eggs/
 dist/
@@ -44,7 +43,6 @@ ENV/
 
 # uv
 .uv.toml
-uv.lock
 
 # Testing
 .coverage
