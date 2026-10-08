@@ -1,5 +1,5 @@
 ---
-last_mapped_commit: a44d3104b8ab1e04ddbebed75446772fc0ca3f1b
+last_mapped_commit: 89f59d4
 last_mapped_at: 2026-10-08
 ---
 # Codebase Structure
@@ -17,6 +17,9 @@ dnallmmark/                       # Repository root
 ├── uv.lock                       # Committed uv lockfile (exact resolution, single numpy/pandas pin)
 ├── requirements.txt              # Generated: uv export of the data group (exact pins + hashes)
 ├── .python-version               # Single line "3.13" — contributor interpreter pin (D-07)
+├── LICENSE                       # MIT license for code (plan 01-03, D-10)
+├── AUDIT.md                      # Published severity-graded audit report (plan 01-02, D-02)
+├── .gitleaks.toml                # Secret-scan config: default rules + zenodo detection rule + rule-scoped AND allowlist (plan 01-03, REL-05)
 ├── baseline/                     # Pre-fix data baseline tooling (plan 01-01)
 │   ├── compare.py                # Order-insensitive JSON value comparator (--summary-json machine mode)
 │   ├── data-v1.sha256            # SHA256 manifest of the 52 derived outputs at tag data-v1

@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v0.7.1
 current_phase: 01
 current_phase_name: Audit & Release Foundations
-status: executing
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-10-08T14:33:54.539Z"
+status: verifying
+stopped_at: "Completed 01-03-PLAN.md (phase 01 complete: ready for verification)"
+last_updated: "2026-10-08T14:56:39.816Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 01 execution started
-state_head: 1295f9e35257bade6a45de81bdf4d727aa2636bb
+state_head: 511a1006594ad767c69a7716ae8758bbc59b4e70
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 
 Phase: 01 (Audit & Release Foundations) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-08 — Phase 01 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -58,6 +58,7 @@ Progress: [░░░░░░░░░░] 0%
 |------|----------|-------|-------|
 | Phase 01 P01 | 9 min | 2 tasks | 8 files |
 | Phase 01 P02 | 15 min | 3 tasks | 1 files |
+| Phase 01 P03 | 16 min | 3 tasks | 59 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,9 @@ Recent decisions affecting current work:
 - [Phase 01]: Audit grading: both pipeline producer defects P0 (species-as-dataset, batch config leak) — committed leaderboard intact but unreproducible from committed code; aggregation math independently recomputed correct (42/42)
 - [Phase 01]: AUDIT.md migration inventory pre-documents THREE exact-tie rank pairs (PIN-VALIDATION's investigated microbe pair included, not just the plan's literal two) — baseline evidence is authoritative for the D-06 gate
 - [Phase 01]: Frontend audit verified via headless-chromium DOM dumps; interaction-dependent claims recorded static-verified-only — 15 findings routed to Phase 4 scope with file:line evidence
+- [Phase 01]: FIX-05 landed: deterministic generators (sorted iteration, sort_keys, no live clock) with the one-time 52-file migration fully attributed against data-v1; fourth exact-tie pair investigated into the inventory (6-group census recorded in AUDIT.md)
+- [Phase 01]: Secret scan settled behaviorally: gitleaks 8.30.1 default jwt rule misses markdown-paren-closed JWTs (detection rule added) and global path allowlists act as file-level exclusion (rule-scoped AND allowlist used) — probe finds exactly the 1 intentional link, production scan clean over all refs
+- [Phase 01]: License landed: MIT for code (LICENSE + README section, atomic with CC BY 4.0 derived-data terms and upstream-terms disclaimer); copyright holder naming 'Tao Zhang and DNALLM-Mark contributors' is a surfaced assumption for maintainer override before public flip (D-09)
 
 ### Pending Todos
 
@@ -99,6 +103,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T14:33:54.523Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-10-08T14:56:39.800Z
+Stopped at: Completed 01-03-PLAN.md (phase 01 complete: ready for verification)
 Resume file: None

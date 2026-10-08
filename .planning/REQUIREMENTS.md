@@ -14,11 +14,11 @@ Requirements for the hardening release. Each maps to roadmap phases.
 
 ### Release Foundations
 
-- [ ] **REL-01**: LICENSE file present (explicit code license; data licensing declared separately)
+- [x] **REL-01**: LICENSE file present (explicit code license; data licensing declared separately)
 - [x] **REL-02**: Dependency manifests for the offline/data chain, version-pinned (`pandas>=2.2,<3.0`); GPU pipeline dependencies in a separate group that CI never installs
 - [ ] **REL-03**: README reproducibility section — literal copy-pasteable commands from repo root (install → data → aggregate → serve)
 - [ ] **REL-04**: Single-command data-regeneration chain (`make data` or equivalent) replacing the undocumented 3-step CWD-sensitive procedure
-- [ ] **REL-05**: Secret hygiene settled per maintainer decision (2026-10-08 discuss) — the Zenodo record-19135551 preview link + token at `README.md:116` is the intentional dataset-sharing mechanism (record-scoped, read-only) and stays as-is; a full-history secret scan confirms no OTHER secrets exist beyond this known-intentional link
+- [x] **REL-05**: Secret hygiene settled per maintainer decision (2026-10-08 discuss) — the Zenodo record-19135551 preview link + token at `README.md:116` is the intentional dataset-sharing mechanism (record-scoped, read-only) and stays as-is; a full-history secret scan confirms no OTHER secrets exist beyond this known-intentional link
 
 ### Correctness Fixes
 
@@ -26,7 +26,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [ ] **FIX-02**: Species-as-dataset grouping bug fixed (`pipeline/dnallmmark_pipeline.py:1229`), with a failing test written first
 - [ ] **FIX-03**: Submission flow repaired — `submit.html` created, orphaned `js/submit.js` wired to the current data schema, reachable from navigation
 - [ ] **FIX-04**: Sink-side escaping at DOM-build sites the fixes touch (bounded to touched code, not a full security hardening pass)
-- [ ] **FIX-05**: All three data generators produce deterministic output (sorted directory iteration + `sort_keys` JSON writing) — prerequisite for every diff-based check
+- [x] **FIX-05**: All three data generators produce deterministic output (sorted directory iteration + `sort_keys` JSON writing) — prerequisite for every diff-based check
 
 ### Test Infrastructure
 
@@ -92,10 +92,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | AUDIT-01 | Phase 1 | Complete |
 | AUDIT-02 | Phase 1 | Complete |
-| REL-01 | Phase 1 | Pending |
+| REL-01 | Phase 1 | Complete |
 | REL-02 | Phase 1 | Complete |
-| REL-05 | Phase 1 | Pending |
-| FIX-05 | Phase 1 | Pending |
+| REL-05 | Phase 1 | Complete |
+| FIX-05 | Phase 1 | Complete |
 | REL-04 | Phase 2 | Pending |
 | TEST-01 | Phase 2 | Pending |
 | TEST-02 | Phase 2 | Pending |
