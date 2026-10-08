@@ -38,8 +38,9 @@ function generateTaskIndex() {
     // Extract task ID from filename
     const taskId = file.replace('_task_performance.json', '');
 
-    // Format display name (replace underscores with spaces)
-    const displayName = taskId.replace(/_/g, ' ');
+    // Format display name (collapse underscore runs to single spaces — task ids
+    // use Source__task, and a per-underscore replace would emit a double space)
+    const displayName = taskId.replace(/_+/g, ' ').trim();
 
     return {
       id: taskId,

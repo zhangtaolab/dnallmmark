@@ -5,7 +5,7 @@
     {
       "id": "BEND__CpG_methylation",
       "name": "BEND__CpG_methylation",
-      "displayName": "BEND  CpG methylation",
+      "displayName": "BEND CpG methylation",
       "species": "Animals",
       "type": "multilabel",
       "labels": 7,
@@ -16,7 +16,7 @@
     {
       "id": "Deep4mC_datasets__C.elegans_4mC",
       "name": "Deep4mC_datasets__C.elegans_4mC",
-      "displayName": "Deep4mC datasets  C.elegans 4mC",
+      "displayName": "Deep4mC datasets C.elegans 4mC",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -27,7 +27,7 @@
     {
       "id": "Deep4mC_datasets__D.melanogaster_4mC",
       "name": "Deep4mC_datasets__D.melanogaster_4mC",
-      "displayName": "Deep4mC datasets  D.melanogaster 4mC",
+      "displayName": "Deep4mC datasets D.melanogaster 4mC",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -38,7 +38,7 @@
     {
       "id": "Deep4mC_datasets__E.coli_4mC",
       "name": "Deep4mC_datasets__E.coli_4mC",
-      "displayName": "Deep4mC datasets  E.coli 4mC",
+      "displayName": "Deep4mC datasets E.coli 4mC",
       "species": "Microbe",
       "type": "binary",
       "labels": 2,
@@ -49,7 +49,7 @@
     {
       "id": "GUE__EPI_GM12878",
       "name": "GUE__EPI_GM12878",
-      "displayName": "GUE  EPI GM12878",
+      "displayName": "GUE EPI GM12878",
       "species": "Microbe",
       "type": "binary",
       "labels": 2,
@@ -60,7 +60,7 @@
     {
       "id": "GUE__emp_H3K14ac",
       "name": "GUE__emp_H3K14ac",
-      "displayName": "GUE  emp H3K14ac",
+      "displayName": "GUE emp H3K14ac",
       "species": "Microbe",
       "type": "binary",
       "labels": 2,
@@ -71,7 +71,7 @@
     {
       "id": "GUE__emp_H3K36me3",
       "name": "GUE__emp_H3K36me3",
-      "displayName": "GUE  emp H3K36me3",
+      "displayName": "GUE emp H3K36me3",
       "species": "Microbe",
       "type": "binary",
       "labels": 2,
@@ -82,7 +82,7 @@
     {
       "id": "GUE__emp_H3K4me1",
       "name": "GUE__emp_H3K4me1",
-      "displayName": "GUE  emp H3K4me1",
+      "displayName": "GUE emp H3K4me1",
       "species": "Microbe",
       "type": "binary",
       "labels": 2,
@@ -93,7 +93,7 @@
     {
       "id": "GUE__emp_H3K79me3",
       "name": "GUE__emp_H3K79me3",
-      "displayName": "GUE  emp H3K79me3",
+      "displayName": "GUE emp H3K79me3",
       "species": "Microbe",
       "type": "binary",
       "labels": 2,
@@ -104,7 +104,7 @@
     {
       "id": "GUE__emp_H3K9ac",
       "name": "GUE__emp_H3K9ac",
-      "displayName": "GUE  emp H3K9ac",
+      "displayName": "GUE emp H3K9ac",
       "species": "Microbe",
       "type": "binary",
       "labels": 2,
@@ -115,7 +115,7 @@
     {
       "id": "GUE__emp_H3",
       "name": "GUE__emp_H3",
-      "displayName": "GUE  emp H3",
+      "displayName": "GUE emp H3",
       "species": "Microbe",
       "type": "binary",
       "labels": 2,
@@ -126,7 +126,7 @@
     {
       "id": "GUE__emp_H4",
       "name": "GUE__emp_H4",
-      "displayName": "GUE  emp H4",
+      "displayName": "GUE emp H4",
       "species": "Microbe",
       "type": "binary",
       "labels": 2,
@@ -137,7 +137,7 @@
     {
       "id": "GUE__emp_H4ac",
       "name": "GUE__emp_H4ac",
-      "displayName": "GUE  emp H4ac",
+      "displayName": "GUE emp H4ac",
       "species": "Microbe",
       "type": "binary",
       "labels": 2,
@@ -148,7 +148,7 @@
     {
       "id": "GUE__fungi_species_20",
       "name": "GUE__fungi_species_20",
-      "displayName": "GUE  fungi species 20",
+      "displayName": "GUE fungi species 20",
       "species": "Animals",
       "type": "multiclass",
       "labels": 20,
@@ -159,7 +159,7 @@
     {
       "id": "GUE__human_tf_0",
       "name": "GUE__human_tf_0",
-      "displayName": "GUE  human tf 0",
+      "displayName": "GUE human tf 0",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -170,7 +170,7 @@
     {
       "id": "GUE__mouse_1",
       "name": "GUE__mouse_1",
-      "displayName": "GUE  mouse 1",
+      "displayName": "GUE mouse 1",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -181,7 +181,7 @@
     {
       "id": "GUE__mouse_4",
       "name": "GUE__mouse_4",
-      "displayName": "GUE  mouse 4",
+      "displayName": "GUE mouse 4",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -192,7 +192,7 @@
     {
       "id": "GUE__prom_300_all",
       "name": "GUE__prom_300_all",
-      "displayName": "GUE  prom 300 all",
+      "displayName": "GUE prom 300 all",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -203,7 +203,7 @@
     {
       "id": "GUE__prom_core_all",
       "name": "GUE__prom_core_all",
-      "displayName": "GUE  prom core all",
+      "displayName": "GUE prom core all",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -214,7 +214,7 @@
     {
       "id": "GUE__virus_covid",
       "name": "GUE__virus_covid",
-      "displayName": "GUE  virus covid",
+      "displayName": "GUE virus covid",
       "species": "Microbe",
       "type": "multiclass",
       "labels": 9,
@@ -225,7 +225,7 @@
     {
       "id": "GUE__virus_species_40",
       "name": "GUE__virus_species_40",
-      "displayName": "GUE  virus species 40",
+      "displayName": "GUE virus species 40",
       "species": "Microbe",
       "type": "multiclass",
       "labels": 25,
@@ -236,7 +236,7 @@
     {
       "id": "Genomic_Benchmarks__coding",
       "name": "Genomic_Benchmarks__coding",
-      "displayName": "Genomic Benchmarks  coding",
+      "displayName": "Genomic Benchmarks coding",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -247,7 +247,7 @@
     {
       "id": "Genomic_Benchmarks__human_vs_worm",
       "name": "Genomic_Benchmarks__human_vs_worm",
-      "displayName": "Genomic Benchmarks  human vs worm",
+      "displayName": "Genomic Benchmarks human vs worm",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -258,7 +258,7 @@
     {
       "id": "Genomic_Benchmarks__regulatory_region_type",
       "name": "Genomic_Benchmarks__regulatory_region_type",
-      "displayName": "Genomic Benchmarks  regulatory region type",
+      "displayName": "Genomic Benchmarks regulatory region type",
       "species": "Animals",
       "type": "multiclass",
       "labels": 3,
@@ -269,7 +269,7 @@
     {
       "id": "NT_downstream_tasks__H3K27ac",
       "name": "NT_downstream_tasks__H3K27ac",
-      "displayName": "NT downstream tasks  H3K27ac",
+      "displayName": "NT downstream tasks H3K27ac",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -280,7 +280,7 @@
     {
       "id": "NT_downstream_tasks__H3K27me3",
       "name": "NT_downstream_tasks__H3K27me3",
-      "displayName": "NT downstream tasks  H3K27me3",
+      "displayName": "NT downstream tasks H3K27me3",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -291,7 +291,7 @@
     {
       "id": "NT_downstream_tasks__H3K4me2",
       "name": "NT_downstream_tasks__H3K4me2",
-      "displayName": "NT downstream tasks  H3K4me2",
+      "displayName": "NT downstream tasks H3K4me2",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -302,7 +302,7 @@
     {
       "id": "NT_downstream_tasks__H3K9me3",
       "name": "NT_downstream_tasks__H3K9me3",
-      "displayName": "NT downstream tasks  H3K9me3",
+      "displayName": "NT downstream tasks H3K9me3",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -313,7 +313,7 @@
     {
       "id": "NT_downstream_tasks__enhancers",
       "name": "NT_downstream_tasks__enhancers",
-      "displayName": "NT downstream tasks  enhancers",
+      "displayName": "NT downstream tasks enhancers",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -324,7 +324,7 @@
     {
       "id": "NT_downstream_tasks__splice_sites_acceptors",
       "name": "NT_downstream_tasks__splice_sites_acceptors",
-      "displayName": "NT downstream tasks  splice sites acceptors",
+      "displayName": "NT downstream tasks splice sites acceptors",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -335,7 +335,7 @@
     {
       "id": "NT_downstream_tasks__splice_sites_all",
       "name": "NT_downstream_tasks__splice_sites_all",
-      "displayName": "NT downstream tasks  splice sites all",
+      "displayName": "NT downstream tasks splice sites all",
       "species": "Animals",
       "type": "multiclass",
       "labels": 3,
@@ -346,7 +346,7 @@
     {
       "id": "NT_downstream_tasks__splice_sites_donors",
       "name": "NT_downstream_tasks__splice_sites_donors",
-      "displayName": "NT downstream tasks  splice sites donors",
+      "displayName": "NT downstream tasks splice sites donors",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -357,7 +357,7 @@
     {
       "id": "PDLLMs_datasets__plant-multi-species-H3K27ac",
       "name": "PDLLMs_datasets__plant-multi-species-H3K27ac",
-      "displayName": "PDLLMs datasets  plant-multi-species-H3K27ac",
+      "displayName": "PDLLMs datasets plant-multi-species-H3K27ac",
       "species": "Plants",
       "type": "binary",
       "labels": 2,
@@ -368,7 +368,7 @@
     {
       "id": "PDLLMs_datasets__plant-multi-species-H3K27me3",
       "name": "PDLLMs_datasets__plant-multi-species-H3K27me3",
-      "displayName": "PDLLMs datasets  plant-multi-species-H3K27me3",
+      "displayName": "PDLLMs datasets plant-multi-species-H3K27me3",
       "species": "Plants",
       "type": "binary",
       "labels": 2,
@@ -379,7 +379,7 @@
     {
       "id": "PDLLMs_datasets__plant-multi-species-H3K4me3",
       "name": "PDLLMs_datasets__plant-multi-species-H3K4me3",
-      "displayName": "PDLLMs datasets  plant-multi-species-H3K4me3",
+      "displayName": "PDLLMs datasets plant-multi-species-H3K4me3",
       "species": "Plants",
       "type": "binary",
       "labels": 2,
@@ -390,7 +390,7 @@
     {
       "id": "PDLLMs_datasets__plant-multi-species-core-promoters",
       "name": "PDLLMs_datasets__plant-multi-species-core-promoters",
-      "displayName": "PDLLMs datasets  plant-multi-species-core-promoters",
+      "displayName": "PDLLMs datasets plant-multi-species-core-promoters",
       "species": "Plants",
       "type": "binary",
       "labels": 2,
@@ -401,7 +401,7 @@
     {
       "id": "PDLLMs_datasets__plant-multi-species-lncRNAs",
       "name": "PDLLMs_datasets__plant-multi-species-lncRNAs",
-      "displayName": "PDLLMs datasets  plant-multi-species-lncRNAs",
+      "displayName": "PDLLMs datasets plant-multi-species-lncRNAs",
       "species": "Plants",
       "type": "binary",
       "labels": 2,
@@ -412,7 +412,7 @@
     {
       "id": "PDLLMs_datasets__plant-multi-species-open-chromatin",
       "name": "PDLLMs_datasets__plant-multi-species-open-chromatin",
-      "displayName": "PDLLMs datasets  plant-multi-species-open-chromatin",
+      "displayName": "PDLLMs datasets plant-multi-species-open-chromatin",
       "species": "Plants",
       "type": "multiclass",
       "labels": 3,
@@ -423,7 +423,7 @@
     {
       "id": "PDLLMs_datasets__plant-multi-species-sequence-conservation",
       "name": "PDLLMs_datasets__plant-multi-species-sequence-conservation",
-      "displayName": "PDLLMs datasets  plant-multi-species-sequence-conservation",
+      "displayName": "PDLLMs datasets plant-multi-species-sequence-conservation",
       "species": "Plants",
       "type": "binary",
       "labels": 2,
@@ -434,7 +434,7 @@
     {
       "id": "PlantCAD2_fine_tuning_tasks__cross_species_leaf_absolute_translation",
       "name": "PlantCAD2_fine_tuning_tasks__cross_species_leaf_absolute_translation",
-      "displayName": "PlantCAD2 fine tuning tasks  cross species leaf absolute translation",
+      "displayName": "PlantCAD2 fine tuning tasks cross species leaf absolute translation",
       "species": "Plants",
       "type": "regression",
       "labels": 1,
@@ -445,7 +445,7 @@
     {
       "id": "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation",
       "name": "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation",
-      "displayName": "PlantCAD2 fine tuning tasks  cross species leaf on off translation",
+      "displayName": "PlantCAD2 fine tuning tasks cross species leaf on off translation",
       "species": "Plants",
       "type": "binary",
       "labels": 2,
@@ -456,7 +456,7 @@
     {
       "id": "iDNA_ABF_datasets__5mC",
       "name": "iDNA_ABF_datasets__5mC",
-      "displayName": "iDNA ABF datasets  5mC",
+      "displayName": "iDNA ABF datasets 5mC",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -467,7 +467,7 @@
     {
       "id": "iDNA_ABF_datasets__6mA",
       "name": "iDNA_ABF_datasets__6mA",
-      "displayName": "iDNA ABF datasets  6mA",
+      "displayName": "iDNA ABF datasets 6mA",
       "species": "Animals",
       "type": "binary",
       "labels": 2,
@@ -478,7 +478,7 @@
     {
       "id": "iPro-WAEL_datasets__Promoter_R_capsulatus",
       "name": "iPro-WAEL_datasets__Promoter_R_capsulatus",
-      "displayName": "iPro-WAEL datasets  Promoter R capsulatus",
+      "displayName": "iPro-WAEL datasets Promoter R capsulatus",
       "species": "Microbe",
       "type": "binary",
       "labels": 2,
@@ -489,7 +489,7 @@
     {
       "id": "plant-genomic-benchmark__poly_a.arabidopsis_thaliana",
       "name": "plant-genomic-benchmark__poly_a.arabidopsis_thaliana",
-      "displayName": "plant-genomic-benchmark  poly a.arabidopsis thaliana",
+      "displayName": "plant-genomic-benchmark poly a.arabidopsis thaliana",
       "species": "Plants",
       "type": "binary",
       "labels": 2,
@@ -500,7 +500,7 @@
     {
       "id": "plant-genomic-benchmark__promoter_strength.leaf",
       "name": "plant-genomic-benchmark__promoter_strength.leaf",
-      "displayName": "plant-genomic-benchmark  promoter strength.leaf",
+      "displayName": "plant-genomic-benchmark promoter strength.leaf",
       "species": "Plants",
       "type": "regression",
       "labels": 1,
@@ -511,7 +511,7 @@
     {
       "id": "plant-genomic-benchmark__terminator_strength.leaf",
       "name": "plant-genomic-benchmark__terminator_strength.leaf",
-      "displayName": "plant-genomic-benchmark  terminator strength.leaf",
+      "displayName": "plant-genomic-benchmark terminator strength.leaf",
       "species": "Plants",
       "type": "regression",
       "labels": 1,
