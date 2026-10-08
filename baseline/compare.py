@@ -26,7 +26,8 @@ Usage (explicit paths, repo-root tooling — never CWD-relative)::
 ``--summary-json`` prints a single JSON object to stdout with keys ``committed``
 (string), ``regen`` (string), ``total`` (int), ``counts`` (object mapping each
 diff class to its count; ``{}`` when no diffs) and ``diffs`` — the COMPLETE,
-untruncated list of ``{kind, path, detail}`` objects in walk order, so that
+untruncated list of ``{kind, path, detail}`` objects in walk order (dict keys
+visited in sorted order, so the diff sequence is process-independent), so that
 ``len(diffs) == total == sum(counts.values())`` always holds. The machine mode
 is the contract the plan 01-03 migration gate consumes. The human-readable
 mode caps its detail lines at 8 (models_comparison.json alone carries ~42 diffs;
@@ -56,7 +57,9 @@ def walk(a, b, path, diffs):
     """Recursively compare parsed JSON values, appending diff tuples.
 
     Diffs are appended as ``(kind, path, detail)`` in walk order; dict keys are
-    compared as sets so key order never produces a diff.
+    compared as sets and iterated in ``sorted()`` order, so key order never
+    produces a diff and the diff sequence is deterministic across processes
+    (independent of ``PYTHONHASHSEED`` string-hash randomization).
 
     Args:
         a: Value from the committed file.
@@ -68,11 +71,11 @@ def walk(a, b, path, diffs):
         diffs.append(("TYPE", path, f"{type(a).__name__} vs {type(b).__name__}"))
         return
     if isinstance(a, dict):
-        for k in set(a) - set(b):
+        for k in sorted(set(a) - set(b)):
             diffs.append(("MISSING_IN_REGEN", path + "/" + str(k), "key only in committed"))
-        for k in set(b) - set(a):
+        for k in sorted(set(b) - set(a)):
             diffs.append(("EXTRA_IN_REGEN", path + "/" + str(k), "key only in regen"))
-        for k in set(a) & set(b):
+        for k in sorted(set(a) & set(b)):
             walk(a[k], b[k], path + "/" + str(k), diffs)
     elif isinstance(a, list):
         if len(a) != len(b):
