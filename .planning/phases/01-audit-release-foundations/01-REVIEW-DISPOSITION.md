@@ -5,16 +5,32 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: fixed
-    title: "Live Zenodo preview JWT committed in public README — residual risk untracked"
+    disposition: open
+    title: "gitleaks allowlist is record-scoped, not token-scoped — any swapped JWT in the known link position is silently suppressed"
   - id: WR-02
     severity: warning
-    disposition: fixed
-    title: "README says Python 3.11+ while the repo pins >=3.13"
+    disposition: open
+    title: "`compare.py` treats equal-value bool/int cross-type pairs as identical — silent false-negative against live pinned data"
   - id: WR-03
     severity: warning
-    disposition: fixed
-    title: "`baseline/compare.py` diff ordering is nondeterministic across processes"
+    disposition: open
+    title: "Non-finite metric values (`\"nan\"`, `NaN`, `\"inf\"`) pass the presence gate and poison an entire task's normalization"
+  - id: IN-01
+    severity: info
+    disposition: open
+    title: "Pure-integer differences are classified as `FLOAT_BIG`"
+  - id: IN-02
+    severity: info
+    disposition: open
+    title: "Index generator crashes with a raw stack trace when `task_performance/` is missing"
+  - id: IN-03
+    severity: info
+    disposition: open
+    title: "README \"Output fields\" still omits `avg_PFLOPs`"
+  - id: IN-04
+    severity: info
+    disposition: open
+    title: "`.planning/tmp/` GSD scratch is untracked noise in `git status`"
   - id: WR-04
     severity: warning
     disposition: fixed
@@ -30,7 +46,7 @@ findings:
   - id: WR-07
     severity: warning
     disposition: fixed
-    title: "Documented output filenames are plural; the generator writes singular (AUD-19 persists in reviewed files)"
+    title: "Documented output filenames are plural; the generator writes singular (AUD-19)"
   - id: WR-08
     severity: warning
     disposition: fixed
@@ -39,22 +55,6 @@ findings:
     severity: warning
     disposition: fixed
     title: "README's data-regeneration docs omit the third generator entirely"
-  - id: IN-01
-    severity: info
-    disposition: fixed
-    title: "Dead counter variable"
-  - id: IN-02
-    severity: info
-    disposition: fixed
-    title: "Metric-presence check is narrower than `get_float`'s missing-value semantics"
-  - id: IN-03
-    severity: info
-    disposition: fixed
-    title: "No per-file error handling in the index generator"
-  - id: IN-04
-    severity: info
-    disposition: fixed
-    title: "Double spaces in generated task display names"
   - id: IN-05
     severity: info
     disposition: fixed
@@ -63,30 +63,31 @@ findings:
     severity: info
     disposition: fixed
     title: "`.gitignore` carries upstream-dnallm rules for paths that do not exist here"
-open: 0
+open: 7
 total: 15
-recorded: 2026-10-08T16:04:17.317Z
+recorded: 2026-10-08T16:51:58.431Z
 ---
 
 # Phase 01: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | fixed | 01-REVIEW-FIX.md |
-| WR-02 | warning | fixed | 01-REVIEW-FIX.md |
-| WR-03 | warning | fixed | 01-REVIEW-FIX.md |
-| WR-04 | warning | fixed | 01-REVIEW-FIX.md |
-| WR-05 | warning | skipped | 01-REVIEW-FIX.md |
-| WR-06 | warning | skipped | 01-REVIEW-FIX.md |
-| WR-07 | warning | fixed | 01-REVIEW-FIX.md (commit a8854b7; hand-reconciled — fixer shortened the title) |
-| WR-08 | warning | fixed | 01-REVIEW-FIX.md |
-| WR-09 | warning | fixed | 01-REVIEW-FIX.md |
-| IN-01 | info | fixed | 01-REVIEW-FIX.md |
-| IN-02 | info | fixed | 01-REVIEW-FIX.md |
-| IN-03 | info | fixed | 01-REVIEW-FIX.md |
-| IN-04 | info | fixed | 01-REVIEW-FIX.md |
-| IN-05 | info | fixed | 01-REVIEW-FIX.md |
-| IN-06 | info | fixed | 01-REVIEW-FIX.md |
+| WR-01 | warning | open | - |
+| WR-02 | warning | open | - |
+| WR-03 | warning | open | - |
+| IN-01 | info | open | - |
+| IN-02 | info | open | - |
+| IN-03 | info | open | - |
+| IN-04 | info | open | - |
+| WR-04 | warning | fixed | 01-REVIEW-FIX.md (not in the current review) |
+| WR-05 | warning | skipped | 01-REVIEW-FIX.md (not in the current review) |
+| WR-06 | warning | skipped | 01-REVIEW-FIX.md (not in the current review) |
+| WR-07 | warning | fixed | 01-REVIEW-FIX.md (not in the current review) |
+| WR-08 | warning | fixed | 01-REVIEW-FIX.md (not in the current review) |
+| WR-09 | warning | fixed | 01-REVIEW-FIX.md (not in the current review) |
+| IN-05 | info | fixed | 01-REVIEW-FIX.md (not in the current review) |
+| IN-06 | info | fixed | 01-REVIEW-FIX.md (not in the current review) |
 
-Dispositions: `open`, `fixed`, `skipped`, `deferred`.
-Set `deferred` by hand and put the reason in the Source cell; both are preserved.
+Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
+Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
+Re-running the gate keeps every row it can. A row the current review no longer reports is kept and its Source cell flagged, so a finding does not leave this record silently. ONE exception: when a finding id is REUSED by a different finding, the earlier decision cannot keep a row — the id is taken — and it is dropped. A RECORDED decision (anything but `open`) is named on the console when that happens; a row still at `open` is replaced silently, because `open` records no decision to lose.
