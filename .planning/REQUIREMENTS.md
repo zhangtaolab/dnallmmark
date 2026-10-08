@@ -18,6 +18,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [ ] **REL-02**: Dependency manifests for the offline/data chain, version-pinned (`pandas>=2.2,<3.0`); GPU pipeline dependencies in a separate group that CI never installs
 - [ ] **REL-03**: README reproducibility section — literal copy-pasteable commands from repo root (install → data → aggregate → serve)
 - [ ] **REL-04**: Single-command data-regeneration chain (`make data` or equivalent) replacing the undocumented 3-step CWD-sensitive procedure
+- [ ] **REL-05**: Leaked Zenodo token (`README.md:116`) revoked before any public visibility — revocation evidence recorded, full-history secret scan (e.g., gitleaks) clean, token removed from the README
 
 ### Correctness Fixes
 
@@ -89,13 +90,50 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (to be filled by roadmap) | | |
+| AUDIT-01 | Phase 1 | Pending |
+| AUDIT-02 | Phase 1 | Pending |
+| REL-01 | Phase 1 | Pending |
+| REL-02 | Phase 1 | Pending |
+| REL-05 | Phase 1 | Pending |
+| FIX-05 | Phase 1 | Pending |
+| REL-04 | Phase 2 | Pending |
+| TEST-01 | Phase 2 | Pending |
+| TEST-02 | Phase 2 | Pending |
+| TEST-03 | Phase 2 | Pending |
+| TEST-06 | Phase 2 | Pending |
+| PIPE-01 | Phase 3 | Pending |
+| PIPE-02 | Phase 3 | Pending |
+| PIPE-03 | Phase 3 | Pending |
+| FIX-01 | Phase 4 | Pending |
+| FIX-02 | Phase 4 | Pending |
+| FIX-03 | Phase 4 | Pending |
+| FIX-04 | Phase 4 | Pending |
+| TEST-04 | Phase 5 | Pending |
+| TEST-05 | Phase 5 | Pending |
+| TEST-07 | Phase 5 | Pending |
+| DATA-01 | Phase 5 | Pending |
+| DATA-02 | Phase 5 | Pending |
+| DATA-03 | Phase 5 | Pending |
+| DATA-06 | Phase 5 | Pending |
+| REL-03 | Phase 6 | Pending |
+| DATA-04 | Phase 6 | Pending |
+| DATA-05 | Phase 6 | Pending |
+| DATA-07 | Phase 6 | Pending |
+| EXT-01 | Phase 6 | Pending |
+| EXT-02 | Phase 6 | Pending |
 
 **Coverage:**
-- v1 requirements: 30 total
-- Mapped to phases: 0
-- Unmapped: 30 ⚠️ (roadmap pending)
+- v1 requirements: 31 total (30 defined + REL-05 added at roadmap creation)
+- Mapped to phases: 31
+- Unmapped: 0 ✓
+
+**Phase mapping notes:**
+- FIX-02 (species fix) maps to Phase 4, but its failing test is scaffolded in Phase 2 per the dependency ordering — test before fix
+- PIPE-01..03 (dnallm dev adaptation) form Phase 3: Phase 2's model_performance schema defines PIPE-03's "structurally valid", and the Phase 4 species fix lands in the already-adapted pipeline so `dnallmmark_pipeline.py` is not touched twice
+- DATA-03 maps to Phase 5 where `data-v2` completes the pair; the pre-fix `data-v1` tag is created in Phase 1 under AUDIT-02
+- DATA-07 (methodology docs + dead-logic removal) is kept whole in Phase 6; the dead `recalculateComparison()` is uncalled and affects no number
+- TEST-06 schemas/contract tests are created in Phase 2 (before fixes move numbers); CI enforcement activates when Phase 5 lands CI
 
 ---
 *Requirements defined: 2026-10-08*
-*Last updated: 2026-10-08 after dnallm-dev adaptation additions (PIPE-01..03, per user; local clone verified at v0.7.1)*
+*Last updated: 2026-10-08 after roadmap creation (REL-05 added for token revocation; traceability filled — 31/31 mapped; PIPE-01..03 mapped to Phase 3)*
