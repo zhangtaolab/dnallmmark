@@ -87,7 +87,6 @@ Thumbs.db
 dnallm/models/downloads/
 dnallm/data/cache/
 dnallm/ui/tmp/
-.planning/
 
 # Jupyter Notebook tmp files
 .ipynb_checkpoints/
