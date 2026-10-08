@@ -1,0 +1,28 @@
+# Source: github.com/gitleaks/gitleaks README (config/allowlist syntax, `git` subcommand)
+title = "DNALLM-Mark secret scan — detect Zenodo preview tokens; allowlist the one intentional sharing link"
+
+[extend]
+useDefault = true
+
+# Detection rule added after empirical testing (2026-10-08): gitleaks 8.30.1's built-in
+# `jwt` rule does NOT match JWTs closed by a markdown-link ")" (verified with both the
+# real README link and synthetic tokens — caught at end-of-line, missed before ")").
+# Without this rule the allowlist below would be vacuous: the committed config would
+# detect nothing for exactly the token class it exists to watch.
+#
+# The allowlist is scoped INSIDE this rule after empirical testing of the global-block
+# form: a top-level [[allowlists]] with `paths` acts as a file-level exclusion in
+# gitleaks 8.30.1 and silences every rule's findings in README.md (a classic JWT in
+# README.md went undetected). A rule-level allowlist with the AND condition suppresses
+# only findings of THIS rule where BOTH the path and the record-scoped regex match.
+[[rules]]
+id = "zenodo-preview-token"
+description = "Zenodo record URL carrying a JWT token parameter"
+regex = '''zenodo\.org/records/[0-9]+\?[^ )"']*token=eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'''
+keywords = ["zenodo"]
+
+    [[rules.allowlists]]
+    description = "Intentional Zenodo record-19135551 preview link (maintainer decision 2026-10-08, D-08)"
+    condition = "AND"
+    paths = ['''README\.md''']
+    regexes = ['''zenodo\.org/records/19135551\?preview=1&token=''']

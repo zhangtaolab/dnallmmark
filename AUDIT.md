@@ -156,4 +156,22 @@ Recorded without severity grades per the correctness-first audit scope:
 
 ## Secret-scan evidence
 
-<!-- pending: filled by plan 01-03 task 3 -->
+Scanned 2026-10-08 with gitleaks 8.30.1 (brew-bottled, version-pinned install), full git history over **all refs** (`--log-opts="--all"`; 38 non-merge commits scanned — the 5 merge commits introduce no unique patch content).
+
+**Commands and exit codes:**
+
+1. No-allowlist probe (detection rules only, no suppression):
+   `gitleaks git --config /tmp/gitleaks-probe-config.toml --log-opts="--all" --report-path /tmp/gitleaks-probe.json .`
+   — **exit 1, exactly 1 finding**: `README.md` line 116 (RuleID `zenodo-preview-token`, introduced in commit `09fb0ae` "dnallmmark init", 2026-03-27). This is the known intentional link; its content is not reproduced here — referenced by location only.
+2. Production scan (committed config: default rules + detection rule + allowlist):
+   `gitleaks git --config .gitleaks.toml --log-opts="--all" .`
+   — **exit 0, zero findings.**
+
+**Interpretation (D-08):** the `README.md:116` Zenodo record-19135551 preview link is the intentional, record-scoped, read-only dataset-sharing mechanism (maintainer decision 2026-10-08, D-08 — kept as-is, no history rewrite, no revocation). The probe proves the scanner detects exactly that one finding and nothing else across the full history; the production scan proves the committed allowlist suppresses exactly that finding. Together: no secret exists in git history beyond the intentional, documented link.
+
+**Two empirically-driven config decisions** (the plan anticipated first-run tuning; both were verified behaviorally before committing):
+
+- **Detection rule added (`zenodo-preview-token`).** gitleaks 8.30.1's built-in `jwt` rule does not match JWTs closed by a markdown-link `)` — the exact shape of the README link (verified: the same token is caught at end-of-line but missed before a closing paren). Without the added rule the allowlist would have been vacuous and this token class undetectable by the committed config. The default ruleset stays fully active (`useDefault = true`).
+- **Rule-scoped AND allowlist instead of a global `[[allowlists]]` block.** In 8.30.1 a top-level allowlist carrying `paths` behaves as a file-level exclusion: it silenced every rule's findings in README.md (canary test: a classic JWT placed in README.md went undetected). The committed `[[rules.allowlists]]` with `condition = "AND"` suppresses only findings of the zenodo rule where BOTH the README path and the record-19135551 regex match. Canary-verified in both directions: a 19135551-shaped link in another file is caught; a different-record link inside README.md is caught; only the exact README.md + record-19135551 combination is suppressed.
+
+The probe runs with an explicit rules-only config because gitleaks auto-loads `./.gitleaks.toml` from the working directory when `--config` is omitted (the committed config would suppress the probe finding and the proof would be vacuous). The committed config at `.gitleaks.toml` is the in-repo artifact for reviewer scrutiny.
