@@ -113,6 +113,13 @@ open http://localhost:8080
 
 ### Datasets and Models Preparation
 
+<!-- Load-bearing link (do not rotate or strip casually): the Zenodo URL below
+     carries an intentional, record-scoped, read-only preview token — maintainer
+     decision D-08, see AUDIT.md "Secret-scan evidence". The .gitleaks.toml
+     allowlist exists solely to suppress this one link; any change here must
+     update that allowlist in the same commit. When Zenodo record 19135551 is
+     published, replace this with the public record DOI/URL and drop the
+     allowlist rule (tracked as a Phase 6 release item in .planning/ROADMAP.md). -->
 Before starting benchmark models on different tasks, users should first download the preseted datasets from [Zenodo](https://zenodo.org/records/19135551?preview=1&token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImVhYzE2MTJmLWQzZDMtNDMxZC04ZTc3LTkyNzk1MTQzMmIxOCIsImRhdGEiOnt9LCJyYW5kb20iOiJhZTc1OTk5N2FjNzA3MjczNzJiYzE4MGM5NDA2ZDg5YiJ9.Btz9VeF52JLK1fzuMXcBJ8ZtD1aR9sHWwNSyc20eahZjgidmlWaRZ6lImsA5Pnw8Ei9vjyGpdXCeY8JdhlntlQ), then extract the datasets to `pipeline/datasets/` directory.
 
 Detailed datasets information are listed in the `datasets_info.json` file, which is used for running the pipeline.

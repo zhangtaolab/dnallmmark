@@ -110,6 +110,7 @@ Plans:
   3. Anyone can download a data manifest (CSV/JSON) carrying full dataset metadata and direct links (ModelScope defaults, alternates included)
   4. The four aggregation methods (rank / MinMax / z-score / robust) are documented in one place, and the divergent dead logic in `js/data.js:recalculateComparison()` is gone, leaving a single authoritative implementation
   5. A maintainer can onboard a new model or dataset by following the documented process end-to-end through to "appears on the leaderboard" (mechanism validated, no new GPU runs required)
+  6. The intentional Zenodo preview-token link in `README.md` (maintainer decision D-08) is replaced with the published record DOI/URL once Zenodo record 19135551 is public, with the `.gitleaks.toml` allowlist rule removed or updated in the same commit (follow-up from phase 01 code review WR-01)
 
 **Plans**: TBD
 
