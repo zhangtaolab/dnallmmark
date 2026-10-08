@@ -306,7 +306,7 @@ def main():
 
     # -------------------- Read per-model JSON files ------------------
     print("Reading model data and extracting metrics...")
-    for filename in os.listdir(input_dir):
+    for filename in sorted(os.listdir(input_dir)):
         if not filename.endswith('.json'):
             continue
 
@@ -378,7 +378,7 @@ def main():
     )
 
     with open(output_total, "w", encoding='utf-8') as f:
-        json.dump(total_comparison, f, indent=4, ensure_ascii=False)
+        json.dump(total_comparison, f, indent=4, ensure_ascii=False, sort_keys=True)
     print(f"✅ Global comparison results saved to: {output_total}")
 
     # ---------- Step 3: Per-species aggregate comparisons ------------
@@ -405,7 +405,7 @@ def main():
             safe_species_name = singular_species.replace("/", "_").replace("\\", "_").lower()
             out_file = f'models_comparison_{safe_species_name}.json'
             with open(out_file, "w", encoding='utf-8') as f:
-                json.dump(species_comparison, f, indent=4, ensure_ascii=False)
+                json.dump(species_comparison, f, indent=4, ensure_ascii=False, sort_keys=True)
             print(
                 f"✅ Species [{species}] comparison saved to: {out_file} "
                 f"(contains {len(ds_list)} dataset(s))"

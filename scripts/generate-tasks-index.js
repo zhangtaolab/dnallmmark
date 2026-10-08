@@ -47,7 +47,6 @@ function generateTaskIndex() {
   
   const index = {
     version: '1.0.0',
-    generatedAt: new Date().toISOString().split('T')[0],
     count: tasks.length,
     tasks: tasks
   };

@@ -97,7 +97,7 @@ def main():
     print(f"Reading model data from '{input_dir}/', pivoting by dataset...")
 
     file_count = 0
-    for filename in os.listdir(input_dir):
+    for filename in sorted(os.listdir(input_dir)):
         if not filename.endswith(".json"):
             continue
 
@@ -156,7 +156,7 @@ def main():
 
         out_file = os.path.join(output_dir, f"{safe_dataset_name}_task_performance.json")
         with open(out_file, "w", encoding="utf-8") as f:
-            json.dump(ds_data, f, indent=4, ensure_ascii=False)
+            json.dump(ds_data, f, indent=4, ensure_ascii=False, sort_keys=True)
         saved_count += 1
 
     print("\n✅ Dimension conversion completed!")
