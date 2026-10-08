@@ -330,7 +330,6 @@ def main():
         }
 
         perf_data = model_data.get("performance", {})
-        cnt = 0
         for dataset_name, ds_content in perf_data.items():
             ds_meta = ds_content.get("dataset", {})
             species = str(ds_meta.get("species", "Unknown")).strip()
@@ -363,7 +362,6 @@ def main():
             if dataset_name not in raw_dataset_flops:
                 raw_dataset_flops[dataset_name] = {}
             raw_dataset_flops[dataset_name][model_alias] = flops
-            cnt += 1
 
     # ---------- Step 1: Per-task normalisation and ranking -----------
     print("Calculating normalised scores and ranks at the dataset level...")
