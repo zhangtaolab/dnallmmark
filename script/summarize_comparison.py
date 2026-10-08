@@ -346,15 +346,19 @@ def main():
             if metric_key in metric_key_map:
                 metric_key = metric_key_map[metric_key]
 
-            # Extract the model's raw score and FLOPs for this task
-            raw_score = get_float(ds_content.get("performance", {}).get(metric_key, ""))
+            # Extract the model's raw score and FLOPs for this task. raw_score
+            # is None exactly when the metric is missing under the semantics
+            # get_float documents (None, "", or whitespace-only strings).
+            raw_score = get_float(ds_content.get("performance", {}).get(metric_key, ""), default=None)
             flops = get_float(ds_content.get("performance", {}).get("FLOPs", ""))
 
-            # Only include in ranking if the metric value is present (non-empty).
-            # Models that failed or were not evaluated on a task will have an
-            # empty string for the metric and are excluded from comparison for
-            # that specific dataset.
-            if ds_content.get("performance", {}).get(metric_key, "") != "":
+            # Only include in ranking if the metric value is present. Presence
+            # is derived from get_float itself so a null or whitespace-only
+            # metric can never enter the ranking as a real 0.0 score (which
+            # would drag every other model's rank on that task). Models that
+            # failed or were not evaluated on a task are excluded from
+            # comparison for that specific dataset.
+            if raw_score is not None:
                 if dataset_name not in raw_dataset_scores:
                     raw_dataset_scores[dataset_name] = {}
                 raw_dataset_scores[dataset_name][model_alias] = raw_score
