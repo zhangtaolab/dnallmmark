@@ -7,7 +7,8 @@ values, so pin validation must go through a parsed, recursive walk.
 
 Diff classes (the complete vocabulary — both output modes use it):
 
-- ``TYPE``              — compared values have different JSON types
+- ``TYPE``              — compared values have different JSON types (including
+  equal-value int/float asymmetry, e.g. committed ``5`` vs regenerated ``5.0``)
 - ``MISSING_IN_REGEN``  — key present in committed, absent in regenerated
 - ``EXTRA_IN_REGEN``    — key present in regenerated, absent in committed
 - ``LEN``               — lists of different lengths
@@ -17,6 +18,8 @@ Diff classes (the complete vocabulary — both output modes use it):
 - ``VALUE``             — string (or other scalar) mismatch
 
 Relative delta is computed as ``abs(a - b) / max(abs(a), abs(b), 1e-300)``.
+``NaN`` on both sides compares as identical (``json.load`` parses ``NaN``
+literals, but ``NaN != NaN`` in Python).
 
 Usage (explicit paths, repo-root tooling — never CWD-relative)::
 
@@ -49,6 +52,7 @@ See also:
 
 import argparse
 import json
+import math
 import sys
 from collections import Counter
 
@@ -88,7 +92,17 @@ def walk(a, b, path, diffs):
             if a != b:
                 diffs.append(("BOOL", path, f"{a} vs {b}"))
             return
+        # json.load accepts NaN literals but NaN != NaN in Python; treat NaN on
+        # both sides as identical instead of reporting a spurious FLOAT_BIG.
+        if isinstance(a, float) and isinstance(b, float) and math.isnan(a) and math.isnan(b):
+            return
         if a == b:
+            # Equal value with asymmetric int/float types (committed 5 vs regen
+            # 5.0) is a real JSON byte/type change — e.g. numpy.float64 leaking
+            # into count fields serializes as a float — so report it as TYPE
+            # instead of staying silent.
+            if isinstance(a, float) != isinstance(b, float):
+                diffs.append(("TYPE", path, f"{type(a).__name__} vs {type(b).__name__}"))
             return
         rel = abs(a - b) / max(abs(a), abs(b), 1e-300)
         if rel < 1e-12:
