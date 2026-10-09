@@ -85,11 +85,13 @@ Plans:
 - [ ] 03-01-PLAN.md — D-01 merge of origin/dev@c6b3137 (51 data conflicts to HEAD, 6 dev-added data files removed) + F10 old-pipeline deprecation/README entry-point rename + D-03 species-lock pivot to the export-chain contract + D-04 frontend diff review of commit 8d99daf (REV-10)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 03-02-PLAN.md — F1 dev splits: script/make_dev_splits.py (stratified 10%, seed=42, numpy) carving the 18 Dev-empty tasks, both registries updated (CRLF preserved), run_finetune.py refusal guard + source-contract tests (REV-01)
-- [ ] 03-03-PLAN.md — [pipeline]→[gpu] pyproject group (torch==2.11.0 cu130, transformers==5.17.0, definition only per D-05) + ty toolchain wiring + make typecheck + PlantHelixSeek models_info entry from the D-09 ModelScope card (PIPE-02, PIPE-03)
+- [ ] 03-02-PLAN.md — D-10 registry unification to single-source JSON (convert_registry.py ingest + tested extensions, run_finetune.py json read site, both .txt registries retired, D-03 Category retarget, single-source contract test) + F1 dev splits: make_dev_splits.py carving the 18 Dev-empty tasks, unified registry updated, run_finetune.py refusal guard + source-contract tests (REV-01)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 03-04-PLAN.md — F2/G1 seed-isolated output dirs + D-07 grad_accum per-dataset reset in run_finetune.py + pipeline/run_sweep.py matrix driver (--dry-run, run_record/failure/manifest, suite-native metric keys) + D-08 all 16 ruff findings fixed + widened make lint (REV-02)
+- [ ] 03-03-PLAN.md — [pipeline]→[gpu] pyproject group (torch==2.11.0 cu130, transformers==5.17.0, definition only per D-05) + ty toolchain wiring + make typecheck + PlantHelixSeek card fill in the unified 62-entry registry from the D-09 ModelScope card (PIPE-02, PIPE-03)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 03-04-PLAN.md — F2/G1 seed-isolated output dirs + D-11 per-model base-config reload (cross-model head-config leak) + D-07 grad_accum per-dataset reset in run_finetune.py + pipeline/run_sweep.py matrix driver over the unified json registries (--dry-run, run_record/failure/manifest, suite-native metric keys) + D-08 ruff findings fixed fresh + widened make lint (REV-02)
 **Decisions carried from the 2026-10-09 discussion**: dedicated new uv venv (not DNALLM/.venv reuse); pyproject `[gpu]` dependency-group + uv.lock as the lock carrier; E2E pair = the two maintainer-named models × PlantCAD2__on_off; on-disk datasets are double-nested from unzip and get normalized during setup.
 
 ### Phase 4: Correctness & Methodology Core
