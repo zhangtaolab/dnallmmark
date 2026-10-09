@@ -4,16 +4,16 @@ milestone: v0.7.1
 current_phase: 2
 current_phase_name: Data Contracts & Test Harness
 status: executing
-stopped_at: Completed 02-01-PLAN.md (schemas + harness + make data proven)
-last_updated: "2026-10-09T03:45:34.261Z"
+stopped_at: Completed 02-02-PLAN.md (synthetic test corpus + goldens + JS lane)
+last_updated: "2026-10-09T04:04:04.010Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 2 execution started
-state_head: 5c556a9eb0f4208208d3b966fe9c10fc90d5cdee
+state_head: ba2348f1efcda0236f199ea588c25a4bc83810b9
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 ## Current Position
 
 Phase: 2 (Data Contracts & Test Harness) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-10-09 — Phase 2 execution started
 
@@ -60,6 +60,7 @@ Progress: [██░░░░░░░░] 17% (1/6 phases)
 | Phase 01 P02 | 15 min | 3 tasks | 1 files |
 | Phase 01 P03 | 16 min | 3 tasks | 59 files |
 | Phase 02 P02-01 | 6 min | 3 tasks | 11 files |
+| Phase 02 P02 | 14 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,7 @@ Recent decisions affecting current work:
 - [Phase 01]: License landed: MIT for code (LICENSE + README section, atomic with CC BY 4.0 derived-data terms and upstream-terms disclaimer); copyright holder confirmed by maintainer 2026-10-09 as 'zhangtaolab and DNALLM-Mark contributors' (D-09 resolved in UAT)
 - [Phase 02]: Plan 02-01: self-contained schema files (defs duplicated, no cross-file $ref) — per-file strictness, local forced versioning (resolved Open Question 1)
 - [Phase 02]: Plan 02-01: make test excludes node --test until tests/js/ exists in plan 02-02; lint scope tests/-only this phase (D-04, ~21 pre-existing production findings deferred with Makefile comment)
+- [Phase 02]: Plan 02-02: constant-score guard test uses binary-exact 0.5 (np.std([0.7]*3) is one ULP > 0, so the std==0 guard never fires for decimal constants); gamma aggregate total asserted as 0 (plan's '=1' slip); goldens chain-produced and walk()-compared
 
 ### Pending Todos
 
@@ -104,6 +106,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T03:45:34.235Z
-Stopped at: Completed 02-01-PLAN.md (schemas + harness + make data proven)
+Last session: 2026-10-09T04:04:03.984Z
+Stopped at: Completed 02-02-PLAN.md (synthetic test corpus + goldens + JS lane)
 Resume file: None
