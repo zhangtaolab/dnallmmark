@@ -18,7 +18,11 @@ Every behavior bullet of the plan's Task 2 is pinned here:
   0 WITHOUT writing ``final_metrics.json`` is likewise ``failed`` with a
   missing-metrics error and a failures entry (CR-02:
   run_finetune.py's blind-except isolation makes training failures exit
-  0, so the missing file is the failure signal); a pre-existing
+  0, so the missing file is the failure signal); a fake that writes a
+  TRUNCATED ``final_metrics.json`` fails only that cell — the sweep
+  continues, the remaining cells still run, and the manifest is still
+  written (WR-11: child-data corruption is a failed cell, not a driver
+  bug that aborts the sweep); a pre-existing
   ``trainer_state.json`` yields status ``skipped`` with NO executor
   invocation — and the skip is seed-scoped (seed 43 still runs when seed
   42's marker exists in the sibling dir);
@@ -278,6 +282,60 @@ def test_run_matrix_exit0_without_metrics_is_failure(tmp_path):
     manifest = json.loads(
         (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
     assert manifest["cells"][0]["status"] == "failed"
+
+
+def test_run_matrix_corrupt_metrics_file_fails_cell_not_sweep(tmp_path):
+    """WR-11: a final_metrics.json that is present but not valid JSON (the
+    child writes it inside its blind-except scope, so a mid-write death —
+    e.g. disk full — can leave a truncated file with the child still
+    exiting 0) fails only THAT cell, recorded failed with a corrupt-file
+    error and a failures-manifest entry; the sweep CONTINUES — the
+    remaining cells still run and the manifest is still written — instead
+    of an uncaught JSONDecodeError aborting the entire sweep."""
+    out_root = tmp_path / "sweep-out"
+
+    def corrupting_executor(model, task, seed, output_root):
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        if seed == 42:
+            # Truncated JSON — exactly what a mid-write death leaves on
+            # disk: present, non-empty, and not parseable.
+            (cell_dir / "final_metrics.json").write_text(
+                '{"eval_AUROC": 0.91', encoding="utf-8")
+        else:
+            (cell_dir / "final_metrics.json").write_text(
+                json.dumps(SUITE_NATIVE_METRICS, indent=4), encoding="utf-8")
+
+    records = run_sweep.run_matrix(
+        [("model-a", "task-x", 42), ("model-a", "task-x", 43)],
+        out_root, executor=corrupting_executor)
+    statuses = {record["seed"]: record["status"] for record in records}
+    assert statuses[42] == "failed", (
+        "a corrupt final_metrics.json is a failed cell — child-data "
+        "corruption, not a driver/executor bug that aborts the sweep"
+    )
+    assert statuses[43] == "completed", (
+        "the sweep must continue past the corrupt cell — the remaining "
+        "cells still run"
+    )
+    assert records[0]["metrics"] is None
+    assert "corrupt" in records[0]["error"], (
+        "the error must say the metrics file is corrupt, not attribute "
+        "the failure to a swallowed training failure (the file exists)"
+    )
+    failures = json.loads(
+        (out_root / "sweep_failures.json").read_text(encoding="utf-8"))
+    assert len(failures) == 1
+    assert failures[0]["seed"] == 42
+    assert failures[0]["error"] == records[0]["error"]
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert [c["status"] for c in manifest["cells"]] == [
+        "failed", "completed"], (
+        "the manifest must be written even when a cell's metrics file is "
+        "corrupt — pre-fix, the JSONDecodeError aborted the sweep before "
+        "the manifest existed"
+    )
 
 
 def test_run_matrix_resume_marker_is_seed_scoped(tmp_path):

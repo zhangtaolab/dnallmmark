@@ -80,8 +80,14 @@ Failure boundary:
     no ``final_metrics.json`` (CR-02): ``run_finetune.py``'s designed
     blind-except isolation (D-08) swallows a training failure and still
     exits 0 without writing metrics, so the missing file is the only
-    reliable training-failure signal from the child. Any other exception
-    is a driver/executor BUG and aborts the sweep loudly instead of being
+    reliable training-failure signal from the child — OR when the file
+    is present but not valid JSON (WR-11): the child writes it inside
+    its D-08 blind-except scope, so a mid-write death (e.g. disk full)
+    can leave a truncated file with the child still exiting 0 —
+    child-data corruption, not a driver bug, so it fails the cell and
+    the sweep continues instead of an uncaught ``JSONDecodeError``
+    aborting every remaining cell. Any other exception is a
+    driver/executor BUG and aborts the sweep loudly instead of being
     recorded across thousands of cells (and no blind ``except Exception``
     is introduced: D-08 forbids noqa outside run_finetune.py's three
     designed isolation sites).
@@ -396,7 +402,11 @@ def run_matrix(cells, output_root, executor=None):
     0 but the cell dir has no final_metrics.json (CR-02:
     run_finetune.py's blind-except isolation makes a training failure
     exit 0 without writing metrics, so the missing file — not the exit
-    status — is the training-failure signal). sweep_failures.json is
+    status — is the training-failure signal) OR when final_metrics.json
+    is present but not valid JSON (WR-11: the child writes it inside
+    its blind-except scope, so a mid-write death can leave a truncated
+    file with the child still exiting 0 — the cell fails and the sweep
+    continues). sweep_failures.json is
     written on EVERY run — an empty list when no cell failed — so a
     stale failures manifest can never outlive its sweep (WR-06).
 
@@ -455,9 +465,31 @@ def run_matrix(cells, output_root, executor=None):
                         "error": record["error"],
                     })
                 else:
-                    record["status"] = "completed"
-                    with open(metrics_path, "r", encoding="utf-8") as f:
-                        record["metrics"] = json.load(f)
+                    try:
+                        with open(metrics_path, "r", encoding="utf-8") as f:
+                            record["metrics"] = json.load(f)
+                        record["status"] = "completed"
+                    except json.JSONDecodeError as exc:
+                        # WR-11: run_finetune.py writes final_metrics.json
+                        # inside its D-08 blind-except scope, so a
+                        # mid-write death (e.g. disk full) can leave a
+                        # truncated file with the child still exiting 0 —
+                        # child-data corruption, not a driver bug. Fail
+                        # the cell and continue the sweep instead of
+                        # letting the decode error abort every remaining
+                        # cell with no manifest ever written.
+                        record["status"] = "failed"
+                        record["error"] = (
+                            "final_metrics.json is corrupt/unreadable "
+                            f"({exc}); the child left a partial file"
+                        )
+                        failures.append({
+                            "model": model,
+                            "task": task,
+                            "seed": seed,
+                            "output_dir": str(cell_dir),
+                            "error": record["error"],
+                        })
             except (subprocess.SubprocessError, OSError) as exc:
                 record["status"] = "failed"
                 record["error"] = f"{type(exc).__name__}: {exc}"
