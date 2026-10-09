@@ -1,0 +1,40 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-10-09T08:49:35.246Z",
+  "phase": "3",
+  "phase_name": "dev-reconciliation-revision-blockers",
+  "phase_dir": ".planning/phases/03-dev-reconciliation-revision-blockers",
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "Phase 1 verification+UAT+SECURITY+transition", "status": "done", "commit": "eb71ba1"},
+    {"id": 2, "name": "Phase 2 discuss→plan→execute(3 plans)→3-round review convergence→UAT→SECURITY→verify passed→complete", "status": "done", "commit": "cdf1c6d"},
+    {"id": 3, "name": "Phase 2 learnings extraction + estimate calibration (factor 0.5, 6 samples)", "status": "done", "commit": "c3fdd87"},
+    {"id": 4, "name": "Manuscript-revision plan F1-F10 integrated into ROADMAP (phases 3-6 restructured, REV-01..10, PIPE-01 absorbed)", "status": "done", "commit": "8bab66b"},
+    {"id": 5, "name": "Phase 3 discuss: gray areas presented (4 areas), user selection PENDING", "status": "in_progress", "progress": "3 pre-restructure decisions settled (GPU env=dedicated venv, lock=pyproject [gpu]+uv.lock, E2E pair=plant-dnamamba-6mer+PlantHelixSeek×PlantCAD2__on_off) and recorded in ROADMAP Phase 3 notes; 4 NEW gray areas presented at session end awaiting numbered selection"}
+  ],
+  "remaining_tasks": [
+    {"id": 6, "name": "Phase 3 discuss completion (user selects gray areas → deep-dive → 03-CONTEXT.md)", "status": "not_started"},
+    {"id": 7, "name": "/gsd-plan-phase 3 (revision timeline: 10-22 freeze, F1→F2→E2' critical path)", "status": "not_started"},
+    {"id": 8, "name": "/gsd-execute-phase 3", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "Phase 3 gray-area selection unanswered (4 areas presented in final message of 2026-10-09 session)", "type": "human_action", "workaround": "Resume presents the same 4 areas for numbered selection"}
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {"action": "Select which Phase 3 gray areas to discuss (areas 1-4, multi-select by number)", "context": "Area 1 merge strategy + derived-data-tree choice is the load-bearing decision; areas 2-4 are anchor-migration shape, dataset double-nesting normalization, dev frontend-diff handling", "blocking": true}
+  ],
+  "decisions": [
+    {"decision": "Revision plan F1-F10 folded into ROADMAP as restructured phases 3-6; REV-01..10 requirements added; PIPE-01 marked absorbed by dev-branch rewrite", "rationale": "User chose formal roadmap integration over ad-hoc quick tasks; 10-22 freeze timeline", "phase": "3"},
+    {"decision": "GPU env = NEW dedicated uv venv (not DNALLM/.venv reuse); dnallm@0.7.1 from local clone; torch 2.11.0+cu130/transformers 5.17.0 pinned per verified combo", "rationale": "PIPE-02 reproducibility + DNALLM/.venv has stale dnallm 0.6.0", "phase": "3"},
+    {"decision": "Lock carrier = pyproject [gpu] dependency-group + uv.lock", "rationale": "Same substrate as Phase 1; GPU group never CI-installed", "phase": "3"},
+    {"decision": "E2E validation pair = plant-dnamamba-6mer + PlantHelixSeek (models_info entry to add in-phase, serving AUD-05) × PlantCAD2__cross_species_leaf_on_off_translation", "rationale": "Maintainer-named real leaderboard models; smallest on-disk plant dataset", "phase": "3"},
+    {"decision": "Discovered during scouting: dev@c6b3137 carries its own REGENERATED derived data (all 51 files differ; ~+126 lines/task file = new model rows incl. CrossDNA) + js/main.js 79-line change", "rationale": "Makes the data-tree take-ours-vs-take-theirs decision the top Phase 3 gray area", "phase": "3"}
+  ],
+  "uncommitted_files": ["?? .planning/WINDOWS.md", "?? .planning/estimation-calibration.json", "?? .planning/phases/02-data-contracts-test-harness/02-PATTERNS.md", "?? .planning/research/.cache/ (5 files)", "?? .planning/state.json"],
+  "next_action": "Re-present the 4 Phase 3 gray areas for numbered selection (merge strategy/data-tree choice, AST anchor migration shape, dataset double-nesting normalization, dev frontend-diff handling), then continue the discuss-phase flow to 03-CONTEXT.md",
+  "context_notes": "The user works in Chinese, answers decisively by number, and delegates verification ('你来检查/你来检测') expecting me to gather evidence and present a recommendation before their pass. AskUserQuestion option text corrupted twice this session — plain-text numbered questions are the established workaround. The gray-area presentation with the merge-conflict evidence was the session's final message."
+}
