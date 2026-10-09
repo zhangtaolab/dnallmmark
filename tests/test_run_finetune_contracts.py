@@ -46,6 +46,10 @@ files). The contracts asserted here are textual/structural:
   before ``DNATrainer`` construction, so the global ``bf16: True`` in
   ``finetune_config.yaml`` never trains those registry models in
   reduced precision.
+- **dataset presence guard (WR-02)** — an ``os.path.isdir(dataset_path)``
+  skip-guard precedes ``DNADataset.load_local_data`` so an unlocatable
+  dataset dir (a documented expected state) logs and continues instead of
+  aborting the whole model loop.
 
 See also:
     ``script/make_dev_splits.py`` — the remediation the guard names.
@@ -267,4 +271,27 @@ def test_fp32_only_models_forced_to_full_precision():
         "the fp32 override must precede DNATrainer construction "
         f"(override at {override_idx}, trainer at {trainer_idx}) so the "
         "trainer never sees reduced-precision flags for these models"
+    )
+
+
+def test_dataset_presence_guard_precedes_dataset_load():
+    """WR-02: the dataset-dir presence guard (ported from the deprecated
+    pipeline's os.path.exists check) precedes the DNADataset.load_local_data
+    call site — an unlocatable dataset dir is a documented expected state
+    (the suite double-nesting unzip quirk) and must log + continue to the
+    next dataset, never raise an uncaught exception that kills the model
+    loop."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    guard_idx = src.find("if not os.path.isdir(dataset_path):")
+    assert guard_idx != -1, (
+        "no dataset-presence guard (WR-02) — DNADataset.load_local_data "
+        "would raise an uncaught exception for an unlocatable dataset dir "
+        "and kill the rest of the model loop"
+    )
+    load_idx = src.find("DNADataset.load_local_data(")
+    assert load_idx != -1, "no DNADataset.load_local_data call site found"
+    assert guard_idx < load_idx, (
+        "the presence guard must precede the dataset load "
+        f"(guard at {guard_idx}, load at {load_idx}) — a guard after the "
+        "load cannot protect it"
     )

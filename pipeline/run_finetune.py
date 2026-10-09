@@ -499,6 +499,23 @@ if __name__ == "__main__":
                         "script/make_dev_splits.py."
                     )
 
+                # Check data presence (WR-02, ported from the deprecated
+                # pipeline's guard): an unlocatable dataset dir is a
+                # documented, expected state (run_sweep.py records the
+                # suite double-nesting unzip quirk deferred to the E2E
+                # gate), so skip with a log line instead of letting
+                # DNADataset.load_local_data raise an uncaught exception
+                # that kills the whole model loop.
+                if not os.path.isdir(dataset_path):
+                    current_time = get_current_time()
+                    message = (
+                        f"[{current_time}] Dataset dir not found for "
+                        f"{dataset_name}: {dataset_path} — skipping"
+                    )
+                    print(message)
+                    print(message, file=error_log)
+                    continue
+
                 # Set task-specific configurations
                 configs["task"].num_labels = row["labels"]
                 configs["task"].label_names = [str(i) for i in range(row["labels"])]
