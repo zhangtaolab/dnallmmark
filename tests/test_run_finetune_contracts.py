@@ -49,8 +49,8 @@ See also:
     on this seed-isolated layout contract.
 """
 
-from pathlib import Path
 import re
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUN_FINETUNE = REPO_ROOT / "pipeline" / "run_finetune.py"
