@@ -56,7 +56,14 @@ Plans:
   4. Golden-file tests pass over a synthetic fixture tree, and a determinism regression test re-runs the chain expecting byte-identical output
   5. The suite is stable by construction — float assertions carry explicit tolerances (`pytest.approx`) and thread counts are pinned in conftest — so repeated local runs do not flake
 
-**Plans**: TBD
+**Plans**: 3/3 plans planned
+Plans:
+**Wave 1**
+- [ ] 02-01-PLAN.md — Four fully-strict JSON Schemas + 94-file schema validation suite + dev group/Makefile entry points (make data/test/test-fast/lint) + D-08 micro-fixes; make data proven zero-diff (REL-04, TEST-06, TEST-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 02-02-PLAN.md — Synthetic fixture tree (tie/missing-metric/regression/species-group edges) + aggregation/pivot unit tests + golden files via compare.walk + node:test JS suite; make test runs Python+JS (TEST-01, TEST-02, TEST-03)
+- [ ] 02-03-PLAN.md — Real-tree determinism regression (chain ×2 byte-identical + regeneration == committed, slow-marked) + xfail(strict=True) locks for AUD-01-P0/WR-02/WR-03; full make test green (TEST-03, TEST-02)
 
 ### Phase 3: Pipeline Adaptation to dnallm Dev
 
