@@ -187,9 +187,10 @@ def test_run_matrix_completed_copies_metrics_verbatim(tmp_path):
         .read_text(encoding="utf-8"))
     assert disk["status"] == "completed"
     assert disk["metrics"] == SUITE_NATIVE_METRICS
-    assert list(disk["metrics"]) == list(SUITE_NATIVE_METRICS), (
-        "key ORDER and identity must be verbatim (sort_keys only sorts the "
-        "serialized form — no key renaming may occur)"
+    assert sorted(disk["metrics"]) == sorted(SUITE_NATIVE_METRICS), (
+        "key identity must be verbatim — same key set, no renaming "
+        "(on-disk order is sorted by the sort_keys write discipline; the "
+        "in-memory record above preserves the final_metrics source order)"
     )
     manifest = json.loads(
         (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
