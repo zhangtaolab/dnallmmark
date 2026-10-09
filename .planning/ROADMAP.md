@@ -79,7 +79,7 @@ Plans:
   6. [DEFERRED 2026-10-09 — no model runs until the DNALLM suite stabilizes] The GPU pipeline environment is reproducibly buildable (PIPE-02): dedicated uv venv on the GB10 machine, dnallm@0.7.1 from the local clone, torch/transformers pinned to the verified combination (2.11.0+cu130 / 5.17.0), locked in pyproject `[gpu]` group + uv.lock, documented rebuild commands. THIS PHASE lands only the pyproject `[gpu]` group definition as code (no install)
   7. [DEFERRED 2026-10-09 — with PIPE-02, until model runs resume] Two end-to-end runs complete on the new pipeline (PIPE-03): plant-dnamamba-6mer and PlantHelixSeek each fine-tune on PlantCAD2__cross_species_leaf_on_off_translation and produce `{model}_performance.json` validating against the Phase 2 schema. THIS PHASE lands PlantHelixSeek's models_info entry as metadata only (AUD-05 groundwork)
 
-**Plans**: 2/4 plans executed planned
+**Plans**: 3/4 plans executed planned
 Plans:
 **Wave 1**
 - [x] 03-01-PLAN.md — D-01 merge of origin/dev@c6b3137 (51 data conflicts to HEAD, 6 dev-added data files removed) + F10 old-pipeline deprecation/README entry-point rename + D-03 species-lock pivot to the export-chain contract + D-04 frontend diff review of commit 8d99daf (REV-10)
@@ -88,7 +88,7 @@ Plans:
 - [x] 03-02-PLAN.md — D-10 registry unification to single-source JSON (convert_registry.py ingest + tested extensions, run_finetune.py json read site, both .txt registries retired, D-03 Category retarget, single-source contract test) + F1 dev splits: make_dev_splits.py carving the 18 Dev-empty tasks, unified registry updated, run_finetune.py refusal guard + source-contract tests (REV-01)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 03-03-PLAN.md — [pipeline]→[gpu] pyproject group (torch==2.11.0 cu130, transformers==5.17.0, definition only per D-05) + ty toolchain wiring + make typecheck + PlantHelixSeek card fill in the unified 62-entry registry from the D-09 ModelScope card (PIPE-02, PIPE-03)
+- [x] 03-03-PLAN.md — [pipeline]→[gpu] pyproject group (torch==2.11.0 cu130, transformers==5.17.0, definition only per D-05) + ty toolchain wiring + make typecheck + PlantHelixSeek card fill in the unified 62-entry registry from the D-09 ModelScope card (PIPE-02, PIPE-03)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 03-04-PLAN.md — F2/G1 seed-isolated output dirs + D-11 per-model base-config reload (cross-model head-config leak) + D-07 grad_accum per-dataset reset in run_finetune.py + pipeline/run_sweep.py matrix driver over the unified json registries (--dry-run, run_record/failure/manifest, suite-native metric keys) + D-08 ruff findings fixed fresh + widened make lint (REV-02)
@@ -152,7 +152,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Audit & Release Foundations | 3/3 | Complete    | 2026-10-09 |
 | 2. Data Contracts & Test Harness | 3/3 | Complete    | 2026-10-09 |
-| 3. Pipeline Adaptation to dnallm Dev | 2/4 | In Progress | - |
+| 3. Pipeline Adaptation to dnallm Dev | 3/4 | In Progress | - |
 | 4. Correctness Fixes | 0/TBD | Not started | - |
 | 5. CI & Verified Data Migration | 0/TBD | Not started | - |
 | 6. Release Packaging & Provenance | 0/TBD | Not started | - |

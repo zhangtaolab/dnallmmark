@@ -4,16 +4,16 @@ milestone: v0.7.1
 current_phase: 03
 current_phase_name: Dev-Branch Reconciliation & P0 Revision Blockers
 status: executing
-stopped_at: Completed 03-02-PLAN.md (D-10 unification, F1 dev splits, EVAL-01 refusal guard)
-last_updated: "2026-10-09T16:58:02.085Z"
+stopped_at: "Completed 03-03-PLAN.md (PIPE-02/03 deferred metadata: [gpu] group + ty toolchain + PlantHelixSeek card)"
+last_updated: "2026-10-09T17:10:04.540Z"
 last_activity: 2026-10-10
 last_activity_desc: Phase 03 execution started
-state_head: 883eafb3e35b05e2df11b401ebb10986bab75824
+state_head: 4248e54af059fa4ae8b1abe40d426c3e734fe86b
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 10
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 ## Current Position
 
 Phase: 03 (Dev-Branch Reconciliation & P0 Revision Blockers) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-10-10 — Phase 03 execution started
 
@@ -65,6 +65,7 @@ Progress: [███░░░░░░░] 33% (1/6 phases)
 | Phase 02 P03 | 7 min | 2 tasks | 2 files |
 | Phase 03 P01 | 15 min | 3 tasks | 7 files |
 | Phase 03 P02 | 19 min | 3 tasks | 13 files |
+| Phase 03 P03 | 10 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,9 @@ Recent decisions affecting current work:
 - [Phase 03]: [Phase 03]: 03-02: D-10 unification — name-column lands as a field on every merged entry (key == Model_name/Dataset_name), required by the dict read site; converter extensions --rename-name (merge-key + cell rewrite) and --derive-operational (card-only entries) were the only conversion code authored
 - [Phase 03]: [Phase 03]: 03-02: registry counts are disk-authoritative — 5 stale dev-side counts corrected (4 Train + 4 Test header-inclusive on Deep4mC x3/iPro-WAEL; BEND Dev/Test transposed); --check extended to verify Train/Dev/Test against disk, 7 unlocatable GUE dirs (partial extraction) WARNING-excluded to the E2E gate
 - [Phase 03]: [Phase 03]: 03-02: REFUSED guard sits after the selection filters and before task-config/model load (fires only for datasets that would actually run, still precedes load_model_and_tokenizer and data_dict); two-layer EVAL-01 enforcement closed — suite opt-in contract + driver fail-fast + config purity (allow_test_as_eval never set)
+- [Phase 03]: [Phase 03]: 03-03: [gpu] group replaces [pipeline] with exact pins torch==2.11.0+cu130 / transformers==5.17.0 via the explicit torch-scoped pytorch-cu130 index (T-03-07) — definition-only per D-05, never synced; dev env provably torch-free; uv.lock re-resolved same-commit
+- [Phase 03]: [Phase 03]: 03-03: ty 0.0.85 joins dev group with [tool.ty] config + make typecheck zero-diagnostics gate; torch_npu.** added empirically to replace-imports-with-any (research glob missed run_finetune.py:44 Huawei NPU import)
+- [Phase 03]: [Phase 03]: 03-03: PlantHelixSeek card filled from the D-09 ModelScope card inside the unified registry — 62 entries unchanged, complete cards 44->45, card-absent enumeration 18->17 (plan's post-fill '44 complete' was the stale pre-fill count; 62-17=45); PIPE-02/PIPE-03 deliberately stay Pending — only their D-05 deferred metadata form landed
 
 ### Pending Todos
 
@@ -120,6 +124,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T16:58:02.052Z
-Stopped at: Completed 03-02-PLAN.md (D-10 unification, F1 dev splits, EVAL-01 refusal guard)
+Last session: 2026-10-09T17:10:04.505Z
+Stopped at: Completed 03-03-PLAN.md (PIPE-02/03 deferred metadata: [gpu] group + ty toolchain + PlantHelixSeek card)
 Resume file: None
