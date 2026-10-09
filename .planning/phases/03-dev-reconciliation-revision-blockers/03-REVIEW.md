@@ -1,6 +1,6 @@
 ---
 phase: 03-dev-reconciliation-revision-blockers
-reviewed: 2026-10-10T00:00:00Z
+reviewed: 2026-10-09T18:25:47Z
 depth: standard
 files_reviewed: 19
 files_reviewed_list:
@@ -24,200 +24,177 @@ files_reviewed_list:
   - tests/test_run_finetune_contracts.py
   - tests/test_sweep.py
 findings:
-  critical: 2
-  warning: 10
-  info: 6
-  total: 18
+  critical: 0
+  warning: 1
+  info: 11
+  total: 12
 status: issues_found
 ---
 
-# Phase 3: Code Review Report
+# Phase 3: Code Review Report (iteration 3 — convergence check)
 
-**Reviewed:** 2026-10-10
+**Reviewed:** 2026-10-09
 **Depth:** standard
-**Files Reviewed:** 19 (uv.lock excluded per scope rules — generated lockfile, spot-checked for consistency with pyproject only)
+**Files Reviewed:** 19 (same scope as iterations 1-2)
 **Status:** issues_found
 
 ## Summary
 
-The phase's core deliverables are largely solid and verifiably green: I re-ran
-`pytest -m "not slow"` (177 passed + 5 xfailed, matching the claimed 178 full-lane),
-`ruff check` and `ty check` over the declared scopes — both clean. The unified
-registries verify exactly against their pinned contracts (62 models / 50 datasets,
-`key == Model_name`/`Dataset_name` everywhere, operational fields complete, all
-Train/Dev/Test/Index/length/labels are ints > 0, and both files byte-roundtrip under
-the `indent=4, sort_keys=True, ensure_ascii=False` + trailing-newline discipline).
-The registry unification (D-10), dev-split carving policy (F1), seed-isolated
-outdirs (G1), and the sweep driver's argv/cwd subprocess contract all hold up under
-direct inspection. Two of the phase's flagged sensitivities are confirmed as real
-latent defects (grad_accum snapshot placement; special-model handling lost in the
-active pipeline), and the sweep's failure accounting has a gap that mislabels failed
-trainings as `completed`.
+Iteration-3 convergence re-review after fix iteration 2 (commits `062f72e`,
+`43acfa8`, `dbabb8b` — WR-11 corrupt-metrics cell failure, WR-12 record
+preservation on skip, WR-13 metrics-before-marker ordering). All three fixes
+were verified **at the source level and at the behavior level** — each is
+correct, complete against its stated scope, and regression-free (details
+below). Gates re-run directly by this review, all green:
 
-The two central problems, both worth fixing before any real sweep runs:
+- `pytest` (full lane): **186 passed + 5 xfailed** (fast lane: 185 passed +
+  1 slow deselected — the count delta vs iteration 2's 183 full-lane is
+  exactly the three new regression tests, i.e. the test diffs are purely
+  additive)
+- `node --test tests/js/`: **fail 0**
+- `ruff check tests/ script/make_dev_splits.py pipeline/run_finetune.py
+  pipeline/run_sweep.py`: **All checks passed**
+- `ty check script/ baseline/ tests/ scripts/ pipeline/run_sweep.py`:
+  **All checks passed**
 
-1. **The active entry point lost model-quirk handling that this same phase
-   re-affirmed in the deprecated file.** The phase commit added the three CrossDNA
-   models to the *deprecated* pipeline's `models_only_support_fp32` list, while
-   `run_finetune.py` — the file the sweep actually launches — has no fp32 handling
-   at all and the global config sets `bf16: True` (CR-01), plus three more
-   unported/diverged quirk registries (WR-03, WR-04).
-2. **`run_sweep.py` records `completed` for cells whose training actually failed**,
-   because `run_finetune.py`'s designed blind-except isolation makes the subprocess
-   exit 0 after a training failure (CR-02).
+Since iteration 2's review, exactly three commits landed, touching
+`pipeline/run_sweep.py`, `pipeline/run_finetune.py`, `tests/test_sweep.py`,
+and `tests/test_run_finetune_contracts.py` — all four files were re-read in
+full at current HEAD; the other 15 in-scope files are byte-identical to what
+iterations 1-2 reviewed at standard depth.
 
-Known, deliberately-locked defects (AUD-01 species-as-dataset at
-`pipeline/dnallmmark_pipeline.py:1248`, WR-02 bool/int comparator silence, WR-03
-non-finite `get_float` pass-through) are pinned by `xfail(strict=True)` locks in
-`tests/test_known_defects.py` and routed to Phase 4 — they are not re-reported here
-as new findings.
+The convergence hunt found **one new Warning**: the WR-07 fail-fast fix
+established the invariant that a filter value which would run a surprising
+matrix must abort, but degenerate all-empty-element values bypass it in both
+directions — `--models ,`/`--tasks ,` silently invert to the FULL registry
+matrix (empirically: 3100 cells), and `--seeds ""`/`--seeds ,` silently
+enumerate 0 cells, write a manifest, and exit 0 (empirically confirmed).
+Three new Info items were also recorded (IN-09..IN-11); none escalate a
+documented-open item.
 
-## Critical Issues
+Out-of-scope items honored and NOT re-reported: WR-03/WR-04 (quirk-parity
+surface) remain maintainer-sanctioned Phase-4 deferrals; WR-09 stands
+resolved as false premise; the three `xfail(strict=True)` locks in
+`tests/test_known_defects.py` (AUD-01 species, comparator bool/int,
+non-finite `get_float`) are intact and routed to Phase 4; IN-01..IN-08 remain
+documented-open Info findings (carried below, none escalated).
 
-### CR-01: fp32-only model handling absent from the active entry point while the same phase added CrossDNA to the deprecated file's fp32 list
+### Iteration-2 fix verification
 
-**File:** `pipeline/run_finetune.py:383-397` (special-case lists), `pipeline/finetune_config.yaml:53` (`bf16: True`); contrast `pipeline/dnallmmark_pipeline.py:881-883` and `pipeline/dnallmmark_pipeline.py:1355-1360`
-**Issue:** The legacy pipeline forces `configs["finetune"].fp16 = False; configs["finetune"].bf16 = False` for `models_only_support_fp32` — and this phase's own commit added `CrossDNA_8.1M`, `CrossDNA_71.6M`, `CrossDNA_519M` to that list (alongside `Jamba-DNA-v1-114M-hg38`), asserting these four registry models cannot train in reduced precision. `run_finetune.py` — the benchmark entry point the sweep driver launches — carries no fp32 handling whatsoever, and `finetune_config.yaml` sets `bf16: True` globally. When `run_sweep.py` enumerates the full 62-model matrix, these four models train under bf16: either the run fails (swallowed by the blind except at `run_finetune.py:760`, compounding CR-02) or it produces numerically degraded results that would flow toward the leaderboard — against the project's core value that every published number is correct.
-**Fix:** Port the override into `run_finetune.py`'s dataset loop (near the safetensors block at line 549):
+| Fix | Verdict | Evidence |
+|---|---|---|
+| WR-11 corrupt final_metrics.json fails the cell, not the sweep | **Correct + complete** | `run_sweep.py:476-500`: `json.load` now sits inside its own `try`, and `status = "completed"` is assigned only AFTER a successful load (an ordering improvement over the suggested patch — a decode failure can no longer leave a completed status behind). The `except json.JSONDecodeError` branch records `failed` with a corrupt-file cause string distinct from the missing-metrics cause, appends to `failures`, and the sweep continues; the outer launch-seam handler (`subprocess.SubprocessError`/`OSError`, line 501) and the "any other exception is a driver BUG and aborts loudly" boundary are untouched. Test drives the real `run_matrix` with a truncating executor and pins: seed-42 failed / seed-43 completed, `metrics is None`, cause string, one failures entry, and manifest written with `[failed, completed]`. Residual narrow gap (non-UTF-8 corruption) → IN-09. |
+| WR-12 never overwrite an existing run_record.json for a skipped cell | **Correct + complete** | `run_sweep.py:511-523`: the write is gated on `record["status"] != "skipped" or not record_path.exists()`. Non-skipped cells always write (behavior unchanged from pre-fix); a skipped cell with an existing record is preserved verbatim; a skipped cell with no record (standalone `run_finetune.py` left the marker but no record — the exact case the pre-existing seed-scoped test constructs) still gets one. The manifest still reports THIS run's skipped view because it is built from the in-memory `records` list, not from disk — test pins both artifacts side by side (on-disk record == run-1's completed record byte-for-byte; manifest cell == `skipped`), plus zero executor invocations on resume. `cell_dir` necessarily exists for a skipped cell (it contains the marker), so the no-record write cannot hit a missing parent. Interaction note → IN-10. |
+| WR-13 final_metrics.json written before the trainer_state.json resume marker | **Correct + complete** | `run_finetune.py:801-803`: `json.dump(metrics, ...)` now precedes `shutil.copy(.../checkpoint-{last_step}/trainer_state.json", outdir)`. Both marker consumers read the copied file (`run_finetune.py:601` resume check, `run_sweep.py:443` skip check), so the marker is now genuinely the final act of a successful cell. The reorder is surgical: `checkpoints`/`last_step` computation, the `local_rank == 0` guard, the trailing `trainer.evaluate()` (whose result is discarded — unchanged position and semantics), and the D-08 blind-except scope are all untouched; if either write raises, the except continues with no marker, so the cell retrains. The textual ordering test is faithful despite being source-text-based: both anchor strings occur exactly once in the file (verified by grep), so the index comparison cannot be fooled by a distant second occurrence. Durability nuance → IN-11. |
 
-```python
-models_only_support_fp32 = [
-    "Jamba-DNA-v1-114M-hg38",
-    "CrossDNA_8.1M", "CrossDNA_71.6M", "CrossDNA_519M",
-]
-# ...inside the dataset loop, before DNATrainer construction:
-if model_name in models_only_support_fp32:
-    configs["finetune"].fp16 = False
-    configs["finetune"].bf16 = False
-```
-
-### CR-02: run_sweep records `completed` for cells whose training failed (exit-0 failure swallowing; missing final_metrics.json not distinguished)
-
-**File:** `pipeline/run_sweep.py:372-378`; interacts with `pipeline/run_finetune.py:745-767`
-**Issue:** `run_finetune.py`'s designed isolation (D-08 sanctioned blind except at lines 760-767) logs a training failure and `continue`s — the process still exits 0. `run_finetune.py` then never writes `final_metrics.json` for that dataset. On the driver side, `run_matrix` sets `record["status"] = "completed"` as soon as the executor returns, and the subsequent `if metrics_path.exists()` silently leaves `metrics: null` when the file is absent. Net effect: the dominant real-world failure mode (a training error) produces a cell recorded `completed` with null metrics, no `sweep_failures.json` entry, and — because `run_record.json` is the per-cell audit artifact — a manifest that lies about a multi-day sweep's outcome. Only launch-seam exceptions (`SubprocessError`/`OSError`) are treated as failures.
-**Fix:** Treat a successful executor with no `final_metrics.json` as a failure:
-
-```python
-executor(model, task, seed, str(output_root))
-metrics_path = cell_dir / METRICS_NAME
-if not metrics_path.exists():
-    record["status"] = "failed"
-    record["error"] = ("executor exited 0 but final_metrics.json is missing "
-                       "(run_finetune.py swallowed a training failure)")
-    failures.append({...})
-else:
-    record["status"] = "completed"
-    with open(metrics_path, "r", encoding="utf-8") as f:
-        record["metrics"] = json.load(f)
-```
+**Regression hunt on the three fix diffs:** none found. Each diff matches its
+stated scope exactly; no existing test was modified (only docstring bullets
+added); the three new tests account for the full-lane count 183→186; the
+`_validate_filters`/`enumerate_matrix`/dry-run paths, argv construction, and
+`run_finetune.py`'s loop structure were re-traced end-to-end at HEAD with no
+semantics drift beyond the intended fixes.
 
 ## Warnings
 
-### WR-01: grad_accum default snapshotted from the base YAML before the custom-head config replacement (D-07/D-11 interaction)
+### WR-14: Degenerate all-empty filter/seed values bypass the WR-07 fail-fast — a separator-only filter silently enumerates the FULL matrix, an empty `--seeds` silently runs 0 cells and exits 0
 
-**File:** `pipeline/run_finetune.py:414-431, 444`
-**Issue:** `default_grad_accum = configs["finetune"].gradient_accumulation_steps` (line 419) is taken from the freshly loaded base config, but for `evo2_1b_base`/`megaDNA_updated` `configs` is then REPLACED by `finetune_config_with_head.yaml` (lines 430-432). The per-dataset reset (line 444) therefore forces the base YAML's grad_accum onto head models, ignoring whatever the with_head YAML specifies. Both YAMLs currently carry `gradient_accumulation_steps: 1`, so there is no divergence today — but the snapshot is taken from the wrong config for exactly the two models whose config is swapped, and any future with_head grad_accum change is silently clobbered. This is one of the phase's own flagged sensitivities.
-**Fix:** Move the snapshot after the custom-head reload (inside the `error_log` block, after line 432), so it captures whichever config is actually active for that model.
+**File:** `pipeline/run_sweep.py:549-557` (strip normalization in `main`), interacting with `_validate_filters` early-return at `:256-257` and `enumerate_matrix` falsy checks at `:219, :225`
+**Issue:** WR-07's fix (verified in iteration 2) established the invariant that filter values the registry does not know must abort before enumeration, because "a silently successful no-op for a driver meant to launch multi-day GPU sweeps [is] an operational hazard." Two degenerate input classes bypass that invariant:
 
-### WR-02: dataset loading/statistics sit outside all error isolation — one unlocatable dataset aborts the rest of the run
+1. **All-empty-element filters invert to the FULL matrix.** `--models ,` (or `--tasks ,`) survives the strip-filter at lines 550-557 as `[]`, which is falsy — `_validate_filters` early-returns on falsy filters (line 256), and `enumerate_matrix`'s `if models_filter:` (line 219) treats `[]` the same as `None`, i.e. no filtering. Empirically confirmed against the real registries: `--models ,` enumerates **3100 cells (62 models x 50 tasks)**. An operator passing a filter that expands from shell indirection to separators only (e.g. `--models "$A,$B"` with both variables empty) launches the full multi-day sweep while believing the run was scoped — the worst-case mislaunch, not merely a no-op.
+2. **An empty seed set runs 0 cells and exits 0.** `--seeds ""` or `--seeds ,` (argparse `required=True` is satisfied by any present value, including empty) yields an empty set at line 549; `run_matrix([])` then writes a manifest + empty failures manifest, `main` prints "Sweep finished: 0 cell(s) — 0 completed, 0 skipped, 0 failed", and the process exits 0. Empirically confirmed (manifest written, 0 records). This is exactly the terminal state the WR-07 fix's own docstring declares unacceptable.
 
-**File:** `pipeline/run_finetune.py:654-666` (contrast `pipeline/dnallmmark_pipeline.py:870-872`)
-**Issue:** `DNADataset.load_local_data(...)` (line 658) and `dataset.statistics()` (line 666) execute before the encode-phase `try` (line 689) with no presence check on `dataset_path`. The legacy pipeline checked `os.path.exists(dataset_path)` and skipped; the new path raises an uncaught exception that propagates through the model loop and kills the whole process. This matters because an unlocatable dataset directory is a documented, expected state — `run_sweep.py:90-95` records the suite double-nesting unzip quirk deferred to the E2E gate. A manual `python run_finetune.py --target_model X` run (README's documented usage) hitting a misplaced dataset dies mid-loop with a raw traceback, silently skipping every later dataset, with nothing in the error log.
-**Fix:** Mirror the legacy guard (skip + log + `continue` when `dataset_path` is not a directory), or wrap the load/statistics block in the same log-and-continue isolation used for encode and train.
+**Fix:** After strip normalization, refuse empty results for explicitly-passed flags (fail fast, mirroring WR-07's `sys.exit` style):
 
-### WR-03: sequence validation alphabet hardcoded to ACGT-only for every model — training-set divergence from the runs behind the committed numbers
+```python
+seeds = sorted({int(s.strip()) for s in args.seeds.split(",") if s.strip()})
+if not seeds:
+    sys.exit("[Error] --seeds produced no values after stripping empties")
 
-**File:** `pipeline/run_finetune.py:691`; contrast `pipeline/dnallmmark_pipeline.py:1054-1057`
-**Issue:** The legacy pipeline chose `valid_chars` per model: `"ACGTacgt|"` only for the `models_no_char_n` list, `"ACGTNacgtn|"` (N allowed) for everything else. `run_finetune.py` hardcodes `valid_chars="ACGTacgt|"` for all 62 models and drops `models_no_char_n` entirely. Depending on dnallm's `validate_sequences` semantics, N-containing rows are now dropped or error for every model — changing the effective training set relative to every historical run that produced the committed leaderboard data, with no documented disposition of the change. Reproducibility of published numbers is the project's stated core value.
-**Fix:** Either restore the per-model conditional (port `models_no_char_n`) or document the deliberate switch to strict-ACGT for all models (with the expected count impact) in the registry-quirk block where the other lists live.
+models_filter = None
+if args.models is not None:
+    models_filter = [m.strip() for m in args.models.split(",") if m.strip()]
+    if not models_filter:
+        sys.exit("[Error] --models produced no names after stripping empties "
+                 "(refusing to silently enumerate the full registry)")
+# same pattern for --tasks
+```
 
-### WR-04: three more model-quirk registries not ported or silently diverged between the deprecated reference and the active entry point
-
-**File:** `pipeline/run_finetune.py:383-397, 579-592`; contrast `pipeline/dnallmmark_pipeline.py:983-993, 1322-1333, 1351-1354`
-**Issue:**
-- `models_with_limited_length` (`prokbert-mini`: 1027, `plant-dnabert-6mer`: 512) has no counterpart in `run_finetune.py` — the context-length cap is unenforced in the active path; both models are in the 62-model registry.
-- `model_not_use_safetensors` membership diverges: the legacy list includes `plant-dnamamba-6mer` (and not `PlantGFM`); the new list includes `PlantGFM` (and not `plant-dnamamba-6mer`) — both models are in the registry. One of the two lists is wrong, and nothing records which.
-- The legacy max_length tier rounding (`len_ranges`, rounding non-singlebase max_length up to 32-step tiers) is not ported, changing padding lengths vs historical runs.
-
-The deprecation banner positions `dnallmmark_pipeline.py` as the behavioral reference (historical attribution, FLOPs reference), yet the quirk lists contradict the active file. Each unported quirk is a future wrong-run for the affected registry models.
-**Fix:** Port or explicitly disposition each list in `run_finetune.py` (a short comment block naming the deliberately-dropped quirks is acceptable; silence is not).
-
-### WR-05: make_dev_splits docstring promises interrupted-run self-healing that the count guard makes impossible in the train-write → registry-write window
-
-**File:** `script/make_dev_splits.py:260-264` (docstring), `332-334` (write order), `453` (registry persisted in main)
-**Issue:** The docstring claims "an interrupted run self-healing on re-run: the deterministic carve overwrites any half-written dev.csv ... before train.csv and the registry are updated." That holds for an interruption between the dev.csv and train.csv writes, but NOT for an interruption after the train.csv rewrite (line 333) and before `write_registry` (main, line 453): the registry still carries the pre-carve `Train` count, so a re-run reaches the count guard (line 320-326) and hard-exits with "registry/disk mismatch", requiring manual reconciliation (or the Zenodo re-download). The documented recovery story and the enforced behavior contradict each other.
-**Fix:** Either narrow the docstring claim, or heal the recognizable interrupted state: when `dev.csv` exists, registry `Dev == 0`, and `len(train_rows) + len(dev_rows) == registry Train`, update only the registry instead of aborting.
-
-### WR-06: stale sweep_failures.json never cleared on a clean re-run
-
-**File:** `pipeline/run_sweep.py:400-401`
-**Issue:** The failures manifest is written only `if failures:`. Re-running a sweep over the same output root after the failures are fixed leaves the previous run's `sweep_failures.json` in place next to a fresh `sweep_manifest.json` showing all cells completed/skipped — contradictory audit artifacts for the same root.
-**Fix:** Always write the manifest (empty list when no failures) or explicitly remove/overwrite a stale `sweep_failures.json` at the start of `run_matrix`.
-
-### WR-07: filter typos silently enumerate an empty matrix and exit 0
-
-**File:** `pipeline/run_sweep.py:203-212`
-**Issue:** `--models`/`--tasks` filters are intersected with registry keys with no unknown-name detection: `--models pant-dnamamba-6mer` (typo) yields 0 cells, writes a manifest, prints "Sweep finished: 0 cell(s) — 0 completed, 0 skipped, 0 failed", and exits 0. A task requested via `--tasks` that has `Train=0` is likewise silently dropped before the filter applies. For a driver meant to launch multi-day GPU sweeps, a typo'd no-op that reports success is an operational hazard.
-**Fix:** After filtering, compare requested names against registry keys and exit non-zero listing unmatched names (e.g. `sys.exit(f"[Error] --models names not in registry: {sorted(unknown)}")`).
-
-### WR-08: README Run Pipeline section omits the required CWD and documents the pre-F2 output layout
-
-**File:** `README.md:151-155, 200`
-**Issue:** The quick-start shows `python run_finetune.py --target_model ... --seed 9527` with no `cd pipeline` first. `run_finetune.py` resolves `./finetune_config.yaml` (line 414), `./logs/` (line 426), and the `./finetuned` default CWD-relatively — `run_sweep.py`'s own docstring documents this as research Pitfall 3 and pins its subprocess cwd for exactly this reason. Run from the repo root per the README, the invocation dies on the first model with a raw `FileNotFoundError` traceback. Line 200 also documents `finetuned/{model_name}/{dataset_name}/`, but the F2/G1 layout this phase shipped appends `/seed_{seed}/` (`run_finetune.py:560`).
-**Fix:** Add `cd pipeline` to the README command block and update the documented output layout to include the seed segment; document `run_sweep.py` as the matrix entry point.
-
-### WR-09: deprecation banner claims the legacy pipeline is retained "read-only ... exact code" in the same phase that functionally edited it
-
-**File:** `pipeline/dnallmmark_pipeline.py:1-21` (banner) vs `:1277-1280, 1355-1360` (this phase's edits)
-**Issue:** The new banner states the file is "retained read-only, never deleted" so "its exact code stays available for reproducibility review" of the committed numbers. The same phase renamed its metric extraction keys (`eval_auroc`→`eval_AUROC`, `eval_pearson_r`→`eval_pearsonr`, etc.) and added the CrossDNA models to `models_only_support_fp32`. The retained file therefore no longer reproduces the committed historical outputs it is kept for — anyone using it "for reproducibility" per the banner gets different JSON than what is committed under `dnallm-mark/data/`.
-**Fix:** Record the deliberate post-hoc edits in the banner (what changed, when, why — alignment with the current dnallm suite's metric keys), or move the key alignment into the active path only and leave the legacy file byte-frozen.
-
-### WR-10: --mem_ratio silently ignored in the length-scaling batch estimator, which also contains a dead branch
-
-**File:** `pipeline/run_finetune.py:210-231, 615-622`
-**Issue:** The call site at line 615-622 passes `gpu_mem_total` but not `target_mem_ratio`, so `estimate_batch_size` uses its 0.4 default while the documented `--mem_ratio` (default 0.70) only reaches `estimate_batch_size_by_model_params`. Operators tuning `--mem_ratio` get a different ratio than requested whenever the second estimator fires (longer sequences than the first dataset). Additionally, inside `estimate_batch_size` both branches of the `if predicted_mem >= gpu_mem_total * threshold:` compute the identical expression (`threshold` IS `target_mem_ratio`) — the if/else is dead logic that only misleads.
-**Fix:** Pass `target_mem_ratio=mem_ratio` at the call site; delete the dead branch (or make the two branches genuinely differ, e.g. an aggression factor for the headroom case).
+Note the `args.models is not None` form also makes the (currently silent)
+`--models ""` → full-matrix path an explicit error instead of
+indistinguishable-from-absent.
 
 ## Info
 
-### IN-01: duplicated assignment
+### IN-09 (new): WR-11's catch is `json.JSONDecodeError` only — a non-UTF-8 `final_metrics.json` raises `UnicodeDecodeError` and still aborts the sweep
 
-**File:** `pipeline/run_finetune.py:340-341`
+**File:** `pipeline/run_sweep.py:480`
+**Issue:** `except json.JSONDecodeError` does not catch `UnicodeDecodeError` (verified: both are `ValueError` subclasses; neither derives from the other — a file containing invalid UTF-8 bytes raises `UnicodeDecodeError` from the text-mode `open`, escaping both the inner catch and the outer `subprocess.SubprocessError`/`OSError` handler, aborting the sweep with no manifest). The error message already says "corrupt/unreadable", but only the corrupt-and-parse-failing half of "unreadable" is handled. Reachability is negligible today — the child writes ASCII-only metric keys/values, and any truncation of ASCII text is still valid UTF-8, so the realistic mid-write-death artifact lands in the handled `JSONDecodeError` branch — hence Info, not Warning.
+**Fix:** Catch the common base: `except ValueError as exc:` (covers both `JSONDecodeError` and `UnicodeDecodeError`; keep the same failed-cell handling).
+
+### IN-10 (new): `_write_json` is non-atomic, and WR-12's never-overwrite now preserves a truncated `run_record.json` forever
+
+**File:** `pipeline/run_sweep.py:350-353` (`_write_json`: plain `open(path, "w")` + `json.dump`, no temp+rename), interacting with the WR-12 guard at `:522`
+**Issue:** A driver death mid-record-write truncates `run_record.json` on disk. Pre-WR-12, a resumed sweep would overwrite it with a fresh (skipped) record; post-WR-12 the guard refuses the overwrite, so the truncated record persists across all future resumes. Mitigating factors, hence Info: there is no programmatic consumer of `run_record.json` (writer, tests, and README only — verified by repo-wide grep), the training outputs and manifest remain intact, and a truncated JSON fails loudly (obvious parse error) rather than silently misleading.
+**Fix:** Make `_write_json` atomic (write to `path.with_suffix(".tmp")`, then `os.replace`), or have the WR-12 guard preserve the existing record only when it parses (`json.loads` try/except) and rewrite it otherwise.
+
+### IN-11 (new): WR-13's comment claims power-loss coverage that the write ordering alone does not deliver (no fsync)
+
+**File:** `pipeline/run_finetune.py:792-803`
+**Issue:** The new comment lists "power loss" among the covered kill windows, but without `f.flush()` + `os.fsync()`, the ordering guarantee holds for process death only (page-cache ordering); on power loss the two files' durability is unordered, so the marker-durable/metrics-lost inversion the fix targets remains physically possible. Probability is minute (sub-second window) and the fix's core value (process-death coverage: OOM killer / SIGKILL) is fully delivered.
+**Fix:** Either soften the comment to "process death (OOM killer / SIGKILL)" or add `f.flush(); os.fsync(f.fileno())` after the `json.dump` (and fsync the copied marker's directory) if power-loss coverage is actually claimed.
+
+### IN-01 (carried, open since iteration 1): duplicated assignment
+
+**File:** `pipeline/run_finetune.py:337-338`
 **Issue:** `gpu_memory_override = args.gpu_memory` appears twice consecutively.
 **Fix:** Delete one.
 
-### IN-02: split_task reimplements carve_stratified_dev inline
+### IN-02 (carried, open since iteration 1): split_task reimplements carve_stratified_dev inline
 
-**File:** `script/make_dev_splits.py:328-330`
-**Issue:** `split_task` inlines `select_dev_indices` + row-splitting instead of calling the tested `carve_stratified_dev` (which exists precisely for this and is what the tests pin). The two copies can drift (e.g. a future seed-parameter change applied to one but not the other).
-**Fix:** `dev_rows, train_rows = carve_stratified_dev(rows)` — the inline copy is byte-equivalent today.
+**File:** `script/make_dev_splits.py:333-335`
+**Issue:** `split_task` inlines `select_dev_indices` + row-splitting instead of calling the tested `carve_stratified_dev` (byte-equivalent today; the copies can drift).
+**Fix:** `dev_rows, train_rows = carve_stratified_dev(rows)`.
 
-### IN-03: --target_dataset elements not stripped
+### IN-03 (carried, open since iteration 1): --target_dataset elements not stripped
 
-**File:** `pipeline/run_finetune.py:448-450`
-**Issue:** `target_dataset.split(",")` keeps whitespace: `--target_dataset "A, B"` matches nothing and the run silently processes zero datasets. `run_sweep.py` strips its filter elements (lines 413-419) — inconsistent handling of the same convention.
+**File:** `pipeline/run_finetune.py:459`
+**Issue:** `target_dataset.split(",")` keeps whitespace: `--target_dataset "A, B"` matches nothing and the run silently processes zero datasets (`run_sweep.py` strips its filters; `--task_index` at line 472 also strips).
 **Fix:** `target_datasets = [t.strip() for t in target_dataset.split(",")]`.
 
-### IN-04: converter's --to-csv / --map / --numeric / --columns / --crlf directions have no test coverage
+### IN-04 (carried, open since iteration 1): converter's --to-csv direction has no test coverage
 
-**File:** `tests/test_convert_registry.py` (coverage gap); `script/convert_registry.py:341-363`
-**Issue:** All eight tests exercise the `--to-json` direction only. The CSV projection direction — which the single-source contract calls "the sanctioned on-demand projection" and which the docstring's own round-trip recipe depends on — is untested; a regression in `to_csv` (column ordering, name-column prepending, CRLF mode) would ship unnoticed.
-**Fix:** Add a round-trip pin: `to_csv` then `to_json` over a fixture registry reproduces the operational columns (`Index`/`Train`/etc. as ints, `Model_size` verbatim).
+**File:** `tests/test_convert_registry.py` (all tests exercise `--to-json` only); `script/convert_registry.py:341-363`
+**Issue:** The CSV projection direction — the "sanctioned on-demand projection" per the single-source contract, and the direction the docstring's own round-trip recipe depends on — is untested; a regression in `to_csv` (column ordering, name-column prepending, CRLF mode) would ship unnoticed.
+**Fix:** Add a round-trip pin: `to_csv` then `to_json` over a fixture registry reproduces the operational columns as ints with `Model_size` verbatim.
 
-### IN-05: README project-structure annotations incorrect
+### IN-05 (carried, open since iteration 1): README project-structure annotations incorrect
 
-**File:** `README.md:338, 348`
-**Issue:** Line 348 describes pyproject.toml as "Dependency groups (data / dev / pipeline)" — the third group is named `gpu`. Line 338 labels `finetune_config.yaml` "Training script" — it is a configuration file.
+**File:** `README.md:346, 356`
+**Issue:** Line 356 describes pyproject.toml as "Dependency groups (data / dev / pipeline)" — the third group is named `gpu`. Line 346 labels `finetune_config.yaml` "Training script" — it is a configuration file.
 **Fix:** Correct both labels.
 
-### IN-06: live Zenodo preview JWT committed in README (documented decision — no action this phase)
+### IN-06 (carried, documented decision — no action this phase): live Zenodo preview JWT in README
 
-**File:** `README.md:123`; `.gitleaks.toml` (rule-scoped allowlist)
-**Issue:** The dataset download link carries a record-scoped preview token (flagged by the injection scanner during this review as `MD-LINK-TOKEN-IN-QUERY`). This is a documented, deliberate maintainer decision (D-08, AUDIT.md, `.gitleaks.toml` allowlist correctly scoped to rule + anchored path + record regex, Phase 6 retirement tracked for when the record publishes). Recorded so the review is complete; the only action item is the already-tracked one: the allowlist must be updated in the same commit as any link change, and both dropped at publication.
+**File:** `README.md` dataset link; `.gitleaks.toml` (rule-scoped allowlist)
+**Issue:** Record-scoped preview token in the download link; deliberate maintainer decision (D-08, AUDIT.md), allowlist correctly scoped, Phase 6 retirement tracked. The tracking requirement stands: allowlist and link change in the same commit, both dropped at publication.
 **Fix:** None this phase; keep the existing tracking.
+
+### IN-07 (carried, open since iteration 2): CR-02 error string asserts one cause for a multi-cause condition
+
+**File:** `pipeline/run_sweep.py:463-467`
+**Issue:** The missing-metrics error says "run_finetune.py swallowed a training failure", but exit-0-without-metrics has other causes: the WR-02 dataset-dir skip, an encode-phase skip, or the (now-closed) kill window. The *status* is honest either way; the cause attribution can misdirect an operator.
+**Fix:** Neutral wording, e.g. "training failure swallowed, dataset/encode-phase skip, or interrupted write — check the child's error log".
+
+### IN-08 (carried, open since iteration 2): convert_registry.py missing from `make lint` scope
+
+**File:** `Makefile:58-68`
+**Issue:** The lint target's comment defines the scope as "tests/ plus Phase-3-authored/edited files" but omits `script/convert_registry.py` (authored in the Phase-3 window, edited by 03-02). Currently clean; the gap is latent.
+**Fix:** Add `script/convert_registry.py` to the `lint` recipe and adjust the scope comment.
 
 ---
 
-_Reviewed: 2026-10-10_
+_Reviewed: 2026-10-09_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Iteration: 3 (convergence check after fix iteration 2)_
