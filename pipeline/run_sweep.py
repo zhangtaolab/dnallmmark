@@ -223,6 +223,53 @@ def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir):
     )
 
 
+def _validate_filters(models_filter, tasks_filter, registry_dir):
+    """Fail fast on --models/--tasks names the registries do not know.
+
+    A typo'd filter name would otherwise intersect with the registry keys
+    to an EMPTY matrix that writes a manifest, prints "Sweep finished: 0
+    cell(s)" and exits 0 — a silently successful no-op for a driver meant
+    to launch multi-day GPU sweeps (WR-07). Tasks the operator explicitly
+    requested that have no train split (falsy ``Train``) are refused for
+    the same reason: the matrix can never run them, so enumerating them
+    away silently is also a no-op.
+
+    Args:
+        models_filter (list[str] | None): requested --models names.
+        tasks_filter (list[str] | None): requested --tasks names.
+        registry_dir (Path | str): directory holding the unified JSON
+            registries.
+
+    Raises:
+        SystemExit: listing the unknown and/or untrainable names.
+    """
+    if not models_filter and not tasks_filter:
+        return
+    registry_dir = Path(registry_dir)
+    with open(registry_dir / "models_info.json", "r", encoding="utf-8") as f:
+        models_info = json.load(f)
+    with open(registry_dir / "datasets_info.json", "r", encoding="utf-8") as f:
+        datasets_info = json.load(f)
+    unknown_models = sorted(set(models_filter or []) - set(models_info))
+    unknown_tasks = sorted(set(tasks_filter or []) - set(datasets_info))
+    untrainable_tasks = sorted(
+        task for task in (tasks_filter or [])
+        if task in datasets_info and not datasets_info[task].get("Train")
+    )
+    problems = []
+    if unknown_models:
+        problems.append(f"--models names not in registry: {unknown_models}")
+    if unknown_tasks:
+        problems.append(f"--tasks names not in registry: {unknown_tasks}")
+    if untrainable_tasks:
+        problems.append(
+            "--tasks with no train split (Train is falsy): "
+            f"{untrainable_tasks}"
+        )
+    if problems:
+        sys.exit(f"[Error] {'; '.join(problems)}")
+
+
 def cell_dir_for(output_root, model, task, seed):
     """Return the seed-isolated cell dir {root}/{model}/{task}/seed_{seed}."""
     return Path(output_root) / model / task / f"seed_{seed}"
@@ -458,6 +505,10 @@ def main():
         if args.tasks else None
     )
 
+    # Fail fast on typo'd/untrainable filters BEFORE any cell is
+    # enumerated (WR-07): an unknown name would otherwise intersect to an
+    # empty matrix that writes a manifest and exits 0 "successfully".
+    _validate_filters(models_filter, tasks_filter, registry_dir)
     cells = enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir)
 
     if args.dry_run:

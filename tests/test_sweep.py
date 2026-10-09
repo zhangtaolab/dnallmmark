@@ -28,7 +28,11 @@ Every behavior bullet of the plan's Task 2 is pinned here:
   directory — never a shell string;
 - **registry-derived defaults** — default enumeration derives the matrix
   from ``models_info.json`` keys x truthy-``Train`` ``datasets_info.json``
-  entries (the unified D-10 registries), honoring --models/--tasks filters.
+  entries (the unified D-10 registries), honoring --models/--tasks filters;
+- **filter validation** — a --models/--tasks name absent from the
+  registries (or a requested task with falsy ``Train``) exits non-zero
+  listing the names instead of silently enumerating an empty matrix that
+  reports a successful 0-cell sweep (WR-07).
 
 The runner is stdlib-only and never imports torch/dnallm; no test executes
 the real subprocess (the argv test monkeypatches ``subprocess.run``).
@@ -43,6 +47,8 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 import run_sweep  # conftest puts pipeline/ on sys.path
 
@@ -342,3 +348,55 @@ def test_launch_subprocess_builds_argv_list_with_pinned_cwd(monkeypatch):
         "CWD-relative in run_finetune.py (research Pitfall 3)"
     )
     assert not captured["kwargs"].get("shell"), "shell=True is forbidden"
+
+
+def test_cli_exits_nonzero_on_unknown_filter_names(tmp_path, monkeypatch):
+    """WR-07: a typo'd --models/--tasks name exits non-zero listing the
+    unmatched names instead of enumerating an empty matrix that writes a
+    manifest and reports a successful 0-cell sweep."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a,pant-dnamamba-6mer",
+            "--tasks", "task-x,task-typo",
+            "--seeds", "42",
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "pant-dnamamba-6mer" in message, (
+        "the unknown model name must be listed in the error"
+    )
+    assert "task-typo" in message, (
+        "the unknown task name must be listed in the error"
+    )
+    assert not out_root.exists(), (
+        "an unknown filter must abort before any output is written"
+    )
+
+
+def test_cli_exits_nonzero_on_requested_task_without_train_split(
+        tmp_path, monkeypatch):
+    """WR-07: a task explicitly requested via --tasks that has Train=0 is
+    refused with a named error — the matrix can never run it, so dropping
+    it silently would be a no-op reported as success."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--tasks", "task-y",
+            "--seeds", "42",
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "task-y" in message, (
+        "the untrainable task name must be listed in the error"
+    )
+    assert "Train" in message, (
+        "the error must say WHY the task was refused (falsy Train)"
+    )
+    assert not out_root.exists(), (
+        "the refusal must abort before any output is written"
+    )
