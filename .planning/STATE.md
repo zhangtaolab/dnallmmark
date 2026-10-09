@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 
 ## Current Position
 
-Phase: 3 — Pipeline Adaptation to dnallm Dev
+Phase: 3 — Dev-Branch Reconciliation & P0 Revision Blockers
 Plan: Not started
 Status: Ready to plan
 Last activity: 2026-10-09
