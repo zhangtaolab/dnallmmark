@@ -29,9 +29,8 @@ See also:
 
 import json
 
-import pytest
-
 import make_dev_splits  # conftest puts script/ on sys.path
+import pytest
 
 LABEL_HEADER_2COL = ["sequence", "label"]
 LABEL_HEADER_3COL = ["name", "sequence", "label"]
@@ -159,6 +158,7 @@ def test_split_task_end_to_end_byte_determinism(tmp_path):
     assert status_a == status_b == "split"
     assert dev_a == dev_b  # byte-identical dev.csv
     assert train_a == train_b  # byte-identical rewritten train.csv
+    assert entry_a == entry_b  # identical registry updates
     assert entry_a["Dev"] == 4  # 20+20 rows -> 2 dev per class
     assert entry_a["Train"] == 36
     # rows preserved verbatim, dev keeps original order
@@ -183,7 +183,7 @@ def test_split_task_handles_three_column_layout(tmp_path):
     assert dev_lines[0] == "name,sequence,label"
     assert len(dev_lines) == 3  # header + 2 (one per class)
     for line in dev_lines[1:]:
-        name, seq, label = line.split(",")
+        name, seq, _label = line.split(",")
         assert name.startswith("row")  # name cells preserved
         assert seq.startswith("SEQ")
 
