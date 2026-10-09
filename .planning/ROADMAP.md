@@ -56,10 +56,10 @@ Plans:
   4. Golden-file tests pass over a synthetic fixture tree, and a determinism regression test re-runs the chain expecting byte-identical output
   5. The suite is stable by construction — float assertions carry explicit tolerances (`pytest.approx`) and thread counts are pinned in conftest — so repeated local runs do not flake
 
-**Plans**: 3/3 plans planned
+**Plans**: 1/3 plans executed planned
 Plans:
 **Wave 1**
-- [ ] 02-01-PLAN.md — Four fully-strict JSON Schemas + 94-file schema validation suite + dev group/Makefile entry points (make data/test/test-fast/lint) + D-08 micro-fixes; make data proven zero-diff (REL-04, TEST-06, TEST-02)
+- [x] 02-01-PLAN.md — Four fully-strict JSON Schemas + 94-file schema validation suite + dev group/Makefile entry points (make data/test/test-fast/lint) + D-08 micro-fixes; make data proven zero-diff (REL-04, TEST-06, TEST-02)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 02-02-PLAN.md — Synthetic fixture tree (tie/missing-metric/regression/species-group edges) + aggregation/pivot unit tests + golden files via compare.walk + node:test JS suite; make test runs Python+JS (TEST-01, TEST-02, TEST-03)
@@ -129,7 +129,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Audit & Release Foundations | 3/3 | Complete    | 2026-10-09 |
-| 2. Data Contracts & Test Harness | 0/TBD | Not started | - |
+| 2. Data Contracts & Test Harness | 1/3 | In Progress | - |
 | 3. Pipeline Adaptation to dnallm Dev | 0/TBD | Not started | - |
 | 4. Correctness Fixes | 0/TBD | Not started | - |
 | 5. CI & Verified Data Migration | 0/TBD | Not started | - |

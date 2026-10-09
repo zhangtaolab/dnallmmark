@@ -17,7 +17,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [x] **REL-01**: LICENSE file present (explicit code license; data licensing declared separately)
 - [x] **REL-02**: Dependency manifests for the offline/data chain, version-pinned (`pandas>=2.2,<3.0`); GPU pipeline dependencies in a separate group that CI never installs
 - [ ] **REL-03**: README reproducibility section — literal copy-pasteable commands from repo root (install → data → aggregate → serve)
-- [ ] **REL-04**: Single-command data-regeneration chain (`make data` or equivalent) replacing the undocumented 3-step CWD-sensitive procedure
+- [x] **REL-04**: Single-command data-regeneration chain (`make data` or equivalent) replacing the undocumented 3-step CWD-sensitive procedure
 - [x] **REL-05**: Secret hygiene settled per maintainer decision (2026-10-08 discuss) — the Zenodo record-19135551 preview link + token at `README.md:116` is the intentional dataset-sharing mechanism (record-scoped, read-only) and stays as-is; a full-history secret scan confirms no OTHER secrets exist beyond this known-intentional link
 
 ### Correctness Fixes
@@ -35,7 +35,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [ ] **TEST-03**: Golden-file tests over synthetic fixture trees plus a determinism regression test
 - [ ] **TEST-04**: GitHub Actions CI (lint + test matrix on Python 3.12/3.13 plus a Node job; actions SHA-pinned) with README badge
 - [ ] **TEST-05**: Frontend static checks in CI (ESLint flat config + html-validate + `node --check`)
-- [ ] **TEST-06**: JSON Schema contract validation — 4 schemas (model_performance, task_performance, models_comparison, tasks_index) enforced over every committed JSON in CI
+- [x] **TEST-06**: JSON Schema contract validation — 4 schemas (model_performance, task_performance, models_comparison, tasks_index) enforced over every committed JSON in CI
 - [ ] **TEST-07**: CI drift-detection job — regenerate derived data and `git diff --exit-code`, making stale derived files a build failure
 
 ### Data & Records
@@ -96,11 +96,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REL-02 | Phase 1 | Complete |
 | REL-05 | Phase 1 | Complete |
 | FIX-05 | Phase 1 | Complete |
-| REL-04 | Phase 2 | Pending |
+| REL-04 | Phase 2 | Complete |
 | TEST-01 | Phase 2 | Pending |
 | TEST-02 | Phase 2 | Pending |
 | TEST-03 | Phase 2 | Pending |
-| TEST-06 | Phase 2 | Pending |
+| TEST-06 | Phase 2 | Complete |
 | PIPE-01 | Phase 3 | Pending |
 | PIPE-02 | Phase 3 | Pending |
 | PIPE-03 | Phase 3 | Pending |

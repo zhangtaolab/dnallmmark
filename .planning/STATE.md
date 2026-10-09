@@ -4,16 +4,16 @@ milestone: v0.7.1
 current_phase: 2
 current_phase_name: Data Contracts & Test Harness
 status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-10-09T03:29:28.429Z"
+stopped_at: Completed 02-01-PLAN.md (schemas + harness + make data proven)
+last_updated: "2026-10-09T03:45:34.261Z"
 last_activity: 2026-10-09
-last_activity_desc: Phase 01 complete, transitioned to Phase 2
-state_head: 2fa8bf8971a3113bb28b3c40133a5ab87f5358d3
+last_activity_desc: Phase 2 execution started
+state_head: 5c556a9eb0f4208208d3b966fe9c10fc90d5cdee
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 6
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 
 ## Current Position
 
-Phase: 2 (Data Contracts & Test Harness) — READY TO EXECUTE
-Plan: Not started
+Phase: 2 (Data Contracts & Test Harness) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-10-09 — Phase 01 complete, transitioned to Phase 2
+Last activity: 2026-10-09 — Phase 2 execution started
 
 Progress: [██░░░░░░░░] 17% (1/6 phases)
 
@@ -59,6 +59,7 @@ Progress: [██░░░░░░░░] 17% (1/6 phases)
 | Phase 01 P01 | 9 min | 2 tasks | 8 files |
 | Phase 01 P02 | 15 min | 3 tasks | 1 files |
 | Phase 01 P03 | 16 min | 3 tasks | 59 files |
+| Phase 02 P02-01 | 6 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,8 @@ Recent decisions affecting current work:
 - [Phase 01]: FIX-05 landed: deterministic generators (sorted iteration, sort_keys, no live clock) with the one-time 52-file migration fully attributed against data-v1; fourth exact-tie pair investigated into the inventory (6-group census recorded in AUDIT.md)
 - [Phase 01]: Secret scan settled behaviorally: gitleaks 8.30.1 default jwt rule misses markdown-paren-closed JWTs (detection rule added) and global path allowlists act as file-level exclusion (rule-scoped AND allowlist used) — probe finds exactly the 1 intentional link, production scan clean over all refs
 - [Phase 01]: License landed: MIT for code (LICENSE + README section, atomic with CC BY 4.0 derived-data terms and upstream-terms disclaimer); copyright holder confirmed by maintainer 2026-10-09 as 'zhangtaolab and DNALLM-Mark contributors' (D-09 resolved in UAT)
+- [Phase 02]: Plan 02-01: self-contained schema files (defs duplicated, no cross-file $ref) — per-file strictness, local forced versioning (resolved Open Question 1)
+- [Phase 02]: Plan 02-01: make test excludes node --test until tests/js/ exists in plan 02-02; lint scope tests/-only this phase (D-04, ~21 pre-existing production findings deferred with Makefile comment)
 
 ### Pending Todos
 
@@ -101,6 +104,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T02:22:28.114Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-data-contracts-test-harness/02-CONTEXT.md
+Last session: 2026-10-09T03:45:34.235Z
+Stopped at: Completed 02-01-PLAN.md (schemas + harness + make data proven)
+Resume file: None
