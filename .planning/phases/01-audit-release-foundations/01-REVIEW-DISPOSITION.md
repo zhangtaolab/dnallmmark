@@ -63,7 +63,7 @@ findings:
     severity: info
     disposition: fixed
     title: "`.gitignore` carries upstream-dnallm rules for paths that do not exist here"
-open: 0
+open: 7
 total: 15
 recorded: 2026-10-09T00:42:04.402Z
 ---
@@ -72,13 +72,13 @@ recorded: 2026-10-09T00:42:04.402Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | fixed | 01-REVIEW-FIX.md (not in the current review) |
-| WR-02 | warning | fixed | 01-REVIEW-FIX.md (not in the current review) |
-| WR-03 | warning | fixed | 01-REVIEW-FIX.md (not in the current review) |
-| IN-01 | info | fixed | 01-REVIEW-FIX.md (not in the current review) |
-| IN-02 | info | fixed | 01-REVIEW-FIX.md (not in the current review) |
-| IN-03 | info | fixed | 01-REVIEW-FIX.md (not in the current review) |
-| IN-04 | info | fixed | 01-REVIEW-FIX.md (not in the current review) |
+| WR-01 | warning | open | carried from fix-round review (not in the current review) |
+| WR-02 | warning | open | carried from fix-round review (not in the current review) |
+| WR-03 | warning | open | carried from fix-round review (not in the current review) |
+| IN-01 | info | open | carried from fix-round review (not in the current review) |
+| IN-02 | info | open | carried from fix-round review (not in the current review) |
+| IN-03 | info | open | carried from fix-round review (not in the current review) |
+| IN-04 | info | open | carried from fix-round review (not in the current review) |
 | WR-04 | warning | fixed | 01-REVIEW-FIX.md (not in the current review) |
 | WR-05 | warning | skipped | 01-REVIEW-FIX.md (not in the current review) |
 | WR-06 | warning | skipped | 01-REVIEW-FIX.md (not in the current review) |
