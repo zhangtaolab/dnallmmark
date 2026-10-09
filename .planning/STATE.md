@@ -4,16 +4,16 @@ milestone: v0.7.1
 current_phase: 03
 current_phase_name: Dev-Branch Reconciliation & P0 Revision Blockers
 status: executing
-stopped_at: Completed 03-01-PLAN.md (dev merge, F10, D-03 pivot, D-04 review)
-last_updated: "2026-10-09T16:24:16.783Z"
+stopped_at: Completed 03-02-PLAN.md (D-10 unification, F1 dev splits, EVAL-01 refusal guard)
+last_updated: "2026-10-09T16:58:02.085Z"
 last_activity: 2026-10-10
 last_activity_desc: Phase 03 execution started
-state_head: 00a07a2182ed54cbb013b2541e90125bbefac176
+state_head: 883eafb3e35b05e2df11b401ebb10986bab75824
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 10
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 ## Current Position
 
 Phase: 03 (Dev-Branch Reconciliation & P0 Revision Blockers) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-10-10 — Phase 03 execution started
 
@@ -64,6 +64,7 @@ Progress: [███░░░░░░░] 33% (1/6 phases)
 | Phase 02 P02 | 14 min | 3 tasks | 13 files |
 | Phase 02 P03 | 7 min | 2 tasks | 2 files |
 | Phase 03 P01 | 15 min | 3 tasks | 7 files |
+| Phase 03 P02 | 19 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,9 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-01: README Run Pipeline section updated beyond the two named lines (args block, models_info.txt, --fix_token_len dropped, --auto_batch_size) so the renamed entry point is not misdocumented by adjacent prose; exporter sentence deferred to REV-03
 - [Phase 03]: 03-01: D-03 lock = species in {Animals,Plants,Microbe,Multiple} AND == datasets_info Category (OQ-1 recommendation); fixture-injectable, --runxfail-proven non-vacuous on athaliana defect
 - [Phase 03]: 03-01: D-04 review of commit 8d99daf verdict CLEAN, 4 observations recorded (2 AUD-16-interaction edges, pre-existing inert drawBorder, aria-pressed) — no new AUD rows
+- [Phase 03]: [Phase 03]: 03-02: D-10 unification — name-column lands as a field on every merged entry (key == Model_name/Dataset_name), required by the dict read site; converter extensions --rename-name (merge-key + cell rewrite) and --derive-operational (card-only entries) were the only conversion code authored
+- [Phase 03]: [Phase 03]: 03-02: registry counts are disk-authoritative — 5 stale dev-side counts corrected (4 Train + 4 Test header-inclusive on Deep4mC x3/iPro-WAEL; BEND Dev/Test transposed); --check extended to verify Train/Dev/Test against disk, 7 unlocatable GUE dirs (partial extraction) WARNING-excluded to the E2E gate
+- [Phase 03]: [Phase 03]: 03-02: REFUSED guard sits after the selection filters and before task-config/model load (fires only for datasets that would actually run, still precedes load_model_and_tokenizer and data_dict); two-layer EVAL-01 enforcement closed — suite opt-in contract + driver fail-fast + config purity (allow_test_as_eval never set)
 
 ### Pending Todos
 
@@ -116,6 +120,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T16:24:16.750Z
-Stopped at: Completed 03-01-PLAN.md (dev merge, F10, D-03 pivot, D-04 review)
+Last session: 2026-10-09T16:58:02.052Z
+Stopped at: Completed 03-02-PLAN.md (D-10 unification, F1 dev splits, EVAL-01 refusal guard)
 Resume file: None
