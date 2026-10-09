@@ -50,6 +50,14 @@ files). The contracts asserted here are textual/structural:
   skip-guard precedes ``DNADataset.load_local_data`` so an unlocatable
   dataset dir (a documented expected state) logs and continues instead of
   aborting the whole model loop.
+- **completion-marker ordering (WR-13)** — in the ``trainer.train()``
+  success block, ``final_metrics.json`` is written BEFORE the
+  ``trainer_state.json`` resume marker is copied: the marker is the
+  completion signal both this script's resume check and
+  ``run_sweep.py``'s skip check read, so it must be the FINAL act of a
+  successful cell — copying it first opens a kill window (OOM killer /
+  SIGKILL / power loss) in which the cell is permanently "done" with no
+  metrics and is never retrained.
 
 See also:
     ``script/make_dev_splits.py`` — the remediation the guard names.
@@ -294,4 +302,35 @@ def test_dataset_presence_guard_precedes_dataset_load():
         "the presence guard must precede the dataset load "
         f"(guard at {guard_idx}, load at {load_idx}) — a guard after the "
         "load cannot protect it"
+    )
+
+
+def test_final_metrics_written_before_resume_marker():
+    """WR-13: in the trainer.train() success block, final_metrics.json is
+    written BEFORE the trainer_state.json resume marker is copied — the
+    marker is the completion signal both this script's resume check and
+    run_sweep.py's skip check read, so it must be the FINAL act of a
+    successful cell. Copying the marker first opens a kill window (OOM
+    killer, SIGKILL, power loss) in which the cell is permanently "done"
+    with no metrics and is never retrained."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    write_idx = src.find('open(outdir + "final_metrics.json"')
+    assert write_idx != -1, (
+        "no final_metrics.json write found — the sweep driver's "
+        "completed/failed contract depends on this file existing"
+    )
+    copy_idx = src.find(
+        'shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json"'
+    )
+    assert copy_idx != -1, (
+        "no trainer_state.json resume-marker copy found — without the "
+        "marker, resume would retrain every cell"
+    )
+    assert write_idx < copy_idx, (
+        "final_metrics.json must be written before the trainer_state.json "
+        f"resume marker is copied (write at {write_idx}, copy at "
+        f"{copy_idx}) — the marker promises the metrics exist, so it must "
+        "be the final act of a successful cell; a process death between "
+        "the two otherwise leaves a cell permanently done-with-no-metrics "
+        "that no later sweep ever retrains (WR-13)"
     )

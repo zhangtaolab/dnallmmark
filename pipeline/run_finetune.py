@@ -789,9 +789,18 @@ if __name__ == "__main__":
                         checkpoints = glob(outdir + "checkpoint-*")
                         all_steps = [int(ckpt.split("-")[-1]) for ckpt in checkpoints]
                         last_step = max(all_steps)
-                        shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json", outdir)
+                        # Write final_metrics.json FIRST and copy the
+                        # trainer_state.json resume marker LAST (WR-13):
+                        # the marker is the completion signal both this
+                        # script's resume check and run_sweep.py's skip
+                        # check read, so it must be the final act of a
+                        # successful cell. Copying it first opens a kill
+                        # window (OOM killer / SIGKILL / power loss) in
+                        # which the cell is permanently "done" with no
+                        # metrics and is never retrained.
                         with open(outdir + "final_metrics.json", 'w') as f:
                             json.dump(metrics, f, indent=4)
+                        shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json", outdir)
                     trainer.evaluate()
                 # Blind except is the designed isolation (D-08 sanctioned):
                 # a dataset-train failure logs and CONTINUEs to the next
