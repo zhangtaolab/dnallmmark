@@ -35,9 +35,10 @@ files). The contracts asserted here are textual/structural:
   the with_head YAML and never restores it, so only a fresh in-loop load
   guarantees the model after ``evo2_1b_base``/``megaDNA_updated`` starts
   with no ``head_config`` residue.
-- **grad_accum reset per dataset (D-07)** — the YAML-default
-  ``default_grad_accum`` snapshot (taken right after the per-model base
-  reload) must be restored at the top of the dataset loop, BEFORE the
+- **grad_accum reset per dataset (D-07 / WR-01)** — the YAML-default
+  ``default_grad_accum`` snapshot (taken AFTER the custom-head reload, so
+  head models snapshot the with_head YAML's default) must be restored at
+  the top of the dataset loop, BEFORE the
   adjustment block reads ``gradient_accumulation_steps`` — a per-task
   grad_accum from dataset A must never persist into dataset B.
 - **fp32-only models (CR-01)** — ``models_only_support_fp32`` must match
@@ -168,16 +169,28 @@ def test_base_config_reload_is_per_model():
 
 
 def test_grad_accum_reset_per_dataset():
-    """D-07: default_grad_accum is snapshotted after the per-model base
-    reload and restored inside the dataset loop BEFORE the adjustment
-    block reads gradient_accumulation_steps — a per-task grad_accum from
-    dataset A never persists into dataset B."""
+    """D-07: default_grad_accum is snapshotted AFTER the custom-head config
+    reload (WR-01: evo2_1b_base / megaDNA_updated snapshot the with_head
+    YAML's default, not the base config's) and restored inside the dataset
+    loop BEFORE the adjustment block reads gradient_accumulation_steps — a
+    per-task grad_accum from dataset A never persists into dataset B."""
     src = RUN_FINETUNE.read_text(encoding="utf-8")
     snapshot_idx = src.find("default_grad_accum = configs")
     assert snapshot_idx != -1, (
-        "no default_grad_accum snapshot after the per-model base reload "
+        "no default_grad_accum snapshot after the per-model config reloads "
         "(D-07) — the per-dataset reset needs the YAML default captured "
         "before any dataset can mutate it"
+    )
+    with_head_idx = src.find(
+        'load_config("./finetune_config_with_head.yaml")'
+    )
+    assert with_head_idx != -1, "no custom-head config reload found"
+    assert with_head_idx < snapshot_idx, (
+        "the snapshot must be taken AFTER the custom-head reload "
+        f"(with_head reload at {with_head_idx}, snapshot at {snapshot_idx}) "
+        "— snapshotting from the base config forces the base YAML's "
+        "grad_accum onto head models and would clobber any with_head "
+        "grad_accum change (WR-01)"
     )
     reset_idx = src.find(
         'configs["finetune"].gradient_accumulation_steps = default_grad_accum'

@@ -422,11 +422,6 @@ if __name__ == "__main__":
         # leak head_config residue into every model processed after
         # evo2_1b_base / megaDNA_updated in the same run.
         configs = load_config("./finetune_config.yaml")
-        # Snapshot the YAML-default grad_accum (D-07): the adjustment block
-        # in the dataset loop below mutates gradient_accumulation_steps in
-        # place per dataset, and the reset at the top of each dataset
-        # iteration restores this per-model default.
-        default_grad_accum = configs["finetune"].gradient_accumulation_steps
 
         model_path = base_dir + model_row["Model_path"]
         tokenizer_type = model_row["Tokenizer"]
@@ -440,6 +435,15 @@ if __name__ == "__main__":
             if model_name in ["evo2_1b_base", "megaDNA_updated"]:
                 configs = load_config("./finetune_config_with_head.yaml")
                 configs['task'].head_config.head = model_name.lower().split("_")[0]
+
+            # Snapshot the ACTIVE config's YAML-default grad_accum (D-07,
+            # WR-01): taken AFTER the custom-head reload above so
+            # evo2_1b_base / megaDNA_updated snapshot the with_head YAML's
+            # default rather than the base config's — the per-dataset reset
+            # below must restore whichever config is actually active for
+            # this model, or a future with_head grad_accum change would be
+            # silently clobbered by the base YAML's value.
+            default_grad_accum = configs["finetune"].gradient_accumulation_steps
 
             # Iterate through datasets
             count = 0
