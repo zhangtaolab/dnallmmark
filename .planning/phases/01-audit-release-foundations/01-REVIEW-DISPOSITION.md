@@ -5,32 +5,32 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: fixed
-    title: "Live Zenodo preview JWT committed in public README — residual risk untracked"
+    disposition: open
+    title: "gitleaks allowlist is record-scoped, not token-scoped — any swapped JWT in the known link position is silently suppressed"
   - id: WR-02
     severity: warning
-    disposition: fixed
-    title: "README says Python 3.11+ while the repo pins >=3.13"
+    disposition: open
+    title: "`compare.py` treats equal-value bool/int cross-type pairs as identical — silent false-negative against live pinned data"
   - id: WR-03
     severity: warning
-    disposition: fixed
-    title: "`baseline/compare.py` diff ordering is nondeterministic across processes"
+    disposition: open
+    title: "Non-finite metric values (`"nan"`, `NaN`, `"inf"`) pass the presence gate and poison an entire task's normalization"
   - id: IN-01
     severity: info
-    disposition: fixed
-    title: "Dead counter variable"
+    disposition: open
+    title: "Pure-integer differences are classified as `FLOAT_BIG`"
   - id: IN-02
     severity: info
-    disposition: fixed
-    title: "Metric-presence check is narrower than `get_float`'s missing-value semantics"
+    disposition: open
+    title: "Index generator crashes with a raw stack trace when `task_performance/` is missing"
   - id: IN-03
     severity: info
-    disposition: fixed
-    title: "No per-file error handling in the index generator"
+    disposition: open
+    title: "README "Output fields" still omits `avg_PFLOPs`"
   - id: IN-04
     severity: info
-    disposition: fixed
-    title: "Double spaces in generated task display names"
+    disposition: open
+    title: "`.planning/tmp/` GSD scratch is untracked noise in `git status`"
   - id: WR-04
     severity: warning
     disposition: fixed
