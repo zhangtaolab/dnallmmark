@@ -1,0 +1,86 @@
+{
+    "fake-alpha": {
+        "model": {
+            "context_len (bp)": 512,
+            "name": "Fake Alpha",
+            "series": "FakeSeries",
+            "size (M)": 7,
+            "species": "multi-species",
+            "tokenizer": "fake-bpe",
+            "type": "MLM"
+        },
+        "performance": {
+            "avg_PFLOPs": 3e-12,
+            "avg_rank": 2.0,
+            "avg_raw": 0.5,
+            "rank": 2,
+            "rank_score": 1.0,
+            "samples": 1,
+            "sum_PFLOPs": 3e-12,
+            "sum_minmax": 0.5,
+            "sum_robust": 0.0,
+            "sum_zscore": 0.0,
+            "top10_count": 1,
+            "top1_count": 0,
+            "top3_count": 1,
+            "top5_count": 1,
+            "top8_count": 1
+        }
+    },
+    "fake-beta": {
+        "model": {
+            "context_len (bp)": 512,
+            "name": "Fake Beta",
+            "series": "FakeSeries",
+            "size (M)": 8,
+            "species": "multi-species",
+            "tokenizer": "fake-bpe",
+            "type": "MLM"
+        },
+        "performance": {
+            "avg_PFLOPs": 3.1e-12,
+            "avg_rank": 1.0,
+            "avg_raw": 0.6,
+            "rank": 1,
+            "rank_score": 2.0,
+            "samples": 1,
+            "sum_PFLOPs": 3.1e-12,
+            "sum_minmax": 1.0,
+            "sum_robust": 0.9999999999999994,
+            "sum_zscore": 1.2247448713915892,
+            "top10_count": 1,
+            "top1_count": 1,
+            "top3_count": 1,
+            "top5_count": 1,
+            "top8_count": 1
+        }
+    },
+    "fake-gamma": {
+        "model": {
+            "context_len (bp)": 512,
+            "name": "Fake Gamma",
+            "series": "FakeSeries",
+            "size (M)": 9,
+            "species": "multi-species",
+            "tokenizer": "fake-bpe",
+            "type": "MLM"
+        },
+        "performance": {
+            "avg_PFLOPs": 3.2e-12,
+            "avg_rank": 3.0,
+            "avg_raw": 0.4,
+            "rank": 3,
+            "rank_score": 0.0,
+            "samples": 1,
+            "sum_PFLOPs": 3.2e-12,
+            "sum_minmax": 0.0,
+            "sum_robust": -0.9999999999999994,
+            "sum_zscore": -1.2247448713915892,
+            "top10_count": 1,
+            "top1_count": 0,
+            "top3_count": 1,
+            "top5_count": 1,
+            "top8_count": 1
+        }
+    }
+}

@@ -7,8 +7,10 @@
 #
 #   make data       regenerate the derived data chain (47 task_performance
 #                   + 4 models_comparison + tasks.json)
-#   make test       full pytest suite (slow lane included)
-#   make test-fast  pytest excluding @slow (the real-tree determinism run)
+#   make test       full local suite: pytest (slow lane included) plus the
+#                   node:test JS suite over tests/js/ (Python + JS lanes)
+#   make test-fast  pytest excluding @slow (the real-tree determinism run);
+#                   the JS suite is fast and runs in the full test lane
 #   make lint       ruff over tests/
 # =====================================================================
 
@@ -26,10 +28,11 @@ data:
 	node scripts/generate-tasks-index.js
 
 # --group dev is REQUIRED: default-groups = ["data"] in pyproject.toml
-# replaces uv's ["dev"] default (Pitfall 2).
+# replaces uv's ["dev"] default (Pitfall 2). The JS lane runs plain node
+# (built-in node:test runner, zero npm deps — no Python env involved).
 test:
 	$(UV) run --group dev pytest
-# (node --test tests/js/ joins this target in plan 02-02 when tests/js/ exists)
+	node --test tests/js/
 
 test-fast:
 	$(UV) run --group dev pytest -m "not slow"
