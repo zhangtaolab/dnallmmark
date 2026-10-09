@@ -395,6 +395,16 @@ if __name__ == "__main__":
         "borzoi-replicate-0",
         "flashzoi-replicate-0",
     ]
+    # fp32-only models (CR-01, ported from the deprecated pipeline's quirk
+    # list): the global finetune_config.yaml sets bf16: True, but these
+    # registry models cannot train in reduced precision — the dataset loop
+    # below forces fp16/bf16 off for them before the trainer is built.
+    models_only_support_fp32 = [
+        "Jamba-DNA-v1-114M-hg38",
+        "CrossDNA_8.1M",
+        "CrossDNA_71.6M",
+        "CrossDNA_519M",
+    ]
 
     # Iteratively finetune across different models and datasets
     max_mem = 0.0
@@ -544,6 +554,15 @@ if __name__ == "__main__":
                 # Auto batch size adjustment moved to after max_length calculation
                 # to properly account for sequence length
 
+
+                # Force fp32 for models that cannot train in reduced
+                # precision (CR-01): finetune_config.yaml sets bf16: True
+                # globally, so this override must land before DNATrainer
+                # reads the config — mirrors the deprecated pipeline's
+                # models_only_support_fp32 handling.
+                if model_name in models_only_support_fp32:
+                    configs["finetune"].fp16 = False
+                    configs["finetune"].bf16 = False
 
                 # Disable safetensors for specific models
                 if model_name in model_not_use_safetensors:

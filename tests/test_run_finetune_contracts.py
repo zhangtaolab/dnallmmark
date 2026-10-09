@@ -40,6 +40,11 @@ files). The contracts asserted here are textual/structural:
   reload) must be restored at the top of the dataset loop, BEFORE the
   adjustment block reads ``gradient_accumulation_steps`` — a per-task
   grad_accum from dataset A must never persist into dataset B.
+- **fp32-only models (CR-01)** — ``models_only_support_fp32`` must match
+  the deprecated pipeline's membership and force ``fp16``/``bf16`` off
+  before ``DNATrainer`` construction, so the global ``bf16: True`` in
+  ``finetune_config.yaml`` never trains those registry models in
+  reduced precision.
 
 See also:
     ``script/make_dev_splits.py`` — the remediation the guard names.
@@ -201,4 +206,52 @@ def test_grad_accum_reset_per_dataset():
         f"gradient_accumulation_steps (reset at {reset_idx}, read at "
         f"{read_idx}) — otherwise dataset B starts from dataset A's "
         "mutated value"
+    )
+
+
+def test_fp32_only_models_forced_to_full_precision():
+    """CR-01: run_finetune.py forces fp16/bf16 off for the fp32-only quirk
+    models — the SAME membership the deprecated pipeline carries (the
+    behavioral reference) — before DNATrainer is constructed, so the
+    global bf16: True in finetune_config.yaml never trains these models
+    in reduced precision."""
+    active = RUN_FINETUNE.read_text(encoding="utf-8")
+    legacy = (REPO_ROOT / "pipeline" / "dnallmmark_pipeline.py").read_text(
+        encoding="utf-8")
+
+    def list_members(src, name):
+        match = re.search(rf"{name} = \[(.*?)\]", src, re.DOTALL)
+        assert match is not None, f"no {name} = [...] list found in source"
+        return re.findall(r'"([^"]+)"', match.group(1))
+
+    active_list = list_members(active, "models_only_support_fp32")
+    legacy_list = list_members(legacy, "models_only_support_fp32")
+    assert active_list, (
+        "models_only_support_fp32 is missing/empty from run_finetune.py — "
+        "the global bf16: True trains these models in reduced precision"
+    )
+    assert sorted(active_list) == sorted(legacy_list), (
+        "run_finetune.py's fp32-only membership must match the deprecated "
+        f"pipeline's list (active {sorted(active_list)} vs legacy "
+        f"{sorted(legacy_list)}) — the deprecated file is the behavioral "
+        "reference"
+    )
+    override_idx = active.find("if model_name in models_only_support_fp32:")
+    assert override_idx != -1, (
+        "no fp32 override guarded by models_only_support_fp32 (CR-01) — "
+        "the list exists but nothing forces fp16/bf16 off with it"
+    )
+    tail = active[override_idx:]
+    assert 'configs["finetune"].fp16 = False' in tail, (
+        "the fp32 override must set fp16 = False"
+    )
+    assert 'configs["finetune"].bf16 = False' in tail, (
+        "the fp32 override must set bf16 = False (the YAML default is True)"
+    )
+    trainer_idx = active.find("trainer = DNATrainer(")
+    assert trainer_idx != -1, "no DNATrainer construction found"
+    assert override_idx < trainer_idx, (
+        "the fp32 override must precede DNATrainer construction "
+        f"(override at {override_idx}, trainer at {trainer_idx}) so the "
+        "trainer never sees reduced-precision flags for these models"
     )
