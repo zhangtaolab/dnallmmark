@@ -568,20 +568,25 @@ Register `slow` in `[tool.pytest.ini_options]` `markers`. Expected wall time ≈
 | A4 | `subprocess.run([sys.executable, …])` under `uv run pytest` resolves to the venv python | Pattern 3/determinism | Low — `uv run` puts the venv first on PATH and `sys.executable` IS the venv python; alternative `uv run --group data python …` from the Makefile only |
 | A5 | Chain run ≈ 40s (CONTEXT D-10 figure; not independently re-timed this session) | Determinism | Low — only affects `make test` wall-clock expectations |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All three questions below are resolved by the phase plans; each carries an inline RESOLVED note citing the plan/task that owns the resolution.
 
 1. **`$defs` sharing across the 4 schema files — one shared file vs duplication?**
    - What we know: draft 2020-12 supports cross-file `$ref`; jsonschema's default registry handles it with absolute `$id`s; shapes overlap heavily (dataset entry, model card, parameters, metric block).
    - What's unclear: whether cross-file refs resolve smoothly in all validator invocations without a custom `referencing.Registry`.
    - Recommendation: start with duplication inside each file (strictness is per-file self-contained, forced versioning is the goal); consolidate only if drift becomes annoying. If sharing: `check_schema` + one smoke validation per file in Wave 0.
+   - **RESOLVED — plan 02-01 (Tasks 1-2):** duplication. Every schema file is self-contained with its own `$defs` and no cross-file `$ref`; 02-01's acceptance criteria encode this explicitly ("self-contained defs, no cross-file $ref").
 
 2. **Should `make test` include the ~80-90s determinism run, or gate it behind `make test-fast`?**
    - What we know: success criterion 1 says `make test` runs "the full local suite"; D-10 accepts ~40s/chain locally.
    - Recommendation: `make test` = full suite including slow; `make test-fast` = `-m "not slow"` for the inner loop. (Planner's call; both trivially expressible.)
+   - **RESOLVED — plan 02-01 Task 1 (Makefile + pytest config), consumed by 02-03:** both lanes exist. `make test` runs with no marker filter (slow lane included); `make test-fast` runs `-m "not slow"`; the `slow` marker is registered in 02-01's `[tool.pytest.ini_options]` and applied by 02-03's determinism test.
 
 3. **AST contract test anchor fragility across Phase 3 (dnallm dev adaptation)?**
    - What we know: Phase 3 adapts the pipeline to dnallm 0.7.1 — the construction site at 1227 may move or be restructured before Phase 4's fix.
    - Recommendation: the test's fallback `pytest.fail("construction site not found")` keeps it honest; if Phase 3 moves the site, the test needs a one-line anchor update — flag this coupling in the plan so Phase 3's executor knows the test exists and must be kept compiling.
+   - **RESOLVED — plan 02-03 Task 2:** the coupling is flagged, not avoided. The AST lock keeps the honest `pytest.fail("construction site not found")` fallback, the test docstring documents the Phase 3 dnallm-dev coupling, and 02-03's artifacts_produced records the Phase 3 caution (a moved construction site gets a deliberate one-line anchor update, never a silent xfail).
 
 ## Environment Availability
 
