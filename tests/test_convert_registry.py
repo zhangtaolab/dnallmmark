@@ -33,9 +33,8 @@ import argparse
 import json
 import sys
 
-import pytest
-
 import convert_registry  # conftest puts script/ on sys.path
+import pytest
 
 MODELS_TSV_HEADER = ("Model_name\tModel_path\tModel_size\tTokenizer"
                      "\tMean_token_length\n")
@@ -251,8 +250,11 @@ def test_derive_operational_requires_models_kind_and_merge_existing(tmp_path):
     """--derive-operational is a models-kind, --merge-existing flag:
     other combinations abort with a clear error."""
     tsv = MODELS_TSV_HEADER + "a\tmodels/a\t5M\tBPE\t6\n"
+    tsv_ds = (DATASETS_TSV_HEADER
+              + "1\td0\tdatasets/d0\t10\t1\t0\tbinary\t2\t100\tf1\tPlants\n")
     with pytest.raises(SystemExit, match="models"):
-        run_to_json(tmp_path, tsv, kind="datasets", derive_operational=True)
+        run_to_json(tmp_path, tsv_ds, existing={"d0": {"Train": 10}},
+                    kind="datasets", derive_operational=True)
     with pytest.raises(SystemExit, match="merge-existing"):
         run_to_json(tmp_path, tsv, kind="models", derive_operational=True)
 

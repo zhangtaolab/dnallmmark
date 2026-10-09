@@ -22,8 +22,22 @@ Behavior
                into an existing JSON registry: existing keys not named in the
                CSV are preserved; CSV-derived keys overwrite. Column names are
                kept verbatim as JSON keys unless renamed via ``--map from=to``
-               (repeatable). The final operational/card key naming is owned by
-               the Phase 3 plan (D-10); this script is deliberately neutral.
+               (repeatable). The name-column cell also lands verbatim as a
+               field on every merged entry (D-10: ``key == Model_name`` /
+               ``key == Dataset_name`` must hold — the pipeline reads the name
+               field from each JSON entry). ``--rename-name from=to``
+               (repeatable) rewrites BOTH the merge key and the name-column
+               cell before merging, for name-form drift between a legacy
+               tabular registry and the JSON keys (a rename that collides with
+               another CSV row aborts loudly). ``--derive-operational``
+               (models kind, requires ``--merge-existing``) fills the
+               operational four for card-only entries that did not come from
+               the CSV: ``Model_path = models/{key}``, ``Model_size`` from the
+               ``size (M)`` card value with an ``M`` suffix when numeric,
+               ``Tokenizer``/``Mean_token_length`` from the
+               ``tokenizer``/``mean_token_len`` card values, and
+               ``Model_name = key``; existing values are never overwritten and
+               card keys are never modified.
 
 ``--to-csv``   Flatten JSON entries to CSV. Columns default to the preset
                order; JSON entries missing a column get an empty cell (card
@@ -123,6 +137,16 @@ def parse_args():
     parser.add_argument("--map", action="append", default=[], metavar="FROM=TO",
                         help="Rename a CSV column to a different JSON key "
                              "(repeatable, --to-json only)")
+    parser.add_argument("--rename-name", action="append", default=[],
+                        metavar="FROM=TO",
+                        help="Rename a CSV entry name — rewrites BOTH the merge "
+                             "key and the name-column cell — before merging "
+                             "(repeatable, --to-json only; a rename that "
+                             "collides with another CSV row aborts)")
+    parser.add_argument("--derive-operational", action="store_true",
+                        help="Fill the operational four for card-only entries "
+                             "coming from --merge-existing (models kind, "
+                             "--to-json only)")
     parser.add_argument("--numeric", action="append", default=[],
                         metavar="COL",
                         help="Additional numeric columns to coerce to int "
@@ -134,6 +158,75 @@ def parse_args():
     parser.add_argument("--crlf", action="store_true",
                         help="Write CRLF line endings (legacy .txt style); default LF")
     return parser.parse_args()
+
+
+# The models-registry operational columns (D-10): every unified entry must
+# carry these four, whatever its origin (tabular row, card, or derivation).
+OPERATIONAL_COLUMNS = ("Model_path", "Model_size", "Tokenizer",
+                       "Mean_token_length")
+
+
+def format_model_size(size):
+    """Format a ``size (M)`` card value as a ``Model_size`` string.
+
+    Numeric card sizes gain an ``M`` suffix (matching the legacy tabular
+    convention, e.g. ``94`` -> ``"94M"``); non-numeric values pass through
+    verbatim (e.g. ``"~1B"``).
+
+    Args:
+        size: The ``size (M)`` card value (int, float, or str).
+
+    Returns:
+        str: The ``Model_size`` string.
+    """
+    if isinstance(size, bool):
+        return str(size)
+    if isinstance(size, (int, float)):
+        return f"{size}M"
+    return str(size)
+
+
+def derive_operational_fields(registry, csv_names):
+    """Fill derived operational fields for card-only entries (D-10).
+
+    Entries that did NOT come from the CSV (they survive from
+    ``--merge-existing``) and lack any of the operational four gain derived
+    values: ``Model_path = models/{key}`` (the old pipeline's key-derived
+    convention), ``Model_size`` from the ``size (M)`` card value with an
+    ``M`` suffix when numeric, ``Tokenizer``/``Mean_token_length`` from the
+    ``tokenizer``/``mean_token_len`` card values, and ``Model_name = key``.
+    Existing values are never overwritten; card keys are never modified.
+
+    Args:
+        registry (dict): The merged registry (mutated in place).
+        csv_names (set): Entry names supplied by the CSV — never derived.
+
+    Returns:
+        int: Number of entries that gained derived fields.
+    """
+    derived = 0
+    for key, entry in registry.items():
+        if key in csv_names:
+            continue  # came from the CSV — carries the operational fields
+        if all(col in entry for col in OPERATIONAL_COLUMNS):
+            continue  # already operational — untouched
+        size = entry.get("size (M)")
+        updates = {
+            "Model_name": key,
+            "Model_path": f"models/{key}",
+            "Model_size": format_model_size(size) if size is not None else None,
+            "Tokenizer": entry.get("tokenizer"),
+            "Mean_token_length": entry.get("mean_token_len"),
+        }
+        changed = False
+        for col, value in updates.items():
+            if value is None or col in entry:
+                continue  # no card source, or never overwrite an existing value
+            entry[col] = value
+            changed = True
+        if changed:
+            derived += 1
+    return derived
 
 
 def read_csv_rows(path, name_column, numeric_columns):
@@ -194,6 +287,7 @@ def read_csv_rows(path, name_column, numeric_columns):
 def to_json(args, preset):
     """Convert CSV rows to a JSON registry, optionally merging into an existing one."""
     renames = dict(m.split("=", 1) for m in args.map)
+    name_renames = dict(m.split("=", 1) for m in args.rename_name)
     numeric = set(preset["numeric"]) | set(args.numeric) | set(renames)
     rows = read_csv_rows(args.input, preset["name_column"], numeric)
     for name, fields in rows.items():
@@ -204,14 +298,36 @@ def to_json(args, preset):
         with open(args.merge_existing, "r", encoding="utf-8") as f:
             registry = json.load(f)
 
-    added, merged = 0, 0
+    name_column = preset["name_column"]
+    added, merged, renamed_count = 0, 0, 0
+    seen = set()
     for name, fields in rows.items():
-        if name in registry:
-            registry[name].update(fields)
+        final_name = name_renames.get(name, name)
+        if final_name != name:
+            renamed_count += 1
+        if final_name in seen:
+            sys.exit(f"[Error] Name collision after --rename-name: CSV rows "
+                     f"'{name}' and '{final_name}' both map to '{final_name}'")
+        seen.add(final_name)
+        # The name-column cell lands verbatim as a field so key == name field
+        # holds for every entry (D-10 single-source contract).
+        fields[name_column] = final_name
+        if final_name in registry:
+            registry[final_name].update(fields)
             merged += 1
         else:
-            registry[name] = fields
+            registry[final_name] = fields
             added += 1
+
+    derived = 0
+    if args.derive_operational:
+        if not args.merge_existing:
+            sys.exit("[Error] --derive-operational requires --merge-existing "
+                     "(it derives fields for entries that come from the "
+                     "existing registry, not from the CSV)")
+        if args.kind != "models":
+            sys.exit("[Error] --derive-operational applies to --kind models only")
+        derived = derive_operational_fields(registry, csv_names=seen)
 
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -219,7 +335,7 @@ def to_json(args, preset):
         json.dump(registry, f, indent=4, sort_keys=True, ensure_ascii=False)
         f.write("\n")
     print(f"✅ {args.input} -> {out}: {added} entries added, {merged} merged, "
-          f"{len(registry)} total")
+          f"{renamed_count} renamed, {derived} derived, {len(registry)} total")
 
 
 def to_csv(args, preset):
@@ -250,6 +366,9 @@ def to_csv(args, preset):
 def main():
     """Entry point: dispatch to the requested conversion direction."""
     args = parse_args()
+    if args.to_csv and (args.rename_name or args.derive_operational):
+        sys.exit("[Error] --rename-name/--derive-operational apply to "
+                 "--to-json only")
     preset = KIND_PRESETS[args.kind]
     if args.to_json:
         to_json(args, preset)
