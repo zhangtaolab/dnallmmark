@@ -35,6 +35,11 @@ Reconcile the dev-branch pipeline rewrite (dev@c6b3137, `run_finetune.py`, 44-mo
 ### Carried from the pre-restructure discussion (still binding when runs resume)
 - Dedicated NEW uv venv for the pipeline env (never DNALLM/.venv reuse — its dnallm install is 0.6.0/stale); lock carrier = pyproject `[gpu]` + uv.lock; E2E pair = plant-dnamamba-6mer + PlantHelixSeek × PlantCAD2__cross_species_leaf_on_off_translation.
 
+### Planning-time decisions (2026-10-09, maintainer answers during /gsd-plan-phase 3)
+- **D-07:** The newly-found grad_accum cross-dataset leak (`run_finetune.py` L584/L593/L598 — `configs["finetune"].gradient_accumulation_steps` mutated in place and re-read next dataset; same class as old-pipeline P0 AUD-02) is fixed IN Phase 3 F2 scope (2-3 line fix + test), not deferred to Phase 4.
+- **D-08:** Lint scope: ALL 16 ruff findings arriving with `run_finetune.py` via the merge are fixed in Phase 3 (full strictness — no baseline carry-over, no suppression backlog).
+- **D-09:** PlantHelixSeek models_info entry (11 metadata fields) is sourced from the maintainer-provided model card: https://modelscope.cn/models/zhangtaolab/PlantHelixSeek
+
 ### Claude's Discretion
 - Merge mechanics (single merge commit vs. path-checkout steps) and conflict resolution order; a merge-conflict inventory table lands in the plan's acceptance evidence.
 - run_finetune.py reading pass during reconciliation: no behavioral edits (that is F1/F2's job), but a correctness read of the G1/G2 claims at L516/L584-598 vs actual code is cheap and de-risks F2's fix.
