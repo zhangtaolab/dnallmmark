@@ -60,7 +60,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 
 **Revision requirements (F1–F10, per the 2026-10-09 code-review & feature plan against dev@c6b3137; F-numbers are the canonical reference)**:
 - [x] **REV-01** (F1, P0): Dev-split generation for the 18 Dev-empty tasks (stratified 10% from train, seed=42, datasets_info Dev columns updated) + checkpoint selection refuses silent test fallback
-- [ ] **REV-02** (F2, P0): Multi-seed sweep — seed-isolated output dirs fixing G1 (resume never skips a different seed), sweep runner (model×task×seed) with per-run records and failure manifest; VRAM-probe state semantics documented per seed
+- [x] **REV-02** (F2, P0): Multi-seed sweep — seed-isolated output dirs fixing G1 (resume never skips a different seed), sweep runner (model×task×seed) with per-run records and failure manifest; VRAM-probe state semantics documented per seed
 - [ ] **REV-03** (F3, P0): Unified exporter + result snapshot — metric-key mapping layer (suite registry ↔ export keys, key-parity unit-tested), dataset species from a human-verified metadata table (never model cards), per-seed detail + mean±SD/bootstrap-CI aggregates; freeze_snapshot (tar + SHA-256 + frozen commit hash)
 - [ ] **REV-04** (F6, P1): Aggregation upgrade — CI-overlap tie rules, raw-rank + z-score×difficulty-weight dual views, permutation tests (10k, BH-corrected); CpG case renders as tie
 - [ ] **REV-05** (F4, P1): Adaptation lanes — LoRA (suite built-in, CLI-exposed), IA³ (after suite-side support), frozen probes (embedding cache + logistic/MLP); cost-accuracy frontier table
@@ -117,7 +117,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PIPE-02 | Phase 3 | Pending |
 | PIPE-03 | Phase 3 | Pending |
 | REV-01 | Phase 3 | Complete |
-| REV-02 | Phase 3 | Pending |
+| REV-02 | Phase 3 | Complete |
 | REV-03 | Phase 4, Phase 6 | Pending |
 | REV-04 | Phase 5 | Pending |
 | REV-05 | Phase 6 | Pending |

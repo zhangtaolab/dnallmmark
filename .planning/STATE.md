@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v0.7.1
 current_phase: 03
 current_phase_name: Dev-Branch Reconciliation & P0 Revision Blockers
-status: executing
-stopped_at: "Completed 03-03-PLAN.md (PIPE-02/03 deferred metadata: [gpu] group + ty toolchain + PlantHelixSeek card)"
-last_updated: "2026-10-09T17:10:04.540Z"
+status: verifying
+stopped_at: "Completed 03-04-PLAN.md (REV-02: seed-isolated sweep runner + D-07/D-11 leaks + D-08 ruff)"
+last_updated: "2026-10-09T17:30:07.998Z"
 last_activity: 2026-10-10
 last_activity_desc: Phase 03 execution started
-state_head: 4248e54af059fa4ae8b1abe40d426c3e734fe86b
+state_head: 4556cafdf4d0fa751b97df019a0aa32fe0cfd688
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 
 Phase: 03 (Dev-Branch Reconciliation & P0 Revision Blockers) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-10 — Phase 03 execution started
 
 Progress: [███░░░░░░░] 33% (1/6 phases)
@@ -66,6 +66,7 @@ Progress: [███░░░░░░░] 33% (1/6 phases)
 | Phase 03 P01 | 15 min | 3 tasks | 7 files |
 | Phase 03 P02 | 19 min | 3 tasks | 13 files |
 | Phase 03 P03 | 10 min | 2 tasks | 6 files |
+| Phase 03 P04 | 16 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,9 @@ Recent decisions affecting current work:
 - [Phase 03]: [Phase 03]: 03-03: [gpu] group replaces [pipeline] with exact pins torch==2.11.0+cu130 / transformers==5.17.0 via the explicit torch-scoped pytorch-cu130 index (T-03-07) — definition-only per D-05, never synced; dev env provably torch-free; uv.lock re-resolved same-commit
 - [Phase 03]: [Phase 03]: 03-03: ty 0.0.85 joins dev group with [tool.ty] config + make typecheck zero-diagnostics gate; torch_npu.** added empirically to replace-imports-with-any (research glob missed run_finetune.py:44 Huawei NPU import)
 - [Phase 03]: [Phase 03]: 03-03: PlantHelixSeek card filled from the D-09 ModelScope card inside the unified registry — 62 entries unchanged, complete cards 44->45, card-absent enumeration 18->17 (plan's post-fill '44 complete' was the stale pre-fill count; 62-17=45); PIPE-02/PIPE-03 deliberately stay Pending — only their D-05 deferred metadata form landed
+- [Phase 03]: 03-04: run_sweep failure capture is (subprocess.SubprocessError, OSError), not except Exception — D-08's noqa prohibition + widened lint scope force a specific-exception boundary at the launch seam; driver bugs abort loudly (BLE001 probed to fire even on underscore bindings)
+- [Phase 03]: 03-04: F401 torch_npu fixed via importlib.import_module (import removal would break Ascend NPU support — the import's registration side effect makes torch.npu exist); SIM115 fixed by wrapping the model-loop body in a with-open block, break/continue semantics preserved
+- [Phase 03]: 03-04: G1 dead (seed_{seed}/ outdir + seed-scoped resume marker), D-07 grad_accum and D-11 head_config leaks fixed, run_sweep.py landed with --dry-run + fake-executor proof only — zero model runs (D-05/D-06 held; E2' stays gated at F1->F2->E2')
 
 ### Pending Todos
 
@@ -124,6 +128,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T17:10:04.505Z
-Stopped at: Completed 03-03-PLAN.md (PIPE-02/03 deferred metadata: [gpu] group + ty toolchain + PlantHelixSeek card)
+Last session: 2026-10-09T17:30:07.963Z
+Stopped at: Completed 03-04-PLAN.md (REV-02: seed-isolated sweep runner + D-07/D-11 leaks + D-08 ruff)
 Resume file: None
