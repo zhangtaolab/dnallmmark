@@ -1,0 +1,43 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": "v0.7.1",
+  "phases": [
+    {
+      "number": "1",
+      "name": "Audit & Release Foundations",
+      "status": "complete"
+    },
+    {
+      "number": "2",
+      "name": "Data Contracts & Test Harness",
+      "status": "complete"
+    },
+    {
+      "number": "3",
+      "name": "Pipeline Adaptation to dnallm Dev",
+      "status": "pending"
+    },
+    {
+      "number": "4",
+      "name": "Correctness Fixes",
+      "status": "pending"
+    },
+    {
+      "number": "5",
+      "name": "CI & Verified Data Migration",
+      "status": "pending"
+    },
+    {
+      "number": "6",
+      "name": "Release Packaging & Provenance",
+      "status": "pending"
+    }
+  ],
+  "next": {
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step (plan phase 3)",
+    "reason": "Phase 3 of 6 — needs a plan"
+  },
+  "updated_at": "2026-10-09T05:32:20.886Z"
+}
