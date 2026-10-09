@@ -546,15 +546,43 @@ def main():
         Path(args.registry_dir).resolve() if args.registry_dir else PIPELINE_DIR
     )
     output_root = Path(args.output_root).resolve()
+    # WR-14: a PROVIDED --models/--tasks/--seeds whose value strips to
+    # nothing (e.g. --models , --models "" --seeds ,) must abort, not
+    # degrade. An empty filter list is falsy, which _validate_filters'
+    # early return and enumerate_matrix's `if models_filter:` both treat
+    # as "no filter" — silently enumerating the FULL registry matrix
+    # while the operator believes the run was scoped — and an empty seed
+    # set enumerates 0 cells, writes a manifest, and exits 0: both are
+    # WR-07's silently-surprising-matrix hazard in new shapes, so fail
+    # fast naming the flag and its raw value. An ABSENT --models/--tasks
+    # keeps full-matrix semantics; only provided-but-empty fails.
     seeds = sorted({int(s.strip()) for s in args.seeds.split(",") if s.strip()})
-    models_filter = (
-        [m.strip() for m in args.models.split(",") if m.strip()]
-        if args.models else None
-    )
-    tasks_filter = (
-        [t.strip() for t in args.tasks.split(",") if t.strip()]
-        if args.tasks else None
-    )
+    if not seeds:
+        sys.exit(
+            f"[Error] --seeds {args.seeds!r} produced no integer values "
+            "after stripping empty elements; pass at least one seed, "
+            "e.g. --seeds 42"
+        )
+    models_filter = None
+    if args.models is not None:
+        models_filter = [m.strip() for m in args.models.split(",") if m.strip()]
+        if not models_filter:
+            sys.exit(
+                f"[Error] --models {args.models!r} produced no model names "
+                "after stripping empty elements; refusing to silently "
+                "enumerate the full model registry — omit --models to run "
+                "all models"
+            )
+    tasks_filter = None
+    if args.tasks is not None:
+        tasks_filter = [t.strip() for t in args.tasks.split(",") if t.strip()]
+        if not tasks_filter:
+            sys.exit(
+                f"[Error] --tasks {args.tasks!r} produced no task names "
+                "after stripping empty elements; refusing to silently "
+                "enumerate the full task registry — omit --tasks to run "
+                "all trainable tasks"
+            )
 
     # Fail fast on typo'd/untrainable filters BEFORE any cell is
     # enumerated (WR-07): an unknown name would otherwise intersect to an

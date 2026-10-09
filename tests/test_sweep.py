@@ -38,7 +38,15 @@ Every behavior bullet of the plan's Task 2 is pinned here:
 - **filter validation** — a --models/--tasks name absent from the
   registries (or a requested task with falsy ``Train``) exits non-zero
   listing the names instead of silently enumerating an empty matrix that
-  reports a successful 0-cell sweep (WR-07).
+  reports a successful 0-cell sweep (WR-07);
+- **degenerate flag values** — a PROVIDED --models/--tasks/--seeds whose
+  value contains only separators/whitespace (``--models ,``, ``--models ""``,
+  ``--seeds ,``) exits non-zero naming the flag and its raw value instead of
+  degrading: an empty filter list is falsy, which both _validate_filters'
+  early return and enumerate_matrix's ``if models_filter:`` treat as "no
+  filter" (silently enumerating the FULL registry matrix), and an empty seed
+  set runs 0 cells and exits 0 (WR-14); an ABSENT --models/--tasks keeps
+  full-matrix semantics.
 
 The runner is stdlib-only and never imports torch/dnallm; no test executes
 the real subprocess (the argv test monkeypatches ``subprocess.run``).
@@ -523,4 +531,106 @@ def test_cli_exits_nonzero_on_requested_task_without_train_split(
     )
     assert not out_root.exists(), (
         "the refusal must abort before any output is written"
+    )
+
+
+@pytest.mark.parametrize("flag,raw_value", [
+    ("--models", ","),
+    ("--models", ""),
+    ("--tasks", ","),
+    ("--tasks", ""),
+])
+def test_cli_exits_nonzero_on_provided_but_empty_filter_values(
+        tmp_path, monkeypatch, flag, raw_value):
+    """WR-14: a PROVIDED --models/--tasks whose value contains only
+    separators/whitespace — e.g. --models , after shell indirection
+    collapses --models "$A,$B" with both variables empty — exits non-zero
+    naming the flag and its raw value. The stripped list is falsy, which
+    _validate_filters' early return and enumerate_matrix's
+    ``if models_filter:`` both treat as "no filter", so pre-fix the
+    driver silently enumerated the FULL registry matrix (62 models x 50
+    tasks = 3100 cells on the real registries) while the operator
+    believed the run was scoped."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            flag, raw_value,
+            "--seeds", "42",
+            "--dry-run",
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert flag in message, (
+        "the error must name the offending flag so the operator knows "
+        "which value to fix"
+    )
+    assert repr(raw_value) in message, (
+        "the error must echo the flag's raw value"
+    )
+    assert not out_root.exists(), (
+        "a provided-but-empty filter must abort before any output is "
+        "written — never fall through to the full-registry matrix"
+    )
+
+
+@pytest.mark.parametrize("raw_seeds", ["", ","])
+def test_cli_exits_nonzero_on_provided_but_empty_seed_values(
+        tmp_path, monkeypatch, raw_seeds):
+    """WR-14: --seeds is argparse-required, but any PRESENT value
+    satisfies required=True — including "" or "," — which strips to an
+    empty seed set. Pre-fix, run_matrix([]) wrote a manifest, printed
+    "Sweep finished: 0 cell(s)", and exited 0: exactly the
+    silently-successful no-op the WR-07 fail-fast was written to prevent.
+    Provided-but-empty must exit non-zero naming the flag and its raw
+    value."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", raw_seeds,
+            "--dry-run",
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "--seeds" in message, (
+        "the error must name the offending flag so the operator knows "
+        "which value to fix"
+    )
+    assert repr(raw_seeds) in message, (
+        "the error must echo the flag's raw value"
+    )
+    assert not out_root.exists(), (
+        "an empty seed set must abort before any output is written — "
+        "never write a 0-cell manifest and exit 0"
+    )
+
+
+def test_cli_absent_filters_keep_full_matrix_semantics(tmp_path, monkeypatch):
+    """WR-14 guard-rail: OMITTING --models/--tasks keeps full-matrix
+    semantics — only explicitly-provided-but-empty values fail fast. The
+    default sweep must still enumerate every models_info.json key x
+    truthy-Train datasets_info.json entry (task-y excluded: Train=0)."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert [(c["model"], c["task"], c["seed"]) for c in manifest["cells"]] == [
+        ("model-a", "task-x", 42), ("model-a", "task-z", 42),
+        ("model-b", "task-x", 42), ("model-b", "task-z", 42),
+        ("model-c", "task-x", 42), ("model-c", "task-z", 42),
+    ], (
+        "an absent --models/--tasks means ALL registry entries — the "
+        "WR-14 fail-fast must fire only on provided-but-empty values, "
+        "never on absent flags"
     )
