@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v0.7.1
-current_phase: 3
+current_phase: 03
 current_phase_name: Dev-Branch Reconciliation & P0 Revision Blockers
 status: executing
-stopped_at: Phase 3 context gathered (code-first directive)
-last_updated: "2026-10-09T10:55:10.389Z"
-last_activity: 2026-10-09
-last_activity_desc: Phase 3 planning complete
-state_head: e14e159a39188d5db26e31218c74ce41c8c1b293
+stopped_at: Completed 03-01-PLAN.md (dev merge, F10, D-03 pivot, D-04 review)
+last_updated: "2026-10-09T16:24:16.783Z"
+last_activity: 2026-10-10
+last_activity_desc: Phase 03 execution started
+state_head: 00a07a2182ed54cbb013b2541e90125bbefac176
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 10
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-09)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust.
-**Current focus:** Phase 2 — Data Contracts & Test Harness
+**Current focus:** Phase 03 — Dev-Branch Reconciliation & P0 Revision Blockers
 
 ## Current Position
 
-Phase: 3 (Dev-Branch Reconciliation & P0 Revision Blockers) — READY TO EXECUTE
-Plan: Not started
+Phase: 03 (Dev-Branch Reconciliation & P0 Revision Blockers) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-10-09 — Phase 3 planning complete
+Last activity: 2026-10-10 — Phase 03 execution started
 
 Progress: [███░░░░░░░] 33% (1/6 phases)
 
@@ -63,6 +63,7 @@ Progress: [███░░░░░░░] 33% (1/6 phases)
 | Phase 02 P02-01 | 6 min | 3 tasks | 11 files |
 | Phase 02 P02 | 14 min | 3 tasks | 13 files |
 | Phase 02 P03 | 7 min | 2 tasks | 2 files |
+| Phase 03 P01 | 15 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,10 @@ Recent decisions affecting current work:
 - [Phase 02]: Plan 02-03: D-10's ~40s/chain estimate never re-timed — measured ~0.3s/run; docstring records reality, slow marker stays by lane quality not cost
 - [Phase 02]: Plan 02-03: research Pattern 2's parents[2] anchor resolved outside the repo (false-lock hazard) — corrected to parents[1], --runxfail probe proves locks fail on real defects
 - [Phase 02]: Plan 02-03: three xfail(strict=True) defect locks landed (AUD-01-P0 AST, WR-02 walk, WR-03 get_float nan/inf/-inf) — Phase 4 contract is fix + remove marker in same commit
+- [Phase 03]: 03-01: merge resolved mechanically per verified inventory (checkout --ours x51, git rm -f x6 dev-added data files) — zero hand-edited generated JSON; byte-empty staged diff proven before the merge commit
+- [Phase 03]: 03-01: README Run Pipeline section updated beyond the two named lines (args block, models_info.txt, --fix_token_len dropped, --auto_batch_size) so the renamed entry point is not misdocumented by adjacent prose; exporter sentence deferred to REV-03
+- [Phase 03]: 03-01: D-03 lock = species in {Animals,Plants,Microbe,Multiple} AND == datasets_info Category (OQ-1 recommendation); fixture-injectable, --runxfail-proven non-vacuous on athaliana defect
+- [Phase 03]: 03-01: D-04 review of commit 8d99daf verdict CLEAN, 4 observations recorded (2 AUD-16-interaction edges, pre-existing inert drawBorder, aria-pressed) — no new AUD rows
 
 ### Pending Todos
 
@@ -111,6 +116,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T09:22:53.390Z
-Stopped at: Phase 3 context gathered (code-first directive)
-Resume file: .planning/phases/03-dev-reconciliation-revision-blockers/03-CONTEXT.md
+Last session: 2026-10-09T16:24:16.750Z
+Stopped at: Completed 03-01-PLAN.md (dev merge, F10, D-03 pivot, D-04 review)
+Resume file: None
