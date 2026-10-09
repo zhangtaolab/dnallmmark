@@ -151,3 +151,87 @@ def test_metric_enum_matches_committed_data(validators):
         f"schema enum {sorted(schema_enum)} != observed data {sorted(observed)} — "
         "update the schema (D-02 forced versioning) or fix the drifted data"
     )
+
+
+# ===== D-02 closed-enum self-check, widened (IN-02) =====
+# Where each schema carries the closed dataset-vocabulary enums
+# (species/type/metric), and which committed data each copy governs. The
+# enums are deliberately DUPLICATED per file (self-contained schemas, no
+# cross-file $ref — recorded RESEARCH Q1 decision); this check is what
+# keeps the copies honest. models_comparison.json carries NO closed
+# species/type enums by design (open model-card strings, D-02 closes
+# metric enums only) — the boundary is asserted below so widening it is a
+# deliberate act, not drift.
+ENUM_LOCATIONS = {
+    "model_performance": lambda s: s["$defs"]["datasetEntry"]["properties"]["dataset"]["properties"],
+    "task_performance": lambda s: s["$defs"]["datasetBlock"]["properties"],
+    "tasks_index": lambda s: s["properties"]["tasks"]["items"]["properties"],
+}
+DATASET_ENUM_FIELDS = ("metric", "species", "type")
+
+
+def _observed_dataset_field_values():
+    """Collect observed species/type/metric value sets per data form.
+
+    Returns:
+        dict bucket name -> {field: set of values} over the committed data
+        each schema governs — the dataset blocks of the 42 producer files,
+        the info blocks of the 47 pivot files, and the entries of
+        ``tasks.json``.
+    """
+    observed = {
+        bucket: {field: set() for field in DATASET_ENUM_FIELDS}
+        for bucket in ENUM_LOCATIONS
+    }
+    for path in SCHEMA_FILES["model_performance"][1]:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        for entry in doc["performance"].values():
+            for field in DATASET_ENUM_FIELDS:
+                observed["model_performance"][field].add(entry["dataset"][field])
+    for path in SCHEMA_FILES["task_performance"][1]:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        for field in DATASET_ENUM_FIELDS:
+            observed["task_performance"][field].add(doc["info"][field])
+    tasks_doc = json.loads((DATA / "tasks.json").read_text(encoding="utf-8"))
+    for task in tasks_doc["tasks"]:
+        for field in DATASET_ENUM_FIELDS:
+            observed["tasks_index"][field].add(task[field])
+    return observed
+
+
+def test_dataset_enums_match_committed_data_across_all_schemas(validators):
+    """IN-02: every closed species/type/metric enum equals the value set
+    actually present in the committed data its schema governs, and the
+    copies across schema files are identical.
+
+    Same ≡ discipline as ``test_metric_enum_matches_committed_data``
+    (which stays as the metric-focused pin), applied to all three fields
+    in all three enum-carrying schemas: a new dataset vocabulary value
+    turns this red until every schema copy is updated together, and an
+    enum copy drifting from its siblings is caught even when the data
+    still matches one of them.
+    """
+    observed = _observed_dataset_field_values()
+    reference = {}  # model_performance owns the vocabulary; copies must match it
+    for bucket, get_props in ENUM_LOCATIONS.items():
+        props = get_props(validators[bucket].schema)
+        for field in DATASET_ENUM_FIELDS:
+            schema_enum = set(props[field]["enum"])
+            reference.setdefault(field, schema_enum)
+            assert schema_enum == observed[bucket][field] == reference[field], (
+                f"{bucket}.{field}: schema enum {sorted(schema_enum)} != "
+                f"observed data {sorted(observed[bucket][field])} and/or != "
+                f"model_performance copy {sorted(reference[field])} — update "
+                "the schema copies together (D-02 forced versioning) or fix "
+                "the drifted data"
+            )
+    # models_comparison boundary: model-card species/type stay OPEN strings
+    # (D-02) — if they ever get closed, that belongs in ENUM_LOCATIONS with
+    # the same ≡ discipline, as a deliberate schema change.
+    mc_model = validators["models_comparison"].schema["$defs"]["modelComparison"]["properties"]["model"]["properties"]
+    for field in ("species", "type"):
+        assert "enum" not in mc_model[field], (
+            f"models_comparison model-card {field} is an open string by "
+            "design (D-02); closing it is a deliberate schema change that "
+            "must widen this enum check at the same time"
+        )
