@@ -258,9 +258,14 @@ def write_registry(path, registry):
 def split_task(name, entry, registry, datasets_root=PIPELINE_ROOT):
     """Carve the dev split for one task, all-or-nothing.
 
-    Order of operations makes an interrupted run self-healing on re-run:
-    the deterministic carve overwrites any half-written dev.csv with the
-    same bytes before train.csv and the registry are updated.
+    Interrupted-run behavior: an interruption before the train.csv
+    rewrite self-heals on re-run — the deterministic carve overwrites any
+    half-written dev.csv with the same bytes before train.csv is
+    rewritten. An interruption AFTER the train.csv rewrite but before
+    the registry is persisted (in :func:`main`) leaves the registry at
+    the pre-carve Train count, so a re-run hits the count guard below
+    and refuses with a registry/disk mismatch — that window does NOT
+    self-heal and needs manual reconciliation (WR-05).
 
     Args:
         name (str): Task key (for messages and the registry update).
