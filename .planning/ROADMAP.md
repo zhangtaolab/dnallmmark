@@ -13,7 +13,7 @@ This is a hardening milestone over an existing, working platform — not a build
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Audit & Release Foundations** - Findings report over all three subsystems, pre-fix baseline frozen (`data-v1`), LICENSE + pinned manifests, deterministic generators, secret-hygiene decision applied (intentional Zenodo preview link kept; scan confirms no other secrets) (completed 2026-10-09)
-- [ ] **Phase 2: Data Contracts & Test Harness** - Four JSON Schemas, CPU-only unit/golden/determinism tests over the data chain, and a single-command Makefile — locked before any number moves
+- [x] **Phase 2: Data Contracts & Test Harness** - Four JSON Schemas, CPU-only unit/golden/determinism tests over the data chain, and a single-command Makefile — locked before any number moves (completed 2026-10-09)
 - [ ] **Phase 3: Pipeline Adaptation to dnallm Dev** - Pipeline adapted to dnallm dev (v0.7.1), GPU environment reproducibly buildable on the GB10 machine, one end-to-end fine-tune run emitting schema-valid output
 - [ ] **Phase 4: Correctness Fixes** - Every page renders (navbar fix), species-grouping fixed test-first in the adapted pipeline, submission flow restored, escaping at touched DOM-build sites
 - [ ] **Phase 5: CI & Verified Data Migration** - GitHub Actions CI (lint, test matrix, frontend checks, drift detection) plus post-fix recomputation with a changelogged, tagged before/after record
@@ -56,7 +56,7 @@ Plans:
   4. Golden-file tests pass over a synthetic fixture tree, and a determinism regression test re-runs the chain expecting byte-identical output
   5. The suite is stable by construction — float assertions carry explicit tolerances (`pytest.approx`) and thread counts are pinned in conftest — so repeated local runs do not flake
 
-**Plans**: 3/3 plans executed planned
+**Plans**: 3/3 plans complete planned
 Plans:
 **Wave 1**
 - [x] 02-01-PLAN.md — Four fully-strict JSON Schemas + 94-file schema validation suite + dev group/Makefile entry points (make data/test/test-fast/lint) + D-08 micro-fixes; make data proven zero-diff (REL-04, TEST-06, TEST-02)
@@ -129,7 +129,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Audit & Release Foundations | 3/3 | Complete    | 2026-10-09 |
-| 2. Data Contracts & Test Harness | 3/3 | In Progress | - |
+| 2. Data Contracts & Test Harness | 3/3 | Complete    | 2026-10-09 |
 | 3. Pipeline Adaptation to dnallm Dev | 0/TBD | Not started | - |
 | 4. Correctness Fixes | 0/TBD | Not started | - |
 | 5. CI & Verified Data Migration | 0/TBD | Not started | - |
