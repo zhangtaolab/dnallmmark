@@ -107,9 +107,13 @@ def _snapshot_outputs(work):
 def _run_chain_once(work):
     """Run the full chain once inside ``work``, leaving only run outputs.
 
-    The Python steps overwrite their own outputs in place; the JS-visible
-    ``task_performance/`` copy is rebuilt from scratch each run so run 2
-    sees only run-2 outputs (no stale run-1 files can linger).
+    Every chain output is REMOVED first (WR-04): ``task_performance/``, the
+    ``models_comparison*.json`` files, and the generated ``tasks.json``.
+    Without this, a run-2 file-set shrink (an output silently not written)
+    is masked — run 1's leftover copy of that file would enter snapshot 2
+    with run-1 bytes and every comparison would pass vacuously. With the
+    cleanup, each run must write its FULL output set from scratch. The
+    copied ``model_performance/`` inputs are never touched.
 
     Args:
         work: The tmp chain root (holds ``model_performance/`` and the JS
@@ -118,6 +122,13 @@ def _run_chain_once(work):
     Returns:
         Dict ``{relative_posix_path: bytes}`` of all regenerated outputs.
     """
+    # Remove stale run-N outputs so a later run cannot inherit them
+    # (inputs under model_performance/ are preserved).
+    shutil.rmtree(work / "task_performance", ignore_errors=True)
+    for stale in work.glob("models_comparison*.json"):
+        stale.unlink()
+    (work / JS_INDEX_RELPATH).unlink(missing_ok=True)
+
     # Both Python scripts resolve inputs/outputs against CWD at call time
     # (paths are locals inside main()) — running them with cwd=work keeps
     # every write inside the tmp tree.
