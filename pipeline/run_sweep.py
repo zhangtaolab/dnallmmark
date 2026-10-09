@@ -76,10 +76,15 @@ Registry contract (D-10 single source):
 Failure boundary:
     A cell is recorded ``failed`` when the executor raises a
     ``subprocess.SubprocessError`` or ``OSError`` — the failure modes of
-    the launch seam. Any other exception is a driver/executor BUG and
-    aborts the sweep loudly instead of being recorded across thousands of
-    cells (and no blind ``except Exception`` is introduced: D-08 forbids
-    noqa outside run_finetune.py's three designed isolation sites).
+    the launch seam — OR when the executor exits 0 but the cell dir has
+    no ``final_metrics.json`` (CR-02): ``run_finetune.py``'s designed
+    blind-except isolation (D-08) swallows a training failure and still
+    exits 0 without writing metrics, so the missing file is the only
+    reliable training-failure signal from the child. Any other exception
+    is a driver/executor BUG and aborts the sweep loudly instead of being
+    recorded across thousands of cells (and no blind ``except Exception``
+    is introduced: D-08 forbids noqa outside run_finetune.py's three
+    designed isolation sites).
 
 --dry-run:
     Enumerates the matrix and writes ONLY ``sweep_manifest.json``
@@ -337,9 +342,14 @@ def run_matrix(cells, output_root, executor=None):
     cell dir marks the cell ``skipped`` with NO executor invocation;
     otherwise the executor runs, and on success the cell's
     final_metrics.json keys are copied VERBATIM into the record's
-    ``metrics`` (suite-native — translation is REV-03's job). An executor
-    failure (subprocess.SubprocessError / OSError) records the cell
-    ``failed`` with the error text and appends to the failures manifest.
+    ``metrics`` (suite-native — translation is REV-03's job). A cell is
+    recorded ``failed`` with the error text and an entry in the failures
+    manifest when the executor raises (subprocess.SubprocessError /
+    OSError — the launch-seam failure modes) OR when the executor exits
+    0 but the cell dir has no final_metrics.json (CR-02:
+    run_finetune.py's blind-except isolation makes a training failure
+    exit 0 without writing metrics, so the missing file — not the exit
+    status — is the training-failure signal).
 
     Args:
         cells (list[tuple[str, str, int]]): (model, task, seed) cells.
@@ -371,9 +381,32 @@ def run_matrix(cells, output_root, executor=None):
             cell_dir.mkdir(parents=True, exist_ok=True)
             try:
                 executor(model, task, seed, str(output_root))
-                record["status"] = "completed"
                 metrics_path = cell_dir / METRICS_NAME
-                if metrics_path.exists():
+                if not metrics_path.exists():
+                    # CR-02: run_finetune.py's designed blind-except
+                    # isolation (D-08) swallows a training failure and
+                    # still exits 0 WITHOUT writing final_metrics.json —
+                    # so exit status alone cannot distinguish a completed
+                    # training from a failed one. A successful executor
+                    # with no metrics file IS a failed cell: record it
+                    # failed (never "completed" with null metrics) so
+                    # the per-cell audit artifacts never lie about the
+                    # sweep's outcome.
+                    record["status"] = "failed"
+                    record["error"] = (
+                        "executor exited 0 but final_metrics.json is "
+                        "missing (run_finetune.py swallowed a training "
+                        "failure)"
+                    )
+                    failures.append({
+                        "model": model,
+                        "task": task,
+                        "seed": seed,
+                        "output_dir": str(cell_dir),
+                        "error": record["error"],
+                    })
+                else:
+                    record["status"] = "completed"
                     with open(metrics_path, "r", encoding="utf-8") as f:
                         record["metrics"] = json.load(f)
             except (subprocess.SubprocessError, OSError) as exc:

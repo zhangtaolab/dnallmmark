@@ -14,7 +14,11 @@ Every behavior bullet of the plan's Task 2 is pinned here:
   ``final_metrics.json`` into the cell dir yields status ``completed`` with
   metrics copied VERBATIM (suite-native keys untouched — translation is
   REV-03's job); a fake that raises yields status ``failed`` with the error
-  string recorded and an entry in the failures manifest; a pre-existing
+  string recorded and an entry in the failures manifest; a fake that exits
+  0 WITHOUT writing ``final_metrics.json`` is likewise ``failed`` with a
+  missing-metrics error and a failures entry (CR-02:
+  run_finetune.py's blind-except isolation makes training failures exit
+  0, so the missing file is the failure signal); a pre-existing
   ``trainer_state.json`` yields status ``skipped`` with NO executor
   invocation — and the skip is seed-scoped (seed 43 still runs when seed
   42's marker exists in the sibling dir);
@@ -222,6 +226,41 @@ def test_run_matrix_failed_records_error_and_failures_manifest(tmp_path):
     assert failures[0]["model"] == "model-a"
     assert failures[0]["task"] == "task-x"
     assert failures[0]["seed"] == 42
+    assert failures[0]["error"] == records[0]["error"]
+    disk = json.loads(
+        (out_root / "model-a" / "task-x" / "seed_42" / "run_record.json")
+        .read_text(encoding="utf-8"))
+    assert disk["status"] == "failed"
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"][0]["status"] == "failed"
+
+
+def test_run_matrix_exit0_without_metrics_is_failure(tmp_path):
+    """CR-02: a fake executor that returns normally but writes NO
+    final_metrics.json (run_finetune.py's blind-except isolation swallows
+    a training failure and still exits 0) is recorded failed with a
+    missing-metrics error and a sweep_failures.json entry — never
+    completed with null metrics."""
+    out_root = tmp_path / "sweep-out"
+
+    def silent_failure_executor(model, task, seed, output_root):
+        # Exits 0, writes nothing — the dominant real-world failure mode
+        # as seen from the driver side of the subprocess seam.
+        return None
+
+    records = run_sweep.run_matrix(
+        [("model-a", "task-x", 42)], out_root, executor=silent_failure_executor)
+    assert records[0]["status"] == "failed", (
+        "an executor that exits 0 without writing final_metrics.json is a "
+        "failed cell, not a completed one with null metrics"
+    )
+    assert records[0]["metrics"] is None
+    assert "final_metrics.json is missing" in records[0]["error"]
+    failures = json.loads(
+        (out_root / "sweep_failures.json").read_text(encoding="utf-8"))
+    assert len(failures) == 1
+    assert failures[0]["model"] == "model-a"
     assert failures[0]["error"] == records[0]["error"]
     disk = json.loads(
         (out_root / "model-a" / "task-x" / "seed_42" / "run_record.json")
