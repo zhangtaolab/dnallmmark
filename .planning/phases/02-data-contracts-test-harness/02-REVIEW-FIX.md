@@ -1,10 +1,10 @@
 ---
 phase: 02-data-contracts-test-harness
-fixed_at: 2026-10-09T04:59:21Z
+fixed_at: 2026-10-09T05:16:21Z
 review_path: .planning/phases/02-data-contracts-test-harness/02-REVIEW.md
-iteration: 1
-findings_in_scope: 9
-fixed: 7
+iteration: 2
+findings_in_scope: 12
+fixed: 10
 deferred: 2
 status: all_fixed
 ---
@@ -247,3 +247,132 @@ acceptable under D-04.
 _Fixed: 2026-10-09T04:59:21Z_
 _Fixer: Claude (gsd-code-fixer)_
 _Iteration: 1_
+
+---
+
+# Round 2 — Fix-Round Delta (WR-06, WR-07, IN-05)
+
+**Fixed at:** 2026-10-09T05:16:21Z
+**Source review:** the fix-round delta review appended to
+`.planning/phases/02-data-contracts-test-harness/02-REVIEW.md`
+(reviewed 2026-10-09T05:08:13Z, base diff since `61308cc`)
+**Iteration:** 2
+**Where verification ran:** the main checkout (branch `autorun`) — same as
+Round 1, so every command and output below is reproducible from this tree.
+
+**Summary:**
+- Findings in scope: 3 (the delta review's full set — WR-06, WR-07, IN-05)
+- Fixed: 3, one atomic commit each; skipped: 0
+- Scope discipline: only `tests/` and `Makefile` touched (D-04 respected);
+  `02-REVIEW.md`, `02-REVIEW-DISPOSITION.md`, `STATE.md`, `ROADMAP.md`
+  untouched
+
+**Final gates (all green, after all three fixes):**
+- `make test` — pytest lane `136 passed, 5 xfailed in 1.38s`, JS lane
+  `pass 2 / fail 0`, exit 0
+- `make lint` — `ruff check tests/` → `All checks passed!`
+- `make data` — exit 0; `git status --porcelain -- dnallm-mark/data/`
+  empty (zero-diff, published data untouched)
+- `git status --porcelain -- dnallm-mark/data/ tests/ Makefile schemas/`
+  — clean (no source left modified)
+
+## Round 2 — Fixed Issues
+
+### WR-06: check-node's remediation message points to a node-free lane that does not exist — `make test-fast` hard-requires node via `test_golden.py`
+
+**Files modified:** `tests/test_golden.py`, `Makefile`
+**Commit:** `86fdc8a`
+**What changed:**
+- `tests/test_golden.py`: module-level
+  `pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node >=18 required for the JS generator step of this test")`
+  — all three tests in the module consume the shared `chain_result`
+  fixture, whose generator step shells out to `node`
+  (`subprocess.run(["node", ...], check=True)`), so the module-level mark
+  covers exactly the node-dependent set. `shutil` was already imported.
+- `Makefile` check-node message: dropped the false "or run make test-fast"
+  alternative; the message now says node is required for the JS test lane
+  and the tasks.json goldens AND states accurately that the pytest-only
+  fast lane SKIPS node-dependent tests when node is absent (true only
+  because of the skipif — noted in the comment).
+
+**Verified:**
+- Node present (normal path): `pytest tests/test_golden.py -v` →
+  `3 passed` (skipif inert); full `make test` → `136 passed, 5 xfailed` +
+  JS `2 pass / 0 fail`, exit 0.
+- Node-less fast lane: scratch shell with `PATH=/tmp/nodeless_bin`
+  (scratch dir holding ONLY a `uv` symlink — `/usr/bin/node` excluded, so
+  the normal PATH could not be reused) running
+  `env PATH=/tmp/nodeless_bin /usr/bin/make test-fast` →
+  `132 passed, 3 skipped, 1 deselected, 5 xfailed`, exit 0. With `-rs`:
+  `SKIPPED [1] tests/test_golden.py: node >=18 required for the JS
+  generator step of this test` (x3) — skip, not error.
+- Pre-fix contrast (this round's edit stashed): identical node-less PATH →
+  `3 errors` with `FileNotFoundError`, exit 1 — the raw-tracepoint mode
+  IN-04 was filed against, reproduced and then closed.
+
+### WR-07: `make data` invokes node with no check-node guard — the raw exit-127 failure IN-04 fixed for `test` persists in the other node-dependent target
+
+**Files modified:** `Makefile`
+**Commit:** `713609d`
+**What changed:** `data: check-node` — the guard is now a prerequisite of
+both node-dependent targets. The check-node comment and message were
+widened to name both lanes: `node >=18 required for the JS test lane, the
+tasks.json goldens, and 'make data' — install Node; the pytest-only fast
+lane (make test-fast) skips node-dependent tests when node is absent`.
+
+**Verified:**
+- Node-less: `env PATH=/tmp/nodeless_bin /usr/bin/make data` → prints
+  exactly the one-line message and aborts at
+  `make: *** [Makefile:45：check-node] 错误 1` (make's "Error 1" abort in
+  this shell's zh locale), nonzero exit — the guard fires BEFORE any
+  recipe line, so the old third-line `/bin/sh: node: not found` /
+  `Error 127` mode can no longer occur.
+- Normal path: `make data` → exit 0, and
+  `git status --porcelain -- dnallm-mark/data/` is empty — zero-diff
+  against the committed data tree.
+
+### IN-05: AUD-01 companion guards findability and uniqueness but not key-presence — one silent-degradation path remains open
+
+**Files modified:** `tests/test_known_defects.py`
+**Commit:** `e642600`
+**What changed:** One assert added to the UNMARKED companion
+(`test_aud01_construction_site_anchor_is_findable_and_unique`), directly
+after the uniqueness assert, exactly as the review specified:
+
+```python
+assert any(
+    isinstance(k, ast.Constant) and k.value == "species"
+    for k in sites[0].keys
+), (
+    "matched construction site no longer contains a 'species' key — "
+    "update the anchor deliberately"
+)
+```
+
+plus a comment naming the IN-05 path it closes: a restructure that keeps
+a unique construction site but moves `"species"` out of the `"dataset"`
+sub-dict would leave the lock failing INSIDE `xfail(strict=True)` —
+reported XFAIL, suite green, lock vacuous. The companion assert puts that
+degradation RED, outside the marker.
+
+**Verified:**
+- `pytest tests/test_known_defects.py -q` → `1 passed, 5 xfailed` — the
+  companion is green against the real site (the `"species"` key at
+  `pipeline/dnallmmark_pipeline.py:1229` inside the unique construction
+  site at line 1227), and all five lock semantics are unchanged.
+- Scratch simulation (scratch copy of the pipeline with the
+  `"species": model_row.get("species", "unknown"),` line removed —
+  anchor still matches exactly one site — and `PIPELINE_SOURCE`
+  monkeypatched to it): the companion fails with
+  `AssertionError: matched construction site no longer contains a
+  'species' key — update the anchor deliberately`.
+- Pre-fix contrast (this round's assert stashed): the SAME scratch
+  simulation left the companion PASSING on the species-less site (the
+  scratch checker failed accordingly) — the silent vacuous-XFAIL
+  degradation, reproduced and then closed. Scratch artifacts deleted.
+
+---
+
+_Fixed: 2026-10-09T05:16:21Z_
+_Fixer: Claude (gsd-code-fixer)_
+_Iteration: 2_
