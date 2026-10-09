@@ -12,7 +12,7 @@ This is a hardening milestone over an existing, working platform — not a build
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Audit & Release Foundations** - Findings report over all three subsystems, pre-fix baseline frozen (`data-v1`), LICENSE + pinned manifests, deterministic generators, secret-hygiene decision applied (intentional Zenodo preview link kept; scan confirms no other secrets)
+- [x] **Phase 1: Audit & Release Foundations** - Findings report over all three subsystems, pre-fix baseline frozen (`data-v1`), LICENSE + pinned manifests, deterministic generators, secret-hygiene decision applied (intentional Zenodo preview link kept; scan confirms no other secrets) (completed 2026-10-09)
 - [ ] **Phase 2: Data Contracts & Test Harness** - Four JSON Schemas, CPU-only unit/golden/determinism tests over the data chain, and a single-command Makefile — locked before any number moves
 - [ ] **Phase 3: Pipeline Adaptation to dnallm Dev** - Pipeline adapted to dnallm dev (v0.7.1), GPU environment reproducibly buildable on the GB10 machine, one end-to-end fine-tune run emitting schema-valid output
 - [ ] **Phase 4: Correctness Fixes** - Every page renders (navbar fix), species-grouping fixed test-first in the adapted pipeline, submission flow restored, escaping at touched DOM-build sites
@@ -33,7 +33,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. A fresh contributor can install the CPU-only data-chain dependencies from version-pinned manifests (`pandas>=2.2,<3.0`), with GPU pipeline dependencies isolated in a separate group CI never installs
   5. The repo is publishable: a LICENSE file exists with data licensing declared separately, and the secret-hygiene decision (2026-10-08) is applied — the intentional Zenodo record-19135551 preview link at `README.md:116` stays as-is while a full-history secret scan confirms no OTHER secrets exist beyond that known-intentional link
 
-**Plans**: 3/3 plans executed
+**Plans**: 3/3 plans complete
 Plans:
 **Wave 1**
 - [x] 01-01-PLAN.md — Freeze data-v1 baseline (comparator + SHA256 manifest + tag) and pin the data-chain environment (pyproject/uv.lock/requirements + pin validation)
@@ -121,7 +121,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Audit & Release Foundations | 3/3 | In Progress | - |
+| 1. Audit & Release Foundations | 3/3 | Complete    | 2026-10-09 |
 | 2. Data Contracts & Test Harness | 0/TBD | Not started | - |
 | 3. Pipeline Adaptation to dnallm Dev | 0/TBD | Not started | - |
 | 4. Correctness Fixes | 0/TBD | Not started | - |

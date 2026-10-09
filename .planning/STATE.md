@@ -1,43 +1,44 @@
 ---
 gsd_state_version: "1.0"
 milestone: v0.7.1
-current_phase: 01
-current_phase_name: Audit & Release Foundations
-status: verifying
-stopped_at: "Completed 01-03-PLAN.md (phase 01 complete: ready for verification)"
-last_updated: "2026-10-08T16:32:21.567Z"
+current_phase: 2
+current_phase_name: Data Contracts & Test Harness
+status: planning
+stopped_at: Phase 01 complete, ready to plan Phase 2
+last_updated: "2026-10-09T00:51:06.719Z"
 last_activity: 2026-10-09
-last_activity_desc: Phase 01 execution started
-state_head: 3112539ea61c4ab8e5b43a9b804bca899417885c
+last_activity_desc: Phase 01 complete, transitioned to Phase 2
+state_head: 38f4f31fe1c2ac241a3a2b1aafba4e1e9ed9bfac
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
   completed_plans: 3
+  percent: 17
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-08)
+See: .planning/PROJECT.md (updated 2026-10-09)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust.
-**Current focus:** Phase 01 — Audit & Release Foundations
+**Current focus:** Phase 2 — Data Contracts & Test Harness
 
 ## Current Position
 
-Phase: 01 (Audit & Release Foundations) — VERIFYING
-Plan: 3 of 3
-Status: Phase complete — verification in progress (verifier re-run after review fixes)
-Last activity: 2026-10-09 — Phase 01 execution started
+Phase: 2 — Data Contracts & Test Harness
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-09 — Phase 01 complete, transitioned to Phase 2
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 17% (1/6 phases)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
+- Total plans completed: 3
 - Average duration: -
 - Total execution time: -
 
@@ -45,7 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 01 | 3 | - | - |
 
 **Recent Trend:**
 - Last 5 plans: -
@@ -79,7 +80,7 @@ Recent decisions affecting current work:
 - [Phase 01]: Frontend audit verified via headless-chromium DOM dumps; interaction-dependent claims recorded static-verified-only — 15 findings routed to Phase 4 scope with file:line evidence
 - [Phase 01]: FIX-05 landed: deterministic generators (sorted iteration, sort_keys, no live clock) with the one-time 52-file migration fully attributed against data-v1; fourth exact-tie pair investigated into the inventory (6-group census recorded in AUDIT.md)
 - [Phase 01]: Secret scan settled behaviorally: gitleaks 8.30.1 default jwt rule misses markdown-paren-closed JWTs (detection rule added) and global path allowlists act as file-level exclusion (rule-scoped AND allowlist used) — probe finds exactly the 1 intentional link, production scan clean over all refs
-- [Phase 01]: License landed: MIT for code (LICENSE + README section, atomic with CC BY 4.0 derived-data terms and upstream-terms disclaimer); copyright holder naming 'Tao Zhang and DNALLM-Mark contributors' is a surfaced assumption for maintainer override before public flip (D-09)
+- [Phase 01]: License landed: MIT for code (LICENSE + README section, atomic with CC BY 4.0 derived-data terms and upstream-terms disclaimer); copyright holder confirmed by maintainer 2026-10-09 as 'zhangtaolab and DNALLM-Mark contributors' (D-09 resolved in UAT)
 
 ### Pending Todos
 
@@ -87,9 +88,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 1: Known-good environment export needed before pandas/numpy pins are authoritative (research gap)
-- Phase 1: License choice (Apache-2.0 recommended, DNABERT-2 precedent) and raw-vs-derived data redistribution status are discuss-phase decisions
-- Phase 1: Zenodo token revocation is a manual out-of-repo action — cannot land as a commit
+- Zenodo preview-token revocation remains a manual out-of-repo action; recorded as a post-publish option (D-08, token read-only scoped)
 - Phase 3: GPU work runs on the NVIDIA GB10 aarch64 machine against the local dnallm dev clone (`/home/forrest/Github/DNALLM` @ c99fa9d) — permanently outside CI scope
 - Phase 6: Dataset-by-dataset license terms for murkier genomics datasets may need spot verification during execution
 
@@ -104,5 +103,5 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-08T14:56:39.800Z
-Stopped at: Completed 01-03-PLAN.md (phase 01 complete: ready for verification)
+Stopped at: Phase 01 complete, ready to plan Phase 2
 Resume file: None

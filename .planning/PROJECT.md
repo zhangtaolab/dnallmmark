@@ -20,16 +20,16 @@ Every number on the public leaderboard is correct and reproducible from code tha
 - ✓ Fine-tuning results, models catalog, and datasets catalog pages (`dnallm-mark/js/finetuning.js`, `js/models.js`, `js/datasets.js`)
 - ✓ Offline data chain: model-centric → task-centric pivot, multi-method score aggregation (rank/MinMax/z-score/robust), task index generation (`script/get_task_performance.py`, `script/summarize_comparison.py`, `scripts/generate-tasks-index.js`)
 - ✓ Client-side submission validation + PR instruction generator (`dnallm-mark/js/submit.js` — implemented but orphaned; `submit.html` missing)
+- ✓ Systematic tri-subsystem review producing a severity-graded, fully-reproduced findings report — `AUDIT.md`, 24 findings (2 P0 / 12 P1 / 10 P2) — Phase 1
+- ✓ Reproducibility substrate: `data-v1` frozen baseline (tag + SHA256 manifest + `baseline/compare.py`), pinned dependencies (pyproject/uv.lock, pandas 2.3.3 / numpy 2.5.3), deterministic data generators with one-time fully-attributed 52-file migration — Phase 1
+- ✓ Pre-release hygiene: secret-hygiene decision recorded (Zenodo preview link intentional, D-08), full-history gitleaks scan clean, MIT LICENSE landed with holder "zhangtaolab and DNALLM-Mark contributors" (maintainer-confirmed 2026-10-09) — Phase 1
 
 ### Active
 
-- [ ] Systematic review of pipeline, data scripts, and frontend producing a severity-graded findings report
 - [ ] Fix confirmed correctness bugs (3 pages dead-on-load from `renderNavbar()`, species-as-dataset grouping at `dnallmmark_pipeline.py:1229`, orphaned submit flow)
-- [ ] Close maintainability gaps (dependency manifests, documented/detectable data-regeneration chain)
 - [ ] Unit tests for the data-processing scripts (`script/`)
 - [ ] GitHub Actions CI running the test suite
 - [ ] Recompute leaderboard data after fixes, with before/after comparison notes
-- [ ] Pre-release hygiene: secret-hygiene decision recorded (Zenodo preview link at `README.md:116` is intentional dataset sharing — kept; scan for any OTHER secrets), LICENSE (default MIT per README badge, maintainer may override)
 - [ ] Adapt pipeline to dnallm dev branch (v0.7.1): resolve API/config-schema deltas, imports and dry-run pass
 - [ ] Build reproducible local GPU pipeline environment (uv/venv; dnallm from git dev; pinned torch/transformers)
 - [ ] Small end-to-end validation: at least one model×dataset fine-tune run against dnallm dev produces a valid performance JSON
@@ -76,6 +76,10 @@ Every number on the public leaderboard is correct and reproducible from code tha
 | Allow data recomputation after fixes, documented with comparisons | Correctness over number stability — the species fix intentionally changes aggregates | — Pending |
 | Priority: correctness first, maintainability second; security limited to token revocation | User prioritization for this milestone | — Pending |
 | Adapt to dnallm dev (v0.7.1) with local GPU env + one-pair validation; full benchmark re-run deferred | Upstream moved; local GB10 machine + local DNALLM clone make adaptation verifiable now | — Pending |
+| D-09 closed: LICENSE holder = "zhangtaolab and DNALLM-Mark contributors" | Maintainer override of the surfaced git-author assumption during Phase 1 UAT (2026-10-09); org handle matches the GitHub org | ✓ Applied (33b80ca) |
+| D-06 accepted: six exact-tie-group census is the complete migration attribution | Maintainer UAT confirmation over independently re-derived evidence (4 flip/2 stable groups, exact rank_score ties both sides) | ✓ Confirmed |
+| P0 rubric boundary: producer-side regeneration risks grade P0 even with committed data intact | "Risks corrupting published numbers on regeneration" reading accepted in UAT; steers Phase 4 scope (AUD-01..06) | ✓ Confirmed |
+| Baseline form: annotated data-v1 tag + tracked SHA256 manifest + comparator, no golden copies | git stores exact bytes at the tag; 52 duplicated copies would rot | ✓ Landed (Phase 1) |
 
 ## Evolution
 
@@ -95,4 +99,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-08 after initialization*
+*Last updated: 2026-10-09 after Phase 1*
