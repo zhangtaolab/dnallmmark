@@ -49,7 +49,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 import run_sweep  # conftest puts pipeline/ on sys.path
 
 SUITE_NATIVE_METRICS = {
