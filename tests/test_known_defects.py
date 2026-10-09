@@ -112,6 +112,19 @@ def test_aud01_construction_site_anchor_is_findable_and_unique():
         "exactly 1) — the anchor lost uniqueness; tighten or update it "
         "deliberately"
     )
+    # IN-05: key-presence. If a restructure keeps a unique dataset-entry
+    # site but moves "species" out of its "dataset" sub-dict, the lock's
+    # next(...) yields None, is_row_get goes False, and the assert fails
+    # INSIDE xfail(strict=True) — reported XFAIL, suite green, lock vacuous
+    # (the WR-01 silent-degradation class, narrower trigger). Guarding it
+    # here puts that degradation RED, outside the marker.
+    assert any(
+        isinstance(k, ast.Constant) and k.value == "species"
+        for k in sites[0].keys
+    ), (
+        "matched construction site no longer contains a 'species' key — "
+        "update the anchor deliberately"
+    )
 
 
 @pytest.mark.xfail(strict=True,
