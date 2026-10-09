@@ -5,7 +5,7 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "AUD-01 lock's `pytest.fail` honesty guard is swallowed by its own `xfail` marker"
   - id: WR-02
     severity: warning
@@ -17,7 +17,7 @@ findings:
     title: "Schema-validation buckets built from glob with no non-emptiness guard — silent vacuous pass"
   - id: WR-04
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Determinism run-to-run check masks a \"run 2 wrote fewer files\" flake"
   - id: WR-05
     severity: warning
@@ -39,19 +39,19 @@ findings:
     severity: info
     disposition: open
     title: "`node` is an undeclared hard dependency of `make test-fast` with a raw traceback on absence"
-open: 9
+open: 7
 total: 9
-recorded: 2026-10-09T04:30:10.223Z
+recorded: 2026-10-09T05:00:49.681Z
 ---
 
 # Phase 02: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
+| WR-01 | warning | fixed | 02-REVIEW-FIX.md |
 | WR-02 | warning | open | - |
 | WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
+| WR-04 | warning | fixed | 02-REVIEW-FIX.md |
 | WR-05 | warning | open | - |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
