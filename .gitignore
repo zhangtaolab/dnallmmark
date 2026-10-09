@@ -97,3 +97,6 @@ finetuned/
 .worktrees/
 worktrees/
 
+# GSD planning scratch (untracked runtime noise)
+.planning/tmp/
+

@@ -256,6 +256,7 @@ This will generate:
 - `sum_robust` - Sum of robust normalized scores
 - `avg_raw` - Average raw metric value across tasks
 - `avg_rank` - Average rank across tasks
+- `avg_PFLOPs` - Average computational cost in PetaFLOPs per task
 - `top1_count`, `top3_count`, `top5_count`, `top8_count`, `top10_count` - Number of tasks in top positions
 - `sum_PFLOPs` - Total computational cost in PetaFLOPs
 - `rank` - Overall ranking position
