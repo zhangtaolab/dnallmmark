@@ -1,140 +1,71 @@
 ---
 phase: 02-data-contracts-test-harness
-reviewed: 2026-10-09T05:08:13Z
+reviewed: 2026-10-09T05:22:56Z
 depth: standard
-files_reviewed: 5
+files_reviewed: 3
 files_reviewed_list:
   - Makefile
-  - tests/conftest.py
-  - tests/test_determinism.py
+  - tests/test_golden.py
   - tests/test_known_defects.py
-  - tests/test_schemas.py
 findings:
   critical: 0
-  warning: 2
-  info: 1
-  total: 3
-status: issues_found
+  warning: 0
+  info: 0
+  total: 0
+status: clean
 ---
 
-# Phase 02: Code Review Report (Fix-Round Delta)
+# Phase 02: Code Review Report (Fix-Round Delta 3 — Convergence)
 
-**Reviewed:** 2026-10-09T05:08:13Z
+**Reviewed:** 2026-10-09T05:22:56Z
 **Depth:** standard
-**Files Reviewed:** 5 (Makefile, tests/conftest.py, tests/test_determinism.py, tests/test_known_defects.py, tests/test_schemas.py)
-**Base:** diff since 61308cc (fix round for WR-01..WR-05, IN-02, IN-04)
-**Status:** issues_found
+**Files Reviewed:** 3 (Makefile, tests/test_golden.py, tests/test_known_defects.py)
+**Base:** diff since 20db676 (fix round for WR-06, WR-07, IN-05)
+**Status:** clean
 
 ## Summary
 
-Incremental re-review of the Phase 2 fix round. All seven applied fixes were
-re-verified independently against the sources they reference — every fix
-implements its intent correctly; two of them (both under IN-04, the node
-dependency guard) leave the guard's goal only half-achieved, producing the two
-warnings below. Finding IDs continue the prior review's sequence (WR-06+,
-IN-05) so recorded dispositions in 02-REVIEW-DISPOSITION.md are not displaced.
+Third delta over the Phase 2 fix rounds. The three changed files implement
+exactly the prior delta's three prescriptions — WR-06 (module-level
+`pytestmark` skipif on missing node in `tests/test_golden.py` plus a truthful
+`check-node` message), WR-07 (`data: check-node` prerequisite), and IN-05
+(companion assert for `"species"` key presence at the matched construction
+site). Each fix was verified against the sources and behavior it references,
+including live simulation of the node-less machine and AST mutation testing of
+the IN-05 guard. All three implement their intent correctly; no new findings.
+Finding-ID sequence stays at WR-07/IN-05 — nothing new to number.
 
-### Fix verification (all independently confirmed)
+All reviewed files meet quality standards. No issues found.
+
+### Fix verification (all independently confirmed, not trusted from green runs)
 
 | Fix | Verdict | Evidence |
 |-----|---------|----------|
-| WR-01 unmarked anchor companion | Correct | AST walk over `pipeline/dnallmmark_pipeline.py` matches exactly 1 site (line 1227); companion is unmarked, so anchor loss goes red outside the `xfail`; lock's `sites[0]` selection is safe under the companion's uniqueness assert. One hardening gap remains (IN-05). |
-| WR-02 `UV ?= uv` | Correct | Overridable PATH-lookup default; `command -v uv` resolves on this machine; comment documents the CI threat. |
-| WR-03 bucket-count canary | Correct | Pins verified live: 42 model_performance, 47 task_performance, 4 comparison, 1 tasks.json globbed under `dnallm-mark/data/`. Canary asserts non-empty AND exact count, closing the vacuous-pass channel. |
-| WR-04 inter-run cleanup | Correct | `_run_chain_once` removes `task_performance/`, all `models_comparison*.json` (verified: summarize writes exactly those names at CWD root), and the generated `tasks.json` before each run — a run-2 file-set shrink can no longer inherit run-1 bytes. Inputs under `model_performance/` untouched. |
-| WR-05 force-assign pinning | Correct | Assignment at conftest import precedes every test-module numpy import; `test_aggregation.py:309-313` (`== "1"` hard assert) now cannot go red from a hostile preset. |
-| IN-02 widened enum self-check | Correct | All three `ENUM_LOCATIONS` paths resolve; schema enums for metric/species/type are identical across the three schemas and exactly equal the observed value sets in all three data forms (verified by independent extraction); models_comparison model-card species/type carry no `enum`, matching the boundary assertion. |
-| IN-04 check-node guard | Partial | Guard exists and is wired to `test` only — see WR-06/WR-07. |
+| WR-06 skipif + truthful message | Correct | `pytestmark = pytest.mark.skipif(shutil.which("node") is None, ...)` at `tests/test_golden.py:43-46`; `shutil` imported (line 29); all three module tests consume `chain_result` (whose fixture shells out to node at line 97), so module-wide scope is exact — no node-free test is over-skipped. **Live node-less simulation** (PATH stripped of node): `pytest tests/test_golden.py` → 3 SKIPPED with reason; full fast lane `pytest tests -m "not slow"` → `132 passed, 3 skipped, 1 deselected, 5 xfailed`, zero errors — the message's "fast lane skips node-dependent tests when node is absent" claim is now empirically true (goldens skip via skipif; the only other pytest-lane node call, `tests/test_determinism.py:142`, is `@pytest.mark.slow`-marked and deselected by `-m "not slow"`, verified). |
+| WR-07 `data: check-node` + widened message | Correct | `Makefile:28` — `make -n data` shows `check-node` recipe running before the three data recipe lines; `check-node` is in `.PHONY` (line 17), prerequisite ordering is correct under parallel make. **Negative path exercised live**: `make check-node` with node absent from PATH prints the exact new message and exits non-zero. The message's enumeration (JS test lane, tasks.json goldens, `make data`) matches the actual node-dependent surfaces; the `test-fast` escape hatch is real (see WR-06 row). |
+| IN-05 species key-presence assert | Correct | `tests/test_known_defects.py:121-127` — `sites[0]` indexing is safe (guarded by the preceding non-empty and uniqueness asserts); `ast.Dict.keys` can contain `None` entries for `**`-unpacking and the `isinstance(k, ast.Constant)` guard tolerates that without crashing. **AST-verified against live source**: exactly one anchor site at `pipeline/dnallmmark_pipeline.py` (~1227) whose `"dataset"` sub-dict carries `"species": model_row.get(...)`. **Mutation-verified** (read-only, over a /tmp copy): with the species key moved out of the sub-dict, the companion's key-presence verdict flips to False (RED outside the marker) while the lock alone would still report silent XFAIL — the exact WR-01 degradation class IN-05 targeted; with the hypothetical Phase 4 fix (`row.get`), the companion stays green and the lock XPASSes into the designed strict failure. No false-positive channel: the legitimate fix keeps the `"species"` key, so the companion never blocks it. |
 
-Suite state independently reproduced: `uv run --group dev pytest -q` →
-`136 passed, 5 xfailed in 1.39s`; `node --test tests/js/` → 2 pass / 0 fail;
-`git status --porcelain` over `dnallm-mark/data/`, `tests/`, `Makefile`,
-`schemas/` clean. The 5 xfails are the three defect locks (AUD-01 anchor,
-bool/int comparator silence at `baseline/compare.py:74`, non-finite
-`get_float` pass-through) — each lock's failure semantics re-verified against
-source, not just trusted from the green run.
+### Suite state independently reproduced
 
-## Critical Issues
+- `make test-fast` → `135 passed, 1 deselected, 5 xfailed in 0.78s`
+- `make test` → `136 passed, 5 xfailed` + `node --test tests/js/` 2 pass / 0 fail
+- `make lint` → `ruff check tests/` all checks passed
+- Simulated node-less fast lane → green (see WR-06 row)
+- `git status --porcelain` over `Makefile`, `tests/`, `dnallm-mark/data/` clean
+  after review activity (the determinism test's own committed-tree check also
+  passed inside `make test`)
 
-None.
+### Residual observation (not a finding — pre-existing, accepted semantics)
 
-## Warnings
-
-### WR-06: check-node's remediation message points to a node-free lane that does not exist — `make test-fast` hard-requires node via `test_golden.py`
-
-**File:** `Makefile:40` (and `tests/test_golden.py:87`)
-**Issue:** The guard's failure message is `node >=18 required for the JS test
-lane — install Node or run make test-fast`. But `make test-fast` runs
-`pytest -m "not slow"`, which collects all three `tests/test_golden.py` tests
-(verified: none is slow-marked; `--collect-only -m "not slow"` shows all
-three). Their shared `chain_result` fixture invokes
-`subprocess.run(["node", str(inner / "gen.js")], check=True, ...)` at
-`tests/test_golden.py:87`. On a node-less machine the operator follows the
-message's advice and lands on exactly the raw-tracepoint failure mode IN-04
-was filed against: `FileNotFoundError` inside pytest, 3 test errors. The
-escape hatch the message promises is broken, so the guard converts one
-confusing failure into a wrong direction plus the same failure.
-**Fix:** Correct the message AND make it true. Minimal: guard the golden lane
-on node presence —
-
-```python
-# tests/test_golden.py (module level, after imports)
-pytestmark = pytest.mark.skipif(
-    shutil.which("node") is None,
-    reason="tasks.json golden requires the Node index generator",
-)
-```
-
-— and change the Makefile message to `node >=18 required (JS test lane and
-the tasks.json goldens) — install Node` (drop the false alternative), or
-document `make test-fast` as node-free only once the skipif lands.
-
-### WR-07: `make data` invokes node with no check-node guard — the raw exit-127 failure IN-04 fixed for `test` persists in the other node-dependent target
-
-**File:** `Makefile:31`
-**Issue:** The fix round added `check-node` as a prerequisite of `test` only,
-but the `data` target's third recipe line runs
-`node scripts/generate-tasks-index.js` directly. On a node-less machine
-`make data` dies with `/bin/sh: node: not found` and make `Error 127` — the
-identical unguarded, non-actionable failure class IN-04 was filed against,
-one target over. (The slow determinism lane also shells out to node at
-`tests/test_determinism.py:142`, but it is excluded from `make test-fast` and
-covered once WR-06's message stops advertising a node-free lane; `data` has
-no such exclusion.)
-**Fix:** Promote the guard to cover both node-dependent targets:
-
-```make
-data: check-node
-	cd $(DATA_DIR) && $(UV) run --group data python ../../script/get_task_performance.py
-	...
-```
-
-(the message in `check-node` should then say "test/data lanes", per WR-06).
-
-## Info
-
-### IN-05: AUD-01 companion guards findability and uniqueness but not key-presence — one silent-degradation path remains open
-
-**File:** `tests/test_known_defects.py:93-114`
-**Issue:** The companion asserts the anchor matches ≥1 site and exactly 1
-site. If a future pipeline restructure keeps a unique dataset-entry
-construction site but moves or renames the `"species"` key out of its
-`"dataset"` sub-dict, the lock's `next(...)` yields `None`, `is_row_get` is
-`False`, the assert fails *inside* `xfail(strict=True)` — reported XFAIL,
-suite green — while the companion stays green too. The lock is then vacuous
-and nothing is red, which is the exact silent-degradation class WR-01 was
-filed against (narrower trigger, same failure shape).
-**Fix:** One extra assert in the companion (outside the marker), e.g.:
-
-```python
-assert any(
-    isinstance(k, ast.Constant) and k.value == "species"
-    for k in sites[0].keys
-), "matched construction site no longer contains a 'species' key — update the anchor deliberately"
-```
+The `node >=18` texts (check-node message, skipif reason) are enforced as
+presence-only checks (`command -v node` / `shutil.which("node")`), consistent
+with the prior round's accepted prescription shape and the documented project
+Node floor. On an ancient-node machine the guard passes and the JS lane then
+fails loudly (`node --test` flag error) — a loud, actionable failure, not the
+silent class the guards target. No action required this phase.
 
 ---
 
-_Reviewed: 2026-10-09T05:08:13Z_
+_Reviewed: 2026-10-09T05:22:56Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
