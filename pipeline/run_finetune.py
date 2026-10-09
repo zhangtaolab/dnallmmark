@@ -375,9 +375,6 @@ if __name__ == "__main__":
     # Set seed for reproducable results
     set_seed(seed)
 
-    # Get pre-defined configs
-    configs = load_config("./finetune_config.yaml")
-
     # Define models with specific arguments
     model_not_use_safetensors = [
         "hyenadna-large-1m-seqlen-hf",
@@ -405,6 +402,19 @@ if __name__ == "__main__":
         if target_model is not None:
             if model_name != target_model:
                 continue
+
+        # Reload the base config fresh for EVERY model (D-11): the
+        # custom-head override below REPLACES configs with the with_head
+        # YAML and never restores it in-process, so a pre-loop load would
+        # leak head_config residue into every model processed after
+        # evo2_1b_base / megaDNA_updated in the same run.
+        configs = load_config("./finetune_config.yaml")
+        # Snapshot the YAML-default grad_accum (D-07): the adjustment block
+        # in the dataset loop below mutates gradient_accumulation_steps in
+        # place per dataset, and the reset at the top of each dataset
+        # iteration restores this per-model default.
+        default_grad_accum = configs["finetune"].gradient_accumulation_steps
+
         model_path = base_dir + model_row["Model_path"]
         tokenizer_type = model_row["Tokenizer"]
         mean_token_len = model_row["Mean_token_length"]
@@ -423,6 +433,12 @@ if __name__ == "__main__":
         for idx, row in datasets_info.items():
             dataset_name = row["Dataset_name"]
             dataset_path = base_dir + row["Dataset_path"]
+
+            # Reset grad_accum to this model's YAML default (D-07) so a
+            # per-task adjustment from the previous dataset cannot leak
+            # into this one — the adjustment block below must start from
+            # the default, never dataset A's mutated value.
+            configs["finetune"].gradient_accumulation_steps = default_grad_accum
 
             # Select target dataset if specified
             if target_dataset is not None:
@@ -529,10 +545,12 @@ if __name__ == "__main__":
             else:
                 configs["finetune"].save_safetensors = True
 
-            # Set output directory for finetuning
+            # Set output directory for finetuning (seed-isolated per
+            # G1/REV-02: the trainer_state.json resume marker below is
+            # scoped to this seed, so resume never skips a different seed)
             save_root = output_dir if output_dir else "./finetuned"
             model_save_name = save_model_name if save_model_name else model_name
-            outdir = f"{save_root}/{model_save_name}/{dataset_name}/"
+            outdir = f"{save_root}/{model_save_name}/{dataset_name}/seed_{seed}/"
             os.makedirs(outdir, exist_ok=True)
             configs["finetune"].output_dir = outdir
 
