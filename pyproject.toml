@@ -12,7 +12,14 @@ data = [
     "pandas>=2.2,<3.0",   # D-05 floor; latest 2.x = 2.3.3 (verified; pandas 3.0.6 excluded)
     "numpy>=2.0,<3",      # bounded alongside pandas per D-05
 ]
-dev = []                   # Phase 2 adds pytest/ruff — keep Phase 1 minimal
+dev = [
+    # Phase 2 harness (added 2026-10-09): floors here, exact pins in uv.lock.
+    # Makefile invokes via `uv run --group dev` — default-groups stays ["data"]
+    # (RESEARCH Pitfall 2: default-groups replaces uv's ["dev"] default).
+    "jsonschema>=4.26.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.10",
+]
 pipeline = [
     # GPU-only, NEVER installed in CI (REL-02). dnallm itself is deliberately absent —
     # it is installed from the local dev clone in Phase 3 (PIPE-02).
@@ -23,3 +30,11 @@ pipeline = [
 [tool.uv]
 package = false            # virtual project: deps installed, repo not built/packaged
 default-groups = ["data"]  # `uv sync` installs data chain only
+
+[tool.pytest.ini_options]
+# Phase 2 test harness (2026-10-09). `slow` gates the ~80s real-tree determinism
+# regression (plan 02-03, D-10); `make test-fast` runs `-m "not slow"`.
+testpaths = ["tests"]
+markers = [
+    "slow: long-running real-tree regression tests; excluded by make test-fast",
+]

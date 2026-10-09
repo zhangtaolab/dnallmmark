@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/zhangtaolab/dnallmmark/main/schemas/model_performance.json",
+  "$comment": "Fully strict contract (D-01): additionalProperties false at every object level, every observed field required. Any shape drift fails validation; adding a field requires a schema change first. Closed enums per D-02. Missing metric values are exactly '' or a number (Pitfall 7) — null, '0', 'N/A' are all invalid. Key sets surveyed live from all 42 committed files (Phase 2 research, 2026-10-09). Self-contained: no cross-file $ref.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["info", "performance"],
+  "properties": {
+    "info": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "architecture",
+        "context_len (bp)",
+        "huggingface",
+        "mean_token_len",
+        "modelscope",
+        "name",
+        "series",
+        "size (M)",
+        "species",
+        "tokenizer",
+        "type"
+      ],
+      "properties": {
+        "architecture": { "type": "string" },
+        "context_len (bp)": { "type": "integer" },
+        "huggingface": { "type": "string" },
+        "mean_token_len": { "type": "integer" },
+        "modelscope": { "type": "string" },
+        "name": { "type": "string" },
+        "series": { "type": "string" },
+        "size (M)": { "type": "integer" },
+        "species": { "type": "string" },
+        "tokenizer": { "type": "string" },
+        "type": { "type": "string" }
+      }
+    },
+    "performance": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/datasetEntry" }
+    }
+  },
+  "$defs": {
+    "datasetEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset", "parameters", "performance"],
+      "properties": {
+        "dataset": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dev",
+            "labels",
+            "length",
+            "metric",
+            "species",
+            "test",
+            "train",
+            "type"
+          ],
+          "properties": {
+            "dev": { "type": "integer" },
+            "labels": { "type": "integer" },
+            "length": { "type": "integer" },
+            "metric": { "enum": ["f1", "mcc", "spearmanr", "AUPRC"] },
+            "species": { "enum": ["Animals", "Plants", "Microbe"] },
+            "test": { "type": "integer" },
+            "train": { "type": "integer" },
+            "type": { "enum": ["binary", "multiclass", "regression", "multilabel"] }
+          }
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "batch_size",
+            "bf16",
+            "epochs",
+            "fp16",
+            "gradient_accumulation_steps",
+            "learning_rate",
+            "lr_scheduler_type",
+            "steps",
+            "warmup"
+          ],
+          "properties": {
+            "batch_size": {
+              "anyOf": [{ "type": "integer" }, { "const": "" }]
+            },
+            "bf16": { "type": "boolean" },
+            "epochs": { "type": "integer" },
+            "fp16": { "type": "boolean" },
+            "gradient_accumulation_steps": { "type": "integer" },
+            "learning_rate": { "type": "number" },
+            "lr_scheduler_type": { "type": "string" },
+            "steps": { "type": "integer" },
+            "warmup": { "type": "number" }
+          }
+        },
+        "performance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "FLOPs",
+            "accuracy",
+            "auprc",
+            "auroc",
+            "f1",
+            "loss",
+            "mcc",
+            "mse",
+            "pearson_r",
+            "precision",
+            "r2",
+            "recall",
+            "runtime",
+            "spearman_r"
+          ],
+          "properties": {
+            "FLOPs": { "type": "number" },
+            "accuracy": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+            "auprc": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+            "auroc": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+            "f1": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+            "loss": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+            "mcc": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+            "mse": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+            "pearson_r": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+            "precision": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+            "r2": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+            "recall": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+            "runtime": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+            "spearman_r": { "anyOf": [{ "type": "number" }, { "const": "" }] }
+          }
+        }
+      }
+    }
+  }
+}
