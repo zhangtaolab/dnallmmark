@@ -31,8 +31,8 @@ Requirements for the hardening release. Each maps to roadmap phases.
 ### Test Infrastructure
 
 - [x] **TEST-01**: Unit tests for the data-script pure functions (rank/MinMax/z-score/robust aggregation, pivot logic) using synthetic fixtures, CPU-only
-- [ ] **TEST-02**: Float-tolerance policy and thread pinning fixed at scaffold time (`pytest.approx` tolerances; `OMP/OPENBLAS/MKL_NUM_THREADS=1` in conftest)
-- [ ] **TEST-03**: Golden-file tests over synthetic fixture trees plus a determinism regression test
+- [x] **TEST-02**: Float-tolerance policy and thread pinning fixed at scaffold time (`pytest.approx` tolerances; `OMP/OPENBLAS/MKL_NUM_THREADS=1` in conftest)
+- [x] **TEST-03**: Golden-file tests over synthetic fixture trees plus a determinism regression test
 - [ ] **TEST-04**: GitHub Actions CI (lint + test matrix on Python 3.12/3.13 plus a Node job; actions SHA-pinned) with README badge
 - [ ] **TEST-05**: Frontend static checks in CI (ESLint flat config + html-validate + `node --check`)
 - [x] **TEST-06**: JSON Schema contract validation — 4 schemas (model_performance, task_performance, models_comparison, tasks_index) enforced over every committed JSON in CI
@@ -98,8 +98,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FIX-05 | Phase 1 | Complete |
 | REL-04 | Phase 2 | Complete |
 | TEST-01 | Phase 2 | Complete |
-| TEST-02 | Phase 2 | Pending |
-| TEST-03 | Phase 2 | Pending |
+| TEST-02 | Phase 2 | Complete |
+| TEST-03 | Phase 2 | Complete |
 | TEST-06 | Phase 2 | Complete |
 | PIPE-01 | Phase 3 | Pending |
 | PIPE-02 | Phase 3 | Pending |

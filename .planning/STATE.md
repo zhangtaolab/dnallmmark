@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v0.7.1
 current_phase: 2
 current_phase_name: Data Contracts & Test Harness
-status: executing
-stopped_at: Completed 02-02-PLAN.md (synthetic test corpus + goldens + JS lane)
-last_updated: "2026-10-09T04:04:04.010Z"
+status: verifying
+stopped_at: Completed 02-03-PLAN.md (determinism regression + known-defect locks)
+last_updated: "2026-10-09T04:17:31.088Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 2 execution started
-state_head: ba2348f1efcda0236f199ea588c25a4bc83810b9
+state_head: 89c71f2dbaa573faf12aec6e288ea5d65882dfaf
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 
 Phase: 2 (Data Contracts & Test Harness) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-09 — Phase 2 execution started
 
 Progress: [██░░░░░░░░] 17% (1/6 phases)
@@ -61,6 +61,7 @@ Progress: [██░░░░░░░░] 17% (1/6 phases)
 | Phase 01 P03 | 16 min | 3 tasks | 59 files |
 | Phase 02 P02-01 | 6 min | 3 tasks | 11 files |
 | Phase 02 P02 | 14 min | 3 tasks | 13 files |
+| Phase 02 P03 | 7 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,9 @@ Recent decisions affecting current work:
 - [Phase 02]: Plan 02-01: self-contained schema files (defs duplicated, no cross-file $ref) — per-file strictness, local forced versioning (resolved Open Question 1)
 - [Phase 02]: Plan 02-01: make test excludes node --test until tests/js/ exists in plan 02-02; lint scope tests/-only this phase (D-04, ~21 pre-existing production findings deferred with Makefile comment)
 - [Phase 02]: Plan 02-02: constant-score guard test uses binary-exact 0.5 (np.std([0.7]*3) is one ULP > 0, so the std==0 guard never fires for decimal constants); gamma aggregate total asserted as 0 (plan's '=1' slip); goldens chain-produced and walk()-compared
+- [Phase 02]: Plan 02-03: D-10's ~40s/chain estimate never re-timed — measured ~0.3s/run; docstring records reality, slow marker stays by lane quality not cost
+- [Phase 02]: Plan 02-03: research Pattern 2's parents[2] anchor resolved outside the repo (false-lock hazard) — corrected to parents[1], --runxfail probe proves locks fail on real defects
+- [Phase 02]: Plan 02-03: three xfail(strict=True) defect locks landed (AUD-01-P0 AST, WR-02 walk, WR-03 get_float nan/inf/-inf) — Phase 4 contract is fix + remove marker in same commit
 
 ### Pending Todos
 
@@ -106,6 +110,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T04:04:03.984Z
-Stopped at: Completed 02-02-PLAN.md (synthetic test corpus + goldens + JS lane)
+Last session: 2026-10-09T04:17:31.061Z
+Stopped at: Completed 02-03-PLAN.md (determinism regression + known-defect locks)
 Resume file: None
