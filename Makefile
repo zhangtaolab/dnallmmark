@@ -14,7 +14,7 @@
 #   make lint       ruff over tests/
 # =====================================================================
 
-.PHONY: data test test-fast lint
+.PHONY: data test test-fast lint check-node
 
 # WR-02: PATH lookup with an overridable default (`make UV=/path/to/uv`) —
 # setup-uv/brew/pipx installs live outside ~/.local/bin, and a hardcode
@@ -33,7 +33,13 @@ data:
 # --group dev is REQUIRED: default-groups = ["data"] in pyproject.toml
 # replaces uv's ["dev"] default (Pitfall 2). The JS lane runs plain node
 # (built-in node:test runner, zero npm deps — no Python env involved).
-test:
+# check-node (IN-04): node is a hard dependency of this target — without
+# the guard a node-less machine dies on a raw FileNotFoundError instead of
+# an actionable message.
+check-node:
+	@command -v node >/dev/null 2>&1 || { echo "node >=18 required for the JS test lane — install Node or run make test-fast"; exit 1; }
+
+test: check-node
 	$(UV) run --group dev pytest
 	node --test tests/js/
 
