@@ -55,9 +55,21 @@ Requirements for the hardening release. Each maps to roadmap phases.
 
 ### Pipeline & Environment (dnallm dev)
 
-- [ ] **PIPE-01**: Pipeline code adapted to dnallm dev branch (v0.7.1, local clone `/home/forrest/Github/DNALLM` @ `c99fa9d`) — API/config-schema deltas resolved; imports and dry-run pass
+- [x] **PIPE-01**: ~~Pipeline code adapted to dnallm dev branch~~ — **absorbed by the dev-branch rewrite** (`pipeline/run_finetune.py` @ dev `c6b3137`, 2026-10-09): the rewritten pipeline already targets dnallm dev; remaining adaptation work (branch reconciliation, Phase 2 asset survival, anchor migration) lives in REV-01..REV-10 and Phase 3's success criteria
 - [ ] **PIPE-02**: Local GPU pipeline environment reproducibly buildable (uv/venv on the NVIDIA GB10 aarch64 machine; dnallm installed from the local git dev clone; torch/transformers pinned per dnallm 0.7.1 bounds) with documented setup commands
-- [ ] **PIPE-03**: Small end-to-end validation — at least one model×dataset fine-tune run completes against dnallm dev and produces a structurally valid `{model}_performance.json`
+
+**Revision requirements (F1–F10, per the 2026-10-09 code-review & feature plan against dev@c6b3137; F-numbers are the canonical reference)**:
+- [ ] **REV-01** (F1, P0): Dev-split generation for the 18 Dev-empty tasks (stratified 10% from train, seed=42, datasets_info Dev columns updated) + checkpoint selection refuses silent test fallback
+- [ ] **REV-02** (F2, P0): Multi-seed sweep — seed-isolated output dirs fixing G1 (resume never skips a different seed), sweep runner (model×task×seed) with per-run records and failure manifest; VRAM-probe state semantics documented per seed
+- [ ] **REV-03** (F3, P0): Unified exporter + result snapshot — metric-key mapping layer (suite registry ↔ export keys, key-parity unit-tested), dataset species from a human-verified metadata table (never model cards), per-seed detail + mean±SD/bootstrap-CI aggregates; freeze_snapshot (tar + SHA-256 + frozen commit hash)
+- [ ] **REV-04** (F6, P1): Aggregation upgrade — CI-overlap tie rules, raw-rank + z-score×difficulty-weight dual views, permutation tests (10k, BH-corrected); CpG case renders as tie
+- [ ] **REV-05** (F4, P1): Adaptation lanes — LoRA (suite built-in, CLI-exposed), IA³ (after suite-side support), frozen probes (embedding cache + logistic/MLP); cost-accuracy frontier table
+- [ ] **REV-06** (F9, P1): CI golden tests — smoke (tiny model × 1k × 1 epoch incl. export), key parity, species spot checks, aggregation units; CPU, <15 min, PR-required
+- [ ] **REV-07** (F7, P1): N-frequency audit (47 tasks × splits) + unified eval-subset ID lists accepted by the pipeline
+- [ ] **REV-08** (F5+F8, P1/P2): Zero-shot VEP lane (CLM/MLM scoring, ClinVar/AraGWAS, baselines + sanity checks) and, window permitting, from-scratch baselines + learning curves (label-fraction sweeps)
+- [ ] **REV-09** (E2' 执行面, P0 依赖): Three-seed full re-run (E2') executes only after REV-01/REV-02 gates — critical path F1→F2→E2'
+- [ ] **REV-10** (F10, P0): Old pipeline (`dnallmmark_pipeline.py`) deprecation header + README names `run_finetune.py` as the benchmark entry point
+- [ ] **PIPE-03**: Small end-to-end validation on the NEW pipeline (`run_finetune.py`) — plant-dnamamba-6mer and PlantHelixSeek (models_info entry added in-phase) each fine-tune on PlantCAD2__cross_species_leaf_on_off_translation and produce a `{model}_performance.json` valid against the Phase 2 schema
 
 ## v2 Requirements
 
@@ -101,9 +113,19 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TEST-02 | Phase 2 | Complete |
 | TEST-03 | Phase 2 | Complete |
 | TEST-06 | Phase 2 | Complete |
-| PIPE-01 | Phase 3 | Pending |
+| PIPE-01 | — (absorbed by dev rewrite) | Absorbed |
 | PIPE-02 | Phase 3 | Pending |
 | PIPE-03 | Phase 3 | Pending |
+| REV-01 | Phase 3 | Pending |
+| REV-02 | Phase 3 | Pending |
+| REV-03 | Phase 4, Phase 6 | Pending |
+| REV-04 | Phase 5 | Pending |
+| REV-05 | Phase 6 | Pending |
+| REV-06 | Phase 5 | Pending |
+| REV-07 | Phase 5 | Pending |
+| REV-08 | Phase 6 | Pending |
+| REV-09 | Phase 5 | Pending |
+| REV-10 | Phase 3 | Pending |
 | FIX-01 | Phase 4 | Pending |
 | FIX-02 | Phase 4 | Pending |
 | FIX-03 | Phase 4 | Pending |
@@ -129,11 +151,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 **Phase mapping notes:**
 - FIX-02 (species fix) maps to Phase 4, but its failing test is scaffolded in Phase 2 per the dependency ordering — test before fix
-- PIPE-01..03 (dnallm dev adaptation) form Phase 3: Phase 2's model_performance schema defines PIPE-03's "structurally valid", and the Phase 4 species fix lands in the already-adapted pipeline so `dnallmmark_pipeline.py` is not touched twice
+- PIPE-01 absorbed by the dev-branch rewrite (run_finetune.py @ dev c6b3137); PIPE-02/03 + REV-01/02/10 form Phase 3 (reconciliation + P0 blockers). Phase 2's model_performance schema defines PIPE-03 validity. REV-03's dataset-side species table is the AUD-01-P0 fix vehicle in Phase 4. Revision critical path: REV-01 → REV-02 → E2' (REV-09); E2' must not start before REV-02 (seed overwrite)
 - DATA-03 maps to Phase 5 where `data-v2` completes the pair; the pre-fix `data-v1` tag is created in Phase 1 under AUDIT-02
 - DATA-07 (methodology docs + dead-logic removal) is kept whole in Phase 6; the dead `recalculateComparison()` is uncalled and affects no number
 - TEST-06 schemas/contract tests are created in Phase 2 (before fixes move numbers); CI enforcement activates when Phase 5 lands CI
 
 ---
 *Requirements defined: 2026-10-08*
-*Last updated: 2026-10-08 after roadmap creation (REL-05 added for token revocation; traceability filled — 31/31 mapped; PIPE-01..03 mapped to Phase 3)*
+*Last updated: 2026-10-09 after revision-plan integration (REV-01..10 added from the F1-F10 manuscript-revision plan; PIPE-01 absorbed by dev rewrite; phases 3-6 restructured; critical path F1→F2→E2' recorded)*

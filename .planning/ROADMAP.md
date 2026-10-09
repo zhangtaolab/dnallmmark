@@ -14,10 +14,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Audit & Release Foundations** - Findings report over all three subsystems, pre-fix baseline frozen (`data-v1`), LICENSE + pinned manifests, deterministic generators, secret-hygiene decision applied (intentional Zenodo preview link kept; scan confirms no other secrets) (completed 2026-10-09)
 - [x] **Phase 2: Data Contracts & Test Harness** - Four JSON Schemas, CPU-only unit/golden/determinism tests over the data chain, and a single-command Makefile — locked before any number moves (completed 2026-10-09)
-- [ ] **Phase 3: Pipeline Adaptation to dnallm Dev** - Pipeline adapted to dnallm dev (v0.7.1), GPU environment reproducibly buildable on the GB10 machine, one end-to-end fine-tune run emitting schema-valid output
-- [ ] **Phase 4: Correctness Fixes** - Every page renders (navbar fix), species-grouping fixed test-first in the adapted pipeline, submission flow restored, escaping at touched DOM-build sites
-- [ ] **Phase 5: CI & Verified Data Migration** - GitHub Actions CI (lint, test matrix, frontend checks, drift detection) plus post-fix recomputation with a changelogged, tagged before/after record
-- [ ] **Phase 6: Release Packaging & Provenance** - README reproducibility commands, 50-dataset provenance table + downloadable manifest, aggregation-methodology docs, validated onboarding guides
+- [ ] **Phase 3: Dev-Branch Reconciliation & P0 Revision Blockers** - dev@c6b3137 (run_finetune.py rewrite) merged with Phase 1/2 assets intact; dev splits (F1), seed-isolated sweep (F2/G1), old-pipeline retirement (F10); GPU env + two-model E2E on the new pipeline
+- [ ] **Phase 4: Correctness & Methodology Core** - Species fix via dataset-side metadata (F3②), unified exporter with metric-key mapping + run_record (F3), IN-03 lands; every page renders, submission restored, escaping at touched sites
+- [ ] **Phase 5: CI & Three-Seed Full Re-Run (E2')** - Aggregation upgrade first (F6: tie/CI-overlap, difficulty normalization, permutation tests), CI golden tests (F9), N audit + eval subsets (F7), then E2' 3-seed full re-run with changelogged tagged migration
+- [ ] **Phase 6: Revision Packaging & Extended Lanes** - Provenance table + reproducibility docs + snapshot/Zenodo SI (F3); revision-window permitting: LoRA/IA³/probes (F4), zero-shot VEP (F5), learning curves (F8); remainder to response-letter future work
 
 ## Phase Details
 
@@ -65,61 +65,70 @@ Plans:
 - [x] 02-02-PLAN.md — Synthetic fixture tree (tie/missing-metric/regression/species-group edges) + aggregation/pivot unit tests + golden files via compare.walk + node:test JS suite; make test runs Python+JS (TEST-01, TEST-02, TEST-03)
 - [x] 02-03-PLAN.md — Real-tree determinism regression (chain ×2 byte-identical + regeneration == committed, slow-marked) + xfail(strict=True) locks for AUD-01-P0/WR-02/WR-03; full make test green (TEST-03, TEST-02)
 
-### Phase 3: Pipeline Adaptation to dnallm Dev
+### Phase 3: Dev-Branch Reconciliation & P0 Revision Blockers
 
-**Goal**: The fine-tuning pipeline runs against the dnallm dev branch — code adapted, GPU environment reproducibly buildable on the local machine, and proven by a real end-to-end run whose output passes the data contract
+**Goal**: The dev-branch pipeline rewrite (run_finetune.py @ dev c6b3137) is reconciled with the audited main lineage — Phase 1/2 contracts and tests survive the merge — and the manuscript-revision P0 blockers (dev splits, seed-isolated sweep, old-pipeline retirement) land, proven by a two-model end-to-end run on the new pipeline
 **Depends on**: Phase 2
-**Requirements**: PIPE-01, PIPE-02, PIPE-03
+**Requirements**: PIPE-02, PIPE-03, REV-01, REV-02, REV-10
 **Success Criteria** (what must be TRUE):
-  1. The pipeline's imports resolve and a dry-run completes against the dnallm dev clone (v0.7.1 @ `c99fa9d`, `/home/forrest/Github/DNALLM`) with all API/config-schema deltas resolved
-  2. A maintainer can rebuild the GPU pipeline environment from documented commands on the NVIDIA GB10 aarch64 machine (uv/venv; dnallm installed from the local dev clone; torch/transformers pinned per dnallm 0.7.1 bounds)
-  3. At least one model×dataset fine-tune completes end-to-end against dnallm dev and produces a `{model}_performance.json` that validates against the Phase 2 model_performance schema
+  1. dev@c6b3137 is merged into the audited lineage (or the audited lineage rebased onto it) with zero loss of Phase 1/2 assets: all four schemas, the full test suite, the Makefile, and the data-v1 baseline discipline survive; `make test` is green on the merged tree
+  2. The Phase 2 species xfail lock's AST anchor is migrated to the new pipeline/export chain (or the lock re-anchored with the same strict semantics), and the anchor companion still guards findability+uniqueness+species-key
+  3. `pipeline/dnallmmark_pipeline.py` carries a deprecation header pointing to `run_finetune.py` (REV-10/F10); README names run_finetune.py as the benchmark entry point
+  4. All 47 tasks have train/dev/test splits (REV-01/F1): the 18 Dev-empty tasks get stratified 10% dev splits (seed=42, reproducible), datasets_info Dev columns updated, and checkpoint selection refuses to silently fall back to test
+  5. Multi-seed execution is real (REV-02/F2, fixes G1): output dirs are seed-isolated (`{model}/{task}/seed_{seed}/`), resume never skips a different seed, and a sweep runner drives model×task×seed matrices with per-run records and a failure manifest
+  6. The GPU pipeline environment is reproducibly buildable (PIPE-02): dedicated uv venv on the GB10 machine, dnallm@0.7.1 from the local clone, torch/transformers pinned to the verified combination (2.11.0+cu130 / 5.17.0), locked in pyproject `[gpu]` group + uv.lock, documented rebuild commands
+  7. Two end-to-end runs complete on the new pipeline (PIPE-03, AUD-05 groundwork): plant-dnamamba-6mer (existing models_info entry) and PlantHelixSeek (models_info entry ADDED in this phase — dataset source/tokenizer/species from its model card) each fine-tune on PlantCAD2__cross_species_leaf_on_off_translation and produce `{model}_performance.json` validating against the Phase 2 model_performance schema
 
 **Plans**: TBD
+**Decisions carried from the 2026-10-09 discussion**: dedicated new uv venv (not DNALLM/.venv reuse); pyproject `[gpu]` dependency-group + uv.lock as the lock carrier; E2E pair = the two maintainer-named models × PlantCAD2__on_off; on-disk datasets are double-nested from unzip and get normalized during setup.
 
-### Phase 4: Correctness Fixes
+### Phase 4: Correctness & Methodology Core
 
-**Goal**: Every page works and every confirmed correctness bug is fixed surgically — one fix per review unit, each backed by test evidence, with only fix-explained deltas in the diff
+**Goal**: Every confirmed correctness bug is fixed surgically with test evidence — species grouping via dataset-side metadata, a unified exporter with an explicit metric-key mapping, key-name parity tested — and every page works
 **Depends on**: Phase 3
-**Requirements**: FIX-01, FIX-02, FIX-03, FIX-04
+**Requirements**: FIX-01, FIX-02, FIX-03, FIX-04, REV-03
 **Success Criteria** (what must be TRUE):
-  1. A visitor can load every page (main leaderboard, task benchmark, finetuning, models, datasets) with no console errors, working navigation, and fully rendered content — verified on ALL pages, not just the three known-broken ones
-  2. A user can complete the submission flow: `submit.html` is reachable from navigation, validates a submission client-side, and generates correct PR instructions against the current data schema
-  3. The species-as-dataset grouping fix is in — landed in the dnallm-dev-adapted pipeline — its Phase 2 failing test now passes, and the aggregation diff shows only changes the fix explains
-  4. DOM-build sites touched by these fixes escape rendered content, so a hostile string in any performance JSON displays as inert text, not markup
+  1. Dataset species comes from a human-verified dataset metadata table (REV-03/F3②), never from the model card; the Phase 2 species xfail lock turns green in the same commit as the fix, and the aggregation diff shows only changes the fix explains
+  2. The unified exporter (REV-03/F3①) replaces get_task_performance.py's input side: it reads per-run records, applies an explicit suite-registry↔export-key mapping layer with key-parity unit tests, and emits per-seed detail plus aggregated (mean±SD, bootstrap 95% CI) tables; IN-03 (METRIC_KEY_MAP mirror) is resolved here
+  3. A visitor can load every page (main leaderboard, task benchmark, finetuning, models, datasets) with no console errors, working navigation, and fully rendered content — verified on ALL pages
+  4. A user can complete the submission flow: submit.html reachable, client-side validation working, PR instructions correct against the current data schema
+  5. DOM-build sites touched by these fixes escape rendered content, so a hostile string in any performance JSON displays as inert text
+  6. Phase 2 schemas/tests are updated for the new export shape (any new metric keys join the closed enum WITH the data≡enum self-check updated in the same commit)
 
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 5: CI & Verified Data Migration
+### Phase 5: CI & Three-Seed Full Re-Run (E2')
 
-**Goal**: CI proves repo health end-to-end, and the leaderboard numbers are recomputed under that protection with an attributable, changelogged, tagged migration from pre-fix to post-fix data
+**Goal**: Aggregation methodology is upgraded BEFORE numbers publish (tie rules, difficulty normalization, permutation tests), CI proves repo health end-to-end, and the leaderboard is recomputed under three seeds with an attributable, changelogged, tagged migration
 **Depends on**: Phase 4
-**Requirements**: TEST-04, TEST-05, TEST-07, DATA-01, DATA-02, DATA-03, DATA-06
+**Requirements**: TEST-04, TEST-05, TEST-07, DATA-01, DATA-02, DATA-03, DATA-06, REV-04, REV-06, REV-07, REV-09
 **Success Criteria** (what must be TRUE):
-  1. Every push and PR runs GitHub Actions CI — lint plus the test matrix on Python 3.12/3.13 and a Node job, SHA-pinned actions, least-privilege permissions — green on main, with a README badge
-  2. Frontend regressions block merges: ESLint (flat config), html-validate, and `node --check` all run in CI
-  3. Stale derived data is a build failure: a PR that changes source data without regenerating derived files fails the drift-detection job, which names the stale files
-  4. Leaderboard data is recomputed after the fixes; a before/after comparison artifact records which numbers moved and why, CHANGELOG.md documents each result-affecting fix with dates, and `data_version` is stamped into the regenerated JSON
-  5. Both data-version tags (`data-v1`, `data-v2`) exist, and a visitor can see the data-generation date/version in the leaderboard footer
+  1. Aggregation upgrade (REV-06/F6) lands before E2' numbers are published: within-task 95% CI overlap ⇒ tied rank; raw-rank and z-score×difficulty-weighted dual views; permutation tests (10,000 shuffles, BH-corrected) reported; the CpG top-10 case (span 0.0021, distinct ranks) renders as a tie under the new rule
+  2. CI golden tests (REV-09/F9): smoke run (tiny model × 1k samples × 1 epoch incl. export), metric-key parity, species-table spot checks, aggregation unit tests — CPU runner, <15 min, PR-required, badge in README (subsumes TEST-04/05: lint + matrix + frontend checks + drift detection)
+  3. N-frequency audit + unified eval subsets (REV-07/F7): 47 tasks × train/dev/test N/non-ACGT tables published; eval-subset ID lists accepted by the pipeline; all models evaluate identical sample counts per task
+  4. E2' three-seed full re-run executes via the sweep runner only after F1/F2 gates (critical path note); DATA-01/02/03/06 land: recomputed leaderboard, before/after artifact, CHANGELOG with dates, data_version stamped, both data tags (data-v1, data-v2) exist, footer shows the generation date/version
 
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 6: Release Packaging & Provenance
+### Phase 6: Revision Packaging & Extended Lanes
 
-**Goal**: External reviewers can understand, trust, reproduce, and extend the platform — dataset provenance for all 50 datasets, aggregation-methodology docs, validated onboarding guides, and copy-paste reproducibility instructions
+**Goal**: External reviewers can understand, trust, reproduce, and extend the platform — provenance, methodology docs, validated onboarding, result snapshots for SI/Zenodo — with the revision-window extension lanes (PEFT, zero-shot VEP, learning curves) delivered as far as the window allows and the remainder explicitly deferred to the response letter
 **Depends on**: Phase 5
-**Requirements**: REL-03, DATA-04, DATA-05, DATA-07, EXT-01, EXT-02
+**Requirements**: REL-03, DATA-04, DATA-05, DATA-07, EXT-01, EXT-02, REV-03, REV-05, REV-08
 **Success Criteria** (what must be TRUE):
   1. A reviewer can reproduce the leaderboard from a fresh clone using only literal copy-pasteable README commands (install → data → aggregate → serve)
-  2. Each of the 50 datasets has a provenance row in DATA.md — source, citation, license, preprocessing, and a ModelScope-default download URL with alternates
-  3. Anyone can download a data manifest (CSV/JSON) carrying full dataset metadata and direct links (ModelScope defaults, alternates included)
-  4. The four aggregation methods (rank / MinMax / z-score / robust) are documented in one place, and the divergent dead logic in `js/data.js:recalculateComparison()` is gone, leaving a single authoritative implementation
-  5. A maintainer can onboard a new model or dataset by following the documented process end-to-end through to "appears on the leaderboard" (mechanism validated, no new GPU runs required)
-  6. The intentional Zenodo preview-token link in `README.md` (maintainer decision D-08) is replaced with the published record DOI/URL once Zenodo record 19135551 is public, with the `.gitleaks.toml` allowlist rule removed or updated in the same commit (follow-up from phase 01 code review WR-01)
+  2. Each dataset has a provenance row in DATA.md — source, citation, license, preprocessing, ModelScope-default download URL with alternates; a downloadable manifest (CSV/JSON) carries full metadata and direct links
+  3. A results snapshot (REV-03: tar + SHA-256 manifest + frozen commit hash) supports SI/Zenodo deposition and can be re-verified from its manifest
+  4. The four aggregation methods (plus the F6 dual views) are documented in one place; the divergent dead logic in js/data.js:recalculateComparison() is gone
+  5. A maintainer can onboard a new model or dataset end-to-end by following the documented process (mechanism validated, no new GPU runs required)
+  6. Revision-window lanes, in priority order: LoRA/IA³/frozen probes (REV-05/F4) with a cost-accuracy frontier table; zero-shot VEP lane (REV-08/F5) with CLM/MLM scoring and sanity checks; learning curves (part of REV-08's P2 tail) — whatever does not fit lands in the response letter as future work with the mechanism documented
+  7. The intentional Zenodo preview-token link in README.md is replaced with the published record DOI/URL once record 19135551 is public, with the .gitleaks.toml allowlist rule updated in the same commit (WR-01 follow-up)
 
 **Plans**: TBD
+
+**Revision-work-package map**: F1→E1'-1 · F2→E1'+E2' prerequisite · F3→E1'-2/3+Ed-5 · F4→E3' · F5→E5 · F6→E8 · F7→E1'-⑤/E7 · F8→E6' (P2) · F9→E10 · F10→E1'-4. **Critical path: F1 → F2 (G1) → E2' full re-run; E2' must NOT start before F2 is done (seeds would overwrite each other).**
 
 ## Progress
 
