@@ -16,7 +16,10 @@
 
 .PHONY: data test test-fast lint
 
-UV := ~/.local/bin/uv
+# WR-02: PATH lookup with an overridable default (`make UV=/path/to/uv`) —
+# setup-uv/brew/pipx installs live outside ~/.local/bin, and a hardcode
+# there breaks every target (incl. CI) with Error 127.
+UV ?= uv
 DATA_DIR := dnallm-mark/data
 
 # Data chain — one `cd ... && ...` per line: each recipe line is its own
