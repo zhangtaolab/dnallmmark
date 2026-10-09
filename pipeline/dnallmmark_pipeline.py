@@ -1255,10 +1255,10 @@ def main():
                         "recall": test_results.get("eval_recall", ""),
                         "f1": test_results.get("eval_f1", ""),
                         "mcc": test_results.get("eval_mcc", ""),
-                        "auroc": test_results.get("eval_auroc", ""),
-                        "auprc": test_results.get("eval_auprc", ""),
-                        "pearson_r": test_results.get("eval_pearson_r", ""),
-                        "spearman_r": test_results.get("eval_spearman_r", ""),
+                        "auroc": test_results.get("eval_AUROC", ""),
+                        "auprc": test_results.get("eval_AUPRC", ""),
+                        "pearson_r": test_results.get("eval_pearsonr", ""),
+                        "spearman_r": test_results.get("eval_spearmanr", ""),
                         "mse": test_results.get("eval_mse", ""),
                         "r2": test_results.get("eval_r2", ""),
                     },
@@ -1335,6 +1335,9 @@ if __name__ == "__main__":
     }
     models_only_support_fp32 = [
         "Jamba-DNA-v1-114M-hg38",
+        "CrossDNA_8.1M",
+        "CrossDNA_71.6M",
+        "CrossDNA_519M",
     ]
     special_models = ["evo2_1b_base", "megaDNA_updated"]
 
