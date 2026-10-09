@@ -35,6 +35,16 @@ import pytest
 import summarize_comparison
 from compare import walk
 
+# WR-06: all three tests below consume ``chain_result``, whose JS-generator
+# step shells out to ``node`` — on a node-less machine the module must SKIP
+# cleanly, not die on a raw FileNotFoundError inside the fixture. This is
+# what makes the pytest-only fast lane (``make test-fast``) genuinely
+# node-free.
+pytestmark = pytest.mark.skipif(
+    shutil.which("node") is None,
+    reason="node >=18 required for the JS generator step of this test",
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SYNTHETIC_DIR = REPO_ROOT / "tests" / "fixtures" / "synthetic_models"
 GOLDEN_DIR = REPO_ROOT / "tests" / "fixtures" / "golden"

@@ -35,9 +35,12 @@ data:
 # (built-in node:test runner, zero npm deps — no Python env involved).
 # check-node (IN-04): node is a hard dependency of this target — without
 # the guard a node-less machine dies on a raw FileNotFoundError instead of
-# an actionable message.
+# an actionable message. WR-06: the fast-lane escape hatch noted below is
+# real only because test_golden.py skips its node-dependent tests via
+# skipif — the fast lane is pytest-only AND skips the goldens, so the
+# message must say "skips", not imply node was never needed.
 check-node:
-	@command -v node >/dev/null 2>&1 || { echo "node >=18 required for the JS test lane — install Node or run make test-fast"; exit 1; }
+	@command -v node >/dev/null 2>&1 || { echo "node >=18 required for the JS test lane and the tasks.json goldens — install Node; the pytest-only fast lane (make test-fast) skips node-dependent tests when node is absent"; exit 1; }
 
 test: check-node
 	$(UV) run --group dev pytest
