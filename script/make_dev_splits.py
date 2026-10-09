@@ -27,7 +27,8 @@ regenerates byte-identical CSVs (auditable, diffable).
 Input / output
 --------------
 - Input: ``pipeline/datasets_info.json`` (the D-10 unified registry) and
-  ``pipeline/datasets/<Dataset_path>/train.csv``. Two CSV layouts occur
+  ``pipeline/<Dataset_path>/train.csv`` (Dataset_path values carry the
+  ``datasets/`` prefix already). Two CSV layouts occur
   across the benchmark and both are handled via the header: 2-column
   ``sequence,label`` and 3-column ``name,sequence,label``. Labels must be
   integers (single-label classification covers all 18 tasks; multilabel
@@ -50,14 +51,14 @@ Usage (from repo root)::
     ~/.local/bin/uv run --group data python script/make_dev_splits.py --check
 
 ``--check`` verifies registry/disk agreement over every registry entry
-(registry Train == train.csv rows; registry Dev > 0 with a dev.csv whose
-row count == Dev) and writes nothing. A dataset directory not found at
-its Dataset_path — the known suite double-nesting unzip quirk
-(suite-name/suite-name/task-dir), deferred to the E2E gate — emits a
-WARNING line and is excluded from the pass count; any hard mismatch
-exits non-zero with a per-task report. In split mode a Dev-empty task
-with an unlocatable directory is a hard error (flatten the directory
-locally and re-run — a file move, not a model run).
+(registry Train/Dev/Test counts equal the on-disk train.csv/dev.csv/
+test.csv data-row counts; Dev > 0) and writes nothing. A dataset
+directory not found at its Dataset_path — the known suite double-nesting
+unzip quirk (suite-name/suite-name/task-dir), deferred to the E2E gate —
+emits a WARNING line and is excluded from the pass count; any hard
+mismatch exits non-zero with a per-task report. In split mode a Dev-empty
+task with an unlocatable directory is a hard error (flatten the
+directory locally and re-run — a file move, not a model run).
 
 Recovery: the original full train.csv is re-downloadable from Zenodo
 (see the README dataset section) if a re-carve is ever needed; the carve
@@ -83,7 +84,10 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = REPO_ROOT / "pipeline" / "datasets_info.json"
-DATASETS_ROOT = REPO_ROOT / "pipeline" / "datasets"
+# Dataset_path values are pipeline-relative and already carry the
+# "datasets/" prefix (e.g. "datasets/GUE/emp_H3") — exactly how
+# run_finetune.py resolves them (base_dir + Dataset_path).
+PIPELINE_ROOT = REPO_ROOT / "pipeline"
 SEED = 42
 
 
@@ -251,7 +255,7 @@ def write_registry(path, registry):
         fh.write("\n")
 
 
-def split_task(name, entry, registry, datasets_root=DATASETS_ROOT):
+def split_task(name, entry, registry, datasets_root=PIPELINE_ROOT):
     """Carve the dev split for one task, all-or-nothing.
 
     Order of operations makes an interrupted run self-healing on re-run:
@@ -333,12 +337,22 @@ def split_task(name, entry, registry, datasets_root=DATASETS_ROOT):
     return "split"
 
 
-def run_check(registry, datasets_root=DATASETS_ROOT):
+def _read_counted(csv_path):
+    """Read a CSV as ``(header, row_count)``, or ``None`` if
+    missing/unreadable (count-check helper for :func:`run_check`)."""
+    try:
+        header, rows = read_csv_rows(csv_path, csv_path.name)
+    except (OSError, TaskSkip):
+        return None
+    return header, len(rows)
+
+
+def run_check(registry, datasets_root=PIPELINE_ROOT):
     """Verify registry/disk agreement over every registry entry.
 
-    Writes nothing. Checks per locatable entry: registry Train equals the
-    train.csv data-row count, registry Dev > 0, and dev.csv exists with
-    exactly Dev rows and the same header as train.csv.
+    Writes nothing. Checks per locatable entry: registry Train/Dev/Test
+    counts equal the on-disk train.csv/dev.csv/test.csv data-row counts,
+    Dev > 0, and dev.csv carries the same header as train.csv.
 
     Args:
         registry (dict): The unified registry.
@@ -359,41 +373,40 @@ def run_check(registry, datasets_root=DATASETS_ROOT):
                 "excluded from the pass count"
             )
             continue
+        issues = []
         dev = int(entry.get("Dev") or 0)
         if dev <= 0:
-            failures.append(
-                f"MISMATCH {name}: registry Dev={dev} — every task needs a "
-                "dev split (run script/make_dev_splits.py without --check)"
+            issues.append(
+                f"registry Dev={dev} — every task needs a dev split (run "
+                "script/make_dev_splits.py without --check)"
             )
-            continue
-        dev_csv = dataset_dir / "dev.csv"
-        if not dev_csv.is_file():
-            failures.append(
-                f"MISMATCH {name}: registry Dev={dev} but dev.csv missing "
-                f"at {dev_csv}"
+        counted = {
+            split: _read_counted(dataset_dir / f"{split}.csv")
+            for split in ("train", "dev", "test")
+        }
+        for split, registered in (("train", int(entry["Train"])),
+                                  ("dev", dev),
+                                  ("test", int(entry.get("Test") or 0))):
+            if registered <= 0 and counted[split] is None:
+                continue  # nothing registered, nothing on disk: consistent
+            if counted[split] is None:
+                issues.append(
+                    f"registry {split.capitalize()}={registered} but "
+                    f"{split}.csv missing or unreadable"
+                )
+            elif counted[split][1] != registered:
+                issues.append(
+                    f"registry {split.capitalize()}={registered} but "
+                    f"{split}.csv has {counted[split][1]} rows"
+                )
+        if (counted["train"] is not None and counted["dev"] is not None
+                and counted["dev"][0] != counted["train"][0]):
+            issues.append(
+                f"dev.csv header {counted['dev'][0]} != train.csv header "
+                f"{counted['train'][0]}"
             )
-            continue
-        try:
-            header, rows = read_csv_rows(dataset_dir / "train.csv", name)
-            dev_header, dev_rows = read_csv_rows(dev_csv, name)
-        except TaskSkip as exc:
-            failures.append(f"MISMATCH {name}: unreadable CSV — {exc}")
-            continue
-        if int(entry["Train"]) != len(rows):
-            failures.append(
-                f"MISMATCH {name}: registry Train={entry['Train']} but "
-                f"train.csv has {len(rows)} rows"
-            )
-        elif len(dev_rows) != dev:
-            failures.append(
-                f"MISMATCH {name}: registry Dev={dev} but dev.csv has "
-                f"{len(dev_rows)} rows"
-            )
-        elif dev_header != header:
-            failures.append(
-                f"MISMATCH {name}: dev.csv header {dev_header} != train.csv "
-                f"header {header}"
-            )
+        if issues:
+            failures.append(f"MISMATCH {name}: " + "; ".join(issues))
         else:
             ok += 1
     return ok, warnings, failures
@@ -406,7 +419,7 @@ def main():
 
     if args.check:
         ok, warnings, failures = run_check(
-            registry, datasets_root=DATASETS_ROOT)
+            registry, datasets_root=PIPELINE_ROOT)
         for line in warnings:
             print(line)
         for line in failures:
@@ -431,7 +444,7 @@ def main():
     for name in split_names:
         try:
             status = split_task(name, registry[name], registry,
-                                datasets_root=DATASETS_ROOT)
+                                datasets_root=PIPELINE_ROOT)
         except TaskSkip as exc:
             print(f"  {exc}")
             failed += 1

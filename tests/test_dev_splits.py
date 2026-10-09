@@ -307,25 +307,40 @@ def test_registry_update_changes_exactly_train_dev(tmp_path):
 
 
 def test_run_check_reports_agreement_mismatch_and_missing_dir(tmp_path):
-    """--check's verifier: consistent tasks count OK; a Train mismatch is
-    a hard failure; an unlocatable dir is a WARNING excluded from the
-    pass count. Writes nothing."""
-    write_task_dir(tmp_path, "suite/good", LABEL_HEADER_2COL,
-                   synth_rows(36, lambda i: str(i % 2)))
-    (tmp_path / "suite/good/dev.csv").write_text(
+    """--check's verifier: consistent tasks count OK; Train/Test count
+    mismatches are hard failures; an unlocatable dir is a WARNING
+    excluded from the pass count. Writes nothing."""
+    good = write_task_dir(tmp_path, "suite/good", LABEL_HEADER_2COL,
+                          synth_rows(36, lambda i: str(i % 2)))
+    (good / "dev.csv").write_text(
         "sequence,label\nSEQ0001,0\nSEQ0002,1\n", encoding="utf-8")
+    (good / "test.csv").write_text(
+        "sequence,label\n" + "T,0\n" * 10, encoding="utf-8")
     write_task_dir(tmp_path, "suite/bad", LABEL_HEADER_2COL,
                    synth_rows(30, lambda i: str(i % 2)))
     (tmp_path / "suite/bad/dev.csv").write_text(
         "sequence,label\nSEQ0001,0\n", encoding="utf-8")
+    (tmp_path / "suite/bad/test.csv").write_text(
+        "sequence,label\nT,0\n", encoding="utf-8")
+    write_task_dir(tmp_path, "suite/badtest", LABEL_HEADER_2COL,
+                   synth_rows(30, lambda i: str(i % 2)))
+    (tmp_path / "suite/badtest/dev.csv").write_text(
+        "sequence,label\nSEQ0001,0\n", encoding="utf-8")
+    (tmp_path / "suite/badtest/test.csv").write_text(
+        "sequence,label\n" + "T,0\n" * 10, encoding="utf-8")
     registry = {
-        "suite__good": make_entry("suite/good", 36, dev=2),
+        "suite__good": make_entry("suite/good", 36, dev=2),  # Test=10 ok
         "suite__bad": make_entry("suite/bad", 40, dev=1),  # Train mismatch
+        "suite__badtest": {**make_entry("suite/badtest", 30, dev=1),
+                           "Test": 5},  # Test mismatch (disk has 10)
         "suite__gone": make_entry("suite/gone", 10, dev=1),  # dir absent
     }
     ok, warnings, failures = make_dev_splits.run_check(
         registry, datasets_root=tmp_path)
     assert ok == 1  # the good task only
     assert len(warnings) == 1 and "suite__gone" in warnings[0]
-    assert len(failures) == 1 and "suite__bad" in failures[0]
-    assert "40" in failures[0] and "30" in failures[0]
+    assert len(failures) == 2
+    assert any("suite__bad:" in f and "Train=40" in f and "30 rows" in f
+               for f in failures)
+    assert any("suite__badtest:" in f and "Test=5" in f and "10 rows" in f
+               for f in failures)

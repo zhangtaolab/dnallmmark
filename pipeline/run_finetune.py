@@ -444,6 +444,28 @@ if __name__ == "__main__":
                 if dataset_index not in task_indices:
                     continue
 
+            # Refuse Dev-less tasks BEFORE any model load (F1 / REV-01).
+            # Suite-side EVAL-01 contract (dnallm/finetune/trainer.py
+            # L568-605 @ revision 483a35c): dnallm uses test as the eval
+            # set only when finetune.allow_test_as_eval is explicitly true
+            # (config default False — a setting our configs must never
+            # carry) and otherwise raises a hard ValueError for a missing
+            # eval split under load_best_model_at_end / early stopping.
+            # Refusing here fails fast on any future Dev-less task instead
+            # of loading a model first.
+            if not row["Dev"]:
+                raise SystemExit(
+                    f"REFUSED: dataset '{dataset_name}' has no dev split "
+                    "(Dev is falsy in datasets_info.json). Per the suite's "
+                    "EVAL-01 contract, dnallm evaluates on test only when "
+                    "finetune.allow_test_as_eval is explicitly true "
+                    "(default False) and otherwise hard-errors on a "
+                    "missing eval split under load_best_model_at_end / "
+                    "early stopping — this task needs a dev split before "
+                    "any model load. Remediation: carve one with "
+                    "script/make_dev_splits.py."
+                )
+
             # Set task-specific configurations
             configs["task"].num_labels = row["labels"]
             configs["task"].label_names = [str(i) for i in range(row["labels"])]
