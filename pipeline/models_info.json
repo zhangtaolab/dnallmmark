@@ -438,7 +438,18 @@
         "Model_name": "PlantHelixSeek",
         "Model_path": "models/PlantHelixSeek-base",
         "Model_size": "470M",
-        "Tokenizer": "singlebase"
+        "Tokenizer": "singlebase",
+        "architecture": "HelixSeek (Transformer + KDA + MLA + MoE)",
+        "context_len (bp)": 8192,
+        "huggingface": "zhangtaolab/PlantHelixSeek",
+        "mean_token_len": 1,
+        "modelscope": "zhangtaolab/PlantHelixSeek",
+        "name": "PlantHelixSeek",
+        "series": "PlantHelixSeek",
+        "size (M)": 470,
+        "species": "plants",
+        "tokenizer": "singlebase",
+        "type": "MLM"
     },
     "SPACE": {
         "Mean_token_length": 1,
