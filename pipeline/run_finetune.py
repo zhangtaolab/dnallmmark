@@ -30,23 +30,27 @@ elif "HF_HOME" not in os.environ:
     os.environ.setdefault("HF_HOME", _default_cache)
     os.environ.setdefault("MS_CACHE_HOME", _default_cache)
 
+import argparse
+import datetime
+import importlib
+import json
 import shutil
 from glob import glob
-import datetime
-import argparse
-import json
+
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn
 
-# Import torch_npu for Huawei Ascend NPU support
+# Import torch_npu for Huawei Ascend NPU support. Imported for its
+# registration side effect (importing it makes torch.npu exist); the
+# module object itself is never referenced, hence importlib.
 try:
-    import torch_npu
+    importlib.import_module("torch_npu")
     NPU_AVAILABLE = torch.npu.is_available()
 except ImportError:
     NPU_AVAILABLE = False
 
-from dnallm import DNADataset, load_config, load_model_and_tokenizer, DNATrainer
+from dnallm import DNADataset, DNATrainer, load_config, load_model_and_tokenizer
 
 
 def parse_args():
@@ -306,7 +310,7 @@ def estimate_batch_size_by_model_params(
     return batch_size
 
 def get_current_time():
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
     return now
 
 
@@ -399,9 +403,8 @@ if __name__ == "__main__":
     init_token_len = -1
     for ix, model_row in models_info.items():
         model_name = model_row["Model_name"]
-        if target_model is not None:
-            if model_name != target_model:
-                continue
+        if target_model is not None and model_name != target_model:
+            continue
 
         # Reload the base config fresh for EVERY model (D-11): the
         # custom-head override below REPLACES configs with the with_head
@@ -421,358 +424,370 @@ if __name__ == "__main__":
 
         # Open error log file
         os.makedirs("./logs/", exist_ok=True)
-        error_log = open(f"./logs/{model_name}_error_log.txt", "w")
+        with open(f"./logs/{model_name}_error_log.txt", "w") as error_log:
 
-        # Reload configurations for model with custom head
-        if model_name in ["evo2_1b_base", "megaDNA_updated"]:
-            configs = load_config("./finetune_config_with_head.yaml")
-            configs['task'].head_config.head = model_name.lower().split("_")[0]
+            # Reload configurations for model with custom head
+            if model_name in ["evo2_1b_base", "megaDNA_updated"]:
+                configs = load_config("./finetune_config_with_head.yaml")
+                configs['task'].head_config.head = model_name.lower().split("_")[0]
 
-        # Iterate through datasets
-        count = 0
-        for idx, row in datasets_info.items():
-            dataset_name = row["Dataset_name"]
-            dataset_path = base_dir + row["Dataset_path"]
+            # Iterate through datasets
+            count = 0
+            for idx, row in datasets_info.items():
+                dataset_name = row["Dataset_name"]
+                dataset_path = base_dir + row["Dataset_path"]
 
-            # Reset grad_accum to this model's YAML default (D-07) so a
-            # per-task adjustment from the previous dataset cannot leak
-            # into this one — the adjustment block below must start from
-            # the default, never dataset A's mutated value.
-            configs["finetune"].gradient_accumulation_steps = default_grad_accum
+                # Reset grad_accum to this model's YAML default (D-07) so a
+                # per-task adjustment from the previous dataset cannot leak
+                # into this one — the adjustment block below must start from
+                # the default, never dataset A's mutated value.
+                configs["finetune"].gradient_accumulation_steps = default_grad_accum
 
-            # Select target dataset if specified
-            if target_dataset is not None:
-                target_datasets = target_dataset.split(",")
-                if dataset_name not in target_datasets:
-                    continue
+                # Select target dataset if specified
+                if target_dataset is not None:
+                    target_datasets = target_dataset.split(",")
+                    if dataset_name not in target_datasets:
+                        continue
             
-            # Filter by category if specified
-            if category is not None:
-                categories = category.split(",")
-                dataset_category = row.get("Category", "")
-                if dataset_category not in categories:
-                    continue
+                # Filter by category if specified
+                if category is not None:
+                    categories = category.split(",")
+                    dataset_category = row.get("Category", "")
+                    if dataset_category not in categories:
+                        continue
             
-            # Filter by task index if specified
-            if task_index is not None:
-                task_indices = [int(i.strip()) for i in task_index.split(",")]
-                dataset_index = int(row.get("Index", -1))
-                if dataset_index not in task_indices:
-                    continue
+                # Filter by task index if specified
+                if task_index is not None:
+                    task_indices = [int(i.strip()) for i in task_index.split(",")]
+                    dataset_index = int(row.get("Index", -1))
+                    if dataset_index not in task_indices:
+                        continue
 
-            # Refuse Dev-less tasks BEFORE any model load (F1 / REV-01).
-            # Suite-side EVAL-01 contract (dnallm/finetune/trainer.py
-            # L568-605 @ revision 483a35c): dnallm uses test as the eval
-            # set only when finetune.allow_test_as_eval is explicitly true
-            # (config default False — a setting our configs must never
-            # carry) and otherwise raises a hard ValueError for a missing
-            # eval split under load_best_model_at_end / early stopping.
-            # Refusing here fails fast on any future Dev-less task instead
-            # of loading a model first.
-            if not row["Dev"]:
-                raise SystemExit(
-                    f"REFUSED: dataset '{dataset_name}' has no dev split "
-                    "(Dev is falsy in datasets_info.json). Per the suite's "
-                    "EVAL-01 contract, dnallm evaluates on test only when "
-                    "finetune.allow_test_as_eval is explicitly true "
-                    "(default False) and otherwise hard-errors on a "
-                    "missing eval split under load_best_model_at_end / "
-                    "early stopping — this task needs a dev split before "
-                    "any model load. Remediation: carve one with "
-                    "script/make_dev_splits.py."
-                )
+                # Refuse Dev-less tasks BEFORE any model load (F1 / REV-01).
+                # Suite-side EVAL-01 contract (dnallm/finetune/trainer.py
+                # L568-605 @ revision 483a35c): dnallm uses test as the eval
+                # set only when finetune.allow_test_as_eval is explicitly true
+                # (config default False — a setting our configs must never
+                # carry) and otherwise raises a hard ValueError for a missing
+                # eval split under load_best_model_at_end / early stopping.
+                # Refusing here fails fast on any future Dev-less task instead
+                # of loading a model first.
+                if not row["Dev"]:
+                    raise SystemExit(
+                        f"REFUSED: dataset '{dataset_name}' has no dev split "
+                        "(Dev is falsy in datasets_info.json). Per the suite's "
+                        "EVAL-01 contract, dnallm evaluates on test only when "
+                        "finetune.allow_test_as_eval is explicitly true "
+                        "(default False) and otherwise hard-errors on a "
+                        "missing eval split under load_best_model_at_end / "
+                        "early stopping — this task needs a dev split before "
+                        "any model load. Remediation: carve one with "
+                        "script/make_dev_splits.py."
+                    )
 
-            # Set task-specific configurations
-            configs["task"].num_labels = row["labels"]
-            configs["task"].label_names = [str(i) for i in range(row["labels"])]
-            configs["task"].task_type = row["type"]
-            if "head_config" in configs['task']:
-                configs['task'].head_config.task_type = row["type"]
+                # Set task-specific configurations
+                configs["task"].num_labels = row["labels"]
+                configs["task"].label_names = [str(i) for i in range(row["labels"])]
+                configs["task"].task_type = row["type"]
+                if "head_config" in configs['task']:
+                    configs['task'].head_config.task_type = row["type"]
 
-            # Load model and tokenizer
-            current_time = get_current_time()
-            print(f"[{current_time}] Loading model: {model_name}")
-            try:
-                model, tokenizer = load_model_and_tokenizer(
-                    model_path,
-                    task_config=configs["task"],
-                    source="local",
-                )
-            except Exception as e:
+                # Load model and tokenizer
                 current_time = get_current_time()
-                print(f"[{current_time}] Error loading model {model_name}: {e}")
-                print(f"--{ix}----------------"
-                      f"[{current_time}] Error loading model {model_name}: {e}"
-                      f"--------------------",
-                      file=error_log
-                )
-                error_log.close()
-                break
+                print(f"[{current_time}] Loading model: {model_name}")
+                try:
+                    model, tokenizer = load_model_and_tokenizer(
+                        model_path,
+                        task_config=configs["task"],
+                        source="local",
+                    )
+                # Blind except is the designed isolation (D-08 sanctioned):
+                # a model-load failure logs and BREAKS to the next model;
+                # narrowing the exception type risks aborting a multi-day
+                # sweep on an unanticipated failure class (unverifiable
+                # without GPU runs).
+                except Exception as e:  # noqa: BLE001
+                    current_time = get_current_time()
+                    print(f"[{current_time}] Error loading model {model_name}: {e}")
+                    print(f"--{ix}----------------"
+                          f"[{current_time}] Error loading model {model_name}: {e}"
+                          f"--------------------",
+                          file=error_log
+                    )
+                    break
 
-            # Initialize, check and repair meta tensor in the model
-            target_layers = ["classifier", "score", "bert.pooler", "weighting_layer"]
-            for name, module in model.named_modules():
-                # check parameters
-                for p_name, param in module.named_parameters(recurse=False):
-                    if param.device.type == 'meta':
-                        print(f"Detected meta parameter: {name}.{p_name}, materializing...")
-                        module._parameters[p_name] = torch.nn.Parameter(
-                            torch.empty_like(param, device="cpu"),
-                            requires_grad=param.requires_grad
-                        )
-                # check buffers
-                for b_name, buffer in module.named_buffers(recurse=False):
-                    if buffer.device.type == 'meta':
-                        print(f"Detected meta buffer: {name}.{b_name}, materializing...")
-                        module.register_buffer(
-                            b_name,
-                            torch.zeros_like(buffer, device="cpu")  # 0 or 1
-                        )
-                for target in target_layers:
-                    if name.startswith(target):
-                        print("Re-initializing:", name)
-                        init_layer(module)
+                # Initialize, check and repair meta tensor in the model
+                target_layers = ["classifier", "score", "bert.pooler", "weighting_layer"]
+                for name, module in model.named_modules():
+                    # check parameters
+                    for p_name, param in module.named_parameters(recurse=False):
+                        if param.device.type == 'meta':
+                            print(f"Detected meta parameter: {name}.{p_name}, materializing...")
+                            module._parameters[p_name] = torch.nn.Parameter(
+                                torch.empty_like(param, device="cpu"),
+                                requires_grad=param.requires_grad
+                            )
+                    # check buffers
+                    for b_name, buffer in module.named_buffers(recurse=False):
+                        if buffer.device.type == 'meta':
+                            print(f"Detected meta buffer: {name}.{b_name}, materializing...")
+                            module.register_buffer(
+                                b_name,
+                                torch.zeros_like(buffer, device="cpu")  # 0 or 1
+                            )
+                    for target in target_layers:
+                        if name.startswith(target):
+                            print("Re-initializing:", name)
+                            init_layer(module)
             
             
-            # Auto batch size adjustment moved to after max_length calculation
-            # to properly account for sequence length
+                # Auto batch size adjustment moved to after max_length calculation
+                # to properly account for sequence length
 
 
-            # Disable safetensors for specific models
-            if model_name in model_not_use_safetensors:
-                # Disable safetensors when shared shades in model
-                configs["finetune"].save_safetensors = False
-            else:
-                configs["finetune"].save_safetensors = True
-
-            # Set output directory for finetuning (seed-isolated per
-            # G1/REV-02: the trainer_state.json resume marker below is
-            # scoped to this seed, so resume never skips a different seed)
-            save_root = output_dir if output_dir else "./finetuned"
-            model_save_name = save_model_name if save_model_name else model_name
-            outdir = f"{save_root}/{model_save_name}/{dataset_name}/seed_{seed}/"
-            os.makedirs(outdir, exist_ok=True)
-            configs["finetune"].output_dir = outdir
-
-            if os.path.exists(outdir + "trainer_state.json"):
-                continue
-
-            # Get dataset file paths
-            data_dict = {}
-            if row["Train"]:
-                train_path = dataset_path + "/train.csv"
-                data_dict["train"] = train_path
-            if row["Dev"]:
-                val_path = dataset_path + "/dev.csv"
-                data_dict["dev"] = val_path
-            if row["Test"]:
-                test_path = dataset_path + "/test.csv"
-                data_dict["test"] = test_path
-
-            # Determine max sequence length
-            data_length = row["length"]
-            if tokenizer_type == "singlebase":
-                if model_name in [
-                    "enformer-official-rough", "space",
-                    "borzoi-replicate-0", "flashzoi-replicate-0",
-                ]:
-                    max_length = int(np.ceil(data_length / 512) * 512)
+                # Disable safetensors for specific models
+                if model_name in model_not_use_safetensors:
+                    # Disable safetensors when shared shades in model
+                    configs["finetune"].save_safetensors = False
                 else:
-                    max_length = int(data_length) + 2  # accounting for special tokens
-            else:
-                max_length = int(data_length / mean_token_len) + 2
-            if max_token_len:
-                if max_length > max_token_len:
+                    configs["finetune"].save_safetensors = True
+
+                # Set output directory for finetuning (seed-isolated per
+                # G1/REV-02: the trainer_state.json resume marker below is
+                # scoped to this seed, so resume never skips a different seed)
+                save_root = output_dir if output_dir else "./finetuned"
+                model_save_name = save_model_name if save_model_name else model_name
+                outdir = f"{save_root}/{model_save_name}/{dataset_name}/seed_{seed}/"
+                os.makedirs(outdir, exist_ok=True)
+                configs["finetune"].output_dir = outdir
+
+                if os.path.exists(outdir + "trainer_state.json"):
+                    continue
+
+                # Get dataset file paths
+                data_dict = {}
+                if row["Train"]:
+                    train_path = dataset_path + "/train.csv"
+                    data_dict["train"] = train_path
+                if row["Dev"]:
+                    val_path = dataset_path + "/dev.csv"
+                    data_dict["dev"] = val_path
+                if row["Test"]:
+                    test_path = dataset_path + "/test.csv"
+                    data_dict["test"] = test_path
+
+                # Determine max sequence length
+                data_length = row["length"]
+                if tokenizer_type == "singlebase":
+                    if model_name in [
+                        "enformer-official-rough", "space",
+                        "borzoi-replicate-0", "flashzoi-replicate-0",
+                    ]:
+                        max_length = int(np.ceil(data_length / 512) * 512)
+                    else:
+                        max_length = int(data_length) + 2  # accounting for special tokens
+                else:
+                    max_length = int(data_length / mean_token_len) + 2
+                if max_token_len and max_length > max_token_len:
                     max_length = int(max_token_len)
             
-            # Auto batch size adjustment based on model params and sequence length
-            if auto_batch_size and count == 0:
-                model_params = sum(p.numel() for p in model.parameters())
-                print(f"Model parameters: {model_params:,}")
-                batch_size = estimate_batch_size_by_model_params(
-                    model_params=model_params,
-                    gpu_mem_total=gpu_mem_total,
-                    seq_len=max_length,
-                    target_mem_ratio=mem_ratio
-                )
-                print(f"Auto-adjusted batch size: {batch_size} (seq_len={max_length})")
+                # Auto batch size adjustment based on model params and sequence length
+                if auto_batch_size and count == 0:
+                    model_params = sum(p.numel() for p in model.parameters())
+                    print(f"Model parameters: {model_params:,}")
+                    batch_size = estimate_batch_size_by_model_params(
+                        model_params=model_params,
+                        gpu_mem_total=gpu_mem_total,
+                        seq_len=max_length,
+                        target_mem_ratio=mem_ratio
+                    )
+                    print(f"Auto-adjusted batch size: {batch_size} (seq_len={max_length})")
 
-            # Record batch size and token length
-            if count == 0:
-                init_batch_size = batch_size
-                init_token_len = max_length
-            if count == 1:
-                init_max_mem = max_mem
+                # Record batch size and token length
+                if count == 0:
+                    init_batch_size = batch_size
+                    init_token_len = max_length
+                if count == 1:
+                    init_max_mem = max_mem
 
-            # Set finetune-specific configurations
-            configs["finetune"].metric_for_best_model = row["metric"]
-            if init_max_mem > 0 and max_length > init_token_len:
-                bs_new = estimate_batch_size(
-                    max_mem_measured=init_max_mem,
-                    seq_len_measured=init_token_len,
-                    seq_len_target=max_length,
-                    batch_old=init_batch_size,
-                    gpu_mem_total=gpu_mem_total
-                )
-                print(f"Update batch size, old: {batch_size}, new: {bs_new}.")
-            else:
-                bs_new = batch_size
-            configs["finetune"].per_device_train_batch_size = bs_new
-            configs["finetune"].per_device_eval_batch_size = bs_new
-            # log and evaluate n times during training
-            num_train_data = int(row["Train"])
-            epoch = configs["finetune"].num_train_epochs
-            grad_accum = configs["finetune"].gradient_accumulation_steps
-            # In case memory insufficient or effective_batch_size is specified
-            if effective_batch_size is not None:
-                # Adjust gradient_accumulation to achieve target effective batch size
-                if bs_new >= effective_batch_size:
-                    # batch_size already large enough, no need for gradient accumulation
-                    required_grad_accum = 1
+                # Set finetune-specific configurations
+                configs["finetune"].metric_for_best_model = row["metric"]
+                if init_max_mem > 0 and max_length > init_token_len:
+                    bs_new = estimate_batch_size(
+                        max_mem_measured=init_max_mem,
+                        seq_len_measured=init_token_len,
+                        seq_len_target=max_length,
+                        batch_old=init_batch_size,
+                        gpu_mem_total=gpu_mem_total
+                    )
+                    print(f"Update batch size, old: {batch_size}, new: {bs_new}.")
                 else:
-                    required_grad_accum = max(1, effective_batch_size // bs_new)
-                configs["finetune"].gradient_accumulation_steps = required_grad_accum
-                grad_accum = required_grad_accum
-                print(f"Effective batch size set to {effective_batch_size}: batch_size={bs_new}, gradient_accumulation={grad_accum}")
-            elif bs_new == 1 and grad_accum == 1:
-                grad_accum = 4
-                configs["finetune"].gradient_accumulation_steps = grad_accum
-            # Calculate steps based on final batch_size and grad_accum
-            num_gpus = int(os.environ.get("WORLD_SIZE", 1))
-            print(f"World size (num_gpus): {num_gpus}")
-            step = num_train_data * epoch // (bs_new * grad_accum * num_gpus * 10)
-            configs["finetune"].logging_steps = max(1, step)
-            configs["finetune"].eval_steps = max(1, step)
-            configs["finetune"].save_steps = max(1, step)
+                    bs_new = batch_size
+                configs["finetune"].per_device_train_batch_size = bs_new
+                configs["finetune"].per_device_eval_batch_size = bs_new
+                # log and evaluate n times during training
+                num_train_data = int(row["Train"])
+                epoch = configs["finetune"].num_train_epochs
+                grad_accum = configs["finetune"].gradient_accumulation_steps
+                # In case memory insufficient or effective_batch_size is specified
+                if effective_batch_size is not None:
+                    # Adjust gradient_accumulation to achieve target effective batch size
+                    if bs_new >= effective_batch_size:
+                        # batch_size already large enough, no need for gradient accumulation
+                        required_grad_accum = 1
+                    else:
+                        required_grad_accum = max(1, effective_batch_size // bs_new)
+                    configs["finetune"].gradient_accumulation_steps = required_grad_accum
+                    grad_accum = required_grad_accum
+                    print(f"Effective batch size set to {effective_batch_size}: batch_size={bs_new}, gradient_accumulation={grad_accum}")
+                elif bs_new == 1 and grad_accum == 1:
+                    grad_accum = 4
+                    configs["finetune"].gradient_accumulation_steps = grad_accum
+                # Calculate steps based on final batch_size and grad_accum
+                num_gpus = int(os.environ.get("WORLD_SIZE", "1"))
+                print(f"World size (num_gpus): {num_gpus}")
+                step = num_train_data * epoch // (bs_new * grad_accum * num_gpus * 10)
+                configs["finetune"].logging_steps = max(1, step)
+                configs["finetune"].eval_steps = max(1, step)
+                configs["finetune"].save_steps = max(1, step)
 
-            # Load dataset
-            multi_label_sep = None
-            if row["labels"] > 1 and row["type"] in ["regression", "multilabel"]:
-                multi_label_sep = ";"
-            dataset = DNADataset.load_local_data(
-                data_dict,
-                seq_col="sequence",
-                label_col="label",
-                multi_label_sep=multi_label_sep,
-                max_length=max_length
-            )
-            # Get dataset statistics
-            dataset_stat = dataset.statistics()
-            # Processing dataset with sequence pairs
-            if dataset_name == "GUE__EPI_GM12878":
-                seq_sep = "|"
-            else:
-                seq_sep = None
-
-            current_time = get_current_time()
-            print(f"[{current_time}] Index: {idx}, Dataset: {dataset_name}")
-
-            """
-            # Sample a small portion for testing
-            train_size = dataset_stat["train"]["n_samples"]
-            if train_size < 100000:
-                ratio = 0.005
-            elif 100000<= train_size < 500000:
-                ratio = 0.002
-            else:
-                ratio = 0.001
-            dataset.sampling(ratio=ratio, seed=42, overwrite=True)
-            """
-
-            # Encode sequences
-            try:
-                # Filter sequences (some models do not support N bases)
-                dataset.validate_sequences(minl=0, maxl=10010, valid_chars="ACGTacgt|")
-                # Encoding
-                dataset.encode_sequences(
-                    remove_unused_columns=True,
-                    tokenizer=tokenizer,
-                    seq_sep=seq_sep
+                # Load dataset
+                multi_label_sep = None
+                if row["labels"] > 1 and row["type"] in ["regression", "multilabel"]:
+                    multi_label_sep = ";"
+                dataset = DNADataset.load_local_data(
+                    data_dict,
+                    seq_col="sequence",
+                    label_col="label",
+                    multi_label_sep=multi_label_sep,
+                    max_length=max_length
                 )
-            except Exception as e:
+                # Get dataset statistics
+                dataset_stat = dataset.statistics()
+                # Processing dataset with sequence pairs
+                if dataset_name == "GUE__EPI_GM12878":
+                    seq_sep = "|"
+                else:
+                    seq_sep = None
+
                 current_time = get_current_time()
-                print(f"[{current_time}] Error encoding dataset {dataset_name} with model {model_name}: {e}")
-                print(f"[{current_time}] Error encoding dataset {dataset_name} with model {model_name}: {e}",
-                      file=error_log
+                print(f"[{current_time}] Index: {idx}, Dataset: {dataset_name}")
+
+                """
+                # Sample a small portion for testing
+                train_size = dataset_stat["train"]["n_samples"]
+                if train_size < 100000:
+                    ratio = 0.005
+                elif 100000<= train_size < 500000:
+                    ratio = 0.002
+                else:
+                    ratio = 0.001
+                dataset.sampling(ratio=ratio, seed=42, overwrite=True)
+                """
+
+                # Encode sequences
+                try:
+                    # Filter sequences (some models do not support N bases)
+                    dataset.validate_sequences(minl=0, maxl=10010, valid_chars="ACGTacgt|")
+                    # Encoding
+                    dataset.encode_sequences(
+                        remove_unused_columns=True,
+                        tokenizer=tokenizer,
+                        seq_sep=seq_sep
+                    )
+                # Blind except is the designed isolation (D-08 sanctioned):
+                # a dataset-encode failure logs and CONTINUEs to the next
+                # dataset; narrowing the exception type risks aborting a
+                # multi-day sweep on an unanticipated tokenizer failure
+                # (unverifiable without GPU runs).
+                except Exception as e:  # noqa: BLE001
+                    current_time = get_current_time()
+                    print(f"[{current_time}] Error encoding dataset {dataset_name} with model {model_name}: {e}")
+                    print(f"[{current_time}] Error encoding dataset {dataset_name} with model {model_name}: {e}",
+                          file=error_log
+                    )
+                    print("--------------------", file=error_log)
+                    continue
+                print(f"Tokenizer type: {tokenizer_type}. Infer max token length: {max_length}")
+
+                # Specific adjustments for deep learning models
+                if model_name in deeplearning_models:
+                    model.target_length = max_length // model.resolution
+
+                # Record GPU memory usage
+                if NPU_AVAILABLE:
+                    torch.npu.reset_peak_memory_stats()
+                elif torch.cuda.is_available():
+                    torch.cuda.reset_peak_memory_stats(device)
+
+                # Initialize the trainer
+                extra_args = {}
+                if gradient_checkpointing:
+                    extra_args["gradient_checkpointing"] = True
+                    # use_reentrant=False avoids "marked as ready twice" under DDP
+                    # (required for MoE shared_experts + checkpointing + DDP combo)
+                    extra_args["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
+                    if hasattr(model, "config"):
+                        model.config.use_cache = False
+                    print("[Info] Gradient checkpointing enabled (use_reentrant=False, use_cache disabled).")
+                if ddp_find_unused_parameters:
+                    extra_args["ddp_find_unused_parameters"] = True
+                    print("[Info] DDP find_unused_parameters forced True (required for MoE models).")
+                trainer = DNATrainer(
+                    model=model,
+                    config=configs,
+                    datasets=dataset,
+                    extra_args=extra_args or None,
                 )
-                print(f"--------------------", file=error_log)
-                continue
-            print(f"Tokenizer type: {tokenizer_type}. Infer max token length: {max_length}")
 
-            # Specific adjustments for deep learning models
-            if model_name in deeplearning_models:
-                model.target_length = max_length // model.resolution
+                # Start finetuning
+                local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+                try:
+                    metrics = trainer.train()
+                    if local_rank == 0:
+                        checkpoints = glob(outdir + "checkpoint-*")
+                        all_steps = [int(ckpt.split("-")[-1]) for ckpt in checkpoints]
+                        last_step = max(all_steps)
+                        shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json", outdir)
+                        with open(outdir + "final_metrics.json", 'w') as f:
+                            json.dump(metrics, f, indent=4)
+                    trainer.evaluate()
+                # Blind except is the designed isolation (D-08 sanctioned):
+                # a dataset-train failure logs and CONTINUEs to the next
+                # dataset; narrowing the exception type risks aborting a
+                # multi-day sweep on an unanticipated training failure
+                # (unverifiable without GPU runs).
+                except Exception as e:  # noqa: BLE001
+                    current_time = get_current_time()
+                    print(f"[{current_time}] Error finetuning dataset {dataset_name} with model {model_name}: {e}")
+                    print(f"[{current_time}] Error finetuning dataset {dataset_name} with model {model_name}: {e}",
+                          file=error_log
+                    )
+                    print("--------------------", file=error_log)
+                    continue
 
-            # Record GPU memory usage
-            if NPU_AVAILABLE:
-                torch.npu.reset_peak_memory_stats()
-            elif torch.cuda.is_available():
-                torch.cuda.reset_peak_memory_stats(device)
-
-            # Initialize the trainer
-            extra_args = {}
-            if gradient_checkpointing:
-                extra_args["gradient_checkpointing"] = True
-                # use_reentrant=False avoids "marked as ready twice" under DDP
-                # (required for MoE shared_experts + checkpointing + DDP combo)
-                extra_args["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
-                if hasattr(model, "config"):
-                    model.config.use_cache = False
-                print("[Info] Gradient checkpointing enabled (use_reentrant=False, use_cache disabled).")
-            if ddp_find_unused_parameters:
-                extra_args["ddp_find_unused_parameters"] = True
-                print("[Info] DDP find_unused_parameters forced True (required for MoE models).")
-            trainer = DNATrainer(
-                model=model,
-                config=configs,
-                datasets=dataset,
-                extra_args=extra_args or None,
-            )
-
-            # Start finetuning
-            local_rank = int(os.environ.get("LOCAL_RANK", 0))
-            try:
-                metrics = trainer.train()
                 if local_rank == 0:
-                    checkpoints = glob(outdir + "checkpoint-*")
-                    all_steps = [int(ckpt.split("-")[-1]) for ckpt in checkpoints]
-                    last_step = sorted(all_steps)[-1]
-                    shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json", outdir)
-                    with open(outdir + "final_metrics.json", 'w') as f:
-                        json.dump(metrics, f, indent=4)
-                trainer.evaluate()
-            except Exception as e:
-                current_time = get_current_time()
-                print(f"[{current_time}] Error finetuning dataset {dataset_name} with model {model_name}: {e}")
-                print(f"[{current_time}] Error finetuning dataset {dataset_name} with model {model_name}: {e}",
-                      file=error_log
-                )
-                print(f"--------------------", file=error_log)
-                continue
+                    if remove_checkpoints:
+                        for checkpoint in checkpoints:
+                            if not checkpoint.endswith("-"+str(last_step)):
+                                shutil.rmtree(checkpoint)
+                    if remove_pt:
+                        for pt_file in glob(outdir + "checkpoint-*/*.pt"):
+                            os.remove(pt_file)
 
-            if local_rank == 0:
-                if remove_checkpoints:
-                    for checkpoint in checkpoints:
-                        if not checkpoint.endswith("-"+str(last_step)):
-                            shutil.rmtree(checkpoint)
-                if remove_pt:
-                    for pt_file in glob(outdir + "checkpoint-*/*.pt"):
-                        os.remove(pt_file)
-
-            # Get max GPU usage during training
-            if NPU_AVAILABLE:
-                max_mem = torch.npu.max_memory_allocated() / (1024**3)
-            elif torch.cuda.is_available():
-                max_mem = torch.cuda.max_memory_allocated() / (1024**3)
-            else:
-                max_mem = 0.0
-            print(f"Training the model using {max_mem} GB memory.\n")
+                # Get max GPU usage during training
+                if NPU_AVAILABLE:
+                    max_mem = torch.npu.max_memory_allocated() / (1024**3)
+                elif torch.cuda.is_available():
+                    max_mem = torch.cuda.max_memory_allocated() / (1024**3)
+                else:
+                    max_mem = 0.0
+                print(f"Training the model using {max_mem} GB memory.\n")
             
-            # Update init_max_mem after first training to fix bug with --target_dataset
-            if init_max_mem < 0:
-                init_max_mem = max_mem
-                print(f"Recorded initial max memory: {init_max_mem} GB")
+                # Update init_max_mem after first training to fix bug with --target_dataset
+                if init_max_mem < 0:
+                    init_max_mem = max_mem
+                    print(f"Recorded initial max memory: {init_max_mem} GB")
 
-            count += 1
+                count += 1
 
-        error_log.close()
