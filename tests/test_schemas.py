@@ -27,6 +27,26 @@ SCHEMA_FILES = {
         REPO / "schemas" / "model_performance.json",
         sorted((DATA / "model_performance").glob("*.json")),
     ),
+    "task_performance": (
+        REPO / "schemas" / "task_performance.json",
+        sorted((DATA / "task_performance").glob("*.json")),
+    ),
+    "models_comparison": (
+        REPO / "schemas" / "models_comparison.json",
+        [
+            DATA / f
+            for f in (
+                "models_comparison.json",
+                "models_comparison_animal.json",
+                "models_comparison_plant.json",
+                "models_comparison_microbe.json",
+            )
+        ],
+    ),
+    "tasks_index": (
+        REPO / "schemas" / "tasks_index.json",
+        [DATA / "tasks.json"],
+    ),
 }
 
 
@@ -71,3 +91,29 @@ def test_schema_documents_are_wellformed():
             Draft202012Validator.check_schema(schema)
         except Exception as exc:  # noqa: BLE001 — re-raise with the bucket named
             pytest.fail(f"{name}: schema at {path} is not well-formed: {exc}")
+
+
+def test_metric_enum_matches_committed_data(validators):
+    """D-02 self-check: the schema metric enum equals the metric values in data.
+
+    Collects every ``dataset.metric`` value across all committed
+    model_performance files and asserts the authored schema's closed enum
+    is exactly that set — so enum and data cannot silently diverge: a new
+    dataset metric turns this test red until the schema is updated.
+
+    Args:
+        validators: session-scoped validator map (fixture).
+    """
+    observed = set()
+    for path in SCHEMA_FILES["model_performance"][1]:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        observed |= {entry["dataset"]["metric"] for entry in doc["performance"].values()}
+
+    schema = validators["model_performance"].schema
+    schema_enum = set(
+        schema["$defs"]["datasetEntry"]["properties"]["dataset"]["properties"]["metric"]["enum"]
+    )
+    assert schema_enum == observed == {"f1", "mcc", "spearmanr", "AUPRC"}, (
+        f"schema enum {sorted(schema_enum)} != observed data {sorted(observed)} — "
+        "update the schema (D-02 forced versioning) or fix the drifted data"
+    )

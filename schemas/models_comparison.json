@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/zhangtaolab/dnallmmark/main/schemas/models_comparison.json",
+  "$comment": "Fully strict contract (D-01) covering ALL FOUR committed comparison files (models_comparison.json, models_comparison_{animal,plant,microbe}.json) — their shapes are identical (verified by live survey). Root is an open map of model alias to {model, performance}. The model block is the 7-KEY SUBSET card (not the full 11-key card); model organism vocabulary stays open strings here (D-02 closes metric enums only). Key sets surveyed live from all 4 committed files (Phase 2 research, 2026-10-09).",
+  "type": "object",
+  "additionalProperties": { "$ref": "#/$defs/modelComparison" },
+  "$defs": {
+    "modelComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "performance"],
+      "properties": {
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "context_len (bp)",
+            "name",
+            "series",
+            "size (M)",
+            "species",
+            "tokenizer",
+            "type"
+          ],
+          "properties": {
+            "context_len (bp)": { "type": "integer" },
+            "name": { "type": "string" },
+            "series": { "type": "string" },
+            "size (M)": { "type": "integer" },
+            "species": { "type": "string" },
+            "tokenizer": { "type": "string" },
+            "type": { "type": "string" }
+          }
+        },
+        "performance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "avg_PFLOPs",
+            "avg_rank",
+            "avg_raw",
+            "rank",
+            "rank_score",
+            "samples",
+            "sum_PFLOPs",
+            "sum_minmax",
+            "sum_robust",
+            "sum_zscore",
+            "top10_count",
+            "top1_count",
+            "top3_count",
+            "top5_count",
+            "top8_count"
+          ],
+          "properties": {
+            "avg_PFLOPs": { "type": "number" },
+            "avg_rank": { "type": "number" },
+            "avg_raw": { "type": "number" },
+            "rank": { "type": "integer" },
+            "rank_score": { "type": "number" },
+            "samples": { "type": "integer" },
+            "sum_PFLOPs": { "type": "number" },
+            "sum_minmax": { "type": "number" },
+            "sum_robust": { "type": "number" },
+            "sum_zscore": { "type": "number" },
+            "top10_count": { "type": "integer" },
+            "top1_count": { "type": "integer" },
+            "top3_count": { "type": "integer" },
+            "top5_count": { "type": "integer" },
+            "top8_count": { "type": "integer" }
+          }
+        }
+      }
+    }
+  }
+}
