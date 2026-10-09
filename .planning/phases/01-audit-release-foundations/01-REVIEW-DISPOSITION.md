@@ -5,32 +5,32 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: open
-    title: "gitleaks allowlist is record-scoped, not token-scoped — any swapped JWT in the known link position is silently suppressed"
+    disposition: fixed
+    title: "Live Zenodo preview JWT committed in public README — residual risk untracked"
   - id: WR-02
     severity: warning
-    disposition: open
-    title: "`compare.py` treats equal-value bool/int cross-type pairs as identical — silent false-negative against live pinned data"
+    disposition: fixed
+    title: "README says Python 3.11+ while the repo pins >=3.13"
   - id: WR-03
     severity: warning
-    disposition: open
-    title: "Non-finite metric values (`\"nan\"`, `NaN`, `\"inf\"`) pass the presence gate and poison an entire task's normalization"
+    disposition: fixed
+    title: "`baseline/compare.py` diff ordering is nondeterministic across processes"
   - id: IN-01
     severity: info
-    disposition: open
-    title: "Pure-integer differences are classified as `FLOAT_BIG`"
+    disposition: fixed
+    title: "Dead counter variable"
   - id: IN-02
     severity: info
-    disposition: open
-    title: "Index generator crashes with a raw stack trace when `task_performance/` is missing"
+    disposition: fixed
+    title: "Metric-presence check is narrower than `get_float`'s missing-value semantics"
   - id: IN-03
     severity: info
-    disposition: open
-    title: "README \"Output fields\" still omits `avg_PFLOPs`"
+    disposition: fixed
+    title: "No per-file error handling in the index generator"
   - id: IN-04
     severity: info
-    disposition: open
-    title: "`.planning/tmp/` GSD scratch is untracked noise in `git status`"
+    disposition: fixed
+    title: "Double spaces in generated task display names"
   - id: WR-04
     severity: warning
     disposition: fixed
@@ -63,22 +63,22 @@ findings:
     severity: info
     disposition: fixed
     title: "`.gitignore` carries upstream-dnallm rules for paths that do not exist here"
-open: 7
+open: 0
 total: 15
-recorded: 2026-10-08T16:51:58.431Z
+recorded: 2026-10-09T00:42:04.402Z
 ---
 
 # Phase 01: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
-| IN-04 | info | open | - |
+| WR-01 | warning | fixed | 01-REVIEW-FIX.md (not in the current review) |
+| WR-02 | warning | fixed | 01-REVIEW-FIX.md (not in the current review) |
+| WR-03 | warning | fixed | 01-REVIEW-FIX.md (not in the current review) |
+| IN-01 | info | fixed | 01-REVIEW-FIX.md (not in the current review) |
+| IN-02 | info | fixed | 01-REVIEW-FIX.md (not in the current review) |
+| IN-03 | info | fixed | 01-REVIEW-FIX.md (not in the current review) |
+| IN-04 | info | fixed | 01-REVIEW-FIX.md (not in the current review) |
 | WR-04 | warning | fixed | 01-REVIEW-FIX.md (not in the current review) |
 | WR-05 | warning | skipped | 01-REVIEW-FIX.md (not in the current review) |
 | WR-06 | warning | skipped | 01-REVIEW-FIX.md (not in the current review) |
