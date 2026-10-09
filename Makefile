@@ -12,9 +12,12 @@
 #   make test-fast  pytest excluding @slow (the real-tree determinism run);
 #                   the JS suite is fast and runs in the full test lane
 #   make lint       ruff over tests/
+#   make typecheck  ty type check over script/, baseline/, tests/, scripts/,
+#                   and pipeline/ (GPU-side imports replaced with Any — they
+#                   are never installed CPU-side, D-05)
 # =====================================================================
 
-.PHONY: data test test-fast lint check-node
+.PHONY: data test test-fast lint typecheck check-node
 
 # WR-02: PATH lookup with an overridable default (`make UV=/path/to/uv`) —
 # setup-uv/brew/pipx installs live outside ~/.local/bin, and a hardcode
@@ -57,3 +60,12 @@ test-fast:
 # not a silent one.
 lint:
 	$(UV) run --group dev ruff check tests/
+
+# Type check (ty, maintainer directive 2026-10-09): zero-diagnostics baseline
+# verified empirically at research time. [tool.ty] in pyproject.toml carries
+# the config — extra-paths mirrors tests/conftest.py's sys.path contract, and
+# GPU-side imports (torch/dnallm/transformers/peft/datasets) are replaced
+# with Any because they are never installed CPU-side (D-05). --group dev is
+# required for the same default-groups reason as lint/test.
+typecheck:
+	$(UV) run --group dev ty check
