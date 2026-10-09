@@ -349,7 +349,9 @@ def run_matrix(cells, output_root, executor=None):
     0 but the cell dir has no final_metrics.json (CR-02:
     run_finetune.py's blind-except isolation makes a training failure
     exit 0 without writing metrics, so the missing file — not the exit
-    status — is the training-failure signal).
+    status — is the training-failure signal). sweep_failures.json is
+    written on EVERY run — an empty list when no cell failed — so a
+    stale failures manifest can never outlive its sweep (WR-06).
 
     Args:
         cells (list[tuple[str, str, int]]): (model, task, seed) cells.
@@ -430,8 +432,12 @@ def run_matrix(cells, output_root, executor=None):
         "output_root": str(output_root),
     }
     _write_json(output_root / MANIFEST_NAME, _manifest_payload(matrix, records))
-    if failures:
-        _write_json(output_root / FAILURES_NAME, failures)
+    # Always write the failures manifest — an empty list when no cell
+    # failed (WR-06): writing it only on failure would leave a previous
+    # run's stale sweep_failures.json sitting next to a fresh
+    # all-clean sweep_manifest.json, contradictory audit artifacts for
+    # the same output root.
+    _write_json(output_root / FAILURES_NAME, failures)
     return records
 
 

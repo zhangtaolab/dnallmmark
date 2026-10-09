@@ -199,8 +199,12 @@ def test_run_matrix_completed_copies_metrics_verbatim(tmp_path):
     manifest = json.loads(
         (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
     assert manifest["cells"][0]["status"] == "completed"
-    assert not (out_root / "sweep_failures.json").exists(), (
-        "no failures manifest when every cell succeeds"
+    failures = json.loads(
+        (out_root / "sweep_failures.json").read_text(encoding="utf-8"))
+    assert failures == [], (
+        "the failures manifest is written on every run — an EMPTY list "
+        "when every cell succeeds, never a stale file from a previous "
+        "sweep over the same root (WR-06)"
     )
 
 
