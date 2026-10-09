@@ -56,7 +56,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 ### Pipeline & Environment (dnallm dev)
 
 - [x] **PIPE-01**: ~~Pipeline code adapted to dnallm dev branch~~ — **absorbed by the dev-branch rewrite** (`pipeline/run_finetune.py` @ dev `c6b3137`, 2026-10-09): the rewritten pipeline already targets dnallm dev; remaining adaptation work (branch reconciliation, Phase 2 asset survival, anchor migration) lives in REV-01..REV-10 and Phase 3's success criteria
-- [ ] **PIPE-02**: Local GPU pipeline environment reproducibly buildable (uv/venv on the NVIDIA GB10 aarch64 machine; dnallm installed from the local git dev clone; torch/transformers pinned per dnallm 0.7.1 bounds) with documented setup commands
+- [x] **PIPE-02**: Local GPU pipeline environment reproducibly buildable (uv/venv on the NVIDIA GB10 aarch64 machine; dnallm installed from the local git dev clone; torch/transformers pinned per dnallm 0.7.1 bounds) with documented setup commands
 
 **Revision requirements (F1–F10, per the 2026-10-09 code-review & feature plan against dev@c6b3137; F-numbers are the canonical reference)**:
 - [x] **REV-01** (F1, P0): Dev-split generation for the 18 Dev-empty tasks (stratified 10% from train, seed=42, datasets_info Dev columns updated) + checkpoint selection refuses silent test fallback
@@ -69,7 +69,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [ ] **REV-08** (F5+F8, P1/P2): Zero-shot VEP lane (CLM/MLM scoring, ClinVar/AraGWAS, baselines + sanity checks) and, window permitting, from-scratch baselines + learning curves (label-fraction sweeps)
 - [ ] **REV-09** (E2' 执行面, P0 依赖): Three-seed full re-run (E2') executes only after REV-01/REV-02 gates — critical path F1→F2→E2'
 - [x] **REV-10** (F10, P0): Old pipeline (`dnallmmark_pipeline.py`) deprecation header + README names `run_finetune.py` as the benchmark entry point
-- [ ] **PIPE-03**: Small end-to-end validation on the NEW pipeline (`run_finetune.py`) — plant-dnamamba-6mer and PlantHelixSeek (models_info entry added in-phase) each fine-tune on PlantCAD2__cross_species_leaf_on_off_translation and produce a `{model}_performance.json` valid against the Phase 2 schema
+- [x] **PIPE-03**: Small end-to-end validation on the NEW pipeline (`run_finetune.py`) — plant-dnamamba-6mer and PlantHelixSeek (models_info entry added in-phase) each fine-tune on PlantCAD2__cross_species_leaf_on_off_translation and produce a `{model}_performance.json` valid against the Phase 2 schema
 
 ## v2 Requirements
 
@@ -114,8 +114,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TEST-03 | Phase 2 | Complete |
 | TEST-06 | Phase 2 | Complete |
 | PIPE-01 | — (absorbed by dev rewrite) | Absorbed |
-| PIPE-02 | Phase 3 | Pending |
-| PIPE-03 | Phase 3 | Pending |
+| PIPE-02 | Phase 3 | Complete |
+| PIPE-03 | Phase 3 | Complete |
 | REV-01 | Phase 3 | Complete |
 | REV-02 | Phase 3 | Complete |
 | REV-03 | Phase 4, Phase 6 | Pending |
