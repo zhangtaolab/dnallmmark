@@ -148,10 +148,18 @@ Finetuning parameters can be adjusted in the `finetune_config.yaml` configuratio
 
 ### Run Pipeline
 
-After preparation of datasets and models, users can directly run the pipeline with the follow script:
+After preparation of datasets and models, users can directly run the pipeline with the follow script (run from the `pipeline/` directory — `run_finetune.py` resolves `finetune_config.yaml`, its `./logs/` error-log directory, and its `./finetuned` output default against its working directory):
 
 ```bash
+cd pipeline
 python run_finetune.py --target_model model_name --target_dataset dataset_name --seed 9527
+```
+
+To drive the full model x task x seed matrix, use the sweep driver instead (launched from the repo root; it launches one `run_finetune.py` subprocess per cell and pins each subprocess to `pipeline/` internally):
+
+```bash
+python pipeline/run_sweep.py --seeds 42,43 --output-root ./finetuned --dry-run  # enumerate only, launches nothing
+python pipeline/run_sweep.py --seeds 42,43 --output-root ./finetuned           # launch the sweep
 ```
 
 The detailed arguments are shown below:
@@ -197,7 +205,7 @@ Users need to specify a target model with `--target_model` for benchmarking, oth
 
 `remove_pt` and `remove_checkpoints` are used for saving disk space.
 
-When the pipeline finished, the finetuned models will be stored at `finetuned/{model_name}/{dataset_name}/` directories. Error logs wiil be saved at `logs/` directory. All the finetuned metrics can be visualized via *tensorboard* by setting the log dir to the output foloder:
+When the pipeline finished, the finetuned models will be stored at `finetuned/{model_name}/{dataset_name}/seed_{seed}/` directories (one seed-isolated output per `--seed`; the sweep driver additionally writes a per-cell `run_record.json` plus `sweep_manifest.json` and `sweep_failures.json` at the output root). Error logs wiil be saved at `logs/` directory. All the finetuned metrics can be visualized via *tensorboard* by setting the log dir to the output foloder:
 
 ```bash
 tensorboard --logdir=finetuned/
