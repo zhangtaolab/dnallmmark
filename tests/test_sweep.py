@@ -25,7 +25,9 @@ Every behavior bullet of the plan's Task 2 is pinned here:
   bug that aborts the sweep); a pre-existing
   ``trainer_state.json`` yields status ``skipped`` with NO executor
   invocation — and the skip is seed-scoped (seed 43 still runs when seed
-  42's marker exists in the sibling dir);
+  42's marker exists in the sibling dir) and never overwrites the
+  skipped cell's existing run_record.json (WR-12: the previous run's
+  record is the provenance; the manifest reports this run's view);
 - **subprocess contract** — the real launch path (captured argv, never
   executed) passes --target_model/--target_dataset/--seed/--output_dir as
   separate argv elements of a LIST with cwd set to this repo's pipeline
@@ -371,6 +373,71 @@ def test_run_matrix_resume_marker_is_seed_scoped(tmp_path):
     skipped = json.loads(
         (cell_42 / "run_record.json").read_text(encoding="utf-8"))
     assert skipped["status"] == "skipped"
+
+
+def test_resume_never_overwrites_existing_run_record(tmp_path):
+    """WR-12: a resumed sweep's skipped cell NEVER overwrites the existing
+    run_record.json — the record of the run that actually trained the cell
+    (status completed, verbatim metrics, git commit, wall-clock times) is
+    the provenance, "recorded once at observation time, never
+    regenerated"; this run's skipped view is reported by the manifest
+    only. A skipped cell with NO record yet (the seed-scoped test above:
+    marker but no record) still gets a fresh one."""
+    out_root = tmp_path / "sweep-out"
+
+    def fake_executor(model, task, seed, output_root):
+        # Mimic run_finetune.py's success artifacts: final_metrics.json
+        # PLUS the trainer_state.json resume marker (written last — the
+        # WR-13 ordering), without which run 2 below would have no
+        # marker to skip on.
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text(
+            json.dumps(SUITE_NATIVE_METRICS, indent=4), encoding="utf-8")
+        (cell_dir / "trainer_state.json").write_text("{}", encoding="utf-8")
+
+    # Run 1: the cell trains and its completed record lands on disk.
+    first = run_sweep.run_matrix(
+        [("model-a", "task-x", 42)], out_root, executor=fake_executor)
+    assert first[0]["status"] == "completed"
+    record_path = (
+        out_root / "model-a" / "task-x" / "seed_42" / "run_record.json")
+    completed_record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert completed_record["status"] == "completed"
+    assert completed_record["metrics"] == SUITE_NATIVE_METRICS
+    assert completed_record["started_at"]
+    assert completed_record["finished_at"]
+
+    # Run 2 (resume): the trainer_state.json marker now exists, so the
+    # cell is skipped — the executor must never run, and the on-disk
+    # record must still be run 1's completed record, verbatim.
+    invoked = []
+
+    def never_executor(model, task, seed, output_root):
+        invoked.append((model, task, seed))
+
+    second = run_sweep.run_matrix(
+        [("model-a", "task-x", 42)], out_root, executor=never_executor)
+    assert invoked == [], "a skipped cell must never invoke the executor"
+    assert second[0]["status"] == "skipped", (
+        "the manifest reports THIS run's view of the cell: skipped"
+    )
+    assert json.loads(record_path.read_text(encoding="utf-8")) == (
+        completed_record
+    ), (
+        "a skipped cell's existing run_record.json must be preserved "
+        "verbatim — overwriting it with a skipped/metrics-null record "
+        "destroys the only provenance linking the cell's metrics to the "
+        "git commit and wall-clock times of the run that produced them "
+        "(WR-12)"
+    )
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"][0]["status"] == "skipped", (
+        "the manifest reflects this run's skipped view while the per-cell "
+        "record keeps the original run's completed view — the two "
+        "artifacts answer different questions"
+    )
 
 
 def test_launch_subprocess_builds_argv_list_with_pinned_cwd(monkeypatch):

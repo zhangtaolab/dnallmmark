@@ -50,7 +50,11 @@ document where the numbers will land once the pipeline persists them.
 
 ``started_at`` / ``finished_at`` / ``git_commit`` are RUNTIME OBSERVATIONS
 (Phase 2 discipline): recorded once at observation time, never
-regenerated, never diffed. Everything else is deterministic — the matrix
+regenerated, never diffed — and a resumed sweep's ``skipped`` cells
+therefore never rewrite an existing ``run_record.json`` (WR-12): the
+previous run's record (its status, metrics, commit, timestamps) is the
+cell's provenance, and this run's skipped view is reported by the
+manifest only. Everything else is deterministic — the matrix
 iterates in ``sorted()`` order and every JSON file is written with
 ``sort_keys=True, indent=4, ensure_ascii=False``, so two dry-runs over the
 same inputs produce byte-identical manifests.
@@ -392,7 +396,11 @@ def run_matrix(cells, output_root, executor=None):
     """Execute the sweep matrix, writing run records + manifests.
 
     Per cell (in sorted order): a pre-existing trainer_state.json in the
-    cell dir marks the cell ``skipped`` with NO executor invocation;
+    cell dir marks the cell ``skipped`` with NO executor invocation and
+    WITHOUT overwriting any existing run_record.json (WR-12: the
+    previous run's record is the cell's provenance; a fresh skipped
+    record is written only when none exists — e.g. a standalone
+    run_finetune.py invocation left the marker but no record);
     otherwise the executor runs, and on success the cell's
     final_metrics.json keys are copied VERBATIM into the record's
     ``metrics`` (suite-native — translation is REV-03's job). A cell is
@@ -501,7 +509,18 @@ def run_matrix(cells, output_root, executor=None):
                     "error": record["error"],
                 })
         record["finished_at"] = _utc_now_iso()
-        _write_json(cell_dir / RECORD_NAME, record)
+        record_path = cell_dir / RECORD_NAME
+        # WR-12: never overwrite an existing record for a SKIPPED cell.
+        # The on-disk record of the run that actually trained (or failed)
+        # the cell — status, verbatim metrics, git commit, wall-clock
+        # times — is the only provenance linking the cell's outcome to
+        # the run that produced it ("recorded once at observation time,
+        # never regenerated"). Overwriting it with this run's
+        # skipped/metrics-null view would destroy that provenance on
+        # every resumed sweep; the manifest reports THIS run's view of
+        # the cell. A skipped cell with NO record yet still gets one.
+        if record["status"] != "skipped" or not record_path.exists():
+            _write_json(record_path, record)
         records.append(record)
 
     matrix = {
