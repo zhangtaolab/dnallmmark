@@ -218,13 +218,10 @@ def estimate_batch_size(
 ):
     predicted_mem = max_mem_measured * (seq_len_target / seq_len_measured)
     print(f"Estimated memory usage: {predicted_mem} GB ...")
-    # Use higher threshold for better GPU utilization
-    threshold = target_mem_ratio
-    if predicted_mem >= gpu_mem_total * threshold:
-        batch_new = int(batch_old * (gpu_mem_total * threshold / predicted_mem))
-    else:
-        # More aggressive when we have headroom
-        batch_new = int(batch_old * (gpu_mem_total * target_mem_ratio / predicted_mem))
+    # Scale the old batch so the predicted usage lands on the target
+    # memory ratio (WR-10: the previous if/else computed the IDENTICAL
+    # expression in both branches — dead logic, removed).
+    batch_new = int(batch_old * (gpu_mem_total * target_mem_ratio / predicted_mem))
     # Avoid high batch_new if batch_old is very low
     if batch_new // batch_old >= max_change:
         batch_new = batch_old * max_change
@@ -658,7 +655,11 @@ if __name__ == "__main__":
                         seq_len_measured=init_token_len,
                         seq_len_target=max_length,
                         batch_old=init_batch_size,
-                        gpu_mem_total=gpu_mem_total
+                        gpu_mem_total=gpu_mem_total,
+                        # WR-10: honor --mem_ratio here too — previously
+                        # this estimator silently used its 0.4 default and
+                        # only the first-dataset estimator saw the flag.
+                        target_mem_ratio=mem_ratio
                     )
                     print(f"Update batch size, old: {batch_size}, new: {bs_new}.")
                 else:
