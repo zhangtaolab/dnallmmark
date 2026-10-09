@@ -93,6 +93,40 @@ def test_schema_documents_are_wellformed():
             pytest.fail(f"{name}: schema at {path} is not well-formed: {exc}")
 
 
+# Pinned corpus sizes (WR-03): the glob-built buckets parametrize to ZERO
+# pytest items when the data tree is missing or partial, so the 42-file and
+# 47-file validation silently vanishes while the suite stays green. The
+# pins fail loudly instead. Update them DELIBERATELY when the corpus grows.
+EXPECTED_BUCKET_SIZES = {
+    "model_performance": 42,
+    "task_performance": 47,
+    "models_comparison": 4,
+    "tasks_index": 1,
+}
+
+
+def test_schema_bucket_counts_are_pinned():
+    """WR-03 canary: every bucket holds exactly its pinned file count.
+
+    A glob over a missing/partial ``dnallm-mark/data`` tree cannot fail on
+    its own — an empty glob just yields zero parametrized validation items
+    (a vacuous pass). The literal-path buckets fail loudly per missing
+    file, but their counts are pinned here too so an accidental list edit
+    cannot shrink coverage unnoticed.
+    """
+    for name, (schema_path, paths) in SCHEMA_FILES.items():
+        expected = EXPECTED_BUCKET_SIZES[name]
+        assert paths, (
+            f"{name}: no committed data files found for schema "
+            f"{schema_path.name} — the dnallm-mark/data tree is missing "
+            "or partial; this bucket's parametrized validation is vacuous"
+        )
+        assert len(paths) == expected, (
+            f"{name}: found {len(paths)} files, expected {expected} — "
+            "update the pin deliberately when the committed corpus grows"
+        )
+
+
 def test_metric_enum_matches_committed_data(validators):
     """D-02 self-check: the schema metric enum equals the metric values in data.
 
