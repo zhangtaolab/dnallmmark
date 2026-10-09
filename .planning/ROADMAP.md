@@ -112,6 +112,7 @@ Plans:
 **UI hint**: yes
 
 ### Phase 5: CI & Three-Seed Full Re-Run (E2')
+**Decisions carried (2026-10-10 pre-decision)**: E2' launch = dual gate (DNALLM stable release + PIPE-02 env smoke on GB10) with EXPLICIT maintainer authorization (agent never auto-launches); failure recovery = sweep failure-manifest driven re-run of failed cells only; window degradation = priority order (E2E pair all-seeds first, then arena representatives, then the rest as window allows) with honest n_seeds disclosure (suite statistics contract; n<3 → ci95=null/t-interval), never silent omission; E2' scope = ALL 62 unified-registry models (the 18 without prior results are first-time runs, comparability noted in the response letter). Small/medium grey areas (CI smoke shape, aggregation statistics details, N-audit subset rule, data-v2 migration gate) deferred to this phase's discuss.
 
 **Goal**: Aggregation methodology is upgraded BEFORE numbers publish (tie rules, difficulty normalization, permutation tests), CI proves repo health end-to-end, and the leaderboard is recomputed under three seeds with an attributable, changelogged, tagged migration
 **Depends on**: Phase 4
@@ -126,6 +127,7 @@ Plans:
 **UI hint**: yes
 
 ### Phase 6: Revision Packaging & Extended Lanes
+**Decisions carried (2026-10-10 pre-decision)**: Extended-lane priority = LoRA → zero-shot VEP → frozen probes → learning curves → IA3 (suite-support-gated last); lanes open only after E2' core completes, each independently cuttable (completed lanes reported, incomplete → response-letter future work with reasons); cost-accuracy frontier table built from whatever completed. Post-milestone deliverable (maintainer directive 2026-10-10): a gitignored reviewer-response report generated from code at milestone close, answering F1-F10/G1-G7 point-by-point — never committed to the repo.
 
 **Goal**: External reviewers can understand, trust, reproduce, and extend the platform — provenance, methodology docs, validated onboarding, result snapshots for SI/Zenodo — with the revision-window extension lanes (PEFT, zero-shot VEP, learning curves) delivered as far as the window allows and the remainder explicitly deferred to the response letter
 **Depends on**: Phase 5
