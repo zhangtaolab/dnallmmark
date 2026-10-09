@@ -54,7 +54,7 @@ torch = [
 # empirically at research time: zero diagnostics over the whole src set.
 [tool.ty.environment]
 python-version = "3.13"                      # repo floor (requires-python >=3.13)
-extra-paths = ["script", "baseline"]         # mirrors tests/conftest.py sys.path contract
+extra-paths = ["script", "baseline", "pipeline"]  # mirrors tests/conftest.py sys.path contract (pipeline/ = run_sweep, 03-04)
 
 [tool.ty.analysis]
 replace-imports-with-any = ["torch.**", "dnallm.**", "transformers.**", "peft.**", "datasets.**", "torch_npu.**"]

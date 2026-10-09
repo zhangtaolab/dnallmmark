@@ -6,9 +6,10 @@
 #   1. Thread pinning (TEST-02): numpy reductions stay single-threaded
 #      and reproducible — pins must land before any test-module numpy
 #      import, so they live in top-level code, not a fixture.
-#   2. Import roots: `script/` and `baseline/` are not packages; inserting
-#      them on sys.path makes `summarize_comparison`, `get_task_performance`,
-#      and `compare` importable from every test module.
+#   2. Import roots: `script/`, `baseline/`, and `pipeline/` are not packages;
+#      inserting them on sys.path makes `summarize_comparison`,
+#      `get_task_performance`, `compare`, and `run_sweep` importable from
+#      every test module.
 # =====================================================================
 
 import os
@@ -38,3 +39,4 @@ for _var in (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "script"))   # summarize_comparison, get_task_performance
 sys.path.insert(0, str(REPO_ROOT / "baseline")) # compare (walk) for reuse
+sys.path.insert(0, str(REPO_ROOT / "pipeline")) # run_sweep (stdlib-only sweep driver)
