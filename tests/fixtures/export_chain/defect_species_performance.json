@@ -1,0 +1,77 @@
+{
+  "info": {
+    "name": "Defect Fixture Model",
+    "size (M)": 86,
+    "type": "MLM",
+    "tokenizer": "defect-fixture",
+    "mean_token_len": 6,
+    "architecture": "Defect Fixture Architecture",
+    "series": "FixtureSeries",
+    "context_len (bp)": 512,
+    "species": "athaliana",
+    "huggingface": "",
+    "modelscope": ""
+  },
+  "performance": {
+    "GUE__emp_H3": {
+      "dataset": {
+        "species": "Microbe",
+        "type": "binary",
+        "labels": 2,
+        "train": 11971,
+        "test": 1497,
+        "dev": 1497,
+        "length": 500,
+        "metric": "f1"
+      }
+    },
+    "GUE__EPI_GM12878": {
+      "dataset": {
+        "species": "Animals",
+        "type": "binary",
+        "labels": 2,
+        "train": 10000,
+        "test": 2000,
+        "dev": 2000,
+        "length": 5001,
+        "metric": "f1"
+      }
+    },
+    "iDNA_ABF_datasets__5mC": {
+      "dataset": {
+        "species": "Multiple",
+        "type": "binary",
+        "labels": 2,
+        "train": 2344,
+        "test": 2344,
+        "dev": 0,
+        "length": 41,
+        "metric": "f1"
+      }
+    },
+    "plant-genomic-benchmark__promoter_strength.leaf": {
+      "dataset": {
+        "species": "Plants",
+        "type": "regression",
+        "labels": 1,
+        "train": 58179,
+        "test": 7154,
+        "dev": 6825,
+        "length": 170,
+        "metric": "spearmanr"
+      }
+    },
+    "plant-genomic-benchmark__poly_a.arabidopsis_thaliana": {
+      "dataset": {
+        "species": "athaliana",
+        "type": "binary",
+        "labels": 2,
+        "train": 170835,
+        "test": 30384,
+        "dev": 0,
+        "length": 400,
+        "metric": "f1"
+      }
+    }
+  }
+}

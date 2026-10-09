@@ -151,7 +151,7 @@ Finetuning parameters can be adjusted in the `finetune_config.yaml` configuratio
 After preparation of datasets and models, users can directly run the pipeline with the follow script:
 
 ```bash
-python dnallmmark_pipeline.py --target_model model_name --batch_size initial_batch_size --remove_pt
+python run_finetune.py --target_model model_name --target_dataset dataset_name --seed 9527
 ```
 
 The detailed arguments are shown below:
@@ -162,20 +162,38 @@ The detailed arguments are shown below:
                         Name of the target dataset for training
   --batch_size BATCH_SIZE
                         Manual batch size
-  --fix_token_len FIX_TOKEN_LEN
-                        Manual set max token length
   --max_token_len MAX_TOKEN_LEN
                         Manual max token length in case model with singlebase tokenizer processing extra-long sequences
   --remove_pt           If set, remove .pt files in checkpoints
   --remove_checkpoints  If set, remove the all checkpoints directory except the last one
+  --category CATEGORY   Filter datasets by category, supports multiple categories separated by comma (e.g., Plants,Animals,Microbe)
+  --task_index TASK_INDEX
+                        Filter datasets by index number from datasets_info.txt, supports multiple indices separated by comma (e.g., 1,2,7,10)
+  --auto_batch_size     If set, automatically adjust batch size based on model size
+  --gradient_checkpointing
+                        If set, enable HF gradient checkpointing to trade compute for memory
+  --ddp_find_unused_parameters
+                        If set, force DDP find_unused_parameters=True. Required for MoE models under torchrun
+  --cache_dir CACHE_DIR
+                        Cache directory for HF_HOME and MS_CACHE_HOME. Overrides env vars. Default: ../../cache relative to this script (or HF_HOME env if set).
   --seed SEED           Random seed
+  --gpu_memory GPU_MEMORY
+                        Override GPU memory in GB (useful for multi-GPU or incorrect detection)
+  --mem_ratio MEM_RATIO
+                        Target GPU memory usage ratio (0.0-1.0, default 0.70 for 70%)
+  --effective_batch_size EFFECTIVE_BATCH_SIZE
+                        Target effective batch size (batch_size * gradient_accumulation_steps). If set, gradient_accumulation will be adjusted to achieve this product.
+  --output_dir OUTPUT_DIR
+                        Custom output directory for saving finetuned models (default: ./finetuned)
+  --save_model_name SAVE_MODEL_NAME
+                        Custom model name used in output path (default: use Model_name from models_info.txt)
 ```
 
-Users need to specify a target model with `--target_model` for benchmarking, otherwise all the models defined in the `models_info.json` and existed in the `models/` directory will be processed.
+Users need to specify a target model with `--target_model` for benchmarking, otherwise all the models defined in the `models_info.txt` and existed in the `models/` directory will be processed.
 
-`--target_dataset` can be used for finetuning model on specific datasets (multiple datasets are separated by comma). When finetuning model for all the tasks at one time, an appropariate/optimal `--batch_size` should be manual set as an initial batch_size, since this script will automatically adjust batch size for each dataset according to the sequence length.
+`--target_dataset` can be used for finetuning model on specific datasets (multiple datasets are separated by comma). When finetuning model for all the tasks at one time, an appropariate/optimal `--batch_size` should be manual set as an initial batch size, and `--auto_batch_size` can be set to automatically adjust the batch size based on model size and sequence length.
 
-`--fix_token_len` is used if users want to fix the tokenized sequence length, `--max_token_len` is used for hard cut tokenized sequence if the length is longer than the max_token_len.
+`--max_token_len` is used for hard cut tokenized sequence if the length is longer than the max_token_len.
 
 `remove_pt` and `remove_checkpoints` are used for saving disk space.
 
@@ -315,7 +333,8 @@ dnallmmark/
 │   ├── logs/                 # Finetuning logs directory
 │   ├── datasets_info.json    # Datasets information
 │   ├── models_info.json      # Models information
-│   ├── dnallmmark_pipeline.py  # Training script
+│   ├── run_finetune.py         # Training script (benchmark entry point)
+│   ├── dnallmmark_pipeline.py  # DEPRECATED legacy pipeline (retained read-only for historical-run attribution)
 │   ├── finetune_config.yaml  # Training script
 │   └── finetune_config_with_head.yaml  # Configuration file with specific head
 ├── script/                   # Data processing scripts (Python — run from dnallm-mark/data/)

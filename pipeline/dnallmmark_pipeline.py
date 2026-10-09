@@ -1,3 +1,22 @@
+"""
+DEPRECATED: this module is superseded by ``pipeline/run_finetune.py``
+(merged from the dnallm dev branch), which is the benchmark entry point
+as of this change — see README.md "Run Pipeline".
+
+It is retained read-only, never deleted, for two reasons:
+
+1. Historical-run attribution: every committed number under
+   ``dnallm-mark/data/`` was produced by this pipeline, so its exact
+   code stays available for reproducibility review.
+2. FLOPs-instrumentation reference: ``FlopsCounter`` below remains the
+   only implementation of the per-architecture FLOPs accounting;
+   ``run_finetune.py`` does not carry it.
+
+The AUD-01 source-anchor lock that pinned this file's dataset-entry
+construction retired together with this deprecation (same commit,
+Phase 03-01); the AUD-01 contract lives on as the fixture-injectable
+export-chain lock in ``tests/test_known_defects.py`` (D-03 pivot).
+"""
 import os
 
 # Uncomment this if you want to use specific directory for cache
