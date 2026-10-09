@@ -19,9 +19,12 @@ The three locks (defect semantics pinned test-first, fixed in Phase 4):
   ``pipeline/dnallmmark_pipeline.py``. The contract now asserts the
   EXPORT-CHAIN OUTPUT directly over a repo-authored fixture result JSON
   (:func:`test_aud01_species_matches_dataset_arena_category`): every
-  dataset entry's ``species`` must equal the dataset's ``Category`` row
-  in ``pipeline/datasets_info.txt`` (Animals/Plants/Microbe/Multiple).
-  The pipeline modules are never imported (``torch``/``dnallm`` at module
+  dataset entry's ``species`` must equal the dataset's ``Category`` field
+  in the unified ``pipeline/datasets_info.json``
+  (Animals/Plants/Microbe/Multiple). The Category source was retargeted
+  from the retired ``datasets_info.txt`` to the unified JSON in the same
+  commit as the .txt retirement (D-03/D-10 interlock, 03-02). The
+  pipeline modules are never imported (``torch``/``dnallm`` at module
   level are unavailable CPU-side; an import would xfail for the wrong
   reason — a false lock). An UNMARKED companion test
   (:func:`test_aud01_contract_fixture_has_expected_shape`) keeps the lock
@@ -48,7 +51,6 @@ See also:
       tests whose non-finite pass-through pins these locks build on.
 """
 
-import csv
 import json
 from pathlib import Path
 
@@ -59,34 +61,34 @@ from compare import walk
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # Read as DATA, never imported: the pipeline modules do `import torch` /
 # `from dnallm import ...` at module level and are unimportable in the
-# CPU-only test environment. The D-03 export-chain contract joins the TSV
-# registry and a repo-authored fixture as text/JSON — no pipeline import.
-DATASETS_INFO = REPO_ROOT / "pipeline" / "datasets_info.txt"
+# CPU-only test environment. The D-03 export-chain contract joins the
+# unified JSON registry and a repo-authored fixture as text/JSON — no
+# pipeline import. (Category source retargeted from the retired
+# datasets_info.txt to the unified JSON in the same commit as the .txt
+# retirement, 03-02.)
+DATASETS_INFO = REPO_ROOT / "pipeline" / "datasets_info.json"
 DEFECT_FIXTURE = (
     REPO_ROOT / "tests" / "fixtures" / "export_chain"
     / "defect_species_performance.json"
 )
-# The legal species value set: the verbatim Category column of
-# datasets_info.txt (Animals 20 / Plants 15 / Microbe 13 / Multiple 2).
+# The legal species value set: the verbatim Category field of the unified
+# datasets_info.json (Animals 20 / Plants 15 / Microbe 13 / Multiple 2).
 VALID_SPECIES = frozenset({"Animals", "Plants", "Microbe", "Multiple"})
 
 
 def _load_category_map():
-    """Return ``{Dataset_name: Category}`` parsed from the TSV registry.
+    """Return ``{Dataset_name: Category}`` read from the unified JSON registry.
 
-    ``datasets_info.txt`` arrives from the dev branch with CRLF line
-    endings on every row; opening with ``newline=""`` hands line-ending
-    handling to the stdlib csv reader, which normalizes ``\r\n`` row
-    terminators (the documented CRLF-tolerant pattern).
+    Keys are the ``Source__task``-form dataset names (the same form the
+    result-JSON ``performance`` dict and the fixture use), so the join is
+    a plain key lookup — no name normalization, no delimiter parsing.
 
     Returns:
         dict[str, str]: dataset/task name -> arena Category.
     """
-    with DATASETS_INFO.open("r", encoding="utf-8", newline="") as fh:
-        return {
-            row["Dataset_name"]: row["Category"]
-            for row in csv.DictReader(fh, delimiter="\t")
-        }
+    with DATASETS_INFO.open("r", encoding="utf-8") as fh:
+        registry = json.load(fh)
+    return {name: entry["Category"] for name, entry in registry.items()}
 
 
 def _load_fixture():
@@ -133,8 +135,8 @@ def test_aud01_contract_fixture_has_expected_shape():
                    reason="AUD-01-P0 species-as-dataset — Phase 4 fix")
 def test_aud01_species_matches_dataset_arena_category():
     """Export-chain contract (D-03 pivot): every dataset entry's
-    ``species`` must equal the dataset's arena Category from
-    ``pipeline/datasets_info.txt``, never a model organism.
+    ``species`` must equal the dataset's arena Category from the unified
+    ``pipeline/datasets_info.json``, never a model organism.
 
     The fixture deliberately carries the defect: its
     ``plant-genomic-benchmark__poly_a.arabidopsis_thaliana`` entry has

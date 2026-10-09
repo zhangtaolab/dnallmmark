@@ -168,7 +168,7 @@ The detailed arguments are shown below:
   --remove_checkpoints  If set, remove the all checkpoints directory except the last one
   --category CATEGORY   Filter datasets by category, supports multiple categories separated by comma (e.g., Plants,Animals,Microbe)
   --task_index TASK_INDEX
-                        Filter datasets by index number from datasets_info.txt, supports multiple indices separated by comma (e.g., 1,2,7,10)
+                        Filter datasets by index number from datasets_info.json, supports multiple indices separated by comma (e.g., 1,2,7,10)
   --auto_batch_size     If set, automatically adjust batch size based on model size
   --gradient_checkpointing
                         If set, enable HF gradient checkpointing to trade compute for memory
@@ -186,10 +186,10 @@ The detailed arguments are shown below:
   --output_dir OUTPUT_DIR
                         Custom output directory for saving finetuned models (default: ./finetuned)
   --save_model_name SAVE_MODEL_NAME
-                        Custom model name used in output path (default: use Model_name from models_info.txt)
+                        Custom model name used in output path (default: use Model_name from models_info.json)
 ```
 
-Users need to specify a target model with `--target_model` for benchmarking, otherwise all the models defined in the `models_info.txt` and existed in the `models/` directory will be processed.
+Users need to specify a target model with `--target_model` for benchmarking, otherwise all the models defined in the `models_info.json` and existed in the `models/` directory will be processed.
 
 `--target_dataset` can be used for finetuning model on specific datasets (multiple datasets are separated by comma). When finetuning model for all the tasks at one time, an appropariate/optimal `--batch_size` should be manual set as an initial batch size, and `--auto_batch_size` can be set to automatically adjust the batch size based on model size and sequence length.
 

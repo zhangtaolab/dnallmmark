@@ -36,7 +36,6 @@ import datetime
 import argparse
 import json
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 
@@ -106,7 +105,7 @@ def parse_args():
         "--task_index",
         type=str,
         default=None,
-        help="Filter datasets by index number from datasets_info.txt, supports multiple indices separated by comma (e.g., 1,2,7,10)"
+        help="Filter datasets by index number from datasets_info.json, supports multiple indices separated by comma (e.g., 1,2,7,10)"
     )
 
     parser.add_argument(
@@ -177,7 +176,7 @@ def parse_args():
         "--save_model_name",
         type=str,
         default=None,
-        help="Custom model name used in output path (default: use Model_name from models_info.txt)"
+        help="Custom model name used in output path (default: use Model_name from models_info.json)"
     )
 
     args = parser.parse_args()
@@ -313,10 +312,12 @@ def get_current_time():
 
 # base_dir is this script's own directory (auto-inferred, no per-machine hardcoding)
 base_dir = os.path.dirname(os.path.abspath(__file__)) + os.sep
-datasets_info = pd.read_table(base_dir + "datasets_info.txt")
+with open(base_dir + "datasets_info.json", "r", encoding="utf-8") as _registry_file:
+    datasets_info = json.load(_registry_file)
 
 # Load models info
-models_info = pd.read_table(base_dir + "models_info.txt")
+with open(base_dir + "models_info.json", "r", encoding="utf-8") as _registry_file:
+    models_info = json.load(_registry_file)
 
 
 if __name__ == "__main__":
@@ -399,7 +400,7 @@ if __name__ == "__main__":
     init_max_mem = -1
     init_batch_size = -1
     init_token_len = -1
-    for ix, model_row in models_info.iterrows():
+    for ix, model_row in models_info.items():
         model_name = model_row["Model_name"]
         if target_model is not None:
             if model_name != target_model:
@@ -419,7 +420,7 @@ if __name__ == "__main__":
 
         # Iterate through datasets
         count = 0
-        for idx, row in datasets_info.iterrows():
+        for idx, row in datasets_info.items():
             dataset_name = row["Dataset_name"]
             dataset_path = base_dir + row["Dataset_path"]
 
