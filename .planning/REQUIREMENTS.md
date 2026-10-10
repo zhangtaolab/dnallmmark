@@ -16,7 +16,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 
 - [x] **REL-01**: LICENSE file present (explicit code license; data licensing declared separately)
 - [x] **REL-02**: Dependency manifests for the offline/data chain, version-pinned (`pandas>=2.2,<3.0`); GPU pipeline dependencies in a separate group that CI never installs
-- [ ] **REL-03**: README reproducibility section — literal copy-pasteable commands from repo root (install → data → aggregate → serve)
+- [x] **REL-03**: README reproducibility section — literal copy-pasteable commands from repo root (install → data → aggregate → serve)
 - [x] **REL-04**: Single-command data-regeneration chain (`make data` or equivalent) replacing the undocumented 3-step CWD-sensitive procedure
 - [x] **REL-05**: Secret hygiene settled per maintainer decision (2026-10-08 discuss) — the Zenodo record-19135551 preview link + token at `README.md:116` is the intentional dataset-sharing mechanism (record-scoped, read-only) and stays as-is; a full-history secret scan confirms no OTHER secrets exist beyond this known-intentional link
 
@@ -43,15 +43,15 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [x] **DATA-01**: Leaderboard data recomputed after correctness fixes, with a before/after comparison artifact *(complete — co-declared by 05-02 and 05-04; with 05-04's SUMMARY present both declarers are done: 05-02's F6 migration and 05-04's D-18 alias migration each carry a full baseline inventory attributing every before/after diff)*
 - [x] **DATA-02**: CHANGELOG.md records each result-affecting fix with date, per lm-evaluation-harness convention; `data_version` stamped into regenerated JSON
 - [x] **DATA-03**: Git tags for data versions (pre-fix `data-v1`, post-fix `data-v2`) *(complete as PREPARATION — `data-v1` tagged (Phase 1); the data-v2 gate tooling (run_migration_inventory.py + --write-manifest SHA256 convention) is rehearsed on the D-18 mini-migration; the `data-v2` tag itself is created ONLY by the maintainer after E2' sign-off, never by an agent)*
-- [ ] **DATA-04**: Provenance table for all 50 datasets (DATA.md: source, citation, license, preprocessing, download URL) — download URLs default to ModelScope, other sources as alternates
-- [ ] **DATA-05**: Downloadable data manifest file (CSV/JSON) with full dataset metadata and direct links — ModelScope links by default, alternates included
+- [x] **DATA-04**: Provenance table for all 50 datasets (DATA.md: source, citation, license, preprocessing, download URL) — download URLs default to ModelScope, other sources as alternates
+- [x] **DATA-05**: Downloadable data manifest file (CSV/JSON) with full dataset metadata and direct links — ModelScope links by default, alternates included
 - [x] **DATA-06**: Leaderboard page footer shows data-generation date/version stamp
-- [ ] **DATA-07**: Aggregation-methodology documentation (rank vs MinMax vs z-score vs robust) and removal of the divergent dead logic in `js/data.js:recalculateComparison()`
+- [x] **DATA-07**: Aggregation-methodology documentation (rank vs MinMax vs z-score vs robust) and removal of the divergent dead logic in `js/data.js:recalculateComparison()`
 
 ### Extensibility Mechanisms
 
-- [ ] **EXT-01**: New-model onboarding process documented and validated end-to-end (register in `models_info.json` → pipeline quirks → run → copy performance JSON → regenerate → appears on leaderboard)
-- [ ] **EXT-02**: New-dataset onboarding process documented and validated end-to-end (register in `datasets_info.json` → metric mapping → run → regenerate)
+- [x] **EXT-01**: New-model onboarding process documented and validated end-to-end (register in `models_info.json` → pipeline quirks → run → copy performance JSON → regenerate → appears on leaderboard)
+- [x] **EXT-02**: New-dataset onboarding process documented and validated end-to-end (register in `datasets_info.json` → metric mapping → run → regenerate)
 
 ### Pipeline & Environment (dnallm dev)
 
@@ -137,12 +137,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DATA-02 | Phase 5 | Complete |
 | DATA-03 | Phase 5 | Complete |
 | DATA-06 | Phase 5 | Complete |
-| REL-03 | Phase 6 | Pending |
-| DATA-04 | Phase 6 | Pending |
-| DATA-05 | Phase 6 | Pending |
-| DATA-07 | Phase 6 | Pending |
-| EXT-01 | Phase 6 | Pending |
-| EXT-02 | Phase 6 | Pending |
+| REL-03 | Phase 6 | Complete |
+| DATA-04 | Phase 6 | Complete |
+| DATA-05 | Phase 6 | Complete |
+| DATA-07 | Phase 6 | Complete |
+| EXT-01 | Phase 6 | Complete |
+| EXT-02 | Phase 6 | Complete |
 
 **Coverage:**
 - v1 requirements: 31 total (30 defined + REL-05 added at roadmap creation)

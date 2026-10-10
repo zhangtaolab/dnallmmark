@@ -3,18 +3,18 @@ gsd_state_version: "1.0"
 milestone: v0.7.1
 current_phase: 6
 current_phase_name: Revision Packaging & Extended Lanes
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 06-03-PLAN.md (zero-shot VEP driver + schema/fixtures/tests + GB10 two-model smoke, honest sanity FAILs recorded)
-last_updated: "2026-10-10T19:20:55.530Z"
+stopped_at: "Completed 06-04-PLAN.md (packaging: dead-code removal, provenance chain + maintainer review accepted, snapshot lane, docs trio, doi_swap prepared)"
+last_updated: "2026-10-10T23:55:30.624Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 05 complete, transitioned to Phase 6
-state_head: 527167599b3b160810b38137d612f1100372d47d
+state_head: c59f5f84f48bdcfba7728dd62a611d151fc6742d
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 24
-  completed_plans: 22
+  completed_plans: 23
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 ## Current Position
 
 Phase: 6 — Revision Packaging & Extended Lanes
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 5
 Status: Ready to execute
 Last activity: 2026-10-11 — Completed 06-01-PLAN.md (dnallm 1.2.1 adaptation verification + peft tracer + sanctioned GB10 smoke)
@@ -87,6 +87,7 @@ Progress: [████████░░] 83% (1/6 phases)
 | Phase 06 P01 | 33m | 3 tasks | 7 files |
 | Phase 06 P02 | ~23 minutes | 3 tasks | 8 files |
 | Phase 06 P03 | 12 min | 3 tasks | 6 files |
+| Phase 06 P04 | ~75 min (two sessions) | 4 tasks | 23 files |
 
 ## Accumulated Context
 
@@ -155,6 +156,10 @@ Recent decisions affecting current work:
 - [Phase 06]: Sanity classes derived by codon translation (frame-0 synthetic-cohort convention, disclosed in schema) instead of a parallel annotation file
 - [Phase 06]: Model source resolution lives inside the default scorer — unfetchable registry rows become loud evaluation-failed rows, keeping the 62-row enumeration split purely type-driven
 - [Phase 06]: VEP smoke honest-FAIL recorded: both 100M models fail the synthetic-cohort sanity bar; RC strand asymmetry real on the CLM (0.33 vs 0.67)
+- [Phase 06]: 06-04 Task 4 blocking gate RESOLVED (verbatim): maintainer selected 'reviewed 接受现状' — the drafted provenance values stand (15 license / 43 citation verified 2026-10-11); the 35/7/9 Unspecified rows stand as honest unknowns (publication-safe); corrections anytime later via provenance.csv + convert_registry --to-json --merge-existing + make data; recorded in c59f5f8 with the disclosure strings updated to reviewed/accepted
+- [Phase 06]: 06-04: snapshot lane is hermetic — frozen hash reads manifest.json's committed generated_from (never live git; git rev-parse is the documented manual override), .sha256 committed / .tar gitignored (OQ 2), manifest paths relative to baseline/snapshots so the literal sha256sum -c one-liner verifies
+- [Phase 06]: 06-04: doi_swap is prepared, never executed — refuses while the target DOI 404s (--force escape), edits README + .gitleaks.toml in ONE run (both-or-neither tested); the maintainer runs it when Zenodo record 19135551 is public (WR-01 same-commit rule); data_version stays 1.1.0, no tag
+- [Phase 06]: 06-04: provenance chain is registry-driven and drift-gated — six columns in datasets_info.json (D-10 source of truth), CSV is the maintainer-editable surface, build_provenance emits the dual artifact + the marker-scoped DATA.md appendix, the whole chain joined make data as a byte-stable no-op
 
 ### Pending Todos
 
@@ -177,6 +182,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-10T19:20:55.470Z
-Stopped at: Completed 06-03-PLAN.md (zero-shot VEP driver + schema/fixtures/tests + GB10 two-model smoke, honest sanity FAILs recorded)
+Last session: 2026-10-10T23:55:30.565Z
+Stopped at: Completed 06-04-PLAN.md (packaging: dead-code removal, provenance chain + maintainer review accepted, snapshot lane, docs trio, doi_swap prepared)
 Resume file: None
