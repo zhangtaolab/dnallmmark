@@ -19,7 +19,9 @@ What is pinned here (shape/completeness/count, complementing
   strings, no nulls — AUD-05 groundwork requires complete metadata);
 - the numeric trio (size (M), mean_token_len, context_len (bp)) is
   int/float, matching the CrossDNA card convention;
-- exactly 45 entries carry the complete 11-key card.
+- ALL 62 entries carry the complete 11-key card (45 through 03-03; the
+  final 17 filled by 04-04 carryover Q2 — 62/62 complete, the state the
+  REV-03 exporter's modelCard join depends on).
 
 Card-value provenance (each field traces to the D-09 card or the entry's
 operational priors from the 03-02 ingest): 470M params -> size (M) 470 ==
@@ -34,7 +36,7 @@ page itself -> modelscope.
 
 See also:
     - ``tests/test_registry_unification.py`` — the single-source contract
-      (62/50 counts, operational completeness, card-absent enumeration).
+      (62/50 counts, operational completeness, 62/62 card completeness).
     - ``script/convert_registry.py`` — the only sanctioned registry
       conversion path.
 """
@@ -61,7 +63,7 @@ NUMERIC_TRIO = ("size (M)", "mean_token_len", "context_len (bp)")
 # keys" omitted Model_name, which the key == Model_name contract requires
 # on every entry.)
 PLANTHELIXSEEK_EXPECTED_KEYS = OPERATIONAL_FOUR | CARD_KEYS | {NAME_FIELD}
-CARD_BEARING_COUNT = 45  # 44 at unification + PlantHelixSeek (03-03/D-09)
+CARD_BEARING_COUNT = 62  # 44 at unification + PlantHelixSeek (03-03/D-09) + 17 (04-04 Q2)
 
 
 def _load_registry():
@@ -127,9 +129,11 @@ def test_planthelixseek_card_agrees_with_operational_priors():
     assert entry["mean_token_len"] == entry["Mean_token_length"] == 1
 
 
-def test_exactly_45_entries_carry_the_complete_card():
-    """Exactly 45 entries carry the complete 11-key card (44 at the 03-02
-    unification + PlantHelixSeek filled by 03-03 per D-09)."""
+def test_every_entry_carries_the_complete_card():
+    """ALL 62 entries carry the complete 11-key card (44 at the 03-02
+    unification + PlantHelixSeek by 03-03/D-09 + the final 17 by 04-04
+    carryover Q2) — the exporter's modelCard join is total over the
+    registry."""
     registry = _load_registry()
     complete = [k for k, e in registry.items() if CARD_KEYS <= set(e)]
     assert len(complete) == CARD_BEARING_COUNT, (

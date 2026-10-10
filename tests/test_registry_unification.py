@@ -20,12 +20,13 @@ on the real dev data before this test was written):
 - **models** — exactly 62 entries: 38 shared (card + tabular operational),
   18 tabular-only (operational fields, card fields deliberately absent
   until Phase 4 fills them per D-10 — PlantHelixSeek was the 19th such
-  name until 03-03 filled its card from the D-09 ModelScope model card,
-  taking the registry to 45 card-bearing entries; the 17 remaining absent
-  names are enumerated below so the gap is explicit, never silent), and
-  6 json-only (card + derived operational four). Every entry carries the
-  operational four (Model_path, Model_size, Tokenizer, Mean_token_length)
-  and ``key == Model_name``.
+  name until 03-03 filled its card from the D-09 ModelScope model card),
+  and 6 json-only (card + derived operational four). Every entry carries
+  the operational four (Model_path, Model_size, Tokenizer, Mean_token_length)
+  and ``key == Model_name``. Since 04-04 (carryover Q2) ALL 62 entries
+  carry the complete 11-key card — the card-absent set is EMPTY and this
+  contract asserts it stays empty (the REV-03 exporter's modelCard join
+  is total over the registry).
 - **datasets** — exactly 50 entries, every one operationally complete
   (Index, Dataset_path, Train, Test, Dev, type, labels, length, metric,
   Category — Index and Category arrived only with the 03-02 merge),
@@ -49,22 +50,13 @@ DATASETS_INFO = REPO_ROOT / "pipeline" / "datasets_info.json"
 
 # The models-registry operational four: every unified entry carries these.
 OPERATIONAL_FOUR = ("Model_path", "Model_size", "Tokenizer", "Mean_token_length")
-# The 11 model-card keys the dev .json registry carried on all 44 entries
-# (45 since 03-03 filled PlantHelixSeek's card per D-09).
+# The 11 model-card keys every registry entry carries (45 complete at the
+# 03-02 unification + PlantHelixSeek by 03-03/D-09; the final 17 filled by
+# 04-04 carryover Q2 — 62/62 since).
 CARD_KEYS = frozenset({
     "architecture", "context_len (bp)", "huggingface", "mean_token_len",
     "modelscope", "name", "series", "size (M)", "species", "tokenizer",
     "type",
-})
-# The 17 remaining txt-only model names (operational fields, no card yet —
-# Phase 4 fills them per D-10; PlantHelixSeek left this set in 03-03 when
-# D-09 filled its card from the ModelScope model card).
-TXT_ONLY_MODELS = frozenset({
-    "Chaoba", "Chaoba_all_species", "Chaoba_denseMamba", "FungiHelixSeek",
-    "GENA-LM-yeast", "PlantCAD2-Large", "PlantCaduceus_l24", "PlantGFM",
-    "Shorkie_LM", "SpeciesLM-fungi-downstream-k1",
-    "SpeciesLM-fungi-upstream-k1", "denseSSM_plant_genome", "mamba2_370M",
-    "mamba2_plant_genome", "plant-dnamamba-singlebase", "prokbert", "space",
 })
 # The datasets-registry operational columns: every unified entry carries
 # these (Index and Category arrived with the 03-02 tabular merge).
@@ -93,8 +85,9 @@ def test_no_tabular_registry_tracked():
 
 def test_models_registry_single_source():
     """models_info.json: 62 entries, operational four everywhere,
-    key == Model_name, the 11-key card on exactly the 45 card-bearing
-    entries, card-absent set == the enumerated 17 txt-only names."""
+    key == Model_name, and the 11-key card on ALL 62 entries — the
+    card-absent set is EMPTY (04-04 carryover Q2), which is what makes
+    the REV-03 exporter's modelCard join total over the registry."""
     registry = json.loads(MODELS_INFO.read_text(encoding="utf-8"))
     assert len(registry) == 62, (
         f"expected exactly 62 unified model entries (38 shared + 18 "
@@ -108,15 +101,13 @@ def test_models_registry_single_source():
         )
     card_bearing = {k for k, e in registry.items() if CARD_KEYS <= set(e)}
     card_absent = set(registry) - card_bearing
-    assert len(card_bearing) == 45, (
-        f"expected the 11-key card on exactly 45 entries (44 at unification "
-        f"+ PlantHelixSeek filled by 03-03/D-09), got {len(card_bearing)}"
+    assert len(card_bearing) == 62, (
+        f"expected the 11-key card on ALL 62 entries (62/62 complete since "
+        f"04-04 filled the final 17), got {len(card_bearing)}"
     )
-    assert card_absent == TXT_ONLY_MODELS, (
-        "card-absent set drifted from the enumerated 17 remaining txt-only "
-        f"names (extra: {sorted(card_absent - TXT_ONLY_MODELS)}, missing: "
-        f"{sorted(TXT_ONLY_MODELS - card_absent)}) — update the enumeration "
-        "deliberately (Phase 4 fills cards per D-10)"
+    assert not card_absent, (
+        f"card-absent registry entries (must stay EMPTY — every new model "
+        f"enters the registry WITH its card): {sorted(card_absent)}"
     )
 
 
