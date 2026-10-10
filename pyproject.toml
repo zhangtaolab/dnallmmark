@@ -11,6 +11,8 @@ dependencies = []
 data = [
     "pandas>=2.2,<3.0",   # D-05 floor; latest 2.x = 2.3.3 (verified; pandas 3.0.6 excluded)
     "numpy>=2.0,<3",      # bounded alongside pandas per D-05
+    "scipy>=1.15.2",
+    "evaluate>=0.4.6",
 ]
 dev = [
     # Phase 2 harness (added 2026-10-09): floors here, exact pins in uv.lock.

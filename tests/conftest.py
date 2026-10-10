@@ -8,7 +8,8 @@
 #      import, so they live in top-level code, not a fixture.
 #   2. Import roots: `script/`, `baseline/`, and `pipeline/` are not packages;
 #      inserting them on sys.path makes `summarize_comparison`,
-#      `get_task_performance`, `compare`, and `run_sweep` importable from
+#      `get_task_performance`, `compare`, `run_sweep`, and `export_runs`
+#      (04-02: vendored statistics + exporter core) importable from
 #      every test module.
 # =====================================================================
 
