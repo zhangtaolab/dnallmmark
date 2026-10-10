@@ -4,16 +4,16 @@ milestone: v0.7.1
 current_phase: 5
 current_phase_name: CI & Three-Seed Full Re-Run (E2')
 status: executing
-stopped_at: Phase 4 complete, ready to plan Phase 5
-last_updated: "2026-10-10T08:43:05.974Z"
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-10-10T10:04:20.332Z"
 last_activity: 2026-10-10
 last_activity_desc: Phase 5 execution started
-state_head: 2a16fd322bef8703c68a2d6beb74a4aa949ba14d
+state_head: d546e30c4a897edaaeb2c5dcb0e45db2cbc4034f
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 19
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # Project State
@@ -28,8 +28,8 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 ## Current Position
 
 Phase: 5 (CI & Three-Seed Full Re-Run (E2')) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 5
+Plan: 2 of 4
+Status: Ready to execute
 Last activity: 2026-10-10 — Phase 5 execution started
 
 Progress: [███████░░░] 67% (1/6 phases)
@@ -75,6 +75,7 @@ Progress: [███████░░░] 67% (1/6 phases)
 | Phase 04 P02 | 19 min | 3 tasks | 9 files |
 | Phase 04 P02 | 19 min | 3 tasks | 9 files |
 | Phase 04 P05 | 16 min | 2 tasks | 16 files |
+| Phase 05 P01 | 74 min | 3 tasks | 42 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,10 @@ Recent decisions affecting current work:
 - [Phase 04]: [Phase 04] 04-05: pivot retired delete-and-fold — the deleted generator's own deterministic final output committed as the fixture its successor tests assert against; the sanitizer's '/' half accounted as structurally unreachable through the exporter's directory-walk input (fold-or-account honored)
 - [Phase 04]: [Phase 04] 04-05: IN-03 by removal — resolve_dataset_metric is the single authority over both key surfaces with the deleted mirror's identity fallback preserved, making the consolidation provably number-neutral (make data byte-identical no-op)
 - [Phase 04]: [Phase 04] 04-05: OQ4 landed as its own commit after the retirement commit — 2 one-line task-file species corrections + tasks.json's 2 entries, exactly-3-file inventory in the message; no known-wrong species value remains in committed data
+- [Phase 05]: 05-01: action SHAs resolved at execution from official repos (git ls-remote + API, type:commit) — checkout v7.0.1/setup-uv v10.3.0/setup-node v7.1.0; research listing was stale (A2 confirmed)
+- [Phase 05]: 05-01: eslint no-unused-vars tuned to documented repo idioms (varsIgnorePattern ^app$ page-controller singleton, caughtErrors none) instead of editing 6 production files; html-validate 11 rule name is no-dup-id
+- [Phase 05]: 05-01 Task 2 gate: maintainer reply 'approved' — eslint@10.12.0 + html-validate@11.16.2 exact-pin npx-no-package.json form blessed; first fetches happened post-approval
+- [Phase 05]: 05-01: CI lanes are Makefile entry points (make lint/typecheck/test/data); static-check lanes proven non-vacuous by negative probes (dup-ID HTML, dup-key/undef-global JS rejected)
 
 ### Pending Todos
 
@@ -146,6 +151,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-10T05:53:54.318Z
-Stopped at: Phase 4 complete, ready to plan Phase 5
+Last session: 2026-10-10T10:04:20.283Z
+Stopped at: Completed 05-01-PLAN.md
 Resume file: None

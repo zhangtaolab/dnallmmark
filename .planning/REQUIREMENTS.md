@@ -33,10 +33,10 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [x] **TEST-01**: Unit tests for the data-script pure functions (rank/MinMax/z-score/robust aggregation, pivot logic) using synthetic fixtures, CPU-only
 - [x] **TEST-02**: Float-tolerance policy and thread pinning fixed at scaffold time (`pytest.approx` tolerances; `OMP/OPENBLAS/MKL_NUM_THREADS=1` in conftest)
 - [x] **TEST-03**: Golden-file tests over synthetic fixture trees plus a determinism regression test
-- [ ] **TEST-04**: GitHub Actions CI (lint + test matrix on Python 3.12/3.13 plus a Node job; actions SHA-pinned) with README badge
-- [ ] **TEST-05**: Frontend static checks in CI (ESLint flat config + html-validate + `node --check`)
+- [x] **TEST-04**: GitHub Actions CI (lint + test matrix on Python 3.12/3.13 plus a Node job; actions SHA-pinned) with README badge
+- [x] **TEST-05**: Frontend static checks in CI (ESLint flat config + html-validate + `node --check`)
 - [x] **TEST-06**: JSON Schema contract validation — 4 schemas (model_performance, task_performance, models_comparison, tasks_index) enforced over every committed JSON in CI
-- [ ] **TEST-07**: CI drift-detection job — regenerate derived data and `git diff --exit-code`, making stale derived files a build failure
+- [x] **TEST-07**: CI drift-detection job — regenerate derived data and `git diff --exit-code`, making stale derived files a build failure
 
 ### Data & Records
 
@@ -64,7 +64,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [x] **REV-03** (F3, P0): Unified exporter + result snapshot — metric-key mapping layer (suite registry ↔ export keys, key-parity unit-tested), dataset species from a human-verified metadata table (never model cards), per-seed detail + mean±SD/bootstrap-CI aggregates; freeze_snapshot (tar + SHA-256 + frozen commit hash)
 - [ ] **REV-04** (F6, P1): Aggregation upgrade — CI-overlap tie rules, raw-rank + z-score×difficulty-weight dual views, permutation tests (10k, BH-corrected); CpG case renders as tie
 - [ ] **REV-05** (F4, P1): Adaptation lanes — LoRA (suite built-in, CLI-exposed), IA³ (after suite-side support), frozen probes (embedding cache + logistic/MLP); cost-accuracy frontier table
-- [ ] **REV-06** (F9, P1): CI golden tests — smoke (tiny model × 1k × 1 epoch incl. export), key parity, species spot checks, aggregation units; CPU, <15 min, PR-required
+- [x] **REV-06** (F9, P1): CI golden tests — smoke (tiny model × 1k × 1 epoch incl. export), key parity, species spot checks, aggregation units; CPU, <15 min, PR-required
 - [ ] **REV-07** (F7, P1): N-frequency audit (47 tasks × splits) + unified eval-subset ID lists accepted by the pipeline
 - [ ] **REV-08** (F5+F8, P1/P2): Zero-shot VEP lane (CLM/MLM scoring, ClinVar/AraGWAS, baselines + sanity checks) and, window permitting, from-scratch baselines + learning curves (label-fraction sweeps)
 - [ ] **REV-09** (E2' 执行面, P0 依赖): Three-seed full re-run (E2') executes only after REV-01/REV-02 gates — critical path F1→F2→E2'
@@ -121,7 +121,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REV-03 | Phase 4, Phase 6 | Complete |
 | REV-04 | Phase 5 | Pending |
 | REV-05 | Phase 6 | Pending |
-| REV-06 | Phase 5 | Pending |
+| REV-06 | Phase 5 | Complete |
 | REV-07 | Phase 5 | Pending |
 | REV-08 | Phase 6 | Pending |
 | REV-09 | Phase 5 | Pending |
@@ -130,9 +130,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FIX-02 | Phase 4 | Complete |
 | FIX-03 | Phase 4 | Complete |
 | FIX-04 | Phase 4 | Complete |
-| TEST-04 | Phase 5 | Pending |
-| TEST-05 | Phase 5 | Pending |
-| TEST-07 | Phase 5 | Pending |
+| TEST-04 | Phase 5 | Complete |
+| TEST-05 | Phase 5 | Complete |
+| TEST-07 | Phase 5 | Complete |
 | DATA-01 | Phase 5 | Pending |
 | DATA-02 | Phase 5 | Pending |
 | DATA-03 | Phase 5 | Pending |
