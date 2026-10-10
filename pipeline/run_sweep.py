@@ -55,7 +55,9 @@ therefore never rewrite an existing ``run_record.json`` (WR-12): the
 previous run's record (its status, metrics, commit, timestamps) is the
 cell's provenance, and this run's skipped view is reported by the
 manifest only. Everything else is deterministic — the matrix
-iterates in ``sorted()`` order and every JSON file is written with
+iterates in ``sorted()`` order (with an optional ``--priority-file`` tier
+order as the primary key composed over that stable fallback, 05-04) and
+every JSON file is written with
 ``sort_keys=True, indent=4, ensure_ascii=False``, so two dry-runs over the
 same inputs produce byte-identical manifests.
 
@@ -101,6 +103,34 @@ Failure boundary:
     (planned cells with status ``planned`` + their planned seed-isolated
     outdirs) — no subprocess, no cell directories, no run records — which
     is what makes the runner fully CPU-testable under D-05.
+
+--priority-file (05-04, E2' degradation order):
+    A maintainer-curated JSON file — an ordered list of tiers, each a list
+    of entries that are either bare model names or ``{model, task}`` specs
+    (``pipeline/sweep_priorities.json`` is the committed instance: tier 1 =
+    the PIPE-03 E2E pair, tier 2 EMPTY pending maintainer curation). The
+    tiers compose as the PRIMARY sort key — rank ``(tier index, entry
+    specificity)``, a ``{model, task}`` spec outranking a bare model name
+    within its tier, a cell matching several entries taking its best rank
+    — over the existing ``sorted()`` cell order as the STABLE fallback, so
+    unmatched cells keep today's exact order and seeds stay adjacent within
+    a cell. Determinism is preserved when the file is absent: no flag, no
+    reordering at all (byte-identical default enumeration). The file is
+    validated fail-fast BEFORE any cell is enumerated: unknown model/task
+    names vs the registries and structure problems are ALL listed, then
+    the driver exits non-zero (the _validate_filters discipline, T-05-09).
+
+--from-failures (05-04, failure recovery):
+    ``--from-failures <sweep_failures.json>`` re-enumerates exactly the
+    failed (model, task) pairs named in the manifest, across ALL requested
+    seeds. Completed cells were already skipped by the seed-scoped resume
+    marker, so simply re-running the same sweep command re-attempts
+    exactly the failed cells — the filter exists to avoid re-enumerating
+    ~9,300 cells (62x50x3) and to guard against typo'd manual
+    ``--models/--tasks`` re-run filters (research Pattern 6). A CLEAN
+    manifest (empty list — written on every run, WR-06) yields an EXPLICIT
+    zero-cell run with a clear message, never a silent full sweep. The
+    manifest is validated fail-fast exactly like the priority file.
 
 FUTURE E2E note (documented here, deliberately NOT executed — D-05):
     On-disk dataset directories are DOUBLE-NESTED after a fresh unzip of
@@ -191,6 +221,26 @@ def parse_args():
              "no subprocess, no cell dirs, no run records"
     )
 
+    parser.add_argument(
+        "--priority-file",
+        type=str,
+        default=None,
+        help="Maintainer-curated JSON of ordered tiers (each a list of bare "
+             "model names or {model, task} specs) executed FIRST — the E2' "
+             "degradation order; composed over the sorted() fallback "
+             "(default: no reordering, today's exact order)"
+    )
+
+    parser.add_argument(
+        "--from-failures",
+        type=str,
+        default=None,
+        help="A sweep_failures.json manifest; re-enumerate exactly its "
+             "failed (model, task) pairs across all requested seeds — a "
+             "clean manifest yields an explicit zero-cell run, never a "
+             "silent full sweep"
+    )
+
     return parser.parse_args()
 
 
@@ -278,6 +328,235 @@ def _validate_filters(models_filter, tasks_filter, registry_dir):
         )
     if problems:
         sys.exit(f"[Error] {'; '.join(problems)}")
+
+
+def _load_registry_key_sets(registry_dir):
+    """Load the registry KEY sets both operator-input validators join on.
+
+    Args:
+        registry_dir (Path | str): directory holding the unified JSON
+            registries (the D-10 single source).
+
+    Returns:
+        tuple[set, set]: ``(model keys, dataset keys)``.
+    """
+    registry_dir = Path(registry_dir)
+    with open(registry_dir / "models_info.json", "r", encoding="utf-8") as f:
+        models_info = json.load(f)
+    with open(registry_dir / "datasets_info.json", "r", encoding="utf-8") as f:
+        datasets_info = json.load(f)
+    return set(models_info), set(datasets_info)
+
+
+def _read_operator_json(path, flag_name):
+    """Read an operator-supplied JSON file, exiting non-zero naming the
+    file when it is unreadable or not valid JSON.
+
+    Args:
+        path (str): The flag's value (displayed in errors).
+        flag_name (str): The flag name (displayed in errors).
+
+    Returns:
+        The parsed JSON value.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except OSError as exc:
+        sys.exit(f"[Error] cannot read {flag_name} file {path}: {exc}")
+    except json.JSONDecodeError as exc:
+        sys.exit(f"[Error] {flag_name} file {path} is not valid JSON: {exc}")
+
+
+def load_priority_tiers(path, registry_dir):
+    """Parse and validate a --priority-file (fail-fast, all problems listed).
+
+    The file must be a JSON ordered list of tiers; each tier a list of
+    entries that are either bare model names (strings) or ``{model, task}``
+    specs (a spec may omit ``task``, covering the model's every task).
+    Unknown model/task names vs the registries and every structural
+    problem are collected and reported TOGETHER (the _validate_filters
+    discipline, T-05-09) BEFORE any cell is enumerated — the file steers
+    multi-day GPU execution order, so a typo must fail fast.
+
+    Args:
+        path (str): --priority-file value.
+        registry_dir (Path | str): directory holding the unified JSON
+            registries.
+
+    Returns:
+        list[list[tuple[str, str | None]]]: tiers of ``(model, task)``
+        entries (``task`` None for a bare model name).
+
+    Raises:
+        SystemExit: listing every problem.
+    """
+    raw = _read_operator_json(path, "--priority-file")
+    if not isinstance(raw, list):
+        sys.exit(
+            "[Error] --priority-file must be a JSON list of tiers "
+            f"(a list of lists), got: {type(raw).__name__} in {path}"
+        )
+    known_models, known_tasks = _load_registry_key_sets(registry_dir)
+    problems = []
+    tiers = []
+    for tier_idx, tier in enumerate(raw):
+        if not isinstance(tier, list):
+            problems.append(
+                f"tier {tier_idx} is not a list: {tier!r}"
+            )
+            tiers.append([])
+            continue
+        parsed_tier = []
+        for entry_idx, entry in enumerate(tier):
+            where = f"tier {tier_idx} entry {entry_idx}"
+            if isinstance(entry, str):
+                model, task = entry, None
+            elif isinstance(entry, dict):
+                extra_keys = sorted(set(entry) - {"model", "task"})
+                if extra_keys:
+                    problems.append(
+                        f"{where} has unknown key(s) {extra_keys} — entries "
+                        "are bare model names or {model, task} specs"
+                    )
+                    continue
+                model = entry.get("model")
+                task = entry.get("task")
+                if not isinstance(model, str):
+                    problems.append(
+                        f"{where} is missing the 'model' key of its "
+                        "{model, task} spec"
+                    )
+                    continue
+                if task is not None and not isinstance(task, str):
+                    problems.append(
+                        f"{where} has a non-string 'task': {task!r}"
+                    )
+                    continue
+            else:
+                problems.append(
+                    f"{where} is neither a bare model name nor a "
+                    f"{{model, task}} spec: {entry!r}"
+                )
+                continue
+            if model not in known_models:
+                problems.append(
+                    f"--priority-file model not in registry: {model!r} ({where})"
+                )
+                continue
+            if task is not None and task not in known_tasks:
+                problems.append(
+                    f"--priority-file task not in registry: {task!r} ({where})"
+                )
+                continue
+            parsed_tier.append((model, task))
+        tiers.append(parsed_tier)
+    if problems:
+        sys.exit(f"[Error] {'; '.join(problems)}")
+    return tiers
+
+
+def apply_priority_order(cells, tiers):
+    """Stable-reorder cells by priority tier rank over the sorted() fallback.
+
+    Rank ``(tier index, entry specificity)`` is the PRIMARY sort key; a
+    ``{model, task}`` spec (specificity 0) outranks a bare model name
+    (specificity 1) within its tier; a cell matching several entries takes
+    its BEST rank; unmatched cells rank after every tier. Python's sort is
+    stable, so equal ranks keep the incoming (``sorted()``) order — seeds
+    stay adjacent within a (model, task) cell because rank depends only on
+    the (model, task) pair. With no matching entries anywhere the incoming
+    order is returned unchanged (the byte-identical default contract).
+
+    Args:
+        cells (list[tuple[str, str, int]]): (model, task, seed) cells in
+            the sorted() default order.
+        tiers (list[list[tuple[str, str | None]]]): parsed priority tiers
+            (see load_priority_tiers).
+
+    Returns:
+        list[tuple[str, str, int]]: the reordered cells.
+    """
+    fallback_rank = (len(tiers), 0)
+    rank_cache = {}
+
+    def pair_rank(model, task):
+        key = (model, task)
+        if key in rank_cache:
+            return rank_cache[key]
+        best = fallback_rank
+        for tier_idx, tier in enumerate(tiers):
+            for entry_model, entry_task in tier:
+                if entry_model != model:
+                    continue
+                if entry_task is None or entry_task == task:
+                    # A {model, task} spec (task set) is more specific than
+                    # a bare model name within the same tier.
+                    candidate = (tier_idx, 0 if entry_task is not None else 1)
+                    best = min(best, candidate)
+        rank_cache[key] = best
+        return best
+
+    return sorted(cells, key=lambda cell: pair_rank(cell[0], cell[1]))
+
+
+def load_failure_pairs(path, registry_dir):
+    """Parse and validate a --from-failures sweep_failures.json manifest.
+
+    Extracts the failed ``(model, task)`` pairs (the seed is per-record;
+    the re-run fans out over ALL requested seeds). Unknown model/task
+    names vs the registries and structural problems are collected and
+    reported together, fail-fast (the _validate_filters discipline).
+
+    Args:
+        path (str): --from-failures value (a sweep_failures.json file).
+        registry_dir (Path | str): directory holding the unified JSON
+            registries.
+
+    Returns:
+        set[tuple[str, str]]: the distinct failed (model, task) pairs.
+
+    Raises:
+        SystemExit: naming the file (unreadable/not JSON/not a list) or
+            listing every key/structure problem.
+    """
+    raw = _read_operator_json(path, "--from-failures")
+    if not isinstance(raw, list):
+        sys.exit(
+            f"[Error] --from-failures file {path} must be a JSON list of "
+            f"failure entries, got: {type(raw).__name__}"
+        )
+    known_models, known_tasks = _load_registry_key_sets(registry_dir)
+    problems = []
+    pairs = set()
+    for idx, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            problems.append(
+                f"--from-failures entry {idx} is not an object: {entry!r}"
+            )
+            continue
+        model = entry.get("model")
+        task = entry.get("task")
+        if not isinstance(model, str) or not isinstance(task, str):
+            problems.append(
+                f"--from-failures entry {idx} is missing string "
+                "'model'/'task' keys"
+            )
+            continue
+        if model not in known_models:
+            problems.append(
+                f"--from-failures model not in registry: {model!r} (entry {idx})"
+            )
+            continue
+        if task not in known_tasks:
+            problems.append(
+                f"--from-failures task not in registry: {task!r} (entry {idx})"
+            )
+            continue
+        pairs.add((model, task))
+    if problems:
+        sys.exit(f"[Error] {'; '.join(problems)}")
+    return pairs
 
 
 def cell_dir_for(output_root, model, task, seed):
@@ -395,7 +674,11 @@ def _manifest_payload(matrix, records):
 def run_matrix(cells, output_root, executor=None):
     """Execute the sweep matrix, writing run records + manifests.
 
-    Per cell (in sorted order): a pre-existing trainer_state.json in the
+    Per cell (in the GIVEN order — ``main()`` passes the ``sorted()``
+    enumeration, priority-ordered first when a ``--priority-file`` drives
+    the sweep; direct callers pass whatever order they choose, and this
+    function never re-sorts, so a priority order survives to the
+    executor): a pre-existing trainer_state.json in the
     cell dir marks the cell ``skipped`` with NO executor invocation and
     WITHOUT overwriting any existing run_record.json (WR-12: the
     previous run's record is the cell's provenance; a fresh skipped
@@ -419,7 +702,8 @@ def run_matrix(cells, output_root, executor=None):
     stale failures manifest can never outlive its sweep (WR-06).
 
     Args:
-        cells (list[tuple[str, str, int]]): (model, task, seed) cells.
+        cells (list[tuple[str, str, int]]): (model, task, seed) cells in
+            the intended execution order (never re-sorted here).
         output_root (str | Path): sweep output root (resolved absolute).
         executor (callable | None): ``executor(model, task, seed,
             output_root)``; defaults to launch_subprocess. Injectable for
@@ -427,7 +711,7 @@ def run_matrix(cells, output_root, executor=None):
             this phase outside those tests).
 
     Returns:
-        list[dict]: the run records, one per cell, in sorted-cell order.
+        list[dict]: the run records, one per cell, in the given cell order.
     """
     executor = executor if executor is not None else launch_subprocess
     output_root = Path(output_root).resolve()
@@ -436,7 +720,7 @@ def run_matrix(cells, output_root, executor=None):
 
     records = []
     failures = []
-    for model, task, seed in sorted(cells):
+    for model, task, seed in cells:
         cell_dir = cell_dir_for(output_root, model, task, seed)
         record = _new_record(model, task, seed, cell_dir, git_commit)
         record["started_at"] = _utc_now_iso()
@@ -588,7 +872,40 @@ def main():
     # enumerated (WR-07): an unknown name would otherwise intersect to an
     # empty matrix that writes a manifest and exits 0 "successfully".
     _validate_filters(models_filter, tasks_filter, registry_dir)
+    # Operator-supplied steering inputs (05-04, T-05-09): validated the
+    # same fail-fast way BEFORE enumeration — both steer multi-day GPU
+    # execution, so a typo'd key must abort loudly, never silently
+    # reorder or filter the wrong matrix.
+    tiers = None
+    if args.priority_file is not None:
+        tiers = load_priority_tiers(args.priority_file, registry_dir)
+    failure_pairs = None
+    if args.from_failures is not None:
+        failure_pairs = load_failure_pairs(args.from_failures, registry_dir)
     cells = enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir)
+    if tiers is not None:
+        # Tier rank as the PRIMARY sort key over the sorted() fallback —
+        # no file, no reordering (byte-identical default enumeration).
+        cells = apply_priority_order(cells, tiers)
+    if failure_pairs is not None:
+        if failure_pairs:
+            print(
+                f"[From-failures] {len(failure_pairs)} failed (model, task) "
+                f"pair(s) in {args.from_failures}; enumerating their cells "
+                "across the requested seeds"
+            )
+        else:
+            # A clean manifest is a legitimate outcome (the sweep
+            # completed) — but it must be an EXPLICIT zero-cell run with a
+            # clear message, never a silent fall-through to the full
+            # matrix (the exact hazard the filter exists to guard).
+            print(
+                f"[From-failures] {args.from_failures} is clean (0 failed "
+                "pairs) — explicit zero-cell run, NOT a full sweep"
+            )
+        cells = [
+            cell for cell in cells if (cell[0], cell[1]) in failure_pairs
+        ]
 
     if args.dry_run:
         matrix = {

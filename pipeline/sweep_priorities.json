@@ -1,0 +1,13 @@
+[
+    [
+        {
+            "model": "plant-dnamamba-6mer",
+            "task": "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation"
+        },
+        {
+            "model": "PlantHelixSeek",
+            "task": "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation"
+        }
+    ],
+    []
+]
