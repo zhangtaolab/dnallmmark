@@ -386,6 +386,13 @@ def check_dataset_dirs():
 def check_matmul(torch):
     """Check 5: one small-tensor matmul — executability, nothing more.
 
+    The expected value is derived, not magic: an 8x8 all-ones matmul
+    has every entry equal to 8 (each is a dot product of two 8-long
+    ones vectors), so the full-entries sum is 64 * 8 = 512.0. (Found
+    live at the first-ever executed run on GB10, 06-01: the pre-smoke
+    constant said 64.0 — correct only for the trace/diagonal — a latent
+    defect py_compile could never catch; the sanctioned execution did.)
+
     Args:
         torch: The imported torch module.
 
@@ -394,10 +401,10 @@ def check_matmul(torch):
     """
     a = torch.ones(8, 8)
     result = (a @ a).sum().item()
-    if result != 64.0:
-        print(f"FAIL: small-tensor matmul produced {result!r}, expected 64.0")
+    if result != 512.0:
+        print(f"FAIL: small-tensor matmul produced {result!r}, expected 512.0")
         return False
-    print("PASS: small-tensor matmul executed (sum == 64.0)")
+    print("PASS: small-tensor matmul executed (sum == 512.0)")
     return True
 
 
