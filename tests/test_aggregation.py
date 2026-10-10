@@ -12,10 +12,13 @@ Float policy (TEST-02): every float assertion goes through ``pytest.approx``
 (``calculate_dataset_stats`` returns ``np.float64`` scalars); ints (rank,
 samples, counts) use plain ``==``.
 
-``get_float``'s non-finite pass-through (``'nan'``/``'inf'``/``'-inf'`` return
-``nan``/``inf`` through the ``default=None`` gate) is pinned here as PLAIN
-assertions of today's behavior — the 02-03 WR-03 ``xfail(strict=True)`` lock
-builds directly on this pinned fact.
+``get_float``'s non-finite handling was flipped in Phase 4 (D-13/WR-03,
+plan 04-01 Task 2): ``'nan'``/``'inf'``/``'-inf'`` now return the default
+via a ``math.isfinite`` guard applied after ``float()`` coercion — they
+previously passed through the ``default=None`` presence gate as non-finite
+floats (the 02-03 WR-03 ``xfail(strict=True)`` lock's defect, now unmarked
+in the same commit). Finite coercion and the ``''``/``None``/garbage-string
+semantics below are unchanged.
 
 See also:
     - ``tests/test_pivot.py`` — the model→task pivot under ``chdir``.
@@ -23,7 +26,6 @@ See also:
 """
 
 import json
-import math
 import os
 from pathlib import Path
 
@@ -102,20 +104,15 @@ def _load_synthetic_inputs():
 
 
 @pytest.mark.parametrize("bad", ["nan", "inf", "-inf"])
-def test_get_float_nonfinite_passes_through_default_none_gate(bad):
-    """``'nan'``/``'inf'``/``'-inf'`` coerce successfully, so today they pass
-    the ``default=None`` presence gate as non-finite floats.
-
-    This is the WR-03 poisoning carrier, pinned as-is; the 02-03
-    ``xfail(strict=True)`` lock asserts the CORRECT behavior (exclusion) on
-    top of this fact.
+def test_get_float_nonfinite_returns_default(bad):
+    """``'nan'``/``'inf'``/``'-inf'`` coerce successfully but the value is
+    non-finite, so the isfinite guard (WR-03, flipped Phase 4) returns the
+    default — a non-finite metric is excluded from ranking instead of
+    passing the ``default=None`` presence gate and poisoning a whole
+    task's MinMax/z-score normalization.
     """
-    result = get_float(bad, default=None)
-    assert result is not None
-    if bad == "nan":
-        assert math.isnan(result)
-    else:
-        assert math.isinf(result) and result == pytest.approx(float(bad))
+    assert get_float(bad, default=None) is None
+    assert get_float(bad, default=0.0) == 0.0
 
 
 @pytest.mark.parametrize(

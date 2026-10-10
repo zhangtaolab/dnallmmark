@@ -268,9 +268,6 @@ def test_compare_reports_equal_value_bool_int_cross_type():
         pytest.param("-inf", id="-inf"),
     ],
 )
-@pytest.mark.xfail(strict=True,
-                   reason="WR-03 non-finite metrics must be excluded by the "
-                          "presence gate — Phase 4 fix")
 def test_nonfinite_metric_excluded_from_ranking(bad):
     """A non-finite metric value must coerce to the default (be excluded),
     never pass through as a float.

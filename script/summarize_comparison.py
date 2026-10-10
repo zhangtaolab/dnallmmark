@@ -78,6 +78,7 @@ See also:
 """
 
 import json
+import math
 import os
 from pathlib import Path
 
@@ -126,11 +127,15 @@ def load_arena_map():
 
 
 def get_float(val, default=0.0):
-    """Safely coerce a metric value to ``float``.
+    """Safely coerce a metric value to a finite ``float``.
 
     Many evaluation metrics may be missing (empty string or ``None``) when a
     model fails or the metric is not applicable to the task type (e.g. ``r2``
-    for a classification task).  This helper returns ``default`` in those cases.
+    for a classification task).  This helper returns ``default`` in those
+    cases.  A value that coerces successfully but is non-finite (``nan``,
+    ``inf``, ``-inf`` — WR-03, fixed Phase 4) is also treated as missing:
+    returning it would pass the presence gate as a real score and poison a
+    whole task's normalisation arithmetic.
 
     Args:
         val:    Raw metric value — may be a number, ``""``, or ``None``.
@@ -139,9 +144,12 @@ def get_float(val, default=0.0):
     try:
         if val is None or str(val).strip() == "":
             return default
-        return float(val)
+        result = float(val)
     except (ValueError, TypeError):
         return default
+    if not math.isfinite(result):
+        return default
+    return result
 
 
 def calculate_dataset_stats(dataset_records):
