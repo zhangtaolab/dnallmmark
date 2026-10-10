@@ -166,7 +166,18 @@ Plans:
   6. Revision-window lanes, in priority order: LoRA/IA³/frozen probes (REV-05/F4) with a cost-accuracy frontier table; zero-shot VEP lane (REV-08/F5) with CLM/MLM scoring and sanity checks; learning curves (part of REV-08's P2 tail) — whatever does not fit lands in the response letter as future work with the mechanism documented
   7. The intentional Zenodo preview-token link in README.md is replaced with the published record DOI/URL once record 19135551 is public, with the .gitleaks.toml allowlist rule updated in the same commit (WR-01 follow-up)
 
-**Plans**: TBD
+**Plans**: 5/5 plans planned
+Plans:
+**Wave 1**
+- [ ] 06-01-PLAN.md — dnallm 1.2.1 adaptation verification (gating): quirk re-verification vs tag v1.2.1 + citation refresh, --peft tracer wiring (flag + lora:/ia3: YAML + use_lora ctor kwarg + use_ia3), env_smoke peft check + 1.2.1 relabel + smoke-sanction docstring amendment, seed_result.json tolerant reader, and the sanctioned GB10 install + env_smoke EXECUTION + peft_dry_run smoke (REV-05, REV-08)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 06-02-PLAN.md — PEFT lane: adapter-run aliases (+lora/+ia3) + trainable_params_pct persistence + run_sweep --peft threading + cost-accuracy frontier machinery (schema + synthetic fixtures committed; data artifact gated on real post-E2' numbers) + bounded 1-epoch smoke (REV-05)
+- [ ] 06-03-PLAN.md — zero-shot VEP registry driver over the suite kernels (paradigm filtering MLM 32 / CLM 18, DL 5 + EMPTY 7 excluded-with-reason, synonym/nonsense + RC sanity checks, dual CSV+JSON + schema + fixtures, bounded two-model GB10 smoke) (REV-08)
+- [ ] 06-04-PLAN.md — packaging: recalculateComparison dead-code removal as the FIRST dedicated commit, provenance columns + convert_registry round-trip + build_provenance + dual artifact + DATA.md appendix + maintainer-review checkpoint, freeze_snapshot wiring (manifest-derived hash, .sha256 committed / .tar gitignored under baseline/snapshots/), docs/METHODOLOGY.md + docs/ONBOARDING.md + README literal reproduction section, doi_swap.py prepared not executed (REL-03, DATA-04, DATA-05, DATA-07, EXT-01, EXT-02, REV-03)
+
+**Wave 3** *(blocked on 06-02 completion — 06-05 shares the run_finetune/run_sweep surfaces with 06-02)*
+- [ ] 06-05-PLAN.md — frozen probes (--config-variant mechanism + finetune_config_probe.yaml with head_config.frozen + special-loader scope guard + frozen-backbone 1-epoch smoke) + learning curves (--train_fraction + run_sweep --curve with frac-under-seed nesting + tightened curve YAML + extract_curve_points reader) (REV-05, REV-08)
 
 **Revision-work-package map**: F1→E1'-1 · F2→E1'+E2' prerequisite · F3→E1'-2/3+Ed-5 · F4→E3' · F5→E5 · F6→E8 · F7→E1'-⑤/E7 · F8→E6' (P2) · F9→E10 · F10→E1'-4. **Critical path: F1 → F2 (G1) → E2' full re-run; E2' must NOT start before F2 is done (seeds would overwrite each other).**
 
