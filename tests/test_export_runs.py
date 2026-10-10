@@ -53,6 +53,11 @@ import numpy as np
 import pytest
 import summarize_comparison  # 04-01's consumer-side join (arena parity)
 
+# Pinned CI lane (Phase 5, REV-06 Q2): `make ci` (`pytest -m ci`) selects this
+# module's metric-key parity + exporter contract tests alongside the golden
+# replay — the marker adds lane membership only, no behavior change.
+pytestmark = pytest.mark.ci
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = json.loads((REPO_ROOT / "schemas" / "task_performance.json").read_text(encoding="utf-8"))
 

@@ -92,6 +92,12 @@ results/
 datasets/
 models/
 finetuned/
+# ...except the committed canned-replay fixture tree (Phase 5, REV-06 Q1):
+# re-include the directory itself FIRST (git does not descend into an
+# ignored directory, so a child-only negation can never match), then its
+# contents — tests/test_ci_replay.py replays this exact tree in CI.
+!tests/fixtures/e2_replay/finetuned/
+!tests/fixtures/e2_replay/finetuned/**
 
 # Worktrees
 .worktrees/

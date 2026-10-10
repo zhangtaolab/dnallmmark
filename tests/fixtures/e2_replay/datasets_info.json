@@ -1,0 +1,15 @@
+{
+    "FakeCpG__methylation": {
+        "Category": "Multiple",
+        "Dataset_name": "FakeCpG__methylation",
+        "Dataset_path": "datasets/FakeCpG/methylation",
+        "Dev": 100,
+        "Index": 1,
+        "Test": 200,
+        "Train": 300,
+        "labels": 2,
+        "length": 500,
+        "metric": "AUPRC",
+        "type": "binary"
+    }
+}

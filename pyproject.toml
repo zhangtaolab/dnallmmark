@@ -74,7 +74,13 @@ include = ["script", "baseline", "tests", "scripts", "pipeline"]
 [tool.pytest.ini_options]
 # Phase 2 test harness (2026-10-09). `slow` gates the ~80s real-tree determinism
 # regression (plan 02-03, D-10); `make test-fast` runs `-m "not slow"`.
+# `ci` (Phase 5, REV-06 Q2): the pinned CI lane — reuses the existing suite
+# (no duplicated tests); `make ci` runs `pytest -m ci` selecting exactly the
+# golden replay (tests/test_ci_replay.py), metric-key parity
+# (tests/test_export_runs.py), species-table spot checks
+# (tests/test_known_defects.py), and aggregation units (tests/test_aggregation.py).
 testpaths = ["tests"]
 markers = [
     "slow: long-running real-tree regression tests; excluded by make test-fast",
+    "ci: pinned CI lane — metric-key parity, species spot checks, aggregation units, golden replay",
 ]

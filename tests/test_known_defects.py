@@ -62,6 +62,11 @@ import pytest
 import summarize_comparison
 from compare import walk
 
+# Pinned CI lane (Phase 5, REV-06 Q2): `make ci` (`pytest -m ci`) selects
+# this module's species-table spot checks alongside the golden replay — the
+# marker adds lane membership only, no behavior change.
+pytestmark = pytest.mark.ci
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # Read as DATA, never imported: the pipeline modules do `import torch` /
 # `from dnallm import ...` at module level and are unimportable in the

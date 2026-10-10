@@ -12,6 +12,10 @@
 #                   node:test JS suite over tests/js/ (Python + JS lanes)
 #   make test-fast  pytest excluding @slow (the real-tree determinism run);
 #                   the JS suite is fast and runs in the full test lane
+#   make ci         the pinned CI lane (Phase 5, REV-06 Q2): pytest -m ci —
+#                   golden replay + metric-key parity + species spot checks
+#                   + aggregation units; reuses the existing suite (the ci
+#                   marker selects modules, no duplicated tests)
 #   make lint       ruff over tests/ + the Phase-authored/edited files
 #                   (make_dev_splits.py, summarize_comparison.py,
 #                   export_runs.py, freeze_snapshot.py, convert_registry.py,
@@ -21,7 +25,7 @@
 #                   are never installed CPU-side, D-05)
 # =====================================================================
 
-.PHONY: data test test-fast lint typecheck check-node
+.PHONY: data test test-fast ci lint typecheck check-node
 
 # WR-02: PATH lookup with an overridable default (`make UV=/path/to/uv`) —
 # setup-uv/brew/pipx installs live outside ~/.local/bin, and a hardcode
@@ -59,6 +63,13 @@ test: check-node
 
 test-fast:
 	$(UV) run --group dev pytest -m "not slow"
+
+# The pinned CI lane (Phase 5, REV-06 Q2): exactly the tests the CI workflow's
+# test job replays — the golden replay over the committed e2_replay fixture
+# plus the three reused classes (metric-key parity, species spot checks,
+# aggregation units) via the `ci` pytest marker registered in pyproject.toml.
+ci: check-node
+	$(UV) run --group dev pytest -m ci
 
 # Lint scope (Phase 3 decision, D-08): tests/ plus the explicit list of
 # Phase-authored/edited files whose findings are FIXED — script/make_dev_splits.py
