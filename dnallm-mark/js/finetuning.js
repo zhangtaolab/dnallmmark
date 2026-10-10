@@ -113,7 +113,7 @@ class FineTuningPage {
     for (const [modelName, perfData] of Object.entries(this.state.performanceData)) {
       if (this.state.selectedModel && modelName !== this.state.selectedModel) continue;
 
-      for (const [datasetName, data] of Object.entries(perfData)) {
+      for (const [datasetName, data] of Object.entries(perfData.performance || {})) {
         const p = data.performance || {};
         const d = data.dataset || {};
 
@@ -173,7 +173,7 @@ class FineTuningPage {
     const modal = document.getElementById('parameter-modal');
     const paramsDiv = document.getElementById('modal-parameters');
 
-    const data = this.state.performanceData[modelName]?.[datasetName];
+    const data = this.state.performanceData[modelName]?.performance?.[datasetName];
     if (!data) return;
 
     const params = data.parameters || {};
@@ -228,20 +228,21 @@ class FineTuningPage {
       this.renderLeaderboard();
     });
 
-    document.querySelectorAll('.clickable-row').forEach(row => {
-      row.addEventListener('click', () => {
-        const modelName = row.dataset.model;
-        const datasetName = row.dataset.dataset;
-        this.showParameterModal(modelName, datasetName);
-      });
+    // Event delegation on the persistent containers (AUD-12): the row and
+    // modal controls live inside containers whose innerHTML is re-rendered,
+    // so direct bindings would be lost after the first model-select change.
+    document.querySelector('.leaderboard-container')?.addEventListener('click', (e) => {
+      const row = e.target.closest('.clickable-row');
+      if (!row) return;
+      this.showParameterModal(row.dataset.model, row.dataset.dataset);
     });
 
-    document.querySelector('.modal-close')?.addEventListener('click', () => {
-      document.getElementById('parameter-modal').style.display = 'none';
-    });
-
-    document.querySelector('.modal-overlay')?.addEventListener('click', () => {
-      document.getElementById('parameter-modal').style.display = 'none';
+    document.querySelector('.modal-container')?.addEventListener('click', (e) => {
+      const modal = document.getElementById('parameter-modal');
+      if (!modal) return;
+      if (e.target.closest('.modal-close') || e.target.classList.contains('modal-overlay')) {
+        modal.style.display = 'none';
+      }
     });
   }
 }

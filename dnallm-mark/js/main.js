@@ -108,11 +108,23 @@ class DNALLMMark {
       models = models.slice(0, 10);
     }
 
-    // Sort by rank_score (descending, higher Rank Score = better)
+    // Sort by the current sort field, honoring direction (AUD-11):
+    // rank_score descending stays the default until a header is clicked.
+    const sortField = this.state.currentSort;
+    const ascending = this.state.sortAscending;
     models.sort((a, b) => {
-      const rankA = a.performance?.rank_score ?? 0;
-      const rankB = b.performance?.rank_score ?? 0;
-      return rankB - rankA;
+      let aVal = sortField === 'id' ? a.id : a.performance?.[sortField];
+      let bVal = sortField === 'id' ? b.id : b.performance?.[sortField];
+
+      // Model name sorts lexically; every other sortable column numerically.
+      if (typeof aVal === 'string' || typeof bVal === 'string') {
+        const aStr = String(aVal ?? '');
+        const bStr = String(bVal ?? '');
+        return ascending ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
+      }
+      const aNum = Number(aVal ?? 0);
+      const bNum = Number(bVal ?? 0);
+      return ascending ? aNum - bNum : bNum - aNum;
     });
 
     models.forEach((model, index) => {
@@ -467,18 +479,21 @@ class DNALLMMark {
       }
     });
 
-    document.querySelectorAll('.arena-table th.sortable').forEach(th => {
-      th.addEventListener('click', () => {
-        const sortField = th.dataset.sort;
-        if (this.state.currentSort === sortField) {
-          this.state.sortAscending = !this.state.sortAscending;
-        } else {
-          this.state.currentSort = sortField;
-          this.state.sortAscending = false;
-        }
-        this.filterAndSortModels();
-        this.renderLeaderboard();
-      });
+    // Sortable headers: delegated on the persistent container (AUD-12) so
+    // sorting survives leaderboard re-renders (direct th bindings would be
+    // orphaned by the first innerHTML replacement).
+    document.querySelector('.leaderboard-container')?.addEventListener('click', (e) => {
+      const th = e.target.closest('th.sortable');
+      if (!th) return;
+      const sortField = th.dataset.sort;
+      if (this.state.currentSort === sortField) {
+        this.state.sortAscending = !this.state.sortAscending;
+      } else {
+        this.state.currentSort = sortField;
+        this.state.sortAscending = false;
+      }
+      this.filterAndSortModels();
+      this.renderLeaderboard();
     });
   }
 }

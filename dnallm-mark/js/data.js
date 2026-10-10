@@ -263,7 +263,7 @@ const DataAPI = {
           architecture: '',
           series: '',
           'context_len (bp)': '',
-          species: this.aggregateSpecies(modelName, perfData).join(', '),
+          species: this.aggregateSpecies(modelName, perfData.performance).join(', '),
           huggingface: '',
           modelscope: ''
         },

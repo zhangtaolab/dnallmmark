@@ -44,7 +44,7 @@ class DatasetsPage {
     const performanceData = await DataAPI.loadAllModelPerformance();
 
     for (const [modelName, modelData] of Object.entries(performanceData)) {
-      for (const [datasetName, data] of Object.entries(modelData)) {
+      for (const [datasetName, data] of Object.entries(modelData.performance || {})) {
         if (!this.state.datasets.has(datasetName)) {
           this.state.datasets.set(datasetName, {
             name: datasetName,
@@ -130,17 +130,19 @@ class DatasetsPage {
   }
 
   bindEvents() {
-    document.querySelectorAll('.datasets-table th.sortable').forEach(th => {
-      th.addEventListener('click', () => {
-        const field = th.dataset.sort;
-        if (this.state.sortField === field) {
-          this.state.sortAscending = !this.state.sortAscending;
-        } else {
-          this.state.sortField = field;
-          this.state.sortAscending = false;
-        }
-        this.renderDatasetsTable();
-      });
+    // Event delegation on the persistent container (AUD-12): sorting must
+    // survive the table re-renders that replace the header elements.
+    document.querySelector('.datasets-container')?.addEventListener('click', (e) => {
+      const th = e.target.closest('.datasets-table th.sortable');
+      if (!th) return;
+      const field = th.dataset.sort;
+      if (this.state.sortField === field) {
+        this.state.sortAscending = !this.state.sortAscending;
+      } else {
+        this.state.sortField = field;
+        this.state.sortAscending = false;
+      }
+      this.renderDatasetsTable();
     });
   }
 }
