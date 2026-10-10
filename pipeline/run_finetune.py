@@ -194,6 +194,28 @@ def parse_args():
              "evaluates an identical sample count. Absent = full evaluation"
     )
 
+    parser.add_argument(
+        "--peft",
+        type=str,
+        default="none",
+        choices=["none", "lora", "ia3"],
+        help="Parameter-efficient fine-tuning mode (SC-6 lane tracer): "
+             "'lora' passes use_lora=True to the DNATrainer ctor (the lora: "
+             "YAML section is REQUIRED then — the suite indexes "
+             "config['lora'] directly); 'ia3' sets finetune.use_ia3=True "
+             "(the ia3: YAML section is optional — suite defaults + "
+             "presets); 'none' (default) leaves the run surface unchanged"
+    )
+
+    parser.add_argument(
+        "--peft_dry_run",
+        action="store_true",
+        help="Validate-and-exit (requires --peft lora or --peft ia3): the "
+             "suite resolves the adapter config, matches target_modules "
+             "against the live model, prints the dry-run report and "
+             "performs NO training"
+    )
+
     args = parser.parse_args()
     return args
 
@@ -494,6 +516,8 @@ if __name__ == "__main__":
     gradient_checkpointing = args.gradient_checkpointing
     ddp_find_unused_parameters = args.ddp_find_unused_parameters
     subset_file = args.subset_file
+    peft_mode = args.peft
+    peft_dry_run = args.peft_dry_run
 
     # Unified eval subsets (F7 Q3 / REV-07): validate the --subset_file
     # map fail-fast BEFORE any model load — the run_sweep._validate_filters
@@ -509,6 +533,20 @@ if __name__ == "__main__":
                 f"[Error] invalid --subset_file {subset_file}: "
                 + "; ".join(subset_problems)
             )
+
+    # PEFT composition fail-fast (SC-6 lane tracer, 06-01): the dry run
+    # is the suite's validate-and-exit adapter check — with --peft none
+    # (or absent) there is no adapter to validate, and proceeding would
+    # either silently full-train under a dry-run request or die deep in
+    # the suite's own ctor refusal instead of at the argv boundary (the
+    # suite raises the matching ValueError at trainer.py:411-416 @ v1.2.1
+    # — this fail-fast names both flags first).
+    if peft_dry_run and peft_mode == "none":
+        sys.exit(
+            "[Error] --peft_dry_run requires --peft lora or --peft ia3 "
+            f"(got --peft {peft_mode}): the dry run is validate-and-exit "
+            "and there is no adapter to validate in none mode"
+        )
 
     # Detect GPU/NPU memory with fallbacks
     if torch.cuda.is_available():
@@ -796,6 +834,25 @@ if __name__ == "__main__":
                 else:
                     configs["finetune"].save_safetensors = True
 
+                # IA³ enablement (SC-6 lane tracer, 06-01): use_ia3 IS a
+                # TrainingConfig field (dnallm configs.py:326-334 @ v1.2.1
+                # (30dfd6d)) — set here in the per-dataset quirk-mutation
+                # block (the save_safetensors pattern above) BEFORE the
+                # DNATrainer ctor reads it. The ia3: YAML section is
+                # OPTIONAL for the suite (config.get default Ia3Config()
+                # then preset resolution); the guard keeps the none
+                # default a byte-identical no-op.
+                if peft_mode == "ia3":
+                    configs["finetune"].use_ia3 = True
+
+                # PEFT dry-run request (suite validate-and-exit,
+                # trainer.py:335-344/:451-461 @ v1.2.1): the TrainingConfig
+                # flag the ctor reads to resolve the adapter config, match
+                # target_modules, print the report, and return with
+                # trainer=None — no training, no checkpoints.
+                if peft_dry_run:
+                    configs["finetune"].peft_dry_run = True
+
                 # Set output directory for finetuning (seed-isolated per
                 # G1/REV-02: the trainer_state.json resume marker below is
                 # scoped to this seed, so resume never skips a different seed)
@@ -1038,6 +1095,13 @@ if __name__ == "__main__":
                     config=configs,
                     datasets=dataset,
                     extra_args=extra_args or None,
+                    # LoRA enablement is a CONSTRUCTOR KWARG, not a config
+                    # field (dnallm trainer.py:369-376 @ v1.2.1): a pure
+                    # comparison evaluates False under the none default,
+                    # so the peft=none ctor call is identical to today's.
+                    # use_lora=True requires config["lora"] to exist —
+                    # both YAMLs carry the lora: section (06-01).
+                    use_lora=(peft_mode == "lora"),
                 )
 
                 # Start finetuning

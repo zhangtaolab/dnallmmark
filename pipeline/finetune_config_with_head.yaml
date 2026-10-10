@@ -70,4 +70,20 @@ finetune:
     load_best_model_at_end: True
     metric_for_best_model: "eval_loss"
     report_to: "tensorboard"
-    resume_from_checkpoint: 
+    resume_from_checkpoint:
+# Parameter-efficient fine-tuning sections (SC-6 lane tracer, 06-01) — the
+# SAME sections as finetune_config.yaml so a special_models with_head
+# reload can never hit KeyError 'lora' under use_lora=True. Field surfaces
+# are suite-owned (dnallm/configuration/configs.py:400-423 LoraConfig,
+# :436-478 Ia3Config @ v1.2.1 (30dfd6d)); values are the suite defaults.
+lora:
+    r: 8                     # LoRA attention dimension (rank)
+    lora_alpha: 16
+    target_modules: null     # null => suite preset auto-selection (lora_targets.yaml)
+    lora_dropout: 0.1
+    bias: "none"             # none|all|lora_only
+    task_type: "SEQ_CLS"
+ia3:
+    target_modules: null     # null => suite preset auto-selection
+    feedforward_modules: null  # preset fills; must stay a subset of target_modules
+    task_type: "SEQ_CLS"

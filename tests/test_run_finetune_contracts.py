@@ -956,3 +956,204 @@ def test_suite_citations_pinned_to_v121_tag():
         f"(note at {eager_idx}, load call at {load_idx}) — next to the "
         "load it explains, not far away in an unrelated block"
     )
+
+
+# =====================================================================
+# PEFT tracer wiring (06-01, SC-6 lane gate) — LoRA + IA3 passthrough
+# =====================================================================
+
+def test_peft_flags_mirror_the_subset_file_seam_shape():
+    """--peft is an argparse choices flag (none/lora/ia3, default none)
+    and --peft_dry_run a store_true — the --subset_file flag shape."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    peft_idx = src.find('"--peft"')
+    assert peft_idx != -1, "no --peft argument in parse_args() (SC-6)"
+    block = src[peft_idx:peft_idx + 900]
+    assert 'choices=["none", "lora", "ia3"]' in block, (
+        "--peft must be choices=[none, lora, ia3] (argparse rejects any "
+        "other mode at the argv boundary)"
+    )
+    assert 'default="none"' in block, (
+        "--peft must default to 'none' — the peft=none path is the "
+        "byte-identical legacy surface (SC-6 gating tracer)"
+    )
+    dry_idx = src.find('"--peft_dry_run"')
+    assert dry_idx != -1, "no --peft_dry_run argument in parse_args()"
+    dry_block = src[dry_idx:dry_idx + 600]
+    assert "action=" in dry_block and "store_true" in dry_block, (
+        "--peft_dry_run must be a store_true flag"
+    )
+
+
+def test_peft_dry_run_without_adapter_mode_fails_fast():
+    """--peft_dry_run with --peft none (or absent) is an argparse-adjacent
+    fail-fast: an [Error] message naming BOTH flags, before the model
+    loop — the dry run is validate-and-exit, there is no adapter to
+    validate in none mode (mirrors the suite's own ctor refusal)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    error_idx = src.find("[Error] --peft_dry_run requires")
+    assert error_idx != -1, (
+        "no [Error] fail-fast for --peft_dry_run without an adapter mode "
+        "— the run would either silently full-train or die deep in the "
+        "suite's ctor refusal instead of at the argv boundary"
+    )
+    message = src[error_idx:error_idx + 300]
+    assert "--peft" in message and "--peft_dry_run" in message, (
+        "the composition error must name both --peft_dry_run and --peft"
+    )
+    model_loop_idx = src.find("models_info.items():")
+    assert error_idx < model_loop_idx, (
+        "the composition check must run before the model loop (an "
+        "argparse-adjacent fail-fast, never discovered mid-sweep)"
+    )
+
+
+def test_ctor_site_carries_use_lora_kwarg():
+    """The DNATrainer ctor call site carries
+    use_lora=(peft_mode == \"lora\") — LoRA enablement is a CONSTRUCTOR
+    KWARG in the suite (trainer.py:369-376 @ v1.2.1), not a config
+    field; a pure comparison evaluates False under the none default."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    ctor_idx = statement_index(src, "trainer = DNATrainer(")
+    assert ctor_idx != -1, "no DNATrainer ctor call site found"
+    ctor_block = src[ctor_idx:ctor_idx + 900]
+    assert "use_lora=(peft_mode == \"lora\")" in ctor_block, (
+        "the ctor call must pass use_lora=(peft_mode == \"lora\") — "
+        "without the kwarg --peft lora silently full-trains (the suite "
+        "has no config-field path for LoRA)"
+    )
+
+
+def test_use_ia3_mutation_precedes_ctor_inside_quirk_block():
+    """configs[\"finetune\"].use_ia3 = True is set under an ia3-mode guard
+    inside the per-dataset quirk-mutation block (the save_safetensors
+    pattern) BEFORE the DNATrainer ctor reads it — IA3 enablement IS a
+    TrainingConfig field (suite configs.py:326-334 @ v1.2.1)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    guarded = re.search(
+        r'if peft_mode == "ia3":\s*\n[^\S\n]*configs\["finetune"\]'
+        r"\.use_ia3 = True",
+        src,
+    )
+    assert guarded is not None, (
+        'no guarded "if peft_mode == \\"ia3\\": configs[\\"finetune\\"]'
+        '.use_ia3 = True" mutation — IA3 needs the TrainingConfig field '
+        "set before the ctor, and the guard keeps the none default a "
+        "no-op"
+    )
+    safetensors_idx = statement_index(
+        src, 'configs["finetune"].save_safetensors = True'
+    )
+    assert safetensors_idx != -1, "no safetensors quirk mutation found"
+    ctor_idx = statement_index(src, "trainer = DNATrainer(")
+    assert ctor_idx != -1, "no DNATrainer ctor call site found"
+    assert safetensors_idx < guarded.start() < ctor_idx, (
+        "the use_ia3 mutation must sit in the per-dataset quirk block "
+        f"(after the safetensors quirk at {safetensors_idx}, before the "
+        f"ctor at {ctor_idx})"
+    )
+    dry_guarded = re.search(
+        r"if peft_dry_run:\s*\n[^\S\n]*configs\[\"finetune\"\]"
+        r"\.peft_dry_run = True",
+        src,
+    )
+    assert dry_guarded is not None, (
+        'no guarded "if peft_dry_run: configs[\\"finetune\\"]'
+        '.peft_dry_run = True" mutation — the suite reads the '
+        "TrainingConfig flag at ctor time to validate-and-exit"
+    )
+    assert guarded.start() < dry_guarded.start() < ctor_idx, (
+        "the peft_dry_run mutation must also precede the ctor"
+    )
+
+
+def test_peft_none_default_is_a_no_op_on_the_legacy_surface():
+    """peft=none (the default) adds nothing: the outdir/alias construction
+    is byte-identical (no +lora/+ia3 suffixing — adapter aliases land in
+    06-02), and every peft-driven config mutation is mode-guarded so the
+    none path evaluates exactly the pre-tracer statements."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    alias_idx = src.find(
+        "model_save_name = save_model_name if save_model_name else model_name"
+    )
+    assert alias_idx != -1, "the alias construction is unchanged"
+    alias_block = src[alias_idx:alias_idx + 200]
+    assert "peft" not in alias_block and "+lora" not in alias_block, (
+        "the alias construction must not gain peft suffixes in 06-01 — "
+        "adapter alias isolation is 06-02's surface (scope discipline)"
+    )
+    # Every configs["finetune"] mutation mentioning peft must be guarded;
+    # an unguarded one would mutate the none path.
+    for match in re.finditer(
+        r'configs\["finetune"\]\.(use_ia3|peft_dry_run) = True', src
+    ):
+        preceding = src[max(0, match.start() - 200):match.start()]
+        guard = re.search(
+            r'if (peft_mode == "ia3"|peft_dry_run):\s*$', preceding
+        )
+        assert guard is not None, (
+            f"peft mutation at offset {match.start()} is not mode-"
+            "guarded — the peft=none path would diverge from the legacy "
+            "surface (SC-6 gating tracer contract)"
+        )
+
+
+def _yaml_section_keys(text, section):
+    """The 4-space-indented keys of a top-level ``section:`` YAML block."""
+    match = re.search(
+        rf"^{re.escape(section)}:\s*\n(.*?)(?=^\S|\Z)", text,
+        re.DOTALL | re.MULTILINE,
+    )
+    assert match is not None, f"no top-level {section}: section found"
+    return re.findall(
+        r"^\s{4}([A-Za-z_][A-Za-z0-9_]*):", match.group(1), re.MULTILINE
+    )
+
+
+def test_both_finetune_yamls_carry_suite_validated_lora_and_ia3_sections():
+    """Both finetune YAMLs carry a lora: and an ia3: section whose keys
+    are EXACTLY the suite-documented fields (dnallm configs.py:400-423
+    LoraConfig, :436-478 Ia3Config @ v1.2.1) — no invented fields — with
+    r 8 / lora_alpha 16 / target_modules null (suite preset
+    auto-selection). The lora: section is REQUIRED whenever use_lora=True
+    (trainer.py:421 indexes config[\"lora\"] directly — KeyError without
+    it), which is why it must exist in BOTH files: a special_models
+    with_head reload must never hit KeyError 'lora'."""
+    lora_keys_expected = {
+        "r", "lora_alpha", "target_modules", "lora_dropout", "bias",
+        "task_type",
+    }
+    ia3_keys_expected = {"target_modules", "feedforward_modules", "task_type"}
+    for config_path in FINETUNE_CONFIGS:
+        text = config_path.read_text(encoding="utf-8")
+        lora_keys = set(_yaml_section_keys(text, "lora"))
+        ia3_keys = set(_yaml_section_keys(text, "ia3"))
+        assert lora_keys == lora_keys_expected, (
+            f"{config_path.name}: lora: section keys {sorted(lora_keys)} "
+            f"!= the suite-validated field set {sorted(lora_keys_expected)} "
+            "(dnallm configs.py:400-423 @ v1.2.1)"
+        )
+        assert ia3_keys == ia3_keys_expected, (
+            f"{config_path.name}: ia3: section keys {sorted(ia3_keys)} "
+            f"!= the suite-validated field set {sorted(ia3_keys_expected)} "
+            "(dnallm configs.py:436-478 @ v1.2.1)"
+        )
+        lora_match = re.search(
+            r"^lora:\s*\n(.*?)(?=^\S|\Z)", text, re.DOTALL | re.MULTILINE
+        )
+        assert lora_match is not None, f"{config_path.name}: no lora: block"
+        lora_block = lora_match.group(1)
+        assert re.search(
+            r"^\s{4}r: 8\s*(?:#.*)?$", lora_block, re.MULTILINE
+        ), (
+            f"{config_path.name}: lora.r must be the suite default 8"
+        )
+        assert re.search(
+            r"^\s{4}lora_alpha: 16\s*(?:#.*)?$", lora_block, re.MULTILINE
+        ), f"{config_path.name}: lora.lora_alpha must be the suite default 16"
+        assert re.search(
+            r"^\s{4}target_modules: null\s*(?:#.*)?$", lora_block, re.MULTILINE
+        ), (
+            f"{config_path.name}: lora.target_modules must be null — "
+            "the suite resolves its per-family preset (lora_targets.yaml)"
+        )
