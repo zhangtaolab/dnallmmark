@@ -71,10 +71,12 @@ Each file contains a dict keyed by model alias, sorted by ``rank_score`` descend
         ...
     }
 
-Usage (run from ``dnallm-mark/data/``)::
+Usage (canonical: the repo-root ``make data`` chain, which also runs the
+permutation engine and the tasks.json index generator — REL-04; this
+script itself is CWD-sensitive and resolves inputs/outputs against
+``dnallm-mark/data/``)::
 
-    cd dnallm-mark/data
-    python ../../script/summarize_comparison.py
+    make data
 
 See also:
     - ``script/export_runs.py`` — owns the metric-key mapping this script
