@@ -29,8 +29,10 @@ class FineTuningPage {
     console.log('Setting up Fine-tuning page...');
 
     try {
-      await this.loadData();
+      // The navbar is static chrome — render it before any I/O so a failed
+      // data fetch still leaves the user able to navigate (WR-03).
       renderNavbar();
+      await this.loadData();
       this.renderHero();
       this.renderModelSelector();
       this.renderLeaderboard();

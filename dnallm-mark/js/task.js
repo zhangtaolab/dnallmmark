@@ -130,11 +130,13 @@ class TaskBenchmark {
     console.log('Setting up Task Benchmark...');
 
     try {
+      // The navbar is static chrome — render it before any I/O so a failed
+      // task-index fetch still leaves the user able to navigate (WR-03).
+      renderNavbar();
       // Initialize task loader and load lightweight task index (~5KB)
       this.state.taskList = await this.loader.initialize();
-      
+
       // Render UI immediately
-      renderNavbar();
       this.renderHero();
       this.populateTaskDropdown();
       this.bindEvents();

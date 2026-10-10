@@ -28,8 +28,10 @@ class DatasetsPage {
     console.log('Setting up Datasets page...');
 
     try {
-      await this.loadData();
+      // The navbar is static chrome — render it before any I/O so a failed
+      // data fetch still leaves the user able to navigate (WR-03).
       renderNavbar();
+      await this.loadData();
       this.renderHero();
       this.renderDatasetsTable();
       this.bindEvents();
