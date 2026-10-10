@@ -79,6 +79,17 @@ files). The contracts asserted here are textual/structural:
   ``prokbert-mini-long`` / ``MutBERT`` were dropped. Parity is asserted
   MODULO this documented map — a blind verbatim legacy copy (dead names
   resurrected, rename missed) FAILS the tests instead of passing.
+- **unified eval subset (F7 Q3 / REV-07, 05-03)** — ``--subset_file``
+  (JSON task -> integer row-ID list, the audit's
+  ``pipeline/eval_subsets.json``) is validated fail-fast against the
+  registry keys and per-task test-split row ranges (ALL problems
+  collected, ``[Error]`` exit — the ``run_sweep._validate_filters``
+  discipline), and an injectable apply seam restricts the TEST split
+  via the wrapped Dataset's ``select`` — placed between
+  ``DNADataset.load_local_data`` and ``validate_sequences`` so the
+  audited IDs are the actually-evaluated rows; train/dev are NEVER
+  selected (dev drives checkpoint selection, research A4); an absent
+  flag invokes no select anywhere (byte-identical code path).
 
 See also:
     ``script/make_dev_splits.py`` — the remediation the guard names.
@@ -669,4 +680,203 @@ def test_length_tier_rounding_parity():
     assert comp_idx > cap_idx, (
         "the grad_accum compensation must sit at the adjustment site, "
         "after the tier-capped bs_new is determined"
+    )
+
+
+# ===== unified eval subset (F7 Q3 / REV-03, 05-03) =====
+
+
+def extract_subset_fns():
+    """Exec-extract ``validate_subset_file`` + ``apply_eval_subset`` from
+    the run_finetune source (the read-source-never-import pattern —
+    torch/dnallm are unavailable CPU-side; the two functions are pure
+    and contiguous, ending right before ``set_seed``)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    match = re.search(
+        r"def validate_subset_file\(.*?\n(?=def set_seed)", src, re.DOTALL
+    )
+    assert match is not None, (
+        "no validate_subset_file/apply_eval_subset functions found in "
+        "run_finetune.py — the --subset_file validator and apply seam "
+        "are missing (F7 Q3)"
+    )
+    namespace = {"json": json, "Path": Path}
+    exec(match.group(0), namespace)  # noqa: S102 - pure extracted fns
+    return namespace["validate_subset_file"], namespace["apply_eval_subset"]
+
+
+class RecordingSplit:
+    """Stub HF split: records ``.select`` calls (the test double for
+    ``datasets.Dataset.select`` — the same primitive the suite's own
+    ``sampling()`` uses)."""
+
+    def __init__(self):
+        self.select_calls = []
+
+    def select(self, ids):
+        self.select_calls.append(list(ids))
+        return self
+
+
+def write_subset_file(tmp_path, payload):
+    """Write a subset-file JSON fixture, return its path."""
+    path = tmp_path / "subsets.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+REGISTRY_5 = {"TASK": {"Test": 5}, "OTHER": {"Test": 3}}
+
+
+def test_subset_validator_accepts_valid_file(tmp_path):
+    """Known registry keys with in-range integer ID lists load cleanly:
+    no problems, and the loaded map is returned verbatim."""
+    validate, _apply = extract_subset_fns()
+    path = write_subset_file(tmp_path, {"TASK": [0, 4, 2]})
+    subsets, problems = validate(path, REGISTRY_5)
+    assert problems == []
+    assert subsets == {"TASK": [0, 4, 2]}
+
+
+def test_subset_validator_reports_every_malformed_class_by_name(tmp_path):
+    """Unknown task key, non-integer ID, negative ID, and out-of-range ID
+    are ALL collected in one pass and named per class — no partial
+    application before validation completes."""
+    validate, _apply = extract_subset_fns()
+    path = write_subset_file(
+        tmp_path,
+        {"TASK": [0, "x", -1, 5], "UNKNOWN_TASK": [0]},
+    )
+    subsets, problems = validate(path, REGISTRY_5)
+    assert subsets is None
+    joined = "; ".join(problems)
+    assert "UNKNOWN_TASK" in joined, "unknown key must be named"
+    assert "'x'" in joined, "non-integer ID must be named"
+    assert "-1" in joined, "negative ID must be named"
+    assert "out of range [0, 5)" in joined, (
+        "the out-of-range ID must be named with the task's row range"
+    )
+    # every malformed class present (not just the first)
+    assert any("not in datasets_info" in p for p in problems)
+    assert any("non-integer" in p for p in problems)
+    assert any("negative" in p for p in problems)
+    assert any("out of range" in p for p in problems)
+
+
+def test_subset_validator_rejects_non_object_json(tmp_path):
+    """A non-object top level (list, string) is reported as such."""
+    validate, _apply = extract_subset_fns()
+    for payload in ([1, 2], "nope", 7):
+        path = write_subset_file(tmp_path, payload)
+        subsets, problems = validate(path, REGISTRY_5)
+        assert subsets is None
+        assert any("expected an object" in p for p in problems), problems
+
+
+def test_subset_validator_rejects_unreadable_file(tmp_path):
+    """A missing/unreadable file is a problem, not a crash."""
+    validate, _apply = extract_subset_fns()
+    _subsets, problems = validate(tmp_path / "absent.json", REGISTRY_5)
+    assert any("cannot read" in p for p in problems), problems
+
+
+def test_subset_validator_rejects_non_list_value(tmp_path):
+    """A task whose value is not a list is named with its actual type."""
+    validate, _apply = extract_subset_fns()
+    path = write_subset_file(tmp_path, {"TASK": 3})
+    subsets, problems = validate(path, REGISTRY_5)
+    assert subsets is None
+    assert any("TASK" in p and "int" in p for p in problems), problems
+
+
+def test_apply_eval_subset_selects_test_split_only():
+    """With subset IDs for the current dataset, the seam invokes select
+    with EXACTLY those IDs on the test split — train and dev splits are
+    never selected."""
+    _validate, apply_fn = extract_subset_fns()
+    train, dev, test = RecordingSplit(), RecordingSplit(), RecordingSplit()
+    holder = {"train": train, "dev": dev, "test": test}
+    apply_fn(holder, "TASK", {"TASK": [3, 1, 2]})
+    assert test.select_calls == [[3, 1, 2]]
+    assert train.select_calls == [], "train must never be selected"
+    assert dev.select_calls == [], "dev must never be selected"
+
+
+def test_apply_eval_subset_absent_flag_no_select_anywhere():
+    """Absent flag (None): zero select calls anywhere — the code path is
+    identical to today."""
+    _validate, apply_fn = extract_subset_fns()
+    splits = {name: RecordingSplit() for name in ("train", "dev", "test")}
+    apply_fn(splits, "TASK", None)
+    assert all(s.select_calls == [] for s in splits.values())
+
+
+def test_apply_eval_subset_task_without_entry_no_call():
+    """A dataset with no entry in the map runs full evaluation."""
+    _validate, apply_fn = extract_subset_fns()
+    splits = {name: RecordingSplit() for name in ("train", "dev", "test")}
+    apply_fn(splits, "OTHER", {"TASK": [0, 1]})
+    assert all(s.select_calls == [] for s in splits.values())
+
+
+def test_subset_file_flag_declared_in_parse_args():
+    """--subset_file exists with type=Path, default None, and help naming
+    the JSON shape and that absence means full evaluation."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    arg_idx = src.find('"--subset_file"')
+    assert arg_idx != -1, (
+        "no --subset_file argument in parse_args() — the pipeline cannot "
+        "consume pipeline/eval_subsets.json (F7 Q3)"
+    )
+    block = src[arg_idx:arg_idx + 600]
+    assert "type=Path" in block, "--subset_file must be type=Path"
+    assert "default=None" in block, "--subset_file must default to None"
+    assert "full evaluation" in block, (
+        "the help must state that an absent flag means full evaluation"
+    )
+
+
+def test_subset_seam_sits_between_load_and_validate():
+    """The apply seam is wired between the DNADataset.load_local_data call
+    and the dataset.validate_sequences call — BEFORE validation, so the
+    audited IDs are the actually-evaluated rows."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    load_idx = statement_index(src, "dataset = DNADataset.load_local_data(")
+    assert load_idx != -1, "no DNADataset.load_local_data call site found"
+    apply_idx = statement_index(
+        src, "apply_eval_subset(dataset.dataset, dataset_name, eval_subsets)")
+    assert apply_idx != -1, (
+        "no apply_eval_subset(dataset.dataset, ...) wiring — the seam "
+        "exists but is never invoked at the load/validate boundary "
+        "(F7 Q3)"
+    )
+    validate_idx = statement_index(src, "dataset.validate_sequences(")
+    assert validate_idx != -1, "no validate_sequences call site found"
+    assert load_idx < apply_idx < validate_idx, (
+        "the subset select must sit AFTER the dataset load and BEFORE "
+        f"validate_sequences (load {load_idx}, apply {apply_idx}, "
+        f"validate {validate_idx})"
+    )
+
+
+def test_subset_file_validated_fail_fast_with_error_exit():
+    """The __main__ wiring validates the map and exits non-zero with an
+    [Error] message listing the collected problems — before any model
+    load (the _validate_filters discipline)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    wiring_idx = statement_index(
+        src, "eval_subsets, subset_problems = validate_subset_file(")
+    assert wiring_idx != -1, (
+        "no validate_subset_file call in the __main__ wiring — a bad "
+        "--subset_file would be applied unvalidated (T-05-08)"
+    )
+    assert "[Error] invalid --subset_file" in src, (
+        "the fail-fast exit must carry an [Error] invalid --subset_file "
+        "message naming the problems"
+    )
+    model_loop_idx = src.find("models_info.items():")
+    assert model_loop_idx != -1, "no model loop found"
+    assert wiring_idx < model_loop_idx, (
+        "the subset validation must run BEFORE the model loop — no "
+        "partial application or model load ahead of validation"
     )

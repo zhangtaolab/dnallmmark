@@ -1,0 +1,23 @@
+{
+  "command": "uv run --group dev python -m pytest tests/test_run_finetune_contracts.py -v",
+  "cwd": "/home/forrest/Github/dnallmmark",
+  "exitCode": 1,
+  "targetFile": "tests/test_run_finetune_contracts.py",
+  "targetTests": [
+    "test_subset_validator_accepts_valid_file",
+    "test_subset_validator_reports_every_malformed_class_by_name",
+    "test_subset_validator_rejects_non_object_json",
+    "test_subset_validator_rejects_unreadable_file",
+    "test_subset_validator_rejects_non_list_value",
+    "test_apply_eval_subset_selects_test_split_only",
+    "test_apply_eval_subset_absent_flag_no_select_anywhere",
+    "test_apply_eval_subset_task_without_entry_no_call",
+    "test_subset_file_flag_declared_in_parse_args",
+    "test_subset_seam_sits_between_load_and_validate",
+    "test_subset_file_validated_fail_fast_with_error_exit"
+  ],
+  "expected": "All 11 new --subset_file tests fail on their planned assertions: the validate_subset_file/apply_eval_subset functions, the --subset_file argparse flag, and the __main__ fail-fast wiring do not exist yet in pipeline/run_finetune.py (F7 Q3 / REV-07).",
+  "actual": "11 failed, 12 passed. Each failure is an AssertionError on the planned missing behavior (e.g. extract_subset_fns: 'no validate_subset_file/apply_eval_subset functions found in run_finetune.py -- the --subset_file validator and apply seam are missing (F7 Q3)'; test_subset_file_flag_declared_in_parse_args: 'no --subset_file argument in parse_args()'; test_subset_file_validated_fail_fast_with_error_exit: 'no validate_subset_file call in the __main__ wiring').",
+  "semanticAssessment": "Valid RED: the target tests executed and failed on assertions for the planned behavior. No import, syntax, collection, or fixture errors; the 12 pre-existing contract tests in the same file pass (the failures are exactly the new feature tests).",
+  "runner": "pytest 9.1.1 (unittest-family text report; workflow.tdd_mode is false for this project so the machine classifier gate is not enforced -- this record is the honest RED evidence per the TDD reference)"
+}
