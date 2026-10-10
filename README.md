@@ -110,6 +110,131 @@ python3 -m http.server 8080
 open http://localhost:8080
 ```
 
+## 🔁 Reproducing the Leaderboard
+
+Every command below is literal copy-paste, run from the repository root of
+a fresh clone. Each step shows its expected output, so a failed step is
+immediately visible. How the numbers are computed is documented in one
+place — [docs/METHODOLOGY.md](docs/METHODOLOGY.md); extending the
+benchmark (new model or dataset) is documented in
+[docs/ONBOARDING.md](docs/ONBOARDING.md).
+
+### 1. Install the data toolchain
+
+```bash
+uv sync
+```
+
+`uv sync` installs only the `data` dependency group — `default-groups =
+["data"]` in `pyproject.toml` deliberately replaces uv's `["dev"]` default
+(see the comment there). The dev tools (`pytest`, `ruff`, `ty`,
+`jsonschema`) are pulled automatically on demand by the `make` targets
+below via `uv run --group dev`. Expected output ends with lines like:
+
+```
+Resolved N packages, installed M packages in S
+```
+
+(Prerequisites: Python 3.13+ [see `.python-version`], Node.js 18+, and
+[uv](https://docs.astral.sh/uv/). No GPU is needed for anything in this
+section.)
+
+### 2. Verify the derived data is byte-stable (the drift invariant)
+
+```bash
+make data
+git status --porcelain dnallm-mark/data/ DATA.md
+```
+
+`make data` regenerates the entire derived-data chain from the committed
+inputs (aggregation → permutation family → provenance → task index). On
+an untouched clone it is a **byte-identical no-op** — the `git status`
+line must print nothing. Expected command output:
+
+```
+✅ Global comparison results saved to: models_comparison.json
+✅ Species [Microbe] comparison saved to: models_comparison_microbe.json (contains 13 dataset(s))
+✅ Species [Animals] comparison saved to: models_comparison_animal.json (contains 22 dataset(s))
+✅ Species [Plants] comparison saved to: models_comparison_plant.json (contains 12 dataset(s))
+✅ Data manifest saved to: manifest.json (data_version 1.1.0)
+✅ Permutation tests: 861 pair(s) (0 excluded) saved to: .../dnallm-mark/data/permutation_tests.json (657 significant at BH FDR 0.05)
+✅ Provenance artifacts (50 datasets):
+🎉 All statistical comparisons generated successfully!
+Found 47 task files
+✓ Generated tasks.json with 47 tasks
+```
+
+This is the repository's core reproducibility guarantee: CI's drift job
+runs exactly this check on every pull request and fails on any byte of
+drift.
+
+### 3. Run the test suite (both lanes)
+
+```bash
+make test
+```
+
+Runs the Python lane (`uv run --group dev pytest`) and the Node lane
+(`node --test tests/js/`, zero npm deps). Expected output (counts grow as
+the suite grows):
+
+```
+============================= 389 passed in ~10s =============================   # Python lane
+ℹ pass 18                                                                     # Node lane summary
+```
+
+### 4. Serve the leaderboard
+
+```bash
+bash start-server.sh
+```
+
+Expected output, then open <http://localhost:8080> (the ES-module UI needs
+an HTTP origin — `file://` does not work):
+
+```
+Starting DNALLM Mark server...
+Server URL: http://localhost:8080
+Press Ctrl+C to stop the server
+```
+
+### Fresh-clone proof
+
+The [CI badge](https://github.com/zhangtaolab/dnallmmark/actions/workflows/ci.yml)
+at the top of this page replays exactly this chain on every push and pull
+request: the pinned CI lane (`make ci`) replays the golden export →
+aggregate chain over a committed fixture (`tests/fixtures/e2_replay/`),
+and the drift job asserts step 2's no-op invariant — so a green badge is
+machine-checked evidence that a fresh clone reproduces the committed
+leaderboard data.
+
+### Results snapshots (tamper-evident archives)
+
+The derived-data set (everything in `dnallm-mark/data/` except the
+`model_performance/` input) can be frozen into a tar + SHA-256 manifest
+for deposition (e.g. Zenodo supplementary information):
+
+```bash
+make snapshot
+cd baseline/snapshots && sha256sum -c snapshot-*.sha256   # re-verify: every line OK
+```
+
+The frozen commit hash is read from the committed
+`dnallm-mark/data/manifest.json` (`generated_from`) — never from a live
+`git` call — so the lane also works from a tarball-exported tree. The
+`.tar` is gitignored (a deposition artifact); only the `.sha256` manifest
+is committed as tamper-evidence (`baseline/snapshots/`).
+
+**Re-freeze procedure** (after a future data revision lands, e.g. the
+post-recomputation data-v2):
+
+```bash
+make data                                   # regenerate from the new inputs
+git status --porcelain dnallm-mark/data/ DATA.md   # must be empty BEFORE freezing
+make snapshot                               # freeze; verify the new .sha256
+git add baseline/snapshots/snapshot-<hash>.sha256 && git commit   # commit the manifest
+```
+
 ## 📊 Benchmark Pipeline
 
 ### Datasets and Models Preparation
