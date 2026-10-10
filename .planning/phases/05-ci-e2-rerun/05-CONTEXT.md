@@ -38,6 +38,12 @@ Aggregation upgrade (F6: CI-overlap tie rules, dual views, permutation tests) la
 ### E2' execution (pre-decided — ROADMAP carries the full framework)
 - Dual gate (DNALLM stable release + PIPE-02 env smoke on GB10) + EXPLICIT maintainer authorization; failure recovery = sweep failure-manifest re-run; window degradation = priority order (E2E pair → arena representatives → rest) with honest n_seeds; scope = ALL 62 unified-registry models.
 
+### Planning-time decisions (2026-10-10, maintainer answers during Phase 5 research review)
+- **D-16:** The E2' data-chain bridge = Option C: `export_runs.py` emits BOTH views from run records (task-centric `task_performance/` + per-model `model_performance/{alias}_performance.json`). One emitter, one reader per view; both the leaderboard chain and the submit/finetuning per-model contract stay live; the CI golden replay covers the chain end-to-end (export→both views→aggregate→schema).
+- **D-17:** Research OQ package accepted: OQ2 `dnallm-mark/data/manifest.json` carries data_version + generated-from commit (footer reads it, replacing the live clock at js/main.js:367); OQ3 pre-E2' F6 regeneration = CHANGELOG entry + version bump only, git tag reserved for data-v2; OQ4 degradation tier-1 = the PIPE-03 E2E pair, tier-2 = maintainer-curated via checkpoint:human-verify at execution (never agent-invented); OQ5 permutation tests = pairwise on the aggregate view (score-vector permutation across tasks; C(42,2)=861 pre-E2' → C(62,2)=1891 post-E2' family, BH-disclosed; optional per-task spot checks); OQ6 data-v2 inventory = thin orchestrator looping `baseline/compare.py --summary-json` (comparator untouched); OQ7 replay depth = end-to-end per D-16.
+- **D-18:** `plant-dnamamba2-BPE` alias normalization rides the bridge work: one key per model; the committed results file's alias aligns to the unified registry key (investigate the case-variant set-diff at execution; key==name contract governs).
+- **F6 statistical semantics (binding, corrects the CONTEXT Q1 parenthetical):** the vendored `aggregate_seeds` is the SINGLE statistical source — its actual thresholds govern (n<3 → ci95 null/method "none"; 3≤n<10 → t-interval; n≥10 → bootstrap). E2' 3-seed data gets t-intervals (df=2), never bootstrap. Implement by calling the vendored function/constants.
+
 ### Claude's Discretion
 None — all sixteen grey-area answers were maintainer-accepted recommendations.
 
