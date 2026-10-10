@@ -520,6 +520,34 @@ def test_pivot_shape_exporter_sanitizes_task_filenames(tmp_path):
     assert doc["performance"]["FakeModel-A"]["performance"]["auroc"] == pytest.approx(0.9)
 
 
+def test_zero_completed_task_emits_nothing(tmp_path):
+    """A task whose only records are failed emits NO task file, NO stats
+    artifact, and is absent from the returned ``emitted`` list (WR-02): an
+    empty performance map still validates against the schema (no
+    ``minProperties``) and would surface as a permanently empty leaderboard
+    entry via tasks.json — the docstring's "at least one completed record"
+    contract is enforced by the code, not just documented."""
+    root, models_path, datasets_path, config_path = _build_fixture_tree(tmp_path)
+    datasets = json.loads(datasets_path.read_text(encoding="utf-8"))
+    dead_task = "DeadDS__task"
+    datasets[dead_task] = dict(datasets["FakeDS__task"], Dataset_name=dead_task)
+    datasets_path.write_text(json.dumps(datasets), encoding="utf-8")
+    _write_run_record(
+        root, "FakeModel-A", dead_task, 42, _suite_native_metrics(0.0),
+        status="failed",
+    )
+    out = tmp_path / "out"
+    stats_dir = tmp_path / "stats"
+    emitted = export_runs.export_runs_tree(
+        root, models_path, datasets_path, config_path, out, stats_dir,
+        n_bootstrap=100, bootstrap_seed=42, small_n_ci="t-interval",
+    )
+    assert dead_task not in emitted
+    assert emitted == ["FakeDS__task"]
+    assert not (out / "DeadDS__task_task_performance.json").exists()
+    assert not (stats_dir / "DeadDS__task_seed_stats.json").exists()
+
+
 def test_hard_edges_missing_flops_unregistered_one_seed(tmp_path):
     root, models_path, datasets_path, config_path = _build_fixture_tree(tmp_path)
 

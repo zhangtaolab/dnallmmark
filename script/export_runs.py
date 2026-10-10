@@ -725,6 +725,13 @@ def export_runs_tree(
                 for key in sorted(per_metric)
             }
         safe_task = task.replace("/", "_").replace("\\", "_")
+        if not performance:
+            # WR-02: zero completed records anywhere -> no file, no stats
+            # artifact, no ``emitted`` entry (the docstring's "at least one
+            # completed record" contract). An empty performance map would
+            # still validate against the schema (no ``minProperties``) and
+            # surface as a permanently empty leaderboard entry in tasks.json.
+            continue
         _write_json(output_dir / f"{safe_task}_task_performance.json", {
             "info": _dataset_info_block(dataset_row),
             "performance": performance,
