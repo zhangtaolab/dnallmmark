@@ -25,7 +25,22 @@ ANY failure forces a final non-zero exit):
    (the 7 GUE re-extraction gate is VISIBLE here: missing dirs are listed
    BY NAME; when a missing expected dir has a double-nested sibling —
    the fresh-unzip ``suite/suite/task`` layout — a note says so);
-5. a single small-tensor matmul, proving executability end to end.
+5. a single small-tensor matmul, proving executability end to end;
+6. ``numpy`` major version >= the floor PARSED from the repo's own
+   ``pyproject.toml`` dependency string (``numpy>=2.0,<3`` in the
+   ``[data]`` group — the floor is read, never duplicated). Maintainer
+   heads-up 2026-10-10: dnallm 0.8.0's practical runtime requires
+   numpy>=2 (upstream declares numpy>=1.26.0 but caps pyarrow<26 exactly
+   because pyarrow 26 raises a numpy>=2 floor their 1.26 leg cannot meet
+   — they are mid-transition to numpy 2); this repo is already aligned
+   (``numpy>=2.0,<3``, uv.lock 2.5.3), and this check makes the
+   alignment visible on GB10.
+
+One NON-GATING diagnostic prints the installed ``datasets`` and
+``pyarrow`` versions when importable (dnallm 0.8.0 caps
+``datasets<=3.2.0`` and ``pyarrow>=15,<26`` — useful context on the GPU
+box, but dnallm's own constraints govern resolution; this gate does NOT
+enforce them).
 
 Usage (maintainer, on GB10, inside the GPU environment)::
 
@@ -42,6 +57,7 @@ See also:
 """
 
 import json
+import re
 import sys
 import tomllib
 from importlib import import_module
@@ -107,6 +123,96 @@ def release_segment(version):
         str: Everything before the first ``+``.
     """
     return version.partition("+")[0]
+
+
+def read_numpy_floor_major(pyproject_path):
+    """Read the numpy ``>=`` floor's MAJOR version from pyproject.toml.
+
+    The floor is PARSED from the repo's own dependency string
+    (``numpy>=2.0,<3`` in the ``[data]`` group), never duplicated — the
+    same no-duplicated-constants discipline as read_gpu_pins. Maintainer
+    heads-up 2026-10-10: dnallm 0.8.0's practical runtime requires
+    numpy>=2 (upstream declares numpy>=1.26.0 but caps pyarrow<26 because
+    pyarrow 26 raises a numpy>=2 floor their 1.26 leg cannot meet).
+
+    Args:
+        pyproject_path (Path): The repo's pyproject.toml.
+
+    Returns:
+        int: The major version of the first ``>=`` bound on numpy.
+
+    Raises:
+        SystemExit: no numpy requirement with a ``>=`` bound is found —
+            a gate script must fail loudly on its own configuration.
+    """
+    try:
+        with open(pyproject_path, "rb") as fh:
+            doc = tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        sys.exit(f"FAIL: cannot read {pyproject_path}: {exc}")
+    for group in doc.get("dependency-groups", {}).values():
+        if not isinstance(group, list):
+            continue
+        for requirement in group:
+            match = re.match(r"numpy\s*>=\s*([0-9]+)", requirement)
+            if match:
+                return int(match.group(1))
+    sys.exit(
+        f"FAIL: no 'numpy>=X' requirement found in {pyproject_path} "
+        "dependency-groups — cannot derive the numpy floor"
+    )
+
+
+def check_numpy(floor_major):
+    """Check 6: numpy major version >= the pyproject-parsed floor.
+
+    Args:
+        floor_major (int): The parsed numpy ``>=`` floor major version.
+
+    Returns:
+        bool: True when numpy imported and its major version qualifies.
+    """
+    numpy = import_or_fail("numpy")
+    if numpy is None:
+        return False
+    installed_major = int(str(numpy.__version__).split(".")[0])
+    if installed_major >= floor_major:
+        print(
+            f"PASS: numpy {numpy.__version__} >= pyproject floor "
+            f"(major >= {floor_major}; dnallm 0.8.0 requires numpy>=2)"
+        )
+        return True
+    print(
+        f"FAIL: numpy {numpy.__version__} major {installed_major} < "
+        f"pyproject floor {floor_major} (dnallm 0.8.0 requires numpy>=2)"
+    )
+    return False
+
+
+def print_ecosystem_diagnostics():
+    """NON-GATING INFO line: installed datasets/pyarrow versions, if any.
+
+    dnallm 0.8.0 caps ``datasets<=3.2.0`` and ``pyarrow>=15,<26``; those
+    constraints govern the GPU environment's RESOLUTION, not this gate —
+    the line is context for the maintainer reading the smoke output on
+    GB10. Unimportable packages print as ``not installed``; nothing here
+    can fail the gate.
+    """
+    versions = {}
+    for package in ("datasets", "pyarrow"):
+        try:
+            versions[package] = str(import_module(package).__version__)
+        except ImportError:
+            versions[package] = "not installed"
+        except Exception as exc:  # noqa: BLE001 — a DIAGNOSTIC must never
+            # crash the gate: any import-time failure is reported, that's all
+            versions[package] = f"import failed ({type(exc).__name__})"
+    print(
+        "INFO (not gated): datasets "
+        f"{versions['datasets']}, pyarrow {versions['pyarrow']} "
+        "(dnallm 0.8.0 caps datasets<=3.2.0, pyarrow>=15,<26 — dnallm's "
+        "own constraints govern resolution)"
+    )
 
 
 def import_or_fail(module_name):
@@ -282,6 +388,8 @@ def main():
         print("FAIL: torch unavailable — CUDA + matmul checks not run")
         results.append(False)
         results.append(False)
+    results.append(check_numpy(read_numpy_floor_major(PYPROJECT_PATH)))
+    print_ecosystem_diagnostics()
     results.append(check_dataset_dirs())
 
     failed = results.count(False)
