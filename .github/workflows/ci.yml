@@ -1,0 +1,119 @@
+# CI workflow (Phase 5, REV-06/TEST-04/TEST-05/TEST-07).
+#
+# Every lane below was proven locally at commit time against the same repo
+# tree (05-01 Task 3): make lint / make typecheck / make test / the node
+# lane / both pinned npx static checks / make data + git diff --exit-code.
+#
+# Security posture:
+#   - every `uses:` is pinned by full 40-char commit SHA, resolved from the
+#     official repos on 2026-10-10 (git ls-remote + GitHub API cross-check,
+#     both reporting "type": "commit" — never copy SHAs from third-party
+#     listings, T-05-01)
+#   - `pull_request` trigger only; the fork-token `pull_request_target`
+#     variant is forbidden (T-05-03)
+#   - top-level least-privilege permissions; no secret is referenced by any
+#     job (T-05-04)
+#   - npm tools fetched at run time ONLY as exact-version pins blessed by the
+#     05-01 Task 2 blocking-human gate (maintainer reply: "approved")
+#
+# Budget: every job carries timeout-minutes: 14 — the <15-minute REV-06 Q4
+# ceiling is an enforced fact, not an aspiration.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-typecheck:
+    name: Lint + typecheck (ruff / ty)
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: make lint
+        run: make lint
+      - name: make typecheck
+        run: make typecheck
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.13 = the required floor leg (requires-python >= 3.13, pyproject
+        # D-07). 3.14 = forward-compat probe, allowed to fail without
+        # blocking. TEST-04's literal "3.12" matrix text is superseded by the
+        # floor bump (05-01 deviation, recorded in the phase SUMMARY).
+        python-version: ["3.13", "3.14"]
+    continue-on-error: ${{ matrix.python-version == '3.14' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      # make test is not Python-only: it runs the node:test JS lane too
+      # (Makefile check-node guard documents node as a hard dependency).
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: make test (full pytest suite incl. slow lane + JS lane)
+        run: make test
+
+  static-js:
+    name: Static JS/HTML checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: node --test (JS unit lane)
+        run: node --test tests/js/
+      - name: node --check (every frontend + tool JS file)
+        run: |
+          for f in dnallm-mark/js/*.js scripts/*.js; do
+            echo "node --check $f"
+            node --check "$f"
+          done
+      # Exact-version npx pins (no package.json by design — maintainer-blessed
+      # form, 05-01 Task 2). Later releases are inert under an exact pin.
+      - name: eslint 10.12.0 (flat config, zero npm deps in repo)
+        run: npx --yes eslint@10.12.0 --config eslint.config.mjs "dnallm-mark/js/*.js"
+      - name: html-validate 11.16.2 (the six real shells; dev mockups excluded)
+        run: npx --yes html-validate@11.16.2 --config .htmlvalidate.json dnallm-mark/index.html dnallm-mark/task.html dnallm-mark/finetuning.html dnallm-mark/models.html dnallm-mark/datasets.html dnallm-mark/submit.html
+
+  drift:
+    name: Data drift (make data must be a byte-identical no-op)
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      # make data runs the node-based tasks.json index generator
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Regenerate derived data
+        run: make data
+      - name: Fail on any drift in the committed data tree
+        run: git diff --exit-code -- dnallm-mark/data/

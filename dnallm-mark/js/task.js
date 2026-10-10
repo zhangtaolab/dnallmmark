@@ -267,7 +267,7 @@ class TaskBenchmark {
     let actualMetricKey = this.state.currentMetric;
     if (firstModelPerf && !(this.state.currentMetric in firstModelPerf)) {
       const lowercaseMetric = this.state.currentMetric.toLowerCase();
-      for (const [key, value] of Object.entries(firstModelPerf)) {
+      for (const key of Object.keys(firstModelPerf)) {
         if (key.toLowerCase() === lowercaseMetric) {
           actualMetricKey = key;
           break;
