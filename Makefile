@@ -116,8 +116,14 @@ ci: check-node
 # paths stay OUT of scope deliberately.
 # No [tool.ruff] config section exists (D-08: no baseline carry-over, no
 # suppression).
+# Phase-6 extension (06-04): the new phase-6 scripts join the fixed-findings
+# list ONLY when present on disk — a cut lane's script must never be
+# referenced by the gate (existence guard; sequential wave order means
+# 06-02/06-03 scripts already exist here, and script/doi_swap.py joins
+# automatically when it lands later in 06-04).
+PHASE6_SCRIPTS := $(foreach s,script/build_frontier.py script/zero_shot_vep.py script/build_provenance.py script/doi_swap.py,$(if $(wildcard $(s)),$(s)))
 lint:
-	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py
+	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py $(PHASE6_SCRIPTS)
 
 # Type check (ty, maintainer directive 2026-10-09): zero-diagnostics baseline
 # verified empirically at research time. [tool.ty] in pyproject.toml carries
