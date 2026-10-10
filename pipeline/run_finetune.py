@@ -36,6 +36,7 @@ import importlib
 import json
 import shutil
 from glob import glob
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -183,8 +184,104 @@ def parse_args():
         help="Custom model name used in output path (default: use Model_name from models_info.json)"
     )
 
+    parser.add_argument(
+        "--subset_file",
+        type=Path,
+        default=None,
+        help="JSON file mapping dataset names to lists of test-split row IDs "
+             "(the N audit's pipeline/eval_subsets.json); the TEST split is "
+             "restricted to those rows before validation so every model "
+             "evaluates an identical sample count. Absent = full evaluation"
+    )
+
     args = parser.parse_args()
     return args
+
+
+def validate_subset_file(subset_path, datasets_info):
+    """Load and fail-fast validate a ``--subset_file`` map (F7 Q3).
+
+    Mirrors ``run_sweep._validate_filters``: every problem is collected
+    before the caller exits non-zero, so one run reports ALL malformed
+    classes at once (a bad map must abort loudly, never silently no-op
+    an evaluation). Checks: the file is readable JSON; the top level is
+    an object; every key is a ``datasets_info.json`` key; every value is
+    a list of integers; every integer is within ``[0, Test)`` for its
+    task (``Test`` is the registry's test-split row count, disk-verified
+    by ``script/make_dev_splits.py --check``).
+
+    Args:
+        subset_path (Path): The ``--subset_file`` path.
+        datasets_info (dict): The unified datasets registry.
+
+    Returns:
+        tuple: ``(subsets, problems)`` — the loaded map when NO problems
+        were found, else ``None``; ``problems`` lists every malformed
+        class by name.
+    """
+    try:
+        loaded = json.loads(Path(subset_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return None, [f"cannot read {subset_path}: {exc}"]
+    if not isinstance(loaded, dict):
+        return None, [
+            (
+                f"top-level JSON is {type(loaded).__name__}, expected an "
+                "object mapping task names to lists of integer row IDs"
+            )
+        ]
+    problems = []
+    unknown = sorted(set(loaded) - set(datasets_info))
+    if unknown:
+        problems.append(f"task keys not in datasets_info.json: {unknown}")
+    for task in sorted(loaded):
+        if task not in datasets_info:
+            continue
+        ids = loaded[task]
+        if not isinstance(ids, list):
+            problems.append(
+                f"{task}: value is {type(ids).__name__}, expected a list "
+                "of integer row IDs"
+            )
+            continue
+        test_rows = int(datasets_info[task].get("Test") or 0)
+        for row_id in ids:
+            if isinstance(row_id, bool) or not isinstance(row_id, int):
+                problems.append(f"{task}: non-integer ID {row_id!r}")
+            elif row_id < 0:
+                problems.append(f"{task}: negative ID {row_id}")
+            elif row_id >= test_rows:
+                problems.append(
+                    f"{task}: ID {row_id} out of range [0, {test_rows})"
+                )
+    return (loaded if not problems else None), problems
+
+
+def apply_eval_subset(dataset_dict, dataset_name, eval_subsets):
+    """Restrict the TEST split to the audited eval-subset rows (F7 Q3).
+
+    Applied between ``DNADataset.load_local_data`` and
+    ``validate_sequences`` so the audited IDs are the actually-evaluated
+    rows, TEST SPLIT ONLY — train/dev stay full (dev drives checkpoint
+    selection, research A4). Uses the wrapped Dataset's ``select``
+    primitive (the same call the suite's own ``sampling()`` uses); the
+    suite itself is never modified. With no ``--subset_file`` (or no
+    entry for this dataset) this is a no-op — the code path is identical
+    to today.
+
+    Args:
+        dataset_dict (dict): The wrapped ``DatasetDict`` at
+            ``dataset.dataset`` (mutated in place on the test split).
+        dataset_name (str): The current dataset's registry key.
+        eval_subsets (dict | None): The validated subset map (or None).
+    """
+    if not eval_subsets:
+        return
+    ids = eval_subsets.get(dataset_name)
+    if not ids:
+        return
+    if "test" in dataset_dict:
+        dataset_dict["test"] = dataset_dict["test"].select(ids)
 
 
 def set_seed(seed=42):
@@ -373,7 +470,23 @@ if __name__ == "__main__":
     save_model_name = args.save_model_name
     gradient_checkpointing = args.gradient_checkpointing
     ddp_find_unused_parameters = args.ddp_find_unused_parameters
-    
+    subset_file = args.subset_file
+
+    # Unified eval subsets (F7 Q3 / REV-07): validate the --subset_file
+    # map fail-fast BEFORE any model load — the run_sweep._validate_filters
+    # discipline (a bad map must abort loudly with every problem named,
+    # never silently no-op an evaluation).
+    eval_subsets = None
+    if subset_file is not None:
+        eval_subsets, subset_problems = validate_subset_file(
+            subset_file, datasets_info
+        )
+        if subset_problems:
+            sys.exit(
+                f"[Error] invalid --subset_file {subset_file}: "
+                + "; ".join(subset_problems)
+            )
+
     # Detect GPU/NPU memory with fallbacks
     if torch.cuda.is_available():
         device = torch.device('cuda:0')
@@ -799,6 +912,13 @@ if __name__ == "__main__":
                     multi_label_sep=multi_label_sep,
                     max_length=max_length
                 )
+                # Unified eval subset (F7 Q3): restrict the TEST split to
+                # the audited common-filter rows BEFORE validate_sequences
+                # (below) so the audited IDs are the actually-evaluated
+                # rows. TEST SPLIT ONLY — train/dev stay full (dev drives
+                # checkpoint selection, research A4). Without
+                # --subset_file this is a no-op (identical code path).
+                apply_eval_subset(dataset.dataset, dataset_name, eval_subsets)
                 # Get dataset statistics
                 dataset_stat = dataset.statistics()
                 # Processing dataset with sequence pairs
