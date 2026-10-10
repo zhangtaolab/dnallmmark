@@ -22,10 +22,10 @@ Requirements for the hardening release. Each maps to roadmap phases.
 
 ### Correctness Fixes
 
-- [ ] **FIX-01**: Every page renders without errors — `renderNavbar()` null-container crash fixed; verified on ALL pages, not just the 3 known-broken ones
+- [x] **FIX-01**: Every page renders without errors — `renderNavbar()` null-container crash fixed; verified on ALL pages, not just the 3 known-broken ones
 - [ ] **FIX-02**: Species-as-dataset grouping bug fixed (`pipeline/dnallmmark_pipeline.py:1229`), with a failing test written first
-- [ ] **FIX-03**: Submission flow repaired — `submit.html` created, orphaned `js/submit.js` wired to the current data schema, reachable from navigation
-- [ ] **FIX-04**: Sink-side escaping at DOM-build sites the fixes touch (bounded to touched code, not a full security hardening pass)
+- [x] **FIX-03**: Submission flow repaired — `submit.html` created, orphaned `js/submit.js` wired to the current data schema, reachable from navigation
+- [x] **FIX-04**: Sink-side escaping at DOM-build sites the fixes touch (bounded to touched code, not a full security hardening pass)
 - [x] **FIX-05**: All three data generators produce deterministic output (sorted directory iteration + `sort_keys` JSON writing) — prerequisite for every diff-based check
 
 ### Test Infrastructure
@@ -126,10 +126,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REV-08 | Phase 6 | Pending |
 | REV-09 | Phase 5 | Pending |
 | REV-10 | Phase 3 | Complete |
-| FIX-01 | Phase 4 | Pending |
+| FIX-01 | Phase 4 | Complete |
 | FIX-02 | Phase 4 | Pending |
-| FIX-03 | Phase 4 | Pending |
-| FIX-04 | Phase 4 | Pending |
+| FIX-03 | Phase 4 | Complete |
+| FIX-04 | Phase 4 | Complete |
 | TEST-04 | Phase 5 | Pending |
 | TEST-05 | Phase 5 | Pending |
 | TEST-07 | Phase 5 | Pending |

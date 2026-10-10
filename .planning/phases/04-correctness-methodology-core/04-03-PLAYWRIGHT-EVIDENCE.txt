@@ -1,0 +1,60 @@
+PASS [index] zero console errors after load settles — (0 errors)
+PASS [index] .navbar-container non-empty — 6 nav links rendered
+PASS [index] leaderboard table rows rendered — 42 rows
+PASS [index] scatter chart canvas present
+PASS [index] navbar links all resolve 200 — /:200 /task.html:200 /finetuning.html:200 /models.html:200 /datasets.html:200 /submit.html:200
+PASS [index] AUD-11 sort click changes row order — first row: PlantHelixSeek -> SPACE
+PASS [index] AUD-11 second click reverses order — first row: SPACE -> AgroNT
+PASS [index] AUD-11 numeric header sorts desc then asc — desc[0]=43.82 asc[0]=5.74
+PASS [task] zero console errors after load settles — (0 errors)
+PASS [task] .navbar-container non-empty — 6 nav links rendered
+PASS [task] task dropdown populated — 48 options
+PASS [task] task leaderboard rows rendered — 42 rows
+PASS [task] AUD-20 default view selects AUPRC — selected="auprc" (AUPRC ↑)
+PASS [task] task info banner visible
+PASS [task] navbar links all resolve 200 — /:200 /task.html:200 /finetuning.html:200 /models.html:200 /datasets.html:200 /submit.html:200
+PASS [finetuning] zero console errors after load settles — (0 errors)
+PASS [finetuning] .navbar-container non-empty — 6 nav links rendered
+PASS [finetuning] results table real dataset rows (AUD-10) — 1974 rows, info/performance-named rows: 0
+PASS [finetuning] first row dataset name is a real dataset — first dataset cell: "GUE__emp_H3"
+PASS [finetuning] navbar links all resolve 200 — /:200 /task.html:200 /finetuning.html:200 /models.html:200 /datasets.html:200 /submit.html:200
+PASS [finetuning] AUD-12 modal opens before re-render
+PASS [finetuning] AUD-12 modal closes via delegated close
+PASS [finetuning] AUD-12 modal opens AFTER model-select re-render — rows after filter: 47; modal head: "GENERanno-eukaryote-0.5b-base
+      GUE__emp_H3
+
+      Datas"
+PASS [models] zero console errors after load settles — (0 errors)
+PASS [models] .navbar-container non-empty — 6 nav links rendered
+PASS [models] models table rows rendered — 42 rows
+PASS [models] AUD-10 species column populated via aggregateSpecies — 0/42 N/A species cells
+PASS [models] species cell shows arena values — first species cell: "Microbe, Animals, Plants"
+PASS [models] navbar links all resolve 200 — /:200 /task.html:200 /finetuning.html:200 /models.html:200 /datasets.html:200 /submit.html:200
+PASS [models] AUD-12 header sort works twice (delegation) — SPACE -> AgroNT
+PASS [datasets] zero console errors after load settles — (0 errors)
+PASS [datasets] .navbar-container non-empty — 6 nav links rendered
+PASS [datasets] datasets table rows rendered — 47 rows
+PASS [datasets] AUD-10 first dataset name is real — first cell: "BEND__CpG_methylation"
+PASS [datasets] navbar links all resolve 200 — /:200 /task.html:200 /finetuning.html:200 /models.html:200 /datasets.html:200 /submit.html:200
+PASS [datasets] AUD-12 header sort works twice (delegation) — PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation -> BEND__CpG_methylation
+PASS [submit] zero console errors after load settles — (0 errors)
+PASS [submit] .navbar-container non-empty — 6 nav links rendered
+PASS [submit] submission form present
+PASS [submit] navbar links all resolve 200 — /:200 /task.html:200 /finetuning.html:200 /models.html:200 /datasets.html:200 /submit.html:200
+PASS [submit] SC-4 real committed file validates to preview — preview=block; summary=" Submission Summary Model Name: DNABERT-2-117M Dataset Count: 47 Submitter: GSD Executor Email: executor@example.com Sample Dataset: GUE__emp_H3 FieldValue SpeciesMicrobe Typebinary Labels2 Train/Test/Dev11971 / 1497 / 1497 Accuracy0.87374749498998 F10.8790786"
+PASS [submit] SC-4 preview reports real dataset count — dataset count: 47
+PASS [submit] SC-4 PR instructions name the real path —  PR Generation Instructions To submit your data, please follow these steps: Create a new branch: git checkout -b submit-DNABERT-2-117M-1791598816021 Save your J
+PASS [submit] SC-4 malformed root shape rejected with message — "Validation Error: Top level is missing the required "info" object (model card)"
+PASS [submit] SC-4 per-entry rejection names dataset + missing key — "Validation Error: Dataset "Fake__entry" is missing the required "performance" sub-object (dataset, parameters, performance)"
+PASS [submit] SC-5 hostile string renders as inert text — window.__pwned=undefined; literal text present=true; injected <img> elements=0
+PASS [submit] SC-5 PR-instruction block escapes hostile name — literal text present=true; injected <img> elements=0
+PASS [submit] zero console errors across full submission session
+
+==== SUMMARY ====
+index: 8/8 passed
+task: 7/7 passed
+finetuning: 8/8 passed
+models: 7/7 passed
+datasets: 6/6 passed
+submit: 12/12 passed
+TOTAL: 48/48 passed, 0 failed

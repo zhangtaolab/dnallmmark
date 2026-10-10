@@ -4,16 +4,16 @@ milestone: v0.7.1
 current_phase: 4
 current_phase_name: Correctness & Methodology Core
 status: executing
-stopped_at: Completed 04-01-PLAN.md (species fix tracer; 3 production commits, 202 passed + 0 xfailed)
-last_updated: "2026-10-10T01:59:22.876Z"
+stopped_at: Completed 04-03-PLAN.md (static-site restoration; 48/48 live assertions)
+last_updated: "2026-10-10T02:24:44.642Z"
 last_activity: 2026-10-10
 last_activity_desc: Phase 4 execution started
-state_head: b34f43ef8484df2cd2ec7681b96933f8ba8d0625
+state_head: b461268a0c829e6a85d4dc8a74f1cb2cadfe3a79
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 15
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 ## Current Position
 
 Phase: 4 (Correctness & Methodology Core) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-10-10 — Phase 4 execution started
 
@@ -69,6 +69,7 @@ Progress: [█████░░░░░] 50% (1/6 phases)
 | Phase 03 P03 | 10 min | 2 tasks | 6 files |
 | Phase 03 P04 | 16 min | 3 tasks | 7 files |
 | Phase 04 P01 | 17 min | 4 tasks | 11 files |
+| Phase 04 P03 | 15 min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-04: G1 dead (seed_{seed}/ outdir + seed-scoped resume marker), D-07 grad_accum and D-11 head_config leaks fixed, run_sweep.py landed with --dry-run + fake-executor proof only — zero model runs (D-05/D-06 held; E2' stays gated at F1->F2->E2')
 - [Phase 04]: [Phase 04]: 04-01: Multiple->Animals majority mapping maintainer-approved at the blocking Category gate (verbatim 'approved', 50-row record committed as 04-CATEGORY-REVIEW.md); regeneration matched the previewed inventory exactly (total+plant byte-identical, animal/microbe 42/42 via the single membership swap, 22/13 counts preserved)
 - [Phase 04]: [Phase 04]: 04-01: all three Phase-2 xfail locks (AUD-01/WR-02/WR-03) unmarked to permanent green contracts per D-13, each in the same commit as its fix; comparator gains INT + BOOL_CROSS labels (IN-01/WR-02); get_float isfinite guard proven number-neutral on committed data
+- [Phase 04]: 04-03: shared navbar.js is the single navbar source; static <nav> blocks removed from ALL 5 real shells (plan named only models/datasets — every shell carried one; one-navbar-per-page invariant required all five)
+- [Phase 04]: 04-03: live Playwright verification 48/48 (zero console errors on all 6 pages, sort/modal/delegation interactions, submission flow, hostile-string inert) via CLI driver fallback — MCP browser tools absent in executor session
 
 ### Pending Todos
 
@@ -132,6 +135,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-10T01:59:22.825Z
-Stopped at: Completed 04-01-PLAN.md (species fix tracer; 3 production commits, 202 passed + 0 xfailed)
+Last session: 2026-10-10T02:24:44.602Z
+Stopped at: Completed 04-03-PLAN.md (static-site restoration; 48/48 live assertions)
 Resume file: None
