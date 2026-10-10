@@ -19,9 +19,9 @@
 #   make lint       ruff over tests/ + the Phase-authored/edited files
 #                   (make_dev_splits.py, summarize_comparison.py,
 #                   export_runs.py, freeze_snapshot.py, convert_registry.py,
-#                   run_finetune.py, run_sweep.py, compare.py,
-#                   permutation_tests.py, run_migration_inventory.py,
-#                   audit_n_frequencies.py)
+#                   run_finetune.py, run_sweep.py, env_smoke.py,
+#                   compare.py, permutation_tests.py,
+#                   run_migration_inventory.py, audit_n_frequencies.py)
 #   make typecheck  ty type check over script/, baseline/, tests/, scripts/,
 #                   and pipeline/ (GPU-side imports replaced with Any — they
 #                   are never installed CPU-side, D-05)
@@ -93,7 +93,7 @@ ci: check-node
 # No [tool.ruff] config section exists (D-08: no baseline carry-over, no
 # suppression).
 lint:
-	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py
+	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py
 
 # Type check (ty, maintainer directive 2026-10-09): zero-diagnostics baseline
 # verified empirically at research time. [tool.ty] in pyproject.toml carries
