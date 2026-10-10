@@ -99,17 +99,9 @@ class DNALLMMark {
   }
 
   filterAndSortModels() {
-    let models = [...this.state.models];
-
-    // Filter by count
-    if (this.state.currentFilter === 'top-20') {
-      models = models.slice(0, 20);
-    } else if (this.state.currentFilter === 'top-10') {
-      models = models.slice(0, 10);
-    }
-
     // Sort by the current sort field, honoring direction (AUD-11):
     // rank_score descending stays the default until a header is clicked.
+    const models = [...this.state.models];
     const sortField = this.state.currentSort;
     const ascending = this.state.sortAscending;
     models.sort((a, b) => {
@@ -127,11 +119,21 @@ class DNALLMMark {
       return ascending ? aNum - bNum : bNum - aNum;
     });
 
-    models.forEach((model, index) => {
+    // Top-N filters slice AFTER the sort (CR-01): models_comparison*.json is
+    // written with sort_keys=True, so state.models arrives alphabetically —
+    // slicing first displayed an alphabetical subset, not the ranked top N.
+    let filtered = models;
+    if (this.state.currentFilter === 'top-20') {
+      filtered = models.slice(0, 20);
+    } else if (this.state.currentFilter === 'top-10') {
+      filtered = models.slice(0, 10);
+    }
+
+    filtered.forEach((model, index) => {
       model.displayRank = index + 1;
     });
 
-    this.state.filteredModels = models;
+    this.state.filteredModels = filtered;
   }
 
   /**
