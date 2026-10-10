@@ -31,9 +31,15 @@ Output files
 All outputs are written to ``dnallm-mark/data/``:
 
 - ``models_comparison.json``           — all tasks, all models.
-- ``models_comparison_animal.json``     — only tasks whose dataset species is "animal".
-- ``models_comparison_plant.json``      — only tasks whose dataset species is "plant".
-- ``models_comparison_microbe.json``   — only tasks whose dataset species is "microbe".
+- ``models_comparison_animal.json``     — only tasks in the Animals arena.
+- ``models_comparison_plant.json``      — only tasks in the Plants arena.
+- ``models_comparison_microbe.json``   — only tasks in the Microbe arena.
+
+Arena grouping (FIX-02) is driven by the human-verified ``Category`` column of
+``pipeline/datasets_info.json`` (the maintainer-confirmed 50-row review in
+``.planning/phases/04-correctness-methodology-core/04-CATEGORY-REVIEW.md``),
+never by the result JSON's ``dataset.species`` producer string;
+"Multiple"-origin datasets classify into their majority arena.
 
 Each file contains a dict keyed by model alias, sorted by ``rank_score`` descending::
 
@@ -71,10 +77,52 @@ See also:
       by the finetuning results page.
 """
 
-import os
 import json
+import os
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
+
+# ---------------------------------------------------------------------------
+# Arena grouping source (FIX-02): every dataset's arena comes from the
+# human-verified ``Category`` column of ``pipeline/datasets_info.json`` —
+# never from the result JSON's ``dataset.species`` producer string.
+# ``REGISTRY_PATH`` is resolved relative to this script file's location (the
+# script runs with ``cwd = dnallm-mark/data/`` via ``make data``) and is a
+# plain module attribute so tests can monkeypatch a synthetic registry onto
+# it.
+# ---------------------------------------------------------------------------
+REPO_ROOT = Path(__file__).resolve().parents[1]
+REGISTRY_PATH = REPO_ROOT / "pipeline" / "datasets_info.json"
+
+# "Multiple"-origin datasets (cross-species composition, e.g. iDNA_ABF
+# 5mC/6mA) classify into their majority-species arena (CONTEXT species-Q4).
+# Confirmed as ``Animals`` at the maintainer review gate
+# (04-CATEGORY-REVIEW.md); confirmed values produce zero net grouping change.
+MAJORITY_ARENA = {"Multiple": "Animals"}
+
+
+def load_arena_map():
+    """Load ``{Dataset_name: arena}`` from the unified dataset registry.
+
+    The arena is each registry entry's ``Category`` value with
+    "Multiple"-origin rows resolved to their majority arena via
+    ``MAJORITY_ARENA``. Keys are the ``Source__task``-form dataset names —
+    the same form the result-JSON ``performance`` dict uses — so the
+    grouping join is a plain dict lookup: a dataset with no registry row
+    raises ``KeyError`` (hard abort), never a silent fallback to the result
+    file's own ``species`` value.
+
+    Returns:
+        dict[str, str]: dataset/task name -> arena (Animals/Plants/Microbe).
+    """
+    with REGISTRY_PATH.open("r", encoding="utf-8") as fh:
+        registry = json.load(fh)
+    return {
+        name: MAJORITY_ARENA.get(entry["Category"], entry["Category"])
+        for name, entry in registry.items()
+    }
 
 
 def get_float(val, default=0.0):
@@ -305,6 +353,11 @@ def main():
     }
 
     # -------------------- Read per-model JSON files ------------------
+    # Arena grouping map (FIX-02): {dataset_name: arena} from the registry's
+    # maintainer-confirmed Category column, Multiple resolved to majority
+    # arena. Loaded once — the dataset loop below joins via plain lookup.
+    arena_map = load_arena_map()
+
     print("Reading model data and extracting metrics...")
     for filename in sorted(os.listdir(input_dir)):
         if not filename.endswith('.json'):
@@ -332,11 +385,13 @@ def main():
         perf_data = model_data.get("performance", {})
         for dataset_name, ds_content in perf_data.items():
             ds_meta = ds_content.get("dataset", {})
-            species = str(ds_meta.get("species", "Unknown")).strip()
 
-            # Record the species category of this dataset (Animal / Plant / Microbe)
-            if species:
-                dataset_species_map[dataset_name] = species
+            # Record the dataset's arena (Animal / Plant / Microbe). FIX-02:
+            # the arena comes from the registry Category join (see
+            # load_arena_map) — a plain dict lookup, so a dataset with no
+            # registry row aborts the run (KeyError). The result JSON's
+            # dataset.species producer string is never read for grouping.
+            dataset_species_map[dataset_name] = arena_map[dataset_name]
 
             # Determine the primary metric declared by this dataset (e.g. "f1",
             # "auroc", "pearson_r").  Fall back to "accuracy" if unspecified.

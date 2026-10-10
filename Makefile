@@ -11,8 +11,9 @@
 #                   node:test JS suite over tests/js/ (Python + JS lanes)
 #   make test-fast  pytest excluding @slow (the real-tree determinism run);
 #                   the JS suite is fast and runs in the full test lane
-#   make lint       ruff over tests/ + the Phase-3-authored/edited files
-#                   (make_dev_splits.py, run_finetune.py, run_sweep.py)
+#   make lint       ruff over tests/ + the Phase-authored/edited files
+#                   (make_dev_splits.py, summarize_comparison.py,
+#                   run_finetune.py, run_sweep.py)
 #   make typecheck  ty type check over script/, baseline/, tests/, scripts/,
 #                   and pipeline/ (GPU-side imports replaced with Any — they
 #                   are never installed CPU-side, D-05)
@@ -56,16 +57,17 @@ test-fast:
 	$(UV) run --group dev pytest -m "not slow"
 
 # Lint scope (Phase 3 decision, D-08): tests/ plus the explicit list of
-# Phase-3-authored/edited files whose findings are FIXED — script/make_dev_splits.py
+# Phase-authored/edited files whose findings are FIXED — script/make_dev_splits.py
 # (03-02), pipeline/run_finetune.py (D-08: all 16 arriving findings resolved,
 # 13 genuinely + 3 justified per-line noqa at the designed blind-except
-# isolation sites), pipeline/run_sweep.py (03-04). The ~21 pre-existing
+# isolation sites), pipeline/run_sweep.py (03-04), script/summarize_comparison.py
+# (04-01: FIX-02 Category grouping + WR-03 isfinite). The ~21 pre-existing
 # findings in the REMAINING script/, scripts/, baseline/ production files
 # stay deferred to their Phase 4/5 routing, so those paths stay OUT of
 # scope deliberately. No [tool.ruff] config section exists (D-08:
 # no baseline carry-over, no suppression).
 lint:
-	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py pipeline/run_finetune.py pipeline/run_sweep.py
+	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py pipeline/run_finetune.py pipeline/run_sweep.py
 
 # Type check (ty, maintainer directive 2026-10-09): zero-diagnostics baseline
 # verified empirically at research time. [tool.ty] in pyproject.toml carries

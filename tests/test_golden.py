@@ -50,6 +50,15 @@ SYNTHETIC_DIR = REPO_ROOT / "tests" / "fixtures" / "synthetic_models"
 GOLDEN_DIR = REPO_ROOT / "tests" / "fixtures" / "golden"
 GENERATOR = REPO_ROOT / "scripts" / "generate-tasks-index.js"
 
+# Synthetic registry slice (FIX-02): summarize_comparison groups datasets by
+# the datasets_info.json Category join with a hard fail on unregistered
+# names. The FakeDS dataset names do not exist in the real registry (and
+# MUST hard-fail against it), so the synthetic chain runs against this slice
+# whose Category values equal the per-dataset species values already carried
+# in the synthetic model fixtures — keeping the goldens byte-identical under
+# the grouping-source switch (semantics-preserving on the synthetic tree).
+SYNTHETIC_REGISTRY = REPO_ROOT / "tests" / "fixtures" / "synthetic_datasets_info.json"
+
 # One comparison file per synthetic species group + the all-tasks file — the
 # synthetic tree yields exactly one dataset per species (D-09 engineering).
 COMPARISON_FILES = (
@@ -88,6 +97,10 @@ def _run_synthetic_chain(tmp_path, monkeypatch):
     (js_data / "task_performance").mkdir(parents=True)
 
     monkeypatch.chdir(tmp_path)
+    # FIX-02: the grouping join reads summarize_comparison.REGISTRY_PATH —
+    # inject the synthetic slice so the FakeDS names resolve (against the
+    # real registry they would hard-fail by design).
+    monkeypatch.setattr(summarize_comparison, "REGISTRY_PATH", SYNTHETIC_REGISTRY)
     get_task_performance.main()
     summarize_comparison.main()
 

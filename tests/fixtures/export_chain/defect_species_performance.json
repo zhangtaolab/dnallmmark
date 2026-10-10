@@ -63,7 +63,7 @@
     },
     "plant-genomic-benchmark__poly_a.arabidopsis_thaliana": {
       "dataset": {
-        "species": "athaliana",
+        "species": "Plants",
         "type": "binary",
         "labels": 2,
         "train": 170835,

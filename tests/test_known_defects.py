@@ -71,6 +71,8 @@ DEFECT_FIXTURE = (
     REPO_ROOT / "tests" / "fixtures" / "export_chain"
     / "defect_species_performance.json"
 )
+DATA_DIR = REPO_ROOT / "dnallm-mark" / "data"
+MODEL_PERFORMANCE_DIR = DATA_DIR / "model_performance"
 # The legal species value set: the verbatim Category field of the unified
 # datasets_info.json (Animals 20 / Plants 15 / Microbe 13 / Multiple 2).
 VALID_SPECIES = frozenset({"Animals", "Plants", "Microbe", "Multiple"})
@@ -131,8 +133,6 @@ def test_aud01_contract_fixture_has_expected_shape():
         )
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="AUD-01-P0 species-as-dataset — Phase 4 fix")
 def test_aud01_species_matches_dataset_arena_category():
     """Export-chain contract (D-03 pivot): every dataset entry's
     ``species`` must equal the dataset's arena Category from the unified
@@ -162,6 +162,85 @@ def test_aud01_species_matches_dataset_arena_category():
             f"Category is {expected!r} — species must carry the arena "
             "category from datasets_info, never the model organism"
         )
+
+
+def _real_tree_arena_groups():
+    """Derive the real-tree arena groups exactly as the FIXED grouping join
+    in ``summarize_comparison`` does: registry ``Category`` (via
+    :func:`_load_category_map`) over the dataset names present in the
+    committed ``model_performance`` files, with Multiple resolved to the
+    maintainer-confirmed majority arena (production ``MAJORITY_ARENA`` —
+    one source of truth).
+
+    Returns:
+        dict[str, list[str]]: arena (Animals/Plants/Microbe) -> member names.
+    """
+    category_map = _load_category_map()
+    present = set()
+    for path in sorted(MODEL_PERFORMANCE_DIR.glob("*_performance.json")):
+        present.update(
+            json.loads(path.read_text(encoding="utf-8"))["performance"]
+        )
+    groups = {}
+    for name in present:
+        category = category_map[name]
+        arena = summarize_comparison.MAJORITY_ARENA.get(category, category)
+        groups.setdefault(arena, []).append(name)
+    return groups
+
+
+def test_real_tree_arena_membership():
+    """Real-data guard for the FIX-02 grouping switch (04-01): the committed
+    animal/microbe comparison files' dataset membership must match the
+    Category-derived grouping — ``GUE__EPI_GM12878`` in the Animals arena
+    and ``GUE__fungi_species_20`` in Microbe (the maintainer-confirmed
+    swap), with arena sizes 22/13 corroborated by the per-model ``samples``
+    ceiling inside the committed files themselves.
+    """
+    groups = _real_tree_arena_groups()
+    animal, microbe = set(groups["Animals"]), set(groups["Microbe"])
+
+    assert "GUE__EPI_GM12878" in animal, "EPI_GM12878 must group as Animals"
+    assert "GUE__fungi_species_20" not in animal
+    assert "GUE__fungi_species_20" in microbe, (
+        "fungi_species_20 must group as Microbe"
+    )
+    assert "GUE__EPI_GM12878" not in microbe
+    assert len(animal) == 22 and len(microbe) == 13, (
+        f"arena sizes drifted: animal={len(animal)} microbe={len(microbe)}"
+    )
+
+    # The committed files corroborate the join-derived sizes: the per-model
+    # ``samples`` ceiling equals the arena's dataset count.
+    for fname, size in (
+        ("models_comparison_animal.json", len(animal)),
+        ("models_comparison_microbe.json", len(microbe)),
+    ):
+        comparison = json.loads((DATA_DIR / fname).read_text(encoding="utf-8"))
+        max_samples = max(m["performance"]["samples"] for m in comparison.values())
+        assert max_samples == size, (
+            f"{fname}: max per-model samples {max_samples} contradicts the "
+            f"join-derived {fname.removesuffix('.json')} dataset count {size}"
+        )
+
+
+def test_unregistered_dataset_aborts_grouping(tmp_path, monkeypatch):
+    """FIX-02 hard-fail join: a result file referencing a dataset with no
+    registry row aborts the run (``KeyError``) — a silent fallback to the
+    file's ``species`` value would re-create the defect class being fixed.
+    """
+    staged = tmp_path / "model_performance"
+    staged.mkdir()
+    doc = _load_fixture()
+    doc["performance"]["No__registry_row"] = dict(
+        next(iter(doc["performance"].values()))
+    )
+    (staged / "unregistered_performance.json").write_text(
+        json.dumps(doc), encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(KeyError):
+        summarize_comparison.main()
 
 
 @pytest.mark.xfail(strict=True,
