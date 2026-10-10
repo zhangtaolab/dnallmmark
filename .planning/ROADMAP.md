@@ -135,8 +135,20 @@ Plans:
   3. N-frequency audit + unified eval subsets (REV-07/F7): 47 tasks × train/dev/test N/non-ACGT tables published; eval-subset ID lists accepted by the pipeline; all models evaluate identical sample counts per task
   4. E2' three-seed full re-run executes via the sweep runner only after F1/F2 gates (critical path note); DATA-01/02/03/06 land: recomputed leaderboard, before/after artifact, CHANGELOG with dates, data_version stamped, both data tags (data-v1, data-v2) exist, footer shows the generation date/version
 
-**Plans**: TBD
+**Plans**: 4/4 plans planned
 **UI hint**: yes
+Plans:
+**Wave 1**
+- [ ] 05-01-PLAN.md — CI golden harness: canned replay fixture + pinned `ci` marker lane + SHA-pinned workflow (lint/typecheck/test matrix/JS static checks/drift, 14-min budget) + eslint/html-validate configs + README badge, package-legitimacy blocking checkpoint (REV-06, TEST-04, TEST-05, TEST-07)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 05-02-PLAN.md — F6 aggregation upgrade as ONE migration commit: vendored-stats tie rule + weighted dual view + permutation tests (10k/BH, 861-pair family) + schema extensions + regenerated comparisons + re-chained goldens + migration inventory + CHANGELOG/manifest (data_version 1.1.0) + weighted-default frontend view toggle + stamped footer (REV-04, DATA-01, DATA-02, DATA-06)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 05-03-PLAN.md — N-frequency audit: 50-task census (43 present / 7 GUE missing-with-warning) published as DATA.md appendix + CSV/JSON artifacts + unified eval-subset ID lists + run_finetune --subset_file fail-fast test-split seam (REV-07)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 05-04-PLAN.md — E2' readiness (code only): D-16 bridge (export_runs emits BOTH views; full-chain CI replay), D-18 alias normalization (plant-dnamamba2-BPE → PlantDNAMamba2-BPE, inventoried), sweep priority tiers + --from-failures re-run, never-executed env_smoke gate, tier-2 maintainer curation checkpoint, data-v2 gate tooling rehearsal (REV-09, DATA-01, DATA-03)
 
 ### Phase 6: Revision Packaging & Extended Lanes
 
