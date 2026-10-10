@@ -42,6 +42,9 @@ Every confirmed correctness bug is fixed surgically with test evidence — speci
 - **D-13:** WR-02 (comparator bool/int) and WR-03 (non-finite get_float) — the two Phase-2 xfail(strict) locks whose lock-text names "Phase 4 fix" — are FIXED and unmarked THIS phase, same-commit fix+unmark per the species-lock pattern (D-03).
 - **D-14:** AUD-11 (sort-state loss) and AUD-12 (listener loss) are IN scope with flexibility: fix if Playwright can assert the behavior cheaply; where assertion cost is disproportionate, record an explicit scope-down with rationale instead of silent omission.
 
+### Planning-time decisions (2026-10-10, maintainer chose Option C on dependency unification)
+- **D-15:** Dependency unification — `evaluate` (HuggingFace) joins the data group as the METRICS-layer dependency (standard metric implementations for cross-validation of the suite-computed metrics on golden cases); `scipy>=1.15.2` joins the same group as the STATISTICS-layer dependency (vendored aggregate_seeds' t-interval; Phase-5 permutation tests). Both land in the same dependency commit; each serves its own layer, neither replaces the other. The suite-side metric implementation stays authoritative for reported numbers; evaluate is the verification layer (methods section: "metrics computed by the dnallm registry, cross-validated against HuggingFace evaluate").
+
 ### Claude's Discretion
 None — all sixteen grey-area answers were maintainer-accepted recommendations.
 
