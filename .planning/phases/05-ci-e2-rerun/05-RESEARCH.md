@@ -411,7 +411,9 @@ Repo slug `zhangtaolab/dnallmmark` [VERIFIED: `$id` fields in schemas/*.json, e.
 | A6 | Priority ordering lands as a `--priority-file` (maintainer-curated JSON tiers) rather than CLI flags | Pattern 6 | If CLI-form is preferred, tier 2's "arena representatives" list becomes a long flag value; mechanism equivalent |
 | A7 | `plant-dnamamba2-BPE` (committed results, absent from the 62-key registry) drops out of the E2'-chain leaderboard unless registered | Runtime State Inventory | If it must survive, it needs a registry entry (a 62→63 invariant change requiring maintainer sign-off, analogous to the space≡SPACE decision) |
 
-## Open Questions
+## Open Questions (RESOLVED — all 7 dispositioned at planning time)
+
+> Resolution map (2026-10-10, checker-verified): OQ1→D-16 (bridge = Option C dual-view emitter) · OQ2→D-17 (dnallm-mark/data/manifest.json carrier; footer reads it) · OQ3→D-17 (CHANGELOG+bump only; tag reserved for data-v2) · OQ4→D-17 (tier-1 = E2E pair; tier-2 = maintainer checkpoint:human-verify at execution) · OQ5→D-17 (aggregate-view pairwise family, BH-disclosed) · OQ6→D-17 (thin orchestrator over compare.py --summary-json) · OQ7→D-16 (replay end-to-end through both views).
 
 1. **The E2' data-chain bridge (BLOCKING design decision)**
    - What we know: `export_runs.py` emits task-centric `task_performance/` + `seed_stats/` from run records; `summarize_comparison.py` (the only `models_comparison*` producer) reads the model-centric `model_performance/{alias}_performance.json` directory [VERIFIED: summarize_comparison.py:333 `input_dir = 'model_performance'`]; nothing regenerates per-model files from run records; the submit page validates uploads as per-model `{info, performance}` files and the finetuning page loads `DataAPI.loadAllModelPerformance()` [VERIFIED: js/finetuning.js:51].
