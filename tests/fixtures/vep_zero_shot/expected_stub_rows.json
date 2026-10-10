@@ -1,0 +1,145 @@
+{
+    "rows": [
+        {
+            "auprc": 1.0,
+            "auroc": 1.0,
+            "convention": {
+                "clnrevstat_counts": {
+                    "criteria_provided": 10,
+                    "no_assertion_criteria_provided": 1
+                },
+                "cohort": "ClinVar-style labels (CLNSIG/CLNREVSTAT/CLNVC) [stub double]",
+                "excluded": "non-SNV CLNVC, CLNSIG outside the label whitelist (VUS/conflicting/novel), CLNREVSTAT below the star floor",
+                "exclusion_counts": {
+                    "below_star_floor": 1,
+                    "non_snv_clnvc": 1,
+                    "unlabeled_clnsig": 1
+                },
+                "labels": "['Likely_pathogenic', 'Pathogenic']=1 vs ['Benign', 'Likely_benign']=0",
+                "rows_read": 13,
+                "score_direction": "delta = logP(alt) - logP(ref); AUROC/AUPRC computed over the deleteriousness score -delta (higher = more pathogenic) [stub double]",
+                "star_floor": 1,
+                "variant_type": "single_nucleotide_variant"
+            },
+            "evaluated": 12,
+            "excluded_reason": null,
+            "model": "stub-bert-6mer",
+            "paradigm": "mlm",
+            "rc_control": null,
+            "sanity": {
+                "nonsense_median": -2.0,
+                "pass": true,
+                "synonymous_median": -0.2
+            },
+            "skip_fraction": 0.07692307692307693,
+            "skipped": 1,
+            "tokenizer_type": "6mer"
+        },
+        {
+            "auprc": null,
+            "auroc": null,
+            "convention": null,
+            "evaluated": null,
+            "excluded_reason": "unsupported architecture class: DL (deep-learning models with dedicated loaders; outside the zero-shot VEP lane scope)",
+            "model": "stub-dl-cnn",
+            "paradigm": null,
+            "rc_control": null,
+            "sanity": null,
+            "skip_fraction": null,
+            "skipped": null,
+            "tokenizer_type": "one-hot"
+        },
+        {
+            "auprc": null,
+            "auroc": null,
+            "convention": null,
+            "evaluated": null,
+            "excluded_reason": "missing registry type: models_info 'type' column is empty",
+            "model": "stub-empty-row",
+            "paradigm": null,
+            "rc_control": null,
+            "sanity": null,
+            "skip_fraction": null,
+            "skipped": null,
+            "tokenizer_type": "singlebase"
+        },
+        {
+            "auprc": 1.0,
+            "auroc": 1.0,
+            "convention": {
+                "clnrevstat_counts": {
+                    "criteria_provided": 10,
+                    "no_assertion_criteria_provided": 1
+                },
+                "cohort": "ClinVar-style labels (CLNSIG/CLNREVSTAT/CLNVC) [stub double]",
+                "excluded": "non-SNV CLNVC, CLNSIG outside the label whitelist (VUS/conflicting/novel), CLNREVSTAT below the star floor",
+                "exclusion_counts": {
+                    "below_star_floor": 1,
+                    "non_snv_clnvc": 1,
+                    "unlabeled_clnsig": 1
+                },
+                "labels": "['Likely_pathogenic', 'Pathogenic']=1 vs ['Benign', 'Likely_benign']=0",
+                "rows_read": 13,
+                "score_direction": "delta = logP(alt) - logP(ref); AUROC/AUPRC computed over the deleteriousness score -delta (higher = more pathogenic) [stub double]",
+                "star_floor": 1,
+                "variant_type": "single_nucleotide_variant"
+            },
+            "evaluated": 12,
+            "excluded_reason": null,
+            "model": "stub-gpt-bpe",
+            "paradigm": "clm",
+            "rc_control": {
+                "asymmetry": 1.0,
+                "auroc_forward": 1.0,
+                "auroc_rc": 0.0
+            },
+            "sanity": {
+                "nonsense_median": -2.0,
+                "pass": true,
+                "synonymous_median": -0.2
+            },
+            "skip_fraction": 0.07692307692307693,
+            "skipped": 1,
+            "tokenizer_type": "BPE"
+        },
+        {
+            "auprc": 1.0,
+            "auroc": 1.0,
+            "convention": {
+                "clnrevstat_counts": {
+                    "criteria_provided": 10,
+                    "no_assertion_criteria_provided": 1
+                },
+                "cohort": "ClinVar-style labels (CLNSIG/CLNREVSTAT/CLNVC) [stub double]",
+                "excluded": "non-SNV CLNVC, CLNSIG outside the label whitelist (VUS/conflicting/novel), CLNREVSTAT below the star floor",
+                "exclusion_counts": {
+                    "below_star_floor": 1,
+                    "non_snv_clnvc": 1,
+                    "unlabeled_clnsig": 1
+                },
+                "labels": "['Likely_pathogenic', 'Pathogenic']=1 vs ['Benign', 'Likely_benign']=0",
+                "rows_read": 13,
+                "score_direction": "delta = logP(alt) - logP(ref); AUROC/AUPRC computed over the deleteriousness score -delta (higher = more pathogenic) [stub double]",
+                "star_floor": 1,
+                "variant_type": "single_nucleotide_variant"
+            },
+            "evaluated": 12,
+            "excluded_reason": null,
+            "model": "stub-gpt-spelled",
+            "paradigm": "clm",
+            "rc_control": {
+                "asymmetry": 1.0,
+                "auroc_forward": 1.0,
+                "auroc_rc": 0.0
+            },
+            "sanity": {
+                "nonsense_median": -2.0,
+                "pass": true,
+                "synonymous_median": -0.2
+            },
+            "skip_fraction": 0.07692307692307693,
+            "skipped": 1,
+            "tokenizer_type": "6mer"
+        }
+    ]
+}

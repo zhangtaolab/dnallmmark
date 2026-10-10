@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/zhangtaolab/dnallmmark/main/schemas/vep_zero_shot.json",
+  "$comment": "Fully strict contract for the vep_zero_shot artifact — the zero-shot variant-effect registry batch output (SC-6/REV-08, produced offline by script/zero_shot_vep.py over the DNALLM suite v1.2.1 kernels; NEVER at page render). Disclosure: rows carry one entry per models_info registry model — 62 always — with DL-architecture and empty-type rows as excluded-with-reason rows, never drops. Scoring conventions are suite-owned (dnallm/inference/vep.py @ v1.2.1) and only disclosed here: deltas are alt-minus-ref so DELETERIOUS variants are NEGATIVE; AUROC/AUPRC are computed over the deleteriousness score -delta (higher = more pathogenic). Cohort rules (the D-17 ClinVar convention): SNVs only, strict Pathogenic/Likely_pathogenic vs Benign/Likely_benign CLNSIG whitelist (VUS/conflicting/novel excluded, never guessed), >=1 review star. Sanity semantics: synonymous_median / nonsense_median are median paradigm deltas over the cohort's codon-translation classes — the SYNTHETIC-COHORT convention is frame-0, +strand codon translation from contig offset 0 (real-cohort consequence classes require transcript annotation and stay post-E2' work); pass is true iff nonsense_median < synonymous_median, and is null when either median is missing (never fabricated). rc_control is reported for causal (CLM) models ONLY — forward AUROC, reverse-complement AUROC, and their absolute asymmetry; null on masked (MLM) rows and on rows that never scored. An evaluation failure (model load, the suite's paradigm-architecture guard, cohort contract violation) carries paradigm plus excluded_reason='evaluation failed: ...' with null metric fields — a loud row-level failure, never a silent re-paradigm. Publication gate (resolved research OQ 1): this schema ships with committed synthetic fixtures only; the dnallm-mark/data artifact and any site link wait for real post-E2' runs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rows"],
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/row"
+      }
+    }
+  },
+  "$defs": {
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "paradigm",
+        "tokenizer_type",
+        "evaluated",
+        "skipped",
+        "skip_fraction",
+        "auroc",
+        "auprc",
+        "convention",
+        "rc_control",
+        "sanity",
+        "excluded_reason"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "paradigm": {
+          "enum": ["mlm", "clm", null],
+          "description": "Registry type-column paradigm; null on DL/EMPTY exclusion rows."
+        },
+        "tokenizer_type": {
+          "type": ["string", "null"],
+          "description": "Normalized registry Tokenizer value (the 6-mer spelling normalizes to 6mer at read time; the registry file is never rewritten)."
+        },
+        "evaluated": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "skipped": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "skip_fraction": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "auroc": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Null when nothing was scorable or only one label class is present (no fabricated AUROC)."
+        },
+        "auprc": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "convention": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/suiteConvention"
+            }
+          ]
+        },
+        "rc_control": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/rcControl"
+            }
+          ]
+        },
+        "sanity": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sanity"
+            }
+          ]
+        },
+        "excluded_reason": {
+          "type": ["string", "null"],
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "excluded_reason": {
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "evaluated": {
+                "type": "null"
+              },
+              "skipped": {
+                "type": "null"
+              },
+              "skip_fraction": {
+                "type": "null"
+              },
+              "auroc": {
+                "type": "null"
+              },
+              "auprc": {
+                "type": "null"
+              },
+              "convention": {
+                "type": "null"
+              },
+              "sanity": {
+                "type": "null"
+              },
+              "rc_control": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "paradigm": {
+                "const": "mlm"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "rc_control": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "suiteConvention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cohort",
+        "variant_type",
+        "labels",
+        "star_floor",
+        "score_direction",
+        "excluded",
+        "exclusion_counts",
+        "clnrevstat_counts",
+        "rows_read"
+      ],
+      "properties": {
+        "cohort": {
+          "type": "string"
+        },
+        "variant_type": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "string"
+        },
+        "star_floor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "score_direction": {
+          "type": "string"
+        },
+        "excluded": {
+          "type": "string"
+        },
+        "exclusion_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "clnrevstat_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "rows_read": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "rcControl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["auroc_forward", "auroc_rc", "asymmetry"],
+      "properties": {
+        "auroc_forward": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "auroc_rc": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "asymmetry": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "|auroc_forward - auroc_rc|; null when either side is missing."
+        }
+      }
+    },
+    "sanity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["synonymous_median", "nonsense_median", "pass"],
+      "properties": {
+        "synonymous_median": {
+          "type": ["number", "null"]
+        },
+        "nonsense_median": {
+          "type": ["number", "null"]
+        },
+        "pass": {
+          "type": ["boolean", "null"],
+          "description": "True iff nonsense_median < synonymous_median (alt-minus-ref convention); null when either median is missing."
+        }
+      }
+    }
+  }
+}
