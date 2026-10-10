@@ -37,6 +37,11 @@ Every confirmed correctness bug is fixed surgically with test evidence — speci
 - **Q3:** IN-01 comparator label fix lands inside the SC-1 aggregation-diff inventory tooling (one tool surface, two items).
 - **Q4:** README exporter sentence + IN-08 (convert_registry.py joins make lint scope) bundled as one hygiene commit, ruff-zero self-evidenced.
 
+### Planning-time decisions (2026-10-10, maintainer answers during Phase 4 research review)
+- **D-12:** The exporter's parametersBlock (9-key training-params block required by the task_performance schema) is sourced by JOINING the config YAML (finetune_config base values + actually-effective batch/grad_accum overrides) at export time — the schema stays unchanged; run_record.json's contract is NOT extended (Phase 3's accepted deliverable untouched).
+- **D-13:** WR-02 (comparator bool/int) and WR-03 (non-finite get_float) — the two Phase-2 xfail(strict) locks whose lock-text names "Phase 4 fix" — are FIXED and unmarked THIS phase, same-commit fix+unmark per the species-lock pattern (D-03).
+- **D-14:** AUD-11 (sort-state loss) and AUD-12 (listener loss) are IN scope with flexibility: fix if Playwright can assert the behavior cheaply; where assertion cost is disproportionate, record an explicit scope-down with rationale instead of silent omission.
+
 ### Claude's Discretion
 None — all sixteen grey-area answers were maintainer-accepted recommendations.
 
