@@ -128,7 +128,11 @@ class SubmitPage {
     const firstDatasetName = Object.keys(data.performance)[0];
 
     // FIX-04: every user-entered string (and file-sourced dataset names)
-    // rendered on this page is escaped.
+    // rendered on this page is escaped. WR-01: the preview table's
+    // file-sourced values (species/type/labels, sizes, metrics) are escaped
+    // too — the uploaded JSON is the page's one fully untrusted input.
+    // String() coerces before escaping (escapeHTML passes non-strings
+    // through unchanged); the numeric || 0 / 'N/A' defaults stay outside.
     previewContent.innerHTML = `
       <div class="preview-summary">
         <h4>Submission Summary</h4>
@@ -143,13 +147,13 @@ class SubmitPage {
       <h4>Sample Dataset: ${DataAPI.escapeHTML(firstDatasetName)}</h4>
       <table class="preview-table">
         <tr><th>Field</th><th>Value</th></tr>
-        <tr><th>Species</th><td>${firstDataset.dataset?.species || 'N/A'}</td></tr>
-        <tr><th>Type</th><td>${firstDataset.dataset?.type || 'N/A'}</td></tr>
-        <tr><th>Labels</th><td>${firstDataset.dataset?.labels || 'N/A'}</td></tr>
-        <tr><th>Train/Test/Dev</th><td>${firstDataset.dataset?.train || 0} / ${firstDataset.dataset?.test || 0} / ${firstDataset.dataset?.dev || 0}</td></tr>
-        <tr><th>Accuracy</th><td>${firstDataset.performance?.accuracy || 'N/A'}</td></tr>
-        <tr><th>F1</th><td>${firstDataset.performance?.f1 || 'N/A'}</td></tr>
-        <tr><th>AUROC</th><td>${firstDataset.performance?.auroc || 'N/A'}</td></tr>
+        <tr><th>Species</th><td>${DataAPI.escapeHTML(String(firstDataset.dataset?.species || 'N/A'))}</td></tr>
+        <tr><th>Type</th><td>${DataAPI.escapeHTML(String(firstDataset.dataset?.type || 'N/A'))}</td></tr>
+        <tr><th>Labels</th><td>${DataAPI.escapeHTML(String(firstDataset.dataset?.labels || 'N/A'))}</td></tr>
+        <tr><th>Train/Test/Dev</th><td>${DataAPI.escapeHTML(String(firstDataset.dataset?.train || 0))} / ${DataAPI.escapeHTML(String(firstDataset.dataset?.test || 0))} / ${DataAPI.escapeHTML(String(firstDataset.dataset?.dev || 0))}</td></tr>
+        <tr><th>Accuracy</th><td>${DataAPI.escapeHTML(String(firstDataset.performance?.accuracy || 'N/A'))}</td></tr>
+        <tr><th>F1</th><td>${DataAPI.escapeHTML(String(firstDataset.performance?.f1 || 'N/A'))}</td></tr>
+        <tr><th>AUROC</th><td>${DataAPI.escapeHTML(String(firstDataset.performance?.auroc || 'N/A'))}</td></tr>
       </table>
     `;
 
