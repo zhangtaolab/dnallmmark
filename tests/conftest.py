@@ -7,10 +7,11 @@
 #      and reproducible — pins must land before any test-module numpy
 #      import, so they live in top-level code, not a fixture.
 #   2. Import roots: `script/`, `baseline/`, and `pipeline/` are not packages;
-#      inserting them on sys.path makes `summarize_comparison`,
-#      `get_task_performance`, `compare`, `run_sweep`, `export_runs`, and
-#      `freeze_snapshot` (04-02: vendored statistics + exporter core +
-#      snapshot primitive) importable from every test module.
+#      inserting them on sys.path makes `summarize_comparison`, `compare`,
+#      `run_sweep`, `export_runs`, and `freeze_snapshot` (04-02: vendored
+#      statistics + exporter core + snapshot primitive) importable from every
+#      test module. (get_task_performance is gone — deleted at 04-05 when the
+#      pivot's input side retired; export_runs owns the task-file shape.)
 # =====================================================================
 
 import os
@@ -38,6 +39,6 @@ for _var in (
 
 # ===== Import roots =====
 REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "script"))   # summarize_comparison, get_task_performance
+sys.path.insert(0, str(REPO_ROOT / "script"))   # summarize_comparison, export_runs, freeze_snapshot
 sys.path.insert(0, str(REPO_ROOT / "baseline")) # compare (walk) for reuse
 sys.path.insert(0, str(REPO_ROOT / "pipeline")) # run_sweep (stdlib-only sweep driver)

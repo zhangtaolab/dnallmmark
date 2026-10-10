@@ -5,8 +5,9 @@
 # (REL-04): everything below runs from the repo root with no activation
 # step. `uv run` auto-syncs .venv from uv.lock before invoking.
 #
-#   make data       regenerate the derived data chain (47 task_performance
-#                   + 4 models_comparison + tasks.json)
+#   make data       regenerate the derived data chain (4 models_comparison
+#                   + tasks.json; task_performance/ is committed static
+#                   data until E2' regenerates it via script/export_runs.py)
 #   make test       full local suite: pytest (slow lane included) plus the
 #                   node:test JS suite over tests/js/ (Python + JS lanes)
 #   make test-fast  pytest excluding @slow (the real-tree determinism run);
@@ -29,10 +30,12 @@ UV ?= uv
 DATA_DIR := dnallm-mark/data
 
 # Data chain — one `cd ... && ...` per line: each recipe line is its own
-# shell (Pitfall 8), and the Python scripts resolve inputs/outputs against
-# CWD. The JS generator is __dirname-relative and runs from repo root as-is.
+# shell (Pitfall 8), and summarize resolves inputs/outputs against CWD.
+# The JS generator is __dirname-relative and runs from repo root as-is.
+# The retired pivot step is gone (04-05, SC-2/OQ6): task_performance/ is
+# committed static data until E2' regenerates it via script/export_runs.py
+# — this target cannot and must not refresh it.
 data: check-node
-	cd $(DATA_DIR) && $(UV) run --group data python ../../script/get_task_performance.py
 	cd $(DATA_DIR) && $(UV) run --group data python ../../script/summarize_comparison.py
 	node scripts/generate-tasks-index.js
 

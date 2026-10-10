@@ -1,13 +1,24 @@
 """
 Golden-file tests over the synthetic fixture chain (D-09, TEST-03 synthetic half).
 
-Runs the full chain — ``get_task_performance.main()`` +
+Runs the re-scoped chain (04-05 pivot retirement) —
 ``summarize_comparison.main()`` under ``chdir`` into a tmp copy of
-``tests/fixtures/synthetic_models/``, plus the JS index generator via the
+``tests/fixtures/synthetic_models/`` (with the synthetic registry slice
+injected), plus the JS index generator over the COMMITTED
+``tests/fixtures/synthetic_task_performance/`` fixture tree via the
 copy-into-fixture-tree trick — and value-compares every regenerated file
 against the committed goldens in ``tests/fixtures/golden/`` using
 ``baseline/compare.py``'s ``walk()``: the canonical D-06 diff vocabulary,
 reused rather than re-implemented (Don't Hand-Roll rule).
+
+The synthetic_task_performance fixture IS the retired pivot's own final
+output: chain-produced once by ``script/get_task_performance.py``
+(deterministic by FIX-05) immediately before its deletion and committed as a
+fixture input. The goldens themselves are untouched by the retirement — they
+were chain-produced when the full chain (pivot included) created this suite,
+and the fixture bytes are identical to what the pivot produced, so the
+re-scoped chain regenerates the same values. Until E2' regenerates them via
+``script/export_runs.py``, committed task_performance data is static.
 
 Comparison is by VALUE, never by bytes: on the same machine zero diffs of ANY
 class are expected — including ``FLOAT_ULP`` — so the assertion is
@@ -21,7 +32,8 @@ regeneration ever disagrees beyond the vocabulary, the disagreement is
 investigated — goldens are never hand-edited to match chain output.
 
 See also:
-    - ``tests/test_aggregation.py`` / ``tests/test_pivot.py`` — unit scope.
+    - ``tests/test_aggregation.py`` — the aggregation pure functions.
+    - ``tests/test_export_runs.py`` — the pivot-shape owner (folded coverage).
     - ``tests/js/generate-tasks-index.test.js`` — the JS unit lane.
 """
 
@@ -30,7 +42,6 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import get_task_performance
 import pytest
 import summarize_comparison
 from compare import walk
@@ -47,6 +58,7 @@ pytestmark = pytest.mark.skipif(
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SYNTHETIC_DIR = REPO_ROOT / "tests" / "fixtures" / "synthetic_models"
+SYNTHETIC_TASKS_DIR = REPO_ROOT / "tests" / "fixtures" / "synthetic_task_performance"
 GOLDEN_DIR = REPO_ROOT / "tests" / "fixtures" / "golden"
 GENERATOR = REPO_ROOT / "scripts" / "generate-tasks-index.js"
 
@@ -71,7 +83,13 @@ TASKS_INDEX = "tasks.json"
 
 
 def _run_synthetic_chain(tmp_path, monkeypatch):
-    """Run the full synthetic chain inside ``tmp_path``.
+    """Run the re-scoped synthetic chain inside ``tmp_path``.
+
+    Inputs: the synthetic model_performance tree (copied) and the committed
+    synthetic_task_performance fixture (copied as the JS generator's task
+    tree — the retired pivot's final output is a fixture input now, not a
+    chain step). Steps: ``summarize_comparison.main()`` with the synthetic
+    registry slice injected, then the JS index generator via the copy trick.
 
     Args:
         tmp_path: pytest tmp dir (becomes the chain's CWD).
@@ -95,18 +113,17 @@ def _run_synthetic_chain(tmp_path, monkeypatch):
     inner.mkdir()
     js_data = tmp_path / "dnallm-mark" / "data"
     (js_data / "task_performance").mkdir(parents=True)
+    for task_file in sorted(SYNTHETIC_TASKS_DIR.glob("*.json")):
+        shutil.copy(task_file, js_data / "task_performance" / task_file.name)
 
     monkeypatch.chdir(tmp_path)
     # FIX-02: the grouping join reads summarize_comparison.REGISTRY_PATH —
     # inject the synthetic slice so the FakeDS names resolve (against the
     # real registry they would hard-fail by design).
     monkeypatch.setattr(summarize_comparison, "REGISTRY_PATH", SYNTHETIC_REGISTRY)
-    get_task_performance.main()
     summarize_comparison.main()
 
     shutil.copy(GENERATOR, inner / "gen.js")
-    for task_file in (tmp_path / "task_performance").glob("*.json"):
-        shutil.copy(task_file, js_data / "task_performance" / task_file.name)
     subprocess.run(["node", str(inner / "gen.js")], check=True, capture_output=True)
     return tmp_path, js_data
 
@@ -147,7 +164,8 @@ def test_synthetic_comparison_files_match_goldens(chain_result):
 
 def test_tasks_index_matches_golden(chain_result):
     """The JS-generated tasks.json matches its golden via the same vocabulary
-    (one golden-generation flow: produced in this test by the copy trick)."""
+    (one golden-generation flow: produced by the same copy trick over the
+    committed synthetic_task_performance fixture)."""
     _, js_data = chain_result
     regen = js_data / TASKS_INDEX
     assert regen.exists(), "JS generator did not produce tasks.json"

@@ -22,6 +22,13 @@ Covers, in order:
   join), 1-seed degenerate cells (sd/ci95 None, method "none").
 - Byte-stability: exporting the same fixture tree twice produces
   byte-identical outputs (sorted iteration, sort_keys, no live clock).
+- Pivot-shape ownership (04-05, folded from the retired tests/test_pivot.py
+  when script/get_task_performance.py was deleted): one file per dataset
+  named ``{dataset}_task_performance.json``, ``info`` mirroring the dataset
+  block, the 11/9/14 (model/parameters/performance) key shape, sanitized
+  filenames, and the missing-metric model still present — asserted over BOTH
+  the committed synthetic_task_performance fixture (the pivot's own final
+  output) and the exporter's own emission.
 - D-15: HuggingFace evaluate cross-validates the metric conventions on
   golden vectors (evaluate's standard implementations vs independently
   derived expected values, tolerance-asserted).
@@ -365,6 +372,110 @@ def test_end_to_end_emission_validates_against_unchanged_schema(tmp_path):
     assert stats["FakeModel-A"]["auroc"]["per_seed"] == {"42": 0.91, "43": 0.93, "44": 0.95}
     assert stats["FakeModel-B"]["TPR"]["stats"]["n_seeds"] == 3
     assert stats["FakeModel-B"]["auroc"]["stats"]["n_seeds"] == 3  # failed seed excluded
+
+
+# =====================================================================
+# Pivot-shape ownership (04-05 — folded from the retired tests/test_pivot.py)
+#
+# script/get_task_performance.py is deleted (SC-2/OQ6: its model_performance
+# input side no longer exists); the pivot semantics the old test pinned are
+# owned HERE, asserted over both the committed synthetic_task_performance
+# fixture (the pivot's own final deterministic output, produced one last
+# time before its deletion) and the exporter's own emission. The schema +
+# these tests are the reference now.
+# =====================================================================
+
+SYNTHETIC_MODELS_DIR = REPO_ROOT / "tests" / "fixtures" / "synthetic_models"
+SYNTHETIC_TASKS_DIR = REPO_ROOT / "tests" / "fixtures" / "synthetic_task_performance"
+SYNTHETIC_DATASETS = ("FakeDS__tie_task", "FakeDS__missing_task", "FakeDS__regress_task")
+SYNTHETIC_ALIASES = {"fake-alpha", "fake-beta", "fake-gamma"}
+
+
+def test_pivot_shape_committed_fixture_one_file_per_dataset():
+    """The committed synthetic pivot output carries exactly one
+    ``{dataset}_task_performance.json`` per synthetic dataset — the naming
+    contract the exporter owns going forward."""
+    produced = {p.name for p in SYNTHETIC_TASKS_DIR.glob("*.json")}
+    assert produced == {f"{ds}_task_performance.json" for ds in SYNTHETIC_DATASETS}
+
+
+def test_pivot_shape_committed_fixture_info_mirrors_dataset_block():
+    """Each committed fixture ``info`` block mirrors the input dataset block
+    verbatim (the pivot copied it; the exporter joins the registry's
+    datasetBlock) and every per-model block keeps the 11/9/14
+    (model/parameters/performance) key shape."""
+    alpha = json.loads(
+        (SYNTHETIC_MODELS_DIR / "fake-alpha_performance.json").read_text(encoding="utf-8")
+    )
+    for ds in SYNTHETIC_DATASETS:
+        doc = json.loads(
+            (SYNTHETIC_TASKS_DIR / f"{ds}_task_performance.json").read_text(encoding="utf-8")
+        )
+        assert doc["info"] == alpha["performance"][ds]["dataset"]
+        assert set(doc["performance"]) == SYNTHETIC_ALIASES
+        for block in doc["performance"].values():
+            assert len(block["model"]) == 11
+            assert len(block["parameters"]) == 9
+            assert len(block["performance"]) == 14
+
+
+def test_pivot_shape_missing_metric_model_still_present():
+    """The missing-metric model survives with its empty-string metric: the
+    model IS present in the task file and its f1 is still ``""`` — only the
+    ranking in summarize_comparison excludes missing metrics."""
+    doc = json.loads(
+        (SYNTHETIC_TASKS_DIR / "FakeDS__missing_task_task_performance.json")
+        .read_text(encoding="utf-8")
+    )
+    assert "fake-gamma" in doc["performance"]
+    assert doc["performance"]["fake-gamma"]["performance"]["f1"] == ""
+    # TEST-02 float policy: every float assertion goes through pytest.approx.
+    assert doc["performance"]["fake-alpha"]["performance"]["f1"] == pytest.approx(0.7)
+    assert doc["performance"]["fake-beta"]["performance"]["f1"] == pytest.approx(0.8)
+
+
+def test_pivot_shape_exporter_emission_owns_the_shape(tmp_path):
+    """The exporter's own emission carries the same pivot shape: one file
+    per dataset named ``{task}_task_performance.json``, an 8-key info block,
+    and the 11/9/14 (model/parameters/performance) key sets per model."""
+    out, _ = _export(tmp_path)
+    assert sorted(p.name for p in out.iterdir()) == [
+        "FakeDS__task_task_performance.json",
+    ]
+    doc = json.loads((out / "FakeDS__task_task_performance.json").read_text(encoding="utf-8"))
+    assert set(doc["info"]) == {
+        "dev", "labels", "length", "metric", "species", "test", "train", "type",
+    }
+    assert set(doc["performance"]) == {"FakeModel-A", "FakeModel-B"}
+    for block in doc["performance"].values():
+        assert len(block["model"]) == 11
+        assert len(block["parameters"]) == 9
+        assert len(block["performance"]) == 14
+
+
+def test_pivot_shape_exporter_sanitizes_task_filenames(tmp_path):
+    """Task names carrying ``\\\\`` are sanitized to ``_`` in emitted
+    filenames (a legal path component on POSIX, so it reaches the live
+    emission path). The ``/`` half of the retired pivot test's surface is
+    structurally unreachable through the exporter's F2 directory walk — a
+    path component can never contain ``/`` — and stays in the sanitizer as
+    defense-in-depth at the emission boundary."""
+    root, models_path, datasets_path, config_path = _build_fixture_tree(tmp_path)
+    datasets = json.loads(datasets_path.read_text(encoding="utf-8"))
+    raw_task = "Fake\\Src__task"
+    datasets[raw_task] = dict(datasets["FakeDS__task"], Dataset_name=raw_task)
+    datasets_path.write_text(json.dumps(datasets), encoding="utf-8")
+    _write_run_record(root, "FakeModel-A", raw_task, 42, _suite_native_metrics(0.9))
+    out = tmp_path / "out"
+    stats = tmp_path / "stats"
+    export_runs.export_runs_tree(
+        root, models_path, datasets_path, config_path, out, stats,
+        n_bootstrap=100, bootstrap_seed=42, small_n_ci="t-interval",
+    )
+    sanitized = out / "Fake_Src__task_task_performance.json"
+    assert sanitized.exists()
+    doc = json.loads(sanitized.read_text(encoding="utf-8"))
+    assert doc["performance"]["FakeModel-A"]["performance"]["auroc"] == pytest.approx(0.9)
 
 
 def test_hard_edges_missing_flops_unregistered_one_seed(tmp_path):
