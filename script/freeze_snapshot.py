@@ -9,19 +9,41 @@ spaces), with the frozen commit hash recorded both in the artifact names
 (``snapshot-<hash>.tar`` / ``snapshot-<hash>.sha256``) and on the
 manifest's header line.
 
-This module is a TESTED PRIMITIVE in Phase 4 only: the actual invocation is
-intentionally unwired — Phase 6 packaging decides which paths get frozen
-and where the artifact lands (data still moves at E2'; OQ7 resolved to
-parameterized paths + output dir, no repo-global constants).
+This module was authored as a TESTED PRIMITIVE in Phase 4 and is WIRED
+since Phase 6 (06-04): the ``make snapshot`` Makefile lane invokes it over
+the committed derived-data set — everything in ``dnallm-mark/data/``
+except ``model_performance/`` (an input, not a derived output): the 4
+``models_comparison*.json``, ``tasks.json``, ``task_performance/``,
+``n_audit.{json,csv}``, ``permutation_tests.json``, ``manifest.json``, and
+``provenance.{json,csv}``. The lane passes paths RELATIVE TO
+``baseline/snapshots`` (``../../dnallm-mark/data/...``) so re-verification
+is the standard one-liner from that directory:
+``cd baseline/snapshots && sha256sum -c snapshot-*.sha256``. The frozen
+commit hash is read from ``manifest.json``'s committed ``generated_from``
+constant — never a live git call in the data path (the lane must work from
+a tarball-exported tree; ``--commit-hash "$(git rev-parse HEAD)"`` stays a
+documented manual override). The ``.tar`` is gitignored under
+``baseline/snapshots/``; the ``.sha256`` manifest is committed as
+tamper-evidence (resolved OQ 2).
 
 Usage
 -----
 ::
 
-    python script/freeze_snapshot.py \\
-        --paths dnallm-mark/data/models_comparison.json ... \\
-        --output-dir baseline/snapshots \\
-        --commit-hash "$(git rev-parse HEAD)"
+    # The wired form (what `make snapshot` runs — paths relative to the
+    # output dir so `cd baseline/snapshots && sha256sum -c` re-verifies;
+    # hash from the committed manifest constant, never live git):
+    cd baseline/snapshots
+    python ../../script/freeze_snapshot.py \\
+        --paths ../../dnallm-mark/data/models_comparison.json ... \\
+        --output-dir . \\
+        --commit-hash "$(python -c \\
+        "import json; print(json.load(open('../../dnallm-mark/data/manifest.json'))['generated_from'])")"
+
+    # Manual override (records the CURRENT tree instead of the stamped
+    # data revision — use only when re-freezing outside the data chain):
+    python script/freeze_snapshot.py --paths ... \\
+        --output-dir baseline/snapshots --commit-hash "$(git rev-parse HEAD)"
 
 See also:
     - ``baseline/data-v1.sha256`` — the manifest line-format convention.
@@ -83,8 +105,11 @@ def freeze_snapshot(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """CLI wrapper. Intentionally unwired from any Makefile target this
-    phase — Phase 6 packaging owns the invocation policy."""
+    """CLI wrapper, wired by the Makefile ``snapshot`` lane since Phase 6
+    (06-04): the lane owns the frozen path policy (the derived-data set —
+    everything in ``dnallm-mark/data/`` except ``model_performance/``) and
+    sources ``--commit-hash`` from ``manifest.json``'s committed
+    ``generated_from`` constant — no git in the data path."""
     parser = argparse.ArgumentParser(
         prog="freeze_snapshot",
         description="Freeze derived-data files: tar + SHA256 manifest + commit hash (REV-03).",

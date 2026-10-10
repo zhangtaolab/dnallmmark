@@ -27,7 +27,7 @@
 #                   are never installed CPU-side, D-05)
 # =====================================================================
 
-.PHONY: data test test-fast ci lint typecheck check-node
+.PHONY: data test test-fast ci lint typecheck check-node snapshot
 
 # WR-02: PATH lookup with an overridable default (`make UV=/path/to/uv`) —
 # setup-uv/brew/pipx installs live outside ~/.local/bin, and a hardcode
@@ -42,11 +42,35 @@ DATA_DIR := dnallm-mark/data
 # is __dirname-relative and runs from repo root as-is. The retired pivot
 # step is gone (04-05, SC-2/OQ6): task_performance/ is committed static
 # data until E2' regenerates it via script/export_runs.py — this target
-# cannot and must not refresh it.
+# cannot and must not refresh it. The provenance emitter (06-04, DATA-04/
+# DATA-05) projects the registry's six provenance columns into
+# data/provenance.{json,csv} + the DATA.md appendix — deterministic, so the
+# whole chain stays a byte-stable no-op on a clean checkout (the drift
+# invariant the CI job replays).
 data: check-node
 	cd $(DATA_DIR) && $(UV) run --group data python ../../script/summarize_comparison.py
 	$(UV) run --group data python script/permutation_tests.py
+	$(UV) run --group data python script/build_provenance.py
 	node scripts/generate-tasks-index.js
+
+# Snapshot lane (06-04, SC-3 / REV-03 tail): freeze the committed
+# derived-data set — everything in dnallm-mark/data/ except
+# model_performance/ (an input, not a derived output) — into a tar +
+# SHA256 manifest under baseline/snapshots. The frozen commit hash reads
+# the committed manifest.json `generated_from` constant: NEVER a live git
+# call in the data path (the lane must work from a tarball-exported tree).
+# Manual override when re-freezing outside the data chain:
+#   --commit-hash "$$(git rev-parse HEAD)"
+# Paths are passed relative to baseline/snapshots so re-verification is
+# the standard tool one-liner from that directory:
+#   cd baseline/snapshots && sha256sum -c snapshot-*.sha256
+# The .tar is gitignored; the .sha256 manifest is committed (OQ 2).
+SNAPSHOT_FILES := $(patsubst %,../../%,$(wildcard $(DATA_DIR)/*.json $(DATA_DIR)/*.csv)) $(patsubst %,../../%,$(wildcard $(DATA_DIR)/task_performance/*.json))
+snapshot:
+	@set -e; \
+	hash="$$($(UV) run --group data python -c "import json; print(json.load(open('$(DATA_DIR)/manifest.json'))['generated_from'])")"; \
+	mkdir -p baseline/snapshots; cd baseline/snapshots; \
+	$(UV) run --group data python ../../script/freeze_snapshot.py --paths $(SNAPSHOT_FILES) --output-dir . --commit-hash "$$hash"
 
 # --group dev is REQUIRED: default-groups = ["data"] in pyproject.toml
 # replaces uv's ["dev"] default (Pitfall 2). The JS lane runs plain node
