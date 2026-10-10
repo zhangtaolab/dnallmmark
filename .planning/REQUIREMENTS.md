@@ -65,7 +65,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [x] **REV-04** (F6, P1): Aggregation upgrade — CI-overlap tie rules, raw-rank + z-score×difficulty-weight dual views, permutation tests (10k, BH-corrected); CpG case renders as tie
 - [ ] **REV-05** (F4, P1): Adaptation lanes — LoRA (suite built-in, CLI-exposed), IA³ (after suite-side support), frozen probes (embedding cache + logistic/MLP); cost-accuracy frontier table
 - [x] **REV-06** (F9, P1): CI golden tests — smoke (tiny model × 1k × 1 epoch incl. export), key parity, species spot checks, aggregation units; CPU, <15 min, PR-required
-- [ ] **REV-07** (F7, P1): N-frequency audit (47 tasks × splits) + unified eval-subset ID lists accepted by the pipeline
+- [x] **REV-07** (F7, P1): N-frequency audit (47 tasks × splits) + unified eval-subset ID lists accepted by the pipeline
 - [ ] **REV-08** (F5+F8, P1/P2): Zero-shot VEP lane (CLM/MLM scoring, ClinVar/AraGWAS, baselines + sanity checks) and, window permitting, from-scratch baselines + learning curves (label-fraction sweeps)
 - [ ] **REV-09** (E2' 执行面, P0 依赖): Three-seed full re-run (E2') executes only after REV-01/REV-02 gates — critical path F1→F2→E2'
 - [x] **REV-10** (F10, P0): Old pipeline (`dnallmmark_pipeline.py`) deprecation header + README names `run_finetune.py` as the benchmark entry point
@@ -122,7 +122,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REV-04 | Phase 5 | Complete |
 | REV-05 | Phase 6 | Pending |
 | REV-06 | Phase 5 | Complete |
-| REV-07 | Phase 5 | Pending |
+| REV-07 | Phase 5 | Complete |
 | REV-08 | Phase 6 | Pending |
 | REV-09 | Phase 5 | Pending |
 | REV-10 | Phase 3 | Complete |

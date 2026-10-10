@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 11
+open_count: 12
 waived_count: 0
 fixed_count: 0
-total_count: 11
-last_updated: 2026-10-10T10:52:34.776Z
+total_count: 12
+last_updated: 2026-10-10T11:22:28.566Z
 ---
 
 # Broken Windows Ledger
@@ -26,6 +26,7 @@ last_updated: 2026-10-10T10:52:34.776Z
 | 9 | 4 | deviation | tests/test_export_runs.py | 466 | D-15 evaluate cross-check covers the scipy-backed evaluate metrics (pearsonr/spearmanr) only — evaluate's accuracy/f1/mcc modules import scikit-learn, which is outside the sanctioned scipy+evaluate dependency pair; extending coverage needs a maintainer-approved scikit-learn addition | open |  | 2026-10-10T05:22:49.317Z |  |
 | 10 | 05 | unrun-verify | .github/workflows/ci.yml |  | First real GitHub-runner execution of ci.yml happens on the maintainer's next push (badge green + <15-min/job + branch-protection setup queued in 05-USER-SETUP.md) | open |  | 2026-10-10T10:04:38.260Z |  |
 | 11 | 05 | unrun-verify | dnallm-mark/js/main.js |  | 05-02 Task 3 human-check (visual localhost confirmation of weighted default view, raw-rank toggle, stamped footer) deferred to the phase-level UAT gate — behavioral seams pinned by tests/js/main-view-toggle.test.js | open |  | 2026-10-10T10:52:34.776Z |  |
+| 12 | 5 | unrun-verify | pipeline/run_finetune.py |  | 05-03: --subset_file seam + pipeline/eval_subsets.json consumption execute only at E2' (GPU, maintainer dual-gated); CPU-side stub/contract tests + real-artifact validation proof pin the behavior — first real GPU consumption pending launch | open |  | 2026-10-10T11:22:28.566Z |  |
 
 ````json
 [
@@ -169,6 +170,19 @@ last_updated: 2026-10-10T10:52:34.776Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-10T10:52:34.776Z",
+    "resolved_at": null,
+    "milestone": "v0.7.1"
+  },
+  {
+    "id": 12,
+    "kind": "unrun-verify",
+    "phase": "5",
+    "file": "pipeline/run_finetune.py",
+    "line": null,
+    "description": "05-03: --subset_file seam + pipeline/eval_subsets.json consumption execute only at E2' (GPU, maintainer dual-gated); CPU-side stub/contract tests + real-artifact validation proof pin the behavior — first real GPU consumption pending launch",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-10T11:22:28.566Z",
     "resolved_at": null,
     "milestone": "v0.7.1"
   }

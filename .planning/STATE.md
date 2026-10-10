@@ -4,16 +4,16 @@ milestone: v0.7.1
 current_phase: 5
 current_phase_name: CI & Three-Seed Full Re-Run (E2')
 status: executing
-stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-10-10T10:51:40.393Z"
+stopped_at: Completed 05-03-PLAN.md
+last_updated: "2026-10-10T11:22:19.828Z"
 last_activity: 2026-10-10
 last_activity_desc: Phase 5 execution started
-state_head: f1b9d28c98f17fdea3dbe145df5830522d085745
+state_head: 6c151030e32266de7bb93bc6ef6c3e019d1c0c88
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 ## Current Position
 
 Phase: 5 (CI & Three-Seed Full Re-Run (E2')) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-10-10 — Phase 5 execution started
 
@@ -77,6 +77,8 @@ Progress: [███████░░░] 67% (1/6 phases)
 | Phase 04 P05 | 16 min | 2 tasks | 16 files |
 | Phase 05 P01 | 74 min | 3 tasks | 42 files |
 | Phase 05 P02 | 39 min | 3 tasks | 27 files |
+| Phase 05 P03 | 17 min | 2 tasks | 12 files |
+| Phase 05 P03 | 17 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -133,6 +135,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-02: permutation_type='samples' (must_haves literal) is scipy's PAIRED test — kept per three binding plan statements; tests pin exact hand-computed p-values (0.25 floor at 3 tasks, BH 0.375); real 47-task vectors carry full resolution (657/861 significant)
 - [Phase 05]: 05-02: F6 migration inventory = 168 EXTRA_IN_REGEN (42 models x 4 comparison files, one weighted_score key each), 2 new artifacts, tasks.json identical — ZERO existing numbers moved; inventory ran BEFORE make data so the committed side held pre-migration content
 - [Phase 05]: 05-02: load_model_inputs extracted verbatim from summarize main() as the single extraction reader shared with the permutation engine; aggregate_models keeps the include_weighted gate (default False, main passes True) — drift-proven byte-identical, plan file list held
+- [Phase 05]: 05-03: audit Dataset_path resolution strips the registry's datasets/ prefix against --datasets-root (pipeline/datasets) — both the pipeline's base_dir convention and the flag semantics honored; eval_subsets.json OMITS the 7 missing tasks (never an empty list that would select zero rows)
+- [Phase 05]: 05-03: the audit found the fairness gap is real and measurable — 16/43 present tasks carry test rows strict-charset models drop (CpG 106224/106227, human_vs_worm 24355/25000); unified N = min over class survivors, subsets = first N strict-passing IDs so every emitted ID survives the common filter by construction
+- [Phase 05]: 05-03: --subset_file lands as pure validator (collect-all-problems, bool rejected as non-integer) + thin sys.exit wiring + test-split-only select seam between load_local_data and validate_sequences; absent flag = no select anywhere; CPU-side proof ran the real eval_subsets.json against the real registry (43 tasks, 582,927 IDs, zero problems)
 
 ### Pending Todos
 
@@ -155,6 +160,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-10T10:51:40.343Z
-Stopped at: Completed 05-02-PLAN.md
+Last session: 2026-10-10T11:22:08.129Z
+Stopped at: Completed 05-03-PLAN.md
 Resume file: None
