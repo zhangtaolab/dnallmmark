@@ -4,16 +4,16 @@ milestone: v0.7.1
 current_phase: 4
 current_phase_name: Correctness & Methodology Core
 status: executing
-stopped_at: Phase 3 complete, ready to plan Phase 4
-last_updated: "2026-10-10T01:11:13.497Z"
+stopped_at: Completed 04-01-PLAN.md (species fix tracer; 3 production commits, 202 passed + 0 xfailed)
+last_updated: "2026-10-10T01:59:22.876Z"
 last_activity: 2026-10-10
 last_activity_desc: Phase 4 execution started
-state_head: c775463c58043151c20cd7e16691f447ee1d7dfe
+state_head: b34f43ef8484df2cd2ec7681b96933f8ba8d0625
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 15
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -28,8 +28,8 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 ## Current Position
 
 Phase: 4 (Correctness & Methodology Core) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 4
+Plan: 2 of 5
+Status: Ready to execute
 Last activity: 2026-10-10 — Phase 4 execution started
 
 Progress: [█████░░░░░] 50% (1/6 phases)
@@ -68,6 +68,7 @@ Progress: [█████░░░░░] 50% (1/6 phases)
 | Phase 03 P02 | 19 min | 3 tasks | 13 files |
 | Phase 03 P03 | 10 min | 2 tasks | 6 files |
 | Phase 03 P04 | 16 min | 3 tasks | 7 files |
+| Phase 04 P01 | 17 min | 4 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-04: run_sweep failure capture is (subprocess.SubprocessError, OSError), not except Exception — D-08's noqa prohibition + widened lint scope force a specific-exception boundary at the launch seam; driver bugs abort loudly (BLE001 probed to fire even on underscore bindings)
 - [Phase 03]: 03-04: F401 torch_npu fixed via importlib.import_module (import removal would break Ascend NPU support — the import's registration side effect makes torch.npu exist); SIM115 fixed by wrapping the model-loop body in a with-open block, break/continue semantics preserved
 - [Phase 03]: 03-04: G1 dead (seed_{seed}/ outdir + seed-scoped resume marker), D-07 grad_accum and D-11 head_config leaks fixed, run_sweep.py landed with --dry-run + fake-executor proof only — zero model runs (D-05/D-06 held; E2' stays gated at F1->F2->E2')
+- [Phase 04]: [Phase 04]: 04-01: Multiple->Animals majority mapping maintainer-approved at the blocking Category gate (verbatim 'approved', 50-row record committed as 04-CATEGORY-REVIEW.md); regeneration matched the previewed inventory exactly (total+plant byte-identical, animal/microbe 42/42 via the single membership swap, 22/13 counts preserved)
+- [Phase 04]: [Phase 04]: 04-01: all three Phase-2 xfail locks (AUD-01/WR-02/WR-03) unmarked to permanent green contracts per D-13, each in the same commit as its fix; comparator gains INT + BOOL_CROSS labels (IN-01/WR-02); get_float isfinite guard proven number-neutral on committed data
 
 ### Pending Todos
 
@@ -129,6 +132,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T17:30:07.963Z
-Stopped at: Phase 3 complete, ready to plan Phase 4
+Last session: 2026-10-10T01:59:22.825Z
+Stopped at: Completed 04-01-PLAN.md (species fix tracer; 3 production commits, 202 passed + 0 xfailed)
 Resume file: None
