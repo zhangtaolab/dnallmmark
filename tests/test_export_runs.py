@@ -315,6 +315,48 @@ def test_majority_arena_parity_with_summarize_comparison():
 
 
 # =====================================================================
+# Legacy dataset-metric surface (04-05, IN-03 by removal)
+# =====================================================================
+
+def test_legacy_dataset_metric_alias_parity_with_deleted_mirror():
+    """IN-03 (T-04-13): every key of summarize_comparison's DELETED local
+    metric_key_map surface resolves through the exporter's translation to
+    the SAME slot the old map produced — the consolidation cannot silently
+    change a translation. pearsonr/spearmanr need no legacy entry (they are
+    suite canonicals); AUROC/AUPRC resolve via CANONICAL_TO_EXPORT directly."""
+    old_map = {
+        "F1": "f1", "MCC": "mcc", "AUROC": "auroc", "AUPRC": "auprc",
+        "MSE": "mse", "MAE": "mae", "R2": "r2",
+        "pearsonr": "pearson_r", "spearmanr": "spearman_r",
+    }
+    for legacy, old_slot in old_map.items():
+        assert export_runs.resolve_dataset_metric(legacy) == old_slot, legacy
+
+
+def test_resolve_dataset_metric_identity_for_committed_surface():
+    """The committed dataset blocks' metric declarations resolve to exactly
+    the performance-block slots they use today (survey: f1 / mcc / spearmanr
+    / AUPRC): lowercase suite canonicals map to their slots, and a
+    declaration that resolves to neither surface passes through unchanged —
+    the deleted mirror's identity fallback, which made an unlisted metric
+    key simply miss in the performance block."""
+    for declared, slot in {
+        "f1": "f1", "mcc": "mcc", "spearmanr": "spearman_r",
+        "AUPRC": "auprc", "accuracy": "accuracy", "auroc": "auroc",
+    }.items():
+        assert export_runs.resolve_dataset_metric(declared) == slot, declared
+
+
+def test_single_mapping_authority_summarize_imports_exporter_table():
+    """IN-03 by removal (source contract): summarize_comparison.py carries
+    NO local metric-key mapping dict — the exporter's translation function
+    is imported and is the single authority (both key surfaces, one owner)."""
+    src = (REPO_ROOT / "script" / "summarize_comparison.py").read_text(encoding="utf-8")
+    assert "metric_key_map" not in src
+    assert "from export_runs import resolve_dataset_metric" in src
+
+
+# =====================================================================
 # End-to-end emission
 # =====================================================================
 
