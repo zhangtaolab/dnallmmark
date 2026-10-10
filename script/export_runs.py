@@ -9,7 +9,11 @@ apply the exporter-owned metric-key mapping, join the unified registries,
 aggregate over seeds with the suite's own statistics, and emit per-task files
 that validate against ``schemas/task_performance.json`` (UNCHANGED schema,
 CONTEXT exporter-Q2) plus a per-seed detail/statistics artifact per task
-(the reviewer view).
+(the reviewer view) — and, per D-16 Option C (05-04), the per-model view:
+one ``{model}_performance.json`` per model with at least one completed
+record, validating against ``schemas/model_performance.json`` (UNCHANGED
+schema). One emitter, both views, one reader per view downstream
+(``summarize_comparison`` keeps its model_performance reader untouched).
 
 Direction of truth
 ------------------
@@ -43,7 +47,18 @@ map -> join -> aggregate -> emit:
             per metric — never vacuous, D-14/SEED-01);
 4. emit     with sorted iteration, ``sort_keys=True`` and no live clock —
             byte-stable: exporting the same tree twice produces
-            byte-identical outputs.
+            byte-identical outputs. BOTH views come from the same single
+            pass over the joined per-cell payloads (D-16): the task view
+            (``{safe_task}_task_performance.json`` keyed task->model) and
+            the per-model view (``{model}_performance.json`` keyed
+            model->task, shaped per ``schemas/model_performance.json`` —
+            the contract the submit flow and the finetuning page consume).
+            The per-model view's destination defaults to a SIBLING of the
+            input root (``{input_root}/model_performance``) — never
+            ``dnallm-mark/data/model_performance`` — so committed data is
+            never silently overwritten before the maintainer migration
+            gate (the D-18 discipline: data moves only in inventoried,
+            changelogged commits).
 
 Trainer-emitted bookkeeping keys that are neither pipeline-produced
 (``eval_loss``/``train_runtime``/``total_flos``) nor resolvable through the
@@ -79,7 +94,8 @@ deliberate CWD-convention break; NOT run from ``dnallm-mark/data/``)::
     uv run --group data python script/export_runs.py \
         --input-root finetuned \
         --output-dir dnallm-mark/data/task_performance \
-        --stats-dir dnallm-mark/data/seed_stats
+        --stats-dir dnallm-mark/data/seed_stats \
+        --model-output-dir finetuned/model_performance
 
 See also:
     - ``script/summarize_comparison.py`` — downstream aggregation; 04-05
@@ -633,19 +649,29 @@ def export_runs_tree(
     config_path: Path,
     output_dir: Path,
     stats_dir: Path,
+    model_output_dir: Path | None = None,
     *,
     n_bootstrap: int,
     bootstrap_seed: int,
     small_n_ci: str,
 ) -> list[str]:
-    """Run the full export over an F2 run-record tree.
+    """Run the full export over an F2 run-record tree — BOTH views (D-16).
 
     For every task (sorted) with at least one completed record, emits
     ``{safe_task}_task_performance.json`` into ``output_dir`` (validating
     shape: schemas/task_performance.json) and ``{safe_task}_seed_stats.json``
     into ``stats_dir`` (the per-seed detail + vendored-statistics reviewer
-    view). Registry joins are hard-fail dict lookups; iteration is sorted
-    and serialization is sort_keys — the whole export is byte-stable.
+    view). In the SAME single pass over the joined per-cell payloads, also
+    accumulates the per-model view and, for every model (sorted) with at
+    least one completed record, emits ``{model}_performance.json`` into
+    ``model_output_dir`` — ``info`` = the full 11-key registry card join,
+    ``performance`` = per completed task ``{dataset, parameters,
+    performance}`` blocks IDENTICAL to the task view's (one computation,
+    two keyings — the two views agree on every shared cell by
+    construction). A model with zero completed records emits NO file (the
+    WR-02 discipline applied to the model axis). Registry joins are
+    hard-fail dict lookups; iteration is sorted and serialization is
+    sort_keys — the whole export is byte-stable in both views.
 
     Args:
         input_root: Sweep output root (``{model}/{task}/seed_{n}/``).
@@ -654,6 +680,10 @@ def export_runs_tree(
         config_path: finetune config YAML (D-12 parametersBlock join).
         output_dir: Task-file destination.
         stats_dir: Statistics-artifact destination.
+        model_output_dir: Per-model view destination. ``None`` derives
+            ``input_root / "model_performance"`` — a sibling of the input
+            root, NEVER ``dnallm-mark/data/model_performance`` (committed
+            data moves only through inventoried migration commits).
         n_bootstrap: Bootstrap resample count (n >= 10 seeds only).
         bootstrap_seed: Bootstrap RNG seed (deterministic intervals).
         small_n_ci: ``"t-interval"`` or ``"omit"`` for 3 <= n < 10.
@@ -665,9 +695,17 @@ def export_runs_tree(
     datasets_info = _load_json(datasets_info_path)
     finetune_cfg = _load_finetune_config(config_path)
     tree = load_run_records(input_root)
+    if model_output_dir is None:
+        model_output_dir = input_root / "model_performance"
 
     tasks = sorted({task for per_model in tree.values() for task in per_model})
     emitted: list[str] = []
+    # D-16 per-model view accumulators: the SAME joined blocks the task view
+    # emits, keyed model->task (one pass, two keyings). A model enters these
+    # maps only through a completed cell, so zero-completed models emit no
+    # file without a special case.
+    model_cards: dict[str, dict[str, Any]] = {}
+    model_view: dict[str, dict[str, dict[str, Any]]] = {}
     for task in tasks:
         dataset_row = datasets_info[task]  # KeyError: unregistered dataset — hard fail
         performance: dict[str, dict[str, Any]] = {}
@@ -709,6 +747,12 @@ def export_runs_tree(
                 "parameters": parameters,
                 "performance": metric_block,
             }
+            model_cards[model] = performance[model]["model"]
+            model_view.setdefault(model, {})[task] = {
+                "dataset": _dataset_info_block(dataset_row),
+                "parameters": parameters,
+                "performance": metric_block,
+            }
             stats_doc[model] = {
                 key: {
                     "per_seed": {
@@ -738,6 +782,16 @@ def export_runs_tree(
         })
         _write_json(stats_dir / f"{safe_task}_seed_stats.json", stats_doc)
         emitted.append(task)
+    # D-16 per-model emission: one {model}_performance.json per model with at
+    # least one completed record. The filename alias is EXACTLY the registry
+    # key (the key==name contract, D-10/D-18) — the same alias the task view
+    # keys its performance map by, so the leaderboard, the submit flow, and
+    # the finetuning page see one identity per model.
+    for model in sorted(model_view):
+        _write_json(model_output_dir / f"{model}_performance.json", {
+            "info": model_cards[model],
+            "performance": model_view[model],
+        })
     return emitted
 
 
@@ -768,6 +822,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--stats-dir", type=Path,
                         default=REPO_ROOT / "dnallm-mark" / "data" / "seed_stats",
                         help="per-seed statistics destination (default: %(default)s)")
+    parser.add_argument("--model-output-dir", type=Path, default=None,
+                        help="per-model view destination (D-16; default: derived as "
+                             "{input-root}/model_performance — a sibling of the sweep "
+                             "output, NEVER dnallm-mark/data/model_performance, so "
+                             "committed data moves only through inventoried "
+                             "migration commits)")
     parser.add_argument("--n-bootstrap", type=int, default=2000,
                         help="bootstrap resamples, n>=10 seeds only (default: %(default)s)")
     parser.add_argument("--bootstrap-seed", type=int, default=42,
@@ -776,15 +836,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                         default="t-interval",
                         help="small-n (3<=n<10) interval policy (default: %(default)s)")
     args = parser.parse_args(argv)
+    model_output_dir = (
+        args.model_output_dir
+        if args.model_output_dir is not None
+        else args.input_root / "model_performance"
+    )
     emitted = export_runs_tree(
         args.input_root, args.models_info, args.datasets_info, args.config,
-        args.output_dir, args.stats_dir,
+        args.output_dir, args.stats_dir, model_output_dir,
         n_bootstrap=args.n_bootstrap,
         bootstrap_seed=args.bootstrap_seed,
         small_n_ci=args.small_n_ci,
     )
+    model_files = sorted(model_output_dir.glob("*_performance.json"))
     print(f"Exported {len(emitted)} task(s) to {args.output_dir} "
           f"(statistics artifacts in {args.stats_dir})")
+    print(f"Exported {len(model_files)} per-model file(s) to {model_output_dir}")
     for name in emitted:
         print(f"  {name}")
     return 0

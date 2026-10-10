@@ -16,7 +16,18 @@ no real training ever runs here (CI feasibility constraint):
   OVERLAP, while model C is clearly separated — pinned here so the fixture
   cannot silently drift away from that purpose.
 - **Byte-stability (export):** exporting the same fixture twice produces
-  byte-identical outputs (sorted iteration, sort_keys, no live clock).
+  byte-identical outputs (sorted iteration, sort_keys, no live clock) — in
+  BOTH views (task files + seed_stats + the D-16 per-model files).
+- **Full D-16 chain (05-04, D-16/D-17 OQ7):** export emits BOTH views from
+  the committed run records — the task-centric files AND the per-model
+  ``{model}_performance.json`` files (validating against
+  ``schemas/model_performance.json``) — then ``summarize_comparison.main()``
+  runs over the EMITTED per-model view (staged as ``model_performance/``,
+  the e2_replay registry slice injected the way ``tests/test_golden.py``
+  injects the synthetic one) and the resulting comparison files validate
+  against ``schemas/models_comparison.json``, byte-stable across two runs.
+  This closes the E2' bridge end-to-end: run records -> both views ->
+  aggregate over the per-model view -> leaderboard JSON.
 - **Aggregate half:** ``summarize_comparison.main()`` over a tmp copy of
   ``tests/fixtures/synthetic_models/`` (synthetic registry slice injected
   the way ``tests/test_golden.py`` does it) emits ``models_comparison.json``
@@ -65,6 +76,9 @@ REPLAY_MODELS = ("ReplayModel-A", "ReplayModel-B", "ReplayModel-C")
 TASK_SCHEMA = Draft202012Validator(
     json.loads((REPO_ROOT / "schemas" / "task_performance.json").read_text(encoding="utf-8"))
 )
+MODEL_PERFORMANCE_SCHEMA = Draft202012Validator(
+    json.loads((REPO_ROOT / "schemas" / "model_performance.json").read_text(encoding="utf-8"))
+)
 COMPARISON_SCHEMA = Draft202012Validator(
     json.loads((REPO_ROOT / "schemas" / "models_comparison.json").read_text(encoding="utf-8"))
 )
@@ -79,12 +93,18 @@ COMPARISON_FILES = (
 )
 
 
-def _export_fixture(out: Path, stats: Path) -> list[str]:
-    """Run the export half over the committed replay fixture tree.
+def _export_fixture(out: Path, stats: Path, model_out: Path) -> list[str]:
+    """Run the export half over the committed replay fixture tree — BOTH views.
+
+    The per-model destination is an EXPLICIT parameter (never derived): the
+    D-16 default derives from ``--input-root``, which here IS the committed
+    fixture tree — a default would write into the repo, so every caller
+    pins a tmp destination.
 
     Args:
         out: Task-file destination directory.
         stats: Statistics-artifact destination directory.
+        model_out: Per-model view destination directory (D-16).
 
     Returns:
         The sorted list of exported task names.
@@ -96,6 +116,7 @@ def _export_fixture(out: Path, stats: Path) -> list[str]:
         FIXTURE_DIR / "finetune_config.yaml",
         out,
         stats,
+        model_out,
         n_bootstrap=2000,
         bootstrap_seed=42,
         small_n_ci="t-interval",
@@ -128,7 +149,7 @@ def test_export_half_emits_schema_valid_task_file_with_n3_t_intervals(tmp_path):
     seed_stats carry n_seeds=3 t-intervals with two-float ci95 bounds — the
     vendored n-guard semantics (3 <= n < 10 -> t at df=2; never bootstrap)."""
     out, stats_dir = tmp_path / "out", tmp_path / "stats"
-    emitted = _export_fixture(out, stats_dir)
+    emitted = _export_fixture(out, stats_dir, tmp_path / "models")
     assert emitted == [TASK]
 
     doc = json.loads((out / TASK_FILE).read_text(encoding="utf-8"))
@@ -156,7 +177,7 @@ def test_replay_fixture_intervals_a_b_overlap_c_separates(tmp_path):
     sit exactly the committed CpG top-10 span (0.0021) apart, so their n=3
     t-intervals OVERLAP, while C's interval is clearly separated from A's."""
     stats_dir = tmp_path / "stats"
-    _export_fixture(tmp_path / "out", stats_dir)
+    _export_fixture(tmp_path / "out", stats_dir, tmp_path / "models")
     stats = json.loads((stats_dir / STATS_FILE).read_text(encoding="utf-8"))
 
     ci = {
@@ -179,15 +200,16 @@ def test_replay_fixture_intervals_a_b_overlap_c_separates(tmp_path):
 
 def test_export_half_is_byte_stable_across_two_runs(tmp_path):
     """Two exports of the same committed fixture produce byte-identical
-    task files and seed_stats artifacts (deterministic chain: sorted
-    iteration, sort_keys, seeded statistics, no live clock)."""
+    task files, seed_stats artifacts, AND D-16 per-model files (deterministic
+    chain: sorted iteration, sort_keys, seeded statistics, no live clock)."""
     runs = []
     for run in (1, 2):
         out, stats_dir = tmp_path / f"out{run}", tmp_path / f"stats{run}"
-        _export_fixture(out, stats_dir)
-        runs.append((out, stats_dir))
-    (out1, stats1), (out2, stats2) = runs
-    for d1, d2 in ((out1, out2), (stats1, stats2)):
+        model_out = tmp_path / f"models{run}"
+        _export_fixture(out, stats_dir, model_out)
+        runs.append((out, stats_dir, model_out))
+    (out1, stats1, models1), (out2, stats2, models2) = runs
+    for d1, d2 in ((out1, out2), (stats1, stats2), (models1, models2)):
         names1 = sorted(p.name for p in d1.iterdir())
         names2 = sorted(p.name for p in d2.iterdir())
         assert names1 == names2
@@ -195,6 +217,82 @@ def test_export_half_is_byte_stable_across_two_runs(tmp_path):
             assert (d1 / name).read_bytes() == (d2 / name).read_bytes(), (
                 f"{name} not byte-stable across runs"
             )
+
+
+# =====================================================================
+# Full D-16 chain (05-04, OQ7): export -> BOTH views -> aggregate over
+# the emitted per-model view -> schema-valid comparison, byte-stable
+# =====================================================================
+
+def test_full_d16_chain_emits_both_views_then_aggregates_over_model_view(
+        tmp_path, monkeypatch):
+    """The E2' bridge closed end-to-end: the committed run-record tree
+    exports to BOTH views (task-centric + per-model, each schema-valid),
+    and ``summarize_comparison.main()`` — whose model_performance reader is
+    UNTOUCHED (one reader per view) — runs over the EMITTED per-model view
+    to produce comparison files validating against
+    ``schemas/models_comparison.json``, byte-stable across two runs.
+
+    The e2_replay fixture's own datasets_info.json is the registry slice
+    (the test_golden.py injection technique): FakeCpG is Category
+    "Multiple", so the chain produces the all-tasks file plus exactly the
+    animal comparison."""
+    outputs = []
+    for run in (1, 2):
+        out = tmp_path / f"out{run}"
+        stats_dir = tmp_path / f"stats{run}"
+        model_out = tmp_path / f"models{run}"
+        _export_fixture(out, stats_dir, model_out)
+
+        # Bridge half 1: the per-model view emits exactly one file per
+        # replay model, keyed by the registry key, schema-valid.
+        assert sorted(p.name for p in model_out.iterdir()) == [
+            f"{model}_performance.json" for model in REPLAY_MODELS
+        ]
+        for path in sorted(model_out.iterdir()):
+            doc = json.loads(path.read_text(encoding="utf-8"))
+            errors = list(MODEL_PERFORMANCE_SCHEMA.iter_errors(doc))
+            assert not errors, "\n".join(
+                f"- {'/'.join(map(str, e.path))}: {e.message}" for e in errors
+            )
+
+        # Bridge half 2: aggregate over the EMITTED per-model view — the
+        # staged dir carries the chain-produced files, never hand-written
+        # ones (the same staging the aggregate half does over the committed
+        # synthetic fixture).
+        work = tmp_path / f"work{run}"
+        work.mkdir()
+        staged = work / "model_performance"
+        staged.mkdir()
+        for fixture in sorted(model_out.glob("*_performance.json")):
+            shutil.copy(fixture, staged / fixture.name)
+        monkeypatch.chdir(work)
+        monkeypatch.setattr(
+            summarize_comparison, "REGISTRY_PATH", FIXTURE_DIR / "datasets_info.json"
+        )
+        summarize_comparison.main()
+
+        main_file = work / "models_comparison.json"
+        assert main_file.exists(), "chain did not produce models_comparison.json"
+        doc = json.loads(main_file.read_text(encoding="utf-8"))
+        errors = list(COMPARISON_SCHEMA.iter_errors(doc))
+        assert not errors, "\n".join(
+            f"- {'/'.join(map(str, e.path))}: {e.message}" for e in errors
+        )
+        # The comparison is keyed by the emitted view's aliases — the
+        # registry keys — closing the key==name identity across the chain.
+        assert set(doc) == set(REPLAY_MODELS)
+        for entry in doc.values():
+            assert entry["performance"]["samples"] == 1
+            assert entry["performance"]["rank"] in (1, 2, 3)
+        # FakeCpG is Multiple -> the majority Animals arena: the all-tasks
+        # file plus exactly the animal comparison, nothing else.
+        produced = sorted(p.name for p in work.glob("models_comparison*.json"))
+        assert produced == [
+            "models_comparison.json", "models_comparison_animal.json",
+        ]
+        outputs.append({name: (work / name).read_bytes() for name in produced})
+    assert outputs[0] == outputs[1], "full D-16 chain not byte-stable across runs"
 
 
 # =====================================================================

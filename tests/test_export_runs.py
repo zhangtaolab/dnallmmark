@@ -21,7 +21,15 @@ Covers, in order:
   record path), unregistered dataset/model (KeyError — never a fallback
   join), 1-seed degenerate cells (sd/ci95 None, method "none").
 - Byte-stability: exporting the same fixture tree twice produces
-  byte-identical outputs (sorted iteration, sort_keys, no live clock).
+  byte-identical outputs (sorted iteration, sort_keys, no live clock) —
+  in BOTH views (task files + stats artifacts + the D-16 per-model files).
+- D-16 per-model view (05-04): one emitter, both views — the per-model
+  files validate against the UNCHANGED ``schemas/model_performance.json``,
+  the filename alias is exactly the registry key (key==name contract), the
+  default destination derives as ``{input_root}/model_performance`` (never
+  the committed data tree), a zero-completed model emits no file, and the
+  two views agree exactly on every shared cell (dataset/parameters/
+  performance blocks emitted from one joined payload).
 - Pivot-shape ownership (04-05, folded from the retired tests/test_pivot.py
   when script/get_task_performance.py was deleted): one file per dataset
   named ``{dataset}_task_performance.json``, ``info`` mirroring the dataset
@@ -60,6 +68,11 @@ pytestmark = pytest.mark.ci
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = json.loads((REPO_ROOT / "schemas" / "task_performance.json").read_text(encoding="utf-8"))
+# D-16 (05-04): the per-model view's contract — the SAME closed schema the
+# committed per-model results files and the submit flow carry.
+MODEL_SCHEMA = json.loads(
+    (REPO_ROOT / "schemas" / "model_performance.json").read_text(encoding="utf-8")
+)
 
 # The 28 suite canonical names @483a35c — written out independently here so
 # the test (not the module) is the parity oracle's cross-check.
@@ -229,7 +242,13 @@ def _build_fixture_tree(tmp_path, *, include_failed=True):
 
 
 def _export(tmp_path, **overrides):
-    """Run the full export over the standard fixture tree; return paths."""
+    """Run the full export over the standard fixture tree; return paths.
+
+    Returns ``(out, stats, models_out)`` — the task view dir, the stats dir,
+    and the per-model view dir. The per-model dir is the D-16 DEFAULT
+    (``model_output_dir=None`` derives ``{input_root}/model_performance``),
+    so every caller exercises the default-derivation contract too.
+    """
     root, models_path, datasets_path, config_path = _build_fixture_tree(tmp_path)
     out = tmp_path / "out"
     stats = tmp_path / "stats"
@@ -238,7 +257,7 @@ def _export(tmp_path, **overrides):
         n_bootstrap=2000, bootstrap_seed=42, small_n_ci="t-interval",
         **overrides,
     )
-    return out, stats
+    return out, stats, root / "model_performance"
 
 
 # =====================================================================
@@ -366,7 +385,7 @@ def test_single_mapping_authority_summarize_imports_exporter_table():
 # =====================================================================
 
 def test_end_to_end_emission_validates_against_unchanged_schema(tmp_path):
-    out, stats_dir = _export(tmp_path)
+    out, stats_dir, _models_out = _export(tmp_path)
     task_file = out / "FakeDS__task_task_performance.json"
     assert task_file.exists()
     doc = json.loads(task_file.read_text(encoding="utf-8"))
@@ -485,7 +504,7 @@ def test_pivot_shape_exporter_emission_owns_the_shape(tmp_path):
     """The exporter's own emission carries the same pivot shape: one file
     per dataset named ``{task}_task_performance.json``, an 8-key info block,
     and the 11/9/14 (model/parameters/performance) key sets per model."""
-    out, _ = _export(tmp_path)
+    out, _, _models_out = _export(tmp_path)
     assert sorted(p.name for p in out.iterdir()) == [
         "FakeDS__task_task_performance.json",
     ]
@@ -617,26 +636,123 @@ def test_one_seed_cell_emits_degenerate_statistics(tmp_path):
 
 
 def test_export_is_byte_stable_across_runs(tmp_path):
-    """Two exports of the same tree produce byte-identical files."""
+    """Two exports of the same tree produce byte-identical files — in BOTH
+    views (task files, stats artifacts, and the D-16 per-model files)."""
     outs = []
     for run in (1, 2):
         root, models_path, datasets_path, config_path = _build_fixture_tree(tmp_path / f"tree{run}")
         out = tmp_path / f"out{run}"
         stats = tmp_path / f"stats{run}"
+        models_out = tmp_path / f"models{run}"
         export_runs.export_runs_tree(
-            root, models_path, datasets_path, config_path, out, stats,
+            root, models_path, datasets_path, config_path, out, stats, models_out,
             n_bootstrap=2000, bootstrap_seed=42, small_n_ci="t-interval",
         )
-        outs.append((out, stats))
-    (out1, stats1), (out2, stats2) = outs
-    files1 = sorted(p.name for p in out1.iterdir()) + sorted(p.name for p in stats1.iterdir())
-    files2 = sorted(p.name for p in out2.iterdir()) + sorted(p.name for p in stats2.iterdir())
+        outs.append((out, stats, models_out))
+    (out1, stats1, models1), (out2, stats2, models2) = outs
+    files1 = (
+        sorted(p.name for p in out1.iterdir())
+        + sorted(p.name for p in stats1.iterdir())
+        + sorted(p.name for p in models1.iterdir())
+    )
+    files2 = (
+        sorted(p.name for p in out2.iterdir())
+        + sorted(p.name for p in stats2.iterdir())
+        + sorted(p.name for p in models2.iterdir())
+    )
     assert files1 == files2
     for name in files1:
-        for d1, d2 in ((out1, out2), (stats1, stats2)):
+        for d1, d2 in ((out1, out2), (stats1, stats2), (models1, models2)):
             p1, p2 = d1 / name, d2 / name
             if p1.exists() and p2.exists():
                 assert p1.read_bytes() == p2.read_bytes(), f"{name} not byte-stable"
+
+
+# =====================================================================
+# D-16 per-model view (05-04) — one emitter, both views
+# =====================================================================
+
+def test_per_model_view_emits_schema_valid_files_keyed_by_registry_key(tmp_path):
+    """Every emitted per-model file validates against the UNCHANGED
+    schemas/model_performance.json; the filename alias is EXACTLY the
+    registry key (the key==name contract, D-10/D-18) — the same identity
+    the task view's performance map is keyed by; info is the full 11-key
+    registry card join; and the per-model default destination derives as
+    {input_root}/model_performance (a sibling of the sweep output — the
+    committed dnallm-mark/data/model_performance tree is never a default,
+    so data moves only through inventoried migration commits)."""
+    out, _stats, models_out = _export(tmp_path)
+    # The default derivation contract: sibling of the input root.
+    assert models_out == tmp_path / "finetuned" / "model_performance"
+    assert sorted(p.name for p in models_out.iterdir()) == [
+        "FakeModel-A_performance.json",
+        "FakeModel-B_performance.json",
+    ]
+    task_doc = json.loads(
+        (out / "FakeDS__task_task_performance.json").read_text(encoding="utf-8")
+    )
+    for alias in ("FakeModel-A", "FakeModel-B"):
+        doc = json.loads(
+            (models_out / f"{alias}_performance.json").read_text(encoding="utf-8")
+        )
+        jsonschema.validate(instance=doc, schema=MODEL_SCHEMA)
+        # info: the full registry card join — identical to the task view's
+        # per-model model block (one computation, two keyings).
+        assert doc["info"] == task_doc["performance"][alias]["model"]
+        assert set(doc["info"]) == export_runs.CARD_KEYS
+        # performance: exactly the completed tasks, datasetEntry-shaped.
+        assert list(doc["performance"]) == ["FakeDS__task"]
+        entry = doc["performance"]["FakeDS__task"]
+        assert set(entry) == {"dataset", "parameters", "performance"}
+        assert set(entry["performance"]) == export_runs.EXPORT_METRIC_KEYS
+
+
+def test_per_model_view_agrees_with_task_view_on_shared_cells(tmp_path):
+    """The two views agree EXACTLY on a shared cell — dataset block,
+    parameters block, and every metric value — because both are emitted
+    from one joined payload per cell (D-16's one-emitter guarantee)."""
+    out, _stats, models_out = _export(tmp_path)
+    task_doc = json.loads(
+        (out / "FakeDS__task_task_performance.json").read_text(encoding="utf-8")
+    )
+    for alias in ("FakeModel-A", "FakeModel-B"):
+        model_doc = json.loads(
+            (models_out / f"{alias}_performance.json").read_text(encoding="utf-8")
+        )
+        task_block = task_doc["performance"][alias]
+        model_entry = model_doc["performance"]["FakeDS__task"]
+        assert model_entry["dataset"] == task_doc["info"]
+        assert model_entry["parameters"] == task_block["parameters"]
+        assert model_entry["performance"] == task_block["performance"]
+
+
+def test_per_model_view_zero_completed_model_emits_no_file(tmp_path):
+    """A model whose only records are failed produces NO per-model file
+    (the WR-02 discipline applied to the model axis) — while models with
+    completed records still emit theirs, and the task view is unaffected."""
+    root, models_path, datasets_path, config_path = _build_fixture_tree(tmp_path)
+    # Register a dead model (registry-complete), then give it only failed
+    # records — it must vanish from the per-model view without a KeyError
+    # (a failed-only cell contributes nothing, so the registry join for it
+    # is never even required).
+    models = json.loads(models_path.read_text(encoding="utf-8"))
+    models["FakeModel-Dead"] = dict(models["FakeModel-A"], Model_name="FakeModel-Dead")
+    models_path.write_text(json.dumps(models), encoding="utf-8")
+    _write_run_record(
+        root, "FakeModel-Dead", "FakeDS__task", 5,
+        _suite_native_metrics(0.0), status="failed",
+    )
+    out = tmp_path / "out"
+    stats = tmp_path / "stats"
+    models_out = tmp_path / "model_performance"
+    export_runs.export_runs_tree(
+        root, models_path, datasets_path, config_path, out, stats, models_out,
+        n_bootstrap=100, bootstrap_seed=42, small_n_ci="t-interval",
+    )
+    assert sorted(p.name for p in models_out.iterdir()) == [
+        "FakeModel-A_performance.json",
+        "FakeModel-B_performance.json",
+    ], "a zero-completed model must emit NO per-model file"
 
 
 # =====================================================================
