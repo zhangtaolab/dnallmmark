@@ -31,13 +31,13 @@
     {
       "number": "6",
       "name": "Release Packaging & Provenance",
-      "status": "pending"
+      "status": "in_progress"
     }
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 6)",
-    "reason": "Phase 6 of 6 — needs a plan"
+    "label": "Advance to the next step",
+    "reason": "Phase 6 of 6 · executing"
   },
-  "updated_at": "2026-10-10T13:59:45.539Z"
+  "updated_at": "2026-10-10T18:30:18.439Z"
 }
