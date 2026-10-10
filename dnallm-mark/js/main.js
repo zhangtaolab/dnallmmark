@@ -467,6 +467,22 @@ class DNALLMMark {
           this.renderCategoryNav();
           this.renderScatterChart();
           this.renderLeaderboard();
+        }).catch((error) => {
+          // WR-05: a failed arena file must not die as an unhandled
+          // rejection. Log it and surface an inline error state — the page
+          // keeps the previous arena's rendered content and nav highlight
+          // (renderCategoryNav only runs on success), so the user can retry.
+          console.error('Arena switch failed:', error);
+          const container = document.querySelector('.leaderboard-container');
+          if (container) {
+            container.innerHTML = `
+              <div class="empty-state">
+                <div class="empty-state-icon">⚠️</div>
+                <div class="empty-state-text">Failed to load the ${DataAPI.escapeHTML(String(this.state.currentArena))} leaderboard.</div>
+                <div class="empty-state-hint">Check your connection and try switching arenas again.</div>
+              </div>
+            `;
+          }
         });
       }
     });
