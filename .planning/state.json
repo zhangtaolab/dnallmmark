@@ -21,12 +21,12 @@
     {
       "number": "4",
       "name": "Correctness Fixes",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "5",
       "name": "CI & Verified Data Migration",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "6",
@@ -36,8 +36,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 4 of 6 · ready to verify"
+    "label": "Advance to the next step (plan phase 6)",
+    "reason": "Phase 6 of 6 — needs a plan"
   },
-  "updated_at": "2026-10-10T05:53:38.953Z"
+  "updated_at": "2026-10-10T13:59:45.539Z"
 }
