@@ -21,7 +21,8 @@ in the same commit). Finite coercion and the ``''``/``None``/garbage-string
 semantics below are unchanged.
 
 See also:
-    - ``tests/test_pivot.py`` — the model→task pivot under ``chdir``.
+    - ``tests/test_export_runs.py`` — the pivot-shape owner + the metric-key
+      mapping's single authority (IN-03 parity over both key surfaces).
     - ``tests/test_golden.py`` — full synthetic-chain golden comparison.
 """
 
@@ -30,6 +31,7 @@ import os
 from pathlib import Path
 
 import pytest
+from export_runs import resolve_dataset_metric
 from summarize_comparison import (
     aggregate_models,
     calculate_dataset_stats,
@@ -40,20 +42,11 @@ from summarize_comparison import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SYNTHETIC_DIR = REPO_ROOT / "tests" / "fixtures" / "synthetic_models"
 
-# Minimal copy of summarize_comparison.main()'s metric-key mapping: dataset
-# metadata declares "spearmanr" while the performance block stores the value
-# under "spearman_r".
-METRIC_KEY_MAP = {
-    "F1": "f1",
-    "MCC": "mcc",
-    "AUROC": "auroc",
-    "AUPRC": "auprc",
-    "MSE": "mse",
-    "MAE": "mae",
-    "pearsonr": "pearson_r",
-    "spearmanr": "spearman_r",
-    "R2": "r2",
-}
+# IN-03 (04-05): the metric-key translation is IMPORTED from the exporter —
+# the single authority owns both key surfaces (suite canonicals + the legacy
+# dataset-metric spellings). dataset metadata declares "spearmanr" while the
+# performance block stores the value under "spearman_r"; the old local
+# minimal-copy mapping was deleted with summarize_comparison's mirror.
 
 
 def _load_synthetic_inputs():
@@ -81,9 +74,7 @@ def _load_synthetic_inputs():
                      "context_len (bp)", "species"]
         }
         for ds_name, ds_content in doc["performance"].items():
-            metric_key = METRIC_KEY_MAP.get(
-                ds_content["dataset"]["metric"], ds_content["dataset"]["metric"]
-            )
+            metric_key = resolve_dataset_metric(ds_content["dataset"]["metric"])
             raw_score = get_float(
                 ds_content["performance"].get(metric_key, ""), default=None
             )

@@ -6,10 +6,11 @@ GPN, Enformer, GenomeOcean, etc.) across genomic prediction tasks such as promot
 prediction, histone modification classification, splice site detection, and gene
 expression regression.
 
-After ``get_task_performance.py`` pivots the raw data into task-centric files, this
-script goes further: for every model it computes **aggregated ranking statistics**
-across all benchmark tasks (or a species-specific subset), producing the JSON files
-that power the DNALLM-Mark interactive leaderboard (``index.html``).
+This script reads the per-model benchmark results directly (the model-centric
+``{model}_performance.json`` files) and computes **aggregated ranking
+statistics** across all benchmark tasks (or a species-specific subset) for
+every model, producing the JSON files that power the DNALLM-Mark interactive
+leaderboard (``index.html``).
 
 Normalization strategy
 ----------------------
@@ -73,8 +74,9 @@ Usage (run from ``dnallm-mark/data/``)::
     python ../../script/summarize_comparison.py
 
 See also:
-    - ``script/get_task_performance.py`` — produces the per-task JSON files used
-      by the finetuning results page.
+    - ``script/export_runs.py`` — owns the metric-key mapping this script
+      imports (IN-03 single authority) and, at E2', regenerates the per-task
+      JSON files used by the finetuning results page.
 """
 
 import json
@@ -84,6 +86,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from export_runs import resolve_dataset_metric
 
 # ---------------------------------------------------------------------------
 # Arena grouping source (FIX-02): every dataset's arena comes from the
@@ -343,23 +347,6 @@ def main():
     raw_dataset_flops = {}         # {dataset_name: {model_alias: FLOPs}}
     dataset_species_map = {}       # {dataset_name: species_label}
 
-    # Mapping from the "metric" field in dataset metadata (e.g. "F1", "AUROC")
-    # to the corresponding key inside the "performance" dict (e.g. "f1", "auroc").
-    # This allows each task to declare its primary evaluation metric, which may
-    # differ: classification tasks use F1/AUROC/AUPRC, regression tasks use
-    # Pearson r / Spearman r / R² / MSE.
-    metric_key_map = {
-        "F1": "f1",
-        "MCC": "mcc",
-        "AUROC": "auroc",
-        "AUPRC": "auprc",
-        "MSE": "mse",
-        "MAE": "mae",
-        "pearsonr": "pearson_r",
-        "spearmanr": "spearman_r",
-        "R2": "r2",
-    }
-
     # -------------------- Read per-model JSON files ------------------
     # Arena grouping map (FIX-02): {dataset_name: arena} from the registry's
     # maintainer-confirmed Category column, Multiple resolved to majority
@@ -403,11 +390,13 @@ def main():
 
             # Determine the primary metric declared by this dataset (e.g. "f1",
             # "auroc", "pearson_r").  Fall back to "accuracy" if unspecified.
+            # IN-03 (04-05): the legacy/uppercase spellings ("F1", "AUROC", …)
+            # resolve through the exporter-owned translation — the single
+            # authority over both key surfaces; the local mirror is deleted.
             metric_key = ds_meta.get("metric", "accuracy")
             if not metric_key:
                 metric_key = "accuracy"
-            if metric_key in metric_key_map:
-                metric_key = metric_key_map[metric_key]
+            metric_key = resolve_dataset_metric(metric_key)
 
             # Extract the model's raw score and FLOPs for this task. raw_score
             # is None exactly when the metric is missing under the semantics

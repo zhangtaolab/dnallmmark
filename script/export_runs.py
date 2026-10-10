@@ -358,6 +358,45 @@ def _canonical_of(key: str) -> str:
     return key if key in SUITE_CANONICAL else _ALIAS_TO_CANONICAL[key]
 
 
+# Legacy dataset-metric strings (04-05, IN-03 by removal): committed dataset
+# blocks declare their primary metric in mixed producer spellings — the
+# uppercase forms below lived in summarize_comparison's deleted local
+# metric_key_map mirror and are now this table's custody too (one owner,
+# both key surfaces). They resolve to suite canonicals first, then to
+# export slots. AUROC/AUPRC need no entry (already suite canonicals), and
+# pearsonr/spearmanr are canonicals as-is.
+LEGACY_DATASET_METRIC: dict[str, str] = {
+    "F1": "f1",
+    "MCC": "mcc",
+    "MSE": "mse",
+    "MAE": "mae",
+    "R2": "r2",
+}
+
+
+def resolve_dataset_metric(metric: str) -> str:
+    """Translate a dataset block's ``metric`` declaration to its export slot.
+
+    The single authority over BOTH key surfaces (IN-03): legacy/uppercase
+    producer spellings resolve through ``LEGACY_DATASET_METRIC`` to suite
+    canonicals, and suite canonicals map through ``CANONICAL_TO_EXPORT`` to
+    the performance-block slots. A declaration that resolves to neither
+    surface passes through unchanged — the identity fallback the deleted
+    mirror had, so an unlisted metric key simply misses in the performance
+    block exactly as before (numbers never move; T-04-13).
+
+    Args:
+        metric: The ``dataset.metric`` value from a committed result file
+            (e.g. ``"F1"``, ``"AUPRC"``, ``"spearmanr"``).
+
+    Returns:
+        The performance-block slot the value lives under (e.g. ``"f1"``,
+        ``"auprc"``, ``"spearman_r"``).
+    """
+    canonical = LEGACY_DATASET_METRIC.get(metric, metric)
+    return CANONICAL_TO_EXPORT.get(canonical, canonical)
+
+
 # =====================================================================
 # Run-record reader (F2 layout)
 # =====================================================================
