@@ -64,9 +64,23 @@ def _bh_stepup(raw):
 
 
 def test_three_models_yield_three_pairs_with_hand_computed_bh():
-    """C(3,2)=3 pairs; the artifact's p_adj values equal the hand-computed BH
-    step-up over the artifact's own raw p-values, the separated pairs are
-    significant at FDR 0.05, and the twin pair is not."""
+    """C(3,2)=3 pairs; ``permutation_type="samples"`` is scipy's PAIRED
+    permutation test (per-task differences sign-flipped under the null —
+    the models' observations are paired by task). At 3 tasks the exact
+    distribution has 2^3 = 8 configurations, so the p-values are
+    hand-computable exactly:
+
+    - m-high vs m-mid: diffs [1.9, 2.1, 1.7] all positive — |T| >= |T_obs|
+      only for all-plus and all-minus -> p = 2/8 = 0.25 (the floor)
+    - m-high vs m-twin: diffs [1.9, 2.05, 1.75] -> p = 0.25 likewise
+    - m-mid vs m-twin: diffs [0.0, -0.05, 0.05] -> T_obs = 0, every
+      configuration qualifies -> p = 1.0
+
+    The artifact's p_adj values equal the hand-computed BH step-up over
+    these raw p-values ([0.375, 0.375, 1.0]); nothing is significant at 3
+    tasks (0.375 > 0.05 — significance resolution needs more tasks; the
+    production artifact's 47-task vectors have 2^47 configurations under
+    10,000 resamples)."""
     artifact = build_artifact(MATRIX, n_resamples=N_RESAMPLES, seed=42, batch=100)
 
     assert len(artifact["pairs"]) == 3
@@ -80,35 +94,45 @@ def test_three_models_yield_three_pairs_with_hand_computed_bh():
         ("m-high", "m-twin"),
         ("m-mid", "m-twin"),
     }
+    assert by_pair[("m-high", "m-mid")]["p_value"] == pytest.approx(0.25)
+    assert by_pair[("m-high", "m-twin")]["p_value"] == pytest.approx(0.25)
+    assert by_pair[("m-mid", "m-twin")]["p_value"] == pytest.approx(1.0)
+    for pair in by_pair:
+        assert by_pair[pair]["n_common_tasks"] == 3
+        assert by_pair[pair]["significant"] is False  # 3-task floor 0.375 > 0.05
+
+    # BH hand-computation over the raw p-values, independent of scipy:
     raw = sorted(p["p_value"] for p in artifact["pairs"])
     expected = _bh_stepup(raw)
     got = sorted(p["p_adj"] for p in artifact["pairs"])
     assert got == pytest.approx(expected, rel=1e-12)
-
-    # Direction: the clearly separated pairs are significant; the twin pair
-    # (near-identical score vectors) is not.
-    for pair in (("m-high", "m-mid"), ("m-high", "m-twin")):
-        assert by_pair[pair]["significant"] is True
-        assert by_pair[pair]["n_common_tasks"] == 3
-    assert by_pair[("m-mid", "m-twin")]["significant"] is False
+    assert expected == pytest.approx([0.375, 0.375, 1.0])
 
 
-def test_zero_common_task_pair_excluded_and_disclosed():
+def test_unpermutable_pairs_excluded_and_disclosed():
     """A pair sharing no task cannot be permuted: it is excluded from the BH
-    family and disclosed under ``info.excluded_pairs``."""
+    family and disclosed under ``info.excluded_pairs``. A pair sharing exactly
+    ONE task is excluded too — scipy requires >= 2 observations per sample
+    (a single shared task fixes the statistic). Exclusions are listed in the
+    deterministic sorted-pair iteration order."""
     matrix = {
-        "m-a": {"t1": 1.0, "t2": 0.5},
+        "m-a": {"t1": 1.0, "t2": 0.5, "t3": 0.3},
         "m-b": {"t1": 0.9},
-        "m-c": {"t2": 0.4},
+        "m-c": {"t4": 0.4, "t5": 0.6},
+        "m-d": {"t1": 0.8, "t2": 0.4, "t3": 0.2},
     }
     artifact = build_artifact(matrix, n_resamples=500, seed=42, batch=100)
 
     tested = {(p["model_a"], p["model_b"]) for p in artifact["pairs"]}
-    assert ("m-b", "m-c") not in tested
-    assert tested == {("m-a", "m-b"), ("m-a", "m-c")}
-    assert artifact["info"]["family_size"] == 2
+    assert tested == {("m-a", "m-d")}  # the only pair with >= 2 common tasks
+    assert artifact["pairs"][0]["n_common_tasks"] == 3
+    assert artifact["info"]["family_size"] == 1
     assert artifact["info"]["excluded_pairs"] == [
-        {"model_a": "m-b", "model_b": "m-c", "reason": "zero common tasks"}
+        {"model_a": "m-a", "model_b": "m-b", "reason": "single common task"},
+        {"model_a": "m-a", "model_b": "m-c", "reason": "zero common tasks"},
+        {"model_a": "m-b", "model_b": "m-c", "reason": "zero common tasks"},
+        {"model_a": "m-b", "model_b": "m-d", "reason": "single common task"},
+        {"model_a": "m-c", "model_b": "m-d", "reason": "zero common tasks"},
     ]
 
 

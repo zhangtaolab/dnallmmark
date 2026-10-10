@@ -77,6 +77,8 @@ See also:
     - ``script/export_runs.py`` — owns the metric-key mapping this script
       imports (IN-03 single authority) and, at E2', regenerates the per-task
       JSON files used by the finetuning results page.
+    - ``script/permutation_tests.py`` — the pairwise permutation family over
+      this script's zscores (F6 Q3); imports ``load_model_inputs`` here.
 """
 
 import json
@@ -155,7 +157,24 @@ def get_float(val, default=0.0):
     return result
 
 
-def calculate_dataset_stats(dataset_records):
+def _closed_intervals_intersect(a, b):
+    """Closed-interval intersection test (REV-04 boundary truth).
+
+    Intervals ``[lo_a, hi_a]`` and ``[lo_b, hi_b]`` intersect when
+    ``lo_a <= hi_b and lo_b <= hi_a`` — touching at exactly one point
+    (``lo_a == hi_b``) counts as a tie.
+
+    Args:
+        a: First interval ``(lo, hi)``.
+        b: Second interval ``(lo, hi)``.
+
+    Returns:
+        bool: True when the closed intervals intersect.
+    """
+    return a[0] <= b[1] and b[0] <= a[1]
+
+
+def calculate_dataset_stats(dataset_records, ci_map=None):
     """Compute normalised scores and rank-based points for one benchmark task.
 
     Given a flat mapping of ``{model_alias: raw_metric_score}`` for a single
@@ -170,8 +189,27 @@ def calculate_dataset_stats(dataset_records):
     - **Z-Score** — standardises using mean / std of the score distribution.
     - **Robust** — uses median / IQR, making it resistant to outlier scores.
 
+    F6 CI-overlap tie rule (REV-04): when ``ci_map`` supplies a closed 95%
+    interval for a model, "tie" is widened from exact score equality to
+    closed-interval overlap — models whose intervals intersect form connected
+    components of the overlap graph (A~B and B~C tie all three even when A
+    and C do not overlap) and every member receives the component's MINIMUM
+    rank per the ``method='min'`` convention, so ``task_rank_score = N -
+    rank`` stays coherent. The intervals are CONSUMED here, never computed:
+    the single sanctioned producer is the vendored ``aggregate_seeds`` in
+    ``script/export_runs.py`` (n<3 -> ci95 null/method "none"; 3<=n<10 ->
+    t-interval; n>=10 -> seeded bootstrap — the F6 statistical-semantics
+    correction). Models with no interval entry (``ci_map=None``, a ``None``
+    entry, or an absent key) keep pure score ranking, so pre-E2' single-run
+    data — which has no CI source — reproduces the exact-tie output
+    byte-identically.
+
     Args:
         dataset_records: ``{model_alias: raw_score}`` for one task/dataset.
+        ci_map: Optional ``{model_alias: (lo, hi) | None}`` of closed 95%
+            intervals (e.g. built from the vendored ``aggregate_seeds``
+            output). Only models with a non-``None`` entry join the overlap
+            graph.
 
     Returns:
         ``{model_alias: {raw, rank, task_rank_score, minmax, zscore, robust}}``
@@ -190,6 +228,37 @@ def calculate_dataset_stats(dataset_records):
     #    method='min' assigns the best (smallest) rank to all tied scores,
     #    e.g. scores [0.9, 0.9, 0.8] → ranks [1, 1, 3].
     ranks = pd.Series(scores).rank(ascending=False, method='min').values
+
+    # 1b. F6 CI-overlap tie rule: re-assign each overlap-graph connected
+    #     component its minimum rank (see docstring). With no ci_map — or no
+    #     interval entries — this block is a no-op and the exact-tie ranks
+    #     above flow through unchanged.
+    if ci_map is not None:
+        interval_models = [m for m in models if ci_map.get(m) is not None]
+        if len(interval_models) > 1:
+            rank_of = {m: ranks[i] for i, m in enumerate(models)}
+            # Union-find over the closed-interval overlap graph.
+            parent = {m: m for m in interval_models}
+
+            def find(x):
+                root = x
+                while parent[root] != root:
+                    root = parent[root]
+                while parent[x] != root:  # path compression
+                    parent[x], x = root, parent[x]
+                return root
+
+            for i, model_a in enumerate(interval_models):
+                for model_b in interval_models[i + 1:]:
+                    if _closed_intervals_intersect(ci_map[model_a], ci_map[model_b]):
+                        parent[find(model_a)] = find(model_b)
+            component_min = {}
+            for m in interval_models:
+                root = find(m)
+                component_min[root] = min(component_min.get(root, N + 1), rank_of[m])
+            for i, m in enumerate(models):
+                if m in parent:
+                    ranks[i] = component_min[find(m)]
 
     # Convert ranks to competitive points: rank 1 earns N-1, last earns 0.
     task_rank_scores = N - ranks
@@ -243,7 +312,8 @@ def to_singular_species(name):
     return plural_to_singular.get(name_lower, name_lower)
 
 
-def aggregate_models(models_info, dataset_stats_map, dataset_flops_map, target_datasets):
+def aggregate_models(models_info, dataset_stats_map, dataset_flops_map, target_datasets,
+                     *, include_weighted=False):
     """Aggregate per-task normalised scores into overall model rankings.
 
     For each model, this function sums its normalised scores (rank score,
@@ -255,6 +325,15 @@ def aggregate_models(models_info, dataset_stats_map, dataset_flops_map, target_d
     After aggregation, models are assigned a final overall ``rank`` based on
     ``rank_score`` in descending order.
 
+    F6 weighted view (REV-04/F6 Q2): with ``include_weighted=True`` each
+    performance block also carries ``weighted_score`` — the sum of per-task
+    zscores divided by ``len(target_datasets)``, the aggregation view's FULL
+    task count as a uniform ``1/N`` difficulty weight. It follows the same
+    no-imputation convention as ``sum_zscore``: a model missing tasks
+    contributes nothing for them (numerator) while the denominator still
+    counts the view's tasks. The default call does not emit the key — the
+    emission is wired by the F6 migration commit only.
+
     Args:
         models_info:         ``{model_alias: {name, size (M), type, …}}``
         dataset_stats_map:   ``{dataset_name: {model_alias: {raw, rank, …}}}``
@@ -262,6 +341,8 @@ def aggregate_models(models_info, dataset_stats_map, dataset_flops_map, target_d
         dataset_flops_map:   ``{dataset_name: {model_alias: FLOPs}}``
         target_datasets:     List of dataset names to include in this aggregation
                              (e.g. all datasets, or only plant-specific ones).
+        include_weighted:    Emit ``weighted_score`` (F6 weighted view). Off by
+                             default so the pre-migration output is unchanged.
 
     Returns:
         ``{model_alias: {model: …, performance: …}}`` sorted by ``rank_score``
@@ -313,6 +394,15 @@ def aggregate_models(models_info, dataset_stats_map, dataset_flops_map, target_d
             },
         }
 
+        # F6 weighted view (uniform 1/N difficulty weight over the view's
+        # tasks): sum_zscore / len(target_datasets), same no-imputation
+        # convention as the sums above. Gated so main()'s emitted output is
+        # unchanged until the migration commit wires the emission.
+        if include_weighted:
+            aggregated_results[model_alias]["performance"]["weighted_score"] = (
+                sum(s['zscore'] for s in model_m_stats) / len(target_datasets)
+            )
+
     # Assign overall rank based on rank_score (descending).  The model with
     # the highest cumulative rank_score is ranked #1.
     sorted_models = sorted(
@@ -326,27 +416,31 @@ def aggregate_models(models_info, dataset_stats_map, dataset_flops_map, target_d
     return {alias: aggregated_results[alias] for alias, _ in sorted_models}
 
 
-def main():
-    # ========================= Configuration =========================
-    # Directory containing per-model JSON files produced by the fine-tuning
-    # pipeline (e.g. "plant-dnabert-6mer_performance.json").
-    input_dir = 'model_performance'
+def load_model_inputs(input_dir):
+    """Read the per-model result files and extract the aggregation inputs.
 
-    # Output filename for the all-tasks comparison (written to CWD).
-    output_total = 'models_comparison.json'
-    # =================================================================
+    The extraction half of :func:`main` (moved verbatim, 05-02): iterates the
+    per-model JSON files, retains the 7-key leaderboard card subset, joins
+    each dataset's arena through the registry ``Category`` map (FIX-02), and
+    extracts the raw primary-metric score and FLOPs per model per task with
+    the ``get_float(default=None)`` presence gate. Also the single extraction
+    source for the permutation-test engine (``script/permutation_tests.py``)
+    — one reader over the model-centric inputs, never a duplicated loop.
 
-    if not os.path.exists(input_dir):
-        print(f"Error: Could not find input directory '{input_dir}'")
-        return
+    Args:
+        input_dir: Directory containing ``{alias}_performance.json`` files.
 
-    # -------------------- Global accumulators ------------------------
+    Returns:
+        Tuple ``(models_info, raw_dataset_scores, raw_dataset_flops,
+        dataset_species_map)`` — the leaderboard card subset map, per-task
+        raw primary-metric scores (presence-gated), per-task FLOPs (recorded
+        regardless of metric presence), and the per-dataset arena labels.
+    """
     models_info = {}               # {model_alias: {name, size (M), type, tokenizer, …}}
     raw_dataset_scores = {}        # {dataset_name: {model_alias: raw_primary_metric}}
     raw_dataset_flops = {}         # {dataset_name: {model_alias: FLOPs}}
     dataset_species_map = {}       # {dataset_name: species_label}
 
-    # -------------------- Read per-model JSON files ------------------
     # Arena grouping map (FIX-02): {dataset_name: arena} from the registry's
     # maintainer-confirmed Category column, Multiple resolved to majority
     # arena. Loaded once — the dataset loop below joins via plain lookup.
@@ -417,6 +511,30 @@ def main():
             if dataset_name not in raw_dataset_flops:
                 raw_dataset_flops[dataset_name] = {}
             raw_dataset_flops[dataset_name][model_alias] = flops
+
+    return models_info, raw_dataset_scores, raw_dataset_flops, dataset_species_map
+
+
+def main():
+    # ========================= Configuration =========================
+    # Directory containing per-model JSON files produced by the fine-tuning
+    # pipeline (e.g. "plant-dnabert-6mer_performance.json").
+    input_dir = 'model_performance'
+
+    # Output filename for the all-tasks comparison (written to CWD).
+    output_total = 'models_comparison.json'
+    # =================================================================
+
+    if not os.path.exists(input_dir):
+        print(f"Error: Could not find input directory '{input_dir}'")
+        return
+
+    # -------------------- Read per-model JSON files ------------------
+    # (extraction lives in load_model_inputs — the single reader shared with
+    # script/permutation_tests.py; verbatim move, output unchanged)
+    models_info, raw_dataset_scores, raw_dataset_flops, dataset_species_map = (
+        load_model_inputs(input_dir)
+    )
 
     # ---------- Step 1: Per-task normalisation and ranking -----------
     print("Calculating normalised scores and ranks at the dataset level...")
