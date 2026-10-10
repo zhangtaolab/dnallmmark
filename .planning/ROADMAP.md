@@ -108,7 +108,7 @@ Plans:
   5. DOM-build sites touched by these fixes escape rendered content, so a hostile string in any performance JSON displays as inert text
   6. Phase 2 schemas/tests are updated for the new export shape (any new metric keys join the closed enum WITH the data≡enum self-check updated in the same commit)
 
-**Plans**: 4/5 plans executed planned
+**Plans**: 5/5 plans executed planned
 **UI hint**: yes
 Plans:
 **Wave 1**
@@ -120,7 +120,7 @@ Plans:
 - [x] 04-02-PLAN.md — Unified exporter core — scipy behind a blocking-human legitimacy gate, vendored aggregate_seeds @483a35c with parity tests, exporter-owned 28-name metric-key mapping (key-parity both directions), run-record reader + registry joins, D-12 parametersBlock config-YAML join, dual output (schema-valid task_performance-compatible + per-seed stats artifact), freeze_snapshot tested + unwired (REV-03)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 04-05-PLAN.md — Chain retirement + IN-03 + hygiene — get_task_performance.py deleted with pivot assertions folded into exporter tests, golden/determinism re-scoped (task files become committed inputs), OQ4 2-file species correction + tasks.json inventory, summarize's metric-key mirror deleted (exporter table imported, legacy alias surface owned), IN-08 lint scope + README exporter sentence (REV-03, FIX-02)
+- [x] 04-05-PLAN.md — Chain retirement + IN-03 + hygiene — get_task_performance.py deleted with pivot assertions folded into exporter tests, golden/determinism re-scoped (task files become committed inputs), OQ4 2-file species correction + tasks.json inventory, summarize's metric-key mirror deleted (exporter table imported, legacy alias surface owned), IN-08 lint scope + README exporter sentence (REV-03, FIX-02)
 
 ### Phase 5: CI & Three-Seed Full Re-Run (E2')
 
@@ -168,6 +168,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Audit & Release Foundations | 3/3 | Complete    | 2026-10-09 |
 | 2. Data Contracts & Test Harness | 3/3 | Complete    | 2026-10-09 |
 | 3. Pipeline Adaptation to dnallm Dev | 4/4 | Complete    | 2026-10-10 |
-| 4. Correctness Fixes | 4/5 | In Progress | - |
+| 4. Correctness Fixes | 5/5 | In Progress | - |
 | 5. CI & Verified Data Migration | 0/TBD | Not started | - |
 | 6. Release Packaging & Provenance | 0/TBD | Not started | - |

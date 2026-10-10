@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v0.7.1
 current_phase: 4
 current_phase_name: Correctness & Methodology Core
-status: executing
-stopped_at: Completed 04-02-PLAN.md (unified exporter)
-last_updated: "2026-10-10T05:25:54.721Z"
+status: verifying
+stopped_at: Completed 04-05-PLAN.md (pivot retirement + OQ4 + IN-03)
+last_updated: "2026-10-10T05:53:54.360Z"
 last_activity: 2026-10-10
 last_activity_desc: Phase 4 execution started
-state_head: 5b111d7312b949de54f3ad110b48925adbf5e7f1
+state_head: 2a26a6600db3dc6cfac647bc5989f52c63b16a43
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 15
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 
 Phase: 4 (Correctness & Methodology Core) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-10 — Phase 4 execution started
 
 Progress: [█████░░░░░] 50% (1/6 phases)
@@ -73,6 +73,7 @@ Progress: [█████░░░░░] 50% (1/6 phases)
 | Phase 04 P04 | 43 min | 2 tasks | 5 files |
 | Phase 04 P02 | 19 min | 3 tasks | 9 files |
 | Phase 04 P02 | 19 min | 3 tasks | 9 files |
+| Phase 04 P05 | 16 min | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -119,6 +120,9 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-03: live Playwright verification 48/48 (zero console errors on all 6 pages, sort/modal/delegation interactions, submission flow, hostile-string inert) via CLI driver fallback — MCP browser tools absent in executor session
 - [Phase 04]: 04-04: four quirk registries ported with LEGACY_NAME_MAP parity (rename PlantCAD2-Large-l48-d1536→PlantCAD2-Large; drops prokbert-mini-c/-long/MutBERT); safetensors is the 11-entry union (plant-dnamamba-6mer + PlantGFM); limited-length dict WIRED (AUD-15 dead config made functional); tier table composes min(bs_new, cap) before the VRAM estimators with legacy grad_accum compensation — parity tests mutation-proven 8/8
 - [Phase 04]: 04-04: 62/62 complete cards — 10 from confirmed public pages, 7 (no locatable upstream: Chaoba×3, denseSSM, mamba2×2, prokbert) from the operational row + "" absent-convention, never fabricated; context_len "" not 0 (schema would render a wrong number vs fail loudly at E2'); space≡SPACE confirmed same model under two keys, kept distinct, merge surfaced to maintainer
+- [Phase 04]: [Phase 04] 04-05: pivot retired delete-and-fold — the deleted generator's own deterministic final output committed as the fixture its successor tests assert against; the sanitizer's '/' half accounted as structurally unreachable through the exporter's directory-walk input (fold-or-account honored)
+- [Phase 04]: [Phase 04] 04-05: IN-03 by removal — resolve_dataset_metric is the single authority over both key surfaces with the deleted mirror's identity fallback preserved, making the consolidation provably number-neutral (make data byte-identical no-op)
+- [Phase 04]: [Phase 04] 04-05: OQ4 landed as its own commit after the retirement commit — 2 one-line task-file species corrections + tasks.json's 2 entries, exactly-3-file inventory in the message; no known-wrong species value remains in committed data
 
 ### Pending Todos
 
@@ -141,6 +145,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-10T05:25:54.659Z
-Stopped at: Completed 04-02-PLAN.md (unified exporter)
+Last session: 2026-10-10T05:53:54.318Z
+Stopped at: Completed 04-05-PLAN.md (pivot retirement + OQ4 + IN-03)
 Resume file: None

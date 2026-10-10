@@ -23,7 +23,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 ### Correctness Fixes
 
 - [x] **FIX-01**: Every page renders without errors — `renderNavbar()` null-container crash fixed; verified on ALL pages, not just the 3 known-broken ones
-- [ ] **FIX-02**: Species-as-dataset grouping bug fixed (`pipeline/dnallmmark_pipeline.py:1229`), with a failing test written first
+- [x] **FIX-02**: Species-as-dataset grouping bug fixed (`pipeline/dnallmmark_pipeline.py:1229`), with a failing test written first
 - [x] **FIX-03**: Submission flow repaired — `submit.html` created, orphaned `js/submit.js` wired to the current data schema, reachable from navigation
 - [x] **FIX-04**: Sink-side escaping at DOM-build sites the fixes touch (bounded to touched code, not a full security hardening pass)
 - [x] **FIX-05**: All three data generators produce deterministic output (sorted directory iteration + `sort_keys` JSON writing) — prerequisite for every diff-based check
@@ -61,7 +61,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 **Revision requirements (F1–F10, per the 2026-10-09 code-review & feature plan against dev@c6b3137; F-numbers are the canonical reference)**:
 - [x] **REV-01** (F1, P0): Dev-split generation for the 18 Dev-empty tasks (stratified 10% from train, seed=42, datasets_info Dev columns updated) + checkpoint selection refuses silent test fallback
 - [x] **REV-02** (F2, P0): Multi-seed sweep — seed-isolated output dirs fixing G1 (resume never skips a different seed), sweep runner (model×task×seed) with per-run records and failure manifest; VRAM-probe state semantics documented per seed
-- [ ] **REV-03** (F3, P0): Unified exporter + result snapshot — metric-key mapping layer (suite registry ↔ export keys, key-parity unit-tested), dataset species from a human-verified metadata table (never model cards), per-seed detail + mean±SD/bootstrap-CI aggregates; freeze_snapshot (tar + SHA-256 + frozen commit hash)
+- [x] **REV-03** (F3, P0): Unified exporter + result snapshot — metric-key mapping layer (suite registry ↔ export keys, key-parity unit-tested), dataset species from a human-verified metadata table (never model cards), per-seed detail + mean±SD/bootstrap-CI aggregates; freeze_snapshot (tar + SHA-256 + frozen commit hash)
 - [ ] **REV-04** (F6, P1): Aggregation upgrade — CI-overlap tie rules, raw-rank + z-score×difficulty-weight dual views, permutation tests (10k, BH-corrected); CpG case renders as tie
 - [ ] **REV-05** (F4, P1): Adaptation lanes — LoRA (suite built-in, CLI-exposed), IA³ (after suite-side support), frozen probes (embedding cache + logistic/MLP); cost-accuracy frontier table
 - [ ] **REV-06** (F9, P1): CI golden tests — smoke (tiny model × 1k × 1 epoch incl. export), key parity, species spot checks, aggregation units; CPU, <15 min, PR-required
@@ -118,7 +118,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PIPE-03 | Phase 3 | Complete |
 | REV-01 | Phase 3 | Complete |
 | REV-02 | Phase 3 | Complete |
-| REV-03 | Phase 4, Phase 6 | Pending |
+| REV-03 | Phase 4, Phase 6 | Complete |
 | REV-04 | Phase 5 | Pending |
 | REV-05 | Phase 6 | Pending |
 | REV-06 | Phase 5 | Pending |
@@ -127,7 +127,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REV-09 | Phase 5 | Pending |
 | REV-10 | Phase 3 | Complete |
 | FIX-01 | Phase 4 | Complete |
-| FIX-02 | Phase 4 | Pending |
+| FIX-02 | Phase 4 | Complete |
 | FIX-03 | Phase 4 | Complete |
 | FIX-04 | Phase 4 | Complete |
 | TEST-04 | Phase 5 | Pending |
