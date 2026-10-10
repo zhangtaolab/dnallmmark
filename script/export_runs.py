@@ -417,6 +417,82 @@ def resolve_dataset_metric(metric: str) -> str:
 # Run-record reader (F2 layout)
 # =====================================================================
 
+# The suite sweep's per-seed evidence file (dnallm/finetune/sweep.py:168
+# @ v1.2.1 (30dfd6d)); adopted tolerantly by load_run_records below.
+SEED_RESULT_FILENAME = "seed_result.json"
+
+
+def _read_seed_result(seed_dir: Path) -> dict[str, Any] | None:
+    """Read the suite-written per-seed ``seed_result.json`` (06-01).
+
+    Tolerant adoption of the suite's own per-seed evidence file. The
+    ACTUAL writer payload (dnallm/finetune/sweep.py:314-324 @ v1.2.1)
+    is ``{model_name, task_name, seed, timestamp, metrics}`` with
+    ``metrics`` a dict — NOT the looser "{split, timestamp, metrics}"
+    paraphrase (that shape belongs to the suite's separate
+    ``eval_{split}_result.json``). Policy (the run_record abort
+    discipline — an offline tool over the sweep's own output never
+    silently merges a wrong number):
+
+    - absent  -> ``None`` (silent skip: not evidence — our run_sweep
+      subprocesses do not produce this file today, so absence is the
+      normal state on our trees; this reader is adoption, not
+      requirement);
+    - present -> validate the suite shape and return the ``metrics``
+      block as SUPPLEMENTARY per-seed evidence (the caller merges it
+      under run_record precedence — our record stays the authority);
+    - malformed (unparseable JSON, a non-object top level, a missing
+      identity/metrics key, or ``metrics`` not a dict) -> a loud abort
+      (``ValueError`` for parse/shape failures, ``TypeError`` for the
+      two isinstance type checks — ruff TRY004 discipline) naming the
+      file path and the failed check, never a silent skip.
+
+    Args:
+        seed_dir: The ``{root}/{model}/{task}/seed_{n}`` directory.
+
+    Returns:
+        The validated ``metrics`` dict, or ``None`` when the file is
+        absent.
+
+    Raises:
+        ValueError: the file exists but is unparseable JSON or misses a
+            suite-shape key (the message names the path).
+        TypeError: the top level or the ``metrics`` block is not an
+            object (the message names the path).
+    """
+    path = seed_dir / SEED_RESULT_FILENAME
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise ValueError(
+            f"malformed {SEED_RESULT_FILENAME} (unparseable JSON) "
+            f"at {path}: {exc}"
+        ) from exc
+    if not isinstance(data, dict):
+        raise TypeError(
+            f"malformed {SEED_RESULT_FILENAME} (top level is "
+            f"{type(data).__name__}, expected an object) at {path}"
+        )
+    missing = [
+        key for key in ("model_name", "task_name", "seed", "timestamp", "metrics")
+        if key not in data
+    ]
+    if missing:
+        raise ValueError(
+            f"malformed {SEED_RESULT_FILENAME} (missing {missing}) "
+            f"at {path}"
+        )
+    if not isinstance(data["metrics"], dict):
+        raise TypeError(
+            f"malformed {SEED_RESULT_FILENAME} (metrics is "
+            f"{type(data['metrics']).__name__}, expected an object) "
+            f"at {path}"
+        )
+    return data["metrics"]
+
+
 def load_run_records(root: Path) -> dict[str, dict[str, dict[int, dict[str, Any]]]]:
     """Read the F2 run-record tree: ``{model: {task: {seed: record}}}``.
 
@@ -426,11 +502,19 @@ def load_run_records(root: Path) -> dict[str, dict[str, dict[int, dict[str, Any]
     cell); a malformed record aborts loudly (offline tool over the sweep's
     own output).
 
+    Suite ``seed_result.json`` adoption (06-01): when a seed directory
+    also carries the suite's per-seed file, its validated ``metrics``
+    block merges into the record as SUPPLEMENTARY evidence under
+    run_record precedence — on key collision the run record's own value
+    wins; absent files are skipped silently (see ``_read_seed_result``
+    for the malformed-abort policy).
+
     Args:
         root: The sweep output root (default ``finetuned/``).
 
     Returns:
-        The nested record tree, records verbatim.
+        The nested record tree, records verbatim (plus merged seed_result
+        metrics keys where such a file exists).
     """
     if not root.is_dir():
         raise FileNotFoundError(f"input root does not exist: {root}")
@@ -447,6 +531,20 @@ def load_run_records(root: Path) -> dict[str, dict[str, dict[int, dict[str, Any]
                 if not record_path.exists():
                     continue
                 record = json.loads(record_path.read_text(encoding="utf-8"))
+                # Suite seed_result.json (06-01): forward-compatible
+                # adoption — the suite's run_seeds writes this file in its
+                # OWN path; our run_sweep subprocesses do not produce it
+                # today, so the reader supplements when present and is a
+                # no-op otherwise. Run-record precedence: our record stays
+                # the authority, the suite file supplements missing keys.
+                seed_metrics = _read_seed_result(seed_dir)
+                if seed_metrics:
+                    metrics = record.get("metrics")
+                    metrics = metrics if isinstance(metrics, dict) else {}
+                    for key, value in seed_metrics.items():
+                        if key not in metrics:
+                            metrics[key] = value
+                    record["metrics"] = metrics
                 tree.setdefault(model_dir.name, {}).setdefault(task_dir.name, {})[seed] = record
     return tree
 

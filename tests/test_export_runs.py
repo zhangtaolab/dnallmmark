@@ -53,6 +53,7 @@ See also:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import export_runs  # conftest puts script/ on sys.path
@@ -105,8 +106,13 @@ def _suite_native_metrics(auroc: float, *, pearson=0.5, loss=0.234,
 
 
 def _write_run_record(root, model, task, seed, metrics, *, status="completed",
-                      vram=None, global_step=2229285):
-    """Materialize one {root}/{model}/{task}/seed_{seed}/ cell."""
+                      vram=None, global_step=2229285, seed_result=None):
+    """Materialize one {root}/{model}/{task}/seed_{seed}/ cell.
+
+    ``seed_result`` (06-01): when not None, also write the suite-shaped
+    ``seed_result.json`` sibling (dnallm/finetune/sweep.py:314-324 @
+    v1.2.1 writer payload) with the given dict as its ``metrics`` block.
+    """
     seed_dir = root / model / task / f"seed_{seed}"
     seed_dir.mkdir(parents=True)
     record = {
@@ -129,6 +135,17 @@ def _write_run_record(root, model, task, seed, metrics, *, status="completed",
     (seed_dir / "trainer_state.json").write_text(
         json.dumps({"global_step": global_step}), encoding="utf-8"
     )
+    if seed_result is not None:
+        payload = {
+            "model_name": model,
+            "task_name": task,
+            "seed": seed,
+            "timestamp": "2026-10-11T00:00:00Z",
+            "metrics": seed_result,
+        }
+        (seed_dir / "seed_result.json").write_text(
+            json.dumps(payload), encoding="utf-8"
+        )
     return seed_dir
 
 
@@ -821,3 +838,172 @@ def test_d15_evaluate_cross_validates_suite_mapped_metric_conventions():
     # the evaluate layer verifies the conventions the mapping carries.
     assert export_runs.resolve_metric_key("pearsonr") == "pearson_r"
     assert export_runs.resolve_metric_key("spearmanr") == "spearman_r"
+
+
+# =====================================================================
+# Suite seed_result.json tolerant adoption (06-01)
+# =====================================================================
+
+def test_seed_result_absent_leaves_records_verbatim(tmp_path):
+    """Absent seed_result.json: load_run_records returns EXACTLY the
+    on-disk run records, deep-equal — the tolerant reader is provably a
+    no-op on today's tree (our run_sweep subprocesses never write the
+    file; only the suite's own run_seeds path does)."""
+    root, *_ = _build_fixture_tree(tmp_path)
+    tree = export_runs.load_run_records(root)
+    visited = 0
+    for model, tasks in tree.items():
+        for task, seeds in tasks.items():
+            for seed, record in seeds.items():
+                on_disk = json.loads(
+                    (root / model / task / f"seed_{seed}" / "run_record.json")
+                    .read_text(encoding="utf-8")
+                )
+                assert record == on_disk, (
+                    f"{model}/{task}/seed_{seed}: the reader mutated a "
+                    "record that has no seed_result.json sibling"
+                )
+                visited += 1
+    assert visited >= 7, "the deep-equal walk must visit the fixture cells"
+
+
+def test_seed_result_merges_under_run_record_precedence(tmp_path):
+    """Present + well-formed: the metrics block merges as supplementary
+    per-seed evidence — new keys land in the record AND are visible to
+    the downstream metrics consumers (the emitted performance block),
+    while on key collision the run_record's own value wins (our record
+    stays the authority: total_flos keeps the run_record value, not the
+    seed_result's)."""
+    root = tmp_path / "finetuned"
+    collision_flos = 9.9e18  # must NEVER win over the run_record's value
+    for seed in (42, 43, 44):
+        _write_run_record(
+            root, "FakeModel-A", "FakeDS__task", seed,
+            _suite_native_metrics(0.9),
+            seed_result={"eval_mcc": 0.7, "total_flos": collision_flos},
+        )
+    models_path, datasets_path = _registry_files(tmp_path)
+    config_path = tmp_path / "finetune_config.yaml"
+    config_path.write_text(FINETUNE_CONFIG_YAML, encoding="utf-8")
+
+    tree = export_runs.load_run_records(root)
+    for seed in (42, 43, 44):
+        metrics = tree["FakeModel-A"]["FakeDS__task"][seed]["metrics"]
+        assert metrics["eval_mcc"] == 0.7, (
+            f"seed {seed}: the merged-in key is not visible to the "
+            "metrics consumers downstream of load_run_records"
+        )
+        assert metrics["total_flos"] == 1.0e15, (
+            f"seed {seed}: run_record precedence violated — the "
+            "seed_result's total_flos won the collision"
+        )
+
+    out = tmp_path / "out"
+    stats = tmp_path / "stats"
+    export_runs.export_runs_tree(
+        root, models_path, datasets_path, config_path, out, stats,
+        n_bootstrap=100, bootstrap_seed=42, small_n_ci="t-interval",
+    )
+    doc = json.loads(
+        (out / "FakeDS__task_task_performance.json").read_text(encoding="utf-8")
+    )
+    performance = doc["performance"]["FakeModel-A"]["performance"]
+    assert performance["mcc"] == pytest.approx(0.7), (
+        "the merged eval_mcc did not reach the emitted performance block"
+    )
+    assert performance["FLOPs"] == pytest.approx(1.0e15), (
+        "the emitted FLOPs moved off the run_record value — the "
+        "seed_result collision leaked through the export"
+    )
+
+
+def test_seed_result_malformed_cases_abort_loudly_naming_the_path(tmp_path):
+    """Present + malformed (each class): a loud ValueError naming the
+    offending path — unparseable JSON, missing the metrics key, metrics
+    not a dict, missing an identity key (model_name/task_name/seed).
+    Never a silent skip, never a crash without the path (the run_record
+    abort discipline — an offline tool over the sweep's own output must
+    not silently merge a wrong number)."""
+    root = tmp_path / "finetuned"
+    _write_run_record(root, "FakeModel-A", "FakeDS__task", 42,
+                      _suite_native_metrics(0.9))
+    path = root / "FakeModel-A" / "FakeDS__task" / "seed_42" / "seed_result.json"
+    identity = {
+        "model_name": "FakeModel-A", "task_name": "FakeDS__task",
+        "seed": 42, "timestamp": "2026-10-11T00:00:00Z",
+    }
+    cases = {
+        "unparseable JSON": ("{not json", ValueError),
+        "top level not an object": ("[1, 2]", TypeError),
+        "missing the metrics key": (json.dumps(identity), ValueError),
+        "metrics not a dict": (
+            json.dumps({**identity, "metrics": [1, 2]}), TypeError
+        ),
+        "missing identity key": (
+            json.dumps(
+                {k: v for k, v in identity.items() if k != "model_name"}
+                | {"metrics": {"eval_mcc": 0.7}}
+            ),
+            ValueError,
+        ),
+    }
+    for check, (content, exc_type) in cases.items():
+        path.write_text(content, encoding="utf-8")
+        with pytest.raises(exc_type, match=re.escape(str(path))) as exc_info:
+            export_runs.load_run_records(root)
+        assert "seed_result" in str(exc_info.value), (
+            f"{check}: the abort must name seed_result.json"
+        )
+
+
+def test_seed_result_present_export_is_deterministic(tmp_path):
+    """Determinism with seed_result files present: the same fixture tree
+    exports byte-identically across two runs (the merge is a pure
+    function of the on-disk files — sorted iteration, no clock)."""
+    outs = []
+    for run in (1, 2):
+        root, models_path, datasets_path, config_path = _build_fixture_tree(
+            tmp_path / f"tree{run}"
+        )
+        for seed_dir in sorted(p for p in root.glob("*/*/seed_*") if p.is_dir()):
+            record = json.loads(
+                (seed_dir / "run_record.json").read_text(encoding="utf-8")
+            )
+            (seed_dir / "seed_result.json").write_text(
+                json.dumps({
+                    "model_name": record["model"],
+                    "task_name": record["task"],
+                    "seed": record["seed"],
+                    "timestamp": "2026-10-11T00:00:00Z",
+                    "metrics": {"eval_mcc": 0.7, "eval_TPR": 0.8},
+                }),
+                encoding="utf-8",
+            )
+        out = tmp_path / f"out{run}"
+        stats = tmp_path / f"stats{run}"
+        models_out = tmp_path / f"models{run}"
+        export_runs.export_runs_tree(
+            root, models_path, datasets_path, config_path, out, stats,
+            models_out, n_bootstrap=100, bootstrap_seed=42,
+            small_n_ci="t-interval",
+        )
+        outs.append((out, stats, models_out))
+    (out1, stats1, models1), (out2, stats2, models2) = outs
+    files1 = (
+        sorted(p.name for p in out1.iterdir())
+        + sorted(p.name for p in stats1.iterdir())
+        + sorted(p.name for p in models1.iterdir())
+    )
+    files2 = (
+        sorted(p.name for p in out2.iterdir())
+        + sorted(p.name for p in stats2.iterdir())
+        + sorted(p.name for p in models2.iterdir())
+    )
+    assert files1 == files2
+    for name in files1:
+        for d1, d2 in ((out1, out2), (stats1, stats2), (models1, models2)):
+            p1, p2 = d1 / name, d2 / name
+            if p1.exists() and p2.exists():
+                assert p1.read_bytes() == p2.read_bytes(), (
+                    f"{name} not byte-stable with seed_result present"
+                )
