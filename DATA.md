@@ -114,8 +114,8 @@ subset ID lists consumed by the pipeline live in
 One row per benchmark dataset: where it comes from, under what
 terms, and where to download it. Values were research-drafted from
 public sources (dataset papers, ModelScope/Hugging Face/GitHub
-pages; 2026-10-11) and are **pending the maintainer review that
-gates publication** — of the 50 datasets,
+pages; 2026-10-11) and **reviewed and accepted by the maintainer
+(2026-10-11)** — of the 50 datasets,
 35 carry an unresolved license and
 7 an unresolved citation, marked as the
 literal `Unspecified` (never a blank cell), with the source link
