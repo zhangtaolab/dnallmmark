@@ -3,8 +3,8 @@
    数据集页面
    ======================================== */
 
-import CONFIG from './config.js';
 import DataAPI from './data.js';
+import { renderNavbar } from './navbar.js';
 
 class DatasetsPage {
   constructor() {
@@ -29,7 +29,7 @@ class DatasetsPage {
 
     try {
       await this.loadData();
-      this.renderNavbar();
+      renderNavbar();
       this.renderHero();
       this.renderDatasetsTable();
       this.bindEvents();
@@ -61,22 +61,6 @@ class DatasetsPage {
         this.state.datasets.get(datasetName).models.push(modelName);
       }
     }
-  }
-
-  renderNavbar() {
-    const navbarHTML = `
-      <nav class="navbar">
-        <div class="navbar-logo">
-          <a href="/" class="logo">${CONFIG.APP_NAME}</a>
-        </div>
-        <ul class="navbar-nav">
-          ${CONFIG.NAV_LINKS.map(link => `
-            <li><a href="${link.url}" class="nav-link ${link.active ? 'active' : ''}">${link.name}</a></li>
-          `).join('')}
-        </ul>
-      </nav>
-    `;
-    document.querySelector('.navbar-container').innerHTML = navbarHTML;
   }
 
   renderHero() {

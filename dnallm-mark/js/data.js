@@ -164,6 +164,23 @@ const DataAPI = {
   },
 
   /**
+   * Escape a string for safe interpolation into innerHTML template literals
+   * (FIX-04, bounded scope: applied at the DOM-build sites the fix touches —
+   * shared navbar, submit-page user-entered fields, touched task renderers)
+   * @param {*} str - Value to escape
+   * @returns {*} The escaped string, or the input unchanged when not a string
+   */
+  escapeHTML(str) {
+    if (typeof str !== 'string') return str;
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  },
+
+  /**
    * Get color for model based on its index or name
    * @param {string} modelName - Model name
    * @param {number} index - Model index

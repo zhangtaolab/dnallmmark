@@ -5,6 +5,7 @@
 
 import CONFIG from './config.js';
 import DataAPI from './data.js';
+import { renderNavbar } from './navbar.js';
 
 class DNALLMMark {
   constructor() {
@@ -35,6 +36,7 @@ class DNALLMMark {
 
     try {
       await this.loadData();
+      renderNavbar();
       this.renderHero();
       this.renderCategoryNav();
       this.filterAndSortModels();
@@ -67,26 +69,6 @@ class DNALLMMark {
     }));
 
     console.log(`Loaded ${this.state.models.length} models for arena: ${this.state.currentArena}`);
-  }
-
-  renderNavbar() {
-    // Determine active link based on current page
-    const currentPage = window.location.pathname;
-    const navbarHTML = `
-      <nav class="navbar">
-        <div class="navbar-logo">
-          <a href="/" class="logo">${CONFIG.APP_NAME}</a>
-        </div>
-        <ul class="navbar-nav">
-          ${CONFIG.NAV_LINKS.map(link => {
-            const isActive = (link.url === '/' && currentPage === '/') ||
-                             (link.url !== '/' && currentPage.includes(link.url));
-            return `<li><a href="${link.url}" class="nav-link ${isActive ? 'active' : ''}">${link.name}</a></li>`;
-          }).join('')}
-        </ul>
-      </nav>
-    `;
-    document.querySelector('.navbar-container').innerHTML = navbarHTML;
   }
 
   renderHero() {

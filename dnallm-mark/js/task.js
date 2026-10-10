@@ -3,6 +3,7 @@
    ======================================== */
 
 import DataAPI from './data.js';
+import { renderNavbar } from './navbar.js';
 
 /**
  * LoadingController - Manages loading overlay UI
@@ -133,6 +134,7 @@ class TaskBenchmark {
       this.state.taskList = await this.loader.initialize();
       
       // Render UI immediately
+      renderNavbar();
       this.renderHero();
       this.populateTaskDropdown();
       this.bindEvents();

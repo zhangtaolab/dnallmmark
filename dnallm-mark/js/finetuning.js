@@ -3,8 +3,8 @@
    微调结果页面
    ======================================== */
 
-import CONFIG from './config.js';
 import DataAPI from './data.js';
+import { renderNavbar } from './navbar.js';
 
 class FineTuningPage {
   constructor() {
@@ -30,7 +30,7 @@ class FineTuningPage {
 
     try {
       await this.loadData();
-      this.renderNavbar();
+      renderNavbar();
       this.renderHero();
       this.renderModelSelector();
       this.renderLeaderboard();
@@ -47,22 +47,6 @@ class FineTuningPage {
     const comparison = await DataAPI.loadModelsComparison();
     this.state.modelsList = Object.keys(comparison);
     this.state.performanceData = await DataAPI.loadAllModelPerformance();
-  }
-
-  renderNavbar() {
-    const navbarHTML = `
-      <nav class="navbar">
-        <div class="navbar-logo">
-          <a href="/" class="logo">${CONFIG.APP_NAME}</a>
-        </div>
-        <ul class="navbar-nav">
-          ${CONFIG.NAV_LINKS.map(link => `
-            <li><a href="${link.url}" class="nav-link ${link.active ? 'active' : ''}">${link.name}</a></li>
-          `).join('')}
-        </ul>
-      </nav>
-    `;
-    document.querySelector('.navbar-container').innerHTML = navbarHTML;
   }
 
   renderHero() {
