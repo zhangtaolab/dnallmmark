@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 8
+open_count: 9
 waived_count: 0
 fixed_count: 0
-total_count: 8
-last_updated: 2026-10-10T03:13:03.577Z
+total_count: 9
+last_updated: 2026-10-10T05:22:49.317Z
 ---
 
 # Broken Windows Ledger
@@ -23,6 +23,7 @@ last_updated: 2026-10-10T03:13:03.577Z
 | 6 | 4 | stub | pipeline/models_info.json |  | mamba2_370M card: series/architecture/context_len/species/type/huggingface/modelscope are empty-string (no locatable upstream page) — 04-04 | open |  | 2026-10-10T03:13:03.403Z |  |
 | 7 | 4 | stub | pipeline/models_info.json |  | mamba2_plant_genome card: series/architecture/context_len/species/type/huggingface/modelscope are empty-string (no locatable upstream page) — 04-04 | open |  | 2026-10-10T03:13:03.490Z |  |
 | 8 | 4 | stub | pipeline/models_info.json |  | prokbert card: series/architecture/context_len/species/type/huggingface/modelscope are empty-string (no locatable upstream page) — 04-04 | open |  | 2026-10-10T03:13:03.577Z |  |
+| 9 | 4 | deviation | tests/test_export_runs.py | 466 | D-15 evaluate cross-check covers the scipy-backed evaluate metrics (pearsonr/spearmanr) only — evaluate's accuracy/f1/mcc modules import scikit-learn, which is outside the sanctioned scipy+evaluate dependency pair; extending coverage needs a maintainer-approved scikit-learn addition | open |  | 2026-10-10T05:22:49.317Z |  |
 
 ````json
 [
@@ -127,6 +128,19 @@ last_updated: 2026-10-10T03:13:03.577Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-10T03:13:03.577Z",
+    "resolved_at": null,
+    "milestone": "v0.7.1"
+  },
+  {
+    "id": 9,
+    "kind": "deviation",
+    "phase": "4",
+    "file": "tests/test_export_runs.py",
+    "line": 466,
+    "description": "D-15 evaluate cross-check covers the scipy-backed evaluate metrics (pearsonr/spearmanr) only — evaluate's accuracy/f1/mcc modules import scikit-learn, which is outside the sanctioned scipy+evaluate dependency pair; extending coverage needs a maintainer-approved scikit-learn addition",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-10T05:22:49.317Z",
     "resolved_at": null,
     "milestone": "v0.7.1"
   }
