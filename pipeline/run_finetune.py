@@ -208,6 +208,15 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--num_train_epochs",
+        type=int,
+        default=None,
+        help="Override the loaded config's finetune num_train_epochs (the "
+             "bounded-smoke knob: 06-02's 1-epoch LoRA smoke and 06-05's "
+             "probe smoke). Absent = the YAML value governs"
+    )
+
+    parser.add_argument(
         "--peft_dry_run",
         action="store_true",
         help="Validate-and-exit (requires --peft lora or --peft ia3): the "
@@ -518,6 +527,7 @@ if __name__ == "__main__":
     subset_file = args.subset_file
     peft_mode = args.peft
     peft_dry_run = args.peft_dry_run
+    num_train_epochs = args.num_train_epochs
 
     # Unified eval subsets (F7 Q3 / REV-07): validate the --subset_file
     # map fail-fast BEFORE any model load — the run_sweep._validate_filters
@@ -668,6 +678,17 @@ if __name__ == "__main__":
             if model_name in ["evo2_1b_base", "megaDNA_updated"]:
                 configs = load_config("./finetune_config_with_head.yaml")
                 configs['task'].head_config.head = model_name.lower().split("_")[0]
+
+            # Bounded-smoke epochs override (06-02, plan-check blocker fix
+            # 2026-10-11): --num_train_epochs (default None) OVERRIDES the
+            # loaded config's finetune num_train_epochs — the knob this
+            # plan's 1-epoch LoRA smoke and 06-05's probe smoke use; when
+            # absent the YAML value governs (a None-guarded pure assignment,
+            # the --subset_file seam style). Placed AFTER the custom-head
+            # reload so the override applies to whichever config is active
+            # for this model.
+            if num_train_epochs is not None:
+                configs["finetune"].num_train_epochs = num_train_epochs
 
             # Snapshot the ACTIVE config's YAML-default grad_accum (D-07,
             # WR-01): taken AFTER the custom-head reload above so
@@ -855,9 +876,24 @@ if __name__ == "__main__":
 
                 # Set output directory for finetuning (seed-isolated per
                 # G1/REV-02: the trainer_state.json resume marker below is
-                # scoped to this seed, so resume never skips a different seed)
+                # scoped to this seed, so resume never skips a different seed).
+                # Adapter-run alias isolation (SC-6/REV-05, 06-02): an
+                # adapter run (peft lora/ia3) with NO explicit
+                # --save_model_name defaults its save name to
+                # {model}+lora / {model}+ia3 — a separate model-level
+                # output dir and therefore a separate trainer_state.json
+                # resume marker, with ZERO layout-code changes. An explicit
+                # --save_model_name always wins; the registry lookup /
+                # target_model filtering above stays on the BASE model
+                # name (the alias affects only output naming); peft=none
+                # keeps exactly the base name (byte-identical outdir).
                 save_root = output_dir if output_dir else "./finetuned"
-                model_save_name = save_model_name if save_model_name else model_name
+                if save_model_name:
+                    model_save_name = save_model_name
+                elif peft_mode != "none":
+                    model_save_name = f"{model_name}+{peft_mode}"
+                else:
+                    model_save_name = model_name
                 outdir = f"{save_root}/{model_save_name}/{dataset_name}/seed_{seed}/"
                 os.makedirs(outdir, exist_ok=True)
                 configs["finetune"].output_dir = outdir

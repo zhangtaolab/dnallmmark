@@ -90,6 +90,23 @@ files). The contracts asserted here are textual/structural:
   audited IDs are the actually-evaluated rows; train/dev are NEVER
   selected (dev drives checkpoint selection, research A4); an absent
   flag invokes no select anywhere (byte-identical code path).
+- **adapter-run aliases + epochs override + trainable-params persistence
+  (SC-6/REV-05, 06-02)** — ``--peft lora|ia3`` with NO explicit
+  ``--save_model_name`` defaults the effective save name to
+  ``{model}+lora`` / ``{model}+ia3`` (a separate model-level output dir
+  AND therefore a separate ``trainer_state.json`` resume marker, with
+  zero layout-code changes; an explicit ``--save_model_name`` always
+  wins; the registry lookup / target_model filtering stays on the BASE
+  name; ``none`` keeps exactly the base name — byte-identical outdir);
+  ``--num_train_epochs`` (int, default None) OVERRIDES the loaded
+  config's ``finetune.num_train_epochs`` only when given (the
+  bounded-smoke knob — 06-02's 1-epoch LoRA smoke and 06-05's probe
+  smoke), placed after the custom-head reload and before the epoch read;
+  trainable/total params are computed immediately after the DNATrainer
+  ctor (pure arithmetic over the constructed model — the suite PRINTS
+  but does not PERSIST this accounting, trainer.py:248-288 @ v1.2.1) and
+  merged into the final_metrics.json payload for EVERY mode including
+  none (a full run reports 100.0) — the frontier table's producer.
 
 See also:
     ``script/make_dev_splits.py`` — the remediation the guard names.
@@ -1068,20 +1085,28 @@ def test_use_ia3_mutation_precedes_ctor_inside_quirk_block():
     )
 
 
-def test_peft_none_default_is_a_no_op_on_the_legacy_surface():
-    """peft=none (the default) adds nothing: the outdir/alias construction
-    is byte-identical (no +lora/+ia3 suffixing — adapter aliases land in
-    06-02), and every peft-driven config mutation is mode-guarded so the
-    none path evaluates exactly the pre-tracer statements."""
+def test_peft_none_save_name_is_exactly_the_base_name():
+    """06-02 evolution of the 06-01 no-op contract: the save-name resolution
+    now carries the adapter alias branches, but under peft=none the effective
+    name is STILL exactly model_name (the else branch of the chain) — the
+    none-mode outdir is byte-identical to today's; every peft-driven config
+    mutation remains mode-guarded so the none path evaluates exactly the
+    pre-tracer statements."""
     src = RUN_FINETUNE.read_text(encoding="utf-8")
-    alias_idx = src.find(
-        "model_save_name = save_model_name if save_model_name else model_name"
+    chain = re.search(
+        r'if save_model_name:\s*\n'
+        r'[^\S\n]*model_save_name = save_model_name\s*\n'
+        r'[^\S\n]*elif peft_mode != "none":\s*\n'
+        r'[^\S\n]*model_save_name = f"\{model_name\}\+\{peft_mode\}"\s*\n'
+        r"[^\S\n]*else:\s*\n"
+        r"[^\S\n]*model_save_name = model_name",
+        src,
     )
-    assert alias_idx != -1, "the alias construction is unchanged"
-    alias_block = src[alias_idx:alias_idx + 200]
-    assert "peft" not in alias_block and "+lora" not in alias_block, (
-        "the alias construction must not gain peft suffixes in 06-01 — "
-        "adapter alias isolation is 06-02's surface (scope discipline)"
+    assert chain is not None, (
+        "the save-name resolution must be the three-branch chain "
+        '(explicit --save_model_name) > (peft alias {model}+{mode}) > '
+        "(base name) — an unchainable form (e.g. an or-expression) would "
+        "either drop the alias default or change the none-mode name"
     )
     # Every configs["finetune"] mutation mentioning peft must be guarded;
     # an unguarded one would mutate the none path.
@@ -1097,6 +1122,140 @@ def test_peft_none_default_is_a_no_op_on_the_legacy_surface():
             "guarded — the peft=none path would diverge from the legacy "
             "surface (SC-6 gating tracer contract)"
         )
+
+
+def test_adapter_alias_defaults_when_peft_mode_active():
+    """With --peft lora/ia3 and NO explicit --save_model_name, the effective
+    save name defaults to {model}+lora / {model}+ia3 — name isolation
+    end-to-end: a separate model-level output dir and therefore a separate
+    trainer_state.json resume marker, with zero layout-code changes (SC-6,
+    REV-05/F4). The alias branch must reference the explicit flag's falsiness
+    (elif after the explicit-if) so an explicit name always wins."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    alias_branch = re.search(
+        r'elif peft_mode != "none":\s*\n'
+        r'[^\S\n]*model_save_name = f"\{model_name\}\+\{peft_mode\}"',
+        src,
+    )
+    assert alias_branch is not None, (
+        'no "elif peft_mode != \\"none\\": model_save_name = '
+        'f"{model_name}+{peft_mode}" branch — an adapter run without an '
+        "explicit --save_model_name must default to the {model}+lora/+ia3 "
+        "alias or it would share the base run's output dir AND resume "
+        "marker (Pitfall 3)"
+    )
+    outdir_idx = src.find(
+        'f"{save_root}/{model_save_name}/{dataset_name}/seed_{seed}/"'
+    )
+    assert outdir_idx != -1, "the seed-isolated outdir f-string is gone"
+    assert alias_branch.start() < outdir_idx, (
+        "the alias default must resolve BEFORE the outdir f-string "
+        "consumes it — an alias applied after outdir construction would "
+        "silently write the base dir"
+    )
+
+
+def test_explicit_save_model_name_wins_over_alias_default():
+    """An explicitly passed --save_model_name always wins over the alias
+    default: the explicit-flag branch is the FIRST branch of the save-name
+    chain, immediately preceding the peft elif."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    explicit_idx = statement_index(src, "if save_model_name:")
+    alias_idx = src.find('elif peft_mode != "none":')
+    assert explicit_idx != -1, (
+        "no explicit-flag branch in the save-name resolution — an explicit "
+        "--save_model_name must take precedence over the alias default"
+    )
+    assert alias_idx != -1, "no peft alias branch found"
+    assert 0 < alias_idx - explicit_idx < 200, (
+        "the explicit --save_model_name branch must sit immediately before "
+        "the peft elif in the same chain (a distant or inverted ordering "
+        "would let the alias default override an explicit operator choice)"
+    )
+
+
+def test_registry_lookup_stays_on_base_model_name():
+    """The registry lookup / target_model filtering still uses the BASE
+    model name — the alias affects ONLY output naming. The model-loop
+    filter compares model_name, and no quirk-list membership check or
+    config mutation between the quirk block and the alias resolution
+    references model_save_name."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    filter_idx = src.find(
+        "if target_model is not None and model_name != target_model:"
+    )
+    assert filter_idx != -1, "the base-name target_model filter is gone"
+    alias_idx = src.find(
+        'model_save_name = f"{model_name}+{peft_mode}"'
+    )
+    assert alias_idx != -1, "no alias construction found"
+    assert filter_idx < alias_idx, (
+        "the target_model filter runs on model_name BEFORE the alias "
+        "resolution — aliasing the registry lookup would break "
+        "--target_model targeting for every adapter run"
+    )
+    quirk_start = src.find("if model_name in models_only_support_fp32:")
+    assert quirk_start != -1, "no fp32 quirk membership check found"
+    chain_start = statement_index(src, "save_root = output_dir")
+    assert chain_start != -1, "no save_root resolution found"
+    quirk_region = src[quirk_start:chain_start]
+    assert "model_save_name" not in quirk_region, (
+        "the quirk-mutation region must stay keyed on model_name — a "
+        "model_save_name reference there would skip every quirk for "
+        "adapter runs (the alias is not a registry name)"
+    )
+
+
+def test_num_train_epochs_flag_overrides_config_only_when_given():
+    """--num_train_epochs (int, default None) OVERRIDES the loaded config's
+    finetune.num_train_epochs when given and leaves the YAML value governing
+    when absent (a None-guarded pure assignment — the --subset_file seam
+    style). Placement: AFTER the custom-head reload (so it applies to
+    whichever config is active) and BEFORE the epoch read that sizes
+    logging/eval/save steps and the DNATrainer ctor. This is the
+    bounded-smoke knob (plan-check blocker fix 2026-10-11: the smokes
+    previously passed a flag that did not exist)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    flag_idx = src.find('"--num_train_epochs"')
+    assert flag_idx != -1, (
+        "no --num_train_epochs argument in parse_args() — the bounded "
+        "smokes (06-02 LoRA, 06-05 probe) pass this flag"
+    )
+    flag_block = src[flag_idx:flag_idx + 400]
+    assert re.search(r"type=int", flag_block), (
+        "--num_train_epochs must be type=int (an epoch count)"
+    )
+    assert re.search(r"default=None", flag_block), (
+        "--num_train_epochs must default to None — absent flag means the "
+        "YAML value governs (byte-identical to today)"
+    )
+    guarded = re.search(
+        r"if num_train_epochs is not None:\s*\n"
+        r'[^\S\n]*configs\["finetune"\]\.num_train_epochs = num_train_epochs',
+        src,
+    )
+    assert guarded is not None, (
+        'no None-guarded "if num_train_epochs is not None: '
+        'configs[\\"finetune\\"].num_train_epochs = num_train_epochs" '
+        "assignment — the override must write through to the config ONLY "
+        "when the flag is given"
+    )
+    head_idx = src.find('model_name in ["evo2_1b_base", "megaDNA_updated"]')
+    assert head_idx != -1, "no custom-head membership check found"
+    assert head_idx < guarded.start(), (
+        "the epochs override must sit AFTER the custom-head reload — a "
+        "with_head reload would otherwise clobber the override for "
+        "evo2_1b_base / megaDNA_updated"
+    )
+    epoch_read_idx = statement_index(
+        src, 'epoch = configs["finetune"].num_train_epochs'
+    )
+    assert epoch_read_idx != -1, "no epoch read found in the dataset loop"
+    ctor_idx = statement_index(src, "trainer = DNATrainer(")
+    assert guarded.start() < epoch_read_idx < ctor_idx, (
+        "the epochs override must land before both the epoch read (which "
+        "sizes logging/eval/save steps) and the DNATrainer ctor"
+    )
 
 
 def _yaml_section_keys(text, section):
