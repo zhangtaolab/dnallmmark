@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Audit & Release Foundations** - Findings report over all three subsystems, pre-fix baseline frozen (`data-v1`), LICENSE + pinned manifests, deterministic generators, secret-hygiene decision applied (intentional Zenodo preview link kept; scan confirms no other secrets) (completed 2026-10-09)
 - [x] **Phase 2: Data Contracts & Test Harness** - Four JSON Schemas, CPU-only unit/golden/determinism tests over the data chain, and a single-command Makefile — locked before any number moves (completed 2026-10-09)
 - [x] **Phase 3: Dev-Branch Reconciliation & P0 Revision Blockers** - dev@c6b3137 (run_finetune.py rewrite) merged with Phase 1/2 assets intact; dev splits (F1), seed-isolated sweep (F2/G1), old-pipeline retirement (F10); GPU env + two-model E2E on the new pipeline (completed 2026-10-10)
-- [ ] **Phase 4: Correctness & Methodology Core** - Species fix via dataset-side metadata (F3②), unified exporter with metric-key mapping + run_record (F3), IN-03 lands; every page renders, submission restored, escaping at touched sites
+- [x] **Phase 4: Correctness & Methodology Core** - Species fix via dataset-side metadata (F3②), unified exporter with metric-key mapping + run_record (F3), IN-03 lands; every page renders, submission restored, escaping at touched sites (completed 2026-10-10)
 - [ ] **Phase 5: CI & Three-Seed Full Re-Run (E2')** - Aggregation upgrade first (F6: tie/CI-overlap, difficulty normalization, permutation tests), CI golden tests (F9), N audit + eval subsets (F7), then E2' 3-seed full re-run with changelogged tagged migration
 - [ ] **Phase 6: Revision Packaging & Extended Lanes** - Provenance table + reproducibility docs + snapshot/Zenodo SI (F3); revision-window permitting: LoRA/IA³/probes (F4), zero-shot VEP (F5), learning curves (F8); remainder to response-letter future work
 
@@ -108,7 +108,7 @@ Plans:
   5. DOM-build sites touched by these fixes escape rendered content, so a hostile string in any performance JSON displays as inert text
   6. Phase 2 schemas/tests are updated for the new export shape (any new metric keys join the closed enum WITH the data≡enum self-check updated in the same commit)
 
-**Plans**: 5/5 plans executed planned
+**Plans**: 5/5 plans complete planned
 **UI hint**: yes
 Plans:
 **Wave 1**
@@ -168,6 +168,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Audit & Release Foundations | 3/3 | Complete    | 2026-10-09 |
 | 2. Data Contracts & Test Harness | 3/3 | Complete    | 2026-10-09 |
 | 3. Pipeline Adaptation to dnallm Dev | 4/4 | Complete    | 2026-10-10 |
-| 4. Correctness Fixes | 5/5 | In Progress | - |
+| 4. Correctness Fixes | 5/5 | Complete    | 2026-10-10 |
 | 5. CI & Verified Data Migration | 0/TBD | Not started | - |
 | 6. Release Packaging & Provenance | 0/TBD | Not started | - |
