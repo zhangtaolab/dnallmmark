@@ -3,18 +3,18 @@ gsd_state_version: "1.0"
 milestone: v0.7.1
 current_phase: 6
 current_phase_name: Revision Packaging & Extended Lanes
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 06-01-PLAN.md (Wave 1 gate discharged; Wave 2 unblocked)
-last_updated: "2026-10-10T18:30:18.709Z"
+stopped_at: Completed 06-02-PLAN.md (LoRA/IA3 aliases + persistence + sweep threading + frontier machinery; GB10 smoke green)
+last_updated: "2026-10-10T18:59:23.682Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 05 complete, transitioned to Phase 6
-state_head: 07aacf0f43ee67ba70f3c4cf84f266b32db63592
+state_head: 872201259ce8f6a4c3093c8fb0ececb0ff98d715
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 24
-  completed_plans: 20
+  completed_plans: 21
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 ## Current Position
 
 Phase: 6 — Revision Packaging & Extended Lanes
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 5
 Status: Ready to execute
 Last activity: 2026-10-11 — Completed 06-01-PLAN.md (dnallm 1.2.1 adaptation verification + peft tracer + sanctioned GB10 smoke)
@@ -85,6 +85,7 @@ Progress: [████████░░] 83% (1/6 phases)
 | Phase 05 P04 | 55 min | 4 tasks | 18 files |
 | Phase 06 P01 | 33m | 3 tasks | 7 files |
 | Phase 06 P01 | 33m | 3 tasks | 7 files |
+| Phase 06 P02 | ~23 minutes | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -148,6 +149,8 @@ Recent decisions affecting current work:
 - [Phase 06]: peft tracer: --peft {none,lora,ia3} + --peft_dry_run wired flag->YAML->use_ia3->use_lora ctor kwarg; peft=none contract-pinned byte-identical
 - [Phase 06]: dnallm 1.2.1 installed from git-archive v1.2.1 tag content (never editable, suite repo read-only); GB10 env proven: env_smoke all-PASS + both peft dry-runs exit 0
 - [Phase 06]: seed_result.json tolerant reader: absent=skip, present=merge under run_record precedence, malformed=loud abort naming path (ValueError/TypeError per TRY004)
+- [Phase 06]: Frontier rows are one-per-completed-record with the none-counterpart as the per-(base_model,task) mean; only total_flos is hard-required (missing-flos aborts naming the record), all other gaps are null+disclosed skip-as-data (06-02)
+- [Phase 06]: Frontier publication gate held: schema + generator + generator-produced fixture committed now; dnallm-mark/data/frontier.json, SCHEMA_FILES bucket, and DATA.md link all wait for real post-E2' numbers; default output dir is the input-root sibling (D-16 pattern) (06-02)
 
 ### Pending Todos
 
@@ -170,6 +173,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-10T18:30:07.396Z
-Stopped at: Completed 06-01-PLAN.md (Wave 1 gate discharged; Wave 2 unblocked)
+Last session: 2026-10-10T18:59:23.623Z
+Stopped at: Completed 06-02-PLAN.md (LoRA/IA3 aliases + persistence + sweep threading + frontier machinery; GB10 smoke green)
 Resume file: None
