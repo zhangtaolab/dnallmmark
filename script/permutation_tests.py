@@ -189,7 +189,11 @@ def build_artifact(zscore_matrix, *, n_resamples=N_RESAMPLES, seed=SEED,
 
     return {
         "info": {
-            "axis": "per-task zscore, aggregate view (score-vector permutation across tasks)",
+            "axis": (
+                "per-task zscore, aggregate view; paired permutation test "
+                "(scipy permutation_type='samples') — per-task difference "
+                "signs flipped under the null"
+            ),
             "coverage_rule": (
                 "pairs aligned on their common task set; pairs with fewer than "
                 "two common tasks are excluded and disclosed (a single shared "
