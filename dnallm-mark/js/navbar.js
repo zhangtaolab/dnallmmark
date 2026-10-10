@@ -11,24 +11,28 @@ import DataAPI from './data.js';
 
 /**
  * Render the shared navbar into the page's .navbar-container element.
- * Active link is derived from location.pathname at render time (root-aware:
- * the '/' entry is active only on the index page). Null-guarded per the
- * project container convention (if (!el) return).
+ * Active link is derived from location.pathname at render time: the links
+ * are './'-relative (WR-04), so a directory pathname (site root or subpath
+ * root) means the index page — suffix matching works unchanged under
+ * subpath hosting. Null-guarded per the project container convention
+ * (if (!el) return).
  */
 function renderNavbar() {
   const container = document.querySelector('.navbar-container');
   if (!container) return;
 
   const currentPage = window.location.pathname;
+  const pageFile = currentPage.endsWith('/')
+    ? 'index.html'
+    : currentPage.split('/').pop();
   const navbarHTML = `
     <nav class="navbar">
       <div class="navbar-logo">
-        <a href="/" class="logo">${DataAPI.escapeHTML(CONFIG.APP_NAME)}</a>
+        <a href="./index.html" class="logo">${DataAPI.escapeHTML(CONFIG.APP_NAME)}</a>
       </div>
       <ul class="navbar-nav">
         ${CONFIG.NAV_LINKS.map(link => {
-          const isActive = (link.url === '/' && currentPage === '/') ||
-                           (link.url !== '/' && currentPage.includes(link.url));
+          const isActive = link.url === `./${pageFile}`;
           return `<li><a href="${link.url}" class="nav-link ${isActive ? 'active' : ''}">${DataAPI.escapeHTML(link.name)}</a></li>`;
         }).join('')}
       </ul>

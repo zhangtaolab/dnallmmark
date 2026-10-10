@@ -46,14 +46,16 @@ const CONFIG = {
     DEFAULT_FILTER: 'top-20'
   },
 
-  // Nav links (active state is set dynamically based on current page)
+  // Nav links (active state is set dynamically based on current page).
+  // './'-relative like every other asset the pages reference — root-absolute
+  // URLs break under subpath hosting (GitHub Pages project sites, WR-04).
   NAV_LINKS: [
-    { name: 'Leaderboards', url: '/' },
-    { name: 'Task Benchmark', url: '/task.html' },
-    { name: 'Fine-tuning', url: '/finetuning.html' },
-    { name: 'Models', url: '/models.html' },
-    { name: 'Datasets', url: '/datasets.html' },
-    { name: 'Submit', url: '/submit.html' }
+    { name: 'Leaderboards', url: './index.html' },
+    { name: 'Task Benchmark', url: './task.html' },
+    { name: 'Fine-tuning', url: './finetuning.html' },
+    { name: 'Models', url: './models.html' },
+    { name: 'Datasets', url: './datasets.html' },
+    { name: 'Submit', url: './submit.html' }
   ],
 
   // Social links
