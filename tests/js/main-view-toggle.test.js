@@ -5,8 +5,9 @@
  * weighted view is the DEFAULT public number and the raw-rank view is one
  * click away. The weighted value is only ever READ from
  * performance.weighted_score (precomputed offline by
- * script/summarize_comparison.py) — never computed client-side (the dead
- * recalculateComparison lesson, DATA-07).
+ * script/summarize_comparison.py) — never computed client-side (the lesson
+ * of the dead recalculateComparison client-side recompute, since removed —
+ * DATA-07).
  *
  * main.js is an ES module that instantiates its page controller at import
  * time; under require(esm) it needs only a minimal document stub —
