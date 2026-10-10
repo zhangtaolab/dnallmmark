@@ -14,7 +14,12 @@ Diff classes (the complete vocabulary — both output modes use it):
 - ``LEN``               — lists of different lengths
 - ``FLOAT_ULP``         — float diff with relative delta < 1e-12 (summation-order noise)
 - ``FLOAT_BIG``         — float diff with relative delta >= 1e-12 (real change)
-- ``BOOL``              — bool/int cross-type value mismatch
+- ``INT``               — int-vs-int value mismatch (rank / samples / top-K
+  counters; IN-01 — integer changes are not float deltas)
+- ``BOOL``              — bool/bool value mismatch (``true`` vs ``false``)
+- ``BOOL_CROSS``        — bool/int cross-type pair, reported even at equal
+  value (``true`` vs ``1`` — WR-02: a real JSON type change must not stay
+  silent)
 - ``VALUE``             — string (or other scalar) mismatch
 
 Relative delta is computed as ``abs(a - b) / max(abs(a), abs(b), 1e-300)``.
@@ -87,9 +92,15 @@ def walk(a, b, path, diffs):
         else:
             for i, (x, y) in enumerate(zip(a, b)):
                 walk(x, y, f"{path}[{i}]", diffs)
-    elif isinstance(a, float) or isinstance(a, int):
+    elif isinstance(a, (float, int)):
         if isinstance(a, bool) or isinstance(b, bool):
-            if a != b:
+            if isinstance(a, bool) != isinstance(b, bool):
+                # WR-02 (fixed Phase 4): an equal-value bool/int cross-type
+                # pair (``True`` vs ``1``) is a real JSON type change — the
+                # 47 pinned task files carry bf16/fp16 booleans, so a ``1``
+                # emitted where ``true`` was committed must not pass silently.
+                diffs.append(("BOOL_CROSS", path, f"{a!r} vs {b!r}"))
+            elif a != b:
                 diffs.append(("BOOL", path, f"{a} vs {b}"))
             return
         # json.load accepts NaN literals but NaN != NaN in Python; treat NaN on
@@ -103,6 +114,12 @@ def walk(a, b, path, diffs):
             # instead of staying silent.
             if isinstance(a, float) != isinstance(b, float):
                 diffs.append(("TYPE", path, f"{type(a).__name__} vs {type(b).__name__}"))
+            return
+        if isinstance(a, int) and isinstance(b, int):
+            # IN-01 (Phase 4): a pure int-vs-int unequal pair is an integer
+            # change (rank, samples, top-K counters), not a float delta —
+            # label it honestly instead of laundering it through FLOAT_BIG.
+            diffs.append(("INT", path, f"{a} vs {b}"))
             return
         rel = abs(a - b) / max(abs(a), abs(b), 1e-300)
         if rel < 1e-12:

@@ -1,15 +1,19 @@
 """
-Known-defect locks: the three confirmed data-chain defects as
-``xfail(strict=True)`` tests (D-03/D-04/D-07).
+Known-defect locks: the three confirmed data-chain defects, pinned
+test-first as ``xfail(strict=True)`` tests (D-03/D-04/D-07) and UNMARKED to
+permanent green contracts in Phase 4 (D-13 — each fix landed together with
+the deliberate marker removal in the same commit: AUD-01 in 04-01 Task 1,
+WR-03 in 04-01 Task 2, WR-02 in 04-01 Task 3).
 
 House rule: a defect's fix lands ONLY together with the deliberate removal
-of its marker in the same commit. Every marker below carries ``strict=True``
+of its marker in the same commit. Every marker carried ``strict=True``
 and the finding ID in its reason string — with strict semantics an
 unexpected XPASS FAILS the suite (verified live on pytest 9.1.1 in the
 Phase 2 research), so a Phase 4 fix that leaves its marker behind can never
 pass silently, and a marker removed without the fix turns red immediately.
 
-The three locks (defect semantics pinned test-first, fixed in Phase 4):
+The three former locks (defect semantics pinned test-first, each fixed and
+unmarked in Phase 4):
 
 - **AUD-01-P0** — species-as-dataset: result JSONs carry a MODEL-organism
   string as a dataset entry's ``species`` (e.g. ``"athaliana"``) instead
@@ -138,15 +142,14 @@ def test_aud01_species_matches_dataset_arena_category():
     ``species`` must equal the dataset's arena Category from the unified
     ``pipeline/datasets_info.json``, never a model organism.
 
-    The fixture deliberately carries the defect: its
-    ``plant-genomic-benchmark__poly_a.arabidopsis_thaliana`` entry has
+    The fixture originally carried the defect: its
+    ``plant-genomic-benchmark__poly_a.arabidopsis_thaliana`` entry had
     ``species="athaliana"`` — a real MODEL-registry species value
     (``pipeline/models_info.json``) leaked into a dataset field — while
-    the dataset's Category is ``Plants``. Today the asserts fail on that
-    entry, so the test xfails; Phase 4's F3(2) dataset-side species
-    table makes producers write the Category, this test XPASSes, and the
-    strict marker FAILS the suite until it is removed in the same commit
-    as the fix (house rule above).
+    the dataset's Category is ``Plants``. The asserts failed on that
+    entry until the Phase 4 fix (04-01 Task 1: fixture entry corrected to
+    ``"Plants"`` + marker removed in the same commit); the contract is now
+    a permanent green guard over the fixture's shape.
     """
     category_map = _load_category_map()
     doc = _load_fixture()
@@ -243,21 +246,45 @@ def test_unregistered_dataset_aborts_grouping(tmp_path, monkeypatch):
         summarize_comparison.main()
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="WR-02 equal-value bool/int cross-type pairs must be "
-                          "reported — Phase 4 fix")
 def test_compare_reports_equal_value_bool_int_cross_type():
     """The canonical comparator must report an equal-value bool/int
     cross-type pair instead of staying silent.
 
-    Live risk this silence hides: the 47 pinned task files carry bf16/fp16
-    booleans — a regeneration that emits ``1`` where the committed file has
-    ``true`` (or vice versa) compares as identical today, so a real type
-    change in published data would pass the D-06 vocabulary unnoticed.
+    Live risk this silence hid before the fix (04-01 Task 3, WR-02): the
+    47 pinned task files carry bf16/fp16 booleans — a regeneration that
+    emits ``1`` where the committed file has ``true`` (or vice versa)
+    compared as identical, so a real type change in published data would
+    have passed the D-06 vocabulary unnoticed. The pair now reports as
+    ``BOOL_CROSS``.
     """
     diffs = []
     walk(True, 1, "", diffs)
     assert diffs, "bool/int cross-type pair with equal value must produce a diff"
+
+
+def test_compare_same_type_equal_values_stay_silent():
+    """WR-02 converse: equal same-type pairs report nothing — ``true`` vs
+    ``true`` and ``1`` vs ``1`` are genuinely identical JSON values, so the
+    cross-type reporting added for WR-02 must not over-report."""
+    diffs = []
+    walk(True, True, "", diffs)
+    walk(False, False, "", diffs)
+    walk(1, 1, "", diffs)
+    assert diffs == []
+
+
+def test_compare_labels_int_vs_int_mismatch_as_int():
+    """IN-01: a pure int-vs-int unequal pair (the species diff's rank /
+    samples / top-K counters) carries the INT label, not FLOAT_BIG; equal
+    ints stay silent; a mixed int/float unequal pair keeps the existing
+    float label path unchanged."""
+    diffs = []
+    walk({"rank": 3, "n": 5}, {"rank": 4, "n": 5}, "", diffs)
+    assert [(kind, path) for kind, path, _ in diffs] == [("INT", "/rank")], diffs
+
+    mixed = []
+    walk(3, 3.5, "", mixed)
+    assert [kind for kind, _, _ in mixed] == ["FLOAT_BIG"], mixed
 
 
 @pytest.mark.parametrize(
@@ -272,9 +299,11 @@ def test_nonfinite_metric_excluded_from_ranking(bad):
     """A non-finite metric value must coerce to the default (be excluded),
     never pass through as a float.
 
-    Today ``get_float`` returns ``nan``/``inf``/``-inf`` for these inputs
-    (pinned as plain assertions in ``tests/test_aggregation.py``), the
-    value passes the presence gate as present, and a single NaN zeroes or
-    poisons the whole task's MinMax/z-score normalization for every model.
+    Before the fix (04-01 Task 2, WR-03) ``get_float`` returned
+    ``nan``/``inf``/``-inf`` for these inputs (then pinned as plain
+    assertions in ``tests/test_aggregation.py``), the value passed the
+    presence gate as present, and a single NaN zeroed or poisoned the
+    whole task's MinMax/z-score normalization for every model. The
+    isfinite guard now returns the default for all three.
     """
     assert summarize_comparison.get_float(bad, default=None) is None
