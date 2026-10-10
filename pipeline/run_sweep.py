@@ -108,7 +108,11 @@ Failure boundary:
     A maintainer-curated JSON file — an ordered list of tiers, each a list
     of entries that are either bare model names or ``{model, task}`` specs
     (``pipeline/sweep_priorities.json`` is the committed instance: tier 1 =
-    the PIPE-03 E2E pair, tier 2 EMPTY pending maintainer curation). The
+    the PIPE-03 E2E pair; tier 2 = the maintainer-curated arena
+    representatives, one per arena — animal GENERanno-eukaryote-0.5b-base,
+    plant PlantCAD2-Small-l24-d0768, microbe Omni-DNA-700M — curated at the
+    2026-10-10 Task-4 gate from the committed weighted_score arena leaders
+    excluding the tier-1 pair). The
     tiers compose as the PRIMARY sort key — rank ``(tier index, entry
     specificity)``, a ``{model, task}`` spec outranking a bare model name
     within its tier, a cell matching several entries taking its best rank

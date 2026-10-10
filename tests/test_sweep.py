@@ -53,9 +53,11 @@ Every behavior bullet of the plan's Task 2 is pinned here:
   (model, task) cells enumerate FIRST (tier index, then entry specificity,
   as the primary sort key composed over the sorted() fallback — seeds stay
   adjacent within a cell), the committed ``pipeline/sweep_priorities.json``
-  drives the PIPE-03 E2E pair first over a registry holding the real pair
-  names, and run_matrix executes cells in the GIVEN order (the fake
-  executor's invocation order preserves the priority order);
+  drives the PIPE-03 E2E pair first and the maintainer-curated tier-2 arena
+  representatives second over a registry holding the real names, and
+  run_matrix executes cells in the GIVEN order (the fake executor's
+  invocation order preserves the full degradation order: tier 1, then every
+  cell of the tier-2 representatives, then the sorted() fallback);
 - **failures-manifest re-run (05-04)** — ``--from-failures`` enumerates
   exactly the failed (model, task) pairs' cells across ALL requested seeds;
   a clean manifest yields an EXPLICIT zero-cell run with a clear message
@@ -664,6 +666,20 @@ COMMITTED_PRIORITIES = REPO_ROOT / "pipeline" / "sweep_priorities.json"
 # REQUIREMENTS shorthand; the registry key is what validation accepts).
 E2E_TASK = "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation"
 
+# The maintainer-curated tier-2 arena representatives (Task 4 gate,
+# 2026-10-10): one representative per arena — animal
+# GENERanno-eukaryote-0.5b-base, plant PlantCAD2-Small-l24-d0768, microbe
+# Omni-DNA-700M — chosen from the committed weighted_score arena leaders
+# excluding the tier-1 pair (animal 0.799 / plant 1.000 / microbe 1.056).
+# NEVER agent-invented (D-17/OQ4): this list mirrors the maintainer's
+# declaration order; execution order within the tier is the sorted()
+# fallback (bare names in one tier share a rank).
+TIER2_REPRESENTATIVES = [
+    "GENERanno-eukaryote-0.5b-base",
+    "PlantCAD2-Small-l24-d0768",
+    "Omni-DNA-700M",
+]
+
 # The frozen default order over the standard 3x2 fixture (both seeds): the
 # sorted() enumeration that MUST stay byte-identical when no --priority-file
 # is given (backward compatibility, determinism).
@@ -689,9 +705,10 @@ def _manifest_cells(out_root):
 
 
 def make_e2e_registry(tmp_path):
-    """A registry holding the REAL E2E pair names plus a bystander model
-    and a second task, so the committed priorities file validates and its
-    tier-1-first effect is observable against names that are not
+    """A registry holding the REAL E2E pair names, the three REAL tier-2
+    arena-representative names, a bystander model, and a second task, so
+    the committed priorities file validates and its tier-1-first,
+    tier-2-second effect is observable against names that are not
     alphabetically convenient."""
     registry_dir = tmp_path / "registry-e2e"
     registry_dir.mkdir()
@@ -707,6 +724,10 @@ def make_e2e_registry(tmp_path):
             "bystander-model": {
                 "Model_name": "bystander-model",
                 "Model_path": "models/bystander"},
+            **{
+                model: {"Model_name": model, "Model_path": f"models/{model}"}
+                for model in TIER2_REPRESENTATIVES
+            },
         },
         datasets={
             E2E_TASK: {"Dataset_name": E2E_TASK, "Train": 21894, "Dev": 10},
@@ -740,8 +761,8 @@ def test_priority_file_orders_ranked_cells_first_seeds_adjacent(
     """A priorities file reorders the enumerated matrix: tier-1 cells (the
     {model, task} spec, then the bare model's other tasks) enumerate before
     everything else, seeds stay adjacent within a cell, and the remaining
-    cells keep the sorted() fallback order. Tier 2 here is EMPTY (the
-    maintainer-curation form)."""
+    cells keep the sorted() fallback order. Tier 2 here is EMPTY (an empty
+    tier is a valid file form — it ranks nothing)."""
     registry_dir = make_registry(tmp_path)
     priority_file = _write_json(tmp_path / "priorities.json", [
         [
@@ -802,9 +823,11 @@ def test_priority_specificity_spec_before_bare_model_within_tier(
 def test_committed_priorities_file_drives_e2e_pair_first(
         tmp_path, monkeypatch):
     """The committed pipeline/sweep_priorities.json validates against a
-    registry holding the REAL E2E pair names and drives exactly the PIPE-03
-    pair's cells (both models x the E2E task, all seeds) before every other
-    cell — the degradation order's tier 1."""
+    registry holding the REAL E2E pair and tier-2 names and drives the full
+    degradation order: the PIPE-03 pair's cells (both models x the E2E
+    task, all seeds) before every other cell, then EVERY cell of the three
+    tier-2 arena representatives, then the remaining cells in the sorted()
+    fallback order."""
     registry_dir = make_e2e_registry(tmp_path)
     out_root = tmp_path / "sweep-out"
     run_cli(monkeypatch, [
@@ -815,20 +838,26 @@ def test_committed_priorities_file_drives_e2e_pair_first(
         "--registry-dir", str(registry_dir),
     ])
     cells = _manifest_cells(out_root)
-    assert len(cells) == 12  # 3 models x 2 tasks x 2 seeds
+    assert len(cells) == 24  # 6 models x 2 tasks x 2 seeds
     # Tier 1 first: the E2E pair's four cells (both models, both seeds) —
     # in sorted fallback order within the tier, seeds adjacent.
-    assert set(cells[:4]) == {
+    assert cells[:4] == [
         ("PlantHelixSeek", E2E_TASK, 42), ("PlantHelixSeek", E2E_TASK, 43),
         ("plant-dnamamba-6mer", E2E_TASK, 42),
         ("plant-dnamamba-6mer", E2E_TASK, 43),
-    }
-    assert cells[0][0] == cells[1][0] and cells[0][1] == cells[1][1] == E2E_TASK, (
-        "seeds must stay adjacent within a tier-1 cell"
-    )
+    ]
+    # Tier 2 second: EVERY cell of the three arena representatives (bare
+    # names cover all tasks), seeds adjacent, sorted fallback order within
+    # the shared tier rank.
+    assert cells[4:16] == [
+        (model, task, seed)
+        for model in sorted(TIER2_REPRESENTATIVES)
+        for task in [E2E_TASK, "other__task"]
+        for seed in [42, 43]
+    ]
     # Every remaining cell (the bystander's + the E2E models' other__task
     # cells) follows in the sorted() fallback order.
-    assert set(cells[4:]) == {
+    assert set(cells[16:]) == {
         ("PlantHelixSeek", "other__task", 42), ("PlantHelixSeek", "other__task", 43),
         ("bystander-model", E2E_TASK, 42), ("bystander-model", E2E_TASK, 43),
         ("bystander-model", "other__task", 42),
@@ -836,13 +865,15 @@ def test_committed_priorities_file_drives_e2e_pair_first(
         ("plant-dnamamba-6mer", "other__task", 42),
         ("plant-dnamamba-6mer", "other__task", 43),
     }
-    assert cells[4:] == sorted(cells[4:])
+    assert cells[16:] == sorted(cells[16:])
 
 
 def test_committed_priorities_file_content():
     """pipeline/sweep_priorities.json: tier 1 names exactly the pre-decided
-    PIPE-03 E2E pair ({model, task} specs on the E2E task); tier 2 is EMPTY
-    awaiting the maintainer's Task-4 curation (never agent-invented)."""
+    PIPE-03 E2E pair ({model, task} specs on the E2E task); tier 2 carries
+    exactly the three maintainer-curated arena representatives (Task 4
+    gate, 2026-10-10 — one per arena, in the maintainer's declaration
+    order; never agent-invented, D-17/OQ4)."""
     tiers = json.loads(COMMITTED_PRIORITIES.read_text(encoding="utf-8"))
     assert isinstance(tiers, list) and len(tiers) == 2
     tier1, tier2 = tiers
@@ -850,7 +881,88 @@ def test_committed_priorities_file_content():
         {"model": "plant-dnamamba-6mer", "task": E2E_TASK},
         {"model": "PlantHelixSeek", "task": E2E_TASK},
     ]
-    assert tier2 == [], "tier 2 is maintainer-curated — ships EMPTY"
+    assert tier2 == TIER2_REPRESENTATIVES, (
+        "tier 2 is the maintainer's curated list — exactly one "
+        "representative per arena (animal/plant/microbe), no additions, no "
+        "reordering of tier 1"
+    )
+
+
+def test_tier2_representatives_are_real_registry_keys():
+    """Every committed tier-2 name is an exact pipeline/models_info.json
+    key — the fail-fast gate-disposition condition (a typo'd name would
+    abort the real sweep at --priority-file validation, launch day)."""
+    registry = json.loads(
+        (REPO_ROOT / "pipeline" / "models_info.json").read_text(
+            encoding="utf-8"))
+    for model in TIER2_REPRESENTATIVES:
+        assert model in registry, (
+            f"tier-2 representative {model!r} is not a models_info.json "
+            "key — the committed priorities file must name registry keys"
+        )
+
+
+def test_committed_priorities_degradation_order_fake_executor(tmp_path):
+    """The committed priorities file drives the full E2' degradation order
+    through run_matrix under a fake executor (the D-05 discipline — no real
+    subprocess is ever launched): tier-1 E2E pair cells first, then EVERY
+    cell of the three tier-2 arena representatives across both tasks (seeds
+    adjacent), then the remaining cells in the sorted() fallback order.
+    This is the degradation contract the maintainer's curation purchased:
+    if the revision window degrades, the sweep has already produced the
+    E2E pair, then one strong representative per arena."""
+    registry_dir = make_e2e_registry(tmp_path)
+    tiers = run_sweep.load_priority_tiers(
+        str(COMMITTED_PRIORITIES), registry_dir)
+    cells = run_sweep.enumerate_matrix(None, None, [42, 43], registry_dir)
+    ordered = run_sweep.apply_priority_order(cells, tiers)
+    out_root = tmp_path / "sweep-out"
+    invoked = []
+
+    def recording_executor(model, task, seed, output_root):
+        invoked.append((model, task, seed))
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text("{}", encoding="utf-8")
+
+    run_sweep.run_matrix(ordered, out_root, executor=recording_executor)
+    assert len(invoked) == 24, "6 models x 2 tasks x 2 seeds, every cell run"
+    assert invoked == [
+        # tier 1 — the PIPE-03 E2E pair ({model, task} specs, sorted
+        # fallback within the rank), seeds adjacent within each cell
+        ("PlantHelixSeek", E2E_TASK, 42),
+        ("PlantHelixSeek", E2E_TASK, 43),
+        ("plant-dnamamba-6mer", E2E_TASK, 42),
+        ("plant-dnamamba-6mer", E2E_TASK, 43),
+        # tier 2 — the three arena representatives as bare names: EVERY
+        # cell of each model (both tasks), seeds adjacent, sorted()
+        # fallback order within the shared tier rank
+        ("GENERanno-eukaryote-0.5b-base", E2E_TASK, 42),
+        ("GENERanno-eukaryote-0.5b-base", E2E_TASK, 43),
+        ("GENERanno-eukaryote-0.5b-base", "other__task", 42),
+        ("GENERanno-eukaryote-0.5b-base", "other__task", 43),
+        ("Omni-DNA-700M", E2E_TASK, 42),
+        ("Omni-DNA-700M", E2E_TASK, 43),
+        ("Omni-DNA-700M", "other__task", 42),
+        ("Omni-DNA-700M", "other__task", 43),
+        ("PlantCAD2-Small-l24-d0768", E2E_TASK, 42),
+        ("PlantCAD2-Small-l24-d0768", E2E_TASK, 43),
+        ("PlantCAD2-Small-l24-d0768", "other__task", 42),
+        ("PlantCAD2-Small-l24-d0768", "other__task", 43),
+        # the remaining cells — the sorted() fallback order
+        ("PlantHelixSeek", "other__task", 42),
+        ("PlantHelixSeek", "other__task", 43),
+        ("bystander-model", E2E_TASK, 42),
+        ("bystander-model", E2E_TASK, 43),
+        ("bystander-model", "other__task", 42),
+        ("bystander-model", "other__task", 43),
+        ("plant-dnamamba-6mer", "other__task", 42),
+        ("plant-dnamamba-6mer", "other__task", 43),
+    ], (
+        "the executor invocation order must be the full degradation "
+        "order: tier-1 E2E pair, then every tier-2 representative cell, "
+        "then the sorted() fallback"
+    )
 
 
 def test_run_matrix_preserves_given_cell_order(tmp_path):

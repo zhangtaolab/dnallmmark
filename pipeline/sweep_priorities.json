@@ -9,5 +9,9 @@
             "task": "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation"
         }
     ],
-    []
+    [
+        "GENERanno-eukaryote-0.5b-base",
+        "PlantCAD2-Small-l24-d0768",
+        "Omni-DNA-700M"
+    ]
 ]
