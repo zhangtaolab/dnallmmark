@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/zhangtaolab/dnallmmark/main/schemas/frontier.json",
+  "$comment": "Strict contract (D-01 discipline) for the cost-accuracy frontier artifact (SC-6, REV-05/F4) — produced offline by script/build_frontier.py over the F2 run-record tree, one row per COMPLETED run record; synthetic-fixture proven until real post-E2' adapter runs exist (the committed dnallm-mark/data/frontier.json artifact and any DATA.md site link stay gated on real numbers — resolved research OQ 1). Derivation sources: every column traces to an existing record contract. wall_hours = run_record finished_at minus started_at — WALL-CLOCK hours, not GPU-hours; precise GPU accounting stays null-when-unknown per the vram_probe contract. total_flos comes from record metrics and is hard-required: a completed record missing it aborts generation naming the record path (mirroring the exporter's FLOPs discipline — emitting 0 or the empty string would falsify the schema-required bare number). trainable_params_pct comes from the 06-02 run_finetune persistence in final_metrics (present for every post-06-02 run in every mode; null with a disclosed note when the record predates that persistence). score is the task's primary metric resolved through the exporter's dataset-metric surface (script/export_runs.py — the single metric authority). score_delta = the row's score minus the none-method mean score for the same (base_model, task); null with a disclosed note when no counterpart run exists — skip-as-data, never a silent drop; method=none rows are the reference and carry a null delta by construction. method derives from the alias suffix (+lora/+ia3/+probe) first, else the run_record peft field, else none; +probe is deliberate forward-compatibility for the 06-05 frozen-probe lane. notes carries every per-row disclosure. The artifact is byte-deterministic: sorted iteration, sort_keys serialization, no live clock.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rows"],
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "base_model",
+          "method",
+          "model",
+          "notes",
+          "score",
+          "score_delta",
+          "seed",
+          "task",
+          "total_flos",
+          "trainable_params_pct",
+          "wall_hours"
+        ],
+        "properties": {
+          "base_model": { "type": "string" },
+          "method": { "enum": ["none", "lora", "ia3", "probe"] },
+          "model": { "type": "string" },
+          "notes": { "type": "array", "items": { "type": "string" } },
+          "score": { "type": ["null", "number"] },
+          "score_delta": { "type": ["null", "number"] },
+          "seed": { "type": "integer" },
+          "task": { "type": "string" },
+          "total_flos": { "type": "number", "minimum": 0 },
+          "trainable_params_pct": {
+            "type": ["null", "number"],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "wall_hours": { "type": ["null", "number"], "minimum": 0 }
+        }
+      }
+    }
+  }
+}

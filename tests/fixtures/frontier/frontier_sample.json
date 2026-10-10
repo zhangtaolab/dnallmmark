@@ -1,0 +1,106 @@
+{
+    "rows": [
+        {
+            "base_model": "model-a",
+            "method": "none",
+            "model": "model-a",
+            "notes": [
+                "method=none is the score_delta reference — delta is defined for adapter rows only"
+            ],
+            "score": 0.9,
+            "score_delta": null,
+            "seed": 42,
+            "task": "FakeDS__task",
+            "total_flos": 1000000000000000.0,
+            "trainable_params_pct": 100.0,
+            "wall_hours": 1.5
+        },
+        {
+            "base_model": "model-a",
+            "method": "none",
+            "model": "model-a",
+            "notes": [
+                "method=none is the score_delta reference — delta is defined for adapter rows only"
+            ],
+            "score": 0.92,
+            "score_delta": null,
+            "seed": 43,
+            "task": "FakeDS__task",
+            "total_flos": 1000000000000000.0,
+            "trainable_params_pct": 100.0,
+            "wall_hours": 1.5
+        },
+        {
+            "base_model": "model-a",
+            "method": "none",
+            "model": "model-a",
+            "notes": [
+                "method=none is the score_delta reference — delta is defined for adapter rows only"
+            ],
+            "score": 0.94,
+            "score_delta": null,
+            "seed": 44,
+            "task": "FakeDS__task",
+            "total_flos": 1000000000000000.0,
+            "trainable_params_pct": 100.0,
+            "wall_hours": 1.5
+        },
+        {
+            "base_model": "model-a",
+            "method": "lora",
+            "model": "model-a+lora",
+            "notes": [],
+            "score": 0.89,
+            "score_delta": -0.029999999999999916,
+            "seed": 42,
+            "task": "FakeDS__task",
+            "total_flos": 20000000000000.0,
+            "trainable_params_pct": 0.331253,
+            "wall_hours": 0.75
+        },
+        {
+            "base_model": "model-a",
+            "method": "lora",
+            "model": "model-a+lora",
+            "notes": [],
+            "score": 0.91,
+            "score_delta": -0.009999999999999898,
+            "seed": 43,
+            "task": "FakeDS__task",
+            "total_flos": 20000000000000.0,
+            "trainable_params_pct": 0.331253,
+            "wall_hours": 0.75
+        },
+        {
+            "base_model": "model-b",
+            "method": "none",
+            "model": "model-b",
+            "notes": [
+                "trainable_params_pct absent — the record predates the 06-02 run_finetune persistence",
+                "method=none is the score_delta reference — delta is defined for adapter rows only"
+            ],
+            "score": 0.75,
+            "score_delta": null,
+            "seed": 42,
+            "task": "FakeDS__task",
+            "total_flos": 500000000000000.0,
+            "trainable_params_pct": null,
+            "wall_hours": 2.0
+        },
+        {
+            "base_model": "model-c",
+            "method": "lora",
+            "model": "model-c+lora",
+            "notes": [
+                "no completed none-method run for (model-c, FakeDS__task) — no score_delta counterpart"
+            ],
+            "score": 0.6,
+            "score_delta": null,
+            "seed": 42,
+            "task": "FakeDS__task",
+            "total_flos": 30000000000000.0,
+            "trainable_params_pct": 0.4,
+            "wall_hours": 0.5
+        }
+    ]
+}
