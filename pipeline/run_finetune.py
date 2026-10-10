@@ -673,8 +673,9 @@ if __name__ == "__main__":
                         continue
 
                 # Refuse Dev-less tasks BEFORE any model load (F1 / REV-01).
-                # Suite-side EVAL-01 contract (dnallm/finetune/trainer.py
-                # L568-605 @ revision 483a35c): dnallm uses test as the eval
+                # Suite-side EVAL-01 contract
+                # (dnallm/finetune/trainer.py L571-605 @ v1.2.1 (30dfd6d)):
+                # dnallm uses test as the eval
                 # set only when finetune.allow_test_as_eval is explicitly true
                 # (config default False — a setting our configs must never
                 # carry) and otherwise raises a hard ValueError for a missing
@@ -721,6 +722,14 @@ if __name__ == "__main__":
                 # Load model and tokenizer
                 current_time = get_current_time()
                 print(f"[{current_time}] Loading model: {model_name}")
+                # v1.2.1 behavioral pin (verified read-only, 06-01): the
+                # suite hardcodes attn_implementation="eager" in
+                # _load_model_by_task_type's model_load_kwargs
+                # (dnallm/models/model.py:590-594 @ v1.2.1 (30dfd6d)) for
+                # every generic-path load, and trust_remote_code=True is
+                # unconditional in all load paths — so our side needs NO
+                # per-model attention-implementation or trust quirk list;
+                # eager is the pinned suite behavior for every model here.
                 try:
                     model, tokenizer = load_model_and_tokenizer(
                         model_path,

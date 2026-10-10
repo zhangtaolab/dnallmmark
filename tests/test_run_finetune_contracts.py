@@ -18,8 +18,8 @@ files). The contracts asserted here are textual/structural:
   where a comma follows the identifier instead.
 - **config purity** — the string ``allow_test_as_eval`` must appear in
   NEITHER finetune YAML: the dnallm suite's EVAL-01 semantics
-  (``dnallm/finetune/trainer.py`` L568-605 @ revision 483a35c) make test
-  eval strictly opt-in via that key (config default False), so our
+  (``dnallm/finetune/trainer.py`` L571-605 @ v1.2.1, tag 30dfd6d) make
+  test eval strictly opt-in via that key (config default False), so our
   configs leaving it unset is precisely what keeps checkpoint selection
   off the test set — this test pins that the key is never introduced.
 - **seed-isolated output layout (G1/REV-02)** — the outdir construction
@@ -907,4 +907,52 @@ def test_subset_file_validated_fail_fast_with_error_exit():
     assert wiring_idx < model_loop_idx, (
         "the subset validation must run BEFORE the model loop — no "
         "partial application or model load ahead of validation"
+    )
+
+
+# =====================================================================
+# dnallm v1.2.1 adaptation (06-01) — re-pinned suite citations
+# =====================================================================
+
+def test_suite_citations_pinned_to_v121_tag():
+    """06-01: run_finetune.py carries ZERO stale pre-v1.2.1 revision
+    citations — the suite's v1.2 revision (~26.9k insertions, commit
+    92a8106) landed between 483a35c and v1.2.1 and shifted the cited
+    line ranges, so adaptation anchors must pin to tag v1.2.1 (30dfd6d),
+    never the moving dev branch. The EVAL-01 refusal comment cites the
+    v1.2.1 anchor 'trainer.py L571-605 @ v1.2.1 (30dfd6d)' (same guard
+    content, shifted lines), and the model-loading region documents the
+    v1.2.1 attn_implementation='eager' hard pin so no redundant
+    attention-implementation quirk is ever added on our side."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    assert "483a35c" not in src, (
+        "a stale pre-v1.2.1 suite revision citation ('483a35c') survives "
+        "in run_finetune.py — adaptation citations must be re-pinned to "
+        "tag v1.2.1 (30dfd6d); the suite branch moved during the v1.2 "
+        "revision and line anchors shifted"
+    )
+    assert "trainer.py L571-605 @ v1.2.1 (30dfd6d)" in src, (
+        "the EVAL-01 refusal comment must cite the v1.2.1 anchor "
+        "'trainer.py L571-605 @ v1.2.1 (30dfd6d)' — the guard block sits "
+        "at L571-605 in v1.2.1 (L568-605 at the pre-v1.2 483a35c)"
+    )
+    load_idx = statement_index(
+        src, "model, tokenizer = load_model_and_tokenizer("
+    )
+    assert load_idx != -1, "no load_model_and_tokenizer call site found"
+    eager_idx = src.find("attn_implementation")
+    assert eager_idx != -1, (
+        "the model-loading region must document v1.2.1's hardcoded "
+        "attn_implementation=\"eager\" in _load_model_by_task_type's "
+        "model_load_kwargs — without the note a future quirk list would "
+        "add a redundant attention-implementation override on our side"
+    )
+    assert "model.py:590-594" in src, (
+        "the eager-pin note must cite its read-only suite anchor "
+        "(model.py:590-594 @ v1.2.1)"
+    )
+    assert eager_idx < load_idx and load_idx - eager_idx < 2000, (
+        "the eager-pin note must sit in the model-loading comment region "
+        f"(note at {eager_idx}, load call at {load_idx}) — next to the "
+        "load it explains, not far away in an unrelated block"
     )
