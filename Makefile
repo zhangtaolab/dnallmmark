@@ -14,8 +14,8 @@
 #                   the JS suite is fast and runs in the full test lane
 #   make lint       ruff over tests/ + the Phase-authored/edited files
 #                   (make_dev_splits.py, summarize_comparison.py,
-#                   export_runs.py, freeze_snapshot.py, run_finetune.py,
-#                   run_sweep.py, compare.py)
+#                   export_runs.py, freeze_snapshot.py, convert_registry.py,
+#                   run_finetune.py, run_sweep.py, compare.py)
 #   make typecheck  ty type check over script/, baseline/, tests/, scripts/,
 #                   and pipeline/ (GPU-side imports replaced with Any — they
 #                   are never installed CPU-side, D-05)
@@ -65,16 +65,19 @@ test-fast:
 # (03-02), pipeline/run_finetune.py (D-08: all 16 arriving findings resolved,
 # 13 genuinely + 3 justified per-line noqa at the designed blind-except
 # isolation sites), pipeline/run_sweep.py (03-04), script/summarize_comparison.py
-# (04-01: FIX-02 Category grouping + WR-03 isfinite), baseline/compare.py
-# (04-01: IN-01 INT label + WR-02 BOOL_CROSS), script/export_runs.py (04-02:
-# vendored suite statistics + the exporter core), script/freeze_snapshot.py
-# (04-02: the tar + SHA256 snapshot primitive). The pre-existing findings in
-# the REMAINING script/, scripts/, baseline/ production files stay deferred
-# to their Phase 4/5 routing, so those paths stay OUT of scope deliberately.
+# (04-01: FIX-02 Category grouping + WR-03 isfinite; 04-05: IN-03 importer),
+# baseline/compare.py (04-01: IN-01 INT label + WR-02 BOOL_CROSS),
+# script/export_runs.py (04-02: vendored suite statistics + the exporter
+# core; 04-05: the legacy dataset-metric translation), script/freeze_snapshot.py
+# (04-02: the tar + SHA256 snapshot primitive), script/convert_registry.py
+# (04-05, IN-08: the bidirectional registry converter joins scope — clean on
+# arrival). The pre-existing findings in the REMAINING script/, scripts/,
+# baseline/ production files stay deferred to their later routing, so those
+# paths stay OUT of scope deliberately.
 # No [tool.ruff] config section exists (D-08: no baseline carry-over, no
 # suppression).
 lint:
-	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py
+	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py
 
 # Type check (ty, maintainer directive 2026-10-09): zero-diagnostics baseline
 # verified empirically at research time. [tool.ty] in pyproject.toml carries

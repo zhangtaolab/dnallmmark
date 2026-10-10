@@ -213,6 +213,16 @@ tensorboard --logdir=finetuned/
 
 The pipeline will also generate a summarized performance result for the target model named `{model_name}_performance.json` in the `finetuned/{model_name}/` directory. This file can be further used for visualized and comparison in the DNALLM-Mark, please see the next section for detailed usage.
 
+### Export Runs to the Leaderboard
+
+The unified exporter (`script/export_runs.py`) turns finished sweep runs into the leaderboard's task-centric data: it reads the per-cell `run_record.json` files (F2 layout, `finetuned/{model}/{task}/seed_{seed}/`), applies the exporter-owned metric-key mapping, joins `models_info.json` / `datasets_info.json` and `finetune_config.yaml` (the training-parameter block), aggregates over seeds, and writes one `{dataset}_task_performance.json` per task plus a per-seed statistics artifact:
+
+```bash
+uv run --group data python script/export_runs.py --input-root ./finetuned
+```
+
+This is the regeneration path for `dnallm-mark/data/task_performance/`. Until the benchmark recomputation (E2') produces real run records, the committed `task_performance/` files are **static data** — `make data` does not refresh them (its chain is `summarize_comparison.py` + the task index generator only).
+
 
 ## 🔧 Data Processing
 
@@ -287,24 +297,17 @@ This will generate:
 - `sum_PFLOPs` - Total computational cost in PetaFLOPs
 - `rank` - Overall ranking position
 
-### Generate Task Performance Data
+### Task Performance Data (per-dataset files)
 
-Run the task performance script to reorganize data by dataset/task for fine-tuning results page:
-
-```bash
-cd dnallm-mark/data
-
-# Generate task_performance/ directory with per-dataset JSON files
-python ../../script/get_task_performance.py
-```
-
-This will generate `task_performance/{dataset_name}_task_performance.json` for each dataset, containing:
+`dnallm-mark/data/task_performance/` holds one `{dataset}_task_performance.json` per dataset, containing:
 - `info` - Dataset metadata (species, type, labels, train/test/dev sizes, etc.)
 - `performance` - Per-model performance metrics for this specific dataset/task
 
+These files are **committed static data** until the benchmark recomputation (E2') regenerates them with the unified exporter (see [Export Runs to the Leaderboard](#export-runs-to-the-leaderboard)) — the legacy offline pivot from `model_performance/` was removed; there is no script that regenerates them today.
+
 ### Generate Task Index
 
-Regenerate the lightweight task index (`dnallm-mark/data/tasks.json`) consumed by the task benchmark page. Unlike the two Python generators above, this one is **not** CWD-sensitive — it resolves paths relative to its own location, so run it from the repo root:
+Regenerate the lightweight task index (`dnallm-mark/data/tasks.json`) consumed by the task benchmark page. Unlike the Python generator above, this one is **not** CWD-sensitive — it resolves paths relative to its own location, so run it from the repo root:
 
 ```bash
 node scripts/generate-tasks-index.js
@@ -312,7 +315,7 @@ node scripts/generate-tasks-index.js
 
 This rewrites `tasks.json` from the `task_performance/` files. Regenerate it whenever `task_performance/` changes — otherwise the task page serves a stale index (missing or outdated task entries).
 
-> **Note:** the full regeneration chain is: (1) `cd dnallm-mark/data && python ../../script/get_task_performance.py`, (2) `python ../../script/summarize_comparison.py` (same CWD), (3) `node scripts/generate-tasks-index.js` (repo root). Shipping only a partial chain leaves derived files inconsistent with `model_performance/`.
+> **Note:** the full regeneration chain (`make data`) is: (1) `cd dnallm-mark/data && python ../../script/summarize_comparison.py`, (2) `node scripts/generate-tasks-index.js` (repo root). Shipping only a partial chain leaves derived files inconsistent with `model_performance/`. The `task_performance/` files are inputs to step (2), not outputs of the chain — until E2' regenerates them via `script/export_runs.py`.
 
 ## 📁 Project Structure
 
@@ -331,7 +334,7 @@ dnallmmark/
 │   │   └── components.css    # UI component styles
 │   └── data/                 # Data directory
 │       ├── model_performance/  # Input: per-model JSON files
-│       ├── task_performance/   # Generated: per-dataset JSON files
+│       ├── task_performance/   # Per-dataset JSON files (committed static data until E2')
 │       ├── tasks.json          # Generated: task index (scripts/generate-tasks-index.js)
 │       └── models_comparison*.json  # Generated: summary comparison files
 ├── pipeline/                 # Fine-tuning pipeline
@@ -347,7 +350,7 @@ dnallmmark/
 │   └── finetune_config_with_head.yaml  # Configuration file with specific head
 ├── script/                   # Data processing scripts (Python — run from dnallm-mark/data/)
 │   ├── summarize_comparison.py  # Generate summary comparison data
-│   └── get_task_performance.py  # Generate per-dataset performance data
+│   └── export_runs.py           # Unified exporter (run records -> task_performance; E2' path, repo-root-runnable)
 ├── scripts/                  # One-off generators (Node — run from repo root)
 │   └── generate-tasks-index.js  # Regenerate data/tasks.json task index
 ├── baseline/                 # Reproducibility baseline (JSON comparator + SHA256 manifests + pin-validation evidence)
