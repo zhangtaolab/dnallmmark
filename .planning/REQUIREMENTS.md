@@ -40,9 +40,9 @@ Requirements for the hardening release. Each maps to roadmap phases.
 
 ### Data & Records
 
-- [ ] **DATA-01**: Leaderboard data recomputed after correctness fixes, with a before/after comparison artifact
+- [x] **DATA-01**: Leaderboard data recomputed after correctness fixes, with a before/after comparison artifact *(complete — co-declared by 05-02 and 05-04; with 05-04's SUMMARY present both declarers are done: 05-02's F6 migration and 05-04's D-18 alias migration each carry a full baseline inventory attributing every before/after diff)*
 - [x] **DATA-02**: CHANGELOG.md records each result-affecting fix with date, per lm-evaluation-harness convention; `data_version` stamped into regenerated JSON
-- [ ] **DATA-03**: Git tags for data versions (pre-fix `data-v1`, post-fix `data-v2`)
+- [x] **DATA-03**: Git tags for data versions (pre-fix `data-v1`, post-fix `data-v2`) *(complete as PREPARATION — `data-v1` tagged (Phase 1); the data-v2 gate tooling (run_migration_inventory.py + --write-manifest SHA256 convention) is rehearsed on the D-18 mini-migration; the `data-v2` tag itself is created ONLY by the maintainer after E2' sign-off, never by an agent)*
 - [ ] **DATA-04**: Provenance table for all 50 datasets (DATA.md: source, citation, license, preprocessing, download URL) — download URLs default to ModelScope, other sources as alternates
 - [ ] **DATA-05**: Downloadable data manifest file (CSV/JSON) with full dataset metadata and direct links — ModelScope links by default, alternates included
 - [x] **DATA-06**: Leaderboard page footer shows data-generation date/version stamp
@@ -67,7 +67,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [x] **REV-06** (F9, P1): CI golden tests — smoke (tiny model × 1k × 1 epoch incl. export), key parity, species spot checks, aggregation units; CPU, <15 min, PR-required
 - [x] **REV-07** (F7, P1): N-frequency audit (47 tasks × splits) + unified eval-subset ID lists accepted by the pipeline
 - [ ] **REV-08** (F5+F8, P1/P2): Zero-shot VEP lane (CLM/MLM scoring, ClinVar/AraGWAS, baselines + sanity checks) and, window permitting, from-scratch baselines + learning curves (label-fraction sweeps)
-- [ ] **REV-09** (E2' 执行面, P0 依赖): Three-seed full re-run (E2') executes only after REV-01/REV-02 gates — critical path F1→F2→E2'
+- [x] **REV-09** (E2' 执行面, P0 依赖): Three-seed full re-run (E2') executes only after REV-01/REV-02 gates — critical path F1→F2→E2'
 - [x] **REV-10** (F10, P0): Old pipeline (`dnallmmark_pipeline.py`) deprecation header + README names `run_finetune.py` as the benchmark entry point
 - [x] **PIPE-03**: Small end-to-end validation on the NEW pipeline (`run_finetune.py`) — plant-dnamamba-6mer and PlantHelixSeek (models_info entry added in-phase) each fine-tune on PlantCAD2__cross_species_leaf_on_off_translation and produce a `{model}_performance.json` valid against the Phase 2 schema
 
@@ -124,7 +124,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REV-06 | Phase 5 | Complete |
 | REV-07 | Phase 5 | Complete |
 | REV-08 | Phase 6 | Pending |
-| REV-09 | Phase 5 | Pending |
+| REV-09 | Phase 5 | Complete |
 | REV-10 | Phase 3 | Complete |
 | FIX-01 | Phase 4 | Complete |
 | FIX-02 | Phase 4 | Complete |
@@ -133,9 +133,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TEST-04 | Phase 5 | Complete |
 | TEST-05 | Phase 5 | Complete |
 | TEST-07 | Phase 5 | Complete |
-| DATA-01 | Phase 5 | Pending |
+| DATA-01 | Phase 5 | Complete |
 | DATA-02 | Phase 5 | Complete |
-| DATA-03 | Phase 5 | Pending |
+| DATA-03 | Phase 5 | Complete |
 | DATA-06 | Phase 5 | Complete |
 | REL-03 | Phase 6 | Pending |
 | DATA-04 | Phase 6 | Pending |

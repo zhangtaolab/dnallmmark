@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 12
 waived_count: 0
-fixed_count: 0
-total_count: 12
-last_updated: 2026-10-10T11:22:28.566Z
+fixed_count: 1
+total_count: 13
+last_updated: 2026-10-10T12:27:53.830Z
 ---
 
 # Broken Windows Ledger
@@ -27,6 +27,7 @@ last_updated: 2026-10-10T11:22:28.566Z
 | 10 | 05 | unrun-verify | .github/workflows/ci.yml |  | First real GitHub-runner execution of ci.yml happens on the maintainer's next push (badge green + <15-min/job + branch-protection setup queued in 05-USER-SETUP.md) | open |  | 2026-10-10T10:04:38.260Z |  |
 | 11 | 05 | unrun-verify | dnallm-mark/js/main.js |  | 05-02 Task 3 human-check (visual localhost confirmation of weighted default view, raw-rank toggle, stamped footer) deferred to the phase-level UAT gate — behavioral seams pinned by tests/js/main-view-toggle.test.js | open |  | 2026-10-10T10:52:34.776Z |  |
 | 12 | 5 | unrun-verify | pipeline/run_finetune.py |  | 05-03: --subset_file seam + pipeline/eval_subsets.json consumption execute only at E2' (GPU, maintainer dual-gated); CPU-side stub/contract tests + real-artifact validation proof pin the behavior — first real GPU consumption pending launch | open |  | 2026-10-10T11:22:28.566Z |  |
+| 13 | 05 | deviation | pipeline/sweep_priorities.json |  | 05-04 Task 4 blocking-human gate (tier-2 arena curation, D-17/OQ4): tier 2 shipped EMPTY at Task 2 awaiting maintainer decision — resolved 2026-10-10, maintainer selected per-arena one representative (animal GENERanno-eukaryote-0.5b-base / plant PlantCAD2-Small-l24-d0768 / microbe Omni-DNA-700M), landed in 6598e45 | fixed |  | 2026-10-10T12:27:48.027Z | 2026-10-10T12:27:53.830Z |
 
 ````json
 [
@@ -184,6 +185,19 @@ last_updated: 2026-10-10T11:22:28.566Z
     "reason": "",
     "recorded_at": "2026-10-10T11:22:28.566Z",
     "resolved_at": null,
+    "milestone": "v0.7.1"
+  },
+  {
+    "id": 13,
+    "kind": "deviation",
+    "phase": "05",
+    "file": "pipeline/sweep_priorities.json",
+    "line": null,
+    "description": "05-04 Task 4 blocking-human gate (tier-2 arena curation, D-17/OQ4): tier 2 shipped EMPTY at Task 2 awaiting maintainer decision — resolved 2026-10-10, maintainer selected per-arena one representative (animal GENERanno-eukaryote-0.5b-base / plant PlantCAD2-Small-l24-d0768 / microbe Omni-DNA-700M), landed in 6598e45",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-10T12:27:48.027Z",
+    "resolved_at": "2026-10-10T12:27:53.830Z",
     "milestone": "v0.7.1"
   }
 ]

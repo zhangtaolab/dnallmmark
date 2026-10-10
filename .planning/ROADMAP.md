@@ -135,7 +135,7 @@ Plans:
   3. N-frequency audit + unified eval subsets (REV-07/F7): 47 tasks × train/dev/test N/non-ACGT tables published; eval-subset ID lists accepted by the pipeline; all models evaluate identical sample counts per task
   4. E2' three-seed full re-run executes via the sweep runner only after F1/F2 gates (critical path note); DATA-01/02/03/06 land: recomputed leaderboard, before/after artifact, CHANGELOG with dates, data_version stamped, both data tags (data-v1, data-v2) exist, footer shows the generation date/version
 
-**Plans**: 3/4 plans executed planned
+**Plans**: 4/4 plans executed planned
 **UI hint**: yes
 Plans:
 **Wave 1**
@@ -148,7 +148,7 @@ Plans:
 - [x] 05-03-PLAN.md — N-frequency audit: 50-task census (43 present / 7 GUE missing-with-warning) published as DATA.md appendix + CSV/JSON artifacts + unified eval-subset ID lists + run_finetune --subset_file fail-fast test-split seam (REV-07)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 05-04-PLAN.md — E2' readiness (code only): D-16 bridge (export_runs emits BOTH views; full-chain CI replay), D-18 alias normalization (plant-dnamamba2-BPE → PlantDNAMamba2-BPE, inventoried), sweep priority tiers + --from-failures re-run, never-executed env_smoke gate, tier-2 maintainer curation checkpoint, data-v2 gate tooling rehearsal (REV-09, DATA-01, DATA-03)
+- [x] 05-04-PLAN.md — E2' readiness (code only): D-16 bridge (export_runs emits BOTH views; full-chain CI replay), D-18 alias normalization (plant-dnamamba2-BPE → PlantDNAMamba2-BPE, inventoried), sweep priority tiers + --from-failures re-run, never-executed env_smoke gate, tier-2 maintainer curation checkpoint, data-v2 gate tooling rehearsal (REV-09, DATA-01, DATA-03)
 
 ### Phase 6: Revision Packaging & Extended Lanes
 
@@ -181,5 +181,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Data Contracts & Test Harness | 3/3 | Complete    | 2026-10-09 |
 | 3. Pipeline Adaptation to dnallm Dev | 4/4 | Complete    | 2026-10-10 |
 | 4. Correctness Fixes | 5/5 | Complete    | 2026-10-10 |
-| 5. CI & Verified Data Migration | 3/4 | In Progress | - |
+| 5. CI & Verified Data Migration | 4/4 | In Progress | - |
 | 6. Release Packaging & Provenance | 0/TBD | Not started | - |

@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v0.7.1
 current_phase: 5
 current_phase_name: CI & Three-Seed Full Re-Run (E2')
-status: executing
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-10-10T11:22:19.828Z"
+status: verifying
+stopped_at: Completed 05-04-PLAN.md — Phase 5 complete (4/4 plans); Task 4 tier-2 gate resolved by maintainer
+last_updated: "2026-10-10T12:28:26.619Z"
 last_activity: 2026-10-10
 last_activity_desc: Phase 5 execution started
-state_head: 6c151030e32266de7bb93bc6ef6c3e019d1c0c88
+state_head: 6598e4595c2682dce9aea2a733b768437f014101
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 19
-  completed_plans: 18
+  completed_plans: 19
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 
 Phase: 5 (CI & Three-Seed Full Re-Run (E2')) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-10 — Phase 5 execution started
 
 Progress: [███████░░░] 67% (1/6 phases)
@@ -79,6 +79,7 @@ Progress: [███████░░░] 67% (1/6 phases)
 | Phase 05 P02 | 39 min | 3 tasks | 27 files |
 | Phase 05 P03 | 17 min | 2 tasks | 12 files |
 | Phase 05 P03 | 17 min | 2 tasks | 12 files |
+| Phase 05 P04 | 55 min | 4 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -138,6 +139,7 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-03: audit Dataset_path resolution strips the registry's datasets/ prefix against --datasets-root (pipeline/datasets) — both the pipeline's base_dir convention and the flag semantics honored; eval_subsets.json OMITS the 7 missing tasks (never an empty list that would select zero rows)
 - [Phase 05]: 05-03: the audit found the fairness gap is real and measurable — 16/43 present tasks carry test rows strict-charset models drop (CpG 106224/106227, human_vs_worm 24355/25000); unified N = min over class survivors, subsets = first N strict-passing IDs so every emitted ID survives the common filter by construction
 - [Phase 05]: 05-03: --subset_file lands as pure validator (collect-all-problems, bool rejected as non-integer) + thin sys.exit wiring + test-split-only select seam between load_local_data and validate_sequences; absent flag = no select anywhere; CPU-side proof ran the real eval_subsets.json against the real registry (43 tasks, 582,927 IDs, zero problems)
+- [Phase 05]: 05-04 Task 4 gate resolved (verbatim): options per-arena-one-representative / per-arena-top-2 / leave-empty; maintainer selected '每 arena 一代表 (Recommended)' — tier 2 = animal GENERanno-eukaryote-0.5b-base, plant PlantCAD2-Small-l24-d0768, microbe Omni-DNA-700M (weighted_score arena leaders excluding the tier-1 pair: 0.799/1.000/1.056); landed as bare names in 6598e45 with fake-executor degradation-order proof
 
 ### Pending Todos
 
@@ -160,6 +162,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-10T11:22:08.129Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-10-10T12:28:26.565Z
+Stopped at: Completed 05-04-PLAN.md — Phase 5 complete (4/4 plans); Task 4 tier-2 gate resolved by maintainer
 Resume file: None
