@@ -41,11 +41,11 @@ Requirements for the hardening release. Each maps to roadmap phases.
 ### Data & Records
 
 - [ ] **DATA-01**: Leaderboard data recomputed after correctness fixes, with a before/after comparison artifact
-- [ ] **DATA-02**: CHANGELOG.md records each result-affecting fix with date, per lm-evaluation-harness convention; `data_version` stamped into regenerated JSON
+- [x] **DATA-02**: CHANGELOG.md records each result-affecting fix with date, per lm-evaluation-harness convention; `data_version` stamped into regenerated JSON
 - [ ] **DATA-03**: Git tags for data versions (pre-fix `data-v1`, post-fix `data-v2`)
 - [ ] **DATA-04**: Provenance table for all 50 datasets (DATA.md: source, citation, license, preprocessing, download URL) — download URLs default to ModelScope, other sources as alternates
 - [ ] **DATA-05**: Downloadable data manifest file (CSV/JSON) with full dataset metadata and direct links — ModelScope links by default, alternates included
-- [ ] **DATA-06**: Leaderboard page footer shows data-generation date/version stamp
+- [x] **DATA-06**: Leaderboard page footer shows data-generation date/version stamp
 - [ ] **DATA-07**: Aggregation-methodology documentation (rank vs MinMax vs z-score vs robust) and removal of the divergent dead logic in `js/data.js:recalculateComparison()`
 
 ### Extensibility Mechanisms
@@ -62,7 +62,7 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [x] **REV-01** (F1, P0): Dev-split generation for the 18 Dev-empty tasks (stratified 10% from train, seed=42, datasets_info Dev columns updated) + checkpoint selection refuses silent test fallback
 - [x] **REV-02** (F2, P0): Multi-seed sweep — seed-isolated output dirs fixing G1 (resume never skips a different seed), sweep runner (model×task×seed) with per-run records and failure manifest; VRAM-probe state semantics documented per seed
 - [x] **REV-03** (F3, P0): Unified exporter + result snapshot — metric-key mapping layer (suite registry ↔ export keys, key-parity unit-tested), dataset species from a human-verified metadata table (never model cards), per-seed detail + mean±SD/bootstrap-CI aggregates; freeze_snapshot (tar + SHA-256 + frozen commit hash)
-- [ ] **REV-04** (F6, P1): Aggregation upgrade — CI-overlap tie rules, raw-rank + z-score×difficulty-weight dual views, permutation tests (10k, BH-corrected); CpG case renders as tie
+- [x] **REV-04** (F6, P1): Aggregation upgrade — CI-overlap tie rules, raw-rank + z-score×difficulty-weight dual views, permutation tests (10k, BH-corrected); CpG case renders as tie
 - [ ] **REV-05** (F4, P1): Adaptation lanes — LoRA (suite built-in, CLI-exposed), IA³ (after suite-side support), frozen probes (embedding cache + logistic/MLP); cost-accuracy frontier table
 - [x] **REV-06** (F9, P1): CI golden tests — smoke (tiny model × 1k × 1 epoch incl. export), key parity, species spot checks, aggregation units; CPU, <15 min, PR-required
 - [ ] **REV-07** (F7, P1): N-frequency audit (47 tasks × splits) + unified eval-subset ID lists accepted by the pipeline
@@ -119,7 +119,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REV-01 | Phase 3 | Complete |
 | REV-02 | Phase 3 | Complete |
 | REV-03 | Phase 4, Phase 6 | Complete |
-| REV-04 | Phase 5 | Pending |
+| REV-04 | Phase 5 | Complete |
 | REV-05 | Phase 6 | Pending |
 | REV-06 | Phase 5 | Complete |
 | REV-07 | Phase 5 | Pending |
@@ -134,9 +134,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TEST-05 | Phase 5 | Complete |
 | TEST-07 | Phase 5 | Complete |
 | DATA-01 | Phase 5 | Pending |
-| DATA-02 | Phase 5 | Pending |
+| DATA-02 | Phase 5 | Complete |
 | DATA-03 | Phase 5 | Pending |
-| DATA-06 | Phase 5 | Pending |
+| DATA-06 | Phase 5 | Complete |
 | REL-03 | Phase 6 | Pending |
 | DATA-04 | Phase 6 | Pending |
 | DATA-05 | Phase 6 | Pending |

@@ -135,14 +135,14 @@ Plans:
   3. N-frequency audit + unified eval subsets (REV-07/F7): 47 tasks × train/dev/test N/non-ACGT tables published; eval-subset ID lists accepted by the pipeline; all models evaluate identical sample counts per task
   4. E2' three-seed full re-run executes via the sweep runner only after F1/F2 gates (critical path note); DATA-01/02/03/06 land: recomputed leaderboard, before/after artifact, CHANGELOG with dates, data_version stamped, both data tags (data-v1, data-v2) exist, footer shows the generation date/version
 
-**Plans**: 1/4 plans executed planned
+**Plans**: 2/4 plans executed planned
 **UI hint**: yes
 Plans:
 **Wave 1**
 - [x] 05-01-PLAN.md — CI golden harness: canned replay fixture + pinned `ci` marker lane + SHA-pinned workflow (lint/typecheck/test matrix/JS static checks/drift, 14-min budget) + eslint/html-validate configs + README badge, package-legitimacy blocking checkpoint (REV-06, TEST-04, TEST-05, TEST-07)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 05-02-PLAN.md — F6 aggregation upgrade as ONE migration commit: vendored-stats tie rule + weighted dual view + permutation tests (10k/BH, 861-pair family) + schema extensions + regenerated comparisons + re-chained goldens + migration inventory + CHANGELOG/manifest (data_version 1.1.0) + weighted-default frontend view toggle + stamped footer (REV-04, DATA-01, DATA-02, DATA-06)
+- [x] 05-02-PLAN.md — F6 aggregation upgrade as ONE migration commit: vendored-stats tie rule + weighted dual view + permutation tests (10k/BH, 861-pair family) + schema extensions + regenerated comparisons + re-chained goldens + migration inventory + CHANGELOG/manifest (data_version 1.1.0) + weighted-default frontend view toggle + stamped footer (REV-04, DATA-01, DATA-02, DATA-06)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 05-03-PLAN.md — N-frequency audit: 50-task census (43 present / 7 GUE missing-with-warning) published as DATA.md appendix + CSV/JSON artifacts + unified eval-subset ID lists + run_finetune --subset_file fail-fast test-split seam (REV-07)
@@ -181,5 +181,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Data Contracts & Test Harness | 3/3 | Complete    | 2026-10-09 |
 | 3. Pipeline Adaptation to dnallm Dev | 4/4 | Complete    | 2026-10-10 |
 | 4. Correctness Fixes | 5/5 | Complete    | 2026-10-10 |
-| 5. CI & Verified Data Migration | 1/4 | In Progress | - |
+| 5. CI & Verified Data Migration | 2/4 | In Progress | - |
 | 6. Release Packaging & Provenance | 0/TBD | Not started | - |

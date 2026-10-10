@@ -4,16 +4,16 @@ milestone: v0.7.1
 current_phase: 5
 current_phase_name: CI & Three-Seed Full Re-Run (E2')
 status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-10-10T10:04:20.332Z"
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-10-10T10:51:40.393Z"
 last_activity: 2026-10-10
 last_activity_desc: Phase 5 execution started
-state_head: d546e30c4a897edaaeb2c5dcb0e45db2cbc4034f
+state_head: f1b9d28c98f17fdea3dbe145df5830522d085745
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 19
-  completed_plans: 16
+  completed_plans: 17
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 ## Current Position
 
 Phase: 5 (CI & Three-Seed Full Re-Run (E2')) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-10-10 — Phase 5 execution started
 
@@ -76,6 +76,7 @@ Progress: [███████░░░] 67% (1/6 phases)
 | Phase 04 P02 | 19 min | 3 tasks | 9 files |
 | Phase 04 P05 | 16 min | 2 tasks | 16 files |
 | Phase 05 P01 | 74 min | 3 tasks | 42 files |
+| Phase 05 P02 | 39 min | 3 tasks | 27 files |
 
 ## Accumulated Context
 
@@ -129,6 +130,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-01: eslint no-unused-vars tuned to documented repo idioms (varsIgnorePattern ^app$ page-controller singleton, caughtErrors none) instead of editing 6 production files; html-validate 11 rule name is no-dup-id
 - [Phase 05]: 05-01 Task 2 gate: maintainer reply 'approved' — eslint@10.12.0 + html-validate@11.16.2 exact-pin npx-no-package.json form blessed; first fetches happened post-approval
 - [Phase 05]: 05-01: CI lanes are Makefile entry points (make lint/typecheck/test/data); static-check lanes proven non-vacuous by negative probes (dup-ID HTML, dup-key/undef-global JS rejected)
+- [Phase 05]: 05-02: permutation_type='samples' (must_haves literal) is scipy's PAIRED test — kept per three binding plan statements; tests pin exact hand-computed p-values (0.25 floor at 3 tasks, BH 0.375); real 47-task vectors carry full resolution (657/861 significant)
+- [Phase 05]: 05-02: F6 migration inventory = 168 EXTRA_IN_REGEN (42 models x 4 comparison files, one weighted_score key each), 2 new artifacts, tasks.json identical — ZERO existing numbers moved; inventory ran BEFORE make data so the committed side held pre-migration content
+- [Phase 05]: 05-02: load_model_inputs extracted verbatim from summarize main() as the single extraction reader shared with the permutation engine; aggregate_models keeps the include_weighted gate (default False, main passes True) — drift-proven byte-identical, plan file list held
 
 ### Pending Todos
 
@@ -151,6 +155,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-10T10:04:20.283Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-10-10T10:51:40.343Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None
