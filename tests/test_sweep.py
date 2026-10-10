@@ -47,6 +47,23 @@ Every behavior bullet of the plan's Task 2 is pinned here:
   filter" (silently enumerating the FULL registry matrix), and an empty seed
   set runs 0 cells and exits 0 (WR-14); an ABSENT --models/--tasks keeps
   full-matrix semantics.
+- **priority ordering (05-04, E2' degradation order)** — with NO
+  --priority-file the enumeration order is byte-identical to the sorted()
+  default (a frozen expected list); with a priorities file the ranked
+  (model, task) cells enumerate FIRST (tier index, then entry specificity,
+  as the primary sort key composed over the sorted() fallback — seeds stay
+  adjacent within a cell), the committed ``pipeline/sweep_priorities.json``
+  drives the PIPE-03 E2E pair first over a registry holding the real pair
+  names, and run_matrix executes cells in the GIVEN order (the fake
+  executor's invocation order preserves the priority order);
+- **failures-manifest re-run (05-04)** — ``--from-failures`` enumerates
+  exactly the failed (model, task) pairs' cells across ALL requested seeds;
+  a clean manifest yields an EXPLICIT zero-cell run with a clear message
+  (never a silent full sweep);
+- **operator-input validation (T-05-09)** — unknown model/task names,
+  wrong JSON structure, or an unreadable/unparseable --priority-file /
+  --from-failures file exits non-zero with ALL problems listed
+  (the _validate_filters discipline), before any cell is enumerated.
 
 The runner is stdlib-only and never imports torch/dnallm; no test executes
 the real subprocess (the argv test monkeypatches ``subprocess.run``).
@@ -634,3 +651,441 @@ def test_cli_absent_filters_keep_full_matrix_semantics(tmp_path, monkeypatch):
         "WR-14 fail-fast must fire only on provided-but-empty values, "
         "never on absent flags"
     )
+
+
+# =====================================================================
+# Priority ordering + failures-manifest re-run (05-04, REV-09 / E2')
+# =====================================================================
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+COMMITTED_PRIORITIES = REPO_ROOT / "pipeline" / "sweep_priorities.json"
+# The PIPE-03 E2E task's unified-registry key (D-10 single source — the
+# plan prose's "PlantCAD2__cross_species_leaf_on_off_translation" is the
+# REQUIREMENTS shorthand; the registry key is what validation accepts).
+E2E_TASK = "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation"
+
+# The frozen default order over the standard 3x2 fixture (both seeds): the
+# sorted() enumeration that MUST stay byte-identical when no --priority-file
+# is given (backward compatibility, determinism).
+FROZEN_DEFAULT_ORDER = [
+    ("model-a", "task-x", 42), ("model-a", "task-x", 43),
+    ("model-a", "task-z", 42), ("model-a", "task-z", 43),
+    ("model-b", "task-x", 42), ("model-b", "task-x", 43),
+    ("model-b", "task-z", 42), ("model-b", "task-z", 43),
+    ("model-c", "task-x", 42), ("model-c", "task-x", 43),
+    ("model-c", "task-z", 42), ("model-c", "task-z", 43),
+]
+
+
+def _write_json(path, payload):
+    path.write_text(json.dumps(payload, indent=4), encoding="utf-8")
+    return path
+
+
+def _manifest_cells(out_root):
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    return [(c["model"], c["task"], c["seed"]) for c in manifest["cells"]]
+
+
+def make_e2e_registry(tmp_path):
+    """A registry holding the REAL E2E pair names plus a bystander model
+    and a second task, so the committed priorities file validates and its
+    tier-1-first effect is observable against names that are not
+    alphabetically convenient."""
+    registry_dir = tmp_path / "registry-e2e"
+    registry_dir.mkdir()
+    write_registry(
+        registry_dir,
+        models={
+            "plant-dnamamba-6mer": {
+                "Model_name": "plant-dnamamba-6mer",
+                "Model_path": "models/plant-dnamamba-6mer"},
+            "PlantHelixSeek": {
+                "Model_name": "PlantHelixSeek",
+                "Model_path": "models/PlantHelixSeek"},
+            "bystander-model": {
+                "Model_name": "bystander-model",
+                "Model_path": "models/bystander"},
+        },
+        datasets={
+            E2E_TASK: {"Dataset_name": E2E_TASK, "Train": 21894, "Dev": 10},
+            "other__task": {"Dataset_name": "other__task", "Train": 50, "Dev": 5},
+        },
+    )
+    return registry_dir
+
+
+def test_default_enumeration_order_is_frozen_without_priority_file(
+        tmp_path, monkeypatch):
+    """With NO --priority-file the enumerated cell order is byte-identical
+    to today's sorted() default — the frozen list below is the compatibility
+    contract; priority ordering composes OVER it, never replaces it."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert _manifest_cells(out_root) == FROZEN_DEFAULT_ORDER, (
+        "the no-priority-file enumeration order changed — backward "
+        "compatibility is a hard contract"
+    )
+
+
+def test_priority_file_orders_ranked_cells_first_seeds_adjacent(
+        tmp_path, monkeypatch):
+    """A priorities file reorders the enumerated matrix: tier-1 cells (the
+    {model, task} spec, then the bare model's other tasks) enumerate before
+    everything else, seeds stay adjacent within a cell, and the remaining
+    cells keep the sorted() fallback order. Tier 2 here is EMPTY (the
+    maintainer-curation form)."""
+    registry_dir = make_registry(tmp_path)
+    priority_file = _write_json(tmp_path / "priorities.json", [
+        [
+            {"model": "model-c", "task": "task-z"},
+            "model-b",
+        ],
+        [],
+    ])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--priority-file", str(priority_file),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert _manifest_cells(out_root) == [
+        # tier 1, entry 1: the {model, task} spec's cells, seeds adjacent
+        ("model-c", "task-z", 42), ("model-c", "task-z", 43),
+        # tier 1, entry 2: the bare model-b's cells (sorted fallback within
+        # the same rank: task-x before task-z), seeds adjacent
+        ("model-b", "task-x", 42), ("model-b", "task-x", 43),
+        ("model-b", "task-z", 42), ("model-b", "task-z", 43),
+        # unmatched (incl. model-c's OTHER task): the sorted() fallback order
+        ("model-a", "task-x", 42), ("model-a", "task-x", 43),
+        ("model-a", "task-z", 42), ("model-a", "task-z", 43),
+        ("model-c", "task-x", 42), ("model-c", "task-x", 43),
+    ], "priority tiers must enumerate before every other cell, seeds adjacent"
+
+
+def test_priority_specificity_spec_before_bare_model_within_tier(
+        tmp_path, monkeypatch):
+    """Entry specificity is the intra-tier tiebreak: a {model, task} spec
+    outranks the same tier's bare model name, so the spec's cells enumerate
+    before the bare entry's other cells."""
+    registry_dir = make_registry(tmp_path)
+    priority_file = _write_json(tmp_path / "priorities.json", [
+        ["model-b", {"model": "model-b", "task": "task-z"}],
+    ])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42",
+        "--dry-run",
+        "--priority-file", str(priority_file),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    cells = _manifest_cells(out_root)
+    model_b = [cell for cell in cells if cell[0] == "model-b"]
+    assert model_b == [
+        ("model-b", "task-z", 42),  # the spec: more specific, first
+        ("model-b", "task-x", 42),  # the bare entry's other task
+    ], "within one tier the {model, task} spec outranks the bare model name"
+    # the bystander cells still enumerate after every ranked cell
+    assert cells[-2:] == [("model-c", "task-x", 42), ("model-c", "task-z", 42)]
+
+
+def test_committed_priorities_file_drives_e2e_pair_first(
+        tmp_path, monkeypatch):
+    """The committed pipeline/sweep_priorities.json validates against a
+    registry holding the REAL E2E pair names and drives exactly the PIPE-03
+    pair's cells (both models x the E2E task, all seeds) before every other
+    cell — the degradation order's tier 1."""
+    registry_dir = make_e2e_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--priority-file", str(COMMITTED_PRIORITIES),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    cells = _manifest_cells(out_root)
+    assert len(cells) == 12  # 3 models x 2 tasks x 2 seeds
+    # Tier 1 first: the E2E pair's four cells (both models, both seeds) —
+    # in sorted fallback order within the tier, seeds adjacent.
+    assert set(cells[:4]) == {
+        ("PlantHelixSeek", E2E_TASK, 42), ("PlantHelixSeek", E2E_TASK, 43),
+        ("plant-dnamamba-6mer", E2E_TASK, 42),
+        ("plant-dnamamba-6mer", E2E_TASK, 43),
+    }
+    assert cells[0][0] == cells[1][0] and cells[0][1] == cells[1][1] == E2E_TASK, (
+        "seeds must stay adjacent within a tier-1 cell"
+    )
+    # Every remaining cell (the bystander's + the E2E models' other__task
+    # cells) follows in the sorted() fallback order.
+    assert set(cells[4:]) == {
+        ("PlantHelixSeek", "other__task", 42), ("PlantHelixSeek", "other__task", 43),
+        ("bystander-model", E2E_TASK, 42), ("bystander-model", E2E_TASK, 43),
+        ("bystander-model", "other__task", 42),
+        ("bystander-model", "other__task", 43),
+        ("plant-dnamamba-6mer", "other__task", 42),
+        ("plant-dnamamba-6mer", "other__task", 43),
+    }
+    assert cells[4:] == sorted(cells[4:])
+
+
+def test_committed_priorities_file_content():
+    """pipeline/sweep_priorities.json: tier 1 names exactly the pre-decided
+    PIPE-03 E2E pair ({model, task} specs on the E2E task); tier 2 is EMPTY
+    awaiting the maintainer's Task-4 curation (never agent-invented)."""
+    tiers = json.loads(COMMITTED_PRIORITIES.read_text(encoding="utf-8"))
+    assert isinstance(tiers, list) and len(tiers) == 2
+    tier1, tier2 = tiers
+    assert tier1 == [
+        {"model": "plant-dnamamba-6mer", "task": E2E_TASK},
+        {"model": "PlantHelixSeek", "task": E2E_TASK},
+    ]
+    assert tier2 == [], "tier 2 is maintainer-curated — ships EMPTY"
+
+
+def test_run_matrix_preserves_given_cell_order(tmp_path):
+    """run_matrix executes cells in the GIVEN order (a priority-ordered
+    list stays priority-ordered) instead of re-sorting — the fake executor's
+    invocation order is the proof; nothing in this test launches a real
+    subprocess (D-05)."""
+    out_root = tmp_path / "sweep-out"
+    invoked = []
+
+    def recording_executor(model, task, seed, output_root):
+        invoked.append((model, task, seed))
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text("{}", encoding="utf-8")
+
+    cells = [
+        ("model-c", "task-x", 42),
+        ("model-a", "task-z", 42),
+        ("model-c", "task-z", 42),
+    ]  # deliberately NOT sorted — a priority-ordered slice
+    run_sweep.run_matrix(cells, out_root, executor=recording_executor)
+    assert invoked == cells, (
+        "run_matrix must preserve the caller's cell order — re-sorting "
+        "here would destroy the --priority-file ordering"
+    )
+
+
+def _failures_manifest(tmp_path, entries):
+    return _write_json(tmp_path / "sweep_failures.json", entries)
+
+
+def test_from_failures_enumerates_exactly_failed_pairs_all_seeds(
+        tmp_path, monkeypatch):
+    """--from-failures with a manifest naming two failed (model, task)
+    pairs enumerates exactly those pairs' cells across ALL requested seeds
+    (the seed-scoped resume marker already skips completed cells; the
+    filter exists to avoid re-enumerating ~9,300 cells and to guard against
+    typo'd manual re-run filters)."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a", "task": "task-x", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+        {"model": "model-c", "task": "task-z", "seed": 43,
+         "output_dir": "y", "error": "boom"},
+    ])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--from-failures", str(failures),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert _manifest_cells(out_root) == [
+        ("model-a", "task-x", 42), ("model-a", "task-x", 43),
+        ("model-c", "task-z", 42), ("model-c", "task-z", 43),
+    ], "exactly the failed pairs' cells, every requested seed"
+
+
+def test_from_failures_clean_manifest_yields_explicit_zero_cell_run(
+        tmp_path, monkeypatch, capsys):
+    """A CLEAN failures manifest (empty list — WR-06 writes one every run)
+    yields an EXPLICIT zero-cell run with a clear message: the operator
+    sees why zero cells enumerated; the driver must NEVER fall through to
+    the full matrix (the silent-full-sweep hazard)."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--from-failures", str(failures),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert _manifest_cells(out_root) == []
+    captured = capsys.readouterr().out
+    assert "clean" in captured, (
+        "the zero-cell run must carry a clear message naming the clean "
+        f"manifest — got: {captured!r}"
+    )
+    assert "0" in captured
+
+
+def test_from_failures_unknown_keys_exit_nonzero_listing_all_problems(
+        tmp_path, monkeypatch):
+    """Unknown model/task names in a failures manifest exit non-zero with
+    EVERY problem listed (the _validate_filters discipline) — a typo'd
+    re-run filter must not silently enumerate the wrong (or full) matrix."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a", "task": "task-x", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+        {"model": "ghost-model", "task": "task-x", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+        {"model": "model-a", "task": "ghost-task", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+    ])
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(failures),
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "ghost-model" in message
+    assert "ghost-task" in message
+    assert not out_root.exists(), (
+        "an invalid manifest must abort before any output is written"
+    )
+
+
+@pytest.mark.parametrize("payload", [
+    {"model": "model-a", "task": "task-x", "seed": 42},   # not a list
+    ["not-an-object"],
+    [{"task": "task-x", "seed": 42}],                     # missing model
+    [{"model": "model-a", "seed": 42}],                   # missing task
+])
+def test_from_failures_structure_errors_exit_nonzero(
+        tmp_path, monkeypatch, payload):
+    """A failures manifest with the wrong structure (not a list of objects
+    carrying string model/task keys) exits non-zero instead of being
+    misread."""
+    registry_dir = make_registry(tmp_path)
+    failures = _write_json(tmp_path / "sweep_failures.json", payload)
+    with pytest.raises(SystemExit):
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(failures),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+
+
+@pytest.mark.parametrize("content", ["{not json", ""])
+def test_from_failures_unreadable_or_unparseable_file_exits_nonzero(
+        tmp_path, monkeypatch, content):
+    """An unreadable (missing) or unparseable --from-failures file exits
+    non-zero naming the file."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as missing_info:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(tmp_path / "does-not-exist.json"),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "does-not-exist.json" in str(missing_info.value)
+    bad = tmp_path / "bad.json"
+    bad.write_text(content, encoding="utf-8")
+    with pytest.raises(SystemExit) as bad_info:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(bad),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "bad.json" in str(bad_info.value)
+
+
+def test_priority_file_unknown_names_exit_nonzero_listing_all_problems(
+        tmp_path, monkeypatch):
+    """Unknown model/task names in a priorities file exit non-zero with
+    every problem listed (registry-join key validation, T-05-09) — the file
+    steers multi-day GPU execution order, so a typo must fail fast."""
+    registry_dir = make_registry(tmp_path)
+    priority_file = _write_json(tmp_path / "priorities.json", [
+        ["ghost-model", {"model": "model-a", "task": "ghost-task"}],
+    ])
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--priority-file", str(priority_file),
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "ghost-model" in message
+    assert "ghost-task" in message
+    assert not out_root.exists(), (
+        "an invalid priorities file must abort before any output is written"
+    )
+
+
+@pytest.mark.parametrize("payload,marker", [
+    ({"tiers": []}, "list of tiers"),                       # not a list
+    ([["model-a"], "model-b"], "tier 1"),                   # tier not a list
+    ([[42]], "entry"),                                      # not str/dict
+    ([[{"task": "task-x"}]], "model"),                      # spec missing model
+    ([[{"model": "model-a", "task": "task-x", "why": "x"}]], "unknown key"),
+    ([[{"model": "model-a", "task": 7}]], "task"),           # non-string task
+])
+def test_priority_file_structure_errors_exit_nonzero(
+        tmp_path, monkeypatch, payload, marker):
+    """A priorities file with the wrong structure exits non-zero — the JSON
+    must be an ordered list of tiers, each a list of bare model names or
+    {model, task} specs."""
+    registry_dir = make_registry(tmp_path)
+    priority_file = _write_json(tmp_path / "priorities.json", payload)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--priority-file", str(priority_file),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert marker in str(excinfo.value), (
+        f"the error must describe the structural problem ({marker}): "
+        f"{excinfo.value}"
+    )
+
+
+@pytest.mark.parametrize("content", ["{not json", ""])
+def test_priority_file_unparseable_json_exits_nonzero(
+        tmp_path, monkeypatch, content):
+    """An unparseable --priority-file exits non-zero naming the file."""
+    registry_dir = make_registry(tmp_path)
+    bad = tmp_path / "bad-priorities.json"
+    bad.write_text(content, encoding="utf-8")
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--priority-file", str(bad),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "bad-priorities.json" in str(excinfo.value)
