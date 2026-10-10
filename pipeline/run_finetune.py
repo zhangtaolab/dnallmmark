@@ -207,6 +207,37 @@ def init_layer(module):
         nn.init.zeros_(module.bias)
 
 
+def determine_batch_size(max_length, batch_size):
+    # LENGTH-TIER BATCH ROUNDING (WR-04, legacy parity)
+    # Ported verbatim from the deprecated pipeline's tier table
+    # (pipeline/dnallmmark_pipeline.py:791-811, read-only behavioral
+    # reference): the resolved sequence length puts an initial cap on the
+    # configured batch size. The VRAM estimators below may reduce further
+    # but never raise past this cap.
+    if max_length <= 512:
+        dynamic_batch_size = batch_size
+    elif max_length <= 1024:
+        dynamic_batch_size = max(1, batch_size // 2)
+    elif max_length <= 2048:
+        dynamic_batch_size = max(1, batch_size // 4)
+    elif max_length <= 4096:
+        dynamic_batch_size = max(1, batch_size // 8)
+    elif max_length <= 8192:
+        dynamic_batch_size = max(1, batch_size // 16)
+    elif max_length <= 16384:
+        dynamic_batch_size = max(1, batch_size // 32)
+    else:
+        dynamic_batch_size = 1
+
+    print(
+        f"Base batch size: {batch_size} | "
+        f"Dynamic starting batch size: {dynamic_batch_size} "
+        f"for max_len {max_length}"
+    )
+
+    return dynamic_batch_size
+
+
 def estimate_batch_size(
     max_mem_measured,        # GB
     seq_len_measured,        # old
@@ -377,11 +408,17 @@ if __name__ == "__main__":
     set_seed(seed)
 
     # Define models with specific arguments
+    # Safetensors disabled for these models (WR-03 union fix, ported from
+    # the deprecated pipeline's list at :1322-1333): the legacy list
+    # carried plant-dnamamba-6mer (the rewrite dropped it) and the rewrite
+    # added PlantGFM (the legacy lacked it) — the union keeps BOTH, 11
+    # entries total, so no side loses a model that needs the quirk.
     model_not_use_safetensors = [
         "hyenadna-large-1m-seqlen-hf",
         "caduceus-ph_seqlen-131k_d_model-256_n_layer-16",
         "caduceus-ps_seqlen-131k_d_model-256_n_layer-16",
         "Omni-DNA-700M", "plant-dnamamba-BPE",
+        "plant-dnamamba-6mer",
         "enformer-official-rough", "space",
         "evo2_1b_base", "megaDNA_updated",
         "PlantGFM"
@@ -392,6 +429,31 @@ if __name__ == "__main__":
         "borzoi-replicate-0",
         "flashzoi-replicate-0",
     ]
+    # Models that validate against the ACGT-only charset (WR-03, ported
+    # from the deprecated pipeline's models_no_char_n at :1340-1350):
+    # list members reject N bases ("ACGTacgt|"); all other models allow N
+    # ("ACGTNacgtn|"). CURRENT unified-registry name forms — the legacy
+    # entries prokbert-mini-c / prokbert-mini-long / MutBERT were dropped
+    # at the D-10 unification and PlantCAD2-Large-l48-d1536 was renamed to
+    # PlantCAD2-Large; the parity contract test in
+    # tests/test_run_finetune_contracts.py pins this mapping (a blind
+    # verbatim legacy copy FAILS that test, it does not resurrect names).
+    models_no_char_n = deeplearning_models + [
+        "PlantCAD2-Small-l24-d0768",
+        "PlantCAD2-Medium-l48-d1024",
+        "PlantCAD2-Large",
+        "prokbert-mini",
+        "MutBERT-Multi",
+        "megaDNA_updated",
+    ]
+    # Per-model max_length caps (WR-03/AUD-15, ported from the deprecated
+    # pipeline's models_with_limited_length at :1351-1354). The legacy dict
+    # was defined but never applied (dead config — AUD-15); here it is
+    # WIRED: the max_length-determination block clamps to these caps.
+    models_with_limited_length = {
+        "prokbert-mini": 1027,
+        "plant-dnabert-6mer": 512,
+    }
     # fp32-only models (CR-01, ported from the deprecated pipeline's quirk
     # list): the global finetune_config.yaml sets bf16: True, but these
     # registry models cannot train in reduced precision — the dataset loop
@@ -627,7 +689,22 @@ if __name__ == "__main__":
                     max_length = int(data_length / mean_token_len) + 2
                 if max_token_len and max_length > max_token_len:
                     max_length = int(max_token_len)
-            
+
+                # Per-model length caps (WR-03/AUD-15): clamp the resolved
+                # max_length to the model's documented cap. The legacy
+                # pipeline defined this dict but never applied it (dead
+                # config); here it is functional.
+                if model_name in models_with_limited_length:
+                    max_length = min(
+                        max_length, models_with_limited_length[model_name]
+                    )
+
+                # WR-04 length-tier rounding: the resolved sequence length
+                # caps the configured batch size by the legacy tier table
+                # BEFORE any VRAM estimator runs — the estimators may
+                # reduce below this cap but never raise past it.
+                tier_batch_cap = determine_batch_size(max_length, batch_size)
+
                 # Auto batch size adjustment based on model params and sequence length
                 if auto_batch_size and count == 0:
                     model_params = sum(p.numel() for p in model.parameters())
@@ -664,6 +741,10 @@ if __name__ == "__main__":
                     print(f"Update batch size, old: {batch_size}, new: {bs_new}.")
                 else:
                     bs_new = batch_size
+                # Compose with the length-tier cap (WR-04): the VRAM path
+                # may RAISE the estimate for a shorter dataset — never past
+                # the tier cap for this sequence length.
+                bs_new = min(bs_new, tier_batch_cap)
                 configs["finetune"].per_device_train_batch_size = bs_new
                 configs["finetune"].per_device_eval_batch_size = bs_new
                 # log and evaluate n times during training
@@ -681,6 +762,21 @@ if __name__ == "__main__":
                     configs["finetune"].gradient_accumulation_steps = required_grad_accum
                     grad_accum = required_grad_accum
                     print(f"Effective batch size set to {effective_batch_size}: batch_size={bs_new}, gradient_accumulation={grad_accum}")
+                elif bs_new < batch_size:
+                    # WR-04 grad_accum compensation (legacy parity, ported
+                    # from the deprecated pipeline's scaling at :1007-1012):
+                    # a tier or VRAM reduction of the per-device batch is
+                    # compensated by scaling gradient accumulation —
+                    # max(1, batch_size // bs_new) — so the effective batch
+                    # is preserved. grad_accum here still holds this
+                    # model's YAML default (the D-07 reset at the top of
+                    # the dataset loop), matching the legacy
+                    # original_grad_accum base.
+                    scaling_factor = max(1, batch_size // bs_new)
+                    configs["finetune"].gradient_accumulation_steps = (
+                        grad_accum * scaling_factor
+                    )
+                    grad_accum = configs["finetune"].gradient_accumulation_steps
                 elif bs_new == 1 and grad_accum == 1:
                     grad_accum = 4
                     configs["finetune"].gradient_accumulation_steps = grad_accum
@@ -729,7 +825,18 @@ if __name__ == "__main__":
                 # Encode sequences
                 try:
                     # Filter sequences (some models do not support N bases)
-                    dataset.validate_sequences(minl=0, maxl=10010, valid_chars="ACGTacgt|")
+                    # — WR-03 parity with the deprecated pipeline's
+                    # conditional at :1055: models_no_char_n members
+                    # validate against the ACGT-only charset; all other
+                    # models allow N.
+                    valid_chars = (
+                        "ACGTacgt|"
+                        if model_name in models_no_char_n
+                        else "ACGTNacgtn|"
+                    )
+                    dataset.validate_sequences(
+                        minl=0, maxl=10010, valid_chars=valid_chars
+                    )
                     # Encoding
                     dataset.encode_sequences(
                         remove_unused_columns=True,

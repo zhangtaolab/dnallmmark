@@ -58,6 +58,27 @@ files). The contracts asserted here are textual/structural:
   successful cell — copying it first opens a kill window (OOM killer /
   SIGKILL / power loss) in which the cell is permanently "done" with no
   metrics and is never retrained.
+- **quirk-registry parity (WR-03/WR-04, 04-04)** — the four legacy quirk
+  behaviors port with their parity contracts, each comparing the ACTIVE
+  source against ``pipeline/dnallmmark_pipeline.py`` read as TEXT (the
+  deprecated file stays untouched — read-only behavioral reference per
+  F10): (1) ``models_no_char_n`` — the ACGT-alphabet conditional at the
+  ``validate_sequences`` call site (list members get the ACGT-only
+  charset, all others the N-allowing one); (2)
+  ``models_with_limited_length`` — the per-model max_length caps, WIRED
+  at the max_length-determination block (the legacy dict was defined but
+  never applied — AUD-15 dead config made functional); (3)
+  ``model_not_use_safetensors`` — the 11-entry UNION (legacy's
+  plant-dnamamba-6mer AND the rewrite's PlantGFM both present); (4) the
+  length-tier rounding — ``determine_batch_size`` (the legacy tier table)
+  as the initial batch cap composed BEFORE the VRAM estimators, with the
+  legacy grad_accum compensation at the adjustment site.
+- **registry name drift (LEGACY_NAME_MAP)** — the legacy quirk lists
+  predate the D-10 registry unification: ``PlantCAD2-Large-l48-d1536``
+  was renamed to ``PlantCAD2-Large`` and ``prokbert-mini-c`` /
+  ``prokbert-mini-long`` / ``MutBERT`` were dropped. Parity is asserted
+  MODULO this documented map — a blind verbatim legacy copy (dead names
+  resurrected, rename missed) FAILS the tests instead of passing.
 
 See also:
     ``script/make_dev_splits.py`` — the remediation the guard names.
@@ -65,17 +86,81 @@ See also:
     rationale's origin.
     ``tests/test_sweep.py`` — the sweep runner whose subprocesses rely
     on this seed-isolated layout contract.
+    ``tests/test_registry_unification.py`` — the 62-entry unified
+    registry every quirk-list member must resolve against.
 """
 
+import json
 import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUN_FINETUNE = REPO_ROOT / "pipeline" / "run_finetune.py"
+LEGACY_PIPELINE = REPO_ROOT / "pipeline" / "dnallmmark_pipeline.py"
+MODELS_INFO = REPO_ROOT / "pipeline" / "models_info.json"
 FINETUNE_CONFIGS = [
     REPO_ROOT / "pipeline" / "finetune_config.yaml",
     REPO_ROOT / "pipeline" / "finetune_config_with_head.yaml",
 ]
+
+# Legacy -> unified-registry name mapping for the quirk lists (04-04).
+# Values are the CURRENT registry name forms; None marks a model DROPPED
+# at the D-10 unification (it must NOT be ported into any active list).
+LEGACY_NAME_MAP = {
+    "PlantCAD2-Large-l48-d1536": "PlantCAD2-Large",  # renamed
+    "prokbert-mini-c": None,     # dropped — registry has no such model
+    "prokbert-mini-long": None,  # dropped
+    "MutBERT": None,             # dropped (registry carries MutBERT-Multi)
+}
+
+
+def list_members(src, name):
+    """Regex-extract the quoted members of a ``name = [...]`` list."""
+    match = re.search(rf"{name} = \[(.*?)\]", src, re.DOTALL)
+    assert match is not None, f"no {name} = [...] list found in source"
+    return re.findall(r'"([^"]+)"', match.group(1))
+
+
+def composed_members(src, name):
+    """Effective membership of a registry assignment, resolving one level
+    of ``<other-list> + [...]`` composition (the form models_no_char_n
+    uses in BOTH the active and the legacy source)."""
+    match = re.search(rf"{name} = ([^\n=]+?)\s*\+\s*\[(.*?)\]", src, re.DOTALL)
+    if match is not None:
+        prefix = match.group(1).strip()
+        members = re.findall(r'"([^"]+)"', match.group(2))
+        return list_members(src, prefix) + members
+    return list_members(src, name)
+
+
+def dict_members(src, name):
+    """Regex-extract the ``"key": value`` pairs of a ``name = {...}`` dict."""
+    match = re.search(rf"{name} = \{{(.*?)\}}", src, re.DOTALL)
+    assert match is not None, f"no {name} = {{...}} dict found in source"
+    return dict(re.findall(r'"([^"]+)":\s*(\d+)', match.group(1)))
+
+
+def apply_legacy_name_map(names):
+    """Map legacy names to current registry forms, dropping the None-
+    mapped (dropped-at-unification) names — the blind-copy guard."""
+    return {
+        mapped
+        for mapped in (LEGACY_NAME_MAP.get(name, name) for name in names)
+        if mapped is not None
+    }
+
+
+def registry_keys():
+    """The unified models registry's keys — the name authority (D-10)."""
+    return set(json.loads(MODELS_INFO.read_text(encoding="utf-8")))
+
+
+def statement_index(src, code):
+    """Index of ``code`` as a REAL statement (at a line start, so a
+    commented-out or string-embedded copy never satisfies the contract),
+    or -1 — wiring assertions must not match dead text."""
+    match = re.search(rf"^[^\S\n]*{re.escape(code)}", src, re.MULTILINE)
+    return match.start() if match else -1
 
 
 def test_dev_refusal_guard_precedes_data_dict():
@@ -241,13 +326,7 @@ def test_fp32_only_models_forced_to_full_precision():
     global bf16: True in finetune_config.yaml never trains these models
     in reduced precision."""
     active = RUN_FINETUNE.read_text(encoding="utf-8")
-    legacy = (REPO_ROOT / "pipeline" / "dnallmmark_pipeline.py").read_text(
-        encoding="utf-8")
-
-    def list_members(src, name):
-        match = re.search(rf"{name} = \[(.*?)\]", src, re.DOTALL)
-        assert match is not None, f"no {name} = [...] list found in source"
-        return re.findall(r'"([^"]+)"', match.group(1))
+    legacy = LEGACY_PIPELINE.read_text(encoding="utf-8")
 
     active_list = list_members(active, "models_only_support_fp32")
     legacy_list = list_members(legacy, "models_only_support_fp32")
@@ -333,4 +412,261 @@ def test_final_metrics_written_before_resume_marker():
         "be the final act of a successful cell; a process death between "
         "the two otherwise leaves a cell permanently done-with-no-metrics "
         "that no later sweep ever retrains (WR-13)"
+    )
+
+
+def test_models_no_char_n_parity_with_name_map():
+    """WR-03: the ACGT-alphabet list matches the deprecated pipeline's
+    models_no_char_n MODULO the documented legacy name map — current
+    registry name forms only (dropped names resurrected or the rename
+    missed both fail), every member resolves against the unified
+    registry, and the validate_sequences call site actually applies the
+    conditional charset."""
+    active = RUN_FINETUNE.read_text(encoding="utf-8")
+    legacy = LEGACY_PIPELINE.read_text(encoding="utf-8")
+
+    active_list = composed_members(active, "models_no_char_n")
+    legacy_list = composed_members(legacy, "models_no_char_n")
+    assert active_list, (
+        "models_no_char_n is missing/empty from run_finetune.py — every "
+        "model validates against the ACGT-only charset, so models that "
+        "tolerate N bases would have them silently dropped instead"
+    )
+    expected = apply_legacy_name_map(legacy_list)
+    assert set(active_list) == expected, (
+        "models_no_char_n must equal the legacy list mapped to current "
+        f"registry names (active {sorted(set(active_list))} vs expected "
+        f"{sorted(expected)}) — either a legacy name was blindly copied "
+        "(dropped names must NOT be resurrected) or a live quirk was lost"
+    )
+    resurrected = {n for n in LEGACY_NAME_MAP if LEGACY_NAME_MAP[n] is None
+                   and n in active_list}
+    assert not resurrected, (
+        f"dead registry names resurrected into models_no_char_n: "
+        f"{sorted(resurrected)} — these models do not exist in the "
+        "unified registry (D-10 drops)"
+    )
+    unresolved = [n for n in active_list if n not in registry_keys()]
+    assert not unresolved, (
+        f"models_no_char_n members not in the unified registry: "
+        f"{unresolved} — the registry is the name authority (D-10)"
+    )
+    # deeplearning_models is the composition prefix on both sides — pin
+    # its membership equality too (all four quirk registries asserted).
+    assert (sorted(list_members(active, "deeplearning_models"))
+            == sorted(list_members(legacy, "deeplearning_models"))), (
+        "deeplearning_models membership diverged from the deprecated "
+        "pipeline's list"
+    )
+    # Wiring: the conditional charset at the validate_sequences site,
+    # with the exact legacy strings (deprecated pipeline :1055). The
+    # conditional expression places the ACGT literal BEFORE the guard
+    # line, so the window includes preceding context.
+    cond_idx = statement_index(active, "if model_name in models_no_char_n")
+    assert cond_idx != -1, (
+        "no models_no_char_n conditional — the list exists but "
+        "validate_sequences never applies it (dead list, the WR-03 bug)"
+    )
+    validate_idx = statement_index(active, "dataset.validate_sequences(")
+    assert validate_idx != -1, "no validate_sequences call site found"
+    window = active[max(0, cond_idx - 200):validate_idx + 200]
+    assert '"ACGTacgt|"' in window, (
+        'list members must validate against "ACGTacgt|" (the ACGT-only '
+        "charset)"
+    )
+    assert '"ACGTNacgtn|"' in window, (
+        'non-members must validate against "ACGTNacgtn|" (N-allowing) — '
+        "hardcoding either charset for ALL models is the divergence the "
+        "parity port closes"
+    )
+    assert cond_idx < validate_idx, (
+        "the charset conditional must precede the validate_sequences call"
+    )
+
+
+def test_models_with_limited_length_wired():
+    """WR-03/AUD-15: the per-model max_length caps match the deprecated
+    pipeline's models_with_limited_length (name-mapped) AND are WIRED —
+    the legacy dict was defined but never applied (dead config); the
+    rewrite must clamp max_length at the determination block, and every
+    member must resolve against the unified registry."""
+    active = RUN_FINETUNE.read_text(encoding="utf-8")
+    legacy = LEGACY_PIPELINE.read_text(encoding="utf-8")
+
+    active_caps = dict_members(active, "models_with_limited_length")
+    legacy_caps = dict_members(legacy, "models_with_limited_length")
+    assert active_caps, (
+        "models_with_limited_length is missing/empty from run_finetune.py "
+        "— prokbert-mini and plant-dnabert-6mer would run past their "
+        "documented context caps"
+    )
+    expected = {
+        LEGACY_NAME_MAP.get(name, name): value
+        for name, value in legacy_caps.items()
+        if LEGACY_NAME_MAP.get(name, name) is not None
+    }
+    assert active_caps == expected, (
+        f"models_with_limited_length must equal the legacy caps "
+        f"(active {active_caps} vs expected {expected})"
+    )
+    unresolved = [n for n in active_caps if n not in registry_keys()]
+    assert not unresolved, (
+        f"models_with_limited_length members not in the unified registry: "
+        f"{unresolved} (D-10 name authority)"
+    )
+    # Wiring (the AUD-15 point — legacy never used the dict): a clamp on
+    # max_length guarded by the dict, downstream of the max_length
+    # determination (the max_token_len clamp) and upstream of the batch
+    # sizing that consumes max_length.
+    clamp_idx = statement_index(
+        active, "if model_name in models_with_limited_length:")
+    assert clamp_idx != -1, (
+        "no models_with_limited_length guard — the dict exists but "
+        "nothing clamps max_length with it (the AUD-15 dead-config state)"
+    )
+    clamp_block = active[clamp_idx:clamp_idx + 400]
+    compact = re.sub(r"\s+", "", clamp_block)
+    assert ("min(max_length,models_with_limited_length[model_name])"
+            in compact), (
+        "the guard must CLAMP max_length to the per-model cap "
+        "(min(max_length, models_with_limited_length[model_name])), not "
+        "merely reference the dict"
+    )
+    max_token_idx = statement_index(
+        active, "if max_token_len and max_length > max_token_len:")
+    assert max_token_idx != -1, "no max_token_len clamp found"
+    estimator_idx = statement_index(
+        active, "if auto_batch_size and count == 0:")
+    assert estimator_idx != -1, "no auto-batch estimator block found"
+    assert max_token_idx < clamp_idx < estimator_idx, (
+        "the per-model clamp must sit after the max_length-determination "
+        "block and before the batch sizing that consumes max_length "
+        f"(token-len clamp at {max_token_idx}, clamp at {clamp_idx}, "
+        f"estimator at {estimator_idx})"
+    )
+
+
+def test_safetensors_list_is_legacy_union():
+    """WR-03 union fix: model_not_use_safetensors is EXACTLY the legacy
+    set plus PlantGFM (11 entries) — the legacy list carried
+    plant-dnamamba-6mer which the rewrite dropped, and the rewrite added
+    PlantGFM which the legacy lacked; the union keeps both so neither
+    side loses a model needing the quirk. Every member resolves against
+    the unified registry."""
+    active = RUN_FINETUNE.read_text(encoding="utf-8")
+    legacy = LEGACY_PIPELINE.read_text(encoding="utf-8")
+
+    active_list = list_members(active, "model_not_use_safetensors")
+    legacy_list = list_members(legacy, "model_not_use_safetensors")
+    assert set(active_list) == set(legacy_list) | {"PlantGFM"}, (
+        "model_not_use_safetensors must be the exact 11-entry union "
+        "(legacy set plus PlantGFM) — active: "
+        f"{sorted(set(active_list))}, legacy|PlantGFM: "
+        f"{sorted(set(legacy_list) | {'PlantGFM'})}"
+    )
+    assert len(active_list) == 11, (
+        f"expected exactly 11 union entries, got {len(active_list)}"
+    )
+    assert "plant-dnamamba-6mer" in active_list, (
+        "plant-dnamamba-6mer (legacy member) missing — the rewrite's drop "
+        "would leave this model failing to save checkpoints it cannot "
+        "serialize as safetensors"
+    )
+    assert "PlantGFM" in active_list, "PlantGFM (rewrite member) missing"
+    unresolved = [n for n in active_list if n not in registry_keys()]
+    assert not unresolved, (
+        f"safetensors list members not in the unified registry: "
+        f"{unresolved} (D-10 name authority)"
+    )
+    guard_idx = statement_index(
+        active, "if model_name in model_not_use_safetensors:")
+    assert guard_idx != -1, (
+        "no model_not_use_safetensors guard — the list exists but "
+        "save_safetensors is never disabled with it"
+    )
+    disable_idx = statement_index(
+        active, 'configs["finetune"].save_safetensors = False')
+    assert disable_idx != -1 and disable_idx > guard_idx, (
+        "the guard must set save_safetensors = False in its branch"
+    )
+
+
+def test_length_tier_rounding_parity():
+    """WR-04: determine_batch_size is the legacy tier table verbatim
+    (behaviorally proven by exec-ing the extracted pure function from
+    BOTH sources — no torch import needed), and the tier cap is WIRED as
+    the initial batch cap composed BEFORE the VRAM estimators with the
+    legacy grad_accum compensation preserved at the adjustment site."""
+    active = RUN_FINETUNE.read_text(encoding="utf-8")
+    legacy = LEGACY_PIPELINE.read_text(encoding="utf-8")
+
+    def extract_fn(src):
+        match = re.search(
+            r"def determine_batch_size\(.*?return dynamic_batch_size",
+            src, re.DOTALL,
+        )
+        assert match is not None, (
+            "no determine_batch_size function found — the WR-04 length-"
+            "tier table is missing"
+        )
+        namespace = {}
+        exec(match.group(0), namespace)  # noqa: S102 - pure extracted fn
+        return namespace["determine_batch_size"]
+
+    active_fn = extract_fn(active)
+    legacy_fn = extract_fn(legacy)
+    # Tier boundaries (legacy semantics): <=512 full, then //2 //4 //8
+    # //16 //32 at 1024/2048/4096/8192/16384, else 1 — and the max(1, ..)
+    # floor at every tier.
+    cases = [
+        (512, 32, 32), (513, 32, 16), (1024, 32, 16), (1025, 32, 8),
+        (2048, 32, 8), (2049, 32, 4), (4096, 32, 4), (4097, 32, 2),
+        (8192, 32, 2), (8193, 32, 1), (16384, 32, 1), (16385, 32, 1),
+        (2048, 3, 1),   # max(1, 3 // 4) floor
+        (1024, 1, 1),   # floor at batch_size 1
+        (512, 0, 0),
+    ]
+    for max_length, batch_size, expected in cases:
+        assert legacy_fn(max_length, batch_size) == expected, (
+            f"legacy oracle self-check failed at ({max_length}, "
+            f"{batch_size}) — the parity oracle's tier table changed"
+        )
+        assert active_fn(max_length, batch_size) == expected, (
+            f"active determine_batch_size diverged from the legacy tier "
+            f"table at (max_length={max_length}, batch_size="
+            f"{batch_size}): expected {expected}"
+        )
+    # Wiring 1: the tier cap is computed from the resolved max_length
+    # BEFORE the VRAM estimator block runs.
+    tier_call_idx = statement_index(
+        active, "tier_batch_cap = determine_batch_size(max_length, batch_size)")
+    assert tier_call_idx != -1, (
+        "determine_batch_size is never called with the resolved "
+        "max_length/batch_size — dead function, the WR-04 bug"
+    )
+    estimator_idx = statement_index(
+        active, "if auto_batch_size and count == 0:")
+    assert estimator_idx != -1, "no auto-batch estimator block found"
+    assert tier_call_idx < estimator_idx, (
+        "the tier cap must be computed BEFORE the VRAM estimator runs "
+        f"(tier call at {tier_call_idx}, estimator at {estimator_idx})"
+    )
+    # Wiring 2: composition — bs_new is min()'d with the tier cap so the
+    # estimators only ever reduce below it, never raise past it.
+    cap_idx = statement_index(active, "bs_new = min(bs_new, tier_batch_cap)")
+    assert cap_idx != -1, (
+        "no bs_new = min(bs_new, tier_batch_cap) composition — the VRAM "
+        "estimators can raise the batch past the length-tier cap"
+    )
+    # Wiring 3: the legacy grad_accum compensation at the adjustment site.
+    comp_idx = statement_index(
+        active, "scaling_factor = max(1, batch_size // bs_new)")
+    assert comp_idx != -1, (
+        "no grad_accum compensation (max(1, batch_size // bs_new)) at the "
+        "adjustment site — a tier/VRAM reduction would silently shrink "
+        "the effective batch (legacy parity requires the scaling factor)"
+    )
+    assert comp_idx > cap_idx, (
+        "the grad_accum compensation must sit at the adjustment site, "
+        "after the tier-capped bs_new is determined"
     )
