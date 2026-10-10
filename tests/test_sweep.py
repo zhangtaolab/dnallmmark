@@ -1266,3 +1266,242 @@ def test_priority_file_unparseable_json_exits_nonzero(
             "--registry-dir", str(registry_dir),
         ])
     assert "bad-priorities.json" in str(excinfo.value)
+
+
+# =====================================================================
+# --peft threading (06-02, SC-6/REV-05 adapter lanes)
+# =====================================================================
+
+def test_peft_none_default_is_byte_identical_to_today(tmp_path):
+    """--peft none (the default) changes nothing: enumerate_matrix emits
+    base-name cells (the peft kwarg absent OR explicit 'none'), build_argv
+    carries NO --peft/--save_model_name elements, and _new_record's peft
+    field reads 'none' — a none-mode run is byte-for-byte the current
+    behavior."""
+    registry_dir = make_registry(tmp_path)
+    default_cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir)
+    assert default_cells == [("model-a", "task-x", 42)]
+    explicit_none = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir, peft="none")
+    assert explicit_none == default_cells, (
+        "peft='none' must enumerate exactly the default (base-name) cells"
+    )
+    argv_default = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
+    argv_none = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root", "none")
+    assert argv_default == argv_none
+    assert "--peft" not in argv_none, (
+        "the none-mode argv must carry no --peft element — a default-mode "
+        "run must be byte-identical to today's subprocess"
+    )
+    assert "--save_model_name" not in argv_none, (
+        "the none-mode argv must carry no --save_model_name element (the "
+        "child's default save name is the base model name already)"
+    )
+    record = run_sweep._new_record(
+        "model-a", "task-x", 42, Path("/tmp/root"), "testshash")
+    assert record["peft"] == "none", (
+        "the run_record peft field must default to 'none'"
+    )
+
+
+def test_enumerate_matrix_emits_alias_cells_under_peft(tmp_path):
+    """--peft lora/ia3: cells enumerate under the ALIAS model name
+    {model}+{mode} (the output-dir / resume-marker identity) while the
+    registry and the --models filter join stays on BASE names — an alias
+    filter value finds nothing, proving the join was never aliased."""
+    registry_dir = make_registry(tmp_path)
+    lora = run_sweep.enumerate_matrix(
+        ["model-a", "model-b"], ["task-x"], [42, 43], registry_dir,
+        peft="lora")
+    assert lora == [
+        ("model-a+lora", "task-x", 42), ("model-a+lora", "task-x", 43),
+        ("model-b+lora", "task-x", 42), ("model-b+lora", "task-x", 43),
+    ], "peft=lora must enumerate sorted alias cells"
+    ia3 = run_sweep.enumerate_matrix(
+        ["model-b"], ["task-x"], [42], registry_dir, peft="ia3")
+    assert ia3 == [("model-b+ia3", "task-x", 42)]
+    # The --models join stays on BASE names: an alias-typed filter is
+    # simply unknown to the registry (fail-fast via _validate_filters in
+    # the CLI path; here the enumeration itself yields nothing).
+    aliased_filter = run_sweep.enumerate_matrix(
+        ["model-a+lora"], ["task-x"], [42], registry_dir, peft="lora")
+    assert aliased_filter == [], (
+        "registry filtering must join on base names — an alias filter "
+        "value must not match (argv targeting re-derives the base itself)"
+    )
+
+
+def test_build_argv_targets_base_and_saves_alias_as_list_elements():
+    """Under peft, build_argv emits --target_model <BASE> (suffix-stripped)
+    plus --save_model_name <alias> and --peft <mode> — every flag and value
+    a separate LIST element (T-03-10 continuity)."""
+    argv = run_sweep.build_argv(
+        "model-a+lora", "task-x", 42, "/tmp/root", "lora")
+    assert isinstance(argv, list), (
+        "the subprocess must be launched from an argv LIST, never a shell "
+        "string (T-03-10: registry values must not pass through a shell)"
+    )
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--target_model") == "model-a", (
+        "--target_model must carry the BASE registry name — the alias is "
+        "not a registry key and would break the child's model filtering"
+    )
+    assert flag_value(argv, "--target_dataset") == "task-x"
+    assert flag_value(argv, "--seed") == "42"
+    assert flag_value(argv, "--output_dir") == "/tmp/root"
+    assert flag_value(argv, "--save_model_name") == "model-a+lora", (
+        "--save_model_name must carry the ALIAS so the child writes the "
+        "alias dir (name isolation end-to-end)"
+    )
+    assert flag_value(argv, "--peft") == "lora"
+    ia3 = run_sweep.build_argv(
+        "model-b+ia3", "task-z", 7, "/tmp/root", "ia3")
+    assert flag_value(ia3, "--target_model") == "model-b"
+    assert flag_value(ia3, "--save_model_name") == "model-b+ia3"
+    assert flag_value(ia3, "--peft") == "ia3"
+
+
+def test_launch_subprocess_threads_peft_into_argv(monkeypatch):
+    """The real launch path (captured argv, never executed) carries the
+    peft composition: base target, alias save name, mode flag."""
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=0)
+
+    monkeypatch.setattr(run_sweep.subprocess, "run", fake_run)
+    run_sweep.launch_subprocess(
+        "model-a+lora", "task-x", 42, "/tmp/sweep-root", peft="lora")
+    argv = captured["argv"]
+    assert flag_value(argv, "--target_model") == "model-a"
+    assert flag_value(argv, "--save_model_name") == "model-a+lora"
+    assert flag_value(argv, "--peft") == "lora"
+
+
+def test_run_matrix_writes_peft_record_inside_alias_cell_dir(tmp_path):
+    """run_matrix with a fake executor over alias cells writes
+    run_record.json carrying the peft field INSIDE the alias cell dir —
+    the exporter walk treats the alias as just another model dir."""
+    out_root = tmp_path / "sweep-out"
+
+    def fake_executor(model, task, seed, output_root):
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text(
+            json.dumps(SUITE_NATIVE_METRICS, indent=4), encoding="utf-8")
+
+    registry_dir = make_registry(tmp_path)
+    cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir, peft="lora")
+    records = run_sweep.run_matrix(
+        cells, out_root, executor=fake_executor, peft="lora")
+    assert records[0]["model"] == "model-a+lora"
+    assert records[0]["peft"] == "lora"
+    record_path = (
+        out_root / "model-a+lora" / "task-x" / "seed_42" / "run_record.json")
+    disk = json.loads(record_path.read_text(encoding="utf-8"))
+    assert disk["peft"] == "lora", (
+        "the on-disk run_record must carry the peft field — the frontier "
+        "row derivation reads it"
+    )
+    assert disk["model"] == "model-a+lora"
+    assert disk["status"] == "completed"
+    assert disk["metrics"] == SUITE_NATIVE_METRICS
+
+
+def test_default_executor_receives_peft(tmp_path, monkeypatch):
+    """run_matrix's DEFAULT executor path threads peft through to the real
+    launcher: with no executor injected, the (captured, never-executed)
+    subprocess argv carries the peft composition."""
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        # _git_commit() also rides subprocess.run — give it a stdout.
+        if argv[:1] == ["git"]:
+            return subprocess.CompletedProcess(
+                argv, returncode=0, stdout="fakehash\n")
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=0)
+
+    monkeypatch.setattr(run_sweep.subprocess, "run", fake_run)
+    # The fake run writes no final_metrics.json, so the cell is recorded
+    # failed (CR-02) — the point here is the argv the default executor
+    # built, not the status.
+    records = run_sweep.run_matrix(
+        [("model-a+lora", "task-x", 42)], tmp_path / "out", peft="lora")
+    assert flag_value(captured["argv"], "--peft") == "lora"
+    assert flag_value(captured["argv"], "--save_model_name") == "model-a+lora"
+    assert flag_value(captured["argv"], "--target_model") == "model-a"
+    assert records[0]["peft"] == "lora"
+
+
+def test_alias_marker_does_not_skip_base_cell(tmp_path):
+    """The resume-marker skip stays scoped to the (alias, task, seed) cell:
+    a trainer_state.json under model-a+lora never skips the BASE model-a
+    cell (the alias gives a distinct model-level dir and marker)."""
+    out_root = tmp_path / "sweep-out"
+    alias_cell = out_root / "model-a+lora" / "task-x" / "seed_42"
+    alias_cell.mkdir(parents=True)
+    (alias_cell / "trainer_state.json").write_text("{}", encoding="utf-8")
+
+    invoked = []
+
+    def fake_executor(model, task, seed, output_root):
+        invoked.append((model, task, seed))
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text(
+            json.dumps(SUITE_NATIVE_METRICS, indent=4), encoding="utf-8")
+
+    records = run_sweep.run_matrix(
+        [("model-a+lora", "task-x", 42), ("model-a", "task-x", 42)],
+        out_root, executor=fake_executor)
+    statuses = {record["model"]: record["status"] for record in records}
+    assert statuses["model-a+lora"] == "skipped"
+    assert statuses["model-a"] == "completed", (
+        "an alias cell's resume marker must never skip the base cell — "
+        "name isolation is the whole point of the alias (Pitfall 3)"
+    )
+    assert invoked == [("model-a", "task-x", 42)]
+
+
+def test_dry_run_peft_manifest_lists_alias_cells_only(tmp_path, monkeypatch):
+    """--dry-run with --peft lora writes sweep_manifest.json listing ONLY
+    alias cells (no base-name cells, no execution, no cell dirs) — and the
+    same matrix + --peft produces byte-identical manifests across two
+    runs."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    argv = [
+        "--models", "model-a,model-b",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--peft", "lora",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ]
+    run_cli(monkeypatch, argv)
+    manifest_path = out_root / "sweep_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert {c["model"] for c in manifest["cells"]} == {
+        "model-a+lora", "model-b+lora"}, (
+        "the --peft dry-run manifest must list ONLY alias cells"
+    )
+    assert manifest["matrix"]["models"] == [
+        "model-a+lora", "model-b+lora"]
+    assert all("+lora" in c["output_dir"] for c in manifest["cells"]), (
+        "every planned outdir must live under the alias model dir"
+    )
+    assert not list(out_root.rglob("seed_*")), (
+        "dry-run must not create cell directories"
+    )
+    first = manifest_path.read_bytes()
+    run_cli(monkeypatch, argv)
+    assert manifest_path.read_bytes() == first, (
+        "two --peft dry-runs over the same inputs must produce "
+        "byte-identical manifests"
+    )

@@ -24,6 +24,7 @@ run_record.json schema (per seed dir)::
 
     {
         "model": "...", "task": "...", "seed": 42,
+        "peft": "none" | "lora" | "ia3",
         "status": "completed" | "failed" | "skipped",
         "output_dir": ".../seed_42",
         "metrics": { ... },
@@ -136,6 +137,20 @@ Failure boundary:
     zero-cell run with a clear message, never a silent full sweep. The
     manifest is validated fail-fast exactly like the priority file.
 
+--peft (06-02, SC-6/REV-05 adapter lanes):
+    ``--peft {none,lora,ia3}`` (default ``none``) threads the adapter mode
+    through the whole matrix: cells enumerate under the ALIAS model name
+    ``{model}+lora`` / ``{model}+ia3`` (the output-dir and resume-marker
+    identity) while the registry and the ``--models`` filter join stays on
+    BASE names; each cell's argv targets ``--target_model <base>`` and
+    appends ``--save_model_name <alias>`` + ``--peft <mode>`` as separate
+    LIST elements (T-03-10 continuity); ``run_record.json`` gains a ``peft``
+    field (default ``"none"``). Alias cells are name-isolated end-to-end:
+    a separate model-level dir means a separate ``trainer_state.json``
+    resume marker, so the seed-dir layout and the marker-skip logic are
+    UNTOUCHED (an alias marker never skips a base cell). ``none`` is
+    byte-identical to today's enumeration, argv, and records.
+
 FUTURE E2E note (documented here, deliberately NOT executed — D-05):
     On-disk dataset directories are DOUBLE-NESTED after a fresh unzip of
     a suite archive (the zip extracts as ``suite-name/suite-name/task-dir``
@@ -158,6 +173,7 @@ See also:
 """
 
 import argparse
+import functools
 import json
 import subprocess
 import sys
@@ -245,20 +261,44 @@ def parse_args():
              "silent full sweep"
     )
 
+    parser.add_argument(
+        "--peft",
+        type=str,
+        default="none",
+        choices=["none", "lora", "ia3"],
+        help="Parameter-efficient mode threaded to every run_finetune.py "
+             "subprocess (SC-6 adapter lanes, 06-02): 'lora'/'ia3' "
+             "enumerate cells under the alias model names {model}+lora / "
+             "{model}+ia3 (separate output dirs AND resume markers; "
+             "registry filtering stays on base names, argv targets "
+             "--target_model <base> --save_model_name <alias> --peft "
+             "<mode>); 'none' (default) is byte-identical to today"
+    )
+
     return parser.parse_args()
 
 
-def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir):
+def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir,
+                     peft="none"):
     """Build the sorted (model, task, seed) cell list from the registries.
+
+    Under ``peft`` lora/ia3 (06-02) the emitted cells carry the ALIAS
+    model name ``{model}+{mode}`` — the output-dir / resume-marker
+    identity — while the registry iteration and the ``--models`` filter
+    join stay on BASE names (argv targeting re-derives the base via
+    suffix strip in ``build_argv``). Sorting happens AFTER the alias
+    mapping, so the enumeration stays deterministic.
 
     Args:
         models_filter (list[str] | None): restrict to these models_info.json
-            keys; None means all keys.
+            keys (BASE names); None means all keys.
         tasks_filter (list[str] | None): restrict to these datasets_info.json
             keys; None means every entry with truthy Train.
         seeds (list[int]): seed values to fan out per (model, task) pair.
         registry_dir (Path | str): directory holding the unified JSON
             registries (the D-10 single source — there is no .txt to read).
+        peft (str): adapter mode (none/lora/ia3); none emits base-name
+            cells byte-identical to the pre-peft enumeration.
 
     Returns:
         list[tuple[str, str, int]]: sorted cells (model, task, seed).
@@ -279,8 +319,12 @@ def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir):
     if tasks_filter:
         allowed_tasks = set(tasks_filter)
         tasks = [task for task in tasks if task in allowed_tasks]
+
+    def cell_model(model):
+        return f"{model}+{peft}" if peft != "none" else model
+
     return sorted(
-        (model, task, seed)
+        (cell_model(model), task, seed)
         for model in models
         for task in tasks
         for seed in seeds
@@ -592,31 +636,47 @@ def cell_dir_for(output_root, model, task, seed):
     return Path(output_root) / model / task / f"seed_{seed}"
 
 
-def build_argv(model, task, seed, output_root):
+def build_argv(model, task, seed, output_root, peft="none"):
     """Build the run_finetune.py argv for one cell — a LIST, never a string.
 
+    Under ``peft`` lora/ia3 (06-02) the cell's model is the ALIAS
+    (``{base}+{mode}``): argv targets the BASE registry name via
+    ``--target_model`` (suffix-stripped — the alias is not a registry key)
+    and appends ``--save_model_name <alias>`` + ``--peft <mode>`` as
+    separate LIST elements, so the child resolves the alias save name
+    explicitly and writes its outputs under the alias dir (name isolation
+    end-to-end). Under ``none`` the argv is byte-identical to the pre-peft
+    form — no extra elements.
+
     Args:
-        model (str): value for --target_model.
+        model (str): value for the cell's model identity — the BASE name
+            under peft=none, the ALIAS under lora/ia3 (value for
+            --save_model_name then; --target_model gets the strip).
         task (str): value for --target_dataset.
         seed (int): value for --seed.
         output_root (str | Path): ABSOLUTE root for --output_dir (the
             subprocess resolves it against its own cwd, which is pinned
             to pipeline/ — see the module docstring's invocation contract).
+        peft (str): adapter mode none/lora/ia3.
 
     Returns:
         list[str]: the argv, each flag and value a separate element.
     """
-    return [
+    argv = [
         sys.executable,
         str(RUN_FINETUNE),
-        "--target_model", str(model),
+        "--target_model",
+        str(model.removesuffix(f"+{peft}") if peft != "none" else model),
         "--target_dataset", str(task),
         "--seed", str(seed),
         "--output_dir", str(output_root),
     ]
+    if peft != "none":
+        argv += ["--save_model_name", str(model), "--peft", peft]
+    return argv
 
 
-def launch_subprocess(model, task, seed, output_root):
+def launch_subprocess(model, task, seed, output_root, peft="none"):
     """Default executor: run run_finetune.py for one cell.
 
     cwd is pinned to PIPELINE_DIR because finetune_config.yaml and the
@@ -628,7 +688,7 @@ def launch_subprocess(model, task, seed, output_root):
         OSError: the subprocess could not be spawned.
     """
     return subprocess.run(
-        build_argv(model, task, seed, output_root),
+        build_argv(model, task, seed, output_root, peft),
         cwd=PIPELINE_DIR,
         check=True,
     )
@@ -660,12 +720,18 @@ def _write_json(path, payload):
         json.dump(payload, f, indent=4, ensure_ascii=False, sort_keys=True)
 
 
-def _new_record(model, task, seed, cell_dir, git_commit):
-    """Build the run_record skeleton (statuses/timestamps filled by caller)."""
+def _new_record(model, task, seed, cell_dir, git_commit, peft="none"):
+    """Build the run_record skeleton (statuses/timestamps filled by caller).
+
+    The ``peft`` field (06-02, string, default ``"none"``) marks the
+    adapter mode the sweep was launched with — the frontier row derivation
+    reads it (alias-suffix first, this field as the record-level source).
+    """
     return {
         "model": model,
         "task": task,
         "seed": seed,
+        "peft": peft,
         "status": None,
         "output_dir": str(cell_dir),
         "metrics": None,
@@ -699,7 +765,7 @@ def _manifest_payload(matrix, records):
     }
 
 
-def run_matrix(cells, output_root, executor=None):
+def run_matrix(cells, output_root, executor=None, peft="none"):
     """Execute the sweep matrix, writing run records + manifests.
 
     Per cell (in the GIVEN order — ``main()`` passes the ``sorted()``
@@ -731,17 +797,25 @@ def run_matrix(cells, output_root, executor=None):
 
     Args:
         cells (list[tuple[str, str, int]]): (model, task, seed) cells in
-            the intended execution order (never re-sorted here).
+            the intended execution order (never re-sorted here). Under
+            --peft the model component is the ALIAS name — the cell dir,
+            record, and manifest all key by it.
         output_root (str | Path): sweep output root (resolved absolute).
         executor (callable | None): ``executor(model, task, seed,
-            output_root)``; defaults to launch_subprocess. Injectable for
-            the fake-executor tests (D-05: real mode is never launched
-            this phase outside those tests).
+            output_root)``; defaults to launch_subprocess (bound with this
+            call's ``peft`` so the real launch path composes the adapter
+            argv). Injectable for the fake-executor tests (D-05: real mode
+            is never launched this phase outside those tests).
+        peft (str): adapter mode none/lora/ia3 (06-02) — carried into the
+            run_record ``peft`` field and the default executor's argv.
 
     Returns:
         list[dict]: the run records, one per cell, in the given cell order.
     """
-    executor = executor if executor is not None else launch_subprocess
+    executor = (
+        executor if executor is not None
+        else functools.partial(launch_subprocess, peft=peft)
+    )
     output_root = Path(output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
     git_commit = _git_commit()
@@ -750,7 +824,7 @@ def run_matrix(cells, output_root, executor=None):
     failures = []
     for model, task, seed in cells:
         cell_dir = cell_dir_for(output_root, model, task, seed)
-        record = _new_record(model, task, seed, cell_dir, git_commit)
+        record = _new_record(model, task, seed, cell_dir, git_commit, peft)
         record["started_at"] = _utc_now_iso()
         if (cell_dir / RESUME_MARKER).exists():
             # Seed-scoped resume marker (G1): only THIS (model, task,
@@ -910,7 +984,8 @@ def main():
     failure_pairs = None
     if args.from_failures is not None:
         failure_pairs = load_failure_pairs(args.from_failures, registry_dir)
-    cells = enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir)
+    cells = enumerate_matrix(
+        models_filter, tasks_filter, seeds, registry_dir, peft=args.peft)
     if tiers is not None:
         # Tier rank as the PRIMARY sort key over the sorted() fallback —
         # no file, no reordering (byte-identical default enumeration).
@@ -965,7 +1040,7 @@ def main():
         )
         return
 
-    records = run_matrix(cells, output_root, executor=None)
+    records = run_matrix(cells, output_root, executor=None, peft=args.peft)
     completed = sum(1 for r in records if r["status"] == "completed")
     skipped = sum(1 for r in records if r["status"] == "skipped")
     failed = sum(1 for r in records if r["status"] == "failed")
