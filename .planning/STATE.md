@@ -4,16 +4,16 @@ milestone: v0.7.1
 current_phase: 4
 current_phase_name: Correctness & Methodology Core
 status: executing
-stopped_at: Completed 04-03-PLAN.md (static-site restoration; 48/48 live assertions)
-last_updated: "2026-10-10T02:24:44.642Z"
+stopped_at: Completed 04-04-PLAN.md (quirk-parity ports + 62/62 cards)
+last_updated: "2026-10-10T03:13:57.381Z"
 last_activity: 2026-10-10
 last_activity_desc: Phase 4 execution started
-state_head: b461268a0c829e6a85d4dc8a74f1cb2cadfe3a79
+state_head: 84f56ad45297e96bfaf2c16612287c1e3f65754b
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 15
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 ## Current Position
 
 Phase: 4 (Correctness & Methodology Core) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-10-10 — Phase 4 execution started
 
@@ -70,6 +70,7 @@ Progress: [█████░░░░░] 50% (1/6 phases)
 | Phase 03 P04 | 16 min | 3 tasks | 7 files |
 | Phase 04 P01 | 17 min | 4 tasks | 11 files |
 | Phase 04 P03 | 15 min | 3 tasks | 16 files |
+| Phase 04 P04 | 43 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,8 @@ Recent decisions affecting current work:
 - [Phase 04]: [Phase 04]: 04-01: all three Phase-2 xfail locks (AUD-01/WR-02/WR-03) unmarked to permanent green contracts per D-13, each in the same commit as its fix; comparator gains INT + BOOL_CROSS labels (IN-01/WR-02); get_float isfinite guard proven number-neutral on committed data
 - [Phase 04]: 04-03: shared navbar.js is the single navbar source; static <nav> blocks removed from ALL 5 real shells (plan named only models/datasets — every shell carried one; one-navbar-per-page invariant required all five)
 - [Phase 04]: 04-03: live Playwright verification 48/48 (zero console errors on all 6 pages, sort/modal/delegation interactions, submission flow, hostile-string inert) via CLI driver fallback — MCP browser tools absent in executor session
+- [Phase 04]: 04-04: four quirk registries ported with LEGACY_NAME_MAP parity (rename PlantCAD2-Large-l48-d1536→PlantCAD2-Large; drops prokbert-mini-c/-long/MutBERT); safetensors is the 11-entry union (plant-dnamamba-6mer + PlantGFM); limited-length dict WIRED (AUD-15 dead config made functional); tier table composes min(bs_new, cap) before the VRAM estimators with legacy grad_accum compensation — parity tests mutation-proven 8/8
+- [Phase 04]: 04-04: 62/62 complete cards — 10 from confirmed public pages, 7 (no locatable upstream: Chaoba×3, denseSSM, mamba2×2, prokbert) from the operational row + "" absent-convention, never fabricated; context_len "" not 0 (schema would render a wrong number vs fail loudly at E2'); space≡SPACE confirmed same model under two keys, kept distinct, merge surfaced to maintainer
 
 ### Pending Todos
 
@@ -124,6 +127,7 @@ None yet.
 - Zenodo preview-token revocation remains a manual out-of-repo action; recorded as a post-publish option (D-08, token read-only scoped)
 - Phase 3: GPU work runs on the NVIDIA GB10 aarch64 machine against the local dnallm dev clone (`/home/forrest/Github/DNALLM` @ c99fa9d) — permanently outside CI scope
 - Phase 6: Dataset-by-dataset license terms for murkier genomics datasets may need spot verification during execution
+- Maintainer registry decisions from 04-04: (1) space and SPACE are the same model under two registry keys (committed info block identical; no distinct lowercase-space upstream) — merge decision (62→61) is the maintainer's; (2) 7 models (Chaoba×3, denseSSM_plant_genome, mamba2_370M, mamba2_plant_genome, prokbert) have no locatable public card — "" card fields await maintainer backfill (will fail exporter schema loudly if exported); (3) prokbert↔neuralbioinfo/prokbert-mini size-correspondence ambiguity (existing prokbert-mini card links the 20.6M repo while its own op row says 25M ≡ prokbert-mini-c)
 
 ## Deferred Items
 
@@ -135,6 +139,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-10T02:24:44.602Z
-Stopped at: Completed 04-03-PLAN.md (static-site restoration; 48/48 live assertions)
+Last session: 2026-10-10T03:13:32.406Z
+Stopped at: Completed 04-04-PLAN.md (quirk-parity ports + 62/62 cards)
 Resume file: None

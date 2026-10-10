@@ -108,13 +108,13 @@ Plans:
   5. DOM-build sites touched by these fixes escape rendered content, so a hostile string in any performance JSON displays as inert text
   6. Phase 2 schemas/tests are updated for the new export shape (any new metric keys join the closed enum WITH the data≡enum self-check updated in the same commit)
 
-**Plans**: 2/5 plans executed planned
+**Plans**: 3/5 plans executed planned
 **UI hint**: yes
 Plans:
 **Wave 1**
 - [x] 04-01-PLAN.md — TRACER: species fix end-to-end — maintainer Category-review gate → summarize Comparison-join grouping (hard-fail, Multiple→majority) → regeneration + previewed diff inventory (2 byte-identical / 2 swapped membership 42/42, counts 22/13) → AUD-01 lock unmark three-in-one; WR-03 get_float isfinite + WR-02 bool/int + IN-01 INT label with same-commit unmarks (D-13) (FIX-02, REV-03)
 - [x] 04-03-PLAN.md — Frontend restoration — shared escaped navbar on all 6 shells (AUD-09 + the 2 nav-less pages), AUD-10 nesting ×4, AUD-11 sort state + AUD-12 delegation (D-14), AUD-20 dropdown, submit.html + schema-current submit.js (FIX-03), bounded escapeHTML (FIX-04), LIVE Playwright zero-console-error pass per page (FIX-01, FIX-03, FIX-04)
-- [ ] 04-04-PLAN.md — Carryovers — 4 quirk-parity ports in run_finetune.py (ACGT alphabet, limited-length wiring, safetensors union, length-tier rounding) with rename-map parity tests; 17 card fills → 62/62 complete cards (REV-03)
+- [x] 04-04-PLAN.md — Carryovers — 4 quirk-parity ports in run_finetune.py (ACGT alphabet, limited-length wiring, safetensors union, length-tier rounding) with rename-map parity tests; 17 card fills → 62/62 complete cards (REV-03)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 04-02-PLAN.md — Unified exporter core — scipy behind a blocking-human legitimacy gate, vendored aggregate_seeds @483a35c with parity tests, exporter-owned 28-name metric-key mapping (key-parity both directions), run-record reader + registry joins, D-12 parametersBlock config-YAML join, dual output (schema-valid task_performance-compatible + per-seed stats artifact), freeze_snapshot tested + unwired (REV-03)
@@ -168,6 +168,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Audit & Release Foundations | 3/3 | Complete    | 2026-10-09 |
 | 2. Data Contracts & Test Harness | 3/3 | Complete    | 2026-10-09 |
 | 3. Pipeline Adaptation to dnallm Dev | 4/4 | Complete    | 2026-10-10 |
-| 4. Correctness Fixes | 2/5 | In Progress | - |
+| 4. Correctness Fixes | 3/5 | In Progress | - |
 | 5. CI & Verified Data Migration | 0/TBD | Not started | - |
 | 6. Release Packaging & Provenance | 0/TBD | Not started | - |
