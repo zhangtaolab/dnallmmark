@@ -30,6 +30,17 @@ const CONFIG = {
     { id: 'top-10', name: 'Top 10' }
   ],
 
+  // Leaderboard view options (F6 Q4, 05-02): the z-score × uniform-difficulty
+  // weighted view is the DEFAULT public number; the raw-rank view stays one
+  // click away. The weighted value is precomputed offline
+  // (performance.weighted_score in models_comparison*.json) — selected
+  // client-side, never recomputed (the dead recalculateComparison lesson,
+  // DATA-07).
+  VIEW_OPTIONS: [
+    { id: 'weighted', name: 'Weighted (default)' },
+    { id: 'rank', name: 'Raw Rank' }
+  ],
+
   // Ranking display options
   RANKING_DISPLAY: {
     SHOW_RANKINGS: true,
@@ -87,7 +98,20 @@ const CONFIG = {
       xAxis: 'sum_PFLOPs',
       yAxis: 'rank_score',
       xAxisLabel: 'Sum PFLOPs (lower = more efficient)',
-      yAxisLabel: 'Rank Score (higher = better)'
+      yAxisLabel: 'Rank Score (higher = better)',
+      // F6 dual view (05-02): per-view y-axis field + label. The field is
+      // READ from the performance block (weighted_score is precomputed
+      // offline); the label is view-derived.
+      viewYAxis: {
+        weighted: {
+          field: 'weighted_score',
+          label: 'Weighted Score (z-score × uniform difficulty, higher = better)'
+        },
+        rank: {
+          field: 'rank_score',
+          label: 'Rank Score (higher = better)'
+        }
+      }
     },
     FINETUNING: {
       defaultX: 'FLOPs',

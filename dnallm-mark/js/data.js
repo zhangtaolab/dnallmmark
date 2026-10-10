@@ -11,7 +11,8 @@ const DataAPI = {
       animal: null,
       plant: null,
       microbe: null
-    }
+    },
+    dataManifest: null
   },
 
   /**
@@ -69,6 +70,33 @@ const DataAPI = {
       return data;
     } catch (error) {
       console.error('Error loading models comparison:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Load the data-version manifest (data/manifest.json) — the STAMPED date +
+   * data_version the leaderboard footer renders (DATA-06, D-17/OQ2).
+   * Cached like every other fetch; a failed fetch throws so the caller can
+   * hide the stamp entirely — the footer never falls back to a client-derived
+   * value (no live clock).
+   * @returns {Promise<Object>}
+   */
+  async loadDataManifest() {
+    if (this.cache.dataManifest) {
+      return this.cache.dataManifest;
+    }
+
+    try {
+      const response = await fetch('./data/manifest.json');
+      if (!response.ok) {
+        throw new Error(`Failed to load manifest.json: ${response.status}`);
+      }
+      const data = await response.json();
+      this.cache.dataManifest = data;
+      return data;
+    } catch (error) {
+      console.error('Error loading data manifest:', error);
       throw error;
     }
   },
