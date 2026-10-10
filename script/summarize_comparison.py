@@ -535,7 +535,7 @@ def main():
     # Bumped EXCLUSIVELY in migration commits, alongside CHANGELOG.md and
     # the migration inventory.
     DATA_VERSION = "1.1.0"
-    GENERATED_FROM = "73006a0464c6dcdf0c28a29a48cdfb829b0fba6c"  # pre-F6-migration HEAD
+    GENERATED_FROM = "991804613c4874bfa3f32d318340b5d7b4118ffe"  # pre-D-18-rename HEAD
     DATE = "2026-10-10"
     # =================================================================
 

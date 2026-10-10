@@ -19,13 +19,13 @@
             "sum_PFLOPs": 109.00558538318592,
             "sum_minmax": 8.751573660341428,
             "sum_robust": -0.19978530082887197,
-            "sum_zscore": 2.252770355901069,
+            "sum_zscore": 2.2527703559010663,
             "top10_count": 1,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 1,
-            "weighted_score": 0.1732900273770053
+            "weighted_score": 0.1732900273770051
         }
     },
     "GENERanno-eukaryote-0.5b-base": {
@@ -48,13 +48,13 @@
             "sum_PFLOPs": 1674.1150101051724,
             "sum_minmax": 9.09638059056673,
             "sum_robust": 5.634781432442203,
-            "sum_zscore": 8.86178450693339,
+            "sum_zscore": 8.861784506933388,
             "top10_count": 6,
             "top1_count": 1,
             "top3_count": 2,
             "top5_count": 4,
             "top8_count": 5,
-            "weighted_score": 0.6816757313025684
+            "weighted_score": 0.6816757313025683
         }
     },
     "GENERanno-prokaryote-0.5b-base": {
@@ -77,13 +77,13 @@
             "sum_PFLOPs": 1674.1150101051724,
             "sum_minmax": 8.977090527134413,
             "sum_robust": 6.02391217905816,
-            "sum_zscore": 9.082373014713506,
+            "sum_zscore": 9.082373014713502,
             "top10_count": 10,
             "top1_count": 0,
             "top3_count": 3,
             "top5_count": 4,
             "top8_count": 9,
-            "weighted_score": 0.698644078054885
+            "weighted_score": 0.6986440780548848
         }
     },
     "GROVER": {
@@ -106,13 +106,13 @@
             "sum_PFLOPs": 76.61523331336551,
             "sum_minmax": 7.470131617044978,
             "sum_robust": -4.551061783043934,
-            "sum_zscore": -2.556888627732255,
+            "sum_zscore": -2.556888627732257,
             "top10_count": 1,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.19668374059478883
+            "weighted_score": -0.19668374059478902
         }
     },
     "GenomeOcean-500M": {
@@ -135,13 +135,13 @@
             "sum_PFLOPs": 485.0178962940887,
             "sum_minmax": 10.950505423927197,
             "sum_robust": 5.918503422404133,
-            "sum_zscore": 10.58055438333362,
+            "sum_zscore": 10.580554383333617,
             "top10_count": 8,
             "top1_count": 0,
             "top3_count": 1,
             "top5_count": 2,
             "top8_count": 7,
-            "weighted_score": 0.8138887987179708
+            "weighted_score": 0.8138887987179705
         }
     },
     "Jamba-DNA-v1-114M-hg38": {
@@ -164,13 +164,13 @@
             "sum_PFLOPs": 48.84630684711321,
             "sum_minmax": 6.98307947448604,
             "sum_robust": -6.767543722583305,
-            "sum_zscore": -4.572456654806136,
+            "sum_zscore": -4.572456654806139,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.3517274349850874
+            "weighted_score": -0.35172743498508763
         }
     },
     "Mistral-DNA-v1-138M-virus": {
@@ -222,13 +222,13 @@
             "sum_PFLOPs": 59.83601752778342,
             "sum_minmax": 1.9426285969211117,
             "sum_robust": -40.210646805453294,
-            "sum_zscore": -23.087034983653727,
+            "sum_zscore": -23.08703498365373,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -1.7759257679733635
+            "weighted_score": -1.7759257679733638
         }
     },
     "Mistral-DNA-v1-422M-hg38": {
@@ -251,13 +251,13 @@
             "sum_PFLOPs": 59.83601752778342,
             "sum_minmax": 8.157742726255671,
             "sum_robust": -3.9473026907027196,
-            "sum_zscore": -0.31684863481827036,
+            "sum_zscore": -0.3168486348182733,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.02437297190909772
+            "weighted_score": -0.024372971909097946
         }
     },
     "ModernBERT-DNA-v1-37M-hg38": {
@@ -280,13 +280,13 @@
             "sum_PFLOPs": 64.28757030999091,
             "sum_minmax": 0.5152177847098907,
             "sum_robust": -54.37686517181537,
-            "sum_zscore": -28.691557770797445,
+            "sum_zscore": -28.691557770797452,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -2.2070429054459573
+            "weighted_score": -2.2070429054459577
         }
     },
     "MutBERT-Multi": {
@@ -309,13 +309,13 @@
             "sum_PFLOPs": 734.1136117347179,
             "sum_minmax": 7.363610781706114,
             "sum_robust": -3.4623369089923464,
-            "sum_zscore": -1.9050744610800834,
+            "sum_zscore": -1.9050744610800867,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.14654418931385257
+            "weighted_score": -0.14654418931385282
         }
     },
     "Omni-DNA-700M": {
@@ -338,13 +338,13 @@
             "sum_PFLOPs": 1119.2482713741558,
             "sum_minmax": 11.748949467556931,
             "sum_robust": 8.570912718951666,
-            "sum_zscore": 13.72630106478288,
+            "sum_zscore": 13.726301064782875,
             "top10_count": 9,
             "top1_count": 4,
             "top3_count": 4,
             "top5_count": 5,
             "top8_count": 6,
-            "weighted_score": 1.0558693126756062
+            "weighted_score": 1.0558693126756058
         }
     },
     "OmniNA-220m": {
@@ -367,13 +367,13 @@
             "sum_PFLOPs": 252.37287772500787,
             "sum_minmax": 7.164759209085329,
             "sum_robust": -6.359604796043474,
-            "sum_zscore": -3.769802944697225,
+            "sum_zscore": -3.7698029446972283,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.28998484189978657
+            "weighted_score": -0.2899848418997868
         }
     },
     "PlantBiMoE": {
@@ -396,13 +396,13 @@
             "sum_PFLOPs": 423.6468119957883,
             "sum_minmax": 9.481620537662353,
             "sum_robust": 1.09047407580213,
-            "sum_zscore": 4.86243905056623,
+            "sum_zscore": 4.862439050566225,
             "top10_count": 3,
             "top1_count": 0,
             "top3_count": 1,
             "top5_count": 1,
             "top8_count": 2,
-            "weighted_score": 0.3740337731204792
+            "weighted_score": 0.37403377312047886
         }
     },
     "PlantCAD2-Medium-l48-d1024": {
@@ -425,13 +425,13 @@
             "sum_PFLOPs": 5300.421046073709,
             "sum_minmax": 9.38243115793168,
             "sum_robust": 2.73350623168076,
-            "sum_zscore": 5.170881378618801,
+            "sum_zscore": 5.170881378618797,
             "top10_count": 8,
             "top1_count": 0,
             "top3_count": 1,
             "top5_count": 2,
             "top8_count": 6,
-            "weighted_score": 0.39776010604760004
+            "weighted_score": 0.3977601060475998
         }
     },
     "PlantCAD2-Small-l24-d0768": {
@@ -454,13 +454,13 @@
             "sum_PFLOPs": 1687.5414540039444,
             "sum_minmax": 10.319685071688466,
             "sum_robust": 4.934860403758039,
-            "sum_zscore": 8.297126858232572,
+            "sum_zscore": 8.29712685823257,
             "top10_count": 10,
             "top1_count": 0,
             "top3_count": 3,
             "top5_count": 6,
             "top8_count": 9,
-            "weighted_score": 0.6382405275563516
+            "weighted_score": 0.6382405275563515
         }
     },
     "PlantCaduceus_l32": {
@@ -483,13 +483,42 @@
             "sum_PFLOPs": 4053.469173793837,
             "sum_minmax": 9.750850137768918,
             "sum_robust": 5.59385143425737,
-            "sum_zscore": 8.972250871170443,
+            "sum_zscore": 8.972250871170441,
             "top10_count": 10,
             "top1_count": 0,
             "top3_count": 2,
             "top5_count": 6,
             "top8_count": 9,
-            "weighted_score": 0.6901731439361879
+            "weighted_score": 0.6901731439361878
+        }
+    },
+    "PlantDNAMamba2-BPE": {
+        "model": {
+            "context_len (bp)": 2000,
+            "name": "PlantDNAMamba2-BPE",
+            "series": "PDLLMs",
+            "size (M)": 370,
+            "species": "plants",
+            "tokenizer": "BPE",
+            "type": "CLM"
+        },
+        "performance": {
+            "avg_PFLOPs": 22.96824134157123,
+            "avg_rank": 7.461538461538462,
+            "avg_raw": 0.7486696815474397,
+            "rank": 4,
+            "rank_score": 444.0,
+            "samples": 13,
+            "sum_PFLOPs": 298.587137440426,
+            "sum_minmax": 11.170940419616189,
+            "sum_robust": 6.788128771633064,
+            "sum_zscore": 11.335897717452308,
+            "top10_count": 10,
+            "top1_count": 0,
+            "top3_count": 3,
+            "top5_count": 6,
+            "top8_count": 8,
+            "weighted_score": 0.871992132111716
         }
     },
     "PlantHelixSeek": {
@@ -512,13 +541,13 @@
             "sum_PFLOPs": 1141.809562235446,
             "sum_minmax": 12.003815727157413,
             "sum_robust": 9.334465787522136,
-            "sum_zscore": 14.405516188720828,
+            "sum_zscore": 14.405516188720823,
             "top10_count": 11,
             "top1_count": 4,
             "top3_count": 8,
             "top5_count": 9,
             "top8_count": 10,
-            "weighted_score": 1.108116629901602
+            "weighted_score": 1.1081166299016016
         }
     },
     "agro-nucleotide-transformer-1b": {
@@ -541,13 +570,13 @@
             "sum_PFLOPs": 790.329036887523,
             "sum_minmax": 11.399545284291555,
             "sum_robust": 6.884988509108657,
-            "sum_zscore": 11.62605091445428,
+            "sum_zscore": 11.626050914454279,
             "top10_count": 8,
             "top1_count": 3,
             "top3_count": 3,
             "top5_count": 5,
             "top8_count": 7,
-            "weighted_score": 0.8943116088041754
+            "weighted_score": 0.8943116088041753
         }
     },
     "borzoi-replicate-0": {
@@ -570,13 +599,13 @@
             "sum_PFLOPs": 23.898503856777985,
             "sum_minmax": 7.804058289042177,
             "sum_robust": -3.682898191995412,
-            "sum_zscore": -1.6119946898922808,
+            "sum_zscore": -1.611994689892284,
             "top10_count": 2,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 1,
-            "weighted_score": -0.12399959153017545
+            "weighted_score": -0.12399959153017569
         }
     },
     "caduceus-ph_seqlen-131k_d_model-256_n_layer-16": {
@@ -599,13 +628,13 @@
             "sum_PFLOPs": 69.5388127082112,
             "sum_minmax": 6.055148109777641,
             "sum_robust": -7.586224430711413,
-            "sum_zscore": -6.881595381366837,
+            "sum_zscore": -6.881595381366839,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.529353490874372
+            "weighted_score": -0.5293534908743722
         }
     },
     "caduceus-ps_seqlen-131k_d_model-256_n_layer-16": {
@@ -628,13 +657,13 @@
             "sum_PFLOPs": 139.0776254164224,
             "sum_minmax": 6.626411101050454,
             "sum_robust": -6.1800893225053795,
-            "sum_zscore": -5.046279261310296,
+            "sum_zscore": -5.0462792613103,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.3881753277930997
+            "weighted_score": -0.3881753277931
         }
     },
     "enformer-official-rough": {
@@ -657,7 +686,7 @@
             "sum_PFLOPs": 38.785884295034876,
             "sum_minmax": 4.451111987439782,
             "sum_robust": -14.525849331998003,
-            "sum_zscore": -14.043182780961628,
+            "sum_zscore": -14.04318278096163,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
@@ -715,13 +744,13 @@
             "sum_PFLOPs": 21.74631289237786,
             "sum_minmax": 7.016340886415431,
             "sum_robust": -5.67970510147112,
-            "sum_zscore": -4.373121176003393,
+            "sum_zscore": -4.373121176003396,
             "top10_count": 1,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.3363939366156456
+            "weighted_score": -0.33639393661564587
         }
     },
     "gena-lm-bert-large-t2t": {
@@ -744,13 +773,13 @@
             "sum_PFLOPs": 153.8728736952914,
             "sum_minmax": 6.359993389840948,
             "sum_robust": -8.5717630768833,
-            "sum_zscore": -6.172387796837532,
+            "sum_zscore": -6.172387796837536,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.4747990612951947
+            "weighted_score": -0.47479906129519506
         }
     },
     "gena-lm-bigbird-base-t2t": {
@@ -773,13 +802,13 @@
             "sum_PFLOPs": 52.8927827796864,
             "sum_minmax": 7.127183995937346,
             "sum_robust": -6.3314830129525195,
-            "sum_zscore": -3.626622544678301,
+            "sum_zscore": -3.6266225446783045,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.2789709649752539
+            "weighted_score": -0.2789709649752542
         }
     },
     "gpn-brassicales": {
@@ -802,13 +831,13 @@
             "sum_PFLOPs": 306.8183171675474,
             "sum_minmax": 9.033046286606414,
             "sum_robust": -0.003397375051299778,
-            "sum_zscore": 3.128576801481453,
+            "sum_zscore": 3.1285768014814486,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": 0.24065975396011177
+            "weighted_score": 0.24065975396011144
         }
     },
     "hyenadna-large-1m-seqlen-hf": {
@@ -831,13 +860,13 @@
             "sum_PFLOPs": 31.37619247203046,
             "sum_minmax": 7.104125974106637,
             "sum_robust": -5.563000339639008,
-            "sum_zscore": -3.3306778670944848,
+            "sum_zscore": -3.3306778670944874,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.25620598977649883
+            "weighted_score": -0.25620598977649905
         }
     },
     "megaDNA_updated": {
@@ -860,13 +889,13 @@
             "sum_PFLOPs": 34.86907230671462,
             "sum_minmax": 7.782961610312938,
             "sum_robust": -3.55259504614902,
-            "sum_zscore": -0.8237319957879873,
+            "sum_zscore": -0.8237319957879905,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.06336399967599902
+            "weighted_score": -0.06336399967599927
         }
     },
     "nucleotide-transformer-v2-500m-multi-species": {
@@ -889,13 +918,13 @@
             "sum_PFLOPs": 457.4123695857439,
             "sum_minmax": 11.444086629597463,
             "sum_robust": 6.576531382394345,
-            "sum_zscore": 11.745878191072594,
+            "sum_zscore": 11.745878191072588,
             "top10_count": 9,
             "top1_count": 1,
             "top3_count": 3,
             "top5_count": 5,
             "top8_count": 7,
-            "weighted_score": 0.9035290916209687
+            "weighted_score": 0.9035290916209683
         }
     },
     "plant-dnabert-6mer": {
@@ -918,13 +947,13 @@
             "sum_PFLOPs": 60.00443481367296,
             "sum_minmax": 9.517702966782597,
             "sum_robust": 1.6729632541232191,
-            "sum_zscore": 4.949768232221233,
+            "sum_zscore": 4.9497682322212295,
             "top10_count": 2,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 1,
             "top8_count": 1,
-            "weighted_score": 0.3807514024785564
+            "weighted_score": 0.3807514024785561
         }
     },
     "plant-dnagemma-BPE": {
@@ -947,13 +976,13 @@
             "sum_PFLOPs": 167.92408059612364,
             "sum_minmax": 10.322696574559352,
             "sum_robust": 3.6457032960659363,
-            "sum_zscore": 8.191877015694061,
+            "sum_zscore": 8.19187701569406,
             "top10_count": 3,
             "top1_count": 0,
             "top3_count": 3,
             "top5_count": 3,
             "top8_count": 3,
-            "weighted_score": 0.6301443858226201
+            "weighted_score": 0.6301443858226199
         }
     },
     "plant-dnagpt-BPE": {
@@ -976,13 +1005,13 @@
             "sum_PFLOPs": 71.15573327000371,
             "sum_minmax": 7.922045071336459,
             "sum_robust": -3.5335287958565873,
-            "sum_zscore": -1.0475366123753105,
+            "sum_zscore": -1.0475366123753136,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.08057973941348542
+            "weighted_score": -0.08057973941348566
         }
     },
     "plant-dnamamba-6mer": {
@@ -1005,13 +1034,13 @@
             "sum_PFLOPs": 80.7403924772859,
             "sum_minmax": 10.908993545786373,
             "sum_robust": 5.650985561106048,
-            "sum_zscore": 10.117487078963633,
+            "sum_zscore": 10.11748707896363,
             "top10_count": 7,
             "top1_count": 0,
             "top3_count": 2,
             "top5_count": 2,
             "top8_count": 5,
-            "weighted_score": 0.7782682368433563
+            "weighted_score": 0.7782682368433562
         }
     },
     "plant-dnamamba-BPE": {
@@ -1034,42 +1063,13 @@
             "sum_PFLOPs": 80.7403924772859,
             "sum_minmax": 9.469693861345016,
             "sum_robust": 1.0006637495966513,
-            "sum_zscore": 4.73856048388138,
+            "sum_zscore": 4.738560483881377,
             "top10_count": 2,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 1,
             "top8_count": 1,
-            "weighted_score": 0.36450465260625997
-        }
-    },
-    "plant-dnamamba2-BPE": {
-        "model": {
-            "context_len (bp)": 2000,
-            "name": "PlantDNAMamba2-BPE",
-            "series": "PDLLMs",
-            "size (M)": 370,
-            "species": "plants",
-            "tokenizer": "BPE",
-            "type": "CLM"
-        },
-        "performance": {
-            "avg_PFLOPs": 22.96824134157123,
-            "avg_rank": 7.461538461538462,
-            "avg_raw": 0.7486696815474397,
-            "rank": 4,
-            "rank_score": 444.0,
-            "samples": 13,
-            "sum_PFLOPs": 298.587137440426,
-            "sum_minmax": 11.170940419616189,
-            "sum_robust": 6.788128771633064,
-            "sum_zscore": 11.335897717452314,
-            "top10_count": 10,
-            "top1_count": 0,
-            "top3_count": 3,
-            "top5_count": 6,
-            "top8_count": 8,
-            "weighted_score": 0.8719921321117164
+            "weighted_score": 0.3645046526062598
         }
     },
     "plant-dnamodernbert-singlebase": {
@@ -1092,13 +1092,13 @@
             "sum_PFLOPs": 788.6482815955461,
             "sum_minmax": 9.401430299124984,
             "sum_robust": 1.2669027759794893,
-            "sum_zscore": 4.727002056564246,
+            "sum_zscore": 4.727002056564243,
             "top10_count": 2,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 2,
-            "weighted_score": 0.3636155428126343
+            "weighted_score": 0.3636155428126341
         }
     },
     "plant-genomic-jamba": {
@@ -1121,13 +1121,13 @@
             "sum_PFLOPs": 345.2207186278287,
             "sum_minmax": 7.652563828338674,
             "sum_robust": -2.5263182538755293,
-            "sum_zscore": -1.2306565402986964,
+            "sum_zscore": -1.2306565402986989,
             "top10_count": 1,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.09466588771528434
+            "weighted_score": -0.09466588771528453
         }
     },
     "plant-nucleotide-transformer-6mer": {
@@ -1150,13 +1150,13 @@
             "sum_PFLOPs": 92.9512611631319,
             "sum_minmax": 10.203007727196871,
             "sum_robust": 3.026467745871882,
-            "sum_zscore": 7.422173031013086,
+            "sum_zscore": 7.422173031013084,
             "top10_count": 2,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 1,
             "top8_count": 2,
-            "weighted_score": 0.5709363870010067
+            "weighted_score": 0.5709363870010065
         }
     },
     "prokbert-mini": {
@@ -1179,13 +1179,13 @@
             "sum_PFLOPs": 67.00250580603264,
             "sum_minmax": 8.946607803779749,
             "sum_robust": 0.5178040117258584,
-            "sum_zscore": 3.484607287372709,
+            "sum_zscore": 3.484607287372706,
             "top10_count": 4,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 2,
             "top8_count": 3,
-            "weighted_score": 0.2680467144132853
+            "weighted_score": 0.2680467144132851
         }
     },
     "space": {
@@ -1208,13 +1208,13 @@
             "sum_PFLOPs": 35.15861146389811,
             "sum_minmax": 6.7595418723709075,
             "sum_robust": -6.325916529515602,
-            "sum_zscore": -5.247057926780001,
+            "sum_zscore": -5.247057926780002,
             "top10_count": 0,
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
             "top8_count": 0,
-            "weighted_score": -0.40361984052153854
+            "weighted_score": -0.4036198405215386
         }
     }
 }

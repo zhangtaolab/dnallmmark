@@ -1,0 +1,86 @@
+{
+    "data_version": "1.1.0",
+    "date": "2026-10-10",
+    "files": [
+        {
+            "counts": {
+                "VALUE": 1
+            },
+            "path": "dnallm-mark/data/manifest.json",
+            "status": "changed",
+            "total": 1
+        },
+        {
+            "counts": {
+                "EXTRA_IN_REGEN": 1,
+                "FLOAT_ULP": 69,
+                "MISSING_IN_REGEN": 1
+            },
+            "path": "dnallm-mark/data/models_comparison.json",
+            "status": "changed",
+            "total": 71
+        },
+        {
+            "counts": {
+                "EXTRA_IN_REGEN": 1,
+                "FLOAT_ULP": 68,
+                "MISSING_IN_REGEN": 1
+            },
+            "path": "dnallm-mark/data/models_comparison_animal.json",
+            "status": "changed",
+            "total": 70
+        },
+        {
+            "counts": {
+                "EXTRA_IN_REGEN": 1,
+                "FLOAT_ULP": 77,
+                "MISSING_IN_REGEN": 1
+            },
+            "path": "dnallm-mark/data/models_comparison_microbe.json",
+            "status": "changed",
+            "total": 79
+        },
+        {
+            "counts": {
+                "EXTRA_IN_REGEN": 1,
+                "FLOAT_ULP": 82,
+                "MISSING_IN_REGEN": 1
+            },
+            "path": "dnallm-mark/data/models_comparison_plant.json",
+            "status": "changed",
+            "total": 84
+        },
+        {
+            "counts": {
+                "BOOL": 174,
+                "FLOAT_BIG": 730,
+                "VALUE": 820
+            },
+            "path": "dnallm-mark/data/permutation_tests.json",
+            "status": "changed",
+            "total": 1724
+        },
+        {
+            "counts": {},
+            "path": "dnallm-mark/data/tasks.json",
+            "status": "identical",
+            "total": 0
+        }
+    ],
+    "generated_from": "991804613c4874bfa3f32d318340b5d7b4118ffe",
+    "totals": {
+        "counts": {
+            "BOOL": 174,
+            "EXTRA_IN_REGEN": 4,
+            "FLOAT_BIG": 730,
+            "FLOAT_ULP": 296,
+            "MISSING_IN_REGEN": 4,
+            "VALUE": 821
+        },
+        "diffs_total": 2029,
+        "files_changed": 6,
+        "files_identical": 1,
+        "files_new": 0,
+        "files_total": 7
+    }
+}

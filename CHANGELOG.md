@@ -68,3 +68,35 @@ attributable to the `weighted_score` field addition).
 - **No intermediate tag (D-17/OQ3):** `data_version` 1.1.0 exists only as
   the manifest stamp + this section; the next git tag is `data-v2` at the
   maintainer gate after E2'.
+
+### Alias normalization (D-18, 2026-10-10)
+
+`plant-dnamamba2-BPE` → `PlantDNAMamba2-BPE`: the committed results file
+was renamed to the unified-registry key (`git mv`, one key per model — the
+key==name contract). Only the file name and the leaderboard alias (derived
+from it) change; scores are untouched.
+
+| Category | Count | Files |
+|----------|-------|-------|
+| `MISSING_IN_REGEN` / `EXTRA_IN_REGEN` (the one alias key, per file) | 4 + 4 | 4 × `models_comparison{,_animal,_plant,_microbe}.json` |
+| `FLOAT_ULP` (zscore-sum fields only; max rel. 5.9e-15) | 296 | 4 × `models_comparison*.json` |
+| Pair churn in `permutation_tests.json` (the renamed model's 41 pairs; array-positional) | 1724 | `permutation_tests.json` |
+| `VALUE` (`generated_from` restamp) | 1 | `manifest.json` |
+| Byte-identical | 0 diffs | `tasks.json` |
+
+Attribution (verified at migration time): exactly one model's key churns
+in every comparison file; `rank`, `rank_score`, `samples`, and all Top-K
+counts are unchanged for all 41 shared models; the only comparison-value
+movement is `sum_zscore`/`weighted_score` at ULP scale (≤5.9e-15 relative)
+— the documented float summation-order class (the alias sorts at a
+different position, reordering iteration), same phenomenon as the Phase-1
+PIN-VALIDATION `sum_zscore` ULP finding. In `permutation_tests.json` every
+pair whose identity is unchanged (820/861) has a byte-identical p-value
+and significance flag — zero p-value movement anywhere; the 1724 diffs are
+the 41 renamed pairs changing identity plus the array-positional index
+shifts those moves cause (the artifact is a sorted list, so compare.py
+matches moved entries cross-wise). `manifest.json` carries the pre-rename
+commit restamp per the 05-02 convention; `DATA_VERSION` stays 1.1.0.
+
+Machine-readable inventory: [`baseline/d18-alias-inventory.json`](baseline/d18-alias-inventory.json)
+(7 derived files: 6 changed, 1 identical; 2029 diffs, all attributed above).
