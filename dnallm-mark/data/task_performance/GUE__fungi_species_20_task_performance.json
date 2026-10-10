@@ -4,7 +4,7 @@
         "labels": 20,
         "length": 10000,
         "metric": "mcc",
-        "species": "Animals",
+        "species": "Microbe",
         "test": 1000,
         "train": 8000,
         "type": "multiclass"
