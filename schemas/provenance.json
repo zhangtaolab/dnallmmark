@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zhangtaolab/dnallmmark/schemas/provenance.json",
+  "title": "Dataset provenance artifact (DATA-04 / DATA-05)",
+  "$comment": "Strict schema for dnallm-mark/data/provenance.json, emitted by script/build_provenance.py from pipeline/datasets_info.json (the D-10 single source of truth). DISCLOSURE (T-06-14 / CONTEXT Area 2): provenance values are research-drafted from public sources (2026-10-11) and are PENDING THE MAINTAINER REVIEW that gates publication; every unresolved license/citation/download cell is the literal string \"Unspecified\" with the source link in the source field - never a blank (minLength 1 enforces no-empty-string). Corrections flow data/provenance.csv -> script/convert_registry.py --to-json --merge-existing -> re-run make data. The row count is pinned to 50 (the committed benchmark corpus; update deliberately when a dataset is added or retired).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rows"],
+  "properties": {
+    "rows": {
+      "type": "array",
+      "minItems": 50,
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dataset",
+          "source",
+          "citation",
+          "license",
+          "preprocessing",
+          "download_url",
+          "download_url_alternates"
+        ],
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Registry key of the benchmark dataset (Source__task convention)."
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Public page naming the dataset's upstream origin (paper DOI, GitHub, or dataset hub page)."
+          },
+          "citation": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Upstream paper citation, or the literal Unspecified."
+          },
+          "license": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Dataset license as stated on the hosting page, or the literal Unspecified."
+          },
+          "preprocessing": {
+            "type": "string",
+            "minLength": 1,
+            "description": "How the packaged per-task train/dev/test CSVs were derived from the upstream source."
+          },
+          "download_url": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Primary public download URL (ModelScope mirror where the maintainer org hosts one), or the literal Unspecified."
+          },
+          "download_url_alternates": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Secondary public download URL(s), or the literal Unspecified."
+          }
+        }
+      }
+    }
+  }
+}

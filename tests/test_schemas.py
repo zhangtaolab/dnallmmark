@@ -65,6 +65,13 @@ SCHEMA_FILES = {
         REPO / "schemas" / "n_audit.json",
         [DATA / "n_audit.json"],
     ),
+    # 06-04 provenance artifact (DATA-04/DATA-05): the registry-driven
+    # dataset provenance table — part of `make data` (drift-gated via the
+    # build_provenance recipe line).
+    "provenance": (
+        REPO / "schemas" / "provenance.json",
+        [DATA / "provenance.json"],
+    ),
 }
 
 
@@ -123,6 +130,7 @@ EXPECTED_BUCKET_SIZES = {
     "permutation_tests": 1,
     "data_manifest": 1,
     "n_audit": 1,
+    "provenance": 1,
 }
 
 
