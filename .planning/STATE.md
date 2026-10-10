@@ -3,18 +3,18 @@ gsd_state_version: "1.0"
 milestone: v0.7.1
 current_phase: 6
 current_phase_name: Revision Packaging & Extended Lanes
-status: planning
-stopped_at: Phase 05 complete, ready to plan Phase 6
-last_updated: "2026-10-10T13:59:45.531Z"
-last_activity: 2026-10-10
+current_plan: 2
+status: executing
+stopped_at: Completed 06-01-PLAN.md (Wave 1 gate discharged; Wave 2 unblocked)
+last_updated: "2026-10-10T18:30:18.709Z"
+last_activity: 2026-10-11
 last_activity_desc: Phase 05 complete, transitioned to Phase 6
-state_head: ca4e8dec709b1b5df420d1e5e14296b4c584ed0b
+state_head: 07aacf0f43ee67ba70f3c4cf84f266b32db63592
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 19
-  completed_plans: 19
-  percent: 83
+  total_plans: 24
+  completed_plans: 20
 ---
 
 # Project State
@@ -29,9 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 ## Current Position
 
 Phase: 6 — Revision Packaging & Extended Lanes
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-10-10 — Phase 05 complete, transitioned to Phase 6
+Current Plan: 2
+Total Plans in Phase: 5
+Status: Ready to execute
+Last activity: 2026-10-11 — Completed 06-01-PLAN.md (dnallm 1.2.1 adaptation verification + peft tracer + sanctioned GB10 smoke)
 
 Progress: [████████░░] 83% (1/6 phases)
 
@@ -82,6 +83,8 @@ Progress: [████████░░] 83% (1/6 phases)
 | Phase 05 P03 | 17 min | 2 tasks | 12 files |
 | Phase 05 P03 | 17 min | 2 tasks | 12 files |
 | Phase 05 P04 | 55 min | 4 tasks | 18 files |
+| Phase 06 P01 | 33m | 3 tasks | 7 files |
+| Phase 06 P01 | 33m | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -142,6 +145,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-03: the audit found the fairness gap is real and measurable — 16/43 present tasks carry test rows strict-charset models drop (CpG 106224/106227, human_vs_worm 24355/25000); unified N = min over class survivors, subsets = first N strict-passing IDs so every emitted ID survives the common filter by construction
 - [Phase 05]: 05-03: --subset_file lands as pure validator (collect-all-problems, bool rejected as non-integer) + thin sys.exit wiring + test-split-only select seam between load_local_data and validate_sequences; absent flag = no select anywhere; CPU-side proof ran the real eval_subsets.json against the real registry (43 tasks, 582,927 IDs, zero problems)
 - [Phase 05]: 05-04 Task 4 gate resolved (verbatim): options per-arena-one-representative / per-arena-top-2 / leave-empty; maintainer selected '每 arena 一代表 (Recommended)' — tier 2 = animal GENERanno-eukaryote-0.5b-base, plant PlantCAD2-Small-l24-d0768, microbe Omni-DNA-700M (weighted_score arena leaders excluding the tier-1 pair: 0.799/1.000/1.056); landed as bare names in 6598e45 with fake-executor degradation-order proof
+- [Phase 06]: peft tracer: --peft {none,lora,ia3} + --peft_dry_run wired flag->YAML->use_ia3->use_lora ctor kwarg; peft=none contract-pinned byte-identical
+- [Phase 06]: dnallm 1.2.1 installed from git-archive v1.2.1 tag content (never editable, suite repo read-only); GB10 env proven: env_smoke all-PASS + both peft dry-runs exit 0
+- [Phase 06]: seed_result.json tolerant reader: absent=skip, present=merge under run_record precedence, malformed=loud abort naming path (ValueError/TypeError per TRY004)
 
 ### Pending Todos
 
@@ -164,6 +170,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-10T12:28:26.565Z
-Stopped at: Phase 05 complete, ready to plan Phase 6
+Last session: 2026-10-10T18:30:07.396Z
+Stopped at: Completed 06-01-PLAN.md (Wave 1 gate discharged; Wave 2 unblocked)
 Resume file: None
