@@ -335,21 +335,29 @@ def _validate_filters(models_filter, tasks_filter, registry_dir):
 
 
 def _load_registry_key_sets(registry_dir):
-    """Load the registry KEY sets both operator-input validators join on.
+    """Load the registry KEY sets both operator-input validators join on,
+    plus the set of tasks that can never run (falsy ``Train``).
 
     Args:
         registry_dir (Path | str): directory holding the unified JSON
             registries (the D-10 single source).
 
     Returns:
-        tuple[set, set]: ``(model keys, dataset keys)``.
+        tuple[set, set, set]: ``(model keys, dataset keys, Train-falsy
+        dataset keys)`` — the operator-input validators refuse a requested
+        task from the third set for the same reason ``_validate_filters``
+        does: the matrix can never run it, so accepting it would be
+        silently inert.
     """
     registry_dir = Path(registry_dir)
     with open(registry_dir / "models_info.json", "r", encoding="utf-8") as f:
         models_info = json.load(f)
     with open(registry_dir / "datasets_info.json", "r", encoding="utf-8") as f:
         datasets_info = json.load(f)
-    return set(models_info), set(datasets_info)
+    no_train_tasks = {
+        task for task, row in datasets_info.items() if not row.get("Train")
+    }
+    return set(models_info), set(datasets_info), no_train_tasks
 
 
 def _read_operator_json(path, flag_name):
@@ -378,10 +386,12 @@ def load_priority_tiers(path, registry_dir):
     The file must be a JSON ordered list of tiers; each tier a list of
     entries that are either bare model names (strings) or ``{model, task}``
     specs (a spec may omit ``task``, covering the model's every task).
-    Unknown model/task names vs the registries and every structural
-    problem are collected and reported TOGETHER (the _validate_filters
-    discipline, T-05-09) BEFORE any cell is enumerated — the file steers
-    multi-day GPU execution order, so a typo must fail fast.
+    Unknown model/task names vs the registries, tasks with no train split
+    (falsy ``Train`` — the _validate_filters discipline: the matrix can
+    never run them, so prioritizing them would be silently inert), and
+    every structural problem are collected and reported TOGETHER
+    (T-05-09) BEFORE any cell is enumerated — the file steers multi-day
+    GPU execution order, so a typo must fail fast.
 
     Args:
         path (str): --priority-file value.
@@ -401,7 +411,7 @@ def load_priority_tiers(path, registry_dir):
             "[Error] --priority-file must be a JSON list of tiers "
             f"(a list of lists), got: {type(raw).__name__} in {path}"
         )
-    known_models, known_tasks = _load_registry_key_sets(registry_dir)
+    known_models, known_tasks, no_train_tasks = _load_registry_key_sets(registry_dir)
     problems = []
     tiers = []
     for tier_idx, tier in enumerate(raw):
@@ -451,6 +461,12 @@ def load_priority_tiers(path, registry_dir):
             if task is not None and task not in known_tasks:
                 problems.append(
                     f"--priority-file task not in registry: {task!r} ({where})"
+                )
+                continue
+            if task is not None and task in no_train_tasks:
+                problems.append(
+                    "--priority-file task has no train split (Train is "
+                    f"falsy): {task!r} ({where})"
                 )
                 continue
             parsed_tier.append((model, task))
@@ -509,8 +525,10 @@ def load_failure_pairs(path, registry_dir):
 
     Extracts the failed ``(model, task)`` pairs (the seed is per-record;
     the re-run fans out over ALL requested seeds). Unknown model/task
-    names vs the registries and structural problems are collected and
-    reported together, fail-fast (the _validate_filters discipline).
+    names vs the registries, tasks with no train split (falsy ``Train`` —
+    the _validate_filters discipline: the matrix can never run them, so
+    re-running them would be silently inert), and structural problems are
+    collected and reported together, fail-fast.
 
     Args:
         path (str): --from-failures value (a sweep_failures.json file).
@@ -530,7 +548,7 @@ def load_failure_pairs(path, registry_dir):
             f"[Error] --from-failures file {path} must be a JSON list of "
             f"failure entries, got: {type(raw).__name__}"
         )
-    known_models, known_tasks = _load_registry_key_sets(registry_dir)
+    known_models, known_tasks, no_train_tasks = _load_registry_key_sets(registry_dir)
     problems = []
     pairs = set()
     for idx, entry in enumerate(raw):
@@ -555,6 +573,12 @@ def load_failure_pairs(path, registry_dir):
         if task not in known_tasks:
             problems.append(
                 f"--from-failures task not in registry: {task!r} (entry {idx})"
+            )
+            continue
+        if task in no_train_tasks:
+            problems.append(
+                "--from-failures task has no train split (Train is falsy): "
+                f"{task!r} (entry {idx})"
             )
             continue
         pairs.add((model, task))

@@ -1079,6 +1079,39 @@ def test_from_failures_unknown_keys_exit_nonzero_listing_all_problems(
     )
 
 
+def test_from_failures_task_without_train_split_exits_nonzero(
+        tmp_path, monkeypatch):
+    """WR-02 (05 review): a failures manifest naming a task with falsy
+    ``Train`` (task-y in the fixture) exits non-zero with a named error —
+    the matrix can never run it, so accepting the pair would silently
+    enumerate nothing for it while the operator believes it is re-run
+    (the same refusal _validate_filters applies to --tasks)."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a", "task": "task-y", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+    ])
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(failures),
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "task-y" in message, (
+        "the untrainable task name must be listed in the error"
+    )
+    assert "Train" in message, (
+        "the error must say WHY the task was refused (falsy Train)"
+    )
+    assert not out_root.exists(), (
+        "an invalid manifest must abort before any output is written"
+    )
+
+
 @pytest.mark.parametrize("payload", [
     {"model": "model-a", "task": "task-x", "seed": 42},   # not a list
     ["not-an-object"],
@@ -1151,6 +1184,38 @@ def test_priority_file_unknown_names_exit_nonzero_listing_all_problems(
     message = str(excinfo.value)
     assert "ghost-model" in message
     assert "ghost-task" in message
+    assert not out_root.exists(), (
+        "an invalid priorities file must abort before any output is written"
+    )
+
+
+def test_priority_file_task_without_train_split_exits_nonzero(
+        tmp_path, monkeypatch):
+    """WR-02 (05 review): a priority entry naming a task with falsy
+    ``Train`` (task-y in the fixture) exits non-zero with a named error —
+    the cell would never enumerate, so the maintainer would believe a
+    cell is prioritized that can never run (silently inert; the same
+    refusal _validate_filters applies to --tasks)."""
+    registry_dir = make_registry(tmp_path)
+    priority_file = _write_json(tmp_path / "priorities.json", [
+        ["model-a", {"model": "model-b", "task": "task-y"}],
+    ])
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--priority-file", str(priority_file),
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "task-y" in message, (
+        "the untrainable task name must be listed in the error"
+    )
+    assert "Train" in message, (
+        "the error must say WHY the task was refused (falsy Train)"
+    )
     assert not out_root.exists(), (
         "an invalid priorities file must abort before any output is written"
     )
