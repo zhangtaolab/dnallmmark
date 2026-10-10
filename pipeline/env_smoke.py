@@ -1,13 +1,19 @@
 """PIPE-02 environment smoke gate — the E2' dual gate's environment half.
 
-CONTRACT (binding, PIPE-02 / D-05): this script is executed ONLY by the
-maintainer on the GB10 GPU machine, as the second half of the E2' launch
-dual gate (DNALLM stable release + this env smoke + explicit maintainer
-authorization). Agents NEVER execute or import it — ``python3 -m
-py_compile`` is the only sanctioned agent-side proof (the module banner
-and this docstring ARE that contract; CI's ruff + ty gates cover the file
+CONTRACT (binding, PIPE-02 / D-05; AMENDED 2026-10-11): this script is
+executed by the maintainer on the GB10 GPU machine, as the second half
+of the E2' launch dual gate (DNALLM stable release + this env smoke +
+explicit maintainer authorization). SMOKE SANCTION (maintainer
+directive, 2026-10-11): executed smoke is additionally permitted as
+EXPLICIT, BOUNDED plan TASKS on this GB10 host (this machine IS the
+GB10); ``python3 -m py_compile`` remains a valid agent-side proof but
+is no longer the ONLY sanctioned form. The boundary holds: executed
+smoke lives only inside a plan's task on this host — it NEVER enters
+``make test`` or any CI workflow (CI stays GPU-free), and the full E2'
+three-seed sweep remains maintainer dual-gate. The module banner and
+this docstring ARE that contract; CI's ruff + ty gates cover the file
 statically, and ty sees the GPU imports as ``Any`` via the existing
-``replace-imports-with-any`` config — no config change needed).
+``replace-imports-with-any`` config — no config change needed.
 
 Checkable surface (every check prints a greppable ``PASS:``/``FAIL:`` line;
 ANY failure forces a final non-zero exit):
@@ -29,18 +35,20 @@ ANY failure forces a final non-zero exit):
 6. ``numpy`` major version >= the floor PARSED from the repo's own
    ``pyproject.toml`` dependency string (``numpy>=2.0,<3`` in the
    ``[data]`` group — the floor is read, never duplicated). Maintainer
-   heads-up 2026-10-10: dnallm 0.8.0's practical runtime requires
-   numpy>=2 (upstream declares numpy>=1.26.0 but caps pyarrow<26 exactly
-   because pyarrow 26 raises a numpy>=2 floor their 1.26 leg cannot meet
-   — they are mid-transition to numpy 2); this repo is already aligned
-   (``numpy>=2.0,<3``, uv.lock 2.5.3), and this check makes the
-   alignment visible on GB10.
+   heads-up 2026-10-11: dnallm 1.2.1 pins ``numpy>=2.0.0`` directly
+   (upstream retired numpy 1.x on 2026-10-10; 1.x users stay on the
+   0.8.x series); this repo is already aligned (``numpy>=2.0,<3``,
+   uv.lock 2.5.3), and this check makes the alignment visible on GB10;
+7. ``peft`` imports and its version prints (06-01, the SC-6 lanes): the
+   suite hard-imports peft at module top (dnallm/finetune/trainer.py:58
+   @ v1.2.1), so the LoRA/IA3 lanes need it importable in this
+   environment (suite floor ``peft>=0.14.0``).
 
 One NON-GATING diagnostic prints the installed ``datasets`` and
-``pyarrow`` versions when importable (dnallm 0.8.0 caps
-``datasets<=3.2.0`` and ``pyarrow>=15,<26`` — useful context on the GPU
-box, but dnallm's own constraints govern resolution; this gate does NOT
-enforce them).
+``pyarrow`` versions when importable (dnallm 1.2.1 caps
+``datasets<=3.2.0`` and declares no pyarrow constraint — the 0.8.x-era
+pyarrow cap is gone; useful context on the GPU box, but dnallm's own
+constraints govern resolution; this gate does NOT enforce them).
 
 Usage (maintainer, on GB10, inside the GPU environment)::
 
@@ -131,9 +139,9 @@ def read_numpy_floor_major(pyproject_path):
     The floor is PARSED from the repo's own dependency string
     (``numpy>=2.0,<3`` in the ``[data]`` group), never duplicated — the
     same no-duplicated-constants discipline as read_gpu_pins. Maintainer
-    heads-up 2026-10-10: dnallm 0.8.0's practical runtime requires
-    numpy>=2 (upstream declares numpy>=1.26.0 but caps pyarrow<26 because
-    pyarrow 26 raises a numpy>=2 floor their 1.26 leg cannot meet).
+    heads-up 2026-10-11: dnallm 1.2.1 pins ``numpy>=2.0.0`` directly
+    (upstream retired numpy 1.x on 2026-10-10; 1.x users stay on the
+    0.8.x series).
 
     Args:
         pyproject_path (Path): The repo's pyproject.toml.
@@ -179,12 +187,12 @@ def check_numpy(floor_major):
     if installed_major >= floor_major:
         print(
             f"PASS: numpy {numpy.__version__} >= pyproject floor "
-            f"(major >= {floor_major}; dnallm 0.8.0 requires numpy>=2)"
+            f"(major >= {floor_major}; dnallm 1.2.1 requires numpy>=2)"
         )
         return True
     print(
         f"FAIL: numpy {numpy.__version__} major {installed_major} < "
-        f"pyproject floor {floor_major} (dnallm 0.8.0 requires numpy>=2)"
+        f"pyproject floor {floor_major} (dnallm 1.2.1 requires numpy>=2)"
     )
     return False
 
@@ -192,11 +200,13 @@ def check_numpy(floor_major):
 def print_ecosystem_diagnostics():
     """NON-GATING INFO line: installed datasets/pyarrow versions, if any.
 
-    dnallm 0.8.0 caps ``datasets<=3.2.0`` and ``pyarrow>=15,<26``; those
-    constraints govern the GPU environment's RESOLUTION, not this gate —
-    the line is context for the maintainer reading the smoke output on
-    GB10. Unimportable packages print as ``not installed``; nothing here
-    can fail the gate.
+    dnallm 1.2.1 caps ``datasets<=3.2.0`` and declares no pyarrow
+    constraint (the 0.8.x-era pyarrow cap is gone — verified read-only
+    against the v1.2.1 pyproject); those constraints govern the GPU
+    environment's RESOLUTION, not this gate — the line is context for
+    the maintainer reading the smoke output on GB10.
+    Unimportable packages print as ``not installed``; nothing here can
+    fail the gate.
     """
     versions = {}
     for package in ("datasets", "pyarrow"):
@@ -210,7 +220,7 @@ def print_ecosystem_diagnostics():
     print(
         "INFO (not gated): datasets "
         f"{versions['datasets']}, pyarrow {versions['pyarrow']} "
-        "(dnallm 0.8.0 caps datasets<=3.2.0, pyarrow>=15,<26 — dnallm's "
+        "(dnallm 1.2.1 caps datasets<=3.2.0, no pyarrow pin — dnallm's "
         "own constraints govern resolution)"
     )
 
@@ -273,6 +283,32 @@ def check_dnallm():
         bool: True when the import resolved.
     """
     return import_or_fail("dnallm") is not None
+
+
+def check_peft():
+    """Check 7 (06-01): ``import peft`` resolves, version printed.
+
+    The SC-6 LoRA/IA3 lanes build on peft: the suite hard-imports it at
+    module top (dnallm/finetune/trainer.py:58 @ v1.2.1 (30dfd6d)), so a
+    GPU environment without an importable peft cannot construct
+    DNATrainer at all. Suite floor ``peft>=0.14.0`` (v1.2.1 pyproject);
+    the resolved version prints here for the smoke record.
+
+    Returns:
+        bool: True when peft imported (version printed on the PASS line).
+    """
+    try:
+        peft = import_module("peft")
+    except Exception as exc:  # noqa: BLE001 — the smoke gate's contract:
+        # ANY import-time failure is a named FAIL line, never a traceback
+        print(f"FAIL: import peft — {type(exc).__name__}: {exc}")
+        return False
+    version = str(getattr(peft, "__version__", "?"))
+    print(
+        f"PASS: peft {version} importable "
+        "(SC-6 LoRA/IA3 lanes; suite floor peft>=0.14.0)"
+    )
+    return True
 
 
 def check_cuda(torch):
@@ -372,6 +408,7 @@ def main():
     results = []
     results.append(check_version_pins(pins))
     results.append(check_dnallm())
+    results.append(check_peft())
     # The GPU-surface import as a LITERAL statement (deferred so a missing
     # GPU stack is a named FAIL line, never a traceback): the CUDA and
     # matmul checks below consume this module object directly.

@@ -107,6 +107,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUN_FINETUNE = REPO_ROOT / "pipeline" / "run_finetune.py"
+ENV_SMOKE = REPO_ROOT / "pipeline" / "env_smoke.py"
 LEGACY_PIPELINE = REPO_ROOT / "pipeline" / "dnallmmark_pipeline.py"
 MODELS_INFO = REPO_ROOT / "pipeline" / "models_info.json"
 FINETUNE_CONFIGS = [
@@ -1157,3 +1158,81 @@ def test_both_finetune_yamls_carry_suite_validated_lora_and_ia3_sections():
             f"{config_path.name}: lora.target_modules must be null — "
             "the suite resolves its per-family preset (lora_targets.yaml)"
         )
+
+
+# =====================================================================
+# env_smoke v1.2.1 alignment (06-01) — labels, peft check, sanction
+# =====================================================================
+
+def test_env_smoke_carries_zero_stale_version_labels():
+    """06-01: env_smoke.py carries ZERO stale 'dnallm 0.8.0' labels —
+    every version-label string was relabeled to 1.2.1 with its fact
+    re-checked against the v1.2.1 pyproject (datasets<=3.2.0 and the
+    numpy>=2 floor hold; the 0.8.x-era pyarrow>=15,<26 cap is GONE —
+    v1.2.1 declares no pyarrow constraint, so the claim is dropped, not
+    relabeled)."""
+    src = ENV_SMOKE.read_text(encoding="utf-8")
+    assert "0.8.0" not in src, (
+        "a stale 'dnallm 0.8.0' version label survives in env_smoke.py — "
+        "labels must be relabeled to 1.2.1 with facts re-checked against "
+        "the v1.2.1 pyproject"
+    )
+    assert "1.2.1" in src, "the 1.2.1 relabel is absent entirely"
+    assert "pyarrow>=15,<26" not in src, (
+        "the 0.8.x-era pyarrow cap claim survived — v1.2.1 declares NO "
+        "pyarrow constraint (verified read-only against its pyproject); "
+        "the claim must be dropped, not relabeled"
+    )
+
+
+def test_env_smoke_docstring_records_the_smoke_sanction():
+    """06-01: the binding docstring contract is AMENDED to record the
+    2026-10-11 maintainer smoke sanction with its exact boundary —
+    executed smoke permitted as explicit bounded plan TASKS on this GB10
+    host, py_compile no longer the only sanctioned agent-side proof, E2'
+    full sweep still maintainer dual-gate, CI still GPU-free. Without
+    the amendment a future agent treats execution as out-of-contract
+    (Pitfall 7)."""
+    docstring = ENV_SMOKE.read_text(encoding="utf-8")[:4200]
+    assert "2026-10-11" in docstring and "sanction" in docstring.lower(), (
+        "the module docstring must record the 2026-10-11 smoke sanction"
+    )
+    assert "bounded" in docstring.lower(), (
+        "the sanction record must state the bounded-plan-TASKS boundary"
+    )
+    assert "dual" in docstring.lower() and "gate" in docstring.lower(), (
+        "the sanction record must keep E2' maintainer dual-gate explicit"
+    )
+    assert "GPU-free" in docstring, (
+        "the sanction record must keep CI GPU-free explicit"
+    )
+
+
+def test_env_smoke_peft_check_is_gating():
+    """06-01: a peft import+version check joins the PASS/FAIL surface and
+    is wired into main()'s results — any FAIL forces the final non-zero
+    exit like every other check (the SC-6 lanes build on peft; the suite
+    hard-imports it at trainer.py:58 @ v1.2.1)."""
+    src = ENV_SMOKE.read_text(encoding="utf-8")
+    check_match = re.search(r"^def check_peft\(\):", src, re.MULTILINE)
+    assert check_match is not None, (
+        "no check_peft() function — the lanes depend on peft being "
+        "importable and the smoke gate must say so"
+    )
+    body = src[check_match.start():check_match.start() + 900]
+    assert "FAIL" in body and "PASS" in body, (
+        "check_peft must print a greppable PASS/FAIL line like every "
+        "other check"
+    )
+    assert "__version__" in body, (
+        "check_peft must print the installed peft version"
+    )
+    wiring = re.search(r"^(\s*)results\.append\(check_peft\(\)\)", src, re.MULTILINE)
+    assert wiring is not None, (
+        "main() never appends check_peft()'s result — the check would "
+        "print without gating the exit code"
+    )
+    main_idx = src.find("def main():")
+    assert main_idx != -1 and wiring.start() > main_idx, (
+        "the check_peft wiring must sit inside main()"
+    )
