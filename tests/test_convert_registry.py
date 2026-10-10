@@ -17,6 +17,12 @@ Two suites live here:
   dict read site and tests/test_registry_unification.py both require), and
   ``--derive-operational`` (operational four derived for the 6 json-only
   card entries per the documented convention).
+- **Provenance extension tests** (06-04, DATA-04/DATA-05): the six
+  provenance columns round-trip through ``--to-csv`` ->
+  ``--to-json --merge-existing`` to identical JSON values; an ingest CSV
+  missing expected columns aborts naming the expected set (the D-10
+  wrong-count family); ``--to-csv`` of the enriched registry emits all 17
+  columns.
 
 The converter is exercised through its module API (``to_json`` with an
 ``argparse.Namespace`` shaped exactly like the real parser output, plus a
@@ -32,14 +38,61 @@ See also:
 import argparse
 import json
 import sys
+from pathlib import Path
 
 import convert_registry  # conftest puts script/ on sys.path
 import pytest
 
 MODELS_TSV_HEADER = ("Model_name\tModel_path\tModel_size\tTokenizer"
                      "\tMean_token_length\n")
+# The datasets surface carries the six provenance columns (06-04, DATA-04/
+# DATA-05) — every datasets fixture must present the full 17-column header
+# or the abort-on-missing-columns ingest (D-10 wrong-count family) refuses.
 DATASETS_TSV_HEADER = ("Index\tDataset_name\tDataset_path\tTrain\tTest\tDev"
-                       "\ttype\tlabels\tlength\tmetric\tCategory\n")
+                       "\ttype\tlabels\tlength\tmetric\tCategory"
+                       "\tsource\tcitation\tlicense\tpreprocessing"
+                       "\tdownload_url\tdownload_url_alternates\n")
+
+
+def _provenance_cells(**overrides):
+    """Six provenance cells with D-10-safe defaults (never blank)."""
+    cells = {
+        "source": "https://example.org/source",
+        "citation": "Test Author et al., \"A dataset\", Journal, 2024",
+        "license": "Unspecified",
+        "preprocessing": "train/dev/test CSVs; Dev carved via make_dev_splits",
+        "download_url": "https://modelscope.cn/datasets/org/name",
+        "download_url_alternates": "Unspecified",
+    }
+    cells.update(overrides)
+    return cells
+
+
+def _datasets_row(index, name, provenance=None, **field_overrides):
+    """One datasets CSV row line from column values + provenance cells."""
+    fields = {
+        "Index": str(index),
+        "Dataset_name": name,
+        "Dataset_path": f"datasets/{name}",
+        "Train": "100",
+        "Test": "10",
+        "Dev": "0",
+        "type": "binary",
+        "labels": "2",
+        "length": "500",
+        "metric": "f1",
+        "Category": "Plants",
+        **field_overrides,
+    }
+    cells = _provenance_cells(**(provenance or {}))
+    values = [fields[c] for c in (
+        "Index", "Dataset_name", "Dataset_path", "Train", "Test", "Dev",
+        "type", "labels", "length", "metric", "Category",
+    )] + [cells[c] for c in (
+        "source", "citation", "license", "preprocessing",
+        "download_url", "download_url_alternates",
+    )]
+    return "\t".join(values) + "\n"
 
 
 def run_to_json(tmp_path, tsv_text, existing=None, kind="models",
@@ -132,12 +185,14 @@ def test_numeric_discipline_unchanged(tmp_path):
     assert result["tiny"]["Model_size"] == "<1M"
 
     tsv_ds = (DATASETS_TSV_HEADER
-              + "1\td1\tdatasets/d1\t100\t10\t0\tbinary\t2\t500\tf1\tPlants\n"
-                "2\td2\tdatasets/d2\t50\t5\t\tbinary\t2\t500\tf1\tPlants\n")
+              + _datasets_row(1, "d1")
+              + _datasets_row(2, "d2", Dev=""))
     result = run_to_json(tmp_path, tsv_ds, kind="datasets")
     assert result["d1"]["Dev"] == 0  # numeric cell coerced
     assert result["d1"]["Train"] == 100
     assert result["d2"]["Dev"] == ""  # empty cell stays a string
+    assert result["d1"]["license"] == "Unspecified"  # provenance round-trips
+    assert result["d2"]["download_url"].startswith("https://")
 
 
 # ===== D-10 extensions =====
@@ -154,7 +209,7 @@ def test_name_column_lands_as_field(tmp_path):
     assert result["alpha"]["Model_name"] == "alpha"
 
     tsv_ds = (DATASETS_TSV_HEADER
-              + "1\td1\tdatasets/d1\t100\t10\t0\tbinary\t2\t500\tf1\tPlants\n")
+              + _datasets_row(1, "d1"))
     result = run_to_json(tmp_path, tsv_ds, kind="datasets")
     assert result["d1"]["Dataset_name"] == "d1"
 
@@ -171,8 +226,9 @@ def test_rename_name_merges_into_existing_key(tmp_path):
         },
     }
     tsv = (DATASETS_TSV_HEADER
-           + "7\tgene_exp.x\tdatasets/suite/gene_exp.x\t100\t10\t0"
-             "\tbinary\t2\t500\tspearman\tPlants\n")
+           + _datasets_row(7, "gene_exp.x",
+                           Dataset_path="datasets/suite/gene_exp.x",
+                           metric="spearman"))
     result = run_to_json(tmp_path, tsv, existing=existing, kind="datasets",
                          rename_name=["gene_exp.x=suite__gene_exp.x"])
     assert set(result) == {"suite__gene_exp.x"}  # key set unchanged
@@ -187,10 +243,12 @@ def test_rename_name_collision_aborts(tmp_path):
     """Two CSV rows mapping to the same final name (one renamed onto the
     other) abort loudly instead of merging silently."""
     tsv = (DATASETS_TSV_HEADER
-           + "7\tgene_exp.x\tdatasets/suite/gene_exp.x\t100\t10\t0"
-             "\tbinary\t2\t500\tspearman\tPlants\n"
-             "8\tsuite__gene_exp.x\tdatasets/suite/gene_exp.x\t100\t10\t0"
-             "\tbinary\t2\t500\tspearman\tPlants\n")
+           + _datasets_row(7, "gene_exp.x",
+                           Dataset_path="datasets/suite/gene_exp.x",
+                           metric="spearman")
+           + _datasets_row(8, "suite__gene_exp.x",
+                           Dataset_path="datasets/suite/gene_exp.x",
+                           metric="spearman"))
     with pytest.raises(SystemExit, match="suite__gene_exp.x"):
         run_to_json(tmp_path, tsv, kind="datasets",
                     rename_name=["gene_exp.x=suite__gene_exp.x"])
@@ -251,7 +309,7 @@ def test_derive_operational_requires_models_kind_and_merge_existing(tmp_path):
     other combinations abort with a clear error."""
     tsv = MODELS_TSV_HEADER + "a\tmodels/a\t5M\tBPE\t6\n"
     tsv_ds = (DATASETS_TSV_HEADER
-              + "1\td0\tdatasets/d0\t10\t1\t0\tbinary\t2\t100\tf1\tPlants\n")
+              + _datasets_row(1, "d0", Train="10"))
     with pytest.raises(SystemExit, match="models"):
         run_to_json(tmp_path, tsv_ds, existing={"d0": {"Train": 10}},
                     kind="datasets", derive_operational=True)
@@ -273,3 +331,188 @@ def test_cli_wires_new_flags(monkeypatch, tmp_path):
     args = convert_registry.parse_args()
     assert args.rename_name == ["gene_exp.x=suite__gene_exp.x"]
     assert args.derive_operational is True
+
+
+# ===== 06-04 provenance columns (DATA-04 / DATA-05) =====
+
+PROVENANCE_COLUMNS = ("source", "citation", "license", "preprocessing",
+                      "download_url", "download_url_alternates")
+
+
+def run_to_csv(tmp_path, registry, kind="datasets", columns=None):
+    """Run the converter's ``--to-csv`` direction over a fixture registry.
+
+    Args:
+        tmp_path (Path): pytest tmp dir for the fixture files.
+        registry (dict): JSON registry object.
+        kind (str): ``models`` or ``datasets`` preset.
+        columns (list[str] | None): optional ``--columns`` override.
+
+    Returns:
+        str: the emitted CSV text.
+    """
+    in_path = tmp_path / "in.json"
+    in_path.write_text(json.dumps(registry), encoding="utf-8")
+    out_path = tmp_path / "out.csv"
+    args = argparse.Namespace(
+        to_json=False, to_csv=True, kind=kind,
+        input=str(in_path), output=str(out_path),
+        merge_existing=None,
+        map=[], numeric=[], columns=list(columns or []),
+        crlf=False, rename_name=[], derive_operational=False,
+    )
+    convert_registry.to_csv(args, convert_registry.KIND_PRESETS[kind])
+    return out_path.read_text(encoding="utf-8")
+
+
+def test_provenance_columns_round_trip(tmp_path):
+    """A CSV carrying the six provenance columns re-ingests to identical
+    JSON values (``--to-json --merge-existing`` over the CSV produced by
+    ``--to-csv`` of the same registry) — the D-10 edit surface."""
+    registry = {
+        "BEND__CpG_methylation": {
+            "Dataset_name": "BEND__CpG_methylation",
+            "Dataset_path": "datasets/BEND/CpG_methylation",
+            "Train": 743095, "Test": 106227, "Dev": 109717,
+            "type": "binary", "labels": 2, "length": 500,
+            "metric": "AUPRC", "Category": "Animals", "Index": 1,
+            **_provenance_cells(license="Unspecified"),
+        },
+        "GUE__emp_H3": {
+            "Dataset_name": "GUE__emp_H3",
+            "Dataset_path": "datasets/GUE/emp_H3",
+            "Train": 11971, "Test": 1497, "Dev": 1497,
+            "type": "binary", "labels": 2, "length": 500,
+            "metric": "f1", "Category": "Microbe", "Index": 2,
+            **_provenance_cells(license="CC BY-NC-SA 4.0",
+                                 citation="Zhou et al., 2023"),
+        },
+    }
+    csv_text = run_to_csv(tmp_path, registry)
+    # --to-csv emits all 17 columns with values (no blank provenance cells).
+    header = csv_text.splitlines()[0].split(",")
+    assert header[:1] == ["Index"]  # preset order starts with Index
+    for col in PROVENANCE_COLUMNS:
+        assert col in header
+    assert len(header) == 17
+
+    # Ingest the emitted CSV back with --merge-existing over the same
+    # registry: every value (including all six provenance fields) is
+    # identical — the round-trip is lossless.
+    csv_path = tmp_path / "roundtrip.csv"
+    csv_path.write_text(csv_text, encoding="utf-8")
+    merge_path = tmp_path / "existing.json"
+    merge_path.write_text(json.dumps(registry), encoding="utf-8")
+    out_path = tmp_path / "roundtrip.json"
+    args = argparse.Namespace(
+        to_json=True, to_csv=False, kind="datasets",
+        input=str(csv_path), output=str(out_path),
+        merge_existing=str(merge_path),
+        map=[], numeric=[], columns=[], crlf=False,
+        rename_name=[], derive_operational=False,
+    )
+    convert_registry.to_json(args, convert_registry.KIND_PRESETS["datasets"])
+    result = json.loads(out_path.read_text(encoding="utf-8"))
+    assert result == registry
+
+
+def test_to_csv_emits_empty_cells_only_where_value_genuinely_absent(tmp_path):
+    """``--to-csv`` of an entry missing a provenance column emits an empty
+    cell for it (the pre-seeding state); after seeding, no blank cells
+    remain — the emitter discipline is what forbids blanks, not the
+    converter."""
+    registry = {
+        "d1": {"Dataset_name": "d1", "Dataset_path": "datasets/d1"},
+    }
+    csv_text = run_to_csv(tmp_path, registry)
+    header = csv_text.splitlines()[0].split(",")
+    source_idx = header.index("source")
+    row = csv_text.splitlines()[1].split(",")
+    assert row[source_idx] == ""  # genuinely absent -> empty cell
+
+
+def test_ingest_aborts_on_missing_expected_columns(tmp_path):
+    """A CSV missing an expected column aborts with the wrong-count error
+    naming the expected set (the D-10 abort-on-missing-columns family) —
+    a partial header can never silently drop provenance fields."""
+    legacy_header = ("Index\tDataset_name\tDataset_path\tTrain\tTest\tDev"
+                     "\ttype\tlabels\tlength\tmetric\tCategory\n")
+    tsv = legacy_header + _datasets_row(1, "d1").rsplit("\t", 6)[0] + "\n"
+    with pytest.raises(SystemExit, match="source") as excinfo:
+        run_to_json(tmp_path, tsv, kind="datasets")
+    message = str(excinfo.value)
+    for col in PROVENANCE_COLUMNS:
+        assert col in message, f"abort must name the expected set ({col})"
+
+
+def test_ingest_aborts_on_partially_missing_provenance_columns(tmp_path):
+    """Dropping exactly one provenance column (the subtle drift case)
+    still aborts naming that column."""
+    header_cols = (DATASETS_TSV_HEADER.strip().split("\t"))
+    header_cols.remove("license")
+    header = "\t".join(header_cols) + "\n"
+    full_row = _datasets_row(1, "d1").strip().split("\t")
+    # Remove the license cell (same position as in the header).
+    license_idx = (DATASETS_TSV_HEADER.strip().split("\t")).index("license")
+    del full_row[license_idx]
+    tsv = header + "\t".join(full_row) + "\n"
+    with pytest.raises(SystemExit, match="license"):
+        run_to_json(tmp_path, tsv, kind="datasets")
+
+
+def test_models_ingest_also_validates_expected_columns(tmp_path):
+    """The wrong-count validation is family-general: a models CSV missing
+    ``Tokenizer`` aborts too (unless the column arrives via ``--map``)."""
+    tsv = ("Model_name\tModel_path\tModel_size\tMean_token_length\n"
+           "a\tmodels/a\t5M\t6\n")
+    with pytest.raises(SystemExit, match="Tokenizer"):
+        run_to_json(tmp_path, tsv, kind="models")
+
+
+def test_map_target_satisfies_expected_columns(tmp_path):
+    """A CSV column renamed onto an expected name via ``--map`` satisfies
+    the expected-columns check (the legacy-unification path keeps
+    working): ``Tok`` maps to ``Tokenizer``."""
+    tsv = ("Model_name\tModel_path\tModel_size\tTok\tMean_token_length\n"
+           "a\tmodels/a\t5M\tBPE\t6\n")
+    csv_path = tmp_path / "input.txt"
+    csv_path.write_text(tsv, encoding="utf-8", newline="")
+    out_path = tmp_path / "out.json"
+    args = argparse.Namespace(
+        to_json=True, to_csv=False, kind="models",
+        input=str(csv_path), output=str(out_path),
+        merge_existing=None,
+        map=["Tok=Tokenizer"], numeric=[], columns=[], crlf=False,
+        rename_name=[], derive_operational=False,
+    )
+    convert_registry.to_json(args, convert_registry.KIND_PRESETS["models"])
+    result = json.loads(out_path.read_text(encoding="utf-8"))
+    assert result["a"]["Tokenizer"] == "BPE"
+
+
+def test_committed_datasets_registry_round_trips(tmp_path):
+    """The real ``pipeline/datasets_info.json`` carries all six provenance
+    columns across all entries and round-trips losslessly (the D-10
+    guarantee the maintainer-edit surface depends on)."""
+    registry_path = (Path(__file__).resolve().parents[1]
+                     / "pipeline" / "datasets_info.json")
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    assert len(registry) == 50
+    for name, entry in registry.items():
+        for col in PROVENANCE_COLUMNS:
+            assert col in entry, f"{name} lacks {col}"
+            assert entry[col], f"{name}.{col} is blank"
+    csv_text = run_to_csv(tmp_path, registry)
+    csv_path = tmp_path / "rt.csv"
+    csv_path.write_text(csv_text, encoding="utf-8")
+    out_path = tmp_path / "rt.json"
+    args = argparse.Namespace(
+        to_json=True, to_csv=False, kind="datasets",
+        input=str(csv_path), output=str(out_path),
+        merge_existing=str(registry_path),
+        map=[], numeric=[], columns=[], crlf=False,
+        rename_name=[], derive_operational=False,
+    )
+    convert_registry.to_json(args, convert_registry.KIND_PRESETS["datasets"])
+    result = json.loads(out_path.read_text(encoding="utf-8"))
+    assert result == registry

@@ -18,9 +18,15 @@ Behavior
 --------
 ``--to-json``  Read CSV rows into ``{name: {col: value}}``. Numeric columns
                (preset per kind, extendable via ``--numeric``) are coerced to
-               int. With ``--merge-existing PATH`` the CSV fields are merged
-               into an existing JSON registry: existing keys not named in the
-               CSV are preserved; CSV-derived keys overwrite. Column names are
+               int. The ingest validates that the CSV header carries every
+               preset column (the D-10 abort-on-missing-columns family:
+               a partial header can never silently drop fields — the error
+               names the expected set; columns arriving via ``--map`` count
+               as satisfied). With ``--merge-existing PATH`` the CSV fields
+               are merged
+               into an existing JSON registry: existing keys not named in
+               the CSV are preserved; CSV-derived keys overwrite. Column
+               names are
                kept verbatim as JSON keys unless renamed via ``--map from=to``
                (repeatable). The name-column cell also lands verbatim as a
                field on every merged entry (D-10: ``key == Model_name`` /
@@ -37,7 +43,12 @@ Behavior
                ``Tokenizer``/``Mean_token_length`` from the
                ``tokenizer``/``mean_token_len`` card values, and
                ``Model_name = key``; existing values are never overwritten and
-               card keys are never modified.
+               card keys are never modified. The datasets preset carries the
+               six provenance columns (06-04, DATA-04/DATA-05):
+               ``source``, ``citation``, ``license``, ``preprocessing``,
+               ``download_url``, ``download_url_alternates`` — unresolved
+               values are the literal string ``Unspecified``, never blank
+               (the maintainer-editable surface is the CSV projection).
 
 ``--to-csv``   Flatten JSON entries to CSV. Columns default to the preset
                order; JSON entries missing a column get an empty cell (card
@@ -107,6 +118,15 @@ KIND_PRESETS = {
             "length",
             "metric",
             "Category",
+            # Six provenance columns (06-04, DATA-04/DATA-05): the D-10
+            # single-source registry carries them; unknown values are the
+            # literal "Unspecified", never blank.
+            "source",
+            "citation",
+            "license",
+            "preprocessing",
+            "download_url",
+            "download_url_alternates",
         ],
         "numeric": ["Index", "Train", "Test", "Dev", "labels", "length"],
     },
@@ -229,38 +249,61 @@ def derive_operational_fields(registry, csv_names):
     return derived
 
 
-def read_csv_rows(path, name_column, numeric_columns):
+def read_csv_rows(path, name_column, numeric_columns, required_header=None):
     """Read a CSV/TSV file into an ordered ``{name: {col: value}}`` mapping.
 
-    Handles both comma and tab delimiters (sniffed from the header line) so
-    the legacy ``.txt`` TSV registries and new ``.csv`` files both ingest.
+    Handles both comma and tab delimiters (sniffed from the HEADER LINE
+    ONLY — data rows legitimately embed commas inside quoted or
+    tab-delimited provenance values, which misleads a sample-wide sniff)
+    so the legacy ``.txt`` TSV registries and new ``.csv`` files both
+    ingest.
 
     Args:
         path (str): Input CSV/TSV path.
         name_column (str): Column holding the entry name (becomes the JSON key).
         numeric_columns (set): Columns whose values coerce to int when possible.
+        required_header (set | None): Column names the raw header must carry
+            (the D-10 abort-on-missing-columns family). ``None`` skips the
+            check. ``--map`` targets are pre-subtracted by the caller; the
+            caller adds the ``--map`` source names instead.
 
     Returns:
         dict: Ordered mapping of name -> fields (CSV column names verbatim).
 
     Raises:
-        SystemExit: If the file is missing, the header lacks the name column,
-            or duplicate names are found.
+        SystemExit: If the file is missing, the header lacks the name column
+            or any ``required_header`` column, or duplicate names are found.
     """
     src = Path(path)
     if not src.is_file():
         sys.exit(f"[Error] Input file not found: {path}")
     with open(src, "r", encoding="utf-8-sig", newline="") as f:
-        sample = f.read(4096)
+        header_line = f.readline()
         f.seek(0)
+        # Sniff ONLY the delimiter, and ONLY from the header line: data rows
+        # legitimately embed commas inside provenance values (misleading a
+        # sample-wide sniff), and a header-only sniff carries no quotes for
+        # the Sniffer to bind a quotechar to — so quoting stays the standard
+        # excel form rather than the sniffed (quote-less) dialect.
         try:
-            dialect = csv.Sniffer().sniff(sample, delimiters=",\t")
+            delimiter = csv.Sniffer().sniff(
+                header_line, delimiters=",\t"
+            ).delimiter
         except csv.Error:
-            dialect = csv.excel  # fall back to comma
-        reader = csv.DictReader(f, dialect=dialect)
+            delimiter = ","  # fall back to comma
+        reader = csv.DictReader(f, delimiter=delimiter)
         if reader.fieldnames is None or name_column not in reader.fieldnames:
             sys.exit(f"[Error] Header of {path} lacks name column "
                      f"'{name_column}' (found: {reader.fieldnames})")
+        if required_header:
+            missing = sorted(required_header - set(reader.fieldnames))
+            if missing:
+                sys.exit(
+                    f"[Error] Header of {path} is missing expected "
+                    f"column(s): {', '.join(missing)}; the ingest requires "
+                    f"the preset column set: {sorted(required_header)} — "
+                    "regenerate the CSV with --to-csv before editing it"
+                )
         rows, seen = {}, set()
         for row in reader:
             name = (row.get(name_column) or "").strip()
@@ -289,7 +332,14 @@ def to_json(args, preset):
     renames = dict(m.split("=", 1) for m in args.map)
     name_renames = dict(m.split("=", 1) for m in args.rename_name)
     numeric = set(preset["numeric"]) | set(args.numeric) | set(renames)
-    rows = read_csv_rows(args.input, preset["name_column"], numeric)
+    # D-10 abort-on-missing-columns: every preset column must arrive —
+    # either directly in the raw header or via a --map rename whose source
+    # name IS in the header (an unsatisfiable map target fails loudly too).
+    required_header = (
+        set(preset["columns"]) - set(renames.values())
+    ) | set(renames.keys())
+    rows = read_csv_rows(args.input, preset["name_column"], numeric,
+                         required_header=required_header)
     for name, fields in rows.items():
         rows[name] = {renames.get(col, col): value for col, value in fields.items()}
 
