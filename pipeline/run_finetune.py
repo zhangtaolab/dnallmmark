@@ -205,10 +205,14 @@ def validate_subset_file(subset_path, datasets_info):
     before the caller exits non-zero, so one run reports ALL malformed
     classes at once (a bad map must abort loudly, never silently no-op
     an evaluation). Checks: the file is readable JSON; the top level is
-    an object; every key is a ``datasets_info.json`` key; every value is
-    a list of integers; every integer is within ``[0, Test)`` for its
-    task (``Test`` is the registry's test-split row count, disk-verified
-    by ``script/make_dev_splits.py --check``).
+    an object; every key is a ``datasets_info.json`` key; every key's
+    registry row carries a ``Dataset_name`` coincident with the key (the
+    map is joined on registry KEYS here but resolved via ``Dataset_name``
+    at the apply seam — a divergent row would silently no-op that task's
+    subset, so divergence is refused up front); every value is a list of
+    integers; every integer is within ``[0, Test)`` for its task
+    (``Test`` is the registry's test-split row count, disk-verified by
+    ``script/make_dev_splits.py --check``).
 
     Args:
         subset_path (Path): The ``--subset_file`` path.
@@ -236,6 +240,25 @@ def validate_subset_file(subset_path, datasets_info):
         problems.append(f"task keys not in datasets_info.json: {unknown}")
     for task in sorted(loaded):
         if task not in datasets_info:
+            continue
+        # Key-space coincidence guard (WR-03, 05 review): the map's keys
+        # are registry KEYS here, but the apply seam resolves them via
+        # row["Dataset_name"] in the dataset loop. They coincide for all
+        # 50 registry rows today; any future divergence would make that
+        # task's subset silently no-op (full-split evaluation while the
+        # operator believes the unified-N subset is applied), so a row
+        # whose Dataset_name differs from its key is refused up front. A
+        # row omitting Dataset_name cannot silently diverge — the dataset
+        # loop's row["Dataset_name"] lookup would crash the run first.
+        registry_name = datasets_info[task].get("Dataset_name", task)
+        if registry_name != task:
+            problems.append(
+                f"{task}: datasets_info.json row has Dataset_name "
+                f"{registry_name!r} != registry key {task!r} — the "
+                "--subset_file map is keyed on registry keys but applied "
+                "by Dataset_name, so this task's subset would silently "
+                "no-op"
+            )
             continue
         ids = loaded[task]
         if not isinstance(ids, list):

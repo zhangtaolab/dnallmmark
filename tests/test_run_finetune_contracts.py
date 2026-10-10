@@ -725,7 +725,10 @@ def write_subset_file(tmp_path, payload):
     return path
 
 
-REGISTRY_5 = {"TASK": {"Test": 5}, "OTHER": {"Test": 3}}
+REGISTRY_5 = {
+    "TASK": {"Dataset_name": "TASK", "Test": 5},
+    "OTHER": {"Dataset_name": "OTHER", "Test": 3},
+}
 
 
 def test_subset_validator_accepts_valid_file(tmp_path):
@@ -787,6 +790,31 @@ def test_subset_validator_rejects_non_list_value(tmp_path):
     subsets, problems = validate(path, REGISTRY_5)
     assert subsets is None
     assert any("TASK" in p and "int" in p for p in problems), problems
+
+
+def test_subset_validator_refuses_dataset_name_divergence(tmp_path):
+    """WR-03 (05 review): a registry row whose Dataset_name differs from
+    its registry key is refused by name — the map is keyed on registry
+    KEYS at validation but applied by Dataset_name at the seam, so a
+    divergent row would silently no-op that task's subset (full-split
+    evaluation while the operator believes the unified-N fairness subset
+    is applied). Coincident rows (REGISTRY_5 above) stay a no-op."""
+    validate, _apply = extract_subset_fns()
+    registry = {
+        "TASK": {"Dataset_name": "TASK", "Test": 5},
+        "DIVERGENT": {"Dataset_name": "renamed__task", "Test": 3},
+    }
+    path = write_subset_file(tmp_path, {"DIVERGENT": [0, 1]})
+    subsets, problems = validate(path, registry)
+    assert subsets is None, (
+        "a divergent row must fail validation — never return the map"
+    )
+    assert any(
+        "Dataset_name" in p and "DIVERGENT" in p for p in problems
+    ), problems
+    assert any("silently" in p for p in problems), (
+        "the problem must say WHY divergence is refused"
+    )
 
 
 def test_apply_eval_subset_selects_test_split_only():
