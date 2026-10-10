@@ -47,6 +47,16 @@ SCHEMA_FILES = {
         REPO / "schemas" / "tasks_index.json",
         [DATA / "tasks.json"],
     ),
+    # F6 artifacts (05-02): the published permutation family + the
+    # data-version stamp the footer reads.
+    "permutation_tests": (
+        REPO / "schemas" / "permutation_tests.json",
+        [DATA / "permutation_tests.json"],
+    ),
+    "data_manifest": (
+        REPO / "schemas" / "data_manifest.json",
+        [DATA / "manifest.json"],
+    ),
 }
 
 
@@ -102,6 +112,8 @@ EXPECTED_BUCKET_SIZES = {
     "task_performance": 47,
     "models_comparison": 4,
     "tasks_index": 1,
+    "permutation_tests": 1,
+    "data_manifest": 1,
 }
 
 

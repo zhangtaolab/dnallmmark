@@ -35,6 +35,8 @@ All outputs are written to ``dnallm-mark/data/``:
 - ``models_comparison_animal.json``     — only tasks in the Animals arena.
 - ``models_comparison_plant.json``      — only tasks in the Plants arena.
 - ``models_comparison_microbe.json``   — only tasks in the Microbe arena.
+- ``manifest.json``                     — the data-version stamp (data_version,
+  generated_from, date — constants from the Configuration block; DATA-02).
 
 Arena grouping (FIX-02) is driven by the human-verified ``Category`` column of
 ``pipeline/datasets_info.json`` (the maintainer-confirmed 50-row review in
@@ -52,6 +54,7 @@ Each file contains a dict keyed by model alias, sorted by ``rank_score`` descend
                 "rank_score": 120.0,
                 "sum_minmax": 38.5,
                 "sum_zscore": 12.3,
+                "weighted_score": 0.2617,
                 "sum_robust": 8.1,
                 "avg_raw": 0.82,
                 "avg_rank": 3.2,
@@ -331,8 +334,8 @@ def aggregate_models(models_info, dataset_stats_map, dataset_flops_map, target_d
     task count as a uniform ``1/N`` difficulty weight. It follows the same
     no-imputation convention as ``sum_zscore``: a model missing tasks
     contributes nothing for them (numerator) while the denominator still
-    counts the view's tasks. The default call does not emit the key — the
-    emission is wired by the F6 migration commit only.
+    counts the view's tasks. ``main()`` emits it (schema-required since the
+    F6 migration); direct calls default to the pure 15-key block.
 
     Args:
         models_info:         ``{model_alias: {name, size (M), type, …}}``
@@ -342,7 +345,8 @@ def aggregate_models(models_info, dataset_stats_map, dataset_flops_map, target_d
         target_datasets:     List of dataset names to include in this aggregation
                              (e.g. all datasets, or only plant-specific ones).
         include_weighted:    Emit ``weighted_score`` (F6 weighted view). Off by
-                             default so the pre-migration output is unchanged.
+                             default for pure-function callers; ``main()`` sets
+                             it True.
 
     Returns:
         ``{model_alias: {model: …, performance: …}}`` sorted by ``rank_score``
@@ -396,8 +400,9 @@ def aggregate_models(models_info, dataset_stats_map, dataset_flops_map, target_d
 
         # F6 weighted view (uniform 1/N difficulty weight over the view's
         # tasks): sum_zscore / len(target_datasets), same no-imputation
-        # convention as the sums above. Gated so main()'s emitted output is
-        # unchanged until the migration commit wires the emission.
+        # convention as the sums above. main() emits it (schema-required
+        # since the F6 migration); pure-function callers keep the 15-key
+        # block by default.
         if include_weighted:
             aggregated_results[model_alias]["performance"]["weighted_score"] = (
                 sum(s['zscore'] for s in model_m_stats) / len(target_datasets)
@@ -523,6 +528,15 @@ def main():
 
     # Output filename for the all-tasks comparison (written to CWD).
     output_total = 'models_comparison.json'
+
+    # F6 data-version stamp (DATA-02, D-17/OQ2): manifest.json constants —
+    # CONSTANTS ONLY, never a live clock or a live git call in this
+    # regeneration path (the drift job must stay a byte-identical no-op).
+    # Bumped EXCLUSIVELY in migration commits, alongside CHANGELOG.md and
+    # the migration inventory.
+    DATA_VERSION = "1.1.0"
+    GENERATED_FROM = "73006a0464c6dcdf0c28a29a48cdfb829b0fba6c"  # pre-F6-migration HEAD
+    DATE = "2026-10-10"
     # =================================================================
 
     if not os.path.exists(input_dir):
@@ -546,6 +560,7 @@ def main():
     all_datasets = list(raw_dataset_scores.keys())
     total_comparison = aggregate_models(
         models_info, dataset_stats_map, raw_dataset_flops, all_datasets,
+        include_weighted=True,
     )
 
     with open(output_total, "w", encoding='utf-8') as f:
@@ -567,6 +582,7 @@ def main():
 
         species_comparison = aggregate_models(
             models_info, dataset_stats_map, raw_dataset_flops, ds_list,
+            include_weighted=True,
         )
 
         if species_comparison:
@@ -581,6 +597,22 @@ def main():
                 f"✅ Species [{species}] comparison saved to: {out_file} "
                 f"(contains {len(ds_list)} dataset(s))"
             )
+
+    # ---------- Step 4: Data-version manifest (DATA-02, D-17/OQ2) ----
+    # The stamped identity the leaderboard footer reads (the live clock is
+    # gone, DATA-06): data_version + the pre-migration commit this data was
+    # regenerated from + the migration date — all constants declared in the
+    # Configuration block above, byte-stable under regeneration.
+    with open('manifest.json', 'w', encoding='utf-8') as f:
+        json.dump(
+            {
+                "data_version": DATA_VERSION,
+                "generated_from": GENERATED_FROM,
+                "date": DATE,
+            },
+            f, indent=4, ensure_ascii=False, sort_keys=True,
+        )
+    print(f"✅ Data manifest saved to: manifest.json (data_version {DATA_VERSION})")
 
     print("🎉 All statistical comparisons generated successfully!")
 

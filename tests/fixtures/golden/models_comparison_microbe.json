@@ -24,7 +24,8 @@
             "top1_count": 0,
             "top3_count": 1,
             "top5_count": 1,
-            "top8_count": 1
+            "top8_count": 1,
+            "weighted_score": 0.0
         }
     },
     "fake-beta": {
@@ -52,7 +53,8 @@
             "top1_count": 1,
             "top3_count": 1,
             "top5_count": 1,
-            "top8_count": 1
+            "top8_count": 1,
+            "weighted_score": 1.2247448713915892
         }
     },
     "fake-gamma": {
@@ -80,7 +82,8 @@
             "top1_count": 0,
             "top3_count": 1,
             "top5_count": 1,
-            "top8_count": 1
+            "top8_count": 1,
+            "weighted_score": -1.2247448713915892
         }
     }
 }

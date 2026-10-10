@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/zhangtaolab/dnallmmark/main/schemas/models_comparison.json",
-  "$comment": "Fully strict contract (D-01) covering ALL FOUR committed comparison files (models_comparison.json, models_comparison_{animal,plant,microbe}.json) — their shapes are identical (verified by live survey). Root is an open map of model alias to {model, performance}. The model block is the 7-KEY SUBSET card (not the full 11-key card); model organism vocabulary stays open strings here (D-02 closes metric enums only). Key sets surveyed live from all 4 committed files (Phase 2 research, 2026-10-09).",
+  "$comment": "Fully strict contract (D-01) covering ALL FOUR committed comparison files (models_comparison.json, models_comparison_{animal,plant,microbe}.json) — their shapes are identical (verified by live survey). Root is an open map of model alias to {model, performance}. The model block is the 7-KEY SUBSET card (not the full 11-key card); model organism vocabulary stays open strings here (D-02 closes metric enums only). Key sets surveyed live from all 4 committed files (Phase 2 research, 2026-10-09). F6 extension (05-02, data_version 1.1.0): performance gains the 16th required key weighted_score (sum_zscore / view task count, uniform difficulty weight — REV-04/F6 Q2), added in the SAME commit as the regenerated data and re-chained goldens.",
   "type": "object",
   "additionalProperties": { "$ref": "#/$defs/modelComparison" },
   "$defs": {
@@ -50,7 +50,8 @@
             "top1_count",
             "top3_count",
             "top5_count",
-            "top8_count"
+            "top8_count",
+            "weighted_score"
           ],
           "properties": {
             "avg_PFLOPs": { "type": "number" },
@@ -67,7 +68,8 @@
             "top1_count": { "type": "integer" },
             "top3_count": { "type": "integer" },
             "top5_count": { "type": "integer" },
-            "top8_count": { "type": "integer" }
+            "top8_count": { "type": "integer" },
+            "weighted_score": { "type": "number" }
           }
         }
       }

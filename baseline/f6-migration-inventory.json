@@ -1,0 +1,63 @@
+{
+    "data_version": "1.1.0",
+    "date": "2026-10-10",
+    "files": [
+        {
+            "path": "dnallm-mark/data/manifest.json",
+            "status": "new"
+        },
+        {
+            "counts": {
+                "EXTRA_IN_REGEN": 42
+            },
+            "path": "dnallm-mark/data/models_comparison.json",
+            "status": "changed",
+            "total": 42
+        },
+        {
+            "counts": {
+                "EXTRA_IN_REGEN": 42
+            },
+            "path": "dnallm-mark/data/models_comparison_animal.json",
+            "status": "changed",
+            "total": 42
+        },
+        {
+            "counts": {
+                "EXTRA_IN_REGEN": 42
+            },
+            "path": "dnallm-mark/data/models_comparison_microbe.json",
+            "status": "changed",
+            "total": 42
+        },
+        {
+            "counts": {
+                "EXTRA_IN_REGEN": 42
+            },
+            "path": "dnallm-mark/data/models_comparison_plant.json",
+            "status": "changed",
+            "total": 42
+        },
+        {
+            "path": "dnallm-mark/data/permutation_tests.json",
+            "status": "new"
+        },
+        {
+            "counts": {},
+            "path": "dnallm-mark/data/tasks.json",
+            "status": "identical",
+            "total": 0
+        }
+    ],
+    "generated_from": "73006a0464c6dcdf0c28a29a48cdfb829b0fba6c",
+    "totals": {
+        "counts": {
+            "EXTRA_IN_REGEN": 168
+        },
+        "diffs_total": 168,
+        "files_changed": 4,
+        "files_identical": 1,
+        "files_new": 2,
+        "files_total": 7
+    }
+}

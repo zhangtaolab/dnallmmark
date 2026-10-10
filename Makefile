@@ -19,7 +19,8 @@
 #   make lint       ruff over tests/ + the Phase-authored/edited files
 #                   (make_dev_splits.py, summarize_comparison.py,
 #                   export_runs.py, freeze_snapshot.py, convert_registry.py,
-#                   run_finetune.py, run_sweep.py, compare.py)
+#                   run_finetune.py, run_sweep.py, compare.py,
+#                   permutation_tests.py, run_migration_inventory.py)
 #   make typecheck  ty type check over script/, baseline/, tests/, scripts/,
 #                   and pipeline/ (GPU-side imports replaced with Any — they
 #                   are never installed CPU-side, D-05)
@@ -35,12 +36,15 @@ DATA_DIR := dnallm-mark/data
 
 # Data chain — one `cd ... && ...` per line: each recipe line is its own
 # shell (Pitfall 8), and summarize resolves inputs/outputs against CWD.
-# The JS generator is __dirname-relative and runs from repo root as-is.
-# The retired pivot step is gone (04-05, SC-2/OQ6): task_performance/ is
-# committed static data until E2' regenerates it via script/export_runs.py
-# — this target cannot and must not refresh it.
+# The permutation engine is REPO_ROOT-relative and runs from the repo root
+# (F6 Q3: offline at regeneration, never at page render). The JS generator
+# is __dirname-relative and runs from repo root as-is. The retired pivot
+# step is gone (04-05, SC-2/OQ6): task_performance/ is committed static
+# data until E2' regenerates it via script/export_runs.py — this target
+# cannot and must not refresh it.
 data: check-node
 	cd $(DATA_DIR) && $(UV) run --group data python ../../script/summarize_comparison.py
+	$(UV) run --group data python script/permutation_tests.py
 	node scripts/generate-tasks-index.js
 
 # --group dev is REQUIRED: default-groups = ["data"] in pyproject.toml
@@ -88,7 +92,7 @@ ci: check-node
 # No [tool.ruff] config section exists (D-08: no baseline carry-over, no
 # suppression).
 lint:
-	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py
+	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py
 
 # Type check (ty, maintainer directive 2026-10-09): zero-diagnostics baseline
 # verified empirically at research time. [tool.ty] in pyproject.toml carries

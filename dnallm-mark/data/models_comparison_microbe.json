@@ -24,7 +24,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 1
+            "top8_count": 1,
+            "weighted_score": 0.1732900273770053
         }
     },
     "GENERanno-eukaryote-0.5b-base": {
@@ -52,7 +53,8 @@
             "top1_count": 1,
             "top3_count": 2,
             "top5_count": 4,
-            "top8_count": 5
+            "top8_count": 5,
+            "weighted_score": 0.6816757313025684
         }
     },
     "GENERanno-prokaryote-0.5b-base": {
@@ -80,7 +82,8 @@
             "top1_count": 0,
             "top3_count": 3,
             "top5_count": 4,
-            "top8_count": 9
+            "top8_count": 9,
+            "weighted_score": 0.698644078054885
         }
     },
     "GROVER": {
@@ -108,7 +111,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.19668374059478883
         }
     },
     "GenomeOcean-500M": {
@@ -136,7 +140,8 @@
             "top1_count": 0,
             "top3_count": 1,
             "top5_count": 2,
-            "top8_count": 7
+            "top8_count": 7,
+            "weighted_score": 0.8138887987179708
         }
     },
     "Jamba-DNA-v1-114M-hg38": {
@@ -164,7 +169,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.3517274349850874
         }
     },
     "Mistral-DNA-v1-138M-virus": {
@@ -192,7 +198,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -2.147295807437893
         }
     },
     "Mistral-DNA-v1-417M-Athaliana": {
@@ -220,7 +227,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -1.7759257679733635
         }
     },
     "Mistral-DNA-v1-422M-hg38": {
@@ -248,7 +256,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.02437297190909772
         }
     },
     "ModernBERT-DNA-v1-37M-hg38": {
@@ -276,7 +285,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -2.2070429054459573
         }
     },
     "MutBERT-Multi": {
@@ -304,7 +314,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.14654418931385257
         }
     },
     "Omni-DNA-700M": {
@@ -332,7 +343,8 @@
             "top1_count": 4,
             "top3_count": 4,
             "top5_count": 5,
-            "top8_count": 6
+            "top8_count": 6,
+            "weighted_score": 1.0558693126756062
         }
     },
     "OmniNA-220m": {
@@ -360,7 +372,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.28998484189978657
         }
     },
     "PlantBiMoE": {
@@ -388,7 +401,8 @@
             "top1_count": 0,
             "top3_count": 1,
             "top5_count": 1,
-            "top8_count": 2
+            "top8_count": 2,
+            "weighted_score": 0.3740337731204792
         }
     },
     "PlantCAD2-Medium-l48-d1024": {
@@ -416,7 +430,8 @@
             "top1_count": 0,
             "top3_count": 1,
             "top5_count": 2,
-            "top8_count": 6
+            "top8_count": 6,
+            "weighted_score": 0.39776010604760004
         }
     },
     "PlantCAD2-Small-l24-d0768": {
@@ -444,7 +459,8 @@
             "top1_count": 0,
             "top3_count": 3,
             "top5_count": 6,
-            "top8_count": 9
+            "top8_count": 9,
+            "weighted_score": 0.6382405275563516
         }
     },
     "PlantCaduceus_l32": {
@@ -472,7 +488,8 @@
             "top1_count": 0,
             "top3_count": 2,
             "top5_count": 6,
-            "top8_count": 9
+            "top8_count": 9,
+            "weighted_score": 0.6901731439361879
         }
     },
     "PlantHelixSeek": {
@@ -500,7 +517,8 @@
             "top1_count": 4,
             "top3_count": 8,
             "top5_count": 9,
-            "top8_count": 10
+            "top8_count": 10,
+            "weighted_score": 1.108116629901602
         }
     },
     "agro-nucleotide-transformer-1b": {
@@ -528,7 +546,8 @@
             "top1_count": 3,
             "top3_count": 3,
             "top5_count": 5,
-            "top8_count": 7
+            "top8_count": 7,
+            "weighted_score": 0.8943116088041754
         }
     },
     "borzoi-replicate-0": {
@@ -556,7 +575,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 1
+            "top8_count": 1,
+            "weighted_score": -0.12399959153017545
         }
     },
     "caduceus-ph_seqlen-131k_d_model-256_n_layer-16": {
@@ -584,7 +604,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.529353490874372
         }
     },
     "caduceus-ps_seqlen-131k_d_model-256_n_layer-16": {
@@ -612,7 +633,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.3881753277930997
         }
     },
     "enformer-official-rough": {
@@ -640,7 +662,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -1.0802448293047406
         }
     },
     "evo2_1b_base": {
@@ -668,7 +691,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -1.648501718113844
         }
     },
     "flashzoi-replicate-0": {
@@ -696,7 +720,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.3363939366156456
         }
     },
     "gena-lm-bert-large-t2t": {
@@ -724,7 +749,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.4747990612951947
         }
     },
     "gena-lm-bigbird-base-t2t": {
@@ -752,7 +778,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.2789709649752539
         }
     },
     "gpn-brassicales": {
@@ -780,7 +807,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": 0.24065975396011177
         }
     },
     "hyenadna-large-1m-seqlen-hf": {
@@ -808,7 +836,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.25620598977649883
         }
     },
     "megaDNA_updated": {
@@ -836,7 +865,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.06336399967599902
         }
     },
     "nucleotide-transformer-v2-500m-multi-species": {
@@ -864,7 +894,8 @@
             "top1_count": 1,
             "top3_count": 3,
             "top5_count": 5,
-            "top8_count": 7
+            "top8_count": 7,
+            "weighted_score": 0.9035290916209687
         }
     },
     "plant-dnabert-6mer": {
@@ -892,7 +923,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 1,
-            "top8_count": 1
+            "top8_count": 1,
+            "weighted_score": 0.3807514024785564
         }
     },
     "plant-dnagemma-BPE": {
@@ -920,7 +952,8 @@
             "top1_count": 0,
             "top3_count": 3,
             "top5_count": 3,
-            "top8_count": 3
+            "top8_count": 3,
+            "weighted_score": 0.6301443858226201
         }
     },
     "plant-dnagpt-BPE": {
@@ -948,7 +981,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.08057973941348542
         }
     },
     "plant-dnamamba-6mer": {
@@ -976,7 +1010,8 @@
             "top1_count": 0,
             "top3_count": 2,
             "top5_count": 2,
-            "top8_count": 5
+            "top8_count": 5,
+            "weighted_score": 0.7782682368433563
         }
     },
     "plant-dnamamba-BPE": {
@@ -1004,7 +1039,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 1,
-            "top8_count": 1
+            "top8_count": 1,
+            "weighted_score": 0.36450465260625997
         }
     },
     "plant-dnamamba2-BPE": {
@@ -1032,7 +1068,8 @@
             "top1_count": 0,
             "top3_count": 3,
             "top5_count": 6,
-            "top8_count": 8
+            "top8_count": 8,
+            "weighted_score": 0.8719921321117164
         }
     },
     "plant-dnamodernbert-singlebase": {
@@ -1060,7 +1097,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 2
+            "top8_count": 2,
+            "weighted_score": 0.3636155428126343
         }
     },
     "plant-genomic-jamba": {
@@ -1088,7 +1126,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.09466588771528434
         }
     },
     "plant-nucleotide-transformer-6mer": {
@@ -1116,7 +1155,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 1,
-            "top8_count": 2
+            "top8_count": 2,
+            "weighted_score": 0.5709363870010067
         }
     },
     "prokbert-mini": {
@@ -1144,7 +1184,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 2,
-            "top8_count": 3
+            "top8_count": 3,
+            "weighted_score": 0.2680467144132853
         }
     },
     "space": {
@@ -1172,7 +1213,8 @@
             "top1_count": 0,
             "top3_count": 0,
             "top5_count": 0,
-            "top8_count": 0
+            "top8_count": 0,
+            "weighted_score": -0.40361984052153854
         }
     }
 }
