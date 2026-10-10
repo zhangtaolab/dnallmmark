@@ -1140,6 +1140,26 @@ if __name__ == "__main__":
                     use_lora=(peft_mode == "lora"),
                 )
 
+                # Trainable-params persistence (SC-6 frontier producer,
+                # 06-02): the suite computes and PRINTS this accounting but
+                # does not persist it (trainer.py:248-288 @ v1.2.1 —
+                # _guard_trainable_ratio returns and discards it), so
+                # run_finetune owns the record value — pure arithmetic over
+                # the constructed (adapter-wrapped under peft) model,
+                # persisted into final_metrics.json for EVERY mode
+                # including none (a full run reports 100.0): the frontier
+                # table needs the value in the record chain.
+                trainable_params = sum(
+                    p.numel() for p in trainer.model.parameters()
+                    if p.requires_grad
+                )
+                total_params = sum(
+                    p.numel() for p in trainer.model.parameters()
+                )
+                trainable_params_pct = round(
+                    100.0 * trainable_params / max(total_params, 1), 6
+                )
+
                 # Start finetuning
                 local_rank = int(os.environ.get("LOCAL_RANK", "0"))
                 try:
@@ -1158,6 +1178,16 @@ if __name__ == "__main__":
                         # which the cell is permanently "done" with no
                         # metrics and is never retrained.
                         with open(outdir + "final_metrics.json", 'w') as f:
+                            # Merge the post-ctor parameter accounting into
+                            # the payload (06-02): the sweep copies
+                            # final_metrics verbatim into run_record.metrics,
+                            # so trainable_params_pct reaches the frontier
+                            # reader through the existing channel.
+                            metrics.update({
+                                "trainable_params": trainable_params,
+                                "total_params": total_params,
+                                "trainable_params_pct": trainable_params_pct,
+                            })
                             json.dump(metrics, f, indent=4)
                         shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json", outdir)
                     trainer.evaluate()

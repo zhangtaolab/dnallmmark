@@ -1258,6 +1258,67 @@ def test_num_train_epochs_flag_overrides_config_only_when_given():
     )
 
 
+def test_trainable_params_persisted_into_final_metrics_for_every_mode():
+    """trainable_params / total_params / trainable_params_pct are computed
+    immediately after the DNATrainer ctor — pure arithmetic over the
+    constructed model: sums of p.numel() over trainer.model.parameters()
+    filtered by requires_grad (trainable) and unfiltered (total), pct
+    derived and rounded to 6 decimals — and merged into the metrics payload
+    the final_metrics.json write persists, for EVERY mode including none (a
+    full run reports 100.0). The suite PRINTS but does not PERSIST this
+    accounting (trainer.py:248-288 @ v1.2.1 — _guard_trainable_ratio
+    computes and discards it), so run_finetune owns the record value the
+    frontier table needs; nothing between the ctor and the computation
+    gates on peft_mode (a guard would starve the method=none rows)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    ctor_idx = statement_index(src, "trainer = DNATrainer(")
+    assert ctor_idx != -1, "no DNATrainer ctor call site found"
+    trainable_idx = statement_index(src, "trainable_params = sum(")
+    assert trainable_idx != -1, (
+        "no trainable_params computation — the frontier table's "
+        "trainable_params_pct column has no producer without it"
+    )
+    total_idx = statement_index(src, "total_params = sum(")
+    pct_idx = statement_index(src, "trainable_params_pct = round(")
+    write_idx = src.find('open(outdir + "final_metrics.json", \'w\')')
+    assert total_idx != -1, "no total_params computation found"
+    assert pct_idx != -1, "no trainable_params_pct derivation found"
+    assert write_idx != -1, "no final_metrics.json write found"
+    assert ctor_idx < trainable_idx < total_idx < pct_idx < write_idx, (
+        "the persistence arithmetic must sit between the DNATrainer ctor "
+        "(the model exists, adapter-wrapped under peft) and the "
+        "final_metrics.json write it feeds"
+    )
+    arithmetic = src[trainable_idx:pct_idx + 300]
+    assert "trainer.model.parameters()" in arithmetic, (
+        "the sums must run over trainer.model.parameters() — the "
+        "CONSTRUCTED model (post adapter attach under peft), not the "
+        "pre-ctor module"
+    )
+    assert "p.requires_grad" in arithmetic, (
+        "the trainable sum must filter on p.requires_grad"
+    )
+    pct_stmt = src[pct_idx:pct_idx + 300]
+    assert re.search(r",\s*6\s*\)", pct_stmt), (
+        "trainable_params_pct must be rounded to 6 decimals"
+    )
+    write_block = src[write_idx - 500:write_idx + 800]
+    for key in ("trainable_params", "total_params", "trainable_params_pct"):
+        assert key in write_block, (
+            f"{key} must be merged into the metrics payload at the "
+            "final_metrics.json write — the sweep copies final_metrics "
+            "verbatim into run_record.metrics, so this is the channel the "
+            "frontier reader consumes"
+        )
+    between = src[ctor_idx:trainable_idx]
+    assert "if peft_mode" not in between, (
+        "the persistence must run for EVERY mode — a peft_mode guard "
+        "between the ctor and the computation would leave method=none "
+        "records without trainable_params_pct (the frontier's none rows "
+        "derive without special cases only if full runs report 100.0)"
+    )
+
+
 def _yaml_section_keys(text, section):
     """The 4-space-indented keys of a top-level ``section:`` YAML block."""
     match = re.search(
