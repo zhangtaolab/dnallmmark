@@ -1,0 +1,1571 @@
+{
+    "tasks": {
+        "BEND__CpG_methylation": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "N": 20
+                    },
+                    "n_tolerant_survivors": 109717,
+                    "non_acgt_chars": 20,
+                    "rows": 109717,
+                    "rows_with_non_acgt": 1,
+                    "strict_survivors": 109716,
+                    "total_chars": 56175104
+                },
+                "test": {
+                    "by_char": {
+                        "N": 4
+                    },
+                    "n_tolerant_survivors": 106227,
+                    "non_acgt_chars": 4,
+                    "rows": 106227,
+                    "rows_with_non_acgt": 3,
+                    "strict_survivors": 106224,
+                    "total_chars": 54388224
+                },
+                "train": {
+                    "by_char": {
+                        "N": 504
+                    },
+                    "n_tolerant_survivors": 743095,
+                    "non_acgt_chars": 504,
+                    "rows": 743095,
+                    "rows_with_non_acgt": 15,
+                    "strict_survivors": 743080,
+                    "total_chars": 380464640
+                }
+            },
+            "unified_eval_n": 106224
+        },
+        "Deep4mC_datasets__C.elegans_4mC": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 8492,
+                    "non_acgt_chars": 0,
+                    "rows": 8492,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 8492,
+                    "total_chars": 348172
+                },
+                "test": {
+                    "by_char": {
+                        "N": 11
+                    },
+                    "n_tolerant_survivors": 36398,
+                    "non_acgt_chars": 11,
+                    "rows": 36398,
+                    "rows_with_non_acgt": 1,
+                    "strict_survivors": 36397,
+                    "total_chars": 1492318
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 76434,
+                    "non_acgt_chars": 0,
+                    "rows": 76434,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 76434,
+                    "total_chars": 3133794
+                }
+            },
+            "unified_eval_n": 36397
+        },
+        "Deep4mC_datasets__D.melanogaster_4mC": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 12646,
+                    "non_acgt_chars": 0,
+                    "rows": 12646,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 12646,
+                    "total_chars": 518486
+                },
+                "test": {
+                    "by_char": {
+                        "N": 144
+                    },
+                    "n_tolerant_survivors": 54200,
+                    "non_acgt_chars": 144,
+                    "rows": 54200,
+                    "rows_with_non_acgt": 15,
+                    "strict_survivors": 54185,
+                    "total_chars": 2222200
+                },
+                "train": {
+                    "by_char": {
+                        "N": 109
+                    },
+                    "n_tolerant_survivors": 113820,
+                    "non_acgt_chars": 109,
+                    "rows": 113820,
+                    "rows_with_non_acgt": 11,
+                    "strict_survivors": 113809,
+                    "total_chars": 4666620
+                }
+            },
+            "unified_eval_n": 54185
+        },
+        "Deep4mC_datasets__E.coli_4mC": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 867,
+                    "non_acgt_chars": 0,
+                    "rows": 867,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 867,
+                    "total_chars": 35547
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3721,
+                    "non_acgt_chars": 0,
+                    "rows": 3721,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3721,
+                    "total_chars": 152561
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 7814,
+                    "non_acgt_chars": 0,
+                    "rows": 7814,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 7814,
+                    "total_chars": 320374
+                }
+            },
+            "unified_eval_n": 3721
+        },
+        "GUE__EPI_GM12878": {
+            "missing": true,
+            "splits": null,
+            "unified_eval_n": null
+        },
+        "GUE__emp_H3": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 1497,
+                    "non_acgt_chars": 0,
+                    "rows": 1497,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 1497,
+                    "total_chars": 748500
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 1497,
+                    "non_acgt_chars": 0,
+                    "rows": 1497,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 1497,
+                    "total_chars": 748500
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 11971,
+                    "non_acgt_chars": 0,
+                    "rows": 11971,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 11971,
+                    "total_chars": 5985100
+                }
+            },
+            "unified_eval_n": 1497
+        },
+        "GUE__emp_H3K14ac": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3305,
+                    "non_acgt_chars": 0,
+                    "rows": 3305,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3305,
+                    "total_chars": 1652290
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3305,
+                    "non_acgt_chars": 0,
+                    "rows": 3305,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3305,
+                    "total_chars": 1652500
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 26438,
+                    "non_acgt_chars": 0,
+                    "rows": 26438,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 26438,
+                    "total_chars": 13218759
+                }
+            },
+            "unified_eval_n": 3305
+        },
+        "GUE__emp_H3K36me3": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3488,
+                    "non_acgt_chars": 0,
+                    "rows": 3488,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3488,
+                    "total_chars": 1744000
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3488,
+                    "non_acgt_chars": 0,
+                    "rows": 3488,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3488,
+                    "total_chars": 1744000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 27904,
+                    "non_acgt_chars": 0,
+                    "rows": 27904,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 27904,
+                    "total_chars": 13951759
+                }
+            },
+            "unified_eval_n": 3488
+        },
+        "GUE__emp_H3K4me1": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3168,
+                    "non_acgt_chars": 0,
+                    "rows": 3168,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3168,
+                    "total_chars": 1584000
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3168,
+                    "non_acgt_chars": 0,
+                    "rows": 3168,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3168,
+                    "total_chars": 1583790
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 25341,
+                    "non_acgt_chars": 0,
+                    "rows": 25341,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 25341,
+                    "total_chars": 12670310
+                }
+            },
+            "unified_eval_n": 3168
+        },
+        "GUE__emp_H3K79me3": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2884,
+                    "non_acgt_chars": 0,
+                    "rows": 2884,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2884,
+                    "total_chars": 1442000
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2884,
+                    "non_acgt_chars": 0,
+                    "rows": 2884,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2884,
+                    "total_chars": 1442000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 23069,
+                    "non_acgt_chars": 0,
+                    "rows": 23069,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 23069,
+                    "total_chars": 11534259
+                }
+            },
+            "unified_eval_n": 2884
+        },
+        "GUE__emp_H3K9ac": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2779,
+                    "non_acgt_chars": 0,
+                    "rows": 2779,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2779,
+                    "total_chars": 1389500
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2779,
+                    "non_acgt_chars": 0,
+                    "rows": 2779,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2779,
+                    "total_chars": 1389500
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 22224,
+                    "non_acgt_chars": 0,
+                    "rows": 22224,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 22224,
+                    "total_chars": 11111790
+                }
+            },
+            "unified_eval_n": 2779
+        },
+        "GUE__emp_H4": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 1461,
+                    "non_acgt_chars": 0,
+                    "rows": 1461,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 1461,
+                    "total_chars": 730500
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 1461,
+                    "non_acgt_chars": 0,
+                    "rows": 1461,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 1461,
+                    "total_chars": 730500
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 11679,
+                    "non_acgt_chars": 0,
+                    "rows": 11679,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 11679,
+                    "total_chars": 5839259
+                }
+            },
+            "unified_eval_n": 1461
+        },
+        "GUE__emp_H4ac": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3410,
+                    "non_acgt_chars": 0,
+                    "rows": 3410,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3410,
+                    "total_chars": 1704949
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3410,
+                    "non_acgt_chars": 0,
+                    "rows": 3410,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3410,
+                    "total_chars": 1705000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 27275,
+                    "non_acgt_chars": 0,
+                    "rows": 27275,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 27275,
+                    "total_chars": 13637290
+                }
+            },
+            "unified_eval_n": 3410
+        },
+        "GUE__fungi_species_20": {
+            "missing": true,
+            "splits": null,
+            "unified_eval_n": null
+        },
+        "GUE__human_tf_0": {
+            "missing": true,
+            "splits": null,
+            "unified_eval_n": null
+        },
+        "GUE__mouse_1": {
+            "missing": true,
+            "splits": null,
+            "unified_eval_n": null
+        },
+        "GUE__mouse_4": {
+            "missing": true,
+            "splits": null,
+            "unified_eval_n": null
+        },
+        "GUE__prom_300_all": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "N": 1
+                    },
+                    "n_tolerant_survivors": 5920,
+                    "non_acgt_chars": 1,
+                    "rows": 5920,
+                    "rows_with_non_acgt": 1,
+                    "strict_survivors": 5919,
+                    "total_chars": 1776000
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 5920,
+                    "non_acgt_chars": 0,
+                    "rows": 5920,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 5920,
+                    "total_chars": 1776000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 47356,
+                    "non_acgt_chars": 0,
+                    "rows": 47356,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 47356,
+                    "total_chars": 14206800
+                }
+            },
+            "unified_eval_n": 5920
+        },
+        "GUE__prom_core_all": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 5920,
+                    "non_acgt_chars": 0,
+                    "rows": 5920,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 5920,
+                    "total_chars": 414400
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 5920,
+                    "non_acgt_chars": 0,
+                    "rows": 5920,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 5920,
+                    "total_chars": 414400
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 47356,
+                    "non_acgt_chars": 0,
+                    "rows": 47356,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 47356,
+                    "total_chars": 3314920
+                }
+            },
+            "unified_eval_n": 5920
+        },
+        "GUE__virus_covid": {
+            "missing": true,
+            "splits": null,
+            "unified_eval_n": null
+        },
+        "GUE__virus_species_40": {
+            "missing": true,
+            "splits": null,
+            "unified_eval_n": null
+        },
+        "Genomic_Benchmarks__coding": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 7500,
+                    "non_acgt_chars": 0,
+                    "rows": 7500,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 7500,
+                    "total_chars": 1500000
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 25000,
+                    "non_acgt_chars": 0,
+                    "rows": 25000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 25000,
+                    "total_chars": 5000000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 67500,
+                    "non_acgt_chars": 0,
+                    "rows": 67500,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 67500,
+                    "total_chars": 13500000
+                }
+            },
+            "unified_eval_n": 25000
+        },
+        "Genomic_Benchmarks__human_vs_worm": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "N": 33100
+                    },
+                    "n_tolerant_survivors": 7500,
+                    "non_acgt_chars": 33100,
+                    "rows": 7500,
+                    "rows_with_non_acgt": 166,
+                    "strict_survivors": 7334,
+                    "total_chars": 1500000
+                },
+                "test": {
+                    "by_char": {
+                        "N": 128812
+                    },
+                    "n_tolerant_survivors": 25000,
+                    "non_acgt_chars": 128812,
+                    "rows": 25000,
+                    "rows_with_non_acgt": 645,
+                    "strict_survivors": 24355,
+                    "total_chars": 5000000
+                },
+                "train": {
+                    "by_char": {
+                        "N": 343670
+                    },
+                    "n_tolerant_survivors": 67500,
+                    "non_acgt_chars": 343670,
+                    "rows": 67500,
+                    "rows_with_non_acgt": 1719,
+                    "strict_survivors": 65781,
+                    "total_chars": 13500000
+                }
+            },
+            "unified_eval_n": 24355
+        },
+        "Genomic_Benchmarks__regulatory_region_type": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 14999,
+                    "non_acgt_chars": 0,
+                    "rows": 14999,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 14999,
+                    "total_chars": 6435816
+                },
+                "test": {
+                    "by_char": {
+                        "N": 1
+                    },
+                    "n_tolerant_survivors": 57713,
+                    "non_acgt_chars": 1,
+                    "rows": 57713,
+                    "rows_with_non_acgt": 1,
+                    "strict_survivors": 57712,
+                    "total_chars": 24821743
+                },
+                "train": {
+                    "by_char": {
+                        "N": 3
+                    },
+                    "n_tolerant_survivors": 135001,
+                    "non_acgt_chars": 3,
+                    "rows": 135001,
+                    "rows_with_non_acgt": 3,
+                    "strict_survivors": 134998,
+                    "total_chars": 58055797
+                }
+            },
+            "unified_eval_n": 57712
+        },
+        "NT_downstream_tasks__H3K27ac": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2999,
+                    "non_acgt_chars": 0,
+                    "rows": 2999,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2999,
+                    "total_chars": 2999000
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 1616,
+                    "non_acgt_chars": 0,
+                    "rows": 1616,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 1616,
+                    "total_chars": 1616000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 27001,
+                    "non_acgt_chars": 0,
+                    "rows": 27001,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 27001,
+                    "total_chars": 27001000
+                }
+            },
+            "unified_eval_n": 1616
+        },
+        "NT_downstream_tasks__H3K27me3": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2999,
+                    "non_acgt_chars": 0,
+                    "rows": 2999,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2999,
+                    "total_chars": 2999000
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3000,
+                    "non_acgt_chars": 0,
+                    "rows": 3000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3000,
+                    "total_chars": 3000000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 27001,
+                    "non_acgt_chars": 0,
+                    "rows": 27001,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 27001,
+                    "total_chars": 27001000
+                }
+            },
+            "unified_eval_n": 3000
+        },
+        "NT_downstream_tasks__H3K4me2": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2999,
+                    "non_acgt_chars": 0,
+                    "rows": 2999,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2999,
+                    "total_chars": 2999000
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2138,
+                    "non_acgt_chars": 0,
+                    "rows": 2138,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2138,
+                    "total_chars": 2138000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 27001,
+                    "non_acgt_chars": 0,
+                    "rows": 27001,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 27001,
+                    "total_chars": 27001000
+                }
+            },
+            "unified_eval_n": 2138
+        },
+        "NT_downstream_tasks__H3K9me3": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2742,
+                    "non_acgt_chars": 0,
+                    "rows": 2742,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2742,
+                    "total_chars": 2742000
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 850,
+                    "non_acgt_chars": 0,
+                    "rows": 850,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 850,
+                    "total_chars": 850000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 24696,
+                    "non_acgt_chars": 0,
+                    "rows": 24696,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 24696,
+                    "total_chars": 24696000
+                }
+            },
+            "unified_eval_n": 850
+        },
+        "NT_downstream_tasks__enhancers": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2999,
+                    "non_acgt_chars": 0,
+                    "rows": 2999,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2999,
+                    "total_chars": 1199600
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3000,
+                    "non_acgt_chars": 0,
+                    "rows": 3000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3000,
+                    "total_chars": 1200000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 27001,
+                    "non_acgt_chars": 0,
+                    "rows": 27001,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 27001,
+                    "total_chars": 10800400
+                }
+            },
+            "unified_eval_n": 3000
+        },
+        "NT_downstream_tasks__splice_sites_acceptors": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2999,
+                    "non_acgt_chars": 0,
+                    "rows": 2999,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2999,
+                    "total_chars": 1799400
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3000,
+                    "non_acgt_chars": 0,
+                    "rows": 3000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3000,
+                    "total_chars": 1800000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 27001,
+                    "non_acgt_chars": 0,
+                    "rows": 27001,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 27001,
+                    "total_chars": 16200600
+                }
+            },
+            "unified_eval_n": 3000
+        },
+        "NT_downstream_tasks__splice_sites_all": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2998,
+                    "non_acgt_chars": 0,
+                    "rows": 2998,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2998,
+                    "total_chars": 1798800
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3000,
+                    "non_acgt_chars": 0,
+                    "rows": 3000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3000,
+                    "total_chars": 1800000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 27002,
+                    "non_acgt_chars": 0,
+                    "rows": 27002,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 27002,
+                    "total_chars": 16201200
+                }
+            },
+            "unified_eval_n": 3000
+        },
+        "NT_downstream_tasks__splice_sites_donors": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2999,
+                    "non_acgt_chars": 0,
+                    "rows": 2999,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2999,
+                    "total_chars": 1799400
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3000,
+                    "non_acgt_chars": 0,
+                    "rows": 3000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3000,
+                    "total_chars": 1800000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 27001,
+                    "non_acgt_chars": 0,
+                    "rows": 27001,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 27001,
+                    "total_chars": 16200600
+                }
+            },
+            "unified_eval_n": 3000
+        },
+        "PDLLMs_datasets__plant-multi-species-H3K27ac": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "N": 12
+                    },
+                    "n_tolerant_survivors": 10240,
+                    "non_acgt_chars": 12,
+                    "rows": 10240,
+                    "rows_with_non_acgt": 3,
+                    "strict_survivors": 10237,
+                    "total_chars": 6865442
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 10240,
+                    "non_acgt_chars": 0,
+                    "rows": 10240,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 10240,
+                    "total_chars": 6887630
+                },
+                "train": {
+                    "by_char": {
+                        "N": 44
+                    },
+                    "n_tolerant_survivors": 81920,
+                    "non_acgt_chars": 44,
+                    "rows": 81920,
+                    "rows_with_non_acgt": 21,
+                    "strict_survivors": 81899,
+                    "total_chars": 54636707
+                }
+            },
+            "unified_eval_n": 10240
+        },
+        "PDLLMs_datasets__plant-multi-species-H3K27me3": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "N": 5
+                    },
+                    "n_tolerant_survivors": 9968,
+                    "non_acgt_chars": 5,
+                    "rows": 9968,
+                    "rows_with_non_acgt": 2,
+                    "strict_survivors": 9966,
+                    "total_chars": 8448938
+                },
+                "test": {
+                    "by_char": {
+                        "S": 1
+                    },
+                    "n_tolerant_survivors": 9967,
+                    "non_acgt_chars": 1,
+                    "rows": 9968,
+                    "rows_with_non_acgt": 1,
+                    "strict_survivors": 9967,
+                    "total_chars": 8528228
+                },
+                "train": {
+                    "by_char": {
+                        "M": 1,
+                        "N": 100
+                    },
+                    "n_tolerant_survivors": 79747,
+                    "non_acgt_chars": 101,
+                    "rows": 79748,
+                    "rows_with_non_acgt": 30,
+                    "strict_survivors": 79718,
+                    "total_chars": 68004017
+                }
+            },
+            "unified_eval_n": 9967
+        },
+        "PDLLMs_datasets__plant-multi-species-H3K4me3": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "N": 11
+                    },
+                    "n_tolerant_survivors": 10240,
+                    "non_acgt_chars": 11,
+                    "rows": 10240,
+                    "rows_with_non_acgt": 4,
+                    "strict_survivors": 10236,
+                    "total_chars": 10128433
+                },
+                "test": {
+                    "by_char": {
+                        "N": 11
+                    },
+                    "n_tolerant_survivors": 10240,
+                    "non_acgt_chars": 11,
+                    "rows": 10240,
+                    "rows_with_non_acgt": 3,
+                    "strict_survivors": 10237,
+                    "total_chars": 10040751
+                },
+                "train": {
+                    "by_char": {
+                        "K": 1,
+                        "N": 43,
+                        "R": 1,
+                        "W": 3,
+                        "Y": 1
+                    },
+                    "n_tolerant_survivors": 81919,
+                    "non_acgt_chars": 49,
+                    "rows": 81920,
+                    "rows_with_non_acgt": 16,
+                    "strict_survivors": 81904,
+                    "total_chars": 80640938
+                }
+            },
+            "unified_eval_n": 10237
+        },
+        "PDLLMs_datasets__plant-multi-species-core-promoters": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "N": 21
+                    },
+                    "n_tolerant_survivors": 8320,
+                    "non_acgt_chars": 21,
+                    "rows": 8320,
+                    "rows_with_non_acgt": 18,
+                    "strict_survivors": 8302,
+                    "total_chars": 2496000
+                },
+                "test": {
+                    "by_char": {
+                        "N": 151
+                    },
+                    "n_tolerant_survivors": 8320,
+                    "non_acgt_chars": 151,
+                    "rows": 8320,
+                    "rows_with_non_acgt": 11,
+                    "strict_survivors": 8309,
+                    "total_chars": 2496000
+                },
+                "train": {
+                    "by_char": {
+                        "K": 3,
+                        "M": 4,
+                        "N": 89,
+                        "R": 9,
+                        "S": 4,
+                        "W": 6,
+                        "Y": 14
+                    },
+                    "n_tolerant_survivors": 66548,
+                    "non_acgt_chars": 129,
+                    "rows": 66560,
+                    "rows_with_non_acgt": 84,
+                    "strict_survivors": 66476,
+                    "total_chars": 19968000
+                }
+            },
+            "unified_eval_n": 8309
+        },
+        "PDLLMs_datasets__plant-multi-species-lncRNAs": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "N": 17
+                    },
+                    "n_tolerant_survivors": 5028,
+                    "non_acgt_chars": 17,
+                    "rows": 5028,
+                    "rows_with_non_acgt": 3,
+                    "strict_survivors": 5025,
+                    "total_chars": 3021589
+                },
+                "test": {
+                    "by_char": {
+                        "N": 1665
+                    },
+                    "n_tolerant_survivors": 5032,
+                    "non_acgt_chars": 1665,
+                    "rows": 5032,
+                    "rows_with_non_acgt": 8,
+                    "strict_survivors": 5024,
+                    "total_chars": 2976901
+                },
+                "train": {
+                    "by_char": {
+                        "N": 3849
+                    },
+                    "n_tolerant_survivors": 40248,
+                    "non_acgt_chars": 3849,
+                    "rows": 40248,
+                    "rows_with_non_acgt": 29,
+                    "strict_survivors": 40219,
+                    "total_chars": 24127778
+                }
+            },
+            "unified_eval_n": 5024
+        },
+        "PDLLMs_datasets__plant-multi-species-open-chromatin": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "N": 54
+                    },
+                    "n_tolerant_survivors": 14850,
+                    "non_acgt_chars": 54,
+                    "rows": 14850,
+                    "rows_with_non_acgt": 41,
+                    "strict_survivors": 14809,
+                    "total_chars": 7155631
+                },
+                "test": {
+                    "by_char": {
+                        "N": 78,
+                        "R": 1,
+                        "W": 1
+                    },
+                    "n_tolerant_survivors": 14849,
+                    "non_acgt_chars": 80,
+                    "rows": 14850,
+                    "rows_with_non_acgt": 49,
+                    "strict_survivors": 14801,
+                    "total_chars": 7103876
+                },
+                "train": {
+                    "by_char": {
+                        "K": 1,
+                        "M": 1,
+                        "N": 537,
+                        "R": 6,
+                        "S": 1,
+                        "V": 1,
+                        "W": 2,
+                        "Y": 4,
+                        "n": 2044
+                    },
+                    "n_tolerant_survivors": 118790,
+                    "non_acgt_chars": 2597,
+                    "rows": 118800,
+                    "rows_with_non_acgt": 348,
+                    "strict_survivors": 118452,
+                    "total_chars": 57450521
+                }
+            },
+            "unified_eval_n": 14801
+        },
+        "PDLLMs_datasets__plant-multi-species-sequence-conservation": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "N": 93
+                    },
+                    "n_tolerant_survivors": 7040,
+                    "non_acgt_chars": 93,
+                    "rows": 7040,
+                    "rows_with_non_acgt": 30,
+                    "strict_survivors": 7010,
+                    "total_chars": 7040000
+                },
+                "test": {
+                    "by_char": {
+                        "N": 133
+                    },
+                    "n_tolerant_survivors": 7040,
+                    "non_acgt_chars": 133,
+                    "rows": 7040,
+                    "rows_with_non_acgt": 38,
+                    "strict_survivors": 7002,
+                    "total_chars": 7040000
+                },
+                "train": {
+                    "by_char": {
+                        "N": 635
+                    },
+                    "n_tolerant_survivors": 56320,
+                    "non_acgt_chars": 635,
+                    "rows": 56320,
+                    "rows_with_non_acgt": 213,
+                    "strict_survivors": 56107,
+                    "total_chars": 56320000
+                }
+            },
+            "unified_eval_n": 7002
+        },
+        "PlantCAD2_fine_tuning_tasks__cross_species_leaf_absolute_translation": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 5492,
+                    "non_acgt_chars": 0,
+                    "rows": 5492,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 5492,
+                    "total_chars": 2746000
+                },
+                "test": {
+                    "by_char": {
+                        "N": 537
+                    },
+                    "n_tolerant_survivors": 39035,
+                    "non_acgt_chars": 537,
+                    "rows": 39035,
+                    "rows_with_non_acgt": 2,
+                    "strict_survivors": 39033,
+                    "total_chars": 19517500
+                },
+                "train": {
+                    "by_char": {
+                        "K": 1,
+                        "N": 27
+                    },
+                    "n_tolerant_survivors": 21893,
+                    "non_acgt_chars": 28,
+                    "rows": 21894,
+                    "rows_with_non_acgt": 2,
+                    "strict_survivors": 21892,
+                    "total_chars": 10947000
+                }
+            },
+            "unified_eval_n": 39033
+        },
+        "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 5492,
+                    "non_acgt_chars": 0,
+                    "rows": 5492,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 5492,
+                    "total_chars": 2746000
+                },
+                "test": {
+                    "by_char": {
+                        "N": 537
+                    },
+                    "n_tolerant_survivors": 39035,
+                    "non_acgt_chars": 537,
+                    "rows": 39035,
+                    "rows_with_non_acgt": 2,
+                    "strict_survivors": 39033,
+                    "total_chars": 19517500
+                },
+                "train": {
+                    "by_char": {
+                        "K": 1,
+                        "N": 27
+                    },
+                    "n_tolerant_survivors": 21893,
+                    "non_acgt_chars": 28,
+                    "rows": 21894,
+                    "rows_with_non_acgt": 2,
+                    "strict_survivors": 21892,
+                    "total_chars": 10947000
+                }
+            },
+            "unified_eval_n": 39033
+        },
+        "iDNA_ABF_datasets__5mC": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 234,
+                    "non_acgt_chars": 0,
+                    "rows": 234,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 234,
+                    "total_chars": 9594
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2344,
+                    "non_acgt_chars": 0,
+                    "rows": 2344,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2344,
+                    "total_chars": 96104
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2110,
+                    "non_acgt_chars": 0,
+                    "rows": 2110,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2110,
+                    "total_chars": 86510
+                }
+            },
+            "unified_eval_n": 2344
+        },
+        "iDNA_ABF_datasets__6mA": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 1832,
+                    "non_acgt_chars": 0,
+                    "rows": 1832,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 1832,
+                    "total_chars": 75112
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 18334,
+                    "non_acgt_chars": 0,
+                    "rows": 18334,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 18334,
+                    "total_chars": 751694
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 16504,
+                    "non_acgt_chars": 0,
+                    "rows": 16504,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 16504,
+                    "total_chars": 676664
+                }
+            },
+            "unified_eval_n": 18334
+        },
+        "iPro-WAEL_datasets__Promoter_R_capsulatus": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 740,
+                    "non_acgt_chars": 0,
+                    "rows": 740,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 740,
+                    "total_chars": 29600
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 3175,
+                    "non_acgt_chars": 0,
+                    "rows": 3175,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 3175,
+                    "total_chars": 127000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 6666,
+                    "non_acgt_chars": 0,
+                    "rows": 6666,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 6666,
+                    "total_chars": 266640
+                }
+            },
+            "unified_eval_n": 3175
+        },
+        "plant-genomic-benchmark__gene_exp.arabidopsis_thaliana": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "N": 3
+                    },
+                    "n_tolerant_survivors": 3401,
+                    "non_acgt_chars": 3,
+                    "rows": 3401,
+                    "rows_with_non_acgt": 3,
+                    "strict_survivors": 3398,
+                    "total_chars": 20406000
+                },
+                "test": {
+                    "by_char": {
+                        "N": 6
+                    },
+                    "n_tolerant_survivors": 3402,
+                    "non_acgt_chars": 6,
+                    "rows": 3402,
+                    "rows_with_non_acgt": 4,
+                    "strict_survivors": 3398,
+                    "total_chars": 20412000
+                },
+                "train": {
+                    "by_char": {
+                        "N": 6344
+                    },
+                    "n_tolerant_survivors": 25731,
+                    "non_acgt_chars": 6344,
+                    "rows": 25731,
+                    "rows_with_non_acgt": 35,
+                    "strict_survivors": 25696,
+                    "total_chars": 154386000
+                }
+            },
+            "unified_eval_n": 3398
+        },
+        "plant-genomic-benchmark__gene_exp.oryza_sativa": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "N": 6880
+                    },
+                    "n_tolerant_survivors": 3702,
+                    "non_acgt_chars": 6880,
+                    "rows": 3702,
+                    "rows_with_non_acgt": 37,
+                    "strict_survivors": 3665,
+                    "total_chars": 22212000
+                },
+                "test": {
+                    "by_char": {
+                        "N": 6436
+                    },
+                    "n_tolerant_survivors": 3702,
+                    "non_acgt_chars": 6436,
+                    "rows": 3702,
+                    "rows_with_non_acgt": 31,
+                    "strict_survivors": 3671,
+                    "total_chars": 22212000
+                },
+                "train": {
+                    "by_char": {
+                        "N": 51537
+                    },
+                    "n_tolerant_survivors": 31244,
+                    "non_acgt_chars": 51537,
+                    "rows": 31244,
+                    "rows_with_non_acgt": 286,
+                    "strict_survivors": 30958,
+                    "total_chars": 187464000
+                }
+            },
+            "unified_eval_n": 3671
+        },
+        "plant-genomic-benchmark__gene_exp.zea_mays": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "N": 869
+                    },
+                    "n_tolerant_survivors": 4483,
+                    "non_acgt_chars": 869,
+                    "rows": 4483,
+                    "rows_with_non_acgt": 1,
+                    "strict_survivors": 4482,
+                    "total_chars": 26898000
+                },
+                "test": {
+                    "by_char": {
+                        "N": 13
+                    },
+                    "n_tolerant_survivors": 4483,
+                    "non_acgt_chars": 13,
+                    "rows": 4483,
+                    "rows_with_non_acgt": 1,
+                    "strict_survivors": 4482,
+                    "total_chars": 26898000
+                },
+                "train": {
+                    "by_char": {
+                        "N": 20860
+                    },
+                    "n_tolerant_survivors": 34493,
+                    "non_acgt_chars": 20860,
+                    "rows": 34493,
+                    "rows_with_non_acgt": 10,
+                    "strict_survivors": 34483,
+                    "total_chars": 206958000
+                }
+            },
+            "unified_eval_n": 4482
+        },
+        "plant-genomic-benchmark__poly_a.arabidopsis_thaliana": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 17083,
+                    "non_acgt_chars": 0,
+                    "rows": 17083,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 17083,
+                    "total_chars": 6833200
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 30384,
+                    "non_acgt_chars": 0,
+                    "rows": 30384,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 30384,
+                    "total_chars": 12153600
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 153752,
+                    "non_acgt_chars": 0,
+                    "rows": 153752,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 153752,
+                    "total_chars": 61500800
+                }
+            },
+            "unified_eval_n": 30384
+        },
+        "plant-genomic-benchmark__promoter_strength.leaf": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 6825,
+                    "non_acgt_chars": 0,
+                    "rows": 6825,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 6825,
+                    "total_chars": 1160250
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 7154,
+                    "non_acgt_chars": 0,
+                    "rows": 7154,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 7154,
+                    "total_chars": 1216180
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 58179,
+                    "non_acgt_chars": 0,
+                    "rows": 58179,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 58179,
+                    "total_chars": 9890430
+                }
+            },
+            "unified_eval_n": 7154
+        },
+        "plant-genomic-benchmark__terminator_strength.leaf": {
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 4806,
+                    "non_acgt_chars": 0,
+                    "rows": 4806,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 4806,
+                    "total_chars": 817020
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 5309,
+                    "non_acgt_chars": 0,
+                    "rows": 5309,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 5309,
+                    "total_chars": 902530
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 43294,
+                    "non_acgt_chars": 0,
+                    "rows": 43294,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 43294,
+                    "total_chars": 7359980
+                }
+            },
+            "unified_eval_n": 5309
+        }
+    }
+}

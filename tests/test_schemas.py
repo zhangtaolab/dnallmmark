@@ -57,6 +57,14 @@ SCHEMA_FILES = {
         REPO / "schemas" / "data_manifest.json",
         [DATA / "manifest.json"],
     ),
+    # F7 artifact (05-03): the N-frequency / non-ACGT census over the
+    # registry tasks (LOCAL audit output — not part of `make data`, so
+    # not drift-gated; the schema bucket keeps the every-committed-JSON-
+    # validated invariant over it).
+    "n_audit": (
+        REPO / "schemas" / "n_audit.json",
+        [DATA / "n_audit.json"],
+    ),
 }
 
 
@@ -114,6 +122,7 @@ EXPECTED_BUCKET_SIZES = {
     "tasks_index": 1,
     "permutation_tests": 1,
     "data_manifest": 1,
+    "n_audit": 1,
 }
 
 
