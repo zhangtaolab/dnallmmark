@@ -590,7 +590,9 @@ def test_safetensors_membership_is_legacy_union():
 | A6 | Unmapped suite canonicals (f1_micro, AUROC_ovr, TPR…) map to `""` (14-key contract unchanged) rather than extending the metricBlock enum this phase | Mapping layer | If a Phase 4 test task actually emits one, SC-6 enum extension lands instead — both paths are designed; no schema breakage either way |
 | A7 | scipy's SUS verdict is a probe-signal artifact (null downloads/repo), not evidence of risk — suite-pinned, 25-year-old NumFOCUS package | Package audit | None practically; checkpoint:human-verify satisfies the protocol |
 
-## Open Questions
+## Open Questions (RESOLVED — all 7 dispositioned at planning time)
+
+> Resolution map (recorded 2026-10-10 after checker verification): OQ1→D-12 (parametersBlock = config-YAML join, schema unchanged) · OQ2→D-13 (WR-02/WR-03 fixed+unmarked in 04-01) · OQ3→D-14 (AUD-11/12 include-with-flexibility) · OQ4→04-05 Task (2-file species correction + tasks.json, ordered after pivot retirement) · OQ5→04-01 Task 3 (IN-01 label) · OQ6→04-05 (get_task_performance.py deleted, assertions folded) · OQ7→04-02 (freeze_snapshot path parameterized).
 
 1. **Exporter parametersBlock sourcing (blocking design decision)**
    - What we know: task_performance schema requires 9 training-param keys; run_record.json carries none (vram_probe holds 4 of them as nulls by design).
