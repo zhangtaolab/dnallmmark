@@ -90,10 +90,16 @@ See also:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import argparse
+import json
+import math
+import re
+from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 import numpy as np
+import yaml
 from scipy import stats
 
 # =====================================================================
@@ -202,3 +208,541 @@ def aggregate_seeds(
     return out
 
 # ===== END vendored section @483a35c =====
+
+
+# =====================================================================
+# Exporter-owned metric-key mapping (IN-03 single owner)
+# =====================================================================
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# Suite canonical metric names @483a35c — the vendored parity surface.
+# Source: dnallm/tasks/metric_registry.py _RAW_REGISTRY keys, read-only at
+# suite revision 483a35c (the live registry cannot be imported CPU-side:
+# dnallm/__init__ pulls torch — CONTEXT exporter-Q1). The alias table below
+# mirrors the registry's alias column exactly; recognition is strictly
+# one-directional — aliases are NEVER emitted.
+SUITE_CANONICAL = frozenset({
+    "accuracy", "precision", "recall", "f1", "f1_micro", "f1_weighted",
+    "f1_samples", "precision_micro", "precision_weighted", "precision_samples",
+    "recall_micro", "recall_weighted", "recall_samples", "mcc",
+    "matthews_correlation", "AUROC", "AUPRC", "AUROC_ovr", "AUROC_ovo",
+    "TPR", "TNR", "FPR", "FNR", "mse", "mae", "r2", "pearsonr", "spearmanr",
+})
+
+_SUITE_ALIASES: dict[str, tuple[str, ...]] = {
+    "accuracy": ("eval_accuracy",),
+    "precision": ("eval_precision",),
+    "recall": ("eval_recall",),
+    "f1": ("eval_f1",),
+    "f1_micro": ("eval_f1_micro",),
+    "f1_weighted": ("eval_f1_weighted",),
+    "f1_samples": ("eval_f1_samples",),
+    "precision_micro": ("eval_precision_micro",),
+    "precision_weighted": ("eval_precision_weighted",),
+    "precision_samples": ("eval_precision_samples",),
+    "recall_micro": ("eval_recall_micro",),
+    "recall_weighted": ("eval_recall_weighted",),
+    "recall_samples": ("eval_recall_samples",),
+    "mcc": ("eval_mcc",),
+    "matthews_correlation": ("eval_matthews_correlation",),
+    "AUROC": ("eval_AUROC", "eval_auroc"),
+    "AUPRC": ("eval_AUPRC", "eval_auprc"),
+    "AUROC_ovr": ("eval_AUROC_ovr",),
+    "AUROC_ovo": ("eval_AUROC_ovo",),
+    "TPR": ("eval_TPR",),
+    "TNR": ("eval_TNR",),
+    "FPR": ("eval_FPR",),
+    "FNR": ("eval_FNR",),
+    "mse": ("eval_mse",),
+    "mae": ("eval_mae",),
+    "r2": ("eval_r2",),
+    "pearsonr": ("eval_pearsonr", "eval_pearson_r"),
+    "spearmanr": ("eval_spearmanr", "eval_spearman_r"),
+}
+_ALIAS_TO_CANONICAL: dict[str, str] = {
+    alias: canonical
+    for canonical, aliases in _SUITE_ALIASES.items()
+    for alias in aliases
+}
+
+# Canonical -> export metricBlock slot. The legacy producer's hardcoded
+# semantics (pipeline/dnallmmark_pipeline.py:1273-1285), formalized as the
+# single mapping table.
+CANONICAL_TO_EXPORT: dict[str, str] = {
+    "accuracy": "accuracy",
+    "precision": "precision",
+    "recall": "recall",
+    "f1": "f1",
+    "mcc": "mcc",
+    "AUROC": "auroc",
+    "AUPRC": "auprc",
+    "mse": "mse",
+    "r2": "r2",
+    "pearsonr": "pearson_r",
+    "spearmanr": "spearman_r",
+}
+
+# The deliberate non-mappings (A6): suite canonicals with no slot in the
+# 14-key metricBlock contract. They emit the empty string (the contract's
+# missing-value convention) and are disclosed under their canonical names
+# in the per-seed statistics artifact. Extending the closed enum instead is
+# the SC-6 same-commit path (schema + data + self-check together), NOT
+# taken this phase.
+UNMAPPED = frozenset(SUITE_CANONICAL - set(CANONICAL_TO_EXPORT))
+
+# Pipeline-produced (non-registry) keys with export slots: the HF Trainer
+# output keys the sweep records verbatim, plus the FLOPs instrumentation
+# source (a bare number in the schema — its absence is a hard error).
+PIPELINE_KEYS: dict[str, str] = {
+    "eval_loss": "loss",
+    "train_runtime": "runtime",
+    "total_flos": "FLOPs",
+}
+
+# The 14-key metricBlock surface — equals schemas/task_performance.json's
+# metricBlock required set (pinned by tests/test_export_runs.py).
+EXPORT_METRIC_KEYS = frozenset(CANONICAL_TO_EXPORT.values()) | frozenset(PIPELINE_KEYS.values())
+
+# Multiple-Category rows classify into their majority-species arena before
+# emission (maintainer-confirmed 2026-10-10 — 04-CATEGORY-REVIEW.md; the
+# raw "Multiple" value must never reach output: the schema enum rejects
+# it). The consumer-side twin is summarize_comparison.MAJORITY_ARENA
+# (04-01); the two constants are pinned equal by test.
+MAJORITY_ARENA = {"Multiple": "Animals"}
+
+# The 11 model-card keys every unified registry entry carries
+# (== tests/test_registry_unification.py CARD_KEYS; 62/62 complete since
+# the 04-04 fills). A missing key aborts — never a partial card.
+CARD_KEYS = frozenset({
+    "architecture", "context_len (bp)", "huggingface", "mean_token_len",
+    "modelscope", "name", "series", "size (M)", "species", "tokenizer",
+    "type",
+})
+
+_SEED_DIR_PATTERN = re.compile(r"^seed_(\d+)$")
+
+
+def resolve_metric_key(key: str) -> str | None:
+    """Map one run-record metric key to its export metricBlock slot.
+
+    Pipeline-produced keys win first (``eval_loss``/``train_runtime``/
+    ``total_flos`` are not registry metrics). Registry resolution then
+    mirrors the suite rules exactly: a canonical name resolves to itself, a
+    registered alias resolves one-directionally to its canonical. A mapped
+    canonical yields its export slot; an unmapped canonical yields ``""``
+    (the deliberate empty-string marker, A6); a key that is neither —
+    Trainer bookkeeping such as ``train_loss``, ``epoch``, ``eval_runtime``
+    or ``*_per_second`` — yields ``None`` (not a leaderboard metric,
+    skipped by the documented contract). This function never returns an
+    alias spelling.
+
+    Args:
+        key: A metric key from a run record's ``metrics`` block.
+
+    Returns:
+        The export slot, ``""`` for a deliberately unmapped canonical, or
+        ``None`` for a non-metric key.
+    """
+    if key in PIPELINE_KEYS:
+        return PIPELINE_KEYS[key]
+    if key in SUITE_CANONICAL:
+        return CANONICAL_TO_EXPORT.get(key, "")
+    if key in _ALIAS_TO_CANONICAL:
+        return CANONICAL_TO_EXPORT.get(_ALIAS_TO_CANONICAL[key], "")
+    return None
+
+
+def _canonical_of(key: str) -> str:
+    """The canonical name for a known canonical-or-alias key."""
+    return key if key in SUITE_CANONICAL else _ALIAS_TO_CANONICAL[key]
+
+
+# =====================================================================
+# Run-record reader (F2 layout)
+# =====================================================================
+
+def load_run_records(root: Path) -> dict[str, dict[str, dict[int, dict[str, Any]]]]:
+    """Read the F2 run-record tree: ``{model: {task: {seed: record}}}``.
+
+    Walks ``{root}/{model}/{task}/seed_{n}/run_record.json`` — models and
+    tasks in sorted order, seed directories sorted numerically. A seed
+    directory without a run_record.json is skipped (a partially-written
+    cell); a malformed record aborts loudly (offline tool over the sweep's
+    own output).
+
+    Args:
+        root: The sweep output root (default ``finetuned/``).
+
+    Returns:
+        The nested record tree, records verbatim.
+    """
+    if not root.is_dir():
+        raise FileNotFoundError(f"input root does not exist: {root}")
+    tree: dict[str, dict[str, dict[int, dict[str, Any]]]] = {}
+    for model_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        for task_dir in sorted(p for p in model_dir.iterdir() if p.is_dir()):
+            seed_dirs: list[tuple[int, Path]] = []
+            for path in task_dir.iterdir():
+                match = _SEED_DIR_PATTERN.match(path.name)
+                if match and path.is_dir():
+                    seed_dirs.append((int(match.group(1)), path))
+            for seed, seed_dir in sorted(seed_dirs):
+                record_path = seed_dir / "run_record.json"
+                if not record_path.exists():
+                    continue
+                record = json.loads(record_path.read_text(encoding="utf-8"))
+                tree.setdefault(model_dir.name, {}).setdefault(task_dir.name, {})[seed] = record
+    return tree
+
+
+def _finite(value: Any) -> float | None:
+    """Coerce to a finite float, or ``None`` (WR-03: non-finite = missing)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    result = float(value)
+    return result if math.isfinite(result) else None
+
+
+def _record_path(root: Path, model: str, task: str, seed: int) -> Path:
+    return root / model / task / f"seed_{seed}" / "run_record.json"
+
+
+def _collect_cell_values(
+    records: Mapping[int, Mapping[str, Any]], root: Path, model: str, task: str
+) -> dict[str, dict[int, float]]:
+    """Per-metric seed values over a cell's COMPLETED records, finite only.
+
+    Keys are export slots for mapped canonicals and pipeline-produced keys;
+    deliberately unmapped canonicals are kept under their canonical names
+    so the statistics artifact discloses them (no silent drops). Records
+    with status failed/skipped contribute nothing. A completed record
+    missing ``total_flos`` is a hard error naming the record path (the
+    schema requires a bare number — 0 or ``""`` would falsify or
+    invalidate; T-04-04).
+
+    Args:
+        records: ``{seed: record}`` for one model/task cell.
+        root: The input root (for actionable error paths).
+        model: Model name (path component).
+        task: Task name (path component).
+
+    Returns:
+        ``{stats key: {seed: finite value}}``.
+    """
+    per_metric: dict[str, dict[int, float]] = {}
+    for seed in sorted(records):
+        record = records[seed]
+        if record.get("status") != "completed":
+            continue
+        metrics = record.get("metrics") or {}
+        if "total_flos" not in metrics:
+            raise RuntimeError(
+                f"completed run record is missing the pipeline-produced FLOPs "
+                f"source 'total_flos' (schemas/task_performance.json requires "
+                f"a bare number — emitting 0 or '' would falsify or "
+                f"invalidate): {_record_path(root, model, task, seed)}"
+            )
+        for key, raw in metrics.items():
+            slot = resolve_metric_key(key)
+            if slot is None:
+                continue  # Trainer bookkeeping — documented skip contract
+            value = _finite(raw)
+            if value is None:
+                continue
+            stats_key = slot if slot else _canonical_of(key)
+            per_metric.setdefault(stats_key, {})[seed] = value
+    if "FLOPs" not in per_metric:
+        completed = [s for s in sorted(records) if records[s].get("status") == "completed"]
+        raise RuntimeError(
+            f"no finite 'total_flos' across the completed seeds of {model}/{task} "
+            f"(seeds {completed}) — FLOPs is a required bare number, refusing "
+            f"to emit a fabricated value"
+        )
+    return per_metric
+
+
+# =====================================================================
+# D-12 parametersBlock join (config YAML + actually-effective overrides)
+# =====================================================================
+
+def load_parameters_block(
+    record: Mapping[str, Any], seed_dir: Path, finetune_cfg: Mapping[str, Any], config_path: Path
+) -> dict[str, Any]:
+    """The 9-key parametersBlock per D-12 — the config-YAML join, NOT a
+    run_record contract extension.
+
+    ``batch_size``/``gradient_accumulation_steps`` come from the record's
+    ``vram_probe`` when non-null (the actually-effective overrides), else
+    from the YAML base (``per_device_train_batch_size`` /
+    ``gradient_accumulation_steps``). ``epochs``/``learning_rate``/
+    ``lr_scheduler_type``/``warmup`` (from ``warmup_ratio``)/``bf16``/
+    ``fp16`` come from the YAML. ``steps`` comes from the seed dir's
+    ``trainer_state.json`` ``global_step`` (present in every completed cell
+    by the WR-13 write ordering), falling back to the YAML ``max_steps``
+    ONLY when it is positive — otherwise an actionable hard error.
+
+    Provenance: ``record``/``seed_dir`` are the FIRST completed seed of the
+    cell in sorted order (per-cell training params are config-derived and
+    seed-invariant).
+
+    Args:
+        record: The anchor (first completed) run record.
+        seed_dir: That seed's directory (holds trainer_state.json).
+        finetune_cfg: The config YAML's ``finetune`` block.
+        config_path: Config path (for the actionable error message).
+
+    Returns:
+        The parametersBlock dict (schema: 9 required keys).
+    """
+    vram = record.get("vram_probe") or {}
+    probe_batch = vram.get("batch_size")
+    probe_accum = vram.get("gradient_accumulation_steps")
+    state_path = seed_dir / "trainer_state.json"
+    if state_path.exists():
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        steps = int(state["global_step"])
+    else:
+        max_steps = int(finetune_cfg.get("max_steps", -1))
+        if max_steps > 0:
+            steps = max_steps
+        else:
+            raise RuntimeError(
+                f"cannot source 'steps' for the parameters block: no "
+                f"trainer_state.json in {seed_dir} and the config max_steps "
+                f"is not positive ({max_steps}, {config_path}) — refusing to "
+                f"emit a fabricated step count"
+            )
+    return {
+        "batch_size": (
+            int(probe_batch)
+            if probe_batch is not None
+            else int(finetune_cfg["per_device_train_batch_size"])
+        ),
+        "bf16": bool(finetune_cfg["bf16"]),
+        "epochs": int(finetune_cfg["num_train_epochs"]),
+        "fp16": bool(finetune_cfg["fp16"]),
+        "gradient_accumulation_steps": (
+            int(probe_accum)
+            if probe_accum is not None
+            else int(finetune_cfg["gradient_accumulation_steps"])
+        ),
+        "learning_rate": float(finetune_cfg["learning_rate"]),
+        "lr_scheduler_type": str(finetune_cfg["lr_scheduler_type"]),
+        "steps": steps,
+        "warmup": float(finetune_cfg["warmup_ratio"]),
+    }
+
+
+# =====================================================================
+# Registry joins + emitter
+# =====================================================================
+
+def _load_json(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _load_finetune_config(path: Path) -> dict[str, Any]:
+    """The ``finetune`` block of the config YAML (the D-12 join source).
+
+    PyYAML is not a direct dependency of this repo: it arrives transitively
+    via evaluate -> huggingface-hub (D-15). A missing block aborts loudly.
+    """
+    with path.open("r", encoding="utf-8") as fh:
+        doc = yaml.safe_load(fh) or {}
+    cfg = doc.get("finetune") if isinstance(doc, dict) else None
+    if cfg is None:
+        raise RuntimeError(f"config YAML has no 'finetune' block: {path}")
+    if not isinstance(cfg, dict):
+        raise TypeError(f"config 'finetune' block is not a mapping: {path}")
+    return cfg
+
+
+def _model_card(row: Mapping[str, Any]) -> dict[str, Any]:
+    """The 11-key card join — a missing key aborts (never a partial card)."""
+    return {key: row[key] for key in sorted(CARD_KEYS)}
+
+
+def _dataset_info_block(row: Mapping[str, Any]) -> dict[str, Any]:
+    """The 8-key datasetBlock; Category -> species with Multiple resolved to
+    the majority arena BEFORE emission (the raw value never reaches output)."""
+    return {
+        "dev": row["Dev"],
+        "labels": row["labels"],
+        "length": row["length"],
+        "metric": row["metric"],  # verbatim — casing NOT normalized (Pitfall 7)
+        "species": MAJORITY_ARENA.get(row["Category"], row["Category"]),
+        "test": row["Test"],
+        "train": row["Train"],
+        "type": row["type"],
+    }
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    """Deterministic JSON write: sort_keys, indent 4, no trailing newline
+    (the pivot script's byte convention — byte-stability is a truth)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=4, ensure_ascii=False, sort_keys=True)
+
+
+def export_runs_tree(
+    input_root: Path,
+    models_info_path: Path,
+    datasets_info_path: Path,
+    config_path: Path,
+    output_dir: Path,
+    stats_dir: Path,
+    *,
+    n_bootstrap: int,
+    bootstrap_seed: int,
+    small_n_ci: str,
+) -> list[str]:
+    """Run the full export over an F2 run-record tree.
+
+    For every task (sorted) with at least one completed record, emits
+    ``{safe_task}_task_performance.json`` into ``output_dir`` (validating
+    shape: schemas/task_performance.json) and ``{safe_task}_seed_stats.json``
+    into ``stats_dir`` (the per-seed detail + vendored-statistics reviewer
+    view). Registry joins are hard-fail dict lookups; iteration is sorted
+    and serialization is sort_keys — the whole export is byte-stable.
+
+    Args:
+        input_root: Sweep output root (``{model}/{task}/seed_{n}/``).
+        models_info_path: Unified models registry (modelCard join).
+        datasets_info_path: Unified datasets registry (datasetBlock join).
+        config_path: finetune config YAML (D-12 parametersBlock join).
+        output_dir: Task-file destination.
+        stats_dir: Statistics-artifact destination.
+        n_bootstrap: Bootstrap resample count (n >= 10 seeds only).
+        bootstrap_seed: Bootstrap RNG seed (deterministic intervals).
+        small_n_ci: ``"t-interval"`` or ``"omit"`` for 3 <= n < 10.
+
+    Returns:
+        The sorted list of exported task names.
+    """
+    models_info = _load_json(models_info_path)
+    datasets_info = _load_json(datasets_info_path)
+    finetune_cfg = _load_finetune_config(config_path)
+    tree = load_run_records(input_root)
+
+    tasks = sorted({task for per_model in tree.values() for task in per_model})
+    emitted: list[str] = []
+    for task in tasks:
+        dataset_row = datasets_info[task]  # KeyError: unregistered dataset — hard fail
+        performance: dict[str, dict[str, Any]] = {}
+        stats_doc: dict[str, dict[str, Any]] = {}
+        for model in sorted(tree):
+            records = tree[model].get(task)
+            if not records:
+                continue
+            completed = {
+                seed: record
+                for seed, record in sorted(records.items())
+                if record.get("status") == "completed"
+            }
+            if not completed:
+                continue  # a cell with no completed seeds contributes nothing
+            model_row = models_info[model]  # KeyError: unregistered model — hard fail
+            per_metric = _collect_cell_values(records, input_root, model, task)
+            anchor_seed = min(completed)
+            parameters = load_parameters_block(
+                completed[anchor_seed],
+                input_root / model / task / f"seed_{anchor_seed}",
+                finetune_cfg,
+                config_path,
+            )
+            metric_block: dict[str, Any] = {}
+            for key in sorted(EXPORT_METRIC_KEYS):
+                values = per_metric.get(key)
+                if values:
+                    ordered = [values[seed] for seed in sorted(values)]
+                    metric_block[key] = float(np.mean(ordered))
+                elif key == "FLOPs":
+                    raise RuntimeError(  # pragma: no cover — guarded in _collect_cell_values
+                        f"FLOPs missing for {model}/{task}"
+                    )
+                else:
+                    metric_block[key] = ""
+            performance[model] = {
+                "model": _model_card(model_row),
+                "parameters": parameters,
+                "performance": metric_block,
+            }
+            stats_doc[model] = {
+                key: {
+                    "per_seed": {
+                        str(seed): per_metric[key][seed]
+                        for seed in sorted(per_metric[key])
+                    },
+                    "stats": aggregate_seeds(
+                        [per_metric[key][seed] for seed in sorted(per_metric[key])],
+                        n_bootstrap=n_bootstrap,
+                        bootstrap_seed=bootstrap_seed,
+                        small_n_ci=small_n_ci,
+                    ),
+                }
+                for key in sorted(per_metric)
+            }
+        safe_task = task.replace("/", "_").replace("\\", "_")
+        _write_json(output_dir / f"{safe_task}_task_performance.json", {
+            "info": _dataset_info_block(dataset_row),
+            "performance": performance,
+        })
+        _write_json(stats_dir / f"{safe_task}_seed_stats.json", stats_doc)
+        emitted.append(task)
+    return emitted
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """CLI: repo-root-runnable with explicit REPO_ROOT-relative defaults
+    (the documented, deliberate CWD-convention break — Pitfall 3)."""
+    parser = argparse.ArgumentParser(
+        prog="export_runs",
+        description=(
+            "Unified exporter: F2 run records -> task_performance-compatible "
+            "JSON + per-seed statistics artifacts (SC-2/REV-03)."
+        ),
+    )
+    parser.add_argument("--input-root", type=Path, default=REPO_ROOT / "finetuned",
+                        help="sweep output root (default: %(default)s)")
+    parser.add_argument("--models-info", type=Path,
+                        default=REPO_ROOT / "pipeline" / "models_info.json",
+                        help="unified models registry (default: %(default)s)")
+    parser.add_argument("--datasets-info", type=Path,
+                        default=REPO_ROOT / "pipeline" / "datasets_info.json",
+                        help="unified datasets registry (default: %(default)s)")
+    parser.add_argument("--config", type=Path,
+                        default=REPO_ROOT / "pipeline" / "finetune_config.yaml",
+                        help="finetune config YAML, the D-12 join source (default: %(default)s)")
+    parser.add_argument("--output-dir", type=Path,
+                        default=REPO_ROOT / "dnallm-mark" / "data" / "task_performance",
+                        help="task-file destination (default: %(default)s)")
+    parser.add_argument("--stats-dir", type=Path,
+                        default=REPO_ROOT / "dnallm-mark" / "data" / "seed_stats",
+                        help="per-seed statistics destination (default: %(default)s)")
+    parser.add_argument("--n-bootstrap", type=int, default=2000,
+                        help="bootstrap resamples, n>=10 seeds only (default: %(default)s)")
+    parser.add_argument("--bootstrap-seed", type=int, default=42,
+                        help="bootstrap RNG seed (default: %(default)s)")
+    parser.add_argument("--small-n-ci", choices=list(SMALL_N_CI_CHOICES),
+                        default="t-interval",
+                        help="small-n (3<=n<10) interval policy (default: %(default)s)")
+    args = parser.parse_args(argv)
+    emitted = export_runs_tree(
+        args.input_root, args.models_info, args.datasets_info, args.config,
+        args.output_dir, args.stats_dir,
+        n_bootstrap=args.n_bootstrap,
+        bootstrap_seed=args.bootstrap_seed,
+        small_n_ci=args.small_n_ci,
+    )
+    print(f"Exported {len(emitted)} task(s) to {args.output_dir} "
+          f"(statistics artifacts in {args.stats_dir})")
+    for name in emitted:
+        print(f"  {name}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

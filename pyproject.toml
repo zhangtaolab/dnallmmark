@@ -11,8 +11,10 @@ dependencies = []
 data = [
     "pandas>=2.2,<3.0",   # D-05 floor; latest 2.x = 2.3.3 (verified; pandas 3.0.6 excluded)
     "numpy>=2.0,<3",      # bounded alongside pandas per D-05
-    "scipy>=1.15.2",
-    "evaluate>=0.4.6",
+    # D-15 dependency unification (2026-10-10, maintainer Option C): both join
+    # the data group in the SAME dependency commit, each serving its own layer.
+    "scipy>=1.15.2",      # statistics layer: vendored aggregate_seeds t-interval (suite floor)
+    "evaluate>=0.4.6",    # metrics layer: HF evaluate cross-validates suite-computed metrics (D-15)
 ]
 dev = [
     # Phase 2 harness (added 2026-10-09): floors here, exact pins in uv.lock.
@@ -59,9 +61,12 @@ python-version = "3.13"                      # repo floor (requires-python >=3.1
 extra-paths = ["script", "baseline", "pipeline"]  # mirrors tests/conftest.py sys.path contract (pipeline/ = run_sweep, 03-04)
 
 [tool.ty.analysis]
-replace-imports-with-any = ["torch.**", "dnallm.**", "transformers.**", "peft.**", "datasets.**", "torch_npu.**"]
+replace-imports-with-any = ["torch.**", "dnallm.**", "transformers.**", "peft.**", "datasets.**", "torch_npu.**", "evaluate.**"]
 # GPU-side imports, never installed CPU-side; substitution keeps ty green without lying about types
-# (torch_npu: Huawei Ascend NPU adapter, run_finetune.py:44 — found empirically, research glob incomplete)
+# (torch_npu: Huawei Ascend NPU adapter, run_finetune.py:44 — found empirically, research glob incomplete).
+# evaluate (04-02, D-15 metrics layer): its partial py.typed annotations make ty misread
+# EvaluationModule.compute as an unbound union member — replaced with Any; its behavior is
+# pinned by tests/test_export_runs.py's D-15 golden-case cross-check, not by types.
 
 [tool.ty.src]
 include = ["script", "baseline", "tests", "scripts", "pipeline"]
