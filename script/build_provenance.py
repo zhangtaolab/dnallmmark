@@ -214,26 +214,53 @@ def apply_data_md(data_md: Path, rows: list[dict[str, str]]) -> None:
 
     Markers present -> replace ONLY the content from the BEGIN marker
     through the END marker (maintainer sections byte-identical). Markers
-    absent -> append the block (the bootstrap path). A BEGIN marker with
-    no END marker aborts loudly.
+    absent -> append the block (the bootstrap path). Marker SAFETY
+    (LOW-05, phase-06 review): every malformed marker state aborts
+    loudly instead of garbling — BEGIN without END, END without BEGIN
+    (previously fell through to the append branch, leaving the stray
+    END marker mid-file plus a second block), more than one occurrence
+    of either marker, and an END that precedes its BEGIN.
 
     Args:
         data_md: The DATA.md path (read if present).
         rows: The provenance rows.
+
+    Raises:
+        SystemExit: On any malformed marker state, naming the problem.
     """
     block = render_block(rows)
     if data_md.is_file():
         text = data_md.read_text(encoding="utf-8")
     else:
         text = ""
-    if BEGIN_MARKER in text:
-        if END_MARKER not in text:
+    has_begin = BEGIN_MARKER in text
+    has_end = END_MARKER in text
+    if has_begin and not has_end:
+        sys.exit(
+            "[Error] DATA.md carries the GENERATED PROVENANCE BEGIN"
+            " marker without its END marker — fix the file before"
+            " regenerating"
+        )
+    if has_end and not has_begin:
+        sys.exit(
+            "[Error] DATA.md carries the GENERATED PROVENANCE END"
+            " marker without its BEGIN marker — fix the file before"
+            " regenerating"
+        )
+    if has_begin:
+        if text.count(BEGIN_MARKER) > 1 or text.count(END_MARKER) > 1:
             sys.exit(
-                "[Error] DATA.md carries the GENERATED PROVENANCE BEGIN"
-                " marker without its END marker — fix the file before"
+                "[Error] DATA.md carries more than one GENERATED"
+                " PROVENANCE marker pair — fix the file before"
                 " regenerating"
             )
         begin = text.index(BEGIN_MARKER)
+        if text.index(END_MARKER) < begin:
+            sys.exit(
+                "[Error] DATA.md carries its GENERATED PROVENANCE END"
+                " marker before its BEGIN marker — fix the file before"
+                " regenerating"
+            )
         end = text.index(END_MARKER) + len(END_MARKER)
         text = text[:begin] + block + text[end:]
     else:

@@ -191,6 +191,34 @@ def test_unbalanced_marker_aborts(tmp_path):
         emit(tmp_path, seed_markdown=seed)
 
 
+def test_end_marker_without_begin_aborts(tmp_path):
+    """LOW-05 (phase-06 review): a stranded END marker with no BEGIN
+    aborts loudly — previously the append branch ran, leaving the stray
+    END marker mid-file plus a second full block."""
+    seed = "# Notes\n\n" + build_provenance.END_MARKER + "\n"
+    with pytest.raises(SystemExit, match="without its BEGIN"):
+        emit(tmp_path, seed_markdown=seed)
+
+
+def test_multiple_marker_pairs_abort(tmp_path):
+    """LOW-05: two marker pairs abort loudly — previously text.index took
+    the first BEGIN and the first END anywhere, silently garbling the
+    file when a stale pair survived elsewhere."""
+    pair = build_provenance.BEGIN_MARKER + "\nx\n" + build_provenance.END_MARKER
+    seed = "# Notes\n\n" + pair + "\n\nmiddle\n\n" + pair + "\n"
+    with pytest.raises(SystemExit, match="more than one"):
+        emit(tmp_path, seed_markdown=seed)
+
+
+def test_end_marker_before_begin_aborts(tmp_path):
+    """LOW-05: an END marker that precedes its BEGIN aborts loudly —
+    previously the slice math produced overlapping garbage."""
+    seed = ("# Notes\n\n" + build_provenance.END_MARKER + "\nmiddle\n"
+            + build_provenance.BEGIN_MARKER + "\nstranded\n")
+    with pytest.raises(SystemExit, match="before its BEGIN"):
+        emit(tmp_path, seed_markdown=seed)
+
+
 # ===== Artifact shape + schema =====
 
 
