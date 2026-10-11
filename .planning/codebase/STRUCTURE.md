@@ -62,10 +62,10 @@ dnallmmark/                       # Repository root
 ├── tui/                          # DNALLM-Mark operator console, Textual TUI (Phase 8, 08-02; screens/services from 08-03)
 │   ├── __init__.py               # Package contract docstring: layout + one-directional import boundary
 │   ├── __main__.py               # python -m tui entry: REPO_ROOT + pipeline/ sys.path bootstrap from __file__ (never CWD)
-│   ├── app.py                    # DnallmMarkTui(App) — composition root: TITLE/CSS_PATH + env_check screen registration/opening + app-level q binding (08-03)
-│   ├── strings.py                # I18N-01 single home for operator copy (APP_TITLE/APP_QUIT_LABEL, ENV_KERNEL_LABELS, ENV_STATE_PENDING, ENV_COL_*)
-│   ├── styles.tcss               # Textual CSS — theme tokens only (comment-only minimal; screen styling lands with the 08-06 build)
-│   ├── screens/                  # Presentation tier (imports textual freely); first screen env_check.py — seven-pending-rows shell (08-03, filled by 08-06)
+│   ├── app.py                    # DnallmMarkTui(App) — full composition root (08-06): EnvCheckServiceProtocol injection seam, env_check opening screen, q/? bindings, HelpModal, 80x24 min-size guard (push/pop), SCREENS slot registry for 08-07
+│   ├── strings.py                # I18N-01 single home for operator copy (complete APP_ + ENV_ block, 08-06: verdict/routing/quick-check/min-size/help copy + ENV_KERNEL_LABELS/state glyphs)
+│   ├── styles.tcss               # Textual CSS (complete, 08-06) — theme tokens only, zero hex, declared spacing tokens (1 4 / 0 2 / 1-cell borders), modal width-60 pattern, verdict color classes
+│   ├── screens/                  # Presentation tier (imports textual freely); env_check.py — the FULL env screen (08-06): 7-row DataTable keyed on kernel ids, exclusive @work(thread=True) worker + nested Messages, cache-hit instant render, env_gate verdict block, ModalScreen+RichLog verbatim drill-down, EnvCheckServiceProtocol + real EnvCheckBackend adapter
 │   └── services/                 # ZERO textual imports, ever — locked by tests/tui/test_import_lock.py; first service registries.py (registry counts via registry_loader, 08-03)
 └── tests/                        # pytest suite (since Phase 2); tests/tui/conftest.py adds repo root to sys.path (08-02)
 ```

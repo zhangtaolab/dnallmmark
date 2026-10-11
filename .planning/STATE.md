@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 08
 current_phase_name: TUI Foundation (Env Check & Selection)
 status: executing
-stopped_at: Completed 08-05-PLAN.md
-last_updated: "2026-10-11T13:38:35.279Z"
+stopped_at: Completed 08-06-PLAN.md
+last_updated: "2026-10-11T14:35:03.379Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 08 execution started
-state_head: 059673760053b89c5dda3f3916fe9ab771ec7dcb
+state_head: 1c9d0a32ec6e6684c73849e7798bdf4d6d27873f
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 13
-  completed_plans: 11
+  completed_plans: 12
   percent: 17
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 08 (TUI Foundation (Env Check & Selection)) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-10-11 — Phase 08 execution started
 
@@ -69,6 +69,7 @@ Progress (v1.2): [████████░░] 85% (11/13 plans)
 | Phase 08 P08-03 | 15 min | 1 tasks | 8 files |
 | Phase 08 P08-04 | 32 min | 3 tasks | 13 files |
 | Phase 08 P08-05 | 26 min | 2 tasks | 7 files |
+| Phase 08 P08-06 | 43 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,11 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 08]: 08-05 tier interop encoding: template_to_tiers emits one tier of explicit cross-product pairs (a bare priorities name covers the model's EVERY task — it would cover unselected tasks too); tiers_to_template is registry-blind, preserves file order first-occurrence, and refuses names-only tiers files (minItems-1 tasks would carry nothing); both compositions preserve model/task membership exactly
 - [Phase 08]: 08-05 filter grammar: axis names are the strict lowercase five-axis vocabulary (models species/type/size — size maps to the canonical size_m field; datasets category/type/metric); values and bare substrings match case-insensitively over key + display fields (never card); unknown-axis tokens drop from applied terms into diagnostics; selection.py imports NOTHING from registries (entries/keys arrive as parameters, 08-07 wires them)
 - [Phase 08]: 08-05 jsonschema lane note: tui/services/templates.py imports jsonschema at module top level — dev/CI test + typecheck lanes carry it (dev group), the make tui display lane does not yet import the module; 08-07 must add jsonschema>=4.26.0 to the [tui] group when the selection screen wires template import (same locked range as dev)
+- [Phase 08]: 08-06 env screen landed: EnvCheckServiceProtocol is the injection seam (structural — real EnvCheckBackend adapter + Pilot fakes conform); the adapter lives in the screen module because the plan's file list forbids new service files, and it is thin delegation glue over the tested 08-04 service
+- [Phase 08]: 08-06 worker shape: CheckItemChecking posted BEFORE each kernel call makes the pending->checking->done progression observable per row; the gated-fake (threading.Event) Pilot test doubles as the T-08-07 UI-responsiveness proof; kernel() exists exactly once in the screen, inside the exclusive @work(thread=True) worker
+- [Phase 08]: 08-06 presentation derivations: the summary column is the kernel's own first detail line (PASS:/FAIL: prefix stripped, byte-stable D-02 text); the routing count n counts the dataset_dirs '  - ' listing lines; the UI-SPEC mockup's summaries were hand-abbreviated sketches
+- [Phase 08]: 08-06 textual 8.2.8 facts (probe-pinned): Static.content is the content read API (no .renderable); from textual import work (no textual.work module — research A1 path was wrong); the focused DataTable consumes enter (RowSelected) so the screen enter Binding serves the Footer hint + unfocused path; plain-Screen push/pop hides everything beneath (the min-size guard mechanism)
+- [Phase 08]: 08-06 styles decisions: zero hex (the optional dnallmmark teal theme deliberately not landed — default tokens satisfy the contract); the xl 12-cell token is skipped because Textual CSS has no media queries; the drill-down RichLog max-height 20 is a scroll bound, not a spacing token (the prohibition governs paddings)
 
 ### Pending Todos
 
@@ -133,8 +139,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11T13:38:35.246Z
-Stopped at: Completed 08-05-PLAN.md
+Last session: 2026-10-11T14:35:03.344Z
+Stopped at: Completed 08-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
