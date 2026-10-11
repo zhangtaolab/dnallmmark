@@ -448,10 +448,21 @@ VARIANT_CONFIGS = {
 # (the HeadConfig field at configs.py L14-17; the freeze loop runs at
 # model.py L101-103) never reaches them and a probe run would silently
 # train an unfrozen model under a +probe dir. One provenance comment per
-# member (the suite special/ module each family dispatches to):
+# member (the suite special/ module each family dispatches to). The space
+# family needs BOTH registry spellings (HI-01, phase-06 review): the
+# registry carries two distinct rows — uppercase ``SPACE`` (Model_path
+# ``models/SPACE``) and lowercase ``space`` (``models/space``) — and the
+# suite's space dispatch claims each separately: the native
+# ``space_models = ["SPACE"]`` member matches the uppercase row's path
+# case-sensitively (``"SPACE" in ".../models/SPACE"``, special/space.py
+# substring loop), while the lowercase row is claimed via the ``extra``
+# self-append (``extra=model_name if "space" in model_name.lower()``,
+# model.py:1207-1215) — both return before the generic head_config
+# routing, so BOTH are probe-ineligible.
 PROBE_INELIGIBLE = [
     "enformer-official-rough",  # enformer dedicated loader (suite special/enformer.py via model.py:1196-1204)
-    "space",                    # SPACE dedicated loader (suite special/space.py via model.py:1207-1215)
+    "SPACE",                    # UPPERCASE registry row (models/SPACE): native space_models member "SPACE" claims it case-sensitively (suite special/space.py via model.py:1207-1215)
+    "space",                    # lowercase registry row (models/space): claimed via the extra self-append ("space" in path.lower()) — the same dedicated loader (suite special/space.py via model.py:1207-1215)
     "borzoi-replicate-0",       # borzoi dedicated loader (suite special/borzoi.py via model.py:1218-1226)
     "flashzoi-replicate-0",     # borzoi-family flashzoi loader (suite special/borzoi.py via model.py:1218-1226)
     "evo2_1b_base",             # evo2 own-head branch (suite special/evo.py via model.py:1170-1172)

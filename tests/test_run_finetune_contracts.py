@@ -115,8 +115,10 @@ files). The contracts asserted here are textual/structural:
   snapshot — the ACTIVE config governs); the frozen probe is the with_head
   block with head ``mlp``, ``frozen: true``, ``hidden_dims [512]``
   (suite-owned fields only); a module-level PROBE_INELIGIBLE list (the
-  deeplearning four + the special_models two + the gpn/omnidna dedicated
-  special-loader registry members, one provenance comment each) backs an
+  deeplearning four — with BOTH spellings of the space family, HI-01 —
+  + the special_models two + the gpn/omnidna dedicated special-loader
+  registry members, one provenance comment each, closed under registry
+  case-variant groups) backs an
   argv-boundary guard refusing probe runs on special-loader models with a
   disclosing ``[Error]``; the probe variant alone defaults the save name
   to ``{model}+probe`` (the 06-02 alias seam); the per-dataset
@@ -1651,10 +1653,24 @@ def test_variant_reload_occupies_the_special_models_slot_before_snapshot():
 def test_probe_ineligible_list_covers_special_loader_families_with_provenance():
     """The module-level PROBE_INELIGIBLE list is the enforced scope
     boundary of the frozen-probe lane: the deeplearning_models four, the
-    special_models two, and the two remaining dedicated special-loader
-    registry families (gpn, omnidna — evo1 has no registry members).
-    Every member is a real registry key and every entry line carries a
-    one-line provenance comment naming its special loader."""
+    special_models two, the two remaining dedicated special-loader
+    registry families (gpn, omnidna — evo1 has no registry members), and
+    BOTH spellings of the space family (HI-01, phase-06 review: the
+    registry's uppercase ``SPACE`` row dispatches to the suite's
+    dedicated space loader via the native ``space_models = ["SPACE"]``
+    member while lowercase ``space`` is claimed via the ``extra``
+    self-append — the original 8-member list covered only the lowercase
+    spelling, so ``--config-variant probe --target_model SPACE`` passed
+    the guard and trained unfrozen). Every member is a real registry key
+    and every entry line carries a one-line provenance comment naming its
+    special loader.
+
+    Drift closure (no silent future omissions): the suite's special
+    dispatch is SUBSTRING-based over the model path, so registry rows
+    that differ only by case route to the SAME special loader — the list
+    must be closed under registry case-variant groups (all-in or all-out,
+    never half). The invariant is DERIVED from the registry here, so a
+    future registry rename/case-split cannot silently reopen the hole."""
     src = RUN_FINETUNE.read_text(encoding="utf-8")
     match = re.search(r"PROBE_INELIGIBLE = \[(.*?)\]", src, re.DOTALL)
     assert match is not None, (
@@ -1667,21 +1683,47 @@ def test_probe_ineligible_list_covers_special_loader_families_with_provenance():
     block = match.group(1)
     members = re.findall(r'"([^"]+)"', block)
     assert set(members) == {
-        "enformer-official-rough", "space",
+        "enformer-official-rough", "SPACE", "space",
         "borzoi-replicate-0", "flashzoi-replicate-0",
         "evo2_1b_base", "megaDNA_updated",
         "gpn-brassicales", "Omni-DNA-700M",
     }, (
-        "PROBE_INELIGIBLE must be exactly the deeplearning four + the "
-        "special_models pair + the gpn/omnidna dedicated-loader registry "
-        f"members (got {sorted(members)})"
+        "PROBE_INELIGIBLE must be exactly the deeplearning four (with "
+        "BOTH space spellings) + the special_models pair + the "
+        "gpn/omnidna dedicated-loader registry members "
+        f"(got {sorted(members)})"
     )
+    keys = registry_keys()
+    assert {"SPACE", "space"} <= set(members), (
+        "both registry spellings of the space family must be listed — "
+        "the suite claims each case-variant row separately (HI-01)"
+    )
+    assert {"SPACE", "space"} <= keys, (
+        "the space case-pair assumption no longer holds against the "
+        "registry — re-derive the special-loader families (HI-01 drift "
+        "closure)"
+    )
+    # Registry-derived case closure: group registry keys by lowercased
+    # name; any group PARTIALLY covered by the list is a silent future
+    # HI-01 recurrence (the uncovered case-variant dispatches to the same
+    # special loader and would pass the exact-name guard).
+    by_lower: dict[str, set[str]] = {}
+    for key in keys:
+        by_lower.setdefault(key.lower(), set()).add(key)
+    for group in by_lower.values():
+        listed = group & set(members)
+        assert not (listed and listed != group), (
+            "PROBE_INELIGIBLE is case-incomplete: registry rows "
+            f"{sorted(group)} route to the same suite special loader "
+            f"(substring dispatch over the model path), but only "
+            f"{sorted(listed)} are listed (HI-01 case closure)"
+        )
     assert set(list_members(src, "deeplearning_models")) <= set(members), (
         "every deeplearning_models member must be probe-ineligible — "
         "their dedicated loaders bypass the generic head path"
     )
     assert {"evo2_1b_base", "megaDNA_updated"} <= set(members)
-    unresolved = [n for n in members if n not in registry_keys()]
+    unresolved = [n for n in members if n not in keys]
     assert not unresolved, (
         f"PROBE_INELIGIBLE members not in the unified registry: "
         f"{unresolved} (D-10 name authority)"
@@ -1692,6 +1734,44 @@ def test_probe_ineligible_list_covers_special_loader_families_with_provenance():
         "comment naming its suite special loader (model.py:1169-1228 "
         "families)"
     )
+
+
+def test_probe_guard_membership_catches_both_space_spellings():
+    """Guard simulation (HI-01): exec-extract the PROBE_INELIGIBLE literal
+    and run the guard's EXACT membership expression over every registry
+    key the suite dispatches to a special loader family — the review
+    reproduced ``--config-variant probe --target_model SPACE`` passing the
+    guard because the exact-name check ``name in PROBE_INELIGIBLE`` saw
+    only the lowercase spelling. Both ``SPACE`` and ``space`` must be
+    caught by the same expression the argv-boundary guard uses."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    match = re.search(
+        r"PROBE_INELIGIBLE = \[(.*?)\]", src, re.DOTALL
+    )
+    assert match is not None, "no PROBE_INELIGIBLE list found"
+    namespace = {}
+    exec(match.group(0), namespace)  # noqa: S102 - pure list literal
+    ineligible = namespace["PROBE_INELIGIBLE"]
+    # The guard's expression, verbatim in form: exact-name membership
+    # over the resolved probe target set.
+    for name in ("SPACE", "space", "evo2_1b_base", "megaDNA_updated",
+                 "Omni-DNA-700M", "gpn-brassicales",
+                 "enformer-official-rough", "borzoi-replicate-0",
+                 "flashzoi-replicate-0"):
+        assert name in ineligible, (
+            f"special-loader model {name!r} passes the probe guard's "
+            "exact-name membership check"
+        )
+    assert "SPACE" in ineligible and "space" in ineligible, (
+        "both registry spellings of the space family must be caught — "
+        "the suite claims the uppercase row via the native "
+        "space_models member and the lowercase row via the extra "
+        "self-append, and either would train unfrozen under a +probe "
+        "dir (HI-01)"
+    )
+    # A generic-path model must NOT be refused (the guard stays scoped).
+    generic = sorted(registry_keys() - set(ineligible))
+    assert generic and generic[0] not in ineligible
 
 
 def test_probe_ineligibility_guard_fails_fast_before_model_loop():
