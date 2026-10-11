@@ -157,9 +157,26 @@ def render_block(rows: list[dict[str, str]]) -> str:
 
     Returns:
         str: BEGIN marker line, the section body, END marker line.
+
+    Raises:
+        SystemExit: If the rows carry more than one distinct
+            ``preprocessing`` value — the appendix asserts "uniform
+            across all N datasets" from ``rows[0]``, so a future CSV
+            correction introducing a second value would make it
+            silently assert a falsehood (LOW-06, phase-06 review:
+            abort, never print the falsehood).
     """
     unspecified_license = sum(1 for r in rows if r["license"] == "Unspecified")
     unspecified_citation = sum(1 for r in rows if r["citation"] == "Unspecified")
+    distinct_preprocessing = {r["preprocessing"] for r in rows}
+    if len(distinct_preprocessing) > 1:
+        sys.exit(
+            f"[Error] provenance rows carry {len(distinct_preprocessing)} "
+            "distinct preprocessing values, but the DATA.md appendix "
+            "asserts one uniform value — either restore uniformity in "
+            "the registry or reword the appendix before regenerating "
+            "(LOW-06)"
+        )
     preprocessing = rows[0]["preprocessing"] if rows else ""
     lines = [
         BEGIN_MARKER,

@@ -219,6 +219,18 @@ def test_end_marker_before_begin_aborts(tmp_path):
         emit(tmp_path, seed_markdown=seed)
 
 
+def test_nonuniform_preprocessing_aborts_instead_of_lying(tmp_path):
+    """LOW-06 (phase-06 review): the appendix asserts "Preprocessing
+    (uniform across all N datasets)" from rows[0]; a registry/CSV
+    correction introducing a SECOND distinct value aborts loudly
+    instead of silently printing the falsehood."""
+    registry = make_registry()
+    first = min(registry)
+    registry[first]["preprocessing"] = "a different pipeline entirely"
+    with pytest.raises(SystemExit, match="distinct preprocessing"):
+        emit(tmp_path, registry=registry)
+
+
 # ===== Artifact shape + schema =====
 
 
