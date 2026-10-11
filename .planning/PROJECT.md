@@ -29,7 +29,7 @@ Every number on the public leaderboard is correct and reproducible from code tha
 
 - [ ] TUI console: model×dataset selection matrix (filters, preset groups, template import/export)
 - [ ] Data management panel: presence audit view, ModelScope fetch + row-count verification, persistent download queue
-- [ ] Run configuration surface: seeds/PEFT/variant/curve/subset/epochs + auto-GA (`--effective-batch`) + project/storage directory settings
+- [ ] Run configuration surface: seeds/PEFT/variant/curve/subset/epochs + auto-GA (`--effective_batch_size`) + project/storage directory settings
 - [ ] Single-GPU launch with env_smoke gate, dry-run preview, E2' authorization boundary
 - [ ] Task monitoring: cell dashboard, failure re-run, log tailing, resume states
 - [ ] FlopsCounter port (20+ architecture hooks) from the legacy pipeline to `run_finetune.py`
@@ -80,7 +80,7 @@ Every number on the public leaderboard is correct and reproducible from code tha
 | Baseline form: annotated data-v1 tag + tracked SHA256 manifest + comparator, no golden copies | git stores exact bytes at the tag; 52 duplicated copies would rot | ✓ Landed (Phase 1) |
 | v1.2 scope: FlopsCounter port included (early phase) | Feeds E2' FLOPs correctness + leaderboard efficiency axis; beneficiary beyond the TUI | — Pending (2026-10-11) |
 | v1.2 scope: multi-GPU as final phase P4, hard-gated on single-GPU validation | Maintainer's stated sequencing: 单卡开发成功再开发多卡 | — Pending (2026-10-11) |
-| v1.2 auto-GA policy: `--effective-batch` flag, GA=max(1, N//batch_size), default 16 | Team requirement (lgq12697 Q7) on top of existing dynamic batch sizing + D-07 reset | — Pending |
+| v1.2 auto-GA policy: `--effective_batch_size` flag, GA=max(1, N//batch_size), default 16 | Team requirement (lgq12697 Q7) on top of existing dynamic batch sizing + D-07 reset | — Pending |
 
 ## Evolution
 

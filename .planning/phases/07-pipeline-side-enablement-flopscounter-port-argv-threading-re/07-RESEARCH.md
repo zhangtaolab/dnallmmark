@@ -626,33 +626,41 @@ Not applicable — no external ecosystem movement informs this phase (no new lib
 | A7 | HF `total_flos` is a usable magnitude anchor (fwd+bwd semantics) for D-23 sanity | Smoke criteria | Widen the ratio window; criterion is order-of-magnitude anyway |
 | A8 | `bf16` branch of the calibration uses `configs["finetune"].bf16` as in legacy; run_finetune's fp32-quirk override (`:1114-1116`) lands before the calibration slot so the branch sees the corrected flag | Pattern 1 item 4 | If ordering differs, fp32-only models calibrate under autocast — port must verify override precedes slot (it does: quirk block `:1114` < slot `~:1424`) |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All six were closed during Phase 7 planning (2026-10-11); each disposition names the adopting plan. Original notes retained for provenance.
 
 1. **platformdirs now vs. Phase 8 (A3)**
    - What we know: D-07 names platformdirs; constraint 10 reserves it for `[tui]`; dev/data groups lack it (verified).
    - What's unclear: whether the maintainer reads D-07 as mandating the library in Phase 7.
    - Recommendation: hand-rolled resolver now, identical Linux path, one-line swap later. Flag at plan review.
+   - **RESOLVED — adopted by 07-02 Task 1:** hand-rolled resolver (env var > XDG_CONFIG_HOME > ~/.config, joined with dnallmmark), documented in-plan as a visible refinement of D-07; platformdirs consolidation stays a Phase 8 one-line swap behind the same seam.
 
 2. **Sweep-side subset pre-validation: slim reimplementation vs. shared extraction**
    - What we know: run_sweep cannot import run_finetune (torch); extracting `validate_subset_file` to a shared module breaks the exec-extract regex tests unless those tests are rewritten.
    - What's unclear: appetite for test churn vs. strict DRY.
    - Recommendation: sweep-owned ~25-line collect-all validator (the `_validate_filters` shape), child remains authoritative. Double validation is deliberate defense-in-depth, matching D-14's "pre-validate, then child enforces".
+   - **RESOLVED — adopted by 07-03 Task 2:** `_validate_subset_file(path, datasets_info)`, the sweep-owned collect-all validator; the child's `validate_subset_file` stays authoritative — no shared import.
 
 3. **Manifest flag-fields placement (record vs. manifest projection)**
    - What we know: D-13 says manifest cells record present-flags; `_manifest_payload` projects fixed keys from records; `run_record.json` is not to be disturbed (D-02 spirit).
    - Recommendation: thread a `flags` dict into `run_matrix`/`_manifest_payload` and merge into manifest cells only — run_record.json stays byte-identical even when flags are present.
+   - **RESOLVED — adopted by 07-03 Task 3:** present-flags dict merged into `_manifest_payload` cells only; `_new_record` untouched, so run_record.json keeps its exact field set even when flags are present.
 
 4. **flops_report write timing for failed cells**
    - What we know: legacy wrote the report pre-training (exists even if training fails); recommended design writes post-success only.
    - Recommendation: post-success single write (failed cells produce no artifacts, consistent with final_metrics semantics). Confirm at plan review — the alternative (calibration-time partial write, post-train amend) doubles write logic.
+   - **RESOLVED — adopted by 07-04 Task 2:** single post-success write inside the local_rank == 0 success block, ordered final_metrics.json < flops_report.json < trainer_state.json marker (WR-13); a failed cell emits no report.
 
 5. **Smoke driven via run_finetune directly vs. via run_sweep**
    - What we know: both shapes proven viable; direct = Phase 6 precedent (lowest risk); sweep-driven additionally proves PIPE-02 threading on GPU.
    - Recommendation: sweep-driven if a single smoke is desired for both proofs; direct if smoke risk must be minimal. Either satisfies D-22..D-25.
+   - **RESOLVED — split across 07-06 Tasks 1-2:** Task 1 proves the sweep-driven surface with a CPU-side dry-run (flags thread + manifest recording, no GPU), Task 2 runs the GPU smoke direct through run_finetune.py (Phase 6 precedent shape) — both shapes proven at their lowest-risk lanes; D-22..D-25 satisfied.
 
 6. **Overlay scope under non-default `--registry-dir`**
    - What we know: D-06 text implies uniform application; tests use tmp registries.
    - Recommendation: uniform application + env-var pinning in new tests (Pitfall 3); revisit only if Phase 9 wizards need isolation semantics.
+   - **RESOLVED — adopted by 07-02 as a flagged assumption:** overlay applies uniformly regardless of registry_dir (the D-06-faithful reading); all new tests pin DNALLMMARK_CUSTOM_REGISTRY_DIR; revisit trigger remains "Phase 9 wizards need isolation semantics".
 
 ## Environment Availability
 
