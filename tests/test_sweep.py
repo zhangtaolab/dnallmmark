@@ -62,6 +62,13 @@ Every behavior bullet of the plan's Task 2 is pinned here:
   exactly the failed (model, task) pairs' cells across ALL requested seeds;
   a clean manifest yields an EXPLICIT zero-cell run with a clear message
   (never a silent full sweep);
+- **from-failures x peft (MED-01, phase-06 review)** — failure entries
+  record the BASE registry name (``base_model``) beside the alias cell
+  identity, so a ``--peft`` sweep's own manifest feeds back through
+  ``--from-failures``: with the same ``--peft`` mode the failed ALIAS
+  cells re-enumerate (the join runs on base names, the alias re-derives
+  from the re-run's mode); legacy alias-only entries recover via a known
+  suffix strip, and a name still unknown after the strip fails loudly;
 - **operator-input validation (T-05-09)** — unknown model/task names,
   wrong JSON structure, or an unreadable/unparseable --priority-file /
   --from-failures file exits non-zero with ALL problems listed
@@ -1175,6 +1182,128 @@ def test_from_failures_unreadable_or_unparseable_file_exits_nonzero(
             "--registry-dir", str(registry_dir),
         ])
     assert "bad.json" in str(bad_info.value)
+
+
+# ===== from-failures x peft composition (MED-01, phase-06 review) =====
+
+def test_peft_failure_entries_record_base_model_beside_alias(tmp_path):
+    """A --peft sweep's sweep_failures.json entries carry BOTH the cell
+    identity (the ALIAS — matches the cell dir and run_record) and the
+    BASE registry name under ``base_model`` (MED-01: --from-failures
+    validates against registry KEYS, so an alias-only entry is rejected
+    as not-in-registry and a peft sweep could not be recovered)."""
+    out_root = tmp_path / "sweep-out"
+
+    def failing_executor(model, task, seed, output_root, train_fraction=None):
+        raise subprocess.CalledProcessError(
+            returncode=1, cmd="run_finetune.py", output="boom")
+
+    records = run_sweep.run_matrix(
+        [("model-a+lora", "task-x", 42), ("model-b+lora", "task-z", 42)],
+        out_root, executor=failing_executor, peft="lora")
+    assert all(r["status"] == "failed" for r in records)
+    failures = json.loads(
+        (out_root / "sweep_failures.json").read_text(encoding="utf-8"))
+    assert [(f["model"], f["base_model"]) for f in failures] == [
+        ("model-a+lora", "model-a"), ("model-b+lora", "model-b"),
+    ], (
+        "every failure entry must record the alias cell identity AND the "
+        "base registry name (MED-01)"
+    )
+
+
+def test_from_failures_recovers_peft_sweep_alias_cells(tmp_path, monkeypatch):
+    """The phase-06 MED-01 reproduction, fixed: feeding a --peft sweep's
+    own sweep_failures.json back through --from-failures WITH the same
+    --peft mode re-enumerates exactly the failed ALIAS cells (validation
+    and the join run on base names; the alias re-derives from the re-run's
+    --peft via enumerate_matrix) — previously this exited non-zero with
+    \"model not in registry: 'model-a+lora'\"."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a+lora", "base_model": "model-a",
+         "task": "task-x", "seed": 42, "output_dir": "x",
+         "error": "boom"},
+        {"model": "model-b+lora", "base_model": "model-b",
+         "task": "task-z", "seed": 43, "output_dir": "y",
+         "error": "boom"},
+    ])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--peft", "lora",
+        "--from-failures", str(failures),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert _manifest_cells(out_root) == [
+        ("model-a+lora", "task-x", 42), ("model-a+lora", "task-x", 43),
+        ("model-b+lora", "task-z", 42), ("model-b+lora", "task-z", 43),
+    ], (
+        "a lora manifest recovered with --peft lora must re-enumerate "
+        "exactly the failed alias cells across every requested seed "
+        "(MED-01)"
+    )
+
+
+def test_from_failures_legacy_alias_entry_recovers_via_suffix_strip(
+        tmp_path, monkeypatch):
+    """A legacy alias-only failure entry (no ``base_model`` — manifests
+    written before the MED-01 fix) still recovers: the validator strips a
+    known adapter suffix from ``model`` before refusing, mirroring
+    build_argv's strip."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a+lora", "task": "task-x", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+    ])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42",
+        "--dry-run",
+        "--from-failures", str(failures),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    # Without --peft on the re-run, the pairs enumerate as BASE cells —
+    # the mode in play governs the alias re-derivation.
+    assert _manifest_cells(out_root) == [("model-a", "task-x", 42)]
+    # The stripped form is not a blanket accept: a name that stays
+    # unknown after the strip still fails loudly.
+    ghost = _failures_manifest(tmp_path, [
+        {"model": "ghost+lora", "task": "task-x", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+    ])
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(ghost),
+            "--output-root", str(tmp_path / "out2"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "ghost" in str(excinfo.value)
+
+
+def test_from_failures_rejects_non_string_base_model(
+        tmp_path, monkeypatch):
+    """A structurally bad ``base_model`` (non-string) is a named problem,
+    not a silent fall-through to the alias."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a+lora", "base_model": 7, "task": "task-x",
+         "seed": 42, "output_dir": "x", "error": "boom"},
+    ])
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(failures),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "base_model" in str(excinfo.value)
 
 
 def test_priority_file_unknown_names_exit_nonzero_listing_all_problems(

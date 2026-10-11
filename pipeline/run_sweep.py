@@ -133,7 +133,16 @@ Failure boundary:
     marker, so simply re-running the same sweep command re-attempts
     exactly the failed cells — the filter exists to avoid re-enumerating
     ~9,300 cells (62x50x3) and to guard against typo'd manual
-    ``--models/--tasks`` re-run filters (research Pattern 6). A CLEAN
+    ``--models/--tasks`` re-run filters (research Pattern 6). Pairs join
+    on BASE registry names: each failure entry records the cell identity
+    (the ALIAS under ``--peft``) as ``model`` plus the registry name as
+    ``base_model`` (MED-01, phase-06 review — a peft sweep's own manifest
+    must feed back through this flag); the re-run's ``--peft`` mode
+    re-derives the alias via enumerate_matrix, so a lora manifest
+    recovered with ``--peft lora`` re-enumerates exactly the failed alias
+    cells, and one recovered without ``--peft`` enumerates the base cells.
+    Legacy alias-only manifests (no ``base_model``) recover through a
+    known-suffix strip of ``model``. A CLEAN
     manifest (empty list — written on every run, WR-06) yields an EXPLICIT
     zero-cell run with a clear message, never a silent full sweep. The
     manifest is validated fail-fast exactly like the priority file.
@@ -682,13 +691,22 @@ def load_failure_pairs(path, registry_dir):
     re-running them would be silently inert), and structural problems are
     collected and reported together, fail-fast.
 
+    MED-01 (phase-06 review): a ``--peft`` sweep's manifest records the
+    ALIAS under ``model`` and the BASE registry name under ``base_model``;
+    validation and the returned pairs run on BASE names, and the alias
+    re-derives from the re-run's own ``--peft`` mode (enumerate_matrix
+    re-aliases the cells). Legacy manifests without ``base_model`` fall
+    back to stripping a known adapter suffix from ``model`` (the same
+    strip ``build_argv`` applies) before refusing.
+
     Args:
         path (str): --from-failures value (a sweep_failures.json file).
         registry_dir (Path | str): directory holding the unified JSON
             registries.
 
     Returns:
-        set[tuple[str, str]]: the distinct failed (model, task) pairs.
+        set[tuple[str, str]]: the distinct failed (base model, task)
+            pairs.
 
     Raises:
         SystemExit: naming the file (unreadable/not JSON/not a list) or
@@ -717,11 +735,26 @@ def load_failure_pairs(path, registry_dir):
                 "'model'/'task' keys"
             )
             continue
-        if model not in known_models:
+        base_model = entry.get("base_model")
+        if base_model is not None and not isinstance(base_model, str):
             problems.append(
-                f"--from-failures model not in registry: {model!r} (entry {idx})"
+                f"--from-failures entry {idx} has a non-string "
+                f"'base_model' key: {base_model!r}"
             )
             continue
+        join_name = base_model or model
+        if join_name not in known_models:
+            stripped = (
+                join_name.removesuffix("+lora").removesuffix("+ia3")
+            )
+            if stripped != join_name and stripped in known_models:
+                join_name = stripped
+            else:
+                problems.append(
+                    f"--from-failures model not in registry: "
+                    f"{join_name!r} (entry {idx})"
+                )
+                continue
         if task not in known_tasks:
             problems.append(
                 f"--from-failures task not in registry: {task!r} (entry {idx})"
@@ -733,7 +766,7 @@ def load_failure_pairs(path, registry_dir):
                 f"{task!r} (entry {idx})"
             )
             continue
-        pairs.add((model, task))
+        pairs.add((join_name, task))
     if problems:
         sys.exit(f"[Error] {'; '.join(problems)}")
     return pairs
@@ -750,6 +783,28 @@ def cell_dir_for(output_root, model, task, seed, fraction=None):
     if fraction is not None:
         cell = cell / f"frac_{fraction}"
     return cell
+
+
+def base_model_name(model, peft="none"):
+    """Resolve a cell/alias model name to its BASE registry name.
+
+    Under ``peft`` lora/ia3 (06-02) the cell, record, and failure-entry
+    model identity is the ALIAS ``{base}+{mode}``; the registry join, the
+    child's ``--target_model``, and ``--from-failures`` validation all
+    operate on BASE names, so every alias consumer re-derives the base
+    through this one suffix strip (MED-01, phase-06 review: failure
+    entries used to record only the alias, which ``--from-failures``
+    then rejected as not-in-registry).
+
+    Args:
+        model (str): the cell's model identity — BASE under peft=none,
+            ALIAS under lora/ia3.
+        peft (str): adapter mode none/lora/ia3.
+
+    Returns:
+        str: the base registry name (the alias suffix removed).
+    """
+    return model.removesuffix(f"+{peft}") if peft != "none" else model
 
 
 def build_argv(model, task, seed, output_root, peft="none",
@@ -790,7 +845,7 @@ def build_argv(model, task, seed, output_root, peft="none",
         sys.executable,
         str(RUN_FINETUNE),
         "--target_model",
-        str(model.removesuffix(f"+{peft}") if peft != "none" else model),
+        str(base_model_name(model, peft)),
         "--target_dataset", str(task),
         "--seed", str(seed),
         "--output_dir", str(output_root),
@@ -963,7 +1018,11 @@ def run_matrix(cells, output_root, executor=None, peft="none"):
     is present but not valid JSON (WR-11: the child writes it inside
     its blind-except scope, so a mid-write death can leave a truncated
     file with the child still exiting 0 — the cell fails and the sweep
-    continues). sweep_failures.json is
+    continues). Each failure entry records BOTH the cell's model identity
+    (the ALIAS under ``--peft``, matching the cell dir and record) and
+    its ``base_model`` (the registry name — MED-01, phase-06 review:
+    ``--from-failures`` validates and joins on base names, so a peft
+    sweep's own manifest must be recoverable). sweep_failures.json is
     written on EVERY run — an empty list when no cell failed — so a
     stale failures manifest can never outlive its sweep (WR-06).
 
@@ -1036,6 +1095,7 @@ def run_matrix(cells, output_root, executor=None, peft="none"):
                     )
                     failures.append({
                         "model": model,
+                        "base_model": base_model_name(model, peft),
                         "task": task,
                         "seed": seed,
                         "output_dir": str(cell_dir),
@@ -1062,6 +1122,7 @@ def run_matrix(cells, output_root, executor=None, peft="none"):
                         )
                         failures.append({
                             "model": model,
+                            "base_model": base_model_name(model, peft),
                             "task": task,
                             "seed": seed,
                             "output_dir": str(cell_dir),
@@ -1072,6 +1133,7 @@ def run_matrix(cells, output_root, executor=None, peft="none"):
                 record["error"] = f"{type(exc).__name__}: {exc}"
                 failures.append({
                     "model": model,
+                    "base_model": base_model_name(model, peft),
                     "task": task,
                     "seed": seed,
                     "output_dir": str(cell_dir),
@@ -1197,7 +1259,9 @@ def main():
                 "pairs) — explicit zero-cell run, NOT a full sweep"
             )
         cells = [
-            cell for cell in cells if (cell[0], cell[1]) in failure_pairs
+            cell for cell in cells
+            if (base_model_name(cell[0], args.peft), cell[1])
+            in failure_pairs
         ]
 
     if args.dry_run:
