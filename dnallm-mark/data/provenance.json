@@ -4,7 +4,7 @@
             "citation": "Marin et al., \"BEND: Benchmarking DNA Language Models on biologically meaningful tasks\", arXiv:2311.12570, 2023",
             "dataset": "BEND__CpG_methylation",
             "download_url": "https://sid.erda.dk/cgi-sid/ls.py?share_id=aNQa0Oz2lY",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/forrestzhang/BEND",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/frederikkemarin/BEND"
@@ -12,7 +12,7 @@
         {
             "citation": "\"Deep4mC: systematic assessment and computational prediction for DNA N4-methylcytosine site\", Briefings in Bioinformatics, 2020, doi:10.1093/bib/bbaa099",
             "dataset": "Deep4mC_datasets__C.elegans_4mC",
-            "download_url": "Unspecified",
+            "download_url": "https://www.modelscope.cn/datasets/forrestzhang/Deep4mC_datasets",
             "download_url_alternates": "Unspecified",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
@@ -21,7 +21,7 @@
         {
             "citation": "\"Deep4mC: systematic assessment and computational prediction for DNA N4-methylcytosine site\", Briefings in Bioinformatics, 2020, doi:10.1093/bib/bbaa099",
             "dataset": "Deep4mC_datasets__D.melanogaster_4mC",
-            "download_url": "Unspecified",
+            "download_url": "https://www.modelscope.cn/datasets/forrestzhang/Deep4mC_datasets",
             "download_url_alternates": "Unspecified",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
@@ -30,7 +30,7 @@
         {
             "citation": "\"Deep4mC: systematic assessment and computational prediction for DNA N4-methylcytosine site\", Briefings in Bioinformatics, 2020, doi:10.1093/bib/bbaa099",
             "dataset": "Deep4mC_datasets__E.coli_4mC",
-            "download_url": "Unspecified",
+            "download_url": "https://www.modelscope.cn/datasets/forrestzhang/Deep4mC_datasets",
             "download_url_alternates": "Unspecified",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
@@ -40,7 +40,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__EPI_GM12878",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -49,7 +49,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__emp_H3",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -58,7 +58,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__emp_H3K14ac",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -67,7 +67,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__emp_H3K36me3",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -76,7 +76,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__emp_H3K4me1",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -85,7 +85,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__emp_H3K79me3",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -94,7 +94,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__emp_H3K9ac",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -103,7 +103,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__emp_H4",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -112,7 +112,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__emp_H4ac",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -121,7 +121,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__fungi_species_20",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -130,7 +130,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__human_tf_0",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -139,7 +139,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__mouse_1",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -148,7 +148,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__mouse_4",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -157,7 +157,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__prom_300_all",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -166,7 +166,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__prom_core_all",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -175,7 +175,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__virus_covid",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -184,7 +184,7 @@
             "citation": "Zhou et al., \"DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome\", arXiv:2306.15006, 2023 (introduces GUE)",
             "dataset": "GUE__virus_species_40",
             "download_url": "https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/GUE",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://github.com/MAGICS-LAB/DNABERT_2"
@@ -192,7 +192,7 @@
         {
             "citation": "Grešová et al., \"Genomic benchmarks: a collection of datasets for genomic sequence classification\", BMC Genomic Data, 2023, doi:10.1186/s12863-023-01123-8",
             "dataset": "Genomic_Benchmarks__coding",
-            "download_url": "Unspecified",
+            "download_url": "https://www.modelscope.cn/datasets/lgq12697/Genomic_Benchmarks",
             "download_url_alternates": "https://huggingface.co/katarinagresova (per-task HF mirrors by the benchmark author)",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
@@ -201,7 +201,7 @@
         {
             "citation": "Grešová et al., \"Genomic benchmarks: a collection of datasets for genomic sequence classification\", BMC Genomic Data, 2023, doi:10.1186/s12863-023-01123-8",
             "dataset": "Genomic_Benchmarks__human_vs_worm",
-            "download_url": "Unspecified",
+            "download_url": "https://www.modelscope.cn/datasets/lgq12697/Genomic_Benchmarks",
             "download_url_alternates": "https://huggingface.co/katarinagresova (per-task HF mirrors by the benchmark author)",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
@@ -210,7 +210,7 @@
         {
             "citation": "Grešová et al., \"Genomic benchmarks: a collection of datasets for genomic sequence classification\", BMC Genomic Data, 2023, doi:10.1186/s12863-023-01123-8",
             "dataset": "Genomic_Benchmarks__regulatory_region_type",
-            "download_url": "Unspecified",
+            "download_url": "https://www.modelscope.cn/datasets/lgq12697/Genomic_Benchmarks",
             "download_url_alternates": "https://huggingface.co/katarinagresova (per-task HF mirrors by the benchmark author)",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
@@ -220,7 +220,7 @@
             "citation": "Dalla-Torre et al., \"The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics\", bioRxiv, 2023, doi:10.1101/2023.01.11.523679",
             "dataset": "NT_downstream_tasks__H3K27ac",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/nucleotide_transformer_downstream_tasks",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks"
@@ -229,7 +229,7 @@
             "citation": "Dalla-Torre et al., \"The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics\", bioRxiv, 2023, doi:10.1101/2023.01.11.523679",
             "dataset": "NT_downstream_tasks__H3K27me3",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/nucleotide_transformer_downstream_tasks",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks"
@@ -238,7 +238,7 @@
             "citation": "Dalla-Torre et al., \"The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics\", bioRxiv, 2023, doi:10.1101/2023.01.11.523679",
             "dataset": "NT_downstream_tasks__H3K4me2",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/nucleotide_transformer_downstream_tasks",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks"
@@ -247,7 +247,7 @@
             "citation": "Dalla-Torre et al., \"The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics\", bioRxiv, 2023, doi:10.1101/2023.01.11.523679",
             "dataset": "NT_downstream_tasks__H3K9me3",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/nucleotide_transformer_downstream_tasks",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks"
@@ -256,7 +256,7 @@
             "citation": "Dalla-Torre et al., \"The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics\", bioRxiv, 2023, doi:10.1101/2023.01.11.523679",
             "dataset": "NT_downstream_tasks__enhancers",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/nucleotide_transformer_downstream_tasks",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks"
@@ -265,7 +265,7 @@
             "citation": "Dalla-Torre et al., \"The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics\", bioRxiv, 2023, doi:10.1101/2023.01.11.523679",
             "dataset": "NT_downstream_tasks__splice_sites_acceptors",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/nucleotide_transformer_downstream_tasks",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks"
@@ -274,7 +274,7 @@
             "citation": "Dalla-Torre et al., \"The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics\", bioRxiv, 2023, doi:10.1101/2023.01.11.523679",
             "dataset": "NT_downstream_tasks__splice_sites_all",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/nucleotide_transformer_downstream_tasks",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks"
@@ -283,7 +283,7 @@
             "citation": "Dalla-Torre et al., \"The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics\", bioRxiv, 2023, doi:10.1101/2023.01.11.523679",
             "dataset": "NT_downstream_tasks__splice_sites_donors",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/nucleotide_transformer_downstream_tasks",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks"
@@ -372,7 +372,7 @@
         {
             "citation": "\"iDNA-ABF: multi-scale deep biological language learning model for the interpretable prediction of DNA methylations\", Genome Biology, 2022, doi:10.1186/s13059-022-02780-1",
             "dataset": "iDNA_ABF_datasets__5mC",
-            "download_url": "Unspecified",
+            "download_url": "https://www.modelscope.cn/datasets/forrestzhang/iDNA_ABF_datasets",
             "download_url_alternates": "Unspecified",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
@@ -381,7 +381,7 @@
         {
             "citation": "\"iDNA-ABF: multi-scale deep biological language learning model for the interpretable prediction of DNA methylations\", Genome Biology, 2022, doi:10.1186/s13059-022-02780-1",
             "dataset": "iDNA_ABF_datasets__6mA",
-            "download_url": "Unspecified",
+            "download_url": "https://www.modelscope.cn/datasets/forrestzhang/iDNA_ABF_datasets",
             "download_url_alternates": "Unspecified",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
@@ -390,7 +390,7 @@
         {
             "citation": "\"iPro-WAEL: a comprehensive and robust framework for identifying promoters in multiple species\", Nucleic Acids Research, 2022, doi:10.1093/nar/gkac824",
             "dataset": "iPro-WAEL_datasets__Promoter_R_capsulatus",
-            "download_url": "Unspecified",
+            "download_url": "https://www.modelscope.cn/datasets/forrestzhang/iPro-WAEL_datasets",
             "download_url_alternates": "Unspecified",
             "license": "Unspecified",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
@@ -400,7 +400,7 @@
             "citation": "\"AgroNT: A Foundational Large Language Model for Edible Plant Genomes\" (paper named on the InstaDeepAI dataset card; DOI not stated there)",
             "dataset": "plant-genomic-benchmark__gene_exp.arabidopsis_thaliana",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/plant-genomic-benchmark",
             "license": "CC BY-NC-SA 4.0",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark"
@@ -409,7 +409,7 @@
             "citation": "\"AgroNT: A Foundational Large Language Model for Edible Plant Genomes\" (paper named on the InstaDeepAI dataset card; DOI not stated there)",
             "dataset": "plant-genomic-benchmark__gene_exp.oryza_sativa",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/plant-genomic-benchmark",
             "license": "CC BY-NC-SA 4.0",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark"
@@ -418,7 +418,7 @@
             "citation": "\"AgroNT: A Foundational Large Language Model for Edible Plant Genomes\" (paper named on the InstaDeepAI dataset card; DOI not stated there)",
             "dataset": "plant-genomic-benchmark__gene_exp.zea_mays",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/plant-genomic-benchmark",
             "license": "CC BY-NC-SA 4.0",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark"
@@ -427,7 +427,7 @@
             "citation": "\"AgroNT: A Foundational Large Language Model for Edible Plant Genomes\" (paper named on the InstaDeepAI dataset card; DOI not stated there)",
             "dataset": "plant-genomic-benchmark__poly_a.arabidopsis_thaliana",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/plant-genomic-benchmark",
             "license": "CC BY-NC-SA 4.0",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark"
@@ -436,7 +436,7 @@
             "citation": "\"AgroNT: A Foundational Large Language Model for Edible Plant Genomes\" (paper named on the InstaDeepAI dataset card; DOI not stated there)",
             "dataset": "plant-genomic-benchmark__promoter_strength.leaf",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/plant-genomic-benchmark",
             "license": "CC BY-NC-SA 4.0",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark"
@@ -445,7 +445,7 @@
             "citation": "\"AgroNT: A Foundational Large Language Model for Edible Plant Genomes\" (paper named on the InstaDeepAI dataset card; DOI not stated there)",
             "dataset": "plant-genomic-benchmark__terminator_strength.leaf",
             "download_url": "https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark",
-            "download_url_alternates": "Unspecified",
+            "download_url_alternates": "https://www.modelscope.cn/datasets/lgq12697/plant-genomic-benchmark",
             "license": "CC BY-NC-SA 4.0",
             "preprocessing": "Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README",
             "source": "https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark"
