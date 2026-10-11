@@ -226,7 +226,10 @@ class DnallmMarkTui(App):
         The guard screen is pushed as a plain Screen, so while it is on
         top NOTHING else renders (the message is the whole surface); a
         modal beneath it (e.g. an open drill-down) survives the round
-        trip — the pop restores the exact stack.
+        trip — the pop restores the exact stack. The pop itself only
+        fires when the guard IS the active screen: popping the top screen
+        unconditionally would remove a modal that legitimately sits
+        beneath the guard and strand the guard itself (WR-01).
         """
         below = width < MIN_WIDTH or height < MIN_HEIGHT
         guard = self._min_size_screen
@@ -241,12 +244,21 @@ class DnallmMarkTui(App):
                 guard.update_dimensions(width, height)
         elif guard is not None:
             self._min_size_screen = None
-            self.pop_screen()
+            if self.screen is guard:
+                self.pop_screen()
 
     # ===== Actions (app-level) =====
 
     def action_help(self) -> None:
-        """The ``?`` key: the help modal over the current screen."""
+        """The ``?`` key: the help modal over the current screen.
+
+        Suppressed below the minimum grid: no chrome may open over the
+        guard (a modal pushed there would be popped instead of the guard
+        on grow, stranding the console on the min-size screen at full
+        size — WR-01).
+        """
+        if self._min_size_screen is not None:
+            return  # below the minimum grid: no chrome over the guard
         self.push_screen(HelpModal(self._binding_rows()))
 
     def _binding_rows(self) -> "list[tuple[str, str]]":

@@ -643,6 +643,47 @@ async def test_min_size_guard_swaps_updates_and_restores():
         assert app.screen.query_one(DataTable).row_count == 7
 
 
+async def test_min_size_guard_help_suppressed_grow_never_strands():
+    """WR-01: ? below the minimum opens nothing (no chrome over the
+    guard — a modal there would be popped INSTEAD of the guard on grow,
+    stranding the console on the min-size screen at full size); growing
+    back restores the screen beneath."""
+    fake = FakeEnvCheckService(cached=("2026-10-11 09:30", _mixed_results()))
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert isinstance(app.screen, EnvCheckScreen)
+
+        # shrink below the minimum grid -> the guard screen swaps in
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+
+        # ? is suppressed below the minimum: no modal pushed over the
+        # guard (the stack stays env + guard)
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+        assert not any(
+            isinstance(screen, HelpModal) for screen in app.screen_stack
+        ), "no chrome may open over the min-size guard"
+
+        # growing back restores the env-check screen — never the stranded
+        # guard at full size
+        await pilot.resize_terminal(120, 40)
+        await pilot.pause()
+        assert isinstance(app.screen, EnvCheckScreen), (
+            "the console must never be stranded on the min-size screen "
+            "at full size"
+        )
+        assert app._min_size_screen is None
+
+        # ? works again once above the minimum
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpModal)
+
+
 async def test_no_color_scenario_keeps_distinct_glyphs(monkeypatch):
     """NO_COLOR: the app runs and rendered glyphs stay distinct per state."""
     monkeypatch.setenv("NO_COLOR", "1")
