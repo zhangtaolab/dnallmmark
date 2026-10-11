@@ -108,9 +108,14 @@ uv run --group data python script/convert_registry.py --kind datasets --to-csv \
 Add one row with all 17 columns: the operational fields (`Index`
 (next free), `Dataset_name` in `Source__task` form, `Dataset_path`
 (`datasets/<group>/<task>`), `Train`/`Test`/`Dev` row counts, `type`,
-`labels`, `length`, `metric` (must be one of the schema's closed enum:
-`f1`, `mcc`, `spearmanr`, `AUPRC` — a new metric value turns the schema
-tests red until every enum copy is updated together), `Category`
+`labels`, `length`, `metric` (one of `f1`, `mcc`, `spearmanr`, `AUPRC`
+in the performance-JSON schema's closed enum, plus `r2` — the
+registry's three `plant-genomic-benchmark__gene_exp.*` tasks declare
+`r2`, a pre-existing registry↔schema divergence: the committed
+performance JSONs and the schema enums carry only the four enum values,
+so a new `r2` task keeps the registry/pipeline working but a new FIFTH
+metric value turns the schema tests red until every enum copy is
+updated together), `Category`
 (`Animals` / `Plants` / `Microbe` — this drives arena grouping), and the
 six provenance columns `source`, `citation`, `license`, `preprocessing`,
 `download_url`, `download_url_alternates` — unresolved provenance values
