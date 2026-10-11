@@ -1,320 +1,343 @@
 # Pitfalls Research
 
-**Domain:** Auditing and hardening a research benchmark repository (DNA LLM benchmark: pipeline + data scripts + static leaderboard) for public release
-**Researched:** 2026-10-08
-**Confidence:** MEDIUM overall — core claims verified against primary sources (GitHub docs, pytest/numpy official docs, lm-evaluation-harness official guides, arXiv abstract, scikit-learn CI config); community-consensus claims that could not be primary-verified this run are individually tagged and must be treated as strong hypotheses, not authoritative fact.
+**Domain:** Adding a Textual TUI operator console to an existing subprocess-driven benchmark platform (dnallmmark v1.2)
+**Researched:** 2026-10-11
+**Confidence:** MEDIUM (community + official-docs cross-checked; no single authoritative "Textual integration post-mortem" corpus exists — findings triangulated from official guides/API docs, Textualize GitHub issues/discussions, and real Textual wrapper projects)
 
-> **How to read this file.** Each pitfall is specific to the "hardening-and-release of a research benchmark repo" domain and anchored to DNALLM-Mark's known findings (leaked Zenodo token in `README.md:116`, dead pages from `renderNavbar()`, species-grouping bug at `dnallmmark_pipeline.py:1229`, unescaped `innerHTML`, no tests/CI/LICENSE, manual 3-step data chain). "Phase to address" uses the milestone's logical phases: **Audit → Correctness Fixes → Recomputation → Tests+CI → Release Hygiene**. Renumber when the roadmap lands.
+**Context anchors (verified in this repo):** `pipeline/run_sweep.py` launches cells via blocking `subprocess.run(argv, check=True)` with **uncaptured** child stdout, cwd pinned to `PIPELINE_DIR` (`run_sweep.py:860-876`); `sweep_failures.json` is deleted at sweep start (WR-06, `run_sweep.py:1024-1027`); `run_record.json` is never rewritten (WR-12) but is written **non-atomically** (`_write_json` = `open("w")` + `json.dump`, no tmp+rename, `run_sweep.py:899-902`); the `trainer_state.json` resume marker is written LAST per cell (WR-13, `run_finetune.py:1487-1489`); CI is CPU-only, ruff+ty gated, 14-min timeout, matrix 3.13/3.14 (`.github/workflows/ci.yml`); dependency groups are `data` (default), `dev`, `gpu` (`pyproject.toml`). Textual current release: **8.2.8**, pure-Python deps, `requires-python >=3.9,<4.0` (3.13 fine).
+
+**Milestone phase skeleton used below** (per `docs/TUI-REQUIREMENTS.md` §6): P1 TUI foundation → P2 data manager (downloads) → P3 single-GPU launch + monitoring → P4 multi-GPU orchestration (hard-gated on P3). FlopsCounter port lands as its own work package before P3.
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Silent leaderboard-number migration (numbers change with no documented trail)
+### Pitfall 1: Blocking the Textual event loop with sync subprocess/SDK calls
 
 **What goes wrong:**
-The species-as-dataset fix (`dnallmmark_pipeline.py:1229`) will legitimately move aggregated leaderboard numbers. The failure mode is not the change itself — it is regenerating `dnallm-mark/data/*.json` and committing them with a message like "update data" so that every external user who already cited or screenshotted a number finds it silently different. Anyone diffing the release sees thousands of changed float fields and zero explanation of which fix caused which movement. Trust in the whole platform drops: if numbers change silently once, users assume they can change silently again.
+The UI freezes mid-interaction. Every symptom of a "laggy" or "hung" TUI: keys echo seconds late, clicks queue up and replay in a burst, the spinner stops, and long output appears "all at once" at the end instead of streaming. In the worst case the operator concludes the sweep hung and kills it.
 
 **Why it happens:**
-Derived-data regeneration feels like a mechanical build step, so it gets a mechanical commit. Authors know *why* numbers moved and forget that consumers don't. Benchmarks also compound this: one pipeline fix + one aggregation tweak + a dependency upgrade can land together, making the before/after delta unattributable even to the authors.
+`run_sweep.py`'s default executor is blocking (`subprocess.run(..., check=True)`, cells run for minutes-to-hours). The ModelScope download SDK is synchronous. `env_smoke.py` runs imports of torch/dnallm (seconds). Any of these called directly inside a Textual message handler (`on_button_pressed`, `on_input_changed`, `on_mount`) stops the event loop, because a single-threaded asyncio app can't repaint or process input while the handler runs. Official Textual docs name the symptom explicitly: "a noticeable delay between pressing a key and seeing it echoed on screen," and prescribe the worker discipline for anything over "a few milliseconds." Textualize discussion #3788 documents the exact "output appears all at once" failure for blocking `Popen` reads.
 
 **How to avoid:**
-- Treat number changes as releases, not chores. Before regenerating, tag the pre-fix data state (`git tag data-v1`) so the old numbers stay retrievable.
-- Produce an explicit before/after artifact per result-affecting fix: which datasets/models/ranks moved, by how much, and why (the fix's PR description). The milestone already mandates "before/after comparison notes" — make that a checked-in file (e.g. `docs/data-changelog.md` or `CHANGELOG.md` entry), not a chat message.
-- Follow the lm-evaluation-harness pattern (verified from their official `docs/new_task_guide.md`): bump a version marker on the data/protocol when a change alters results, and record a dated changelog entry with PR number — their example format is literally "*[date] (PR #999) Version 0.0 → 1.0: Fixed a bug with answer extraction that led to underestimated performance*". DNALLM-Mark's equivalent: stamp the regenerated JSON (top-level `meta.data_version` / `generated_at` / `pipeline_commit`) so any leaderboard page can display "results as of vX".
-- One number-affecting change per commit/PR where feasible, so each delta in the comparison file maps to one named fix.
-- State the non-comparability explicitly in the README (industry precedent: the HF Open LLM Leaderboard v1→v2 reboot publicly declared old and new results non-comparable — LOW confidence, synthesis; the practice itself is standard).
+- **Never import-and-call the sweep executor in-process.** The TUI always spawns `python pipeline/run_sweep.py ...` itself via `asyncio.create_subprocess_exec` (argv LIST, never `shell=True` — repo rule T-03-10) and reads `proc.stdout.readline()` inside an async worker. This one decision removes hours-long blocking by construction and keeps the GPU stack out of the TUI process.
+- Wrap every blocking call that cannot be subprocessed (ModelScope SDK download, big JSON reads of 62-model registries) in a **thread worker**: `@work(thread=True, exclusive=True)`. Touch the UI from the thread only via `self.post_message(...)` (thread-safe) or `App.call_from_thread` — never set reactives or call widget methods directly from the worker thread.
+- Use `exclusive=True` on workers that serve one slot (one download stream, one sweep supervisor, one log tail per cell) so re-triggering cancels the stale worker instead of stacking them — this is also the official fix for out-of-order results (e.g. a slow read for cell A landing after cell B's).
+- Prefer handling `on_worker_state_changed` over `await worker.wait()` inside handlers (the await blocks the UI); set `exit_on_error=False` on workers whose failures must surface as a UI error state, not an app-killing traceback.
 
 **Warning signs:**
-- A regenerated data commit touching more than a handful of JSON files with no accompanying note.
-- No way to answer "which numbers were different before the species fix?" without archaeology (`git show data-v1:...`).
-- Leaderboard pages displaying numbers with no version/date stamp.
-- Before/after comparisons living only in PR review conversation.
+- Any `await` or sync call in a handler that takes >100 ms in manual testing (key-echo lag is the canary).
+- A `RichLog` that fills in one dump at process end rather than streaming.
+- Code review: `subprocess.run`/`requests`/`modelscope` appearing inside an `on_*` handler or `watch_*` method.
 
-**Phase to address:** Recomputation phase (structure + changelog), seeded during Correctness Fixes (one-fix-per-PR discipline), surfaced in Release Hygiene (README statement + data version display).
+**Phase to address:** P1 (foundation) — the worker/subprocess discipline is the first architectural decision; it is nearly impossible to retrofit once handlers are full of sync calls.
 
 ---
 
-### Pitfall 2: Over-refactoring during hardening breaks reproducibility and muddies attribution
+### Pitfall 2: Losing subprocess output — uncaptured children, teardown, and resize
 
 **What goes wrong:**
-An audit finds dozens of code smells (and this repo has them: duplicated aggregation logic, a 1200+ line pipeline script, dead JS modules). The tempting move is to fix them all in the same pass as the correctness bugs. Result: the public release's diff versus the code that produced the published numbers is enormous, and when recomputed numbers shift, nobody can say whether the shift came from the species-grouping fix, the refactor, or float reordering introduced by restructured loops. Worse, "safe" cleanups delete hard-coded constants or reorder operations that were load-bearing, changing outputs for reasons no one intended.
+Three related failure modes. (a) **Terminal corruption:** the sweep child inherits the TUI's stdout/stderr (that is what `subprocess.run` without capture does today), so thousands of lines of training output paint straight over the alternate-screen buffer — the display becomes garbage. (b) **Output lost on teardown:** the operator quits the TUI (or SSH drops) and the reader tasks die; if the child was killed too, a half-finished cell has neither a live viewer nor a durable log. (c) **Output lost around resize:** uncaptured/piped-but-unread buffers plus a mid-flight resize leave the log view and the artifact on disk disagreeing about what happened.
 
 **Why it happens:**
-Auditors are in bug-hunting mindset; every smell looks fixable. Refactoring feels like it improves reviewability, so it seems *helpful* for public release. The discipline failure is treating hygiene changes and behavior-affecting changes as the same class of change.
+`launch_subprocess` today deliberately lets the child write to the parent's terminal — correct for CLI usage, catastrophic when the parent is a full-screen TUI. Community Textual wrapper projects (textual-shell, terraform-tui, terok) all converge on the same fix: PIPE + reader worker + `proc.terminate()` cleanup, because there is no official one-page recipe and the default (inherit) is the trap.
 
 **How to avoid:**
-- Enforce the milestone's own constraint: surgical fixes only, no opportunistic refactors. The audit report should grade findings into "correctness (fix now)", "maintainability (fix if cheap and behavior-preserving)", and "deferred (list, don't touch)".
-- Capture golden outputs from the *current, unfixed* code before changing anything (checksums of the existing committed JSON are already available — record them). Then after each fix, regenerate and diff; an unexpected delta that isn't explained by the fix is a red flag.
-- Explicit equivalence policy for anything that must be restructured: bitwise-identical output required (no tolerance) for pure refactors; documented, explained deltas allowed only for the named correctness fixes.
-- Tag/branch the as-published state before the fix series starts, so "what produced the old leaderboard" is always answerable.
-- Community-consensus checklist for research-code release (LOW confidence, synthesis — consistent across Software Sustainability Institute / Turing Way guidance): archive as-run state first; first public pass is hygiene-only (README, LICENSE, CITATION, pinned env, relative paths); refactor later under tests.
+- Spawn the sweep with `stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT` (merged; run_finetune's error log file remains the durable per-model record on disk).
+- **Tee, don't just tail:** every line read by the worker goes both to a per-sweep log file on disk (append) and to the `RichLog` widget. The file is the source of truth; the widget is a view. Then TUI death, SSH drop, or resize can never destroy the record.
+- **Bound the widget:** construct `RichLog(max_lines=N)` (e.g. 10k) — an hours-long, 3-seed sweep emits far more than any terminal view should hold in memory.
+- Detach the sweep's lifetime from the TUI's: start it with `start_new_session=True` (its own process group) so quitting the TUI or an SSH hiccup does not SIGHUP a 40-minute cell. The TUI then *supervises* (poll + log tail) rather than *is* the sweep. Explicit "stop sweep" action sends SIGTERM to the group, with a confirmation modal (an accidental Ctrl+C must not equal killing a GPU run).
+- In `on_unmount` (or the screen's teardown): cancel reader tasks, then terminate the child — but only the child the TUI owns as a foreground choice; detached sweeps are left running by design and shown as such on reattach.
 
 **Warning signs:**
-- PRs mixing whitespace/renaming/structural changes with behavior fixes.
-- A finding labeled "correctness" whose fix also renames functions, moves files, or rewrites loops.
-- No tagged pre-fix commit when the fix series begins.
-- Recomputed diff shows movements in datasets/models unrelated to the known bug.
+- Garbage on screen the first time a real cell runs (always test with one tiny smoke cell before wiring all 50 datasets).
+- `RichLog` memory growing monotonically in a long session (watch RSS).
+- A "quit TUI" that also silently kills the sweep (operator discovers runs died overnight).
 
-**Phase to address:** Audit phase (capture baseline + tag pre-fix state) and Correctness Fixes phase (diff discipline enforced in review).
+**Phase to address:** P3 (single-GPU launch + monitoring). The tee-to-file and detach decisions define the launch architecture; P1 only needs to not preclude them (keep the log-tail widget a leaf component).
 
 ---
 
-### Pitfall 3: Tests coupled to exact floating-point outputs
+### Pitfall 3: Terminal matrix failures — SSH, tmux, mouse mode, colors, escape leaks
 
 **What goes wrong:**
-The new data-script test suite (first tests this repo will have) asserts `result == expected` on floats produced by the aggregation scripts (`summarize_comparison.py` does rank/MinMax/z-score/robust aggregation over pandas frames). The tests pass on the author's machine, then fail on GitHub Actions' Ubuntu runner, on macOS, or after a numpy/pandas version bump — not because the code is wrong but because non-associative IEEE 754 summation reorders under different BLAS backends (OpenBLAS vs MKL vs Accelerate), different thread counts, and FMA contraction. The team concludes the tests are "flaky by nature" and starts ignoring or deleting them before the release is out.
+The GB10 box is SSH-only, so every operator runs the TUI through at least one multiplexer. Documented failure modes in exactly this stack:
+- **Scrollback appears dead:** a full-screen TUI enables mouse reporting, so wheel events go to the app instead of tmux/terminal scrollback. Users perceive "the TUI ate my scrollback."
+- **Crash on tmux detach/reattach or SSH reconnect:** Textual issue #6668 — when the terminal is rebuilt under a live app, SGR mouse negotiation (`?1006`) is dropped and the terminal falls back to legacy X10 encoding; X10 reports with coordinates past column ~95 produce bytes >0x7F, and the strict UTF-8 stdin decoder raises `UnicodeDecodeError`. Reattach mid-sweep is precisely when this fires.
+- **256-color degradation:** colors picked on a truecolor local terminal become wrong/muddy when `TERM=xterm-256color` over SSH (or inside tmux without RGB overrides). Status semantics that live only in color (red=fail) silently lose meaning.
+- **Escape-sequence leaks:** a hard crash (or a subprocess writing raw bytes mid-alt-screen) can leave the operator's shell with a hidden cursor, weird keybindings, or mouse mode stuck on after exit.
 
 **Why it happens:**
-Exact assertions are the path of least resistance when writing the first tests against known JSON outputs. Cross-platform float divergence is invisible until CI runs somewhere else, and each failure costs 5+ minutes of round-trip, which trains people to `--update` or skip rather than investigate.
+Terminal capabilities are negotiated state, not constants; SSH + tmux chains renegotiate on detach/reattach and drop capabilities the app assumed. Textual restores the terminal on clean exit, but not on SIGKILL or a mid-screen subprocess write.
 
 **How to avoid:**
-- Never assert `==` on computed floats. Verified defaults for the two standard tools:
-  - `pytest.approx`: relative tolerance 1e-6, absolute 1e-12, `nan_ok=False` — note the absolute floor exists precisely because *nothing but 0.0 is relatively close to 0.0*; pass an explicit `abs=` whenever expected values can be near zero.
-  - `numpy.testing.assert_allclose`: `rtol=1e-07, atol=0, equal_nan=True` — its zero default `atol` bites for near-zero comparisons; set both explicitly.
-- Pin thread counts for determinism *before* numpy/pandas import (conftest or CI env): `OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1`. Primary-source example: scikit-learn's own CI pins exactly these three env vars (verified in their `.circleci/config.yml`).
-- Prefer integer/structural assertions where the domain allows: ranks are integers, row counts are integers, membership ("model X in top-5 for dataset Y") is boolean. Reserve float tolerances for scores.
-- Round-trip/property tests are immune to float drift: aggregation of a known tiny fixture should satisfy invariants (monotonicity under scaling for MinMax, z-score mean≈0/std≈1) regardless of last-ULP noise.
-- Pin the pandas/numpy versions in the manifest so local and CI environments don't silently diverge.
+- Make **tmux the blessed operating environment** (it also solves Pitfall 2's SSH-drop case) and document the operator setup once: `mouse on`, generous `history-limit`, `allow-passthrough on`, truecolor via `terminal-features ",*:RGB"` (or `terminal-overrides`), and wheel bindings that enter copy-mode. Put this in the TUI README/ONBOARDING, not tribal memory.
+- **Never encode state in color alone** — pair color with a glyph/text (`✗ FAILED`, `⏸ skipped`), which survives 256-color and monochrome. Use Textual's theme/semantic styles rather than hardcoded truecolor hex.
+- **Provide keybindings for everything the mouse does** (scroll, focus next pane, select row) — over SSH the wheel is the least reliable input.
+- Reattach robustness: prefer restarting the TUI after a detach (it re-reads artifacts — see Pitfall 4) over surviving in-place; test the reattach path explicitly. Pin a floor Textual version and track #6668-class fixes in the CHANGELOG (see Pitfall 7's version policy).
+- Add an exit-hygiene smoke check to the manual test list: launch, interact, quit, verify the shell prompt is sane (`reset` not required).
 
 **Warning signs:**
-- Any `assert x == 0.5`-style line in tests for computed values.
-- Test failures that differ between local machine and CI, or between CI runs, with tiny (1e-12-ish) diffs.
-- Tests passing only after setting thread env vars by hand, not in config.
+- Bug reports that only reproduce "over SSH from my laptop" or "inside tmux."
+- Any widget state communicated only by shade of color.
+- Operators routinely running `reset` after using the console.
 
-**Phase to address:** Tests+CI phase — this is decided the day the test harness is scaffolded (conftest + tolerances + env pinning), not retrofitted.
+**Phase to address:** P1 (the compatibility test matrix and the color/glyph discipline are cheap only if set as conventions up front); re-verified in P3 when long-lived monitoring sessions make reattach common.
 
 ---
 
-### Pitfall 4: Golden-file tests that block legitimate data updates (or train the team to blindly regenerate)
+### Pitfall 4: State desync — TUI view vs filesystem truth
 
 **What goes wrong:**
-The suite golden-copies the full aggregated performance JSON (50 datasets × 41 models). Every legitimate data refresh then fails CI. Two bad equilibria follow: (a) the team runs the regenerate flag with no review, at which point the golden no longer tests anything — it just snapshots whatever the code currently produces, bugs included; or (b) data updates get deferred indefinitely because "updating the goldens is a pain", and the repo ships with stale derived files (already a live risk here: the data chain is manual and stale derived files are undetectable today).
+The dashboard shows a world that no longer exists: a "failed" list from a sweep that was re-launched, a cell shown "running" whose `run_record.json` already says `completed`, a truncated JSON parsed as empty, or "done" claimed for a cell whose resume marker was never written. Concretely in this repo:
+- `sweep_failures.json` is **deleted at sweep start** (WR-06) — a TUI holding the old list in memory shows phantom failures the moment a re-run begins.
+- `run_record.json` / `sweep_manifest.json` are written with `open("w")` + `json.dump` — **not atomic** — so a poll that lands mid-write reads truncated JSON.
+- A cell is resumable/complete only when `trainer_state.json` exists, and it is written **last** (WR-13) — a directory existing proves nothing.
+- `run_record.json` is never rewritten once final (WR-12) — so "current status" is a blend of manifest enumeration + record state + marker presence, and any cached blend goes stale.
 
 **Why it happens:**
-Full-output goldens are the easiest test to write and they do catch the species-grouping class of bug — once. But they conflate "output changed" with "output changed *unexpectedly*", and only the second is a bug. Without a designed update flow, the test suite becomes an obstacle to the one thing a benchmark repo must do routinely: refresh results.
+The sweep is the writer and the TUI is a reader with no notification channel. Textual offers **no public stable filesystem-watching API** (the `api/watcher/` docs page 404s in 8.x; the internal `FileMonitor` is an mtime-polling helper, not a watchfiles/inotify API — Textualize's own `toolong` ships its own polling watchers rather than using one). So the TUI must poll, and naive polling plus caching manufactures desync.
 
 **How to avoid:**
-- Layer the goldens:
-  - **Exact goldens only on tiny, pinned fixtures** (3 models × 2 datasets, checked in as test fixtures, never the production data).
-  - **Contract/schema assertions on production outputs** (required keys present, types correct, model/dataset IDs match the catalogs, ranks are valid permutations, scores in expected ranges) — these pass across legitimate refreshes and fail on structural breakage.
-  - **Summary-statistic checks** (counts per dataset, no NaN where forbidden) instead of full-file equality.
-- One-command regeneration with review friction in the right place: `make update-goldens` (or pytest flag) regenerates; the update lands as its own commit/PR whose diff *is* the review artifact, paired with the data-changelog entry from Pitfall 1. Never hand-edit goldens (community consensus, LOW confidence synthesis — matches pytest-regressions/Syrupy/ApprovalTests documented workflows).
-- Add a CI **drift-detection** job: regenerate derived files from upstream inputs and `git diff --exit-code`. This converts "golden blocks updates" into "CI tells you exactly which derived files are stale", which is the actual property this repo needs.
-- Scrub/mask volatile fields (timestamps) or exclude them from comparison so only meaningful content is compared.
+- **One artifact-loader module, used by every widget** (the `DataAPI` pattern from the web frontend is the in-house precedent). No widget opens `sweep_*.json` itself.
+- Poll on a `set_interval` timer (1-2 s is plenty; cells run for minutes). Each tick: stat mtimes first, re-read only what changed; tolerate `json.JSONDecodeError`/`FileNotFoundError` by **keeping last-known-good and skipping the tick** — never crash the dashboard on a mid-write artifact.
+- Treat every read as a snapshot with an "as of" timestamp rendered in the UI; on sweep-start detection (manifest mtime reset / failures file gone), **drop all cached state**, don't merge.
+- Derive cell status the same way `run_sweep.py` does: record status + `trainer_state.json` marker presence — reuse the repo's own semantics rather than inventing a parallel state machine (which is also Pitfall 8).
+- Reattach = cold read. Since the TUI is a supervisor (Pitfall 2), "restart TUI, see truth" must always work.
 
 **Warning signs:**
-- Golden update commits containing thousands of changed lines with no explanation.
-- Team members deleting or `xfail`ing golden tests "to unblock a data refresh".
-- Derived JSON regenerated by hand-editing instead of the chain.
-- No command exists to regenerate goldens; people copy-paste expected values into test files.
+- Any `json.load` in a widget file rather than the loader.
+- Tests that only exercise the loader with well-formed, complete JSON (add a truncated-file and missing-file case to the P1 loader tests).
+- UI state surviving a detected re-launch.
 
-**Phase to address:** Tests+CI phase (layered structure, regen command, drift job), interacting with Recomputation phase (goldens updated in a reviewed, changelogged commit).
+**Phase to address:** P1 (loader seam + tolerant-read tests land with the foundation, because every later screen consumes it); P3 exercises it against real sweep timing.
 
 ---
 
-### Pitfall 5: CI that cannot be run (or debugged) locally
+### Pitfall 5: Long-lived session resource leaks (handles, timers, workers, widget memory)
 
 **What goes wrong:**
-The first GitHub Actions workflow embeds real logic — multi-line `run:` blocks installing numpy/pandas, invoking the data chain, diffing JSON — directly in the YAML. It works, but nobody can reproduce a failure without pushing commits. Academic contributors (this repo's audience) won't iterate via push-wait-5-minutes-watch-logs cycles; they open an issue instead, or abandon the PR. Additionally, if the workflow grows dependencies on the GPU pipeline or the external `dnallm` package, CI becomes permanently red or permanently skipped — both equivalent to no CI.
+A monitoring session left open for a multi-day sweep degrades: RSS creeps (unbounded log buffer, ever-growing caches), file handles accumulate (each poll tick opening without closing, log-tail handles per cell never released), stale `set_interval` timers keep firing for screens that were popped, and repeated actions (re-entering the dashboard, retrying a download) stack duplicate workers.
 
 **Why it happens:**
-Workflows are written in the GitHub UI or by pasting from docs, where embedding shell logic is the shortest path. There is no first-class local execution of GitHub Actions (community tool `act` approximates runners in Docker with known gaps; GitHub's own `gh act` local runner was preview-stage — LOW confidence synthesis). The constraint that CI must not require GPU or `dnallm` (already a project constraint) also has to be actively designed for, since the data scripts import from the pipeline tree in subtle ways sometimes.
+TUIs are long-lived in a way CLIs never are — the process that would have exited in the pipeline world now lives for days. Python's GC hides most handle leaks until the box is slow, and Textual workers/timers are tied to DOM nodes: removing a screen cleans them up *only if* they were created on that node and nothing else references them.
 
 **How to avoid:**
-- Thin workflow, fat scripts: the YAML does `run: make test` (or `./scripts/ci.sh`). The identical command is documented in the README/CONTRIBUTING and run by developers locally. If it can't run locally in under a minute on a laptop, it shouldn't be in CI.
-- Statically lint the workflow with `actionlint` (+ `yamllint`/`shellcheck` for embedded shell) before pushing — catches most schema/expression errors that would otherwise cost a push-and-wait cycle (community practice, LOW confidence synthesis).
-- Keep the CI dependency set to stdlib+numpy+pandas with pinned versions and a lockfile/requirements the CI installs; any import of `dnallm` or torch in a tested module fails fast at import time — structure the data scripts so their imports don't transitively pull the GPU stack.
-- Free/included tooling first: pytest, `node --check` for ES modules, a JSON parse + schema check, actionlint. No paid runners, no secrets needed — a workflow requiring secrets cannot run on forks.
-- Validate the CI on a clean fork or with `act` before trusting it.
+- `with open(...)` context managers everywhere in the loader (the repo's `script/` convention already mandates this — carry it into TUI code; ruff's lint surface should flag bare `open`).
+- `RichLog(max_lines=...)`; bounded dicts for any per-cell cache (the `TaskLoader` LRU-of-10 pattern in `js/task-loader.js` is the in-house precedent).
+- Create timers/workers on the screen or widget that owns them so teardown is automatic; cancel log-tail workers in `on_unmount`; `exclusive=True` on any retryable action.
+- One open log-tail per viewed cell (not per cell in the matrix), closed on view change.
 
 **Warning signs:**
-- Workflow files longer than ~50 lines or containing loops/conditionals in `run:` blocks.
-- Tests that import the fine-tuning pipeline (and would drag in torch/dnallm).
-- No local command in the docs that corresponds to what CI runs.
-- Commits named "try fix ci", "ci?", "wip ci" — the signature of push-driven debugging.
+- `lsof` on a TUI left running overnight shows growing fd counts.
+- Two entries for the same action in a worker listing; CPU pegged by timers after navigating away.
 
-**Phase to address:** Tests+CI phase (structure decided at workflow creation).
+**Phase to address:** P1 conventions; enforced structurally in P3 (the first genuinely long-lived screens).
 
 ---
 
-### Pitfall 6: Treating a leaked token as "removed" when it lives in git history (revocation-first)
+### Pitfall 6: Testing pitfalls — Pilot flakiness, time dependence, headless CI
 
 **What goes wrong:**
-The Zenodo token is deleted from `README.md:116`, the commit is pushed, and the repo is declared clean for public release. The token remains fully retrievable from every prior commit (`git log -p`, any file view by SHA), in forks and clones, and in GitHub's cached views. If it was ever pushed to a remote — and it is at HEAD, so it was — it must be assumed harvested: automated scanners index credentials pushed to public remotes within minutes (vendor-reported figure; LOW confidence). Deleting from HEAD is cosmetic.
+TUI tests flap in CI (pass locally, fail on the runner, or fail randomly), and the team loses trust in them; or worse, they're written as smoke-only and catch nothing. Classic flavors: asserting immediately after `pilot.press()` before messages settle; sleeping fixed durations (either too short → flake, or too long → the CI 14-minute budget erodes); snapshot baselines that differ per environment; tests that need a real terminal and can't run headless.
 
 **Why it happens:**
-Mental model of git as "the current files" rather than an append-only history. Revocation also feels optional when the repo is currently private — but making a repo public publishes its entire history, so "we'll deal with it at release" is exactly the wrong order.
+Textual apps are asynchronous message machines; Pilot simulates input faster than the app processes it. The official remedy is `await pilot.pause()` (drains the message queue and waits for idle) — skipping it is the #1 flake source. `App.run_test()` runs headless via `HeadlessDriver`, which is exactly right for CI, but only if the app's data/seams are injectable (no real GPU, no real ModelScope, no real sweeps — the repo's CI constraint). Snapshot testing (`pytest-textual-snapshot`) has its own trap: the **first run always fails** (no baseline) and `--snapshot-update` must follow *human verification*, or garbage becomes the golden.
 
 **How to avoid:**
-All points below verified against GitHub's official "Removing sensitive data from a repository" doc unless noted:
-1. **Revoke/rotate FIRST.** GitHub's doc is explicit that for credentials you "need to revoke and/or rotate that secret" — rotation alone may make a history rewrite unnecessary. For Zenodo: revoke the personal access token in Zenodo account settings (mechanism is standard; exact help URL could not be primary-verified this run), and check Zenodo usage logs for the exposure window.
-2. Only then decide on history hygiene. GitHub officially recommends `git filter-repo` (v2.47+ even has a `--sensitive-data-removal` flag); `filter-branch` is deprecated; BFG is a simpler alternative for text replacement.
-3. Know the limits of rewriting: GitHub keeps cached views reachable by commit SHA; contact GitHub Support to clear cached views and run server-side GC. You cannot clean other users' clones or forks.
-4. Coordinate the force-push: collaborators must re-clone or rebase — one merge commit from an old clone reintroduces the tainted history. Check that no open PRs/reviews reference the old commits.
-5. Prevent recurrence: enable GitHub push protection / secret scanning, and add a pre-commit gitleaks hook for arbitrary token formats GitHub doesn't know (Zenodo tokens are not in GitHub's default pattern set — inference from it being a non-first-party provider; verify configuration).
-6. Scan the *full history* (gitleaks/trufflehog over all commits), not just HEAD — the README copy may not be the only copy (docs, scripts, notebooks).
+- Land the test harness in P1 together with the skeleton: `pytest` + `pytest-asyncio` with `asyncio_mode = "auto"`, every TUI test through `async with app.run_test() as pilot:`; assert only after `await pilot.pause()`.
+- **No wall-clock sleeps.** Synchronize on conditions: `await app.workers.wait_for_complete()` for worker-backed loads; make every `set_interval` interval an injectable constructor/parameter (tests pass 0.01 s). This mirrors the repo's existing fake-executor discipline in `tests/test_sweep.py` — the TUI's sweep-launcher seam gets the same fake (a stub process or stubbed `create_subprocess_exec`), keeping CI GPU-free per the milestone constraint.
+- Snapshot tests: use sparingly (a few canonical screens), commit SVGs as maintainer-verified goldens per the repo's golden-file discipline, treat snapshot diffs in CI as review artifacts (HTML report uploaded as artifact), and re-baseline only with eyes on the report.
+- Use `run_test(size=(N, M))` to test the narrow-SSH-terminal rendering (e.g. 100×30 and 200×50 legs), catching truncation bugs that only appear over SSH.
+- Expect `WaitForScreenTimeout`-class failures to mean "deadlock/unprocessed message," not "slow runner" — fix the app, never the timeout.
 
 **Warning signs:**
-- A "removed token" commit with no corresponding revocation recorded anywhere.
-- No full-history scan evidence before the release tag.
-- Release checklist says "delete token from README" instead of "revoke token".
+- `time.sleep` in any TUI test (ban via review).
+- Tests that only pass with `--snapshot-update` run first.
+- A TUI test importing `torch`, `dnallm`, or hitting the network.
 
-**Phase to address:** Release Hygiene phase — but make revocation a **manual, out-of-repo checklist item** (the milestone already flags it); the repo-side work (history scan, optional rewrite, push protection) is code/CI and belongs in the same phase. Note: this is the one pitfall where the fix cannot be expressed as a commit.
+**Phase to address:** P1 (harness + fake seams land with the first screen — retrofitting testability into a live app is the expensive path); every later phase inherits the pattern.
 
 ---
 
-### Pitfall 7: License/provenance gap for benchmark data (code license silently applied to data)
+### Pitfall 7: Dependency-gate pitfalls — TUI deps leaking into the wrong groups
 
 **What goes wrong:**
-A single LICENSE file (MIT/Apache) is added at release, and everything in the repo is implicitly covered by it. But the repo redistributes derived artifacts of 50 datasets, each with its own upstream source, license, and citation expectations. The Data Provenance Initiative's audit (verified from the arXiv abstract of 2310.16787) found license omission of 70%+ and license error rates of 50%+ across popular dataset hosting sites — misattribution is the norm, not the exception, and a benchmark platform amplifies it by re-publishing aggregates of many datasets under one roof. Downstream users assume "MIT repo → data is MIT", which can be wrong for non-commercial or share-alike upstream sources.
+`uv sync` on the offline data chain (or in CI's data lane) suddenly drags in `textual` + `rich` + `platformdirs` + `pygments` + `markdown-it-py`; or the operator's GPU environment gets a textual upgrade that breaks the TUI mid-milestone; or `textual-dev` (the dev-tools package with the console/serve commands) lands as a runtime dependency of the operator console.
 
 **Why it happens:**
-"Add a LICENSE" is on every release checklist; "add a DATA_LICENSE and per-dataset provenance" is on none. Benchmark authors usually fetched the datasets programmatically and never recorded terms. The datasets catalog page (`datasets.js`) exists for science, not licensing, so nobody thinks of it as the provenance record.
+uv's `default-groups` currently `["data"]` — anything added there (or to `dev`, which CI installs) becomes ambient. Textual releases every few weeks, follows SemVer with real cross-major breaks (2.0.0 `OptionList` API removal, 3.0.0 `App.query` default-screen semantics change, 8.0.0 `Select.BLANK`→`NULL`), and has **no official upgrade guide** — the CHANGELOG is the only reference. Ecosystem practice (gptme, atlas, hypergumbo) is bounded ranges with deliberately-raised floors. Textual 8.2.8 itself is pure-Python and CPU-only, so it *can* live in CI — the question is which lanes must carry it.
 
 **How to avoid:**
-- Dual declaration: LICENSE (code) + explicit data-terms statement (separate DATA_LICENSE or a README section): "aggregated performance metrics are ours; underlying datasets belong to their original publishers; see the provenance table".
-- Provenance table for all 50 datasets: name, original source (paper/URL), license as stated upstream (or "unknown"), and whether DNALLM-Mark redistributes raw data or only derived aggregates (derived metrics are a much weaker exposure than raw redistribution — verify which one this repo commits).
-- If any upstream dataset is non-commercial or ambiguous, say so in the table rather than resolving it silently.
-- Add CITATION.cff + a BibTeX block so the platform itself gets cited correctly (academic UX, cheap, expected).
-- Do this before public flipping: relicensing/retrofitting provenance after users have already consumed the data is far messier.
+- New **`tui` dependency group**: `textual>=8.2,<9` (floor at the audited version, cap at the audited major — consistent with the repo's bounded-range discipline). `default-groups` stays `["data"]` so the data chain and website tooling never see it. `gpu` group never gains TUI deps; `textual-dev` (if wanted for `textual run --dev` console) goes in `dev` only, never `tui`.
+- CI: the test lane that runs Pilot tests installs `--group tui` explicitly (textual is pure-Python CPU — the "CI stays GPU/dnallm-free" constraint is satisfied; the open requirement 3.6 checkbox should be resolved as "no GPU/TUI *runtime display*, textual-the-library is fine in the test lane").
+- Lock discipline unchanged: floors in `pyproject.toml`, exact pins in `uv.lock` (the existing dev-group pattern). Version bumps are deliberate commits that read the CHANGELOG's breaking-change flags — same treatment `ty` already gets in this repo.
+- ruff + ty gates cover TUI sources from day one (add the TUI package dir to `[tool.ty.src] include` and ruff's paths in the same commit that creates the package — memory rule: ty wired in from Phase 3 on, and here from P1).
 
 **Warning signs:**
-- Release checklist contains only "choose LICENSE".
-- Datasets catalog displays names/sources but no license column anywhere in the repo.
-- Raw dataset files (FASTA etc.) committed without any terms note.
-- No citation file and no license header on the leaderboard site.
+- `uv sync` output on a clean data-lane checkout mentioning textual/rich.
+- A `uv.lock` diff that touches torch lanes because of a TUI dependency change.
+- Unbounded `textual>=X` with no cap.
 
-**Phase to address:** Release Hygiene phase (license decision is already an active requirement; the provenance table can be drafted earlier during the audit, when each dataset is being touched anyway).
+**Phase to address:** P1 (the group is created with the first line of TUI code; retro-fitting group hygiene after widgets exist always misses a lane).
+
+---
+
+### Pitfall 8: Scope creep — reimplementing pipeline logic client-side instead of reading artifacts
+
+**What goes wrong:**
+The TUI grows its own copy of benchmark semantics: its own cell enumeration that counts 3,112 cells when `run_sweep.py --dry-run` says 3,100; its own rank/aggregation preview that disagrees with `script/summarize_comparison.py`; its own dataset-presence check that diverges from `n_audit.json`; its own "is this model eligible for probe" guard instead of surfacing `PROBE_INELIGIBLE`. Every disagreement becomes a correctness incident on a platform whose core value is "every number is correct and reproducible."
+
+**Why it happens:**
+It starts innocently — a quick recomputation to show a richer preview — and each instance is small. But the TUI then holds a second implementation of rules that already exist in `run_sweep.py`/`run_finetune.py`/`script/`, and the two drift on every upstream change (the repo has lived this movie: "duplicate frontend aggregation logic" is already a named anti-pattern in the web UI).
+
+**How to avoid:**
+- **Hard rule: the TUI reads registries and artifacts; it orchestrates; it does not compute benchmark semantics.** Selection matrices come from `models_info.json`/`datasets_info.json`; presence from `n_audit.json`; preview counts from **invoking `run_sweep.py --dry-run` and rendering its manifest** (subprocess, cheap, CPU-only — and it is already a tested contract); failures from `sweep_failures.json`; resume state from `trainer_state.json` markers.
+- Where pure helpers genuinely must be shared (argv building, priority tiers), import the *existing* function from `pipeline/run_sweep.py` (CPU-side, torch-free — CI's sweep tests prove it) rather than copying it; one definition, two consumers.
+- The launch preview shows the **actual argv** the TUI will exec — so preview and execution cannot diverge by construction.
+- The E2' full-sweep gate confirms against the sweep's own dry-run manifest, not a TUI-side tally.
+
+**Warning signs:**
+- A PR diff touching only TUI files yet changing displayed counts/eligibility rules.
+- Two implementations of the same rule found by grep (e.g. tier logic, metric-key mapping).
+- Any numeric literal in TUI code that also exists in `script/` or `pipeline/`.
+
+**Phase to address:** P1 (the architecture rule and the dry-run-manifest preview pattern are set before the first feature screen); audited per-phase thereafter.
+
+---
+
+### Pitfall 9: The "TUI becomes the only interface" trap
+
+**What goes wrong:**
+Six months in, the only tested path to launch a sweep is clicking through the console. The CLI paths (`run_sweep.py`, `run_finetune.py`, `env_smoke.py`) silently rot — flags drift, the E2' authorization becomes "whoever has TUI access," cron/CI/automation can't drive the platform, and a broken terminal on the GPU box becomes a blocked benchmark. Community consensus is blunt: full-screen TUIs are "GUI programs in disguise" — not composable or scriptable — which is why mature tools keep a machine mode next to the human mode (Amplitude Wizard's dual-mode architecture: TUI + `--agent` NDJSON + `--ci` non-interactive, patterned on gh/stripe/terraform CLIs).
+
+**Why it happens:**
+The TUI is where the new development energy goes; every convenience lands there first "because that's what operators use," and the CLI equivalents stop being maintained or never gain the new knobs.
+
+**How to avoid:**
+- **Every TUI capability must already exist as a CLI capability** — this milestone's design already satisfies it (selection → `--models`/`--tasks`/priorities file; downloads → ModelScope CLI/SDK; launch → `run_sweep.py`; retry → `--from-failures`; checks → `env_smoke.py`). The TUI is a view+supervisor over those entry points, never a replacement (and the TUI should show the equivalent command line for what it's about to do — which Pitfall 8's argv preview provides for free).
+- Keep the CLI path CI-exercised: the existing `tests/test_sweep.py` dry-run/fake-executor contract tests are the regression net — new TUI-driving flags (e.g. `--effective-batch`) land in `run_sweep.py`/`run_finetune.py` first, with tests, then get surfaced in the TUI.
+- The E2' maintainer authorization must remain a *documented, reproducible CLI act* (the confirmation gate records the exact command the maintainer is authorizing), not a TUI-internal state.
+- Documentation (ONBOARDING) shows both paths side by side for every operator task.
+
+**Warning signs:**
+- A feature request that can only be satisfied by changing TUI code.
+- Docs that say "open the console and..." with no CLI equivalent.
+- CI green while the last-touched CLI flag has no test.
+
+**Phase to address:** P1 (architecture principle: TUI wraps entry points); P3 verifies it end-to-end (launch from TUI ≡ launch from CLI, same artifacts); P4 (multi-GPU orchestration is the highest-risk regression point — the sharding layer must equally be a CLI-invocable mode).
 
 ---
 
 ## Technical Debt Patterns
 
-Shortcuts that seem reasonable but create long-term problems.
-
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Ship release with no dependency manifest (`requirements.txt`/`pyproject.toml`) | No version-research work today | CI can't install; reviewers can't run; recomputation environment unreproducible (feeds Pitfalls 3, 8) | Never for a public benchmark repo |
-| Hand-edit a derived JSON to fix "one number" | 2-minute fix | Regeneration chain overwrites it; number's provenance becomes unexplainable | Never — fix upstream or accept the number |
-| Keep dead-but-plausible duplicate logic (`js/data.js:recalculateComparison` vs `script/summarize_comparison.py`) | Zero deletion risk during hardening | Two sources of truth; someone "fixes" the JS copy and the site silently disagrees with the scripts | Acceptable to *defer* deletion if reported in the findings doc; not acceptable to leave unreported |
-| Full-output golden tests (against Pitfall 4) | Fastest first test to write | Every legit refresh fails CI; suite degraded to auto-snapshot | Only on tiny pinned fixtures |
-| README prose hardcoding leaderboard numbers ("Model X achieves Y") | Nice for the paper | Diverges from data on every recomputation; someone must remember to update it | Avoid; link to the leaderboard page instead |
-| Test logic embedded in workflow YAML (against Pitfall 5) | One less file | Cannot run/debug locally; push-driven CI debugging | Thin wrappers only |
-| Defer LICENSE/CITATION to "after the code is clean" | Sequencing feels tidy | Everything (data table, README, site footer) keys off the license; retrofitting provenance post-release is painful | Decide early even if the final text lands late |
+| Parse sweep stdout as a data contract in the TUI | No changes to sweep code needed | Brittle to any print-format change; P1→P4 rework | Never — read JSON artifacts; stdout is for humans/logs |
+| Poll every artifact every tick (no mtime check) | Simpler loader | Wasted IO at 62×50 scale; CI-time slowdown | MVP-only in P1, replaced before P3 dashboard |
+| Sync ModelScope calls in a handler "just for one download" | Ships the data manager faster | Frozen UI during multi-GB downloads (Pitfall 1) | Never |
+| One giant App class for all screens | Fast start | Unnavigable; test setup drags the whole app | Never beyond P1 skeleton — one screen-module per domain from the start |
+| Hardcoded 80×24 assumptions in layouts | Looks fine locally | Broken on narrow SSH windows | Never — test at two sizes (Pitfall 6) |
+| Skipping the per-sweep tee-to-file because RichLog shows it | Less code in P3 | Output lost on TUI death/SSH drop; no audit trail | Never (Pitfall 2) |
+| Snapshot tests for every screen | Cheap visual coverage | Baseline churn on every styling tweak; CI noise | Only canonical screens, maintainer-verified goldens |
 
 ## Integration Gotchas
 
-Common mistakes when connecting to external services.
-
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| Zenodo (token leak, `README.md:116`) | Treat README deletion as cleanup; assume a private repo's history is safe forever | Revoke first, scan full history, rewrite only if desired, coordinate force-push (Pitfall 6) |
-| Zenodo (future data deposits) | Pasting working token snippets into docs as "instructions" | Use `<your-token>` placeholders in all docs; real tokens only via env var, never in examples that get copy-pasted into commits |
-| GitHub Actions | Over-broad `GITHUB_TOKEN` permissions; actions referenced by mutable tags; workflow that needs secrets (breaks on forks) | Read-only default permissions (`permissions: contents: read`), pin actions by SHA, keep the test workflow secret-free so external contributors' PRs run it |
-| GitHub Pages (static hosting constraint) | Assuming "static site, nothing can break" — the `renderNavbar()` class of bug shipped because nothing loads pages | Cheap structural checks in CI: every nav link resolves to an existing file, every `js/*.js` passes `node --check`, every data JSON parses (full E2E is out of scope by decision — these checks are not) |
-| Git history rewrite | Rewriting while PRs are open; merging (not rebasing) from pre-rewrite clones; forgetting forks keep old history | Close/merge PRs first; announce re-clone requirement; accept forks as unfixable (GitHub docs, verified) |
+| `run_sweep.py` (as child process) | Importing its executor in-process; inheriting stdout; assuming CWD | `create_subprocess_exec` with argv list, PIPE, cwd pinned like `launch_subprocess` does (`PIPELINE_DIR`); pass `--output-root` explicitly (directory-settings requirement) rather than relying on CWD |
+| `run_sweep.py` (pure helpers) | Copying enumeration/argv logic into the TUI | Import the existing functions; one definition (Pitfall 8) |
+| ModelScope SDK | Sync calls on the event loop; token echoed into TUI logs/config | Thread worker (`@work(thread=True)`); SDK reads `~/.modelscope` itself — never copy/log the token; persist only queue state, never credentials |
+| `env_smoke.py` | Ignoring its exit code; parsing human text only | Non-zero exit blocks launch; parse the greppable `PASS:`/`FAIL:` lines for the reasons view (stable, documented contract) |
+| tmux / SSH terminals | Assuming wheel-scroll, truecolor, SGR mouse always available | Blessed tmux config documented; keybindings for scroll; color+glyph redundancy (Pitfall 3) |
+| Artifact JSON (`run_record`/`sweep_failures`/`trainer_state`) | Caching reads across sweep restarts; crashing on mid-write files | Loader with tolerant reads + mtime diffing + cold-read on reattach (Pitfall 4) |
+| GitHub Actions CI | Installing the `gpu` group for TUI tests; or excluding TUI tests entirely | `--group tui` (+dev) in the test lane only; fakes for any process seam (Pitfalls 6, 7) |
 
 ## Performance Traps
 
-Patterns that work at small scale but fail as usage grows. Scale here = datasets × models × history, not users.
-
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Golden-diffing full production JSON (Pitfall 4) | CI diffs of 10k+ lines; humans stop reading them | Layered assertions; summary stats; drift job | Immediately at 50×41; worsens with every model added |
-| Committing regenerated bulk JSON on every refresh | Repo bloat, noisy history, huge PR diffs | Keep derived data small and normalized; consider data release tags for big refreshes | After several recomputation cycles |
-| Test suite running the real 50-dataset pipeline | CI minutes balloon; contributors skip the suite | Tests run on tiny fixtures; full-data checks limited to the drift job | First time the data doubles |
-| Browser pages loading the full performance JSON eagerly (existing two-tier cache exists, but new pages tend to skip it) | Leaderboard feels fine to authors with cache, slow to first-time visitors | Reuse the existing caching pattern for any page the fixes touch | New visitor, doubled data size |
+| Unbounded `RichLog` growth | RSS climbs over a multi-hour monitoring session | `RichLog(max_lines=10_000)`; durable copy on disk anyway | First multi-hour sweep (P3) |
+| Re-rendering the full 62×50 matrix on every poll tick | Dashboard CPU-pegged; flicker | Update only changed rows/cells; tick at 1-2 s; stat-mtime gating before re-read | First full-matrix dashboard render |
+| Re-reading all 47-50 task artifacts every tick | IO storm, slow ticks | Loader memoizes by (path, mtime, size) | P2/P3 as artifact counts grow |
+| Fixed-interval timers that also fire when hidden/unfocused | Background CPU burn while operator reads a log | Pause polling when the screen isn't visible (`Screen` visibility / timers owned by the screen) | Long-lived sessions (P3) |
+| One worker per matrix cell (e.g. 3,100 log tails) | Worker explosion, fd exhaustion | Tail only the currently viewed cell; one supervisor worker for the sweep | First "tail all logs" feature idea |
 
 ## Security Mistakes
 
-Domain-specific issues beyond general web security. (Deep security is out of scope this milestone by decision; these are the ones that interact with the audit's own findings.)
-
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Treating the `innerHTML` finding as cosmetic because "the data JSON is trusted, we generate it" | The submission flow (`js/submit.js` + PR instructions) invites external input; one accepted community submission with a hostile model/dataset string turns stored XSS live | Escape at the sinks (DOM building / `textContent`) during the correctness pass; treat submission-generated JSON as untrusted forever after |
-| Revocation-free "cleanup" of the leaked token (Pitfall 6) | Live credential in public history post-release | Revocation-first runbook; full-history gitleaks scan in CI |
-| Assuming push protection covers Zenodo tokens | GitHub's pattern set targets first-party providers; a Zenodo token likely slips through | Pre-commit gitleaks with a custom rule for the token format; verify empirically |
-| Client-side-only submission validation presented as a security control | Bypassed trivially; hostile data enters the PR pipeline | Document validation as UX-only; the real gate is human PR review + sink-side escaping |
+| Copying the ModelScope token into TUI config/session files | Token leaks via dotfiles, screenshots, sync | SDK reads `~/.modelscope` directly; TUI stores no credentials; session/state files audited to contain paths/flags only |
+| `shell=True` or string-joining user-selected model names into commands | Injection through registry values / template imports | Argv-list discipline (T-03-10 continuity); validate imported run-config templates against registries the way `--from-failures` validation does |
+| TUI logs echoing full child environment | Secret-bearing env vars in durable tee-files | Log child stdout/stderr only; never dump env |
+| E2' gate as a saved/default setting in a template | Full three-seed sweep auto-authorized by imported config | Full-sweep authorization is per-session interactive confirmation over the dry-run manifest, never a persisted default |
+| Template import (JSON) trusted blindly | Malicious/typo paths in project/storage dir settings escape the repo | Same-path validation as `--from-failures` (`_read_operator_json` pattern); reject unknown keys, resolve and display effective paths before applying |
 
 ## UX Pitfalls
 
-Users here are researchers who consume the leaderboard and cite the platform.
-
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|------------------|
-| Numbers change without a data changelog (Pitfall 1) | Cited numbers stop matching the site; platform presumed unreliable | Data version stamp + changelog + archived old snapshot |
-| No date/version on displayed results | "As of when?" is unanswerable; screenshots circulate without context | Render `meta.generated_at` / `data_version` in the page footer |
-| Nav links to missing pages (`submit.html` orphan) | Users hit 404s and conclude the project is abandoned | Link-resolution check in CI; fix or remove the link in the correctness pass |
-| No citation guidance | The platform gets mis-cited or not cited | CITATION.cff + BibTeX block + one-line "how to cite" on the leaderboard |
+| Color-only status | 256-color/SSH users misread cell states | Glyph + text + color (Pitfall 3) |
+| Mouse-only interactions | Wheel/selection unreliable over SSH+tmux | Full keyboard path for every action; document bindings on-screen (`?` help) |
+| Modal blocking the dashboard while a download runs | Operator can't check anything during multi-GB fetches | Non-modal status/queue area; downloads are workers, not dialogs |
+| "Where did my sweep go?" after quitting the TUI | Operators assume quitting killed the run | Detached-by-design supervision + an always-visible "sweep running (PID N) — TUI exit will NOT stop it" affordance (Pitfall 2) |
+| Hidden refresh age | Decisions made on stale data during a re-launch | "as of HH:MM:SS" timestamp on every artifact-derived panel (Pitfall 4) |
+| Bilingual strings interleaved ad hoc | Mixed-language UI drift | Pick per-string language policy at P1 (team requirement flags 中文界面/双语 as open) — one constants module, never inline duplicated strings |
 
 ## "Looks Done But Isn't" Checklist
 
-Things that appear complete but are missing critical pieces. Run this before the release tag.
-
-- [ ] **Token revoked:** Zenodo token *revoked at the provider* (not just absent from README); gitleaks/trufflehog scan over **full history** is clean; push protection enabled.
-- [ ] **History actually clean:** (if rewrite chosen) commits by old SHA no longer fetch; GitHub Support contacted about cached views; collaborators re-cloned.
-- [ ] **Numbers reproducible:** fresh clone → run the documented data chain → output matches committed JSON (drift job green).
-- [ ] **Number migration documented:** data changelog entry per result-affecting fix, before/after artifact checked in, pre-fix data tagged.
-- [ ] **Every page renders:** each HTML page loads in a browser without console errors; navbar renders on all pages (`renderNavbar()` fix verified on *all* pages, not just the three known-broken ones).
-- [ ] **Every link resolves:** no nav/anchor references missing files (`submit.html` fixed or link removed).
-- [ ] **CI is green from a clean fork:** no secrets, no GPU, no `dnallm` import; workflow runnable by an outside contributor.
-- [ ] **Local ≡ CI:** the documented local command runs the same suite CI runs, in comparable time.
-- [ ] **Licensing complete:** code license chosen; data terms stated; per-dataset provenance table exists; CITATION.cff present.
-- [ ] **Dependency manifest:** `pip install -r requirements.txt` (or equivalent) on a clean venv suffices to run tests and data scripts.
-- [ ] **No shadow logic:** duplicate divergent aggregation in `js/data.js` deleted or explicitly marked deprecated with a pointer to the authoritative script.
+- [ ] **Sweep launch:** often missing the tee-to-file durable log — verify a log file exists on disk with the full child output after a smoke cell
+- [ ] **Sweep supervision:** often missing detach semantics — verify quitting the TUI leaves the sweep running and a restarted TUI reattaches (shows live progress, not stale state)
+- [ ] **Stop path:** often missing group-kill — verify "stop" terminates the whole child tree (`start_new_session` + group signal), not just the wrapper
+- [ ] **Artifact reader:** often missing mid-write tolerance — verify a truncated-JSON tick keeps last-known-good instead of blanking the dashboard
+- [ ] **Terminal hygiene:** often missing exit-restore check — verify shell prompt is normal after quit, including after a crashed run
+- [ ] **Matrix coverage:** often missing the SSH/tmux/256-color legs — verify at least: local truecolor, SSH plain, SSH+tmux, narrow window
+- [ ] **Reattach:** often missing the tmux detach/reattach test — verify no `UnicodeDecodeError` (issue #6668 class) on reattach with the mouse in use
+- [ ] **CI parity:** often missing group isolation proof — verify `uv sync` (data default) does not install textual, while the TUI test lane does
+- [ ] **Preview fidelity:** often missing argv equality — verify the dry-run preview's manifest matches the actual launch's manifest byte-for-byte
+- [ ] **Failure re-run:** often missing CLI equivalence — verify TUI re-run and `--from-failures` produce the same outcome on the same manifest
+- [ ] **Resource ceiling:** often missing the overnight soak — verify RSS and fd count are flat after an hours-long monitoring session
 
 ## Recovery Strategies
 
-When pitfalls occur despite prevention, how to recover.
-
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Token found live after release (P6) | LOW (technical) / varies (impact) | Revoke immediately; pull Zenodo usage logs for the exposure window; then optional history rewrite + Support contact; disclose if misuse found |
-| Numbers changed silently post-release (P1) | MEDIUM | Publish a retroactive migration note; tag the pre-change data; reconstruct before/after from git history; add the version stamp going forward |
-| Golden suite all-red after a legitimate update (P4) | LOW | Regenerate via the official command; review the diff in a dedicated PR with a changelog entry; never delete tests or hand-edit goldens to get green |
-| Over-refactor already merged (P2) | HIGH | Revert to the tagged pre-fix baseline; re-apply fixes as surgical diffs; recompute and document deltas per fix |
-| CI chronically red / ignored (P5) | MEDIUM | Split a fast local-runnable core suite from full CI; fix determinism (thread pinning, tolerances); delete jobs nobody fixes |
-| Mislicensed data discovered post-release (P7) | MEDIUM-HIGH | Add provenance table immediately; restrict or annotate the affected datasets; update README and any redistributed archives; consult the data owner if uncertain |
+| Event-loop blocking baked into handlers | HIGH (touch every handler) | Introduce a `Supervisor` service object owning all process/IO workers; handlers shrink to post_message calls; migrate screen-by-screen |
+| Child-output loss (no tee) | MEDIUM | Add tee in the reader worker; historical output unrecoverable — accept, re-run affected cell via `--from-failures` |
+| Terminal matrix breakage found late | LOW-MEDIUM | Mostly config/docs (tmux blessed setup) + keybinding pass; color-only fixes are widget-local |
+| Desync architecture (widgets reading files directly) | HIGH | Extract the loader module, redirect widgets, add tolerant-read tests — same shape as the web `DataAPI` consolidation |
+| Flaky Pilot suite | MEDIUM | Audit for sleeps → replace with `pause()`/`wait_for_complete()`/injectable intervals; quarantine genuinely timing-bound tests behind a marker |
+| Textual major bump forced mid-milestone | LOW | Bounded `>=8.2,<9` cap makes this a deliberate upgrade: read CHANGELOG breaking flags, fix call sites, refresh snapshots with review |
+| Client-side logic duplication discovered | HIGH (correctness brand) | Diff TUI-computed values against `--dry-run`/script outputs; delete the TUI copy; add a parity test that runs both and compares |
+| CLI rot | MEDIUM | Feature-freeze TUI additions until CLI parity restored; add the missing CLI tests; document dual paths |
 
 ## Pitfall-to-Phase Mapping
 
-How roadmap phases should address these pitfalls. Phase names are the milestone's logical stages — renumber to the roadmap's actual phases.
-
 | Pitfall | Prevention Phase | Verification |
-|---------|------------------|--------------|
-| P1 Silent number migration | Recomputation (changelog + version stamp), seeded in Correctness Fixes (one-fix-per-PR) | Data changelog exists; pre-fix data tag exists; before/after artifact reviewed |
-| P2 Over-refactor breaks reproducibility | Audit (baseline capture + pre-fix tag + severity-grading rules), Correctness Fixes (diff discipline) | Post-fix diff contains only fix-explained deltas; no unexplained movements |
-| P3 Exact-float test coupling | Tests+CI | Zero `==` asserts on computed floats; conftest pins thread env vars; CI green on Ubuntu + one other OS ideally |
-| P4 Goldens block legit updates | Tests+CI | Layered suite (fixture goldens + schema contracts + summary stats); regen command documented; drift job green on fresh clone |
-| P5 CI not locally runnable | Tests+CI | Workflow ≤ thin wrapper; README documents the identical local command; contributor-fork run passes |
-| P6 Token-in-history / revocation-first | Release Hygiene (revocation is a manual checklist item) | Token shown revoked at Zenodo; full-history secret scan clean; push protection on |
-| P7 Data license/provenance gap | Release Hygiene (table drafted during Audit) | LICENSE + data terms + 50-row provenance table + CITATION.cff present |
-| Moderate: recomputation environment drift | Recomputation | Recompute in an environment pinned by the new manifest; manifest committed before recomputation |
-| Moderate: shadow aggregation logic divergence | Correctness Fixes (report) → Tests+CI (delete or deprecate) | Single authoritative implementation or explicit deprecation pointer |
-| Moderate: sink-side escaping vs blanket escape | Correctness Fixes | Pages render real data without artifacts (no double-escaping); escaping verified at DOM-build sites |
+|---------|------------------|---------------|
+| 1. Event-loop blocking | P1 (worker/subprocess discipline is the foundation architecture) | Pilot test asserting UI stays responsive while the fake sweep streams; code-review ban on sync calls in handlers |
+| 2. Subprocess output loss / teardown | P3 (launch + monitoring) | Smoke cell leaves complete tee-file; quit-TUI-reattach test; stop-action kills process group |
+| 3. Terminal matrix (SSH/tmux/mouse/color) | P1 conventions, P3 verification | Manual matrix checklist (4 environments) executed at P3 exit; color+glyph lint over status renderers |
+| 4. View-vs-filesystem desync | P1 (loader seam), P3 (live timing) | Loader unit tests with truncated/missing/stale artifacts; cold-read-on-relaunch test |
+| 5. Resource leaks | P1 conventions, P3 enforced | Overnight soak with RSS + fd-count assertions (manual, documented) |
+| 6. Pilot/testing pitfalls | P1 (harness lands with first screen) | Zero `time.sleep` in TUI tests (grep gate); CI runs the TUI lane headless green |
+| 7. Dependency groups | P1 (`tui` group created day one) | `uv sync` dry-run shows no textual in default resolution; CI lane matrix green |
+| 8. Client-side logic duplication | P1 rule, audited each phase | Preview-vs-dry-run parity test; grep audit for duplicated tier/metric logic per phase review |
+| 9. TUI-only interface trap | P1 principle, P3/P4 verification | Every operator task documented with CLI equivalent; E2' gate records the authorized command line; CLI contract tests still green |
 
 ## Sources
 
-Confidence per the classify-confidence seam: all web providers rate LOW mechanically; items below marked **verified** were fetched directly from the named primary source this run and are the strongest available evidence.
-
-**Verified primary sources (best evidence):**
-- GitHub official docs, "Removing sensitive data from a repository" (docs.github.com) — revoke-first ordering, filter-repo recommendation incl. `--sensitive-data-removal` (2.47+), cached views by SHA, Support contact for GC, fork/clone recontamination, rebase-not-merge. [P6, P5-adjacent]
-- pytest official API reference — `approx` defaults rel=1e-6 / abs=1e-12 / nan_ok=False, near-zero rationale. [P3]
-- NumPy official docs — `assert_allclose` defaults rtol=1e-07 / atol=0 / equal_nan=True. [P3]
-- EleutherAI/lm-evaluation-harness `docs/new_task_guide.md` (via GitHub API) — task versioning policy + changelog entry format for result-affecting fixes; release notes v0.4.x pattern of grouped "Task Fixes". [P1]
-- scikit-learn `.circleci/config.yml` (via GitHub API) — pins MKL/OPENBLAS/OMP_NUM_THREADS=1 in CI. [P3]
-- arXiv:2310.16787 abstract, "The Data Provenance Initiative" — 70%+ license omission, 50%+ error rates across audited dataset collections. [P7]
-
-**Community-consensus claims (LOW confidence per seam; consistent across multiple independent syntheses but not primary-verified this run — treat as strong hypotheses):**
-- HF Open LLM Leaderboard v1→v2 declared results non-comparable; SWE-bench Verified re-annotation changed rankings; EvalPlus/HumanEval+ score drops. [P1]
-- Golden-file update workflow (regenerate-review-diff; pytest-regressions / Syrupy / ApprovalTests conventions). [P4]
-- `act`/`gh act` local-execution limitations; actionlint pre-push linting practice. [P5]
-- Research-code release discipline (archive as-run state; hygiene-only first pass; characterization tests before refactor) — Software Sustainability Institute / Turing Way consensus. [P2]
-- Bots harvesting pushed credentials "within minutes" (GitGuardian vendor reporting); TruffleHog live-credential verification; gitleaks pre-commit mode. [P6]
-
-**Environment caveat:** the WebSearch tool in this run returned model-knowledge syntheses without live citations; every load-bearing claim above was therefore re-verified by direct fetch (WebFetch / GitHub API) where a canonical URL existed. Claims that could not be re-verified are the LOW-confidence group. The Zenodo token-revocation help page could not be fetched (404 at attempted URLs); the mechanism (revoke personal access tokens under account settings) is standard and consistent with GitHub's revoke-first guidance.
+- Textual official docs — Workers guide (textual.textualize.io/guide/workers/) and Testing guide (textual.textualize.io/guide/testing/), fetched 2026-10-11 — MEDIUM (first-party, cross-checked against API docs and discussions)
+- Textualize discussions #3788 and #2689 ("Displaying output from script in a RichLog", "continuously update TextLog from a running process") — MEDIUM (official maintainer answers)
+- Textualize/textual issue #6668 (SGR mouse negotiation dropped on tmux reattach/SSH reconnect → X10 fallback → UnicodeDecodeError) — MEDIUM (single issue, reproducer-graded)
+- textual-shell (jason-lawrence.github.io/textual-shell) and terraform-tui `plan.py` — subprocess+RichLog reference implementations — MEDIUM (community code, convergent pattern)
+- Textual PyPI metadata JSON (version 8.2.8, requires-dist, requires-python) — HIGH (registry fact)
+- Textual CHANGELOG + ecosystem pinning practice (frogmouth #94, gptme PR #3202, atlas, hypergumbo) — MEDIUM (version-break history triangulated)
+- Textual `file_monitor.py` source + api/watcher 404 — negative finding: no public stable file-watching API in 8.x — MEDIUM (docs + source verified)
+- Amplitude Wizard dual-mode architecture doc; Chef Courier antipattern doc; HN TUI composability thread — MEDIUM (multi-source consensus on keeping CLI first-class)
+- Repo grounding: `pipeline/run_sweep.py` (subprocess/cwd/WR-06/WR-12/_write_json), `pipeline/run_finetune.py` (WR-13 marker ordering), `pipeline/env_smoke.py` (exit contract), `.github/workflows/ci.yml`, `pyproject.toml` — HIGH (read directly, 2026-10-11)
 
 ---
-*Pitfalls research for: audit-and-release hardening of research benchmark repositories*
-*Researched: 2026-10-08*
+*Pitfalls research for: dnallmmark v1.2 TUI milestone (Textual console over subprocess-driven sweeps)*
+*Researched: 2026-10-11*

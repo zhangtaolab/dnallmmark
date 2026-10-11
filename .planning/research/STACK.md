@@ -1,10 +1,10 @@
-# Stack Research
+# Stack Research — v1.2 TUI Console
 
-**Domain:** Public-release hardening toolchain for a research benchmark repo (offline Python/Node data scripts, GPU PyTorch pipeline, vanilla no-build JS MPA)
-**Researched:** 2026-10-08
-**Confidence:** HIGH — every version below was verified against primary sources on the research date (PyPI JSON API, npm registry API, GitHub Releases API, official tool docs). No version comes from training data. Practice-level recommendations are tagged individually.
+**Domain:** Terminal UI (TUI) operator console for a DNA-LLM benchmark platform — subprocess-driven training launches, output streaming, filesystem polling, ModelScope downloads
+**Researched:** 2026-10-11
+**Confidence:** HIGH for versions/footprint facts (every version verified against the PyPI JSON API and the Textual v8.2.8 source tree/tag on the research date — no version from training data), MEDIUM for practice-level recommendations (tagged individually)
 
-**Repo facts this stack is fitted to** (from PROJECT.md + spot-check, not re-research): no manifests exist today (no `package.json`, `pyproject.toml`, `requirements.txt`); `script/get_task_performance.py` is stdlib-only; `script/summarize_comparison.py` needs numpy+pandas; `scripts/generate-tasks-index.js` is plain Node; pipeline needs `torch`+`dnallm` (GPU-only, excluded from CI by constraint); frontend is a hard no-build vanilla ES-module constraint; local dev machine runs Python 3.14.7 / Node 26.10.0.
+**Repo facts this stack is fitted to** (from PROJECT.md / pyproject.toml / Makefile / ci.yml, not re-researched): Python `>=3.13` floor with a 3.14 CI probe leg; uv virtual project (`package = false`, PEP 735 groups `data`/`dev`/`gpu`, `default-groups = ["data"]`); ruff + ty double gate (ty 0.0.86 current, repo floor `>=0.0.85`); pytest 9.1.1 with `slow`/`ci` markers; CI is CPU-only and must stay GPU/dnallm-free with TUI tests running "CPU-side with injectable seams"; `rich`, `markdown-it-py`, `pygments`, and `pyyaml` are **already present in uv.lock** as transitive deps (rich via typer, pyyaml via datasets/huggingface-hub/transformers); the TUI drives the already-validated `run_finetune.py` / `run_sweep.py` / `env_smoke.py` CLIs and the ModelScope SDK 1.34 validated in the gpu env.
 
 ---
 
@@ -14,156 +14,150 @@
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| pyproject.toml (PEP 621 + PEP 735 `[dependency-groups]`) | PEP 621 / PEP 735 (standard) | Single dependency manifest for a **non-package** repo | The 2025+ standard home for deps even when you ship no library. Mark it non-package with `[tool.uv] package = false` (uv docs: virtual projects are "not built or installed", only deps install). Groups (`data`, `dev`, `pipeline`) let CI install just the GPU-less subset — exactly the split this repo needs. **Confidence: HIGH** (PEP 735 support verified in uv and pip docs) |
-| uv + uv.lock | 0.12.23 | Dependency resolution + lockfile; `uv sync` / `uv run` | One fast tool for venv+install+lock. `uv.lock` pins exact versions and only changes via explicit `uv lock --upgrade` — a reproducibility guarantee for a repo whose core value is "every number is reproducible". Verified: uv uses PEP 735 `[dependency-groups]` natively; `astral-sh/setup-uv` GitHub action is first-class (v10.2.0). **Confidence: HIGH** |
-| pytest | 9.1.1 | Unit tests for `script/` data scripts | The uncontested Python test standard. 9.x (9.0.0 released 2025-11-05) requires Python >=3.10, supports config directly in `pyproject.toml`, and turns old deprecation warnings into errors by default — good for a fresh suite. Parametrize + `tmp_path` fixtures fit JSON-in/JSON-out script testing perfectly. **Confidence: HIGH** |
-| Node.js `node:test` (built-in test runner) | Node 24 LTS (runner stable since Node 20) | Tests for `scripts/generate-tasks-index.js` | Zero new dependencies — the runner ships with Node. Verified Stability: 2 (Stable) since v20.0.0; `node --test` auto-discovers `**/*.test.js`; ESM `import test from 'node:test'` works. Nothing to configure, no runner dependency to rot. **Confidence: HIGH** |
-| ruff | 0.16.10 | Python lint + format (one tool) | Replaces flake8+isort+pyupgrade+black with one Rust binary and one config in `pyproject.toml`. The ecosystem default for new Python setups; official `astral-sh/ruff-pre-commit` hook tracks the same version tag (v0.16.10 verified). For a review/hardening milestone, its lint pass doubles as a free static audit of the data scripts. **Confidence: HIGH** |
-| ESLint (flat config) | 10.12.0 + `globals` 17.13.0 | Lint for the vanilla no-build JS MPA (`dnallm-mark/js/*.js`) | ESLint 10 is flat-config-only (`eslint.config.mjs`, eslintrc removed — verified against eslint.org migration guide). It lints plain browser-JS source files directly with **no bundler/build step** — `@eslint/js` recommended rules + `languageOptions.globals: {...globals.browser}` is all a no-framework MPA needs. Dev-only `package.json`; site files stay raw. **Confidence: HIGH** |
-| html-validate | 11.16.2 | Offline HTML5 sanity check of the MPA in CI, no browser | Verified: an offline validator with CLI included in the npm package, rule-configurable via `.html-validate.json`. Catches the class of bug this repo already has (dead-on-load pages from missing/renamed DOM targets are adjacent to what element-presence rules catch; it will catch malformed/unclosed HTML and missing required elements). Runs in milliseconds, fits CI, needs no browser farm. **Confidence: HIGH for capability; MEDIUM for fit vs alternatives** |
-| jsonschema (Python) | 4.26.0 | Validate leaderboard JSON data files in pytest | Keeps ONE test runner for the whole repo (Python data chain) — schema tests live next to the script tests as `test_data_integrity.py`. The repo's worst failure mode is silently-wrong derived JSON shipped to the leaderboard; schema tests make stale/corrupt derived files a CI failure. **Confidence: MEDIUM** (capability verified; the "prefer over ajv-cli" call is judgment, see Alternatives) |
-| GitHub Actions | `actions/checkout@v7.0.1`, `actions/setup-python@v7.0.0`, `actions/setup-node@v7.1.0` — pinned to SHAs (below) | CI: tests + lint, GPU-less | Free for public repos on standard runners (official billing docs: usage is "free … for public repositories that use standard GitHub-hosted runners"). `setup-python` supports pip caching; v7 majors released July–Oct 2026 (verified via GitHub Releases API). **Confidence: HIGH** |
-| pre-commit | 4.6.2 | Local developer gate (hygiene + ruff) | Standard hook manager; 4.x requires Python >=3.10. Keeps trivial defects (whitespace, merge markers, large files, bad JSON) out of review entirely. **Confidence: HIGH** |
-
-**Action SHAs for pinning** (fetched 2026-10-08 from the repos' tag objects; GitHub's security guide: "Pinning an action to a full-length commit SHA is currently the only way to use an action as an immutable release"):
-
-| Action | Tag | Full-length SHA |
-|--------|-----|-----------------|
-| actions/checkout | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
-| actions/setup-python | v7.0.0 | `5fda3b95a4ea91299a34e894583c3862153e4b97` |
-| actions/setup-node | v7.1.0 | `949feb2413d6458794dcd2491c4babbbce0c15c1` |
-
-### Dependency pins that protect the leaderboard numbers
-
-| Package | Pin | Why |
-|---------|-----|-----|
-| pandas | `>=2.2,<3.0` (latest 2.x = 2.3.3) | **pandas 3.0.0 shipped 2026-01-21 with breaking changes** (default string dtype, copy-on-write default, microsecond datetime resolution, groupby unobserved-group changes). Unpinned installs now get 3.0.6 and can silently change aggregation outputs — the exact class of bug this milestone exists to prevent. Official pandas guidance is migrate via warning-free 2.3 first. A 3.x migration is a *post-release* task, not part of surgical fixes. **Confidence: HIGH** (official whatsnew verified) |
-| numpy | `>=2.0,<3` (current line 2.5.3) | numpy 2.x is the stable ABI era; 2.5.3 requires Python >=3.12, so keep the floor where the known-good env sits. **Confidence: HIGH for versions; pin source below is the real rule** |
-| Exact pins | **Export from the known-good data-generation environment** (`uv pip freeze` / `pip freeze`) | The authoritative pin is whatever produced the current leaderboard JSON on the maintainer's machine (system Python here has no pandas — the real env is elsewhere). Freeze that env into `uv.lock` / `requirements.txt`; do not adopt latest-for-latest's-sake during a correctness milestone. **Confidence: HIGH (process rule), version floor MEDIUM until env exported** |
-| torch / dnallm | Group `pipeline`, NOT installed in CI | GPU-only, out of CI scope by constraint. Document in a `[dependency-groups]` group (or separate `requirements-pipeline.txt`) so the manifest still describes the full system. **Confidence: HIGH** |
+| **Textual** | **8.2.8** (2026-06-30) — pin `>=8.2,<9` | The TUI framework: App/Widget DOM model, TSS CSS, DataTable/RichLog/SelectionList widgets, workers, headless test driver | The only pure-Python full-screen TUI framework with a first-class testing story. Wheel is `py3-none-any` (verified on PyPI) — zero build step, zero compiled deps; runtime deps are markdown-it-py + mdit-py-plugins + platformdirs + pygments + rich + typing-extensions, and **rich/pygments/markdown-it-py are already in uv.lock**, so the real install delta is ~2 pure-Python packages. App/Widget + CSS matches the repo's existing page-controller + CSS-custom-properties mental model. Strict SemVer discipline (below) makes the `<9` cap safe and upgrades legible. **Confidence: HIGH** |
+| **pytest-asyncio** | **1.4.0** (2026-05-26) — pin `>=1.4,<2` in the `dev` group | Runs `App.run_test()` async tests under the existing pytest 9.1.1 suite | Textual's `run_test()` is an async context manager; it needs an async pytest plugin. pytest-asyncio 1.4.0 requires `pytest<10,>=8.4` (verified on PyPI) — compatible with the repo's pytest 9.1.1. Set `asyncio_mode = "auto"` in `[tool.pytest.ini_options]` so async TUI tests need no per-test decorator and existing sync tests are unaffected (auto mode only touches `async def` tests). **Confidence: HIGH** |
+| **platformdirs** | 4.13.0 (2026-10-11) — pin `>=3.6,<5` | `~/.config/dnallmmark/` session/filter/config persistence location (TUI-REQUIREMENTS §4) | It is already a transitive dependency of textual (`platformdirs<5,>=3.6.0` in textual's requires_dist, verified) — declaring it explicitly in the `[tui]` group costs nothing new and stops the anti-pattern of importing a transitive dep without declaring it. Handles XDG/Windows/macOS precedence correctly so the requirements doc's `~/.config/dnallmmark/?` question gets a standards answer. **Confidence: HIGH** |
+| **JSON (stdlib `json`)** | stdlib | Run-config template import/export, session state, download queue persistence | The requirements specify templates as **JSON** files (§3.1 模板导入) and the repo's entire data contract is JSON with `ensure_ascii=False` conventions. Zero deps, diff-friendly, validated by the existing `jsonschema` test pattern if a template schema is wanted. **Confidence: HIGH (process judgment)** |
 
 ### Supporting Libraries
 
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| pytest-cov | 7.1.0 | Coverage reporting for `script/` | Optional; add to the CI pytest invocation only if coverage numbers would drive review decisions. Don't gate a milestone on a coverage threshold. |
-| ajv-cli | 5.0.0 | JSON-schema validation, Node-side | ONLY if the repo publishes a submitter-facing JSON schema for the leaderboard submission flow. Otherwise keep validation in pytest (one runner). |
-| @eslint/js | current (bundled with eslint install) | Recommended rule preset for flat config | Always — base of `eslint.config.mjs`. |
-| pre-commit-hooks (repo `pre-commit/pre-commit-hooks`) | current | `trailing-whitespace`, `end-of-file-fixer`, `check-json`, `check-yaml`, `check-merge-conflict`, `check-added-large-files` | Always — cheap hygiene, and `check-json` catches corrupt derived JSON before commit. |
+| **PyYAML** | 6.0.3 (2025-09-29) | Reading/editing `finetune_config.yaml` / `finetune_config_with_head.yaml` from the TUI | **Only if a phase actually parses or edits YAML.** Already in uv.lock transitively (datasets, huggingface-hub, transformers depend on it), so adding `pyyaml>=6.0.2` to `[tui]` changes nothing in the install. cp313/cp314 wheels exist (verified). Maintenance is slow-but-alive (6.0.3 Sep 2025; packaged by Debian/Fedora/FreeBSD) — Snyk labels it "Inactive", which is acceptable for a load-only use. **Do not add pre-need.** |
+| **textual-dev** | 1.8.0 (2025-10-11) | `textual console` devtools + `textual run --dev` hot-reload for CSS/widget iteration | **Never in a committed group.** Use on demand: `uv run --group tui --with textual-dev==1.8.0 textual run --dev python tui/main.py`. It drags aiohttp + click + msgpack + textual-serve; committing it to `dev` would bloat every CI lane for a maintainer-only convenience. **Confidence: HIGH (footprint verified on PyPI)** |
+| **anyio** | 4.15.1 | Alternative async pytest plugin (built-in plugin, no extra package if already present) | Only if pytest-asyncio clashes with the existing suite in practice — it shouldn't. One plugin, not both. |
 
 ### Development Tools
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| ruff via `astral-sh/ruff-pre-commit` | Lint+format hook | Pin hook rev to `v0.16.10` to match the CLI; hooks: `ruff` (lint, `--fix` optional) and `ruff-format`. |
-| ESLint via npm script | `npx eslint dnallm-mark/js/` in CI | Flat config `eslint.config.mjs` at repo root; `ignores` for vendored/minified files if any. |
-| html-validate via npm script | `npx html-validate dnallm-mark/**/*.html` in CI | Config `.html-validate.json`; start permissive (errors-only rules) and tighten — don't block release on stylistic HTML rules. |
-| Internal-link check (custom `node:test` file) | Verify nav targets exist (the repo's 3-dead-pages bug class) | ~30-line test that parses `<a href>` targets and asserts a matching file/element — cheaper than any browser tooling and directly targets the known failure mode. **Confidence: MEDIUM (judgment)** |
-| `uv pip freeze` export | Keep a `requirements.txt` for pip-only contributors | Regenerate on lockfile change; label it "generated — edit pyproject.toml". |
+| `App.run_test()` + `Pilot` | Headless behavioral tests of screens/widgets | `async with app.run_test(size=(120, 40)) as pilot:` → `pilot.press(...)`, `pilot.click("#selector")`, `await pilot.pause()` to drain the message queue before asserting. `headless=True` is the default — no terminal, no display, CI-safe (official testing guide, verified 2026-10-11). |
+| `# ty: ignore[rule]` | Per-line suppression for ty edge cases | Documented ty escape hatch (ty docs FAQ). Expected use: near-zero; Textual ships `py.typed` (verified present at the v8.2.8 tag) so ty reads real types — unlike torch/dnallm, **no `replace-imports-with-any` entry is needed for textual**. |
+| `uv run --with textual-dev==…` | Ephemeral devtools without group pollution | The uv-native way to keep heavy dev conveniences out of CI (see above). |
 
 ## Installation
 
-```bash
-# Python side (uv manages venv + deps from pyproject.toml)
-pip install uv==0.12.23        # or: curl -LsSf https://astral.sh/uv/install.sh | sh
-uv sync --group data --group dev
+Proposed `pyproject.toml` delta (surgical — one new group, one dev-group addition, three config lines):
 
-# JS side (dev-only tooling; no build step introduced)
-npm install --save-dev eslint@10.12.0 globals@17.13.0 html-validate@11.16.2
+```toml
+[dependency-groups]
+# ... existing data / dev / gpu unchanged ...
+tui = [
+    # Textual 8.2.8 (2026-06-30): pure-python wheel, no build step; <9 cap because
+    # Textual bumps major on ANY breaking change (strict SemVer — see research).
+    "textual>=8.2,<9",
+    # Already a textual transitive dep; declared because the TUI imports it
+    # directly for ~/.config/dnallmmark (do not rely on transitive luck).
+    "platformdirs>=3.6,<5",
+]
+# dev group gains exactly one line:
+#   "pytest-asyncio>=1.4,<2",   # run_test() is async; pytest<10,>=8.4 ✓ with 9.1.1
 
-# Local gate
-pre-commit install
+[tool.pytest.ini_options]
+asyncio_mode = "auto"   # async TUI tests need no decorator; sync tests unaffected
 
-# Run checks
-uv run pytest                                  # Python data-script tests + JSON schema tests
-node --test                                    # Node data-script tests (generate-tasks-index)
-npx eslint dnallm-mark/js/                     # MPA JS lint
-npx html-validate "dnallm-mark/**/*.html"      # MPA HTML sanity
+# [tool.ty.src] include gains "tui"; [tool.ty.environment] extra-paths gains "tui"
+# (mirrors the pipeline/ contract). modelscope.** joins replace-imports-with-any
+# ONLY if the TUI imports the SDK directly instead of shelling to its CLI.
 ```
+
+```bash
+# Operator launch (GB10 gpu box): data (default) + tui + gpu all present
+uv run --group tui --group gpu python -m tui
+
+# CPU-side iteration (no gpu group)
+uv run --group tui python -m tui
+
+# TUI tests (CPU, headless — injectable seams for launch/download)
+uv run --group dev --group tui pytest tests/tui
+
+# Devtools on demand (never committed to a group)
+uv run --group tui --with textual-dev==1.8.0 textual run --dev python tui/main.py
+```
+
+**Makefile integration** (the existing pattern, extended):
+
+- `make tui` → `$(UV) run --group tui --group gpu python -m tui` (operator entry; `--group gpu` optional for dry-run/data-management sessions)
+- `make test` recipe becomes `$(UV) run --group dev --group tui pytest` — textual is pure-Python, installs in seconds, and the constraint "CI 不引入 GPU/TUI 运行时" is satisfied because `run_test()` is headless and GPU/dnallm/modelscope never enter the test path (seams)
+- `make lint` file list gains `tui/` files; `make typecheck` picks up `tui/` via `[tool.ty.src]` — both gates stay green by construction, no new tools
+- CI workflow (`ci.yml`) needs **zero new jobs** — `make lint`/`make typecheck`/`make test` already define the lanes; the `--group tui` addition rides along
+
+**Code layout** (repo convention — flat top-level packages, not src/): `tui/` package with `__main__.py`, `tui/app.py`, `tui/screens/`, `tui/css/app.tcss`, tests in `tests/tui/`. Loading `tui/` on `python -m tui` mirrors how `pipeline/` scripts are invoked.
 
 ## Alternatives Considered
 
 | Recommended | Alternative | When to Use Alternative |
 |-------------|-------------|-------------------------|
-| pyproject.toml + uv.lock | requirements.txt only (pip-tools `pip-compile`) | If maintainers firmly refuse new tooling: `requirements.in` → `pip-compile` still gives a lock; keep a `requirements.txt` export regardless for pip-only users. uv is faster and gives the cross-platform lockfile pip-tools can't. |
-| pytest | stdlib `unittest` | Only under a zero-dependency constraint that doesn't apply here (CI already installs numpy/pandas). |
-| ruff | black + flake8 + isort (separate) | Never for a new setup in 2026 — three configs/tools where one suffices. |
-| `node:test` | vitest / jest | If the frontend ever gains a framework/build step (explicitly out of scope). vitest/jest add ~200+ deps of toolchain to lint three dozen vanilla ES modules — poor trade. |
-| ESLint 10 | oxlint / Biome | Biome shines in TS/monorepo settings; oxlint is fast but smaller rule/plugin ecosystem. ESLint remains the interoperable default and matches the "boring, public-scrutiny-proof" goal. Revisit only if lint runtime ever matters. |
-| html-validate | W3C NU Checker (`vnu.jar` / validator.w3.org/nu) | vnu is the reference validator and zero-config, but JVM startup is slow in CI and rule behavior is not configurable. Use vnu for a one-time conformance audit during review; html-validate for the recurring CI gate. **MEDIUM** |
-| jsonschema-in-pytest | ajv-cli (npm) | If a schema must be published for the client-side submit flow / external submitters — then one schema serves CI and submitters via ajv. |
-| Run pre-commit directly in CI job | `pre-commit/action` | Never prefer: its latest release is v3.0.1 from Feb 2024 (stale). `pip install pre-commit && pre-commit run --all-files` in the job is one fewer third-party action to pin. |
-| SHA-pinned actions | Tag-pinned (`@v7`) | Only when SHA churn demonstrably hurts; GitHub's own security guidance says SHAs are the only immutable pin form. For a repo under public scrutiny post-release, SHA-pin. |
+| Textual 8.2.8 | **rich alone** (Rich Live + manual key handling) | Never for this milestone — rich has no widget system, no CSS, no test driver; a 62×50 selection matrix + cell dashboard + log tailing is exactly what rich-only apps drown in. rich still gets used *through* Textual (it is textual's rendering engine). |
+| Textual | **urwid** | Only under a hard C-extension-free + async-free constraint that doesn't apply. urwid's design predates asyncio, its widget set is thinner, docs/testing story weaker, and development is community-speed. Nothing here urwid does better. |
+| Textual | **prompt_toolkit** | If the deliverable were a wizard/REPL rather than a full-screen dashboard. The monitoring requirement (cell grid + live log tail + failure list) rules it out. |
+| Textual | **curses/stdlib** | Zero-dep but hand-rolls everything (color, input decoding, layout) — hundreds of lines of platform quirks to re-derive; contradicts reviewability goals. |
+| Polling loop (`asyncio.sleep` + re-read artifacts) | **watchfiles / Textual Watcher** | Not an option: Textual 8.x **has no file-watching API** (verified — no watcher module in the v8.2.8 source tree; `watchfiles` absent from requires_dist). If inotify-grade latency were ever needed, watchfiles 1.3.0 ships prebuilt abi3 wheels (no build step on install) — but Rust-compiled, so it violates the pure-Python spirit for no real gain over 1–2 s polling. |
+| pytest-asyncio | **anyio pytest plugin** | If the suite ever standardizes on anyio (it doesn't — no trio/anyio anywhere in the repo). |
+| JSON persistence | **ruamel.yaml** (0.19.1, pure-python wheel, active) | Only if a phase must edit YAML **preserving comments/formatting** (round-trip). Surgical scope says: don't edit training YAML from the TUI — pass CLI flags to the validated entry points instead. |
+| Direct ModelScope SDK import in TUI | **`modelscope` CLI as subprocess** (same pattern as training launches) | Prefer the subprocess/CLI seam by default: it keeps the TUI CPU-testable (constraint: injectable seams), keeps `modelscope` out of CPU-side groups, and the CLI (`modelscope download --dataset X`) is already validated at 50/50 coverage. Import the SDK directly only inside the gpu-env run if progress-callback granularity demands it — then add `modelscope.**` to ty's `replace-imports-with-any` (exact pattern already used for torch/dnallm). |
 
 ## What NOT to Use
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| Playwright/E2E browser tests | Explicitly out of scope by milestone decision; heavy to maintain for a static MPA; wrong layer for data-correctness risks | html-validate + jsonschema tests + internal-link `node:test` |
-| jest / vitest / mocha for this repo | Heavyweight runners for ~4 vanilla ES-module files; contradict the no-build constraint's spirit; `node:test` is stable and built-in | `node --test` |
-| JSHint | Effectively unmaintained (2.13.6, dormant for years); no modern ECMAScript coverage | ESLint 10 |
-| `setup.py` / making the repo a pip package | It's an application/benchmark, not a library; packaging would demand layout changes (src/, build backend) violating surgical-fix discipline | `[tool.uv] package = false` virtual project |
-| conda `environment.yml` | Fragments tooling (two package managers); nothing here needs conda-only binaries (torch env lives on the GPU machine) | pyproject + uv; document GPU env separately |
-| tox / nox | Overkill for one Linux CI job with a straightforward matrix | GitHub Actions matrix directly |
-| Unpinned pandas / unpinned deps in CI | pandas 3.0 (Jan 2026) silently changes aggregation semantics — numbers drift with no code change | `pandas>=2.2,<3.0` + lockfile |
-| Floating action tags (`actions/checkout@v7`) | Tags are mutable; not an immutable release per GitHub security docs | Full-length SHA pins (table above) |
-| black + flake8 + isort | Three tools, three configs, slower; ruff covers all in one | ruff 0.16.10 |
+| **textual-serve / textual-dev in committed groups** | Web-serving the TUI (open question 5, "可要可不要") drags aiohttp+jinja2 into every sync; textual-dev drags aiohttp+click+msgpack+textual-serve into CI lanes for a maintainer-only tool | `uv run --with textual-dev==1.8.0 …` on demand; revisit textual-serve only if the team answers Q5 "yes" |
+| **pytest-textual-snapshot** (1.1.0) | SVG golden snapshots pin `syrupy==4.8.0` + jinja2 and are invalidated by textual version bumps — churn generator in a milestone whose gate discipline is "zero-diagnostics baseline". Last release 2025-01-23 (slow-moving). | Pilot behavioral assertions (`pilot.press`/`click` + query widget state); add snapshots post-v1.2 only if visual regressions hurt |
+| **Any JS/Node tooling for the TUI** | Hard repo constraint (no build step, vanilla ES modules) — and nothing is needed | Textual's own TSS CSS |
+| **Blocking `subprocess.Popen` reads on the event loop** | Output batches up and the UI freezes (Textualize discussion #3788) — the single most common Textual+subprocess mistake | `@work` async worker + `asyncio.create_subprocess_exec(..., stdout=PIPE, stderr=STDOUT)` + `readline()` loop into `RichLog` |
+| **`textual` in the `data` or default groups** | `default-groups = ["data"]` means every `uv sync`/CI lane would carry the TUI runtime; the data chain must stay untouched (reproducibility substrate) | Dedicated `[tui]` group, added explicitly where needed |
+| **Relying on Textual for filesystem watching** | The API does not exist in 8.x (verified) — code written against old docs/blogs (`watch_path`, `Watcher`, watchfiles) will not even import | `set_interval`/async worker polling of `sweep_failures.json`, `trainer_state.json`, directory mtimes |
+| **Capturing business logic in the TUI** | An operator console that re-implements selection/sweep/audit logic forks the truth and becomes untestable in CI | TUI = thin launcher/monitor: subprocess the CLIs, render the JSON artifacts they already emit |
 
 ## Stack Patterns by Variant
 
-**If the maintainer's known-good env turns out to run pandas 1.x or numpy 1.x:**
-- Pin to the known-good line first, fix bugs, release; schedule version bumps as post-release maintenance with before/after data comparison (the milestone's reproducibility rule).
+**If a run must keep streaming while the TUI exits** (long E2' cells survive operator disconnect):
+- Launch training via `nohup`-style detach or a supervisor script the TUI *starts and monitors* rather than *owns*
+- Because Textual cancels its workers on app exit — a subprocess started inside a worker is killed unless you `proc.detach()`/ignore SIGHUP explicitly; decide the ownership semantic per phase (monitor-only resume already exists via `trainer_state.json` skip logic)
 
-**If the leaderboard submission flow needs public validation rules:**
-- Author ONE JSON Schema; wire ajv-cli into CI and reference it from `submit.js` — schema-as-single-source beats duplicated Python/JS validation (the repo already has a divergent-duplication bug in `js/data.js`).
+**If tmux is the primary operator environment** (it is, for SSH GPU boxes):
+- Document the two rules up front: scrollback lives in tmux copy-mode (`prefix+[`) because the app owns the alternate screen + mouse; hold **Shift** for native terminal selection/copy
+- Known open bug Textualize/textual#6668 (against 8.2.8, Linux): after tmux detach/reattach or SSH reconnect, lost SGR mouse negotiation can crash with `UnicodeDecodeError` once the mouse crosses ~column 95 — operational guidance "restart the TUI after reattach" until upstream fixes it; keeping the TUI monitor-only-and-resumable (above) makes that cheap
 
-**If CI minutes ever matter (they won't — public repo = free):**
-- Drop the matrix to a single Python version; keep Node job (it's seconds).
+**If Windows Terminal operators appear** (currently Linux/GB10 only):
+- Textual's supported terminal matrix includes Windows Terminal (ecosystem-standard claim, **MEDIUM confidence — re-verify against the official FAQ if Windows becomes real**); legacy `conhost` is the known-poor path. tmux guidance is moot there.
+
+**If the download queue needs resume-after-restart** (open question 4: "需要"):
+- Persist the queue as JSON under the platformdirs config dir; reconcile against on-disk presence (`n_audit` row counts) at TUI startup — pure stdlib, no new deps
 
 ## Version Compatibility
 
-| Component | Requires / Notes |
-|-----------|------------------|
-| pytest 9.1.1 | Python >=3.10; config may live in pyproject.toml |
-| pre-commit 4.6.2 | Python >=3.10 |
-| uv 0.12.23 | Python >=3.8 (manages any 3.9+ runtime) |
-| numpy 2.5.3 | **Python >=3.12**; use numpy 2.4.x line if CI must include 3.11 |
-| pandas 2.3.3 | Python >=3.9 (last 2.x; safe pin target). pandas 3.0.6 needs >=3.11 — do not adopt this milestone |
-| jsonschema 4.26.0 | Python >=3.10 |
-| ESLint 10.12.0 | Node ^20.19.0 OR ^22.13.0 OR >=24 |
-| html-validate 11.16.2 | Node ^22.22.0 OR >=24.8.0 |
-| Node 24 (LTS "Krypton") | Active LTS now (maintenance phase starts 2026-10-20); Node 26 becomes LTS 2026-10-28; Node 22 EOL 2027-04-30. **Pin CI to Node 24** — satisfies every tool above |
-| Recommended CI matrix | Python `["3.12", "3.13"]` on `ubuntu-latest` + one Node 24 job. (3.14 wheels for pinned pandas 2.3.x unverified — check before adding.) |
+| Component | Compatible With | Notes |
+|-----------|-----------------|-------|
+| textual 8.2.8 | Python 3.9–3.14 | `requires_python <4.0,>=3.9` (PyPI); 3.14 support added in 6.3.0 (2025-10-11, CHANGELOG PR #6121). Repo floor 3.13 ✓, CI 3.14 probe leg ✓ |
+| textual ↔ rich 15.0.0 | ✓ (needs `rich>=14.2.0`) | rich 15.0.0 (2026-04-12) is pure-python, already locked via typer |
+| pytest-asyncio 1.4.0 | pytest `>=8.4,<10` | Repo pins pytest 9.1.1 ✓; Python >=3.10 ✓ |
+| pyyaml 6.0.3 (if added) | cp313/cp314 wheels verified | Already in uv.lock transitively — zero resolution change |
+| ty 0.0.86 (2026-10-09) | textual's `py.typed` | Verified py.typed exists at tag v8.2.8 — ty sees real Textual types; **no** `replace-imports-with-any` entry needed for textual. No Textual-specific ty issues surfaced (searched astral-sh/ty — **negative claim, MEDIUM**: absence of evidence; per-line `# ty: ignore[rule]` is the escape hatch) |
+| GitHub Actions lanes | unchanged | No new actions, no new jobs; `--group tui` rides existing `make` targets; textual adds seconds of pure-python install, well inside the 14-min job ceilings |
 
-## Suggested CI Shape (for the roadmap, not prescriptive detail)
+### Textual version-cadence fact the roadmap must plan around
 
-Two jobs, both on `ubuntu-latest`, workflow `permissions: contents: read`, SHA-pinned actions, `concurrency` group to cancel superseded runs:
+Strict SemVer: **any** breaking change bumps the major, and majors are frequently tiny — 7.0.0 was "much smaller change than the version number may suggest"; 8.0.0's breaking change was a `Select.BLANK`→`Select.NULL` rename. Eight majors since 1.0.0 (2024-12-12): 2.0 Feb 2025, 3.0 Mar 2025, 4.0 Jul 2025, 5.0 Jul 2025, 6.0 Aug 2025, 7.0 Jan 2026, 8.0 Feb 2026; patches roughly biweekly (8.2.3→8.2.8 spanned Apr–Jun 2026; no release since 2026-06-30 as of research date). Practical discipline for this repo: cap `<9`, upgrade deliberately via `uv lock --upgrade-package textual` with a CHANGELOG scan, and never let dependabot-style auto-bumps cross a major. **Confidence: HIGH** (CHANGELOG + PyPI, both fetched 2026-10-11).
 
-1. **python**: setup-python (3.12/3.13 matrix) → install `data`+`dev` groups → `ruff check` → `pytest` (script unit tests + JSON-schema integrity tests).
-2. **node**: setup-node 24 → `npm ci` (dev deps only) → `node --test` (generate-tasks-index + internal-link check) → `npx eslint dnallm-mark/js/` → `npx html-validate "dnallm-mark/**/*.html"`.
+### The three load-bearing API facts (verified, current)
 
-Public repo ⇒ standard runners are free (verified: GitHub billing docs). GPU pipeline and `dnallm` never enter CI.
-
-## Release-adjacent decisions this stack assumes (flagged for roadmap)
-
-- **LICENSE**: required pre-release. Recommend **Apache-2.0** (explicit patent grant; used by HELM/BIG-bench-style benchmark platforms) or MIT if maximal simplicity is preferred; if datasets are redistributed, pair code license with CC-BY-4.0 for data. **Confidence: MEDIUM — community-practice judgment, decide in planning.**
-- **CITATION.cff**: GitHub renders it and gives "Cite this repository" — cheap win for a paper-linked benchmark. **Confidence: HIGH (stable GitHub feature).**
+1. **Workers** (official guide): `run_worker(...)` / `@work(exclusive=True)` for async work; `thread=True` + `call_from_thread()`/`post_message()` + `is_cancelled` polling for blocking code (the ModelScope SDK is blocking — run it in a thread worker or behind the CLI subprocess seam). Workers auto-cancel when their widget/screen is removed or the app exits.
+2. **Subprocess streaming** (official discussion #3788 + multiple production apps): `await asyncio.create_subprocess_exec(..., stdout=PIPE, stderr=STDOUT)` → `readline()` loop → `RichLog.write()` → `await proc.wait()`. Never `communicate()` (buffers everything).
+3. **No filesystem watching in 8.x** (verified against source): poll `sweep_failures.json` / `trainer_state.json` / mtimes on an interval. This *answers TUI-REQUIREMENTS open question 2*: polling vs in-process callbacks — polling is not the compromise, it is the only mechanism, and it is also the correct one for cross-process truth (the sweep is a separate process).
 
 ## Sources
 
-- PyPI JSON API (pypi.org/pypi/{pytest,ruff,uv,pre-commit,pytest-cov,pandas,numpy,jsonschema,pip-tools,pip}/json) — latest versions + requires_python, fetched 2026-10-08 — **HIGH (primary registry)**
-- npm registry (registry.npmjs.org/{eslint,html-validate,ajv-cli,globals,prettier,jshint,stylelint}/latest) — versions + engines — **HIGH (primary registry)**
-- GitHub Releases/tag API — actions/checkout v7.0.1, setup-python v7.0.0, setup-node v7.1.0, cache v6.1.0, astral-sh/setup-uv v10.2.0, pre-commit/action v3.0.1 + full-length SHAs — **HIGH (primary)**
-- pandas 3.0.0 whatsnew (pandas.pydata.org/docs/whatsnew/v3.0.0.html) — breaking changes, release date, 2.3-first migration path — **HIGH (official)**
-- Node.js docs (nodejs.org/api/test.html) — node:test Stability: 2 since v20 — **HIGH (official)**
-- nodejs/release schedule — Node 24 Active LTS, Node 26 LTS on 2026-10-28, Node 22 EOL 2027-04-30 — **HIGH (official)**
-- docs.github.com — security-hardening (SHA pinning quote), billing (public repos free) — **HIGH (official)**
-- eslint.org migration guide — flat config only, globals package pattern — **HIGH (official)**
-- docs.astral.sh/uv — init (--no-package/--bare), dependency-groups (PEP 735), settings (`package = false`), lockfile behavior — **HIGH (official)**
-- pip.pypa.io — `pip install --group` (PEP 735) documented in current pip (26.2.1) — **HIGH (official)**
-- docs.pytest.org changelog — pytest 9.0.0 released 2025-11-05, Python >=3.10 — **HIGH (official)**
-- html-validate.org usage — offline CLI validation — **HIGH (official capability claims); comparison vs vnu.jar is MEDIUM judgment**
+- PyPI JSON API (pypi.org/pypi/{textual,rich,textual-dev,textual-serve,pytest-asyncio,pytest-textual-snapshot,pyyaml,ruamel-yaml,platformdirs,watchfiles,anyio,ty}/json) — versions, release dates, requires_python, requires_dist, wheel purity; fetched 2026-10-11 — **HIGH (primary registry)**
+- Textual CHANGELOG at tag v8.2.8 (raw.githubusercontent.com/Textualize/textual/v8.2.8/CHANGELOG.md) — major-version history/breaking changes, Python 3.14 support (6.3.0), 8.0.0 contents — **HIGH (official)**
+- Textual v8.2.8 source tree (GitHub tree API + raw file fetches) — no watcher module / no `watch_path`; `py.typed` present; `run_test()` signature in app.py — **HIGH (primary source)**
+- Textual official guides — /guide/workers/, /guide/testing/, /guide/CSS/ (HTTP 200 + content fetched 2026-10-11); widget docs /widgets/{data_table,rich_log,selection_list,tabbed_content,progress_bar,log}/ all current — **HIGH (official docs)**
+- Textualize/textual discussion #3788 (RichLog streaming; blocking-Popen pitfall) — **HIGH (official maintainers)**
+- Textualize/textual issue #6668 (open, 8.2.8, Linux): UnicodeDecodeError after terminal rebuild / X10 mouse fallback under tmux reattach — **HIGH (verified open 2026-10-11)**
+- astral-sh/ty issues search — no Textual-specific false positives found — **MEDIUM (negative claim)**
+- PyYAML maintenance signal: Snyk "Inactive" label vs 6.0.3 distro adoption (Debian/Fedora/FreeBSD packaging news) — **MEDIUM**
+- uv.lock / pyproject.toml / Makefile / .github/workflows/ci.yml — integration surface facts — **HIGH (repo)**
 
 ---
-*Stack research for: DNALLM-Mark public-release hardening*
-*Researched: 2026-10-08*
+*Stack research for: DNALLM-Mark v1.2 TUI console*
+*Researched: 2026-10-11*

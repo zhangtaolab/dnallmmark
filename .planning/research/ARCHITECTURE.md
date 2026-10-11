@@ -1,336 +1,350 @@
 # Architecture Research
 
-**Domain:** Test/CI/release-quality infrastructure layered onto an existing static-MPA + offline-data-pipeline benchmark repo (brownfield hardening)
-**Researched:** 2026-10-08
-**Confidence:** HIGH for codebase facts (verified by direct inspection of this repo at `a44d310`), MEDIUM for ecosystem patterns (cross-verified web/official-docs sources)
+**Domain:** Textual TUI console layered onto an existing subprocess-based sweep orchestration platform (brownfield integration — v1.2 TUI任务)
+**Researched:** 2026-10-11
+**Confidence:** HIGH for repo facts (verified by direct inspection of `pipeline/run_sweep.py`, `pipeline/run_finetune.py`, `pipeline/env_smoke.py`, `pyproject.toml`, `tests/conftest.py`, `docs/TUI-REQUIREMENTS.md` at autorun HEAD) and for Textual API facts (official textualize.io docs fetched 2026-10-11); MEDIUM for Textual version status and ModelScope CLI flag details (secondary sources)
 
 ## Standard Architecture
 
-The quality layer does not sit beside the three existing subsystems — it **wraps** them. Tests point at code and data that already exist; CI points at the repo; the task runner points at the regeneration chain. Nothing in the existing runtime architecture (browser → static JSON → offline scripts → pipeline) changes; the new components are all read-only observers except the gated regeneration path.
+The TUI does **not** become part of the sweep. It is a **read-plan-launch-observe shell** around an execution model that already exists and must not change: `run_sweep.py` enumerates the matrix and spawns one `run_finetune.py` subprocess per cell; all durable state lands on the filesystem (per-cell `run_record.json`, resume markers, end-of-run manifests). The TUI's job is to make that filesystem state visible and the launch safe — nothing more.
+
+Three facts from the existing code anchor every design decision below:
+
+1. **The filesystem is the progress API.** `run_matrix()` writes `run_record.json` per cell *inside* the loop (`run_sweep.py:1144-1154`), but `sweep_manifest.json` and `sweep_failures.json` only *after* the loop (`run_sweep.py:1163-1169`). `run_sweep.py` prints almost nothing per cell. So live cell status lives exclusively in per-cell `run_record.json` files as they appear — the manifests are post-run audit artifacts, not live feeds.
+2. **Child logs flow through run_sweep's stdout.** `launch_subprocess()` uses `subprocess.run(argv, cwd=PIPELINE_DIR, check=True)` with **no capture** (`run_sweep.py:872-876`) — every `run_finetune.py` child inherits run_sweep's stdout/stderr. A TUI that pipes run_sweep's stdout therefore receives the interleaved live training logs for free, with zero pipeline changes.
+3. **Planning functions are pure and importable.** `enumerate_matrix`, `apply_priority_order`, `cell_dir_for`, `parse_curve_fractions`, `load_priority_tiers`, `load_failure_pairs` are stdlib-only, read-only, side-effect-free (`run_sweep.py:333-812`) — already imported headless by `tests/test_sweep.py` via the conftest `sys.path` seam (`tests/conftest.py`). The TUI can compute the exact planned cell list for preview **without launching anything**, guaranteed in parity with the subprocess because it is the same code.
 
 ### System Overview
 
 ```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│                     QUALITY / VERIFICATION LAYER (new)                    │
-│                                                                          │
-│  ┌────────────────────────┐  ┌───────────────────┐  ┌────────────────┐   │
-│  │ GitHub Actions CI      │  │ Makefile          │  │ schemas/       │   │
-│  │ .github/workflows/     │  │ (entry points:    │  │ JSON Schema    │   │
-│  │  lint → test →         │  │  data, test,      │  │ data contracts │   │
-│  │  verify-data jobs      │  │  lint, check)     │  │                │   │
-│  └──────────┬─────────────┘  └─────────┬─────────┘  └───────┬────────┘   │
-│             │ calls make targets       │ shells into        │ validates  │
-│  ┌──────────┴──────────────────────────┴─────────────────────┴────────┐   │
-│  │                      tests/ (pytest)                               │   │
-│  │   unit tests (pure functions)  ·  golden-file tests (synthetic     │   │
-│  │   fixture trees in tmp_path)   ·  data-contract tests (schema-     │   │
-│  │   validate every committed JSON)  ·  determinism test              │   │
-│  └──────────┬───────────────────────────────┬─────────────────────────┘   │
-├─────────────┼───────────────────────────────┼─────────────────────────────┤
-│             ▼ imports (guarded modules)     ▼ reads/writes via scratch   │
-│  ┌──────────────────────────┐  ┌─────────────────────────────────────┐   │
-│  │ Offline data scripts     │  │ Committed JSON data                 │   │
-│  │ script/*.py (2)          │→ │ dnallm-mark/data/                   │   │
-│  │ scripts/generate-*.js    │  │  model_performance/   (source of     │   │
-│  └──────────────────────────┘  │  truth, ~42 files, ~2.1 MB)          │   │
-│                                │  task_performance/ + tasks.json +    │   │
-│                                │  models_comparison*.json (DERIVED)   │   │
-│                                └─────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │ Fine-tuning pipeline (pipeline/) — OUT OF TEST SCOPE              │    │
-│  │ CI never imports it; guarded by "no torch/dnallm in CI deps"      │    │
-│  └──────────────────────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│                    TUI PRESENTATION LAYER (new — textual)                  │
+│  Screens: Selection · DataManager · RunConfig · Monitor · Modal gates      │
+│  (App = composition root only; reactive dashboard state; Pilot-testable)   │
+├────────────────────────────────────────────────────────────────────────────┤
+│                    TUI SERVICE LAYER (new — NO textual imports)            │
+│  registries · sweep_plan · launcher · monitor · downloads ·                │
+│  settings · templates · env_gate                                           │
+│  (pure Python + stdlib + run_sweep imports; constructor-injected fakes;    │
+│   unit-tested headless like tests/test_sweep.py)                           │
+├───────────────┬─────────────────────────────┬──────────────────────────────┤
+│  PROCESS      │        PROCESS SEAM         │  CONFIG STATE (new)          │
+│  BOUNDARY     │  asyncio.create_subprocess_ │  ~/.config/dnallmmark/       │
+│               │  exec(argv LIST, cwd, env,  │    settings.json             │
+│  run_sweep.py │  start_new_session=True)    │    templates/*.json          │
+│  env_smoke.py │  stdout streamed → log tail │    downloads.json (queue)    │
+│  modelscope   │  terminate() / detach       │  (XDG; injectable root path) │
+│  audit_n_freq │                              │                              │
+├───────────────┴─────────────────────────────┴──────────────────────────────┤
+│                EXISTING PIPELINE (UNCHANGED CONTRACTS)                     │
+│  run_sweep.py → run_finetune.py subprocess per cell (argv LIST, cwd=pwd)   │
+├────────────────────────────────────────────────────────────────────────────┤
+│                FILESYSTEM — THE INTEGRATION BUS (existing)                 │
+│  {output_root}/{model}/{task}/seed_{s}/[frac_{f}/]                         │
+│    run_record.json (per cell, as-finished) · trainer_state.json (marker)   │
+│    final_metrics.json · sweep_manifest.json + sweep_failures.json (at end) │
+│  pipeline/{models_info,datasets_info}.json · n_audit.json ·                │
+│  eval_subsets.json · sweep_priorities.json · pipeline/datasets/            │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
-
-Key boundary rule: **tests and CI never write to committed data.** The only writer of `dnallm-mark/data/` derived files is a maintainer (or CI scratch dir) running the regeneration chain through the Makefile. Derived-data freshness is *proven*, not assumed, by regenerating into a scratch copy and diffing.
 
 ### Component Responsibilities
 
 | Component | Responsibility | Typical Implementation |
 |-----------|----------------|------------------------|
-| Unit tests | Verify aggregation math in pure functions (`get_float`, `calculate_dataset_stats`, `to_singular_species`, `aggregate_models` in `script/summarize_comparison.py:80-268`) | pytest, plain-dict fixtures mirroring the performance-JSON shape |
-| Golden-file tests | Verify whole-script I/O: synthetic `model_performance/` tree → run script `main()` → byte/parse-compare outputs against committed goldens | pytest + `monkeypatch.chdir(tmp_path)`; goldens in `tests/data/golden/` |
-| Data-contract tests | Validate every committed JSON against a schema encoding the documented contract | pytest + `jsonschema`, parametrized over `dnallm-mark/data/**.json` (alternative: `check-jsonschema` CLI / pre-commit) |
-| Determinism test | Run the chain twice (and/or with shuffled directory order), assert byte-identical output | pytest + `tmp_path`, two runs |
-| Task runner | Single discoverable entry point for the regeneration chain and all checks; encodes the CWD contract (`cd dnallm-mark/data`) | `Makefile` with `.PHONY` targets (`data`, `verify-data`, `test`, `lint`, `check`) |
-| CI workflow | Fail PRs on lint errors, test failures, schema violations, or stale derived data — without GPU/dnallm | GitHub Actions: `lint` + `test` + `verify-data` jobs, path filters, `permissions: contents: read` |
-| JSON Schemas | Machine-readable statement of the pipeline→scripts→UI data contract; reusable for external submitters | JSON Schema draft 2020-12 files in `schemas/` |
-| Static frontend checks | Syntax-level safety net for the no-build MPA: parse every ES module, lint every HTML page | `node --check` loop over `git ls-files '*.js'` (needs `"type":"module"` in `package.json`), `htmlhint` |
+| `tui/app.py` | Composition root: build services, own shared reactives, MODES wiring, key bindings | Textual `App` — no business logic |
+| `screens/selection.py` | 62×50 matrix view, filters (arena/type/species/size), preset groups, presence column | `DataTable` with row keys = model names, `update_cell` for status |
+| `screens/data_manager.py` | Presence audit view, download queue UI, row-count reconciliation | `DataTable` + queue `ListView` |
+| `screens/run_config.py` | Seeds/PEFT/variant/curve/subset/epochs/effective-batch form, dry-run preview, directory settings | Input/Select/Toggle widgets → `RunSpec` dataclass |
+| `screens/monitor.py` | Cell dashboard, progress counts, failure list, log tail, resume states | `DataTable` + `RichLog` + reactive counters |
+| `screens/modals.py` | E2' full-sweep confirm gate, exit-with-running-sweep prompt | `ModalScreen[bool]` + `dismiss()` |
+| `services/sweep_plan.py` | Wrap `run_sweep` pure functions: enumerate, priority tiers, planned-cell preview, argv construction for display | thin import wrapper (stdlib-only) |
+| `services/launcher.py` | Spawn/track run_sweep (and env_smoke) subprocesses; stream stdout; terminate or detach on exit | async `@work` worker + `asyncio.create_subprocess_exec` |
+| `services/monitor.py` | Poll output_root frontier; derive per-cell + aggregate state from run_record/marker files | pure functions + `set_interval` tick |
+| `services/downloads.py` | Persistent queue state machine; drive `modelscope` CLI per dataset; verify post-download | subprocess + JSON queue file |
+| `services/settings.py` | Load/save XDG config; project-root vs storage-root resolution | stdlib json + injectable base path |
+| `services/templates.py` | Run-config template import/export/validation (shareable JSON) | schema-validated (jsonschema, dev group) |
+| `services/env_gate.py` | Run `env_smoke.py`, parse `PASS:`/`FAIL:` lines, block launch on FAIL | subprocess + line parsing |
 
 ## Recommended Project Structure
 
+Follows repo convention: `script/`, `pipeline/`, `baseline/` are sys.path roots, not installable packages (`pyproject.toml` `package = false`; `tests/conftest.py` inserts `pipeline/`). The TUI is the same shape — a directory importable from repo root, run via `python -m tui`:
+
 ```text
-dnallmmark/
-├── Makefile                        # canonical entry points (see Pattern 5)
-├── pyproject.toml                  # numpy/pandas bounds + pytest config + ruff config
-│                                   #   (single manifest; requirements.txt only if generated)
-├── package.json                    # {"type":"module"} + devDependencies: htmlhint
-│                                   #   minimal — enables ESM parsing, adds NO build step
-├── schemas/
-│   ├── model_performance.schema.json    # contract for the ~42 source files
-│   ├── task_performance.schema.json     # contract for the ~47 pivot outputs
-│   ├── models_comparison.schema.json    # contract for leaderboard files (incl. _animal/_plant/_microbe)
-│   └── tasks_index.schema.json          # contract for tasks.json
-├── tests/
-│   ├── conftest.py                 # fixture-tree factory, real-data path helpers
-│   ├── test_summarize_comparison.py # unit: 4 pure functions + main() golden
-│   ├── test_get_task_performance.py # golden-file pivot test on synthetic tree
-│   ├── test_tasks_index.py          # subprocess node → assert tasks.json content
-│   ├── test_data_contracts.py       # schema-validate every committed JSON file
-│   ├── test_determinism.py          # chain twice → byte-identical
-│   └── data/
-│       ├── model_performance/       # 2-3 handcrafted minimal model files
-│       │                            #   (must include edge cases: empty metric, "" value, missing field)
-│       └── golden/                  # expected outputs of the chain over the synthetic tree
-├── .github/
-│   └── workflows/
-│       └── ci.yml                   # lint → test → verify-data (path-filtered)
-├── script/                          # existing (plus ~4-line determinism fixes)
-├── scripts/                         # existing
-├── pipeline/                        # existing — untouched by CI
-└── dnallm-mark/                     # existing MPA + committed data
+tui/
+├── __init__.py
+├── __main__.py            # entry: python -m tui  (resolves REPO_ROOT itself)
+├── app.py                 # DnallmMarkTui(App) — composition root ONLY
+├── styles.tcss            # Textual CSS (single file to start)
+├── screens/
+│   ├── __init__.py
+│   ├── selection.py       # model×dataset matrix (MODES["select"])
+│   ├── data_manager.py    # presence + downloads (MODES["data"])
+│   ├── run_config.py      # run parameters + preview (MODES["run"])
+│   ├── monitor.py         # sweep dashboard (MODES["monitor"])
+│   └── modals.py          # ModalScreen gates (E2', exit, from-failures confirm)
+├── services/              # ZERO textual imports (typing-only if ever needed)
+│   ├── __init__.py
+│   ├── registries.py      # models_info/datasets_info/n_audit/eval_subsets readers
+│   ├── sweep_plan.py      # wraps run_sweep pure functions + preview argv
+│   ├── launcher.py        # SweepProcess: spawn/stream/terminate/detach
+│   ├── monitor.py         # filesystem state derivation (frontier scan)
+│   ├── settings.py        # XDG settings + directory resolution
+│   ├── templates.py       # run-config template IO + validation
+│   ├── downloads.py       # queue state machine + modelscope CLI driver
+│   └── env_gate.py        # env_smoke runner + PASS/FAIL parser
+└── events.py              # frozen dataclass ServiceEvent union (services → app)
+tests/tui/                 # tier 1: headless service tests (no textual)
+                          # tier 2: Pilot tests (textual, fake services injected)
 ```
 
 ### Structure Rationale
 
-- **`tests/` at repo root (not inside `script/`):** pytest's recommended layout for script-style repos — tests outside the code under test, one runner for Python + Node-invoked + schema checks. The codebase map's suggestion of `script/test_*.py` colocated tests is viable but scatters the suite and couples test discovery to the scripts' CWD quirk; a root `tests/` with `pythonpath = ["script"]` in pyproject keeps imports clean (`import summarize_comparison`).
-- **`tests/data/` synthetic fixtures are separate from `dnallm-mark/data/` real data:** unit/golden tests need *small, explainable* inputs with deliberate edge cases (empty strings for metrics — which `get_float` coerces to `0.0`; species pluralization variants for `to_singular_species`). The real 2.1 MB corpus serves as the integration corpus for contract tests and the CI diff — never duplicated into `tests/`.
-- **`schemas/` at root, not under `script/`:** the schema is a contract between *three* parties (pipeline emits, scripts consume/produce, UI consumes, plus external submitters). Root placement signals it governs the repo, not one script.
-- **`package.json` at root with only `"type": "module"` + htmlhint:** this is *not* a build step. It exists because `node --check` follows Node's module-detection rules — a `.js` file using `import`/`export` fails `--check` with "Cannot use import statement outside a module" unless the nearest `package.json` declares `"type": "module"`. The frontend stays exactly as-is.
+- **`services/` textual-free is the load-bearing rule.** It is what makes CI-side unit testing possible without the TUI runtime, mirrors the existing `tests/test_sweep.py` fake-executor discipline (D-05), and keeps ty/ruff coverage uniform. Enforce with an import-linter-style test: `assert no module in tui/services imports textual` (a 5-line test — no new dependency).
+- **`screens/` get everything through constructor injection.** `MonitorScreen(monitor=FakeMonitor())` is what makes Pilot tests deterministic and fast; screens never construct services themselves — `app.py` does.
+- **`python -m tui` (not a script path)** avoids the CWD-sensitivity trap that the two legacy `script/` tools document (`summarize_comparison.py` must run from `dnallm-mark/data/`). `__main__.py` resolves REPO_ROOT from `__file__` and never trusts CWD.
 
 ## Architectural Patterns
 
-### Pattern 1: Two-tier fixtures — synthetic trees for unit/golden, committed real data for integration
+### Pattern 1: Subprocess launch + in-process import of pure planning functions (dual-use)
 
-**What:** Handcrafted 2-3-model fixture trees in `tests/data/model_performance/` drive unit and golden-file tests (fast, debuggable, edge-case-loaded). The real committed corpus in `dnallm-mark/data/` drives contract tests and the CI regenerate-and-diff — it is its own golden master.
-**When to use:** Always in this repo. The synthetic tier catches logic bugs; the real-data tier catches drift and contract violations at scale (42 files, 47 task files).
-**Trade-offs:** Synthetic fixtures can silently diverge from the real schema shape — mitigated by validating fixtures against the same JSON Schemas in a test.
+**What:** Execution always goes through `python pipeline/run_sweep.py <argv LIST>` as a subprocess. Planning/preview imports the same module's pure functions.
 
-**Example:**
-```python
-# tests/conftest.py
-import json, os, pytest
+**When to use:** Always for this codebase.
 
-FIXTURES = os.path.join(os.path.dirname(__file__), "data")
-
-@pytest.fixture
-def synthetic_data_tree(tmp_path, monkeypatch):
-    """Materialize the synthetic model_performance/ tree into tmp_path and chdir."""
-    src = os.path.join(FIXTURES, "model_performance")
-    dst = tmp_path / "model_performance"
-    dst.mkdir()
-    for f in os.listdir(src):
-        (dst / f).write_text((Path(src) / f).read_text())
-    monkeypatch.chdir(tmp_path)   # scripts resolve inputs/outputs from CWD
-    return tmp_path
-```
-
-### Pattern 2: Golden-file testing via regenerate-and-diff
-
-**What:** The canonical CI recipe for committed derived artifacts: regenerate into a scratch location, then `git diff --exit-code`. Any diff means the committed files are stale (or the generator changed without recomputing) → fail the build showing the diff. At unit level, the same idea runs one script against a synthetic tree and compares to committed goldens in `tests/data/golden/`.
-**When to use:** For any generated file that is committed to git — here: `task_performance/*.json`, `models_comparison*.json`, `tasks.json`.
-**Trade-offs:** Goldens go stale-by-design when a bug fix intentionally changes output (exactly this milestone's species-grouping fix). Provide an explicit, boring update path (`make update-golden`, `make data`) and document before/after. Merge commits of golden files can be textually "clean" but semantically wrong — regenerate after merges rather than trusting conflict resolution.
-
-**Example (repo-level — the heart of "detectable/verifiable"):**
-```make
-# Makefile
-DATA_DIR := dnallm-mark/data
-
-.PHONY: data verify-data
-data:  ## Regenerate all derived JSON in-place (run from repo root)
-	cd $(DATA_DIR) && python ../../script/get_task_performance.py
-	cd $(DATA_DIR) && python ../../script/summarize_comparison.py
-	node scripts/generate-tasks-index.js
-
-verify-data:  ## Prove committed derived files match the source data — fail loudly if not
-	git stash --quiet --include-untracked -- $(DATA_DIR) 2>/dev/null || true
-	$(MAKE) data
-	git diff --exit-code -- $(DATA_DIR) || (echo "❌ Derived data is stale. Run 'make data' and commit the result."; exit 1)
-```
-(In CI, prefer regenerating into a `cp -r` scratch copy over stashing — no mutation of the checked-out tree, no stash-failure edge cases.)
-
-### Pattern 3: JSON Schema as data-contract tests
-
-**What:** The performance-JSON shape is already documented in prose (README "Input Data Format" + docstrings at `script/get_task_performance.py:28-62`, `script/summarize_comparison.py:29-62`). Encode it as JSON Schema files; a parametrized pytest validates **every** committed instance file. This turns the pipeline→scripts→UI seam into an executable contract.
-**When to use:** Before regenerating data after correctness fixes — the schema locks the contract so recomputed files can't silently change shape. Also directly reusable by `js/submit.js`'s client-side validation for external submitters.
-**Trade-offs:** Schema maintenance burden — keep schemas permissive on optional metadata (model-card fields evolve) and strict only on load-bearing structure (`info`, `performance.{dataset}.performance`, metric keys). Overly strict schemas make every new model a CI failure.
+**Trade-offs:** Subprocess gives crash isolation (TUI hang/death never kills a multi-day sweep), clean cancel semantics (`Process.terminate()`), the identical argv a maintainer would type by hand (the TUI-REQUIREMENTS "same entry as smoke→E2'" requirement), and a natural multi-GPU generalization (N subprocesses). Cost: no in-memory progress callbacks — solved by Pattern 2. Importing `run_matrix` in-process instead would block Textual's event loop for hours, entangle TUI crashes with sweep fate, conflict with SIGINT handling, and fork GPU-adjacent state into the console process — rejected.
 
 **Example:**
 ```python
-# tests/test_data_contracts.py
-import json, pathlib, pytest
-from jsonschema import validate
+# services/sweep_plan.py — preview WITHOUT launching (parity by construction)
+import run_sweep  # pure import; conftest-proven pattern (tests/conftest.py)
 
-DATA = pathlib.Path("dnallm-mark/data")
-SCHEMAS = pathlib.Path("schemas")
+def preview_cells(spec: RunSpec) -> list[Cell]:
+    cells = run_sweep.enumerate_matrix(
+        spec.models, spec.tasks, spec.seeds, REPO_ROOT / "pipeline",
+        peft=spec.peft, fractions=spec.curve_fractions)
+    if spec.priority_tiers:
+        cells = run_sweep.apply_priority_order(cells, spec.priority_tiers)
+    return cells  # count, order, and planned dirs for the preview pane
 
-def instances(pattern, schema):
-    return [pytest.param(p, schema, id=p.name)
-            for p in sorted(DATA.glob(pattern))]
-
-@pytest.mark.parametrize("path,schema", 
-    instances("model_performance/*.json", "model_performance.schema.json"))
-def test_model_file_contract(path, schema):
-    validate(json.loads(path.read_text()),
-             json.loads((SCHEMAS / schema).read_text()))
+# services/launcher.py — execution ALWAYS a subprocess
+argv = [sys.executable, str(REPO_ROOT / "pipeline" / "run_sweep.py"),
+        "--models", ",".join(spec.models), "--tasks", ",".join(spec.tasks),
+        "--seeds", ",".join(map(str, spec.seeds)),
+        "--output-root", str(spec.output_root), ...]
+proc = await asyncio.create_subprocess_exec(
+    *argv, cwd=REPO_ROOT, stdout=asyncio.subprocess.PIPE,
+    stderr=asyncio.subprocess.STDOUT, start_new_session=True,
+    env={**os.environ, "PYTHONUNBUFFERED": "1",
+         "CUDA_VISIBLE_DEVICES": spec.gpu})
 ```
 
-### Pattern 4: Deterministic serialization is a *prerequisite*, not an enhancement
+**Details that matter (repo-verified):**
+- `PYTHONUNBUFFERED=1` is mandatory — piped Python children are block-buffered otherwise; the log tail would lag by kilobytes.
+- `start_new_session=True` detaches the sweep from the TUI's session: it survives TUI exit (detach) and ignores terminal-originated SIGHUP, while the retained `Process` object still allows explicit `terminate()`.
+- argv is built as a LIST, never a shell string — same T-03-10 discipline run_sweep itself follows.
+- `--registry-dir` exists on run_sweep if the TUI ever reads non-default registries; `--output-root` is resolved absolute by run_sweep itself.
 
-**What:** Verified in this repo — none of the three generators produce filesystem-independent output:
-- `script/summarize_comparison.py:309` iterates `os.listdir(input_dir)` **unsorted** → both summation order (float sum order changes last-ulp results) and output key order depend on filesystem directory order (differs between ext4/tmpfs/macOS/CI runners).
-- All three writers serialize without `sort_keys` (`json.dump(..., indent=4, ensure_ascii=False)` at `summarize_comparison.py:381,408`, `get_task_performance.py:159`; `JSON.stringify(index, null, 2)` in `generate-tasks-index.js:56` with unsorted `readdirSync` at line 18).
+### Pattern 2: Filesystem-as-API monitoring — poll the frontier, stream stdout only for logs
 
-Any regenerate-and-diff check built on top of this will produce **false failures on some filesystem** and the team will disable it — the failure mode that kills reproducibility gates.
-**When to use:** First, before any diff-based CI. The fix is surgical (~4 lines): `sorted(os.listdir(...))` (both Python scripts), `fs.readdirSync(...).sort()` (Node), and `sort_keys=True` on every `json.dump`. Note: adding `sort_keys=True` rewrites the byte layout of all derived files once — do it as its own commit, then recompute.
-**Trade-offs:** None of substance; key order in output is not consumed semantically by the UI (`DataAPI` indexes by key).
+**What:** The monitor derives state by stat-reading the output tree against the planned cell list; the subprocess stdout stream feeds only the log-tail pane.
 
-### Pattern 5: Makefile as the single discoverable entry point
+**When to use:** Any long-running child whose durable state is on disk — exactly this repo.
 
-**What:** A root `Makefile` with conventional targets (`make data`, `make test`, `make lint`, `make verify-data`, `make check` = all of them) that shells into the scripts and **encodes the CWD contract** (`cd dnallm-mark/data`) inside the recipes. `make check` is the long-standard convention for "run the test suite"; benchmark/research repos increasingly adopt "clone → install → `make all`" as the reproducibility acceptance test.
-**When to use:** Here, immediately — the #1 maintainability finding ("regeneration is tribal knowledge documented only in README") is solved by making the chain *executable and discoverable* (`make` with no args prints targets; recipes are self-documenting).
-**Trade-offs:** vs `just`: just has nicer syntax (no tabs/.PHONY) but adds a tool install for every contributor/reviewer — for a public research repo, zero-extra-dependency Make wins. vs npm scripts: no ecosystem-endorsed canonical entry point, cross-platform shell quoting issues, and would force Node ownership of Python steps. Make's timestamp-based incremental re-runs are irrelevant here (targets are phony) so its classic determinism liability doesn't apply.
+**Trade-offs:** Polling is deterministic, Pilot-testable (fixture trees in `tmp_path`, injectable interval), correct over SSH/network mounts, and works for sweeps the TUI did **not** launch (attach to any output_root — even a CLI-started sweep — because state is read from disk, not from a process handle). Cost: a tick interval; bounded below.
 
-### Pattern 6: GPU-less CI — lint / test / verify-data job separation
+**Repo-grounded signal map:**
 
-**What:** The heavy pipeline cannot run in CI (GPU + external `dnallm`), so CI covers everything *except* it: a fast lint job, a test job (pytest), and a verify-data reproducibility job — the pattern used by EleutherAI's lm-evaluation-harness (separate linters job via pre-commit/ruff; CPU unit-test matrix; path-filtered task-validation workflow; a `DummyLM` mock so the full eval path runs without GPU). DNALLM-Mark's equivalent of DummyLM is the synthetic fixture tree: the full aggregation chain runs on CPU in seconds (~2.1 MB input).
-**When to use:** Always in this milestone. Guard the boundary explicitly: CI installs only `numpy`, `pandas`, `pytest`, `jsonschema`, `ruff` (+ Node for one script) — the install list *is* the enforcement that pipeline/ stays out of scope.
-**Trade-offs:** Job fan-out costs runner startup (~30s each) but gives isolated, parallel failure signals. One deliberate restriction: the **verify-data job must run on pinned dependency versions** (see Anti-Pattern 4) — a version matrix and a byte-diff check are incompatible in the same job.
+| Signal | File | Written | Meaning |
+|--------|------|---------|---------|
+| Cell finished (any status) | `run_record.json` in cell dir | per cell, inside loop (`run_sweep.py:1144`) | status: completed/failed/skipped + metrics + timings |
+| Cell in-flight | cell dir exists, no `run_record.json` | dir created just before executor (`run_sweep.py:1075`) | current cell |
+| Cell trained (resume marker) | `trainer_state.json` | by run_finetune | skip-on-resume eligibility |
+| Training produced metrics | `final_metrics.json` | by run_finetune | CR-02 failure signal when missing |
+| Sweep over | `sweep_manifest.json`, `sweep_failures.json` | AFTER loop (`run_sweep.py:1163-1169`) | authoritative final report only |
+
+**Refresh cadence under Textual's asyncio loop:** one `set_interval` timer at **2 s** (setting, not constant) driving an async callback. Cost control at 9,300 cells (62×50×3 full sweep): per tick, stat only the **frontier** — the first K unresolved cells in planned order plus a periodic full rescan (every ~60 s and on process exit) to absorb out-of-order completion (priority tiers reorder execution). A full planned-order rescan is ~9,300 `stat` calls ≈ 10 ms — harmless, but the frontier scan keeps the common tick at microseconds. Pause the timer on `ScreenSuspend` when the monitor screen is hidden. Log lines are NOT polled — they arrive event-driven via `async for line in proc.stdout` in the launcher's async worker; the launcher forwards them to the app via a thread-safe post (worker → reactive update).
+
+**Do not** use Textual filesystem-watch APIs: no watcher API is documented in current Textual (only `watch_css` for CSS hot-reload); `set_interval` polling is the documented, testable mechanism (LOW-confidence leads on watcher APIs were not verifiable — treat as unavailable).
+
+### Pattern 3: Headless services with injectable seams
+
+**What:** Every service is a plain class taking its collaborators and an event sink through the constructor; screens take services through the constructor; only `app.py` wires real implementations.
+
+**When to use:** Any Textual app that must be CI-tested — here mandated by "TUI tests CPU-side with injectable seams" (PROJECT.md Constraints).
+
+**Trade-offs:** Slightly more wiring code; buys the two-tier test strategy that keeps CI GPU/dnallm-free and lets service logic run under plain pytest without textual installed.
 
 **Example:**
-```yaml
-# .github/workflows/ci.yml (shape, not verbatim)
-name: CI
-on: [push, pull_request]
-permissions: { contents: read }
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-jobs:
-  lint:        # ~1 min: ruff check, node --check loop, htmlhint
-  test:        # pytest, pinned python + numpy/pandas (cache: pip)
-  verify-data: # cp -r dnallm-mark/data scratch → regenerate → git diff --exit-code
+```python
+# tests/tui/test_monitor.py — tier 1, no textual, CI-safe
+def test_frontier_derives_in_flight_cell(tmp_path):
+    root = make_fixture_tree(tmp_path, cells=[("m1", "t1", 42, "completed")],
+                             planned=[("m1", "t1", 42), ("m1", "t1", 43)])
+    state = MonitorService(root, planned=...).scan()
+    assert state.counts == {"completed": 1, "pending": 1}
+    assert state.current_cell == ("m1", "t1", 43)
+
+# tests/tui/test_pilot_monitor.py — tier 2, textual, fake service
+async def test_monitor_renders_records():
+    app = DnallmMarkTui(monitor=FakeMonitor(fixed_state))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.query_one("#counts", Static).content # ...
 ```
+
+Tier 2 runs under pytest-asyncio (`asyncio_mode = "auto"` per Textual's documented integration) with textual from a new `tui` uv group — CPU-only, satisfying the GPU/dnallm-free CI constraint. The unchecked requirement "CI 不引入 GPU/TUI 运行时" should be resolved at discuss: recommendation is to run tier-2 in CI as a separate job (`uv run --group tui pytest tests/tui -m pilot`) because textual is a small pure-Python install and Pilot tests are the only automated UI regression net; the strict-local-only fallback is a pytest marker if the team prefers.
+
+### Pattern 4: XDG config state — user-local, never repo-local
+
+**What:** All TUI persistent state lives under `$XDG_CONFIG_HOME/dnallmmark/` (default `~/.config/dnallmmark/`), path resolved by a hand-rolled ~10-line helper with an injectable override for tests.
+
+**Schema:**
+```jsonc
+// ~/.config/dnallmmark/settings.json  (written atomically: tmp+rename)
+{
+  "settings_version": 1,
+  "project_root": "/home/forrest/Github/dnallmmark",   // repo location: registries, scripts
+  "storage": {
+    "output_root": null,     // null = repo default ./finetuned (resolved absolute at launch)
+    "cache_dir": null        // null = run_finetune default
+  },
+  "monitor": {"poll_seconds": 2.0},
+  "defaults": {"seeds": [42, 43, 44], "peft": "none", "effective_batch": 16}
+}
+
+// ~/.config/dnallmmark/templates/<name>.json — the shareable run template
+{
+  "template_version": 1,
+  "name": "tier1-e2e-smoke",
+  "models": ["plant-dnamamba-6mer"], "tasks": ["GUE__emp_H3"],
+  "seeds": [42], "peft": "none", "curve": null, "config_variant": null,
+  "subset_file": true, "effective_batch": 16, "num_train_epochs": 1,
+  "priority_tiers": [["plant-dnamamba-6mer"], ["GENERanno-eukaryote-0.5b-base"]]
+}
+```
+
+**Rationale:** operator state is per-machine, so repo-local is wrong (would dirty the checkout and leak machine paths into git); hand-rolled XDG resolution avoids adding `platformdirs` for ~10 lines, consistent with the repo's minimal-dependency discipline. Templates are user-local between sessions but **import/export to arbitrary paths** as shareable artifacts (the requirement), validated against a JSON Schema committed under `schemas/` — reusing the repo's existing schema-validation pattern (jsonschema already in the dev group). `priority_tiers` mirrors `sweep_priorities.json`'s tier structure so a template converts to a `--priority-file` by writing the tiers array verbatim; the TUI writes that temp file under its config dir (never into the repo).
+
+### Pattern 5: Download manager — CLI subprocess + persisted queue state machine
+
+**What:** One `modelscope download --dataset <ns/name> --local_dir <dst>` subprocess at a time, driven by a JSON queue file that survives restarts.
+
+**When to use:** The repo has already validated the CLI channel at 50/50 coverage (TUI-REQUIREMENTS §2); the CLI is an external prerequisite checked with `shutil.which("modelscope")` at startup — the TUI itself adds **no** modelscope dependency.
+
+**Trade-offs vs alternatives:** SDK-in-thread couples a heavy import tree and a hung transfer to the TUI process, and can't be killed without killing the thread; raw-HTTP async re-implements auth/resume that the CLI already handles. The CLI subprocess gets crash isolation, trivial kill/restart, and resume for free (re-running the command continues partial downloads; flag details MEDIUM confidence — verified behavior should be confirmed in phase). Keep the raw HTTP API (`/api/v1/datasets/{ns}/{name}/repo?FilePath=...`) as the documented fallback channel, not a second implementation.
+
+**Queue file** (`~/.config/dnallmmark/downloads.json`): entries `{task, ns_name, local_dir, status: pending|running|done|failed, attempts, last_error, verified: bool}` — rewritten atomically on every transition; on TUI start, `running` entries reset to `pending` (resume = re-enqueue; the CLI's own resume makes re-download cheap). Destination dirs come from `datasets_info.json` `Dataset_path` joined to the project root — datasets must land exactly where `run_finetune.py:973` expects (`base_dir + Dataset_path`). Post-download **verification** reuses `script/audit_n_frequencies.py` (the authoritative row-count tool) as a subprocess, then reloads `n_audit.json` — reuse, not re-implementation; a light pre-check (dir exists, expected file count) gates the full audit. Mind the documented double-nesting zip gotcha (run_sweep module docstring "FUTURE E2E note"): a freshly unzipped suite extracts as `suite-name/suite-name/...` and must be flattened before `Dataset_path` resolves — the verifier should detect and report this specifically.
+
+### Pattern 6: Directory settings — pass-through today, threading gaps inventoried explicitly
+
+**What:** The TUI resolves every path absolute and passes it via existing script flags; it never changes script assumptions (the requirement's own rule: 需统一传参而非改脚本假设).
+
+**Support matrix (repo-verified):**
+
+| Setting | Flag that carries it | Status |
+|---------|---------------------|--------|
+| Output root | `run_sweep --output-root` (resolved absolute internally) | supported today |
+| Registry dir | `run_sweep --registry-dir` | supported today (run_finetune still reads its own dir — fine, TUI reads registries itself) |
+| Model cache | `run_finetune --cache_dir` | **not threaded through run_sweep argv** |
+| Datasets root | none — `run_finetune.py:672-673,973` hard-joins `base_dir + Dataset_path` | **not redirectable without pipeline change — out of scope; datasets live under the repo checkout** |
+| Models root | none — `run_finetune.py:922` `base_dir + Model_path` | same — repo checkout |
+
+Consequence: the "project directory / storage directory" split is realized as **project_root** (where the repo lives — basis for registries, scripts, and by default datasets/models) plus **storage.output_root** (fully supported) and **storage.cache_dir** (needs one small threading addition). Redirecting datasets/models outside the repo would violate the no-contract-change constraint and is documented as out of scope for v1.2.
+
+**Sanctioned small run_sweep threading additions** (each follows the established append-as-separate-LIST-elements pattern in `build_argv`, byte-identical when absent, argv-shape asserted in `tests/test_sweep.py` — the same pattern `--peft`/`--train_fraction` already established):
+
+| Addition | Status in repo docs | Size |
+|----------|--------------------|------|
+| `--subset_file` pass-through | already inventoried as "the one known pre-launch gap" (PROJECT.md Context) | ~15 lines |
+| `--effective-batch` → child `--effective_batch_size` | PROJECT.md Key Decision (auto-GA, GA=max(1, N//batch), default 16) — Pending | small |
+| `--num_train_epochs` pass-through | run_finetune flag exists (`run_finetune.py:210`); TUI "1-epoch smoke fast path" needs it for sweeps | small |
+| `--cache_dir` pass-through | run_finetune flag exists (`run_finetune.py:137`) | small, optional |
+
+These are the ONLY pipeline-file modifications the TUI milestone needs on `run_sweep.py`, and they extend its contract additively — the TUI never bypasses run_sweep to reach run_finetune directly for sweeps.
 
 ## Data Flow
 
-### Verification Flow (the new flow this milestone adds)
+### Launch Flow (single GPU)
 
 ```text
-MAINTAINER PATH (writes committed data — the only writer)
-  edit model_performance/*.json (or fix a script)
-      ↓
-  make data            (3-script chain, CWD contract inside Makefile)
-      ↓
-  git commit  (derived JSON changes land in the SAME commit as their cause)
-
-CI PATH (read-only over the repo, writes only to scratch)
-  PR/push
-      ↓
-  ┌─ lint job ──────── ruff · node --check (all *.js) · htmlhint (all *.html)
-  ├─ test job ──────── pytest:
-  │      unit        : synthetic dict fixtures → pure functions → assertions
-  │      golden      : tests/data/model_performance → main() in tmp_path
-  │                     → compare vs tests/data/golden/*
-  │      contract    : every dnallm-mark/data/**/*.json → JSON Schema → pass/fail per file
-  │      determinism : chain ×2 in tmp_path → byte-identical
-  └─ verify-data job : cp -r dnallm-mark/data → scratch/
-                       run chain in scratch/ → diff vs committed derived files
-                       git diff --exit-code  ⇒  clean = proven fresh
-                                              dirty = fail with the diff shown
+[RunConfig screen] -- RunSpec dataclass -->
+[env_gate] -- subprocess env_smoke.py, parse PASS:/FAIL: -- FAIL? --> modal, BLOCK launch
+[E2' gate] -- is_full_e2e_sweep(preview) ? ModalScreen[bool] typed confirm --> abort | continue
+[launcher] -- asyncio.create_subprocess_exec(run_sweep argv LIST,
+              cwd=REPO_ROOT, PYTHONUNBUFFERED=1, CUDA_VISIBLE_DEVICES=<dev>,
+              start_new_session=True) --> Process handle
+[App] switch_mode("monitor")
 ```
 
-### Key Data Flows
+### Monitoring Flow
 
-1. **Unit/golden flow:** `tests/data/model_performance/` (handcrafted) → imported script module (`summarize_comparison`, `get_task_performance` — both have `if __name__ == "__main__"` guards, verified) → `tmp_path` outputs → compare against `tests/data/golden/`. Never touches committed data.
-2. **Contract flow:** committed JSON files (read-only) → schema validation → per-file pass/fail with filename in the test id. Direction: schemas describe data; data never changes to satisfy a test.
-3. **Reproducibility flow (the milestone's core deliverable):** committed `model_performance/` (source of truth) → regeneration chain → derived files; the *diff between regenerated and committed derived files* is the freshness proof. Direction is one-way: source data determines derived data; a dirty diff is a defect, never auto-committed by CI.
-4. **CI → repo flow:** CI invokes `make` targets (not raw ad-hoc commands) so local and CI verification are the same commands — the Makefile is the single source of procedural truth; the workflow file is only orchestration.
+```text
+set_interval(2s) → [monitor.scan(output_root, planned_cells)]
+   frontier stats: run_record.json (status) · trainer_state.json (marker)
+   final_metrics.json presence · periodic full rescan (60s)
+        ↓ frozen ServiceEvent
+[App reactives] --data_bind--> [counts/progress widgets]
+                    └--> [DataTable rows: update_cell(row_key, "status", ...)]
+[launcher worker] async-for line in proc.stdout → [RichLog tail pane]
+process exit → read sweep_manifest.json + sweep_failures.json → final report
+     failures present → [from-failures re-run] button pre-fills RunSpec
+         (--from-failures <path> — flag already exists, run_sweep.py:293)
+```
 
-## Component Boundaries
+### Download Flow
 
-| Boundary | Communication | Rules / Considerations |
-|----------|---------------|------------------------|
-| tests → `script/*.py` | Python import (`pythonpath = ["script"]` in pyproject) | Only guarded modules are importable; module-level `import numpy/pandas` in `summarize_comparison.py:76-77` means CI must install them (already required) |
-| tests → `scripts/generate-tasks-index.js` | subprocess (`node`), parse stdout/JSON | Script is already `__dirname`-relative (location-independent) — no chdir gymnastics needed; asserting file content beats asserting exit code |
-| tests → committed `dnallm-mark/data/` | read-only filesystem access | Contract tests + verify-data only; a test that mutates committed data is a defect |
-| tests → `pipeline/` | **none — forbidden** | Importing it would drag torch/dnallm into CI; enforced by dependency list, optionally by a lint rule (`ruff` import blacklist) |
-| Makefile → scripts | shell recipes with explicit `cd` | Encodes the CWD contract once; humans and CI stop memorizing it |
-| CI → Makefile | `run: make <target>` | One procedural source of truth; workflow changes are orchestration-only |
-| schemas ↔ `dnallm-mark/data/` | validation relationship | Schema changes are contract changes → require recomputation review; validate the schemas themselves once (metaschema check) |
-| `js/submit.js` ↔ `schemas/` | future alignment (optional) | Client-side submission validation should mirror the schema; out of strict scope but the schemas make it possible |
-
-## Suggested Build Order
-
-Dependency-ordered; each step unblocks the next and nothing later depends on undone earlier work:
-
-1. **Determinism fixes in the three generators first** (sorted listing + `sort_keys`, ~4 lines total). Everything diff-based (goldens, verify-data) is built on byte-stable output; doing it later invalidates every golden committed before. Lands as its own commit with a one-time reformat of derived JSON (recompute via `make data` once it exists — or manually this first time).
-2. **Dependency manifests** (`pyproject.toml` with bounded `numpy`/`pandas`; minimal `package.json` with `"type": "module"`). Tests cannot even be installed in CI before this; `package.json` unblocks `node --check`.
-3. **JSON Schemas + contract tests.** Lock the data contract *before* the correctness fixes change the numbers — then recomputed files are automatically validated, and before/after comparisons have a shape anchor.
-4. **Unit tests for the 4 pure functions** in `summarize_comparison.py` (cheap, no I/O) — these will directly pin down correct behavior *before* fixing the species-grouping bug, i.e., write the failing test first where practical.
-5. **Golden-file tests on the synthetic tree** (pivot script + aggregation `main()`). Requires 1 (byte stability) and 2 (runner config).
-6. **Makefile** (`data`, `test`, `lint`, `verify-data`, `check`). Requires nothing upstream but is most useful once tests exist to wire into `check`.
-7. **CI workflow** (`lint` → `test` → `verify-data`). Requires 2, 5, 6. Path filters keep it fast.
-8. **Recompute leaderboard data after correctness fixes, with before/after notes.** Last, so it happens under full CI protection: the verify-data job then *proves* the recomputation is complete and committed.
+```text
+[DataManager screen] presence = n_audit.json × datasets_info.json (missing flags)
+[enqueue missing] → downloads.json (atomic write) → worker: one modelscope CLI
+   subprocess at a time → stdout stream → progress line → on exit:
+[verify] audit_n_frequencies.py subprocess → reload n_audit.json →
+   row-count mismatch? mark entry failed with diff shown; nesting issue? named hint
+```
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Regenerate-and-diff without determinism fixes
+### Anti-Pattern 1: Importing run_matrix to drive the sweep in-process
 
-**What people do:** Wire `git diff --exit-code` into CI while the generators iterate `os.listdir()` unsorted and serialize without `sort_keys` (this repo's current state, verified).
-**Why it's wrong:** Directory order and float-summation order vary across filesystems; the check false-fails on some runner, someone disables it, and the gate is dead.
-**Do this instead:** Pattern 4 first; add a determinism test (run twice, byte-compare) so regressions are caught at test time, not in a red CI job at 2 a.m.
+**What people do:** `import run_sweep; run_sweep.run_matrix(...)` inside a Textual thread worker to get "real" callbacks.
+**Why it's wrong:** hours-long synchronous loop in the console process; TUI crash kills a multi-day sweep; no clean cancel; SIGINT/Ctrl-C semantics fight between Textual and the child; breaks "TUI launch = same entrypoint as CLI".
+**Do this instead:** subprocess launch (Pattern 1); import ONLY the pure planning functions.
 
-### Anti-Pattern 2: Duplicating the real corpus as test fixtures
+### Anti-Pattern 2: Treating manifests as live progress
 
-**What people do:** Copy `dnallm-mark/data/` into `tests/fixtures/` to "test with real data."
-**Why it's wrong:** Two copies of 2.1 MB of derived data that drift; tests that fail for data reasons look like code failures.
-**Do this instead:** Synthetic mini-tree for logic; the committed corpus itself is the integration corpus (contract tests + scratch-dir diff). It is already in git — use it in place.
+**What people do:** poll `sweep_failures.json`/`sweep_manifest.json` mtime for the dashboard.
+**Why it's wrong:** both are written once, AFTER the loop (`run_sweep.py:1163-1169`) — the dashboard would show nothing for days, then everything.
+**Do this instead:** per-cell `run_record.json` as it appears; manifests are the final report read on process exit.
 
-### Anti-Pattern 3: Fighting the scripts' CWD coupling with refactors
+### Anti-Pattern 3: Dry-run against the real output root for preview
 
-**What people do:** "Fix" `input_dir = "model_performance"` by refactoring both scripts to take `--data-dir` flags.
-**Why it's wrong:** Contradicts this milestone's surgical-fix discipline and widens review surface for zero verified correctness gain.
-**Do this instead:** Accommodate the contract: `monkeypatch.chdir(tmp_path)` in tests, `cd $(DATA_DIR)` in Makefile recipes, scratch-dir copies in CI. (If a later milestone modularizes, flags come then.)
+**What people do:** run `run_sweep.py --dry-run --output-root ./finetuned` to count cells.
+**Why it's wrong:** dry-run writes `sweep_manifest.json` into that root — clobbering a previous real run's authoritative manifest (contradictory audit artifacts, the exact WR-06 class of hazard the driver was hardened against).
+**Do this instead:** import `enumerate_matrix`/`apply_priority_order` for preview (no disk writes at all).
 
-### Anti-Pattern 4: Version matrix in the same job as the byte-diff check
+### Anti-Pattern 4: Parsing child log text as state
 
-**What people do:** A CI matrix over Python/pandas versions for the whole test suite including verify-data.
-**Why it's wrong:** pandas float formatting and dtype coercion differ across versions — the diff check would fail on every version but the pinned one (spurious red). The 100%-vs-10% reproducibility disagreement in the Node literature traces to exactly this ambiguity.
-**Do this instead:** verify-data on one pinned env; if drift monitoring is wanted, a separate *advisory* (non-blocking) job with loose bounds.
+**What people do:** regex the training stdout for "epoch 3" to compute progress.
+**Why it's wrong:** log format belongs to dnallm/HF Trainer and changes upstream; tqdm `\r` progress spam pollutes parsing; the durable truth is already on disk.
+**Do this instead:** logs are for the human tail pane (RichLog handles `\r`); state comes from files. Also expect HF Trainer progress-bar spam in the tail — filter or tolerate, never parse.
 
-### Anti-Pattern 5: CI auto-commits regenerated data
+### Anti-Pattern 5: Re-implementing enumeration/aggregation in the TUI
 
-**What people do:** A workflow bot commits regenerated derived files on red verify-data.
-**Why it's wrong:** Surprise commits bypass review — precisely what external reviewers of a benchmark must not see; it can also mask a script regression as a "data update."
-**Do this instead:** Fail with instructions ("run `make data` and commit"). Human reviews every number change with before/after notes (a stated milestone requirement).
+**What people do:** a fresh "models × tasks × seeds" counter in `tui/` "because it's easy".
+**Why it's wrong:** drifts from run_sweep semantics (peft aliasing, curve expansion, priority composition) — the preview would lie about the real run.
+**Do this instead:** wrap `run_sweep` functions (Pattern 1); drift is impossible by construction.
 
-### Anti-Pattern 6: Letting quality tooling mutate the frontend
+### Anti-Pattern 6: Business logic inside screens/App
 
-**What people do:** Adopt prettier/eslint --fix or a bundler "while adding CI," rewriting the vanilla ES-module MPA.
-**Why it's wrong:** Violates the hard no-build/no-framework constraint and balloons the diff under review.
-**Do this instead:** Read-only checks only: `node --check` (syntax), `htmlhint` (structure). If more frontend checking is ever wanted, it is a new decision, not a side effect.
+**What people do:** cell-state derivation, template validation, queue transitions written as widget methods.
+**Why it's wrong:** untestable without textual; Pilot tests become the only tests; CI story collapses.
+**Do this instead:** services own logic; screens render (Pattern 3); add the import-linter test pinning `tui/services` textual-free.
 
-### Anti-Pattern 7: One mega CI job
+### Anti-Pattern 7: Killing the sweep on TUI exit by default
 
-**What people do:** A single job running lint + tests + regen + diff sequentially.
-**Why it's wrong:** Slow feedback (lint failure blocks test signal), confusing reds, cache invalidation of everything on any change.
-**Do this instead:** Three small jobs with path filters (docs-only pushes skip everything); each fails fast and independently.
-
-## Scaling Considerations
-
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| Current (42 models, 50 datasets, ~2.1 MB) | Full-chain regen in CI in seconds; verify-data on every PR; schema validation linear over ~95 files — no adjustments needed |
-| ~2× (new models/datasets land) | Still trivial. Consider path-filtered verify-data (only run when `model_performance/**`, `script/**`, or `scripts/**` change) to keep PR-only pushes fast |
-| 100+ model files | Regen stays cheap (aggregation is O(files) pandas ops); golden *review* gets noisy — elide regenerated JSON from PR diffs via `.gitattributes` (`*-database` style diff suppression is not applicable; instead rely on verify-data as the equivalence proof and consider linguist-generated attributes) and keep the before/after discipline in release notes |
-
-### Scaling Priorities
-
-1. **First bottleneck: golden-file PR noise.** Derived JSON diffs are large and review-hostile — the verify-data job is the equivalence proof humans should read instead; document that reviewers may skim derived-file hunks.
-2. **Second bottleneck: dependency drift over the repo's lifetime.** Bounded pandas/numpy ranges + a lockfile-for-CI keep the diff check meaningful years out (quant-reproducibility pattern: pinned env is part of the published claim).
+**What people do:** nothing — app exit cancels workers, orphaned child dies with the session.
+**Why it's wrong:** a sanctioned multi-day E2'-adjacent sweep should not die because the operator closed the console; conversely silently leaking GPU processes is worse.
+**Do this instead:** exit prompt when a sweep is live: `[K]ill (terminate group) / [D]etach (default for launched sweeps — resume-safe by marker design) / [C]ancel exit`. `start_new_session=True` makes both explicit choices, and re-attach works later because monitoring reads the filesystem.
 
 ## Integration Points
 
@@ -338,32 +352,58 @@ Dependency-ordered; each step unblocks the next and nothing later depends on und
 
 | Service | Integration Pattern | Notes |
 |---------|---------------------|-------|
-| GitHub Actions | 3 jobs, `permissions: contents: read`, `concurrency` with `cancel-in-progress` on PRs, `timeout-minutes` per job, `setup-python cache: pip` keyed on the lock/manifest | Keep action pins at major tags (`@v4`/`@v5`); SHA-pin only if the org requires it |
-| pre-commit (optional) | `check-jsonschema` hooks (`files: ^dnallm-mark/data/.*\.json$`, `--schemafile schemas/...`) + `--check-metaschema` | Runs the same contracts locally pre-push; pytest contract tests remain the CI authority — do not force contributors to install pre-commit to pass CI |
+| `run_sweep.py` | subprocess (argv LIST) for execution; module import for planning | contracts frozen; additive flag threading per Pattern 6 table |
+| `run_finetune.py` | never called directly by the TUI for sweeps; contract untouched | FlopsCounter port into it is pipeline-side work, not TUI |
+| `env_smoke.py` | subprocess before first launch; parse greppable `PASS:`/`FAIL:` lines + exit code | blocks launch on FAIL with reasons shown |
+| `modelscope` CLI | subprocess per queued dataset; `shutil.which` prerequisite check | token already at `~/.modelscope`; resume on re-run (confirm in phase) |
+| `script/audit_n_frequencies.py` | subprocess for post-download verification | authoritative row counts; output `n_audit.json` re-read |
+| Textual ≥8,<9 | new `tui` uv group; ty src include + ruff as usual | Python 3.13 supported (6.3.0+); expect major-bump deprecation churn |
 
 ### Internal Boundaries
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| CI ⇄ pipeline/ | none (exclusion) | Enforced by CI dependency list; optional ruff import-forbidden rule documents it in code |
-| Makefile ⇄ README | README shows `make` commands only | Kills the drift between documented steps and actual steps — the README documents the *chain concept*, the Makefile is the *chain implementation* |
+| screens ↔ services | constructor injection; services emit frozen `ServiceEvent`s consumed by App workers | fakes in tests; no service imports textual |
+| TUI ↔ pipeline scripts | process seam + filesystem bus | TUI never writes into `pipeline/` outputs; only reads registries/artifacts |
+| TUI ↔ config | `~/.config/dnallmmark/` JSON, atomic writes, injectable root | never repo-local; templates import/export via file paths |
+| launcher ↔ monitor | independent: launcher owns the Process; monitor owns the tree | monitor works with zero processes (attach to CLI-launched sweep); log tail available only for TUI-launched sweeps (stdout pipe) |
+| TUI ↔ multi-GPU (P4) | launcher generalizes to N `SweepProcess`es, each `CUDA_VISIBLE_DEVICES=<dev>` + disjoint `--models` shard | static sharding (deterministic, resume markers stay per-shard authoritative); dynamic work-stealing rejected — two workers could claim one cell, and run_sweep's marker-skip is the only concurrency guard |
+
+## Scaling Considerations
+
+| Scale | Architecture Adjustments |
+|-------|--------------------------|
+| Smoke (1 model × 1 task × 1 seed) | nothing — monitor tick 2 s, frontier scan trivial |
+| Full sweep (62×50×3 ≈ 9,300 cells, days) | frontier scan + 60 s full rescan (full rescan ≈ 10 ms of stats); RichLog capped (e.g. `max_lines=10_000`); DataTable shows aggregates + windowed detail, not 9,300 rows at once |
+| Multi-GPU (P4, N GPUs) | N run_sweep subprocesses with static model shards; per-shard monitors (same service, N instances); merge view = read-only scan of the shared output_root (run_sweep's own layout makes shard outputs disjoint by model dir); DDP (torchrun) is a separate per-cell axis — decide explicitly in P4 (requirements cross-check: sharding for E2' throughput, DDP for single 1B+ model acceleration; `--ddp_find_unused_parameters` already exists in run_finetune) |
+| Downloads (50 datasets, multi-GB) | serial queue by design (storage & bandwidth on one box); persistence + re-enqueue on start; verification decoupled from transfer |
+
+### Scaling Priorities
+
+1. **First bottleneck: monitor scan cost at full-sweep scale** — solved by frontier-first scanning (Pattern 2); revisit only if a tick exceeds ~50 ms.
+2. **Second: log volume** — cap RichLog; never persist full logs in the TUI (per-cell stdout is not captured to disk by run_sweep — a TUI-side log file would be the only copy; if persistence is wanted, tee the stream to a TUI-managed file under the config dir, documented as TUI-owned, never alongside pipeline audit artifacts).
+
+## Recommended Build Order (feeds ROADMAP phase structure)
+
+Dependency-ordered; each phase's gate named:
+
+1. **WP-A (pipeline-side, parallel track, EARLY — maintainer directive: 落地于 P3 前): FlopsCounter port** from `dnallmmark_pipeline.py` into `run_finetune.py` (20+ architecture hooks). Independent of every TUI phase; benefits E2' FLOPs correctness and the leaderboard efficiency axis regardless of TUI fate. Not TUI work — do not couple its verification to TUI phases.
+2. **P1 — TUI foundation:** `tui/` package skeleton, `services/settings.py` + `services/registries.py`, selection matrix screen with n_audit presence column, Pilot harness (tier-1 + tier-2 tests, CI decision), pyproject `tui` group + ty/ruff wiring, `make tui`. Gate: matrix renders 62×50 with filters; CI green without GPU/dnallm.
+3. **P2 — Data manager:** `services/downloads.py` queue + modelscope CLI driver + verification via audit script; queue persistence + resume. Depends only on P1 (registries/settings). Gate: one real missing dataset round-trips download → verify → presence flips.
+4. **P2.5 (small, lands with P2 or P3) — run_sweep argv threading:** `--subset_file`, `--effective-batch`, `--num_train_epochs` (+optional `--cache_dir`), argv-shape tests in `tests/test_sweep.py`. Must land **before** the RunConfig screen ships its full surface; independent of screens so it can start any time after P1 scaffolding exists.
+5. **P3 — Run config + single-GPU launch + monitoring:** RunSpec form + dry-run preview (imported enumeration), env_smoke gate, E2' confirm modal, `services/launcher.py`, monitor screen. Depends on P1 (screens/services) + P2.5 (flags exist) + WP-A only in the sense that FLOPs-correct runs want it landed first (maintainer sequencing: FlopsCounter before P3). Gate: bounded smoke (1 model × 1 task × 1 seed, 1 epoch) launched, monitored, failure re-run exercised end-to-end on GB10; E2' gate provably blocks full sweeps.
+6. **P4 — Multi-GPU orchestration (HARD-GATED on P3 single-GPU validation — maintainer: 单卡开发成功再开发多卡):** static model sharding × `CUDA_VISIBLE_DEVICES`, N `SweepProcess`es, per-worker health + isolation re-run, merged dashboard; explicit DDP-vs-sharding decision documented. Gate: 2-GPU sharded bounded run; worker kill isolates and re-runs.
+
+Ordering rationale in one line each: WP-A is early because it is pipeline-critical-path and TUI-independent; settings/registries before everything because every screen consumes them; downloads before launch because env_smoke itself checks dataset presence (a FAIL there is undiagnosable without the manager); flag-threading before RunConfig because the form cannot promise flags that do not exist; monitoring lands with launch (same phase) because the launcher's stdout stream and the monitor's filesystem scan are one screen; multi-GPU last because it is N copies of the launcher plus shard math — cheap only after single-GPU is proven.
 
 ## Sources
 
-Codebase facts (HIGH — direct inspection at commit `a44d310`): `script/summarize_comparison.py:76-77,274,309,381,408`; `script/get_task_performance.py` (CWD-relative dirs, `__main__` guard, single `main()`); `scripts/generate-tasks-index.js:11-12,18,56` (`__dirname`-relative, unsorted `readdirSync`); `dnallm-mark/data/` layout and sizes; `.planning/codebase/{ARCHITECTURE,TESTING}.md`.
-
-Ecosystem patterns (MEDIUM — cross-verified web sources, 2026-10-08):
-
-- Golden-file / regenerate-and-diff: [MongoDB SERVER-100324 (merge hazards)](https://jira.mongodb.org/browse/SERVER-100324), [Dart pub testdata README (golden regen workflow)](https://dart.googlesource.com/pub.git/+show/c5541b337765b3dd53be089a09951dcfc893b166/test/testdata/README.md), [agent-eval-kit test_golden.py (--check mode + staleness)](https://github.com/portable-genai/agent-eval-kit/blob/main/tests/test_golden.py)
-- JSON Schema contract testing: [check-jsonschema pre-commit usage](https://check-jsonschema.readthedocs.io/en/latest/precommit_usage.html), [check-jsonschema repo](https://github.com/python-jsonschema/check-jsonschema), [COSAI hook-validations example](https://raw.githubusercontent.com/cosai-oasis/secure-ai-tooling/refs/heads/main/scripts/docs/hook-validations.md)
-- Task runners / reproducibility: [make-all quant paper pattern](https://faketut.github.io/2026/06/07/qmj-04-make-all-under-a-minute/), [task-runner comparison](https://nihilok.github.io/why-i-built-another-task-runner), [make check convention (Milan handout)](http://homes.di.unimi.it/~sisop/lucidi1718/svigruppo11-handout.pdf), [npm scripts reproducibility ambiguity (arXiv 2503.21705)](https://export-test.arxiv.org/pdf/2503.21705)
-- Determinism: [deterministic output best practices](https://github.com/mcorbett51090/RavenClaude/blob/main/plugins/team-portfolio/best-practices/deterministic-output-makes-diffs-and-caching-trustworthy.md), [JSONCANON canonicalization](https://www.zenodo.org/records/20819570/files/json_canon.pdf?download=1), [replicate/cog nondeterministic-output incident](https://app.semanticdiff.com/gh/replicate/cog/commit/de3af597615018482cfbaed4a63a7efa703d90f4), [Debian reproducible-builds pandas notes](https://tests.reproducible-builds.org/debian/notes/pandas_note.html)
-- Benchmark-repo CI: [lm-evaluation-harness unit_tests workflow](https://huggingface.co/chen459664/quantization2/blob/4f918cc1f91637c5defdf3800e9e4365fe12b306/lm-evaluation-harness/.github/workflows/unit_tests.yml), [new_tasks path-filtered workflow](https://github.com/EleutherAI/lm-evaluation-harness/blob/1dd93108/.github/workflows/new_tasks.yml), [testing infrastructure overview](https://deepwiki.com/EleutherAI/lm-evaluation-harness/8.1-testing-infrastructure)
-- Dependency pinning: [pylock.toml / lockfile-vs-metadata split (Stack Overflow)](https://stackoverflow.com/revisions/76548420/5), [pandas version pinning guidance](https://theneuralbase.com/pandas-for-ml/learn/advanced/pandas-version-pinning/), [Copernicus EOPF dependency design](https://cpm.pages.eopf.cpm.eopf.copernicus.eu/eopf-cpm/3.0.0/djf.html)
-- pytest layout: [pytest good integration practices](https://docs.pytest.org/en/stable/explanation/goodpractices.html)
-
-Node `--check` / htmlhint specifics (LOW — single-source model knowledge, standard well-established tool behavior; verify exact flag behavior when implementing): treat the `"type": "module"` requirement for `node --check` and the `xargs -n1` loop shape as hypotheses to confirm in the first lint-job run.
+- Repo (HIGH, direct inspection 2026-10-11): `pipeline/run_sweep.py` (esp. `launch_subprocess` :872, `run_matrix` :995-1170, `build_argv` :810, argparse :231-330), `pipeline/run_finetune.py` (argparse :57-265, `base_dir` :672-673, :922, :973), `pipeline/env_smoke.py` (PASS/FAIL contract), `pyproject.toml` (groups/ty/pytest), `tests/conftest.py` (sys.path seam), `docs/TUI-REQUIREMENTS.md`, `.planning/PROJECT.md`
+- Official Textual docs, fetched 2026-10-11 (HIGH): guide/workers, guide/screens, guide/testing, guide/reactivity, widgets/data_table, api/timer
+- Textual version status (MEDIUM): libregistry/Debian/Buildroot trackers via search — 8.2.x current, Python 3.13 supported since 6.3.0
+- ModelScope CLI (MEDIUM for flags, HIGH for channel availability via in-repo validation): TUI-REQUIREMENTS §2 + third-party CLI guides
+- Textual filesystem-watch APIs: LOW/inconclusive — correctly treated as unavailable
 
 ---
-*Architecture research for: test/CI/release hardening of DNALLM-Mark*
-*Researched: 2026-10-08*
+*Architecture research for: Textual TUI integration over the DNALLM-Mark subprocess sweep architecture (v1.2)*
+*Researched: 2026-10-11*
