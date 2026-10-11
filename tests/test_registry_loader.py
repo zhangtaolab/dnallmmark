@@ -34,6 +34,7 @@ See also:
 """
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -228,11 +229,19 @@ def test_unreadable_custom_file_fails_loud_naming_file(
     custom_path.write_text(
         json.dumps({"model-custom": {}}), encoding="utf-8")
     custom_path.chmod(0o000)
+    # WR-04 (phase-07 review): root ignores mode bits — without this skip
+    # guard (the tests/test_artifact_loader.py:48-49 idiom) a root CI
+    # container reads the file fine, the overlay merges, no SystemExit
+    # fires, and the test fails spuriously.
+    if os.access(custom_path, os.R_OK):
+        pytest.skip("permission bits not enforced (running as root)")
+    try:
+        with pytest.raises(SystemExit) as excinfo:
+            registry_loader.load_models_registry(registry_dir)
 
-    with pytest.raises(SystemExit) as excinfo:
-        registry_loader.load_models_registry(registry_dir)
-
-    assert str(custom_path) in str(excinfo.value)
+        assert str(custom_path) in str(excinfo.value)
+    finally:
+        custom_path.chmod(0o644)
 
 
 # ===== custom-dir resolution order (D-07) =====
