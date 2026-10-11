@@ -189,6 +189,24 @@ Failure boundary:
     variant flag through this driver is worse than documenting the
     standalone composition.
 
+--subset_file / --effective_batch_size / --num_train_epochs /
+--cache_dir (07-03, PIPE-02 argv parity):
+    Four pure pass-through flags threaded to every run_finetune.py child
+    as separate LIST argv elements ONLY when present (underscore names
+    only, zero alias mapping, D-11). An absent flag contributes ZERO argv
+    elements — the child's YAML/defaults govern, byte-identical to today
+    (D-12: ``--effective_batch_size`` accepts a BARE flag meaning 16 via
+    ``nargs='?' const=16``). The GA arithmetic ``max(1, N // bs_new)``
+    stays CHILD-side (run_finetune.py) — this driver never computes or
+    re-derives gradient accumulation (D-10/D-16 product semantics). The
+    two path flags resolve to ABSOLUTE paths at this layer BEFORE
+    threading (D-15: the child cwd is pinned to pipeline/). Flag sanity
+    (``effective_batch_size >= 1``, ``num_train_epochs >= 1``, non-empty
+    subset path) is validated collect-all at startup, before any cell
+    enumerates (Pitfall 5). The future TUI run-config screen (Phase 11)
+    drives sweeps exclusively through these flags — they exist CLI-first
+    with argv-shape proofs in ``tests/test_sweep.py``.
+
 FUTURE E2E note (documented here, deliberately NOT executed — D-05):
     On-disk dataset directories are DOUBLE-NESTED after a fresh unzip of
     a suite archive (the zip extracts as ``suite-name/suite-name/task-dir``
@@ -327,6 +345,51 @@ def parse_args():
              "sibling); each cell's argv appends --train_fraction <f> "
              "(run_finetune applies it to the TRAIN split only, "
              "seed-governed shuffle-then-select; dev/test untouched)"
+    )
+
+    parser.add_argument(
+        "--subset_file",
+        type=str,
+        default=None,
+        help="JSON file mapping dataset names to lists of test-split row "
+             "IDs, threaded VERBATIM to every run_finetune.py subprocess "
+             "as --subset_file <resolved absolute path> (07-03, PIPE-02 "
+             "pass-through; the child's validate_subset_file remains the "
+             "authoritative per-cell check)"
+    )
+
+    parser.add_argument(
+        "--effective_batch_size",
+        nargs="?",
+        const=16,
+        type=int,
+        default=None,
+        help="Target effective batch size threaded to every child as "
+             "--effective_batch_size <N>. A BARE flag means 16; an ABSENT "
+             "flag threads nothing (the child's YAML gradient-accumulation "
+             "governs — byte-identical to today). GA = max(1, N // bs_new) "
+             "is applied CHILD-side (run_finetune.py); this driver is pure "
+             "pass-through and never computes gradient accumulation (D-10)"
+    )
+
+    parser.add_argument(
+        "--num_train_epochs",
+        type=int,
+        default=None,
+        help="Epoch override threaded to every child as "
+             "--num_train_epochs <N> (the flag overrides the loaded "
+             "config's finetune num_train_epochs child-side; absent = the "
+             "YAML value governs — pure pass-through, D-16)"
+    )
+
+    parser.add_argument(
+        "--cache_dir",
+        type=str,
+        default=None,
+        help="Cache directory threaded to every child as --cache_dir "
+             "<resolved absolute path> (sets HF_HOME/MS_CACHE_HOME in the "
+             "child via its argv pre-scan; absent = the child's env/default "
+             "resolution governs)"
     )
 
     return parser.parse_args()
@@ -801,7 +864,9 @@ def base_model_name(model, peft="none"):
 
 
 def build_argv(model, task, seed, output_root, peft="none",
-               train_fraction=None):
+               train_fraction=None, subset_file=None,
+               effective_batch_size=None, num_train_epochs=None,
+               cache_dir=None):
     """Build the run_finetune.py argv for one cell — a LIST, never a string.
 
     Under ``peft`` lora/ia3 (06-02) the cell's model is the ALIAS
@@ -818,6 +883,15 @@ def build_argv(model, task, seed, output_root, peft="none",
     applies it to the TRAIN split only and nests its output under
     ``seed_{seed}/frac_{f}/``. Absent fraction: no extra elements.
 
+    Under the four pass-through flags (07-03, PIPE-02) each PRESENT flag
+    appends exactly two LIST elements (flag then ``str(value)``) —
+    ``--subset_file``, ``--effective_batch_size``,
+    ``--num_train_epochs``, ``--cache_dir``. An ABSENT flag contributes
+    ZERO elements, so a no-flag sweep builds the exact pre-07-03 argv
+    (D-12/D-13 absent parity). No gradient-accumulation arithmetic lives
+    here: GA = max(1, N // bs_new) is the child's existing logic (D-10/
+    D-16 — this builder is pure pass-through).
+
     Args:
         model (str): value for the cell's model identity — the BASE name
             under peft=none, the ALIAS under lora/ia3 (value for
@@ -830,6 +904,15 @@ def build_argv(model, task, seed, output_root, peft="none",
         peft (str): adapter mode none/lora/ia3.
         train_fraction (float | None): curve-lane fraction appended as
             ``--train_fraction <f>`` when given.
+        subset_file (str | None): resolved ABSOLUTE subset-map path
+            appended as ``--subset_file <path>`` when given (D-15).
+        effective_batch_size (int | None): target effective batch size
+            appended as ``--effective_batch_size <N>`` when given; the
+            child derives gradient accumulation from it.
+        num_train_epochs (int | None): epoch override appended as
+            ``--num_train_epochs <N>`` when given.
+        cache_dir (str | None): resolved ABSOLUTE cache directory
+            appended as ``--cache_dir <path>`` when given (D-15).
 
     Returns:
         list[str]: the argv, each flag and value a separate element.
@@ -847,23 +930,37 @@ def build_argv(model, task, seed, output_root, peft="none",
         argv += ["--save_model_name", str(model), "--peft", peft]
     if train_fraction is not None:
         argv += ["--train_fraction", str(train_fraction)]
+    if subset_file is not None:
+        argv += ["--subset_file", str(subset_file)]
+    if effective_batch_size is not None:
+        argv += ["--effective_batch_size", str(effective_batch_size)]
+    if num_train_epochs is not None:
+        argv += ["--num_train_epochs", str(num_train_epochs)]
+    if cache_dir is not None:
+        argv += ["--cache_dir", str(cache_dir)]
     return argv
 
 
 def launch_subprocess(model, task, seed, output_root, peft="none",
-                      train_fraction=None):
+                      train_fraction=None, subset_file=None,
+                      effective_batch_size=None, num_train_epochs=None,
+                      cache_dir=None):
     """Default executor: run run_finetune.py for one cell.
 
     cwd is pinned to PIPELINE_DIR because finetune_config.yaml and the
     ./finetuned default are CWD-relative in run_finetune.py (research
-    Pitfall 3); shell is never used (T-03-10).
+    Pitfall 3); shell is never used (T-03-10). The four pass-through
+    flags (07-03) forward verbatim — the child is the authoritative
+    validator and GA computation.
 
     Raises:
         subprocess.CalledProcessError: the run exited nonzero (check=True).
         OSError: the subprocess could not be spawned.
     """
     return subprocess.run(
-        build_argv(model, task, seed, output_root, peft, train_fraction),
+        build_argv(model, task, seed, output_root, peft, train_fraction,
+                   subset_file, effective_batch_size, num_train_epochs,
+                   cache_dir),
         cwd=PIPELINE_DIR,
         check=True,
     )
@@ -985,7 +1082,8 @@ def _manifest_payload(matrix, records):
     }
 
 
-def run_matrix(cells, output_root, executor=None, peft="none"):
+def run_matrix(cells, output_root, executor=None, peft="none",
+               sweep_flags=None):
     """Execute the sweep matrix, writing run records + manifests.
 
     Per cell (in the GIVEN order — ``main()`` passes the ``sorted()``
@@ -1035,13 +1133,21 @@ def run_matrix(cells, output_root, executor=None, peft="none"):
             phase outside those tests).
         peft (str): adapter mode none/lora/ia3 (06-02) — carried into the
             run_record ``peft`` field and the default executor's argv.
+        sweep_flags (dict | None): the PRESENT pass-through flags
+            (07-03, PIPE-02) — keys ``subset_file`` /
+            ``effective_batch_size`` / ``num_train_epochs`` /
+            ``cache_dir``, values as threaded (paths already resolved
+            absolute by ``main()``, D-15). Bound into the default
+            executor's argv; an empty/None dict binds nothing
+            (byte-identical default).
 
     Returns:
         list[dict]: the run records, one per cell, in the given cell order.
     """
     executor = (
         executor if executor is not None
-        else functools.partial(launch_subprocess, peft=peft)
+        else functools.partial(
+            launch_subprocess, peft=peft, **(sweep_flags or {}))
     )
     output_root = Path(output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -1218,6 +1324,48 @@ def main():
     fractions = None
     if args.curve is not None:
         fractions = parse_curve_fractions(args.curve)
+    # Pass-through flag sanity + resolution (07-03, PIPE-02): the four
+    # child flags validate collect-all here (Pitfall 5 — the child's own
+    # guards are partial, so nonsense batch math must die at sweep start,
+    # never mid-matrix), and the two path flags resolve to ABSOLUTE form
+    # BEFORE threading (D-15 — the child cwd is pinned to pipeline/, so a
+    # relative value would resolve against the wrong root). The
+    # sweep_flags dict carries ONLY present flags: an absent flag threads
+    # nothing at all (D-12 byte-identical-when-absent).
+    flag_problems = []
+    if args.effective_batch_size is not None and args.effective_batch_size < 1:
+        flag_problems.append(
+            f"--effective_batch_size must be >= 1, got "
+            f"{args.effective_batch_size}"
+        )
+    if args.num_train_epochs is not None and args.num_train_epochs < 1:
+        flag_problems.append(
+            f"--num_train_epochs must be >= 1, got {args.num_train_epochs}"
+        )
+    if args.subset_file is not None and not args.subset_file.strip():
+        flag_problems.append(
+            f"--subset_file {args.subset_file!r} is empty — refusing to "
+            "thread a pathless flag"
+        )
+    if flag_problems:
+        sys.exit(f"[Error] {'; '.join(flag_problems)}")
+    subset_file_abs = (
+        str(Path(args.subset_file).resolve())
+        if args.subset_file is not None else None
+    )
+    cache_dir_abs = (
+        str(Path(args.cache_dir).resolve())
+        if args.cache_dir is not None else None
+    )
+    sweep_flags = {}
+    if subset_file_abs is not None:
+        sweep_flags["subset_file"] = subset_file_abs
+    if args.effective_batch_size is not None:
+        sweep_flags["effective_batch_size"] = args.effective_batch_size
+    if args.num_train_epochs is not None:
+        sweep_flags["num_train_epochs"] = args.num_train_epochs
+    if cache_dir_abs is not None:
+        sweep_flags["cache_dir"] = cache_dir_abs
     # Operator-supplied steering inputs (05-04, T-05-09): validated the
     # same fail-fast way BEFORE enumeration — both steer multi-day GPU
     # execution, so a typo'd key must abort loudly, never silently
@@ -1292,7 +1440,8 @@ def main():
         )
         return
 
-    records = run_matrix(cells, output_root, executor=None, peft=args.peft)
+    records = run_matrix(cells, output_root, executor=None, peft=args.peft,
+                         sweep_flags=sweep_flags)
     completed = sum(1 for r in records if r["status"] == "completed")
     skipped = sum(1 for r in records if r["status"] == "skipped")
     failed = sum(1 for r in records if r["status"] == "failed")
