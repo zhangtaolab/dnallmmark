@@ -337,7 +337,7 @@ When the pipeline finished, the finetuned models will be stored at `finetuned/{m
 tensorboard --logdir=finetuned/
 ```
 
-The pipeline will also generate a summarized performance result for the target model named `{model_name}_performance.json` in the `finetuned/{model_name}/` directory. This file can be further used for visualized and comparison in the DNALLM-Mark, please see the next section for detailed usage.
+Run records land under `finetuned/{model_name}/{task}/seed_{seed}/` (metrics, parameters, resume markers). The per-model leaderboard files (`{model_name}_performance.json`) are NOT written by the training run itself — they are produced by the unified exporter in the next section.
 
 ### Export Runs to the Leaderboard
 
@@ -474,9 +474,18 @@ dnallmmark/
 │   ├── dnallmmark_pipeline.py  # DEPRECATED legacy pipeline (retained read-only for historical-run attribution)
 │   ├── finetune_config.yaml  # Training script
 │   └── finetune_config_with_head.yaml  # Configuration file with specific head
-├── script/                   # Data processing scripts (Python — run from dnallm-mark/data/)
+├── script/                   # Data processing scripts (Python — repo-root-runnable via make/uv)
 │   ├── summarize_comparison.py  # Generate summary comparison data
-│   └── export_runs.py           # Unified exporter (run records -> task_performance; E2' path, repo-root-runnable)
+│   ├── export_runs.py           # Unified exporter (run records -> task_performance; E2' path)
+│   ├── convert_registry.py      # Bidirectional registry JSON<->CSV (provenance correction path)
+│   ├── audit_n_frequencies.py   # N-frequency + non-ACGT census + eval-subset emission
+│   ├── make_dev_splits.py       # Stratified dev-split carving
+│   ├── freeze_snapshot.py       # Results snapshot tar + SHA-256 manifest (make snapshot)
+│   ├── run_migration_inventory.py  # Data-migration diff inventory + write-manifest
+│   ├── permutation_tests.py     # Pairwise permutation tests (861-family, BH-corrected)
+│   ├── build_frontier.py        # Cost-accuracy frontier table generator
+│   ├── zero_shot_vep.py         # Zero-shot VEP registry batch driver
+│   └── doi_swap.py              # Zenodo DOI swap preparation (maintainer-executed)
 ├── scripts/                  # One-off generators (Node — run from repo root)
 │   └── generate-tasks-index.js  # Regenerate data/tasks.json task index
 ├── baseline/                 # Reproducibility baseline (JSON comparator + SHA256 manifests + pin-validation evidence)

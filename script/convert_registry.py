@@ -103,7 +103,7 @@ Usage
         <(python -c "import json;print(json.dumps(json.load(open('/tmp/d.json')),sort_keys=True,indent=1))")
 
 See also:
-    ``script/get_task_performance.py`` for the stdlib-only registry-reading
+    ``script/audit_n_frequencies.py`` for the stdlib-only registry-reading
     style this script follows.
 """
 

@@ -28,7 +28,7 @@ function generateTaskIndex() {
       const content = fs.readFileSync(filePath, 'utf8');
       data = JSON.parse(content);
     } catch (e) {
-      // Per-file skip (same convention as script/get_task_performance.py):
+      // Per-file skip (same convention as script/audit_n_frequencies.py):
       // one malformed task file logs a [Skip] line and is left out of the
       // index instead of aborting the whole build.
       console.warn(`  [Skip] Failed to read file ${file}: ${e.message}`);

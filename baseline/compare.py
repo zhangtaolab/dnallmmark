@@ -52,7 +52,7 @@ See also:
       files frozen at git tag ``data-v1`` (the pre-fix byte baseline).
     - ``baseline/PIN-VALIDATION.md`` — empirical pin-validation evidence built
       on this comparator (D-05/D-06).
-    - ``script/get_task_performance.py`` — project script-skeleton conventions.
+    - ``script/audit_n_frequencies.py`` — project script-skeleton conventions.
 """
 
 import argparse

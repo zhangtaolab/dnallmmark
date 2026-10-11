@@ -34,8 +34,11 @@ DNALLM-Mark is a DNA language-model benchmark platform: a PyTorch fine-tuning pi
 ## Runtime
 
 - Python 3.11+ required (per `README.md` badge); GPU with CUDA expected for pipeline training (`torch.cuda.manual_seed_all` at `pipeline/dnallmmark_pipeline.py:752`, bf16 autocast at `pipeline/dnallmmark_pipeline.py:1095`)
+- Data chain pinned to Python 3.13 via `.python-version` (uv-managed; plan 01-01, D-07)
 - Node.js 18+ optional (only needed for `npx http-server` fallback in `start-server.sh:20-22`)
-- None declared. No `requirements.txt`, `pyproject.toml`, `package.json`, or lockfiles exist in the repo. Install `dnallm`, `torch`, `transformers`, `numpy`, `pandas` manually.
+- uv 0.12.23 with committed lockfile (plan 01-01): `pyproject.toml` (PEP 621 + PEP 735 `[dependency-groups]`) + `uv.lock` + pip-compatible `requirements.txt` export (`uv export --group data --no-emit-project`)
+- Groups: `data` (default; `pandas>=2.2,<3.0`, `numpy>=2.0,<3` — D-05 floor bounds, locked to pandas 2.3.3 / numpy 2.5.3), `dev` (empty until Phase 2), `pipeline` (GPU-only `torch>=2.0`, `transformers>=4.0` — never CI-installed; `dnallm` deliberately absent until Phase 3)
+- Fresh install: `uv sync` (data group only); pin-validation evidence in `baseline/PIN-VALIDATION.md`
 
 ## Frameworks
 
@@ -70,7 +73,8 @@ DNALLM-Mark is a DNA language-model benchmark platform: a PyTorch fine-tuning pi
 
 ## Platform Requirements
 
-- Python 3.11+ with `dnallm`, `torch`, `transformers`, `numpy`, `pandas` installed manually
+- Data chain: `uv venv .venv --python 3.13 && uv sync` (repo-local venv; pandas/numpy from the committed lockfile)
+- Pipeline: `dnallm`, `torch`, `transformers` installed manually (`uv sync --group pipeline` + dnallm from the local dev clone in Phase 3)
 - Any static file server for the web UI (`python3 -m http.server` or `npx http-server`)
 - Internet access at runtime for CDN scripts (Chart.js, xlsx) — the UI breaks offline
 - None configured. Static hosting for `dnallm-mark/` is implied (GitHub Pages-style); the fine-tuning pipeline targets a single CUDA GPU workstation with models in `pipeline/models/` and datasets in `pipeline/datasets/` (both gitignored, downloaded externally)
