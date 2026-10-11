@@ -4,12 +4,12 @@ milestone: v1.2
 milestone_name: TUI任务
 current_phase: 07
 current_phase_name: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
-status: planning
+status: executing
 stopped_at: Phase 7 context gathered
-last_updated: "2026-10-11T05:38:33.650Z"
+last_updated: "2026-10-11T05:39:37.124Z"
 last_activity: 2026-10-11
-last_activity_desc: "v1.2 roadmap revised: custom-entries category folded in (6 phases 7-12, 38/38 requirements mapped)"
-state_head: 8c11a600b2f63b93c92159997660bdb7f421e183
+last_activity_desc: Phase 07 execution started
+state_head: 1bb86fbb6acbbe077845261c819ff078d1175974
 progress:
   total_phases: 6
   completed_phases: 0
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-11)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 7 — Pipeline-Side Enablement (FlopsCounter port + argv threading + registry overlay)
+**Current focus:** Phase 07 — Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
 
 ## Current Position
 
-Phase: 07 (Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)) — READY TO EXECUTE
-Plan: — (not yet planned)
-Status: Roadmap revised (maintainer custom-entries adjustment) — ready to discuss/plan Phase 7 (awaiting maintainer approval of the revision)
-Last activity: 2026-10-11 — v1.2 roadmap revised: custom-entries category folded in (6 phases 7-12, 38/38 requirements mapped)
+Phase: 07 (Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 07
+Last activity: 2026-10-11 — Phase 07 execution started
 
 Progress (v1.2): [░░░░░░░░░░] 0%
 

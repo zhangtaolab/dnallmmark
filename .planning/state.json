@@ -1,43 +1,43 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v0.7.1",
+  "milestone": "v1.2 — TUI任务",
   "phases": [
     {
-      "number": "1",
-      "name": "Audit & Release Foundations",
-      "status": "complete"
+      "number": "7",
+      "name": "Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)",
+      "status": "pending"
     },
     {
-      "number": "2",
-      "name": "Data Contracts & Test Harness",
-      "status": "complete"
+      "number": "8",
+      "name": "TUI Foundation (Env Check & Selection)",
+      "status": "pending"
     },
     {
-      "number": "3",
-      "name": "Pipeline Adaptation to dnallm Dev",
-      "status": "complete"
+      "number": "9",
+      "name": "Custom Model & Dataset Onboarding",
+      "status": "pending"
     },
     {
-      "number": "4",
-      "name": "Correctness Fixes",
-      "status": "complete"
+      "number": "10",
+      "name": "Data Manager (Downloads & Verification)",
+      "status": "pending"
     },
     {
-      "number": "5",
-      "name": "CI & Verified Data Migration",
-      "status": "complete"
+      "number": "11",
+      "name": "Run Config, Launch Gates & Single-GPU Monitoring",
+      "status": "pending"
     },
     {
-      "number": "6",
-      "name": "Release Packaging & Provenance",
-      "status": "complete"
+      "number": "12",
+      "name": "Multi-GPU Orchestration & Console Hardening",
+      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:progress",
-    "label": "Show progress",
-    "reason": "Unsure of state — showing progress"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 07 of 6 · 0% · executing"
   },
-  "updated_at": "2026-10-11T03:09:40.364Z"
+  "updated_at": "2026-10-11T05:39:37.136Z"
 }
