@@ -8,16 +8,16 @@
 ### Environment Check (启动体检)
 
 - [x] **ENV-01**: TUI 启动即运行完整环境检查（复用 env_smoke 检查内核：版本 pin/dnallm 导入/CUDA/数据集目录/numpy≥2/peft），以状态面板呈现每项 ✓/✗ + 详情
-- [ ] **ENV-02**: 检查结果持久化并显示检查日期（"上次检查：YYYY-MM-DD HH:MM"）；提供刷新动作随时重检；同日重复启动读缓存不强制重跑
-- [ ] **ENV-03**: 关键 FAIL（无 GPU/依赖缺失）阻止进入启动流程；缺数据项引导至数据管理面板
-- [ ] **ENV-04**: 每次启动任务前的快检（轻量重验启动所需子集）
+- [x] **ENV-02**: 检查结果持久化并显示检查日期（"上次检查：YYYY-MM-DD HH:MM"）；提供刷新动作随时重检；同日重复启动读缓存不强制重跑
+- [x] **ENV-03**: 关键 FAIL（无 GPU/依赖缺失）阻止进入启动流程；缺数据项引导至数据管理面板
+- [x] **ENV-04**: 每次启动任务前的快检（轻量重验启动所需子集）
 
 ### Selection (选择)
 
 - [ ] **SEL-01**: 模型列表与数据集列表分别呈现可浏览选择（62 模型 / 50 数据集，含关键卡片字段列）；k9s 式过滤+标记集（arena/类型/物种/规模）+ 空格键标记 + 稳定 row_key 集合；只读矩阵总览作为辅助视图（非编辑界面）
 - [ ] **SEL-02**: 预设组一键选择：tier-1 E2E 对、tier-2 arena 代表、全部、自定义保存
 - [ ] **SEL-03**: 模板导入/导出：运行配置模板（模型×任务×种子×PEFT×变体×GA 完整参数集）JSON 文件，导入时校验；与 sweep_priorities.json tier 结构兼容或提供互转
-- [ ] **SEL-04**: 每行显示本地数据状态（✓ 在场 / ✗ 缺失 + n_audit 行数）
+- [x] **SEL-04**: 每行显示本地数据状态（✓ 在场 / ✗ 缺失 + n_audit 行数）
 
 ### Custom Entries (自定义模型/数据集接入 — 用户自维护，与官方注册表分离)
 
@@ -91,13 +91,13 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | ENV-01 | Phase 8 | Complete |
-| ENV-02 | Phase 8 | Pending |
-| ENV-03 | Phase 8 | Pending |
-| ENV-04 | Phase 8 | Pending |
+| ENV-02 | Phase 8 | Complete |
+| ENV-03 | Phase 8 | Complete |
+| ENV-04 | Phase 8 | Complete |
 | SEL-01 | Phase 8 | Pending |
 | SEL-02 | Phase 8 | Pending |
 | SEL-03 | Phase 8 | Pending |
-| SEL-04 | Phase 8 | Pending |
+| SEL-04 | Phase 8 | Complete |
 | CUST-01 | Phase 9 | Pending |
 | CUST-02 | Phase 9 | Pending |
 | CUST-03 | Phase 9 | Pending |

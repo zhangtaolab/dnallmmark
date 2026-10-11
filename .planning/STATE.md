@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 08
 current_phase_name: TUI Foundation (Env Check & Selection)
 status: executing
-stopped_at: Completed 08-03-PLAN.md
-last_updated: "2026-10-11T12:02:21.475Z"
+stopped_at: Completed 08-04-PLAN.md
+last_updated: "2026-10-11T12:44:20.246Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 08 execution started
-state_head: 6b78026c0c6e9b168aa6573d85f30c38c3fbd02d
+state_head: 25a4d617ccf6772da128986d338b2a1acf3054d6
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 13
-  completed_plans: 9
+  completed_plans: 10
   percent: 17
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 08 (TUI Foundation (Env Check & Selection)) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-10-11 — Phase 08 execution started
 
@@ -67,6 +67,7 @@ Progress (v1.2): [███████░░░] 69% (9/13 plans)
 | Phase 08 P08-01 | 17 min | 2 tasks | 2 files |
 | Phase 08 P08-02 | 84 min | 2 tasks | 11 files |
 | Phase 08 P08-03 | 15 min | 1 tasks | 8 files |
+| Phase 08 P08-04 | 32 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 08]: 08-03 tracer landed: console boots on the env-check shell (seven pending rows, main() kernel order, stable kernel-id row keys) and the first service crosses the tui-to-pipeline seam (load_registry_counts -> RegistryCounts(62, 50) from the real overlay-merged registries); services-textual-free import lock green and non-vacuous from the first module
 - [Phase 08]: 08-03 Rule 3: Makefile test-fast + ci gain --group tui — pytest imports every collected module before -m filtering, so the first textual-importing test file would break both lanes on a fresh dev-only venv; every pytest lane now carries textual-the-library (D-01 posture), data/gpu lanes untouched
 - [Phase 08]: 08-03 RUF012 resolved by mirroring the App base ClassVar annotations verbatim (BINDINGS: ClassVar[list[BindingType]], SCREENS: ClassVar[dict[str, Callable[[], Screen[Any]]]]) — framework-read class constants, truthful typing, no noqa
+- [Phase 08]: 08-04 env/registry services landed: five textual-free services — settings (D-04 XDG state/config split via platformdirs + whole-dir env overrides + atomic writes), env_check (D-05 same-local-day cache + whole-item persistence over the imported env_smoke kernels, D-02 import-only), env_gate (D-09 pure judgment; CRITICAL = six ids incl. numpy — the plan action's five-id list omitted numpy, resolved as a plan-text slip per the seven-coverage contract), quick_check (six non-matmul ids, computed on demand, never persisted), registries (canonical entries + MODEL_CARD_* casing-twin constants + presence_for pure data from n_audit, D-08); zero pipeline changes (D-10)
+- [Phase 08]: 08-04 seams for the rest of Phase 8: default_kernels() is the one shared env_smoke sequence (main() order, torch-gate two-False fallback) consumed by run_full_check, quick_check's subset, and the 08-06 worker; run_full_check(kernels=None, state_path=None, now=None) grew explicit persistence-target/moment params; canonical entry vocabulary models {key,type,species,size_m,card} / datasets {key,category,type,metric,card} + MODEL_CARD_* casing constants (committed card twins genuinely diverge — prokbert-mini Mean_token_length 6 vs mean_token_len 1) are the 08-05 filter / 08-07 column contract; presence_for's four statuses (present/missing/unknown/unavailable) with exact integer rows
 
 ### Pending Todos
 
@@ -125,8 +128,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11T12:02:21.443Z
-Stopped at: Completed 08-03-PLAN.md
+Last session: 2026-10-11T12:44:20.213Z
+Stopped at: Completed 08-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

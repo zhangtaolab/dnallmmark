@@ -187,7 +187,7 @@ dnallmmark/                       # Repository root
 
 **New TUI screen or service** *(since Phase 8, 08-02)*:
 - Screen: `tui/screens/{name}.py` — Textual presentation only, services injected via constructor, copy from `tui/strings.py` constants, `ModalScreen` for drill-downs/confirms
-- Service: `tui/services/{name}.py` — pure orchestration + I/O; may import only stdlib, `platformdirs`, and the pipeline modules (`env_smoke`/`registry_loader`/`artifact_loader` — never textual); the import-lock test is the tripwire
+- Service: `tui/services/{name}.py` — pure orchestration + I/O; may import only stdlib, `platformdirs`, the pipeline modules (`env_smoke`/`registry_loader`/`artifact_loader` — never textual), and sibling services within the tier (e.g. `quick_check` → `env_check` → `settings`, 08-04); the import-lock test is the tripwire. Landed services (08-03/08-04): `registries` (entries + presence), `settings` (D-04 XDG roots + atomic writes), `env_check` (kernel orchestration + same-day cache), `env_gate` (pure launch judgment), `quick_check` (six-kernel launch subset)
 - Coverage joins automatically: lint via the `PHASE8_TUI` Makefile wildcard, ty via `[tool.ty.src]`, pytest via `tests/tui/conftest.py` (repo root on sys.path)
 
 ## Special Directories
