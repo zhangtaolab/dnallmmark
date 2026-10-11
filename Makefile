@@ -101,15 +101,23 @@ test: check-node
 	$(UV) run --group dev --group tui pytest
 	node --test tests/js/*.test.js
 
+# 08-03 (Rule 3): --group tui joins this lane and the ci lane below too —
+# tests/tui now carries textual-importing modules (the 08-03 Pilot boot
+# test), and pytest imports every collected module BEFORE -m filtering,
+# so a fresh dev-only venv would fail collection. Same D-01 posture as
+# test: textual-the-library rides the existing lanes; the data/gpu lanes
+# still never see textual.
 test-fast:
-	$(UV) run --group dev pytest -m "not slow"
+	$(UV) run --group dev --group tui pytest -m "not slow"
 
 # The pinned CI lane (Phase 5, REV-06 Q2): exactly the tests the CI workflow's
 # test job replays — the golden replay over the committed e2_replay fixture
 # plus the three reused classes (metric-key parity, species spot checks,
 # aggregation units) via the `ci` pytest marker registered in pyproject.toml.
+# (--group tui: see the 08-03 note at test-fast — collection imports
+# tests/tui; the marker filter runs after.)
 ci: check-node
-	$(UV) run --group dev pytest -m ci
+	$(UV) run --group dev --group tui pytest -m ci
 
 # Lint scope (Phase 3 decision, D-08): tests/ plus the explicit list of
 # Phase-authored/edited files whose findings are FIXED — script/make_dev_splits.py
