@@ -202,6 +202,27 @@ def test_unified_n_is_min_over_model_classes(tmp_path):
     assert len(subsets["CLEAN"]) == 3
 
 
+def test_zero_unified_n_omits_subset_entry_with_warning(tmp_path, capsys):
+    """WR-02 (phase-07 review): a readable test split where NO row
+    survives the strict filter (unified_eval_n == 0) emits NO
+    eval_subsets entry, with a warning — the audit once wrote ``[]``,
+    which run_finetune's apply seam treated as "no entry" and silently
+    evaluated the FULL test split while the operator believed the
+    unified-N fairness subset was applied."""
+    build_task(tmp_path, "GUE/alln", {"test": ["ACGTN", "NNNN"]})
+    registry = {"Z": make_registry_entry("datasets/GUE/alln")}
+    tasks, subsets, _paths = run_audit(registry, tmp_path, tmp_path / "out")
+    assert tasks["Z"]["unified_eval_n"] == 0
+    assert "Z" not in subsets, (
+        "a unified_eval_n == 0 task must get no subset entry — an empty "
+        "list silently means full evaluation downstream"
+    )
+    loaded = json.loads(
+        (tmp_path / "out" / "eval_subsets.json").read_text(encoding="utf-8"))
+    assert loaded == {}
+    assert "unified_eval_n is 0" in capsys.readouterr().out
+
+
 def test_emitted_ids_survive_common_filter_and_are_first_n(tmp_path):
     """Every emitted subset ID passes an independent oracle of the
     pipeline filter; IDs are ascending file order; the list is the

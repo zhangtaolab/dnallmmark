@@ -985,6 +985,24 @@ def test_subset_validator_rejects_non_list_value(tmp_path):
     assert any("TASK" in p and "int" in p for p in problems), problems
 
 
+def test_subset_validator_refuses_empty_id_list(tmp_path):
+    """WR-02 (phase-07 review): a task mapped to an EMPTY list is refused
+    by name — apply_eval_subset's ``if not ids`` no-op treats ``[]`` like
+    "no entry", silently evaluating the FULL test split while the operator
+    believes the unified-N fairness subset is applied (the audit could
+    emit exactly this for a task whose unified_eval_n is 0)."""
+    validate, _apply = extract_subset_fns()
+    path = write_subset_file(tmp_path, {"TASK": [], "OTHER": [1]})
+    subsets, problems = validate(path, REGISTRY_5)
+    assert subsets is None, "an empty ID list must fail validation"
+    assert any(
+        "TASK" in p and "empty ID list" in p for p in problems
+    ), problems
+    assert any("full evaluation" in p for p in problems), (
+        "the problem must say WHY an empty list is refused"
+    )
+
+
 def test_subset_validator_refuses_dataset_name_divergence(tmp_path):
     """WR-03 (05 review): a registry row whose Dataset_name differs from
     its registry key is refused by name — the map is keyed on registry

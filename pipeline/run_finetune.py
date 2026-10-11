@@ -352,6 +352,19 @@ def validate_subset_file(subset_path, datasets_info):
                 "of integer row IDs"
             )
             continue
+        if not ids:
+            # WR-02 (phase-07 review): an empty ID list cannot mean full
+            # evaluation — the apply seam's ``if not ids`` no-op would
+            # silently evaluate the WHOLE test split while the operator
+            # believes the unified-N fairness subset is applied (the audit
+            # can emit exactly this for a task whose unified_eval_n is 0),
+            # so it is refused by name like every other malformed class.
+            problems.append(
+                f"{task}: empty ID list — an empty subset cannot mean "
+                "full evaluation; remove the key or investigate the "
+                "audit's unified_eval_n=0"
+            )
+            continue
         test_rows = int(datasets_info[task].get("Test") or 0)
         for row_id in ids:
             if isinstance(row_id, bool) or not isinstance(row_id, int):

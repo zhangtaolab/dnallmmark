@@ -309,15 +309,25 @@ def audit_task(
     unified = min(
         test_stats["strict_survivors"], test_stats["n_tolerant_survivors"]
     )
-    # The subset IDs: ascending strict-passing row indices, truncated to
-    # N. Every emitted ID itself survives the COMMON filter by
-    # construction (Pitfall 4).
-    subset_ids = sorted(test_strict_ids)[:unified]
     result = {
         "missing": False,
         "unified_eval_n": unified,
         "splits": splits,
     }
+    # The subset IDs: ascending strict-passing row indices, truncated to
+    # N. Every emitted ID itself survives the COMMON filter by
+    # construction (Pitfall 4). WR-02 (phase-07 review): a task with
+    # unified == 0 gets NO subset entry (plus a warning) — the audit once
+    # emitted ``[]``, which run_finetune's apply seam treated as "no
+    # entry" and silently evaluated the FULL test split.
+    if unified == 0:
+        print(
+            f"WARNING {name}: unified_eval_n is 0 — no eval-subset entry "
+            "is emitted (an empty list would silently disable the "
+            "unified-N fairness subset downstream)"
+        )
+        return result, None
+    subset_ids = sorted(test_strict_ids)[:unified]
     return result, subset_ids
 
 
