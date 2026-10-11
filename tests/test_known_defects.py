@@ -19,8 +19,9 @@ unmarked in Phase 4):
   string as a dataset entry's ``species`` (e.g. ``"athaliana"``) instead
   of the dataset's arena category. PIVOTED in Phase 03-01 (decision D-03):
   the original lock anchored on the old pipeline's construction-site AST
-  and retired in the same commit as F10's deprecation of
-  ``pipeline/dnallmmark_pipeline.py``. The contract now asserts the
+  and retired in the same commit as F10's deprecation of the old
+  monolithic pipeline script (itself deleted at Phase 7 per D-04 — git
+  history is the reference). The contract now asserts the
   EXPORT-CHAIN OUTPUT directly over a repo-authored fixture result JSON
   (:func:`test_aud01_species_matches_dataset_arena_category`): every
   dataset entry's ``species`` must equal the dataset's ``Category`` field

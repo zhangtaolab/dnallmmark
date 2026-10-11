@@ -87,7 +87,8 @@
 - [X] 断点续跑状态（trainer_state.json 标记识别）
 
 - 补充：＿＿＿目前部分新架构以及混合架构 tensorboard默认计算的flops有些问题， 这部分需要额外加一个模块来评估flops？
-  > 【核查 2026-10-11】是真实缺口：旧 `dnallmmark_pipeline.py` 的 FlopsCounter（20+ 架构前向钩子：Mamba/SSM/Hyena/BigBird/GQA…）未随 dev 重写移植到 `run_finetune.py`；HF Trainer 对混合架构的 total_flos 不可靠，而排行榜效率轴依赖它。**建议列为独立 work package**（受益方不止 TUI，含 E2' 的 FLOPs 采集正确性），置于 P3 前落地。
+  > 【核查 2026-10-11】是真实缺口：旧管线的 FlopsCounter（20+ 架构前向钩子：Mamba/SSM/Hyena/BigBird/GQA…）未随 dev 重写移植到 `run_finetune.py`；HF Trainer 对混合架构的 total_flos 不可靠，而排行榜效率轴依赖它。**建议列为独立 work package**（受益方不止 TUI，含 E2' 的 FLOPs 采集正确性），置于 P3 前落地。
+  > 【更新 2026-10-11, Phase 7 已落地】FlopsCounter 已原样移植为 `pipeline/flops_counter.py`（CPU 可导入、无模块级 torch 依赖），`run_finetune.py` 经校准槽位集成并按 run 写出 `flops_report.json`；旧的单体管线脚本已按 D-04 删除（git 历史即参考）。
 
 ### 3.6 环境与安全边界
 

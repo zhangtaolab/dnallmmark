@@ -471,7 +471,7 @@ dnallmmark/
 │   ├── datasets_info.json    # Datasets information
 │   ├── models_info.json      # Models information
 │   ├── run_finetune.py         # Training script (benchmark entry point)
-│   ├── dnallmmark_pipeline.py  # DEPRECATED legacy pipeline (retained read-only for historical-run attribution)
+│   ├── flops_counter.py        # FLOPs instrumentation (FlopsCounter port; writes flops_report.json per run)
 │   ├── finetune_config.yaml  # Training script
 │   └── finetune_config_with_head.yaml  # Configuration file with specific head
 ├── script/                   # Data processing scripts (Python — repo-root-runnable via make/uv)

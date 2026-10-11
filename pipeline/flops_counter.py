@@ -1,9 +1,10 @@
 """
 flops_counter.py — CPU-importable FlopsCounter port (Phase 7, PIPE-01).
 
-Ported from the deprecated ``pipeline/dnallmmark_pipeline.py:43-720`` (the
-legacy per-architecture FLOPs accounting; that file is scheduled for
-deletion per D-04 — git history remains the reference). Hook formulas and
+Ported from the deprecated pre-rewrite pipeline script's :43-720 span (the
+legacy per-architecture FLOPs accounting; that file was deleted at Phase 7
+per D-04 — git history is the reference, final commit
+1b74037e14defbe7ed94f798e2f3f91b0d184ce6). Hook formulas and
 the ``_register_hooks`` dispatch order are ported VERBATIM: the math
 encodes non-obvious decisions behind every historical leaderboard number,
 so re-derivation is forbidden (Don't-Hand-Roll discipline).
@@ -800,7 +801,7 @@ class FlopsCounter:
 
 def count_split_tokens(hf_dataset):
     """Count total input_ids tokens and carrying samples in a HF split
-    (ported verbatim from dnallmmark_pipeline.py:711-720)."""
+    (ported verbatim from the deleted legacy pipeline script :711-720)."""
     if hf_dataset is None:
         return 0, 0
     n_tokens = 0
@@ -850,8 +851,9 @@ def _torch():
 def calibration_forward(model, model_name, bf16, batch_sample):
     """Run ONE no_grad calibration forward on a single train sample.
 
-    Ported verbatim from dnallmmark_pipeline.py:1086-1148 (the legacy
-    pre-training FLOPs pass): the evo2-backbone special case, the bf16
+    Ported verbatim from the deleted legacy pipeline script :1086-1148
+    (the legacy pre-training FLOPs pass): the evo2-backbone special case,
+    the bf16
     autocast branch, the plain branch, and the except-retry with an
     attention_mask of ones; a second failure prints and continues (the
     calibration is best-effort — training proceeds regardless). The caller

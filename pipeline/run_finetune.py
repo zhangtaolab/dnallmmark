@@ -546,11 +546,11 @@ def init_layer(module):
 
 def determine_batch_size(max_length, batch_size):
     # LENGTH-TIER BATCH ROUNDING (WR-04, legacy parity)
-    # Ported verbatim from the deprecated pipeline's tier table
-    # (pipeline/dnallmmark_pipeline.py:791-811, read-only behavioral
-    # reference): the resolved sequence length puts an initial cap on the
-    # configured batch size. The VRAM estimators below may reduce further
-    # but never raise past this cap.
+    # Ported verbatim from the deleted legacy pipeline script's tier
+    # table (:791-811 at its final commit 1b74037e — git history is the
+    # reference, D-04): the resolved sequence length puts an initial cap
+    # on the configured batch size. The VRAM estimators below may reduce
+    # further but never raise past this cap.
     if max_length <= 512:
         dynamic_batch_size = batch_size
     elif max_length <= 1024:
@@ -1440,8 +1440,8 @@ if __name__ == "__main__":
                 # always-on — no flag, no opt-in): hooks registered, ONE
                 # no_grad calibration forward on train[0], hooks removed
                 # BEFORE the DNATrainer ctor below — the training path is
-                # never instrumented (the legacy
-                # dnallmmark_pipeline.py:1072-1157 chain, ported into
+                # never instrumented (the deleted legacy pipeline's
+                # :1072-1157 chain, ported into
                 # pipeline/flops_counter.py by 07-01; evo2-backbone / bf16
                 # autocast / plain branches and the single attention_mask
                 # retry live in calibration_forward — Pitfall 8: nothing

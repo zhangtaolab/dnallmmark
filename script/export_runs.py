@@ -283,8 +283,9 @@ _ALIAS_TO_CANONICAL: dict[str, str] = {
 }
 
 # Canonical -> export metricBlock slot. The legacy producer's hardcoded
-# semantics (pipeline/dnallmmark_pipeline.py:1273-1285), formalized as the
-# single mapping table.
+# semantics (the deleted pre-rewrite pipeline script :1273-1285 — see the
+# flops_report/quirk lineage in pipeline/flops_counter.py's port notes),
+# formalized as the single mapping table.
 CANONICAL_TO_EXPORT: dict[str, str] = {
     "accuracy": "accuracy",
     "precision": "precision",

@@ -2,6 +2,8 @@
 
 **Scope:** pipeline / data scripts / frontend at commit `788e909` (tag `data-v1`, pre-fix state). The working tree equals the tagged state for all three audited subsystems — plan 01-01 of this milestone added only root-level substrate files (`baseline/`, `pyproject.toml`, `uv.lock`, `requirements.txt`, `.python-version`) and touched no audited code or data.
 
+> **Post-audit note (Phase 7, 2026-10-11):** `pipeline/dnallmmark_pipeline.py` — the audited pipeline file cited throughout the findings below — was **deleted at Phase 7** after its FlopsCounter port to `pipeline/flops_counter.py` and the `run_finetune.py` rewrite superseded it (decision D-04; the pre-Phase-7 parity reference is retained in git history — final commit `1b74037`). The findings below are historical records: their file/line citations point at the file as it stood at audit time and must not be read as claims about the current tree.
+
 **Method:** parallel systematic review with one reviewer per subsystem (pipeline / data scripts / frontend); every finding independently reproduced before grading. An internal seed inventory (CONCERNS.md, mapped 2026-10-08) was used as input hypotheses to re-verify — never as conclusions. Findings sharing one root cause are merged into a single row citing every affected site.
 
 ## Executive summary
