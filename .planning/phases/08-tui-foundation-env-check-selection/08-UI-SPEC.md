@@ -1,7 +1,8 @@
 ---
 phase: "8"
 slug: "tui-foundation-env-check-selection"
-status: draft
+status: approved
+reviewed_at: "2026-10-11"
 shadcn_initialized: false
 preset: none
 created: "2026-10-11"
@@ -382,6 +383,14 @@ no download, no registry writes.
 > Considerations` lift rule. State-rooted UI coverage (empty / loading / error / populated /
 > partial / overflow / zero-one-many / long-text). Copy lives in `## Copywriting Contract`
 > above — this section references those rows.
+>
+> **Post-verification probe cross-check (2026-10-11, --auto):** the compiled
+> ui-consideration-probe engine ran over the spec's 10 described surfaces after checker
+> approval — 61 applicable category pairs, 2 unclassified elements (footer/status line,
+> confirm modals; both hand-covered by rows below). Kind-confirmation found no
+> state-significant pair missing from this table; the engine's additional cross-product
+> pairs are trivial states for a fixed-row terminal table UI and are covered by the
+> screen-level contracts in §Screen Layouts / §Keyboard & Interaction Contract.
 
 Applicable state considerations resolved: 16 covered, 2 backstop, 1 unresolved
 
@@ -450,12 +459,12 @@ override any row at plan review without invalidating the spec.
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
-- [ ] Dimension 7 Inventory Provenance: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
+- [x] Dimension 7 Inventory Provenance: PASS (1 non-blocking FLAG — re-enumerate after `uv sync --group tui` lands and record the full provenance line; the current widget table is disclosure, not an allowlist)
 
-**Approval:** pending
+**Approval:** approved 2026-10-11 — gsd-ui-checker verdict APPROVED (1 FLAG, 0 BLOCK)
