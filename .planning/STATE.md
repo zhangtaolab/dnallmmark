@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 08
 current_phase_name: TUI Foundation (Env Check & Selection)
 status: executing
-stopped_at: Completed 08-04-PLAN.md
-last_updated: "2026-10-11T12:44:20.246Z"
+stopped_at: Completed 08-05-PLAN.md
+last_updated: "2026-10-11T13:38:35.279Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 08 execution started
-state_head: 25a4d617ccf6772da128986d338b2a1acf3054d6
+state_head: 059673760053b89c5dda3f3916fe9ab771ec7dcb
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 13
-  completed_plans: 10
+  completed_plans: 11
   percent: 17
 ---
 
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 08 (TUI Foundation (Env Check & Selection)) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Last activity: 2026-10-11 — Phase 08 execution started
 
-Progress (v1.2): [███████░░░] 69% (9/13 plans)
+Progress (v1.2): [████████░░] 85% (11/13 plans)
 
 ## Performance Metrics
 
@@ -50,7 +50,7 @@ Progress (v1.2): [███████░░░] 69% (9/13 plans)
 | 01 / 02 / 03 | 3 / 3 / 4 — all complete |
 | 04 / 05 / 06 | 5 / 4 / 5 — all complete |
 
-**v1.2:** Phase 7 complete (6 plans, 2026-10-11); Phase 8 plans 1-2 of 7 complete (08-01, 08-02).
+**v1.2:** Phase 7 complete (6 plans, 2026-10-11); Phase 8 plans 1-5 of 7 complete (08-01..08-05).
 
 *Updated after each plan completion*
 **Per-Plan Metrics:**
@@ -68,6 +68,7 @@ Progress (v1.2): [███████░░░] 69% (9/13 plans)
 | Phase 08 P08-02 | 84 min | 2 tasks | 11 files |
 | Phase 08 P08-03 | 15 min | 1 tasks | 8 files |
 | Phase 08 P08-04 | 32 min | 3 tasks | 13 files |
+| Phase 08 P08-05 | 26 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 08]: 08-03 RUF012 resolved by mirroring the App base ClassVar annotations verbatim (BINDINGS: ClassVar[list[BindingType]], SCREENS: ClassVar[dict[str, Callable[[], Screen[Any]]]]) — framework-read class constants, truthful typing, no noqa
 - [Phase 08]: 08-04 env/registry services landed: five textual-free services — settings (D-04 XDG state/config split via platformdirs + whole-dir env overrides + atomic writes), env_check (D-05 same-local-day cache + whole-item persistence over the imported env_smoke kernels, D-02 import-only), env_gate (D-09 pure judgment; CRITICAL = six ids incl. numpy — the plan action's five-id list omitted numpy, resolved as a plan-text slip per the seven-coverage contract), quick_check (six non-matmul ids, computed on demand, never persisted), registries (canonical entries + MODEL_CARD_* casing-twin constants + presence_for pure data from n_audit, D-08); zero pipeline changes (D-10)
 - [Phase 08]: 08-04 seams for the rest of Phase 8: default_kernels() is the one shared env_smoke sequence (main() order, torch-gate two-False fallback) consumed by run_full_check, quick_check's subset, and the 08-06 worker; run_full_check(kernels=None, state_path=None, now=None) grew explicit persistence-target/moment params; canonical entry vocabulary models {key,type,species,size_m,card} / datasets {key,category,type,metric,card} + MODEL_CARD_* casing constants (committed card twins genuinely diverge — prokbert-mini Mean_token_length 6 vs mean_token_len 1) are the 08-05 filter / 08-07 column contract; presence_for's four statuses (present/missing/unknown/unavailable) with exact integer rows
+- [Phase 08]: D-07 ratified verbatim 2026-10-11 (maintainer: ratify): schemas/run_template.json field set frozen as proposed — schema_version const 1, models/tasks minItems 1 unique, seeds default 42/43/44, peft none/lora/ia3, config_variant default/head/probe/curve, optional curve_fractions/subset_file/effective_batch_size(>=1)/num_train_epochs(>0)/cache_dir; GA semantics in $comment (GA = max(1, effective_batch // batch_size), maintainer default 16, small-model batch 64 -> GA 1); custom presets -> presets.json under XDG config root; ONE-WAY from landing — field names are a published contract consumed by the Phase 11 run-config screen
+- [Phase 08]: 08-05 tier interop encoding: template_to_tiers emits one tier of explicit cross-product pairs (a bare priorities name covers the model's EVERY task — it would cover unselected tasks too); tiers_to_template is registry-blind, preserves file order first-occurrence, and refuses names-only tiers files (minItems-1 tasks would carry nothing); both compositions preserve model/task membership exactly
+- [Phase 08]: 08-05 filter grammar: axis names are the strict lowercase five-axis vocabulary (models species/type/size — size maps to the canonical size_m field; datasets category/type/metric); values and bare substrings match case-insensitively over key + display fields (never card); unknown-axis tokens drop from applied terms into diagnostics; selection.py imports NOTHING from registries (entries/keys arrive as parameters, 08-07 wires them)
+- [Phase 08]: 08-05 jsonschema lane note: tui/services/templates.py imports jsonschema at module top level — dev/CI test + typecheck lanes carry it (dev group), the make tui display lane does not yet import the module; 08-07 must add jsonschema>=4.26.0 to the [tui] group when the selection screen wires template import (same locked range as dev)
 
 ### Pending Todos
 
@@ -128,8 +133,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11T12:44:20.213Z
-Stopped at: Completed 08-04-PLAN.md
+Last session: 2026-10-11T13:38:35.246Z
+Stopped at: Completed 08-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
