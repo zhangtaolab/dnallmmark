@@ -60,9 +60,10 @@ files). The contracts asserted here are textual/structural:
   metrics and is never retrained.
 - **quirk-registry parity (WR-03/WR-04, 04-04)** — the four legacy quirk
   behaviors port with their parity contracts, each comparing the ACTIVE
-  source against ``pipeline/dnallmmark_pipeline.py`` read as TEXT (the
-  deprecated file stays untouched — read-only behavioral reference per
-  F10): (1) ``models_no_char_n`` — the ACGT-alphabet conditional at the
+  source against the ``LEGACY_*`` literals below — verbatim
+  transcriptions from the deprecated pre-rewrite pipeline script at its
+  final commit, taken before the file's Phase-7 deletion (D-04: git
+  history is the reference): (1) ``models_no_char_n`` — the ACGT-alphabet conditional at the
   ``validate_sequences`` call site (list members get the ACGT-only
   charset, all others the N-allowing one); (2)
   ``models_with_limited_length`` — the per-model max_length caps, WIRED
@@ -156,7 +157,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUN_FINETUNE = REPO_ROOT / "pipeline" / "run_finetune.py"
 ENV_SMOKE = REPO_ROOT / "pipeline" / "env_smoke.py"
-LEGACY_PIPELINE = REPO_ROOT / "pipeline" / "dnallmmark_pipeline.py"
 MODELS_INFO = REPO_ROOT / "pipeline" / "models_info.json"
 PROBE_CONFIG = REPO_ROOT / "pipeline" / "finetune_config_probe.yaml"
 CURVE_CONFIG = REPO_ROOT / "pipeline" / "finetune_config_curve.yaml"
@@ -213,6 +213,97 @@ def apply_legacy_name_map(names):
         for mapped in (LEGACY_NAME_MAP.get(name, name) for name in names)
         if mapped is not None
     }
+
+
+# ===== Legacy quirk-registry expectations (D-04 re-pin, 07-05) =====
+# Verbatim transcriptions from the deprecated pre-rewrite pipeline script
+# (the monolithic ``pipeline/`` entry this module's parity contracts were
+# originally read from as TEXT) at its final commit
+# 1b74037e14defbe7ed94f798e2f3f91b0d184ce6 — transcribed BEFORE the
+# file's Phase-7 deletion. Git history is the reference of record
+# (D-04: git 历史即参考); never regenerate these from memory.
+
+# transcribed from the legacy pipeline script at commit 1b74037e14defbe7ed94f798e2f3f91b0d184ce6 before deletion (D-04)
+LEGACY_MODELS_ONLY_SUPPORT_FP32 = [
+    "Jamba-DNA-v1-114M-hg38",
+    "CrossDNA_8.1M",
+    "CrossDNA_71.6M",
+    "CrossDNA_519M",
+]
+
+# transcribed from the legacy pipeline script at commit 1b74037e14defbe7ed94f798e2f3f91b0d184ce6 before deletion (D-04)
+LEGACY_DEEPLEARNING_MODELS = [
+    "enformer-official-rough",
+    "space",
+    "borzoi-replicate-0",
+    "flashzoi-replicate-0",
+]
+
+# transcribed from the legacy pipeline script at commit 1b74037e14defbe7ed94f798e2f3f91b0d184ce6 before deletion (D-04)
+# The legacy source composed this as deeplearning_models + [...] (the same
+# composition form run_finetune.py uses — see composed_members).
+LEGACY_MODELS_NO_CHAR_N = LEGACY_DEEPLEARNING_MODELS + [
+    "PlantCAD2-Small-l24-d0768",
+    "PlantCAD2-Medium-l48-d1024",
+    "PlantCAD2-Large-l48-d1536",
+    "prokbert-mini",
+    "prokbert-mini-c",
+    "prokbert-mini-long",
+    "MutBERT",
+    "MutBERT-Multi",
+    "megaDNA_updated",
+]
+
+# transcribed from the legacy pipeline script at commit 1b74037e14defbe7ed94f798e2f3f91b0d184ce6 before deletion (D-04)
+# Values are the legacy file's verbatim ints; dict_members()'s regex
+# yields string digits, so the parity test str()-normalizes for the
+# equality (assertion semantics unchanged).
+LEGACY_MODELS_WITH_LIMITED_LENGTH = {
+    "prokbert-mini": 1027,
+    "plant-dnabert-6mer": 512,
+}
+
+# transcribed from the legacy pipeline script at commit 1b74037e14defbe7ed94f798e2f3f91b0d184ce6 before deletion (D-04)
+LEGACY_MODEL_NOT_USE_SAFETENSORS = [
+    "hyenadna-large-1m-seqlen-hf",
+    "caduceus-ph_seqlen-131k_d_model-256_n_layer-16",
+    "caduceus-ps_seqlen-131k_d_model-256_n_layer-16",
+    "Omni-DNA-700M",
+    "plant-dnamamba-BPE",
+    "plant-dnamamba-6mer",
+    "enformer-official-rough",
+    "space",
+    "evo2_1b_base",
+    "megaDNA_updated",
+]
+
+# transcribed from the legacy pipeline script at commit 1b74037e14defbe7ed94f798e2f3f91b0d184ce6 before deletion (D-04)
+# The verbatim function source (the WR-04 tier-table oracle) — exec'd via
+# the same extract_fn() the ACTIVE source goes through.
+LEGACY_DETERMINE_BATCH_SIZE_SRC = '''def determine_batch_size(max_length, batch_size):
+    # DYNAMIC BATCH SIZE SCALING
+    if max_length <= 512:
+        dynamic_batch_size = batch_size
+    elif max_length <= 1024:
+        dynamic_batch_size = max(1, batch_size // 2)
+    elif max_length <= 2048:
+        dynamic_batch_size = max(1, batch_size // 4)
+    elif max_length <= 4096:
+        dynamic_batch_size = max(1, batch_size // 8)
+    elif max_length <= 8192:
+        dynamic_batch_size = max(1, batch_size // 16)
+    elif max_length <= 16384:
+        dynamic_batch_size = max(1, batch_size // 32)
+    else:
+        dynamic_batch_size = 1
+
+    print(
+        f"Base batch size: {batch_size} | "
+        f"Dynamic starting batch size: {dynamic_batch_size} "
+        f"for max_len {max_length}"
+    )
+
+    return dynamic_batch_size'''
 
 
 def registry_keys():
@@ -391,10 +482,9 @@ def test_fp32_only_models_forced_to_full_precision():
     global bf16: True in finetune_config.yaml never trains these models
     in reduced precision."""
     active = RUN_FINETUNE.read_text(encoding="utf-8")
-    legacy = LEGACY_PIPELINE.read_text(encoding="utf-8")
 
     active_list = list_members(active, "models_only_support_fp32")
-    legacy_list = list_members(legacy, "models_only_support_fp32")
+    legacy_list = LEGACY_MODELS_ONLY_SUPPORT_FP32
     assert active_list, (
         "models_only_support_fp32 is missing/empty from run_finetune.py — "
         "the global bf16: True trains these models in reduced precision"
@@ -488,10 +578,9 @@ def test_models_no_char_n_parity_with_name_map():
     registry, and the validate_sequences call site actually applies the
     conditional charset."""
     active = RUN_FINETUNE.read_text(encoding="utf-8")
-    legacy = LEGACY_PIPELINE.read_text(encoding="utf-8")
 
     active_list = composed_members(active, "models_no_char_n")
-    legacy_list = composed_members(legacy, "models_no_char_n")
+    legacy_list = LEGACY_MODELS_NO_CHAR_N
     assert active_list, (
         "models_no_char_n is missing/empty from run_finetune.py — every "
         "model validates against the ACGT-only charset, so models that "
@@ -519,7 +608,7 @@ def test_models_no_char_n_parity_with_name_map():
     # deeplearning_models is the composition prefix on both sides — pin
     # its membership equality too (all four quirk registries asserted).
     assert (sorted(list_members(active, "deeplearning_models"))
-            == sorted(list_members(legacy, "deeplearning_models"))), (
+            == sorted(LEGACY_DEEPLEARNING_MODELS)), (
         "deeplearning_models membership diverged from the deprecated "
         "pipeline's list"
     )
@@ -556,10 +645,15 @@ def test_models_with_limited_length_wired():
     rewrite must clamp max_length at the determination block, and every
     member must resolve against the unified registry."""
     active = RUN_FINETUNE.read_text(encoding="utf-8")
-    legacy = LEGACY_PIPELINE.read_text(encoding="utf-8")
 
     active_caps = dict_members(active, "models_with_limited_length")
-    legacy_caps = dict_members(legacy, "models_with_limited_length")
+    # The transcribed literal carries the legacy file's verbatim int caps;
+    # dict_members()'s regex yields string digits — normalize so the
+    # equality below keeps its exact original semantics.
+    legacy_caps = {
+        name: str(value)
+        for name, value in LEGACY_MODELS_WITH_LIMITED_LENGTH.items()
+    }
     assert active_caps, (
         "models_with_limited_length is missing/empty from run_finetune.py "
         "— prokbert-mini and plant-dnabert-6mer would run past their "
@@ -619,10 +713,9 @@ def test_safetensors_list_is_legacy_union():
     side loses a model needing the quirk. Every member resolves against
     the unified registry."""
     active = RUN_FINETUNE.read_text(encoding="utf-8")
-    legacy = LEGACY_PIPELINE.read_text(encoding="utf-8")
 
     active_list = list_members(active, "model_not_use_safetensors")
-    legacy_list = list_members(legacy, "model_not_use_safetensors")
+    legacy_list = LEGACY_MODEL_NOT_USE_SAFETENSORS
     assert set(active_list) == set(legacy_list) | {"PlantGFM"}, (
         "model_not_use_safetensors must be the exact 11-entry union "
         "(legacy set plus PlantGFM) — active: "
@@ -658,12 +751,12 @@ def test_safetensors_list_is_legacy_union():
 
 def test_length_tier_rounding_parity():
     """WR-04: determine_batch_size is the legacy tier table verbatim
-    (behaviorally proven by exec-ing the extracted pure function from
-    BOTH sources — no torch import needed), and the tier cap is WIRED as
+    (behaviorally proven by exec-ing the extracted pure function from the
+    ACTIVE source and the transcribed LEGACY_DETERMINE_BATCH_SIZE_SRC
+    literal — no torch import needed), and the tier cap is WIRED as
     the initial batch cap composed BEFORE the VRAM estimators with the
     legacy grad_accum compensation preserved at the adjustment site."""
     active = RUN_FINETUNE.read_text(encoding="utf-8")
-    legacy = LEGACY_PIPELINE.read_text(encoding="utf-8")
 
     def extract_fn(src):
         match = re.search(
@@ -679,7 +772,7 @@ def test_length_tier_rounding_parity():
         return namespace["determine_batch_size"]
 
     active_fn = extract_fn(active)
-    legacy_fn = extract_fn(legacy)
+    legacy_fn = extract_fn(LEGACY_DETERMINE_BATCH_SIZE_SRC)
     # Tier boundaries (legacy semantics): <=512 full, then //2 //4 //8
     # //16 //32 at 1024/2048/4096/8192/16384, else 1 — and the max(1, ..)
     # floor at every tier.
