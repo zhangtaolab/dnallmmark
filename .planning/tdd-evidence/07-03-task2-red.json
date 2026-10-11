@@ -1,0 +1,17 @@
+{
+  "command": "uv run --group dev pytest tests/test_sweep.py::test_subset_file_unknown_dataset_key_aborts_naming_key --junitxml=/tmp/red-junit-07-03-t2.xml -q",
+  "exitCode": 1,
+  "output": "<?xml version=\"1.0\" encoding=\"utf-8\"?><testsuites name=\"pytest tests\"><testsuite name=\"pytest\" errors=\"0\" failures=\"1\" skipped=\"0\" tests=\"1\" time=\"0.081\" timestamp=\"2026-10-11T15:10:35.367841+08:00\" hostname=\"edgexpert-296a\"><testcase classname=\"tests.test_sweep\" name=\"test_subset_file_unknown_dataset_key_aborts_naming_key\" time=\"0.002\"><failure message=\"Failed: DID NOT RAISE SystemExit\">tmp_path = PosixPath('/tmp/pytest-of-forrest/pytest-360/test_subset_file_unknown_datas0')\nmonkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0xf103b70c69e0&gt;\n\n    def test_subset_file_unknown_dataset_key_aborts_naming_key(\n            tmp_path, monkeypatch):\n        \"\"\"D-14: a subset file with a dataset key the registry does not know\n        aborts the sweep at STARTUP with the key named \u2014 never after the\n        first cell's model load burns on a map that cannot join.\"\"\"\n        registry_dir = make_registry(tmp_path)\n        subsets = _write_json(\n            tmp_path / \"subsets.json\", {\"task-x\": [0], \"ghost-task\": [1]})\n        out_root = tmp_path / \"sweep-out\"\n&gt;       with pytest.raises(SystemExit) as excinfo:\n             ^^^^^^^^^^^^^^^^^^^^^^^^^\nE       Failed: DID NOT RAISE SystemExit\n\ntests/test_sweep.py:2152: Failed</failure></testcase></testsuite></testsuites>",
+  "reportPath": "/tmp/red-junit-07-03-t2.xml",
+  "runStartedAt": "2026-10-11T07:10:49Z",
+  "reportModifiedAt": "1791702635.4493294",
+  "targetTest": "test_subset_file_unknown_dataset_key_aborts_naming_key",
+  "targetFile": "tests/test_sweep.py",
+  "expected": "a subset file with an unknown dataset key aborts at sweep start with the key named (SystemExit) and no output root created",
+  "actual": "DID NOT RAISE \u2014 run_cli completed the dry-run, wrote the manifest, and printed the planned-cell summary; no sweep-side subset validation exists yet, so the unknown key sailed through",
+  "console": "FAILED tests/test_sweep.py::test_subset_file_unknown_dataset_key_aborts_naming_key - Failed: DID NOT RAISE SystemExit / 1 failed in 0.09s (plus sibling RED failures across the new subset suite)",
+  "runner": "pytest (junitxml)",
+  "phase": "07-03",
+  "task": 2,
+  "semanticAssessment": "JUnit XML shows exactly 1 test executed (tests=1, failures=1) and it IS the named target test_subset_file_unknown_dataset_key_aborts_naming_key. It failed as DID-NOT-RAISE on the planned SystemExit assertion: main() completed the dry-run and wrote the manifest because the D-14 pre-validation is absent \u2014 the planned behavior (startup abort naming the unknown key) cannot occur. Captured stdout shows the sweep running to completion, which is precisely the hazard D-14 exists to prevent. No collection/import/fixture fault. Intentional RED confirmed."
+}

@@ -1,0 +1,17 @@
+{
+  "command": "uv run --group dev pytest tests/test_sweep.py::test_dry_run_manifest_records_present_flags --junitxml=/tmp/red-junit-07-03-t3.xml -q",
+  "exitCode": 1,
+  "output": "<?xml version=\"1.0\" encoding=\"utf-8\"?><testsuites name=\"pytest tests\"><testsuite name=\"pytest\" errors=\"0\" failures=\"1\" skipped=\"0\" tests=\"1\" time=\"0.088\" timestamp=\"2026-10-11T15:13:16.563374+08:00\" hostname=\"edgexpert-296a\"><testcase classname=\"tests.test_sweep\" name=\"test_dry_run_manifest_records_present_flags\" time=\"0.002\"><failure message=\"KeyError: 'effective_batch_size'\">tmp_path = PosixPath('/tmp/pytest-of-forrest/pytest-366/test_dry_run_manifest_records_0')\nmonkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0xe41c4b99a9e0&gt;\n\n    def test_dry_run_manifest_records_present_flags(tmp_path, monkeypatch):\n        \"\"\"D-13: PRESENT flags are recorded in every manifest cell \u2014 a\n        dry-run with --effective_batch_size 16 --num_train_epochs 1 produces\n        cells each carrying both fields alongside the existing five cell\n        keys.\"\"\"\n        registry_dir = make_registry(tmp_path)\n        out_root = tmp_path / \"sweep-out\"\n        run_cli(monkeypatch, [\n            \"--models\", \"model-a\",\n            \"--tasks\", \"task-x\",\n            \"--seeds\", \"42\",\n            \"--dry-run\",\n            \"--effective_batch_size\", \"16\",\n            \"--num_train_epochs\", \"1\",\n            \"--output-root\", str(out_root),\n            \"--registry-dir\", str(registry_dir),\n        ])\n        manifest = json.loads(\n            (out_root / \"sweep_manifest.json\").read_text(encoding=\"utf-8\"))\n        assert manifest[\"cells\"], \"the dry-run must enumerate cells\"\n        for cell in manifest[\"cells\"]:\n&gt;           assert cell[\"effective_batch_size\"] == 16\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE           KeyError: 'effective_batch_size'\n\ntests/test_sweep.py:2307: KeyError</failure></testcase></testsuite></testsuites>",
+  "reportPath": "/tmp/red-junit-07-03-t3.xml",
+  "runStartedAt": "2026-10-11T07:13:26Z",
+  "reportModifiedAt": "1791702796.6519077",
+  "targetTest": "test_dry_run_manifest_records_present_flags",
+  "targetFile": "tests/test_sweep.py",
+  "expected": "dry-run manifest cells carry effective_batch_size: 16 and num_train_epochs: 1 alongside the five base cell keys when the flags are present (D-13)",
+  "actual": "KeyError: 'effective_batch_size' \u2014 the manifest cell carries only the five base keys; the present-flag merge into _manifest_payload / the dry-run planned_records path is absent",
+  "console": "FAILED tests/test_sweep.py::test_dry_run_manifest_records_present_flags - KeyError: 'effective_batch_size' / 1 failed in 0.09s (plus sibling RED failures; the absent-parity key-set test passes today as designed)",
+  "runner": "pytest (junitxml)",
+  "phase": "07-03",
+  "task": 3,
+  "semanticAssessment": "JUnit XML shows exactly 1 test executed (tests=1, failures=1) and it IS the named target test_dry_run_manifest_records_present_flags. It failed at the planned manifest-field assertion \u2014 cell['effective_batch_size'] raised KeyError because the dry-run manifest writes only the five base cell keys; the D-13 present-flag recording is absent and the test cannot pass. The dry-run itself completed (manifest written, planned-cell summary printed), so this is a genuine assertion-level failure on the planned behavior, not a collection/import/fixture fault. Intentional RED confirmed."
+}

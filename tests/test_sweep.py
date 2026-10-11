@@ -2212,7 +2212,7 @@ def test_subset_file_collects_all_value_problems_together(
     registry_dir = make_registry(tmp_path)
     subsets = _write_json(tmp_path / "subsets.json", {
         "task-x": "not-a-list",
-        "task-z": [0, "x"],
+        "task-z": [0, "x", True],
     })
     with pytest.raises(SystemExit) as excinfo:
         run_cli(monkeypatch, [
@@ -2232,6 +2232,10 @@ def test_subset_file_collects_all_value_problems_together(
         "(the child validator's message style)"
     )
     assert "'x'" in message, "the non-integer ID must be named"
+    assert "True" in message, (
+        "a JSON true is NOT an integer row ID (bool is an int subclass "
+        "in Python — excluded explicitly, the child validator's rule)"
+    )
 
 
 def test_valid_subset_file_passes_validation_and_threads_to_child_argv(
