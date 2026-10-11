@@ -88,7 +88,7 @@ check-node:
 
 test: check-node
 	$(UV) run --group dev pytest
-	node --test tests/js/
+	node --test tests/js/*.test.js
 
 test-fast:
 	$(UV) run --group dev pytest -m "not slow"

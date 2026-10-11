@@ -85,7 +85,7 @@ jobs:
         with:
           node-version: 24
       - name: node --test (JS unit lane)
-        run: node --test tests/js/
+        run: node --test tests/js/*.test.js
       - name: node --check (every frontend + tool JS file)
         run: |
           for f in dnallm-mark/js/*.js scripts/*.js; do
