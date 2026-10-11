@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: TUI任务
 current_phase: 07
 current_phase_name: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
-status: executing
-stopped_at: Completed 07-05-PLAN.md
-last_updated: "2026-10-11T07:45:08.090Z"
+status: verifying
+stopped_at: Completed 07-06-PLAN.md
+last_updated: "2026-10-11T07:54:07.719Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 07 execution started
-state_head: 96f20a6ae89e5ff89eb0c166039856c4ffa65546
+state_head: 4b9a12bc3982385d5ebf60b4b36054c5722b586f
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 
 Phase: 07 (Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-11 — Phase 07 execution started
 
 Progress (v1.2): [░░░░░░░░░░] 0%
@@ -63,6 +63,7 @@ Progress (v1.2): [░░░░░░░░░░] 0%
 | Phase 07 P03 | 12 min | 3 tasks | 2 files |
 | Phase 07 P04 | 8 min | 2 tasks | 2 files |
 | Phase 07 P05 | 10 min | 3 tasks | 10 files |
+| Phase 07 P06 | 5 min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 07]: 07-04 hardware capture (D-05): gpu_device verbatim from torch.cuda.get_device_name() (no enum normalization, 5090D/4090D pass through), train_time from metrics.get('train_runtime') (None-tolerant), max_mem_gb from the peak-memory counter read at write time inside the rank-0 success block BEFORE trainer.evaluate() — scopes the captured peak to training
 - [Phase 07]: [Phase 07]: 07-05 D-04 closed: dnallmmark_pipeline.py deleted (final commit 1b74037e — git history is the reference); the five parity expectations in test_run_finetune_contracts.py are self-contained sha-documented verbatim literals; zero live-code references remain and .claude/CLAUDE.md's FLOPs reference of record is pipeline/flops_counter.py
 - [Phase 07]: [Phase 07]: 07-05 provenance convention: after a D-04-style deletion, live-code/test comments cite the deleted source by description + final commit sha, never by live path (the Task-1 comment template vs Task-2 zero-grep-gate reconciliation)
+- [Phase 07]: 07-06 runtime proof: bounded GB10 smoke (plant-dnabert-6mer x iDNA_ABF_datasets__5mC, 1 epoch, default mode, 77s wall, 1.56GB peak) emitted flops_report.json with all six D-23 criteria green — ratio 0.332 vs HF total_flos (the ~1/3 fwd-only expectation), gpu_device 'NVIDIA GB10' verbatim, uncovered_layers empty; PIPE-02 proven live via dry-run (present flags recorded, absent flags leave no keys, D-13)
+- [Phase 07]: 07-06 evidence discipline: real run artifacts stay gitignored under pipeline/finetuned/ (D-26) — the committed evidence is the SUMMARY's pasted key fields + mechanical assertion outputs (D-25); the bounded-smoke evidence shape is the template for Phase 11's bounded smoke
 
 ### Pending Todos
 
@@ -111,8 +114,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11T07:45:08.070Z
-Stopped at: Completed 07-05-PLAN.md
+Last session: 2026-10-11T07:54:07.698Z
+Stopped at: Completed 07-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
