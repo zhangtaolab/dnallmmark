@@ -34,10 +34,8 @@ See also:
 """
 
 import json
-from pathlib import Path
 
 import pytest
-
 import registry_loader  # conftest puts pipeline/ on sys.path
 
 
