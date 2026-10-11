@@ -290,6 +290,16 @@ def test_export_unknown_param_key_raises_naming_it():
         )
 
 
+def test_export_invalid_param_value_raises_listing_problems():
+    """Valid by construction: params that would make the SHAREABLE document
+    invalid are refused with the collect-all problem list — an export can
+    never emit a template another operator's import would reject."""
+    with pytest.raises(ValueError, match="peft"):
+        templates.export_selection_template(
+            ["model-a"], ["task-x"], {"peft": "bogus"}
+        )
+
+
 # ===== SEL-03: sweep_priorities tier interop (pure-function pair) =====
 
 
