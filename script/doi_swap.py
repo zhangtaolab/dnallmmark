@@ -42,7 +42,14 @@ Behavior
 
 ``apply_swap(readme_path, gitleaks_path, doi_url)``
     Reads BOTH files, computes BOTH rewrites, and writes them only after
-    both succeeded — both-or-neither at the filesystem level.
+    both rewrites SUCCEEDED — both-or-neither at the PATTERN level: a
+    missing expected pattern aborts before any write. The guarantee is
+    NOT filesystem-level atomicity: an I/O failure between the two
+    ``write_text`` calls can still leave the first file applied. That
+    partial state is loud, not silent — a re-run aborts because the
+    already-swapped file no longer carries its pattern (LOW-09,
+    phase-06 review: the previous "impossible by construction" claim
+    overclaimed).
 
 Refusals
 --------
@@ -218,11 +225,17 @@ def rewrite_gitleaks(text: str) -> str:
 
 
 def apply_swap(readme_path: Path, gitleaks_path: Path, doi_url: str) -> None:
-    """Apply BOTH edits atomically: both-or-neither at the write level.
+    """Apply BOTH edits: both-or-neither at the PATTERN level (WR-01).
 
     Reads both files, computes both rewrites, and writes them only after
-    both succeeded — a partial application is impossible by construction
-    (WR-01).
+    both succeeded — a MISSING PATTERN aborts before any write, so a
+    partial application can never begin. The guarantee stops at the
+    pattern level: an I/O failure BETWEEN the two ``write_text`` calls
+    can still leave the first file applied; that state is loud, not
+    silent — a re-run aborts because the swapped file no longer carries
+    its expected pattern (LOW-09, phase-06 review: the previous
+    "impossible by construction" wording overclaimed filesystem-level
+    atomicity).
 
     Args:
         readme_path: The README.md to rewrite.
