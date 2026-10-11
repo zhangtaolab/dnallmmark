@@ -22,7 +22,9 @@ same-day cache-hit fake so no kernel executes either, D-03):
   + refocuses;
 - presets (p): REPLACING semantics — tier-1 marks pair models AND tasks,
   a ghost-name preset warns loudly listing the skipped keys, customs
-  apply from the menu, the empty-customs entry renders, toasts fire;
+  apply from the menu, the empty-customs entry renders, toasts fire, and
+  the worker's async modal push never opens over the min-size guard
+  (WR-06);
 - templates (x): a failed import renders the numbered collect-all
   problem list and applies NOTHING; a valid import replaces the marks;
   export/tier-convert write through the service with toasts;
@@ -61,7 +63,7 @@ from textual.keys import _character_to_key
 from textual.widgets import DataTable, RichLog, Static
 
 import tui.screens.selection as selection_screen_module
-from tui.app import DnallmMarkTui, HelpModal
+from tui.app import DnallmMarkTui, HelpModal, MinSizeScreen
 from tui.screens.selection import (
     ConfirmModal,
     PathInputModal,
@@ -740,6 +742,69 @@ async def test_preset_menu_load_runs_off_the_event_loop():
 
         # the read completes -> the modal opens over the loaded menu
         gate.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(app.screen, PresetModal)
+
+
+async def test_preset_modal_never_opens_over_the_min_size_guard():
+    """WR-06: the WR-04 worker's async PresetMenuLoaded push never opens
+    the PresetModal over the min-size guard. The message can arrive while
+    the guard is the active screen (this screen sits beneath it, pump
+    still running), and a modal pushed over the guard strands it at full
+    size on grow (the pop fires only when the guard IS the top screen) —
+    so the message is dropped below the grid; the operator re-presses p
+    after growing back (the same degraded behavior action_help has)."""
+    gate = threading.Event()
+
+    class _GatedMenuFake(FakeSelectionService):
+        """preset_menu blocks until the gate opens (deterministic — the
+        exact T-08-07 slow read the WR-04 worker exists for: the read is
+        still in flight when the terminal shrinks)."""
+
+        def preset_menu(self):
+            gate.wait(timeout=10)
+            return super().preset_menu()
+
+    app = _app(_GatedMenuFake())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+
+        # p at full size: the menu read starts in the worker
+        await pilot.press("p")
+        await pilot.pause()
+        assert not isinstance(app.screen, PresetModal)
+
+        # shrink below the grid while the read is in flight: the guard
+        # swaps in (the selection screen sits beneath, pump still running)
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+
+        # the read completes while the guard is up: the message is
+        # dropped — no chrome over the guard
+        gate.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen), (
+            "no chrome may open over the min-size guard"
+        )
+        assert not any(
+            isinstance(screen, PresetModal) for screen in app.screen_stack
+        ), "the preset modal must never land over the min-size guard"
+
+        # growing back restores the selection screen — never the stranded
+        # guard at full size
+        await pilot.resize_terminal(120, 40)
+        await pilot.pause()
+        assert isinstance(app.screen, SelectionScreen), (
+            "the console must never be stranded on the min-size screen "
+            "at full size"
+        )
+        assert app._min_size_screen is None
+
+        # p works again once above the minimum (the operator re-press)
+        await pilot.press("p")
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert isinstance(app.screen, PresetModal)

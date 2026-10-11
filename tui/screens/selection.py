@@ -48,7 +48,9 @@ Contract (locked decisions):
   group makes them mutually exclusive, so reads never overlap and none
   ever blocks the event loop, T-08-07); the single loading row covers
   the load seam; results cross the thread boundary only via
-  ``post_message``.
+  ``post_message``. A result arriving while the min-size guard is up is
+  dropped — no chrome may open over the guard (WR-06: the push is async,
+  so it can fire while the guard is the active screen).
 - I18N-01: zero Chinese literals in this module — every operator-facing
   string renders through ``tui/strings.py`` constants (grep-enforced);
   registry keys, filter axes, and JSON pointers stay English verbatim.
@@ -61,7 +63,7 @@ import json
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 from rich.text import Text
 from textual import work
@@ -149,6 +151,11 @@ from tui.strings import (
     SEL_TEMPLATE_TITLE,
     SEL_TEMPLATE_WRITE_FAILED,
 )
+
+if TYPE_CHECKING:
+    from textual import getters
+
+    from tui.app import DnallmMarkTui
 
 # ===== Service data shapes (the injection contract's vocabulary) =====
 
@@ -794,6 +801,14 @@ class RowDetailModal(ModalScreen):
 class SelectionScreen(Screen):
     """The selection screen: tables, filter, mark-set, presets, presence."""
 
+    if TYPE_CHECKING:
+        # Narrows MessagePump's ``App[object]`` to the composition root so
+        # the app's own API (``below_minimum_grid``, WR-06) type-checks —
+        # the runtime property is untouched (textual's own pattern, see
+        # ``MessagePump.app``; no runtime import of tui.app — that would
+        # be circular, the composition root imports this screen).
+        app = getters.app(DnallmMarkTui)
+
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("space", "toggle_mark", SEL_MARK_LABEL),
         Binding("m", "switch_list", SEL_SWITCH_LABEL),
@@ -1145,7 +1160,18 @@ class SelectionScreen(Screen):
 
     def on_selection_screen_preset_menu_loaded(
             self, message: PresetMenuLoaded) -> None:
-        """The menu arrived from the worker: open the preset modal."""
+        """The menu arrived from the worker: open the preset modal.
+
+        Dropped below the minimum grid (WR-06): this push is ASYNC — the
+        message can arrive while the min-size guard is the active screen
+        (this screen sits beneath it, pump still running), and a modal
+        pushed over the guard strands it at full size on grow (the
+        restore pop fires only when the guard IS the top screen, WR-01).
+        The operator re-presses ``p`` after growing back, the same
+        degraded behavior ``action_help`` already has.
+        """
+        if self.app.below_minimum_grid:
+            return  # below the minimum grid: no chrome over the guard
         menu = message.menu
         customs_empty = not any(
             option.kind == "custom" for option in menu.options

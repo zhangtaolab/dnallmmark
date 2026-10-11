@@ -247,6 +247,18 @@ class DnallmMarkTui(App):
             if self.screen is guard:
                 self.pop_screen()
 
+    @property
+    def below_minimum_grid(self) -> bool:
+        """True while the min-size guard screen is up (no chrome may open).
+
+        The guard state every ASYNC chrome push must check (WR-06): a
+        message-handler push can fire while the guard is the active
+        screen (the screen beneath keeps pumping), and a modal pushed
+        over the guard strands it at full size on grow — the restore pop
+        fires only when the guard IS the top screen (WR-01).
+        """
+        return self._min_size_screen is not None
+
     # ===== Actions (app-level) =====
 
     def action_help(self) -> None:
@@ -257,7 +269,7 @@ class DnallmMarkTui(App):
         on grow, stranding the console on the min-size screen at full
         size — WR-01).
         """
-        if self._min_size_screen is not None:
+        if self.below_minimum_grid:
             return  # below the minimum grid: no chrome over the guard
         self.push_screen(HelpModal(self._binding_rows()))
 
