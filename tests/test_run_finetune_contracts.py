@@ -2348,3 +2348,76 @@ def test_curve_yaml_tightens_checkpoint_cadence_suite_fields_only():
     assert re.search(r"^\s{4}save_steps: 500\b", base_text, re.MULTILINE)
     assert re.search(r"^\s{4}logging_steps: 500\b", base_text,
                      re.MULTILINE)
+
+
+# =====================================================================
+# FLOPs enablement (PIPE-01 integration, 07-04)
+# =====================================================================
+
+
+def test_calibration_hooks_removed_before_trainer_construction():
+    """PIPE-01/D-01: the always-on calibration slot calls
+    ``flops_counter.remove_hooks()`` and its source position PRECEDES the
+    ``trainer = DNATrainer(`` construction — the hooks live for exactly
+    one pre-training no_grad forward, so the trainer (DDP wrapping, PEFT
+    adapters, gradient checkpointing) never sees them (Pitfall 8 /
+    T-07-08: hook lifetime is the correctness-critical seam)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    remove_idx = src.find("flops_counter.remove_hooks()")
+    assert remove_idx != -1, (
+        "no flops_counter.remove_hooks() call found — FlopsCounter hooks "
+        "would stay registered through DNATrainer construction and "
+        "instrument the training path (double counting + DDP/PEFT "
+        "interference)"
+    )
+    trainer_idx = src.find("trainer = DNATrainer(")
+    assert trainer_idx != -1, "no DNATrainer construction found"
+    assert remove_idx < trainer_idx, (
+        "remove_hooks() must precede the DNATrainer construction "
+        f"(remove at {remove_idx}, trainer at {trainer_idx}) — the legacy "
+        "calibration-pass design exists precisely so hooks never live "
+        "during training"
+    )
+
+
+def test_calibration_slot_between_encode_and_memory_reset():
+    """PIPE-01/D-01: the FlopsCounter construction (unconditional —
+    always-on, no flops flag exists) sits inside the dataset loop AFTER
+    the encode_sequences call and the deeplearning_models target_length
+    adjustment, and BEFORE reset_peak_memory_stats — the verified legacy
+    slot, which is after apply_train_fraction so curve cells extrapolate
+    from the fraction-scaled token count."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    encode_idx = src.find("dataset.encode_sequences(")
+    assert encode_idx != -1, "no encode_sequences call site found"
+    adjust_idx = src.find(
+        "model.target_length = max_length // model.resolution"
+    )
+    assert adjust_idx != -1, (
+        "no deeplearning_models target_length adjustment found (the "
+        "slot's upper anchor)"
+    )
+    counter_idx = src.find("flops_counter = FlopsCounter(")
+    assert counter_idx != -1, (
+        "no FlopsCounter construction found — FLOPs calibration is "
+        "missing from the run (D-01 always-on)"
+    )
+    reset_idx = src.find("reset_peak_memory_stats")
+    assert reset_idx != -1, (
+        "no reset_peak_memory_stats found (the slot's lower anchor)"
+    )
+    assert encode_idx < adjust_idx < counter_idx < reset_idx, (
+        "the calibration slot must sit between the target_length "
+        "adjustment and reset_peak_memory_stats (encode at "
+        f"{encode_idx}, adjust at {adjust_idx}, FlopsCounter at "
+        f"{counter_idx}, reset at {reset_idx}) — after encode (tokens "
+        "exist), after apply_train_fraction (fraction-scaled counts), "
+        "before the peak-memory reset so training's peak is measured "
+        "from a clean baseline"
+    )
+    # D-01: no flops-related CLI flag exists — the calibration is not
+    # opt-out-able (a flag would re-introduce runs without FLOPs data).
+    assert re.search(r'add_argument\(\s*"[^"]*flops', src) is None, (
+        "a flops-related CLI flag exists — D-01 locks FLOPs as "
+        "always-on with no flag surface"
+    )

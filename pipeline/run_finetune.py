@@ -41,6 +41,10 @@ from pathlib import Path
 import numpy as np
 import registry_loader  # sibling module (sys.path[0] = pipeline/ when run as a script)
 import torch
+
+# Sibling module (07-01's CPU-importable port; GPU-lane use only — never
+# imported by tests, which read run_finetune.py as source text instead).
+from flops_counter import FlopsCounter, calibration_forward, count_split_tokens
 from torch import nn
 
 # Import torch_npu for Huawei Ascend NPU support. Imported for its
@@ -1425,6 +1429,43 @@ if __name__ == "__main__":
                 # Specific adjustments for deep learning models
                 if model_name in deeplearning_models:
                     model.target_length = max_length // model.resolution
+
+                # ========================================================
+                # Pre-training FLOPs Calculation Block (PIPE-01 / D-01
+                # always-on — no flag, no opt-in): hooks registered, ONE
+                # no_grad calibration forward on train[0], hooks removed
+                # BEFORE the DNATrainer ctor below — the training path is
+                # never instrumented (the legacy
+                # dnallmmark_pipeline.py:1072-1157 chain, ported into
+                # pipeline/flops_counter.py by 07-01; evo2-backbone / bf16
+                # autocast / plain branches and the single attention_mask
+                # retry live in calibration_forward — Pitfall 8: nothing
+                # beyond the legacy pattern). The slot sits AFTER
+                # apply_train_fraction so curve cells extrapolate from the
+                # fraction-scaled train count, and AFTER the fp32-quirk
+                # override so the bf16 branch sees the corrected flag
+                # (research A8).
+                # ========================================================
+                total_tokens, samples = count_split_tokens(
+                    dataset.dataset.get("train", [])
+                )
+                flops_counter = FlopsCounter(
+                    model, include_norm=True, include_act=True, include_embed=True
+                )
+                if "train" in dataset.dataset and len(dataset.dataset["train"]) > 0:
+                    batch_sample = dataset.dataset["train"][0]
+                    current_tokens = calibration_forward(
+                        model, model_name, configs["finetune"].bf16, batch_sample
+                    )
+                    flops_counter.remove_hooks()
+                else:
+                    flops_counter.remove_hooks()
+                    current_tokens = 0
+                # flops_report.json is written post-success inside the
+                # local_rank == 0 block (after the final_metrics write,
+                # before the trainer_state marker copy — WR-13);
+                # flops_counter / current_tokens / total_tokens stay alive
+                # as loop-locals for that write.
 
                 # Record GPU memory usage
                 if NPU_AVAILABLE:
