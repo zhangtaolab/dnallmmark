@@ -577,8 +577,9 @@ async def test_cross_screen_navigation_integration():
         assert selection.marked_models == {"plant-dnamamba-6mer"}
 
         # the preset applies with REPLACING semantics (tier-1 marks its
-        # pair models AND its task)
+        # pair models AND its task) — the menu read is a worker (WR-04)
         await pilot.press("p")
+        await app.workers.wait_for_complete()
         await pilot.pause()
         await pilot.press("enter")
         await pilot.pause()

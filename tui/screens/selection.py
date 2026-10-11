@@ -41,9 +41,13 @@ Contract (locked decisions):
   and the n_audit-absent column state renders the documented copy. The
   ``missing`` flag decision is the service's (tier-1 tested); the screen
   never re-derives it.
-- D-03 (the read seam): the registry/n_audit load runs in ONE exclusive
-  ``@work(exclusive=True, thread=True)`` worker — the single loading row
-  covers the seam; results cross the thread boundary only via
+- D-03 (the read seam): every file-reading service call — the
+  registry/n_audit load AND the preset-menu read (both registries, the
+  priorities file, and presets.json) — runs in an exclusive
+  ``@work(exclusive=True, thread=True)`` worker (the default worker
+  group makes them mutually exclusive, so reads never overlap and none
+  ever blocks the event loop, T-08-07); the single loading row covers
+  the load seam; results cross the thread boundary only via
   ``post_message``.
 - I18N-01: zero Chinese literals in this module — every operator-facing
   string renders through ``tui/strings.py`` constants (grep-enforced);
@@ -810,6 +814,15 @@ class SelectionScreen(Screen):
             self.data = data
             super().__init__()
 
+    class PresetMenuLoaded(Message):
+        """The worker finished reading the preset menu (D-03, WR-04:
+        both registries, the priorities file, and presets.json are
+        reads — they never run on the event loop)."""
+
+        def __init__(self, menu: PresetMenu) -> None:
+            self.menu = menu
+            super().__init__()
+
     def __init__(self,
                  selection_service: "SelectionServiceProtocol | None" = None,
                  marked_models: "set[str] | None" = None,
@@ -884,6 +897,15 @@ class SelectionScreen(Screen):
         """Read the registries + presence off the event loop."""
         data = self._service.load_selection_data()
         self.post_message(self.DataLoaded(data))
+
+    @work(exclusive=True, thread=True)
+    def _load_preset_menu(self) -> None:
+        """Read the preset menu off the event loop (WR-04, the D-03
+        worker contract): the menu build re-reads both registries, the
+        priorities file, and presets.json — a cold cache or a
+        network-mounted home must never stall the UI (T-08-07)."""
+        menu = self._service.preset_menu()
+        self.post_message(self.PresetMenuLoaded(menu))
 
     def on_selection_screen_data_loaded(self, message: DataLoaded) -> None:
         """Rows compose from the loaded snapshot (the loading row clears)."""
@@ -1115,10 +1137,16 @@ class SelectionScreen(Screen):
         self.query_one("#selection-table", DataTable).focus()
 
     def action_apply_preset(self) -> None:
-        """p: open the preset picker modal."""
+        """p: open the preset picker modal (the menu loads in the
+        exclusive read worker — never on the event loop, WR-04)."""
         if self._data is None:
             return
-        menu = self._service.preset_menu()
+        self._load_preset_menu()
+
+    def on_selection_screen_preset_menu_loaded(
+            self, message: PresetMenuLoaded) -> None:
+        """The menu arrived from the worker: open the preset modal."""
+        menu = message.menu
         customs_empty = not any(
             option.kind == "custom" for option in menu.options
         )

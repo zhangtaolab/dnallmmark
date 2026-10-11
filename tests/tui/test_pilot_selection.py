@@ -606,6 +606,7 @@ async def test_preset_modal_replaces_both_mark_sets_with_toast():
         assert screen.marked_models == {_KEY_MODEL_B}
 
         await pilot.press("p")
+        await app.workers.wait_for_complete()  # the menu read is a worker (WR-04)
         await pilot.pause()
         assert isinstance(app.screen, PresetModal)
         modal = app.screen
@@ -654,6 +655,7 @@ async def test_preset_unknown_keys_warn_loudly_and_skip():
 
         # tier-2 (one down) carries only the ghost model name
         await pilot.press("p")
+        await app.workers.wait_for_complete()  # the menu read is a worker (WR-04)
         await pilot.pause()
         await pilot.press("down")
         await pilot.press("enter")
@@ -677,6 +679,7 @@ async def test_custom_preset_applies_from_the_menu():
         screen = app.screen
 
         await pilot.press("p")
+        await app.workers.wait_for_complete()  # the menu read is a worker (WR-04)
         await pilot.pause()
         modal = app.screen
         # no empty-customs entry when customs exist; the custom is last
@@ -698,6 +701,48 @@ async def test_custom_preset_applies_from_the_menu():
         assert SEL_PRESET_APPLIED.format(
             preset="my-preset", n=1, m=1,
         ) in _toast_messages(app)
+
+
+async def test_preset_menu_load_runs_off_the_event_loop():
+    """WR-04/T-08-07: the preset-menu read (both registries, the
+    priorities file, presets.json) runs in the worker, never on the
+    event loop — a blocked menu load leaves the UI responsive and the
+    modal opens only after the read completes."""
+    gate = threading.Event()
+
+    class _GatedMenuFake(FakeSelectionService):
+        """preset_menu blocks until the gate opens (a cold cache or a
+        network-mounted home, deterministically — never a timed sleep)."""
+
+        def preset_menu(self):
+            gate.wait(timeout=10)
+            return super().preset_menu()
+
+    app = _app(_GatedMenuFake())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+        screen = app.screen
+        table = screen.query_one(DataTable)
+
+        await pilot.press("p")
+        await pilot.pause()
+        # the menu read is in flight in the worker: no modal yet, and
+        # the event loop keeps processing keys (the m toggle renders —
+        # the T-08-07 responsiveness proof)
+        assert not isinstance(app.screen, PresetModal), (
+            "the modal must wait for the worker's menu"
+        )
+        await pilot.press("m")
+        await pilot.pause()
+        assert _row_keys(table) == [_TASK_A, _TASK_B], (
+            "the UI must stay responsive while the menu loads"
+        )
+
+        # the read completes -> the modal opens over the loaded menu
+        gate.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(app.screen, PresetModal)
 
 
 # =====================================================================
