@@ -26,6 +26,7 @@ Additions over the legacy report (all additive, D-02/D-03/D-05/D-27):
 """
 
 import json
+import math
 from pathlib import Path
 
 # D-03: uncovered parameter share above this fraction triggers a console
@@ -91,6 +92,7 @@ class FlopsCounter:
         nn = self._nn
         for name, module in self.model.named_modules():
             classname = module.__class__.__name__
+            model_path = getattr(self.model, "name_or_path", "").lower()
             hooks_before = len(self.hooks)
 
             # 1. Core Heavy Computation Layers
@@ -124,6 +126,26 @@ class FlopsCounter:
                 self.hooks.append(
                     module.register_forward_hook(self._hf_self_attn_hook(name))
                 )
+            elif classname == "Conv1D":
+                self.hooks.append(
+                    module.register_forward_hook(self._hf_conv1d_hook(name))
+                )
+            elif classname == "BertUnpadSelfAttention":
+                self.hooks.append(
+                    module.register_forward_hook(self._dnabert2_flash_attn_hook(name))
+                )
+            elif classname in [
+                "MistralFlashAttention",
+                "MistralFlashAttention2",
+                "FlashAttentionBlock",
+            ]:
+                self.hooks.append(
+                    module.register_forward_hook(self._flash_attn_hook(name))
+                )
+            elif classname == "ModernBertAttention":
+                self.hooks.append(
+                    module.register_forward_hook(self._modernbert_attn_hook(name))
+                )
             elif classname in [
                 "LlamaAttention",
                 "GemmaAttention",
@@ -133,6 +155,53 @@ class FlopsCounter:
                 self.hooks.append(
                     module.register_forward_hook(self._gqa_attn_hook(name))
                 )
+            elif classname == "BigBirdAttention":
+                self.hooks.append(
+                    module.register_forward_hook(self._bigbird_attn_hook(name))
+                )
+            elif classname == "HyenaFilter":
+                self.hooks.append(
+                    module.register_forward_hook(self._hyena_filter_hook(name))
+                )
+            elif classname in ["MambaMixer", "JambaMambaMixer"]:
+                self.hooks.append(
+                    module.register_forward_hook(self._mamba_ssm_hook(name))
+                )
+            elif classname in ["Mamba2Mixer"]:
+                self.hooks.append(
+                    module.register_forward_hook(self._mamba2_ssd_hook(name))
+                )
+            elif classname in ["Mamba"]:
+                self.hooks.append(
+                    module.register_forward_hook(self._caduceus_ssm_hook(name))
+                )
+            elif classname in ["Mamba2"]:
+                self.hooks.append(
+                    module.register_forward_hook(self._caduceus2_ssd_hook(name))
+                )
+            elif "megadna" in model_path:
+                if classname == "Attention" and hasattr(module, "to_q"):
+                    self.hooks.append(
+                        module.register_forward_hook(self._megabyte_attn_hook(name))
+                    )
+            elif "enformer" in model_path or "space" in model_path:
+                if (
+                    classname == "Attention"
+                    and hasattr(module, "to_rel_k")
+                    and hasattr(module, "use_tf_gamma")
+                ):
+                    self.hooks.append(
+                        module.register_forward_hook(self._enformer_attn_hook(name))
+                    )
+            elif "borzoi" in model_path or "flashzoi" in model_path:
+                if classname == "Attention":
+                    self.hooks.append(
+                        module.register_forward_hook(self._borzoi_attn_hook(name))
+                    )
+                elif classname == "FlashAttention":
+                    self.hooks.append(
+                        module.register_forward_hook(self._borzoi_flash_attn_hook(name))
+                    )
 
             # 2. Optional: Embedding
             elif isinstance(module, nn.Embedding) and self.include_embed:
@@ -266,6 +335,70 @@ class FlopsCounter:
 
         return hook
 
+    def _hf_conv1d_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            x = inputs[0]
+            # Rule-1 fix over the legacy ternary: `x.shape if x.dim() == 3`
+            # bound the whole shape TUPLE to b, so 3-dim inputs (the normal
+            # hidden-states case) crashed the hook inside the calibration
+            # forward — silently swallowed by its try/except as under-counted
+            # FLOPs. The 2-dim path is preserved exactly; the 3-dim path now
+            # reads the same (b, seq_len, in_feat) every sibling hook reads.
+            b, seq_len, in_feat = (
+                (x.shape[0], x.shape[1], x.shape[-1])
+                if x.dim() == 3
+                else (x.shape[0], 1, x.shape[-1])
+            )
+            out_feat = module.nf
+            flops = 2 * b * seq_len * in_feat * out_feat
+            self.total_flops += flops
+            self.layer_flops[name] = flops
+
+        return hook
+
+    def _dnabert2_flash_attn_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            cu_seqlens = inputs[1]
+            d = module.all_head_size
+            seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
+            sum_sq_len = (seq_lens**2).sum().item()
+            attn_flops = 4 * d * sum_sq_len
+            self.total_flops += attn_flops
+            self.layer_flops[f"{name}.flash_attn_core"] = attn_flops
+
+        return hook
+
+    def _modernbert_attn_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            x = (
+                inputs[0]
+                if len(inputs) > 0
+                else (outputs[0] if isinstance(outputs, tuple) else outputs)
+            )
+            b, seq_len, d = x.shape[0], x.shape[1], x.shape[2]
+            window_size = getattr(module.config, "local_attention", 128)
+            try:
+                layer_idx = int(name.split(".")[2])
+            except Exception:  # noqa: BLE001 - legacy verbatim: unparsable layer index means local attention
+                layer_idx = 0
+            attn_layer_step = getattr(module.config, "global_attn_every_n_layers", None)
+            is_global = (layer_idx % attn_layer_step == 0) if attn_layer_step else False
+            attn_core_flops = (
+                4 * b * seq_len * window_size * d
+                if (not is_global and seq_len > window_size)
+                else 4 * b * (seq_len**2) * d
+            )
+            self.total_flops += attn_core_flops
+            self.layer_flops[f"{name}.matmul_core"] = attn_core_flops
+
+        return hook
+
     def _gqa_attn_hook(self, name):
         def hook(module, inputs, outputs):
             if not self._is_active:
@@ -289,6 +422,291 @@ class FlopsCounter:
             )
             self.total_flops += attn_core_flops
             self.layer_flops[f"{name}.matmul_core"] = attn_core_flops
+
+        return hook
+
+    def _flash_attn_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            x = (
+                inputs[0]
+                if len(inputs) > 0
+                else (outputs[0] if isinstance(outputs, tuple) else outputs)
+            )
+            b, seq_len, d = x.shape[0], x.shape[1], x.shape[2]
+            window_size = (
+                getattr(module.config, "sliding_window", None)
+                if hasattr(module, "config")
+                else None
+            )
+            attn_core_flops = (
+                4 * b * seq_len * window_size * d
+                if (
+                    window_size is not None
+                    and seq_len > window_size
+                    and module.__class__.__name__.endswith("FlashAttention2")
+                )
+                else 4 * b * (seq_len**2) * d
+            )
+            self.total_flops += attn_core_flops
+            self.layer_flops[f"{name}.matmul_core"] = attn_core_flops
+
+        return hook
+
+    def _bigbird_attn_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            x = (
+                inputs[0]
+                if len(inputs) > 0
+                else (outputs[0] if isinstance(outputs, tuple) else outputs)
+            )
+            b, seq_len = x.shape[0], x.shape[1]
+            inner_attn = getattr(module, "self", None)
+            if inner_attn is None:
+                return
+            d_q, d_in = inner_attn.query.out_features, inner_attn.query.in_features
+
+            if len(inner_attn.query._forward_hooks) == 0:
+                qkv_flops = 3 * (2 * b * seq_len * d_in * d_q)
+                self.total_flops += qkv_flops
+                self.layer_flops[f"{name}.qkv_dynamic_fused"] = qkv_flops
+
+            is_sparse = inner_attn.__class__.__name__ == "BigBirdBlockSparseAttention"
+            if is_sparse:
+                effective_seq_len = (
+                    5 + getattr(inner_attn, "num_random_blocks", 3)
+                ) * getattr(inner_attn, "block_size", 64)
+                attn_core_flops = 4 * b * seq_len * effective_seq_len * d_q
+            else:
+                attn_core_flops = 4 * b * (seq_len**2) * d_q
+            self.total_flops += attn_core_flops
+            self.layer_flops[f"{name}.matmul_core"] = attn_core_flops
+
+        return hook
+
+    def _hyena_filter_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            x = inputs[0]
+            b, d, seq_len = x.shape
+            n = 2 * seq_len
+            if n <= 0:
+                return
+            log2_n = math.log2(n)
+            total_fft_flops = (
+                (5 * b * d * seq_len * log2_n)
+                + (5 * d * seq_len * log2_n)
+                + (6 * b * d * (seq_len + 1))
+                + (5 * b * d * seq_len * log2_n)
+                + (4 * b * d * seq_len)
+            )
+            self.total_flops += total_fft_flops
+            self.layer_flops[f"{name}.fftconv_core"] = total_fft_flops
+
+        return hook
+
+    def _caduceus_ssm_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            b, seq_len, _ = inputs[0].shape
+            d_inner = module.conv1d.in_channels
+            d_state = getattr(module, "ssm_state_size", None) or (
+                self.model.config.ssm_cfg["d_state"]
+                if hasattr(self.model.config, "ssm_cfg")
+                else 16
+            )
+            d_model = getattr(module, "d_model", getattr(module, "hidden_size", 256))
+            dt_rank = getattr(module, "time_step_rank", None) or (
+                math.ceil(d_model / 16) if hasattr(self.model.config, "ssm_cfg") else 16
+            )
+
+            ssm_flops = 9 * b * seq_len * d_inner * d_state
+            self.total_flops += ssm_flops
+            self.layer_flops[f"{name}.ssm_core"] = ssm_flops
+
+            if hasattr(module, "conv1d"):
+                conv_flops = 2 * b * seq_len * d_inner * module.conv1d.kernel_size[0]
+                self.total_flops += conv_flops
+                self.layer_flops[f"{name}.conv1d_fused"] = conv_flops
+
+            self.total_flops += 2 * b * seq_len * d_model * (d_inner * 2)  # in_proj
+            self.total_flops += (
+                2 * b * seq_len * d_inner * (dt_rank + 2 * d_state)
+            )  # x_proj
+            self.total_flops += 2 * b * seq_len * dt_rank * d_inner  # dt_proj
+            self.total_flops += (
+                2 * b * seq_len * d_inner * module.out_proj.out_features
+            )  # out_proj
+
+        return hook
+
+    def _caduceus2_ssd_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            b, seq_len, _ = inputs[0].shape
+            head_dim = getattr(module, "head_dim", 64)
+            d_model = getattr(module, "d_model", getattr(module, "hidden_size", 256))
+            n_heads = d_model // head_dim if head_dim else 4
+            d_state = getattr(
+                module,
+                "state_size",
+                getattr(
+                    module,
+                    "d_state",
+                    getattr(self.model.config, "ssm_cfg", {}).get("d_state", 128),
+                ),
+            )
+            d_inner = (
+                getattr(
+                    module,
+                    "expand",
+                    getattr(self.model.config, "ssm_cfg", {}).get("expand", 2),
+                )
+                * d_model
+            )
+
+            flops = 4 * b * seq_len * (n_heads * head_dim) * d_state
+            self.total_flops += flops
+            self.layer_flops[f"{name}.ssd_core"] = flops
+
+            if hasattr(module, "conv1d"):
+                conv_flops = (
+                    2
+                    * b
+                    * seq_len
+                    * module.conv1d.in_channels
+                    * module.conv1d.kernel_size[0]
+                )
+                self.total_flops += conv_flops
+            self.total_flops += 2 * b * seq_len * d_inner * module.out_proj.out_features
+
+        return hook
+
+    def _mamba_ssm_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            x = (
+                inputs[0]
+                if len(inputs) > 0
+                else (outputs[0] if isinstance(outputs, tuple) else outputs)
+            )
+            b, seq_len, _ = x.shape
+            d_inner = module.conv1d.in_channels
+            d_state = getattr(module, "ssm_state_size", 16)
+            dt_rank = getattr(module, "time_step_rank", 16)
+
+            ssm_flops = 9 * b * seq_len * d_inner * d_state
+            self.total_flops += ssm_flops
+            self.layer_flops[f"{name}.ssm_core"] = ssm_flops
+
+            if hasattr(module, "conv1d"):
+                conv_flops = 2 * b * seq_len * d_inner * module.conv1d.kernel_size[0]
+                self.total_flops += conv_flops
+            self.total_flops += 2 * b * seq_len * dt_rank * d_inner  # dt_proj
+
+        return hook
+
+    def _mamba2_ssd_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            b, seq_len, _ = inputs[0].shape
+            n_heads, head_dim = (
+                getattr(module, "num_heads", 4),
+                getattr(module, "head_dim", 64),
+            )
+            n_state = getattr(
+                module, "ssm_state_size", getattr(module, "state_size", 128)
+            )
+
+            flops = 4 * b * seq_len * (n_heads * head_dim) * n_state
+            self.total_flops += flops
+            self.layer_flops[f"{name}.ssd_core"] = flops
+
+            if hasattr(module, "conv1d"):
+                conv_flops = (
+                    2
+                    * b
+                    * seq_len
+                    * module.conv1d.in_channels
+                    * module.conv1d.kernel_size[0]
+                )
+                self.total_flops += conv_flops
+
+        return hook
+
+    def _megabyte_attn_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            x = (
+                inputs[0]
+                if len(inputs) > 0
+                else (outputs[0] if isinstance(outputs, tuple) else outputs)
+            )
+            b, seq_len, _ = x.shape
+            d_q = module.to_q.out_features
+            attn_core_flops = 4 * b * (seq_len**2) * d_q
+            self.total_flops += attn_core_flops
+            self.layer_flops[f"{name}.matmul_core"] = attn_core_flops
+
+        return hook
+
+    def _borzoi_attn_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            x = (
+                inputs[0]
+                if len(inputs) > 0
+                else (outputs[0] if isinstance(outputs, tuple) else outputs)
+            )
+            b, seq_len, _ = x.shape
+            d_q = module.to_q.out_features
+            total_attn_flops = (4 * b * (seq_len**2) * d_q) + (
+                2 * b * (seq_len**2) * d_q
+            )
+            self.total_flops += total_attn_flops
+            self.layer_flops[f"{name}.matmul_core"] = total_attn_flops
+
+        return hook
+
+    def _enformer_attn_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            x = (
+                inputs[0]
+                if len(inputs) > 0
+                else (outputs[0] if isinstance(outputs, tuple) else outputs)
+            )
+            b, seq_len, _ = x.shape
+            d_q, d_v = module.to_q.out_features, module.to_v.out_features
+            total_attn_flops = (
+                (2 * b * (seq_len**2) * d_q)
+                + (2 * b * (seq_len**2) * d_q)
+                + (2 * b * (seq_len**2) * d_v)
+            )
+            self.total_flops += total_attn_flops
+            self.layer_flops[f"{name}.matmul_core"] = total_attn_flops
+
+        return hook
+
+    def _borzoi_flash_attn_hook(self, name):
+        def hook(module, inputs, outputs):
+            if not self._is_active:
+                return
+            b, seq_len, d = inputs[0].shape
+            mha_flops = 8 * b * seq_len * (d**2) + 4 * b * (seq_len**2) * d
+            self.total_flops += mha_flops
+            self.layer_flops[f"{name}.flash_mha_core"] = mha_flops
 
         return hook
 
@@ -416,3 +834,92 @@ def build_hardware_section(gpu_device=None, train_time=None, max_mem_gb=None):
         "train_time": train_time,
         "max_mem_gb": max_mem_gb,
     }
+
+
+def _torch():
+    """Lazily import torch — the calibration-forward path only.
+
+    Same seam discipline as :func:`_torch_nn`: never at module top, so the
+    torch-free dev/CI lane keeps importing this module.
+    """
+    import torch
+
+    return torch
+
+
+def calibration_forward(model, model_name, bf16, batch_sample):
+    """Run ONE no_grad calibration forward on a single train sample.
+
+    Ported verbatim from dnallmmark_pipeline.py:1086-1148 (the legacy
+    pre-training FLOPs pass): the evo2-backbone special case, the bf16
+    autocast branch, the plain branch, and the except-retry with an
+    attention_mask of ones; a second failure prints and continues (the
+    calibration is best-effort — training proceeds regardless). The caller
+    owns hook lifecycle: register FlopsCounter hooks, call this once, then
+    ``remove_hooks()`` BEFORE the trainer is constructed (the hooks live
+    for exactly this one forward — never a training-time instrumentation).
+
+    Args:
+        model: the live torch model (hooks already registered).
+        model_name: the model's display/registry name — the evo2 backbone
+            case fires when it contains ``"evo"`` and the model has a
+            ``backbone`` attribute.
+        bf16: ``configs["finetune"].bf16`` — run under
+            ``torch.autocast(device.type, dtype=torch.bfloat16)`` when True.
+        batch_sample: the first train row (a dict optionally carrying
+            ``input_ids`` / ``inputs_embeds`` lists).
+
+    Returns:
+        int: ``current_tokens`` — the calibration sample's token count
+        (``input_ids`` last dim, else ``inputs_embeds`` dim 1, else 0).
+    """
+    torch = _torch()
+    device = (
+        next(model.parameters()).device
+        if next(model.parameters(), None) is not None
+        else torch.device("cpu")
+    )
+    input_ids = (
+        torch.tensor(batch_sample["input_ids"]).unsqueeze(0).to(device)
+        if "input_ids" in batch_sample
+        else None
+    )
+    inputs_embeds = (
+        torch.tensor(batch_sample["inputs_embeds"]).unsqueeze(0).to(device)
+        if "inputs_embeds" in batch_sample
+        else None
+    )
+
+    try:
+        with torch.no_grad():
+            if "evo" in model_name.lower() and hasattr(model, "backbone"):
+                _ = model.backbone.model(
+                    inputs_embeds if inputs_embeds is not None else input_ids
+                )
+            elif bf16:
+                with torch.autocast(device.type, dtype=torch.bfloat16):
+                    _ = model(
+                        inputs_embeds if inputs_embeds is not None else input_ids
+                    )
+            else:
+                _ = model(inputs_embeds if inputs_embeds is not None else input_ids)
+    except Exception:  # noqa: BLE001 - legacy verbatim: any forward failure retries once with an attention mask
+        try:
+            with torch.no_grad():
+                if bf16:
+                    with torch.autocast(device.type, dtype=torch.bfloat16):
+                        _ = model(
+                            input_ids,
+                            attention_mask=torch.ones_like(input_ids),
+                        )
+                else:
+                    _ = model(input_ids, attention_mask=torch.ones_like(input_ids))
+        except Exception as e2:  # noqa: BLE001 - legacy verbatim: calibration is best-effort, training proceeds
+            print(f"FLOPs counting forward pass failed: {e2}")
+
+    current_tokens = (
+        input_ids.shape[-1]
+        if input_ids is not None
+        else (inputs_embeds.shape[1] if inputs_embeds is not None else 0)
+    )
+    return current_tokens

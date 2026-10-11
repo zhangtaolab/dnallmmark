@@ -559,3 +559,533 @@ def test_modules_import_in_torch_free_lane():
     )
     assert proc.returncode == 0, proc.stderr
     assert "cpu-import-ok" in proc.stdout
+
+
+# =====================================================================
+# Task 3: exotic architecture families, dispatch-order lock,
+# remove_hooks, calibration_forward
+# =====================================================================
+
+
+class _PlainProj:
+    """Non-nn.Linear projection: in/out features, empty hook list."""
+
+    def __init__(self, in_features, out_features):
+        self.in_features = in_features
+        self.out_features = out_features
+        self._forward_hooks = []
+
+
+class _Conv1dLike:
+    """Non-nn.Conv1d conv attribute: in_channels + kernel_size tuple."""
+
+    def __init__(self, in_channels, kernel_size):
+        self.in_channels = in_channels
+        self.kernel_size = tuple(kernel_size)
+
+
+class _SumVal:
+    def __init__(self, value):
+        self._value = value
+
+    def item(self):
+        return self._value
+
+
+class _CuSeq:
+    """cu_seqlens stub: slicing, subtraction, square, sum().item()."""
+
+    def __init__(self, values):
+        self.values = list(values)
+
+    def __getitem__(self, idx):
+        if isinstance(idx, slice):
+            return _CuSeq(self.values[idx])
+        return self.values[idx]
+
+    def __sub__(self, other):
+        return _CuSeq([a - b for a, b in zip(self.values, other.values)])
+
+    def __pow__(self, exponent):
+        return _CuSeq([v**exponent for v in self.values])
+
+    def sum(self):
+        return _SumVal(sum(self.values))
+
+
+class _MambaMixerStub(_StubModule):
+    def __init__(self, d_inner=64, d_state=16, dt_rank=8, kernel=4):
+        super().__init__({"mixer": _Param(1024)})
+        self.conv1d = _Conv1dLike(d_inner, (kernel,))
+        self.ssm_state_size = d_state
+        self.time_step_rank = dt_rank
+
+
+class _Mamba2MixerStub(_StubModule):
+    def __init__(self, num_heads=4, head_dim=64, state=128, conv_in=128, kernel=4):
+        super().__init__({"mixer": _Param(2048)})
+        self.num_heads = num_heads
+        self.head_dim = head_dim
+        self.ssm_state_size = state
+        self.conv1d = _Conv1dLike(conv_in, (kernel,))
+
+
+class BigBirdBlockSparseAttention:
+    """Inner BigBird attention — exact classname (the is_sparse compare)."""
+
+    def __init__(self, d_in, d_q, num_random_blocks=2, block_size=64):
+        self.query = _PlainProj(d_in, d_q)
+        self.num_random_blocks = num_random_blocks
+        self.block_size = block_size
+
+
+class _BigBirdDenseInner:
+    def __init__(self, d_in, d_q):
+        self.query = _PlainProj(d_in, d_q)
+        self.num_random_blocks = 3
+        self.block_size = 64
+
+
+class _BigBirdAttentionStub(_StubModule):
+    def __init__(self, inner):
+        super().__init__({"attn": _Param(512)})
+        self.self = inner
+
+
+class _GQAStub(_StubModule):
+    def __init__(self, d_model, d_q, sliding_window=None):
+        super().__init__({"q": _Param(256)})
+        self.q_proj = _PlainProj(d_model, d_q)
+        self.config = _StubConfig(sliding_window=sliding_window)
+
+
+class _FlashStub(_StubModule):
+    def __init__(self, sliding_window=None, with_config=True):
+        super().__init__({"f": _Param(256)})
+        if with_config:
+            self.config = _StubConfig(sliding_window=sliding_window)
+
+
+class _ModernBertAttentionStub(_StubModule):
+    def __init__(self, local_attention=128, every_n=3):
+        super().__init__({"q": _Param(256)})
+        self.config = _StubConfig(
+            local_attention=local_attention, global_attn_every_n_layers=every_n
+        )
+
+
+class _Conv1DStub(_StubModule):
+    """HF GPT-2 style Conv1D (classname string, not nn.Conv1d)."""
+
+    def __init__(self, nf):
+        super().__init__({"weight": _Param(64)})
+        self.nf = nf
+
+
+class _BertUnpadStub(_StubModule):
+    def __init__(self, all_head_size=64):
+        super().__init__({"q": _Param(256)})
+        self.all_head_size = all_head_size
+
+
+class _CaduceusMambaStub(_StubModule):
+    def __init__(self, conv_in=64, kernel=4, out_features=64):
+        super().__init__({"m": _Param(512)})
+        self.conv1d = _Conv1dLike(conv_in, (kernel,))
+        self.out_proj = _PlainProj(out_features, out_features)
+
+
+class _Caduceus2Mamba2Stub(_StubModule):
+    def __init__(self, head_dim=64, hidden_size=256, conv_in=512, kernel=4):
+        super().__init__({"m": _Param(512)})
+        self.head_dim = head_dim
+        self.hidden_size = hidden_size
+        self.conv1d = _Conv1dLike(conv_in, (kernel,))
+        self.out_proj = _PlainProj(conv_in, conv_in)
+
+
+class _AttentionStub(_StubModule):
+    """Generic classname-Attention module (megadna/enformer/borzoi)."""
+
+    def __init__(self, d, to_v=None, to_rel_k=False, use_tf_gamma=False):
+        super().__init__({"a": _Param(256)})
+        self.to_q = _PlainProj(d, d)
+        if to_v is not None:
+            self.to_v = _PlainProj(d, to_v)
+        if to_rel_k:
+            self.to_rel_k = True
+        if use_tf_gamma:
+            self.use_tf_gamma = True
+
+
+# ===== Per-family hook arithmetic =====
+
+
+def test_mamba_ssm_hook_arithmetic(stub_nn):
+    mixer = _reclass(
+        _MambaMixerStub(d_inner=64, d_state=16, dt_rank=8, kernel=4), "MambaMixer"
+    )
+    counter, _model = _make_counter([("backbone.layers.0.mixer", mixer)])
+    mixer.fire(_T(1, 10, 64))
+    name = "backbone.layers.0.mixer"
+    assert counter.layer_flops.get(f"{name}.ssm_core") == 9 * 1 * 10 * 64 * 16
+    # conv1d + dt_proj add to the total but not to layer_details
+    expected_total = (
+        (9 * 1 * 10 * 64 * 16) + (2 * 1 * 10 * 64 * 4) + (2 * 1 * 10 * 8 * 64)
+    )
+    assert counter.total_flops == expected_total
+
+
+def test_mamba2_ssd_hook_arithmetic(stub_nn):
+    mixer = _reclass(
+        _Mamba2MixerStub(num_heads=4, head_dim=64, state=128, conv_in=128, kernel=4),
+        "Mamba2Mixer",
+    )
+    counter, _model = _make_counter([("m", mixer)])
+    mixer.fire(_T(1, 10, 256))
+    ssd = 4 * 1 * 10 * (4 * 64) * 128
+    assert counter.layer_flops.get("m.ssd_core") == ssd
+    assert counter.total_flops == ssd + (2 * 1 * 10 * 128 * 4)
+
+
+def test_hyena_filter_hook_fft_terms(stub_nn, tmp_path):
+    filt = _reclass(_StubModule(parameters={"f": _Param(64)}), "HyenaFilter")
+    counter, _model = _make_counter([("h", filt)])
+    filt.fire(_T(1, 64, 100))  # (batch, d_model, seq_len)
+    log2_n = math.log2(2 * 100)
+    expected = (
+        (5 * 1 * 64 * 100 * log2_n)
+        + (5 * 64 * 100 * log2_n)
+        + (6 * 1 * 64 * 101)
+        + (5 * 1 * 64 * 100 * log2_n)
+        + (4 * 1 * 64 * 100)
+    )
+    assert counter.layer_flops.get("h.fftconv_core") == pytest.approx(expected)
+    assert counter.total_flops == pytest.approx(expected)
+    # Fractional layer FLOPs (the verbatim log2 terms) stay schema-valid.
+    out = tmp_path / "flops_report.json"
+    counter.save_to_json(num_tokens=100, all_tokens=10000, filepath=str(out))
+    report = load_json_artifact(out)
+    assert report is not None
+    Draft202012Validator(_load_schema()).validate(report)
+
+
+def test_bigbird_sparse_hook_arithmetic(stub_nn):
+    inner = BigBirdBlockSparseAttention(
+        d_in=32, d_q=32, num_random_blocks=2, block_size=64
+    )
+    attn = _reclass(_BigBirdAttentionStub(inner), "BigBirdAttention")
+    counter, _model = _make_counter([("b", attn)])
+    attn.fire(_T(2, 100, 32))
+    assert counter.layer_flops.get("b.qkv_dynamic_fused") == 3 * (2 * 2 * 100 * 32 * 32)
+    effective_seq_len = (5 + 2) * 64
+    assert counter.layer_flops.get("b.matmul_core") == 4 * 2 * 100 * effective_seq_len * 32
+
+
+def test_bigbird_dense_inner_falls_back_to_quadratic(stub_nn):
+    attn = _reclass(_BigBirdAttentionStub(_BigBirdDenseInner(d_in=32, d_q=32)), "BigBirdAttention")
+    counter, _model = _make_counter([("b", attn)])
+    attn.fire(_T(2, 100, 32))
+    assert counter.layer_flops.get("b.matmul_core") == 4 * 2 * 100 * 100 * 32
+    assert counter.layer_flops.get("b.qkv_dynamic_fused") == 3 * (2 * 2 * 100 * 32 * 32)
+
+
+def test_gqa_hook_quadratic_without_window(stub_nn):
+    attn = _reclass(_GQAStub(d_model=64, d_q=64, sliding_window=None), "LlamaAttention")
+    counter, _model = _make_counter([("g", attn)])
+    attn.fire(_T(1, 50, 64))
+    assert counter.layer_flops.get("g.matmul_core") == 4 * 1 * 2500 * 64
+
+
+def test_gqa_hook_windowed_for_flash_variant(stub_nn):
+    attn = _reclass(
+        _GQAStub(d_model=64, d_q=64, sliding_window=128), "GemmaFlashAttention2"
+    )
+    counter, _model = _make_counter([("g", attn)])
+    attn.fire(_T(1, 512, 64))
+    assert counter.layer_flops.get("g.matmul_core") == 4 * 1 * 512 * 128 * 64
+
+
+def test_flash_attn_hook_windowed_for_attention2(stub_nn):
+    module = _reclass(_FlashStub(sliding_window=128), "MistralFlashAttention2")
+    counter, _model = _make_counter([("f", module)])
+    module.fire(_T(1, 512, 64))
+    assert counter.layer_flops.get("f.matmul_core") == 4 * 1 * 512 * 128 * 64
+
+
+def test_flash_attn_hook_quadratic_without_2_suffix(stub_nn):
+    module = _reclass(_FlashStub(sliding_window=128), "FlashAttentionBlock")
+    counter, _model = _make_counter([("f", module)])
+    module.fire(_T(1, 512, 64))
+    assert counter.layer_flops.get("f.matmul_core") == 4 * 1 * 512 * 512 * 64
+
+
+def test_modernbert_local_layer_windowed(stub_nn):
+    attn = _reclass(_ModernBertAttentionStub(local_attention=128, every_n=3), "ModernBertAttention")
+    counter, _model = _make_counter([("encoder.layers.1.attn", attn)])
+    attn.fire(_T(1, 512, 64))
+    expected = 4 * 1 * 512 * 128 * 64
+    assert counter.layer_flops.get("encoder.layers.1.attn.matmul_core") == expected
+
+
+def test_modernbert_global_layer_quadratic(stub_nn):
+    attn = _reclass(_ModernBertAttentionStub(local_attention=128, every_n=3), "ModernBertAttention")
+    counter, _model = _make_counter([("encoder.layers.3.attn", attn)])
+    attn.fire(_T(1, 512, 64))
+    expected = 4 * 1 * 512 * 512 * 64
+    assert counter.layer_flops.get("encoder.layers.3.attn.matmul_core") == expected
+
+
+def test_hf_conv1d_hook_arithmetic(stub_nn):
+    module = _reclass(_Conv1DStub(nf=32), "Conv1D")
+    counter, _model = _make_counter([("c", module)])
+    module.fire(_T(2, 5, 16))
+    assert counter.layer_flops.get("c") == 2 * 2 * 5 * 16 * 32
+
+
+def test_dnabert2_flash_attn_cu_seqlens_arithmetic(stub_nn):
+    module = _reclass(_BertUnpadStub(all_head_size=64), "BertUnpadSelfAttention")
+    counter, _model = _make_counter([("u", module)])
+    module.fire(_T(1, 12, 64), _CuSeq([0, 10, 12]))
+    # seq_lens [10, 2] -> sum of squares 104
+    assert counter.layer_flops.get("u.flash_attn_core") == 4 * 64 * 104
+
+
+def test_caduceus_ssm_hook_config_fallbacks(stub_nn):
+    module = _reclass(_CaduceusMambaStub(conv_in=64, kernel=4, out_features=64), "Mamba")
+    counter, _model = _make_counter(
+        [("c", module)], config=_StubConfig(ssm_cfg={"d_state": 16})
+    )
+    module.fire(_T(1, 10, 64))
+    assert counter.layer_flops.get("c.ssm_core") == 9 * 1 * 10 * 64 * 16
+    assert counter.layer_flops.get("c.conv1d_fused") == 2 * 1 * 10 * 64 * 4
+    d_model, dt_rank = 256, 16  # defaults; dt_rank = ceil(256 / 16)
+    expected_total = (
+        (9 * 1 * 10 * 64 * 16)
+        + (2 * 1 * 10 * 64 * 4)
+        + (2 * 1 * 10 * d_model * (64 * 2))  # in_proj
+        + (2 * 1 * 10 * 64 * (dt_rank + 2 * 16))  # x_proj
+        + (2 * 1 * 10 * dt_rank * 64)  # dt_proj
+        + (2 * 1 * 10 * 64 * 64)  # out_proj
+    )
+    assert counter.total_flops == expected_total
+
+
+def test_caduceus2_ssd_hook_arithmetic(stub_nn):
+    module = _reclass(
+        _Caduceus2Mamba2Stub(head_dim=64, hidden_size=256, conv_in=512, kernel=4),
+        "Mamba2",
+    )
+    counter, _model = _make_counter([("c2", module)])  # config: no ssm_cfg
+    module.fire(_T(1, 10, 256))
+    n_heads = 256 // 64
+    d_state, d_inner = 128, 2 * 256
+    ssd = 4 * 1 * 10 * (n_heads * 64) * d_state
+    assert counter.layer_flops.get("c2.ssd_core") == ssd
+    expected_total = ssd + (2 * 1 * 10 * 512 * 4) + (2 * 1 * 10 * d_inner * 512)
+    assert counter.total_flops == expected_total
+
+
+def test_megadna_branch_hooks_to_q_attention(stub_nn):
+    attn = _reclass(_AttentionStub(d=64), "Attention")
+    counter, _model = _make_counter(
+        [("a", attn)], name_or_path="models/megadna_updated"
+    )
+    attn.fire(_T(1, 50, 64))
+    assert counter.layer_flops.get("a.matmul_core") == 4 * 1 * 2500 * 64
+
+
+def test_enformer_branch_hooks_rel_k_attention(stub_nn):
+    attn = _reclass(
+        _AttentionStub(d=64, to_v=32, to_rel_k=True, use_tf_gamma=True), "Attention"
+    )
+    counter, _model = _make_counter([("a", attn)], name_or_path="models/enformer")
+    attn.fire(_T(1, 50, 64))
+    expected = (2 * 1 * 2500 * 64) + (2 * 1 * 2500 * 64) + (2 * 1 * 2500 * 32)
+    assert counter.layer_flops.get("a.matmul_core") == expected
+
+
+def test_borzoi_attention_branch_arithmetic(stub_nn):
+    attn = _reclass(_AttentionStub(d=64), "Attention")
+    counter, _model = _make_counter([("a", attn)], name_or_path="models/borzoi-cc")
+    attn.fire(_T(1, 50, 64))
+    expected = (4 * 1 * 2500 * 64) + (2 * 1 * 2500 * 64)
+    assert counter.layer_flops.get("a.matmul_core") == expected
+
+
+def test_borzoi_flash_attention_branch(stub_nn):
+    flash = _reclass(_StubModule(parameters={"f": _Param(64)}), "FlashAttention")
+    counter, _model = _make_counter([("f", flash)], name_or_path="models/flashzoi")
+    flash.fire(_T(1, 50, 64))
+    expected = 8 * 1 * 50 * (64**2) + 4 * 1 * 2500 * 64
+    assert counter.layer_flops.get("f.flash_mha_core") == expected
+
+
+# ===== Dispatch-order lock + hook lifecycle =====
+
+
+def test_linear_wins_over_borzoi_branch(stub_nn):
+    """Dispatch order pin: every classname branch (incl. Linear) precedes
+    the model_path branches, so a Linear — even one whose classname is
+    Attention — inside a borzoi-path model takes the Linear hook first."""
+    linear_named_attention = _reclass(_StubLinear(32, 64), "Attention")
+    counter, _model = _make_counter(
+        [("encoder.attn", linear_named_attention)],
+        name_or_path="pipeline/models/borzoi-cc",
+    )
+    linear_named_attention.fire(_T(2, 10, 32))
+    expected = 2 * 20 * 32 * 64
+    assert counter.layer_flops.get("encoder.attn") == expected
+    assert "encoder.attn.matmul_core" not in counter.layer_flops
+
+
+def test_remove_hooks_empties_handle_list(stub_nn):
+    linear = _StubLinear(8, 16)
+    counter, _model = _make_counter([("x", linear)])
+    assert len(counter.hooks) == 1
+    linear.fire(_T(2, 5, 8))
+    assert counter.total_flops == 2560
+    counter.remove_hooks()
+    assert counter.hooks == []
+    linear.fire(_T(2, 5, 8))  # detached: nothing fires
+    assert counter.total_flops == 2560
+
+
+# ===== calibration_forward (legacy no_grad single-sample chain) =====
+
+
+class _Ctx:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _StubTorchLib:
+    """Duck-typed torch for calibration_forward: tensor/ones_like/no_grad/
+    autocast/device/bfloat16 over the stub tensor types."""
+
+    bfloat16 = "bfloat16"
+
+    def __init__(self):
+        self.autocast_entries = []
+
+    def tensor(self, data):
+        return _T(len(data))
+
+    def ones_like(self, tensor):
+        return tensor
+
+    def no_grad(self):
+        return _Ctx()
+
+    def autocast(self, device_type=None, dtype=None):
+        self.autocast_entries.append((device_type, dtype))
+        return _Ctx()
+
+    def device(self, spec):
+        return _Device()
+
+
+class _BackboneStub:
+    def __init__(self, inner):
+        self.model = inner
+
+
+class _CallableModel:
+    """Model stub: records calls, fails first/always on demand."""
+
+    def __init__(self, fail_first=False, fail_always=False, backbone=None):
+        self.calls = []
+        self._fail_first = fail_first
+        self._fail_always = fail_always
+        if backbone is not None:
+            self.backbone = backbone
+        self.name_or_path = ""
+
+    def __call__(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+        if self._fail_always or (self._fail_first and len(self.calls) == 1):
+            raise RuntimeError("stub forward failure")
+
+    def parameters(self):
+        return iter([_Param(4)])
+
+
+def test_calibration_forward_plain_input_ids(monkeypatch):
+    monkeypatch.setattr(flops_counter, "_torch", lambda: _StubTorchLib())
+    model = _CallableModel()
+    tokens = flops_counter.calibration_forward(
+        model, "plant-dnabert-6mer", False, {"input_ids": [1, 2, 3, 4]}
+    )
+    assert tokens == 4
+    assert len(model.calls) == 1
+    args, kwargs = model.calls[0]
+    assert args[0].shape == (1, 4)
+    assert kwargs == {}
+
+
+def test_calibration_forward_inputs_embeds(monkeypatch):
+    monkeypatch.setattr(flops_counter, "_torch", lambda: _StubTorchLib())
+    model = _CallableModel()
+    tokens = flops_counter.calibration_forward(
+        model, "some-model", False, {"inputs_embeds": [[0.0]] * 6}
+    )
+    assert tokens == 6
+    assert len(model.calls) == 1
+
+
+def test_calibration_forward_evo_backbone_case(monkeypatch):
+    monkeypatch.setattr(flops_counter, "_torch", lambda: _StubTorchLib())
+    inner = _CallableModel()
+    model = _CallableModel(backbone=_BackboneStub(inner))
+    tokens = flops_counter.calibration_forward(
+        model, "evo2_1b_base", False, {"input_ids": [1, 2, 3]}
+    )
+    assert tokens == 3
+    assert len(inner.calls) == 1
+    assert len(model.calls) == 0
+
+
+def test_calibration_forward_bf16_autocast(monkeypatch):
+    torch_lib = _StubTorchLib()
+    monkeypatch.setattr(flops_counter, "_torch", lambda: torch_lib)
+    model = _CallableModel()
+    tokens = flops_counter.calibration_forward(
+        model, "mistral-dna", True, {"input_ids": [1, 2]}
+    )
+    assert tokens == 2
+    assert torch_lib.autocast_entries == [("cpu", "bfloat16")]
+
+
+def test_calibration_forward_attention_mask_retry(monkeypatch):
+    monkeypatch.setattr(flops_counter, "_torch", lambda: _StubTorchLib())
+    model = _CallableModel(fail_first=True)
+    tokens = flops_counter.calibration_forward(
+        model, "some-model", False, {"input_ids": [1, 2, 3, 4, 5]}
+    )
+    assert tokens == 5
+    assert len(model.calls) == 2
+    _args, kwargs = model.calls[1]
+    assert "attention_mask" in kwargs
+    assert kwargs["attention_mask"].shape == (1, 5)
+
+
+def test_calibration_forward_double_failure_prints_and_returns_tokens(
+    monkeypatch, capsys
+):
+    monkeypatch.setattr(flops_counter, "_torch", lambda: _StubTorchLib())
+    model = _CallableModel(fail_always=True)
+    tokens = flops_counter.calibration_forward(
+        model, "some-model", False, {"input_ids": [1, 2]}
+    )
+    assert tokens == 2
+    assert "FLOPs counting forward pass failed" in capsys.readouterr().out
+
+
+def test_calibration_forward_empty_sample_returns_zero(monkeypatch):
+    monkeypatch.setattr(flops_counter, "_torch", lambda: _StubTorchLib())
+    model = _CallableModel()
+    tokens = flops_counter.calibration_forward(model, "some-model", False, {})
+    assert tokens == 0
