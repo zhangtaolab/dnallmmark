@@ -225,6 +225,24 @@ def parse_args():
              "performs NO training"
     )
 
+    parser.add_argument(
+        "--config-variant",
+        type=str,
+        default=None,
+        choices=["head", "probe", "curve"],
+        help="Config variant YAML loaded at the special_models reload "
+             "slot for ANY model (SC-6 lanes, 06-05): 'head' = "
+             "finetune_config_with_head.yaml (the explicit form of the "
+             "implicit evo2/megaDNA auto-reload), 'probe' = "
+             "finetune_config_probe.yaml (frozen backbone, trained MLP "
+             "head — generic-path models ONLY, special-loader models are "
+             "refused; defaults the save name to {model}+probe), 'curve' "
+             "= finetune_config_curve.yaml (dense checkpoint cadence for "
+             "learning curves). Absent = the base config with the "
+             "special_models auto-reload unchanged (byte-identical "
+             "default)"
+    )
+
     args = parser.parse_args()
     return args
 
@@ -336,6 +354,39 @@ def apply_eval_subset(dataset_dict, dataset_name, eval_subsets):
         return
     if "test" in dataset_dict:
         dataset_dict["test"] = dataset_dict["test"].select(ids)
+
+
+# Config-variant YAML resolution (SC-6 lanes, 06-05): each
+# --config-variant choice names the YAML loaded at the special_models
+# reload slot inside the model loop. "head" maps to today's with_head
+# file — --config-variant head is the explicit form of the implicit
+# special_models behavior (any model can request the custom-head
+# config); "probe"/"curve" are the 06-05 lane variants.
+VARIANT_CONFIGS = {
+    "head": "./finetune_config_with_head.yaml",
+    "probe": "./finetune_config_probe.yaml",
+    "curve": "./finetune_config_curve.yaml",
+}
+
+# Probe-ineligible models (SC-6/REV-05 F4, 06-05): --config-variant probe
+# is refused for these names — the suite's load_model_and_tokenizer
+# dispatches each to a dedicated special loader (dnallm/models/model.py
+# L1169-1228 @ v1.2.1 (30dfd6d)) that returns BEFORE the generic
+# head_config routing (model.py L600-615), so task.head_config.frozen
+# (the HeadConfig field at configs.py L14-17; the freeze loop runs at
+# model.py L101-103) never reaches them and a probe run would silently
+# train an unfrozen model under a +probe dir. One provenance comment per
+# member (the suite special/ module each family dispatches to):
+PROBE_INELIGIBLE = [
+    "enformer-official-rough",  # enformer dedicated loader (suite special/enformer.py via model.py:1196-1204)
+    "space",                    # SPACE dedicated loader (suite special/space.py via model.py:1207-1215)
+    "borzoi-replicate-0",       # borzoi dedicated loader (suite special/borzoi.py via model.py:1218-1226)
+    "flashzoi-replicate-0",     # borzoi-family flashzoi loader (suite special/borzoi.py via model.py:1218-1226)
+    "evo2_1b_base",             # evo2 own-head branch (suite special/evo.py via model.py:1170-1172)
+    "megaDNA_updated",          # megaDNA own-head branch (suite special/megadna.py via model.py:1183-1185)
+    "gpn-brassicales",          # gpn special loader (suite special/gpn.py via model.py:1180)
+    "Omni-DNA-700M",            # omnidna special loader (suite special/omnidna.py via model.py:1193)
+]
 
 
 def set_seed(seed=42):
@@ -528,6 +579,7 @@ if __name__ == "__main__":
     peft_mode = args.peft
     peft_dry_run = args.peft_dry_run
     num_train_epochs = args.num_train_epochs
+    config_variant = args.config_variant
 
     # Unified eval subsets (F7 Q3 / REV-07): validate the --subset_file
     # map fail-fast BEFORE any model load — the run_sweep._validate_filters
@@ -557,6 +609,36 @@ if __name__ == "__main__":
             f"(got --peft {peft_mode}): the dry run is validate-and-exit "
             "and there is no adapter to validate in none mode"
         )
+
+    # Probe ineligibility guard (SC-6/REV-05 F4, 06-05): the frozen-probe
+    # lane covers GENERIC-PATH models only. The suite's
+    # load_model_and_tokenizer dispatches the dedicated special-loader
+    # families (model.py:1169-1228 @ v1.2.1 (30dfd6d)) BEFORE the generic
+    # head_config routing (model.py:600-615), so task.head_config.frozen
+    # (configs.py:14-17; the freeze loop executes at model.py:101-103)
+    # never reaches those models — a probe run against one would silently
+    # train an unfrozen model under a +probe dir. Refuse at the argv
+    # boundary, naming the model(s) and the special-loader reason; the
+    # target set is the explicit --target_model or the full registry when
+    # absent (a whole-registry probe run hits the same boundary).
+    if config_variant == "probe":
+        probe_targets = (
+            [target_model] if target_model is not None
+            else [row["Model_name"] for row in models_info.values()]
+        )
+        ineligible_hits = sorted(
+            name for name in probe_targets if name in PROBE_INELIGIBLE
+        )
+        if ineligible_hits:
+            sys.exit(
+                f"[Error] --config-variant probe refuses model(s) "
+                f"{ineligible_hits}: dedicated suite special loaders "
+                "(dnallm model.py:1169-1228 @ v1.2.1) return before the "
+                "generic head_config routing (model.py:600-615), so the "
+                "frozen field (configs.py:14-17, freeze loop "
+                "model.py:101-103) never applies — the frozen-probe lane "
+                "covers generic-path models only"
+            )
 
     # Detect GPU/NPU memory with fallbacks
     if torch.cuda.is_available():
@@ -673,6 +755,20 @@ if __name__ == "__main__":
         # Open error log file
         os.makedirs("./logs/", exist_ok=True)
         with open(f"./logs/{model_name}_error_log.txt", "w") as error_log:
+
+            # Config-variant reload (SC-6 lanes, 06-05): --config-variant
+            # <name> loads the variant's YAML for ANY model at this exact
+            # in-loop slot — the generalization of the special_models
+            # auto-reload below. With NO variant this is a no-op and the
+            # special_models membership check stays the byte-identical
+            # default path (--config-variant head is the explicit
+            # equivalent of that implicit behavior); the special_models
+            # branch below still overrides for its own members under any
+            # variant, so evo2/megaDNA keep their required head config.
+            # Precedes the num_train_epochs override and the D-11
+            # grad_accum snapshot below so the ACTIVE config governs.
+            if config_variant is not None:
+                configs = load_config(VARIANT_CONFIGS[config_variant])
 
             # Reload configurations for model with custom head
             if model_name in ["evo2_1b_base", "megaDNA_updated"]:
@@ -882,16 +978,22 @@ if __name__ == "__main__":
                 # --save_model_name defaults its save name to
                 # {model}+lora / {model}+ia3 — a separate model-level
                 # output dir and therefore a separate trainer_state.json
-                # resume marker, with ZERO layout-code changes. An explicit
+                # resume marker, with ZERO layout-code changes. Probe alias
+                # (SC-6/REV-05 F4, 06-05): --config-variant probe likewise
+                # defaults to {model}+probe — the same 06-02 alias seam,
+                # probe variant ONLY (head/curve do not alias). An explicit
                 # --save_model_name always wins; the registry lookup /
                 # target_model filtering above stays on the BASE model
                 # name (the alias affects only output naming); peft=none
-                # keeps exactly the base name (byte-identical outdir).
+                # with no variant keeps exactly the base name
+                # (byte-identical outdir).
                 save_root = output_dir if output_dir else "./finetuned"
                 if save_model_name:
                     model_save_name = save_model_name
                 elif peft_mode != "none":
                     model_save_name = f"{model_name}+{peft_mode}"
+                elif config_variant == "probe":
+                    model_save_name = f"{model_name}+probe"
                 else:
                     model_save_name = model_name
                 outdir = f"{save_root}/{model_save_name}/{dataset_name}/seed_{seed}/"

@@ -107,6 +107,20 @@ files). The contracts asserted here are textual/structural:
   but does not PERSIST this accounting, trainer.py:248-288 @ v1.2.1) and
   merged into the final_metrics.json payload for EVERY mode including
   none (a full run reports 100.0) — the frontier table's producer.
+- **--config-variant mechanism + frozen probe (SC-6/REV-05 F4, 06-05)** —
+  ``--config-variant {head,probe,curve}`` (default None) loads its YAML
+  via the module-level VARIANT_CONFIGS mapping at the exact in-loop slot
+  the special_models reload occupies (after the per-model base reload,
+  before the unchanged special_models branch and the D-11 grad_accum
+  snapshot — the ACTIVE config governs); the frozen probe is the with_head
+  block with head ``mlp``, ``frozen: true``, ``hidden_dims [512]``
+  (suite-owned fields only); a module-level PROBE_INELIGIBLE list (the
+  deeplearning four + the special_models two + the gpn/omnidna dedicated
+  special-loader registry members, one provenance comment each) backs an
+  argv-boundary guard refusing probe runs on special-loader models with a
+  disclosing ``[Error]``; the probe variant alone defaults the save name
+  to ``{model}+probe`` (the 06-02 alias seam); the per-dataset
+  head_config.task_type assignment stays variant-unconditioned.
 
 See also:
     ``script/make_dev_splits.py`` — the remediation the guard names.
@@ -127,9 +141,12 @@ RUN_FINETUNE = REPO_ROOT / "pipeline" / "run_finetune.py"
 ENV_SMOKE = REPO_ROOT / "pipeline" / "env_smoke.py"
 LEGACY_PIPELINE = REPO_ROOT / "pipeline" / "dnallmmark_pipeline.py"
 MODELS_INFO = REPO_ROOT / "pipeline" / "models_info.json"
+PROBE_CONFIG = REPO_ROOT / "pipeline" / "finetune_config_probe.yaml"
+WITH_HEAD_CONFIG = REPO_ROOT / "pipeline" / "finetune_config_with_head.yaml"
 FINETUNE_CONFIGS = [
     REPO_ROOT / "pipeline" / "finetune_config.yaml",
     REPO_ROOT / "pipeline" / "finetune_config_with_head.yaml",
+    REPO_ROOT / "pipeline" / "finetune_config_probe.yaml",
 ]
 
 # Legacy -> unified-registry name mapping for the quirk lists (04-04).
@@ -1086,27 +1103,31 @@ def test_use_ia3_mutation_precedes_ctor_inside_quirk_block():
 
 
 def test_peft_none_save_name_is_exactly_the_base_name():
-    """06-02 evolution of the 06-01 no-op contract: the save-name resolution
-    now carries the adapter alias branches, but under peft=none the effective
-    name is STILL exactly model_name (the else branch of the chain) — the
-    none-mode outdir is byte-identical to today's; every peft-driven config
-    mutation remains mode-guarded so the none path evaluates exactly the
-    pre-tracer statements."""
+    """06-02 evolution of the 06-01 no-op contract, extended by 06-05's
+    probe alias branch: the save-name resolution now carries the adapter
+    alias AND the probe alias branches, but under peft=none + no variant
+    the effective name is STILL exactly model_name (the final else branch
+    of the chain) — the none-mode outdir is byte-identical to today's;
+    every peft-driven config mutation remains mode-guarded so the none
+    path evaluates exactly the pre-tracer statements."""
     src = RUN_FINETUNE.read_text(encoding="utf-8")
     chain = re.search(
         r'if save_model_name:\s*\n'
         r'[^\S\n]*model_save_name = save_model_name\s*\n'
         r'[^\S\n]*elif peft_mode != "none":\s*\n'
         r'[^\S\n]*model_save_name = f"\{model_name\}\+\{peft_mode\}"\s*\n'
+        r'[^\S\n]*elif config_variant == "probe":\s*\n'
+        r'[^\S\n]*model_save_name = f"\{model_name\}\+probe"\s*\n'
         r"[^\S\n]*else:\s*\n"
         r"[^\S\n]*model_save_name = model_name",
         src,
     )
     assert chain is not None, (
-        "the save-name resolution must be the three-branch chain "
+        "the save-name resolution must be the four-branch chain "
         '(explicit --save_model_name) > (peft alias {model}+{mode}) > '
-        "(base name) — an unchainable form (e.g. an or-expression) would "
-        "either drop the alias default or change the none-mode name"
+        "(probe alias {model}+probe, 06-05) > (base name) — an unchainable "
+        "form (e.g. an or-expression) would either drop an alias default "
+        "or change the none-mode name"
     )
     # Every configs["finetune"] mutation mentioning peft must be guarded;
     # an unguarded one would mutate the none path.
@@ -1332,14 +1353,15 @@ def _yaml_section_keys(text, section):
 
 
 def test_both_finetune_yamls_carry_suite_validated_lora_and_ia3_sections():
-    """Both finetune YAMLs carry a lora: and an ia3: section whose keys
+    """Every shipped finetune YAML (base, with_head, and the 06-05 variant
+    YAMLs as they land) carries a lora: and an ia3: section whose keys
     are EXACTLY the suite-documented fields (dnallm configs.py:400-423
     LoraConfig, :436-478 Ia3Config @ v1.2.1) — no invented fields — with
     r 8 / lora_alpha 16 / target_modules null (suite preset
     auto-selection). The lora: section is REQUIRED whenever use_lora=True
     (trainer.py:421 indexes config[\"lora\"] directly — KeyError without
-    it), which is why it must exist in BOTH files: a special_models
-    with_head reload must never hit KeyError 'lora'."""
+    it), which is why it must exist in EVERY variant file: a config
+    variant reload must never hit KeyError 'lora'."""
     lora_keys_expected = {
         "r", "lora_alpha", "target_modules", "lora_dropout", "bias",
         "task_type",
@@ -1455,4 +1477,315 @@ def test_env_smoke_peft_check_is_gating():
     main_idx = src.find("def main():")
     assert main_idx != -1 and wiring.start() > main_idx, (
         "the check_peft wiring must sit inside main()"
+    )
+
+
+# =====================================================================
+# --config-variant mechanism + frozen probe (06-05, SC-6 / REV-05 F4)
+# =====================================================================
+
+def test_config_variant_flag_declared_with_choices_and_none_default():
+    """--config-variant is an argparse choices flag (head/probe/curve)
+    defaulting to None — the absent-variant path keeps the base config
+    plus the special_models auto-reload (the byte-identical default)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    idx = src.find('"--config-variant"')
+    assert idx != -1, (
+        "no --config-variant argument in parse_args() — the frozen-probe "
+        "lane is not expressible from the CLI (SC-6/REV-05 F4, 06-05)"
+    )
+    block = src[idx:idx + 1200]
+    assert 'choices=["head", "probe", "curve"]' in block, (
+        "--config-variant must be choices=[head, probe, curve] (argparse "
+        "rejects any other variant at the argv boundary)"
+    )
+    assert re.search(r"default=None", block), (
+        "--config-variant must default to None — an absent variant keeps "
+        "the base config + the special_models auto-reload byte-identical"
+    )
+
+
+def test_variant_config_registry_maps_choices_to_real_files():
+    """The module-level VARIANT_CONFIGS mapping resolves every choice to a
+    YAML: head maps to today's with_head file (the explicit form of the
+    implicit special_models behavior — any model can request the custom-
+    head config), probe/curve to this plan's variant files. Every mapping
+    is a real file on disk for the variants shipped so far (head + probe
+    in Task 1; curve lands with the learning-curve lane in Task 2)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    match = re.search(r"VARIANT_CONFIGS = \{(.*?)\}", src, re.DOTALL)
+    assert match is not None, (
+        "no module-level VARIANT_CONFIGS mapping — the variant reload has "
+        "no file resolution"
+    )
+    entries = dict(re.findall(r'"([^"]+)":\s*"([^"]+)"', match.group(1)))
+    assert set(entries) == {"head", "probe", "curve"}, (
+        f"VARIANT_CONFIGS keys must be exactly the --config-variant "
+        f"choices (got {sorted(entries)})"
+    )
+    assert entries.get("head") == "./finetune_config_with_head.yaml", (
+        "the head variant must map to today's with_head file — the "
+        "explicit form of the implicit special_models behavior"
+    )
+    assert entries.get("probe") == "./finetune_config_probe.yaml"
+    assert entries.get("curve") == "./finetune_config_curve.yaml"
+    # Module level: defined OUTSIDE the __main__ block (referenced by the
+    # in-loop reload and testable as a contract surface).
+    assert src.find("VARIANT_CONFIGS = {") < src.find(
+        'if __name__ == "__main__":'
+    ), "VARIANT_CONFIGS must be a module-level mapping"
+    for variant in ("head", "probe"):
+        assert (REPO_ROOT / "pipeline" / Path(entries[variant]).name).is_file(), (
+            f"the {variant} variant's YAML {entries[variant]} does not "
+            "exist on disk — the variant reload would crash at load_config"
+        )
+
+
+def test_variant_reload_occupies_the_special_models_slot_before_snapshot():
+    """The variant reload sits at the exact in-loop slot the special_models
+    reload occupies: AFTER the per-model base reload, BEFORE the unchanged
+    special_models membership branch (which still overrides for its own
+    members — the byte-identical default), and BEFORE the D-11 grad_accum
+    snapshot, so the ACTIVE config's values govern the snapshot. The
+    special_models branch itself is pinned verbatim."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    guarded = re.search(
+        r"if config_variant is not None:\s*\n"
+        r"[^\S\n]*configs = load_config\(VARIANT_CONFIGS\[config_variant\]\)",
+        src,
+    )
+    assert guarded is not None, (
+        'no "if config_variant is not None: configs = '
+        'load_config(VARIANT_CONFIGS[config_variant])" reload — the '
+        "variant mechanism must occupy the special_models reload slot for "
+        "ANY model (06-05)"
+    )
+    base_idx = src.find('load_config("./finetune_config.yaml")')
+    special_idx = src.find('model_name in ["evo2_1b_base", "megaDNA_updated"]')
+    snapshot_idx = src.find("default_grad_accum = configs")
+    assert -1 < base_idx < guarded.start(), (
+        "the variant reload must sit AFTER the per-model base reload "
+        "(D-11: the variant overrides a fresh base, never a stale one)"
+    )
+    assert guarded.start() < special_idx, (
+        "the variant reload must sit BEFORE the special_models branch — "
+        "special models keep their own (overriding) reload, so their "
+        "behavior is unchanged under any variant"
+    )
+    assert special_idx < snapshot_idx, (
+        "the D-11 grad_accum snapshot must stay AFTER every config "
+        "reload — it snapshots whichever config is actually active"
+    )
+    special_branch = re.search(
+        r'if model_name in \["evo2_1b_base", "megaDNA_updated"\]:\s*\n'
+        r'[^\S\n]*configs = load_config\("\./finetune_config_with_head'
+        r'\.yaml"\)\s*\n'
+        r"[^\S\n]*configs\['task'\]\.head_config\.head = model_name"
+        r'\.lower\(\)\.split\("_"\)\[0\]',
+        src,
+    )
+    assert special_branch is not None, (
+        "the special_models auto-reload branch must stay byte-identical "
+        "(the unchanged default; --config-variant is purely additive)"
+    )
+
+
+def test_probe_ineligible_list_covers_special_loader_families_with_provenance():
+    """The module-level PROBE_INELIGIBLE list is the enforced scope
+    boundary of the frozen-probe lane: the deeplearning_models four, the
+    special_models two, and the two remaining dedicated special-loader
+    registry families (gpn, omnidna — evo1 has no registry members).
+    Every member is a real registry key and every entry line carries a
+    one-line provenance comment naming its special loader."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    match = re.search(r"PROBE_INELIGIBLE = \[(.*?)\]", src, re.DOTALL)
+    assert match is not None, (
+        "no module-level PROBE_INELIGIBLE list — the probe lane's scope "
+        "boundary is not enforced (T-06-16)"
+    )
+    assert src.find("PROBE_INELIGIBLE = [") < src.find(
+        'if __name__ == "__main__":'
+    ), "PROBE_INELIGIBLE must be a module-level list"
+    block = match.group(1)
+    members = re.findall(r'"([^"]+)"', block)
+    assert set(members) == {
+        "enformer-official-rough", "space",
+        "borzoi-replicate-0", "flashzoi-replicate-0",
+        "evo2_1b_base", "megaDNA_updated",
+        "gpn-brassicales", "Omni-DNA-700M",
+    }, (
+        "PROBE_INELIGIBLE must be exactly the deeplearning four + the "
+        "special_models pair + the gpn/omnidna dedicated-loader registry "
+        f"members (got {sorted(members)})"
+    )
+    assert set(list_members(src, "deeplearning_models")) <= set(members), (
+        "every deeplearning_models member must be probe-ineligible — "
+        "their dedicated loaders bypass the generic head path"
+    )
+    assert {"evo2_1b_base", "megaDNA_updated"} <= set(members)
+    unresolved = [n for n in members if n not in registry_keys()]
+    assert not unresolved, (
+        f"PROBE_INELIGIBLE members not in the unified registry: "
+        f"{unresolved} (D-10 name authority)"
+    )
+    entry_lines = [ln for ln in block.splitlines() if '"' in ln]
+    assert entry_lines and all("#" in ln for ln in entry_lines), (
+        "every PROBE_INELIGIBLE member carries a one-line provenance "
+        "comment naming its suite special loader (model.py:1169-1228 "
+        "families)"
+    )
+
+
+def test_probe_ineligibility_guard_fails_fast_before_model_loop():
+    """--config-variant probe refuses ineligible models at the argv
+    boundary with an [Error] message naming the model(s) and disclosing
+    the special-loader reason (the suite dispatches them before the
+    generic head_config routing, so the frozen field never applies) —
+    BEFORE any model load or loop iteration."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    guard_idx = src.find('if config_variant == "probe":')
+    assert guard_idx != -1, (
+        "no probe ineligibility guard — a probe run against a "
+        "special-loader model would silently train an unfrozen model "
+        "under a +probe dir (T-06-16)"
+    )
+    error_idx = src.find("[Error] --config-variant probe")
+    assert error_idx != -1, (
+        "the guard's fail-fast must carry an [Error] --config-variant "
+        "probe message"
+    )
+    model_loop_idx = src.find("models_info.items():")
+    assert guard_idx < model_loop_idx, (
+        "the guard must run BEFORE the model loop — an argv-boundary "
+        "fail-fast, never discovered mid-sweep after a model load"
+    )
+    guard_block = src[guard_idx:guard_idx + 900]
+    assert "PROBE_INELIGIBLE" in guard_block, (
+        "the guard must resolve its hits against the PROBE_INELIGIBLE list"
+    )
+    assert "target_model" in guard_block, (
+        "the guard must honor an explicit --target_model (and refuse the "
+        "full-registry run too when any member is ineligible)"
+    )
+    message = src[error_idx:error_idx + 600]
+    assert "special loader" in message, (
+        "the refusal must disclose the special-loader boundary as the reason"
+    )
+    assert "model.py:1169-1228" in message, (
+        "the refusal must cite the suite special-dispatch anchor "
+        "(model.py:1169-1228 @ v1.2.1)"
+    )
+    assert "head_config" in message, (
+        "the refusal must say WHY the probe cannot apply (the generic "
+        "head_config routing these loaders bypass)"
+    )
+
+
+def test_probe_alias_defaults_only_for_the_probe_variant():
+    """--config-variant probe with NO explicit --save_model_name defaults
+    the save name to {model}+probe — the 06-02 alias seam applied to the
+    probe variant ONLY (head/curve do not alias); an explicit
+    --save_model_name still wins (first branch), and the chain still ends
+    at the bare base name for the no-peft/no-variant default."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    chain = re.search(
+        r'if save_model_name:\s*\n'
+        r'[^\S\n]*model_save_name = save_model_name\s*\n'
+        r'[^\S\n]*elif peft_mode != "none":\s*\n'
+        r'[^\S\n]*model_save_name = f"\{model_name\}\+\{peft_mode\}"\s*\n'
+        r'[^\S\n]*elif config_variant == "probe":\s*\n'
+        r'[^\S\n]*model_save_name = f"\{model_name\}\+probe"\s*\n'
+        r"[^\S\n]*else:\s*\n"
+        r"[^\S\n]*model_save_name = model_name",
+        src,
+    )
+    assert chain is not None, (
+        "the save-name resolution must carry the probe alias branch — "
+        "a probe run without an explicit --save_model_name must default "
+        "to {model}+probe or it would share the base run's output dir "
+        "AND resume marker (Pitfall 3)"
+    )
+    assert src.count("elif config_variant ==") == 1, (
+        "only the probe variant aliases the save name — head/curve must "
+        "not gain alias branches"
+    )
+    assert 'f"{model_name}+head"' not in src, "head must not alias"
+    assert 'f"{model_name}+curve"' not in src, "curve must not alias"
+
+
+def test_probe_yaml_carries_the_frozen_mlp_head_block():
+    """pipeline/finetune_config_probe.yaml is the with_head head block with
+    head \"mlp\", frozen: true, hidden_dims [512] inside task.head_config —
+    using ONLY keys present in finetune_config_with_head.yaml plus the
+    suite's frozen field (dnallm configs.py:14-17 HeadConfig.frozen; the
+    freeze loop that executes it at model.py:101-103), with a provenance
+    comment citing both suite anchors."""
+    text = PROBE_CONFIG.read_text(encoding="utf-8")
+    with_head_text = WITH_HEAD_CONFIG.read_text(encoding="utf-8")
+
+    def head_block_of(yaml_text, name):
+        block = re.search(
+            r"^\s{4}head_config:\s*(?:#[^\n]*)?\n(.*?)(?=^\s{0,4}\S)",
+            yaml_text, re.DOTALL | re.MULTILINE,
+        )
+        assert block is not None, f"no task.head_config block in {name}"
+        return block.group(1)
+
+    probe_block = head_block_of(text, "finetune_config_probe.yaml")
+    assert re.search(r'^\s{8}head: "mlp"', probe_block, re.MULTILINE), (
+        'the probe head_config must set head: "mlp"'
+    )
+    assert re.search(r"^\s{8}frozen: true\b", probe_block, re.MULTILINE), (
+        "the probe head_config must set frozen: true — the suite field "
+        "that freezes the backbone (configs.py:14-17; model.py:101-103)"
+    )
+    assert re.search(r"^\s{8}hidden_dims: \[512\]", probe_block,
+                     re.MULTILINE), (
+        "the probe head must use the single-dim [512] hidden layer"
+    )
+    with_head_block = head_block_of(with_head_text,
+                                    "finetune_config_with_head.yaml")
+
+    def head_keys(block):
+        return set(re.findall(r"^\s{8}([A-Za-z_][A-Za-z0-9_]*):", block,
+                              re.MULTILINE))
+
+    expected_keys = head_keys(with_head_block) | {"frozen"}
+    assert head_keys(probe_block) == expected_keys, (
+        "the probe head_config key surface must be exactly with_head's "
+        f"keys plus frozen (got {sorted(head_keys(probe_block))} vs "
+        f"{sorted(expected_keys)}) — no invented fields"
+    )
+    assert "configs.py" in text and "model.py" in text, (
+        "the probe YAML must cite the suite anchors (configs.py:14-17 "
+        "frozen field; model.py:101-103 freeze loop) as provenance"
+    )
+
+
+def test_per_dataset_head_config_task_type_assignment_untouched():
+    """The per-dataset head_config.task_type assignment (the :718-719
+    region) is untouched by the variant mechanism: guarded only by the
+    config's own head_config presence, never by the variant flag — it
+    keeps working for every variant that carries a head_config (the
+    special_models auto-reload before, the probe variant now)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    assignment = re.search(
+        r'if "head_config" in configs\[\'task\'\]:\s*\n'
+        r"[^\S\n]*configs\['task'\]\.head_config\.task_type = row\[\"type\"\]",
+        src,
+    )
+    assert assignment is not None, (
+        'no \'if "head_config" in configs[\'task\']: ... task_type = '
+        'row["type"]\' assignment — the per-dataset head task_type wiring '
+        "is gone (every head-carrying variant breaks)"
+    )
+    plain_idx = statement_index(src, 'configs["task"].task_type = row["type"]')
+    assert plain_idx != -1 and plain_idx < assignment.start(), (
+        "the head_config.task_type assignment must sit in the per-dataset "
+        "task-config block, right after the plain task_type assignment"
+    )
+    preceding = src[max(0, assignment.start() - 200):assignment.start()]
+    assert "config_variant" not in preceding, (
+        "the assignment must not be conditioned on the variant flag — it "
+        "applies to every head-carrying config alike"
     )
