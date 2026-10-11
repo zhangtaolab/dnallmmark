@@ -436,6 +436,29 @@ def test_save_without_tokens_writes_null_extrapolations(stub_nn, tmp_path):
     Draft202012Validator(_load_schema()).validate(report)
 
 
+def test_save_with_zero_tokens_writes_null_extrapolations(stub_nn, tmp_path):
+    """CR-01 (phase-07 review): num_tokens=0 behaves exactly like None —
+    the extrapolations go null instead of dividing by zero. The
+    calibration slot in run_finetune produces current_tokens == 0 for an
+    empty train split, and the legacy ``is not None`` guard crashed the
+    post-success flops write there: final_metrics.json was already on
+    disk, the trainer_state resume marker was NOT copied, and the blind
+    except swallowed the ZeroDivisionError — a cell that records
+    "completed" yet silently retrains on every sweep. The raw count is
+    echoed verbatim (0), only the derived ratios go null."""
+    counter, _model = _make_counter([("x", _StubLinear(8, 16))])
+    out = tmp_path / "flops_report.json"
+    counter.save_to_json(num_tokens=0, all_tokens=1000, filepath=str(out))
+    report = load_json_artifact(out)
+    assert report is not None
+    assert report["num_tokens"] == 0, "the raw count is echoed verbatim"
+    assert report["all_tokens"] == 1000
+    assert report["total_flops_per_token"] is None
+    assert report["total_flops_all_tokens"] is None
+    assert report["computation_size_ratio"] is None
+    Draft202012Validator(_load_schema()).validate(report)
+
+
 def test_build_hardware_section_is_pure_and_nullable():
     assert flops_counter.build_hardware_section() == {
         "gpu_device": None,

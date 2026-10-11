@@ -750,17 +750,27 @@ class FlopsCounter:
         filepath="flops_report.json",
         hardware=None,
     ):
+        # Legacy guarded only total_params > 0, so num_tokens=None crashed on
+        # ``None / total_params``; the ratio is null whenever the per-token
+        # extrapolation is unavailable (schema allows null). CR-01 (phase-07
+        # review): a NON-POSITIVE token count is the same unavailable case —
+        # run_finetune's calibration slot itself yields current_tokens == 0
+        # (empty train split), and the legacy ``is not None`` guard divided
+        # by it, crashing the post-success write after final_metrics.json
+        # landed but before the trainer_state resume marker (a cell that
+        # records completed yet silently retrains forever).
         per_token_flops = (
-            self.total_flops / num_tokens if num_tokens is not None else None
+            self.total_flops / num_tokens
+            if num_tokens is not None and num_tokens > 0
+            else None
         )
         all_tokens_flops = (
             self.total_flops * all_tokens / num_tokens
-            if all_tokens is not None and num_tokens is not None
+            if all_tokens is not None
+            and num_tokens is not None
+            and num_tokens > 0
             else None
         )
-        # Legacy guarded only total_params > 0, so num_tokens=None crashed on
-        # ``None / total_params``; the ratio is null whenever the per-token
-        # extrapolation is unavailable (schema allows null).
         computation_size_ratio = (
             per_token_flops / self.total_params
             if per_token_flops is not None and self.total_params > 0
