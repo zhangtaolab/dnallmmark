@@ -2,9 +2,14 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: TUI任务
+current_phase: 7
+current_phase_name: Pipeline-Side Enablement; 1st of 6 in v1.2
 status: planning
-last_updated: "2026-10-11T12:21:35+08:00"
+stopped_at: Phase 7 context gathered
+last_updated: "2026-10-11T04:49:16.629Z"
 last_activity: 2026-10-11
+last_activity_desc: "v1.2 roadmap revised: custom-entries category folded in (6 phases 7-12, 38/38 requirements mapped)"
+state_head: 38a1220e312d0b03460c67323b162ede5ed420fd
 progress:
   total_phases: 6
   completed_phases: 0
@@ -84,9 +89,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11
-Stopped at: v1.2 roadmap revised per maintainer custom-entries adjustment (overlay → Phase 7, wizards → new Phase 9, phases renumbered to 12; REQUIREMENTS.md traceability refilled 38/38)
-Resume file: None
+Last session: 2026-10-11T04:49:16.616Z
+Stopped at: Phase 7 context gathered
+Resume file: .planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-CONTEXT.md
 
 ## Operator Next Steps
 
