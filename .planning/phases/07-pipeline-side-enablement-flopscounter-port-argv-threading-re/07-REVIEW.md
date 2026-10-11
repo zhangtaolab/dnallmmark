@@ -79,6 +79,8 @@ all_tokens_flops = (
 
 (The schema already allows `num_tokens: 0` with null extrapolations, so no schema change is needed. Optionally also log loudly at the call site when `current_tokens == 0` on a non-empty train split — a zero-token calibration sample means the FLOPs number is meaningless even when it does not crash.)
 
+**Disposition (fix dispatch 2026-10-11):** fixed — `3145a74`. Both guards tightened to `num_tokens is not None and num_tokens > 0`; regression test `test_save_with_zero_tokens_writes_null_extrapolations` in `tests/test_flops_counter.py` pins `num_tokens=0` → no crash, raw counts echoed verbatim, null extrapolations, schema-valid (no schema change needed). The optional call-site log was not added — surgical scope; the null extrapolations already carry the signal.
+
 ## Warnings
 
 ### WR-01: `run_sweep._validate_subset_file` bypassed by a JSON `null` top level — collect-all startup contract violated
@@ -101,17 +103,23 @@ if loaded is not _LOADED and not isinstance(loaded, dict):
 
 (or simply always append a problem when the load failed and drop the sentinel entirely, as the child's `validate_subset_file` effectively does).
 
+**Disposition (fix dispatch 2026-10-11):** fixed — `7d731d7`. Distinct `object()` unreadable sentinel; JSON `null` now refused like every other non-object top level. Regression via the parametrized `test_subset_file_non_object_top_level_aborts` gaining the `None` payload (fails against the old sentinel-colliding code).
+
 ### WR-02: An empty subset-ID list silently means FULL test-split evaluation — and the audit can emit exactly that
 
 **File:** `pipeline/run_finetune.py:386-392` (`apply_eval_subset`), `pipeline/run_finetune.py:348-364` (validator accepts it), `script/audit_n_frequencies.py:309-315` (producer)
 **Issue:** `apply_eval_subset` short-circuits on `if not ids: return`, so a task mapped to `[]` is treated identically to "no entry" — the FULL test split is evaluated while the operator believes the unified-N fairness subset is applied. The child validator raises no problem for an empty list. Meanwhile `audit_n_frequencies.py` computes `unified = min(strict_survivors, n_tolerant_survivors)` and emits `subsets[name] = sorted(test_strict_ids)[:unified]` whenever a test split is readable — a task where no test row passes the strict ACGT filter yields `unified_eval_n: 0` and an **empty-list entry** in `pipeline/eval_subsets.json`. That is precisely the "silently no-op an evaluation" class this codebase refuses loudly everywhere else (the Dataset_name-divergence guard in the same validator exists for exactly this reason). Cross-model test-row comparability — the feature's whole point — breaks silently for such a task.
 **Fix:** In `run_finetune.validate_subset_file`, refuse empty ID lists by name (e.g. `f"{task}: empty ID list — an empty subset cannot mean full evaluation; remove the key or investigate the audit's unified_eval_n=0"`), and/or make `apply_eval_subset` treat `[]` as `select([])` rather than a no-op. At minimum, `audit_n_frequencies.py` should omit tasks with `unified == 0` from `eval_subsets.json` and warn, instead of emitting a key that silently disables the subset.
 
+**Disposition (fix dispatch 2026-10-11):** fixed — `c21a34e`. Both loud edges: the child validator (the authoritative collect-all startup check) refuses empty ID lists by name, and `audit_n_frequencies.py` omits `unified == 0` tasks from `eval_subsets.json` with a warning. `apply_eval_subset` is deliberately unchanged: `[]` can no longer reach it post-validation, and `select([])` would push an empty test split into `trainer.evaluate()` — a mid-run crash is not the right semantics when the startup refusal exists. The sweep-side `_validate_subset_file` was also left alone: its shallow-by-design scope (research Open Q2) puts deeper semantics child-side. Regression tests: `test_subset_validator_refuses_empty_id_list` (contracts, exec-extract span intact — extraction is by function boundaries, in-function edit) and `test_zero_unified_n_omits_subset_entry_with_warning` (audit).
+
 ### WR-03: `tests/test_sweep.py` registry paths are unpinned against the custom-overlay env — machine-dependent failures once a real overlay exists
 
 **File:** `tests/test_sweep.py:157-171, 653-677, 761-777` (and every `run_cli`/`enumerate_matrix` test); cross-ref `pipeline/registry_loader.py:57-81`
 **Issue:** 07-02 rewired `run_sweep.enumerate_matrix` / `_validate_filters` / `_load_registry_key_sets` through `registry_loader`, which applies the user-owned overlay from `DNALLMMARK_CUSTOM_REGISTRY_DIR` > `XDG_CONFIG_HOME` > `~/.config/dnallmmark`. `tests/test_sweep.py` pins **neither** variable (verified by grep across `tests/` — only `test_registry_loader.py` pins them), and `tests/conftest.py` has no autouse pin either. `tests/test_registry_loader.py:26-29` documents the exact hazard: "once real custom files exist on a machine, an unpinned test would see the local overlay and diverge from CI." On the maintainer's machine — the moment the custom-registry feature this phase shipped is actually used — the frozen-order tests (`test_default_enumeration_order_is_frozen_without_priority_file` asserts the exact 12-cell list; `test_cli_absent_filters_keep_full_matrix_semantics`, `test_dry_run_writes_only_the_planned_manifest`, …) enumerate extra custom models and fail, making `make test` red locally while CI stays green.
 **Fix:** Add an autouse fixture in `tests/test_sweep.py` (or `tests/conftest.py`) pointing `DNALLMMARK_CUSTOM_REGISTRY_DIR` at an empty `tmp_path`-style directory for every test that loads registries — the `pin_custom_dir` idiom from `test_registry_loader.py:56-64`, applied at module/conftest scope.
+
+**Disposition (fix dispatch 2026-10-11):** fixed — `d6f0df8`. Module-scope autouse fixture in `tests/test_sweep.py` pins BOTH `DNALLMMARK_CUSTOM_REGISTRY_DIR` and `XDG_CONFIG_HOME` to a fresh empty tmp dir for every test in the module; verified against a hostile ambient overlay exported in the environment (frozen-order test still green). `tests/conftest.py` scope was deliberately rejected: an autouse pin there would override `test_registry_loader.py`'s own overlay-path tests (XDG resolution would short-circuit on the pinned `DNALLMMARK_CUSTOM_REGISTRY_DIR`).
 
 ### WR-04: `test_registry_loader.py` unreadable-file test lacks the running-as-root skip guard its sibling has
 
@@ -124,6 +132,8 @@ custom_path.chmod(0o000)
 if os.access(custom_path, os.R_OK):
     pytest.skip("permission bits not enforced (running as root)")
 ```
+
+**Disposition (fix dispatch 2026-10-11):** fixed — `6e1f7b8`. Skip guard mirrored exactly (plus a `finally` chmod restore so tmp cleanup is unaffected either way, completing the `test_artifact_loader.py:44-53` idiom); `import os` added to the module.
 
 ### WR-05: `--cache_dir ""` silently resolves to the current directory and is threaded to every child
 
@@ -139,11 +149,15 @@ if args.cache_dir is not None and not args.cache_dir.strip():
     )
 ```
 
+**Disposition (fix dispatch 2026-10-11):** fixed — `d50510a`. Twin collect-all check in the same flag-sanity block (exact suggested shape); regression test `test_cli_empty_cache_dir_value_aborts` mirrors the `--subset_file` twin.
+
 ### WR-06: Registry-key vs `Dataset_name` divergence desynchronizes `run_sweep` cell dirs from `run_finetune` output dirs — guarded only for subset-file tasks
 
 **File:** `pipeline/run_sweep.py:900-910` (`cell_dir_for` keyed by registry task key) vs `pipeline/run_finetune.py:985, 1200` (outdir built from `row["Dataset_name"]`)
 **Issue:** `run_sweep` enumerates and checks `final_metrics.json`/resume markers under `{root}/{model}/{registry-key}/...`, while `run_finetune` writes under `{save_root}/{model}/{row["Dataset_name"]}/...`. The divergence is refused loudly only inside `validate_subset_file` (`run_finetune.py:329-347`, "a divergent row would silently no-op that task's subset") and only for tasks present in a `--subset_file`. For any other divergent row, every cell of that task trains successfully in the `Dataset_name` dir while the sweep records it **failed** ("executor exited 0 but final_metrics.json is missing") and re-attempts it forever — a misleading failure manifest and unbounded retraining. All 50 registry rows coincide today (the subset validator's comment says so), but the sweep-path coincidence is enforced nowhere, and the overlay loader this phase added makes user-authored custom dataset rows a new source of divergence.
 **Fix:** Either join the sweep on `Dataset_name` (`enumerate_matrix` emitting `entry["Dataset_name"]` as the task component), or add a one-time startup assertion over the merged datasets registry that every key equals its `Dataset_name`, refusing loudly with the offending rows named.
+
+**Disposition (fix dispatch 2026-10-11):** fixed — `406e1be`, via the loud-refusal extension. New `_validate_dataset_name_alignment` refuses at sweep start over the SAME overlay-merged registry view the enumeration joins on, naming every divergent row (rows omitting `Dataset_name` default to their key, the child validator's reading); wired in `main()` right after `_validate_filters`. Joining the sweep itself on `Dataset_name` was rejected as non-surgical: it would silently relocate every existing cell dir and resume marker. Tests: direct divergent row, overlay-sourced divergence with no filters/subset file, and the aligned-registry inert pass-through.
 
 ## Info
 
