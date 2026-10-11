@@ -98,37 +98,43 @@
 | SEL-02 | Phase 8 | Pending |
 | SEL-03 | Phase 8 | Pending |
 | SEL-04 | Phase 8 | Pending |
-| DATA-01 | Phase 9 | Pending |
-| DATA-02 | Phase 9 | Pending |
-| DATA-03 | Phase 9 | Pending |
-| DATA-04 | Phase 9 | Pending |
-| CFG-01 | Phase 10 | Pending |
-| CFG-02 | Phase 10 | Pending |
-| CFG-03 | Phase 10 | Pending |
-| LNC-01 | Phase 10 | Pending |
-| LNC-02 | Phase 10 | Pending |
-| LNC-03 | Phase 10 | Pending |
-| MON-01 | Phase 10 | Pending |
-| MON-02 | Phase 10 | Pending |
-| MON-03 | Phase 10 | Pending |
-| MON-04 | Phase 10 | Pending |
-| MON-05 | Phase 10 | Pending |
+| CUST-01 | Phase 9 | Pending |
+| CUST-02 | Phase 9 | Pending |
+| CUST-03 | Phase 9 | Pending |
+| CUST-04 | Phase 9 | Pending |
+| CUST-05 | Phase 7 | Pending |
+| CUST-06 | Phase 9 | Pending |
+| DATA-01 | Phase 10 | Pending |
+| DATA-02 | Phase 10 | Pending |
+| DATA-03 | Phase 10 | Pending |
+| DATA-04 | Phase 10 | Pending |
+| CFG-01 | Phase 11 | Pending |
+| CFG-02 | Phase 11 | Pending |
+| CFG-03 | Phase 11 | Pending |
+| LNC-01 | Phase 11 | Pending |
+| LNC-02 | Phase 11 | Pending |
+| LNC-03 | Phase 11 | Pending |
+| MON-01 | Phase 11 | Pending |
+| MON-02 | Phase 11 | Pending |
+| MON-03 | Phase 11 | Pending |
+| MON-04 | Phase 11 | Pending |
+| MON-05 | Phase 11 | Pending |
 | PIPE-01 | Phase 7 | Pending |
 | PIPE-02 | Phase 7 | Pending |
 | PIPE-03 | Phase 7 | Pending |
-| MGPU-01 | Phase 11 | Pending |
-| MGPU-02 | Phase 11 | Pending |
-| MGPU-03 | Phase 11 | Pending |
+| MGPU-01 | Phase 12 | Pending |
+| MGPU-02 | Phase 12 | Pending |
+| MGPU-03 | Phase 12 | Pending |
 | I18N-01 | Phase 8 | Pending |
-| WEB-01 | Phase 11 | Pending |
-| TEST-01 | Phase 11 | Pending |
+| WEB-01 | Phase 12 | Pending |
+| TEST-01 | Phase 12 | Pending |
 
 **Coverage:**
-- v1.2 requirements: 32 total *(corrected 2026-10-11 — the previously stated "28 total" was a stale count predating team supplementation; the file defines 32 checkbox requirements)*
-- Mapped to phases: 32/32 (Phase 7: 3 · Phase 8: 9 · Phase 9: 4 · Phase 10: 11 · Phase 11: 5)
+- v1.2 requirements: 38 total *(maintainer custom-entries revision 2026-10-11 added the CUST category (6 requirements) to the 32 originally mapped; the earliest "28 total" was a stale pre-supplement count)*
+- Mapped to phases: 38/38 (Phase 7: 4 · Phase 8: 9 · Phase 9: 5 · Phase 10: 4 · Phase 11: 11 · Phase 12: 5)
 - Unmapped: 0
 - Orphaned/duplicated: 0
 
 ---
 *Requirements defined: 2026-10-11*
-*Last updated: 2026-10-11 — roadmap traceability filled (32/32 mapped, Phases 7-11)*
+*Last updated: 2026-10-11 — roadmap revised for custom-entries adjustment (38/38 mapped, Phases 7-12)*

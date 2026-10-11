@@ -1,196 +1,186 @@
 # Roadmap: DNALLM-Mark
 
+## Milestones
+
+- ✅ **v0.7.1 Release Hardening** - Phases 1-6 (shipped 2026-10-11)
+- 🚧 **v1.2 TUI任务** - Phases 7-12 (in progress)
+
 ## Overview
 
-This is a hardening milestone over an existing, working platform — not a build. A verification layer is wrapped around the three subsystems (GPU pipeline, offline data chain, static leaderboard site) in the one order that keeps every leaderboard number attributable: audit the codebase and freeze the pre-fix baseline; lock the data contract with schemas and a CPU-only test harness; adapt the GPU pipeline to the dnallm dev branch and prove the adaptation with a real run; land the known correctness fixes surgically under test evidence; recompute the leaderboard under full CI protection with a changelogged, tagged number migration; and finish with the provenance, methodology, and onboarding documentation external reviewers need to trust and extend the platform. Done right, the public leaderboard carries numbers that are correct, reproducible, and defensible under external scrutiny.
+v1.2 builds the operator-facing terminal console on top of the hardened v0.7.1 platform: a pure-Python Textual TUI that lets one operator, working over SSH on the GB10 machine, select from the 62-model × 50-dataset matrix, bring their own models and datasets in through guided wizards, close dataset gaps, configure and safely launch sweeps, and monitor/recover multi-day GPU runs — without changing any existing pipeline contract and without losing CLI parity. The journey: pipeline-side enablement first (FlopsCounter port, the four sanctioned argv flags, and the official+custom registry overlay seam — TUI-independent, feeds E2' FLOPs correctness and makes user-maintained custom entries loadable everywhere); then the TUI foundation carrying every non-retrofittable decision (startup env-check panel, k9s-style selection, textual-free services layer, test harness); then custom model/dataset onboarding — wizards writing user-owned registries over the overlay, with collect-all fool-proofing and a dry-run/audit gauntlet that never lets a failed entry land; then the data manager, so env presence FAILs are diagnosable before launch; then the complete run-config → gated launch → single-GPU monitoring loop, proven by a maintainer-authorized bounded smoke; and finally multi-GPU orchestration, hard-gated on single-GPU validation, with the read-only web mirror and snapshot goldens closing the console out.
 
 ## Phases
 
 **Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+- Integer phases (7, 8, 9): Planned milestone work — numbering continues from v0.7.1 (Phase 6); it never restarts at 1
+- Decimal phases (7.1, 7.2): Urgent insertions (marked with INSERTED)
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [x] **Phase 1: Audit & Release Foundations** - Findings report over all three subsystems, pre-fix baseline frozen (`data-v1`), LICENSE + pinned manifests, deterministic generators, secret-hygiene decision applied (intentional Zenodo preview link kept; scan confirms no other secrets) (completed 2026-10-09)
-- [x] **Phase 2: Data Contracts & Test Harness** - Four JSON Schemas, CPU-only unit/golden/determinism tests over the data chain, and a single-command Makefile — locked before any number moves (completed 2026-10-09)
-- [x] **Phase 3: Dev-Branch Reconciliation & P0 Revision Blockers** - dev@c6b3137 (run_finetune.py rewrite) merged with Phase 1/2 assets intact; dev splits (F1), seed-isolated sweep (F2/G1), old-pipeline retirement (F10); GPU env + two-model E2E on the new pipeline (completed 2026-10-10)
-- [x] **Phase 4: Correctness & Methodology Core** - Species fix via dataset-side metadata (F3②), unified exporter with metric-key mapping + run_record (F3), IN-03 lands; every page renders, submission restored, escaping at touched sites (completed 2026-10-10)
-- [x] **Phase 5: CI & Three-Seed Full Re-Run (E2')** - Aggregation upgrade first (F6: tie/CI-overlap, difficulty normalization, permutation tests), CI golden tests (F9), N audit + eval subsets (F7), then E2' 3-seed full re-run with changelogged tagged migration (completed 2026-10-10)
-- [x] **Phase 6: Revision Packaging & Extended Lanes** - Provenance table + reproducibility docs + snapshot/Zenodo SI (F3); revision-window permitting: LoRA/IA³/probes (F4), zero-shot VEP (F5), learning curves (F8); remainder to response-letter future work (completed 2026-10-11)
+- [ ] **Phase 7: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)** - The four sanctioned `run_sweep.py` flags land CLI-first with argv-parity tests; FlopsCounter (20+ architecture hooks) ports from the legacy pipeline into `run_finetune.py`; the official+custom registry overlay seam lands byte-identical-when-absent; the shared tolerant JSON loader contract is pinned
+- [ ] **Phase 8: TUI Foundation (Env Check & Selection)** - `make tui` opens the console with a persisted startup environment-check panel and k9s-style filter/mark-set selection over first-class model and dataset lists, with presets, templates, and presence columns — carrying all non-retrofittable architecture decisions
+- [ ] **Phase 9: Custom Model & Dataset Onboarding (自定义接入向导)** - Guided wizards land custom models/datasets in user-owned registries over the Phase-7 overlay — collect-all fail-fast field validation, dry-run + audit gauntlet, entry-level rollback; official registries are never written
+- [ ] **Phase 10: Data Manager (Downloads & Verification)** - One-click ModelScope download with a persistent resumable queue and n_audit row-count reconciliation, so missing datasets are closable in-session before launch
+- [ ] **Phase 11: Run Config, Launch Gates & Single-GPU Monitoring** - Full run-config surface with same-source dry-run preview, terraform-style launch gates (E2' stays maintainer-authorized), detached `run_sweep.py` execution, and the poll-and-attach monitor with failure re-run — proven by a bounded GB10 smoke
+- [ ] **Phase 12: Multi-GPU Orchestration & Console Hardening** - CLI-invocable static model sharding × CUDA_VISIBLE_DEVICES with per-worker views, artifact merge, and the DDP-vs-sharding decision, plus the static read-only web mirror and maintainer-verified snapshot goldens — hard-gated on Phase 11 validation
 
 ## Phase Details
 
-### Phase 1: Audit & Release Foundations
+<details>
+<summary>✅ v0.7.1 Release Hardening (Phases 1-6) — SHIPPED 2026-10-11</summary>
 
-**Goal**: The repo is safe for public visibility and every future number change is attributable — all three subsystems audited with evidence, the pre-fix state frozen, and the reproducibility substrate (license, pinned dependencies, deterministic generators) in place
-**Depends on**: Nothing (first phase)
+*(Full accomplishment record: `.planning/MILESTONES.md`. Per-plan execution history: git log + archived phase directories.)*
+
+#### Phase 1: Audit & Release Foundations
+**Goal**: Repo safe for public visibility and every future number change attributable — all three subsystems audited with evidence, pre-fix state frozen, reproducibility substrate in place
 **Requirements**: AUDIT-01, AUDIT-02, REL-01, REL-02, REL-05, FIX-05
-**Success Criteria** (what must be TRUE):
-  1. A findings report covers pipeline, data scripts, and frontend, with every finding severity-graded and backed by `file:line` evidence plus a recommended fix
-  2. The pre-fix state is recoverable and diffable — a `data-v1` git tag and golden baseline outputs of the current data chain exist — before any result-affecting fix lands
-  3. Running the data-regeneration chain twice from a clean checkout produces byte-identical derived JSON
-  4. A fresh contributor can install the CPU-only data-chain dependencies from version-pinned manifests (`pandas>=2.2,<3.0`), with GPU pipeline dependencies isolated in a separate group CI never installs
-  5. The repo is publishable: a LICENSE file exists with data licensing declared separately, and the secret-hygiene decision (2026-10-08) is applied — the intentional Zenodo record-19135551 preview link at `README.md:116` stays as-is while a full-history secret scan confirms no OTHER secrets exist beyond that known-intentional link
+**Plans**: 3/3 complete (01-01 data-v1 baseline freeze + pinned data-chain env · 01-02 three-subsystem audit → AUDIT.md, 24 severity-graded findings · 01-03 deterministic generators + one-time 52-file migration + LICENSE + gitleaks full-history scan)
+**Completed**: 2026-10-09
 
-**Plans**: 3/3 plans complete
-Plans:
-**Wave 1**
-- [x] 01-01-PLAN.md — Freeze data-v1 baseline (comparator + SHA256 manifest + tag) and pin the data-chain environment (pyproject/uv.lock/requirements + pin validation)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 01-02-PLAN.md — Three-subsystem systematic audit with parallel review agents and verified, severity-graded findings published as AUDIT.md
-
-**Wave 3** *(blocked on Wave 2 completion)*
-- [x] 01-03-PLAN.md — FIX-05 deterministic generators + one-time attributed data migration, LICENSE + data terms, gitleaks full-history scan with narrow allowlist
-
-### Phase 2: Data Contracts & Test Harness
-
-**Goal**: The data chain is guarded by executable contracts and a stable CPU-only test harness — schemas, unit tests, golden files, determinism regression, and a single-command Makefile — locked before any correctness fix moves the numbers
-**Depends on**: Phase 1
+#### Phase 2: Data Contracts & Test Harness
+**Goal**: Data chain guarded by executable contracts and a stable CPU-only test harness, locked before any correctness fix moves the numbers
 **Requirements**: REL-04, TEST-01, TEST-02, TEST-03, TEST-06
-**Success Criteria** (what must be TRUE):
-  1. `make data` regenerates all derived leaderboard files in one command from repo root — no undocumented CWD-sensitive steps — and `make test` / `make lint` run the full local suite
-  2. Unit tests over synthetic fixtures exercise rank/MinMax/z-score/robust aggregation and the model-to-task pivot logic, CPU-only and passing; the species-as-dataset bug is captured as a known-failing test that the Phase 4 fix must turn green
-  3. Every committed leaderboard JSON validates against one of the four JSON Schemas (model_performance, task_performance, models_comparison, tasks_index), so a malformed or shape-drifted derived file fails the suite
-  4. Golden-file tests pass over a synthetic fixture tree, and a determinism regression test re-runs the chain expecting byte-identical output
-  5. The suite is stable by construction — float assertions carry explicit tolerances (`pytest.approx`) and thread counts are pinned in conftest — so repeated local runs do not flake
+**Plans**: 3/3 complete (02-01 four fully-strict JSON Schemas + 94-file validation + Makefile entry points · 02-02 synthetic fixture tree + aggregation/pivot unit tests + node:test lane · 02-03 real-tree determinism regression + three xfail(strict=True) defect locks)
+**Completed**: 2026-10-09
 
-**Plans**: 3/3 plans complete planned
-Plans:
-**Wave 1**
-- [x] 02-01-PLAN.md — Four fully-strict JSON Schemas + 94-file schema validation suite + dev group/Makefile entry points (make data/test/test-fast/lint) + D-08 micro-fixes; make data proven zero-diff (REL-04, TEST-06, TEST-02)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 02-02-PLAN.md — Synthetic fixture tree (tie/missing-metric/regression/species-group edges) + aggregation/pivot unit tests + golden files via compare.walk + node:test JS suite; make test runs Python+JS (TEST-01, TEST-02, TEST-03)
-- [x] 02-03-PLAN.md — Real-tree determinism regression (chain ×2 byte-identical + regeneration == committed, slow-marked) + xfail(strict=True) locks for AUD-01-P0/WR-02/WR-03; full make test green (TEST-03, TEST-02)
-
-### Phase 3: Dev-Branch Reconciliation & P0 Revision Blockers
-
-**Goal**: The dev-branch pipeline rewrite (run_finetune.py @ dev c6b3137) is reconciled with the audited main lineage — Phase 1/2 contracts and tests survive the merge — and the manuscript-revision P0 blockers (dev splits, seed-isolated sweep, old-pipeline retirement) land, proven by a two-model end-to-end run on the new pipeline
-**Depends on**: Phase 2
+#### Phase 3: Dev-Branch Reconciliation & P0 Revision Blockers
+**Goal**: dev-branch run_finetune.py rewrite reconciled with the audited lineage (Phase 1/2 assets survive), revision P0 blockers landed (dev splits, seed-isolated sweep, old-pipeline retirement)
 **Requirements**: PIPE-02, PIPE-03, REV-01, REV-02, REV-10
-**Success Criteria** (what must be TRUE):
-  1. dev@c6b3137 is merged into the audited lineage (or the audited lineage rebased onto it) with zero loss of Phase 1/2 assets: all four schemas, the full test suite, the Makefile, and the data-v1 baseline discipline survive; `make test` is green on the merged tree
-  2. The Phase 2 species xfail lock's AST anchor is migrated to the new pipeline/export chain (or the lock re-anchored with the same strict semantics), and the anchor companion still guards findability+uniqueness+species-key
-  3. `pipeline/dnallmmark_pipeline.py` carries a deprecation header pointing to `run_finetune.py` (REV-10/F10); README names run_finetune.py as the benchmark entry point
-  4. All 47 tasks have train/dev/test splits (REV-01/F1): the 18 Dev-empty tasks get stratified 10% dev splits (seed=42, reproducible), datasets_info Dev columns updated, and checkpoint selection refuses to silently fall back to test
-  5. Multi-seed execution is real (REV-02/F2, fixes G1): output dirs are seed-isolated (`{model}/{task}/seed_{seed}/`), resume never skips a different seed, and a sweep runner drives model×task×seed matrices with per-run records and a failure manifest
-  6. [DEFERRED 2026-10-09 — no model runs until the DNALLM suite stabilizes] The GPU pipeline environment is reproducibly buildable (PIPE-02): dedicated uv venv on the GB10 machine, dnallm@0.7.1 from the local clone, torch/transformers pinned to the verified combination (2.11.0+cu130 / 5.17.0), locked in pyproject `[gpu]` group + uv.lock, documented rebuild commands. THIS PHASE lands only the pyproject `[gpu]` group definition as code (no install)
-  7. [DEFERRED 2026-10-09 — with PIPE-02, until model runs resume] Two end-to-end runs complete on the new pipeline (PIPE-03): plant-dnamamba-6mer and PlantHelixSeek each fine-tune on PlantCAD2__cross_species_leaf_on_off_translation and produce `{model}_performance.json` validating against the Phase 2 schema. THIS PHASE lands PlantHelixSeek's models_info entry as metadata only (AUD-05 groundwork)
+**Plans**: 4/4 complete (03-01 D-01 merge + old-pipeline deprecation + species-lock pivot · 02-02→03-02 registry unification + F1 dev splits · 03-03 [gpu] exact-pin group + ty wiring + card fill · 03-04 run_sweep.py matrix driver + G1/D-07/D-11 fixes)
+**Completed**: 2026-10-10
 
-**Plans**: 4/4 plans complete planned
-Plans:
-**Wave 1**
-- [x] 03-01-PLAN.md — D-01 merge of origin/dev@c6b3137 (51 data conflicts to HEAD, 6 dev-added data files removed) + F10 old-pipeline deprecation/README entry-point rename + D-03 species-lock pivot to the export-chain contract + D-04 frontend diff review of commit 8d99daf (REV-10)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 03-02-PLAN.md — D-10 registry unification to single-source JSON (convert_registry.py ingest + tested extensions, run_finetune.py json read site, both .txt registries retired, D-03 Category retarget, single-source contract test) + F1 dev splits: make_dev_splits.py carving the 18 Dev-empty tasks, unified registry updated, run_finetune.py refusal guard + source-contract tests (REV-01)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-- [x] 03-03-PLAN.md — [pipeline]→[gpu] pyproject group (torch==2.11.0 cu130, transformers==5.17.0, definition only per D-05) + ty toolchain wiring + make typecheck + PlantHelixSeek card fill in the unified 62-entry registry from the D-09 ModelScope card (PIPE-02, PIPE-03)
-
-**Wave 4** *(blocked on Wave 3 completion)*
-- [x] 03-04-PLAN.md — F2/G1 seed-isolated output dirs + D-11 per-model base-config reload (cross-model head-config leak) + D-07 grad_accum per-dataset reset in run_finetune.py + pipeline/run_sweep.py matrix driver over the unified json registries (--dry-run, run_record/failure/manifest, suite-native metric keys) + D-08 ruff findings fixed fresh + widened make lint (REV-02)
-
-**Decisions carried from the 2026-10-09 discussion**: dedicated new uv venv (not DNALLM/.venv reuse); pyproject `[gpu]` dependency-group + uv.lock as the lock carrier; E2E pair = the two maintainer-named models × PlantCAD2__on_off; on-disk datasets are double-nested from unzip and get normalized during setup.
-
-### Phase 4: Correctness & Methodology Core
-
-**Goal**: Every confirmed correctness bug is fixed surgically with test evidence — species grouping via dataset-side metadata, a unified exporter with an explicit metric-key mapping, key-name parity tested — and every page works
-**Depends on**: Phase 3
+#### Phase 4: Correctness & Methodology Core
+**Goal**: Every confirmed correctness bug fixed surgically with test evidence — species grouping via dataset-side metadata, unified exporter with explicit metric-key mapping — and every page works
 **Requirements**: FIX-01, FIX-02, FIX-03, FIX-04, REV-03
-**Success Criteria** (what must be TRUE):
-  1. Dataset species comes from a human-verified dataset metadata table (REV-03/F3②), never from the model card; the Phase 2 species xfail lock turns green in the same commit as the fix, and the aggregation diff shows only changes the fix explains
-  2. The unified exporter (REV-03/F3①) replaces get_task_performance.py's input side: it reads per-run records, applies an explicit suite-registry↔export-key mapping layer with key-parity unit tests, and emits per-seed detail plus aggregated (mean±SD, bootstrap 95% CI) tables; IN-03 (METRIC_KEY_MAP mirror) is resolved here
-  3. A visitor can load every page (main leaderboard, task benchmark, finetuning, models, datasets) with no console errors, working navigation, and fully rendered content — verified on ALL pages
-  4. A user can complete the submission flow: submit.html reachable, client-side validation working, PR instructions correct against the current data schema
-  5. DOM-build sites touched by these fixes escape rendered content, so a hostile string in any performance JSON displays as inert text
-  6. Phase 2 schemas/tests are updated for the new export shape (any new metric keys join the closed enum WITH the data≡enum self-check updated in the same commit)
+**Plans**: 5/5 complete (04-01 species fix + xfail unmarks + 42/42 swap inventory · 04-03 frontend restoration (6 pages, 48/48 Playwright) · 04-04 quirk parity ports + 62/62 cards · 04-02 unified exporter + vendored aggregate_seeds · 04-05 pivot retirement + IN-03 single metric-key authority)
+**Completed**: 2026-10-10
 
-**Plans**: 5/5 plans complete planned
-**UI hint**: yes
-Plans:
-**Wave 1**
-- [x] 04-01-PLAN.md — TRACER: species fix end-to-end — maintainer Category-review gate → summarize Comparison-join grouping (hard-fail, Multiple→majority) → regeneration + previewed diff inventory (2 byte-identical / 2 swapped membership 42/42, counts 22/13) → AUD-01 lock unmark three-in-one; WR-03 get_float isfinite + WR-02 bool/int + IN-01 INT label with same-commit unmarks (D-13) (FIX-02, REV-03)
-- [x] 04-03-PLAN.md — Frontend restoration — shared escaped navbar on all 6 shells (AUD-09 + the 2 nav-less pages), AUD-10 nesting ×4, AUD-11 sort state + AUD-12 delegation (D-14), AUD-20 dropdown, submit.html + schema-current submit.js (FIX-03), bounded escapeHTML (FIX-04), LIVE Playwright zero-console-error pass per page (FIX-01, FIX-03, FIX-04)
-- [x] 04-04-PLAN.md — Carryovers — 4 quirk-parity ports in run_finetune.py (ACGT alphabet, limited-length wiring, safetensors union, length-tier rounding) with rename-map parity tests; 17 card fills → 62/62 complete cards (REV-03)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 04-02-PLAN.md — Unified exporter core — scipy behind a blocking-human legitimacy gate, vendored aggregate_seeds @483a35c with parity tests, exporter-owned 28-name metric-key mapping (key-parity both directions), run-record reader + registry joins, D-12 parametersBlock config-YAML join, dual output (schema-valid task_performance-compatible + per-seed stats artifact), freeze_snapshot tested + unwired (REV-03)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-- [x] 04-05-PLAN.md — Chain retirement + IN-03 + hygiene — get_task_performance.py deleted with pivot assertions folded into exporter tests, golden/determinism re-scoped (task files become committed inputs), OQ4 2-file species correction + tasks.json inventory, summarize's metric-key mirror deleted (exporter table imported, legacy alias surface owned), IN-08 lint scope + README exporter sentence (REV-03, FIX-02)
-
-### Phase 5: CI & Three-Seed Full Re-Run (E2')
-
-**Decisions carried (2026-10-10 pre-decision)**: E2' launch = dual gate (DNALLM stable release + PIPE-02 env smoke on GB10) with EXPLICIT maintainer authorization (agent never auto-launches); failure recovery = sweep failure-manifest driven re-run of failed cells only; window degradation = priority order (E2E pair all-seeds first, then arena representatives, then the rest as window allows) with honest n_seeds disclosure (suite statistics contract; n<3 → ci95=null/t-interval), never silent omission; E2' scope = ALL 62 unified-registry models (the 18 without prior results are first-time runs, comparability noted in the response letter). Small/medium grey areas (CI smoke shape, aggregation statistics details, N-audit subset rule, data-v2 migration gate) deferred to this phase's discuss.
-
-**Goal**: Aggregation methodology is upgraded BEFORE numbers publish (tie rules, difficulty normalization, permutation tests), CI proves repo health end-to-end, and the leaderboard is recomputed under three seeds with an attributable, changelogged, tagged migration
-**Depends on**: Phase 4
+#### Phase 5: CI & Three-Seed Full Re-Run (E2')
+**Goal**: Aggregation methodology upgraded before numbers publish, CI proves repo health end-to-end, E2' readiness landed code-only behind the maintainer dual gate
 **Requirements**: TEST-04, TEST-05, TEST-07, DATA-01, DATA-02, DATA-03, DATA-06, REV-04, REV-06, REV-07, REV-09
-**Success Criteria** (what must be TRUE):
-  1. Aggregation upgrade (REV-06/F6) lands before E2' numbers are published: within-task 95% CI overlap ⇒ tied rank; raw-rank and z-score×difficulty-weighted dual views; permutation tests (10,000 shuffles, BH-corrected) reported; the CpG top-10 case (span 0.0021, distinct ranks) renders as a tie under the new rule
-  2. CI golden tests (REV-09/F9): smoke run (tiny model × 1k samples × 1 epoch incl. export), metric-key parity, species-table spot checks, aggregation unit tests — CPU runner, <15 min, PR-required, badge in README (subsumes TEST-04/05: lint + matrix + frontend checks + drift detection)
-  3. N-frequency audit + unified eval subsets (REV-07/F7): 47 tasks × train/dev/test N/non-ACGT tables published; eval-subset ID lists accepted by the pipeline; all models evaluate identical sample counts per task
-  4. E2' three-seed full re-run executes via the sweep runner only after F1/F2 gates (critical path note); DATA-01/02/03/06 land: recomputed leaderboard, before/after artifact, CHANGELOG with dates, data_version stamped, both data tags (data-v1, data-v2) exist, footer shows the generation date/version
+**Plans**: 4/4 complete (05-01 SHA-pinned 4-job CI workflow · 05-02 F6 aggregation migration as one atomic commit (zero existing numbers moved) · 05-03 N-frequency audit + unified eval subsets + --subset_file seam · 05-04 E2' readiness: sweep priority tiers, --from-failures, env_smoke gate, alias normalization)
+**Completed**: 2026-10-10
 
-**Plans**: 4/4 plans complete planned
-**UI hint**: yes
-Plans:
-**Wave 1**
-- [x] 05-01-PLAN.md — CI golden harness: canned replay fixture + pinned `ci` marker lane + SHA-pinned workflow (lint/typecheck/test matrix/JS static checks/drift, 14-min budget) + eslint/html-validate configs + README badge, package-legitimacy blocking checkpoint (REV-06, TEST-04, TEST-05, TEST-07)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 05-02-PLAN.md — F6 aggregation upgrade as ONE migration commit: vendored-stats tie rule + weighted dual view + permutation tests (10k/BH, 861-pair family) + schema extensions + regenerated comparisons + re-chained goldens + migration inventory + CHANGELOG/manifest (data_version 1.1.0) + weighted-default frontend view toggle + stamped footer (REV-04, DATA-01, DATA-02, DATA-06)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-- [x] 05-03-PLAN.md — N-frequency audit: 50-task census (43 present / 7 GUE missing-with-warning) published as DATA.md appendix + CSV/JSON artifacts + unified eval-subset ID lists + run_finetune --subset_file fail-fast test-split seam (REV-07)
-
-**Wave 4** *(blocked on Wave 3 completion)*
-- [x] 05-04-PLAN.md — E2' readiness (code only): D-16 bridge (export_runs emits BOTH views; full-chain CI replay), D-18 alias normalization (plant-dnamamba2-BPE → PlantDNAMamba2-BPE, inventoried), sweep priority tiers + --from-failures re-run, never-executed env_smoke gate, tier-2 maintainer curation checkpoint, data-v2 gate tooling rehearsal (REV-09, DATA-01, DATA-03)
-
-### Phase 6: Revision Packaging & Extended Lanes
-
-**Decisions carried (2026-10-10 pre-decision)**: Extended-lane priority = LoRA → zero-shot VEP → frozen probes → learning curves → IA3 (suite-support-gated last); lanes open only after E2' core completes, each independently cuttable (completed lanes reported, incomplete → response-letter future work with reasons); cost-accuracy frontier table built from whatever completed. Post-milestone deliverable (maintainer directive 2026-10-10): a gitignored reviewer-response report generated from code at milestone close, answering F1-F10/G1-G7 point-by-point — never committed to the repo.
-
-**Goal**: External reviewers can understand, trust, reproduce, and extend the platform — provenance, methodology docs, validated onboarding, result snapshots for SI/Zenodo — with the revision-window extension lanes (PEFT, zero-shot VEP, learning curves) delivered as far as the window allows and the remainder explicitly deferred to the response letter
-**Depends on**: Phase 5
+#### Phase 6: Revision Packaging & Extended Lanes
+**Goal**: External reviewers can understand, trust, reproduce, and extend the platform; extension lanes (PEFT, zero-shot VEP, probes, curves) delivered as far as the revision window allowed
 **Requirements**: REL-03, DATA-04, DATA-05, DATA-07, EXT-01, EXT-02, REV-03, REV-05, REV-08
+**Plans**: 5/5 complete (06-01 dnallm v1.2.1 adaptation + sanctioned GB10 env_smoke/peft smokes · 06-02 PEFT lane + frontier machinery · 06-03 zero-shot VEP registry driver · 06-04 provenance chain + snapshots + docs trio + doi_swap prepared · 06-05 frozen probes + learning curves)
+**Completed**: 2026-10-11
+
+</details>
+
+### v1.2 TUI任务 — Milestone Goal & Binding Constraints
+
+**Milestone Goal:** Operators drive the benchmark platform confidently from one terminal console — select, bring their own models and datasets, fetch data, configure, gate, launch, monitor, recover — while every number stays correct, reproducible, and CLI-reachable.
+
+**Binding Constraints** (load-bearing for every phase in this milestone):
+
+1. **E2' stays maintainer dual-gate.** The TUI may launch bounded runs and present the full-sweep confirmation gate, but the full three-seed E2' re-run is always explicitly maintainer-authorized. No pipeline execution of any kind — including Phase 11's bounded smoke — without explicit maintainer authorization; this milestone is code-first.
+2. **CI stays GPU-free and dnallm-free.** All TUI/service tests run CPU-side with injectable seams. `textual`-the-library is allowed in a CPU test lane (Phase 8 discuss item to ratify: library yes, display/GPU runtime no); zero new CI jobs.
+3. **DNALLM sibling repo is strictly read-only** (`/home/forrest/Github/DNALLM` @ v1.2.1) — issue channel only, never written.
+4. **CLI parity is a rule, not a nicety.** Every TUI capability exists as a CLI capability and stays CI-exercised; orchestration must never become TUI-only; E2' authorization records the exact CLI command, never a persisted TUI state.
+5. **TUI orchestrates, never computes.** No client-side re-implementation of benchmark semantics — the TUI reads artifacts and drives existing implementations (pure-function import or subprocess), and shows the actual argv it will exec.
+6. **Surgical pipeline surface.** The only pipeline modifications are the four sanctioned argv flags (`--subset_file`, `--effective-batch`, `--num_train_epochs`, `--cache_dir`), the FlopsCounter port, and the official+custom registry overlay seam (CUST-05; maintainer refinement 2026-10-11 — custom entries live in user-owned files, never written into `pipeline/{models,datasets}_info.json`); no opportunistic refactors.
+7. **Static hosting model unchanged.** WEB-01's progress mirror is generated static files — no backend, no API — consistent with the vanilla no-build web constraint.
+8. **Multi-GPU is hard-gated** on Phase 11 single-GPU validation (maintainer sequencing: 单卡开发成功再开发多卡).
+9. **Quality gates:** ruff AND ty cover all new code from Phase 7 onward (`make lint` / `make typecheck`).
+10. **Stack addition is surgical:** Textual (`>=8.2,<9`) + platformdirs via a new `[tui]` uv group; textual-dev/textual-serve never in committed groups; data/gpu lanes never see textual.
+11. **Custom/official registry separation is absolute** (maintainer refinement 2026-10-11: 自定义的不与官方放在一起，免得冲突): custom onboarding writes only user-owned registries (`~/.config/dnallmmark/custom_models.json` / `custom_datasets.json`); official registry files are project-maintained and never written by any custom flow; the overlay fails fast on custom-key collision with official keys; absent custom files mean byte-identical behavior and untouched existing tests.
+
+**Phase structure rationale** (granularity: coarse): 6 phases is the natural floor, not padding — multi-GPU cannot merge into the single-GPU phase (maintainer hard gate), the data manager cannot merge into launch (env presence FAILs must be diagnosable first), and pipeline-side enablement stays separate so its verification is never coupled to TUI work. The custom-entries revision (maintainer, 2026-10-11) splits along the exact seam the maintainer drew: the pipeline-side registry overlay (CUST-05) joined Phase 7 — it touches the same run_sweep/run_finetune files, carries the same byte-identical-when-absent discipline as argv parity, and must land before any wizard consumes it — while the wizard surface (CUST-01..04, CUST-06) is a dedicated Phase 9 directly after the selection foundation it builds on and marks: five requirements with a distinct safety story (collect-all fail-fast validation + dry-run/audit gauntlet + entry-level rollback) that would have blurred both verification stories if folded into Phase 8 (14 requirements) and is phase-sized the same way DATA and PIPE are. Downstream renumbering (old 9→10, 10→11, 11→12) is free — zero plans existed. Folded from the research sketch: the small argv-threading lane joined Phase 7; WEB-01/TEST-01 attached to Phase 12.
+
+### Phase 7: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
+**Goal**: The pipeline can be fully driven, measured, and extended by an external operator tool — FlopsCounter's 20+ architecture forward-hook FLOPs instrumentation ported from the deprecated `dnallmmark_pipeline.py` into `run_finetune.py`, the four sanctioned `run_sweep.py` argv flags threaded through with CLI parity, the official+custom registry overlay seam (user-maintained custom entries load on top of official registries; byte-identical when absent), and the tolerant JSON loader contract that FLOPs output and the future monitor share
+**Depends on**: Nothing (first phase of v1.2; pipeline-side and TUI-independent — verification is deliberately NOT coupled to any TUI phase)
+**Requirements**: PIPE-01, PIPE-02, PIPE-03, CUST-05
 **Success Criteria** (what must be TRUE):
-  1. A reviewer can reproduce the leaderboard from a fresh clone using only literal copy-pasteable README commands (install → data → aggregate → serve)
-  2. Each dataset has a provenance row in DATA.md — source, citation, license, preprocessing, ModelScope-default download URL with alternates; a downloadable manifest (CSV/JSON) carries full metadata and direct links
-  3. A results snapshot (REV-03: tar + SHA-256 manifest + frozen commit hash) supports SI/Zenodo deposition and can be re-verified from its manifest
-  4. The four aggregation methods (plus the F6 dual views) are documented in one place; the divergent dead logic in js/data.js:recalculateComparison() is gone
-  5. A maintainer can onboard a new model or dataset end-to-end by following the documented process (mechanism validated, no new GPU runs required)
-  6. Revision-window lanes, in priority order: LoRA/IA³/frozen probes (REV-05/F4) with a cost-accuracy frontier table; zero-shot VEP lane (REV-08/F5) with CLM/MLM scoring and sanity checks; learning curves (part of REV-08's P2 tail) — whatever does not fit lands in the response letter as future work with the mechanism documented
-  7. The intentional Zenodo preview-token link in README.md is replaced with the published record DOI/URL once record 19135551 is public, with the .gitleaks.toml allowlist rule updated in the same commit (WR-01 follow-up)
+  1. `run_sweep.py` accepts `--subset_file`, `--effective-batch` (auto-GA: GA = max(1, N//batch_size), default 16), `--num_train_epochs`, and `--cache_dir`, threads them into the child argv, and produces byte-identical behavior when the flags are absent — proven by argv-shape assertions in the existing sweep test harness
+  2. A run through `run_finetune.py` emits FLOPs accounting equivalent to the legacy pipeline: hook dispatch over the 20+ carried architectures (HF attention variants, GQA, BigBird, windowed attention, Hyena, Mamba/Mamba2, Caduceus, Borzoi/Enformer, megaDNA, …) proven by CPU-side unit tests over stub torch modules — no GPU and no dnallm import required to test
+  3. FLOPs/report JSON is read through the shared tolerant-loader contract: truncated or partially-written files are skipped with last-known-good retained instead of crashing — contract test-pinned for reuse by the Phase 11 monitor
+  4. The registry consumers (`run_sweep.py`, `run_finetune.py`, audit, export) load official registries with an optional custom overlay from user-owned files (`~/.config/dnallmmark/custom_models.json` / `custom_datasets.json`): a custom key colliding with an official key fails fast with a clear error, and with no custom files present behavior is byte-identical to today — existing registry/sweep tests pass unmodified, proven CPU-side in the existing harness (official `pipeline/{models,datasets}_info.json` are never written by any custom flow)
+  5. `make lint` + `make typecheck` cover the changed files and CI stays green with zero GPU/dnallm dependency; every new flag works headless (scripts stay first-class)
+**Plans**: TBD
 
-**Plans**: 5/5 plans complete planned
-Plans:
-**Wave 1**
-- [x] 06-01-PLAN.md — dnallm 1.2.1 adaptation verification (gating): quirk re-verification vs tag v1.2.1 + citation refresh, --peft tracer wiring (flag + lora:/ia3: YAML + use_lora ctor kwarg + use_ia3), env_smoke peft check + 1.2.1 relabel + smoke-sanction docstring amendment, seed_result.json tolerant reader, and the sanctioned GB10 install + env_smoke EXECUTION + peft_dry_run smoke (REV-05, REV-08)
+### Phase 8: TUI Foundation (Env Check & Selection)
+**Goal**: The console exists and is trustworthy at rest — `make tui` opens a Textual app whose startup shows a persisted full environment-check panel, and operators build model×dataset selections k9s-style with presets, templates, and presence columns — with every non-retrofittable decision (textual-free services layer, `[tui]` dependency group, Pilot test harness, tolerant artifact loader, constants-module i18n convention) landed so later phases add screens, not architecture
+**Depends on**: Phase 7 (tolerant-loader JSON contract reused by `tui/services/`)
+**Requirements**: ENV-01, ENV-02, ENV-03, ENV-04, SEL-01, SEL-02, SEL-03, SEL-04, I18N-01
+**Success Criteria** (what must be TRUE):
+  1. `make tui` (uv `--group tui`, `python -m tui`) opens the console over SSH/tmux on GB10; startup runs the full environment check (reusing env_smoke kernels: version pins, dnallm import, CUDA, dataset directories, numpy>=2, peft) and presents per-item ✓/✗ status with drill-down detail
+  2. Check results persist with a visible check date ("上次检查: YYYY-MM-DD HH:MM"); same-day restarts read the cache without re-running, and a manual refresh action re-checks on demand
+  3. Critical FAILs (no GPU / missing dependency) visibly block entry into the launch flow with the reason shown; missing-dataset items route the operator toward data management; a lightweight quick-check re-validates the launch-required subset before each task launch
+  4. The model list and dataset list are first-class selectable surfaces — browsed independently with key card fields as columns (62 models / 50 datasets); operators filter them k9s-style (arena/type/species/scale), spacebar-mark rows into a stable row_key selection set, apply presets (tier-1 E2E pair, tier-2 arena representatives, all, saved customs), and consult a read-only matrix overview as an auxiliary view — never an editable grid
+  5. Every row shows local data presence (✓ present / ✗ missing + n_audit row count) and run-config templates round-trip as validated JSON with `sweep_priorities.json` tier interop; all operator-facing copy is Chinese-primary through the constants module with technical terms in English — and the foundation invariants hold (services layer imports zero textual symbols by test, `[tui]` group keeps textual out of data/gpu lanes, Pilot tests green CPU-side in CI)
+**Plans**: TBD
+**UI hint**: yes
 
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 06-02-PLAN.md — PEFT lane: adapter-run aliases (+lora/+ia3) + trainable_params_pct persistence + run_sweep --peft threading + cost-accuracy frontier machinery (schema + synthetic fixtures committed; data artifact gated on real post-E2' numbers) + bounded 1-epoch smoke (REV-05)
-- [x] 06-03-PLAN.md — zero-shot VEP registry driver over the suite kernels (paradigm filtering MLM 32 / CLM 18, DL 5 + EMPTY 7 excluded-with-reason, synonym/nonsense + RC sanity checks, dual CSV+JSON + schema + fixtures, bounded two-model GB10 smoke) (REV-08)
-- [x] 06-04-PLAN.md — packaging: recalculateComparison dead-code removal as the FIRST dedicated commit, provenance columns + convert_registry round-trip + build_provenance + dual artifact + DATA.md appendix + maintainer-review checkpoint, freeze_snapshot wiring (manifest-derived hash, .sha256 committed / .tar gitignored under baseline/snapshots/), docs/METHODOLOGY.md + docs/ONBOARDING.md + README literal reproduction section, doi_swap.py prepared not executed (REL-03, DATA-04, DATA-05, DATA-07, EXT-01, EXT-02, REV-03)
+### Phase 9: Custom Model & Dataset Onboarding (自定义接入向导)
+**Goal**: Operators can bring their own model and dataset into the benchmark entirely from the console, with official registries provably untouched — guided wizards collect the full entry into user-owned custom registries, fool-proofing validation collects every field problem in one fail-fast report before anything is written, and an entry lands only after passing the real gauntlet (dry-run precheck + audit reconciliation) with entry-level rollback when anything fails
+**Depends on**: Phase 7 (registry overlay seam — custom entries become visible to sweep planning, audit, and export), Phase 8 (selection list surfaces provide the wizard entry points and the custom markers; services skeleton; constants-module i18n)
+**Requirements**: CUST-01, CUST-02, CUST-03, CUST-04, CUST-06
+**Success Criteria** (what must be TRUE):
+  1. From the model list, one action opens the custom-model wizard — guided collection of the model card (name/architecture/tokenizer/species/scale/HF+ModelScope URLs/local path) with the quirk checklist (safetensors/fp32/special heads…) as optional checkboxes — and a validated submission lands in the user-owned custom registry (`~/.config/dnallmmark/custom_models.json`), after which the model appears in the model list via the overlay; `pipeline/models_info.json` is never written
+  2. The same exists for datasets from the dataset list — key name/path/train-dev-test files/label column/primary metric/Task_type/provenance columns — landing in `~/.config/dnallmmark/custom_datasets.json` with `pipeline/datasets_info.json` never written
+  3. Submission is blocked until validation passes, and validation is collect-all fail-fast (the `_validate_filters` discipline): required/type/enum checks, key collisions against official AND existing custom entries, path existence, split-file parseability, row count > 0, label-column validity, and metric-in-registry are checked in one pass with every problem listed item-by-step — never one error at a time
+  4. After submission the automatic error detection runs — dry-run precheck plus audit reconciliation (row counts / non-ACGT / subset survival); any failure is reported prominently and the failed entry never lands: the custom registry reverts cleanly at entry level (official files zero-risk), leaving no half-written state that could trip the registry chain's abort-on-wrong-count discipline
+  5. Landed custom entries carry a visible custom marker in both lists (distinct from the official 62/50), can be individually enabled/disabled, and export as the shareable unit (the custom registry file itself); the official registries and the existing test suite stay green and untouched
+**Plans**: TBD
+**UI hint**: yes
 
-**Wave 3** *(blocked on 06-02 completion — 06-05 shares the run_finetune/run_sweep surfaces with 06-02)*
-- [x] 06-05-PLAN.md — frozen probes (--config-variant mechanism + finetune_config_probe.yaml with head_config.frozen + special-loader scope guard + frozen-backbone 1-epoch smoke) + learning curves (--train_fraction + run_sweep --curve with frac-under-seed nesting + tightened curve YAML + extract_curve_points reader) (REV-05, REV-08)
+### Phase 10: Data Manager (Downloads & Verification)
+**Goal**: Dataset gaps are closable in-session before launch — one-click ModelScope download driven by the registry's authoritative `download_url`, a persistent resumable queue, and row-count reconciliation against n_audit — so an env-check presence FAIL is always diagnosable and fixable from the console
+**Depends on**: Phase 8 (presence view, settings/services skeleton)
+**Requirements**: DATA-01, DATA-02, DATA-03, DATA-04
+**Success Criteria** (what must be TRUE):
+  1. From a missing-dataset row, one action downloads via the ModelScope channel with the registry `download_url` as the only authority; on landing, presence flips to ✓ in the selection table and the environment check
+  2. The download queue persists across TUI exit/crash and resumes where it stopped after restart
+  3. Every landed download reconciles row counts against the n_audit baseline, with mismatches reported prominently rather than silently accepted
+  4. The Zenodo bulk bundle (record 19135551, once public) is reachable as an alternate whole-package entry
+  5. Downloads run under subprocess/thread-worker discipline (the console never freezes) and no credentials are stored or echoed in logs or queue state
+**Plans**: TBD
+**UI hint**: yes
 
-**Revision-work-package map**: F1→E1'-1 · F2→E1'+E2' prerequisite · F3→E1'-2/3+Ed-5 · F4→E3' · F5→E5 · F6→E8 · F7→E1'-⑤/E7 · F8→E6' (P2) · F9→E10 · F10→E1'-4. **Critical path: F1 → F2 (G1) → E2' full re-run; E2' must NOT start before F2 is done (seeds would overwrite each other).**
+### Phase 11: Run Config, Launch Gates & Single-GPU Monitoring
+**Goal**: The operator's core loop is closed and safe — compose a complete run spec, preview it from the same pure planning functions execution uses, pass the env + confirmation gates, launch `run_sweep.py` as a detached subprocess, and monitor/recover the sweep from the same console — proven end-to-end by a maintainer-authorized bounded smoke on GB10, with E2' provably still maintainer-gated
+**Depends on**: Phase 10 (data readiness), Phase 7 (argv flags + FLOPs-correct runs)
+**Requirements**: CFG-01, CFG-02, CFG-03, LNC-01, LNC-02, LNC-03, MON-01, MON-02, MON-03, MON-04, MON-05
+**Success Criteria** (what must be TRUE):
+  1. The run-config screen exposes the full parameter set — seeds (default 42,43,44), PEFT mode with alias preview, config-variant head/probe/curve with PROBE_INELIGIBLE hints, learning-curve tiers, fairness-subset toggle, epochs/batch overrides, auto-GA via `--effective-batch` — plus separated project/storage directories (repo-relative defaults; absolute paths passed on explicit override) and a dry-run preview computed by importing the same pure planning functions execution uses, showing enumerated cell counts
+  2. The launch gate is terraform-style: env_smoke preflight blocks on FAIL with the reason, preview precedes explicit confirmation, and the full E2' three-seed sweep additionally requires a typed confirmation phrase — the TUI presents the gate but cannot bypass maintainer authorization
+  3. Execution is always a `run_sweep.py` subprocess (LIST argv + PYTHONUNBUFFERED=1 + start_new_session detachment); on TUI exit the operator chooses kill/detach/cancel, and a detached sweep is resume-safe to re-attach to later
+  4. The monitor dashboard shows cell-level state (queued/running/done/failed/skipped, seed-adjacent) via 2s frontier + 60s full tolerant scans, progress stats (done/total, current cell, elapsed), attach mode for externally (CLI) launched sweeps, a live failure list with confirmation-gated `--from-failures` re-run, bounded log tailing with tee-to-disk persistence, and resume recognition from `trainer_state.json` markers
+  5. A maintainer-authorized bounded smoke (1 model × 1 task × 1 seed, 1 epoch) runs launch → monitor → failure-re-run end-to-end on GB10 while the E2' full-sweep gate demonstrably blocks; every capability remains reachable headless via CLI
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 12: Multi-GPU Orchestration & Console Hardening
+**Goal**: With single-GPU validated, throughput scales out — CLI-invocable static model sharding × CUDA_VISIBLE_DEVICES with per-worker monitoring, artifact merge, and isolated failure re-run, plus the documented DDP-vs-sharding applicability decision — and the console ships its release extras: a static read-only web progress mirror and maintainer-verified snapshot goldens pinning the canonical screens
+**Depends on**: Phase 11 (HARD GATE — single-GPU validation complete; maintainer sequencing: 单卡开发成功再开发多卡)
+**Requirements**: MGPU-01, MGPU-02, MGPU-03, WEB-01, TEST-01
+**Success Criteria** (what must be TRUE):
+  1. Multi-worker orchestration is invokable from the CLI (not TUI-only): N workers over disjoint static model shards with `CUDA_VISIBLE_DEVICES` isolation, marker-skip as the only concurrency guard
+  2. The operator sees per-worker monitoring views, artifacts merge across workers, and a failed worker's shard re-runs in isolation without touching healthy workers
+  3. The DDP (torch-run data splitting) vs model-sharding applicability decision is documented and landed — single-large-model acceleration vs multi-model throughput
+  4. A read-only web progress mirror generated from sweep artifacts lets the team follow progress in a browser — static files only, no backend (static-hosting constraint holds)
+  5. Canonical screens are pinned by Textual snapshot SVG goldens reviewed and committed by the maintainer, failing CI CPU-side on visual regression
+**Plans**: TBD
+**UI hint**: yes
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
+Phases execute in numeric order: 7 → 8 → 9 → 10 → 11 → 12
+Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencing).
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Audit & Release Foundations | 3/3 | Complete    | 2026-10-09 |
-| 2. Data Contracts & Test Harness | 3/3 | Complete    | 2026-10-09 |
-| 3. Pipeline Adaptation to dnallm Dev | 4/4 | Complete    | 2026-10-10 |
-| 4. Correctness Fixes | 5/5 | Complete    | 2026-10-10 |
-| 5. CI & Verified Data Migration | 4/4 | Complete    | 2026-10-10 |
-| 6. Release Packaging & Provenance | 5/5 | Complete    | 2026-10-11 |
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 7. Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) | v1.2 | 0/TBD | Not started | - |
+| 8. TUI Foundation (Env Check & Selection) | v1.2 | 0/TBD | Not started | - |
+| 9. Custom Model & Dataset Onboarding | v1.2 | 0/TBD | Not started | - |
+| 10. Data Manager (Downloads & Verification) | v1.2 | 0/TBD | Not started | - |
+| 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 0/TBD | Not started | - |
+| 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 0/TBD | Not started | - |
+
+---
+*v0.7.1 (Phases 1-6) shipped 2026-10-11 — collapsed above; full record in `.planning/MILESTONES.md`.*
+*v1.2 TUI任务 roadmap created 2026-10-11 — 5 phases, 32/32 requirements mapped; revised 2026-10-11 per maintainer custom-entries adjustment — 6 phases (7-12), 38/38 requirements mapped.*
