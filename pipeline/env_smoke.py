@@ -46,7 +46,7 @@ ANY failure forces a final non-zero exit):
 
 One NON-GATING diagnostic prints the installed ``datasets`` and
 ``pyarrow`` versions when importable (dnallm 1.2.1 caps
-``datasets<=3.2.0`` and declares no pyarrow constraint — the 0.8.x-era
+``datasets<=5.1.0`` and declares no pyarrow constraint — the 0.8.x-era
 pyarrow cap is gone; useful context on the GPU box, but dnallm's own
 constraints govern resolution; this gate does NOT enforce them).
 
@@ -200,7 +200,7 @@ def check_numpy(floor_major):
 def print_ecosystem_diagnostics():
     """NON-GATING INFO line: installed datasets/pyarrow versions, if any.
 
-    dnallm 1.2.1 caps ``datasets<=3.2.0`` and declares no pyarrow
+    dnallm 1.2.1 caps ``datasets<=5.1.0`` and declares no pyarrow
     constraint (the 0.8.x-era pyarrow cap is gone — verified read-only
     against the v1.2.1 pyproject); those constraints govern the GPU
     environment's RESOLUTION, not this gate — the line is context for
@@ -220,7 +220,7 @@ def print_ecosystem_diagnostics():
     print(
         "INFO (not gated): datasets "
         f"{versions['datasets']}, pyarrow {versions['pyarrow']} "
-        "(dnallm 1.2.1 caps datasets<=3.2.0, no pyarrow pin — dnallm's "
+        "(dnallm 1.2.1 caps datasets<=5.1.0, no pyarrow pin — dnallm's "
         "own constraints govern resolution)"
     )
 

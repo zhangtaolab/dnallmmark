@@ -1467,10 +1467,11 @@ def test_both_finetune_yamls_carry_suite_validated_lora_and_ia3_sections():
 def test_env_smoke_carries_zero_stale_version_labels():
     """06-01: env_smoke.py carries ZERO stale 'dnallm 0.8.0' labels —
     every version-label string was relabeled to 1.2.1 with its fact
-    re-checked against the v1.2.1 pyproject (datasets<=3.2.0 and the
-    numpy>=2 floor hold; the 0.8.x-era pyarrow>=15,<26 cap is GONE —
-    v1.2.1 declares no pyarrow constraint, so the claim is dropped, not
-    relabeled)."""
+    re-checked against the v1.2.1 pyproject (datasets<=5.1.0 — the
+    MED-02 correction, phase-06 review: the relabel commit had carried
+    the retired 0.8.x-era figure 3.2.0 — and the numpy>=2 floor holds;
+    the 0.8.x-era pyarrow>=15,<26 cap is GONE — v1.2.1 declares no
+    pyarrow constraint, so the claim is dropped, not relabeled)."""
     src = ENV_SMOKE.read_text(encoding="utf-8")
     assert "0.8.0" not in src, (
         "a stale 'dnallm 0.8.0' version label survives in env_smoke.py — "
@@ -1482,6 +1483,18 @@ def test_env_smoke_carries_zero_stale_version_labels():
         "the 0.8.x-era pyarrow cap claim survived — v1.2.1 declares NO "
         "pyarrow constraint (verified read-only against its pyproject); "
         "the claim must be dropped, not relabeled"
+    )
+    # MED-02 (phase-06 review): the v1.2.1 pyproject declares
+    # "datasets<=5.1.0" (dependencies table, verified read-only at the
+    # tag) — the retired 0.8.x-era 3.2.0 figure must not survive in any
+    # of the three label sites.
+    assert "3.2.0" not in src, (
+        "the retired 0.8.x-era datasets cap '3.2.0' survives in "
+        "env_smoke.py — the v1.2.1 pyproject caps datasets<=5.1.0 (MED-02)"
+    )
+    assert "datasets<=5.1.0" in src, (
+        "the corrected v1.2.1 datasets cap label (datasets<=5.1.0) is "
+        "absent from env_smoke.py (MED-02)"
     )
 
 
