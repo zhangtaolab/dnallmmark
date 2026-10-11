@@ -62,6 +62,7 @@
 - [X] 输出根目录选择 + 干跑预览（枚举出的 cell 数/预估）
 
 - 补充：＿＿＿除了lora还要加上冻结backbone加上probe的微调办法，默认训练epoch和之前保持一致为3
+- 如果自动化运行，需要解决batch_size和gradient_accumulation_steps的选择，以适配不同模型和数据集
 
 ### 3.4 执行模式（单卡 → 多卡）
 
