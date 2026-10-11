@@ -157,9 +157,9 @@ line must print nothing. Expected command output:
 ✅ Species [Animals] comparison saved to: models_comparison_animal.json (contains 22 dataset(s))
 ✅ Species [Plants] comparison saved to: models_comparison_plant.json (contains 12 dataset(s))
 ✅ Data manifest saved to: manifest.json (data_version 1.1.0)
+🎉 All statistical comparisons generated successfully!
 ✅ Permutation tests: 861 pair(s) (0 excluded) saved to: .../dnallm-mark/data/permutation_tests.json (657 significant at BH FDR 0.05)
 ✅ Provenance artifacts (50 datasets):
-🎉 All statistical comparisons generated successfully!
 Found 47 task files
 ✓ Generated tasks.json with 47 tasks
 ```
