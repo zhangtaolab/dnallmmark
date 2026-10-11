@@ -14,8 +14,11 @@ appendix:
 2. ``dnallm-mark/data/provenance.csv`` — the same rows as a flat CSV (the
    n_audit.{json,csv} dual-artifact convention). **This CSV is the
    maintainer-editable surface**: corrections are made here, then ingested
-   with ``script/convert_registry.py --to-json --merge-existing`` — never
-   by hand-editing the JSON registry (D-10).
+   with ``script/convert_registry.py --kind provenance --to-json
+   --merge-existing`` (the 7-column slice preset, MED-03: the generic
+   ``--kind datasets`` ingest requires the full 21-column header and the
+   ``Dataset_name`` name column, which this projection deliberately does
+   not carry) — never by hand-editing the JSON registry (D-10).
 3. The ``DATA.md`` appendix between the explicit GENERATED PROVENANCE
    BEGIN/END markers — regeneration replaces ONLY the marked section; the
    maintainer-authored sections around it are byte-identical after a run.
@@ -30,7 +33,7 @@ license/citation/download cell is the literal string ``Unspecified`` with
 the source link in ``source`` — NEVER blank. The generated table is
 reviewed by the maintainer before publication (the Phase 6 Task 4
 blocking checkpoint); corrections flow CSV -> convert_registry
-``--to-json --merge-existing`` -> re-run this emitter.
+``--kind provenance --to-json --merge-existing`` -> re-run this emitter.
 
 Determinism
 -----------
@@ -80,8 +83,8 @@ CSV_HEADER = ["dataset", *PROVENANCE_FIELDS]
 BEGIN_MARKER = (
     "<!-- GENERATED PROVENANCE BEGIN — script/build_provenance.py; do not"
     " edit by hand: correct values in dnallm-mark/data/provenance.csv,"
-    " ingest via script/convert_registry.py --to-json --merge-existing,"
-    " then re-run `make data` -->"
+    " ingest via script/convert_registry.py --kind provenance --to-json"
+    " --merge-existing, then re-run `make data` -->"
 )
 END_MARKER = "<!-- GENERATED PROVENANCE END -->"
 
@@ -173,8 +176,8 @@ def render_block(rows: list[dict[str, str]]) -> str:
         "literal `Unspecified` (never a blank cell), with the source link",
         "carried in the `source` column. Corrections flow through the",
         "downloadable CSV: edit `data/provenance.csv`, ingest via",
-        "`script/convert_registry.py --to-json --merge-existing`, re-run",
-        "`make data`.",
+        "`script/convert_registry.py --kind provenance --to-json",
+        "--merge-existing`, re-run `make data`.",
         "",
         f"**Preprocessing (uniform across all {len(rows)} datasets):**",
         f"{preprocessing}",

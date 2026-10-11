@@ -36,6 +36,8 @@ See also:
 """
 
 import argparse
+import csv
+import io
 import json
 import sys
 from pathlib import Path
@@ -516,3 +518,184 @@ def test_committed_datasets_registry_round_trips(tmp_path):
     convert_registry.to_json(args, convert_registry.KIND_PRESETS["datasets"])
     result = json.loads(out_path.read_text(encoding="utf-8"))
     assert result == registry
+
+
+# ===== MED-03 (phase-06 review): the provenance slice correction preset =====
+
+def _slice_csv_row(name, **prov):
+    """One 7-column provenance-slice CSV row (comma-safe via csv.writer)."""
+    cells = _provenance_cells(**prov)
+    buf = io.StringIO()
+    csv.writer(buf, lineterminator="\n").writerow(
+        [name, *(cells[c] for c in PROVENANCE_COLUMNS)])
+    return buf.getvalue().strip()
+
+
+SLICE_HEADER = ",".join(["dataset", *PROVENANCE_COLUMNS])
+
+
+def test_provenance_slice_ingests_the_emitted_seven_column_csv(tmp_path):
+    """``--kind provenance --to-json --merge-existing`` ingests the CSV the
+    emitter ships (name column ``dataset`` + the six provenance fields) into
+    the datasets registry: the corrected value lands, every other field of
+    the touched entry is preserved, the D-10 ``key == Dataset_name``
+    invariant holds, and NO redundant ``dataset`` field is added to the
+    merged entries (the name maps onto the registry's own name field).
+    This is the documented correction path the DATA.md appendix, the
+    provenance schema $comment, and the emitter's BEGIN marker name —
+    the generic ``--kind datasets`` ingest rejects this CSV (name column
+    ``Dataset_name`` + 21 required columns), which was the MED-03
+    breakage."""
+    registry = {
+        "GUE__emp_H3": {
+            "Dataset_name": "GUE__emp_H3",
+            "Dataset_path": "datasets/GUE/emp_H3",
+            "Train": 11971, "Test": 1497, "Dev": 1497,
+            "type": "binary", "labels": 2, "length": 500,
+            "metric": "f1", "Category": "Microbe", "Index": 2,
+            **_provenance_cells(),
+        },
+        "BEND__CpG_methylation": {
+            "Dataset_name": "BEND__CpG_methylation",
+            "Dataset_path": "datasets/BEND/CpG_methylation",
+            "Train": 743095, "Test": 106227, "Dev": 109717,
+            "type": "binary", "labels": 2, "length": 500,
+            "metric": "AUPRC", "Category": "Animals", "Index": 1,
+            **_provenance_cells(),
+        },
+    }
+    csv_text = "\n".join([
+        SLICE_HEADER,
+        _slice_csv_row("GUE__emp_H3", license="CC BY 4.0 (corrected)"),
+        _slice_csv_row("BEND__CpG_methylation"),
+    ]) + "\n"
+    csv_path = tmp_path / "provenance.csv"
+    csv_path.write_text(csv_text, encoding="utf-8")
+    merge_path = tmp_path / "datasets_info.json"
+    merge_path.write_text(json.dumps(registry), encoding="utf-8")
+    out_path = tmp_path / "out.json"
+    args = argparse.Namespace(
+        to_json=True, to_csv=False, kind="provenance",
+        input=str(csv_path), output=str(out_path),
+        merge_existing=str(merge_path),
+        map=[], numeric=[], columns=[], crlf=False,
+        rename_name=[], derive_operational=False,
+    )
+    convert_registry.to_json(args, convert_registry.KIND_PRESETS["provenance"])
+    result = json.loads(out_path.read_text(encoding="utf-8"))
+    assert result["GUE__emp_H3"]["license"] == "CC BY 4.0 (corrected)"
+    for name, entry in result.items():
+        assert entry["Dataset_name"] == name, (
+            "the D-10 key == Dataset_name invariant must hold after a "
+            "slice merge"
+        )
+        assert "dataset" not in entry, (
+            "the slice's name column must NOT land as a redundant "
+            "`dataset` field on registry entries (MED-03)"
+        )
+    untouched = {
+        k: v for k, v in result["BEND__CpG_methylation"].items()
+    }
+    assert untouched == registry["BEND__CpG_methylation"], (
+        "an untouched row's entry must be byte-identical after the merge"
+    )
+    for field in ("Train", "metric", "Dataset_path", "Index"):
+        assert result["GUE__emp_H3"][field] == registry["GUE__emp_H3"][field], (
+            f"operational field {field} must survive a slice merge verbatim"
+        )
+
+
+def test_provenance_slice_requires_merge_existing(tmp_path):
+    """The provenance preset is a correction path, never a standalone
+    ingest: ``--to-json`` without ``--merge-existing`` aborts with a named
+    error (the slice carries no operational columns — a standalone output
+    would be a useless skeletal registry)."""
+    csv_path = tmp_path / "provenance.csv"
+    csv_path.write_text(SLICE_HEADER + "\n" +
+                        _slice_csv_row("GUE__emp_H3") + "\n",
+                        encoding="utf-8")
+    args = argparse.Namespace(
+        to_json=True, to_csv=False, kind="provenance",
+        input=str(csv_path), output=str(tmp_path / "out.json"),
+        merge_existing=None,
+        map=[], numeric=[], columns=[], crlf=False,
+        rename_name=[], derive_operational=False,
+    )
+    with pytest.raises(SystemExit, match="merge-existing"):
+        convert_registry.to_json(args,
+                                  convert_registry.KIND_PRESETS["provenance"])
+
+
+def test_provenance_slice_refuses_rows_absent_from_registry(tmp_path):
+    """A slice row naming a dataset the merge registry does not carry
+    aborts loudly naming it — a correction edits existing rows, and
+    merging an unknown name would add a skeletal, untrainable entry
+    (new datasets flow through the full --kind datasets ingest per
+    docs/ONBOARDING.md)."""
+    registry = {
+        "GUE__emp_H3": {"Dataset_name": "GUE__emp_H3", "Train": 10,
+                        **_provenance_cells()},
+    }
+    csv_path = tmp_path / "provenance.csv"
+    csv_path.write_text("\n".join([
+        SLICE_HEADER,
+        _slice_csv_row("GUE__emp_H3"),
+        _slice_csv_row("ghost__task"),
+    ]) + "\n", encoding="utf-8")
+    merge_path = tmp_path / "existing.json"
+    merge_path.write_text(json.dumps(registry), encoding="utf-8")
+    args = argparse.Namespace(
+        to_json=True, to_csv=False, kind="provenance",
+        input=str(csv_path), output=str(tmp_path / "out.json"),
+        merge_existing=str(merge_path),
+        map=[], numeric=[], columns=[], crlf=False,
+        rename_name=[], derive_operational=False,
+    )
+    with pytest.raises(SystemExit, match="ghost__task"):
+        convert_registry.to_json(args,
+                                  convert_registry.KIND_PRESETS["provenance"])
+
+
+def test_provenance_slice_header_gate_names_the_slice_columns(tmp_path):
+    """A partial slice header aborts on the preset's own required set (the
+    D-10 abort-on-missing-columns family scoped to the 7 slice columns —
+    NOT the full 21-column datasets preset that used to reject the
+    emitted CSV)."""
+    csv_path = tmp_path / "provenance.csv"
+    csv_path.write_text("dataset,source,citation\nGUE__emp_H3,x,y\n",
+                        encoding="utf-8")
+    merge_path = tmp_path / "existing.json"
+    merge_path.write_text(json.dumps(
+        {"GUE__emp_H3": {"Dataset_name": "GUE__emp_H3"}}),
+        encoding="utf-8")
+    args = argparse.Namespace(
+        to_json=True, to_csv=False, kind="provenance",
+        input=str(csv_path), output=str(tmp_path / "out.json"),
+        merge_existing=str(merge_path),
+        map=[], numeric=[], columns=[], crlf=False,
+        rename_name=[], derive_operational=False,
+    )
+    with pytest.raises(SystemExit) as excinfo:
+        convert_registry.to_json(args,
+                                  convert_registry.KIND_PRESETS["provenance"])
+    message = str(excinfo.value)
+    for col in ("license", "preprocessing", "download_url"):
+        assert col in message
+    assert "Index" not in message, (
+        "the slice header gate must require the 7 slice columns, not the "
+        "full datasets preset's operational columns (MED-03)"
+    )
+
+
+def test_cli_offers_provenance_kind(monkeypatch, tmp_path):
+    """--kind provenance parses (the choice list derives from
+    KIND_PRESETS) — the flag surface the documented correction command
+    uses."""
+    monkeypatch.setattr(sys, "argv", [
+        "convert_registry.py", "--kind", "provenance", "--to-json",
+        "--input", str(tmp_path / "provenance.csv"),
+        "--output", str(tmp_path / "datasets_info.json"),
+        "--merge-existing", str(tmp_path / "datasets_info.json"),
+    ])
+    args = convert_registry.parse_args()
+    assert args.kind == "provenance"

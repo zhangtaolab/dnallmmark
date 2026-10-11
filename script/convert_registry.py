@@ -4,10 +4,13 @@ Purpose
 -------
 Convert the pipeline metadata registries between their JSON object form
 (``{name: {field: value, ...}}``) and a flat CSV table form (one row per
-entry, ``name`` in a designated name column). Two registries are preset:
+entry, ``name`` in a designated name column). Three presets:
 
-- ``models``  : ``pipeline/models_info.{json,csv}``   (name column ``Model_name``)
-- ``datasets``: ``pipeline/datasets_info.{json,csv}``  (name column ``Dataset_name``)
+- ``models``    : ``pipeline/models_info.{json,csv}``   (name column ``Model_name``)
+- ``datasets``  : ``pipeline/datasets_info.{json,csv}``  (name column ``Dataset_name``)
+- ``provenance``: ``dnallm-mark/data/provenance.csv``    (name column
+  ``dataset`` — the 7-column provenance slice the emitter ships; a
+  MERGE-ONLY correction ingest into the datasets registry, MED-03)
 
 Direction of truth (D-10, 2026-10-09): **JSON is the single source of truth.**
 CSV is a regenerable, human/spreadsheet-friendly projection used for editing
@@ -49,6 +52,19 @@ Behavior
                ``download_url``, ``download_url_alternates`` — unresolved
                values are the literal string ``Unspecified``, never blank
                (the maintainer-editable surface is the CSV projection).
+               The ``provenance`` preset (MED-03, phase-06 review) is the
+               correction ingest for the emitted
+               ``dnallm-mark/data/provenance.csv``: name column
+               ``dataset``, six required provenance columns, no numeric
+               coercion, and two discipline guards — it REQUIRES
+               ``--merge-existing`` (the slice is a correction path over
+               the datasets registry, never a standalone ingest) and
+               REFUSES rows naming datasets absent from the merge
+               registry (a correction edits existing rows; a skeletal
+               add would be untrainable). The merged name lands under
+               the registry's own ``Dataset_name`` field (the D-10
+               ``key == Dataset_name`` contract), not the CSV's
+               ``dataset`` column.
 
 ``--to-csv``   Flatten JSON entries to CSV. Columns default to the preset
                order; JSON entries missing a column get an empty cell (card
@@ -65,6 +81,14 @@ Usage
     python script/convert_registry.py --kind models --to-json \\
         --input pipeline/models_info.txt --output /tmp/models_info.json \\
         --merge-existing pipeline/models_info.json
+
+    # Provenance correction round-trip (MED-03, the DATA.md-documented
+    # maintainer path): edit a cell in the emitted CSV, re-ingest, re-run
+    # `make data` to regenerate provenance.{json,csv} + the DATA.md appendix
+    python script/convert_registry.py --kind provenance --to-json \\
+        --input dnallm-mark/data/provenance.csv \\
+        --output pipeline/datasets_info.json \\
+        --merge-existing pipeline/datasets_info.json
 
     # JSON -> CSV (regenerate the human-editable view)
     python script/convert_registry.py --kind models --to-csv \\
@@ -91,10 +115,29 @@ from pathlib import Path
 
 # ===== Configuration =====
 
-# Per-kind presets: name column, default CSV column order, numeric columns.
+# Per-kind presets: name column, registry name field, default CSV column
+# order, numeric columns, and per-kind ingest discipline flags.
+#
+# ``name_field`` (MED-03, phase-06 review): the JSON field the merged
+# entry's name lands in. For models/datasets it equals the CSV name
+# column (the D-10 ``key == Model_name`` / ``key == Dataset_name``
+# contract). The ``provenance`` slice preset reads the 7-column
+# ``data/provenance.csv`` the emitter ships (name column ``dataset``) but
+# merges into the DATASETS registry, whose name field is ``Dataset_name``
+# — landing the name under ``dataset`` would add a redundant field to
+# every entry; the preset maps it onto the registry's own name field
+# instead (a no-op value-wise: D-10 already pins the equality).
+#
+# ``merge_only``: the provenance preset is a CORRECTION path over an
+# existing datasets registry, never a standalone ingest (its slice lacks
+# every operational column) and never an add path (a row naming a
+# dataset absent from the merge registry would create a skeletal,
+# untrainable entry — refused loudly; new datasets flow through the full
+# ``--kind datasets`` ingest per docs/ONBOARDING.md).
 KIND_PRESETS = {
     "models": {
         "name_column": "Model_name",
+        "name_field": "Model_name",
         "columns": [
             "Model_name",
             "Model_path",
@@ -106,6 +149,7 @@ KIND_PRESETS = {
     },
     "datasets": {
         "name_column": "Dataset_name",
+        "name_field": "Dataset_name",
         "columns": [
             "Index",
             "Dataset_name",
@@ -129,6 +173,27 @@ KIND_PRESETS = {
             "download_url_alternates",
         ],
         "numeric": ["Index", "Train", "Test", "Dev", "labels", "length"],
+    },
+    # The provenance correction slice (MED-03, phase-06 review): ingests
+    # the emitted dnallm-mark/data/provenance.csv (7 columns: the dataset
+    # key + the six provenance fields) back into pipeline/datasets_info.json
+    # via --to-json --merge-existing — the documented reviewer-facing
+    # correction path named in the DATA.md appendix, the provenance
+    # schema $comment, and the emitter's BEGIN marker.
+    "provenance": {
+        "name_column": "dataset",
+        "name_field": "Dataset_name",
+        "columns": [
+            "dataset",
+            "source",
+            "citation",
+            "license",
+            "preprocessing",
+            "download_url",
+            "download_url_alternates",
+        ],
+        "numeric": [],
+        "merge_only": True,
     },
 }
 
@@ -347,8 +412,28 @@ def to_json(args, preset):
     if args.merge_existing:
         with open(args.merge_existing, "r", encoding="utf-8") as f:
             registry = json.load(f)
+    elif preset.get("merge_only"):
+        sys.exit(
+            f"[Error] --kind {args.kind} requires --merge-existing — the "
+            "provenance slice is a correction path over the datasets "
+            "registry, not a standalone ingest"
+        )
+    if preset.get("merge_only"):
+        # A correction CSV edits existing rows: a name absent from the
+        # merge registry is a typo (or a new dataset taking the wrong
+        # path), and merging it would add a skeletal entry with no
+        # operational columns — refuse, naming every unknown row.
+        unknown = sorted(set(rows) - set(registry))
+        if unknown:
+            sys.exit(
+                f"[Error] --kind {args.kind} CSV names dataset(s) absent "
+                f"from the merge registry: {', '.join(unknown)} — the "
+                "correction path edits existing rows; add new datasets "
+                "through the full --kind datasets ingest "
+                "(docs/ONBOARDING.md)"
+            )
 
-    name_column = preset["name_column"]
+    name_field = preset["name_field"]
     added, merged, renamed_count = 0, 0, 0
     seen = set()
     for name, fields in rows.items():
@@ -359,9 +444,11 @@ def to_json(args, preset):
             sys.exit(f"[Error] Name collision after --rename-name: CSV rows "
                      f"'{name}' and '{final_name}' both map to '{final_name}'")
         seen.add(final_name)
-        # The name-column cell lands verbatim as a field so key == name field
-        # holds for every entry (D-10 single-source contract).
-        fields[name_column] = final_name
+        # The name lands verbatim as the REGISTRY's name field so
+        # key == name field holds for every entry (D-10 single-source
+        # contract; for the provenance slice that field is Dataset_name,
+        # not the CSV's `dataset` column — MED-03).
+        fields[name_field] = final_name
         if final_name in registry:
             registry[final_name].update(fields)
             merged += 1

@@ -107,7 +107,7 @@ subset ID lists consumed by the pipeline live in
 | plant-genomic-benchmark__promoter_strength.leaf | present | 58179 | 6825 | 7154 | 0 | 0 | 0 | 7154 | 7154 | 7154 |
 | plant-genomic-benchmark__terminator_strength.leaf | present | 43294 | 4806 | 5309 | 0 | 0 | 0 | 5309 | 5309 | 5309 |
 
-<!-- GENERATED PROVENANCE BEGIN — script/build_provenance.py; do not edit by hand: correct values in dnallm-mark/data/provenance.csv, ingest via script/convert_registry.py --to-json --merge-existing, then re-run `make data` -->
+<!-- GENERATED PROVENANCE BEGIN — script/build_provenance.py; do not edit by hand: correct values in dnallm-mark/data/provenance.csv, ingest via script/convert_registry.py --kind provenance --to-json --merge-existing, then re-run `make data` -->
 
 ## Dataset provenance (DATA-04 / DATA-05)
 
@@ -121,8 +121,8 @@ pages; 2026-10-11) and **reviewed and accepted by the maintainer
 literal `Unspecified` (never a blank cell), with the source link
 carried in the `source` column. Corrections flow through the
 downloadable CSV: edit `data/provenance.csv`, ingest via
-`script/convert_registry.py --to-json --merge-existing`, re-run
-`make data`.
+`script/convert_registry.py --kind provenance --to-json
+--merge-existing`, re-run `make data`.
 
 **Preprocessing (uniform across all 50 datasets):**
 Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README

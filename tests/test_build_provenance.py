@@ -250,3 +250,112 @@ def test_committed_registry_has_no_blank_provenance_cells():
         for field in PROVENANCE_FIELDS:
             assert isinstance(entry.get(field), str) and entry[field].strip(), \
                 f"{name}.{field} is blank or missing"
+
+
+# ===== MED-03 (phase-06 review): the documented correction round-trip =====
+
+def test_documented_correction_round_trip_over_the_real_registry(tmp_path):
+    """The reviewer-facing correction path named by the DATA.md appendix,
+    the provenance schema $comment, and the emitted BEGIN marker works
+    EXACTLY as documented over the real registry (read-only input; the
+    ingest runs against tmp copies): emit provenance.{json,csv} -> edit a
+    cell in the CSV -> ``convert_registry.py --kind provenance --to-json
+    --merge-existing`` -> no abort, exactly the corrected value lands ->
+    re-emitting over the corrected registry carries the correction into
+    every artifact. Before MED-03 this path died at the first gate: the
+    generic ``--kind datasets`` ingest demanded the ``Dataset_name`` name
+    column and all 21 preset columns the 7-column projection lacks."""
+    import sys
+
+    import convert_registry  # conftest puts script/ on sys.path
+
+    real_registry = json.loads(
+        (REPO / "pipeline" / "datasets_info.json").read_text(encoding="utf-8"))
+    data_dir = tmp_path / "data"
+    data_md = tmp_path / "DATA.md"
+    build_provenance.write_artifacts(real_registry, data_dir, data_md)
+
+    # Step 2 of the documented path: correct a cell in the emitted CSV.
+    csv_path = data_dir / "provenance.csv"
+    rows = list(csv.reader(csv_path.read_text(encoding="utf-8")
+                           .splitlines()))
+    header, target, corrected = rows[0], "GUE__emp_H3", "CC BY 4.0 (review correction)"
+    license_col = header.index("license")
+    for row in rows[1:]:
+        if row[0] == target:
+            assert row[license_col] != corrected
+            row[license_col] = corrected
+    with open(csv_path, "w", encoding="utf-8", newline="") as fh:
+        csv.writer(fh, lineterminator="\n").writerows(rows)
+
+    # Step 3: the documented ingest command, verbatim flag surface, run
+    # against tmp copies (the real registry is never mutated by a test).
+    registry_copy = tmp_path / "datasets_info.json"
+    registry_copy.write_text(json.dumps(real_registry), encoding="utf-8")
+    argv = [
+        "convert_registry.py", "--kind", "provenance", "--to-json",
+        "--input", str(csv_path),
+        "--output", str(registry_copy),
+        "--merge-existing", str(registry_copy),
+    ]
+    old_argv = sys.argv
+    try:
+        sys.argv = argv
+        convert_registry.main()  # no abort — the MED-03 contract
+    finally:
+        sys.argv = old_argv
+    corrected_registry = json.loads(
+        registry_copy.read_text(encoding="utf-8"))
+    entry = corrected_registry[target]
+    assert entry["license"] == corrected, (
+        "the corrected cell must land in the registry"
+    )
+    assert entry["Dataset_name"] == target, (
+        "the D-10 key == Dataset_name invariant must survive the ingest"
+    )
+    assert "dataset" not in entry, (
+        "the slice's name column must not leak a redundant field"
+    )
+    for name, before in real_registry.items():
+        if name == target:
+            continue
+        assert corrected_registry[name] == before, (
+            f"{name} must be byte-identical after the correction ingest"
+        )
+
+    # Step 4: re-run `make data`'s emitter over the corrected registry —
+    # every artifact carries the correction (the round-trip closes).
+    out_dir = tmp_path / "data2"
+    out_md = tmp_path / "DATA2.md"
+    out_md.write_text(data_md.read_text(encoding="utf-8"),
+                      encoding="utf-8")
+    build_provenance.write_artifacts(corrected_registry, out_dir, out_md)
+    rejson = json.loads((out_dir / "provenance.json").read_text(
+        encoding="utf-8"))
+    by_name = {row["dataset"]: row for row in rejson["rows"]}
+    assert by_name[target]["license"] == corrected
+    recsv = list(csv.reader(
+        (out_dir / "provenance.csv").read_text(encoding="utf-8")
+        .splitlines()))
+    for row in recsv[1:]:
+        if row[0] == target:
+            assert row[license_col] == corrected
+    assert corrected in out_md.read_text(encoding="utf-8"), (
+        "the regenerated DATA.md appendix must carry the corrected value"
+    )
+    # The marker and the schema $comment keep naming the working command
+    # (the instruction sites the round-trip contract is pinned against).
+    marker = build_provenance.BEGIN_MARKER
+    assert "--kind provenance --to-json --merge-existing" in marker, (
+        "the BEGIN marker must name the provenance-slice ingest command "
+        "(MED-03: the generic --kind datasets form cannot ingest the "
+        "emitted CSV)"
+    )
+    schema_comment = json.loads(
+        (REPO / "schemas" / "provenance.json").read_text(encoding="utf-8")
+    )["$comment"]
+    assert "--kind provenance --to-json --merge-existing" in schema_comment
+    committed_md = (REPO / "DATA.md").read_text(encoding="utf-8")
+    assert marker in committed_md, (
+        "the committed DATA.md must carry the current marker text"
+    )
