@@ -27,7 +27,7 @@ pilot.pause()`` before every assertion; ``asyncio_mode = "auto"``
 
 from env_smoke import CheckResult
 from rich.text import Text
-from textual.widgets import DataTable
+from textual.widgets import DataTable, Label
 
 from tui.app import DnallmMarkTui
 from tui.screens.env_check import EnvCheckScreen
@@ -100,7 +100,7 @@ async def test_boots_on_env_check_screen_quits_on_q():
             ), f"row must be keyed on the stable kernel id {kernel_id!r}"
 
         # the last-check line renders from the cached checked_at (ENV-02)
-        last_check = app.screen.query_one("#env-last-check")
+        last_check = app.screen.query_one("#env-last-check", Label)
         line = str(last_check.content)
         assert line == ENV_LAST_CHECK_LINE.format(
             checked_at=_CACHED_CHECKED_AT
