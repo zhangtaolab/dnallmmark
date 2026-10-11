@@ -760,8 +760,9 @@ def extract_subset_fns():
 
 
 def extract_fraction_fns():
-    """Exec-extract ``validate_train_fraction`` + ``apply_train_fraction``
-    (the read-source-never-import pattern; the two functions are pure —
+    """Exec-extract ``validate_train_fraction`` +
+    ``zero_selection_tasks`` + ``apply_train_fraction``
+    (the read-source-never-import pattern; the functions are pure —
     the span runs to ``def set_seed``, sweeping the module-level variant
     constants harmlessly along the way)."""
     src = RUN_FINETUNE.read_text(encoding="utf-8")
@@ -777,6 +778,7 @@ def extract_fraction_fns():
     exec(match.group(0), namespace)  # noqa: S102 - pure extracted fns
     return (
         namespace["validate_train_fraction"],
+        namespace["zero_selection_tasks"],
         namespace["apply_train_fraction"],
     )
 
@@ -2073,7 +2075,7 @@ def test_train_fraction_flag_shape_and_seed_governed_semantics():
 def test_train_fraction_validator_rejects_out_of_bounds():
     """The pure validator accepts (0, 1] and rejects f <= 0 and f > 1 with
     a problem naming the bound; None (absent flag) is vacuously valid."""
-    validate, _apply = extract_fraction_fns()
+    validate, _zero, _apply = extract_fraction_fns()
     assert validate(None) == []
     for good in (0.25, 0.5, 0.75, 1.0):
         assert validate(good) == [], f"{good} must be a valid fraction"
@@ -2107,13 +2109,86 @@ def test_train_fraction_fail_fast_at_argv_boundary():
     )
 
 
+def test_zero_selection_tasks_flags_small_n_times_tiny_f():
+    """LOW-08 (phase-06 review): the pure zero-selection resolver flags
+    exactly the tasks whose kept-row count int(Train * f) would be 0 —
+    the crash that previously surfaced deep in the suite as an opaque
+    failed cell is knowable from the registry up front. Falsy-Train
+    tasks (already untrainable) are out of scope, and the
+    --target_dataset filter (comma-separated, like the dataset loop's)
+    scopes the check."""
+    _validate, zero_fn, _apply = extract_fraction_fns()
+    registry = {
+        "tiny__task": {"Dataset_name": "tiny__task", "Train": 40},
+        "normal__task": {"Dataset_name": "normal__task", "Train": 100},
+        "no_train__task": {"Dataset_name": "no_train__task", "Train": 0},
+        "empty_train__task": {"Dataset_name": "empty_train__task",
+                               "Train": ""},
+    }
+    assert zero_fn(registry, 0.01) == ["tiny__task"], (
+        "n=40 x f=0.01 keeps int(0.4) = 0 rows — the task must be flagged"
+    )
+    assert zero_fn(registry, 0.5) == [], (
+        "every trainable task keeps rows at f=0.5 — nothing flagged"
+    )
+    assert zero_fn(registry, 1.0) == [], "f=1.0 never zeroes a selection"
+    assert zero_fn(registry, 0.01, "normal__task") == [], (
+        "a --target_dataset run scopes the check to the targeted task"
+    )
+    assert zero_fn(registry, 0.01, "normal__task,tiny__task") == [
+        "tiny__task"
+    ], "the comma-separated target list matches the dataset-loop filter"
+    # The real registry stays clean at the documented curve fractions.
+    real = json.loads(MODELS_INFO.parent.joinpath(
+        "datasets_info.json").read_text(encoding="utf-8"))
+    for fraction in (0.25, 0.5, 1.0):
+        assert zero_fn(real, fraction) == [], (
+            f"a documented curve fraction ({fraction}) zeroes a real "
+            "task's train split — the learning-curve lane cannot run it"
+        )
+
+
+def test_zero_selection_guard_fails_fast_at_argv_boundary():
+    """LOW-08 wiring: the __main__ block calls zero_selection_tasks when a
+    fraction is given and exits non-zero with an [Error] naming the
+    zeroed task(s) — BEFORE the model loop, so the refusal lands at the
+    argv boundary instead of as a deep-in-the-suite failed cell."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    wiring_idx = statement_index(
+        src, "zeroed = zero_selection_tasks("
+    )
+    assert wiring_idx != -1, (
+        "no zero_selection_tasks call in the __main__ wiring — a "
+        "zero-row fraction would crash deep in the suite (LOW-08)"
+    )
+    assert "[Error] --train_fraction" in src and (
+        "selects" in src and "zero train rows" in src
+    ), (
+        "the fail-fast exit must carry an [Error] --train_fraction "
+        "message naming the zero-selection problem"
+    )
+    model_loop_idx = src.find("models_info.items():")
+    assert wiring_idx < model_loop_idx, (
+        "the zero-selection guard must run BEFORE the model loop"
+    )
+    guarded = re.search(
+        r"if train_fraction is not None:\s*\n"
+        r"[^\S\n]*zeroed = zero_selection_tasks\(",
+        src,
+    )
+    assert guarded is not None, (
+        "the zero-selection check must be guarded on a given fraction — "
+        "the no-fraction default path stays byte-identical"
+    )
+
+
 def test_apply_train_fraction_train_only_seed_governed():
     """The apply seam composes the train split as
     shuffle(seed=<run seed>).select(range(int(n * f))) — TRAIN SPLIT ONLY:
     dev and test are never shuffled or selected (the eval-invariance
     guarantee: test rows identical across fractions and models, so curve
     points are comparable)."""
-    _validate, apply_fn = extract_fraction_fns()
+    _validate, _zero, apply_fn = extract_fraction_fns()
     train, dev, test = ShuffleSplit(100), ShuffleSplit(80), ShuffleSplit(60)
     holder = {"train": train, "dev": dev, "test": test}
     apply_fn(holder, 0.25, 9527)
@@ -2143,7 +2218,7 @@ def test_apply_train_fraction_train_only_seed_governed():
 def test_apply_train_fraction_absent_flag_is_noop():
     """Absent flag (None): zero shuffle/select calls anywhere — the code
     path is identical to today."""
-    _validate, apply_fn = extract_fraction_fns()
+    _validate, _zero, apply_fn = extract_fraction_fns()
     splits = {name: ShuffleSplit() for name in ("train", "dev", "test")}
     apply_fn(splits, None, 9527)
     for split in splits.values():

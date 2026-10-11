@@ -404,6 +404,41 @@ def validate_train_fraction(fraction):
     return []
 
 
+def zero_selection_tasks(datasets_info, fraction, target_dataset=None):
+    """Registry tasks whose train split would select ZERO rows at ``fraction``.
+
+    LOW-08 (phase-06 review): ``int(n * fraction)`` is 0 for small ``n``
+    x tiny ``fraction`` (e.g. n=40, f=0.01), so the fraction seam would
+    build an EMPTY train split and crash deep in the suite (recorded as
+    an opaque failed cell) instead of being refused at the argv
+    boundary. The registry's ``Train`` counts are the on-disk row count
+    (disk-verified by ``script/make_dev_splits.py --check``), so the
+    zero-selection set is knowable up front. Tasks with falsy ``Train``
+    (already untrainable, never enumerated by the sweep) are out of
+    scope.
+
+    Args:
+        datasets_info (dict): The unified datasets registry.
+        fraction (float): The ``--train_fraction`` value.
+        target_dataset (str | None): the ``--target_dataset`` filter
+            (comma-separated list, matching the dataset-loop filter;
+            None = every registry task is in scope).
+
+    Returns:
+        list[str]: sorted task names whose kept-row count would be 0.
+    """
+    targeted = (
+        {t.strip() for t in target_dataset.split(",") if t.strip()}
+        if target_dataset is not None else None
+    )
+    return sorted(
+        task for task, row in datasets_info.items()
+        if (targeted is None or task in targeted)
+        and row.get("Train")
+        and int(row["Train"]) * fraction < 1
+    )
+
+
 def apply_train_fraction(dataset_dict, fraction, seed):
     """Restrict the TRAIN split to a fraction of its rows (REV-08/F8).
 
@@ -760,6 +795,21 @@ if __name__ == "__main__":
             f"[Error] invalid --train_fraction {train_fraction!r}: "
             + "; ".join(fraction_problems)
         )
+    # Zero-selection guard (LOW-08, phase-06 review): a fraction that
+    # keeps ZERO train rows on any in-scope task (int(Train * f) < 1 —
+    # the registry counts are the on-disk row counts) would crash deep
+    # in the suite after a model load, recorded as an opaque failed
+    # cell. Refuse at the argv boundary naming every task (the
+    # --subset_file collect-all discipline).
+    if train_fraction is not None:
+        zeroed = zero_selection_tasks(
+            datasets_info, train_fraction, target_dataset)
+        if zeroed:
+            sys.exit(
+                f"[Error] --train_fraction {train_fraction!r} selects "
+                f"zero train rows for {zeroed}: int(Train * fraction) < 1 "
+                "for each — raise the fraction or exclude the task(s)"
+            )
 
     # Detect GPU/NPU memory with fallbacks
     if torch.cuda.is_available():
