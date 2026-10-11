@@ -185,6 +185,29 @@ def test_derive_presets_tier1_unknown_members_surfaced_not_dropped(tmp_path):
     assert tier1.unknown_keys == ("ghost-model", "ghost-task")
 
 
+def test_derive_presets_tier1_task_omitted_contributes_the_model_only(
+        tmp_path):
+    """WR-03: a tier-1 pair may omit ``task`` — the run_sweep
+    ``--priority-file`` grammar (the model's-every-task spec, the same
+    shape ``tiers_to_template`` accepts). The preset then marks the
+    model only; the file is NOT damaged."""
+    tiers = [
+        [
+            {"model": "model-a"},  # task omitted — the pipeline grammar
+            {"model": "model-b", "task": "task-x"},
+        ],
+        ["model-c"],
+    ]
+    path = write_priorities(tmp_path, tiers)
+    derivation = derive_presets(path, MODEL_KEYS, TASK_KEYS)
+    assert isinstance(derivation, PresetDerivation)
+    assert derivation.load_error is None
+    tier1 = {preset.id: preset for preset in derivation.presets}["tier-1"]
+    assert tier1.models == ("model-a", "model-b")
+    assert tier1.tasks == ("task-x",)  # the omitted task contributes nothing
+    assert tier1.unknown_keys == ()
+
+
 def test_derive_presets_damaged_file_yields_empty_presets_plus_load_error(
         tmp_path):
     """Missing / corrupt / malformed priorities files: empty presets plus a
@@ -207,7 +230,8 @@ def test_derive_presets_damaged_file_yields_empty_presets_plus_load_error(
         {},                                   # not a list
         [["model-a"]],                        # only one tier
         [["model-a"], [], ["model-b"]],       # three tiers
-        [[{"model": "model-a"}], ["model-b"]],  # pair missing 'task'
+        [[{"model": 42, "task": "task-x"}], ["model-b"]],  # non-string model
+        [[{"model": "model-a", "task": 42}], ["model-b"]],  # non-string task
         [[("model-a", "task-x")], ["model-b"]],  # pair is not a dict
         [["model-a"], [42]],                  # tier-2 name is not a string
     ):

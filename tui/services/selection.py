@@ -10,15 +10,17 @@ Contract (locked decisions):
 
 - D-06 (presets derive, never hardcode): every preset derives from
   ``pipeline/sweep_priorities.json`` at READ time — tier-1 (the
-  ``{model, task}`` pairs -> models AND tasks), tier-2 (the model-name
-  list -> models only, no task inferred), and all (the passed registry
-  key lists, registry order verbatim). ZERO tier model names are
-  hardcoded here — the file is the single source, so tier edits require
-  zero code changes. Preset names missing from the passed registry lists
-  are returned as ``unknown_keys`` for loud warning surfacing (the 08-07
-  screen skips + warns) — never silently dropped; the derived
-  models/tasks membership still CARRIES them (registry blindness is the
-  registry's consumer's call, not this derivation's).
+  ``{model, task}`` pairs -> models AND tasks; a pair may omit ``task``
+  — the run_sweep grammar's model-every-task spec, contributing its
+  model only), tier-2 (the model-name list -> models only, no task
+  inferred), and all (the passed registry key lists, registry order
+  verbatim). ZERO tier model names are hardcoded here — the file is the
+  single source, so tier edits require zero code changes. Preset names
+  missing from the passed registry lists are returned as
+  ``unknown_keys`` for loud warning surfacing (the 08-07 screen skips +
+  warns) — never silently dropped; the derived models/tasks membership
+  still CARRIES them (registry blindness is the registry's consumer's
+  call, not this derivation's).
 - SEL-02 (ordering): derivation order is deterministic — file order
   within each tier, first occurrence wins; the derivation returns
   tier-1, tier-2, all in that menu order, and ``load_custom_presets``
@@ -180,8 +182,11 @@ def derive_presets(priorities_path, model_keys, task_keys):
         with unknown-key surfacing, or empty presets plus a load-error
         message when the file is missing, corrupt, or malformed (the
         committed shape is exactly two tiers: tier-1 a list of
-        ``{model, task}`` string pairs, tier-2 a list of model-name
-        strings) — never an exception.
+        ``{model, task}`` string pairs — ``task`` may be omitted, the
+        run_sweep ``--priority-file`` grammar's model-every-task spec
+        that ``tiers_to_template`` also accepts, contributing the model
+        only — and tier-2 a list of model-name strings) — never an
+        exception.
     """
     path = Path(priorities_path)
     doc = artifact_loader.load_json_artifact(path)
@@ -208,14 +213,21 @@ def derive_presets(priorities_path, model_keys, task_keys):
             if (
                 not isinstance(entry, dict)
                 or not isinstance(entry.get("model"), str)
-                or not isinstance(entry.get("task"), str)
+                or not (
+                    entry.get("task") is None
+                    or isinstance(entry.get("task"), str)
+                )
             ):
                 problems.append(
                     f"tier-1 entry {index} is not a {{model, task}} pair "
                     f"of strings: {entry!r}"
                 )
             else:
-                pairs.append((entry["model"], entry["task"]))
+                # ``task`` may be omitted (None) — the run_sweep
+                # --priority-file grammar's model-every-task spec, the
+                # same shape ``tiers_to_template`` accepts (WR-03); the
+                # pair then contributes its model only
+                pairs.append((entry["model"], entry.get("task")))
     elif len(doc) >= 1:
         problems.append("tier-1 must be a list of {model, task} pairs")
     if len(doc) >= 2 and isinstance(doc[1], list):
@@ -241,11 +253,15 @@ def derive_presets(priorities_path, model_keys, task_keys):
     tier1_models, tier1_tasks, tier1_unknown = [], [], []
     for model, task in pairs:
         _append_unique(tier1_models, model)
-        _append_unique(tier1_tasks, task)
         if model not in model_key_set:
             _append_unique(tier1_unknown, model)
-        if task not in task_key_set:
-            _append_unique(tier1_unknown, task)
+        if task is not None:
+            # an omitted task is the model's-every-task spec — the preset
+            # marks the model only, no task inferred (WR-03, the same
+            # derivation tiers_to_template performs)
+            _append_unique(tier1_tasks, task)
+            if task not in task_key_set:
+                _append_unique(tier1_unknown, task)
     tier2_models, tier2_unknown = [], []
     for name in names:
         _append_unique(tier2_models, name)
