@@ -51,6 +51,7 @@ pilot.pause()`` before every assertion; worker completion is awaited via
 import json
 import re
 import threading
+from itertools import pairwise
 from pathlib import Path
 
 from env_smoke import CheckResult
@@ -1168,3 +1169,131 @@ def test_backend_parse_and_apply_delegate_to_the_service_grammar():
         _default_data().model_entries[1],
     ]
     assert backend.parse_filter("bogus=1").diagnostics[0].axis == "bogus"
+
+
+# =====================================================================
+# Task 3 — the 80-column UI backstops (08-UI-SPEC UI Considerations)
+# =====================================================================
+
+#: The real longest registry task key (pipeline/datasets_info.json,
+#: verified 2026-10-11): 68 chars — the backstop fixture's long key.
+_LONGEST_TASK_KEY = (
+    "PlantCAD2_fine_tuning_tasks__cross_species_leaf_absolute_translation"
+)
+
+
+async def test_backstop_longest_task_key_at_80x24():
+    """Backstop (08-UI-SPEC UI Considerations, long-text): at 80x24 the
+    longest real registry task key causes no column collision and no
+    wrap-induced row-height change — every data row stays height 1 and
+    the presence column remains on-screen."""
+    task_keys = tuple(
+        _LONGEST_TASK_KEY if index == 0 else f"GUE__task_{index}"
+        for index in range(12)  # enough rows to force the v-scrollbar
+    )
+    data = SelectionData(
+        model_entries=_default_data().model_entries,
+        dataset_entries=tuple(
+            {"key": key, "category": "Plants", "type": "binary",
+             "metric": "f1", "card": {}}
+            for key in task_keys
+        ),
+        presence={
+            key: Presence(
+                status=PRESENCE_PRESENT, rows=(743095, 109717, 106227),
+            )
+            for key in task_keys
+        },
+    )
+    app = _app(FakeSelectionService(data=data))
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_selection(pilot, app)
+        screen = app.screen
+        table = screen.query_one(DataTable)
+
+        # the dataset table is the long-key surface
+        await pilot.press("m")
+        await pilot.pause()
+        assert table.row_count == 12
+
+        # no wrap-induced row-height change: every data row stays height 1
+        heights = {row.height for row in table.rows.values()}
+        assert heights == {1}, "long keys must never wrap a row taller"
+
+        # no column collision: the column budget fits the 80-column
+        # minimum exactly (widths + per-column padding + the scrollbar)
+        widths = [
+            table.columns[key].width for key in _DATASET_COLUMNS_KEYS
+        ]
+        assert sum(widths) + 2 * len(widths) + 2 <= 80
+
+        # the presence column remains on-screen: its header renders
+        # within the table's viewport (the rendered header strip carries
+        # the presence column header and the presence glyphs render)
+        from textual.geometry import Region
+        strips = table.render_lines(
+            Region(0, 0, table.size.width, min(table.size.height, 3)),
+        )
+        header = "".join(segment.text for segment in strips[0])
+        assert SEL_COL_PRESENCE in header
+        first_data_row = "".join(segment.text for segment in strips[1])
+        assert "✓" in first_data_row
+
+        # the long key truncates with the ellipsis inside its column
+        # budget (the full key stays available in the enter row detail)
+        key_cell = _row(table, 0)[1]
+        assert key_cell.startswith("PlantCAD2_fine_t")
+        assert key_cell.endswith("…")
+        assert Text(key_cell).cell_len == 20  # the dataset key-column budget
+
+
+async def test_backstop_footer_renders_every_binding_label_at_80():
+    """Backstop (08-UI-SPEC UI Considerations, CJK width): at 80 columns
+    the Footer renders every binding label untruncated with the shipped
+    strings — walk the active screen bindings and check each
+    keycap+label renders inside the footer width without overlaps."""
+    from textual.binding import Binding as BindingType
+    from textual.widgets import Footer
+
+    app = _app(FakeSelectionService())
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_selection(pilot, app)
+        screen = app.screen
+        footer = screen.query_one(Footer)
+
+        # the shown bindings of the app + the active screen (the Footer's
+        # own source set; hidden bindings never footer-render)
+        expected = {}
+        for binding in (*app.BINDINGS, *screen.BINDINGS):
+            if isinstance(binding, BindingType) and binding.show:
+                key = binding.key_display or binding.key
+                expected[key] = binding.description
+        assert expected, "the selection screen must carry footer bindings"
+        assert "space" in expected and "/" in expected
+
+        footer_keys = list(footer.query("FooterKey"))
+        assert footer_keys, "the Footer must render the binding map"
+        rendered = {item.key_display: item for item in footer_keys}
+        for key_display, description in expected.items():
+            assert key_display in rendered, (
+                f"the [{key_display}] binding must render in the footer"
+            )
+            item = rendered[key_display]
+            text = item.render()
+            # the label renders UNTRUNCATED with the shipped string
+            assert description in text.plain, (
+                f"the {key_display!r} label {description!r} must render "
+                "untruncated at 80 columns"
+            )
+            # and the whole item fits inside the footer width
+            assert item.region.x + item.region.width <= footer.size.width
+
+        # no two footer items overlap (the 80-column collision guard)
+        spans = sorted(
+            (item.region.x, item.region.x + item.region.width)
+            for item in footer_keys
+        )
+        for (left_start, left_end), (right_start, _) in pairwise(spans):
+            assert right_start >= left_end, (
+                f"footer items overlap at {right_start} < {left_end}"
+            )

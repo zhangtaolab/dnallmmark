@@ -44,7 +44,12 @@ from textual.widgets import DataTable, RichLog
 import tui.screens.matrix as matrix_screen_module
 from tui.app import DnallmMarkTui
 from tui.screens.matrix import MatrixKeyModal, MatrixScreen
-from tui.screens.selection import SelectionData, SelectionScreen
+from tui.screens.selection import (
+    PresetMenu,
+    PresetOption,
+    SelectionData,
+    SelectionScreen,
+)
 from tui.services import selection as selection_service
 from tui.services.registries import (
     PRESENCE_MISSING,
@@ -467,3 +472,108 @@ def test_screen_defines_its_read_only_navigation_bindings():
             f"the matrix must never gain a {forbidden} binding "
             "(read-only by absent bindings — the out-of-scope ban)"
         )
+
+
+# =====================================================================
+# Task 3 — the cross-screen navigation integration (composed app, fakes)
+# =====================================================================
+
+class _IntegrationFake(_MatrixFake):
+    """The full-flow fake: load + grammar + one canned tier-1 preset."""
+
+    def __init__(self, data):
+        super().__init__(data)
+        self.menu = PresetMenu(options=(
+            PresetOption(
+                id="tier-1", kind="derived", name=None,
+                models=("plant-dnamamba-6mer", "PlantHelixSeek"),
+                tasks=("GUE__emp_H3",),
+            ),
+        ))
+
+    def preset_menu(self):
+        return self.menu
+
+    def custom_names(self):
+        return ()
+
+
+async def test_cross_screen_navigation_integration():
+    """The composed navigation path end-to-end, headless with fakes:
+    env screen -> s to selection -> filter -> mark -> preset -> v to
+    matrix -> esc -> q — proving the app wiring as one flow."""
+    from tui.screens.env_check import EnvCheckScreen
+
+    # the app directly (NOT via _app — that helper wraps its argument in
+    # _MatrixFake; the integration fake IS the service)
+    app = DnallmMarkTui(
+        env_check_service=_EnvCacheHitFake(),
+        selection_service=_IntegrationFake(_matrix_data()),
+    )
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        # the app opens on the env screen (cache-hit fake — instant)
+        assert isinstance(app.screen, EnvCheckScreen)
+
+        # s opens the selection screen through the app factory
+        await pilot.press("s")
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        selection = app.screen
+        assert isinstance(selection, SelectionScreen)
+        table = selection.query_one(DataTable)
+        assert _row_keys(table) == list(_MODELS)
+
+        # the k9s filter narrows the model table, esc clears it
+        await pilot.press("slash")
+        await pilot.pause()
+        for character in "mlm":
+            await pilot.press(character)
+        await pilot.pause()
+        assert _row_keys(table) == list(_MODELS)  # all three are MLM
+        await pilot.press("escape")
+        await pilot.pause()
+        assert _row_keys(table) == list(_MODELS)
+
+        # spacebar marks the cursor row (the shared app-state set)
+        await pilot.press("space")
+        await pilot.pause()
+        assert selection.marked_models == {"plant-dnamamba-6mer"}
+
+        # the preset applies with REPLACING semantics (tier-1 marks its
+        # pair models AND its task)
+        await pilot.press("p")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert selection.marked_models == {
+            "plant-dnamamba-6mer", "PlantHelixSeek",
+        }
+        assert selection.marked_tasks == {"GUE__emp_H3"}
+
+        # v pushes the read-only matrix over the same shared sets
+        await pilot.press("v")
+        await pilot.pause()
+        assert isinstance(app.screen, MatrixScreen)
+        matrix_table = app.screen.query_one(DataTable)
+        assert _row_keys(matrix_table) == list(_MODELS)
+        # the diamond prefixes reflect the live mark sets (tier-1 marked
+        # plant-dnamamba-6mer and PlantHelixSeek; plant-dnabert is bare)
+        assert _row(matrix_table, 0)[0] == "◆ plant-dnamamba-6mer"
+        assert _row(matrix_table, 1)[0] == "plant-dnabert-6mer"
+        assert _row(matrix_table, 2)[0] == "◆ PlantHelixSeek"
+
+        # esc pops back to the selection screen — marks intact
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.screen is selection
+        assert selection.marked_models == {
+            "plant-dnamamba-6mer", "PlantHelixSeek",
+        }
+        assert selection.marked_tasks == {"GUE__emp_H3"}
+
+        # q quits the whole console cleanly
+        await pilot.press("q")
+        await pilot.pause()
+        assert app.return_code == 0
