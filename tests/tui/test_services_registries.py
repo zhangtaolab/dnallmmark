@@ -36,6 +36,7 @@ import re
 from pathlib import Path
 
 import registry_loader  # conftest puts pipeline/ on sys.path
+
 from tui.services import registries as registries_module
 from tui.services.registries import (
     MODEL_CARD_MEAN_TOKEN_LEN_FIELD,
@@ -144,7 +145,7 @@ def test_dataset_entries_carry_raw_values():
     entries = {e["key"]: e for e in load_dataset_entries()}
     bend = entries["BEND__CpG_methylation"]
     assert bend["category"] == "Animals"
-    assert bend["type"] == "binary"
+    assert bend["type"] == "multilabel"
     assert bend["metric"] == "AUPRC"
 
 
