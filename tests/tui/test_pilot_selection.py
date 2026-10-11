@@ -1248,8 +1248,12 @@ def test_screen_module_carries_zero_chinese_literals():
 # The real backend adapter (sync — real 08-04/08-05 services, tmp roots)
 # =====================================================================
 
-def test_backend_loads_the_committed_registries_and_presence():
+def test_backend_loads_the_committed_registries_and_presence(
+        monkeypatch, tmp_path):
     """The real seam: 62/50 entries, presence from the committed n_audit."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
     data = SelectionBackend().load_selection_data()
     assert len(data.model_entries) == 62
     assert len(data.dataset_entries) == 50
@@ -1272,7 +1276,8 @@ def test_backend_loads_the_committed_registries_and_presence():
     assert all(key.startswith("GUE__") for key in missing)
 
 
-def test_backend_registry_failure_degrades_to_the_error_state(monkeypatch):
+def test_backend_registry_failure_degrades_to_the_error_state(
+        monkeypatch, tmp_path):
     """A failing registry read degrades to the error state, never raises."""
     def _raise():
         raise OSError("official registry file missing")
@@ -1280,6 +1285,11 @@ def test_backend_registry_failure_degrades_to_the_error_state(monkeypatch):
     monkeypatch.setattr(
         registries_service, "load_model_entries", _raise,
     )
+    # pin the overlay empty: the healthy-side 50 below pins the COMMITTED
+    # registry regardless of any local custom overlay (the WR-05 pin)
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
     data = SelectionBackend().load_selection_data()
     assert data.model_entries == ()
     assert data.models_load_error is not None

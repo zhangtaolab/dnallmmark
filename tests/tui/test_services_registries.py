@@ -128,8 +128,12 @@ def test_entry_lists_and_counts_stay_consistent(monkeypatch, tmp_path):
     assert len(load_dataset_entries()) == counts.datasets
 
 
-def test_model_entries_carry_raw_values_with_empty_string_absents():
+def test_model_entries_carry_raw_values_with_empty_string_absents(
+        monkeypatch, tmp_path):
     """Filter axes hold the RAW registry values; absent -> "" not None."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
     entries = {e["key"]: e for e in load_model_entries()}
     # Chaoba's committed card carries empty type/species — the repo
     # data convention: missing values are "", never None/0.
@@ -140,8 +144,11 @@ def test_model_entries_carry_raw_values_with_empty_string_absents():
     assert entries["Chaoba"]["card"]["Model_size"] == "400M"
 
 
-def test_dataset_entries_carry_raw_values():
+def test_dataset_entries_carry_raw_values(monkeypatch, tmp_path):
     """Dataset filter axes pass the committed card values through."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
     entries = {e["key"]: e for e in load_dataset_entries()}
     bend = entries["BEND__CpG_methylation"]
     assert bend["category"] == "Animals"
@@ -149,9 +156,12 @@ def test_dataset_entries_carry_raw_values():
     assert bend["metric"] == "AUPRC"
 
 
-def test_size_m_is_the_numeric_card_field_as_float():
+def test_size_m_is_the_numeric_card_field_as_float(monkeypatch, tmp_path):
     """size_m == float(card["size (M)"]) — the numeric field, not the
     "400M" string twin (the projection choice is load-bearing)."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
     for entry in load_model_entries():
         assert entry["size_m"] == float(entry["card"]["size (M)"])
 
@@ -247,9 +257,13 @@ def test_load_n_audit_reads_the_real_committed_artifact():
     assert missing.rows is None
 
 
-def test_every_registry_dataset_key_maps_to_a_definite_presence():
+def test_every_registry_dataset_key_maps_to_a_definite_presence(
+        monkeypatch, tmp_path):
     """Real-data adjacency: all 50 registry keys resolve to present or
     missing against the committed audit — no unknown, no exception."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
     tasks = load_n_audit()
     statuses = {
         presence_for(entry["key"], tasks).status
