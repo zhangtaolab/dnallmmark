@@ -28,11 +28,55 @@ Contract:
 - The 08-04+ expansion (entry lists, filter axes, card columns) reads
   the same loaders through this module; ``load_registry_counts`` is the
   tracer slice of that view, not a parallel implementation.
+- 08-04 additions (RED SKELETONS — behavior lands in the GREEN commit):
+  the canonical entry view (``load_model_entries`` /
+  ``load_dataset_entries``), the n_audit presence mapping
+  (``load_n_audit`` / ``presence_for``).
 """
 
+from dataclasses import dataclass
 from typing import NamedTuple
 
 import registry_loader  # top-level module (pipeline/ sys.path root, D-02/D-19)
+
+# ===== RED skeletons (08-04) — canonical model-card field constants =====
+MODEL_CARD_SIZE_FIELD = ""
+MODEL_CARD_TOKENIZER_FIELD = ""
+MODEL_CARD_MEAN_TOKEN_LEN_FIELD = ""
+
+# ===== RED skeletons (08-04) — presence status vocabulary =====
+PRESENCE_PRESENT = ""
+PRESENCE_MISSING = ""
+PRESENCE_UNKNOWN = ""
+PRESENCE_UNAVAILABLE = ""
+
+
+@dataclass(frozen=True)
+class Presence:
+    """RED skeleton — behavior lands in GREEN."""
+
+    status: str
+    rows: tuple[int, int, int] | None
+
+
+def load_model_entries():
+    """RED skeleton — behavior lands in GREEN."""
+    return None
+
+
+def load_dataset_entries():
+    """RED skeleton — behavior lands in GREEN."""
+    return None
+
+
+def load_n_audit():
+    """RED skeleton — behavior lands in GREEN."""
+    return None
+
+
+def presence_for(task_key, audit_tasks):
+    """RED skeleton — behavior lands in GREEN."""
+    return None
 
 
 class RegistryCounts(NamedTuple):
