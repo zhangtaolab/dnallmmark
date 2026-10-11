@@ -50,7 +50,7 @@ seams (env_smoke, artifact_loader) + the sibling settings service.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
@@ -103,8 +103,9 @@ def is_same_local_day(state, now=None):
     Args:
         state: the loaded state dict (from ``load_cached``); None or a
             state without a parseable ``checked_at`` reads as a miss.
-        now: the comparison moment as a naive LOCAL datetime; None
-            means ``datetime.now()``.
+        now: the comparison moment as a datetime — naive values are
+            read as local wall-clock time (the display basis); None
+            means the current local moment.
 
     Returns:
         bool: True when checked_at falls on now's local calendar day.
@@ -113,10 +114,10 @@ def is_same_local_day(state, now=None):
     if not isinstance(checked_at, str):
         return False
     try:
-        checked_date = datetime.strptime(checked_at[:10], "%Y-%m-%d").date()
+        checked_date = date.fromisoformat(checked_at[:10])
     except ValueError:
         return False
-    moment = datetime.now() if now is None else now
+    moment = now if now is not None else datetime.now().astimezone()
     return checked_date == moment.date()
 
 
@@ -134,8 +135,8 @@ def run_full_check(kernels=None, state_path=None, now=None):
             unavailable.
         state_path: where to persist; None means
             ``default_state_path()`` (the D-04 state root).
-        now: the check moment as a naive LOCAL datetime (see
-            ``persist``); None means now.
+        now: the check moment as a datetime (naive values are read as
+            local wall-clock time; see ``persist``); None means now.
 
     Returns:
         list[CheckResult]: the executed kernel results, in order.
@@ -231,17 +232,18 @@ def persist(path, results, now=None):
     Args:
         path: the state file to write (str or os.PathLike).
         results: the ``CheckResult`` values to persist, in kernel order.
-        now: the check moment as a naive LOCAL datetime — the single
+        now: the check moment as a datetime — naive values are read as
+            local wall-clock time (the display basis); the single
             instant both timestamp forms derive from; None means now.
     """
-    moment = datetime.now() if now is None else now
+    moment = now if now is not None else datetime.now().astimezone()
     payload = {
         "schema_version": STATE_SCHEMA_VERSION,
         "checked_at": moment.strftime(CHECKED_AT_FORMAT),
         # The ISO-8601 UTC instant of the SAME moment — one write, both
         # bases (Pitfall 8: display and comparison are local; the ISO
         # form preserves the absolute instant).
-        "checked_at_iso": moment.astimezone(timezone.utc).isoformat(),
+        "checked_at_iso": moment.astimezone(UTC).isoformat(),
         "items": [
             {
                 "name": result.name,
