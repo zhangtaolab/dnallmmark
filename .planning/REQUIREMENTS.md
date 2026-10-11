@@ -63,10 +63,10 @@ Requirements for the hardening release. Each maps to roadmap phases.
 - [x] **REV-02** (F2, P0): Multi-seed sweep — seed-isolated output dirs fixing G1 (resume never skips a different seed), sweep runner (model×task×seed) with per-run records and failure manifest; VRAM-probe state semantics documented per seed
 - [x] **REV-03** (F3, P0): Unified exporter + result snapshot — metric-key mapping layer (suite registry ↔ export keys, key-parity unit-tested), dataset species from a human-verified metadata table (never model cards), per-seed detail + mean±SD/bootstrap-CI aggregates; freeze_snapshot (tar + SHA-256 + frozen commit hash)
 - [x] **REV-04** (F6, P1): Aggregation upgrade — CI-overlap tie rules, raw-rank + z-score×difficulty-weight dual views, permutation tests (10k, BH-corrected); CpG case renders as tie
-- [ ] **REV-05** (F4, P1): Adaptation lanes — LoRA (suite built-in, CLI-exposed), IA³ (after suite-side support), frozen probes (embedding cache + logistic/MLP); cost-accuracy frontier table
+- [x] **REV-05** (F4, P1): Adaptation lanes — LoRA (suite built-in, CLI-exposed), IA³ (after suite-side support), frozen probes (embedding cache + logistic/MLP); cost-accuracy frontier table
 - [x] **REV-06** (F9, P1): CI golden tests — smoke (tiny model × 1k × 1 epoch incl. export), key parity, species spot checks, aggregation units; CPU, <15 min, PR-required
 - [x] **REV-07** (F7, P1): N-frequency audit (47 tasks × splits) + unified eval-subset ID lists accepted by the pipeline
-- [ ] **REV-08** (F5+F8, P1/P2): Zero-shot VEP lane (CLM/MLM scoring, ClinVar/AraGWAS, baselines + sanity checks) and, window permitting, from-scratch baselines + learning curves (label-fraction sweeps)
+- [x] **REV-08** (F5+F8, P1/P2): Zero-shot VEP lane (CLM/MLM scoring, ClinVar/AraGWAS, baselines + sanity checks) and, window permitting, from-scratch baselines + learning curves (label-fraction sweeps)
 - [x] **REV-09** (E2' 执行面, P0 依赖): Three-seed full re-run (E2') executes only after REV-01/REV-02 gates — critical path F1→F2→E2'
 - [x] **REV-10** (F10, P0): Old pipeline (`dnallmmark_pipeline.py`) deprecation header + README names `run_finetune.py` as the benchmark entry point
 - [x] **PIPE-03**: Small end-to-end validation on the NEW pipeline (`run_finetune.py`) — plant-dnamamba-6mer and PlantHelixSeek (models_info entry added in-phase) each fine-tune on PlantCAD2__cross_species_leaf_on_off_translation and produce a `{model}_performance.json` valid against the Phase 2 schema
@@ -120,10 +120,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REV-02 | Phase 3 | Complete |
 | REV-03 | Phase 4, Phase 6 | Complete |
 | REV-04 | Phase 5 | Complete |
-| REV-05 | Phase 6 | Pending |
+| REV-05 | Phase 6 | Complete |
 | REV-06 | Phase 5 | Complete |
 | REV-07 | Phase 5 | Complete |
-| REV-08 | Phase 6 | Pending |
+| REV-08 | Phase 6 | Complete |
 | REV-09 | Phase 5 | Complete |
 | REV-10 | Phase 3 | Complete |
 | FIX-01 | Phase 4 | Complete |

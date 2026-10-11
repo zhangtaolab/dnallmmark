@@ -4,17 +4,17 @@ milestone: v0.7.1
 current_phase: 6
 current_phase_name: Revision Packaging & Extended Lanes
 current_plan: 5
-status: executing
-stopped_at: "Completed 06-04-PLAN.md (packaging: dead-code removal, provenance chain + maintainer review accepted, snapshot lane, docs trio, doi_swap prepared)"
-last_updated: "2026-10-10T23:55:30.624Z"
+status: verifying
+stopped_at: Completed 06-05-PLAN.md (frozen probes + learning curves — phase 06 complete)
+last_updated: "2026-10-11T00:32:50.333Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 05 complete, transitioned to Phase 6
-state_head: c59f5f84f48bdcfba7728dd62a611d151fc6742d
+state_head: 7d850a51ca086c5cb9de80a9750bce680b992d6f
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 24
-  completed_plans: 23
+  completed_plans: 24
 ---
 
 # Project State
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 Phase: 6 — Revision Packaging & Extended Lanes
 Current Plan: 5
 Total Plans in Phase: 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-11 — Completed 06-01-PLAN.md (dnallm 1.2.1 adaptation verification + peft tracer + sanctioned GB10 smoke)
 
 Progress: [████████░░] 83% (1/6 phases)
@@ -88,6 +88,7 @@ Progress: [████████░░] 83% (1/6 phases)
 | Phase 06 P02 | ~23 minutes | 3 tasks | 8 files |
 | Phase 06 P03 | 12 min | 3 tasks | 6 files |
 | Phase 06 P04 | ~75 min (two sessions) | 4 tasks | 23 files |
+| Phase 06 P05 | 15 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,10 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-04: snapshot lane is hermetic — frozen hash reads manifest.json's committed generated_from (never live git; git rev-parse is the documented manual override), .sha256 committed / .tar gitignored (OQ 2), manifest paths relative to baseline/snapshots so the literal sha256sum -c one-liner verifies
 - [Phase 06]: 06-04: doi_swap is prepared, never executed — refuses while the target DOI 404s (--force escape), edits README + .gitleaks.toml in ONE run (both-or-neither tested); the maintainer runs it when Zenodo record 19135551 is public (WR-01 same-commit rule); data_version stays 1.1.0, no tag
 - [Phase 06]: 06-04: provenance chain is registry-driven and drift-gated — six columns in datasets_info.json (D-10 source of truth), CSV is the maintainer-editable surface, build_provenance emits the dual artifact + the marker-scoped DATA.md appendix, the whole chain joined make data as a byte-stable no-op
+- [Phase 06]: VARIANT_CONFIGS maps head to the existing with_head YAML — 'variant head is the explicit form of today's implicit special_models behavior'; probe/curve follow the ./finetune_config_<variant>.yaml pattern
+- [Phase 06]: Fraction-scaled step cadence added (Rule 2): run_finetune's dynamic logging/eval/save calc now uses int(Train*f) under the fraction guard — full-count cadence would land 4x sparser curve points
+- [Phase 06]: Sweep executor seam extended additively with train_fraction=None kwarg — fake-executor provability of frac cells requires the fraction; --config-variant deliberately not forwarded through run_sweep (standalone composition documented, half-wiring rejected)
+- [Phase 06]: Frozen-probe scope enforced in code: module-level PROBE_INELIGIBLE (deeplearning 4 + special_models 2 + gpn/omnidna registry members) refuses --config-variant probe at the argv boundary with the special-loader reason
 
 ### Pending Todos
 
@@ -182,6 +187,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-10T23:55:30.565Z
-Stopped at: Completed 06-04-PLAN.md (packaging: dead-code removal, provenance chain + maintainer review accepted, snapshot lane, docs trio, doi_swap prepared)
+Last session: 2026-10-11T00:32:50.272Z
+Stopped at: Completed 06-05-PLAN.md (frozen probes + learning curves — phase 06 complete)
 Resume file: None
