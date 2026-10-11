@@ -1134,8 +1134,31 @@ def _new_record(model, task, seed, cell_dir, git_commit, peft="none",
     }
 
 
-def _manifest_payload(matrix, records):
-    """Build the sweep manifest from matrix definition + cell records."""
+def _manifest_payload(matrix, records, sweep_flags=None):
+    """Build the sweep manifest from matrix definition + cell records.
+
+    PRESENT pass-through flags (07-03, D-13) merge into every cell dict —
+    flag name -> threaded value (paths already resolved absolute by
+    ``main()``, D-15). ABSENT flags contribute no keys, so a no-flag
+    payload is byte-identical to the pre-07-03 five-key projection;
+    ``_write_json``'s ``sort_keys=True`` keeps the serialization
+    deterministic with the extra fields. run_record.json is deliberately
+    NOT extended (D-02 spirit, research Open Q3): the flags are
+    sweep-level run configuration recorded once in the manifest, never
+    per-cell provenance fields.
+
+    Args:
+        matrix (dict): the matrix definition (models/tasks/seeds/
+            output_root).
+        records (list[dict]): per-cell record views (only the five
+            manifest keys are projected — extra record fields never
+            leak into the manifest).
+        sweep_flags (dict | None): the present pass-through flags.
+
+    Returns:
+        dict: the manifest payload.
+    """
+    flags = sweep_flags or {}
     return {
         "matrix": matrix,
         "cells": [
@@ -1145,6 +1168,7 @@ def _manifest_payload(matrix, records):
                 "seed": record["seed"],
                 "status": record["status"],
                 "output_dir": record["output_dir"],
+                **flags,
             }
             for record in records
         ],
@@ -1207,7 +1231,8 @@ def run_matrix(cells, output_root, executor=None, peft="none",
             ``effective_batch_size`` / ``num_train_epochs`` /
             ``cache_dir``, values as threaded (paths already resolved
             absolute by ``main()``, D-15). Bound into the default
-            executor's argv; an empty/None dict binds nothing
+            executor's argv AND merged into every manifest cell (D-13);
+            an empty/None dict binds nothing and records nothing
             (byte-identical default).
 
     Returns:
@@ -1328,7 +1353,8 @@ def run_matrix(cells, output_root, executor=None, peft="none",
         "seeds": sorted({cell[2] for cell in cells}),
         "output_root": str(output_root),
     }
-    _write_json(output_root / MANIFEST_NAME, _manifest_payload(matrix, records))
+    _write_json(output_root / MANIFEST_NAME,
+                _manifest_payload(matrix, records, sweep_flags))
     # Always write the failures manifest — an empty list when no cell
     # failed (WR-06): writing it only on failure would leave a previous
     # run's stale sweep_failures.json sitting next to a fresh
@@ -1507,9 +1533,13 @@ def main():
             for cell in cells
         ]
         output_root.mkdir(parents=True, exist_ok=True)
+        # The dry-run and real-run manifest paths record IDENTICALLY
+        # (07-03, D-13): both project through _manifest_payload, so the
+        # present sweep_flags join planned cells exactly as they join
+        # executed cells — absent flags add no keys on either path.
         _write_json(
             output_root / MANIFEST_NAME,
-            {"matrix": matrix, "cells": planned_records},
+            _manifest_payload(matrix, planned_records, sweep_flags),
         )
         print(
             f"[Dry-run] {len(cells)} planned cell(s) over "
