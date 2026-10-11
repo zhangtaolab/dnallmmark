@@ -39,7 +39,7 @@
 - [ ] 预设组一键选择：tier-1 E2E 对、tier-2 arena 代表、全部、自定义保存
 - [ ] **模板导入**：运行配置模板（模型×任务×种子×PEFT×变体×GA 等完整参数集）以 JSON 文件导入/导出，可分享、可复用；与 `sweep_priorities.json` 的 tier 结构兼容或提供互转
 - [X] 每行显示本地数据状态（✓ 在场 / ✗ 缺失 + 行数来自 n_audit）
-- [ ] 选择结果导出为 run_sweep 的 `--models`/`--tasks` 参数或 priorities 文件
+- [x] 选择结果导出为 run_sweep 的 `--models`/`--tasks` 参数或 priorities 文件
 
 - 补充：＿＿＿
 
@@ -48,7 +48,7 @@
 - [X] 缺失数据集一键下载（ModelScope 通道，注册表 download_url 为唯一权威）
 - [X] 下载进度显示；落地后行数对账（n_audit 基准）
 - [ ] Zenodo 整包（record 19135551，公开后）作为备选整体入口
-- [ ] 7 个非 ModelScope 托管家族（已由 forrestzhang 补齐——若后续有新增数据源，此处维护映射）
+- [x] 7 个非 ModelScope 托管家族（已由 forrestzhang 补齐——若后续有新增数据源，此处维护映射）
 
 - 补充：＿＿＿
 
@@ -90,19 +90,19 @@
 
 ### 3.6 环境与安全边界
 
-- [ ] ruff + ty 双门保持；TUI 属新依赖需评审（框架选型见开放问题）
-- [ ] DNALLM 套件仓库只读；TUI 不写入
+- [x] ruff + ty 双门保持；TUI 属新依赖需评审（框架选型见开放问题）
+- [x] DNALLM 套件仓库只读；TUI 不写入
 - [ ] CI 不引入 GPU/TUI 运行时
 
 - 补充：＿＿＿
 
 ## 4. 非功能需求
 
-- [ ] 终端环境：最低支持配置（SSH 终端宽度/颜色/鼠标？）
-- [ ] 框架候选：**Textual**（纯 Python、无构建步、组件丰富）／rich（轻量只读面板）／urwid（老牌）——见开放问题
-- [ ] 配置持久化：会话选择/过滤器的保存位置（~/.config/dnallmmark/？）
+- [x] 终端环境：SSH 终端宽度/颜色/鼠标
+- [x] 框架候选：**Textual**（纯 Python、无构建步、组件丰富）
+- [x] 配置持久化：会话选择/过滤器的保存位置（~/.config/dnallmmark/？）
 - [ ] **目录设置**：项目目录与存储目录可配置——项目根（仓库位置：注册表/脚本解析基准）与存储根（输出/数据集/模型缓存：`run_sweep --output-root`、`pipeline/datasets/`、`pipeline/models/` 的落位）分离设置；默认沿用仓库内相对路径，显式覆盖时 TUI 负责把路径传给下游脚本（现有脚本多为 REPO_ROOT 相对假设，需统一传参而非改脚本假设）
-- [ ] 中文界面/双语？
+- [x] 中文界面/双语？
 
 - 补充：＿＿＿
 
