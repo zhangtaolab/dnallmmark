@@ -1,161 +1,93 @@
-# Requirements: DNALLM-Mark — Public-Release Hardening
+# Requirements: DNALLM-Mark v1.2 TUI任务
 
-**Defined:** 2026-10-08
-**Core Value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust.
+**Defined:** 2026-10-11
+**Core Value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
 
-## v1 Requirements
+## v1.2 Requirements
 
-Requirements for the hardening release. Each maps to roadmap phases.
+### Environment Check (启动体检)
 
-### Systematic Audit
+- [ ] **ENV-01**: TUI 启动即运行完整环境检查（复用 env_smoke 检查内核：版本 pin/dnallm 导入/CUDA/数据集目录/numpy≥2/peft），以状态面板呈现每项 ✓/✗ + 详情
+- [ ] **ENV-02**: 检查结果持久化并显示检查日期（"上次检查：YYYY-MM-DD HH:MM"）；提供刷新动作随时重检；同日重复启动读缓存不强制重跑
+- [ ] **ENV-03**: 关键 FAIL（无 GPU/依赖缺失）阻止进入启动流程；缺数据项引导至数据管理面板
+- [ ] **ENV-04**: 每次启动任务前的快检（轻量重验启动所需子集）
 
-- [x] **AUDIT-01**: Severity-graded findings report covering all three subsystems (pipeline, data scripts, frontend), every finding with `file:line` evidence and a recommended fix
-- [x] **AUDIT-02**: Pre-fix baseline captured — golden outputs of the current data chain plus a `data-v1` git tag — before any result-affecting fix lands, so number changes are attributable
+### Selection (选择)
 
-### Release Foundations
+- [ ] **SEL-01**: k9s 式过滤+标记集选择：模型表与数据集表分别过滤（arena/类型/物种/规模）+ 空格键标记 + 稳定 row_key 集合；只读矩阵总览作为辅助视图（非编辑界面）
+- [ ] **SEL-02**: 预设组一键选择：tier-1 E2E 对、tier-2 arena 代表、全部、自定义保存
+- [ ] **SEL-03**: 模板导入/导出：运行配置模板（模型×任务×种子×PEFT×变体×GA 完整参数集）JSON 文件，导入时校验；与 sweep_priorities.json tier 结构兼容或提供互转
+- [ ] **SEL-04**: 每行显示本地数据状态（✓ 在场 / ✗ 缺失 + n_audit 行数）
 
-- [x] **REL-01**: LICENSE file present (explicit code license; data licensing declared separately)
-- [x] **REL-02**: Dependency manifests for the offline/data chain, version-pinned (`pandas>=2.2,<3.0`); GPU pipeline dependencies in a separate group that CI never installs
-- [x] **REL-03**: README reproducibility section — literal copy-pasteable commands from repo root (install → data → aggregate → serve)
-- [x] **REL-04**: Single-command data-regeneration chain (`make data` or equivalent) replacing the undocumented 3-step CWD-sensitive procedure
-- [x] **REL-05**: Secret hygiene settled per maintainer decision (2026-10-08 discuss) — the Zenodo record-19135551 preview link + token at `README.md:116` is the intentional dataset-sharing mechanism (record-scoped, read-only) and stays as-is; a full-history secret scan confirms no OTHER secrets exist beyond this known-intentional link
+### Data Management (数据管理)
 
-### Correctness Fixes
+- [ ] **DATA-01**: 缺失数据集一键下载（ModelScope 通道，注册表 download_url 为唯一权威）
+- [ ] **DATA-02**: 下载队列持久化 + 断点续传（崩溃/重启后续跑）
+- [ ] **DATA-03**: 下载落地后行数对账（n_audit 基准）；不一致醒目报告
+- [ ] **DATA-04**: Zenodo 整包（record 19135551 公开后）作为备选整体入口
 
-- [x] **FIX-01**: Every page renders without errors — `renderNavbar()` null-container crash fixed; verified on ALL pages, not just the 3 known-broken ones
-- [x] **FIX-02**: Species-as-dataset grouping bug fixed (`pipeline/dnallmmark_pipeline.py:1229`), with a failing test written first
-- [x] **FIX-03**: Submission flow repaired — `submit.html` created, orphaned `js/submit.js` wired to the current data schema, reachable from navigation
-- [x] **FIX-04**: Sink-side escaping at DOM-build sites the fixes touch (bounded to touched code, not a full security hardening pass)
-- [x] **FIX-05**: All three data generators produce deterministic output (sorted directory iteration + `sort_keys` JSON writing) — prerequisite for every diff-based check
+### Run Configuration (运行配置)
 
-### Test Infrastructure
+- [ ] **CFG-01**: 全参数面：种子（默认 42,43,44）、PEFT 模式+别名预览、config-variant（head/probe/curve+PROBE_INELIGIBLE 提示）、学习曲线档位、公平性子集开关、epochs/batch 覆盖
+- [ ] **CFG-02**: 项目目录与存储目录分离设置（输出根/数据集/模型缓存），默认仓库相对路径，显式覆盖时 TUI 统一传绝对路径参数
+- [ ] **CFG-03**: 干跑预览：枚举 cell 数/预估（导入纯规划函数计算，与执行同源）
 
-- [x] **TEST-01**: Unit tests for the data-script pure functions (rank/MinMax/z-score/robust aggregation, pivot logic) using synthetic fixtures, CPU-only
-- [x] **TEST-02**: Float-tolerance policy and thread pinning fixed at scaffold time (`pytest.approx` tolerances; `OMP/OPENBLAS/MKL_NUM_THREADS=1` in conftest)
-- [x] **TEST-03**: Golden-file tests over synthetic fixture trees plus a determinism regression test
-- [x] **TEST-04**: GitHub Actions CI (lint + test matrix on Python 3.12/3.13 plus a Node job; actions SHA-pinned) with README badge
-- [x] **TEST-05**: Frontend static checks in CI (ESLint flat config + html-validate + `node --check`)
-- [x] **TEST-06**: JSON Schema contract validation — 4 schemas (model_performance, task_performance, models_comparison, tasks_index) enforced over every committed JSON in CI
-- [x] **TEST-07**: CI drift-detection job — regenerate derived data and `git diff --exit-code`, making stale derived files a build failure
+### Launch (启动)
 
-### Data & Records
+- [ ] **LNC-01**: 启动门：env_smoke 前置（FAIL 阻止+原因显示）+ terraform 式确认（预览 → 显式批准；全量 E2' 需输入确认短语）
+- [ ] **LNC-02**: 执行恒为 `run_sweep.py` 子进程（LIST argv + PYTHONUNBUFFERED=1 + start_new_session 分离）；TUI 退出提示 kill/detach/cancel，detach 断点安全
+- [ ] **LNC-03**: E2' 全量三种子保持维护者显式授权边界（TUI 只呈现确认门，不绕过）
 
-- [x] **DATA-01**: Leaderboard data recomputed after correctness fixes, with a before/after comparison artifact *(complete — co-declared by 05-02 and 05-04; with 05-04's SUMMARY present both declarers are done: 05-02's F6 migration and 05-04's D-18 alias migration each carry a full baseline inventory attributing every before/after diff)*
-- [x] **DATA-02**: CHANGELOG.md records each result-affecting fix with date, per lm-evaluation-harness convention; `data_version` stamped into regenerated JSON
-- [x] **DATA-03**: Git tags for data versions (pre-fix `data-v1`, post-fix `data-v2`) *(complete as PREPARATION — `data-v1` tagged (Phase 1); the data-v2 gate tooling (run_migration_inventory.py + --write-manifest SHA256 convention) is rehearsed on the D-18 mini-migration; the `data-v2` tag itself is created ONLY by the maintainer after E2' sign-off, never by an agent)*
-- [x] **DATA-04**: Provenance table for all 50 datasets (DATA.md: source, citation, license, preprocessing, download URL) — download URLs default to ModelScope, other sources as alternates
-- [x] **DATA-05**: Downloadable data manifest file (CSV/JSON) with full dataset metadata and direct links — ModelScope links by default, alternates included
-- [x] **DATA-06**: Leaderboard page footer shows data-generation date/version stamp
-- [x] **DATA-07**: Aggregation-methodology documentation (rank vs MinMax vs z-score vs robust) and removal of the divergent dead logic in `js/data.js:recalculateComparison()`
+### Monitoring (监控)
 
-### Extensibility Mechanisms
+- [ ] **MON-01**: poll-and-attach 看板：cell 级状态（排队/运行/完成/失败/跳过，种子相邻），2s 前沿扫描 + 60s 全扫，容错 artifact-loader（部分写跳拍）
+- [ ] **MON-02**: 进度统计：完成/总数、当前 cell、耗时；对外部（CLI）启动的 sweep 同样可附加监控
+- [ ] **MON-03**: 失败清单实时显示 + 一键 `--from-failures` 重跑（确认门）
+- [ ] **MON-04**: 日志尾部跟随（RichLog 有界视图）+ **tee 落盘持久化**（~/.config/dnallmmark/logs/ 或任务输出目录）
+- [ ] **MON-05**: 断点续跑状态识别（trainer_state.json 标记）
 
-- [x] **EXT-01**: New-model onboarding process documented and validated end-to-end (register in `models_info.json` → pipeline quirks → run → copy performance JSON → regenerate → appears on leaderboard)
-- [x] **EXT-02**: New-dataset onboarding process documented and validated end-to-end (register in `datasets_info.json` → metric mapping → run → regenerate)
+### Pipeline-side (管线侧配套)
 
-### Pipeline & Environment (dnallm dev)
+- [ ] **PIPE-01**: FlopsCounter 移植：旧 dnallmmark_pipeline.py 的 20+ 架构前向钩子移植到 run_finetune.py（早于监控阶段；喂 E2' FLOPs 正确性与排行榜效率轴）
+- [ ] **PIPE-02**: run_sweep argv 透传四项：--subset_file（E2' 公平性，补已知缺口）、--effective-batch（auto-GA：GA=max(1, N//batch_size)，默认 16）、--num_train_epochs、--cache_dir（可选）
+- [ ] **PIPE-03**: FlopsCounter 与监控共用容错 loader 的 JSON 输出契约
 
-- [x] **PIPE-01**: ~~Pipeline code adapted to dnallm dev branch~~ — **absorbed by the dev-branch rewrite** (`pipeline/run_finetune.py` @ dev `c6b3137`, 2026-10-09): the rewritten pipeline already targets dnallm dev; remaining adaptation work (branch reconciliation, Phase 2 asset survival, anchor migration) lives in REV-01..REV-10 and Phase 3's success criteria
-- [x] **PIPE-02**: Local GPU pipeline environment reproducibly buildable (uv/venv on the NVIDIA GB10 aarch64 machine; dnallm installed from the local git dev clone; torch/transformers pinned per dnallm 0.7.1 bounds) with documented setup commands
+### Multi-GPU (多卡编排)
 
-**Revision requirements (F1–F10, per the 2026-10-09 code-review & feature plan against dev@c6b3137; F-numbers are the canonical reference)**:
-- [x] **REV-01** (F1, P0): Dev-split generation for the 18 Dev-empty tasks (stratified 10% from train, seed=42, datasets_info Dev columns updated) + checkpoint selection refuses silent test fallback
-- [x] **REV-02** (F2, P0): Multi-seed sweep — seed-isolated output dirs fixing G1 (resume never skips a different seed), sweep runner (model×task×seed) with per-run records and failure manifest; VRAM-probe state semantics documented per seed
-- [x] **REV-03** (F3, P0): Unified exporter + result snapshot — metric-key mapping layer (suite registry ↔ export keys, key-parity unit-tested), dataset species from a human-verified metadata table (never model cards), per-seed detail + mean±SD/bootstrap-CI aggregates; freeze_snapshot (tar + SHA-256 + frozen commit hash)
-- [x] **REV-04** (F6, P1): Aggregation upgrade — CI-overlap tie rules, raw-rank + z-score×difficulty-weight dual views, permutation tests (10k, BH-corrected); CpG case renders as tie
-- [x] **REV-05** (F4, P1): Adaptation lanes — LoRA (suite built-in, CLI-exposed), IA³ (after suite-side support), frozen probes (embedding cache + logistic/MLP); cost-accuracy frontier table
-- [x] **REV-06** (F9, P1): CI golden tests — smoke (tiny model × 1k × 1 epoch incl. export), key parity, species spot checks, aggregation units; CPU, <15 min, PR-required
-- [x] **REV-07** (F7, P1): N-frequency audit (47 tasks × splits) + unified eval-subset ID lists accepted by the pipeline
-- [x] **REV-08** (F5+F8, P1/P2): Zero-shot VEP lane (CLM/MLM scoring, ClinVar/AraGWAS, baselines + sanity checks) and, window permitting, from-scratch baselines + learning curves (label-fraction sweeps)
-- [x] **REV-09** (E2' 执行面, P0 依赖): Three-seed full re-run (E2') executes only after REV-01/REV-02 gates — critical path F1→F2→E2'
-- [x] **REV-10** (F10, P0): Old pipeline (`dnallmmark_pipeline.py`) deprecation header + README names `run_finetune.py` as the benchmark entry point
-- [x] **PIPE-03**: Small end-to-end validation on the NEW pipeline (`run_finetune.py`) — plant-dnamamba-6mer and PlantHelixSeek (models_info entry added in-phase) each fine-tune on PlantCAD2__cross_species_leaf_on_off_translation and produce a `{model}_performance.json` valid against the Phase 2 schema
+- [ ] **MGPU-01**: 按模型分片 × CUDA_VISIBLE_DEVICES 多 worker 静态编排（CLI 可调用的模式，非 TUI 专属）
+- [ ] **MGPU-02**: 每 worker 监控视图 + 产物合并 + 失败 worker 隔离重跑
+- [ ] **MGPU-03**: DDP（torch run 切数据）与模型分片两层的适用场景决策落地（单大模型加速 vs 多模型吞吐）；硬依赖单卡验证通过
 
-## v2 Requirements
+### Localization & Extras (本地化与附加)
 
-Deferred to post-release. Tracked, not in current roadmap.
+- [ ] **I18N-01**: 中文为主的界面文案（constants 模块约定，术语保留英文）
+- [ ] **WEB-01**: 只读 Web 进度镜像（团队看进度；静态产物，不引入后端——符合静态托管约束）
+- [ ] **TEST-01**: Textual 官方快照测试（canonical screens 的 SVG 金标准，维护者验证后提交）
 
-### Citation & Archival
-
-- **CITE-01**: BibTeX citation block in README
-- **CITE-02**: CITATION.cff and Zenodo DOI on first tagged release
-
-## Out of Scope
-
-Explicitly excluded. Documented to prevent scope creep.
+## v1.2 Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Deep security hardening (CSP, SRI on CDN scripts) | Descoped by prioritization; only token revocation is release-blocking |
-| Frontend E2E tests (Playwright) | Regression prevention scoped to data scripts + CI by decision |
-| Automated evaluation/submission server | Violates static-site constraint; unbounded GPU cost and maintenance |
-| Maintainer re-run verification of submitted results | Unbounded GPU cost per submission |
-| Git history rewrite to purge leaked token | Post-revocation it protects nothing; breaks SHAs/forks |
-| Full Datasheets for all 50 datasets | Weeks of work on murky licenses; provenance table suffices |
-| Framework migration / bundler / pipeline rewrite | Hard constraint: vanilla no-build MPA; surgical fixes only |
-| Full benchmark re-run against dnallm dev | Extensive GPU time; adaptation validated with one model×dataset pair (PIPE-03) |
-| Actually adding new models/datasets this milestone | Mechanism only (EXT-01/02); new entries require GPU runs and arrive later |
+| 可编辑 62×50 矩阵作为主 UI | 终端不友好；k9s 式标记集 + 只读总览替代（研究反特性表） |
+| TUI 内 YAML 编辑器 | suspend-to-$EDITOR 模式替代 |
+| Optuna 式分析图表 | 超出操作台定位；排行榜网站已有分析面 |
+| 自动重试循环 | 失败重跑保持显式确认门（研究反特性） |
+| TUI 内实现基准语义（分数计算等客户端复算） | 反 scope-creep 铁律：TUI 读 artifact/编排，不重算 |
+| Windows Terminal 支持矩阵 | 操作环境为 SSH/Linux GB10；Windows 运维成真再验 |
+| textual-serve / textual-dev 进 committed 组 | 研究明确不添加 |
+| E2' 全量重跑自动触发 | 恒为维护者显式授权（双门） |
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUDIT-01 | Phase 1 | Complete |
-| AUDIT-02 | Phase 1 | Complete |
-| REL-01 | Phase 1 | Complete |
-| REL-02 | Phase 1 | Complete |
-| REL-05 | Phase 1 | Complete |
-| FIX-05 | Phase 1 | Complete |
-| REL-04 | Phase 2 | Complete |
-| TEST-01 | Phase 2 | Complete |
-| TEST-02 | Phase 2 | Complete |
-| TEST-03 | Phase 2 | Complete |
-| TEST-06 | Phase 2 | Complete |
-| PIPE-01 | — (absorbed by dev rewrite) | Absorbed |
-| PIPE-02 | Phase 3 | Complete |
-| PIPE-03 | Phase 3 | Complete |
-| REV-01 | Phase 3 | Complete |
-| REV-02 | Phase 3 | Complete |
-| REV-03 | Phase 4, Phase 6 | Complete |
-| REV-04 | Phase 5 | Complete |
-| REV-05 | Phase 6 | Complete |
-| REV-06 | Phase 5 | Complete |
-| REV-07 | Phase 5 | Complete |
-| REV-08 | Phase 6 | Complete |
-| REV-09 | Phase 5 | Complete |
-| REV-10 | Phase 3 | Complete |
-| FIX-01 | Phase 4 | Complete |
-| FIX-02 | Phase 4 | Complete |
-| FIX-03 | Phase 4 | Complete |
-| FIX-04 | Phase 4 | Complete |
-| TEST-04 | Phase 5 | Complete |
-| TEST-05 | Phase 5 | Complete |
-| TEST-07 | Phase 5 | Complete |
-| DATA-01 | Phase 5 | Complete |
-| DATA-02 | Phase 5 | Complete |
-| DATA-03 | Phase 5 | Complete |
-| DATA-06 | Phase 5 | Complete |
-| REL-03 | Phase 6 | Complete |
-| DATA-04 | Phase 6 | Complete |
-| DATA-05 | Phase 6 | Complete |
-| DATA-07 | Phase 6 | Complete |
-| EXT-01 | Phase 6 | Complete |
-| EXT-02 | Phase 6 | Complete |
+| (待 roadmap 填充) | | |
 
 **Coverage:**
-- v1 requirements: 31 total (30 defined + REL-05 added at roadmap creation)
-- Mapped to phases: 31
-- Unmapped: 0 ✓
-
-**Phase mapping notes:**
-- FIX-02 (species fix) maps to Phase 4, but its failing test is scaffolded in Phase 2 per the dependency ordering — test before fix
-- PIPE-01 absorbed by the dev-branch rewrite (run_finetune.py @ dev c6b3137); PIPE-02/03 + REV-01/02/10 form Phase 3 (reconciliation + P0 blockers). Phase 2's model_performance schema defines PIPE-03 validity. REV-03's dataset-side species table is the AUD-01-P0 fix vehicle in Phase 4. Revision critical path: REV-01 → REV-02 → E2' (REV-09); E2' must not start before REV-02 (seed overwrite)
-- DATA-03 maps to Phase 5 where `data-v2` completes the pair; the pre-fix `data-v1` tag is created in Phase 1 under AUDIT-02
-- DATA-07 (methodology docs + dead-logic removal) is kept whole in Phase 6; the dead `recalculateComparison()` is uncalled and affects no number
-- TEST-06 schemas/contract tests are created in Phase 2 (before fixes move numbers); CI enforcement activates when Phase 5 lands CI
+- v1.2 requirements: 28 total
+- Mapped to phases: 0
+- Unmapped: 28 ⚠️ (roadmap will fill)
 
 ---
-*Requirements defined: 2026-10-08*
-*Last updated: 2026-10-09 after revision-plan integration (REV-01..10 added from the F1-F10 manuscript-revision plan; PIPE-01 absorbed by dev rewrite; phases 3-6 restructured; critical path F1→F2→E2' recorded)*
+*Requirements defined: 2026-10-11*
+*Last updated: 2026-10-11 after research synthesis (b9de144) + maintainer scoping*
