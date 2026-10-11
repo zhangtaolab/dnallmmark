@@ -26,6 +26,11 @@ dev = [
     # ty (Phase 3, maintainer directive 2026-10-09): floors here, exact pins in
     # uv.lock — pre-1.0 tool, version bumps are deliberate (RESEARCH Pitfall 7).
     "ty>=0.0.85",
+    # pytest-asyncio (Phase 8, 08-02, 2026-10-11): tier-2 Pilot tests are async
+    # (`App.run_test()`); asyncio_mode = "auto" in [tool.pytest.ini_options] is
+    # the documented Textual testing integration (08-RESEARCH Standard Stack).
+    # Requires pytest<10,>=8.4 — the repo's pytest>=9.1.1 satisfies it.
+    "pytest-asyncio>=1.4,<2",
 ]
 # GPU-only, NEVER installed in CI (REL-02). Definition lands Phase 3; the BUILD
 # is deferred (D-05). dnallm stays deliberately absent — installed from the local
@@ -33,6 +38,22 @@ dev = [
 gpu = [
     "torch==2.11.0",
     "transformers==5.17.0",
+]
+# TUI console runtime (Phase 8, D-01 + binding constraint 10, 2026-10-11).
+# Exactly two packages: textual is pinned >=8.2,<9 (majors are frequent and
+# real — upgrades are deliberate `uv lock --upgrade-package textual` + CHANGELOG
+# scan events); platformdirs resolves the XDG state/config split (D-04) and is
+# declared directly to stop transitive-luck imports. Package legitimacy:
+# maintainer-approved 2026-10-11 (08-02 Task 1 blocking-gate verdict, recorded
+# in 08-02-SUMMARY.md). textual-dev / textual-serve NEVER enter any committed
+# group (constraint 10) — devtools are on-demand
+# `uv run --group tui --with textual-dev==1.8.0 ...` only. The data/gpu lanes
+# never install this group: textual-the-library rides the existing CI test
+# lane via make test's --group tui (D-01); the display runtime (make tui,
+# --group tui --group gpu) is GB10-local, never CI.
+tui = [
+    "textual>=8.2,<9",
+    "platformdirs>=3.6,<5",
 ]
 
 [tool.uv]
@@ -58,7 +79,7 @@ torch = [
 # empirically at research time: zero diagnostics over the whole src set.
 [tool.ty.environment]
 python-version = "3.13"                      # repo floor (requires-python >=3.13)
-extra-paths = ["script", "baseline", "pipeline"]  # mirrors tests/conftest.py sys.path contract (pipeline/ = run_sweep, 03-04)
+extra-paths = ["script", "baseline", "pipeline", "."]  # mirrors tests/conftest.py sys.path contract (pipeline/ = run_sweep, 03-04) + the repo root (08-02): tui is imported package-qualified (from tui.app import ...), so the repo root itself must be an import root
 
 [tool.ty.analysis]
 replace-imports-with-any = ["torch.**", "dnallm.**", "transformers.**", "peft.**", "datasets.**", "torch_npu.**", "evaluate.**"]
@@ -69,7 +90,7 @@ replace-imports-with-any = ["torch.**", "dnallm.**", "transformers.**", "peft.**
 # pinned by tests/test_export_runs.py's D-15 golden-case cross-check, not by types.
 
 [tool.ty.src]
-include = ["script", "baseline", "tests", "scripts", "pipeline"]
+include = ["script", "baseline", "tests", "scripts", "pipeline", "tui"]  # tui/ joins the checked set (08-02, binding constraint 9)
 
 [tool.pytest.ini_options]
 # Phase 2 test harness (2026-10-09). `slow` gates the ~80s real-tree determinism
@@ -80,6 +101,11 @@ include = ["script", "baseline", "tests", "scripts", "pipeline"]
 # (tests/test_export_runs.py), species-table spot checks
 # (tests/test_known_defects.py), and aggregation units (tests/test_aggregation.py).
 testpaths = ["tests"]
+# Phase 8 (08-02, 2026-10-11): tier-2 Pilot tests (`App.run_test()`) are async —
+# auto mode needs no per-test marker and leaves sync tests unaffected (A3,
+# proven by make test-fast staying green; 08-RESEARCH Standard Stack cites
+# textual.textualize.io/guide/testing/).
+asyncio_mode = "auto"
 markers = [
     "slow: long-running real-tree regression tests; excluded by make test-fast",
     "ci: pinned CI lane — metric-key parity, species spot checks, aggregation units, golden replay",

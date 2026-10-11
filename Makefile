@@ -22,12 +22,18 @@
 #                   run_finetune.py, run_sweep.py, env_smoke.py,
 #                   compare.py, permutation_tests.py,
 #                   run_migration_inventory.py, audit_n_frequencies.py)
+#                   plus the Phase 6/7/8 extension modules (existence-guard
+#                   lists PHASE6_SCRIPTS / PHASE7_MODULES / PHASE8_TUI below)
 #   make typecheck  ty type check over script/, baseline/, tests/, scripts/,
-#                   and pipeline/ (GPU-side imports replaced with Any — they
-#                   are never installed CPU-side, D-05)
+#                   pipeline/, and tui/ (GPU-side imports replaced with Any —
+#                   they are never installed CPU-side, D-05)
+#   make tui       launch the DNALLM-Mark operator console (Phase 8):
+#                   python -m tui via uv with the [tui] + [gpu] groups —
+#                   display runtime on the GB10 host, never a CI lane (D-01:
+#                   CI knows textual only as a library inside make test)
 # =====================================================================
 
-.PHONY: data test test-fast ci lint typecheck check-node snapshot
+.PHONY: data test test-fast ci lint typecheck check-node snapshot tui
 
 # WR-02: PATH lookup with an overridable default (`make UV=/path/to/uv`) —
 # setup-uv/brew/pipx installs live outside ~/.local/bin, and a hardcode
@@ -86,8 +92,13 @@ snapshot:
 check-node:
 	@command -v node >/dev/null 2>&1 || { echo "node >=18 required for the JS test lane, the tasks.json goldens, and 'make data' — install Node; the pytest-only fast lane (make test-fast) skips node-dependent tests when node is absent"; exit 1; }
 
+# Phase 8 (08-02, D-01): the pytest lane gains --group tui — textual-the-
+# library rides this EXISTING lane (headless Pilot tests, no display, no GPU,
+# no dnallm) with zero CI workflow edits and zero new CI jobs; the data/gpu
+# lanes never install textual (binding constraint 2/10). Makefile recipes
+# only — .github/workflows/ci.yml stays byte-identical.
 test: check-node
-	$(UV) run --group dev pytest
+	$(UV) run --group dev --group tui pytest
 	node --test tests/js/*.test.js
 
 test-fast:
@@ -127,8 +138,14 @@ PHASE6_SCRIPTS := $(foreach s,script/build_frontier.py script/zero_shot_vep.py s
 # so pipeline/registry_loader.py (created by sibling plan 07-02) joins lint
 # coverage automatically when it lands; no later plan edits this Makefile.
 PHASE7_MODULES := $(foreach s,pipeline/flops_counter.py pipeline/registry_loader.py pipeline/artifact_loader.py,$(if $(wildcard $(s)),$(s)))
+# Phase-8 extension (08-02): the tui/ package joins the fixed-findings list
+# via a directory glob — every tui/*.py, tui/screens/*.py, and tui/services/*.py
+# file present on disk is linted (the wildcard IS the existence guard: a file
+# that does not exist can never be referenced by the gate, so later Phase 8
+# plans add screens/services without touching this Makefile again).
+PHASE8_TUI := $(wildcard tui/*.py tui/screens/*.py tui/services/*.py)
 lint:
-	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py $(PHASE6_SCRIPTS) $(PHASE7_MODULES)
+	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py $(PHASE6_SCRIPTS) $(PHASE7_MODULES) $(PHASE8_TUI)
 
 # Type check (ty, maintainer directive 2026-10-09): zero-diagnostics baseline
 # verified empirically at research time. [tool.ty] in pyproject.toml carries
@@ -136,5 +153,22 @@ lint:
 # GPU-side imports (torch/dnallm/transformers/peft/datasets) are replaced
 # with Any because they are never installed CPU-side (D-05). --group dev is
 # required for the same default-groups reason as lint/test.
+# Phase 8 (08-02, Rule 3 fix): --group tui joins — tui/app.py and the screens
+# subclass textual types and textual ships py.typed, so ty needs the library
+# installed to check against real types (NO replace-imports-with-any entry
+# for textual — RESEARCH Standard Stack; constraint 9 demands real coverage).
+# Proven empirically: without the group, ty fails tui/app.py with
+# unresolved-import in exactly the fresh-env state CI's lint-typecheck job
+# has. textual-the-library in this existing CPU static lane is consistent
+# with D-01 (data/gpu lanes still never see textual).
 typecheck:
-	$(UV) run --group dev ty check
+	$(UV) run --group dev --group tui ty check
+
+# Phase 8 (08-02): launch the DNALLM-Mark operator console. --group gpu is
+# REQUIRED on the GB10 display runtime: torch lives only in [gpu], and the
+# env panel's CUDA/matmul kernels would honestly FAIL without it (RESEARCH
+# Pitfall 10). uv run's inexact sync preserves the manually-installed dnallm
+# package across invocations (A4 — Phase 7 practice). Display runtime, never
+# a CI lane (D-01).
+tui:
+	$(UV) run --group tui --group gpu python -m tui

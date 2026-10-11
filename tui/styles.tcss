@@ -1,0 +1,14 @@
+/*
+ * ===== styles.tcss — DNALLM-Mark console styles (Phase 8, 08-02) =====
+ *
+ * Minimal by design: the skeleton app carries no styled widgets yet; screen
+ * rules land with the screens (08-03+).
+ *
+ * Contract (08-UI-SPEC Color, approved 2026-10-11): semantic Textual theme
+ * tokens ONLY — $background, $surface, $panel, $boost, $accent, $success,
+ * $warning, $error, $text-muted — which adapt to light/dark/NO_COLOR
+ * automatically. Hardcoded hex is forbidden here; the single permitted hex
+ * site is the optional `dnallmmark` custom theme definition (brand teal,
+ * not landed yet). Every color-coded state carries a distinct glyph first
+ * (glyph+color redundancy) so the UI stays legible under NO_COLOR.
+ */
