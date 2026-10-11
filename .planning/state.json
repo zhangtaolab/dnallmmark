@@ -6,7 +6,7 @@
     {
       "number": "7",
       "name": "Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "8",
@@ -36,8 +36,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 07 of 6 · 0% · ready to verify"
+    "label": "Advance to the next step (plan phase 8)",
+    "reason": "Phase 8 of 6 — needs a plan"
   },
-  "updated_at": "2026-10-11T07:53:53.380Z"
+  "updated_at": "2026-10-11T08:29:00.332Z"
 }
