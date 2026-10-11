@@ -39,6 +39,7 @@ from glob import glob
 from pathlib import Path
 
 import numpy as np
+import registry_loader  # sibling module (sys.path[0] = pipeline/ when run as a script)
 import torch
 from torch import nn
 
@@ -671,12 +672,15 @@ def get_current_time():
 
 # base_dir is this script's own directory (auto-inferred, no per-machine hardcoding)
 base_dir = os.path.dirname(os.path.abspath(__file__)) + os.sep
-with open(base_dir + "datasets_info.json", "r", encoding="utf-8") as _registry_file:
-    datasets_info = json.load(_registry_file)
+# Registry loads route through the shared official+custom overlay loader
+# (07-02 / D-08): same module-level position, same order (datasets then
+# models), same crash-on-missing-official-file behavior — the loader never
+# catches OSError on the official file, so a missing registry still fails
+# the import exactly as before (导入时序不变).
+datasets_info = registry_loader.load_datasets_registry()
 
 # Load models info
-with open(base_dir + "models_info.json", "r", encoding="utf-8") as _registry_file:
-    models_info = json.load(_registry_file)
+models_info = registry_loader.load_models_registry()
 
 
 if __name__ == "__main__":

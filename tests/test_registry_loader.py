@@ -34,9 +34,14 @@ See also:
 """
 
 import json
+import re
+from pathlib import Path
 
 import pytest
 import registry_loader  # conftest puts pipeline/ on sys.path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+RUN_FINETUNE = REPO_ROOT / "pipeline" / "run_finetune.py"
 
 
 def write_registry(root, models, datasets):
@@ -282,3 +287,48 @@ def test_missing_official_datasets_file_raises_oserror(
     empty_dir.mkdir()
     with pytest.raises(OSError):
         registry_loader.load_datasets_registry(empty_dir)
+
+
+# ===== run_finetune rewiring (source contract — read-source-never-import) =====
+
+
+def test_run_finetune_module_level_loads_route_through_registry_loader():
+    """run_finetune.py's module-level registry loads call the overlay
+    loader, and the former direct opens of the info JSON filenames are
+    gone from executable positions.
+
+    ``run_finetune.py`` is read as SOURCE TEXT and never imported (it
+    does ``import torch`` / ``from dnallm import ...`` at module level,
+    unavailable CPU-side — the test_run_finetune_contracts.py
+    philosophy): the contract is asserted textually. The calls must sit
+    at module level (column 0) so the import-time load order and
+    crash-on-missing behavior are preserved (D-08 导入时序不变)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+
+    # the sibling-module import is present
+    assert re.search(r"^import registry_loader\b", src, re.MULTILINE), (
+        "run_finetune.py must import the sibling registry_loader module "
+        "(sys.path[0] = pipeline/ when run as a script)"
+    )
+    # the module-level loads route through the loader (column 0 =
+    # module-level statements, the former direct loads' position)
+    assert re.search(
+        r"^datasets_info = registry_loader\.load_datasets_registry\(\)",
+        src, re.MULTILINE), (
+        "module-level datasets_info load must call "
+        "registry_loader.load_datasets_registry() at module level"
+    )
+    assert re.search(
+        r"^models_info = registry_loader\.load_models_registry\(\)",
+        src, re.MULTILINE), (
+        "module-level models_info load must call "
+        "registry_loader.load_models_registry() at module level"
+    )
+    # the former direct opens are gone (no executable open of the info
+    # JSON filenames remains, at any indentation)
+    for name in ("datasets_info", "models_info"):
+        assert not re.search(
+            rf"open\([^)]*[\"']{name}\.json[\"']", src), (
+            f"run_finetune.py must not open {name}.json directly — all "
+            "registry reads route through registry_loader"
+        )
