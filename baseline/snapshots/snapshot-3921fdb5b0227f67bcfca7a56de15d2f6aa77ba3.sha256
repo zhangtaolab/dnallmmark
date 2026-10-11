@@ -1,4 +1,4 @@
-# commit 991804613c4874bfa3f32d318340b5d7b4118ffe
+# commit 3921fdb5b0227f67bcfca7a56de15d2f6aa77ba3
 eb18d74920ede4f17ffb9af36caa18ea3c5487d288790524af44578885c40977  ../../dnallm-mark/data/manifest.json
 935d80116357ef473e5b971eb7f7135d18a70e77179462af25b7920c2fb5cd83  ../../dnallm-mark/data/models_comparison.json
 fadc71afe38010b087b4815d60e5259dbd75432a7807b43a3e287e623a544bca  ../../dnallm-mark/data/models_comparison_animal.json
@@ -7,8 +7,8 @@ aa288628b70b4ae14d6146be71abb5247dbbe0fa7a758deb8aa3be6bfd34c95d  ../../dnallm-m
 2111fa1c5eee3d9bc3598934651adad18d968334c9f29e97543ff4bdff5f3768  ../../dnallm-mark/data/n_audit.csv
 f345d97c9e70f437ddc9d389226f932ea00830aaaeae3391569e64a743549fdd  ../../dnallm-mark/data/n_audit.json
 a1365b86decc4e1ab24af29418afe246bd566c100c26fcda738abe92b9928532  ../../dnallm-mark/data/permutation_tests.json
-725d115b17b4c6e6b3f728ed5072e11787ea21c74a1a506b8e50452bcf1af6dd  ../../dnallm-mark/data/provenance.csv
-4bb5111d8421e7f93c2d47020f7051aeb6d5bfed7975797177d9a68715191074  ../../dnallm-mark/data/provenance.json
+ccb96b5754123d3cf13449718af7a530a134d97248df692a1e97aff00987781a  ../../dnallm-mark/data/provenance.csv
+b6114fcf99f95a220466cb81e6cc8c50de1b4ecea01e3ca8765dd17a5a89efc3  ../../dnallm-mark/data/provenance.json
 74628e308800e58fcb9e7e071895b0347b29ea358d1bef370379224ee36c4554  ../../dnallm-mark/data/task_performance/BEND__CpG_methylation_task_performance.json
 63eb153a5c3d727aae749d98dfc40d091684904f4f7ab2c26f60736bd487313d  ../../dnallm-mark/data/task_performance/Deep4mC_datasets__C.elegans_4mC_task_performance.json
 3d52b474ccf1fc7502acaf4c638e704cedbd2b9a4f5dce8b77d7cd78fa0e0faa  ../../dnallm-mark/data/task_performance/Deep4mC_datasets__D.melanogaster_4mC_task_performance.json
