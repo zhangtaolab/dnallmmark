@@ -19,13 +19,14 @@
 - [ ] **SEL-03**: 模板导入/导出：运行配置模板（模型×任务×种子×PEFT×变体×GA 完整参数集）JSON 文件，导入时校验；与 sweep_priorities.json tier 结构兼容或提供互转
 - [ ] **SEL-04**: 每行显示本地数据状态（✓ 在场 / ✗ 缺失 + n_audit 行数）
 
-### Custom Entries (自定义模型/数据集接入)
+### Custom Entries (自定义模型/数据集接入 — 用户自维护，与官方注册表分离)
 
-- [ ] **CUST-01**: 自定义模型接入向导：TUI 引导录入模型卡片（名称/架构/tokenizer/物种/规模/HF+ModelScope 地址/本地路径），落注册表走 ONBOARDING 流程（注册表写入 → convert_registry 往返 → dry-run 验证）；quirk 清单（safetensors/fp32/特殊头等）可选勾选
-- [ ] **CUST-02**: 自定义数据集接入向导：TUI 引导录入数据集条目（键名/路径/train-dev-test 文件/标签列/主指标/Task_type/溯源列），同走注册表+审计流程
-- [ ] **CUST-03**: **防呆检测**：字段级校验（必填/类型/枚举/键名冲突/路径存在/split 文件可解析/行数>0/标签列合法/指标名在度量注册表），提交前逐项列出全部问题（fail-fast 收集式，与 _validate_filters 同纪律）
-- [ ] **CUST-04**: **错误检测**：接入后自动 dry-run 预检 + audit 对账（行数/非 ACGT/子集存活）；失败时醒目报告并支持撤销（未通过的接入不落盘/可回滚）
-- [ ] **CUST-05**: 自定义项在列表中带 custom 标记（与官方 62/50 区分），不破坏官方注册表语义与现有测试
+- [ ] **CUST-01**: 自定义模型接入向导：TUI 引导录入模型卡片（名称/架构/tokenizer/物种/规模/HF+ModelScope 地址/本地路径），**存入用户自维护的自定义注册表（如 `~/.config/dnallmmark/custom_models.json`），绝不写入官方 `pipeline/models_info.json`**——官方文件由官方维护，自定义由用户维护，互不冲突；quirk 清单（safetensors/fp32/特殊头等）可选勾选
+- [ ] **CUST-02**: 自定义数据集接入向导：TUI 引导录入数据集条目（键名/路径/train-dev-test 文件/标签列/主指标/Task_type/溯源列），**同样存入用户自定义注册表（`custom_datasets.json`），不动官方 `datasets_info.json`**
+- [ ] **CUST-03**: **防呆检测**：字段级校验（必填/类型/枚举/**键名与官方及既有自定义不冲突**/路径存在/split 文件可解析/行数>0/标签列合法/指标名在度量注册表），提交前逐项列出全部问题（fail-fast 收集式，与 _validate_filters 同纪律）
+- [ ] **CUST-04**: **错误检测**：接入后自动 dry-run 预检 + audit 对账（行数/非 ACGT/子集存活）；失败时醒目报告并支持撤销（自定义注册表条目级回滚，官方文件零风险）
+- [ ] **CUST-05**: **注册表叠加层（overlay）**：管线工具（run_sweep/run_finetune/audit/export）在官方注册表之上加载自定义 overlay（custom 键不得与官方冲突，冲突 fail-fast）；无自定义文件时行为与今天**逐字节一致**（向后兼容，现有测试零改动）
+- [ ] **CUST-06**: 自定义项在列表中带 custom 标记（与官方 62/50 区分），可单独启用/停用/导出分享（自定义注册表即分享单元）
 
 ### Data Management (数据管理)
 
