@@ -2134,3 +2134,143 @@ def test_cli_empty_subset_file_value_aborts(tmp_path, monkeypatch):
             "--registry-dir", str(registry_dir),
         ])
     assert "--subset_file" in str(excinfo.value)
+
+
+# =====================================================================
+# --subset_file sweep-owned pre-validation (07-03, D-14)
+# =====================================================================
+
+def test_subset_file_unknown_dataset_key_aborts_naming_key(
+        tmp_path, monkeypatch):
+    """D-14: a subset file with a dataset key the registry does not know
+    aborts the sweep at STARTUP with the key named — never after the
+    first cell's model load burns on a map that cannot join."""
+    registry_dir = make_registry(tmp_path)
+    subsets = _write_json(
+        tmp_path / "subsets.json", {"task-x": [0], "ghost-task": [1]})
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", "42",
+            "--dry-run",
+            "--subset_file", str(subsets),
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "ghost-task" in str(excinfo.value), (
+        "the unknown key must be named in the error"
+    )
+    assert not out_root.exists(), (
+        "an invalid subset file must abort before any output is written"
+    )
+
+
+def test_subset_file_unreadable_path_aborts_naming_path(
+        tmp_path, monkeypatch):
+    """An unreadable --subset_file path aborts non-zero naming the path
+    (the _read_operator_json error-text style, collected)."""
+    registry_dir = make_registry(tmp_path)
+    missing = tmp_path / "does-not-exist.json"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--subset_file", str(missing),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "does-not-exist.json" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("payload", [["task-x"], "a string", 42])
+def test_subset_file_non_object_top_level_aborts(
+        tmp_path, monkeypatch, payload):
+    """A subset file whose top level is not a JSON object (e.g. a list)
+    aborts non-zero describing the expected shape."""
+    registry_dir = make_registry(tmp_path)
+    subsets = _write_json(tmp_path / "subsets.json", payload)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--subset_file", str(subsets),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "object" in str(excinfo.value), (
+        "the error must say an object mapping was expected"
+    )
+
+
+def test_subset_file_collects_all_value_problems_together(
+        tmp_path, monkeypatch):
+    """Collect-all (D-14): a file with one key mapping to a non-list
+    value AND another key mapping to a list containing a non-int exits
+    ONCE listing BOTH problems in one message — never one-at-a-time."""
+    registry_dir = make_registry(tmp_path)
+    subsets = _write_json(tmp_path / "subsets.json", {
+        "task-x": "not-a-list",
+        "task-z": [0, "x"],
+    })
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--subset_file", str(subsets),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "task-x" in message and "task-z" in message, (
+        "BOTH problems must be named in the single collect-all exit — "
+        f"got: {message!r}"
+    )
+    assert "not-a-list" in message
+    assert "'x'" in message, "the non-integer ID must be named"
+
+
+def test_valid_subset_file_passes_validation_and_threads_to_child_argv(
+        tmp_path, monkeypatch):
+    """A fully valid subset file (keys in the tmp registry, int-list
+    values) passes sweep-start validation and threads through to the
+    child argv unchanged."""
+    registry_dir = make_registry(tmp_path)
+    subsets = _write_json(tmp_path / "subsets.json", {"task-x": [0, 5]})
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--subset_file", str(subsets),
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--subset_file") == str(subsets)
+
+
+def test_subset_validation_runs_before_any_cell_enumerates(
+        tmp_path, monkeypatch):
+    """Pre-cell proof: a bad subset file plus a VALID matrix still exits
+    before the executor is invoked — the (captured, never-executed) child
+    launch never happens and no output root is created."""
+    registry_dir = make_registry(tmp_path)
+    subsets = _write_json(tmp_path / "subsets.json", {"ghost-task": [0]})
+    captured = _capturing_launcher(monkeypatch)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", "42",
+            "--subset_file", str(subsets),
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "ghost-task" in str(excinfo.value)
+    assert "argv" not in captured, (
+        "validation must abort before the first child launch — the "
+        "matrix was valid, the subset file was not"
+    )
+    assert not out_root.exists()
