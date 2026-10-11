@@ -2160,6 +2160,24 @@ def test_cli_empty_subset_file_value_aborts(tmp_path, monkeypatch):
     assert "--subset_file" in str(excinfo.value)
 
 
+def test_cli_empty_cache_dir_value_aborts(tmp_path, monkeypatch):
+    """WR-05 (phase-07 review): a provided-but-empty --cache_dir aborts
+    non-zero naming the flag — the --subset_file twin. Path('').resolve()
+    is the CWD, so threading it would set HF_HOME/MS_CACHE_HOME to the
+    repository root in every child's argv pre-scan: caches start landing
+    in the repo with no error and no warning."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--cache_dir", "",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "--cache_dir" in str(excinfo.value)
+
+
 # =====================================================================
 # --subset_file sweep-owned pre-validation (07-03, D-14)
 # =====================================================================

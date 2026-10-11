@@ -1448,6 +1448,17 @@ def main():
             f"--subset_file {args.subset_file!r} is empty — refusing to "
             "thread a pathless flag"
         )
+    if args.cache_dir is not None and not args.cache_dir.strip():
+        # WR-05 (phase-07 review): the --subset_file twin — Path("").resolve()
+        # is the CWD, so an empty --cache_dir would thread the repo root to
+        # every child and its argv pre-scan would set HF_HOME/MS_CACHE_HOME
+        # to the repository root (caches landing in the repo with no error
+        # and no warning; a whitespace value resolves to a ' '-suffixed
+        # path).
+        flag_problems.append(
+            f"--cache_dir {args.cache_dir!r} is empty — refusing to "
+            "thread a pathless flag"
+        )
     if flag_problems:
         sys.exit(f"[Error] {'; '.join(flag_problems)}")
     subset_file_abs = (
