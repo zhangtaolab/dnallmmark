@@ -167,16 +167,25 @@ def _wall_hours(record: dict[str, Any]) -> float | None:
 def _primary_score(metrics: dict[str, Any], slot: str) -> float | None:
     """The record's value for the task's primary-metric export slot.
 
-    Iterates the record's metric keys in sorted order and takes the first
-    finite value whose exporter resolution lands on ``slot`` — the same
-    resolution surface the leaderboard uses, never a local mapping.
+    Iterates the record's metric keys in INSERTION order and keeps the
+    LAST finite value whose exporter resolution lands on ``slot`` —
+    EXACTLY the collision rule ``export_runs._collect_cell_values``
+    applies (its per-slot ``[seed] = value`` assignment lets the last
+    insertion-order key win), so a record whose metrics carry two
+    spellings resolving to one slot (e.g. a run_record ``AUROC`` beside
+    a suite ``eval_AUROC`` after the seed_result merge) yields the SAME
+    number the leaderboard exporter would emit (LOW-07, phase-06
+    review: this resolver previously took the FIRST SORTED key,
+    silently diverging from the exporter under exactly that collision).
+    The single-key case is identical under both rules.
     """
-    for key in sorted(metrics):
+    value: float | None = None
+    for key, raw in metrics.items():
         if resolve_metric_key(key) == slot:
-            value = _finite(metrics[key])
-            if value is not None:
-                return value
-    return None
+            candidate = _finite(raw)
+            if candidate is not None:
+                value = candidate
+    return value
 
 
 def build_frontier_rows(

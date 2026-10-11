@@ -457,3 +457,40 @@ def test_module_imports_the_exporter_authorities_never_rewalks():
         "the module must not walk the tree itself — load_run_records is "
         "the single reader authority"
     )
+
+
+# ===== LOW-07 (phase-06 review): slot-collision parity with the exporter =====
+
+def test_primary_score_collision_rule_matches_the_exporter():
+    """When a record's metrics carry TWO spellings resolving to one export
+    slot (e.g. a run_record ``eval_f1`` beside a suite-written ``f1`` —
+    the shape the seed_result merge makes reachable), _primary_score
+    must return EXACTLY what export_runs._collect_cell_values would emit
+    for the same metrics: the LAST finite insertion-order key wins the
+    slot. The frontier previously took the FIRST SORTED key, silently
+    diverging from the leaderboard under exactly that collision
+    (LOW-07)."""
+    import export_runs
+
+    metrics = {"eval_f1": 0.7, "f1": 0.5, "total_flos": 1.0e15}
+    # Insertion order puts the run-record key FIRST and the suite key
+    # LAST — the two rules disagree on exactly this shape.
+    assert build_frontier._primary_score(metrics, "f1") == 0.5, (
+        "the LAST finite insertion-order key resolving to the slot must "
+        "win — the exporter's collision rule"
+    )
+    per_metric = export_runs._collect_cell_values(
+        {42: {"status": "completed", "metrics": metrics}},
+        Path("/tmp/root"), "model-a", "FakeDS__task",
+    )
+    assert per_metric["f1"][42] == 0.5, (
+        "sanity: the exporter's own collector takes the same last-write"
+    )
+    assert (
+        build_frontier._primary_score(metrics, "f1")
+        == per_metric["f1"][42]
+    ), "frontier and exporter must share ONE collision rule per slot"
+    # A non-finite colliding value is skipped, not propagated: the LAST
+    # FINITE insertion-order key wins.
+    nan_metrics = {"eval_f1": 0.7, "f1": float("nan")}
+    assert build_frontier._primary_score(nan_metrics, "f1") == 0.7
