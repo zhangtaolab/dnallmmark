@@ -104,6 +104,82 @@ HelpModal {
     max-height: 20;
 }
 
+/* ===== Selection screen (08-07) ===== */
+
+#selection-title-bar {
+    height: 1;      /* row token: one status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#selection-screen-title {
+    text-style: bold;          /* Heading role */
+    width: auto;
+}
+
+#selection-status {
+    width: 1fr;                /* right edge of the same status line */
+    text-align: right;
+    color: $text-muted;        /* Secondary role */
+}
+
+#selection-filter-bar {
+    height: 1;      /* the compact Input renders one row */
+    padding: 0 1;   /* 1-cell status-line exception */
+}
+
+#selection-filter-label {
+    width: auto;
+    color: $text-muted;        /* Secondary role */
+}
+
+#selection-filter {
+    width: 1fr;                /* the Input owns the bar's remaining width */
+}
+
+#selection-filter-count {
+    width: auto;               /* the (N/total) readout right-aligns after it */
+    color: $text-muted;        /* Secondary role */
+}
+
+#selection-filter-warning {
+    height: 1;      /* reserved row — the layout never jumps */
+    padding: 0 2;   /* 2-cell status-line exception */
+    color: $warning;
+}
+
+#selection-table {
+    height: 1fr;    /* the table owns every remaining row; scrolls below */
+}
+
+#selection-table > .datatable--header {
+    text-style: bold;
+    color: $text-muted;
+    background: $surface;
+}
+
+/* ===== Selection/matrix modals (08-07) — the shared box pattern ===== */
+
+PresetModal,
+TemplateMenuModal,
+PathInputModal,
+ConfirmModal,
+RowDetailModal {
+    align: center middle;      /* the bordered box centers on screen */
+}
+
+.modal-box {
+    width: 60;                   /* modal token (min(60, width-4) narrow) */
+    height: auto;
+    padding: 1 4;                /* modal token */
+    border: solid $accent;       /* 1-cell border exception */
+    background: $surface;
+}
+
+#row-detail-log {
+    height: auto;
+    max-height: 20;   /* scroll bound (not a spacing token) — wrap, never elide */
+}
+
 /* ===== Min-size guard screen ===== */
 
 MinSizeScreen {

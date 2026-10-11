@@ -390,14 +390,13 @@ async def test_boot_columns_toggle_and_marks_persist_independently():
         ]
         # rows keyed on the registry keys, registry order (stable keys)
         assert _row_keys(table) == [_KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_C]
-        # card-field columns render; the presence column renders the
-        # exact fake counts (formatting happens only in the screen)
+        # card-field columns render; the model presence cell renders the
+        # unknown copy (models are not n_audit subjects — the real
+        # backend fills presence per DATASET key only)
         assert _row(table, 0)[:5] == [
             "", _KEY_MODEL_A, "MLM", "plants", "396",
         ]
-        assert _row(table, 0)[5] == SEL_PRESENCE_PRESENT.format(
-            train="743,095", dev="109,717", test="106,227",
-        )
+        assert _row(table, 0)[5] == SEL_PRESENCE_UNKNOWN
 
         # space marks the cursor row (the mark column updates in place)
         await pilot.press("space")
@@ -413,6 +412,11 @@ async def test_boot_columns_toggle_and_marks_persist_independently():
             SEL_COL_METRIC, SEL_COL_PRESENCE,
         ]
         assert _row_keys(table) == [_TASK_A, _TASK_B]
+        # the dataset presence cell carries the fake's exact counts
+        # (formatting happens only in the screen)
+        assert _row(table, 0)[5] == SEL_PRESENCE_PRESENT.format(
+            train="743,095", dev="109,717", test="106,227",
+        )
         assert _row(table, 1)[5] == SEL_PRESENCE_MISSING
 
         # the dataset mark set is INDEPENDENT (models still marked)

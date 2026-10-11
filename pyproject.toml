@@ -54,6 +54,11 @@ gpu = [
 tui = [
     "textual>=8.2,<9",
     "platformdirs>=3.6,<5",
+    # 08-07 (the 08-05 handoff flag): the selection screen wires template
+    # import, and tui/services/templates.py imports jsonschema at module top
+    # — the make tui display lane (--group tui --group gpu) must carry it or
+    # the console ImportErrors at composition. Same locked range as dev.
+    "jsonschema>=4.26.0",
 ]
 
 [tool.uv]

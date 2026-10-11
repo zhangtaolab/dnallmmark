@@ -53,8 +53,10 @@ Contract (locked decisions):
   modal is on top (Pitfall 11).
 """
 
+import json
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, ClassVar, Protocol
 
 from rich.text import Text
@@ -78,7 +80,10 @@ from textual.widgets import (
 )
 from textual.widgets.selection_list import Selection
 
+from tui.services import registries as registries_service
 from tui.services import selection as selection_service
+from tui.services import settings as settings_service
+from tui.services import templates as templates_service
 from tui.services.registries import (
     PRESENCE_MISSING,
     PRESENCE_PRESENT,
@@ -99,7 +104,9 @@ from tui.strings import (
     SEL_FILTER_COUNT,
     SEL_FILTER_KEY_LABEL,
     SEL_FILTER_LABEL,
+    SEL_FILTER_NO_MATCH,
     SEL_FILTER_PLACEHOLDER,
+    SEL_FILTER_UNKNOWN_AXIS,
     SEL_LOADING_ROW,
     SEL_MARK_LABEL,
     SEL_MATRIX_LABEL,
@@ -108,18 +115,29 @@ from tui.strings import (
     SEL_PRESENCE_PRESENT,
     SEL_PRESENCE_UNKNOWN,
     SEL_PRESET_ALL,
+    SEL_PRESET_APPLIED,
     SEL_PRESET_LABEL,
+    SEL_PRESET_NAME_PLACEHOLDER,
     SEL_PRESET_NO_CUSTOMS,
+    SEL_PRESET_OVERWRITE_CONFIRM,
+    SEL_PRESET_SAVED,
     SEL_PRESET_TIER_1,
     SEL_PRESET_TIER_2,
     SEL_PRESET_TITLE,
+    SEL_PRESET_UNKNOWN_KEYS,
+    SEL_REGISTRY_LOAD_FAILED,
     SEL_SAVE_PRESET_LABEL,
+    SEL_SCREEN_TITLE_DATASETS,
     SEL_SCREEN_TITLE_MODELS,
+    SEL_STATUS_LINE,
     SEL_SWITCH_LABEL,
+    SEL_TEMPLATE_EXPORTED,
+    SEL_TEMPLATE_IMPORTED,
     SEL_TEMPLATE_LABEL,
     SEL_TEMPLATE_MENU_EXPORT,
     SEL_TEMPLATE_MENU_IMPORT,
     SEL_TEMPLATE_MENU_TIERS,
+    SEL_TEMPLATE_PATH_PLACEHOLDER,
     SEL_TEMPLATE_PROBLEM_LINE,
     SEL_TEMPLATE_PROBLEMS,
     SEL_TEMPLATE_TITLE,
@@ -268,23 +286,87 @@ class SelectionBackend:
         self._config_dir = config_dir
         self._priorities_path = priorities_path
 
-    # ----- the seam methods (behavior lands in GREEN) -----
+    # ----- the registries + presence snapshot -----
 
     def load_selection_data(self) -> SelectionData:
-        """The registries + presence snapshot."""
-        return SelectionData()
+        """The registries + presence snapshot (the worker-read seam).
+
+        Both registry reads degrade independently (a failed models read
+        leaves the dataset table healthy); presence fills per DATASET
+        key from the committed n_audit through the pure 08-04 mapping.
+        """
+        model_entries, models_error = _load_entries(
+            registries_service.load_model_entries, _MODELS_REGISTRY_PATH,
+        )
+        dataset_entries, datasets_error = _load_entries(
+            registries_service.load_dataset_entries, _DATASETS_REGISTRY_PATH,
+        )
+        audit = registries_service.load_n_audit()
+        presence: dict[str, Presence] = {}
+        if audit is not None:
+            presence = {
+                entry["key"]: registries_service.presence_for(
+                    entry["key"], audit,
+                )
+                for entry in dataset_entries
+            }
+        return SelectionData(
+            model_entries=tuple(model_entries),
+            dataset_entries=tuple(dataset_entries),
+            presence=presence,
+            audit_available=audit is not None,
+            models_load_error=models_error,
+            datasets_load_error=datasets_error,
+        )
+
+    # ----- presets (SEL-02, D-06: derived, never hardcoded) -----
 
     def preset_menu(self) -> PresetMenu:
-        """The derived preset menu."""
-        return PresetMenu()
+        """tier-1, tier-2, all (derived) then customs sorted by name."""
+        model_entries, _ = _load_entries(
+            registries_service.load_model_entries, _MODELS_REGISTRY_PATH,
+        )
+        dataset_entries, _ = _load_entries(
+            registries_service.load_dataset_entries, _DATASETS_REGISTRY_PATH,
+        )
+        derivation = selection_service.derive_presets(
+            self._priorities_path or str(_DEFAULT_PRIORITIES_PATH),
+            [entry["key"] for entry in model_entries],
+            [entry["key"] for entry in dataset_entries],
+        )
+        options = tuple(
+            PresetOption(
+                id=preset.id, kind="derived", name=None,
+                models=preset.models, tasks=preset.tasks,
+                unknown_keys=preset.unknown_keys,
+            )
+            for preset in derivation.presets
+        )
+        customs = selection_service.load_custom_presets(self._config_root())
+        options += tuple(
+            PresetOption(
+                id=f"custom:{name}", kind="custom", name=name,
+                models=tuple(value["models"]),
+                tasks=tuple(value["tasks"]),
+            )
+            for name, value in sorted(customs.items())
+        )
+        return PresetMenu(options=options, load_error=derivation.load_error)
 
     def custom_names(self) -> tuple[str, ...]:
-        """The saved custom-preset names."""
-        return ()
+        """The saved custom-preset names, sorted (the overwrite check)."""
+        return tuple(sorted(
+            selection_service.load_custom_presets(self._config_root())
+        ))
 
     def save_preset(self, name: str, models: Iterable[str],
                     tasks: Iterable[str]) -> None:
-        """Persist a custom preset."""
+        """Persist a custom preset under the config root (atomic)."""
+        selection_service.save_custom_preset(
+            name, models, tasks, self._config_root(),
+        )
+
+    # ----- the filter grammar (pure 08-05 delegation) -----
 
     def parse_filter(self, query: str) -> Any:
         """Parse a filter query (the pure 08-05 grammar)."""
@@ -294,17 +376,85 @@ class SelectionBackend:
         """Apply parsed terms to entries."""
         return selection_service.apply_filter(entries, parsed.terms)
 
+    # ----- templates (SEL-03, D-07: strict, collect-all, fail-closed) -----
+
     def import_template(self, path: str) -> TemplateImport:
-        """Read + validate one template file (collect-all)."""
-        return TemplateImport()
+        """Read + collect-all validate one template file (fail-closed)."""
+        doc, load_error = templates_service.load_template_file(path)
+        if load_error is not None:
+            return TemplateImport(
+                ok=False, problems=((str(path), load_error),),
+            )
+        problems = templates_service.validate_template(doc)
+        if problems:
+            return TemplateImport(ok=False, problems=tuple(problems))
+        if not isinstance(doc, dict):
+            # unreachable post-validation (the schema requires an object)
+            # — the guard narrows the type, never fires on real input
+            return TemplateImport(
+                ok=False,
+                problems=((str(path), "template must be a JSON object"),),
+            )
+        return TemplateImport(
+            ok=True,
+            models=tuple(doc["models"]),
+            tasks=tuple(doc["tasks"]),
+        )
 
     def export_template(self, path: str, models: Iterable[str],
                         tasks: Iterable[str]) -> None:
-        """Export the selection as a run template."""
+        """Export the selection as a run template (valid by construction)."""
+        doc = templates_service.export_selection_template(models, tasks)
+        _write_json(Path(path), doc)
 
     def export_tiers(self, path: str, models: Iterable[str],
                      tasks: Iterable[str]) -> None:
-        """Export the selection as a tier list."""
+        """Export the selection as a sweep_priorities tier list."""
+        doc = templates_service.export_selection_template(models, tasks)
+        _write_json(Path(path), templates_service.template_to_tiers(doc))
+
+    def _config_root(self) -> Path:
+        """The config root: the injected dir or the 08-04 default."""
+        return (
+            Path(self._config_dir) if self._config_dir is not None
+            else settings_service.config_dir()
+        )
+
+
+# ===== Locations (resolved through the 08-04 service's own REPO_ROOT) =====
+
+_MODELS_REGISTRY_PATH = (
+    registries_service.REPO_ROOT / "pipeline" / "models_info.json"
+)
+_DATASETS_REGISTRY_PATH = (
+    registries_service.REPO_ROOT / "pipeline" / "datasets_info.json"
+)
+_DEFAULT_PRIORITIES_PATH = (
+    registries_service.REPO_ROOT / "pipeline" / "sweep_priorities.json"
+)
+
+
+def _load_entries(loader: Callable[[], list[dict]], registry_path: Path):
+    """One tolerant registry read: (entries, None) or ([], the path).
+
+    The advisory-UI survivability seam (SEL-01 empty edge): a missing
+    official file (OSError) or a malformed custom overlay (SystemExit,
+    the loader's fail-loud contract) degrades to the documented
+    load-error state naming the path — never an exception through the
+    screen, and the loader's own contract stays untouched for pipeline
+    consumers.
+    """
+    try:
+        return list(loader()), None
+    except (OSError, SystemExit):
+        return [], str(registry_path)
+
+
+def _write_json(path: Path, doc: object) -> None:
+    """Atomically write one JSON document (the 08-04 helper)."""
+    settings_service.atomic_write(
+        path, json.dumps(doc, indent=2, ensure_ascii=False),
+    )
 
 
 # ===== Column geometry (the 80-column budget, 08-UI-SPEC Screen 2) =====
@@ -325,26 +475,40 @@ _COL_PRESENCE_KEY = "presence"
 
 #: (column key, header constant, width) — the column keys are the
 #: update_cell addressing scheme (English technical ids, I18N-01).
+_MODEL_KEY_W = 25
+_MODEL_TYPE_W = 4
+_MODEL_SPECIES_W = 8
+_MODEL_SIZE_W = 7
+_MODEL_PRESENCE_W = 20
+
+_DATASET_KEY_W = 20
+_DATASET_CATEGORY_W = 8
+_DATASET_TYPE_W = 10
+_DATASET_METRIC_W = 8
+_DATASET_PRESENCE_W = 18
+
 _MODEL_COLUMNS: tuple[tuple[str, str, int], ...] = (
     (_COL_MARK, SEL_COL_MARK, 2),
-    (_COL_KEY, SEL_COL_MODEL, 25),
-    ("type", SEL_COL_TYPE, 4),
-    ("species", SEL_COL_SPECIES, 8),
-    ("size", SEL_COL_SIZE, 7),
-    (_COL_PRESENCE_KEY, SEL_COL_PRESENCE, 20),
+    (_COL_KEY, SEL_COL_MODEL, _MODEL_KEY_W),
+    ("type", SEL_COL_TYPE, _MODEL_TYPE_W),
+    ("species", SEL_COL_SPECIES, _MODEL_SPECIES_W),
+    ("size", SEL_COL_SIZE, _MODEL_SIZE_W),
+    (_COL_PRESENCE_KEY, SEL_COL_PRESENCE, _MODEL_PRESENCE_W),
 )
 
 _DATASET_COLUMNS: tuple[tuple[str, str, int], ...] = (
     (_COL_MARK, SEL_COL_MARK, 2),
-    (_COL_KEY, SEL_COL_TASK, 20),
-    ("category", SEL_COL_CATEGORY, 8),
-    ("type", SEL_COL_TYPE, 10),
-    ("metric", SEL_COL_METRIC, 8),
-    (_COL_PRESENCE_KEY, SEL_COL_PRESENCE, 18),
+    (_COL_KEY, SEL_COL_TASK, _DATASET_KEY_W),
+    ("category", SEL_COL_CATEGORY, _DATASET_CATEGORY_W),
+    ("type", SEL_COL_TYPE, _DATASET_TYPE_W),
+    ("metric", SEL_COL_METRIC, _DATASET_METRIC_W),
+    (_COL_PRESENCE_KEY, SEL_COL_PRESENCE, _DATASET_PRESENCE_W),
 )
 
 # Row keys for the non-registry state rows (never mark/filter targets).
 _LOADING_ROW_KEY = "_loading"
+_NO_MATCH_ROW_KEY = "_no_match"
+_REGISTRY_ERROR_ROW_KEY = "_registry_error"
 
 # Per-cell rich Text styles: semantic theme tokens only (the 08-06
 # idiom — the glyph carries meaning under NO_COLOR, color is the
@@ -356,15 +520,29 @@ _STYLE_PRESENCE_FAIL = "bold $error"
 _STYLE_PRESENCE_UNKNOWN = "$text-muted"
 
 
-def _cell(value: object, width: int, style: "str | None" = None) -> Text:
-    """One DataTable cell: plain text, ellipsis-truncated to the width.
-
-    Rich's own width measurement does the truncating (never hand-rolled
-    width math); short values pass through unchanged.
-    """
-    text = Text(str(value), style=style) if style else Text(str(value))
+def _truncate(text: Text, width: int) -> Text:
+    """Ellipsis-truncate one rich Text in place to the width (Rich's own
+    measurement — never hand-rolled width math)."""
     text.truncate(width, overflow="ellipsis", pad=False)
     return text
+
+
+def _cell(value: object, width: int, style: "str | None" = None) -> Text:
+    """One DataTable cell: plain text, ellipsis-truncated to the width."""
+    return _truncate(
+        Text(str(value), style=style) if style else Text(str(value)), width,
+    )
+
+
+def _size_text(value: object) -> str:
+    """One model size: ``396.0`` renders as ``396``; absent renders blank.
+
+    The repo data convention (missing = empty string, never null/0) — the
+    registries service maps an absent ``size (M)`` to ``0.0``.
+    """
+    if not value:
+        return ""
+    return format(value, "g")
 
 
 def _presence_cell(data: SelectionData, key: str) -> Text:
@@ -650,6 +828,9 @@ class SelectionScreen(Screen):
         self._data: SelectionData | None = None
         self._view = _MODELS_VIEW
         self._query = ""
+        # The parsed current query (empty terms = every entry). The
+        # service owns the grammar; the screen only stores its output.
+        self._parsed = self._service.parse_filter("")
         self._view_keys: frozenset[str] = frozenset()
 
     # ----- properties (the shared sets — Pilot assertions read these) -----
@@ -674,7 +855,7 @@ class SelectionScreen(Screen):
         with Horizontal(id="selection-filter-bar"):
             yield Label(SEL_FILTER_LABEL, id="selection-filter-label")
             yield Input(placeholder=SEL_FILTER_PLACEHOLDER,
-                        id="selection-filter")
+                        id="selection-filter", compact=True)
             yield Label(SEL_FILTER_COUNT.format(n=0, total=0),
                         id="selection-filter-count")
         yield Label("", id="selection-filter-warning")
@@ -723,49 +904,428 @@ class SelectionScreen(Screen):
         table.clear(columns=True)
         for column_key, header, width in columns:
             table.add_column(header, key=column_key, width=width)
-        self._add_state_or_data_rows(table, columns)
 
-    def _add_state_or_data_rows(self, table: DataTable,
-                                columns: tuple) -> None:
-        """The loading row (pre-data; the read seam's visible state)."""
-        table.add_row(
-            "", Text(SEL_LOADING_ROW, style=_STYLE_DIM),
-            key=_LOADING_ROW_KEY,
+        data = self._data
+        if data is None:
+            # the single loading row covers the registry/n_audit read
+            # seam before rows compose (SEL-01 loading)
+            self._view_keys = frozenset()
+            self._add_state_row(
+                table, SEL_LOADING_ROW, _LOADING_ROW_KEY, _STYLE_DIM,
+            )
+            self._update_count_readout(0, 0)
+            return
+
+        load_error = (
+            data.models_load_error if self._view == _MODELS_VIEW
+            else data.datasets_load_error
+        )
+        entries = self._view_entries()
+        self._view_keys = frozenset(entry["key"] for entry in entries)
+        if load_error is not None:
+            # the registry-failure empty state names the path (SEL-01)
+            self._add_state_row(
+                table,
+                SEL_REGISTRY_LOAD_FAILED.format(registry_path=load_error),
+                _REGISTRY_ERROR_ROW_KEY, _STYLE_PRESENCE_FAIL,
+            )
+            self._update_count_readout(0, 0)
+            return
+
+        filtered = self._service.apply_filter(entries, self._parsed)
+        if not filtered and entries:
+            # zero matches render the documented no-match row with the
+            # Esc-clear hint — never a blank table (SEL-01 empty edge)
+            self._add_state_row(
+                table, SEL_FILTER_NO_MATCH.format(total=len(entries)),
+                _NO_MATCH_ROW_KEY, _STYLE_DIM,
+            )
+        else:
+            for entry in filtered:
+                table.add_row(*self._row_cells(entry), key=entry["key"])
+        self._update_count_readout(len(filtered), len(entries))
+
+    def _add_state_row(self, table: DataTable, text: str,
+                       row_key: str, style: str) -> None:
+        """One non-registry state row (the copy sits in the key column;
+        the full value is stored untruncated — the table clips at the
+        column budget, the copy itself is never elided)."""
+        table.add_row("", Text(text, style=style), key=row_key)
+
+    def _view_entries(self) -> list[dict]:
+        """The active view's entries (registry order)."""
+        data = self._data
+        if data is None:
+            return []
+        return list(
+            data.model_entries if self._view == _MODELS_VIEW
+            else data.dataset_entries
         )
 
-    # ----- helpers (behavior lands in GREEN) -----
+    def _row_cells(self, entry: dict) -> list:
+        """The six cells of one data row, view-specific.
 
-    def _apply_filter(self) -> None:
-        """Parse + apply the current query; rebuild; update the readout."""
+        The mark cell renders from the shared sets at add time; the
+        spacebar updates it in place via ``update_cell`` afterwards.
+        """
+        key = entry["key"]
+        marks = (
+            self._marked_models if self._view == _MODELS_VIEW
+            else self._marked_tasks
+        )
+        mark_cell = (
+            Text("✓", style=_STYLE_MARK) if key in marks else ""
+        )
+        # Presence cells carry the FULL contract format — the DataTable
+        # clips display at the column budget (no wrap, row height 1);
+        # pre-truncation is only for the long registry keys below.
+        # (_row_cells only composes with data loaded; the None branch is
+        # the type narrowing, unreachable in practice.)
+        data = self._data
+        presence = (
+            _presence_cell(data, key) if data is not None
+            else Text(SEL_PRESENCE_UNKNOWN, style=_STYLE_PRESENCE_UNKNOWN)
+        )
+        if self._view == _MODELS_VIEW:
+            return [
+                mark_cell,
+                _cell(key, _MODEL_KEY_W),
+                _cell(entry.get("type") or "", _MODEL_TYPE_W),
+                _cell(entry.get("species") or "", _MODEL_SPECIES_W),
+                _cell(_size_text(entry.get("size_m")), _MODEL_SIZE_W),
+                presence,
+            ]
+        return [
+            mark_cell,
+            _cell(key, _DATASET_KEY_W),
+            _cell(entry.get("category") or "", _DATASET_CATEGORY_W),
+            _cell(entry.get("type") or "", _DATASET_TYPE_W),
+            _cell(entry.get("metric") or "", _DATASET_METRIC_W),
+            presence,
+        ]
+
+    # ----- readouts -----
 
     def _update_status_line(self) -> None:
         """The zero-one-many marked-counts readout (top-right)."""
+        data = self._data
+        self.query_one("#selection-status", Label).update(
+            SEL_STATUS_LINE.format(
+                n=len(self._marked_models),
+                models_total=len(data.model_entries) if data else 0,
+                m=len(self._marked_tasks),
+                tasks_total=len(data.dataset_entries) if data else 0,
+            )
+        )
+
+    def _update_count_readout(self, visible: int, total: int) -> None:
+        """The live (N/total) filter readout (right-aligned in the bar)."""
+        self.query_one("#selection-filter-count", Label).update(
+            SEL_FILTER_COUNT.format(n=visible, total=total)
+        )
+
+    def _render_filter_warning(self) -> None:
+        """The dim unknown-axis warning line (valid terms still apply)."""
+        label = self.query_one("#selection-filter-warning", Label)
+        if not self._parsed.diagnostics:
+            label.update("")
+            return
+        label.update("; ".join(
+            SEL_FILTER_UNKNOWN_AXIS.format(
+                axis=diagnostic.axis,
+                axes=", ".join(diagnostic.known_axes),
+            )
+            for diagnostic in self._parsed.diagnostics
+        ))
+
+    def _apply_filter(self) -> None:
+        """Re-apply the current query over the loaded data (rebuild)."""
+        self._rebuild_rows()
+        self._update_status_line()
+
+    # ----- filter Input wiring -----
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Every keystroke re-parses and rebuilds (k9s type-to-filter)."""
+        if event.input.id != "selection-filter":
+            return
+        self._query = event.value
+        self._parsed = self._service.parse_filter(self._query)
+        self._render_filter_warning()
+        self._rebuild_rows()
+        self._update_status_line()
 
     # ----- actions (user intent) -----
 
     def action_toggle_mark(self) -> None:
         """space: toggle the cursor row's mark (the mark column updates)."""
+        table = self.query_one("#selection-table", DataTable)
+        cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
+        if cell_key is None:
+            return
+        row_key = cell_key[0]
+        key = str(row_key.value)
+        if key not in self._view_keys:
+            return  # state rows (loading/no-match/error) never mark
+        marks = (
+            self._marked_models if self._view == _MODELS_VIEW
+            else self._marked_tasks
+        )
+        if key in marks:
+            marks.discard(key)
+        else:
+            marks.add(key)
+        table.update_cell(
+            row_key, _COL_MARK,
+            Text("✓", style=_STYLE_MARK) if key in marks else "",
+        )
+        self._update_status_line()
 
     def action_switch_list(self) -> None:
         """m: toggle the model/dataset table (both mark sets persist)."""
+        self._view = (
+            _DATASETS_VIEW if self._view == _MODELS_VIEW else _MODELS_VIEW
+        )
+        self.query_one("#selection-screen-title", Label).update(
+            SEL_SCREEN_TITLE_DATASETS
+            if self._view == _DATASETS_VIEW else SEL_SCREEN_TITLE_MODELS
+        )
+        self._rebuild_rows()
+        self._update_status_line()
+        self.query_one("#selection-table", DataTable).focus()
 
     def action_focus_filter(self) -> None:
         """/: focus the filter Input (k9s type-to-filter)."""
+        self.query_one("#selection-filter", Input).focus()
 
     def action_clear_filter(self) -> None:
         """esc: clear the filter and refocus the table."""
+        self._query = ""
+        self._parsed = self._service.parse_filter("")
+        self.query_one("#selection-filter", Input).value = ""
+        self._render_filter_warning()
+        self._rebuild_rows()
+        self._update_status_line()
+        self.query_one("#selection-table", DataTable).focus()
 
     def action_apply_preset(self) -> None:
         """p: open the preset picker modal."""
+        if self._data is None:
+            return
+        menu = self._service.preset_menu()
+        customs_empty = not any(
+            option.kind == "custom" for option in menu.options
+        )
+        self.app.push_screen(PresetModal(
+            options=menu.options,
+            customs_empty=customs_empty,
+            load_error=menu.load_error,
+            on_apply=self._apply_preset,
+        ))
+
+    def _apply_preset(self, option: PresetOption) -> None:
+        """Apply one preset with REPLACING semantics (SEL-02).
+
+        The relevant set(s) are cleared then filled; keys absent from the
+        loaded registries are skipped with the loud warning (registry
+        evolution tolerance — recomputed against the live view so stale
+        customs warn too, never silently dropped).
+        """
+        model_keys = frozenset(
+            entry["key"] for entry in self._data.model_entries
+        ) if self._data else frozenset()
+        task_keys = frozenset(
+            entry["key"] for entry in self._data.dataset_entries
+        ) if self._data else frozenset()
+        unknown = [
+            key for key in option.models if key not in model_keys
+        ] + [
+            key for key in option.tasks if key not in task_keys
+        ]
+        self._marked_models.clear()
+        self._marked_models.update(
+            key for key in option.models if key in model_keys
+        )
+        self._marked_tasks.clear()
+        self._marked_tasks.update(
+            key for key in option.tasks if key in task_keys
+        )
+        if unknown:
+            self.app.notify(
+                SEL_PRESET_UNKNOWN_KEYS.format(
+                    n=len(unknown), keys=", ".join(unknown),
+                ),
+                severity="warning",
+            )
+        self.app.notify(SEL_PRESET_APPLIED.format(
+            preset=_preset_label(option),
+            n=len(self._marked_models),
+            m=len(self._marked_tasks),
+        ))
+        self._rebuild_rows()
+        self._update_status_line()
+        self.query_one("#selection-table", DataTable).focus()
 
     def action_open_templates(self) -> None:
         """x: open the template menu modal."""
+        if self._data is None:
+            return
+        self.app.push_screen(TemplateMenuModal(
+            on_choice=self._on_template_choice,
+        ))
+
+    def _on_template_choice(self, action: str) -> None:
+        """Route the chosen template menu entry to its input modal."""
+        titles = {
+            "import": SEL_TEMPLATE_MENU_IMPORT,
+            "export": SEL_TEMPLATE_MENU_EXPORT,
+            "tiers": SEL_TEMPLATE_MENU_TIERS,
+        }
+        self.app.push_screen(PathInputModal(
+            title=titles[action],
+            placeholder=SEL_TEMPLATE_PATH_PLACEHOLDER,
+            on_submit={
+                "import": self._submit_import,
+                "export": self._submit_export,
+                "tiers": self._submit_tiers,
+            }[action],
+        ))
+
+    def _submit_import(self, path: str) -> "Sequence[tuple[str, str]] | None":
+        """Import: validate collect-all; NOTHING applies on failure."""
+        outcome = self._service.import_template(path)
+        if not outcome.ok:
+            return outcome.problems
+        self._replace_marks(outcome.models, outcome.tasks)
+        self.app.notify(SEL_TEMPLATE_IMPORTED.format(
+            n=len(self._marked_models), m=len(self._marked_tasks),
+        ))
+        self._rebuild_rows()
+        self._update_status_line()
+        self.query_one("#selection-table", DataTable).focus()
+        return None
+
+    def _submit_export(self, path: str) -> "Sequence[tuple[str, str]] | None":
+        """Export the current mark sets to the operator-chosen path."""
+        try:
+            self._service.export_template(
+                path, sorted(self._marked_models), sorted(self._marked_tasks),
+            )
+        except ValueError as exc:
+            # e.g. an empty selection cannot be exported (the service's
+            # loud refusal) — surfaced in the modal, nothing written
+            return ((path, str(exc)),)
+        self.app.notify(SEL_TEMPLATE_EXPORTED.format(path=path))
+        return None
+
+    def _submit_tiers(self, path: str) -> "Sequence[tuple[str, str]] | None":
+        """Export the selection as a sweep_priorities tier list."""
+        try:
+            self._service.export_tiers(
+                path, sorted(self._marked_models), sorted(self._marked_tasks),
+            )
+        except ValueError as exc:
+            return ((path, str(exc)),)
+        self.app.notify(SEL_TEMPLATE_EXPORTED.format(path=path))
+        return None
+
+    def _replace_marks(self, models: Iterable[str],
+                       tasks: Iterable[str]) -> None:
+        """Replace both mark sets, skipping keys unknown to the registry
+        with the loud warning (the same loud-skip discipline as presets)."""
+        model_keys = frozenset(
+            entry["key"] for entry in self._data.model_entries
+        ) if self._data else frozenset()
+        task_keys = frozenset(
+            entry["key"] for entry in self._data.dataset_entries
+        ) if self._data else frozenset()
+        unknown = [
+            key for key in models if key not in model_keys
+        ] + [
+            key for key in tasks if key not in task_keys
+        ]
+        self._marked_models.clear()
+        self._marked_models.update(
+            key for key in models if key in model_keys
+        )
+        self._marked_tasks.clear()
+        self._marked_tasks.update(key for key in tasks if key in task_keys)
+        if unknown:
+            self.app.notify(
+                SEL_PRESET_UNKNOWN_KEYS.format(
+                    n=len(unknown), keys=", ".join(unknown),
+                ),
+                severity="warning",
+            )
 
     def action_save_preset(self) -> None:
         """s: save the current mark sets as a custom preset."""
+        self.app.push_screen(PathInputModal(
+            title=SEL_SAVE_PRESET_LABEL,
+            placeholder=SEL_PRESET_NAME_PLACEHOLDER,
+            on_submit=self._submit_save,
+        ))
+
+    def _submit_save(self, name: str) -> None:
+        """An existing name confirms before the overwrite; else saves.
+
+        The confirm push is deferred one refresh: the path modal
+        dismisses itself (popping the TOP screen) immediately after this
+        callback returns None, so the confirm must land on the stack
+        AFTER that pop — pushing it here would dismiss the confirm
+        instead of the input modal.
+        """
+        if name in self._service.custom_names():
+            self.app.call_after_refresh(
+                lambda name=name: self.app.push_screen(ConfirmModal(
+                    message=SEL_PRESET_OVERWRITE_CONFIRM.format(name=name),
+                    on_confirm=lambda: self._do_save(name),
+                ))
+            )
+            return
+        self._do_save(name)
+
+    def _do_save(self, name: str) -> None:
+        """Persist the current mark sets under the name + toast."""
+        self._service.save_preset(
+            name, sorted(self._marked_models), sorted(self._marked_tasks),
+        )
+        self.app.notify(SEL_PRESET_SAVED.format(
+            name=name,
+            n=len(self._marked_models),
+            m=len(self._marked_tasks),
+        ))
+        self.query_one("#selection-table", DataTable).focus()
 
     def action_open_matrix(self) -> None:
         """v: push the read-only matrix overview (08-07 Task 2)."""
 
     def action_show_detail(self) -> None:
         """enter (table unfocused): drill into the cursor row's card."""
+        table = self.query_one("#selection-table", DataTable)
+        cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
+        if cell_key is None:
+            return
+        self._open_detail(str(cell_key[0].value))
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """enter on the focused table (its native select event)."""
+        self._open_detail(str(event.row_key.value))
+
+    def _open_detail(self, key: str) -> None:
+        """Open the row-detail modal for a registry entry's full card."""
+        entry = self._find_entry(key)
+        if entry is None:
+            return  # state rows have no detail — no-op
+        self.app.push_screen(RowDetailModal(
+            entry_key=key, card=entry.get("card") or {},
+        ))
+
+    def _find_entry(self, key: str) -> "dict | None":
+        """The entry (either list) for a registry key, else None."""
+        if self._data is None:
+            return None
+        for entry in self._data.model_entries + self._data.dataset_entries:
+            if entry["key"] == key:
+                return entry
+        return None

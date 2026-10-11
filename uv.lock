@@ -448,6 +448,7 @@ gpu = [
     { name = "transformers" },
 ]
 tui = [
+    { name = "jsonschema" },
     { name = "platformdirs" },
     { name = "textual" },
 ]
@@ -474,6 +475,7 @@ gpu = [
     { name = "transformers", specifier = "==5.17.0" },
 ]
 tui = [
+    { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "platformdirs", specifier = ">=3.6,<5" },
     { name = "textual", specifier = ">=8.2,<9" },
 ]
