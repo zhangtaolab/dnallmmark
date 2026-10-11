@@ -14,10 +14,18 @@
 
 ### Selection (选择)
 
-- [ ] **SEL-01**: k9s 式过滤+标记集选择：模型表与数据集表分别过滤（arena/类型/物种/规模）+ 空格键标记 + 稳定 row_key 集合；只读矩阵总览作为辅助视图（非编辑界面）
+- [ ] **SEL-01**: 模型列表与数据集列表分别呈现可浏览选择（62 模型 / 50 数据集，含关键卡片字段列）；k9s 式过滤+标记集（arena/类型/物种/规模）+ 空格键标记 + 稳定 row_key 集合；只读矩阵总览作为辅助视图（非编辑界面）
 - [ ] **SEL-02**: 预设组一键选择：tier-1 E2E 对、tier-2 arena 代表、全部、自定义保存
 - [ ] **SEL-03**: 模板导入/导出：运行配置模板（模型×任务×种子×PEFT×变体×GA 完整参数集）JSON 文件，导入时校验；与 sweep_priorities.json tier 结构兼容或提供互转
 - [ ] **SEL-04**: 每行显示本地数据状态（✓ 在场 / ✗ 缺失 + n_audit 行数）
+
+### Custom Entries (自定义模型/数据集接入)
+
+- [ ] **CUST-01**: 自定义模型接入向导：TUI 引导录入模型卡片（名称/架构/tokenizer/物种/规模/HF+ModelScope 地址/本地路径），落注册表走 ONBOARDING 流程（注册表写入 → convert_registry 往返 → dry-run 验证）；quirk 清单（safetensors/fp32/特殊头等）可选勾选
+- [ ] **CUST-02**: 自定义数据集接入向导：TUI 引导录入数据集条目（键名/路径/train-dev-test 文件/标签列/主指标/Task_type/溯源列），同走注册表+审计流程
+- [ ] **CUST-03**: **防呆检测**：字段级校验（必填/类型/枚举/键名冲突/路径存在/split 文件可解析/行数>0/标签列合法/指标名在度量注册表），提交前逐项列出全部问题（fail-fast 收集式，与 _validate_filters 同纪律）
+- [ ] **CUST-04**: **错误检测**：接入后自动 dry-run 预检 + audit 对账（行数/非 ACGT/子集存活）；失败时醒目报告并支持撤销（未通过的接入不落盘/可回滚）
+- [ ] **CUST-05**: 自定义项在列表中带 custom 标记（与官方 62/50 区分），不破坏官方注册表语义与现有测试
 
 ### Data Management (数据管理)
 
@@ -81,13 +89,45 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (待 roadmap 填充) | | |
+| ENV-01 | Phase 8 | Pending |
+| ENV-02 | Phase 8 | Pending |
+| ENV-03 | Phase 8 | Pending |
+| ENV-04 | Phase 8 | Pending |
+| SEL-01 | Phase 8 | Pending |
+| SEL-02 | Phase 8 | Pending |
+| SEL-03 | Phase 8 | Pending |
+| SEL-04 | Phase 8 | Pending |
+| DATA-01 | Phase 9 | Pending |
+| DATA-02 | Phase 9 | Pending |
+| DATA-03 | Phase 9 | Pending |
+| DATA-04 | Phase 9 | Pending |
+| CFG-01 | Phase 10 | Pending |
+| CFG-02 | Phase 10 | Pending |
+| CFG-03 | Phase 10 | Pending |
+| LNC-01 | Phase 10 | Pending |
+| LNC-02 | Phase 10 | Pending |
+| LNC-03 | Phase 10 | Pending |
+| MON-01 | Phase 10 | Pending |
+| MON-02 | Phase 10 | Pending |
+| MON-03 | Phase 10 | Pending |
+| MON-04 | Phase 10 | Pending |
+| MON-05 | Phase 10 | Pending |
+| PIPE-01 | Phase 7 | Pending |
+| PIPE-02 | Phase 7 | Pending |
+| PIPE-03 | Phase 7 | Pending |
+| MGPU-01 | Phase 11 | Pending |
+| MGPU-02 | Phase 11 | Pending |
+| MGPU-03 | Phase 11 | Pending |
+| I18N-01 | Phase 8 | Pending |
+| WEB-01 | Phase 11 | Pending |
+| TEST-01 | Phase 11 | Pending |
 
 **Coverage:**
-- v1.2 requirements: 28 total
-- Mapped to phases: 0
-- Unmapped: 28 ⚠️ (roadmap will fill)
+- v1.2 requirements: 32 total *(corrected 2026-10-11 — the previously stated "28 total" was a stale count predating team supplementation; the file defines 32 checkbox requirements)*
+- Mapped to phases: 32/32 (Phase 7: 3 · Phase 8: 9 · Phase 9: 4 · Phase 10: 11 · Phase 11: 5)
+- Unmapped: 0
+- Orphaned/duplicated: 0
 
 ---
 *Requirements defined: 2026-10-11*
-*Last updated: 2026-10-11 after research synthesis (b9de144) + maintainer scoping*
+*Last updated: 2026-10-11 — roadmap traceability filled (32/32 mapped, Phases 7-11)*
