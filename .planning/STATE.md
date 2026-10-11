@@ -2,19 +2,19 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: TUI任务
-current_phase: 8
+current_phase: 08
 current_phase_name: TUI Foundation (Env Check & Selection)
 status: executing
-stopped_at: Phase 8 UI-SPEC approved
-last_updated: "2026-10-11T09:40:57.115Z"
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-10-11T10:03:34.478Z"
 last_activity: 2026-10-11
-last_activity_desc: Phase 07 complete, transitioned to Phase 8
-state_head: db2971f812c2a06fd4b9a026e1148d8de902bb41
+last_activity_desc: Phase 08 execution started
+state_head: 32144600b4a3427f7e165695cce6f5a3939c3864
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 13
-  completed_plans: 6
+  completed_plans: 7
   percent: 17
 ---
 
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-11)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 07 — Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
+**Current focus:** Phase 08 — TUI Foundation (Env Check & Selection)
 
 ## Current Position
 
-Phase: 8 (TUI Foundation (Env Check & Selection)) — READY TO EXECUTE
-Plan: Not started
+Phase: 08 (TUI Foundation (Env Check & Selection)) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-10-11 — Phase 07 complete, transitioned to Phase 8
+Last activity: 2026-10-11 — Phase 08 execution started
 
 Progress (v1.2): [░░░░░░░░░░] 0%
 
@@ -50,7 +50,7 @@ Progress (v1.2): [░░░░░░░░░░] 0%
 | 01 / 02 / 03 | 3 / 3 / 4 — all complete |
 | 04 / 05 / 06 | 5 / 4 / 5 — all complete |
 
-**v1.2:** no plans executed yet.
+**v1.2:** Phase 7 complete (6 plans, 2026-10-11); Phase 8 plan 1 of 7 complete (08-01).
 
 *Updated after each plan completion*
 **Per-Plan Metrics:**
@@ -64,6 +64,7 @@ Progress (v1.2): [░░░░░░░░░░] 0%
 | Phase 07 P04 | 8 min | 2 tasks | 2 files |
 | Phase 07 P05 | 10 min | 3 tasks | 10 files |
 | Phase 07 P06 | 5 min | 3 tasks | 1 files |
+| Phase 08 P08-01 | 17 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 07]: [Phase 07]: 07-05 provenance convention: after a D-04-style deletion, live-code/test comments cite the deleted source by description + final commit sha, never by live path (the Task-1 comment template vs Task-2 zero-grep-gate reconciliation)
 - [Phase 07]: 07-06 runtime proof: bounded GB10 smoke (plant-dnabert-6mer x iDNA_ABF_datasets__5mC, 1 epoch, default mode, 77s wall, 1.56GB peak) emitted flops_report.json with all six D-23 criteria green — ratio 0.332 vs HF total_flos (the ~1/3 fwd-only expectation), gpu_device 'NVIDIA GB10' verbatim, uncovered_layers empty; PIPE-02 proven live via dry-run (present flags recorded, absent flags leave no keys, D-13)
 - [Phase 07]: 07-06 evidence discipline: real run artifacts stay gitignored under pipeline/finetuned/ (D-26) — the committed evidence is the SUMMARY's pasted key fields + mechanical assertion outputs (D-25); the bounded-smoke evidence shape is the template for Phase 11's bounded smoke
+- [Phase 08]: 08-01 D-02 landed: env_smoke kernels return frozen CheckResult(name/ok/lines) with zero printing; main() is the sole renderer (_emit + two segment loops); CLI stdout and 0/1 exit proven byte-identical by a golden characterization suite (S1/S2/S3) recorded from live runs + live before/after diff + the three untouched grep-lock tests
+- [Phase 08]: 08-01 check_peft stays byte-exact un-annotated (def check_peft(): pinned by test_env_smoke_peft_check_is_gating); torch-unavailable cuda/matmul become ok=False empty-lines CheckResult placeholders (same two-failed-groups semantics, type-clean list)
 
 ### Pending Todos
 
@@ -114,10 +117,10 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11T08:59:12.184Z
-Stopped at: Phase 8 UI-SPEC approved
-Resume file: .planning/phases/08-tui-foundation-env-check-selection/08-UI-SPEC.md
+Last session: 2026-10-11T10:03:34.446Z
+Stopped at: Completed 08-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
-- Maintainer reviews/approves the revised v1.2 roadmap, then `/gsd-discuss-phase 7` (config discuss_mode: discuss)
+- Continue Phase 8 execution: plans 08-02..08-07 pending — `/gsd-execute-phase 08` (next wave: 08-02 [tui] group + 08-03 tui skeleton tracer)
