@@ -1,18 +1,16 @@
 ---
 gsd_state_version: "1.0"
-milestone: v0.7.1
-status: Awaiting next milestone
-stopped_at: Phase 06 complete — all phases complete
-last_updated: "2026-10-11T03:09:40.357Z"
+milestone: v1.2
+milestone_name: TUI任务
+status: planning
+last_updated: "2026-10-11T03:46:45.256Z"
 last_activity: 2026-10-11
-last_activity_desc: Milestone v0.7.1 completed and archived
-state_head: a9bd06d6e4429ef74725d4945627ce54b7f6398b
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 24
-  completed_plans: 24
-current_phase: 06
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -26,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-10-09)
 
 ## Current Position
 
-Phase: Milestone v0.7.1 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-10-11 — Milestone v0.7.1 completed and archived
+Status: Defining requirements
+Last activity: 2026-10-11 — Milestone v1.2 started
 
 ## Performance Metrics
 

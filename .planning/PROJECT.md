@@ -2,7 +2,7 @@
 
 ## What This Is
 
-DNALLM-Mark is a DNA language-model benchmark platform: a PyTorch fine-tuning pipeline that evaluates 41 DNA LLMs across 50 datasets (with custom FLOPs instrumentation), offline Python/Node scripts that aggregate results, and a static multi-page leaderboard website. The current milestone is a **systematic review and hardening pass** over the existing codebase to prepare it for public release: audit all three subsystems, fix confirmed issues, and add regression prevention (data-script tests + CI).
+DNALLM-Mark is a DNA language-model benchmark platform: a PyTorch fine-tuning pipeline that evaluates 62 DNA LLMs across 50 datasets (three-seed protocol, PEFT/VEP/curve lanes), offline Python/Node scripts that aggregate results with vendored statistics, and a static multi-page leaderboard website — hardened and release-reviewed in v0.7.1 (audit, contracts, CI, methodology migration, provenance, snapshots). The current milestone **v1.2 TUI任务** builds the operator-facing terminal console: model×dataset selection with data presence/download, run configuration, single-GPU launch with task monitoring, and multi-GPU orchestration after single-GPU validation.
 
 ## Core Value
 
@@ -23,16 +23,17 @@ Every number on the public leaderboard is correct and reproducible from code tha
 - ✓ Systematic tri-subsystem review producing a severity-graded, fully-reproduced findings report — `AUDIT.md`, 24 findings (2 P0 / 12 P1 / 10 P2) — Phase 1
 - ✓ Reproducibility substrate: `data-v1` frozen baseline (tag + SHA256 manifest + `baseline/compare.py`), pinned dependencies (pyproject/uv.lock, pandas 2.3.3 / numpy 2.5.3), deterministic data generators with one-time fully-attributed 52-file migration — Phase 1
 - ✓ Pre-release hygiene: secret-hygiene decision recorded (Zenodo preview link intentional, D-08), full-history gitleaks scan clean, MIT LICENSE landed with holder "zhangtaolab and DNALLM-Mark contributors" (maintainer-confirmed 2026-10-09) — Phase 1
+- ✓ **v0.7.1 shipped (6 phases / 24 plans / 68 tasks, 2026-10-11)**: dev-branch reconciliation to `run_finetune.py`/`run_sweep.py` (seed protocol, priority tiers, failure re-run, `--subset_file` fairness, PEFT/variant/curve flags), correctness core (species fix, dual registries, unified exporter, vendored statistics), CI (SHA-pinned 4-job workflow, first real-runner green), F6 methodology migration (weighted dual view, 861-pair permutation artifact, CHANGELOG/manifest), N-audit + provenance (ModelScope 50/50, maintainer-reviewed), snapshots, METHODOLOGY/ONBOARDING/README reproduction, docs trio, doi_swap prepared — full record in `.planning/MILESTONES.md` and `reviewer-response/REPORT.md` (untracked)
 
 ### Active
 
-- [ ] Fix confirmed correctness bugs (3 pages dead-on-load from `renderNavbar()`, species-as-dataset grouping at `dnallmmark_pipeline.py:1229`, orphaned submit flow)
-- [ ] Unit tests for the data-processing scripts (`script/`)
-- [ ] GitHub Actions CI running the test suite
-- [ ] Recompute leaderboard data after fixes, with before/after comparison notes
-- [ ] Adapt pipeline to dnallm dev branch (v0.7.1): resolve API/config-schema deltas, imports and dry-run pass
-- [ ] Build reproducible local GPU pipeline environment (uv/venv; dnallm from git dev; pinned torch/transformers)
-- [ ] Small end-to-end validation: at least one model×dataset fine-tune run against dnallm dev produces a valid performance JSON
+- [ ] TUI console: model×dataset selection matrix (filters, preset groups, template import/export)
+- [ ] Data management panel: presence audit view, ModelScope fetch + row-count verification, persistent download queue
+- [ ] Run configuration surface: seeds/PEFT/variant/curve/subset/epochs + auto-GA (`--effective-batch`) + project/storage directory settings
+- [ ] Single-GPU launch with env_smoke gate, dry-run preview, E2' authorization boundary
+- [ ] Task monitoring: cell dashboard, failure re-run, log tailing, resume states
+- [ ] FlopsCounter port (20+ architecture hooks) from the legacy pipeline to `run_finetune.py`
+- [ ] Multi-GPU orchestration (model sharding × CUDA_VISIBLE_DEVICES; DDP layer) — gated on single-GPU validation
 
 ### Out of Scope
 
@@ -45,27 +46,24 @@ Every number on the public leaderboard is correct and reproducible from code tha
 
 ## Context
 
-- Brownfield repo mapped 2026-10-08 at commit `a44d310` (7 docs in `.planning/codebase/`)
-- Known findings from the map (input to the review, not its conclusion):
-  - Zenodo preview link + token in `README.md:116` — **decided 2026-10-08: intentional dataset-sharing mechanism, kept as-is** (record-scoped, read-only; see Phase 1 CONTEXT.md D-08)
-  - `finetuning.js` / `models.js` / `datasets.js` / `submit.js` abort rendering in `setup()` because `renderNavbar()` targets a nonexistent `.navbar-container` — 3 production pages render partially or not at all
-  - `submit.html` missing while `js/submit.js` (300 lines) and its nav link exist — submission feature unreachable
-  - Species-as-dataset bug: `dnallmmark_pipeline.py:1229` treats species as a dataset key
-  - Unescaped `innerHTML` rendering — stored-XSS risk if any performance JSON carries hostile strings
-  - Duplicate, divergent aggregation logic in `js/data.js:recalculateComparison()` (uncalled, returns placeholders) vs the authoritative `script/summarize_comparison.py`
-  - No tests, no `requirements.txt`/`pyproject.toml`, no CI, no LICENSE
-- Repo: `https://github.com/zhangtaolab/dnallmmark` — target is public release; code must withstand external scrutiny (paper/community use)
-- Upstream DNALLM framework moved: dev branch at v0.7.1 (local clone `/home/forrest/Github/DNALLM`, commit `c99fa9d`, 2026-10-08). The pipeline was written against an older dnallm and must be adapted. Local machine is an NVIDIA GB10 (Grace Blackwell, aarch64, CUDA) — the pipeline environment builds here
-- Data regeneration is a manual 3-step chain run from `dnallm-mark/data/` (`get_task_performance.py` → `summarize_comparison.py` → `generate-tasks-index.js`), documented only in README — stale derived files are undetectable today
-- `.planning/` is currently gitignored (`.gitignore:90`)
+- v0.7.1 closed and archived 2026-10-11 (`.planning/MILESTONES.md`); reviewer-response evidence base generated (gitignored)
+- Upstream DNALLM on **main @ v1.2.1** (local clone `/home/forrest/Github/DNALLM`, STRICTLY READ-ONLY; peft native; metric registry stable; `aggregate_seeds` verified identical to our vendored copy)
+- GB10 environment live: `[gpu]` group + dnallm 1.2.1 tag-extract + peft 0.21.2 + torch 2.11.0+cu130; four bounded smokes executed green (env_smoke, LoRA, probe, VEP)
+- ModelScope dataset coverage 50/50 (zhangtaolab 9 / lgq12697 34 / forrestzhang 7); SDK token stored (`~/.modelscope`)
+- Pre-revision data frozen immutably at `baseline/pre-revision-data/` (a44d310 tree + SHA-256) for E2' old-vs-new comparison — never overwritten
+- `dnallmmark.org` serves from main (currently rolled back to a44d310 after a mixed deploy broke it; re-merge procedure documented)
+- TUI requirements gathered in `docs/TUI-REQUIREMENTS.md` (team-supplemented + orchestrator cross-checked)
+- Branch flow: **autorun = standing development branch**; dev/main sync only on explicit maintainer request
+- E2' three-seed full re-run remains maintainer dual-gate; `--subset_file` sweep threading is the one known pre-launch gap (~15 lines)
 
 ## Constraints
 
-- **Tech stack**: Keep vanilla ES-module JS (no build step, no framework) and Python — public release must not change the architecture
-- **Hosting model**: Static files only — no backend or API may be introduced
-- **Reproducibility**: Fixes may change aggregated numbers (e.g. species-grouping fix); recomputation is allowed and expected, each change documented with before/after comparison
-- **CI feasibility**: GitHub Actions must not require GPU or the external `dnallm` package — test scope limited to stdlib/numpy/pandas scripts and static checks
-- **Fix discipline**: Surgical fixes only; no opportunistic refactors that widen review surface
+- **Tech stack**: Vanilla ES-module JS frontend (no build step) unchanged; TUI = pure-Python pip-installable framework (Textual preferred — no build step, consistent with repo architecture)
+- **E2' boundary**: TUI may launch bounded runs and present the full-sweep confirmation gate; the full three-seed sweep itself stays maintainer-authorized
+- **CI feasibility**: GitHub Actions stays GPU/dnallm-free; TUI tests CPU-side with injectable seams
+- **DNALLM read-only**: The suite repo is never written by this project (issue channel only)
+- **Reproducibility**: Leaderboard numbers move only through the inventoried migration discipline (one-commit schema+data+goldens; drift gate green)
+- **Fix discipline**: Surgical changes; no opportunistic refactors
 
 ## Key Decisions
 
@@ -80,6 +78,9 @@ Every number on the public leaderboard is correct and reproducible from code tha
 | D-06 accepted: six exact-tie-group census is the complete migration attribution | Maintainer UAT confirmation over independently re-derived evidence (4 flip/2 stable groups, exact rank_score ties both sides) | ✓ Confirmed |
 | P0 rubric boundary: producer-side regeneration risks grade P0 even with committed data intact | "Risks corrupting published numbers on regeneration" reading accepted in UAT; steers Phase 4 scope (AUD-01..06) | ✓ Confirmed |
 | Baseline form: annotated data-v1 tag + tracked SHA256 manifest + comparator, no golden copies | git stores exact bytes at the tag; 52 duplicated copies would rot | ✓ Landed (Phase 1) |
+| v1.2 scope: FlopsCounter port included (early phase) | Feeds E2' FLOPs correctness + leaderboard efficiency axis; beneficiary beyond the TUI | — Pending (2026-10-11) |
+| v1.2 scope: multi-GPU as final phase P4, hard-gated on single-GPU validation | Maintainer's stated sequencing: 单卡开发成功再开发多卡 | — Pending (2026-10-11) |
+| v1.2 auto-GA policy: `--effective-batch` flag, GA=max(1, N//batch_size), default 16 | Team requirement (lgq12697 Q7) on top of existing dynamic batch sizing + D-07 reset | — Pending |
 
 ## Evolution
 
@@ -99,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-09 after Phase 1*
+*Last updated: 2026-10-11 after v1.2 TUI任务 milestone start*
