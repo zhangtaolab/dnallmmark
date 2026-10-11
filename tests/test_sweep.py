@@ -1748,3 +1748,59 @@ def test_default_executor_receives_train_fraction(tmp_path, monkeypatch):
     run_sweep.run_matrix(
         [("model-a", "task-x", 42, 0.25)], tmp_path / "out")
     assert flag_value(captured["argv"], "--train_fraction") == "0.25"
+
+
+# =====================================================================
+# extract_curve_points (06-05, SC-6 / REV-08 F8 offline harvesting)
+# =====================================================================
+
+def test_extract_curve_points_sorts_and_filters_log_history():
+    """Only log_history entries carrying eval_ keys are curve points;
+    points return SORTED by step (out-of-order input handled); non-eval
+    keys on an eval entry are excluded from the metrics dict."""
+    state = {
+        "log_history": [
+            {"loss": 0.5, "step": 1, "epoch": 0.01},
+            {"eval_loss": 0.4, "eval_AUROC": 0.7, "step": 100},
+            {"loss": 0.3, "step": 100},  # no eval keys -> skipped
+            {"eval_loss": 0.2, "step": 50},  # out of order -> sorted
+            {"eval_loss": 0.1, "eval_AUROC": 0.75, "step": 300,
+             "epoch": 1.0},
+        ],
+    }
+    points = run_sweep.extract_curve_points(state)
+    assert [step for step, _ in points] == [50, 100, 300], (
+        "points must be sorted by step regardless of log order"
+    )
+    assert points[0][1] == {"eval_loss": 0.2}
+    assert points[1][1] == {"eval_loss": 0.4, "eval_AUROC": 0.7}, (
+        "non-eval keys (loss/epoch) must not leak into the metrics dict"
+    )
+    assert points[2][1] == {"eval_loss": 0.1, "eval_AUROC": 0.75}
+
+
+def test_extract_curve_points_empty_or_absent_history():
+    """An absent log_history, an empty one, a None trainer_state, and a
+    history with no eval-carrying entries all yield [] — the reader is
+    total over trainer_state shapes, never raising."""
+    assert run_sweep.extract_curve_points({}) == []
+    assert run_sweep.extract_curve_points(None) == []
+    assert run_sweep.extract_curve_points({"log_history": []}) == []
+    assert run_sweep.extract_curve_points(
+        {"log_history": [{"loss": 1.0, "step": 5}]}
+    ) == [], "a pure-loss history carries no curve points"
+
+
+def test_extract_curve_points_skips_unusable_entries():
+    """A non-dict entry and an eval entry without a usable step are
+    skipped — a point that cannot be placed on the curve is not a
+    point."""
+    state = {
+        "log_history": [
+            "garbage-entry",
+            {"eval_loss": 0.3},  # no step
+            {"eval_loss": 0.25, "step": 200},
+        ],
+    }
+    points = run_sweep.extract_curve_points(state)
+    assert points == [(200, {"eval_loss": 0.25})]

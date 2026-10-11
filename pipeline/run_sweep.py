@@ -847,6 +847,46 @@ def _write_json(path, payload):
         json.dump(payload, f, indent=4, ensure_ascii=False, sort_keys=True)
 
 
+def extract_curve_points(trainer_state):
+    """Extract the (step, eval-metrics) learning-curve points from a
+    trainer_state.json structure (SC-6/REV-08 F8, 06-05).
+
+    Pure and CPU-side: consumes only the trainer_state dict (the file
+    run_finetune copies next to final_metrics.json as the resume
+    marker's companion), never a live trainer. ``log_history`` carries
+    mixed records — plain loss/logging rows and evaluation rows; only
+    entries with at least one ``eval_`` key are curve points (the dense
+    cadence comes from the finetune_config_curve.yaml variant, eval every
+    100 steps). Points return SORTED by step — log_history is append
+    ordered in practice, but sorting makes the contract structural. A
+    non-dict entry or an eval entry without a usable ``step`` is skipped
+    (a point that cannot be placed on the curve is not a point); an
+    absent/empty log_history yields ``[]``.
+
+    Args:
+        trainer_state (dict | None): a parsed trainer_state.json — only
+            the ``log_history`` key is read; None/absent tolerated.
+
+    Returns:
+        list[tuple[int, dict]]: ``(step, {eval_*: value})`` points sorted
+        by step (stable for equal steps).
+    """
+    history = (trainer_state or {}).get("log_history") or []
+    points = []
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+        step = entry.get("step")
+        eval_metrics = {
+            key: value for key, value in entry.items()
+            if key.startswith("eval_")
+        }
+        if not eval_metrics or step is None:
+            continue
+        points.append((step, eval_metrics))
+    return sorted(points, key=lambda point: point[0])
+
+
 def _new_record(model, task, seed, cell_dir, git_commit, peft="none",
                 train_fraction=None):
     """Build the run_record skeleton (statuses/timestamps filled by caller).
