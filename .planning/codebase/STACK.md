@@ -1,10 +1,10 @@
 ---
-last_mapped_commit: a44d3104b8ab1e04ddbebed75446772fc0ca3f1b
-last_mapped_at: 2026-10-08
+last_mapped_commit: ef56567
+last_mapped_at: 2026-10-11
 ---
 # Technology Stack
 
-**Analysis Date:** 2026-10-08
+**Analysis Date:** 2026-10-08 (partial update 2026-10-11, Phase 8 plan 08-02: `[tui]` group + textual/platformdirs/pytest-asyncio; the pipeline references below predate the Phase 3 rename to `pipeline/run_finetune.py` + `run_sweep.py` and the Phase 7 FLOPs port to `pipeline/flops_counter.py`)
 
 ## Languages
 
@@ -26,20 +26,22 @@ last_mapped_at: 2026-10-08
 - Node.js 18+ optional (only needed for `npx http-server` fallback in `start-server.sh:20-22`)
 
 **Package Manager:**
-- uv 0.12.23 with committed lockfile (plan 01-01): `pyproject.toml` (PEP 621 + PEP 735 `[dependency-groups]`) + `uv.lock` + pip-compatible `requirements.txt` export (`uv export --group data --no-emit-project`)
-- Groups: `data` (default; `pandas>=2.2,<3.0`, `numpy>=2.0,<3` — D-05 floor bounds, locked to pandas 2.3.3 / numpy 2.5.3), `dev` (empty until Phase 2), `pipeline` (GPU-only `torch>=2.0`, `transformers>=4.0` — never CI-installed; `dnallm` deliberately absent until Phase 3)
-- Fresh install: `uv sync` (data group only); pin-validation evidence in `baseline/PIN-VALIDATION.md`
+- uv with committed lockfile (plan 01-01): `pyproject.toml` (PEP 621 + PEP 735 `[dependency-groups]`) + `uv.lock` + pip-compatible `requirements.txt` export (`uv export --group data --no-emit-project`)
+- Groups (current, 2026-10-11): `data` (default; pandas/numpy floor-bounded per D-05, plus scipy + evaluate since Phase 4), `dev` (jsonschema/pytest/ruff/ty test+gate tooling; `pytest-asyncio>=1.4,<2` since Phase 8), `gpu` (`torch==2.11.0` + `transformers==5.17.0` via the cu130 index — never CI-installed; `dnallm` deliberately absent, installed from the local clone), `tui` (Phase 8, 08-02: exactly `textual>=8.2,<9` + `platformdirs>=3.6,<5` — D-01/binding constraint 10; textual-dev/textual-serve never in committed groups; data/gpu lanes never install it)
+- Fresh install: `uv sync` (data group only); TUI display runtime: `make tui` (`uv run --group tui --group gpu python -m tui`)
 
 ## Frameworks
 
 **Core:**
 - None for the web UI — pure HTML/CSS/ES-module JavaScript, served as static files (no React/Vue/bundler)
+- Textual 8.2.8 (`>=8.2,<9`, `[tui]` group, Phase 8) - TUI framework for the operator console (`tui/`): App/Screen/DataTable/workers/Pilot; pure-Python, py.typed, CPU-lane-safe; display runtime via `make tui` only
+- platformdirs 4.13.0 (`>=3.6,<5`, `[tui]` group, Phase 8) - XDG `user_state_dir`/`user_config_dir` resolution for the TUI persistence split (D-04); the pipeline side keeps its hand-rolled stdlib resolver (D-10 — no consolidation)
 - DNALLM (external, https://github.com/zhangtaolab/DNALLM) - DNA LLM finetuning framework wrapping Hugging Face; imported at `pipeline/dnallmmark_pipeline.py:18` as `from dnallm import DNADataset, load_config, load_model_and_tokenizer, DNATrainer`
 - PyTorch (`torch`, `torch.nn`) - model training, FLOPs instrumentation via forward hooks (`pipeline/dnallmmark_pipeline.py:16-17`, `FlopsCounter` at line 24)
 - Hugging Face Transformers - lazy fallback loader (`AutoConfig`/`AutoModelForSequenceClassification`/`AutoTokenizer` with `trust_remote_code=True`, `pipeline/dnallmmark_pipeline.py:880-898`); training args follow the `transformers.TrainingArguments` schema
 
 **Testing:**
-- Not detected. No test framework, no test files anywhere in the repo.
+- pytest suite under `tests/` (since Phase 2) run via `make test` / `make test-fast` / `make ci`; ruff + ty gates via `make lint` / `make typecheck` (since Phase 3); `pytest-asyncio>=1.4,<2` with `asyncio_mode = "auto"` (Phase 8, 08-02) enables async tier-2 Textual Pilot tests
 
 **Build/Dev:**
 - No build step. Development server: `bash start-server.sh` (runs `python3 -m http.server 8080` from `dnallm-mark/`, `start-server.sh:13-22`)

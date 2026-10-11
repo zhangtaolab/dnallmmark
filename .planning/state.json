@@ -11,7 +11,7 @@
     {
       "number": "8",
       "name": "TUI Foundation (Env Check & Selection)",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "9",
@@ -39,5 +39,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 08 of 6 · 17% · executing"
   },
-  "updated_at": "2026-10-11T10:03:24.831Z"
+  "updated_at": "2026-10-11T11:35:22.451Z"
 }

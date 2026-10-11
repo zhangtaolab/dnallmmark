@@ -69,7 +69,7 @@
 
 ### Localization & Extras (本地化与附加)
 
-- [ ] **I18N-01**: 中文为主的界面文案（constants 模块约定，术语保留英文）
+- [x] **I18N-01**: 中文为主的界面文案（constants 模块约定，术语保留英文）
 - [ ] **WEB-01**: 只读 Web 进度镜像（团队看进度；静态产物，不引入后端——符合静态托管约束）
 - [ ] **TEST-01**: Textual 官方快照测试（canonical screens 的 SVG 金标准，维护者验证后提交）
 
@@ -125,7 +125,7 @@
 | MGPU-01 | Phase 12 | Pending |
 | MGPU-02 | Phase 12 | Pending |
 | MGPU-03 | Phase 12 | Pending |
-| I18N-01 | Phase 8 | Pending |
+| I18N-01 | Phase 8 | Complete |
 | WEB-01 | Phase 12 | Pending |
 | TEST-01 | Phase 12 | Pending |
 

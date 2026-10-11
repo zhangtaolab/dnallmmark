@@ -1,6 +1,6 @@
 ---
-last_mapped_commit: a44d3104b8ab1e04ddbebed75446772fc0ca3f1b
-last_mapped_at: 2026-10-08
+last_mapped_commit: ef56567
+last_mapped_at: 2026-10-11
 ---
 # External Integrations
 
@@ -68,7 +68,8 @@ last_mapped_at: 2026-10-08
 - None configured. Local static serving via `start-server.sh` (port 8080) or `python3 -m http.server 8000` per `dnallm-mark/README.md`
 
 **CI Pipeline:**
-- None detected (no `.github/workflows/`, no CI config files)
+- *(2026-10-08 audit said none; SUPERSEDED since Phase 5)* GitHub Actions at `.github/workflows/ci.yml` — four SHA-pinned jobs: `lint-typecheck` (make lint + make typecheck), `test` (make test, Python 3.13 floor + 3.14 probe matrix), `static-js` (node:test + eslint/html-validate npx pins), `drift` (make data must be a byte-identical no-op). PR-triggered, GPU-free, dnallm-free, 14-minute timeouts.
+- *(Phase 8, 08-02, 2026-10-11)* The `[tui]` group rides the existing CPU lanes through Makefile recipes only — `make test` and `make typecheck` both run `uv run --group dev --group tui ...`, so textual-the-library installs in CI with zero workflow edits (D-01); the data (drift) and JS lanes never install textual.
 
 ## Environment Configuration
 
@@ -77,6 +78,8 @@ last_mapped_at: 2026-10-08
 
 **Optional env vars:**
 - `HF_HOME`, `MS_CACHE_HOME` - hub cache redirection (commented out at `pipeline/dnallmmark_pipeline.py:3-5`)
+- `DNALLMMARK_CUSTOM_REGISTRY_DIR` - whole-dir override for custom registries (Phase 7 CUST-05)
+- `DNALLMMARK_TUI_STATE_DIR` / `DNALLMMARK_TUI_CONFIG_DIR` - whole-dir overrides for the TUI XDG state/config roots (Phase 8 test injection, resolved in 08-04's settings service)
 
 **Secrets location:**
 - Not applicable — no secrets are used anywhere in this repo

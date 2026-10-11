@@ -1,10 +1,10 @@
 ---
-last_mapped_commit: a44d3104b8ab1e04ddbebed75446772fc0ca3f1b
-last_mapped_at: 2026-10-08
+last_mapped_commit: ef56567
+last_mapped_at: 2026-10-11
 ---
 # Testing Patterns
 
-**Analysis Date:** 2026-10-08
+**Analysis Date:** 2026-10-08 (SUPERSEDED in bulk: the pytest suite under `tests/` has existed since Phase 2 — see `pyproject.toml [tool.pytest.ini_options]`, `Makefile` test/test-fast/ci targets, and `tests/conftest.py`. This partial update 2026-10-11, Phase 8 plan 08-02, adds only the `tests/tui/` lane facts below; the Phase 2-7 suite details are recorded in the phase SUMMARYs)
 
 ## Test Framework
 
@@ -181,4 +181,14 @@ When introducing tests, follow these placements to match repo layout:
 
 ---
 
-*Testing analysis: 2026-10-08*
+## TUI Test Lane (added 2026-10-11, Phase 8 plan 08-02)
+
+- **Location:** `tests/tui/` — the tier-1 (headless service) / tier-2 (Textual Pilot) lane; `tests/tui/conftest.py` inserts the REPO_ROOT on `sys.path` so `import tui` resolves package-qualified under plain pytest (the parent `tests/conftest.py` provides `script/`, `baseline/`, `pipeline/` but NOT the repo root).
+- **Async support:** `pytest-asyncio>=1.4,<2` (dev group) with `asyncio_mode = "auto"` in `[tool.pytest.ini_options]` — `async def` Pilot tests (`App.run_test()`) need no marker; the sync suite is unaffected (proven: 560 sync tests green under auto mode).
+- **Lane commands:** `make test` runs the full pytest suite with `--group dev --group tui` (textual-the-library installed in the existing CI test lane — D-01); `make typecheck` also carries `--group tui` (ty needs textual's py.typed types to check `tui/app.py`).
+- **Import-lock discipline (from 08-03):** `tests/tui/test_import_lock.py` asserts no module under `tui/services/` imports textual — the Phase 7 absence-lock pattern.
+- **Fakes:** tier-1 tests inject fake kernels/services (never real GPU kernels in CI); tier-2 Pilot tests use constructor-injected fake services and `await pilot.pause()` before assertions.
+
+---
+
+*Testing analysis: 2026-10-08 (tui lane section 2026-10-11)*

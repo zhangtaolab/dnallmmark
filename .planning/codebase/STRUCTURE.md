@@ -1,10 +1,10 @@
 ---
-last_mapped_commit: 89f59d4
-last_mapped_at: 2026-10-08
+last_mapped_commit: ef56567
+last_mapped_at: 2026-10-11
 ---
 # Codebase Structure
 
-**Analysis Date:** 2026-10-08
+**Analysis Date:** 2026-10-08 (partial update 2026-10-11, Phase 8 plan 08-02: `tui/` package + `[tui]` dependency group added; sections not touched below predate Phases 2-7 — e.g. the pipeline entry-point and testing rows are superseded by `pipeline/run_finetune.py`, `pipeline/run_sweep.py`, and the `tests/` pytest suite)
 
 ## Directory Layout
 
@@ -57,8 +57,17 @@ dnallmmark/                       # Repository root
 ├── script/                       # Python data-processing scripts (singular "script")
 │   ├── summarize_comparison.py   # model_performance/ → models_comparison*.json
 │   └── get_task_performance.py   # model_performance/ → task_performance/
-└── scripts/                      # Node data-processing scripts (plural "scripts" — inconsistent with script/)
-    └── generate-tasks-index.js   # task_performance/ → tasks.json
+├── scripts/                      # Node data-processing scripts (plural "scripts" — inconsistent with script/)
+│   └── generate-tasks-index.js   # task_performance/ → tasks.json
+├── tui/                          # DNALLM-Mark operator console, Textual TUI (Phase 8, 08-02)
+│   ├── __init__.py               # Package contract docstring: layout + one-directional import boundary
+│   ├── __main__.py               # python -m tui entry: REPO_ROOT + pipeline/ sys.path bootstrap from __file__ (never CWD)
+│   ├── app.py                    # DnallmMarkTui(App) — minimal composition root (TITLE from strings, CSS_PATH)
+│   ├── strings.py                # I18N-01 single home for operator copy (APP_TITLE, ENV_KERNEL_LABELS)
+│   ├── styles.tcss               # Textual CSS — theme tokens only (comment-only until screens land)
+│   ├── screens/                  # Presentation tier (imports textual freely; populated from 08-03)
+│   └── services/                 # ZERO textual imports, ever — locked by tests/tui/test_import_lock.py (08-03)
+└── tests/                        # pytest suite (since Phase 2); tests/tui/conftest.py adds repo root to sys.path (08-02)
 ```
 
 ## Directory Purposes
@@ -91,6 +100,11 @@ dnallmmark/                       # Repository root
 **`script/` and `scripts/`:**
 - Purpose: Offline JSON transformation scripts (Python in `script/`, Node in `scripts/`)
 - Note the inconsistent naming (singular vs plural) — both exist; Python scripts go in `script/`, Node scripts in `scripts/` to match current convention
+
+**`tui/`** *(added 2026-10-11, Phase 8 plan 08-02)*:
+- Purpose: The operator console — a thin read-plan-launch-observe shell over the pipeline seams (TUI orchestrates, never computes)
+- Contains: `app.py` (composition root — the only App subclass), `screens/` (Textual presentation, no business logic), `services/` (textual-free orchestration + I/O), `strings.py` (all operator-facing copy), `styles.tcss`, `__main__.py` (`python -m tui` entry, `make tui`)
+- Key invariant: `tui/services/` imports zero textual symbols; dependencies point one way — tui → pipeline (`env_smoke`, `registry_loader`, `artifact_loader`) and tui → textual outside services only
 
 **`baseline/`:**
 - Purpose: Pre-fix derived-data baseline tooling (plan 01-01, AUDIT-02/REL-02) — comparator, SHA256 manifest, pin-validation evidence
@@ -170,6 +184,11 @@ dnallmmark/                       # Repository root
 - Shared frontend helpers (colors, species mapping, fetching): `dnallm-mark/js/data.js`
 - Shared constants: `dnallm-mark/js/config.js`
 - Offline JSON transforms: `script/` (Python) or `scripts/` (Node)
+
+**New TUI screen or service** *(since Phase 8, 08-02)*:
+- Screen: `tui/screens/{name}.py` — Textual presentation only, services injected via constructor, copy from `tui/strings.py` constants, `ModalScreen` for drill-downs/confirms
+- Service: `tui/services/{name}.py` — pure orchestration + I/O; may import only stdlib, `platformdirs`, and the pipeline modules (`env_smoke`/`registry_loader`/`artifact_loader` — never textual); the import-lock test is the tripwire
+- Coverage joins automatically: lint via the `PHASE8_TUI` Makefile wildcard, ty via `[tool.ty.src]`, pytest via `tests/tui/conftest.py` (repo root on sys.path)
 
 ## Special Directories
 

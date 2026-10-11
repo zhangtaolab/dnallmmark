@@ -133,11 +133,11 @@ Plans:
   4. The model list and dataset list are first-class selectable surfaces — browsed independently with key card fields as columns (62 models / 50 datasets); operators filter them k9s-style (arena/type/species/scale), spacebar-mark rows into a stable row_key selection set, apply presets (tier-1 E2E pair, tier-2 arena representatives, all, saved customs), and consult a read-only matrix overview as an auxiliary view — never an editable grid
   5. Every row shows local data presence (✓ present / ✗ missing + n_audit row count) and run-config templates round-trip as validated JSON with `sweep_priorities.json` tier interop; all operator-facing copy is Chinese-primary through the constants module with technical terms in English — and the foundation invariants hold (services layer imports zero textual symbols by test, `[tui]` group keeps textual out of data/gpu lanes, Pilot tests green CPU-side in CI)
 
-**Plans**: 1/7 plans executed
+**Plans**: 2/7 plans executed
 Plans:
 **Wave 1**
 - [x] 08-01-PLAN.md — env_smoke D-02 structured-return refactor (ENV-01 substrate): golden byte-characterization suite + kernels-return-CheckResult + renderer main(), E2' contract byte-stable
-- [ ] 08-02-PLAN.md — foundation spine (D-01): [tui] group + make tui + tui/ skeleton + test-harness conftest; textual-free services discipline declared; CI lane unchanged
+- [x] 08-02-PLAN.md — foundation spine (D-01): [tui] group + make tui + tui/ skeleton + test-harness conftest; textual-free services discipline declared; CI lane unchanged
 
 **Wave 2** *(blocked on 08-02)*
 - [ ] 08-03-PLAN.md — phase tracer: console boots on the env-check shell over the registry seam (load_registry_counts 62/50); services-textual-free import-lock test + tier-1/tier-2 test lanes
@@ -223,7 +223,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 7. Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) | v1.2 | 6/6 | Complete    | 2026-10-11 |
-| 8. TUI Foundation (Env Check & Selection) | v1.2 | 1/7 | In Progress | - |
+| 8. TUI Foundation (Env Check & Selection) | v1.2 | 2/7 | In Progress | - |
 | 9. Custom Model & Dataset Onboarding | v1.2 | 0/TBD | Not started | - |
 | 10. Data Manager (Downloads & Verification) | v1.2 | 0/TBD | Not started | - |
 | 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 0/TBD | Not started | - |

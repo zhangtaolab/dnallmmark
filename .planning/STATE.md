@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 08
 current_phase_name: TUI Foundation (Env Check & Selection)
 status: executing
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-10-11T10:03:34.478Z"
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-10-11T11:36:01.074Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 08 execution started
-state_head: 32144600b4a3427f7e165695cce6f5a3939c3864
+state_head: ef56567c24206fdd5af0275a990e961a5efd4092
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 13
-  completed_plans: 7
+  completed_plans: 8
   percent: 17
 ---
 
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 08 (TUI Foundation (Env Check & Selection)) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-10-11 — Phase 08 execution started
 
-Progress (v1.2): [░░░░░░░░░░] 0%
+Progress (v1.2): [██████░░░░] 62% (8/13 plans)
 
 ## Performance Metrics
 
@@ -50,7 +50,7 @@ Progress (v1.2): [░░░░░░░░░░] 0%
 | 01 / 02 / 03 | 3 / 3 / 4 — all complete |
 | 04 / 05 / 06 | 5 / 4 / 5 — all complete |
 
-**v1.2:** Phase 7 complete (6 plans, 2026-10-11); Phase 8 plan 1 of 7 complete (08-01).
+**v1.2:** Phase 7 complete (6 plans, 2026-10-11); Phase 8 plans 1-2 of 7 complete (08-01, 08-02).
 
 *Updated after each plan completion*
 **Per-Plan Metrics:**
@@ -65,6 +65,7 @@ Progress (v1.2): [░░░░░░░░░░] 0%
 | Phase 07 P05 | 10 min | 3 tasks | 10 files |
 | Phase 07 P06 | 5 min | 3 tasks | 1 files |
 | Phase 08 P08-01 | 17 min | 2 tasks | 2 files |
+| Phase 08 P08-02 | 84 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 07]: 07-06 evidence discipline: real run artifacts stay gitignored under pipeline/finetuned/ (D-26) — the committed evidence is the SUMMARY's pasted key fields + mechanical assertion outputs (D-25); the bounded-smoke evidence shape is the template for Phase 11's bounded smoke
 - [Phase 08]: 08-01 D-02 landed: env_smoke kernels return frozen CheckResult(name/ok/lines) with zero printing; main() is the sole renderer (_emit + two segment loops); CLI stdout and 0/1 exit proven byte-identical by a golden characterization suite (S1/S2/S3) recorded from live runs + live before/after diff + the three untouched grep-lock tests
 - [Phase 08]: 08-01 check_peft stays byte-exact un-annotated (def check_peft(): pinned by test_env_smoke_peft_check_is_gating); torch-unavailable cuda/matmul become ok=False empty-lines CheckResult placeholders (same two-failed-groups semantics, type-clean list)
+- [Phase 08]: 08-02 package legitimacy gate closed (maintainer verdict 2026-10-11, delegation on record): textual 8.2.8 (Textualize), platformdirs 4.13.0 (tox-dev, signed provenance — same-day release accepted), pytest-asyncio 1.4.0 (pytest-dev) all APPROVED via PyPI page + JSON API; uv.lock pins exactly these versions; verdict lines recorded verbatim in 08-02-SUMMARY.md
+- [Phase 08]: 08-02 typecheck lane gains --group tui (Rule 3, empirically proven): ty cannot resolve textual's py.typed types in a fresh env — make typecheck failed tui/app.py with unresolved-import in exactly CI's lint-typecheck state, so the recipe installs the maintainer-approved [tui] group in that existing CPU static lane; NO replace-imports-with-any entry (real types, per RESEARCH); data/gpu lanes still never see textual; ci.yml byte-identical
+- [Phase 08]: 08-02 spine landed: [tui] group (exactly textual>=8.2,<9 + platformdirs>=3.6,<5), make tui (--group tui --group gpu, Pitfall 10), PHASE8_TUI wildcard lint guard (later tui files join coverage with zero Makefile edits), asyncio_mode=auto (A3 proven — 560 sync tests green), tui/ skeleton with the services-textual-free contract declared and the __file__-derived REPO_ROOT bootstrap; uv sync for the tui group must use --inexact (plain sync is exact and strips the GB10 GPU stack + dnallm)
 
 ### Pending Todos
 
@@ -117,10 +121,10 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11T10:03:34.446Z
-Stopped at: Completed 08-01-PLAN.md
+Last session: 2026-10-11T11:36:01.041Z
+Stopped at: Completed 08-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
 
-- Continue Phase 8 execution: plans 08-02..08-07 pending — `/gsd-execute-phase 08` (next wave: 08-02 [tui] group + 08-03 tui skeleton tracer)
+- Continue Phase 8 execution: plans 08-03..08-07 pending — `/gsd-execute-phase 08` (next: 08-03 tui skeleton tracer on the 08-02 spine)
