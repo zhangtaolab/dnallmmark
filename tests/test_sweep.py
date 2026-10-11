@@ -2277,3 +2277,154 @@ def test_subset_validation_runs_before_any_cell_enumerates(
         "matrix was valid, the subset file was not"
     )
     assert not out_root.exists()
+
+
+# =====================================================================
+# Manifest only-when-present flag fields (07-03, D-13) + byte lock
+# =====================================================================
+
+def test_dry_run_manifest_records_present_flags(tmp_path, monkeypatch):
+    """D-13: PRESENT flags are recorded in every manifest cell — a
+    dry-run with --effective_batch_size 16 --num_train_epochs 1 produces
+    cells each carrying both fields alongside the existing five cell
+    keys."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--effective_batch_size", "16",
+        "--num_train_epochs", "1",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"], "the dry-run must enumerate cells"
+    for cell in manifest["cells"]:
+        assert cell["effective_batch_size"] == 16
+        assert cell["num_train_epochs"] == 1
+        assert set(cell) == {
+            "model", "task", "seed", "status", "output_dir",
+            "effective_batch_size", "num_train_epochs",
+        }, (
+            "the five base cell keys are unchanged; only PRESENT flags "
+            "join the cell"
+        )
+
+
+def test_dry_run_manifest_absent_flags_add_no_keys(tmp_path, monkeypatch):
+    """D-13 absent parity: with all four flags omitted, every manifest
+    cell keeps EXACTLY the five base keys — no flag keys leak in (the
+    byte level is locked by test_dry_run_manifest_is_byte_deterministic;
+    this locks the key set)."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"]
+    for cell in manifest["cells"]:
+        assert set(cell) == {
+            "model", "task", "seed", "status", "output_dir"}, (
+            "absent flags must leave no manifest keys — byte-identical "
+            "cells"
+        )
+
+
+def test_manifest_records_resolved_absolute_paths(tmp_path, monkeypatch):
+    """--subset_file / --cache_dir record in the manifest cells as the
+    RESOLVED absolute path strings (D-15 carried into D-13 recording)."""
+    registry_dir = make_registry(tmp_path)
+    (tmp_path / "subsets.json").write_text(
+        json.dumps({"task-x": [0]}), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--subset_file", "subsets.json",
+        "--cache_dir", "hf-cache",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    for cell in manifest["cells"]:
+        assert cell["subset_file"] == str(tmp_path / "subsets.json")
+        assert cell["cache_dir"] == str(tmp_path / "hf-cache")
+
+
+def test_run_record_untouched_by_sweep_flags(tmp_path):
+    """run_record.json keeps its exact field set even when flags are
+    present (D-02 spirit, research Open Q3): the flags are sweep-level
+    run configuration recorded once in the manifest — the per-cell record
+    carries none of the four keys."""
+    out_root = tmp_path / "sweep-out"
+
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text("{}", encoding="utf-8")
+
+    run_sweep.run_matrix(
+        [("model-a", "task-x", 42)], out_root, executor=fake_executor,
+        sweep_flags={
+            "subset_file": "/tmp/subsets.json",
+            "effective_batch_size": 16,
+            "num_train_epochs": 1,
+            "cache_dir": "/tmp/cache",
+        })
+    disk = json.loads(
+        (out_root / "model-a" / "task-x" / "seed_42" / "run_record.json")
+        .read_text(encoding="utf-8"))
+    for flag_key in ("subset_file", "effective_batch_size",
+                     "num_train_epochs", "cache_dir"):
+        assert flag_key not in disk, (
+            f"run_record.json must not carry {flag_key} — the record "
+            "contract is untouched by sweep flags"
+        )
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"][0]["effective_batch_size"] == 16, (
+        "the REAL-run manifest records the same present flags the dry-run "
+        "path does"
+    )
+    assert manifest["cells"][0]["subset_file"] == "/tmp/subsets.json"
+
+
+def test_dry_run_with_flags_is_byte_deterministic(tmp_path, monkeypatch):
+    """Two identical dry-runs with the SAME flags produce byte-identical
+    manifest files — sort_keys determinism holds with the extra fields."""
+    registry_dir = make_registry(tmp_path)
+    subsets = _write_json(tmp_path / "subsets.json", {"task-x": [0]})
+    out_root = tmp_path / "sweep-out"
+    argv = [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--effective_batch_size",
+        "--num_train_epochs", "1",
+        "--subset_file", str(subsets),
+        "--cache_dir", "/tmp/cache",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ]
+    run_cli(monkeypatch, argv)
+    first = (out_root / "sweep_manifest.json").read_bytes()
+    run_cli(monkeypatch, argv)
+    assert (out_root / "sweep_manifest.json").read_bytes() == first, (
+        "two same-flag dry-runs must produce byte-identical manifests"
+    )
