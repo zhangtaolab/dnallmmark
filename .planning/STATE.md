@@ -4,16 +4,16 @@ milestone: v1.2
 milestone_name: TUI任务
 current_phase: 8
 current_phase_name: TUI Foundation (Env Check & Selection)
-status: planning
-stopped_at: Phase 8 context gathered
-last_updated: "2026-10-11T08:36:17.359Z"
+status: executing
+stopped_at: Phase 8 UI-SPEC approved
+last_updated: "2026-10-11T09:40:57.115Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 07 complete, transitioned to Phase 8
-state_head: e923c78d06dfc38733b12be38260237b5d061b5f
+state_head: db2971f812c2a06fd4b9a026e1148d8de902bb41
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 6
+  total_plans: 13
   completed_plans: 6
   percent: 17
 ---
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 
 ## Current Position
 
-Phase: 8 — TUI Foundation (Env Check & Selection)
+Phase: 8 (TUI Foundation (Env Check & Selection)) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-10-11 — Phase 07 complete, transitioned to Phase 8
 
 Progress (v1.2): [░░░░░░░░░░] 0%
@@ -114,9 +114,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11T08:36:17.329Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-tui-foundation-env-check-selection/08-CONTEXT.md
+Last session: 2026-10-11T08:59:12.184Z
+Stopped at: Phase 8 UI-SPEC approved
+Resume file: .planning/phases/08-tui-foundation-env-check-selection/08-UI-SPEC.md
 
 ## Operator Next Steps
 
