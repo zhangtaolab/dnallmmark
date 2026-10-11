@@ -37,6 +37,7 @@
 
 - [X] 矩阵/列表视图：62×50，支持按 arena（animal/plant/microbe）、模型类型（MLM/CLM/DL）、物种、规模过滤
 - [ ] 预设组一键选择：tier-1 E2E 对、tier-2 arena 代表、全部、自定义保存
+- [ ] **模板导入**：运行配置模板（模型×任务×种子×PEFT×变体×GA 等完整参数集）以 JSON 文件导入/导出，可分享、可复用；与 `sweep_priorities.json` 的 tier 结构兼容或提供互转
 - [X] 每行显示本地数据状态（✓ 在场 / ✗ 缺失 + 行数来自 n_audit）
 - [ ] 选择结果导出为 run_sweep 的 `--models`/`--tasks` 参数或 priorities 文件
 
@@ -100,6 +101,7 @@
 - [ ] 终端环境：最低支持配置（SSH 终端宽度/颜色/鼠标？）
 - [ ] 框架候选：**Textual**（纯 Python、无构建步、组件丰富）／rich（轻量只读面板）／urwid（老牌）——见开放问题
 - [ ] 配置持久化：会话选择/过滤器的保存位置（~/.config/dnallmmark/？）
+- [ ] **目录设置**：项目目录与存储目录可配置——项目根（仓库位置：注册表/脚本解析基准）与存储根（输出/数据集/模型缓存：`run_sweep --output-root`、`pipeline/datasets/`、`pipeline/models/` 的落位）分离设置；默认沿用仓库内相对路径，显式覆盖时 TUI 负责把路径传给下游脚本（现有脚本多为 REPO_ROOT 相对假设，需统一传参而非改脚本假设）
 - [ ] 中文界面/双语？
 
 - 补充：＿＿＿
