@@ -157,13 +157,53 @@ HelpModal {
     background: $surface;
 }
 
+/* ===== Matrix overview screen (08-07, Task 2) ===== */
+
+#matrix-title-bar {
+    height: 1;      /* row token: one status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#matrix-screen-title {
+    text-style: bold;          /* Heading role */
+    width: auto;
+}
+
+#matrix-scroll-hint {
+    width: 1fr;                /* the hint right-aligns on the same line */
+    text-align: right;
+    color: $text-muted;        /* Secondary role */
+}
+
+#matrix-table {
+    height: 1fr;    /* the grid owns every remaining row; scrolls below */
+}
+
+#matrix-table > .datatable--header {
+    text-style: bold;
+    color: $text-muted;
+    background: $surface;
+}
+
+#matrix-readout {
+    height: 1;      /* row token: the cursor readout line below the grid */
+    padding: 0 2;   /* 2-cell status-line exception */
+    color: $text-muted;        /* Secondary role */
+}
+
+#matrix-empty {
+    padding: 1 4;   /* md token: the empty-state copy sits like a panel */
+    color: $warning;
+}
+
 /* ===== Selection/matrix modals (08-07) — the shared box pattern ===== */
 
 PresetModal,
 TemplateMenuModal,
 PathInputModal,
 ConfirmModal,
-RowDetailModal {
+RowDetailModal,
+MatrixKeyModal {
     align: center middle;      /* the bordered box centers on screen */
 }
 
@@ -176,6 +216,11 @@ RowDetailModal {
 }
 
 #row-detail-log {
+    height: auto;
+    max-height: 20;   /* scroll bound (not a spacing token) — wrap, never elide */
+}
+
+#matrix-key-log {
     height: auto;
     max-height: 20;   /* scroll bound (not a spacing token) — wrap, never elide */
 }

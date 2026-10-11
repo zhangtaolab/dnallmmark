@@ -74,6 +74,7 @@ from tui.strings import (
     ENV_STATE_PENDING,
     ENV_VERDICT_CRITICAL_FAIL,
     ENV_VERDICT_PASS,
+    SEL_OPEN_LABEL,
 )
 
 # State-cell styles: semantic theme tokens only (08-UI-SPEC Color —
@@ -255,9 +256,14 @@ class EnvCheckScreen(Screen):
 
     # The ClassVar annotation mirrors the App base declaration verbatim
     # (the 08-03 RUF012 resolution) — framework-read class constant.
+    # The s binding (08-07, 08-UI-SPEC Keyboard map) opens the selection
+    # screen; the action targets the app's screen factory via the
+    # qualified ``app.open_selection`` action name (the shared mark sets
+    # live on the composition root).
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("r", "refresh", ENV_REFRESH_LABEL),
         Binding("enter", "show_detail", ENV_DETAIL_LABEL),
+        Binding("s", "app.open_selection", SEL_OPEN_LABEL),
     ]
 
     class CheckItemChecking(Message):

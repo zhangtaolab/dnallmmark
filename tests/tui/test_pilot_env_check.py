@@ -76,6 +76,7 @@ from tui.strings import (
     ENV_STATE_PENDING,
     ENV_VERDICT_CRITICAL_FAIL,
     ENV_VERDICT_PASS,
+    SEL_OPEN_LABEL,
 )
 
 # The seven kernel ids in main() order — the row-order contract (08-01).
@@ -587,12 +588,14 @@ async def test_help_modal_lists_bindings_and_esc_closes():
         assert modal.query_one("#help-box").border_title == APP_HELP_TITLE
         rows = [str(static.content) for static in modal.query(Static)]
         # every binding row, Chinese labels from strings via APP_HELP_ROW
-        # (app: q quit + ? help; env screen: r refresh + enter detail)
+        # (app: q quit + ? help; env screen: r refresh + enter detail +
+        # s open-selection — the 08-07 wiring)
         expected_rows = [
             APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
             APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
             APP_HELP_ROW.format(key="r", label=ENV_REFRESH_LABEL),
             APP_HELP_ROW.format(key="enter", label=ENV_DETAIL_LABEL),
+            APP_HELP_ROW.format(key="s", label=SEL_OPEN_LABEL),
         ]
         assert rows == expected_rows
 

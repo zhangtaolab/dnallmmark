@@ -33,16 +33,16 @@ Contract (locked decisions):
   ``tui/strings.py`` constants; registry keys stay English verbatim.
 """
 
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
+from textual.coordinate import Coordinate
 from textual.screen import ModalScreen, Screen
-from textual.widgets import DataTable, Footer, Header, Label, RichLog
+from textual.widgets import DataTable, Footer, Header, Label, RichLog, Static
 
-from tui.screens.selection import SelectionData
 from tui.services.registries import (
     PRESENCE_MISSING,
     PRESENCE_PRESENT,
@@ -50,9 +50,20 @@ from tui.services.registries import (
 from tui.strings import (
     APP_MODAL_BACK_LABEL,
     ENV_DETAIL_LABEL,
+    MATRIX_CURSOR_READOUT,
     MATRIX_SCROLL_HINT,
     MATRIX_TITLE,
+    SEL_COL_MODEL,
+    SEL_N_AUDIT_MISSING,
 )
+
+if TYPE_CHECKING:
+    # The selection snapshot type — annotations only (the runtime data
+    # arrives structurally through the constructor; a runtime import
+    # here would be circular: selection imports this screen for the v
+    # binding's push).
+    from tui.screens.selection import SelectionData
+
 
 # ===== Geometry =====
 
@@ -93,7 +104,7 @@ def _row_label(model_key: str, marked: bool) -> Text:
     return text
 
 
-def _presence_glyph(data: SelectionData, task_key: str) -> Text:
+def _presence_glyph(data: "SelectionData", task_key: str) -> Text:
     """One cell glyph from the 08-04 presence data — render only."""
     presence = data.presence.get(task_key)
     if presence is not None and presence.status == PRESENCE_PRESENT:
@@ -143,7 +154,7 @@ class MatrixScreen(Screen):
         Binding("enter", "show_key", ENV_DETAIL_LABEL, show=False),
     ]
 
-    def __init__(self, data: SelectionData,
+    def __init__(self, data: "SelectionData",
                  marked_models: "set[str] | None" = None,
                  marked_tasks: "set[str] | None" = None, **kwargs):
         super().__init__(**kwargs)
@@ -166,33 +177,97 @@ class MatrixScreen(Screen):
                 id="matrix-screen-title",
             )
             yield Label(MATRIX_SCROLL_HINT, id="matrix-scroll-hint")
+        if not self._data.audit_available:
+            # n_audit absent: the documented column-level empty copy IS
+            # the body — presence is the matrix's entire payload, and a
+            # grid of unknown glyphs would hide the actual state
+            yield Static(SEL_N_AUDIT_MISSING, id="matrix-empty")
+            return
         yield DataTable(id="matrix-table")
         yield Label("", id="matrix-readout")
 
     def on_mount(self) -> None:
-        """Set up the table surface (rows compose in GREEN)."""
+        """Compose the grid: fixed model column, one glyph column per
+        dataset, diamond prefixes from the live shared mark sets."""
+        if not self._data.audit_available:
+            return  # the empty state composed instead of the grid
         table = self.query_one("#matrix-table", DataTable)
         table.cursor_type = "cell"
         table.zebra_stripes = True
         table.fixed_columns = 1
+        table.add_column(SEL_COL_MODEL, key=_COL_MODEL, width=_MODEL_COLUMN_W)
+        for task_entry in self._data.dataset_entries:
+            task_key = task_entry["key"]
+            table.add_column(
+                _header_text(task_key, task_key in self._marked_tasks),
+                key=task_key, width=_TASK_COLUMN_W,
+            )
+        for model_entry in self._data.model_entries:
+            model_key = model_entry["key"]
+            cells = [_row_label(model_key, model_key in self._marked_models)]
+            cells.extend(
+                _presence_glyph(self._data, task_entry["key"])
+                for task_entry in self._data.dataset_entries
+            )
+            table.add_row(*cells, key=model_key)
+        # the cursor starts on the FIRST dataset column — the readout is
+        # immediately meaningful (column 0 is the model column)
+        if self._data.dataset_entries:
+            table.cursor_coordinate = Coordinate(0, 1)
+        self._update_readout()
+        table.focus()
 
-    # ----- helpers (behavior lands in GREEN) -----
+    # ----- the cursor readout -----
 
     def _current_task_key(self) -> "str | None":
         """The dataset key under the cursor column, else None."""
+        table = self.query_one("#matrix-table", DataTable)
+        cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
+        if cell_key is None:
+            return None
+        column_key = str(cell_key[1].value)
+        if column_key in self._task_key_set:
+            return column_key
         return None
 
     def _update_readout(self) -> None:
         """The cursor readout line: the FULL task key under the cursor."""
+        task_key = self._current_task_key() or ""
+        self.query_one("#matrix-readout", Label).update(
+            MATRIX_CURSOR_READOUT.format(task_key=task_key)
+        )
+
+    @property
+    def _task_key_set(self) -> frozenset[str]:
+        """The dataset keys (the column-key vocabulary)."""
+        return frozenset(
+            entry["key"] for entry in self._data.dataset_entries
+        )
 
     # ----- actions (the read-only navigation pair) -----
 
     def action_close(self) -> None:
         """esc: pop back to the selection screen (never quits the app)."""
+        self.app.pop_screen()
 
     def action_show_key(self) -> None:
         """enter (table unfocused): the full-key modal for the cursor."""
+        task_key = self._current_task_key()
+        if task_key is None:
+            return
+        table = self.query_one("#matrix-table", DataTable)
+        cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
+        model_key = str(cell_key[0].value) if cell_key is not None else ""
+        self.app.push_screen(MatrixKeyModal(
+            model_key=model_key, task_key=task_key,
+        ))
 
     def on_data_table_cell_highlighted(
             self, event: DataTable.CellHighlighted) -> None:
         """Cursor movement keeps the readout live."""
+        self._update_readout()
+
+    def on_data_table_cell_selected(
+            self, event: DataTable.CellSelected) -> None:
+        """enter on the focused table (its native select event)."""
+        self.action_show_key()

@@ -80,6 +80,7 @@ from textual.widgets import (
 )
 from textual.widgets.selection_list import Selection
 
+from tui.screens.matrix import MatrixScreen
 from tui.services import registries as registries_service
 from tui.services import selection as selection_service
 from tui.services import settings as settings_service
@@ -1298,7 +1299,20 @@ class SelectionScreen(Screen):
         self.query_one("#selection-table", DataTable).focus()
 
     def action_open_matrix(self) -> None:
-        """v: push the read-only matrix overview (08-07 Task 2)."""
+        """v: push the read-only matrix overview (the auxiliary view).
+
+        The matrix receives THIS screen's loaded snapshot plus the same
+        live shared mark sets (render-only; read-only by its absent
+        bindings). Not pushed before the data loads — an empty snapshot
+        has nothing to show.
+        """
+        if self._data is None:
+            return
+        self.app.push_screen(MatrixScreen(
+            data=self._data,
+            marked_models=self._marked_models,
+            marked_tasks=self._marked_tasks,
+        ))
 
     def action_show_detail(self) -> None:
         """enter (table unfocused): drill into the cursor row's card."""
