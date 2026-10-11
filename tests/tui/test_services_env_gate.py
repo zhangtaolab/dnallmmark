@@ -184,5 +184,10 @@ def test_unknown_kernel_ids_are_ignored_deterministically():
 def test_gate_verdict_is_frozen():
     """The verdict value is immutable (a pure judgment, D-09)."""
     verdict = gate_verdict(_all_pass())
+    # setattr (not attribute assignment): ty correctly reads frozen
+    # dataclass properties as read-only — the 08-01 ty-vs-intent
+    # precedent — while runtime still raises FrozenInstanceError. The
+    # trailing noqa covers the inverse ruff conflict (B010), same
+    # justification as the 08-01 site.
     with pytest.raises(dataclasses.FrozenInstanceError):
-        verdict.can_launch = False
+        setattr(verdict, "can_launch", False)  # noqa: B010

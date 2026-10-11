@@ -55,6 +55,16 @@ MAIN_KERNEL_ORDER = (
 )
 
 
+def _local(year, month, day, hour=0, minute=0):
+    """A naive LOCAL datetime — the service's display basis (Pitfall 8).
+
+    Deliberately naive (single justified noqa): the service contract
+    reads naive values as local wall-clock time, and these fixtures pin
+    exactly that path — an aware fixture would test a different branch.
+    """
+    return datetime(year, month, day, hour, minute)  # noqa: DTZ001
+
+
 def _pass(name):
     """A fake passing kernel result."""
     return CheckResult(name=name, ok=True, lines=(f"PASS: fake {name}",))
@@ -71,7 +81,7 @@ def _fail(name):
 def test_same_day_state_is_a_cache_hit(tmp_path):
     """checked_at on today's LOCAL calendar day -> same-day hit."""
     path = tmp_path / "env_check.json"
-    now = datetime(2026, 10, 11, 9, 30)
+    now = _local(2026, 10, 11, 9, 30)
     persist(path, [_pass("numpy")], now=now)
     state = load_cached(path)
     assert state is not None
@@ -83,7 +93,7 @@ def test_same_day_state_is_a_cache_hit(tmp_path):
 def test_yesterday_state_is_a_cache_miss(tmp_path):
     """checked_at yesterday -> the cache does not satisfy startup (D-05)."""
     path = tmp_path / "env_check.json"
-    now = datetime(2026, 10, 11, 9, 30)
+    now = _local(2026, 10, 11, 9, 30)
     persist(path, [_pass("numpy")], now=now - timedelta(days=1))
     state = load_cached(path)
     assert is_same_local_day(state, now=now) is False
@@ -113,7 +123,7 @@ def test_none_state_is_never_a_same_day_hit():
 def test_persist_writes_schema_and_both_timestamps(tmp_path):
     """State shape: schema_version 1 + local naive + ISO + full items."""
     path = tmp_path / "env_check.json"
-    now = datetime(2026, 10, 11, 16, 20)
+    now = _local(2026, 10, 11, 16, 20)
     persist(path, [_pass("version_pins"), _fail("cuda")], now=now)
     state = load_cached(path)
     assert state["schema_version"] == 1
@@ -134,7 +144,7 @@ def test_persist_writes_schema_and_both_timestamps(tmp_path):
 def test_persist_twice_leaves_single_valid_file_no_tmp_residue(tmp_path):
     """Idempotent persistence: one valid file, zero .tmp siblings."""
     path = tmp_path / "env_check.json"
-    now = datetime(2026, 10, 11, 16, 20)
+    now = _local(2026, 10, 11, 16, 20)
     persist(path, [_pass("numpy")], now=now)
     persist(path, [_pass("numpy"), _pass("peft")], now=now)
     assert list(tmp_path.iterdir()) == [path]
@@ -154,7 +164,7 @@ def test_partial_failure_persists_whole(tmp_path):
         _pass("numpy"),
         _fail("dataset_dirs"),
     ]
-    persist(path, results, now=datetime(2026, 10, 11, 8, 0))
+    persist(path, results, now=_local(2026, 10, 11, 8, 0))
     state = load_cached(path)
     assert len(state["items"]) == 7
     assert state["items"][3] == {
@@ -197,7 +207,7 @@ def test_run_full_check_injected_kernels_return_in_order_and_persist_once(
     results = run_full_check(
         kernels=[kernel_a, kernel_b],
         state_path=path,
-        now=datetime(2026, 10, 11, 10, 0),
+        now=_local(2026, 10, 11, 10, 0),
     )
     assert [result.name for result in results] == ["version_pins", "cuda"]
     assert calls == ["a", "b"]  # every kernel executed exactly once
@@ -288,7 +298,7 @@ def test_run_full_check_default_sequence_mirrors_main_order(
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
 
     results = run_full_check(
-        state_path=path, now=datetime(2026, 10, 11, 10, 0)
+        state_path=path, now=_local(2026, 10, 11, 10, 0)
     )
     assert order == list(MAIN_KERNEL_ORDER)
     assert received == [("cuda", fake_torch), ("matmul", fake_torch)]
@@ -315,7 +325,7 @@ def test_default_sequence_torch_gate_appends_two_false_results(
     monkeypatch.setitem(sys.modules, "torch", None)
 
     results = run_full_check(
-        state_path=path, now=datetime(2026, 10, 11, 10, 0)
+        state_path=path, now=_local(2026, 10, 11, 10, 0)
     )
     assert order == ["version_pins", "dnallm", "peft", "numpy", "dataset_dirs"]
     assert [result.name for result in results] == list(MAIN_KERNEL_ORDER)
