@@ -54,6 +54,7 @@ import threading
 from itertools import pairwise
 from pathlib import Path
 
+import pytest
 from env_smoke import CheckResult
 from rich.text import Text
 from textual.keys import _character_to_key
@@ -111,6 +112,7 @@ from tui.strings import (
     SEL_PRESET_LABEL,
     SEL_PRESET_NO_CUSTOMS,
     SEL_PRESET_OVERWRITE_CONFIRM,
+    SEL_PRESET_SAVE_FAILED,
     SEL_PRESET_SAVED,
     SEL_PRESET_TIER_1,
     SEL_PRESET_TIER_2,
@@ -124,6 +126,7 @@ from tui.strings import (
     SEL_TEMPLATE_LABEL,
     SEL_TEMPLATE_PROBLEM_LINE,
     SEL_TEMPLATE_PROBLEMS,
+    SEL_TEMPLATE_WRITE_FAILED,
 )
 
 _SCREEN_MODULE_FILE = Path(selection_screen_module.__file__)
@@ -815,6 +818,106 @@ async def test_template_export_and_tiers_write_through_the_service():
         )
 
 
+async def test_export_to_an_unwritable_path_fails_closed_in_the_modal():
+    """CR-02: an OSError export path (e.g. a parent that is a file)
+    renders as in-modal problems and the app stays alive — the console
+    never crashes on an operator-plausible path."""
+    class _UnwritableExportFake(FakeSelectionService):
+        """Exports raise like the real backend's atomic_write on an
+        unwritable operator path (the review's /dev/null/x.json repro)."""
+
+        def export_template(self, path, models, tasks):
+            raise FileExistsError(17, "File exists", "/dev/null")
+
+        def export_tiers(self, path, models, tasks):
+            raise FileExistsError(17, "File exists", "/dev/null")
+
+    fake = _UnwritableExportFake()
+    app = _app(fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+        screen = app.screen
+        await pilot.press("space")  # a marked model: a non-empty selection
+        await pilot.pause()
+
+        # export (menu entry 2) to the unwritable path
+        await pilot.press("x")
+        await pilot.pause()
+        await pilot.press("down")
+        await pilot.press("enter")
+        await pilot.pause()
+        await _type(pilot, "/dev/null/x.json")
+        await pilot.press("enter")
+        await pilot.pause()
+        # the modal STAYS OPEN with the numbered problem — fail closed,
+        # nothing written, the app never crashed
+        assert isinstance(app.screen, PathInputModal)
+        content = str(app.screen.query_one("#path-problems", Static).content)
+        assert content.startswith(SEL_TEMPLATE_PROBLEMS.format(n=1))
+        assert SEL_TEMPLATE_PROBLEM_LINE.format(
+            n=1, location="/dev/null/x.json",
+            message=SEL_TEMPLATE_WRITE_FAILED.format(
+                error="FileExistsError: [Errno 17] File exists: '/dev/null'",
+            ),
+        ) in content
+        # esc closes the modal; the app stays alive and responds
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, SelectionScreen)
+        await pilot.press("m")
+        await pilot.pause()
+        assert _row_keys(screen.query_one(DataTable)) == [_TASK_A, _TASK_B]
+
+        # the tier conversion degrades the same way (menu entry 3)
+        await pilot.press("x")
+        await pilot.pause()
+        await pilot.press("down")
+        await pilot.press("down")
+        await pilot.press("enter")
+        await pilot.pause()
+        await _type(pilot, "/dev/null/t.json")
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, PathInputModal)
+        assert str(
+            app.screen.query_one("#path-problems", Static).content
+        ).startswith(SEL_TEMPLATE_PROBLEMS.format(n=1))
+
+
+async def test_save_preset_to_an_unwritable_root_warns_and_stays_alive():
+    """CR-02: an OSError from the save path degrades to a warning toast —
+    the save flow never crashes the console."""
+    class _UnwritableSaveFake(FakeSelectionService):
+        """save_preset raises like the real atomic_write on a read-only
+        config root."""
+
+        def save_preset(self, name, models, tasks):
+            raise PermissionError(13, "Permission denied", "/root/.config")
+
+    fake = _UnwritableSaveFake()
+    app = _app(fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+        screen = app.screen
+        await pilot.press("space")
+        await pilot.pause()
+        await pilot.press("s")
+        await pilot.pause()
+        await _type(pilot, "mine")
+        await pilot.press("enter")
+        await pilot.pause()
+        # the input modal dismissed; the warning toast fired; app alive
+        assert isinstance(app.screen, SelectionScreen)
+        assert SEL_PRESET_SAVE_FAILED.format(
+            error="PermissionError: [Errno 13] Permission denied: "
+                  "'/root/.config'",
+        ) in _toast_messages(app)
+        # the app stays alive: the table still responds
+        await pilot.press("m")
+        await pilot.pause()
+        assert _row_keys(screen.query_one(DataTable)) == [_TASK_A, _TASK_B]
+
+
 async def test_save_preset_overwrite_confirm_works_both_ways():
     """s: an existing name confirms; Enter overwrites via the service,
     Esc cancels with nothing saved."""
@@ -1207,6 +1310,21 @@ def test_backend_template_import_and_exports_round_trip(tmp_path):
     assert tiers == [[
         {"model": "plant-dnabert-6mer", "task": "GUE__emp_H3"},
     ]]
+
+
+def test_backend_export_to_an_unwritable_path_raises_oserror():
+    """CR-02 contract: an operator path whose parent is a file (/dev/null
+    on POSIX) fails with OSError from the atomic write — the exact class
+    the screen's submit handlers catch and surface in-modal."""
+    backend = SelectionBackend()
+    with pytest.raises(OSError):
+        backend.export_template(
+            "/dev/null/x.json", ["plant-dnabert-6mer"], ["GUE__emp_H3"],
+        )
+    with pytest.raises(OSError):
+        backend.export_tiers(
+            "/dev/null/x.json", ["plant-dnabert-6mer"], ["GUE__emp_H3"],
+        )
 
 
 def test_backend_parse_and_apply_delegate_to_the_service_grammar():

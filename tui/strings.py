@@ -217,6 +217,10 @@ SEL_PRESET_APPLIED = "✓ 已应用预设 {preset}（模型 {n}·数据集 {m}�
 # only the applied/exported toasts; a destructive-adjacent save needs its
 # own feedback), same shape as the applied toast.
 SEL_PRESET_SAVED = "✓ 预设已保存: {name}（模型 {n}·数据集 {m}）"
+# Save-failure warning — OSError persisting under the config root (a
+# read-only location, a full disk): the save flow degrades to a warning
+# toast, never a crash (the OS error detail is data).
+SEL_PRESET_SAVE_FAILED = "✗ 预设保存失败: {error}"
 # Warning — preset unknown keys (registry evolution tolerance): loud, lists
 # every skipped key.
 SEL_PRESET_UNKNOWN_KEYS = "⚠ 预设含 {n} 个未知键（注册表已演进？）: {keys} — 已跳过"
@@ -244,6 +248,11 @@ SEL_TEMPLATE_IMPORTED = "✓ 模板已导入（模型 {n}·数据集 {m}）"
 # Export-success toast (verbatim from the Copywriting Contract); the tier
 # conversion export reuses it (it IS an export of the current selection).
 SEL_TEMPLATE_EXPORTED = "✓ 模板已导出: {path}"
+# Write-failure problem line (template export / tier conversion): OSError
+# from an unwritable or invalid operator path (a parent that is a file, a
+# read-only location, a full disk) — the OS error detail is data; the
+# modal stays open and nothing was written.
+SEL_TEMPLATE_WRITE_FAILED = "✗ 写入失败: {error}"
 
 # Destructive — clearing all marks (Enter/Esc confirm). Landed for the
 # record per the Copywriting Contract; NO Phase 8 trigger exists ("if

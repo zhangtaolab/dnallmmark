@@ -121,6 +121,7 @@ from tui.strings import (
     SEL_PRESET_NAME_PLACEHOLDER,
     SEL_PRESET_NO_CUSTOMS,
     SEL_PRESET_OVERWRITE_CONFIRM,
+    SEL_PRESET_SAVE_FAILED,
     SEL_PRESET_SAVED,
     SEL_PRESET_TIER_1,
     SEL_PRESET_TIER_2,
@@ -142,6 +143,7 @@ from tui.strings import (
     SEL_TEMPLATE_PROBLEM_LINE,
     SEL_TEMPLATE_PROBLEMS,
     SEL_TEMPLATE_TITLE,
+    SEL_TEMPLATE_WRITE_FAILED,
 )
 
 # ===== Service data shapes (the injection contract's vocabulary) =====
@@ -1216,6 +1218,13 @@ class SelectionScreen(Screen):
             # e.g. an empty selection cannot be exported (the service's
             # loud refusal) — surfaced in the modal, nothing written
             return ((path, str(exc)),)
+        except OSError as exc:
+            # an unwritable/invalid operator path (a parent that is a
+            # file, a read-only location, a full disk) — fail closed in
+            # the modal, the console never crashes (CR-02)
+            return ((path, SEL_TEMPLATE_WRITE_FAILED.format(
+                error=f"{type(exc).__name__}: {exc}",
+            )),)
         self.app.notify(SEL_TEMPLATE_EXPORTED.format(path=path))
         return None
 
@@ -1227,6 +1236,11 @@ class SelectionScreen(Screen):
             )
         except ValueError as exc:
             return ((path, str(exc)),)
+        except OSError as exc:
+            # the same fail-closed contract as the template export (CR-02)
+            return ((path, SEL_TEMPLATE_WRITE_FAILED.format(
+                error=f"{type(exc).__name__}: {exc}",
+            )),)
         self.app.notify(SEL_TEMPLATE_EXPORTED.format(path=path))
         return None
 
@@ -1288,9 +1302,22 @@ class SelectionScreen(Screen):
 
     def _do_save(self, name: str) -> None:
         """Persist the current mark sets under the name + toast."""
-        self._service.save_preset(
-            name, sorted(self._marked_models), sorted(self._marked_tasks),
-        )
+        try:
+            self._service.save_preset(
+                name, sorted(self._marked_models), sorted(self._marked_tasks),
+            )
+        except OSError as exc:
+            # an unwritable config root (a read-only location, a full
+            # disk) — a warning toast, never a crash (CR-02: the save
+            # flow degrades like every other write path)
+            self.app.notify(
+                SEL_PRESET_SAVE_FAILED.format(
+                    error=f"{type(exc).__name__}: {exc}",
+                ),
+                severity="warning",
+            )
+            self.query_one("#selection-table", DataTable).focus()
+            return
         self.app.notify(SEL_PRESET_SAVED.format(
             name=name,
             n=len(self._marked_models),
