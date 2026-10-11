@@ -22,8 +22,13 @@ onto this root.
   renders ONLY the min-size message with the current dimensions — a
   dedicated screen swapped in on mount/resize and popped when the
   terminal grows back; nothing else is visible while it is on top.
-- Screen slots: the SCREENS registry is the declared slot mechanism for
-  the selection/matrix screens 08-07 adds (do not create them early).
+
+08-07 wiring:
+
+- The selection seam: ``selection_service`` (the same Protocol-injection
+  pattern) plus the shared app-state mark sets — every selection/matrix
+  screen is built through ``build_selection_screen`` so the sets are the
+  same live instances (SEL-01 persistence).
 """
 
 from collections.abc import Callable
@@ -37,6 +42,10 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import Footer, Static
 
 from tui.screens.env_check import EnvCheckScreen, EnvCheckServiceProtocol
+from tui.screens.selection import (
+    SelectionScreen,
+    SelectionServiceProtocol,
+)
 from tui.strings import (
     APP_HELP_LABEL,
     APP_HELP_ROW,
@@ -128,9 +137,11 @@ class DnallmMarkTui(App):
     ]
 
     # Screen registry (key-switched full screens, 08-UI-SPEC Auto-Selected
-    # Default #4): the env-check screen is the opening screen; the
-    # selection/matrix screens join here in 08-07 (the registry IS the
-    # declared slot mechanism — do not create those screens early).
+    # Default #4): the env-check screen is the opening screen. The
+    # selection/matrix screens (08-07) deliberately do NOT join this
+    # zero-arg registry: they share the live app-state mark sets, so they
+    # are built through build_selection_screen / the pushing screen —
+    # a slot-built screen would carry fresh sets and silently lose marks.
     # Classes instantiate lazily on first name access; name-based access
     # builds the default (real) service — the injected-service path is
     # get_default_screen below.
@@ -138,17 +149,28 @@ class DnallmMarkTui(App):
         "env_check": EnvCheckScreen,
     }
 
-    def __init__(self, env_check_service: EnvCheckServiceProtocol | None = None):
-        """Compose the console with an injectable env-check service.
+    def __init__(self, env_check_service: EnvCheckServiceProtocol | None = None,
+                 selection_service: SelectionServiceProtocol | None = None):
+        """Compose the console with injectable services.
 
         Args:
             env_check_service: optional service override for the env-check
                 screen (the tier-2 Pilot seam — tests inject deterministic
                 fakes so no real kernel executes in CI, D-03). None means
                 the real service (EnvCheckBackend over the 08-04 module).
+            selection_service: optional service override for the selection
+                screen (the same seam pattern, 08-07). None means the real
+                service (SelectionBackend over the 08-04/08-05 modules).
         """
         super().__init__()
         self._env_check_service = env_check_service
+        self._selection_service = selection_service
+        # The shared app-state mark sets (SEL-01): marks live HERE, never
+        # inside a DataTable — the selection screen and the matrix screen
+        # read the same live sets, so filter rebuilds, table switches,
+        # and screen pushes can never lose them.
+        self._marked_models: set[str] = set()
+        self._marked_tasks: set[str] = set()
         # The active min-size guard screen (None = terminal at/above the
         # minimum grid).
         self._min_size_screen: MinSizeScreen | None = None
@@ -156,6 +178,21 @@ class DnallmMarkTui(App):
     def get_default_screen(self) -> EnvCheckScreen:
         """Open the console on the env-check screen (with the wired service)."""
         return EnvCheckScreen(env_check_service=self._env_check_service)
+
+    def build_selection_screen(self) -> SelectionScreen:
+        """Build the selection screen over the shared mark sets.
+
+        The screen factory (08-07): the injected-or-real service plus the
+        SAME live mark-set instances every selection/matrix screen
+        shares — constructed here, never through a zero-arg SCREENS slot
+        (a slot-built screen would carry fresh sets and silently lose
+        the SEL-01 persistence guarantee).
+        """
+        return SelectionScreen(
+            selection_service=self._selection_service,
+            marked_models=self._marked_models,
+            marked_tasks=self._marked_tasks,
+        )
 
     # ===== Min-size guard (08-UI-SPEC Terminal Contract) =====
 
