@@ -2227,7 +2227,10 @@ def test_subset_file_collects_all_value_problems_together(
         "BOTH problems must be named in the single collect-all exit — "
         f"got: {message!r}"
     )
-    assert "not-a-list" in message
+    assert "value is str" in message, (
+        "the non-list value's problem must name the offending type "
+        "(the child validator's message style)"
+    )
     assert "'x'" in message, "the non-integer ID must be named"
 
 

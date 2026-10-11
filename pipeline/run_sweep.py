@@ -203,9 +203,17 @@ Failure boundary:
     threading (D-15: the child cwd is pinned to pipeline/). Flag sanity
     (``effective_batch_size >= 1``, ``num_train_epochs >= 1``, non-empty
     subset path) is validated collect-all at startup, before any cell
-    enumerates (Pitfall 5). The future TUI run-config screen (Phase 11)
-    drives sweeps exclusively through these flags — they exist CLI-first
-    with argv-shape proofs in ``tests/test_sweep.py``.
+    enumerates (Pitfall 5). ``--subset_file`` is additionally pre-validated
+    ONCE at sweep start against the overlay-merged datasets registry
+    (``_validate_subset_file``, D-14): every problem — unreadable,
+    non-object, unknown registry key, malformed value — is listed together
+    before a non-zero exit, never per-cell after model loads burn; the
+    child's ``validate_subset_file`` remains the authoritative per-cell
+    re-check (deliberate defense-in-depth, never a shared import — this
+    module stays stdlib-only and headless-importable). The future TUI
+    run-config screen (Phase 11) drives sweeps exclusively through these
+    flags — they exist CLI-first with argv-shape proofs in
+    ``tests/test_sweep.py``.
 
 FUTURE E2E note (documented here, deliberately NOT executed — D-05):
     On-disk dataset directories are DOUBLE-NESTED after a fresh unzip of
@@ -595,6 +603,67 @@ def _read_operator_json(path, flag_name):
         sys.exit(f"[Error] cannot read {flag_name} file {path}: {exc}")
     except json.JSONDecodeError as exc:
         sys.exit(f"[Error] {flag_name} file {path} is not valid JSON: {exc}")
+
+
+def _validate_subset_file(path, datasets_info):
+    """Fail fast on a ``--subset_file`` map the registry cannot join on
+    (07-03, D-14).
+
+    A bad subset map must abort the sweep at STARTUP with every problem
+    listed together — never after the first cell's model load burns on a
+    map that cannot join (the ``_validate_filters`` /
+    ``parse_curve_fractions`` collect-all discipline, T-05-09). Checks:
+    the file is readable JSON; the top level is an object; every key is a
+    datasets-registry key; every value is a list of ints.
+
+    Shallow BY DESIGN (research Open Q2 disposition): structure and
+    registry membership only — bounds-vs-Test-count and deeper semantics
+    stay child-side, where ``run_finetune.validate_subset_file`` is the
+    authoritative per-cell re-check. Deliberate defense-in-depth, NOT a
+    shared import: this module is stdlib-only and headless-importable
+    (importing run_finetune would pull torch into CI), and extracting
+    the child function would break the exec-extract contract tests.
+
+    Args:
+        path (str): the RESOLVED absolute ``--subset_file`` path.
+        datasets_info (dict): the overlay-merged datasets registry — the
+            same ``registry_loader`` source the matrix enumeration joins
+            on, so keys validate against the identical view.
+
+    Raises:
+        SystemExit: listing every problem in one non-zero exit.
+    """
+    problems = []
+    loaded = None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        problems.append(f"cannot read {path}: {exc}")
+    if loaded is not None and not isinstance(loaded, dict):
+        problems.append(
+            f"top-level JSON is {type(loaded).__name__}, expected an "
+            "object mapping task names to lists of integer row IDs"
+        )
+    if isinstance(loaded, dict):
+        unknown = sorted(set(loaded) - set(datasets_info))
+        if unknown:
+            problems.append(f"task keys not in datasets registry: {unknown}")
+        for task in sorted(loaded):
+            if task not in datasets_info:
+                continue
+            ids = loaded[task]
+            if not isinstance(ids, list):
+                problems.append(
+                    f"{task}: value is {type(ids).__name__}, expected a "
+                    "list of integer row IDs"
+                )
+                continue
+            for row_id in ids:
+                if isinstance(row_id, bool) or not isinstance(row_id, int):
+                    problems.append(f"{task}: non-integer ID {row_id!r}")
+    if problems:
+        sys.exit(f"[Error] --subset_file {'; '.join(problems)}")
 
 
 def load_priority_tiers(path, registry_dir):
@@ -1366,6 +1435,16 @@ def main():
         sweep_flags["num_train_epochs"] = args.num_train_epochs
     if cache_dir_abs is not None:
         sweep_flags["cache_dir"] = cache_dir_abs
+    # D-14: pre-validate the subset map ONCE at sweep start against the
+    # same overlay-merged registry view the matrix enumeration joins on
+    # (registry_loader, post 07-02) — collect-all, before any cell's
+    # model load can burn. The child's validate_subset_file re-checks per
+    # cell (authoritative; defense-in-depth, not a shared import).
+    if subset_file_abs is not None:
+        _validate_subset_file(
+            subset_file_abs,
+            registry_loader.load_datasets_registry(registry_dir),
+        )
     # Operator-supplied steering inputs (05-04, T-05-09): validated the
     # same fail-fast way BEFORE enumeration — both steer multi-day GPU
     # execution, so a typo'd key must abort loudly, never silently
