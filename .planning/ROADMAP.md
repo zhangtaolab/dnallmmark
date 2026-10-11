@@ -107,11 +107,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. The registry consumers (`run_sweep.py`, `run_finetune.py`, audit, export) load official registries with an optional custom overlay from user-owned files (`~/.config/dnallmmark/custom_models.json` / `custom_datasets.json`): a custom key colliding with an official key fails fast with a clear error, and with no custom files present behavior is byte-identical to today — existing registry/sweep tests pass unmodified, proven CPU-side in the existing harness (official `pipeline/{models,datasets}_info.json` are never written by any custom flow)
   5. `make lint` + `make typecheck` cover the changed files and CI stays green with zero GPU/dnallm dependency; every new flag works headless (scripts stay first-class)
 
-**Plans**: 1/6 plans executed
+**Plans**: 2/6 plans executed
 Plans:
 **Wave 1**
 - [x] 07-01-PLAN.md — FLOPs report chain on CPU: flops_counter module (lazy-torch port, uncovered accounting), artifact_loader tolerant contract, schemas/flops_report.json (D-27 one-way checkpoint), Makefile lint coverage
-- [ ] 07-02-PLAN.md — registry overlay (CUST-05): registry_loader with collision fail-fast + env/XDG path resolution, five load sites rewired, absent = byte-identical
+- [x] 07-02-PLAN.md — registry overlay (CUST-05): registry_loader with collision fail-fast + env/XDG path resolution, five load sites rewired, absent = byte-identical
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 07-03-PLAN.md — run_sweep four-flag argv threading (PIPE-02): registration, abs-path resolution, collect-all subset pre-validation, only-when-present manifest fields, argv parity tests
@@ -204,7 +204,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 7. Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) | v1.2 | 1/6 | In Progress | - |
+| 7. Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) | v1.2 | 2/6 | In Progress | - |
 | 8. TUI Foundation (Env Check & Selection) | v1.2 | 0/TBD | Not started | - |
 | 9. Custom Model & Dataset Onboarding | v1.2 | 0/TBD | Not started | - |
 | 10. Data Manager (Downloads & Verification) | v1.2 | 0/TBD | Not started | - |

@@ -25,7 +25,7 @@
 - [ ] **CUST-02**: 自定义数据集接入向导：TUI 引导录入数据集条目（键名/路径/train-dev-test 文件/标签列/主指标/Task_type/溯源列），**同样存入用户自定义注册表（`custom_datasets.json`），不动官方 `datasets_info.json`**
 - [ ] **CUST-03**: **防呆检测**：字段级校验（必填/类型/枚举/**键名与官方及既有自定义不冲突**/路径存在/split 文件可解析/行数>0/标签列合法/指标名在度量注册表），提交前逐项列出全部问题（fail-fast 收集式，与 _validate_filters 同纪律）
 - [ ] **CUST-04**: **错误检测**：接入后自动 dry-run 预检 + audit 对账（行数/非 ACGT/子集存活）；失败时醒目报告并支持撤销（自定义注册表条目级回滚，官方文件零风险）
-- [ ] **CUST-05**: **注册表叠加层（overlay）**：管线工具（run_sweep/run_finetune/audit/export）在官方注册表之上加载自定义 overlay（custom 键不得与官方冲突，冲突 fail-fast）；无自定义文件时行为与今天**逐字节一致**（向后兼容，现有测试零改动）
+- [x] **CUST-05**: **注册表叠加层（overlay）**：管线工具（run_sweep/run_finetune/audit/export）在官方注册表之上加载自定义 overlay（custom 键不得与官方冲突，冲突 fail-fast）；无自定义文件时行为与今天**逐字节一致**（向后兼容，现有测试零改动）
 - [ ] **CUST-06**: 自定义项在列表中带 custom 标记（与官方 62/50 区分），可单独启用/停用/导出分享（自定义注册表即分享单元）
 
 ### Data Management (数据管理)
@@ -102,7 +102,7 @@
 | CUST-02 | Phase 9 | Pending |
 | CUST-03 | Phase 9 | Pending |
 | CUST-04 | Phase 9 | Pending |
-| CUST-05 | Phase 7 | Pending |
+| CUST-05 | Phase 7 | Complete |
 | CUST-06 | Phase 9 | Pending |
 | DATA-01 | Phase 10 | Pending |
 | DATA-02 | Phase 10 | Pending |

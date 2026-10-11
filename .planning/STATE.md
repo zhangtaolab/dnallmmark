@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 07
 current_phase_name: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
 status: executing
-stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-10-11T06:43:07.289Z"
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-10-11T07:02:08.876Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 07 execution started
-state_head: f8fa845ac49109613068fb8c0fe255700a7480ce
+state_head: 50e0cfc3a95f6c470abeffe8ee30bf398e48e580
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 6
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 07 (Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-10-11 — Phase 07 execution started
 
@@ -58,6 +58,7 @@ Progress (v1.2): [░░░░░░░░░░] 0%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 07 P01 | 13 min | 3 tasks | 7 files |
+| Phase 07 P02 | 11 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 07]: flops_report.json v1 schema published exactly as derived (maintainer ratified publish-as-derived at the 07-01 Task-1 checkpoint, 2026-10-11); D-27 one-way contract — field names immutable downstream
 - [Phase 07]: flops_report layer_details/total_flops_exact values typed number (not integer): the verbatim HyenaFilter FFT formula emits fractional FLOPs, and an integer map would reject legitimate writer output (Rule-1; every ratified field name unchanged)
 - [Phase 07]: FlopsCounter ported behind lazy _torch_nn/_torch seams with no module-top torch import — the CPU dev/CI lane imports and stub-tests the full 20+ architecture dispatch (PIPE-01 criterion 2)
+- [Phase 07]: CUST-05 registry overlay seam landed: DNALLMMARK_CUSTOM_REGISTRY_DIR whole-dir override (D-07 覆盖整个目录 — no suffix on the env value; the dnallmmark join applies to the XDG/~/.config bases only); custom entries add-only, collision fails fast naming key + both file paths
+- [Phase 07]: platformdirs refinement: hand-rolled env>XDG>home resolver in registry_loader (platformdirs undeclared in every CPU-side group — RESEARCH Pitfall 2; reserved for Phase 8 [tui] by constraint 10); identical Linux path, Phase 8 may consolidate behind the seam
 
 ### Pending Todos
 
@@ -97,8 +100,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11T06:43:07.272Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-10-11T07:02:01.307Z
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
