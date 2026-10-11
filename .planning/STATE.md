@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 08
 current_phase_name: TUI Foundation (Env Check & Selection)
 status: planning
-stopped_at: Phase 7 complete, ready to plan Phase 08
-last_updated: "2026-10-11T14:38:58.565Z"
+stopped_at: Completed 08-07-PLAN.md
+last_updated: "2026-10-11T16:03:39.335Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 7 complete, transitioned to Phase 08
-state_head: dfb02d266e84ac56ab10c92353c241eed3b592ce
+state_head: 42c82a5da175524aa47bd5d8a951e9c28d36cba5
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 13
-  completed_plans: 12
+  completed_plans: 13
   percent: 17
 ---
 
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 08 — TUI Foundation (Env Check & Selection)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-10-11 — Phase 7 complete, transitioned to Phase 08
+Plan: 08-07 complete (the final Phase 8 plan — all 7/7 executed)
+Status: Phase 8 execution complete; ready for phase close-out
+Last activity: 2026-10-11 — 08-07 selection + matrix screens landed (SEL-01..04 + I18N-01)
 
-Progress (v1.2): [████████░░] 85% (11/13 plans)
+Progress (v1.2): [██████████] 100% (13/13 plans)
 
 ## Performance Metrics
 
@@ -70,6 +70,7 @@ Progress (v1.2): [████████░░] 85% (11/13 plans)
 | Phase 08 P08-04 | 32 min | 3 tasks | 13 files |
 | Phase 08 P08-05 | 26 min | 2 tasks | 7 files |
 | Phase 08 P08-06 | 43 min | 2 tasks | 6 files |
+| Phase 08 P08-07 | 79 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,12 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 08]: 08-06 presentation derivations: the summary column is the kernel's own first detail line (PASS:/FAIL: prefix stripped, byte-stable D-02 text); the routing count n counts the dataset_dirs '  - ' listing lines; the UI-SPEC mockup's summaries were hand-abbreviated sketches
 - [Phase 08]: 08-06 textual 8.2.8 facts (probe-pinned): Static.content is the content read API (no .renderable); from textual import work (no textual.work module — research A1 path was wrong); the focused DataTable consumes enter (RowSelected) so the screen enter Binding serves the Footer hint + unfocused path; plain-Screen push/pop hides everything beneath (the min-size guard mechanism)
 - [Phase 08]: 08-06 styles decisions: zero hex (the optional dnallmmark teal theme deliberately not landed — default tokens satisfy the contract); the xl 12-cell token is skipped because Textual CSS has no media queries; the drill-down RichLog max-height 20 is a scroll bound, not a spacing token (the prohibition governs paddings)
+- [Phase 08]: 08-07 mark-set home: marks live in app-state sets constructed once on the composition root and passed BY REFERENCE through build_selection_screen / the v push — selection/matrix are deliberately NOT zero-arg SCREENS slots (a slot-built screen would carry fresh sets and silently lose the SEL-01 persistence guarantee; the 08-06 slot comment is superseded)
+- [Phase 08]: 08-07 model presence = the unknown copy (◌ 未知): the real backend fills presence per DATASET key only (models are not n_audit subjects) — the UI-SPEC mockup's per-split counts on model rows were a hand-sketch error; dataset rows carry the counts
+- [Phase 08]: 08-07 80-column budget: column widths sum 66 per view (66 + 12 cell-padding + 2 scrollbar == 80, probe-validated and backstop-pinned); the selection footer is compact with show_command_palette=False (9 binding labels exceed 80 in the default style; ctrl+p keeps working, only the hint hides)
+- [Phase 08]: 08-07 jsonschema>=4.26.0 joined the [tui] group (the 08-05 handoff flag closed): the selection backend imports tui.services.templates at module top, so the make tui display lane needs it — same locked range as dev
+- [Phase 08]: 08-07 gap-filler copy landed and documented: SEL_PRESENCE_UNKNOWN (the four-status vocabulary lacked render copy), SEL_PRESET_SAVED / SEL_TEMPLATE_IMPORTED (the truths pin 'a toast fires' but only the applied/exported toasts were worded), and SEL_CLEAR_MARKS_CONFIRM landed unsurfaced per the contract's 'if surfaced' (the keyboard map defines no clear binding in Phase 8)
+- [Phase 08]: 08-07 Phase 8 console complete: selection + matrix + env surfaces composed over the shared mark sets, both 80-column backstops and the cross-screen integration green — roadmap criteria 4 and 5 TRUE (SEL-01..04 + I18N-01 closed with 167 green tests/tui, make test 728, lint/typecheck clean, CI byte-untouched)
 
 ### Pending Todos
 
@@ -139,10 +146,10 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11T14:35:03.344Z
-Stopped at: Phase 7 complete, ready to plan Phase 08
+Last session: 2026-10-11T16:03:39.302Z
+Stopped at: Completed 08-07-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
 
-- Continue Phase 8 execution: plans 08-04..08-07 pending — `/gsd-execute-phase 08` (next: 08-04 env/registry services on the proven tracer seam)
+- Phase 8 execution is COMPLETE (all 7/7 plans, 2026-10-11): run the phase close-out — verification / `/gsd-progress` to transition toward Phase 9 (Custom Model & Dataset Onboarding)

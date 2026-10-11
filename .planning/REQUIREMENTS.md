@@ -14,9 +14,9 @@
 
 ### Selection (选择)
 
-- [ ] **SEL-01**: 模型列表与数据集列表分别呈现可浏览选择（62 模型 / 50 数据集，含关键卡片字段列）；k9s 式过滤+标记集（arena/类型/物种/规模）+ 空格键标记 + 稳定 row_key 集合；只读矩阵总览作为辅助视图（非编辑界面）
-- [ ] **SEL-02**: 预设组一键选择：tier-1 E2E 对、tier-2 arena 代表、全部、自定义保存
-- [ ] **SEL-03**: 模板导入/导出：运行配置模板（模型×任务×种子×PEFT×变体×GA 完整参数集）JSON 文件，导入时校验；与 sweep_priorities.json tier 结构兼容或提供互转
+- [x] **SEL-01**: 模型列表与数据集列表分别呈现可浏览选择（62 模型 / 50 数据集，含关键卡片字段列）；k9s 式过滤+标记集（arena/类型/物种/规模）+ 空格键标记 + 稳定 row_key 集合；只读矩阵总览作为辅助视图（非编辑界面）
+- [x] **SEL-02**: 预设组一键选择：tier-1 E2E 对、tier-2 arena 代表、全部、自定义保存
+- [x] **SEL-03**: 模板导入/导出：运行配置模板（模型×任务×种子×PEFT×变体×GA 完整参数集）JSON 文件，导入时校验；与 sweep_priorities.json tier 结构兼容或提供互转
 - [x] **SEL-04**: 每行显示本地数据状态（✓ 在场 / ✗ 缺失 + n_audit 行数）
 
 ### Custom Entries (自定义模型/数据集接入 — 用户自维护，与官方注册表分离)
@@ -94,9 +94,9 @@
 | ENV-02 | Phase 8 | Complete |
 | ENV-03 | Phase 8 | Complete |
 | ENV-04 | Phase 8 | Complete |
-| SEL-01 | Phase 8 | Pending |
-| SEL-02 | Phase 8 | Pending |
-| SEL-03 | Phase 8 | Pending |
+| SEL-01 | Phase 8 | Complete |
+| SEL-02 | Phase 8 | Complete |
+| SEL-03 | Phase 8 | Complete |
 | SEL-04 | Phase 8 | Complete |
 | CUST-01 | Phase 9 | Pending |
 | CUST-02 | Phase 9 | Pending |
