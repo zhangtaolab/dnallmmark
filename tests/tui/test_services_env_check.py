@@ -209,10 +209,14 @@ def test_run_full_check_injected_kernels_return_in_order_and_persist_once(
     ]
 
 
-def _patch_env_smoke_kernels(monkeypatch, cuda_fn=None, matmul_fn=None):
+def _patch_env_smoke_kernels(monkeypatch, order, cuda_fn=None, matmul_fn=None):
     """Replace every env_smoke kernel with a recording fake (D-03: no real
-    kernel ever executes; the service's import seam is what's under test)."""
-    order = []
+    kernel ever executes; the service's import seam is what's under test).
+
+    ``order`` is the shared recording list every fake appends its kernel
+    id to; custom cuda/matmul fakes must do their own appends (they own
+    the recording).
+    """
 
     def fake_version_pins(pins):
         order.append("version_pins")
@@ -263,18 +267,22 @@ def test_run_full_check_default_sequence_mirrors_main_order(
     """
     path = tmp_path / "env_check.json"
     fake_torch = types.ModuleType("torch")
+    order = []
     received = []
 
     def recording_cuda(torch_module):
+        order.append("cuda")
         received.append(("cuda", torch_module))
         return _pass("cuda")
 
     def recording_matmul(torch_module):
+        order.append("matmul")
         received.append(("matmul", torch_module))
         return _pass("matmul")
 
-    order = _patch_env_smoke_kernels(
-        monkeypatch, cuda_fn=recording_cuda, matmul_fn=recording_matmul
+    _patch_env_smoke_kernels(
+        monkeypatch, order=order, cuda_fn=recording_cuda,
+        matmul_fn=recording_matmul,
     )
     # torch PRESENT: a fake module in sys.modules (the 08-01 injection seam)
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
@@ -300,7 +308,8 @@ def test_default_sequence_torch_gate_appends_two_false_results(
     failed CheckResult placeholders with zero lines of their own.
     """
     path = tmp_path / "env_check.json"
-    order = _patch_env_smoke_kernels(monkeypatch)
+    order = []
+    _patch_env_smoke_kernels(monkeypatch, order=order)
     # torch MISSING: the None halt sentinel in sys.modules (08-01 seam) —
     # deterministic regardless of whether the host really has torch.
     monkeypatch.setitem(sys.modules, "torch", None)
