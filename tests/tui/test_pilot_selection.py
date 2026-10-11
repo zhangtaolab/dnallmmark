@@ -60,7 +60,7 @@ from textual.keys import _character_to_key
 from textual.widgets import DataTable, RichLog, Static
 
 import tui.screens.selection as selection_screen_module
-from tui.app import DnallmMarkTui
+from tui.app import DnallmMarkTui, HelpModal
 from tui.screens.selection import (
     ConfirmModal,
     PathInputModal,
@@ -82,6 +82,9 @@ from tui.services.registries import (
     Presence,
 )
 from tui.strings import (
+    APP_HELP_LABEL,
+    APP_HELP_ROW,
+    APP_QUIT_LABEL,
     ENV_KERNEL_LABELS,
     SEL_COL_CATEGORY,
     SEL_COL_MARK,
@@ -93,15 +96,19 @@ from tui.strings import (
     SEL_COL_TASK,
     SEL_COL_TYPE,
     SEL_FILTER_COUNT,
+    SEL_FILTER_KEY_LABEL,
     SEL_FILTER_NO_MATCH,
     SEL_FILTER_UNKNOWN_AXIS,
     SEL_LOADING_ROW,
+    SEL_MARK_LABEL,
+    SEL_MATRIX_LABEL,
     SEL_N_AUDIT_MISSING,
     SEL_PRESENCE_MISSING,
     SEL_PRESENCE_PRESENT,
     SEL_PRESENCE_UNKNOWN,
     SEL_PRESET_ALL,
     SEL_PRESET_APPLIED,
+    SEL_PRESET_LABEL,
     SEL_PRESET_NO_CUSTOMS,
     SEL_PRESET_OVERWRITE_CONFIRM,
     SEL_PRESET_SAVED,
@@ -109,9 +116,12 @@ from tui.strings import (
     SEL_PRESET_TIER_2,
     SEL_PRESET_UNKNOWN_KEYS,
     SEL_REGISTRY_LOAD_FAILED,
+    SEL_SAVE_PRESET_LABEL,
     SEL_STATUS_LINE,
+    SEL_SWITCH_LABEL,
     SEL_TEMPLATE_EXPORTED,
     SEL_TEMPLATE_IMPORTED,
+    SEL_TEMPLATE_LABEL,
     SEL_TEMPLATE_PROBLEM_LINE,
     SEL_TEMPLATE_PROBLEMS,
 )
@@ -862,6 +872,47 @@ async def test_save_preset_overwrite_confirm_works_both_ways():
         await pilot.pause()
         assert isinstance(app.screen, SelectionScreen)
         assert fake.save_calls[-1] == ("fresh", [_KEY_MODEL_A], [])
+
+
+# =====================================================================
+# Pilot tests — the ? help modal over the selection screen (app chrome)
+# =====================================================================
+
+async def test_help_modal_opens_on_the_selection_screen():
+    """? over the selection screen renders every shown binding row —
+    including the ``/`` keycap (a literal Rich would otherwise parse as
+    a broken auto-closing markup tag, CR-01) — and never lists the
+    hidden enter/escape bindings."""
+    app = _app(FakeSelectionService())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpModal), (
+            "? must open the help modal over the selection screen "
+            "without a markup crash"
+        )
+        modal = app.screen
+        rows = [str(static.content) for static in modal.query(Static)]
+        # app rows first, then the screen's shown bindings in declaration
+        # order; the / keycap renders as literal text (the row is a rich
+        # Text content object, never markup-parsed) and the hidden
+        # enter/escape rows never list
+        assert rows == [
+            APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
+            APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
+            APP_HELP_ROW.format(key="space", label=SEL_MARK_LABEL),
+            APP_HELP_ROW.format(key="m", label=SEL_SWITCH_LABEL),
+            APP_HELP_ROW.format(key="p", label=SEL_PRESET_LABEL),
+            APP_HELP_ROW.format(key="x", label=SEL_TEMPLATE_LABEL),
+            APP_HELP_ROW.format(key="s", label=SEL_SAVE_PRESET_LABEL),
+            APP_HELP_ROW.format(key="/", label=SEL_FILTER_KEY_LABEL),
+            APP_HELP_ROW.format(key="v", label=SEL_MATRIX_LABEL),
+        ]
+        # esc closes back to the selection screen
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, SelectionScreen)
 
 
 # =====================================================================

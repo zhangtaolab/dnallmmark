@@ -34,6 +34,7 @@ onto this root.
 from collections.abc import Callable
 from typing import Any, ClassVar
 
+from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
@@ -81,7 +82,12 @@ class HelpModal(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(id="help-box"):
             for key, label in self._rows:
-                yield Static(APP_HELP_ROW.format(key=key, label=label))
+                # A rich Text content object is never markup-parsed — the
+                # keycap renders as literal text. Key displays may be
+                # markup-reserved characters (the selection screen's "/"
+                # filter keycap parsed as a broken auto-closing tag and
+                # crashed the console — the row must stay literal).
+                yield Static(Text(APP_HELP_ROW.format(key=key, label=label)))
             yield Footer()
 
     def on_mount(self) -> None:
@@ -264,9 +270,15 @@ def _binding_row(binding: BindingType) -> "tuple[str, str] | None":
 
     Handles both BINDINGS forms: ``Binding`` objects (key_display shown
     when set) and the tuple shorthands ``(key, action[, description])``
-    (the 2-tuple carries no footer label — no help row for it).
+    (the 2-tuple carries no footer label — no help row for it). Hidden
+    bindings (``show=False``) and description-less bindings never
+    help-render — the same set the Footer renders (a hidden binding
+    listed in help would advertise a key the footer deliberately hides,
+    and a description-less row renders a ``None`` label).
     """
     if isinstance(binding, Binding):
+        if not binding.show or not binding.description:
+            return None  # hidden bindings never help-render (Footer contract)
         return (binding.key_display or binding.key, binding.description)
     if len(binding) >= 3 and binding[2]:
         return (binding[0], binding[2])
