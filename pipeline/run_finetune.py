@@ -44,7 +44,12 @@ import torch
 
 # Sibling module (07-01's CPU-importable port; GPU-lane use only — never
 # imported by tests, which read run_finetune.py as source text instead).
-from flops_counter import FlopsCounter, calibration_forward, count_split_tokens
+from flops_counter import (
+    FlopsCounter,
+    build_hardware_section,
+    calibration_forward,
+    count_split_tokens,
+)
 from torch import nn
 
 # Import torch_npu for Huawei Ascend NPU support. Imported for its
@@ -1528,7 +1533,8 @@ if __name__ == "__main__":
                         checkpoints = glob(outdir + "checkpoint-*")
                         all_steps = [int(ckpt.split("-")[-1]) for ckpt in checkpoints]
                         last_step = max(all_steps)
-                        # Write final_metrics.json FIRST and copy the
+                        # Write final_metrics.json FIRST, then
+                        # flops_report.json SECOND, and copy the
                         # trainer_state.json resume marker LAST (WR-13):
                         # the marker is the completion signal both this
                         # script's resume check and run_sweep.py's skip
@@ -1549,6 +1555,47 @@ if __name__ == "__main__":
                                 "trainable_params_pct": trainable_params_pct,
                             })
                             json.dump(metrics, f, indent=4)
+                        # flops_report.json (PIPE-01 / D-02, 07-04): single
+                        # post-success write from the calibration-slot
+                        # counts — a failed cell emits no report (consistent
+                        # with the no-metrics-no-marker cell semantics,
+                        # research Open Q4; T-07-07: writing it after the
+                        # marker would leave a permanently-done cell missing
+                        # its FLOPs report). The hardware section (D-05)
+                        # captures values that exist only post-training:
+                        # train_time from the train_runtime metric (None if
+                        # absent), max_mem_gb from the peak-memory counter
+                        # (the same expression family as the print-only read
+                        # below, computed here at write time — this read
+                        # happens before trainer.evaluate(), so it measures
+                        # the training peak), gpu_device verbatim from
+                        # torch.cuda.get_device_name() with no enum
+                        # normalization (5090D/4090D pass through as
+                        # reported); NPU/CPU runs record None.
+                        train_time = metrics.get("train_runtime")
+                        if NPU_AVAILABLE:
+                            max_mem_gb = (
+                                torch.npu.max_memory_allocated() / (1024**3)
+                            )
+                        elif torch.cuda.is_available():
+                            max_mem_gb = (
+                                torch.cuda.max_memory_allocated() / (1024**3)
+                            )
+                        else:
+                            max_mem_gb = 0.0
+                        gpu_device = (
+                            torch.cuda.get_device_name()
+                            if torch.cuda.is_available()
+                            else None
+                        )
+                        flops_counter.save_to_json(
+                            num_tokens=current_tokens,
+                            all_tokens=total_tokens,
+                            filepath=os.path.join(outdir, "flops_report.json"),
+                            hardware=build_hardware_section(
+                                gpu_device, train_time, max_mem_gb
+                            ),
+                        )
                         shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json", outdir)
                     trainer.evaluate()
                 # Blind except is the designed isolation (D-08 sanctioned):

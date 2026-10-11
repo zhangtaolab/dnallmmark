@@ -2421,3 +2421,116 @@ def test_calibration_slot_between_encode_and_memory_reset():
         "a flops-related CLI flag exists — D-01 locks FLOPs as "
         "always-on with no flag surface"
     )
+
+
+def test_final_metrics_then_flops_report_then_resume_marker():
+    """WR-13 extension (07-04): the success block writes in the strict
+    source order final_metrics.json < flops_report.json < trainer_state
+    marker copy — the flops report joins the kill-window chain so a
+    process death can never leave a permanently-done cell missing its
+    FLOPs report (T-07-07), and the write's hardware section carries the
+    D-05 values (train_time from the train_runtime metric, max_mem_gb
+    from the peak-memory counter, gpu_device verbatim from
+    torch.cuda.get_device_name())."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    write_idx = src.find('open(outdir + "final_metrics.json"')
+    assert write_idx != -1, (
+        "no final_metrics.json write found — the sweep driver's "
+        "completed/failed contract depends on this file existing"
+    )
+    flops_idx = src.find('os.path.join(outdir, "flops_report.json")')
+    assert flops_idx != -1, (
+        "no flops_report.json write found — every successful run must "
+        "emit the schema-versioned FLOPs report into its own outdir "
+        "(D-02)"
+    )
+    copy_idx = src.find(
+        'shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json"'
+    )
+    assert copy_idx != -1, (
+        "no trainer_state.json resume-marker copy found — without the "
+        "marker, resume would retrain every cell"
+    )
+    assert write_idx < flops_idx < copy_idx, (
+        "the WR-13 write order must be final_metrics.json < "
+        f"flops_report.json < trainer_state.json marker copy (write at "
+        f"{write_idx}, flops at {flops_idx}, copy at {copy_idx}) — a "
+        "flops report written after the marker would leave a "
+        "permanently-done cell missing its FLOPs report on a kill "
+        "between the two (T-07-07)"
+    )
+    # the WR-13 comment names flops_report.json in the ordering chain
+    wr13_idx = src.find("Write final_metrics.json FIRST")
+    assert wr13_idx != -1, "no WR-13 ordering comment found"
+    assert src.find("flops_report.json", wr13_idx, write_idx) != -1, (
+        "the WR-13 comment block must name flops_report.json in the "
+        "ordering chain — a comment describing only final_metrics/marker "
+        "hides the third artifact the discipline now covers"
+    )
+    # D-05 hardware wiring inside the write region (between the
+    # final_metrics write and the marker copy)
+    region = src[write_idx:copy_idx]
+    assert 'metrics.get("train_runtime")' in region, (
+        "train_time must come from the proven train_runtime trainer "
+        "metric (research A1), None-tolerant"
+    )
+    assert "torch.cuda.get_device_name()" in region, (
+        "gpu_device must be captured verbatim from "
+        "torch.cuda.get_device_name() (no enum normalization — 5090D/"
+        "4090D pass through, D-05)"
+    )
+    assert "max_memory_allocated() / (1024**3)" in region, (
+        "max_mem_gb must use the peak-memory counter expression family "
+        "(GiB conversion of max_memory_allocated)"
+    )
+    assert "build_hardware_section(" in region, (
+        "the write must pass hardware=build_hardware_section(...) so the "
+        "optional D-05 section lands in the report"
+    )
+
+
+def test_flops_report_write_rank_guarded():
+    """A5 (07-04): the flops_report.json write sits INSIDE the
+    local_rank == 0 success block — rank-guarded like the final_metrics
+    write (the legacy pipeline wrote unguarded, single-GPU in practice;
+    under torchrun the guard prevents N ranks racing one file, worst case
+    without it being duplicate/torn writes)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    flops_idx = src.find("flops_counter.save_to_json(")
+    assert flops_idx != -1, "no flops_counter.save_to_json call found"
+    guard_match = re.search(
+        r"^([ ]*)if local_rank == 0:", src, re.MULTILINE
+    )
+    assert guard_match is not None, (
+        "no local_rank == 0 success-block guard found"
+    )
+    guard_idx = guard_match.start()
+    assert guard_idx < flops_idx, (
+        "the flops_report write must come after the local_rank == 0 "
+        f"guard (guard at {guard_idx}, write at {flops_idx})"
+    )
+    # block membership: the write line indented DEEPER than the guard
+    # line (inside the guarded block, not merely after the guard line)
+    write_match = re.search(
+        r"^([ ]*)flops_counter\.save_to_json", src, re.MULTILINE
+    )
+    assert write_match is not None
+    assert len(write_match.group(1)) > len(guard_match.group(1)), (
+        "the flops_report write must be INSIDE the local_rank == 0 block "
+        "(write indented "
+        f"{len(write_match.group(1))} spaces vs guard "
+        f"{len(guard_match.group(1))}) — an unguarded write races N ranks "
+        "on one file under torchrun"
+    )
+    # the write precedes trainer.evaluate() — the statement that follows
+    # the success block — so the write is part of the guarded block, not
+    # the post-block flow (statement_index: line-anchored, so the write's
+    # own comments naming trainer.evaluate() never satisfy this)
+    evaluate_idx = statement_index(src, "trainer.evaluate()")
+    assert evaluate_idx != -1, "no trainer.evaluate() call found"
+    assert flops_idx < evaluate_idx, (
+        "the flops_report write must precede trainer.evaluate() (write "
+        f"at {flops_idx}, evaluate at {evaluate_idx}) — it belongs to "
+        "the success block, and reading the peak-memory counter before "
+        "evaluate() is what scopes max_mem_gb to the training peak"
+    )
