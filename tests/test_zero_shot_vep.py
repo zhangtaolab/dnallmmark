@@ -567,6 +567,27 @@ def test_rc_control_clm_only_with_asymmetry(tmp_path):
     assert _row(rows, "stub-bert-6mer")["rc_control"] is None
 
 
+def test_models_filter_unknown_names_abort_listing_offenders(tmp_path):
+    """LOW-04 (phase-06 review): a --models name absent from the registry
+    aborts non-zero listing every offender — previously it matched no
+    registry key, produced all-not-selected rows, and exited 0 (a typo'd
+    multi-model list was invisible in the artifact). Known unselected
+    names keep their skip-as-data not-selected rows."""
+    with pytest.raises(SystemExit) as excinfo:
+        _run_slice(tmp_path, models={"stub-bert-6mer", "ghost-model"})
+    message = str(excinfo.value)
+    assert "ghost-model" in message, (
+        "the refusal must name the unknown filter entry"
+    )
+    assert "--models" in message and "registry" in message
+    # Known names only: no abort, the unselected row stays skip-as-data.
+    rows, _ = _run_slice(tmp_path, models={"stub-bert-6mer"})
+    selected = _row(rows, "stub-bert-6mer")
+    assert selected["excluded_reason"] is None
+    other = _row(rows, "stub-gpt-bpe")
+    assert other["excluded_reason"] == "not selected (--models filter)"
+
+
 def test_scorer_failure_is_a_loud_row_level_exclusion(tmp_path):
     """A scorer exception (model load failure, the paradigm guard)
     becomes that model's disclosed evaluation-failed row — the sibling

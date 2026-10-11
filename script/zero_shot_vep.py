@@ -824,7 +824,11 @@ def run_zero_shot_vep(
         vcf_path: The cohort VCF.
         reference: Chromosome mapping, JSON path, or FASTA path.
         output_dir: Destination for the dual artifacts.
-        models_filter: Optional model-name subset to evaluate.
+        models_filter: Optional model-name subset to evaluate —
+            validated against the registry keys: unknown names abort
+            the run with every offender listed (a typo must not
+            silently produce an all-not-selected artifact, LOW-04);
+            known unselected names keep their skip-as-data rows.
         scorer: The scorer seam.
 
     Returns:
@@ -842,6 +846,20 @@ def run_zero_shot_vep(
             f"Registry '{registry_path}' must be a JSON object mapping "
             "model names to rows."
         )
+    # --models filter validation (LOW-04, phase-06 review): an unknown
+    # name previously matched no registry key, producing 62 not-selected
+    # rows and exit 0 — a typo'd multi-model list was invisible in the
+    # artifact. Refuse fail-fast listing every unknown name (the
+    # run_sweep WR-07 filter discipline); KNOWN unselected names keep
+    # their skip-as-data not-selected rows.
+    if models_filter is not None:
+        unknown = sorted(models_filter - set(registry))
+        if unknown:
+            sys.exit(
+                "[Error] --models name(s) not in the registry: "
+                + ", ".join(unknown)
+                + " (known names are the models_info.json keys)"
+            )
     rows = build_rows(
         registry,
         Path(vcf_path),
@@ -896,7 +914,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--models",
         default=None,
         help="Comma-separated model names to evaluate (default: every "
-        "MLM/CLM registry entry)",
+        "MLM/CLM registry entry); unknown names abort the run listing "
+        "every offender — a typo never silently yields an "
+        "all-not-selected artifact",
     )
     args = parser.parse_args(argv)
     models_filter = None
