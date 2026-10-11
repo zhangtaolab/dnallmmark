@@ -116,3 +116,6 @@ worktrees/
 
 # GSD research dedup cache (ephemeral, tool-internal)
 .planning/research/.cache/
+
+# Reviewer response report (maintainer-only, never committed)
+reviewer-response/
