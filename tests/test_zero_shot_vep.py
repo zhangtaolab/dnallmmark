@@ -546,7 +546,10 @@ def test_sanity_flag_true_and_flips_with_stub_ordering(tmp_path):
 def test_rc_control_clm_only_with_asymmetry(tmp_path):
     """rc_control is a populated dict on CLM rows (forward 1.0, RC 0.0
     under the +2.1 stub shift — a REAL asymmetry computation) and null
-    on MLM rows; the RC sidecar VCF lands in the output dir."""
+    on MLM rows; the RC sidecar VCF lands in the output dir under the
+    PER-MODEL name {model}.rc.vcf (LOW-03: a fixed name made every CLM
+    model's RC pass in a batch overwrite the same file — the surviving
+    sidecar is now auditable against its row)."""
     rows, out = _run_slice(tmp_path)
     clm = _row(rows, "stub-gpt-bpe")["rc_control"]
     assert clm == {
@@ -554,7 +557,13 @@ def test_rc_control_clm_only_with_asymmetry(tmp_path):
         "auroc_rc": pytest.approx(0.0),
         "asymmetry": pytest.approx(1.0),
     }
-    assert (out / "cohort.rc.vcf").is_file()
+    assert (out / "stub-gpt-bpe.rc.vcf").is_file(), (
+        "the RC sidecar must be named {model}.rc.vcf — one per model, "
+        "never a shared fixed name a batch overwrites (LOW-03)"
+    )
+    assert not (out / "cohort.rc.vcf").exists(), (
+        "the pre-LOW-03 fixed sidecar name must be gone"
+    )
     assert _row(rows, "stub-bert-6mer")["rc_control"] is None
 
 

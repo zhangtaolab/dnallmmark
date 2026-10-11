@@ -481,9 +481,12 @@ def _build_rc_cohort(
     construction) becomes one single-ALT row: coordinates transform as
     ``pos0_rc = len(seq) - pos0 - len(ref)`` with reverse-complemented
     alleles, and the label round-trips through the same CLNSIG
-    whitelist vocabulary the suite parses. The output path is derived
-    from the INPUT VCF stem under the output dir — never from VCF
-    record fields (the suite's own path-safety discipline).
+    whitelist vocabulary the suite parses. The sidecar lands under the
+    output dir as ``{model}.rc.vcf`` — one PER MODEL (LOW-03, phase-06
+    review: a fixed name made every CLM model's RC pass in a batch
+    overwrite the same file), so each sidecar stays auditable against
+    its row; the name never derives from VCF record fields (the suite's
+    own path-safety discipline).
 
     Args:
         records: Forward-pass records from the scorer result.
@@ -563,6 +566,7 @@ def _rc_control(
     sequences: Mapping[str, str],
     output_dir: Path,
     scorer: Scorer,
+    model: str,
 ) -> dict[str, Any]:
     """Run the reverse-complement control pass and report asymmetry.
 
@@ -570,8 +574,11 @@ def _rc_control(
         forward: The forward scorer result (records + metrics).
         base_request: The forward request (the model row is reused).
         sequences: The forward reference mapping.
-        output_dir: Destination for the RC cohort VCF sidecar.
+        output_dir: Destination directory for the RC cohort VCF sidecar.
         scorer: The scorer seam.
+        model: The registry model name — the sidecar is
+            ``{model}.rc.vcf``, one per model, so a multi-model batch
+            never overwrites a previous model's RC cohort (LOW-03).
 
     Returns:
         ``{"auroc_forward", "auroc_rc", "asymmetry"}`` — inner nulls
@@ -579,7 +586,7 @@ def _rc_control(
         variants / one label class); asymmetry is the absolute AUROC
         difference, null when either side is missing.
     """
-    out_vcf = output_dir / "cohort.rc.vcf"
+    out_vcf = output_dir / f"{model}.rc.vcf"
     rc_sequences = _build_rc_cohort(
         forward.get("records", []), sequences, out_vcf
     )
@@ -738,7 +745,7 @@ def build_rows(
             )
             if paradigm == "clm":
                 row["rc_control"] = _rc_control(
-                    result, request, mapping, output_dir, scorer
+                    result, request, mapping, output_dir, scorer, model
                 )
             else:
                 row["rc_control"] = None
