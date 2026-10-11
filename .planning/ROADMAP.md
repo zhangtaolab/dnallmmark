@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Dev-Branch Reconciliation & P0 Revision Blockers** - dev@c6b3137 (run_finetune.py rewrite) merged with Phase 1/2 assets intact; dev splits (F1), seed-isolated sweep (F2/G1), old-pipeline retirement (F10); GPU env + two-model E2E on the new pipeline (completed 2026-10-10)
 - [x] **Phase 4: Correctness & Methodology Core** - Species fix via dataset-side metadata (F3②), unified exporter with metric-key mapping + run_record (F3), IN-03 lands; every page renders, submission restored, escaping at touched sites (completed 2026-10-10)
 - [x] **Phase 5: CI & Three-Seed Full Re-Run (E2')** - Aggregation upgrade first (F6: tie/CI-overlap, difficulty normalization, permutation tests), CI golden tests (F9), N audit + eval subsets (F7), then E2' 3-seed full re-run with changelogged tagged migration (completed 2026-10-10)
-- [ ] **Phase 6: Revision Packaging & Extended Lanes** - Provenance table + reproducibility docs + snapshot/Zenodo SI (F3); revision-window permitting: LoRA/IA³/probes (F4), zero-shot VEP (F5), learning curves (F8); remainder to response-letter future work
+- [x] **Phase 6: Revision Packaging & Extended Lanes** - Provenance table + reproducibility docs + snapshot/Zenodo SI (F3); revision-window permitting: LoRA/IA³/probes (F4), zero-shot VEP (F5), learning curves (F8); remainder to response-letter future work (completed 2026-10-11)
 
 ## Phase Details
 
@@ -166,7 +166,7 @@ Plans:
   6. Revision-window lanes, in priority order: LoRA/IA³/frozen probes (REV-05/F4) with a cost-accuracy frontier table; zero-shot VEP lane (REV-08/F5) with CLM/MLM scoring and sanity checks; learning curves (part of REV-08's P2 tail) — whatever does not fit lands in the response letter as future work with the mechanism documented
   7. The intentional Zenodo preview-token link in README.md is replaced with the published record DOI/URL once record 19135551 is public, with the .gitleaks.toml allowlist rule updated in the same commit (WR-01 follow-up)
 
-**Plans**: 5/5 plans executed planned
+**Plans**: 5/5 plans complete planned
 Plans:
 **Wave 1**
 - [x] 06-01-PLAN.md — dnallm 1.2.1 adaptation verification (gating): quirk re-verification vs tag v1.2.1 + citation refresh, --peft tracer wiring (flag + lora:/ia3: YAML + use_lora ctor kwarg + use_ia3), env_smoke peft check + 1.2.1 relabel + smoke-sanction docstring amendment, seed_result.json tolerant reader, and the sanctioned GB10 install + env_smoke EXECUTION + peft_dry_run smoke (REV-05, REV-08)
@@ -193,4 +193,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Pipeline Adaptation to dnallm Dev | 4/4 | Complete    | 2026-10-10 |
 | 4. Correctness Fixes | 5/5 | Complete    | 2026-10-10 |
 | 5. CI & Verified Data Migration | 4/4 | Complete    | 2026-10-10 |
-| 6. Release Packaging & Provenance | 5/5 | In Progress | - |
+| 6. Release Packaging & Provenance | 5/5 | Complete    | 2026-10-11 |

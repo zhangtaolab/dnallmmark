@@ -31,13 +31,13 @@
     {
       "number": "6",
       "name": "Release Packaging & Provenance",
-      "status": "in_progress"
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 6 of 6 · ready to verify"
+    "command": "/gsd:new-milestone",
+    "label": "Start a new milestone",
+    "reason": "All phases complete — start a new milestone"
   },
-  "updated_at": "2026-10-11T00:32:07.812Z"
+  "updated_at": "2026-10-11T02:39:58.519Z"
 }
