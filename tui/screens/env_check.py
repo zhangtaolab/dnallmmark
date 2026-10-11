@@ -267,26 +267,44 @@ class EnvCheckScreen(Screen):
     ]
 
     class CheckItemChecking(Message):
-        """One kernel is starting (worker thread -> event loop, D-03)."""
+        """One kernel is starting (worker thread -> event loop, D-03).
 
-        def __init__(self, kernel_id: str) -> None:
+        Carries the run id it belongs to — the handlers drop messages
+        from a superseded run (WR-02).
+        """
+
+        def __init__(self, kernel_id: str, run_id: int) -> None:
             self.kernel_id = kernel_id
+            self.run_id = run_id
             super().__init__()
 
     class CheckItemDone(Message):
-        """One kernel finished; carries its CheckResult (D-03)."""
+        """One kernel finished; carries its CheckResult (D-03).
 
-        def __init__(self, result: CheckResult) -> None:
+        Carries the run id it belongs to — the handlers drop messages
+        from a superseded run: a cancelled worker's OS thread can still
+        finish its in-flight kernel and post AFTER the new run's
+        messages, and a stale landing last would overwrite the fresh
+        result (WR-02).
+        """
+
+        def __init__(self, result: CheckResult, run_id: int) -> None:
             self.result = result
+            self.run_id = run_id
             super().__init__()
 
     class CheckRunComplete(Message):
-        """The whole run finished (persisted); carries the outcome (D-03)."""
+        """The whole run finished (persisted); carries the outcome (D-03).
+
+        Carries the run id it belongs to — dropped when superseded (WR-02).
+        """
 
         def __init__(self, checked_at: str,
-                     results: "tuple[CheckResult, ...]") -> None:
+                     results: "tuple[CheckResult, ...]",
+                     run_id: int) -> None:
             self.checked_at = checked_at
             self.results = results
+            self.run_id = run_id
             super().__init__()
 
     def __init__(self, env_check_service: EnvCheckServiceProtocol | None = None,
@@ -297,6 +315,10 @@ class EnvCheckScreen(Screen):
             else EnvCheckBackend()
         )
         self._results: dict[str, CheckResult] = {}
+        # The current run's id (WR-02): incremented on every refresh so a
+        # cancelled run's late messages — its OS thread cannot be
+        # interrupted — are recognized as stale and dropped.
+        self._run_id = 0
 
     def compose(self) -> ComposeResult:
         """The screen frame: header, title bar, kernel table, verdict slot."""
@@ -355,25 +377,40 @@ class EnvCheckScreen(Screen):
         run, post the result; per run: persist through the service (file
         I/O stays off the event loop too), then post the completion. The
         cancellation poll between kernels honors exclusive=True's cancel
-        of a still-running previous refresh (threads cannot be interrupted).
+        of a still-running previous refresh (threads cannot be
+        interrupted). Every message carries the run id captured at start;
+        the handlers drop messages whose id no longer matches
+        ``self._run_id`` — the cancelled run's OS thread can finish its
+        in-flight kernel and post AFTER the new run's messages, and a
+        stale landing last would overwrite the fresh result (WR-02).
         """
         worker = get_current_worker()
+        run_id = self._run_id  # the run this worker serves (WR-02)
         results: list[CheckResult] = []
         for kernel_id, kernel in self._service.kernels().items():
             if worker.is_cancelled:
                 return
-            self.post_message(self.CheckItemChecking(kernel_id))
+            self.post_message(self.CheckItemChecking(kernel_id, run_id))
             result = kernel()
             results.append(result)
-            self.post_message(self.CheckItemDone(result))
+            self.post_message(self.CheckItemDone(result, run_id))
+        if worker.is_cancelled:
+            # a newer run superseded this one mid-flight — never persist
+            # stale results over the fresh run's state (the same WR-02
+            # race, on the persisted side)
+            return
         checked_at = self._service.persist(results)
-        self.post_message(self.CheckRunComplete(checked_at, tuple(results)))
+        self.post_message(
+            self.CheckRunComplete(checked_at, tuple(results), run_id)
+        )
 
     # ===== Message handlers (event-loop side: row mutation only, never kernels) =====
 
     def on_env_check_screen_check_item_checking(
             self, message: CheckItemChecking) -> None:
         """Flip the in-flight row to the checking state (inline fill)."""
+        if message.run_id != self._run_id:
+            return  # a newer exclusive run superseded this one (WR-02)
         if message.kernel_id not in ENV_KERNEL_LABELS:
             return
         table = self.query_one("#env-kernels", DataTable)
@@ -385,12 +422,16 @@ class EnvCheckScreen(Screen):
     def on_env_check_screen_check_item_done(
             self, message: CheckItemDone) -> None:
         """Record the result and flip its row to the final glyph + summary."""
+        if message.run_id != self._run_id:
+            return  # a newer exclusive run superseded this result (WR-02)
         self._results[message.result.name] = message.result
         self._apply_result_to_table(message.result)
 
     def on_env_check_screen_check_run_complete(
             self, message: CheckRunComplete) -> None:
         """Render the last-check line + the verdict block (ENV-02/ENV-03)."""
+        if message.run_id != self._run_id:
+            return  # a newer exclusive run superseded this outcome (WR-02)
         self._render_check_outcome(message.checked_at, message.results)
 
     # ===== Rendering (pure UI state mutation over service results) =====
@@ -458,6 +499,7 @@ class EnvCheckScreen(Screen):
         self._results.clear()
         self.query_one("#env-verdict", Vertical).remove_children()
         self.query_one("#env-last-check", Label).update("")
+        self._run_id += 1  # a new run: the old one's messages now drop (WR-02)
         self.run_full_check()
 
     def action_show_detail(self) -> None:

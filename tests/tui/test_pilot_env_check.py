@@ -385,6 +385,88 @@ async def test_refresh_resets_rows_to_pending_and_reruns():
         assert len(fake.persist_calls) == 2  # and persisted again
 
 
+class _StaleRunFake(FakeEnvCheckService):
+    """WR-02's interleave, deterministic: run 1 blocks in its FIRST
+    kernel carrying STALE results (version_pins FAIL); the refresh run
+    resolves instantly with FRESH results (version_pins PASS) and
+    completes while run 1's thread is still blocked. Releasing the gate
+    then lets the cancelled run's late CheckItemDone land AFTER the
+    fresh run's completion — the handlers must drop it."""
+
+    def __init__(self):
+        stale_results = [
+            _fail("version_pins", ["FAIL: stale run result"]),
+            *_mixed_results()[1:],
+        ]
+        super().__init__(cached=None, results=stale_results)
+        self.first_gate = threading.Event()
+        self.gate = self.first_gate
+        self._kernels_calls = 0
+
+    def kernels(self):
+        self._kernels_calls += 1
+        if self._kernels_calls > 1:
+            # the refresh run: instant kernels with the FRESH results
+            self.gate = None
+            self.results = _mixed_results()
+        return super().kernels()
+
+
+async def test_refresh_race_stale_result_never_overwrites_the_fresh_run():
+    """WR-02: a cancelled refresh's late kernel result lands after the
+    new run completed — it must be dropped, never overwrite the fresh
+    row/summary/last-check."""
+    fake = _StaleRunFake()
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        table = app.screen.query_one(DataTable)
+        # run 1 blocks inside its first kernel (the stale version_pins)
+        for _ in range(100):
+            await pilot.pause()
+            if _row(table, 0)[0] == ENV_STATE_CHECKING:
+                break
+        assert _row(table, 0)[0] == ENV_STATE_CHECKING
+
+        # the refresh starts the fresh run (cancelling run 1) — it runs
+        # to completion and renders its outcome while run 1 still blocks
+        await pilot.press("r")
+        for _ in range(100):
+            await pilot.pause()
+            if _label_text(app.screen, "#env-last-check"):
+                break
+        assert _row(table, 0) == [
+            ENV_STATE_PASS,
+            ENV_KERNEL_LABELS["version_pins"],
+            "torch 2.11.0 == pyproject [gpu] pin",
+        ], "the FRESH run's version_pins result must render"
+        assert _label_text(app.screen, "#env-last-check") == (
+            ENV_LAST_CHECK_LINE.format(checked_at=fake.checked_at)
+        )
+
+        # release the stale run's blocked kernel — its late CheckItemDone
+        # posts after the fresh run completed. wait_for_complete cannot
+        # return before the stale thread finished, so the message is in
+        # the queue; the pauses below hand it to the event loop.
+        fake.first_gate.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.pause()
+
+        # the stale result was DROPPED: the fresh glyph, summary, and
+        # last-check line are all intact (the overwrite is the bug)
+        assert _row(table, 0) == [
+            ENV_STATE_PASS,
+            ENV_KERNEL_LABELS["version_pins"],
+            "torch 2.11.0 == pyproject [gpu] pin",
+        ], "a stale result from the cancelled run must never overwrite"
+        assert _label_text(app.screen, "#env-last-check") == (
+            ENV_LAST_CHECK_LINE.format(checked_at=fake.checked_at)
+        )
+        # exactly one run persisted (the stale thread never reached
+        # persist — it returned at the next cancellation poll)
+        assert len(fake.persist_calls) == 1
+
+
 async def test_enter_opens_verbatim_drilldown_modal_blocks_app_bindings():
     """Drill-down: verbatim lines (wrapped, never elided); ModalScreen blocks."""
     fake = FakeEnvCheckService(cached=None)
