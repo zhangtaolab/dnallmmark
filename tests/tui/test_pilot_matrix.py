@@ -61,6 +61,7 @@ from tui.strings import (
     MATRIX_CURSOR_READOUT,
     MATRIX_TITLE,
     SEL_N_AUDIT_MISSING,
+    SEL_REGISTRY_LOAD_FAILED,
 )
 
 _MATRIX_MODULE_FILE = Path(matrix_screen_module.__file__)
@@ -421,6 +422,40 @@ async def test_n_audit_absent_renders_the_documented_empty_copy():
             SEL_N_AUDIT_MISSING
         )
         # esc still pops back (the screen stays a screen)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, SelectionScreen)
+
+
+async def test_models_registry_degraded_mounts_empty_copy_and_stays_alive():
+    """CR-03: v in the models-registry-degraded state (the selection
+    screen's own survivable empty state) pushes a matrix that mounts the
+    documented load-failure copy — never a rowless grid that crashes on
+    mount; enter is a no-op on the empty state; esc pops back alive."""
+    base = _matrix_data()
+    degraded = SelectionData(
+        model_entries=(),
+        dataset_entries=base.dataset_entries,
+        presence=base.presence,
+        models_load_error="/repo/pipeline/models_info.json",
+    )
+    app = _app(degraded)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_matrix(pilot, app)
+        matrix = app.screen
+        assert isinstance(matrix, MatrixScreen)
+        # the documented load-failure copy IS the body — no grid composed
+        assert not list(matrix.query(DataTable))
+        assert str(matrix.query_one("#matrix-empty").content) == (
+            SEL_REGISTRY_LOAD_FAILED.format(
+                registry_path="/repo/pipeline/models_info.json",
+            )
+        )
+        # enter is a no-op on the empty state (no grid, no crash)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.screen is matrix
+        # esc pops back to the selection screen — the app stays alive
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, SelectionScreen)

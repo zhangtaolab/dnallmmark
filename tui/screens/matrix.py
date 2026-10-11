@@ -28,7 +28,12 @@ Contract (locked decisions):
   the 50 dataset columns scroll horizontally.
 - n_audit absent: the documented column-level empty copy renders INSTEAD
   of the grid (presence is the matrix's entire payload — without it the
-  view has nothing honest to show).
+  view has nothing honest to show). A failed models-registry read degrades
+  the same way (CR-03): the selection screen's survivable degraded state
+  must survive HERE too — a rowless grid would crash the cursor readout
+  on mount (``coordinate_to_cell_key`` RAISES for invalid coordinates, it
+  never returns None), so the documented load-failure copy renders
+  instead and the grid is never composed.
 - I18N-01: zero Chinese literals in this module — copy renders through
   ``tui/strings.py`` constants; registry keys stay English verbatim.
 """
@@ -55,6 +60,7 @@ from tui.strings import (
     MATRIX_TITLE,
     SEL_COL_MODEL,
     SEL_N_AUDIT_MISSING,
+    SEL_REGISTRY_LOAD_FAILED,
 )
 
 if TYPE_CHECKING:
@@ -183,14 +189,35 @@ class MatrixScreen(Screen):
             # grid of unknown glyphs would hide the actual state
             yield Static(SEL_N_AUDIT_MISSING, id="matrix-empty")
             return
+        if self._data.models_load_error is not None:
+            # a failed models-registry read (the selection screen's own
+            # survivable degraded state): the documented load-failure
+            # copy IS the body — a rowless grid would crash the cursor
+            # readout on mount (CellDoesNotExist) in exactly the state
+            # this screen must survive (CR-03)
+            yield Static(
+                SEL_REGISTRY_LOAD_FAILED.format(
+                    registry_path=self._data.models_load_error,
+                ),
+                id="matrix-empty",
+            )
+            return
         yield DataTable(id="matrix-table")
         yield Label("", id="matrix-readout")
+
+    @property
+    def _grid_composed(self) -> bool:
+        """True when the grid composed (neither empty state holds)."""
+        return (
+            self._data.audit_available
+            and self._data.models_load_error is None
+        )
 
     def on_mount(self) -> None:
         """Compose the grid: fixed model column, one glyph column per
         dataset, diamond prefixes from the live shared mark sets."""
-        if not self._data.audit_available:
-            return  # the empty state composed instead of the grid
+        if not self._grid_composed:
+            return  # an empty state composed instead of the grid
         table = self.query_one("#matrix-table", DataTable)
         table.cursor_type = "cell"
         table.zebra_stripes = True
@@ -211,8 +238,9 @@ class MatrixScreen(Screen):
             )
             table.add_row(*cells, key=model_key)
         # the cursor starts on the FIRST dataset column — the readout is
-        # immediately meaningful (column 0 is the model column)
-        if self._data.dataset_entries:
+        # immediately meaningful (column 0 is the model column); only a
+        # grid with model rows can carry a cursor at all
+        if self._data.dataset_entries and self._data.model_entries:
             table.cursor_coordinate = Coordinate(0, 1)
         self._update_readout()
         table.focus()
@@ -222,9 +250,12 @@ class MatrixScreen(Screen):
     def _current_task_key(self) -> "str | None":
         """The dataset key under the cursor column, else None."""
         table = self.query_one("#matrix-table", DataTable)
-        cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
-        if cell_key is None:
+        if not table.is_valid_coordinate(table.cursor_coordinate):
+            # no cell under the cursor (a rowless grid, or any invalid
+            # coordinate) — coordinate_to_cell_key RAISES for invalid
+            # coordinates, it never returns None (CR-03)
             return None
+        cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
         column_key = str(cell_key[1].value)
         if column_key in self._task_key_set:
             return column_key
@@ -251,13 +282,19 @@ class MatrixScreen(Screen):
         self.app.pop_screen()
 
     def action_show_key(self) -> None:
-        """enter (table unfocused): the full-key modal for the cursor."""
+        """enter (table unfocused): the full-key modal for the cursor.
+
+        A no-op on the empty states — no grid composed, so there is no
+        cursor cell to show (querying the absent table would crash).
+        """
+        if not self._grid_composed:
+            return  # an empty state composed instead of the grid
         task_key = self._current_task_key()
         if task_key is None:
             return
         table = self.query_one("#matrix-table", DataTable)
         cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
-        model_key = str(cell_key[0].value) if cell_key is not None else ""
+        model_key = str(cell_key[0].value)
         self.app.push_screen(MatrixKeyModal(
             model_key=model_key, task_key=task_key,
         ))

@@ -1063,9 +1063,12 @@ class SelectionScreen(Screen):
     def action_toggle_mark(self) -> None:
         """space: toggle the cursor row's mark (the mark column updates)."""
         table = self.query_one("#selection-table", DataTable)
-        cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
-        if cell_key is None:
+        if not table.is_valid_coordinate(table.cursor_coordinate):
+            # no cell under the cursor (a rowless table) — never marks
+            # (coordinate_to_cell_key RAISES for invalid coordinates, it
+            # never returns None; CR-03's crash class)
             return
+        cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
         row_key = cell_key[0]
         key = str(row_key.value)
         if key not in self._view_keys:
@@ -1344,9 +1347,11 @@ class SelectionScreen(Screen):
     def action_show_detail(self) -> None:
         """enter (table unfocused): drill into the cursor row's card."""
         table = self.query_one("#selection-table", DataTable)
-        cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
-        if cell_key is None:
+        if not table.is_valid_coordinate(table.cursor_coordinate):
+            # no cell under the cursor (a rowless table) — nothing to
+            # drill into (coordinate_to_cell_key RAISES, never None)
             return
+        cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
         self._open_detail(str(cell_key[0].value))
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
