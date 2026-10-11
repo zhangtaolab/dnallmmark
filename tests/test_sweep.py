@@ -2184,11 +2184,16 @@ def test_subset_file_unreadable_path_aborts_naming_path(
     assert "does-not-exist.json" in str(excinfo.value)
 
 
-@pytest.mark.parametrize("payload", [["task-x"], "a string", 42])
+@pytest.mark.parametrize("payload", [["task-x"], "a string", 42, None])
 def test_subset_file_non_object_top_level_aborts(
         tmp_path, monkeypatch, payload):
     """A subset file whose top level is not a JSON object (e.g. a list)
-    aborts non-zero describing the expected shape."""
+    aborts non-zero describing the expected shape. WR-01 (phase-07
+    review): the JSON literal ``null`` (payload None) is in the refused
+    class — it parsed to None, collided with the validator's old
+    ``loaded = None`` unreadable sentinel, and passed startup validation
+    with zero problems, degrading the sweep to N per-cell
+    CalledProcessError failures instead of one startup abort."""
     registry_dir = make_registry(tmp_path)
     subsets = _write_json(tmp_path / "subsets.json", payload)
     with pytest.raises(SystemExit) as excinfo:

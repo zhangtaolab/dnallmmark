@@ -634,13 +634,19 @@ def _validate_subset_file(path, datasets_info):
         SystemExit: listing every problem in one non-zero exit.
     """
     problems = []
-    loaded = None
+    # WR-01 (phase-07 review): a DISTINCT unreadable sentinel — the JSON
+    # literal ``null`` parses to None, which collided with a plain
+    # ``loaded = None`` sentinel and passed startup validation with zero
+    # problems, degrading the sweep to N per-cell CalledProcessError
+    # failures instead of one collect-all startup abort.
+    _unreadable = object()
+    loaded = _unreadable
     try:
         with open(path, "r", encoding="utf-8") as f:
             loaded = json.load(f)
     except (OSError, json.JSONDecodeError) as exc:
         problems.append(f"cannot read {path}: {exc}")
-    if loaded is not None and not isinstance(loaded, dict):
+    if loaded is not _unreadable and not isinstance(loaded, dict):
         problems.append(
             f"top-level JSON is {type(loaded).__name__}, expected an "
             "object mapping task names to lists of integer row IDs"
