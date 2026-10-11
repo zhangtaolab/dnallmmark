@@ -18,16 +18,16 @@
 
 ## 2. 现有资产盘点（TUI 直接复用，无需重做）
 
-| 资产 | 位置/入口 | 说明 |
-|---|---|---|
-| 模型注册表 | `pipeline/models_info.json` | 62 模型，11 键卡片（架构/规模/tokenizer/物种/HF+ModelScope 地址） |
-| 数据集注册表 | `pipeline/datasets_info.json` | 50 数据集，含溯源列（source/citation/license/download_url/alternates） |
-| 数据存在性审计 | `script/audit_n_frequencies.py` → `dnallm-mark/data/n_audit.json` | 每任务 train/dev/test 行数、非 ACGT 统计、缺失标记 |
-| 统一评测子集 | `pipeline/eval_subsets.json` | 公平性评测（`--subset_file`） |
-| 扫描驱动 | `pipeline/run_sweep.py` | 优先级（tier-1/tier-2/其余）、失败清单重跑（`--from-failures`）、干跑（`--dry-run`）、PEFT（`--peft`）、曲线（`--curve`） |
-| 单模型入口 | `pipeline/run_finetune.py` | `--num_train_epochs`/`--config-variant`/`--train_fraction`/`--subset_file` |
-| 环境自检 | `pipeline/env_smoke.py` | 版本 pin/dnallm 导入/CUDA/数据集目录/numpy≥2，PASS/FAIL 退出码 |
-| 迁移/快照 | `make snapshot`、`script/freeze_snapshot.py` | 结果快照 + SHA-256 校验 |
+| 资产           | 位置/入口                                                              | 说明                                                                                                                              |
+| -------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 模型注册表     | `pipeline/models_info.json`                                          | 62 模型，11 键卡片（架构/规模/tokenizer/物种/HF+ModelScope 地址）                                                                 |
+| 数据集注册表   | `pipeline/datasets_info.json`                                        | 50 数据集，含溯源列（source/citation/license/download_url/alternates）                                                            |
+| 数据存在性审计 | `script/audit_n_frequencies.py` → `dnallm-mark/data/n_audit.json` | 每任务 train/dev/test 行数、非 ACGT 统计、缺失标记                                                                                |
+| 统一评测子集   | `pipeline/eval_subsets.json`                                         | 公平性评测（`--subset_file`）                                                                                                   |
+| 扫描驱动       | `pipeline/run_sweep.py`                                              | 优先级（tier-1/tier-2/其余）、失败清单重跑（`--from-failures`）、干跑（`--dry-run`）、PEFT（`--peft`）、曲线（`--curve`） |
+| 单模型入口     | `pipeline/run_finetune.py`                                           | `--num_train_epochs`/`--config-variant`/`--train_fraction`/`--subset_file`                                                |
+| 环境自检       | `pipeline/env_smoke.py`                                              | 版本 pin/dnallm 导入/CUDA/数据集目录/numpy≥2，PASS/FAIL 退出码                                                                   |
+| 迁移/快照      | `make snapshot`、`script/freeze_snapshot.py`                       | 结果快照 + SHA-256 校验                                                                                                           |
 
 **ModelScope 数据覆盖（2026-10-11 已达成 50/50）**：zhangtaolab 官方 9 ｜ lgq12697 镜像 34（GUE/NT/pgb/GB）｜ forrestzhang 7（Deep4mC/iDNA-ABF/iPro-WAEL/BEND，已上传+README）。下载通道：SDK/CLI（`modelscope download --dataset X`）、raw HTTP API（`/api/v1/datasets/{ns}/{name}/repo?FilePath=...`）、git clone。
 
@@ -35,53 +35,59 @@
 
 ### 3.1 模型×数据集选择
 
-- [ ] 矩阵/列表视图：62×50，支持按 arena（animal/plant/microbe）、模型类型（MLM/CLM/DL）、物种、规模过滤
+- [X] 矩阵/列表视图：62×50，支持按 arena（animal/plant/microbe）、模型类型（MLM/CLM/DL）、物种、规模过滤
 - [ ] 预设组一键选择：tier-1 E2E 对、tier-2 arena 代表、全部、自定义保存
-- [ ] 每行显示本地数据状态（✓ 在场 / ✗ 缺失 + 行数来自 n_audit）
+- [X] 每行显示本地数据状态（✓ 在场 / ✗ 缺失 + 行数来自 n_audit）
 - [ ] 选择结果导出为 run_sweep 的 `--models`/`--tasks` 参数或 priorities 文件
+
 - 补充：＿＿＿
 
 ### 3.2 数据管理（下载/校验）
 
-- [ ] 缺失数据集一键下载（ModelScope 通道，注册表 download_url 为唯一权威）
-- [ ] 下载进度显示；落地后行数对账（n_audit 基准）
+- [X] 缺失数据集一键下载（ModelScope 通道，注册表 download_url 为唯一权威）
+- [X] 下载进度显示；落地后行数对账（n_audit 基准）
 - [ ] Zenodo 整包（record 19135551，公开后）作为备选整体入口
 - [ ] 7 个非 ModelScope 托管家族（已由 forrestzhang 补齐——若后续有新增数据源，此处维护映射）
+
 - 补充：＿＿＿
 
 ### 3.3 运行配置
 
-- [ ] 种子选择（默认 42,43,44 = E2' 三种子）
-- [ ] PEFT 模式（none/lora/ia3）+ adapter 别名预览（{model}+lora 等）
-- [ ] config-variant（head/probe/curve）与 PROBE_INELIGIBLE 守卫提示
-- [ ] 学习曲线（--train_fraction 档位选择）
+- [X] 种子选择（默认 42,43,44 = E2' 三种子）
+- [X] PEFT 模式（none/lora/ia3）+ adapter 别名预览（{model}+lora 等）
+- [X] config-variant（head/probe/curve）与 PROBE_INELIGIBLE 守卫提示
+- [X] 学习曲线（--train_fraction 档位选择）
 - [ ] 公平性子集开关（--subset_file eval_subsets.json）
-- [ ] epochs/batch 覆盖（smoke 用 1 epoch 快速通道）
-- [ ] 输出根目录选择 + 干跑预览（枚举出的 cell 数/预估）
-- 补充：＿＿＿
+- [X] epochs/batch 覆盖（smoke 用 1 epoch 快速通道）
+- [X] 输出根目录选择 + 干跑预览（枚举出的 cell 数/预估）
+
+- 补充：＿＿＿除了lora还要加上冻结backbone加上probe的微调办法，默认训练epoch和之前保持一致为3
 
 ### 3.4 执行模式（单卡 → 多卡）
 
-- [ ] **单卡优先**：本机 GB10 开发测试；TUI 内启动 = 与 smoke→E2' 同一入口
-- [ ] 启动前环境自检（env_smoke 集成，FAIL 则阻止并显示原因）
-- [ ] **E2' 边界**：全量三种子重跑仍需维护者显式授权——TUI 对全量启动给出确认门
-- [ ] **多卡（二期）**：按模型分片 × `CUDA_VISIBLE_DEVICES` 多 worker；worker 健康监控；产物合并；失败 worker 隔离重跑
-- 补充：＿＿＿
+- [X] **单卡优先**：本机 GB10 开发测试；TUI 内启动 = 与 smoke→E2' 同一入口
+- [X] 启动前环境自检（env_smoke 集成，FAIL 则阻止并显示原因）
+- [X] **E2' 边界**：全量三种子重跑仍需维护者显式授权——TUI 对全量启动给出确认门
+- [X] **多卡（二期）**：按模型分片 × `CUDA_VISIBLE_DEVICES` 多 worker；worker 健康监控；产物合并；失败 worker 隔离重跑
+
+- 补充：＿＿＿多卡可以使用torch run来实现
 
 ### 3.5 任务监控
 
-- [ ] cell 级状态看板：排队/运行/完成/失败/跳过（seed 相邻显示）
-- [ ] 进度：已完成 cell 数/总数、当前模型×任务×种子、耗时统计
-- [ ] 失败清单实时显示（sweep_failures.json）+ 一键 `--from-failures` 重跑
-- [ ] 日志尾部跟随（当前 cell 的 stdout/stderr）
-- [ ] 断点续跑状态（trainer_state.json 标记识别）
-- 补充：＿＿＿
+- [X] cell 级状态看板：排队/运行/完成/失败/跳过（seed 相邻显示）
+- [X] 进度：已完成 cell 数/总数、当前模型×任务×种子、耗时统计
+- [X] 失败清单实时显示（sweep_failures.json）+ 一键 `--from-failures` 重跑
+- [X] 日志尾部跟随（当前 cell 的 stdout/stderr）
+- [X] 断点续跑状态（trainer_state.json 标记识别）
+
+- 补充：＿＿＿目前部分新架构以及混合架构 tensorboard默认计算的flops有些问题， 这部分需要额外加一个模块来评估flops？
 
 ### 3.6 环境与安全边界
 
 - [ ] ruff + ty 双门保持；TUI 属新依赖需评审（框架选型见开放问题）
 - [ ] DNALLM 套件仓库只读；TUI 不写入
 - [ ] CI 不引入 GPU/TUI 运行时
+
 - 补充：＿＿＿
 
 ## 4. 非功能需求
@@ -90,23 +96,25 @@
 - [ ] 框架候选：**Textual**（纯 Python、无构建步、组件丰富）／rich（轻量只读面板）／urwid（老牌）——见开放问题
 - [ ] 配置持久化：会话选择/过滤器的保存位置（~/.config/dnallmmark/？）
 - [ ] 中文界面/双语？
+
 - 补充：＿＿＿
 
 ## 5. 开放问题（请补充观点）
 
-| # | 问题 | 你的观点 |
-|---|---|---|
-| 1 | TUI 框架选型：Textual vs rich vs urwid？（倾向 Textual：无构建步约束相容、文档好） | ＿ |
-| 2 | 监控刷新机制：轮询 sweep_failures/目录 mtime vs 进程内事件回调？ | ＿ |
-| 3 | 多卡调度策略：静态模型分片 vs 动态任务队列（model 大小均衡）？ | ＿ |
-| 4 | 下载队列是否需要持久化/断点续传？ | ＿ |
-| 5 | TUI 是否也要包一层 Web UI 的远端只读视图（团队看进度）？ | ＿ |
-| 6 | 权限模型：谁能启动全量 E2'？（建议：TUI 内二次确认 + 显式 flag） | ＿ |
-| 7 | ＿新增问题＿ | ＿ |
+| # | 问题                                                                               | 你的观点                                                                                                                                                                                                                                                                            |
+| - | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | TUI 框架选型：Textual vs rich vs urwid？（倾向 Textual：无构建步约束相容、文档好） | ＿                                                                                                                                                                                                                                                                                  |
+| 2 | 监控刷新机制：轮询 sweep_failures/目录 mtime vs 进程内事件回调？                   | ＿                                                                                                                                                                                                                                                                                  |
+| 3 | 多卡调度策略：静态模型分片 vs 动态任务队列（model 大小均衡）？                     | ＿如果多卡不切分模型，切分训练数据                                                                                                                                                                                                                                                  |
+| 4 | 下载队列是否需要持久化/断点续传？                                                  | ＿需要                                                                                                                                                                                                                                                                              |
+| 5 | TUI 是否也要包一层 Web UI 的远端只读视图（团队看进度）？                           | ＿可要可不要                                                                                                                                                                                                                                                                        |
+| 6 | 权限模型：谁能启动全量 E2'？（建议：TUI 内二次确认 + 显式 flag）                   | ＿                                                                                                                                                                                                                                                                                  |
+| 7 | ＿新增问题＿                                                                       | ＿运行需要加一个参数更新梯度步数 Gradient Accumulation*batch size为多少，现在训练脚本是根据模型来自动更新batch size的，所以可以动态调整Gradient Accumulation老保持不同模型尽可能一致，先定16（部分小模型起始batch size就大于16比如64，那么这种情况Gradient Accumulation就为1不管） |
 
 ## 6. 里程碑衔接
 
 本收集文档完成后将作为 `/gsd-new-milestone` 讨论阶段的需求输入（草案骨架：P1 TUI 地基 → P2 数据管理器 → P3 单卡启动+监控 → P4 多卡编排，P4 硬依赖 P3 单卡验证）。
 
 ---
+
 *文档生成于 2026-10-11，基于仓库 @ 当前 autorun HEAD（v0.7.1 收口阶段）。*
