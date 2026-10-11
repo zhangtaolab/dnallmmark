@@ -121,6 +121,16 @@ files). The contracts asserted here are textual/structural:
   disclosing ``[Error]``; the probe variant alone defaults the save name
   to ``{model}+probe`` (the 06-02 alias seam); the per-dataset
   head_config.task_type assignment stays variant-unconditioned.
+- **--train_fraction learning-curve lane (SC-6/REV-08 F8, 06-05)** — the
+  flag (float, default None) validates bounds (0, 1] fail-fast and
+  applies at the --subset_file slot as seed-governed
+  shuffle-then-select on the TRAIN split only (dev/test never touched —
+  the eval-invariance guarantee; A5: plain first-N is explicitly NOT the
+  semantics); the output composition nests frac_{f} UNDER the seed dir
+  (never a sibling — the resume marker is fraction-scoped); the dynamic
+  step cadence consumes the fraction-scaled train count;
+  finetune_config_curve.yaml tightens eval/save/logging to 100/100/50
+  (suite-owned TrainingArguments fields only).
 
 See also:
     ``script/make_dev_splits.py`` — the remediation the guard names.
@@ -142,11 +152,13 @@ ENV_SMOKE = REPO_ROOT / "pipeline" / "env_smoke.py"
 LEGACY_PIPELINE = REPO_ROOT / "pipeline" / "dnallmmark_pipeline.py"
 MODELS_INFO = REPO_ROOT / "pipeline" / "models_info.json"
 PROBE_CONFIG = REPO_ROOT / "pipeline" / "finetune_config_probe.yaml"
+CURVE_CONFIG = REPO_ROOT / "pipeline" / "finetune_config_curve.yaml"
 WITH_HEAD_CONFIG = REPO_ROOT / "pipeline" / "finetune_config_with_head.yaml"
 FINETUNE_CONFIGS = [
     REPO_ROOT / "pipeline" / "finetune_config.yaml",
     REPO_ROOT / "pipeline" / "finetune_config_with_head.yaml",
     REPO_ROOT / "pipeline" / "finetune_config_probe.yaml",
+    REPO_ROOT / "pipeline" / "finetune_config_curve.yaml",
 ]
 
 # Legacy -> unified-registry name mapping for the quirk lists (04-04).
@@ -1578,7 +1590,9 @@ def test_variant_config_registry_maps_choices_to_real_files():
     assert src.find("VARIANT_CONFIGS = {") < src.find(
         'if __name__ == "__main__":'
     ), "VARIANT_CONFIGS must be a module-level mapping"
-    for variant in ("head", "probe"):
+    # Every shipped variant YAML exists on disk (curve lands with the
+    # learning-curve lane, Task 2).
+    for variant in ("head", "probe", "curve"):
         assert (REPO_ROOT / "pipeline" / Path(entries[variant]).name).is_file(), (
             f"the {variant} variant's YAML {entries[variant]} does not "
             "exist on disk — the variant reload would crash at load_config"
@@ -2036,3 +2050,43 @@ def test_fraction_scales_step_cadence_num_train_data():
         "the rescale must sit between the registry read and the step "
         "calculation that consumes it"
     )
+
+
+def test_curve_yaml_tightens_checkpoint_cadence_suite_fields_only():
+    """pipeline/finetune_config_curve.yaml is the base finetune block
+    with eval_steps 100 / save_steps 100 / logging_steps 50 (from the
+    500/500/500 base) — suite-owned TrainingArguments fields only, the
+    dense cadence that makes learning-curve points harvestable offline
+    via extract_curve_points over trainer_state.json log_history."""
+    text = CURVE_CONFIG.read_text(encoding="utf-8")
+    base_text = (REPO_ROOT / "pipeline" / "finetune_config.yaml"
+                 ).read_text(encoding="utf-8")
+    for key, value in (
+        ("eval_steps", "100"), ("save_steps", "100"),
+        ("logging_steps", "50"),
+    ):
+        assert re.search(
+            rf"^\s{{4}}{key}: {value}\s*(?:#.*)?$", text, re.MULTILINE
+        ), (
+            f"the curve variant must tighten {key} to {value} (dense "
+            "checkpoints for offline curve harvesting)"
+        )
+    # suite-owned fields only: the finetune block's key surface matches
+    # the base config's (a tightened copy, not a new schema)
+    def finetune_keys(yaml_text):
+        block = re.search(
+            r"^finetune:\s*\n(.*?)(?=^\S)", yaml_text,
+            re.DOTALL | re.MULTILINE)
+        assert block is not None, "no finetune: block"
+        return set(re.findall(
+            r"^\s{4}([A-Za-z_][A-Za-z0-9_]*):", block.group(1),
+            re.MULTILINE))
+    assert finetune_keys(text) == finetune_keys(base_text), (
+        "the curve finetune block must carry exactly the base block's "
+        "field surface — no invented keys"
+    )
+    # the tightened values genuinely differ from the 500/500/500 base
+    assert re.search(r"^\s{4}eval_steps: 500\b", base_text, re.MULTILINE)
+    assert re.search(r"^\s{4}save_steps: 500\b", base_text, re.MULTILINE)
+    assert re.search(r"^\s{4}logging_steps: 500\b", base_text,
+                     re.MULTILINE)

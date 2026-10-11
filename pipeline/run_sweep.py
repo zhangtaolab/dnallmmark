@@ -25,6 +25,7 @@ run_record.json schema (per seed dir)::
     {
         "model": "...", "task": "...", "seed": 42,
         "peft": "none" | "lora" | "ia3",
+        "train_fraction": 0.25 | null,
         "status": "completed" | "failed" | "skipped",
         "output_dir": ".../seed_42",
         "metrics": { ... },
@@ -151,6 +152,34 @@ Failure boundary:
     UNTOUCHED (an alias marker never skips a base cell). ``none`` is
     byte-identical to today's enumeration, argv, and records.
 
+--curve (06-05, SC-6/REV-08 F8 learning curves):
+    ``--curve "0.25,0.5,1.0"`` (comma-separated train fractions in
+    ``(0, 1]``) expands each (model, task, seed) cell into one cell per
+    fraction — a (model, task, seed, fraction) 4-tuple — with output dirs
+    ``{root}/{model}/{task}/seed_{seed}/frac_{f}/``: frac dirs NEST UNDER
+    the seed dir, NEVER beside it (the trainer_state.json resume marker
+    and the exporter walk stay (model, task, seed, fraction)-scoped; a
+    sibling frac layout would corrupt both). The fraction list validates
+    fail-fast collect-all (parse errors and bounds listed together,
+    duplicates collapse, sorted ascending). Each cell's argv appends
+    ``--train_fraction <f>`` as a separate LIST element;
+    ``run_record.json`` gains a ``train_fraction`` field (float for curve
+    cells, null otherwise). run_finetune applies the fraction to the
+    TRAIN split only, via seed-governed shuffle-then-select — dev/test
+    are untouched, so the eval_subsets discipline keeps test rows
+    identical across fractions and models (the comparability guarantee
+    the lane exists for). Dense checkpoints for offline harvesting come
+    from the ``finetune_config_curve.yaml`` variant (eval/save every 100,
+    logging every 50); ``extract_curve_points()`` reads the (step,
+    eval-metrics) points back out of a trainer_state.json log_history.
+    Composes with ``--peft`` (alias cells expand across fractions).
+    Config variants compose STANDALONE, deliberately not forwarded here:
+    ``run_finetune --config-variant probe --train_fraction f`` nests
+    ``{model}+probe/{task}/seed_{s}/frac_{f}/`` the same way, but the
+    probe lane's scope guard lives in run_finetune — half-wiring a
+    variant flag through this driver is worse than documenting the
+    standalone composition.
+
 FUTURE E2E note (documented here, deliberately NOT executed — D-05):
     On-disk dataset directories are DOUBLE-NESTED after a fresh unzip of
     a suite archive (the zip extracts as ``suite-name/suite-name/task-dir``
@@ -275,12 +304,26 @@ def parse_args():
              "<mode>); 'none' (default) is byte-identical to today"
     )
 
+    parser.add_argument(
+        "--curve",
+        type=str,
+        default=None,
+        help="Comma-separated train fractions in (0, 1], e.g. "
+             "'0.25,0.5,1.0' (SC-6 learning curves, 06-05): each (model, "
+             "task, seed) cell expands to one cell per fraction, output "
+             "nested UNDER the seed dir "
+             "({root}/{model}/{task}/seed_{seed}/frac_{f}/ — never a "
+             "sibling); each cell's argv appends --train_fraction <f> "
+             "(run_finetune applies it to the TRAIN split only, "
+             "seed-governed shuffle-then-select; dev/test untouched)"
+    )
+
     return parser.parse_args()
 
 
 def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir,
-                     peft="none"):
-    """Build the sorted (model, task, seed) cell list from the registries.
+                     peft="none", fractions=None):
+    """Build the sorted (model, task, seed[, fraction]) cell list.
 
     Under ``peft`` lora/ia3 (06-02) the emitted cells carry the ALIAS
     model name ``{model}+{mode}`` — the output-dir / resume-marker
@@ -288,6 +331,12 @@ def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir,
     join stay on BASE names (argv targeting re-derives the base via
     suffix strip in ``build_argv``). Sorting happens AFTER the alias
     mapping, so the enumeration stays deterministic.
+
+    Under ``fractions`` (06-05 curve lane) each (model, task, seed) cell
+    expands to one (model, task, seed, fraction) 4-tuple per fraction —
+    the layout contract lives in ``cell_dir_for`` (frac nested UNDER the
+    seed dir). ``fractions=None`` (the default) enumerates the exact
+    3-tuple cells of today (byte-identical default).
 
     Args:
         models_filter (list[str] | None): restrict to these models_info.json
@@ -299,9 +348,12 @@ def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir,
             registries (the D-10 single source — there is no .txt to read).
         peft (str): adapter mode (none/lora/ia3); none emits base-name
             cells byte-identical to the pre-peft enumeration.
+        fractions (list[float] | None): curve fractions; each cell expands
+            per fraction.
 
     Returns:
-        list[tuple[str, str, int]]: sorted cells (model, task, seed).
+        list[tuple]: sorted cells — (model, task, seed) triples, or
+        (model, task, seed, fraction) quadruples under --curve.
     """
     registry_dir = Path(registry_dir)
     with open(registry_dir / "models_info.json", "r", encoding="utf-8") as f:
@@ -323,12 +375,68 @@ def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir,
     def cell_model(model):
         return f"{model}+{peft}" if peft != "none" else model
 
+    if fractions:
+        return sorted(
+            (cell_model(model), task, seed, fraction)
+            for model in models
+            for task in tasks
+            for seed in seeds
+            for fraction in fractions
+        )
     return sorted(
         (cell_model(model), task, seed)
         for model in models
         for task in tasks
         for seed in seeds
     )
+
+
+def parse_curve_fractions(raw):
+    """Parse + validate a ``--curve`` comma list (fail-fast, collect-all).
+
+    Every problem is collected before the caller exits non-zero (the
+    ``_validate_filters`` discipline, T-05-09): parse errors and
+    out-of-bounds values are listed TOGETHER — the list steers multi-day
+    GPU execution, so a typo must fail fast with every problem named.
+    Valid fractions live in ``(0, 1]`` (``f <= 0`` is meaningless,
+    ``f > 1`` is not a fraction); duplicate values collapse (two
+    identical fractions map to one identical output dir); the returned
+    list is sorted ascending so the enumeration and the manifest are
+    deterministic.
+
+    Args:
+        raw (str): the ``--curve`` value.
+
+    Returns:
+        list[float]: sorted unique fractions.
+
+    Raises:
+        SystemExit: listing every problem, or when nothing parses.
+    """
+    problems = []
+    fractions = []
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
+            problems.append(f"empty fraction element in {raw!r}")
+            continue
+        try:
+            value = float(token)
+        except ValueError:
+            problems.append(f"non-numeric fraction {token!r}")
+            continue
+        if not 0 < value <= 1:
+            problems.append(f"fraction {token!r} outside (0, 1]")
+        else:
+            fractions.append(value)
+    if problems:
+        sys.exit(f"[Error] --curve {'; '.join(problems)}")
+    unique = sorted(set(fractions))
+    if not unique:
+        sys.exit(
+            f"[Error] --curve {raw!r} produced no fractions after parsing"
+        )
+    return unique
 
 
 def _validate_filters(models_filter, tasks_filter, registry_dir):
@@ -631,12 +739,21 @@ def load_failure_pairs(path, registry_dir):
     return pairs
 
 
-def cell_dir_for(output_root, model, task, seed):
-    """Return the seed-isolated cell dir {root}/{model}/{task}/seed_{seed}."""
-    return Path(output_root) / model / task / f"seed_{seed}"
+def cell_dir_for(output_root, model, task, seed, fraction=None):
+    """Return the seed-isolated cell dir {root}/{model}/{task}/seed_{seed},
+    optionally frac-nested UNDER the seed dir (06-05 curve lane:
+    {root}/{model}/{task}/seed_{seed}/frac_{f}/ — the fraction ALWAYS
+    nests under the seed dir, never beside it, so the trainer_state.json
+    resume marker and the exporter walk stay (model, task, seed,
+    fraction)-scoped)."""
+    cell = Path(output_root) / model / task / f"seed_{seed}"
+    if fraction is not None:
+        cell = cell / f"frac_{fraction}"
+    return cell
 
 
-def build_argv(model, task, seed, output_root, peft="none"):
+def build_argv(model, task, seed, output_root, peft="none",
+               train_fraction=None):
     """Build the run_finetune.py argv for one cell — a LIST, never a string.
 
     Under ``peft`` lora/ia3 (06-02) the cell's model is the ALIAS
@@ -648,6 +765,11 @@ def build_argv(model, task, seed, output_root, peft="none"):
     end-to-end). Under ``none`` the argv is byte-identical to the pre-peft
     form — no extra elements.
 
+    Under ``train_fraction`` (06-05 curve lane) the argv appends
+    ``--train_fraction <f>`` as separate LIST elements; run_finetune
+    applies it to the TRAIN split only and nests its output under
+    ``seed_{seed}/frac_{f}/``. Absent fraction: no extra elements.
+
     Args:
         model (str): value for the cell's model identity — the BASE name
             under peft=none, the ALIAS under lora/ia3 (value for
@@ -658,6 +780,8 @@ def build_argv(model, task, seed, output_root, peft="none"):
             subprocess resolves it against its own cwd, which is pinned
             to pipeline/ — see the module docstring's invocation contract).
         peft (str): adapter mode none/lora/ia3.
+        train_fraction (float | None): curve-lane fraction appended as
+            ``--train_fraction <f>`` when given.
 
     Returns:
         list[str]: the argv, each flag and value a separate element.
@@ -673,10 +797,13 @@ def build_argv(model, task, seed, output_root, peft="none"):
     ]
     if peft != "none":
         argv += ["--save_model_name", str(model), "--peft", peft]
+    if train_fraction is not None:
+        argv += ["--train_fraction", str(train_fraction)]
     return argv
 
 
-def launch_subprocess(model, task, seed, output_root, peft="none"):
+def launch_subprocess(model, task, seed, output_root, peft="none",
+                      train_fraction=None):
     """Default executor: run run_finetune.py for one cell.
 
     cwd is pinned to PIPELINE_DIR because finetune_config.yaml and the
@@ -688,7 +815,7 @@ def launch_subprocess(model, task, seed, output_root, peft="none"):
         OSError: the subprocess could not be spawned.
     """
     return subprocess.run(
-        build_argv(model, task, seed, output_root, peft),
+        build_argv(model, task, seed, output_root, peft, train_fraction),
         cwd=PIPELINE_DIR,
         check=True,
     )
@@ -720,18 +847,23 @@ def _write_json(path, payload):
         json.dump(payload, f, indent=4, ensure_ascii=False, sort_keys=True)
 
 
-def _new_record(model, task, seed, cell_dir, git_commit, peft="none"):
+def _new_record(model, task, seed, cell_dir, git_commit, peft="none",
+                train_fraction=None):
     """Build the run_record skeleton (statuses/timestamps filled by caller).
 
     The ``peft`` field (06-02, string, default ``"none"``) marks the
     adapter mode the sweep was launched with — the frontier row derivation
     reads it (alias-suffix first, this field as the record-level source).
+    The ``train_fraction`` field (06-05, float for curve cells, null
+    otherwise) marks the curve lane's fraction — the learning-curve
+    reader groups by it.
     """
     return {
         "model": model,
         "task": task,
         "seed": seed,
         "peft": peft,
+        "train_fraction": train_fraction,
         "status": None,
         "output_dir": str(cell_dir),
         "metrics": None,
@@ -796,16 +928,19 @@ def run_matrix(cells, output_root, executor=None, peft="none"):
     stale failures manifest can never outlive its sweep (WR-06).
 
     Args:
-        cells (list[tuple[str, str, int]]): (model, task, seed) cells in
-            the intended execution order (never re-sorted here). Under
-            --peft the model component is the ALIAS name — the cell dir,
-            record, and manifest all key by it.
+        cells (list[tuple]): (model, task, seed) triples, or (model, task,
+            seed, fraction) quadruples under --curve (06-05), in the
+            intended execution order (never re-sorted here). Under
+            ``--peft`` the model component is the ALIAS name — the cell
+            dir, record, and manifest all key by it; under ``--curve``
+            the fraction component drives the frac-under-seed nesting.
         output_root (str | Path): sweep output root (resolved absolute).
         executor (callable | None): ``executor(model, task, seed,
-            output_root)``; defaults to launch_subprocess (bound with this
-            call's ``peft`` so the real launch path composes the adapter
-            argv). Injectable for the fake-executor tests (D-05: real mode
-            is never launched this phase outside those tests).
+            output_root, train_fraction=None)``; defaults to
+            launch_subprocess (bound with this call's ``peft`` so the real
+            launch path composes the adapter argv). Injectable for the
+            fake-executor tests (D-05: real mode is never launched this
+            phase outside those tests).
         peft (str): adapter mode none/lora/ia3 (06-02) — carried into the
             run_record ``peft`` field and the default executor's argv.
 
@@ -822,9 +957,16 @@ def run_matrix(cells, output_root, executor=None, peft="none"):
 
     records = []
     failures = []
-    for model, task, seed in cells:
-        cell_dir = cell_dir_for(output_root, model, task, seed)
-        record = _new_record(model, task, seed, cell_dir, git_commit, peft)
+    for cell in cells:
+        # Curve cells are (model, task, seed, fraction) quadruples; plain
+        # cells are triples. Normalized here so every downstream consumer
+        # (cell dir, record, executor) sees one shape.
+        model, task, seed = cell[0], cell[1], cell[2]
+        fraction = cell[3] if len(cell) > 3 else None
+        cell_dir = cell_dir_for(output_root, model, task, seed, fraction)
+        record = _new_record(
+            model, task, seed, cell_dir, git_commit, peft,
+            train_fraction=fraction)
         record["started_at"] = _utc_now_iso()
         if (cell_dir / RESUME_MARKER).exists():
             # Seed-scoped resume marker (G1): only THIS (model, task,
@@ -833,7 +975,8 @@ def run_matrix(cells, output_root, executor=None, peft="none"):
         else:
             cell_dir.mkdir(parents=True, exist_ok=True)
             try:
-                executor(model, task, seed, str(output_root))
+                executor(model, task, seed, str(output_root),
+                         train_fraction=fraction)
                 metrics_path = cell_dir / METRICS_NAME
                 if not metrics_path.exists():
                     # CR-02: run_finetune.py's designed blind-except
@@ -910,9 +1053,9 @@ def run_matrix(cells, output_root, executor=None, peft="none"):
         records.append(record)
 
     matrix = {
-        "models": sorted({model for model, _, _ in cells}),
-        "tasks": sorted({task for _, task, _ in cells}),
-        "seeds": sorted({seed for _, _, seed in cells}),
+        "models": sorted({cell[0] for cell in cells}),
+        "tasks": sorted({cell[1] for cell in cells}),
+        "seeds": sorted({cell[2] for cell in cells}),
         "output_root": str(output_root),
     }
     _write_json(output_root / MANIFEST_NAME, _manifest_payload(matrix, records))
@@ -974,6 +1117,12 @@ def main():
     # enumerated (WR-07): an unknown name would otherwise intersect to an
     # empty matrix that writes a manifest and exits 0 "successfully".
     _validate_filters(models_filter, tasks_filter, registry_dir)
+    # Curve-lane fraction list (06-05): validated the same collect-all
+    # fail-fast way BEFORE enumeration — parse errors and bounds are all
+    # listed together, duplicates collapse, order is sorted ascending.
+    fractions = None
+    if args.curve is not None:
+        fractions = parse_curve_fractions(args.curve)
     # Operator-supplied steering inputs (05-04, T-05-09): validated the
     # same fail-fast way BEFORE enumeration — both steer multi-day GPU
     # execution, so a typo'd key must abort loudly, never silently
@@ -985,7 +1134,8 @@ def main():
     if args.from_failures is not None:
         failure_pairs = load_failure_pairs(args.from_failures, registry_dir)
     cells = enumerate_matrix(
-        models_filter, tasks_filter, seeds, registry_dir, peft=args.peft)
+        models_filter, tasks_filter, seeds, registry_dir, peft=args.peft,
+        fractions=fractions)
     if tiers is not None:
         # Tier rank as the PRIMARY sort key over the sorted() fallback —
         # no file, no reordering (byte-identical default enumeration).
@@ -1012,20 +1162,25 @@ def main():
 
     if args.dry_run:
         matrix = {
-            "models": sorted({model for model, _, _ in cells}),
-            "tasks": sorted({task for _, task, _ in cells}),
-            "seeds": sorted({seed for _, _, seed in cells}),
+            "models": sorted({cell[0] for cell in cells}),
+            "tasks": sorted({cell[1] for cell in cells}),
+            "seeds": sorted({cell[2] for cell in cells}),
             "output_root": str(output_root),
         }
         planned_records = [
             {
-                "model": model,
-                "task": task,
-                "seed": seed,
+                "model": cell[0],
+                "task": cell[1],
+                "seed": cell[2],
                 "status": "planned",
-                "output_dir": str(cell_dir_for(output_root, model, task, seed)),
+                "output_dir": str(
+                    cell_dir_for(
+                        output_root, cell[0], cell[1], cell[2],
+                        cell[3] if len(cell) > 3 else None,
+                    )
+                ),
             }
-            for model, task, seed in cells
+            for cell in cells
         ]
         output_root.mkdir(parents=True, exist_ok=True)
         _write_json(

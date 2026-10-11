@@ -66,6 +66,20 @@ Every behavior bullet of the plan's Task 2 is pinned here:
   wrong JSON structure, or an unreadable/unparseable --priority-file /
   --from-failures file exits non-zero with ALL problems listed
   (the _validate_filters discipline), before any cell is enumerated.
+- **--curve fraction expansion (06-05, SC-6/REV-08 F8)** — a comma
+  fraction list in (0, 1] validates fail-fast collect-all (parse errors
+  and bounds listed together, duplicates collapse, sorted ascending);
+  each (model, task, seed) cell expands to one 4-tuple cell per fraction
+  with output dirs {root}/{model}/{task}/seed_{seed}/frac_{f}/ — frac
+  dirs nest UNDER the seed dir, NEVER beside it (the no-sibling layout
+  lock: the trainer_state.json resume marker is fraction-scoped); each
+  cell's argv appends --train_fraction <f> as a separate LIST element;
+  run_record.json gains a train_fraction field (float for curve cells,
+  null otherwise); --curve composes with --peft (alias cells expand
+  across fractions) and --dry-run manifests enumerate frac cells
+  byte-deterministically; extract_curve_points() harvests the (step,
+  eval-metrics) learning-curve points from a trainer_state.json
+  log_history (pure, CPU-side, synthetic-fixture tested).
 
 The runner is stdlib-only and never imports torch/dnallm; no test executes
 the real subprocess (the argv test monkeypatches ``subprocess.run``).
@@ -211,7 +225,7 @@ def test_run_matrix_completed_copies_metrics_verbatim(tmp_path):
     keys, no translation (eval_auroc->eval_AUROC mapping is REV-03's)."""
     out_root = tmp_path / "sweep-out"
 
-    def fake_executor(model, task, seed, output_root):
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
         cell_dir = Path(output_root) / model / task / f"seed_{seed}"
         cell_dir.mkdir(parents=True, exist_ok=True)
         (cell_dir / "final_metrics.json").write_text(
@@ -252,7 +266,7 @@ def test_run_matrix_failed_records_error_and_failures_manifest(tmp_path):
     the error string recorded, and an entry in sweep_failures.json."""
     out_root = tmp_path / "sweep-out"
 
-    def failing_executor(model, task, seed, output_root):
+    def failing_executor(model, task, seed, output_root, train_fraction=None):
         raise subprocess.CalledProcessError(
             returncode=1, cmd="run_finetune.py",
             output="RuntimeError: CUDA out of memory")
@@ -286,7 +300,7 @@ def test_run_matrix_exit0_without_metrics_is_failure(tmp_path):
     completed with null metrics."""
     out_root = tmp_path / "sweep-out"
 
-    def silent_failure_executor(model, task, seed, output_root):
+    def silent_failure_executor(model, task, seed, output_root, train_fraction=None):
         # Exits 0, writes nothing — the dominant real-world failure mode
         # as seen from the driver side of the subprocess seam.
         return None
@@ -323,7 +337,7 @@ def test_run_matrix_corrupt_metrics_file_fails_cell_not_sweep(tmp_path):
     of an uncaught JSONDecodeError aborting the entire sweep."""
     out_root = tmp_path / "sweep-out"
 
-    def corrupting_executor(model, task, seed, output_root):
+    def corrupting_executor(model, task, seed, output_root, train_fraction=None):
         cell_dir = Path(output_root) / model / task / f"seed_{seed}"
         cell_dir.mkdir(parents=True, exist_ok=True)
         if seed == 42:
@@ -378,7 +392,7 @@ def test_run_matrix_resume_marker_is_seed_scoped(tmp_path):
 
     invoked = []
 
-    def fake_executor(model, task, seed, output_root):
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
         invoked.append((model, task, seed))
         cell_dir = Path(output_root) / model / task / f"seed_{seed}"
         cell_dir.mkdir(parents=True, exist_ok=True)
@@ -412,7 +426,7 @@ def test_resume_never_overwrites_existing_run_record(tmp_path):
     marker but no record) still gets a fresh one."""
     out_root = tmp_path / "sweep-out"
 
-    def fake_executor(model, task, seed, output_root):
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
         # Mimic run_finetune.py's success artifacts: final_metrics.json
         # PLUS the trainer_state.json resume marker (written last — the
         # WR-13 ordering), without which run 2 below would have no
@@ -440,7 +454,7 @@ def test_resume_never_overwrites_existing_run_record(tmp_path):
     # record must still be run 1's completed record, verbatim.
     invoked = []
 
-    def never_executor(model, task, seed, output_root):
+    def never_executor(model, task, seed, output_root, train_fraction=None):
         invoked.append((model, task, seed))
 
     second = run_sweep.run_matrix(
@@ -919,7 +933,7 @@ def test_committed_priorities_degradation_order_fake_executor(tmp_path):
     out_root = tmp_path / "sweep-out"
     invoked = []
 
-    def recording_executor(model, task, seed, output_root):
+    def recording_executor(model, task, seed, output_root, train_fraction=None):
         invoked.append((model, task, seed))
         cell_dir = Path(output_root) / model / task / f"seed_{seed}"
         cell_dir.mkdir(parents=True, exist_ok=True)
@@ -973,7 +987,7 @@ def test_run_matrix_preserves_given_cell_order(tmp_path):
     out_root = tmp_path / "sweep-out"
     invoked = []
 
-    def recording_executor(model, task, seed, output_root):
+    def recording_executor(model, task, seed, output_root, train_fraction=None):
         invoked.append((model, task, seed))
         cell_dir = Path(output_root) / model / task / f"seed_{seed}"
         cell_dir.mkdir(parents=True, exist_ok=True)
@@ -1387,7 +1401,7 @@ def test_run_matrix_writes_peft_record_inside_alias_cell_dir(tmp_path):
     the exporter walk treats the alias as just another model dir."""
     out_root = tmp_path / "sweep-out"
 
-    def fake_executor(model, task, seed, output_root):
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
         cell_dir = Path(output_root) / model / task / f"seed_{seed}"
         cell_dir.mkdir(parents=True, exist_ok=True)
         (cell_dir / "final_metrics.json").write_text(
@@ -1449,7 +1463,7 @@ def test_alias_marker_does_not_skip_base_cell(tmp_path):
 
     invoked = []
 
-    def fake_executor(model, task, seed, output_root):
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
         invoked.append((model, task, seed))
         cell_dir = Path(output_root) / model / task / f"seed_{seed}"
         cell_dir.mkdir(parents=True, exist_ok=True)
@@ -1505,3 +1519,232 @@ def test_dry_run_peft_manifest_lists_alias_cells_only(tmp_path, monkeypatch):
         "two --peft dry-runs over the same inputs must produce "
         "byte-identical manifests"
     )
+
+
+# =====================================================================
+# --curve expansion (06-05, SC-6 / REV-08 F8 learning curves)
+# =====================================================================
+
+def test_curve_flag_declared_in_parse_args(monkeypatch):
+    """--curve exists, is a plain string flag, and defaults to None (no
+    fraction expansion — the byte-identical default enumeration)."""
+    monkeypatch.setattr(
+        sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    args = run_sweep.parse_args()
+    assert args.curve is None
+
+
+def test_parse_curve_fractions_valid_sorted_deduped():
+    """A valid comma list parses to sorted unique floats — duplicates
+    collapse (two identical fractions map to one identical output dir)
+    and the ascending order makes the enumeration deterministic."""
+    assert run_sweep.parse_curve_fractions("0.5,0.25,0.25,1.0") == [
+        0.25, 0.5, 1.0]
+    assert run_sweep.parse_curve_fractions("1.0") == [1.0]
+
+
+def test_curve_validation_collects_all_problems_together():
+    """Parse errors and bounds violations are ALL listed in one fail-fast
+    exit (the _validate_filters discipline) — a bad fraction list steers
+    multi-day GPU execution, so every problem must be named at once."""
+    with pytest.raises(SystemExit) as excinfo:
+        run_sweep.parse_curve_fractions("0,abc,1.5")
+    message = str(excinfo.value)
+    assert "[Error] --curve" in message
+    assert "'abc'" in message, "the non-numeric element must be named"
+    assert "'0'" in message, "the f <= 0 element must be named"
+    assert "'1.5'" in message, "the f > 1 element must be named"
+
+
+def test_curve_validation_refuses_empty_elements_and_empty_lists():
+    """An empty comma element and a list that parses to nothing both
+    refuse — never silently enumerate a zero-fraction curve."""
+    with pytest.raises(SystemExit) as empty_elem:
+        run_sweep.parse_curve_fractions("0.5,,1.0")
+    assert "empty fraction element" in str(empty_elem.value)
+    with pytest.raises(SystemExit) as nothing:
+        run_sweep.parse_curve_fractions(" , ")
+    assert "--curve" in str(nothing.value)
+
+
+def test_enumerate_matrix_expands_fraction_cells_sorted(tmp_path):
+    """--curve fractions expand each (model, task, seed) cell into one
+    4-tuple cell per fraction, sorted (model, task, seed, fraction); with
+    no fractions the enumeration is EXACTLY today's 3-tuple form."""
+    registry_dir = make_registry(tmp_path)
+    cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir,
+        fractions=[1.0, 0.25, 0.5])
+    assert cells == [
+        ("model-a", "task-x", 42, 0.25),
+        ("model-a", "task-x", 42, 0.5),
+        ("model-a", "task-x", 42, 1.0),
+    ], "fraction cells must enumerate in sorted fraction order"
+    default = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir)
+    assert default == [("model-a", "task-x", 42)], (
+        "no fractions must keep the exact 3-tuple default enumeration "
+        "(byte-identical cells)"
+    )
+
+
+def test_curve_composes_with_peft_enumeration(tmp_path):
+    """--curve composes with --peft: alias cells expand across fractions
+    exactly like base cells."""
+    registry_dir = make_registry(tmp_path)
+    cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir,
+        peft="lora", fractions=[1.0, 0.25])
+    assert cells == [
+        ("model-a+lora", "task-x", 42, 0.25),
+        ("model-a+lora", "task-x", 42, 1.0),
+    ]
+
+
+def test_curve_dry_run_manifest_lists_frac_cells_nested_under_seed(
+        tmp_path, monkeypatch):
+    """--curve + --dry-run writes planned frac cells whose output dirs
+    nest frac_{f} UNDER the seed dir — the no-sibling regression lock
+    (T-06-15): a frac_ directory may NEVER appear as a direct child of a
+    task dir, or the trainer_state.json resume marker scoping and the
+    exporter walk break. The manifest is byte-identical across two runs
+    and the frac cells enumerate in sorted fraction order."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    argv = [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42,43",
+        "--dry-run",
+        "--curve", "1.0,0.25",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ]
+    run_cli(monkeypatch, argv)
+    manifest_path = out_root / "sweep_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    cells = [(c["model"], c["task"], c["seed"]) for c in manifest["cells"]]
+    assert cells == [
+        ("model-a", "task-x", 42), ("model-a", "task-x", 42),
+        ("model-a", "task-x", 43), ("model-a", "task-x", 43),
+    ]
+    # The no-sibling layout lock: every frac_ path component sits
+    # DIRECTLY under a seed_ component — never a direct child of the
+    # task dir.
+    for entry in manifest["cells"]:
+        parts = Path(entry["output_dir"]).parts
+        frac_positions = [
+            i for i, part in enumerate(parts) if part.startswith("frac_")
+        ]
+        assert frac_positions, (
+            f"curve cell output_dir lacks a frac_ segment: "
+            f"{entry['output_dir']}"
+        )
+        for i in frac_positions:
+            assert parts[i - 1].startswith("seed_"), (
+                f"frac_ dir {parts[i]} is NOT nested under a seed_ dir — "
+                f"a sibling frac layout corrupts the resume-marker "
+                f"scoping and the exporter walk (T-06-15): "
+                f"{entry['output_dir']}"
+            )
+    # sorted fraction order within each (model, task, seed) cell
+    dirs = [c["output_dir"] for c in manifest["cells"]]
+    assert dirs == sorted(dirs)
+    assert "frac_0.25" in dirs[0] and "frac_1.0" in dirs[1]
+    # byte determinism
+    first = manifest_path.read_bytes()
+    run_cli(monkeypatch, argv)
+    assert manifest_path.read_bytes() == first, (
+        "two --curve dry-runs over the same inputs must produce "
+        "byte-identical manifests"
+    )
+    assert not list(out_root.rglob("seed_*")), (
+        "dry-run must not create cell directories"
+    )
+
+
+def test_build_argv_appends_train_fraction_as_list_element():
+    """build_argv appends --train_fraction <f> as separate LIST elements
+    (T-03-10 continuity), composes with the peft alias composition, and
+    omits the elements entirely when no fraction is given."""
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root", train_fraction=0.25)
+    assert isinstance(argv, list)
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--train_fraction") == "0.25"
+    assert flag_value(argv, "--target_model") == "model-a"
+    combined = run_sweep.build_argv(
+        "model-a+lora", "task-x", 42, "/tmp/root", "lora", 0.5)
+    assert flag_value(combined, "--target_model") == "model-a"
+    assert flag_value(combined, "--save_model_name") == "model-a+lora"
+    assert flag_value(combined, "--peft") == "lora"
+    assert flag_value(combined, "--train_fraction") == "0.5"
+    plain = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
+    assert "--train_fraction" not in plain
+
+
+def test_new_record_train_fraction_field():
+    """_new_record gains a train_fraction field: float for curve cells,
+    null otherwise (JSON null via None)."""
+    plain = run_sweep._new_record(
+        "model-a", "task-x", 42, Path("/tmp/root"), "hash")
+    assert plain["train_fraction"] is None
+    curve = run_sweep._new_record(
+        "model-a", "task-x", 42, Path("/tmp/root"), "hash",
+        train_fraction=0.25)
+    assert curve["train_fraction"] == 0.25
+
+
+def test_run_matrix_curve_cell_record_and_frac_scoped_resume(tmp_path):
+    """run_matrix over curve cells writes run_record.json carrying the
+    train_fraction INSIDE the frac-nested cell dir, and the resume marker
+    is (model, task, seed, fraction)-scoped: a marker in frac_0.25 never
+    skips the frac_1.0 cell of the same seed."""
+    out_root = tmp_path / "sweep-out"
+
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
+        cell_dir = run_sweep.cell_dir_for(
+            output_root, model, task, seed, train_fraction)
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text(
+            json.dumps(SUITE_NATIVE_METRICS, indent=4), encoding="utf-8")
+
+    # Pre-existing marker in frac_0.25 only.
+    done = run_sweep.cell_dir_for(out_root, "model-a", "task-x", 42, 0.25)
+    done.mkdir(parents=True)
+    (done / "trainer_state.json").write_text("{}", encoding="utf-8")
+
+    records = run_sweep.run_matrix(
+        [("model-a", "task-x", 42, 0.25), ("model-a", "task-x", 42, 1.0)],
+        out_root, executor=fake_executor)
+    statuses = {r["train_fraction"]: r["status"] for r in records}
+    assert statuses[0.25] == "skipped"
+    assert statuses[1.0] == "completed", (
+        "a frac_0.25 resume marker must never skip the frac_1.0 cell — "
+        "the marker is fraction-scoped (T-06-15 nesting invariant)"
+    )
+    record_path = run_sweep.cell_dir_for(
+        out_root, "model-a", "task-x", 42, 1.0) / "run_record.json"
+    disk = json.loads(record_path.read_text(encoding="utf-8"))
+    assert disk["train_fraction"] == 1.0
+    assert disk["status"] == "completed"
+    assert disk["metrics"] == SUITE_NATIVE_METRICS
+
+
+def test_default_executor_receives_train_fraction(tmp_path, monkeypatch):
+    """run_matrix's DEFAULT executor path threads the fraction through to
+    the real launcher: the captured (never-executed) subprocess argv
+    carries --train_fraction <f>."""
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        if argv[:1] == ["git"]:
+            return subprocess.CompletedProcess(
+                argv, returncode=0, stdout="fakehash\n")
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=0)
+
+    monkeypatch.setattr(run_sweep.subprocess, "run", fake_run)
+    run_sweep.run_matrix(
+        [("model-a", "task-x", 42, 0.25)], tmp_path / "out")
+    assert flag_value(captured["argv"], "--train_fraction") == "0.25"
