@@ -81,6 +81,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import json
 import sys
 from collections import Counter
@@ -88,6 +89,18 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# pipeline/registry_loader.py is not a package sibling of this script (only
+# tests/conftest.py puts pipeline/ on sys.path) — load the module by file
+# path, the script/run_migration_inventory.py:93-98 precedent, so this
+# audit's datasets registry load routes through the same official+custom
+# overlay seam as every other registry consumer (07-02 / D-08).
+_REGISTRY_LOADER_PATH = REPO_ROOT / "pipeline" / "registry_loader.py"
+_REGISTRY_LOADER_SPEC = importlib.util.spec_from_file_location(
+    "registry_loader", _REGISTRY_LOADER_PATH)
+assert _REGISTRY_LOADER_SPEC is not None and _REGISTRY_LOADER_SPEC.loader is not None
+_REGISTRY_LOADER = importlib.util.module_from_spec(_REGISTRY_LOADER_SPEC)
+_REGISTRY_LOADER_SPEC.loader.exec_module(_REGISTRY_LOADER)
 
 # ===== Configuration =====
 
@@ -596,9 +609,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point: audit the registry, emit the artifacts."""
     args = parse_args(argv)
-    registry_path = args.registry_dir / "datasets_info.json"
-    with open(registry_path, "r", encoding="utf-8") as fh:
-        registry = json.load(fh)
+    registry = _REGISTRY_LOADER.load_datasets_registry(args.registry_dir)
 
     tasks, subsets = audit_registry(registry, args.datasets_root)
     artifacts = write_artifacts(

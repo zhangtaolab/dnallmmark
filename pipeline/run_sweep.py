@@ -218,6 +218,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import registry_loader  # sibling module (pipeline/ on sys.path, the same import mechanics tests use for run_sweep itself)
+
 PIPELINE_DIR = Path(__file__).resolve().parent
 RUN_FINETUNE = PIPELINE_DIR / "run_finetune.py"
 
@@ -364,11 +366,8 @@ def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir,
         list[tuple]: sorted cells — (model, task, seed) triples, or
         (model, task, seed, fraction) quadruples under --curve.
     """
-    registry_dir = Path(registry_dir)
-    with open(registry_dir / "models_info.json", "r", encoding="utf-8") as f:
-        models_info = json.load(f)
-    with open(registry_dir / "datasets_info.json", "r", encoding="utf-8") as f:
-        datasets_info = json.load(f)
+    models_info = registry_loader.load_models_registry(registry_dir)
+    datasets_info = registry_loader.load_datasets_registry(registry_dir)
 
     models = sorted(models_info)
     if models_filter:
@@ -470,11 +469,8 @@ def _validate_filters(models_filter, tasks_filter, registry_dir):
     """
     if not models_filter and not tasks_filter:
         return
-    registry_dir = Path(registry_dir)
-    with open(registry_dir / "models_info.json", "r", encoding="utf-8") as f:
-        models_info = json.load(f)
-    with open(registry_dir / "datasets_info.json", "r", encoding="utf-8") as f:
-        datasets_info = json.load(f)
+    models_info = registry_loader.load_models_registry(registry_dir)
+    datasets_info = registry_loader.load_datasets_registry(registry_dir)
     unknown_models = sorted(set(models_filter or []) - set(models_info))
     unknown_tasks = sorted(set(tasks_filter or []) - set(datasets_info))
     untrainable_tasks = sorted(
@@ -510,11 +506,8 @@ def _load_registry_key_sets(registry_dir):
         does: the matrix can never run it, so accepting it would be
         silently inert.
     """
-    registry_dir = Path(registry_dir)
-    with open(registry_dir / "models_info.json", "r", encoding="utf-8") as f:
-        models_info = json.load(f)
-    with open(registry_dir / "datasets_info.json", "r", encoding="utf-8") as f:
-        datasets_info = json.load(f)
+    models_info = registry_loader.load_models_registry(registry_dir)
+    datasets_info = registry_loader.load_datasets_registry(registry_dir)
     no_train_tasks = {
         task for task, row in datasets_info.items() if not row.get("Train")
     }
