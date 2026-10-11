@@ -68,6 +68,7 @@ import json
 import re
 import sys
 import tomllib
+from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 
@@ -76,6 +77,32 @@ REPO_ROOT = PIPELINE_DIR.parent
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 DATASETS_INFO_PATH = PIPELINE_DIR / "datasets_info.json"
 DATASETS_ROOT = PIPELINE_DIR / "datasets"
+
+
+@dataclass(frozen=True)
+class CheckResult:
+    """One kernel's structured outcome (D-02, Phase 8 — the TUI seam).
+
+    The CLI keeps its byte-stable PASS:/FAIL: rendering (main() is the
+    ONLY renderer — kernels build lines, never print), while the Phase 8
+    TUI services import the kernels and consume these values directly
+    (tui->pipeline direction; never subprocess stdout parsing, never
+    re-implemented checks).
+
+    Attributes:
+        name (str): The stable kernel id — exactly the seven ids in
+            main()'s call order: ``version_pins``, ``dnallm``, ``peft``,
+            ``cuda``, ``matmul``, ``numpy``, ``dataset_dirs``.
+        ok (bool): True when the check passed (gates the exit code).
+        lines (tuple[str, ...]): The EXACT PASS/FAIL lines this kernel
+            renders today — byte-stable and order-stable; empty only for
+            the torch-unavailable cuda/matmul placeholders main() appends
+            when torch cannot import.
+    """
+
+    name: str
+    ok: bool
+    lines: tuple[str, ...]
 
 
 def read_gpu_pins(pyproject_path):
@@ -171,30 +198,32 @@ def read_numpy_floor_major(pyproject_path):
     )
 
 
-def check_numpy(floor_major):
+def check_numpy(floor_major) -> CheckResult:
     """Check 6: numpy major version >= the pyproject-parsed floor.
 
     Args:
         floor_major (int): The parsed numpy ``>=`` floor major version.
 
     Returns:
-        bool: True when numpy imported and its major version qualifies.
+        CheckResult: ok=True when numpy imported and its major version
+        qualifies; carries the import line plus the floor comparison
+        line (main() renders them — kernels never print, D-02).
     """
-    numpy = import_or_fail("numpy")
+    numpy, import_line = import_or_fail("numpy")
     if numpy is None:
-        return False
+        return CheckResult(name="numpy", ok=False, lines=(import_line,))
     installed_major = int(str(numpy.__version__).split(".")[0])
     if installed_major >= floor_major:
-        print(
+        detail = (
             f"PASS: numpy {numpy.__version__} >= pyproject floor "
             f"(major >= {floor_major}; dnallm 1.2.1 requires numpy>=2)"
         )
-        return True
-    print(
+        return CheckResult(name="numpy", ok=True, lines=(import_line, detail))
+    detail = (
         f"FAIL: numpy {numpy.__version__} major {installed_major} < "
         f"pyproject floor {floor_major} (dnallm 1.2.1 requires numpy>=2)"
     )
-    return False
+    return CheckResult(name="numpy", ok=False, lines=(import_line, detail))
 
 
 def print_ecosystem_diagnostics():
@@ -226,119 +255,139 @@ def print_ecosystem_diagnostics():
 
 
 def import_or_fail(module_name):
-    """Import one module, printing the PASS/FAIL line for check 2's idiom.
+    """Import one module, building check 2's idiom PASS/FAIL line.
 
-    Any import-time failure is a FAIL line naming the exception class —
-    a smoke gate must report, never traceback.
+    Any import-time failure becomes a named FAIL line — a smoke gate
+    must report, never traceback. D-02: the line is RETURNED for the
+    caller's ``CheckResult`` to carry; nothing here prints.
 
     Args:
         module_name (str): The module to import.
 
     Returns:
-        The imported module, or ``None`` when the import failed.
+        tuple[Any, str]: ``(imported module or None, the PASS/FAIL
+        import line)`` for it.
     """
     try:
         module = import_module(module_name)
     except Exception as exc:  # noqa: BLE001 — the smoke gate's contract:
         # ANY import-time failure is a named FAIL line, never a traceback
-        print(f"FAIL: import {module_name} — {type(exc).__name__}: {exc}")
-        return None
+        return None, f"FAIL: import {module_name} — {type(exc).__name__}: {exc}"
     origin = getattr(module, "__file__", None) or "(built-in)"
-    print(f"PASS: import {module_name} resolves ({origin})")
-    return module
+    return module, f"PASS: import {module_name} resolves ({origin})"
 
 
-def check_version_pins(pins):
+def check_version_pins(pins) -> CheckResult:
     """Check 1: torch/transformers import and match the pyproject pins.
 
     Args:
         pins (dict[str, str]): The parsed ``[gpu]`` pins.
 
     Returns:
-        bool: True when every pinned package imported and matched.
+        CheckResult: ok=True when every pinned package imported and
+        matched; two lines per package (import + pin comparison), in
+        ``sorted(pins)`` order.
     """
     ok = True
+    lines = []
     for package in sorted(pins):
-        module = import_or_fail(package)
+        module, import_line = import_or_fail(package)
+        lines.append(import_line)
         if module is None:
             ok = False
             continue
         installed = release_segment(str(getattr(module, "__version__", "?")))
         pinned = pins[package]
         if installed == pinned:
-            print(f"PASS: {package} {installed} == pyproject [gpu] pin")
+            lines.append(f"PASS: {package} {installed} == pyproject [gpu] pin")
         else:
             ok = False
-            print(
+            lines.append(
                 f"FAIL: {package} {installed!r} != pyproject [gpu] pin "
                 f"{pinned!r}"
             )
-    return ok
+    return CheckResult(name="version_pins", ok=ok, lines=tuple(lines))
 
 
-def check_dnallm():
+def check_dnallm() -> CheckResult:
     """Check 2: ``import dnallm`` resolves (the local dev-clone install).
 
     Returns:
-        bool: True when the import resolved.
+        CheckResult: ok=True with the import PASS line when the import
+        resolved; the named FAIL line otherwise.
     """
-    return import_or_fail("dnallm") is not None
+    module, import_line = import_or_fail("dnallm")
+    return CheckResult(
+        name="dnallm", ok=module is not None, lines=(import_line,)
+    )
 
 
 def check_peft():
-    """Check 7 (06-01): ``import peft`` resolves, version printed.
+    """Check 7 (06-01): ``import peft`` resolves, version reported.
 
-    The SC-6 LoRA/IA3 lanes build on peft: the suite hard-imports it at
-    module top (dnallm/finetune/trainer.py:58 @ v1.2.1 (30dfd6d)), so a
-    GPU environment without an importable peft cannot construct
-    DNATrainer at all. Suite floor ``peft>=0.14.0`` (v1.2.1 pyproject);
-    the resolved version prints here for the smoke record.
+    The SC-6 LoRA/IA3 lanes build on peft: the suite hard-imports it
+    (dnallm/finetune/trainer.py:58 @ v1.2.1 (30dfd6d)); suite floor
+    ``peft>=0.14.0``. No return annotation: ``^def check_peft\\(\\):``
+    is pinned byte-exact by tests/test_run_finetune_contracts.py.
 
     Returns:
-        bool: True when peft imported (version printed on the PASS line).
+        CheckResult: ok + the PASS line carrying __version__ (or FAIL).
     """
     try:
         peft = import_module("peft")
     except Exception as exc:  # noqa: BLE001 — the smoke gate's contract:
         # ANY import-time failure is a named FAIL line, never a traceback
-        print(f"FAIL: import peft — {type(exc).__name__}: {exc}")
-        return False
+        return CheckResult(
+            name="peft",
+            ok=False,
+            lines=(f"FAIL: import peft — {type(exc).__name__}: {exc}",),
+        )
     version = str(getattr(peft, "__version__", "?"))
-    print(
-        f"PASS: peft {version} importable "
-        "(SC-6 LoRA/IA3 lanes; suite floor peft>=0.14.0)"
+    return CheckResult(
+        name="peft",
+        ok=True,
+        lines=(
+            (f"PASS: peft {version} importable "
+             "(SC-6 LoRA/IA3 lanes; suite floor peft>=0.14.0)"),
+        ),
     )
-    return True
 
 
-def check_cuda(torch):
-    """Check 3: CUDA visible, at least one device, name/memory printed.
+def check_cuda(torch) -> CheckResult:
+    """Check 3: CUDA visible, at least one device, name/memory reported.
 
     Args:
         torch: The imported torch module.
 
     Returns:
-        bool: True when CUDA is available with >= 1 device.
+        CheckResult: ok=True when CUDA is available with >= 1 device;
+        carries the availability line plus one device line per index.
     """
     if not torch.cuda.is_available():
-        print("FAIL: torch.cuda.is_available() is False — no visible GPU")
-        return False
+        return CheckResult(
+            name="cuda",
+            ok=False,
+            lines=("FAIL: torch.cuda.is_available() is False — no visible GPU",),
+        )
     count = torch.cuda.device_count()
     if count < 1:
-        print(f"FAIL: torch.cuda.device_count() == {count} (< 1)")
-        return False
-    print(f"PASS: CUDA available, {count} device(s)")
+        return CheckResult(
+            name="cuda",
+            ok=False,
+            lines=(f"FAIL: torch.cuda.device_count() == {count} (< 1)",),
+        )
+    lines = [f"PASS: CUDA available, {count} device(s)"]
     for idx in range(count):
         props = torch.cuda.get_device_properties(idx)
         gib = props.total_memory / (1024 ** 3)
-        print(
+        lines.append(
             f"PASS: device {idx}: {props.name}, "
             f"{gib:.1f} GiB total memory"
         )
-    return True
+    return CheckResult(name="cuda", ok=True, lines=tuple(lines))
 
 
-def check_dataset_dirs():
+def check_dataset_dirs() -> CheckResult:
     """Check 4: every registry Dataset_path dir exists (GUE gate visible).
 
     Missing dirs are listed BY NAME (the documented 7-GUE re-extraction
@@ -348,7 +397,9 @@ def check_dataset_dirs():
     ``{suite}/{task}`` — a note says the archive needs flattening.
 
     Returns:
-        bool: True when every registry dataset dir exists.
+        CheckResult: ok=True with the all-present PASS line; ok=False
+        with the missing-count FAIL line plus one indented ``  - name``
+        line per missing dir (the double-nested note appended verbatim).
     """
     with open(DATASETS_INFO_PATH, "r", encoding="utf-8") as fh:
         datasets_info = json.load(fh)
@@ -366,10 +417,10 @@ def check_dataset_dirs():
             double_nested.append(name)
     total = len(datasets_info)
     if missing:
-        print(
-            f"FAIL: {len(missing)} of {total} registry dataset dir(s) "
-            "missing on disk (the E2' launch gate):"
-        )
+        lines = [
+            (f"FAIL: {len(missing)} of {total} registry dataset dir(s) "
+             "missing on disk (the E2' launch gate):")
+        ]
         for name in missing:
             note = (
                 "  [double-nested: the fresh-unzip suite/suite/task layout "
@@ -377,13 +428,16 @@ def check_dataset_dirs():
                 if name in double_nested
                 else ""
             )
-            print(f"  - {name}{note}")
-        return False
-    print(f"PASS: all {total} registry dataset dir(s) present on disk")
-    return True
+            lines.append(f"  - {name}{note}")
+        return CheckResult(name="dataset_dirs", ok=False, lines=tuple(lines))
+    return CheckResult(
+        name="dataset_dirs",
+        ok=True,
+        lines=(f"PASS: all {total} registry dataset dir(s) present on disk",),
+    )
 
 
-def check_matmul(torch):
+def check_matmul(torch) -> CheckResult:
     """Check 5: one small-tensor matmul — executability, nothing more.
 
     The expected value is derived, not magic: an 8x8 all-ones matmul
@@ -397,25 +451,59 @@ def check_matmul(torch):
         torch: The imported torch module.
 
     Returns:
-        bool: True when the matmul produced the expected value.
+        CheckResult: ok=True with the PASS line when the matmul
+        produced the expected value.
     """
     a = torch.ones(8, 8)
     result = (a @ a).sum().item()
     if result != 512.0:
-        print(f"FAIL: small-tensor matmul produced {result!r}, expected 512.0")
-        return False
-    print("PASS: small-tensor matmul executed (sum == 512.0)")
-    return True
+        return CheckResult(
+            name="matmul",
+            ok=False,
+            lines=((f"FAIL: small-tensor matmul produced {result!r}, "
+                    "expected 512.0"),),
+        )
+    return CheckResult(
+        name="matmul",
+        ok=True,
+        lines=("PASS: small-tensor matmul executed (sum == 512.0)",),
+    )
+
+
+def _emit(result):
+    """Render one kernel result's lines (main()'s rendering helper).
+
+    D-02 (Phase 8): kernels build ``CheckResult`` values and never
+    print — Textual captures stray ``print`` output, so kernel-side
+    printing would pollute the TUI console (RESEARCH Pitfall 6).
+    main() — and only the helpers it calls for rendering, this one and
+    ``print_ecosystem_diagnostics`` — own every byte on stdout.
+
+    Args:
+        result (CheckResult): The kernel result whose lines render now.
+    """
+    for line in result.lines:
+        print(line)
 
 
 def main():
-    """Run every check; exit non-zero when any check failed."""
+    """Run every check; exit non-zero when any check failed.
+
+    D-02 (Phase 8): main() is the ONLY renderer — the seven kernels
+    return ``CheckResult`` values (structured name/ok/lines) for the
+    TUI services layer to import directly, and the byte order below is
+    the E2' greppable contract the golden suite pins: header,
+    version_pins, dnallm, peft, the torch gate, cuda, matmul, numpy,
+    the non-gating INFO diagnostics line, dataset_dirs, trailer.
+    """
     print(f"=== PIPE-02 env smoke ({REPO_ROOT.name} @ {REPO_ROOT}) ===")
     pins = read_gpu_pins(PYPROJECT_PATH)
     results = []
     results.append(check_version_pins(pins))
     results.append(check_dnallm())
     results.append(check_peft())
+    for result in results:  # render the import-surface segment, in order
+        _emit(result)
     # The GPU-surface import as a LITERAL statement (deferred so a missing
     # GPU stack is a named FAIL line, never a traceback): the CUDA and
     # matmul checks below consume this module object directly.
@@ -430,13 +518,16 @@ def main():
         results.append(check_matmul(torch))
     else:
         print("FAIL: torch unavailable — CUDA + matmul checks not run")
-        results.append(False)
-        results.append(False)
+        results.append(CheckResult(name="cuda", ok=False, lines=()))
+        results.append(CheckResult(name="matmul", ok=False, lines=()))
     results.append(check_numpy(read_numpy_floor_major(PYPROJECT_PATH)))
+    for result in results[3:]:  # render the cuda/matmul/numpy segment
+        _emit(result)
     print_ecosystem_diagnostics()
     results.append(check_dataset_dirs())
+    _emit(results[-1])
 
-    failed = results.count(False)
+    failed = sum(1 for result in results if not result.ok)
     if failed:
         print(f"=== SMOKE RESULT: FAIL ({failed} check group(s) failed) ===")
         return 1
