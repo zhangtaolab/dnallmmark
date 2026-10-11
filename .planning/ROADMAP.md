@@ -133,21 +133,24 @@ Plans:
   4. The model list and dataset list are first-class selectable surfaces — browsed independently with key card fields as columns (62 models / 50 datasets); operators filter them k9s-style (arena/type/species/scale), spacebar-mark rows into a stable row_key selection set, apply presets (tier-1 E2E pair, tier-2 arena representatives, all, saved customs), and consult a read-only matrix overview as an auxiliary view — never an editable grid
   5. Every row shows local data presence (✓ present / ✗ missing + n_audit row count) and run-config templates round-trip as validated JSON with `sweep_priorities.json` tier interop; all operator-facing copy is Chinese-primary through the constants module with technical terms in English — and the foundation invariants hold (services layer imports zero textual symbols by test, `[tui]` group keeps textual out of data/gpu lanes, Pilot tests green CPU-side in CI)
 
-**Plans**: 6 plans
+**Plans**: 7 plans
 Plans:
 **Wave 1**
 - [ ] 08-01-PLAN.md — env_smoke D-02 structured-return refactor (ENV-01 substrate): golden byte-characterization suite + kernels-return-CheckResult + renderer main(), E2' contract byte-stable
-- [ ] 08-02-PLAN.md — foundation spine + tracer (D-01): [tui] group + make tui + tui/ skeleton + two-tier test harness + services-textual-free import lock; console boots on the env-check shell over the registry seam
+- [ ] 08-02-PLAN.md — foundation spine (D-01): [tui] group + make tui + tui/ skeleton + test-harness conftest; textual-free services discipline declared; CI lane unchanged
 
-**Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 08-03-PLAN.md — env/registry services (D-04/05/08/09/10): XDG state/config split, env-check orchestration + same-day cache, env-gate judgment + quick-check subset, registry entries + n_audit presence
-- [ ] 08-04-PLAN.md — selection/template services (D-06/D-07, one-way checkpoint): strict run_template schema + collect-all validation + sweep_priorities tier interop, preset derivation, custom presets, filter grammar
+**Wave 2** *(blocked on 08-02)*
+- [ ] 08-03-PLAN.md — phase tracer: console boots on the env-check shell over the registry seam (load_registry_counts 62/50); services-textual-free import-lock test + tier-1/tier-2 test lanes
 
-**Wave 3** *(blocked on 08-03)*
-- [ ] 08-05-PLAN.md — env-check screen + composition root + i18n strings (ENV-01..04 presentation, I18N-01): thread-worker async fill, 上次检查 cache line, advisory gate verdict, verbatim drill-down, min-size/no-color guards
+**Wave 3** *(blocked on 08-01 + 08-03)*
+- [ ] 08-04-PLAN.md — env/registry services (D-04/05/08/09/10): XDG state/config split, env-check orchestration + same-day cache, env-gate judgment + quick-check subset, registry entries + n_audit presence
 
-**Wave 4** *(blocked on 08-04 + 08-05)*
-- [ ] 08-06-PLAN.md — selection + matrix screens (SEL-01..04, I18N-01): k9s filter + mark-set on stable row keys, preset/template modals, presence columns, read-only matrix overview, 80-col backstop Pilot tests
+**Wave 4** *(blocked on 08-04)*
+- [ ] 08-05-PLAN.md — selection/template services (D-06/D-07, one-way checkpoint): strict run_template schema + collect-all validation + sweep_priorities tier interop, preset derivation, custom presets, filter grammar
+- [ ] 08-06-PLAN.md — env-check screen + composition root + i18n strings (ENV-01..04 presentation, I18N-01): thread-worker async fill, 上次检查 cache line, advisory gate verdict, verbatim drill-down, min-size/no-color guards
+
+**Wave 5** *(blocked on 08-05 + 08-06)*
+- [ ] 08-07-PLAN.md — selection + matrix screens (SEL-01..04, I18N-01): k9s filter + mark-set on stable row keys, preset/template modals, presence columns, read-only matrix overview, 80-col backstop Pilot tests
 
 **UI hint**: yes
 

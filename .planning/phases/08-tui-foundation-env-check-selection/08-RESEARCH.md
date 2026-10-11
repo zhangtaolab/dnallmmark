@@ -573,24 +573,28 @@ CI: **zero workflow edits** — the `test` job already runs `make test`; the gro
 | A5 | Unicode row-height: CJK strings in DataTable cells occupy 1 cell row (no double-height issues) | Patterns 3 | cosmetic only |
 | A6 | The env-var override for TUI state/config test injection should be whole-directory, mirroring `DNALLMMARK_CUSTOM_REGISTRY_DIR` | Pattern 4 | low — naming is planner discretion; the whole-dir shape is the ratified precedent |
 
-## Open Questions
+## Open Questions (RESOLVED 2026-10-11 — all four recommendations adopted by the phase 8 plans; none remain open)
 
-1. **TUI env-var names for test injection (D-04 leaves naming to planner)**
+1. **TUI env-var names for test injection (D-04 leaves naming to planner)** — (RESOLVED)
    - What we know: Phase 7 precedent is one whole-dir override var (`DNALLMMARK_CUSTOM_REGISTRY_DIR`); D-04 splits state from config, so one var cannot cover both roots.
    - What's unclear: one var per root (`DNALLMMARK_TUI_STATE_DIR` + `DNALLMMARK_TUI_CONFIG_DIR`) vs a single app-home override.
    - Recommendation: two whole-dir vars mirroring the XDG split; tests point both at `tmp_path` subdirs; document in the settings service docstring.
-2. **Timezone basis for the same-day cache comparison**
+   - Resolution: adopted as recommended — `DNALLMMARK_TUI_STATE_DIR` / `DNALLMMARK_TUI_CONFIG_DIR`, empty value = unset (plan 08-04 Task 1, settings service).
+2. **Timezone basis for the same-day cache comparison** — (RESOLVED)
    - What we know: D-05 says calendar-day; the displayed string is the operator's local clock.
    - What's unclear: local vs UTC for the *comparison*.
    - Recommendation: compare in local time (display and comparison must agree); persist both local display string and ISO instant (Pitfall 8).
-3. **CLI-parity surface for template/preset functions**
+   - Resolution: adopted as recommended — local calendar-day comparison with both `checked_at` (local naive) and `checked_at_iso` persisted (plan 08-04 Task 1).
+3. **CLI-parity surface for template/preset functions** — (RESOLVED)
    - What we know: constraint 4 requires every TUI capability to exist as CLI capability, CI-exercised; env checking already has its CLI (`env_smoke.py` itself).
    - What's unclear: whether template validation/preset derivation need an operator-facing CLI command in Phase 8 or whether CI-exercised tier-1 tests + the JSON-file contract satisfy parity.
    - Recommendation: Phase 8 ships them as importable service functions exercised by tier-1 CI tests (parity = the capability is reachable without the TUI runtime); a thin `python -m tui --export-selection`-style CLI is a natural Phase 11 add-on when run-config materializes. Confirm with maintainer at plan review if in doubt.
-4. **Pilot test lane marker**
+   - Resolution: adopted as recommended — Phase 8 parity = importable service functions exercised by tier-1 CI tests; thin CLI deferred to Phase 11 (plan 08-05 must_haves, "CLI parity" truth).
+4. **Pilot test lane marker** — (RESOLVED)
    - What we know: D-01 ratified textual in the existing CI test lane, zero new jobs; `make test` gains `--group tui`.
    - What's unclear: whether tier-2 tests need a pytest marker (e.g. `pilot`) to allow local fast runs without textual installed.
    - Recommendation: no marker initially (suite is fast); add one only if Pilot runtime or a textual-less local lane becomes a real need.
+   - Resolution: adopted as recommended — no marker in Phase 8; the full `tests/tui` lane runs under `--group dev --group tui`; marker only if a textual-less local lane becomes a real need.
 
 ## Environment Availability
 
