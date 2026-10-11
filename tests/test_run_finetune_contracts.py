@@ -740,6 +740,50 @@ def extract_subset_fns():
     return namespace["validate_subset_file"], namespace["apply_eval_subset"]
 
 
+def extract_fraction_fns():
+    """Exec-extract ``validate_train_fraction`` + ``apply_train_fraction``
+    (the read-source-never-import pattern; the two functions are pure —
+    the span runs to ``def set_seed``, sweeping the module-level variant
+    constants harmlessly along the way)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    match = re.search(
+        r"def validate_train_fraction\(.*?\n(?=def set_seed)", src, re.DOTALL
+    )
+    assert match is not None, (
+        "no validate_train_fraction/apply_train_fraction functions found "
+        "in run_finetune.py — the --train_fraction validator and apply "
+        "seam are missing (REV-08/F8, 06-05)"
+    )
+    namespace = {}
+    exec(match.group(0), namespace)  # noqa: S102 - pure extracted fns
+    return (
+        namespace["validate_train_fraction"],
+        namespace["apply_train_fraction"],
+    )
+
+
+class ShuffleSplit:
+    """Stub HF split: records ``shuffle``/``select`` calls (the fraction
+    seam's primitives — the same Dataset API the eval-subset seam's
+    ``select`` uses)."""
+
+    def __init__(self, n=100):
+        self.n = n
+        self.shuffle_calls = []
+        self.select_calls = []
+
+    def __len__(self):
+        return self.n
+
+    def shuffle(self, seed=None):
+        self.shuffle_calls.append((seed, self.n))
+        return self
+
+    def select(self, ids):
+        self.select_calls.append(list(ids))
+        return self
+
+
 class RecordingSplit:
     """Stub HF split: records ``.select`` calls (the test double for
     ``datasets.Dataset.select`` — the same primitive the suite's own
@@ -1788,4 +1832,207 @@ def test_per_dataset_head_config_task_type_assignment_untouched():
     assert "config_variant" not in preceding, (
         "the assignment must not be conditioned on the variant flag — it "
         "applies to every head-carrying config alike"
+    )
+
+
+# =====================================================================
+# --train_fraction (06-05, SC-6 / REV-08 F8 learning-curve lane)
+# =====================================================================
+
+def test_train_fraction_flag_shape_and_seed_governed_semantics():
+    """--train_fraction is a float flag defaulting to None whose help
+    documents the A5 decision: the train split is shuffled with the run
+    seed then the first int(n * f) rows kept — fraction variance is
+    SEED-GOVERNED; plain first-N (selection without a shuffle) is
+    explicitly NOT the semantics."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    idx = src.find('"--train_fraction"')
+    assert idx != -1, (
+        "no --train_fraction argument in parse_args() — the curve lane "
+        "cannot subset the train split (REV-08/F8, 06-05)"
+    )
+    block = src[idx:idx + 1600]
+    assert re.search(r"type=float", block), (
+        "--train_fraction must be type=float"
+    )
+    assert re.search(r"default=None", block), (
+        "--train_fraction must default to None — an absent flag means the "
+        "full train split (byte-identical code path)"
+    )
+    lowered = block.lower()
+    assert "seed" in lowered and "shuffle" in lowered, (
+        "the help must document the seed-governed shuffle-then-select "
+        "semantics (research A5)"
+    )
+    assert "first-n" in lowered, (
+        "the help must state that plain first-N is explicitly NOT the "
+        "semantics (the A5 decision, disclosed)"
+    )
+    assert "train" in lowered, (
+        "the help must say the fraction applies to the TRAIN split only"
+    )
+
+
+def test_train_fraction_validator_rejects_out_of_bounds():
+    """The pure validator accepts (0, 1] and rejects f <= 0 and f > 1 with
+    a problem naming the bound; None (absent flag) is vacuously valid."""
+    validate, _apply = extract_fraction_fns()
+    assert validate(None) == []
+    for good in (0.25, 0.5, 0.75, 1.0):
+        assert validate(good) == [], f"{good} must be a valid fraction"
+    for bad in (0.0, -0.5, 1.5, 2.0):
+        problems = validate(bad)
+        assert problems, f"{bad} must be rejected"
+        assert "(0, 1]" in problems[0], (
+            "the problem must name the valid bound (0, 1]"
+        )
+
+
+def test_train_fraction_fail_fast_at_argv_boundary():
+    """The __main__ wiring validates the fraction and exits non-zero with
+    an [Error] message listing the collected problems — before the model
+    loop (the --subset_file / _validate_filters discipline)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    wiring_idx = statement_index(
+        src, "fraction_problems = validate_train_fraction(train_fraction)"
+    )
+    assert wiring_idx != -1, (
+        "no validate_train_fraction call in the __main__ wiring — a bad "
+        "--train_fraction would be applied unvalidated"
+    )
+    assert "[Error] invalid --train_fraction" in src, (
+        "the fail-fast exit must carry an [Error] invalid "
+        "--train_fraction message"
+    )
+    model_loop_idx = src.find("models_info.items():")
+    assert wiring_idx < model_loop_idx, (
+        "the fraction validation must run BEFORE the model loop"
+    )
+
+
+def test_apply_train_fraction_train_only_seed_governed():
+    """The apply seam composes the train split as
+    shuffle(seed=<run seed>).select(range(int(n * f))) — TRAIN SPLIT ONLY:
+    dev and test are never shuffled or selected (the eval-invariance
+    guarantee: test rows identical across fractions and models, so curve
+    points are comparable)."""
+    _validate, apply_fn = extract_fraction_fns()
+    train, dev, test = ShuffleSplit(100), ShuffleSplit(80), ShuffleSplit(60)
+    holder = {"train": train, "dev": dev, "test": test}
+    apply_fn(holder, 0.25, 9527)
+    assert train.shuffle_calls == [(9527, 100)], (
+        "the train split must be shuffled with the RUN seed (A5: fraction "
+        "variance is seed-governed)"
+    )
+    assert train.select_calls == [list(range(25))], (
+        "the selection must keep exactly int(n * f) rows "
+        "(int(100 * 0.25) = 25)"
+    )
+    assert dev.shuffle_calls == [] and dev.select_calls == [], (
+        "dev must NEVER be touched by the fraction path — dev drives "
+        "checkpoint selection and must stay full"
+    )
+    assert test.shuffle_calls == [] and test.select_calls == [], (
+        "test must NEVER be touched by the fraction path — the "
+        "eval_subsets discipline keeps test rows identical across "
+        "fractions and models (the comparability guarantee)"
+    )
+    # f = 1.0 keeps the full split (int(n * 1.0) rows).
+    full_train = ShuffleSplit(50)
+    apply_fn({"train": full_train}, 1.0, 42)
+    assert full_train.select_calls == [list(range(50))]
+
+
+def test_apply_train_fraction_absent_flag_is_noop():
+    """Absent flag (None): zero shuffle/select calls anywhere — the code
+    path is identical to today."""
+    _validate, apply_fn = extract_fraction_fns()
+    splits = {name: ShuffleSplit() for name in ("train", "dev", "test")}
+    apply_fn(splits, None, 9527)
+    for split in splits.values():
+        assert split.shuffle_calls == []
+        assert split.select_calls == []
+
+
+def test_train_fraction_seam_sits_between_load_and_validate():
+    """The fraction apply seam is wired between the
+    DNADataset.load_local_data call and dataset.validate_sequences — the
+    same slot as apply_eval_subset, so the subsetted split is what gets
+    validated and encoded."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    load_idx = statement_index(src, "dataset = DNADataset.load_local_data(")
+    assert load_idx != -1, "no DNADataset.load_local_data call site found"
+    apply_idx = statement_index(
+        src, "apply_train_fraction(dataset.dataset, train_fraction, seed)"
+    )
+    assert apply_idx != -1, (
+        "no apply_train_fraction(dataset.dataset, ...) wiring — the seam "
+        "exists but is never invoked at the load/validate boundary"
+    )
+    validate_idx = statement_index(src, "dataset.validate_sequences(")
+    assert validate_idx != -1, "no validate_sequences call site found"
+    assert load_idx < apply_idx < validate_idx, (
+        "the fraction select must sit AFTER the dataset load and BEFORE "
+        f"validate_sequences (load {load_idx}, apply {apply_idx}, "
+        f"validate {validate_idx})"
+    )
+
+
+def test_frac_segment_nests_under_seed_in_default_outdir():
+    """With --train_fraction given, the default output composition nests
+    frac_{f} UNDER the seed dir — never a sibling — and the
+    trainer_state.json resume check that follows is therefore
+    (model, task, seed, fraction)-scoped: a full run's marker in
+    seed_{s}/ never skips a fraction cell and vice versa."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    outdir_idx = src.find(
+        'f"{save_root}/{model_save_name}/{dataset_name}/seed_{seed}/"'
+    )
+    assert outdir_idx != -1, "the seed-isolated outdir f-string is gone"
+    frac_idx = statement_index(
+        src, "outdir = f\"{outdir}frac_{train_fraction}/\""
+    )
+    assert frac_idx != -1, (
+        "no frac_{train_fraction} nesting append — a fraction run would "
+        "collide with the full run's output dir AND resume marker "
+        "(T-06-15)"
+    )
+    resume_idx = src.find('os.path.exists(outdir + "trainer_state.json")')
+    assert resume_idx != -1, "no trainer_state.json resume check found"
+    assert outdir_idx < frac_idx < resume_idx, (
+        "the frac segment must be appended to the seed dir BEFORE the "
+        "resume check reads it — the marker must be fraction-scoped "
+        f"(outdir {outdir_idx}, frac {frac_idx}, resume {resume_idx})"
+    )
+
+
+def test_fraction_scales_step_cadence_num_train_data():
+    """The dynamic logging/eval/save step calculation uses the
+    FRACTION-SCALED train count (int(Train * f)) under the fraction
+    guard — otherwise a 0.25 cell's computed cadence would be 4x sparser
+    than the actual step count and the learning-curve points would not
+    be dense (the lane's whole purpose). Absent fraction: the registry
+    Train count, byte-identical to today."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    read_idx = statement_index(
+        src, 'num_train_data = int(row["Train"])'
+    )
+    assert read_idx != -1, "no num_train_data read found"
+    guarded = re.search(
+        r"if train_fraction is not None:\s*\n"
+        r"[^\S\n]*num_train_data = int\(num_train_data \* train_fraction\)",
+        src,
+    )
+    assert guarded is not None, (
+        "no fraction-guarded num_train_data rescale — the step-cadence "
+        "calculation would use the full registry count for a fraction "
+        "cell, making curve checkpoints sparse"
+    )
+    step_idx = statement_index(
+        src, "step = num_train_data * epoch // (bs_new * grad_accum * num_gpus * 10)"
+    )
+    assert step_idx != -1, "no step cadence calculation found"
+    assert read_idx < guarded.start() < step_idx, (
+        "the rescale must sit between the registry read and the step "
+        "calculation that consumes it"
     )

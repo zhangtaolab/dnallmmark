@@ -243,6 +243,25 @@ def parse_args():
              "default)"
     )
 
+    parser.add_argument(
+        "--train_fraction",
+        type=float,
+        default=None,
+        help="Restrict the TRAIN split to a fraction of its rows (SC-6 "
+             "learning curves, 06-05): the split is shuffled with the run "
+             "--seed then the first int(n * f) rows kept — fraction "
+             "variance is SEED-GOVERNED (research A5: selection without "
+             "a shuffle — plain first-N — is explicitly NOT the "
+             "semantics, it would couple the fraction to registry row "
+             "order). TRAIN SPLIT ONLY: dev/test are untouched, so the "
+             "eval_subsets discipline keeps test rows identical across "
+             "fractions and models (the comparability guarantee the "
+             "curve lane exists for). f must satisfy 0 < f <= 1. The "
+             "output composition nests .../seed_{seed}/frac_{f}/ so "
+             "fraction runs never collide with full runs. Absent = the "
+             "full train split (byte-identical code path)"
+    )
+
     args = parser.parse_args()
     return args
 
@@ -354,6 +373,59 @@ def apply_eval_subset(dataset_dict, dataset_name, eval_subsets):
         return
     if "test" in dataset_dict:
         dataset_dict["test"] = dataset_dict["test"].select(ids)
+
+
+def validate_train_fraction(fraction):
+    """Validate a ``--train_fraction`` value (REV-08/F8, 06-05).
+
+    Pure validator mirroring ``validate_subset_file``'s collect-all
+    discipline: returns the problem list (empty = valid). Fractions live
+    in ``(0, 1]`` — ``f <= 0`` is meaningless and ``f > 1`` is not a
+    fraction.
+
+    Args:
+        fraction (float | None): the flag value; None (absent flag) is
+            vacuously valid.
+
+    Returns:
+        list[str]: every problem found (at most one for a scalar).
+    """
+    if fraction is None:
+        return []
+    if fraction <= 0 or fraction > 1:
+        return [f"{fraction!r} is outside (0, 1]"]
+    return []
+
+
+def apply_train_fraction(dataset_dict, fraction, seed):
+    """Restrict the TRAIN split to a fraction of its rows (REV-08/F8).
+
+    Seed-governed shuffle-then-select (research A5): the split is
+    shuffled with the RUN seed then the first ``int(n * f)`` rows kept,
+    so fraction variance is governed by the seed — plain first-N
+    (selection without a shuffle) is explicitly NOT the semantics; it
+    would couple the fraction to registry row order. TRAIN SPLIT ONLY:
+    dev and test are never touched (dev drives checkpoint selection; the
+    eval_subsets discipline keeps test rows identical across fractions
+    and models — the comparability guarantee the learning-curve lane
+    exists for). With no fraction this is a no-op — the code path is
+    identical to today.
+
+    Args:
+        dataset_dict (dict): The wrapped ``DatasetDict`` at
+            ``dataset.dataset`` (mutated in place on the train split).
+        fraction (float | None): The ``--train_fraction`` value
+            (None = no-op).
+        seed (int): The run's ``--seed``, governing the shuffle.
+    """
+    if fraction is None:
+        return
+    if "train" in dataset_dict:
+        train = dataset_dict["train"]
+        n = len(train)
+        dataset_dict["train"] = train.shuffle(seed=seed).select(
+            range(int(n * fraction))
+        )
 
 
 # Config-variant YAML resolution (SC-6 lanes, 06-05): each
@@ -580,6 +652,7 @@ if __name__ == "__main__":
     peft_dry_run = args.peft_dry_run
     num_train_epochs = args.num_train_epochs
     config_variant = args.config_variant
+    train_fraction = args.train_fraction
 
     # Unified eval subsets (F7 Q3 / REV-07): validate the --subset_file
     # map fail-fast BEFORE any model load — the run_sweep._validate_filters
@@ -639,6 +712,17 @@ if __name__ == "__main__":
                 "model.py:101-103) never applies — the frozen-probe lane "
                 "covers generic-path models only"
             )
+
+    # Curve-lane fraction validation (REV-08/F8, 06-05): fail fast at the
+    # argv boundary with every problem named (the --subset_file /
+    # run_sweep._validate_filters discipline) — never deep in the
+    # dataset loop after a model load.
+    fraction_problems = validate_train_fraction(train_fraction)
+    if fraction_problems:
+        sys.exit(
+            f"[Error] invalid --train_fraction {train_fraction!r}: "
+            + "; ".join(fraction_problems)
+        )
 
     # Detect GPU/NPU memory with fallbacks
     if torch.cuda.is_available():
@@ -997,6 +1081,16 @@ if __name__ == "__main__":
                 else:
                     model_save_name = model_name
                 outdir = f"{save_root}/{model_save_name}/{dataset_name}/seed_{seed}/"
+                # Curve-lane fraction nesting (REV-08/F8, 06-05): frac_{f}
+                # nests UNDER the seed dir — NEVER a sibling — so the
+                # trainer_state.json resume check below stays scoped per
+                # (model, task, seed, fraction): a full run's marker in
+                # seed_{s}/ never skips a fraction cell and vice versa,
+                # and fraction runs never collide with full runs.
+                # --output_dir (the sweep path) supplies the ROOT
+                # verbatim; this composition owns the tail layout.
+                if train_fraction is not None:
+                    outdir = f"{outdir}frac_{train_fraction}/"
                 os.makedirs(outdir, exist_ok=True)
                 configs["finetune"].output_dir = outdir
 
@@ -1089,6 +1183,15 @@ if __name__ == "__main__":
                 configs["finetune"].per_device_eval_batch_size = bs_new
                 # log and evaluate n times during training
                 num_train_data = int(row["Train"])
+                # Curve-lane cadence scaling (REV-08/F8, 06-05): the
+                # dynamic step calculation below must see the
+                # FRACTION-SCALED train count — a 0.25 cell runs a
+                # quarter of the steps, so the full-count cadence would
+                # land 4x fewer logging/eval/save points than intended
+                # (sparse curves). Guarded: absent fraction keeps the
+                # registry count (byte-identical default path).
+                if train_fraction is not None:
+                    num_train_data = int(num_train_data * train_fraction)
                 epoch = configs["finetune"].num_train_epochs
                 grad_accum = configs["finetune"].gradient_accumulation_steps
                 # In case memory insufficient or effective_batch_size is specified
@@ -1146,6 +1249,12 @@ if __name__ == "__main__":
                 # checkpoint selection, research A4). Without
                 # --subset_file this is a no-op (identical code path).
                 apply_eval_subset(dataset.dataset, dataset_name, eval_subsets)
+                # Curve-lane train fraction (REV-08/F8, 06-05): the same
+                # between-load-and-validate slot, TRAIN SPLIT ONLY —
+                # seed-governed shuffle-then-select (A5), dev/test
+                # untouched (the eval-invariance guarantee); absent flag
+                # = the identical code path.
+                apply_train_fraction(dataset.dataset, train_fraction, seed)
                 # Get dataset statistics
                 dataset_stat = dataset.statistics()
                 # Processing dataset with sequence pairs
