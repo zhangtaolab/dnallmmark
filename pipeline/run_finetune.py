@@ -233,12 +233,19 @@ def parse_args():
         help="Config variant YAML loaded at the special_models reload "
              "slot for ANY model (SC-6 lanes, 06-05): 'head' = "
              "finetune_config_with_head.yaml (the explicit form of the "
-             "implicit evo2/megaDNA auto-reload), 'probe' = "
-             "finetune_config_probe.yaml (frozen backbone, trained MLP "
-             "head — generic-path models ONLY, special-loader models are "
-             "refused; defaults the save name to {model}+probe), 'curve' "
-             "= finetune_config_curve.yaml (dense checkpoint cadence for "
-             "learning curves). Absent = the base config with the "
+             "implicit evo2/megaDNA auto-reload; aliases the save name to "
+             "{model}+head for GENERIC models so a custom-head run never "
+             "collides with the base run's dir/marker — the special pair "
+             "keeps the base name, their with-head config IS their base "
+             "config), 'probe' = finetune_config_probe.yaml (frozen "
+             "backbone, trained MLP head — generic-path models ONLY, "
+             "special-loader models are refused, and --peft is refused: "
+             "adapters-on-frozen is a different experiment; defaults the "
+             "save name to {model}+probe), 'curve' = "
+             "finetune_config_curve.yaml (dense checkpoint cadence for "
+             "learning curves; defaults the save name to {model}+curve "
+             "so a curve-cadence run never collides with a base run). "
+             "Absent = the base config with the "
              "special_models auto-reload unchanged (byte-identical "
              "default)"
     )
@@ -694,6 +701,25 @@ if __name__ == "__main__":
             "and there is no adapter to validate in none mode"
         )
 
+    # Probe x adapter composition refusal (MED-04, phase-06 review):
+    # --config-variant probe and --peft lora/ia3 are independently legal
+    # flags but must not compose. The probe lane trains a head on a
+    # FROZEN backbone — adapters-on-frozen is a different experiment —
+    # and the save-name chain resolves the peft alias FIRST, so the
+    # composition would silently drop the +probe alias and write the
+    # frozen-head adapter run into the PLAIN adapter cell's dir, where
+    # the trainer_state.json resume marker makes the two semantically
+    # different runs silently skip each other. Refuse fail-fast at the
+    # argv boundary (the --peft_dry_run discipline), naming both flags.
+    if config_variant == "probe" and peft_mode != "none":
+        sys.exit(
+            f"[Error] --config-variant probe refuses --peft {peft_mode}: "
+            "the frozen-probe lane trains a head on a frozen backbone — "
+            "adapters-on-frozen is a different experiment, and the "
+            f"composition would share the {{model}}+{peft_mode} output "
+            "dir (and resume marker) with the plain adapter cell"
+        )
+
     # Probe ineligibility guard (SC-6/REV-05 F4, 06-05): the frozen-probe
     # lane covers GENERIC-PATH models only. The suite's
     # load_model_and_tokenizer dispatches the dedicated special-loader
@@ -1073,15 +1099,26 @@ if __name__ == "__main__":
                 # --save_model_name defaults its save name to
                 # {model}+lora / {model}+ia3 — a separate model-level
                 # output dir and therefore a separate trainer_state.json
-                # resume marker, with ZERO layout-code changes. Probe alias
-                # (SC-6/REV-05 F4, 06-05): --config-variant probe likewise
-                # defaults to {model}+probe — the same 06-02 alias seam,
-                # probe variant ONLY (head/curve do not alias). An explicit
-                # --save_model_name always wins; the registry lookup /
-                # target_model filtering above stays on the BASE model
-                # name (the alias affects only output naming); peft=none
-                # with no variant keeps exactly the base name
-                # (byte-identical outdir).
+                # resume marker, with ZERO layout-code changes. Variant
+                # alias isolation (MED-04, phase-06 review): the probe
+                # AND curve variants alias ({model}+probe / {model}+curve),
+                # and --config-variant head aliases for GENERIC models
+                # only ({model}+head) — a variant run that fell through
+                # to the BASE name would land in {model}/{task}/seed_{s}/
+                # where an existing full run's marker silently skips it
+                # (or it completes first and the later REAL base run
+                # silently skips, publishing a variant-config run as the
+                # full result). The special_models pair (evo2_1b_base,
+                # megaDNA_updated) is EXEMPT from the +head alias: their
+                # with-head config IS their base config (the unchanged
+                # auto-reload branch below), so an explicit
+                # --config-variant head run is semantically the plain run
+                # and keeps the base name. An explicit --save_model_name
+                # always wins; the registry lookup / target_model
+                # filtering above stays on the BASE model name (the
+                # alias affects only output naming); peft=none with no
+                # variant keeps exactly the base name (byte-identical
+                # outdir).
                 save_root = output_dir if output_dir else "./finetuned"
                 if save_model_name:
                     model_save_name = save_model_name
@@ -1089,6 +1126,12 @@ if __name__ == "__main__":
                     model_save_name = f"{model_name}+{peft_mode}"
                 elif config_variant == "probe":
                     model_save_name = f"{model_name}+probe"
+                elif config_variant == "curve":
+                    model_save_name = f"{model_name}+curve"
+                elif config_variant == "head" and model_name not in (
+                    "evo2_1b_base", "megaDNA_updated"
+                ):
+                    model_save_name = f"{model_name}+head"
                 else:
                     model_save_name = model_name
                 outdir = f"{save_root}/{model_save_name}/{dataset_name}/seed_{seed}/"

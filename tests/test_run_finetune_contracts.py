@@ -120,8 +120,13 @@ files). The contracts asserted here are textual/structural:
   registry members, one provenance comment each, closed under registry
   case-variant groups) backs an
   argv-boundary guard refusing probe runs on special-loader models with a
-  disclosing ``[Error]``; the probe variant alone defaults the save name
-  to ``{model}+probe`` (the 06-02 alias seam); the per-dataset
+  disclosing ``[Error]``; every variant lane defaults to its own alias —
+  probe ``{model}+probe``, curve ``{model}+curve``, head ``{model}+head``
+  for generic models only (MED-04, phase-06 review: a variant run under
+  the base name collides with the base run's resume marker; the
+  special_models pair keeps the base name because their with-head config
+  IS their base config), and probe x peft is refused at the argv boundary
+  (adapters-on-frozen is a different experiment); the per-dataset
   head_config.task_type assignment stays variant-unconditioned.
 - **--train_fraction learning-curve lane (SC-6/REV-08 F8, 06-05)** — the
   flag (float, default None) validates bounds (0, 1] fail-fast and
@@ -1162,9 +1167,10 @@ def test_use_ia3_mutation_precedes_ctor_inside_quirk_block():
 
 def test_peft_none_save_name_is_exactly_the_base_name():
     """06-02 evolution of the 06-01 no-op contract, extended by 06-05's
-    probe alias branch: the save-name resolution now carries the adapter
-    alias AND the probe alias branches, but under peft=none + no variant
-    the effective name is STILL exactly model_name (the final else branch
+    probe alias branch and the MED-04 (phase-06 review) curve/head
+    branches: the save-name resolution now carries the adapter alias and
+    every variant alias branch, but under peft=none + no variant the
+    effective name is STILL exactly model_name (the final else branch
     of the chain) — the none-mode outdir is byte-identical to today's;
     every peft-driven config mutation remains mode-guarded so the none
     path evaluates exactly the pre-tracer statements."""
@@ -1176,16 +1182,23 @@ def test_peft_none_save_name_is_exactly_the_base_name():
         r'[^\S\n]*model_save_name = f"\{model_name\}\+\{peft_mode\}"\s*\n'
         r'[^\S\n]*elif config_variant == "probe":\s*\n'
         r'[^\S\n]*model_save_name = f"\{model_name\}\+probe"\s*\n'
+        r'[^\S\n]*elif config_variant == "curve":\s*\n'
+        r'[^\S\n]*model_save_name = f"\{model_name\}\+curve"\s*\n'
+        r'[^\S\n]*elif config_variant == "head" and model_name not in \(\s*\n'
+        r'[^\S\n]*"evo2_1b_base", "megaDNA_updated"\s*\n'
+        r'[^\S\n]*\):\s*\n'
+        r'[^\S\n]*model_save_name = f"\{model_name\}\+head"\s*\n'
         r"[^\S\n]*else:\s*\n"
         r"[^\S\n]*model_save_name = model_name",
         src,
     )
     assert chain is not None, (
-        "the save-name resolution must be the four-branch chain "
+        "the save-name resolution must be the six-branch chain "
         '(explicit --save_model_name) > (peft alias {model}+{mode}) > '
-        "(probe alias {model}+probe, 06-05) > (base name) — an unchainable "
-        "form (e.g. an or-expression) would either drop an alias default "
-        "or change the none-mode name"
+        "(probe alias {model}+probe) > (curve alias {model}+curve, MED-04) "
+        "> (head alias {model}+head for GENERIC models, MED-04) > "
+        "(base name) — an unchainable form (e.g. an or-expression) would "
+        "either drop an alias default or change the none-mode name"
     )
     # Every configs["finetune"] mutation mentioning peft must be guarded;
     # an unguarded one would mutate the none path.
@@ -1800,7 +1813,10 @@ def test_probe_ineligibility_guard_fails_fast_before_model_loop():
         "special-loader model would silently train an unfrozen model "
         "under a +probe dir (T-06-16)"
     )
-    error_idx = src.find("[Error] --config-variant probe")
+    # MED-04 note: the probe x peft COMPOSITION refusal also begins
+    # "[Error] --config-variant probe refuses" — the ineligibility
+    # message is the one that names the model(s).
+    error_idx = src.find("[Error] --config-variant probe refuses model")
     assert error_idx != -1, (
         "the guard's fail-fast must carry an [Error] --config-variant "
         "probe message"
@@ -1832,12 +1848,22 @@ def test_probe_ineligibility_guard_fails_fast_before_model_loop():
     )
 
 
-def test_probe_alias_defaults_only_for_the_probe_variant():
-    """--config-variant probe with NO explicit --save_model_name defaults
-    the save name to {model}+probe — the 06-02 alias seam applied to the
-    probe variant ONLY (head/curve do not alias); an explicit
-    --save_model_name still wins (first branch), and the chain still ends
-    at the bare base name for the no-peft/no-variant default."""
+def test_variant_alias_defaults_isolate_every_variant_lane():
+    """Every non-default variant lane defaults to its OWN save name when
+    no explicit --save_model_name is given (MED-04, phase-06 review —
+    previously head/curve deliberately did not alias, so a curve-cadence
+    or custom-head run without --train_fraction landed in the BASE
+    model's dir where the trainer_state.json marker made it and a real
+    full run silently skip each other, publishing a variant-config run
+    as the full result): probe -> {model}+probe, curve -> {model}+curve,
+    head -> {model}+head for GENERIC models only. The special_models
+    pair is exempt from +head — their with-head config IS their base
+    config (the unchanged auto-reload branch overrides the variant for
+    them), so an explicit --config-variant head run on evo2/megaDNA is
+    semantically the plain run and keeps the base name (byte-identical).
+    An explicit --save_model_name still wins (first branch), and the
+    chain still ends at the bare base name for the no-peft/no-variant
+    default."""
     src = RUN_FINETUNE.read_text(encoding="utf-8")
     chain = re.search(
         r'if save_model_name:\s*\n'
@@ -1846,22 +1872,86 @@ def test_probe_alias_defaults_only_for_the_probe_variant():
         r'[^\S\n]*model_save_name = f"\{model_name\}\+\{peft_mode\}"\s*\n'
         r'[^\S\n]*elif config_variant == "probe":\s*\n'
         r'[^\S\n]*model_save_name = f"\{model_name\}\+probe"\s*\n'
+        r'[^\S\n]*elif config_variant == "curve":\s*\n'
+        r'[^\S\n]*model_save_name = f"\{model_name\}\+curve"\s*\n'
+        r'[^\S\n]*elif config_variant == "head" and model_name not in \(\s*\n'
+        r'[^\S\n]*"evo2_1b_base", "megaDNA_updated"\s*\n'
+        r'[^\S\n]*\):\s*\n'
+        r'[^\S\n]*model_save_name = f"\{model_name\}\+head"\s*\n'
         r"[^\S\n]*else:\s*\n"
         r"[^\S\n]*model_save_name = model_name",
         src,
     )
     assert chain is not None, (
-        "the save-name resolution must carry the probe alias branch — "
-        "a probe run without an explicit --save_model_name must default "
-        "to {model}+probe or it would share the base run's output dir "
-        "AND resume marker (Pitfall 3)"
+        "the save-name resolution must carry a distinct alias branch for "
+        "every variant lane — a variant run sharing the base dir would "
+        "collide with the base run's resume marker (MED-04)"
     )
-    assert src.count("elif config_variant ==") == 1, (
-        "only the probe variant aliases the save name — head/curve must "
-        "not gain alias branches"
+    assert 'f"{model_name}+probe"' in src
+    assert 'f"{model_name}+curve"' in src, (
+        "curve runs must alias to {model}+curve — a curve-cadence run "
+        "without a fraction previously landed under the base name "
+        "(MED-04)"
     )
-    assert 'f"{model_name}+head"' not in src, "head must not alias"
-    assert 'f"{model_name}+curve"' not in src, "curve must not alias"
+    assert 'f"{model_name}+head"' in src, (
+        "generic-model head runs must alias to {model}+head — a "
+        "custom-head run previously landed under the base name (MED-04)"
+    )
+    head_branch = re.search(
+        r'elif config_variant == "head" and model_name not in \(\s*\n'
+        r'[^\S\n]*"evo2_1b_base", "megaDNA_updated"',
+        src,
+    )
+    assert head_branch is not None, (
+        "the +head alias must be conditioned on the model NOT being in "
+        "the special_models pair — evo2/megaDNA's with-head config IS "
+        "their base config, so their explicit-head runs keep the base "
+        "name (byte-identical to the implicit behavior)"
+    )
+    outdir_idx = src.find(
+        'f"{save_root}/{model_save_name}/{dataset_name}/seed_{seed}/"'
+    )
+    assert chain.start() < outdir_idx, (
+        "the alias defaults must resolve BEFORE the outdir f-string "
+        "consumes them"
+    )
+
+
+def test_probe_peft_composition_refused_at_argv_boundary():
+    """--config-variant probe refuses --peft lora/ia3 at the argv
+    boundary with a disclosing [Error] naming both flags (MED-04, phase-06
+    review): the flags are independently legal, and the save-name chain
+    resolves the peft alias first — the composition would silently drop
+    the +probe alias and write the frozen-head adapter run into the plain
+    adapter cell's dir where the two semantically different runs silently
+    skip each other via the trainer_state.json marker. Probes are
+    frozen-backbone; adapters-on-frozen is a different experiment —
+    refusing is the honest contract. The guard must sit BEFORE the model
+    loop (an argv-boundary fail-fast) and BEFORE the probe-ineligibility
+    guard (the composition error is the more specific diagnosis)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    guard_idx = src.find('if config_variant == "probe" and peft_mode != "none":')
+    assert guard_idx != -1, (
+        "no probe x peft composition guard — the combination silently "
+        "drops the +probe alias and collides with the plain adapter "
+        "cell's dir and resume marker (MED-04)"
+    )
+    error_idx = src.find("[Error] --config-variant probe refuses --peft")
+    assert error_idx != -1, (
+        "the composition refusal must carry an [Error] naming both flags"
+    )
+    model_loop_idx = src.find("models_info.items():")
+    assert guard_idx < model_loop_idx, (
+        "the composition guard must run BEFORE the model loop — an "
+        "argv-boundary fail-fast, never discovered mid-run"
+    )
+    ineligible_idx = src.find('if config_variant == "probe":')
+    assert ineligible_idx != -1, "the probe-ineligibility guard is gone"
+    assert guard_idx < ineligible_idx, (
+        "the composition refusal must precede the ineligibility guard — "
+        "probe+peft must fail with the composition diagnosis, not the "
+        "special-loader one"
+    )
 
 
 def test_probe_yaml_carries_the_frozen_mlp_head_block():
