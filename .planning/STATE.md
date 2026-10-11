@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 07
 current_phase_name: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
 status: executing
-stopped_at: Phase 7 context gathered
-last_updated: "2026-10-11T05:39:37.124Z"
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-10-11T06:43:07.289Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 07 execution started
-state_head: 1bb86fbb6acbbe077845261c819ff078d1175974
+state_head: f8fa845ac49109613068fb8c0fe255700a7480ce
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 6
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 07 (Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 07
+Plan: 2 of 6
+Status: Ready to execute
 Last activity: 2026-10-11 — Phase 07 execution started
 
 Progress (v1.2): [░░░░░░░░░░] 0%
@@ -53,6 +53,11 @@ Progress (v1.2): [░░░░░░░░░░] 0%
 **v1.2:** no plans executed yet.
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 07 P01 | 13 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -66,6 +71,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - Roadmap v1.2: all three PIPE-* plus CUST-05 in Phase 7 — pipeline-side verification deliberately uncoupled from TUI phases; PIPE-02 folded there per coarse granularity (research sketched it as a separate "Phase 2.5")
 - Roadmap v1.2: WEB-01 + TEST-01 attached to Phase 12 (canonical screens are final only after multi-GPU views exist; keeps Phase 11 focused on the bounded-smoke gate). TEST-01 follows the requirement (official snapshot goldens) over the research preference (Pilot-only assertions) — requirement wins
 - Carried binding constraints (full list in ROADMAP.md): E2' maintainer dual-gate; CI GPU/dnallm-free with textual-the-library allowed in a CPU test lane (ratify in Phase 8 discuss); DNALLM repo read-only; CLI parity rule; TUI orchestrates never computes; ruff + ty gates from Phase 7 on
+- [Phase 07]: flops_report.json v1 schema published exactly as derived (maintainer ratified publish-as-derived at the 07-01 Task-1 checkpoint, 2026-10-11); D-27 one-way contract — field names immutable downstream
+- [Phase 07]: flops_report layer_details/total_flops_exact values typed number (not integer): the verbatim HyenaFilter FFT formula emits fractional FLOPs, and an integer map would reject legitimate writer output (Rule-1; every ratified field name unchanged)
+- [Phase 07]: FlopsCounter ported behind lazy _torch_nn/_torch seams with no module-top torch import — the CPU dev/CI lane imports and stub-tests the full 20+ architecture dispatch (PIPE-01 criterion 2)
 
 ### Pending Todos
 
@@ -89,9 +97,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11T04:49:16.616Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-CONTEXT.md
+Last session: 2026-10-11T06:43:07.272Z
+Stopped at: Completed 07-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 

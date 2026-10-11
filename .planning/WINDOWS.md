@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 13
 waived_count: 0
-fixed_count: 2
-total_count: 15
-last_updated: 2026-10-10T23:55:51.180Z
+fixed_count: 3
+total_count: 16
+last_updated: 2026-10-11T06:46:26.720Z
 ---
 
 # Broken Windows Ledger
@@ -30,6 +30,7 @@ last_updated: 2026-10-10T23:55:51.180Z
 | 13 | 05 | deviation | pipeline/sweep_priorities.json |  | 05-04 Task 4 blocking-human gate (tier-2 arena curation, D-17/OQ4): tier 2 shipped EMPTY at Task 2 awaiting maintainer decision — resolved 2026-10-10, maintainer selected per-arena one representative (animal GENERanno-eukaryote-0.5b-base / plant PlantCAD2-Small-l24-d0768 / microbe Omni-DNA-700M), landed in 6598e45 | fixed |  | 2026-10-10T12:27:48.027Z | 2026-10-10T12:27:53.830Z |
 | 14 | 06 | deviation | pipeline/env_smoke.py |  | matmul expected constant corrected 64.0->512.0 (Rule 1, found by first executed smoke) | open |  | 2026-10-10T18:29:17.849Z |  |
 | 15 | 06 | deviation | dnallm-mark/data/provenance.csv |  | 06-04 Task 4 blocking-human gate (maintainer provenance review, CONTEXT Area 2): execution paused at the gate with the Unspecified-default state committed — resolved 2026-10-11, maintainer selected 'reviewed 接受现状' (accept as-is; 35/7/9 Unspecified rows stand as honest unknowns), landed in c59f5f8 | fixed |  | 2026-10-10T23:55:42.192Z | 2026-10-10T23:55:51.180Z |
+| 16 | 07 | deviation | schemas/flops_report.json |  | layer_details/total_flops_exact typed number not integer (Rule-1: verbatim Hyena FFT formula emits fractional FLOPs) — resolved, documented in 07-01-SUMMARY | fixed |  | 2026-10-11T06:45:51.224Z | 2026-10-11T06:46:26.720Z |
 
 ````json
 [
@@ -227,6 +228,19 @@ last_updated: 2026-10-10T23:55:51.180Z
     "recorded_at": "2026-10-10T23:55:42.192Z",
     "resolved_at": "2026-10-10T23:55:51.180Z",
     "milestone": "v0.7.1"
+  },
+  {
+    "id": 16,
+    "kind": "deviation",
+    "phase": "07",
+    "file": "schemas/flops_report.json",
+    "line": null,
+    "description": "layer_details/total_flops_exact typed number not integer (Rule-1: verbatim Hyena FFT formula emits fractional FLOPs) — resolved, documented in 07-01-SUMMARY",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-11T06:45:51.224Z",
+    "resolved_at": "2026-10-11T06:46:26.720Z",
+    "milestone": "v1.2"
   }
 ]
 ````

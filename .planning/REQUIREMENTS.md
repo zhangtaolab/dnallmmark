@@ -59,7 +59,7 @@
 
 - [ ] **PIPE-01**: FlopsCounter 移植：旧 dnallmmark_pipeline.py 的 20+ 架构前向钩子移植到 run_finetune.py（早于监控阶段；喂 E2' FLOPs 正确性与排行榜效率轴）
 - [ ] **PIPE-02**: run_sweep argv 透传四项：--subset_file（E2' 公平性，补已知缺口）、--effective_batch_size（auto-GA：GA=max(1, N//batch_size)，默认 16）、--num_train_epochs、--cache_dir（可选）
-- [ ] **PIPE-03**: FlopsCounter 与监控共用容错 loader 的 JSON 输出契约
+- [x] **PIPE-03**: FlopsCounter 与监控共用容错 loader 的 JSON 输出契约
 
 ### Multi-GPU (多卡编排)
 
@@ -121,7 +121,7 @@
 | MON-05 | Phase 11 | Pending |
 | PIPE-01 | Phase 7 | Pending |
 | PIPE-02 | Phase 7 | Pending |
-| PIPE-03 | Phase 7 | Pending |
+| PIPE-03 | Phase 7 | Complete |
 | MGPU-01 | Phase 12 | Pending |
 | MGPU-02 | Phase 12 | Pending |
 | MGPU-03 | Phase 12 | Pending |
