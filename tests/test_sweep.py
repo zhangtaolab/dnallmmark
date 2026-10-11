@@ -1933,3 +1933,204 @@ def test_extract_curve_points_skips_unusable_entries():
     }
     points = run_sweep.extract_curve_points(state)
     assert points == [(200, {"eval_loss": 0.25})]
+
+
+# =====================================================================
+# Sweep argv flag threading (07-03, PIPE-02): --subset_file /
+# --effective_batch_size / --num_train_epochs / --cache_dir
+# =====================================================================
+
+def _capturing_launcher(monkeypatch):
+    """Patch subprocess.run to capture the child argv WITHOUT executing
+    it (the test_default_executor_receives_peft idiom); _git_commit()'s
+    git call gets a stdout. Returns the capture dict."""
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        if argv[:1] == ["git"]:
+            return subprocess.CompletedProcess(
+                argv, returncode=0, stdout="fakehash\n")
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=0)
+
+    monkeypatch.setattr(run_sweep.subprocess, "run", fake_run)
+    return captured
+
+
+def test_sweep_flags_default_to_none_in_parse_args(monkeypatch):
+    """The four pass-through flags exist and default to None — an absent
+    flag threads NOTHING and records NOTHING (the byte-identical-when-
+    absent contract, D-12/D-13)."""
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    args = run_sweep.parse_args()
+    assert args.subset_file is None
+    assert args.effective_batch_size is None
+    assert args.num_train_epochs is None
+    assert args.cache_dir is None
+
+
+def test_effective_batch_size_bare_valued_absent_parse(monkeypatch):
+    """D-12: a BARE --effective_batch_size parses to 16 (argparse
+    nargs='?' const=16); a valued flag parses to the int; an absent flag
+    is None — no threading at all, the child's YAML gradient-accumulation
+    governs."""
+    monkeypatch.setattr(sys, "argv", [
+        "run_sweep.py", "--seeds", "42", "--effective_batch_size"])
+    assert run_sweep.parse_args().effective_batch_size == 16
+    monkeypatch.setattr(sys, "argv", [
+        "run_sweep.py", "--seeds", "42", "--effective_batch_size", "64"])
+    assert run_sweep.parse_args().effective_batch_size == 64
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    assert run_sweep.parse_args().effective_batch_size is None
+
+
+def test_build_argv_threads_four_flags_as_list_elements():
+    """Each present flag appends exactly two LIST elements — flag then
+    str(value) — the --peft/--train_fraction append idiom verbatim
+    (T-03-10: every flag and value a separate element, never a shell
+    string)."""
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root",
+        subset_file="/tmp/subsets.json", effective_batch_size=16,
+        num_train_epochs=1, cache_dir="/tmp/cache")
+    assert isinstance(argv, list)
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--subset_file") == "/tmp/subsets.json"
+    assert flag_value(argv, "--effective_batch_size") == "16"
+    assert flag_value(argv, "--num_train_epochs") == "1"
+    assert flag_value(argv, "--cache_dir") == "/tmp/cache"
+
+
+def test_build_argv_absent_flags_add_zero_elements():
+    """Absent flags contribute ZERO argv elements — the absent-parity
+    contract: a no-flag sweep builds the exact pre-07-03 child argv."""
+    plain = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
+    for flag in ("--subset_file", "--effective_batch_size",
+                 "--num_train_epochs", "--cache_dir"):
+        assert flag not in plain, (
+            f"{flag} must contribute zero argv elements when absent"
+        )
+
+
+def test_cli_bare_effective_batch_size_threads_16_into_child_argv(
+        tmp_path, monkeypatch):
+    """A BARE --effective_batch_size (const=16, D-12) threads the STRING
+    '16' into the recorded child argv of a default-executor run — the
+    value the child's own GA arithmetic (max(1, N // bs_new)) consumes."""
+    registry_dir = make_registry(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--effective_batch_size",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--effective_batch_size") == "16"
+
+
+def test_cli_resolves_subset_and_cache_dir_to_absolute_paths(
+        tmp_path, monkeypatch):
+    """D-15: relative --subset_file / --cache_dir values are resolved to
+    ABSOLUTE paths at the sweep layer BEFORE threading — the child's cwd
+    is pinned to pipeline/, so a relative value would resolve against the
+    wrong root."""
+    registry_dir = make_registry(tmp_path)
+    # A structurally VALID subset file (keys in the tmp registry, int
+    # lists) so the run also survives the sweep-side pre-validation
+    # (D-14) once it exists.
+    (tmp_path / "subsets.json").write_text(
+        json.dumps({"task-x": [0, 5]}), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--subset_file", "subsets.json",
+        "--cache_dir", "hf-cache",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--subset_file") == str(
+        tmp_path / "subsets.json"), (
+        "a relative --subset_file must reach the child as the resolved "
+        "absolute path"
+    )
+    assert flag_value(captured["argv"], "--cache_dir") == str(
+        tmp_path / "hf-cache"), (
+        "a relative --cache_dir must reach the child as the resolved "
+        "absolute path"
+    )
+
+
+@pytest.mark.parametrize("flag,value", [
+    ("--effective_batch_size", "0"),
+    ("--num_train_epochs", "0"),
+])
+def test_cli_zero_flag_values_abort_naming_flag_and_value(
+        tmp_path, monkeypatch, flag, value):
+    """Pitfall 5: --effective_batch_size 0 / --num_train_epochs 0 abort
+    non-zero naming the flag and its raw value BEFORE any cell is
+    enumerated — the child's own guards are partial, so the sweep refuses
+    nonsense batch math collect-all at startup."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", "42",
+            "--dry-run",
+            flag, value,
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert flag in message, (
+        "the error must name the offending flag so the operator knows "
+        "which value to fix"
+    )
+    assert value in message, "the error must echo the flag's raw value"
+    assert not out_root.exists(), (
+        "an invalid flag value must abort before any output is written"
+    )
+
+
+def test_cli_flag_sanity_is_collect_all(tmp_path, monkeypatch):
+    """A zero batch size AND a zero epoch count are both named in ONE
+    non-zero exit — the parse_curve_fractions problems-list style, never
+    one-at-a-time (D-14 discipline applied to flag sanity)."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--effective_batch_size", "0",
+            "--num_train_epochs", "0",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "--effective_batch_size" in message
+    assert "--num_train_epochs" in message, (
+        "every flag-sanity violation must be listed in the single exit"
+    )
+
+
+def test_cli_empty_subset_file_value_aborts(tmp_path, monkeypatch):
+    """A provided-but-empty --subset_file value aborts non-zero naming
+    the flag — Path('').resolve() is the CWD, so threading it would point
+    the child at a directory, not a file (Pitfall 5 non-empty-path
+    sanity)."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--subset_file", "",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "--subset_file" in str(excinfo.value)
