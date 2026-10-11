@@ -31,12 +31,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+import flops_counter
 import pytest
+from artifact_loader import load_json_artifact
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
-
-import flops_counter
-from artifact_loader import load_json_artifact
 
 REPO = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = REPO / "schemas" / "flops_report.json"
@@ -111,8 +110,7 @@ class _StubModule:
             hook(self, list(inputs), outputs)
 
     def named_parameters(self, recurse=False):
-        for pname, param in self._parameters.items():
-            yield pname, param
+        yield from self._parameters.items()
 
     def parameters(self):
         return iter(self._parameters.values())
@@ -547,14 +545,17 @@ def test_modules_import_in_torch_free_lane():
         [
             sys.executable,
             "-c",
-            "import sys; sys.path.insert(0, 'pipeline'); "
-            "import flops_counter, artifact_loader; "
-            "assert 'torch' not in sys.modules, 'torch leaked at import time'; "
-            "print('cpu-import-ok')",
+            (
+                "import sys; sys.path.insert(0, 'pipeline'); "
+                "import flops_counter, artifact_loader; "
+                "assert 'torch' not in sys.modules, 'torch leaked at import time'; "
+                "print('cpu-import-ok')"
+            ),
         ],
         capture_output=True,
         text=True,
         cwd=str(REPO),
+        check=False,
     )
     assert proc.returncode == 0, proc.stderr
     assert "cpu-import-ok" in proc.stdout

@@ -14,7 +14,6 @@
 import os
 
 import pytest
-
 from artifact_loader import load_json_artifact
 
 

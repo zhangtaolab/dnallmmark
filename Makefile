@@ -122,8 +122,13 @@ ci: check-node
 # 06-02/06-03 scripts already exist here, and script/doi_swap.py joins
 # automatically when it lands later in 06-04).
 PHASE6_SCRIPTS := $(foreach s,script/build_frontier.py script/zero_shot_vep.py script/build_provenance.py script/doi_swap.py,$(if $(wildcard $(s)),$(s)))
+# Phase-7 extension (07-01): the new pipeline modules join the fixed-findings
+# list ONLY when present on disk — same existence-guard idiom as PHASE6_SCRIPTS,
+# so pipeline/registry_loader.py (created by sibling plan 07-02) joins lint
+# coverage automatically when it lands; no later plan edits this Makefile.
+PHASE7_MODULES := $(foreach s,pipeline/flops_counter.py pipeline/registry_loader.py pipeline/artifact_loader.py,$(if $(wildcard $(s)),$(s)))
 lint:
-	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py $(PHASE6_SCRIPTS)
+	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py $(PHASE6_SCRIPTS) $(PHASE7_MODULES)
 
 # Type check (ty, maintainer directive 2026-10-09): zero-diagnostics baseline
 # verified empirically at research time. [tool.ty] in pyproject.toml carries
