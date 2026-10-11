@@ -26,7 +26,12 @@ suite; the service protocol is the injection seam):
   is open; esc closes it;
 - the last-check line matches the persisted checked_at string format
   exactly (ENV-02, halfwidth colon);
-- the state strings are glyph-first and distinct (NO_COLOR legibility).
+- the state strings are glyph-first and distinct (NO_COLOR legibility);
+- 08-06 Task 2, the composed app at rest: Footer visible on boot, the
+  ``?`` help modal (every binding, Chinese labels, esc closes), the
+  80x24 min-size guard (swap, live dimension updates, restore), the
+  NO_COLOR scenario (rendered glyphs stay distinct), and the styles
+  contract (zero hex, declared spacing tokens only).
 
 Pilot discipline (08-RESEARCH Pattern 7 / Pitfall 7): ``await
 pilot.pause()`` before every assertion; worker completion is awaited via
@@ -42,16 +47,28 @@ from pathlib import Path
 
 from env_smoke import CheckResult
 from rich.text import Text
-from textual.widgets import DataTable, RichLog
+from textual.widgets import DataTable, Footer, RichLog, Static
 
+import tui.app as tui_app_module
 import tui.screens.env_check as env_check_screen_module
-from tui.app import DnallmMarkTui
+from tui.app import (
+    DnallmMarkTui,
+    HelpModal,
+    MinSizeScreen,
+)
 from tui.screens.env_check import EnvCheckBackend, EnvCheckScreen, EnvDetailModal
 from tui.services import env_check as env_check_service
 from tui.strings import (
+    APP_HELP_LABEL,
+    APP_HELP_ROW,
+    APP_HELP_TITLE,
+    APP_MIN_SIZE_MESSAGE,
+    APP_QUIT_LABEL,
+    ENV_DETAIL_LABEL,
     ENV_DETAIL_TITLE,
     ENV_KERNEL_LABELS,
     ENV_LAST_CHECK_LINE,
+    ENV_REFRESH_LABEL,
     ENV_ROUTE_MISSING_DATASETS,
     ENV_STATE_CHECKING,
     ENV_STATE_FAIL,
@@ -65,6 +82,8 @@ from tui.strings import (
 MAIN_KERNEL_ORDER = tuple(ENV_KERNEL_LABELS)
 
 _SCREEN_MODULE_FILE = Path(env_check_screen_module.__file__)
+_APP_MODULE_FILE = Path(tui_app_module.__file__)
+_STYLES_FILE = _APP_MODULE_FILE.parent / "styles.tcss"
 
 
 # =====================================================================
@@ -183,7 +202,7 @@ def _label_text(screen, selector):
 def _verdict_lines(screen):
     """The verdict block's rendered line texts, top to bottom."""
     box = screen.query_one("#env-verdict")
-    return [str(static.content) for static in box.query("Static")]
+    return [str(static.content) for static in box.query(Static)]
 
 
 async def _wait_for_check(pilot, app):
@@ -527,3 +546,135 @@ def test_screen_module_carries_zero_chinese_literals():
         "Chinese literals must live in tui/strings.py only "
         f"({len(offenders)} found in {_SCREEN_MODULE_FILE.name})"
     )
+
+
+def test_app_module_carries_zero_chinese_literals():
+    """I18N-01 single-home: the composition root carries zero copy too."""
+    source = _APP_MODULE_FILE.read_text(encoding="utf-8")
+    offenders = re.findall(r"[一-鿿]", source)
+    assert not offenders, (
+        "Chinese literals must live in tui/strings.py only "
+        f"({len(offenders)} found in {_APP_MODULE_FILE.name})"
+    )
+
+
+# =====================================================================
+# Task 2 — the composed app at rest (footer, help modal, min-size, styles)
+# =====================================================================
+
+async def test_app_boots_with_footer_visible_on_env_check():
+    """The composed console boots on env check with the binding Footer."""
+    fake = FakeEnvCheckService(cached=("2026-10-11 09:30", _mixed_results()))
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert isinstance(app.screen, EnvCheckScreen)
+        footer = app.screen.query_one(Footer)
+        assert footer.display, "the Footer must render the binding map"
+
+
+async def test_help_modal_lists_bindings_and_esc_closes():
+    """The ? modal: every binding row from strings, esc closes, q blocked."""
+    fake = FakeEnvCheckService(cached=("2026-10-11 09:30", _mixed_results()))
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpModal), "? must open the help modal"
+
+        modal = app.screen
+        assert modal.query_one("#help-box").border_title == APP_HELP_TITLE
+        rows = [str(static.content) for static in modal.query(Static)]
+        # every binding row, Chinese labels from strings via APP_HELP_ROW
+        # (app: q quit + ? help; env screen: r refresh + enter detail)
+        expected_rows = [
+            APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
+            APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
+            APP_HELP_ROW.format(key="r", label=ENV_REFRESH_LABEL),
+            APP_HELP_ROW.format(key="enter", label=ENV_DETAIL_LABEL),
+        ]
+        assert rows == expected_rows
+
+        # the modal is modal: q does not quit through it
+        await pilot.press("q")
+        await pilot.pause()
+        assert app.return_code is None
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, HelpModal)
+        assert isinstance(app.screen, EnvCheckScreen)
+
+
+async def test_min_size_guard_swaps_updates_and_restores():
+    """Below 80x24 ONLY the min-size message renders; growing restores."""
+    fake = FakeEnvCheckService(cached=("2026-10-11 09:30", _mixed_results()))
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert isinstance(app.screen, EnvCheckScreen)
+
+        # shrink below the minimum grid -> the guard screen swaps in
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen), (
+            "below 80x24 the min-size screen must be the active screen"
+        )
+        message = app.screen.query_one("#min-size-message", Static)
+        assert str(message.content) == APP_MIN_SIZE_MESSAGE.format(w=60, h=20)
+        # the message is the ONLY composed content — nothing else renders
+        # (the screen beneath is not displayed while a plain Screen is on
+        # top)
+        assert len(list(app.screen.query(Static))) == 1
+
+        # still below, new dimensions -> the message stays current
+        await pilot.resize_terminal(50, 15)
+        await pilot.pause()
+        assert str(message.content) == APP_MIN_SIZE_MESSAGE.format(w=50, h=15)
+
+        # grow back to the design grid -> the env-check screen restores
+        await pilot.resize_terminal(120, 40)
+        await pilot.pause()
+        assert isinstance(app.screen, EnvCheckScreen)
+        assert app.screen.query_one(DataTable).row_count == 7
+
+
+async def test_no_color_scenario_keeps_distinct_glyphs(monkeypatch):
+    """NO_COLOR: the app runs and rendered glyphs stay distinct per state."""
+    monkeypatch.setenv("NO_COLOR", "1")
+    fake = FakeEnvCheckService(cached=("2026-10-11 09:30", _mixed_results()))
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert app.no_color is True, "textual must register the NO_COLOR mode"
+
+        table = app.screen.query_one(DataTable)
+        states = [_row(table, index)[0] for index in range(7)]
+        # glyph-first redundancy: with color gone, the DISTINCT glyphs are
+        # the entire state signal — both present in the cached mix
+        assert {state[0] for state in states} == {
+            ENV_STATE_PASS[0], ENV_STATE_FAIL[0],
+        }
+        assert states[0][0] == ENV_STATE_PASS[0]
+        assert states[-1][0] == ENV_STATE_FAIL[0]
+
+
+def test_styles_tcss_zero_hex_and_declared_spacing_tokens_only():
+    """The styles contract: theme variables only; declared spacing tokens."""
+    css = _STYLES_FILE.read_text(encoding="utf-8")
+    stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+
+    # no hardcoded hex in any property value (the optional single-site
+    # brand theme is deliberately not landed — so ZERO hex anywhere)
+    hex_offenders = re.findall(r":\s*[^;{}]*#[0-9a-fA-F]{3,8}", stripped)
+    assert not hex_offenders, f"hardcoded hex forbidden: {hex_offenders}"
+
+    # padding/margin values only from the declared scale: 0/1/2 (the
+    # documented exceptions) and 4/8/12 (the md/lg/xl tokens)
+    for declaration in re.findall(r"(?:padding|margin)\s*:\s*([^;]+);",
+                                  stripped):
+        for number in re.findall(r"\d+", declaration):
+            assert int(number) in {0, 1, 2, 4, 8, 12}, (
+                f"undeclared spacing value {number} in {declaration.strip()!r}"
+            )

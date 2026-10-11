@@ -1,14 +1,117 @@
 /*
- * ===== styles.tcss — DNALLM-Mark console styles (Phase 8, 08-02) =====
+ * ===== styles.tcss — DNALLM-Mark console styles (Phase 8; 08-02 base,
+ * 08-06 complete) =====
  *
- * Minimal by design: the skeleton app carries no styled widgets yet; screen
- * rules land with the screens (08-03+).
+ * Contract (08-UI-SPEC Color + Spacing Scale + Typography, approved
+ * 2026-10-11):
  *
- * Contract (08-UI-SPEC Color, approved 2026-10-11): semantic Textual theme
- * tokens ONLY — $background, $surface, $panel, $boost, $accent, $success,
- * $warning, $error, $text-muted — which adapt to light/dark/NO_COLOR
- * automatically. Hardcoded hex is forbidden here; the single permitted hex
- * site is the optional `dnallmmark` custom theme definition (brand teal,
- * not landed yet). Every color-coded state carries a distinct glyph first
- * (glyph+color redundancy) so the UI stays legible under NO_COLOR.
+ * - Semantic Textual theme tokens ONLY — $background, $surface, $panel,
+ *   $boost, $accent, $success, $warning, $error, $text, $text-muted,
+ *   $border — which adapt to light/dark/NO_COLOR automatically. Hardcoded
+ *   hex is forbidden; the single permitted hex site (the optional
+ *   `dnallmmark` brand-teal theme) is deliberately NOT landed — default
+ *   theme tokens satisfy the contract unchanged.
+ * - Spacing uses ONLY the declared terminal-cell tokens: md = 4 cells
+ *   (padding: 1 4 panels/modals), plus the documented exceptions — 1-cell
+ *   widget borders, and `padding: 0 1`/`0 2` on status lines. No invented
+ *   intermediate paddings (no 3/5/6-cell values anywhere).
+ * - Typography: exactly two weights — regular (body) and bold (heading +
+ *   emphasis roles); no italics, underline, or blink. CJK copy counts
+ *   double width; all measurement is Textual/Rich's.
+ * - Every color-coded state carries its glyph first (the constants carry
+ *   ✓/✗/⚠/◌/⠋) — the UI stays legible under NO_COLOR; color here is the
+ *   redundant second channel.
  */
+
+/* ===== Header / Footer surfaces =====
+ * Textual's built-in Header/Footer already render on semantic theme
+ * variables ($surface-family + $accent keycaps); no overrides needed. */
+
+/* ===== Env-check screen: title bar (status line) ===== */
+
+#env-title-bar {
+    height: 1;      /* row token: one status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#env-screen-title {
+    text-style: bold;          /* Heading role */
+    width: auto;
+}
+
+#env-last-check {
+    width: 1fr;                /* right edge of the same status line */
+    text-align: right;
+    color: $text-muted;        /* Secondary role */
+}
+
+/* ===== Env-check screen: kernel table ===== */
+
+#env-kernels {
+    height: 1fr;   /* the table owns every remaining row; scrolls below */
+}
+
+/* Table header: bold + $text-muted on $surface (Typography + Color) */
+#env-kernels > .datatable--header {
+    text-style: bold;
+    color: $text-muted;
+    background: $surface;
+}
+
+/* ===== Env-check screen: verdict / routing block ===== */
+
+#env-verdict {
+    height: auto;
+    border-top: solid $border;   /* 1-cell border exception — separator */
+    padding: 1 4;                /* md token: panel padding */
+}
+
+.verdict-pass {
+    color: $success;
+    text-style: bold;            /* Emphasis role */
+}
+
+.verdict-fail {
+    color: $error;
+    text-style: bold;            /* Emphasis role */
+}
+
+.verdict-route {
+    color: $warning;
+}
+
+/* ===== Modals (env drill-down + help) ===== */
+
+EnvDetailModal,
+HelpModal {
+    align: center middle;        /* the bordered box centers on screen */
+}
+
+#env-detail-box,
+#help-box {
+    width: 60;                   /* modal token (min(60, width-4) narrow) */
+    height: auto;
+    padding: 1 4;                /* modal token */
+    border: solid $accent;       /* 1-cell border exception */
+    background: $surface;
+}
+
+/* Bounded so the log scrolls its own viewport (wrap + scroll, never
+ * elide); a height cap is not a spacing token — the padding prohibition
+ * governs paddings, and the bound matches the min-screen height class. */
+#env-detail-log {
+    height: auto;
+    max-height: 20;
+}
+
+/* ===== Min-size guard screen ===== */
+
+MinSizeScreen {
+    align: center middle;        /* the message is the ONLY content */
+}
+
+#min-size-message {
+    text-style: bold;
+    color: $warning;
+    padding: 0 2;                /* 2-cell status-line exception */
+}

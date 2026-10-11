@@ -57,10 +57,10 @@ from textual.worker import get_current_worker
 
 from tui.services import env_check, env_gate
 from tui.strings import (
+    APP_MODAL_BACK_LABEL,
     ENV_COL_ITEM,
     ENV_COL_STATE,
     ENV_COL_SUMMARY,
-    ENV_DETAIL_BACK_LABEL,
     ENV_DETAIL_LABEL,
     ENV_DETAIL_TITLE,
     ENV_KERNEL_LABELS,
@@ -192,7 +192,7 @@ class EnvDetailModal(ModalScreen):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", ENV_DETAIL_BACK_LABEL),
+        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, kernel_id: str, label: str,
@@ -203,9 +203,11 @@ class EnvDetailModal(ModalScreen):
         self.detail_lines = tuple(lines)
 
     def compose(self) -> ComposeResult:
+        # The footer lives INSIDE the bordered box (the 08-UI-SPEC modal
+        # mockup: the esc-back hint at the box bottom).
         with Vertical(id="env-detail-box"):
             yield RichLog(wrap=True, id="env-detail-log")
-        yield Footer()
+            yield Footer()
 
     def on_mount(self) -> None:
         box = self.query_one("#env-detail-box", Vertical)

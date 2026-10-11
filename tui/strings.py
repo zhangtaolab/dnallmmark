@@ -106,10 +106,13 @@ ENV_REFRESH_LABEL = "重检"
 ENV_DETAIL_LABEL = "详情"
 
 # Drill-down modal chrome (08-UI-SPEC Modal — 详情下钻): the title pairs the
-# kernel id (English, data) with its ENV_KERNEL_LABELS label, and the modal
-# footer's esc binding label.
+# kernel id (English, data) with its ENV_KERNEL_LABELS label.
 ENV_DETAIL_TITLE = "{kernel_id} — {label}"
-ENV_DETAIL_BACK_LABEL = "返回"
+
+# Modal-back label (esc) — shared app chrome: the env drill-down, the help
+# modal, and every later Phase 8 confirm surface use the same esc wording
+# (08-UI-SPEC Keyboard map: "esc | modals | pop modal — never quits").
+APP_MODAL_BACK_LABEL = "返回"
 
 # Quick check (ENV-04/D-09): the strings land NOW for Phase 11's launch
 # screen to consume — no UI surface or call site exists in Phase 8.
