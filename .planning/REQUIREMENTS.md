@@ -7,7 +7,7 @@
 
 ### Environment Check (启动体检)
 
-- [ ] **ENV-01**: TUI 启动即运行完整环境检查（复用 env_smoke 检查内核：版本 pin/dnallm 导入/CUDA/数据集目录/numpy≥2/peft），以状态面板呈现每项 ✓/✗ + 详情
+- [x] **ENV-01**: TUI 启动即运行完整环境检查（复用 env_smoke 检查内核：版本 pin/dnallm 导入/CUDA/数据集目录/numpy≥2/peft），以状态面板呈现每项 ✓/✗ + 详情
 - [ ] **ENV-02**: 检查结果持久化并显示检查日期（"上次检查：YYYY-MM-DD HH:MM"）；提供刷新动作随时重检；同日重复启动读缓存不强制重跑
 - [ ] **ENV-03**: 关键 FAIL（无 GPU/依赖缺失）阻止进入启动流程；缺数据项引导至数据管理面板
 - [ ] **ENV-04**: 每次启动任务前的快检（轻量重验启动所需子集）
@@ -90,7 +90,7 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ENV-01 | Phase 8 | Pending |
+| ENV-01 | Phase 8 | Complete |
 | ENV-02 | Phase 8 | Pending |
 | ENV-03 | Phase 8 | Pending |
 | ENV-04 | Phase 8 | Pending |

@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 08
 current_phase_name: TUI Foundation (Env Check & Selection)
 status: executing
-stopped_at: Completed 08-02-PLAN.md
-last_updated: "2026-10-11T11:36:01.074Z"
+stopped_at: Completed 08-03-PLAN.md
+last_updated: "2026-10-11T12:02:21.475Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 08 execution started
-state_head: ef56567c24206fdd5af0275a990e961a5efd4092
+state_head: 6b78026c0c6e9b168aa6573d85f30c38c3fbd02d
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 13
-  completed_plans: 8
+  completed_plans: 9
   percent: 17
 ---
 
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 08 (TUI Foundation (Env Check & Selection)) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-10-11 — Phase 08 execution started
 
-Progress (v1.2): [██████░░░░] 62% (8/13 plans)
+Progress (v1.2): [███████░░░] 69% (9/13 plans)
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress (v1.2): [██████░░░░] 62% (8/13 plans)
 | Phase 07 P06 | 5 min | 3 tasks | 1 files |
 | Phase 08 P08-01 | 17 min | 2 tasks | 2 files |
 | Phase 08 P08-02 | 84 min | 2 tasks | 11 files |
+| Phase 08 P08-03 | 15 min | 1 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 08]: 08-02 package legitimacy gate closed (maintainer verdict 2026-10-11, delegation on record): textual 8.2.8 (Textualize), platformdirs 4.13.0 (tox-dev, signed provenance — same-day release accepted), pytest-asyncio 1.4.0 (pytest-dev) all APPROVED via PyPI page + JSON API; uv.lock pins exactly these versions; verdict lines recorded verbatim in 08-02-SUMMARY.md
 - [Phase 08]: 08-02 typecheck lane gains --group tui (Rule 3, empirically proven): ty cannot resolve textual's py.typed types in a fresh env — make typecheck failed tui/app.py with unresolved-import in exactly CI's lint-typecheck state, so the recipe installs the maintainer-approved [tui] group in that existing CPU static lane; NO replace-imports-with-any entry (real types, per RESEARCH); data/gpu lanes still never see textual; ci.yml byte-identical
 - [Phase 08]: 08-02 spine landed: [tui] group (exactly textual>=8.2,<9 + platformdirs>=3.6,<5), make tui (--group tui --group gpu, Pitfall 10), PHASE8_TUI wildcard lint guard (later tui files join coverage with zero Makefile edits), asyncio_mode=auto (A3 proven — 560 sync tests green), tui/ skeleton with the services-textual-free contract declared and the __file__-derived REPO_ROOT bootstrap; uv sync for the tui group must use --inexact (plain sync is exact and strips the GB10 GPU stack + dnallm)
+- [Phase 08]: 08-03 tracer landed: console boots on the env-check shell (seven pending rows, main() kernel order, stable kernel-id row keys) and the first service crosses the tui-to-pipeline seam (load_registry_counts -> RegistryCounts(62, 50) from the real overlay-merged registries); services-textual-free import lock green and non-vacuous from the first module
+- [Phase 08]: 08-03 Rule 3: Makefile test-fast + ci gain --group tui — pytest imports every collected module before -m filtering, so the first textual-importing test file would break both lanes on a fresh dev-only venv; every pytest lane now carries textual-the-library (D-01 posture), data/gpu lanes untouched
+- [Phase 08]: 08-03 RUF012 resolved by mirroring the App base ClassVar annotations verbatim (BINDINGS: ClassVar[list[BindingType]], SCREENS: ClassVar[dict[str, Callable[[], Screen[Any]]]]) — framework-read class constants, truthful typing, no noqa
 
 ### Pending Todos
 
@@ -121,10 +125,10 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11T11:36:01.041Z
-Stopped at: Completed 08-02-PLAN.md
+Last session: 2026-10-11T12:02:21.443Z
+Stopped at: Completed 08-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
 
-- Continue Phase 8 execution: plans 08-03..08-07 pending — `/gsd-execute-phase 08` (next: 08-03 tui skeleton tracer on the 08-02 spine)
+- Continue Phase 8 execution: plans 08-04..08-07 pending — `/gsd-execute-phase 08` (next: 08-04 env/registry services on the proven tracer seam)

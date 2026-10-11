@@ -59,14 +59,14 @@ dnallmmark/                       # Repository root
 │   └── get_task_performance.py   # model_performance/ → task_performance/
 ├── scripts/                      # Node data-processing scripts (plural "scripts" — inconsistent with script/)
 │   └── generate-tasks-index.js   # task_performance/ → tasks.json
-├── tui/                          # DNALLM-Mark operator console, Textual TUI (Phase 8, 08-02)
+├── tui/                          # DNALLM-Mark operator console, Textual TUI (Phase 8, 08-02; screens/services from 08-03)
 │   ├── __init__.py               # Package contract docstring: layout + one-directional import boundary
 │   ├── __main__.py               # python -m tui entry: REPO_ROOT + pipeline/ sys.path bootstrap from __file__ (never CWD)
-│   ├── app.py                    # DnallmMarkTui(App) — minimal composition root (TITLE from strings, CSS_PATH)
-│   ├── strings.py                # I18N-01 single home for operator copy (APP_TITLE, ENV_KERNEL_LABELS)
-│   ├── styles.tcss               # Textual CSS — theme tokens only (comment-only until screens land)
-│   ├── screens/                  # Presentation tier (imports textual freely; populated from 08-03)
-│   └── services/                 # ZERO textual imports, ever — locked by tests/tui/test_import_lock.py (08-03)
+│   ├── app.py                    # DnallmMarkTui(App) — composition root: TITLE/CSS_PATH + env_check screen registration/opening + app-level q binding (08-03)
+│   ├── strings.py                # I18N-01 single home for operator copy (APP_TITLE/APP_QUIT_LABEL, ENV_KERNEL_LABELS, ENV_STATE_PENDING, ENV_COL_*)
+│   ├── styles.tcss               # Textual CSS — theme tokens only (comment-only minimal; screen styling lands with the 08-06 build)
+│   ├── screens/                  # Presentation tier (imports textual freely); first screen env_check.py — seven-pending-rows shell (08-03, filled by 08-06)
+│   └── services/                 # ZERO textual imports, ever — locked by tests/tui/test_import_lock.py; first service registries.py (registry counts via registry_loader, 08-03)
 └── tests/                        # pytest suite (since Phase 2); tests/tui/conftest.py adds repo root to sys.path (08-02)
 ```
 

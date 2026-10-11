@@ -69,7 +69,7 @@ last_mapped_at: 2026-10-11
 
 **CI Pipeline:**
 - *(2026-10-08 audit said none; SUPERSEDED since Phase 5)* GitHub Actions at `.github/workflows/ci.yml` — four SHA-pinned jobs: `lint-typecheck` (make lint + make typecheck), `test` (make test, Python 3.13 floor + 3.14 probe matrix), `static-js` (node:test + eslint/html-validate npx pins), `drift` (make data must be a byte-identical no-op). PR-triggered, GPU-free, dnallm-free, 14-minute timeouts.
-- *(Phase 8, 08-02, 2026-10-11)* The `[tui]` group rides the existing CPU lanes through Makefile recipes only — `make test` and `make typecheck` both run `uv run --group dev --group tui ...`, so textual-the-library installs in CI with zero workflow edits (D-01); the data (drift) and JS lanes never install textual.
+- *(Phase 8, 08-02, 2026-10-11; extended 08-03)* The `[tui]` group rides the existing CPU lanes through Makefile recipes only — `make test`, `make test-fast`, `make ci` (the latter two since 08-03, when the first textual-importing test modules landed), and `make typecheck` all run `uv run --group dev --group tui ...`, so textual-the-library installs in CI with zero workflow edits (D-01); the data (drift) and JS lanes never install textual.
 
 ## Environment Configuration
 

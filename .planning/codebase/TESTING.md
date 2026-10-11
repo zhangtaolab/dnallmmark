@@ -185,9 +185,9 @@ When introducing tests, follow these placements to match repo layout:
 
 - **Location:** `tests/tui/` — the tier-1 (headless service) / tier-2 (Textual Pilot) lane; `tests/tui/conftest.py` inserts the REPO_ROOT on `sys.path` so `import tui` resolves package-qualified under plain pytest (the parent `tests/conftest.py` provides `script/`, `baseline/`, `pipeline/` but NOT the repo root).
 - **Async support:** `pytest-asyncio>=1.4,<2` (dev group) with `asyncio_mode = "auto"` in `[tool.pytest.ini_options]` — `async def` Pilot tests (`App.run_test()`) need no marker; the sync suite is unaffected (proven: 560 sync tests green under auto mode).
-- **Lane commands:** `make test` runs the full pytest suite with `--group dev --group tui` (textual-the-library installed in the existing CI test lane — D-01); `make typecheck` also carries `--group tui` (ty needs textual's py.typed types to check `tui/app.py`).
+- **Lane commands:** every pytest lane carries `--group tui` — `make test` (full suite, the CI test lane — D-01), `make test-fast`, and `make ci` (both since 08-03: pytest imports every collected module before `-m` filtering, and `tests/tui` now contains textual-importing modules, so a fresh dev-only venv would fail collection); `make typecheck` also carries `--group tui` (ty needs textual's py.typed types to check `tui/app.py`).
 - **Import-lock discipline (from 08-03):** `tests/tui/test_import_lock.py` asserts no module under `tui/services/` imports textual — the Phase 7 absence-lock pattern.
-- **Fakes:** tier-1 tests inject fake kernels/services (never real GPU kernels in CI); tier-2 Pilot tests use constructor-injected fake services and `await pilot.pause()` before assertions.
+- **Fakes:** tier-1 tests inject fake kernels/services where GPU-touching (never real GPU kernels in CI); tier-2 Pilot tests use constructor-injected fake services and `await pilot.pause()` before assertions. Style-setters (08-03): `test_services_registries.py` (tier-1, REAL committed data — no fakes on the seam path) and `test_pilot_boot.py` (tier-2 boot contract: 120x40, opening screen, 7 pending rows in kernel order keyed on kernel ids, `q` exits 0).
 
 ---
 
