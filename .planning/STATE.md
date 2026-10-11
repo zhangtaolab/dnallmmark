@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 07
 current_phase_name: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
 status: executing
-stopped_at: Completed 07-03-PLAN.md
-last_updated: "2026-10-11T07:18:29.578Z"
+stopped_at: Completed 07-04-PLAN.md
+last_updated: "2026-10-11T07:30:46.455Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 07 execution started
-state_head: 793c17e91ba6a3d9defb32e6a81edf2281799246
+state_head: 44de6e3f05b39e0ed6dba6dc636ca1acfb8a0b78
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 6
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 07 (Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-10-11 — Phase 07 execution started
 
@@ -61,6 +61,7 @@ Progress (v1.2): [░░░░░░░░░░] 0%
 | Phase 07 P02 | 11 min | 3 tasks | 5 files |
 | Phase 07 P03 | 12 min | 3 tasks | 2 files |
 | Phase 07 P03 | 12 min | 3 tasks | 2 files |
+| Phase 07 P04 | 8 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 07]: 07-03 PIPE-02 argv threading: the four sweep flags are pure pass-through with zero GA arithmetic (GA=max(1, N//bs_new) stays child-side, D-10/D-16); underscore names only, bare --effective_batch_size=16, absent flag = zero argv elements and zero manifest keys (D-11/D-12/D-13)
 - [Phase 07]: D-14 implemented as sweep-owned shallow collect-all (_validate_subset_file: readable-JSON/object/registry-key/int-list with bool exclusion) against the overlay-merged registry view; child validate_subset_file stays authoritative — defense-in-depth, no shared import (sweep stays stdlib-only headless-importable)
 - [Phase 07]: Manifest records present flags in cells only (D-13); run_record.json untouched (D-02 spirit); dry-run path now routes through _manifest_payload so planned and executed cells record identically; byte-determinism tests green unmodified
+- [Phase 07]: 07-04 PIPE-01 integration: FLOPs always-on via the pre-training calibration slot (count_split_tokens -> unconditional FlopsCounter -> single no_grad forward via calibration_forward -> remove_hooks BEFORE the DNATrainer ctor) + a single post-success flops_report.json write ordered final_metrics < flops_report < trainer_state marker (WR-13 three-artifact chain); run_record/final_metrics payload contracts untouched (D-01/D-02)
+- [Phase 07]: 07-04 hardware capture (D-05): gpu_device verbatim from torch.cuda.get_device_name() (no enum normalization, 5090D/4090D pass through), train_time from metrics.get('train_runtime') (None-tolerant), max_mem_gb from the peak-memory counter read at write time inside the rank-0 success block BEFORE trainer.evaluate() — scopes the captured peak to training
 
 ### Pending Todos
 
@@ -105,8 +108,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11T07:18:29.558Z
-Stopped at: Completed 07-03-PLAN.md
+Last session: 2026-10-11T07:29:45.883Z
+Stopped at: Completed 07-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
