@@ -44,8 +44,7 @@ import ast
 import json
 from pathlib import Path
 
-from tui.services import registries
-from tui.services import selection
+from tui.services import registries, selection
 from tui.services.selection import (
     AxisTerm,
     ParsedFilter,
@@ -296,6 +295,28 @@ def test_load_custom_presets_corrupt_file_is_an_empty_mapping(tmp_path):
     presets = load_custom_presets(config_dir)
     assert isinstance(presets, dict)
     assert presets == {}
+
+
+def test_load_custom_presets_skips_malformed_individual_presets(tmp_path):
+    """T-08-06 tolerance: one malformed preset entry degrades to the
+    healthy ones — never an exception, never a crash of the whole menu."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "presets.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "presets": {
+                "good": {"models": ["model-a"], "tasks": ["task-x"]},
+                "bad-models": {"models": "not-a-list", "tasks": ["task-x"]},
+                "bad-shape": ["not", "a", "dict"],
+            },
+        }),
+        encoding="utf-8",
+    )
+    presets = load_custom_presets(config_dir)
+    assert presets == {
+        "good": {"models": ["model-a"], "tasks": ["task-x"]},
+    }
 
 
 def test_load_custom_presets_unknown_schema_version_is_an_empty_mapping(
