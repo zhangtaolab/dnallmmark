@@ -62,7 +62,9 @@
 - [X] 输出根目录选择 + 干跑预览（枚举出的 cell 数/预估）
 
 - 补充：＿＿＿除了lora还要加上冻结backbone加上probe的微调办法，默认训练epoch和之前保持一致为3
+  > 【核查 2026-10-11】probe+冻结骨干**机制已在仓库**（`run_finetune --config-variant probe`，frozen backbone + 不合格模型守卫，GB10 实测可训练参数 0.44%）——TUI 仅需露出该选项；epochs=3 与现行 `finetune_config.yaml` 默认一致。
 - 如果自动化运行，需要解决batch_size和gradient_accumulation_steps的选择，以适配不同模型和数据集
+  > 【核查】机制半在：动态 batch_size 缩放与 per-dataset grad_accum 重置已有；**新增工作 = `--effective-batch <N>` 自动 GA 旗标**（GA = max(1, N // batch_size)，对应开放问题 Q7 的 16/1 规则）。
 
 ### 3.4 执行模式（单卡 → 多卡）
 
@@ -72,6 +74,7 @@
 - [X] **多卡（二期）**：按模型分片 × `CUDA_VISIBLE_DEVICES` 多 worker；worker 健康监控；产物合并；失败 worker 隔离重跑
 
 - 补充：＿＿＿多卡可以使用torch run来实现
+  > 【核查 2026-10-11】torch run（DDP 数据并行）与「按模型分片 × CUDA_VISIBLE_DEVICES」是**互补的两层**：DDP 加速单次大模型运行（切数据）；模型分片最大化 62 模型×独立任务的吞吐（切模型）。E2' 全量重跑更适合模型分片；单个 1B+ 大模型单任务加速才需要 DDP。里程碑 discuss 时需明确两层各自的适用场景与优先级。
 
 ### 3.5 任务监控
 
@@ -82,6 +85,7 @@
 - [X] 断点续跑状态（trainer_state.json 标记识别）
 
 - 补充：＿＿＿目前部分新架构以及混合架构 tensorboard默认计算的flops有些问题， 这部分需要额外加一个模块来评估flops？
+  > 【核查 2026-10-11】是真实缺口：旧 `dnallmmark_pipeline.py` 的 FlopsCounter（20+ 架构前向钩子：Mamba/SSM/Hyena/BigBird/GQA…）未随 dev 重写移植到 `run_finetune.py`；HF Trainer 对混合架构的 total_flos 不可靠，而排行榜效率轴依赖它。**建议列为独立 work package**（受益方不止 TUI，含 E2' 的 FLOPs 采集正确性），置于 P3 前落地。
 
 ### 3.6 环境与安全边界
 
