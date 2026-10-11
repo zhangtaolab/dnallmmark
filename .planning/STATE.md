@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 07
 current_phase_name: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
 status: executing
-stopped_at: Completed 07-02-PLAN.md
-last_updated: "2026-10-11T07:02:08.876Z"
+stopped_at: Completed 07-03-PLAN.md
+last_updated: "2026-10-11T07:18:29.578Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 07 execution started
-state_head: 50e0cfc3a95f6c470abeffe8ee30bf398e48e580
+state_head: 793c17e91ba6a3d9defb32e6a81edf2281799246
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 6
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 07 (Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)) — EXECUTING
-Plan: 3 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-10-11 — Phase 07 execution started
 
@@ -59,6 +59,8 @@ Progress (v1.2): [░░░░░░░░░░] 0%
 |------|----------|-------|-------|
 | Phase 07 P01 | 13 min | 3 tasks | 7 files |
 | Phase 07 P02 | 11 min | 3 tasks | 5 files |
+| Phase 07 P03 | 12 min | 3 tasks | 2 files |
+| Phase 07 P03 | 12 min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -77,6 +79,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 07]: FlopsCounter ported behind lazy _torch_nn/_torch seams with no module-top torch import — the CPU dev/CI lane imports and stub-tests the full 20+ architecture dispatch (PIPE-01 criterion 2)
 - [Phase 07]: CUST-05 registry overlay seam landed: DNALLMMARK_CUSTOM_REGISTRY_DIR whole-dir override (D-07 覆盖整个目录 — no suffix on the env value; the dnallmmark join applies to the XDG/~/.config bases only); custom entries add-only, collision fails fast naming key + both file paths
 - [Phase 07]: platformdirs refinement: hand-rolled env>XDG>home resolver in registry_loader (platformdirs undeclared in every CPU-side group — RESEARCH Pitfall 2; reserved for Phase 8 [tui] by constraint 10); identical Linux path, Phase 8 may consolidate behind the seam
+- [Phase 07]: 07-03 PIPE-02 argv threading: the four sweep flags are pure pass-through with zero GA arithmetic (GA=max(1, N//bs_new) stays child-side, D-10/D-16); underscore names only, bare --effective_batch_size=16, absent flag = zero argv elements and zero manifest keys (D-11/D-12/D-13)
+- [Phase 07]: D-14 implemented as sweep-owned shallow collect-all (_validate_subset_file: readable-JSON/object/registry-key/int-list with bool exclusion) against the overlay-merged registry view; child validate_subset_file stays authoritative — defense-in-depth, no shared import (sweep stays stdlib-only headless-importable)
+- [Phase 07]: Manifest records present flags in cells only (D-13); run_record.json untouched (D-02 spirit); dry-run path now routes through _manifest_payload so planned and executed cells record identically; byte-determinism tests green unmodified
 
 ### Pending Todos
 
@@ -100,8 +105,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-11T07:02:01.307Z
-Stopped at: Completed 07-02-PLAN.md
+Last session: 2026-10-11T07:18:29.558Z
+Stopped at: Completed 07-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
