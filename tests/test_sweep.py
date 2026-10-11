@@ -112,6 +112,30 @@ SUITE_NATIVE_METRICS = {
 }
 
 
+# ===== machine-independence pin (WR-03, phase-07 review) =====
+#
+# 07-02 rewired every registry load in run_sweep through
+# registry_loader's custom overlay (DNALLMMARK_CUSTOM_REGISTRY_DIR >
+# XDG_CONFIG_HOME > ~/.config/dnallmmark). This module's frozen-order
+# and full-matrix tests enumerate OFFICIAL fixture registries, so once
+# real custom files exist on the maintainer's machine an unpinned test
+# would see the local overlay and diverge from CI (the exact hazard
+# tests/test_registry_loader.py:26-29 documents). Pin BOTH overlay env
+# vars to a fresh empty dir for every test in this module — the
+# pin_custom_dir idiom applied at module scope. A test that needs a
+# populated overlay re-sets DNALLMMARK_CUSTOM_REGISTRY_DIR itself; the
+# test-body setenv wins over this fixture's.
+
+
+@pytest.fixture(autouse=True)
+def _pin_custom_registry_overlay(tmp_path, monkeypatch):
+    """Empty-dir pin over the custom overlay for every test here."""
+    pinned = tmp_path / "no-custom-overlay"
+    pinned.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(pinned))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(pinned))
+
+
 def write_registry(root, models, datasets):
     """Materialize unified-registry fixtures under ``root``."""
     (root / "models_info.json").write_text(
