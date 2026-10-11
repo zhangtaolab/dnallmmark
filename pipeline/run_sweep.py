@@ -562,6 +562,47 @@ def _validate_filters(models_filter, tasks_filter, registry_dir):
         sys.exit(f"[Error] {'; '.join(problems)}")
 
 
+def _validate_dataset_name_alignment(datasets_info):
+    """Refuse registry rows whose ``Dataset_name`` diverges from their
+    registry key (WR-06, phase-07 review).
+
+    The sweep keys cell dirs and resume markers on registry KEYS
+    (``cell_dir_for``), while the child writes its outputs under the
+    row's ``Dataset_name`` (``run_finetune.py``'s outdir). Every row
+    coincides today, but a divergent row — e.g. a user-authored custom
+    overlay entry, the new divergence source this phase added — would
+    train successfully into the ``Dataset_name`` dir while the sweep
+    records the cell FAILED ("executor exited 0 but final_metrics.json is
+    missing") and re-attempts it forever. ``validate_subset_file``
+    already refuses divergence, but only for tasks present in a
+    ``--subset_file``; this extends the loud refusal to the WHOLE merged
+    registry at sweep start, the same collect-all discipline.
+
+    Args:
+        datasets_info (dict): the overlay-merged datasets registry — the
+            same ``registry_loader`` view the matrix enumeration joins
+            on. A row omitting ``Dataset_name`` defaults to its key (the
+            child validator's reading) and cannot diverge.
+
+    Raises:
+        SystemExit: naming every divergent row.
+    """
+    divergent = sorted(
+        key for key, row in datasets_info.items()
+        if row.get("Dataset_name", key) != key
+    )
+    if divergent:
+        sys.exit(
+            "[Error] datasets registry rows whose Dataset_name diverges "
+            f"from their registry key: {divergent} — run_sweep cell dirs "
+            "are keyed on registry keys while run_finetune writes "
+            "outputs under Dataset_name, so every cell of such a task "
+            "would train successfully but record as failed and retrain "
+            "forever; align the row's Dataset_name with its key or "
+            "remove the row"
+        )
+
+
 def _load_registry_key_sets(registry_dir):
     """Load the registry KEY sets both operator-input validators join on,
     plus the set of tasks that can never run (falsy ``Train``).
@@ -1419,6 +1460,15 @@ def main():
     # enumerated (WR-07): an unknown name would otherwise intersect to an
     # empty matrix that writes a manifest and exits 0 "successfully".
     _validate_filters(models_filter, tasks_filter, registry_dir)
+    # WR-06 (phase-07 review): the registry-key == Dataset_name
+    # coincidence the cell-dir/output-dir layout silently relies on,
+    # asserted over the SAME overlay-merged registry view the matrix
+    # enumeration joins on (a user-authored custom overlay row is a new
+    # divergence source) — a divergent row would train successfully under
+    # Dataset_name while the sweep records the cell failed forever.
+    _validate_dataset_name_alignment(
+        registry_loader.load_datasets_registry(registry_dir)
+    )
     # Curve-lane fraction list (06-05): validated the same collect-all
     # fail-fast way BEFORE enumeration — parse errors and bounds are all
     # listed together, duplicates collapse, order is sorted ascending.

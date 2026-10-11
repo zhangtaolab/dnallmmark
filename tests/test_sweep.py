@@ -2331,6 +2331,113 @@ def test_subset_validation_runs_before_any_cell_enumerates(
 
 
 # =====================================================================
+# Registry-key / Dataset_name alignment (WR-06, phase-07 review)
+# =====================================================================
+
+
+def test_divergent_dataset_name_row_aborts_sweep_naming_row(
+        tmp_path, monkeypatch):
+    """WR-06 (phase-07 review): a registry row whose Dataset_name differs
+    from its registry key aborts at sweep start naming the row — run_sweep
+    keys cell dirs and resume markers on registry KEYS (cell_dir_for)
+    while run_finetune writes outputs under Dataset_name, so a divergent
+    row would train successfully while the sweep records the cell failed
+    ("executor exited 0 but final_metrics.json is missing") and
+    re-attempts it forever."""
+    registry_dir = tmp_path / "registry"
+    registry_dir.mkdir()
+    write_registry(
+        registry_dir,
+        models={
+            "model-a": {"Model_name": "model-a", "Model_path": "models/a"},
+        },
+        datasets={
+            "task-x": {"Dataset_name": "task-x", "Train": 100, "Dev": 10},
+            "divergent-key": {
+                "Dataset_name": "Source__renamed", "Train": 5, "Dev": 1,
+            },
+        },
+    )
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", "42",
+            "--dry-run",
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "divergent-key" in message, (
+        "the divergent row's key must be named in the error"
+    )
+    assert "Dataset_name" in message
+    assert not out_root.exists(), (
+        "a divergent registry must abort before any output is written"
+    )
+
+
+def test_custom_overlay_divergent_row_aborts_sweep(tmp_path, monkeypatch):
+    """WR-06 via the overlay lane: a user-authored custom_datasets.json
+    entry whose Dataset_name diverges from its key is refused at sweep
+    start even with NO filters and NO subset file — the custom overlay is
+    the new divergence source this phase added, and the refusal must not
+    depend on --subset_file naming the task (the old, narrower guard)."""
+    registry_dir = make_registry(tmp_path)
+    custom_dir = tmp_path / "custom-with-divergence"
+    custom_dir.mkdir()
+    (custom_dir / "custom_datasets.json").write_text(
+        json.dumps({
+            "custom-task": {
+                "Dataset_name": "OTHER__name", "Train": 9, "Dev": 1,
+            },
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(custom_dir))
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "custom-task" in str(excinfo.value)
+
+
+def test_coincident_registry_passes_alignment_and_enumerates(
+        tmp_path, monkeypatch):
+    """The WR-06 guard is inert for today's shape: an aligned registry
+    (every Dataset_name == its key, the default fixture) enumerates and
+    dry-runs exactly as before — rows OMITTING Dataset_name default to
+    their key and never trip the refusal."""
+    registry_dir = tmp_path / "registry"
+    registry_dir.mkdir()
+    write_registry(
+        registry_dir,
+        models={
+            "model-a": {"Model_name": "model-a", "Model_path": "models/a"},
+        },
+        datasets={
+            "task-x": {"Dataset_name": "task-x", "Train": 100, "Dev": 10},
+            "task-bare": {"Train": 7, "Dev": 1},  # no Dataset_name at all
+        },
+    )
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--seeds", "42",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert [c[:3] for c in _manifest_cells(out_root)] == [
+        ("model-a", "task-bare", 42), ("model-a", "task-x", 42),
+    ]
+
+
+# =====================================================================
 # Manifest only-when-present flag fields (07-03, D-13) + byte lock
 # =====================================================================
 
