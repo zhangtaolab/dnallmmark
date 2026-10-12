@@ -266,3 +266,77 @@ MATRIX_SCROLL_HINT = "←/→ 横向滚动 · esc 返回"
 # Cursor readout line (below the table): the FULL task key of the cursor
 # column (long-text resolution for 62-char keys).
 MATRIX_CURSOR_READOUT = "光标: {task_key}"
+
+# ===== 接入向导 (WIZ_, CUST-01..03, 09-01 service tier) =====
+# The validation-report chrome + problem wordings the service composes;
+# the 09-04/09-05 wizard screens render the numbered lines. Report rows
+# verbatim from the 09-UI-SPEC Copywriting Contract; field labels follow
+# the wizard step tables (registry field names stay English verbatim,
+# I18N-01). The service returns machine (field_key, message) pairs — the
+# labels below are the screens' field_key → label map.
+
+# Validation report header + numbered problem line (09-UI-SPEC
+# Copywriting Contract verbatim; field-definition order).
+WIZ_PROBLEMS_HEADER = "✗ 校验失败 — 共 {n} 处问题："
+WIZ_PROBLEM_LINE = "{i}. {field_label}: {problem}"
+
+# Model wizard field labels (WIZM_) — key → label over the model
+# field-definition order.
+WIZM_FIELD_LABELS = {
+    "key": "键名",
+    "Model_path": "本地路径",
+    "size (M)": "规模(M)",
+    "species": "物种",
+    "type": "类型",
+    "architecture": "architecture",
+    "Tokenizer": "tokenizer",
+    "context_len (bp)": "context_len (bp)",
+    "huggingface": "huggingface",
+    "modelscope": "modelscope",
+    "series": "series",
+    "quirks": "quirk",
+}
+
+# Dataset wizard field labels (WIZD_) — key → label over the dataset
+# field-definition order (train/dev/test label the split FILE inputs of
+# step 2; Task_type renders as its UI-SPEC step-3 wording 任务类型).
+WIZD_FIELD_LABELS = {
+    "key": "键名",
+    "Dataset_path": "数据集路径",
+    "Category": "Category",
+    "label_column": "标签列",
+    "Train": "train",
+    "Dev": "dev",
+    "Test": "test",
+    "labels": "标签数",
+    "length": "序列长度",
+    "type": "任务类型",
+    "metric": "主指标",
+    "citation": "citation",
+    "source": "source",
+    "license": "license",
+    "preprocessing": "preprocessing",
+}
+
+# Problem wordings — the {problem} segment of WIZ_PROBLEM_LINE. The
+# collision / path-missing / needs-numeric rows match the 09-UI-SPEC
+# validation-report example verbatim (ASCII parens); interpolated values
+# ({key}/{path}/{value}…) are data.
+WIZ_PROBLEM_REQUIRED = "必填项，不能为空"
+WIZ_PROBLEM_NOT_OBJECT = "录入内容必须是对象 (收到 {type})"
+WIZ_PROBLEM_KEY_FORMAT = "键名不能包含路径分隔符 ({key})"
+WIZ_PROBLEM_COLLISION_OFFICIAL = "与官方条目冲突 ({key})"
+WIZ_PROBLEM_COLLISION_CUSTOM = "与既有自定义条目冲突 ({key})"
+WIZ_PROBLEM_PATH_MISSING = "路径不存在 ({path})"
+WIZ_PROBLEM_NEEDS_NUMERIC = "需为数字 ({value})"
+WIZ_PROBLEM_NEEDS_INTEGER = "需为整数 ({value})"
+WIZ_PROBLEM_ENUM = "取值无效 ({value})，可选: {allowed}"
+# Split-file problems ({file} is the split file name, {column} the
+# collected label column).
+WIZ_PROBLEM_SPLIT_FILE_MISSING = "文件不存在 ({file})"
+WIZ_PROBLEM_SPLIT_UNREADABLE = "无法解析 ({file}: {reason})"
+WIZ_PROBLEM_SPLIT_NO_HEADER = "文件为空，无表头 ({file})"
+WIZ_PROBLEM_SPLIT_NO_SEQUENCE = "表头缺少 sequence 列 ({file})"
+WIZ_PROBLEM_SPLIT_NO_LABEL_COLUMN = "表头缺少标签列 {column} ({file})"
+WIZ_PROBLEM_SPLIT_ZERO_ROWS = "无数据行 (0 行)"
+WIZ_PROBLEM_SPLIT_COUNT_MISMATCH = "声明 {declared} 行，与实际 {counted} 行不符"

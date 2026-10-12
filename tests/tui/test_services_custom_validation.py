@@ -271,9 +271,12 @@ def test_key_collision_check_covers_both_families_in_one_pass(tmp_path):
     values = dict(full_model_values(fs), key="plant-dnabert-6mer")
     problems = cv.validate_model_candidate(values, sources)
     key_problems = [message for field, message in problems if field == "key"]
-    assert len(key_problems) == 2
-    assert any("official" in message for message in key_problems)
-    assert any("custom" in message for message in key_problems)
+    assert key_problems == [
+        strings.WIZ_PROBLEM_COLLISION_OFFICIAL.format(
+            key="plant-dnabert-6mer"),
+        strings.WIZ_PROBLEM_COLLISION_CUSTOM.format(
+            key="plant-dnabert-6mer"),
+    ]
 
 
 def test_empty_or_whitespace_key_is_a_required_problem(tmp_path):
@@ -591,9 +594,19 @@ def test_metric_registry_carries_verbatim_spot_names():
 def test_service_module_never_imports_export_runs():
     """Runtime import of export_runs is impossible from the TUI (numpy
     top-level import; script/ not on the bootstrap path) — the module
-    source never references it."""
+    carries ZERO import statements reaching it (AST-walked, the
+    import-lock discipline; documentation mentions stay legal)."""
+    import ast
+
     source = Path(cv.__file__).read_text(encoding="utf-8")
-    assert "export_runs" not in source
+    for node in ast.walk(ast.parse(source)):
+        names = []
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or ""]
+        for name in names:
+            assert name.split(".")[0] != "export_runs", f"line {node.lineno}"
 
 
 # ===== Untrusted input: problems, never exceptions =====
