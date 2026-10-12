@@ -91,7 +91,7 @@ from rich.text import Text
 from textual import events, work
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import (
@@ -366,6 +366,20 @@ _ROW_STYLE_FAIL = "bold $error"
 #: a height cap is not a spacing token — wrap + scroll, never elide).
 _DRILL_LOG_MAX_HEIGHT = 20
 
+#: Rows the gauntlet panel reserves OUTSIDE the scrollable entry region
+#: (the box border top+bottom, the banner, the undo affordance, the
+#: hint line, one spare) — the entry region's code-applied max-height
+#: cap is the grid height minus this (same scroll-bound rule).
+_PANEL_CHROME_ROWS = 6
+
+
+def _first_or_none(query):
+    """The safe empty-tolerant lookup: ``DOMQuery.first`` RAISES
+    ``NoMatches`` on an empty query (probe-pinned on 8.2.8 — it never
+    returns None), while the panel's optional widgets (a drill view
+    holds the DOM; single-mode heads never exist) need a None path."""
+    return query.nodes[0] if query.nodes else None
+
 
 class _GauntletRow(Static):
     """One focusable gauntlet row (``enter`` drills into its item)."""
@@ -589,8 +603,12 @@ class WizardModal(ModalScreen):
         # (key, entry, declared_splits) in execution order (file order
         # for imports).
         self._gauntlet_queue: list = []
-        # groups: {"key", "items": [{"leg","label","status","text","item"}]}
+        # groups: {"key", "items": [...], "status": {"text","style"}}
         self._gauntlet_rows: list = []
+        # The single-mode banner (landed row / failure banner) is STATE,
+        # never DOM-only: a verdict or land arriving while a drill view
+        # holds the DOM must survive the return recompose.
+        self._gauntlet_banner = {"text": "", "style": ""}
         self._gauntlet_landed = 0
         self._undo_available = False
         self._drill_item: GauntletItem | None = None
@@ -662,19 +680,26 @@ class WizardModal(ModalScreen):
         the entry's own gauntlet title, the adjacency-safe grouping);
         single mode's border title already names the key. Rows and
         status lines render from ``self._gauntlet_rows`` (the state is
-        the source; a recompose can never lose a verdict).
+        the source; a recompose can never lose a verdict). The entry
+        rows live in a bounded scrollable region (the UI-Considerations
+        gauntlet-list rule — many imported entries overflow the 80x24
+        grid; the bound keeps the modal inside it with the bottom
+        reachable; ``_apply_chrome`` owns the code-applied cap).
         """
         is_import = self._gauntlet_mode == "import"
-        for index, group in enumerate(self._gauntlet_rows):
-            if is_import:
-                yield Static(GAUNTLET_TITLE.format(key=group["key"]),
-                             id=f"gauntlet-head-{index}")
-            for item_index, row in enumerate(group["items"]):
-                yield _GauntletRow(
-                    row["text"], id=f"gauntlet-row-{index}-{item_index}")
-            if is_import:
-                yield Static("", id=f"gauntlet-status-{index}")
-        yield Static("", id="gauntlet-banner")
+        with VerticalScroll(id="gauntlet-rows"):
+            for index, group in enumerate(self._gauntlet_rows):
+                if is_import:
+                    yield Static(GAUNTLET_TITLE.format(key=group["key"]),
+                                 id=f"gauntlet-head-{index}")
+                for item_index, row in enumerate(group["items"]):
+                    yield _GauntletRow(
+                        row["text"],
+                        id=f"gauntlet-row-{index}-{item_index}")
+                if is_import:
+                    yield Static(group["status"]["text"],
+                                 id=f"gauntlet-status-{index}")
+        yield Static(self._gauntlet_banner["text"], id="gauntlet-banner")
         yield Static(GAUNTLET_UNDO_AFFORDANCE if self._undo_available
                      else "", id="gauntlet-undo")
         yield Static(f"{GAUNTLET_DRILL_HINT}  {WIZ_GAUNTLET_BACK_HINT}",
@@ -755,6 +780,13 @@ class WizardModal(ModalScreen):
                 key=self._values.get("key", ""))
         box.styles.width = min(
             _WIZARD_MAX_WIDTH, max(20, self.size.width - 4))
+        rows = _first_or_none(self.query("#gauntlet-rows"))
+        if rows is not None:
+            # the entry region's scroll bound (grid minus the panel's
+            # fixed chrome — recomputed on every resize like the width)
+            rows.styles.height = "auto"
+            rows.styles.max_height = max(
+                4, self.size.height - _PANEL_CHROME_ROWS)
 
     def _drill_item_label(self):
         """The drilled item's label (from the panel state)."""
@@ -981,9 +1013,11 @@ class WizardModal(ModalScreen):
              "items": [{"leg": leg, "label": label, "status": "pending",
                         "text": GAUNTLET_ROW_PENDING.format(item=label),
                         "item": None}
-                       for leg, label in _legs_for_kind(self._kind)]}
+                       for leg, label in _legs_for_kind(self._kind)],
+             "status": {"text": "", "style": ""}}
             for key, _entry, _declared in self._gauntlet_queue
         ]
+        self._gauntlet_banner = {"text": "", "style": ""}
 
     async def _begin_single_gauntlet(self, candidate: dict) -> None:
         """Enter the panel for the wizard's own candidate and launch."""
@@ -1011,18 +1045,34 @@ class WizardModal(ModalScreen):
         self._gauntlet_worker()
 
     def _style_gauntlet_panel(self) -> None:
-        """Apply row styles + initial focus (post-mount: probe-pinned)."""
+        """Apply row styles + initial focus (post-mount: probe-pinned).
+
+        Every status surface re-renders FROM STATE — a verdict or land
+        arriving while a drill view held the DOM survives the return.
+        """
         for group_index, group in enumerate(self._gauntlet_rows):
-            head = self.query(f"#gauntlet-head-{group_index}").first(
-                Static) if self._gauntlet_mode == "import" else None
+            head = (_first_or_none(self.query(
+                f"#gauntlet-head-{group_index}"))
+                if self._gauntlet_mode == "import" else None)
             if head is not None:
                 head.update(Text(GAUNTLET_TITLE.format(key=group["key"]),
                                  style=_ROW_STYLE_PASS))
+            if self._gauntlet_mode == "import":
+                status = _first_or_none(self.query(
+                    f"#gauntlet-status-{group_index}"))
+                if status is not None and group["status"]["text"]:
+                    status.update(Text(group["status"]["text"],
+                                       style=group["status"]["style"]))
             for item_index, row_state in enumerate(group["items"]):
                 self._update_row_widget(group_index, item_index,
                                         row_state["text"],
                                         self._row_style(row_state["status"]))
-        restore = (self.query(f"#{self._drill_row_id}").first(_GauntletRow)
+        if self._gauntlet_banner["text"]:
+            banner = _first_or_none(self.query("#gauntlet-banner"))
+            if banner is not None:
+                banner.update(Text(self._gauntlet_banner["text"],
+                                   style=self._gauntlet_banner["style"]))
+        restore = (_first_or_none(self.query(f"#{self._drill_row_id}"))
                    if self._drill_row_id else None)
         if restore is not None:
             restore.focus()
@@ -1031,7 +1081,7 @@ class WizardModal(ModalScreen):
             # Input) is gone after the recompose, and a stale focused
             # widget would swallow keys aimed at the panel (probe-pinned
             # by the import flow — esc from the panel must return).
-            first = self.query(_GauntletRow).first(_GauntletRow)
+            first = _first_or_none(self.query(_GauntletRow))
             if first is not None:
                 first.focus()
 
@@ -1046,8 +1096,8 @@ class WizardModal(ModalScreen):
 
     def _update_row_widget(self, group_index, item_index, text, style):
         """Update one row Static (state is already updated by callers)."""
-        row = self.query(
-            f"#gauntlet-row-{group_index}-{item_index}").first(_GauntletRow)
+        row = _first_or_none(
+            self.query(f"#gauntlet-row-{group_index}-{item_index}"))
         if row is not None:  # a drill view may hold the DOM
             row.update(Text(text, style=style))
 
@@ -1208,7 +1258,7 @@ class WizardModal(ModalScreen):
                 # one of the three form-clearing events
                 self.app.notify(landed)
                 self._undo_available = True
-                undo = self.query("#gauntlet-undo").first(Static)
+                undo = _first_or_none(self.query("#gauntlet-undo"))
                 if undo is not None:
                     undo.update(GAUNTLET_UNDO_AFFORDANCE)
                 self._reset_form()
@@ -1240,16 +1290,23 @@ class WizardModal(ModalScreen):
 
         Single mode renders the shared banner line; import mode renders
         the entry group's own status line (entry-level rollback made
-        visible — earlier groups keep their landed rows).
+        visible — earlier groups keep their landed rows). The text lands
+        in STATE first (a drill view may hold the DOM — the verdict must
+        survive the return recompose), then in the widget if present.
         """
         if text is None:
             text = GAUNTLET_BANNER_FAIL.format(key=entry_key)
         if extra:
             text = text + "\n" + extra
         style = self._row_style("pass" if ok else "fail")
-        target = (self.query(f"#gauntlet-status-{group_index}").first(Static)
-                  if self._gauntlet_mode == "import" else
-                  self.query("#gauntlet-banner").first(Static))
+        if self._gauntlet_mode == "import":
+            self._gauntlet_rows[group_index]["status"] = {
+                "text": text, "style": style}
+            target = _first_or_none(self.query(
+                f"#gauntlet-status-{group_index}"))
+        else:
+            self._gauntlet_banner = {"text": text, "style": style}
+            target = _first_or_none(self.query("#gauntlet-banner"))
         if target is not None:
             target.update(Text(text, style=style))
 
@@ -1306,12 +1363,14 @@ class WizardModal(ModalScreen):
         self._undo(self._kind, self._gauntlet_key)
         toast = GAUNTLET_UNDO_TOAST.format(key=self._gauntlet_key)
         self.app.notify(toast)
-        undo = self.query("#gauntlet-undo").first(Static)
+        undo = _first_or_none(self.query("#gauntlet-undo"))
         if undo is not None:
             undo.update("")
-        banner = self.query("#gauntlet-banner").first(Static)
+        # the panel's final view names the undone state honestly (state
+        # first — the same drill-view survival rule as every status)
+        self._gauntlet_banner = {"text": toast, "style": _ROW_STYLE_DIM}
+        banner = _first_or_none(self.query("#gauntlet-banner"))
         if banner is not None:
-            # the panel's final view names the undone state honestly
             banner.update(Text(toast, style=_ROW_STYLE_DIM))
 
     def _compose_candidate(self):

@@ -1684,17 +1684,15 @@ async def test_drill_down_50_lines_scroll_within_bound_at_80x24():
     wraps (no line elided) and scrolls inside its bound; the modal never
     exceeds the grid."""
     raw = "\n".join(f"LINE-{i:02d}-" + "y" * 80 for i in range(50))
-    service = _FakeGauntlet()
-    service._raw_override = raw
-    original = service.dry_run_precheck
 
-    def dry_with_raw(kind, key, entry, run_id):
-        item = original(kind, key, entry, run_id)
-        return GauntletItem(run_id=item.run_id, kind=item.kind,
-                            leg=item.leg, name=item.name, ok=item.ok,
-                            details=item.details, raw_output=raw)
+    class _Raw50Fake(_FakeGauntlet):
+        def dry_run_precheck(self, kind, key, entry, run_id):
+            item = super().dry_run_precheck(kind, key, entry, run_id)
+            return GauntletItem(run_id=item.run_id, kind=item.kind,
+                                leg=item.leg, name=item.name, ok=item.ok,
+                                details=item.details, raw_output=raw)
 
-    service.dry_run_precheck = dry_with_raw
+    service = _Raw50Fake()
     store = _StoreFake()
     app = _app()
     async with app.run_test(size=(80, 24)) as pilot:
@@ -1746,6 +1744,54 @@ async def test_import_conflict_report_wraps_long_values_at_80x24():
         assert "…" not in joined and "..." not in joined, (
             "nothing elides in the conflict report"
         )
+
+
+async def test_verdicts_arriving_during_drill_render_on_return():
+    """The drill-view race (pins the safe row lookup): verdicts and the
+    land landing while the drill holds the DOM update state only — no
+    crash, no lost write — and returning renders every final verdict."""
+    gate = threading.Event()  # gates the AUDIT leg only
+
+    class _GatedAuditFake(_FakeGauntlet):
+        def audit_reconciliation(self, key, entry, declared_splits, run_id):
+            self.audit_calls.append((key, run_id))
+            gate.wait(timeout=10)
+            return super().audit_reconciliation(
+                key, entry, declared_splits, run_id)
+
+    service = _GatedAuditFake()
+    store = _StoreFake()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            _Seams(), gauntlet_service=service,
+            land=store.land, undo=store.undo)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "key", "my-ds")
+        await _submit(pilot, wizard)
+        # the dry-run leg completes; the audit leg blocks in-flight
+        await _wait_row_becomes(pilot, wizard, 0, 0, (
+            GAUNTLET_ROW_DRY_RUN_PASS.format(cells="6")))
+        # drill into the finished dry-run row while the audit runs
+        await pilot.press("enter")
+        await pilot.pause()
+        drill = wizard.query_one("#gauntlet-drill-log", RichLog)
+        assert "audit ok" not in "".join(
+            strip.text for strip in drill.lines)
+        # the audit completes (and the entry LANDS) while the drill view
+        # holds the DOM — handlers must update state without crashing
+        gate.set()
+        await _settled(pilot, app)
+        assert len(store.land_calls) == 1
+        assert wizard.query_one("#gauntlet-drill-log", RichLog)  # no crash
+        # returning renders every final verdict
+        await pilot.press("escape")
+        await pilot.pause()
+        assert _gauntlet_row_text(wizard, 0, 1) == GAUNTLET_ROW_PASS.format(
+            item=GAUNTLET_ITEM_AUDIT,
+            summary="train_rows=8, unified_eval_n=6")
+        assert _gauntlet_banner(wizard) == GAUNTLET_ROW_LANDED.format(
+            key="my-ds", path=_LAND_PATH)
 
 
 async def test_resize_below_minimum_mid_gauntlet_guard_round_trip():
