@@ -1,29 +1,31 @@
 """
-wizard — the custom-onboarding wizard modal family (Phase 9, 09-04,
-CUST-01/02 UI + the CUST-03 report view).
+wizard — the custom-onboarding wizard modal family (Phase 9, 09-04 +
+09-05; CUST-01/02 UI, the CUST-03 report view, and the CUST-04 gauntlet
+panel with the D-11 import/export views).
 
 ONE ModalScreen family, two type-aware instances (the add-model and
-add-dataset wizards, each exactly the four 09-UI-SPEC steps). Collection
-half only: the form and the validation report view land here; the
-gauntlet PANEL (the real subprocess view) and the import/export views
-are 09-05 against this module's callback seams.
+add-dataset wizards, each exactly the four 09-UI-SPEC steps). The
+collection half (09-04) lands the form and the validation report view;
+the writing half (09-05) lands the gauntlet PANEL — the real async
+subprocess view — plus the session-undo affordance and the import/export
+views behind the step-1 ``f``/``o`` seams.
 
 Contract (locked decisions):
 
 - D-01 (wizard shape): a single ModalScreen holds the step state
   (``self._step``), the phase (``self._phase``: form | report |
-  gauntlet), and ``self._values`` — the ONE value store; compose renders
-  the active step's fields from the declarative step tables, pre-filling
-  from ``_values`` so no value is ever lost across a re-compose (the
-  preservation contract). ``enter`` advances (last step: submit), ``b``
-  goes back, ``esc`` cancels — confirmed via ConfirmModal only when any
-  value is entered; a blank form cancels silently.
-- Pitfall 9 (value preservation is contract): the validation report and
-  the gauntlet are VIEWS inside this same modal (``_phase`` branching),
-  never separate pushed screens — dismissing them returns INTO the
-  wizard at the same step with every entered value intact. Only an
-  explicit esc-confirm, a successful land (09-05), or a used undo clears
-  the form.
+  gauntlet | drill), and ``self._values`` — the ONE value store; compose
+  renders the active step's fields from the declarative step tables,
+  pre-filling from ``_values`` so no value is ever lost across a
+  re-compose (the preservation contract). ``enter`` advances (last step:
+  submit), ``b`` goes back, ``esc`` cancels — confirmed via ConfirmModal
+  only when any value is entered; a blank form cancels silently.
+- Pitfall 9 (value preservation is contract): the validation report,
+  the gauntlet panel, and the drill-down are VIEWS inside this same
+  modal (``_phase`` branching), never separate pushed screens —
+  dismissing them returns INTO the wizard at the same step with every
+  entered value intact. Only an explicit esc-confirm, a successful land,
+  or a used undo clears the form.
 - D-03 (type-aware controls): enum fields are SelectionLists with
   single-pick enforced here (a new pick clears the previous one — the
   widget is multi-toggle by default); path fields are Inputs with the
@@ -39,33 +41,58 @@ Contract (locked decisions):
 - CUST-03 (report): submit runs the INJECTED validator seam and renders
   the numbered collect-all list (the validator's own field-definition
   emission order) in a wrapping RichLog — nothing is applied on failure;
-  a clean pass hands off through the ``on_valid`` callback seam (09-05
-  wires the real gauntlet panel; until then the gauntlet phase renders a
-  minimal pending view).
+  a clean pass transitions into the gauntlet phase (the ``on_valid``
+  callback fires as the observer seam).
+- CUST-04 / D-06/D-07/D-08 (the gauntlet panel, 09-05): the panel
+  renders one row per kind-aware item (models: dry-run only; datasets:
+  dry-run + audit — the service's own ``reconcile`` leg rule mirrored
+  1:1) and drives the INJECTED gauntlet service per leg from ONE
+  exclusive ``@work(thread=True)`` worker (the 08-06 discipline: the
+  console never freezes; posting per-item messages, polling
+  ``is_cancelled`` between legs). Every message carries the run id; the
+  handlers drop stale ids (WR-02) AND anything not addressed to a live
+  gauntlet view. All-✓ lands exactly once THROUGH THE INJECTED land
+  seam (the 09-01 store — this screen never writes a file); any ✗
+  renders the prominent zero-touch banner and lands nothing. The
+  verdicts are ALWAYS the service's parsed-artifact results — the panel
+  renders them, never recomputes (binding constraint 5).
+- D-11 (import/export, 09-05): ``f`` pushes the import path prompt —
+  the collect-all import validation renders its numbered conflicts
+  through the same report surface and NOTHING merges on any problem; a
+  clean file re-enters this same panel grouped per entry, entries
+  gauntleted sequentially in FILE order, a failing entry reverting at
+  entry level while the others land. ``o`` short-circuits the
+  empty-state toast before any path is asked and otherwise copies the
+  registry through the injected export seam (verbatim byte copy).
 - Modal isolation (inherited): ModalScreen blocks every base-screen
   binding (including the 09-03 digit navigation) while open.
-- Prohibitions honored: this screen NEVER writes any registry file
-  (submission validates only — D-08: the gauntlet is the only write
-  path, wired in 09-05); no benchmark semantics here (row counting and
-  survivor logic are CUST-03 service checks or the audit subprocess);
-  no priority bindings anywhere (one would fire before the focused
-  widget's own keys and break Input typing — 09-RESEARCH Pattern 2).
+- Prohibitions honored: this screen NEVER writes any registry file —
+  land/undo/export go through the injected store seams exclusively
+  (D-08: the all-✓ gauntlet completion is the only custom-registry
+  write path, and the official registries are never written by any
+  flow); no benchmark semantics here (row counting and survivor logic
+  are CUST-03 service checks or the audit subprocess); no priority
+  bindings anywhere (one would fire before the focused widget's own
+  keys and break Input typing — 09-RESEARCH Pattern 2).
 - I18N-01: zero Chinese literals in this module — every operator string
   renders through ``tui/strings.py`` constants (grep-enforced).
 
-ZERO service logic here (binding constraint 5): the validator and the
-path-existence probes arrive as injected callables; this module is
-presentation over plain dicts.
+ZERO service logic here (binding constraint 5): the validator, the
+gauntlet service, the store seams, and the path-existence probes arrive
+as injected callables; this module is presentation over plain dicts and
+the service's structured items.
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
-from textual import events
+from rich.text import Text
+from textual import events, work
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
+from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import (
     Checkbox,
@@ -75,6 +102,7 @@ from textual.widgets import (
     Static,
 )
 from textual.widgets.selection_list import Selection
+from textual.worker import get_current_worker
 
 from tui.screens.selection import ConfirmModal
 from tui.services.custom_validation import (
@@ -82,9 +110,26 @@ from tui.services.custom_validation import (
     DATASET_TYPE_VALUES,
     MODEL_TYPE_VALUES,
 )
+from tui.services.gauntlet import LEG_AUDIT, LEG_DRY_RUN, GauntletItem
 from tui.strings import (
     ENV_STATE_PENDING,
+    GAUNTLET_BANNER_FAIL,
+    GAUNTLET_DRILL_HINT,
+    GAUNTLET_DRILL_TITLE,
+    GAUNTLET_IMPORTED_TOAST,
+    GAUNTLET_ITEM_AUDIT,
+    GAUNTLET_ITEM_DRY_RUN,
+    GAUNTLET_ROW_DRY_RUN_PASS,
+    GAUNTLET_ROW_FAIL,
+    GAUNTLET_ROW_LANDED,
+    GAUNTLET_ROW_PASS,
+    GAUNTLET_ROW_PENDING,
+    GAUNTLET_ROW_RUNNING,
     GAUNTLET_TITLE,
+    GAUNTLET_UNDO_AFFORDANCE,
+    GAUNTLET_UNDO_LABEL,
+    GAUNTLET_UNDO_TOAST,
+    SEL_TEMPLATE_WRITE_FAILED,
     WIZ_BACK_LABEL,
     WIZ_BORDER_TITLE,
     WIZ_CANCEL_CONFIRM,
@@ -299,8 +344,64 @@ def _parses_as_number(text):
     return True
 
 
+# ===== The gauntlet panel (CUST-04 UI, 09-05) =====
+
+#: Row text styles (theme tokens; the glyph carries the state under
+#: NO_COLOR — the glyph+color redundancy rule). Probe-pinned on 8.2.8:
+#: ``Text(style="$token")`` updates render correctly in Statics AFTER
+#: mount (the styling pass below runs post-recompose, never in compose).
+_ROW_STYLE_DIM = "$text-muted"
+_ROW_STYLE_PASS = "bold $success"
+_ROW_STYLE_FAIL = "bold $error"
+
+#: The drill-down RichLog's scroll bound (the 08-06 env-detail precedent:
+#: a height cap is not a spacing token — wrap + scroll, never elide).
+_DRILL_LOG_MAX_HEIGHT = 20
+
+
+class _GauntletRow(Static):
+    """One focusable gauntlet row (``enter`` drills into its item)."""
+
+    can_focus = True
+
+
+def _legs_for_kind(kind):
+    """The kind-aware leg composition (the 09-02 service's own
+    ``reconcile`` rule mirrored exactly: models gauntlet the dry-run leg
+    ONLY; datasets run both legs sequentially — n_audit is dataset-only
+    by design).
+
+    Args:
+        kind (str): ``"models"`` or ``"datasets"``.
+
+    Returns:
+        list[tuple[str, str]]: ``(leg, label)`` pairs in execution order.
+    """
+    legs = [(LEG_DRY_RUN, GAUNTLET_ITEM_DRY_RUN)]
+    if kind == "datasets":
+        legs.append((LEG_AUDIT, GAUNTLET_ITEM_AUDIT))
+    return legs
+
+
+def _detail_value(details, token):
+    """Extract one ``token=value`` detail's value (data, verbatim).
+
+    Args:
+        details (tuple[str, ...]): the item's structured detail tokens.
+        token (str): the token name (e.g. ``"planned_cells"``).
+
+    Returns:
+        str: the value after ``=``, or ``""`` when the token is absent.
+    """
+    prefix = token + "="
+    for detail in details:
+        if detail.startswith(prefix):
+            return detail[len(prefix):]
+    return ""
+
+
 class WizardModal(ModalScreen):
-    """The add-model / add-dataset wizard: collect, validate, report.
+    """The add-model / add-dataset wizard: collect, validate, gauntlet.
 
     Construction injects every behavior seam (RESEARCH Pattern 7):
 
@@ -310,9 +411,12 @@ class WizardModal(ModalScreen):
             09-01 collect-all validator (pre-bound to its
             ``ValidationSources`` by the caller); tests inject fakes.
         on_valid: called once with the composed candidate dict on a
-            clean validation pass (the 09-05 gauntlet seam).
-        on_import: the step-1 ``f`` seam (the file-import view, 09-05).
-        on_export: the step-1 ``o`` seam (the registry export, 09-05).
+            clean validation pass (the observer seam; the gauntlet
+            panel itself is internal, driven by ``gauntlet_service``).
+        on_import: the step-1 ``f`` fallback seam (fires only when the
+            09-05 import seams are NOT injected — the legacy 09-04
+            callback).
+        on_export: the step-1 ``o`` fallback seam (same rule).
         prefill: an optional one-item ``{key: entry}`` custom-entry map
             (D-12: edit = delete + re-record — the 09-06 ``w`` push).
         vocabularies: injected enum vocabularies keyed by field name
@@ -322,6 +426,25 @@ class WizardModal(ModalScreen):
         dir_exists: advisory path-existence probe for directory fields
             (default: the real fs, resolution mirroring 09-01).
         file_exists: advisory existence probe for split-file fields.
+        gauntlet_service: the 09-02 ``GauntletService`` (or fake) — the
+            panel drives its two per-leg entry points
+            (``dry_run_precheck`` / ``audit_reconciliation``; per-item
+            ◌→⠋→✓/✗ progression requires a service call per leg, so
+            the batch ``reconcile`` is mirrored leg-for-leg here).
+            ``None`` keeps the 09-04 minimal pending view.
+        land: ``(kind, key, entry) -> Path`` — the 09-01 store's land
+            (the ONLY write the panel performs; called exactly once per
+            all-✓ entry).
+        undo: ``(kind, key) -> bool`` — the 09-01 store's session undo
+            behind the ``[u]`` affordance.
+        import_read: ``(path) -> (doc | None, message | None)`` — the
+            tolerant import-file read (pre-bound to the kind).
+        import_validate: ``(doc) -> problems`` — the collect-all import
+            validator (pre-bound to the kind + its collision sources).
+        export_registry: ``(dest) -> (ok, diagnostic)`` — the 09-01
+            verbatim registry export (pre-bound to the kind).
+        has_custom_entries: ``() -> bool`` — the export empty-state
+            pre-check (the flow short-circuits before asking a path).
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -329,14 +452,21 @@ class WizardModal(ModalScreen):
         Binding("enter", "advance", WIZ_NEXT_LABEL, show=False),
         Binding("b", "go_back", WIZ_BACK_LABEL, show=False),
         # Step-1-only affordances (D-11): declared once, the actions
-        # no-op outside step 1; the views are 09-05 against the seams.
+        # no-op outside step 1; the real views ride the 09-05 seams with
+        # the plain callbacks as the no-service fallback.
         Binding("f", "do_import", WIZ_IMPORT_LABEL, show=False),
         Binding("o", "do_export", WIZ_EXPORT_LABEL, show=False),
+        # The session-undo affordance (D-08): active only in the landed
+        # state (the action guards; single use per session).
+        Binding("u", "undo_landed", GAUNTLET_UNDO_LABEL, show=False),
     ]
 
     def __init__(self, kind, validator, on_valid=None, on_import=None,
                  on_export=None, prefill=None, vocabularies=None,
-                 dir_exists=None, file_exists=None, **kwargs):
+                 dir_exists=None, file_exists=None, gauntlet_service=None,
+                 land=None, undo=None, import_read=None,
+                 import_validate=None, export_registry=None,
+                 has_custom_entries=None, **kwargs):
         super().__init__(**kwargs)
         if kind not in KINDS:
             raise ValueError(
@@ -352,6 +482,14 @@ class WizardModal(ModalScreen):
                               for k, v in (vocabularies or {}).items()}
         self._dir_exists = dir_exists or _default_dir_exists
         self._file_exists = file_exists or _default_file_exists
+        # The 09-05 writing-half seams (None = the legacy 09-04 views).
+        self._gauntlet_service = gauntlet_service
+        self._land = land
+        self._undo = undo
+        self._import_read = import_read
+        self._import_validate = import_validate
+        self._export_registry = export_registry
+        self._has_custom_entries = has_custom_entries
         kind_spec = KINDS[kind]
         self._steps = kind_spec.steps
         self._labels = kind_spec.labels
@@ -369,6 +507,24 @@ class WizardModal(ModalScreen):
         self._values: dict = {"quirks": {name: False
                                        for name, _, _ in QUIRK_FIELDS}}
         self._apply_prefill(prefill)
+        # ===== The gauntlet panel state (09-05) =====
+        # The current run's id (WR-02): incremented on every launch; the
+        # handlers drop every message whose id no longer matches AND
+        # anything not addressed to a live gauntlet view — an abandoned
+        # run can complete all-pass and still never land.
+        self._run_id = 0
+        self._gauntlet_mode = None      # None | "single" | "import"
+        self._gauntlet_key = ""
+        # (key, entry, declared_splits) in execution order (file order
+        # for imports).
+        self._gauntlet_queue: list = []
+        # groups: {"key", "items": [{"leg","label","status","text","item"}]}
+        self._gauntlet_rows: list = []
+        self._gauntlet_landed = 0
+        self._undo_available = False
+        self._drill_item: GauntletItem | None = None
+        self._drill_row_id: str | None = None
+        self._pending_import = None
 
     # ===== Prefill (D-12: edit = delete + re-record) =====
 
@@ -407,7 +563,7 @@ class WizardModal(ModalScreen):
     # ===== Compose (the active phase view) =====
 
     def compose(self) -> ComposeResult:
-        """Render the active phase: the form step, the report, gauntlet."""
+        """Render the active phase: form step, report, gauntlet, drill."""
         with Vertical(id="wizard-box", classes="wizard-box"):
             if self._phase == "form":
                 yield from self._compose_step()
@@ -415,10 +571,43 @@ class WizardModal(ModalScreen):
                 yield RichLog(wrap=True, id="wiz-report-log")
                 yield Static(WIZ_REPORT_BACK_HINT,
                              id="wiz-report-hint")
-            else:  # gauntlet — the minimal pending view (panel = 09-05)
+            elif self._phase == "drill":
+                yield RichLog(wrap=True, id="gauntlet-drill-log")
+                yield Static(WIZ_GAUNTLET_BACK_HINT,
+                             id="gauntlet-drill-hint")
+            elif self._gauntlet_service is not None:
+                yield from self._compose_gauntlet_panel()
+            else:
+                # The 09-04 minimal pending view (no service wired —
+                # the composition root wires the real GauntletService).
                 yield Static(ENV_STATE_PENDING, id="wiz-gauntlet-pending")
                 yield Static(WIZ_GAUNTLET_BACK_HINT,
                              id="wiz-gauntlet-hint")
+
+    def _compose_gauntlet_panel(self):
+        """The gauntlet panel: grouped item rows + status lines + hints.
+
+        Import mode renders one group per entry (its header row carries
+        the entry's own gauntlet title, the adjacency-safe grouping);
+        single mode's border title already names the key. Rows and
+        status lines render from ``self._gauntlet_rows`` (the state is
+        the source; a recompose can never lose a verdict).
+        """
+        is_import = self._gauntlet_mode == "import"
+        for index, group in enumerate(self._gauntlet_rows):
+            if is_import:
+                yield Static(GAUNTLET_TITLE.format(key=group["key"]),
+                             id=f"gauntlet-head-{index}")
+            for item_index, row in enumerate(group["items"]):
+                yield _GauntletRow(
+                    row["text"], id=f"gauntlet-row-{index}-{item_index}")
+            if is_import:
+                yield Static("", id=f"gauntlet-status-{index}")
+        yield Static("", id="gauntlet-banner")
+        yield Static(GAUNTLET_UNDO_AFFORDANCE if self._undo_available
+                     else "", id="gauntlet-undo")
+        yield Static(f"{GAUNTLET_DRILL_HINT}  {WIZ_GAUNTLET_BACK_HINT}",
+                     id="gauntlet-hint")
 
     def _compose_step(self):
         """The active step's fields, pre-filled from ``_values``."""
@@ -480,11 +669,32 @@ class WizardModal(ModalScreen):
         elif self._phase == "report":
             box.border_title = WIZ_REPORT_TITLE.format(
                 kind=KINDS[self._kind].kind_name)
-        else:  # gauntlet pending
+        elif self._phase == "drill":
+            label = self._drill_item_label()
+            box.border_title = (GAUNTLET_DRILL_TITLE.format(item=label)
+                                if label else GAUNTLET_TITLE.format(
+                                    key=self._gauntlet_key))
+        elif self._gauntlet_mode == "import":
+            box.border_title = WIZ_IMPORT_LABEL
+        elif self._gauntlet_service is not None:
+            # the landed panel keeps its key even after the form clears
+            box.border_title = GAUNTLET_TITLE.format(key=self._gauntlet_key)
+        else:  # the 09-04 minimal pending view
             box.border_title = GAUNTLET_TITLE.format(
                 key=self._values.get("key", ""))
         box.styles.width = min(
             _WIZARD_MAX_WIDTH, max(20, self.size.width - 4))
+
+    def _drill_item_label(self):
+        """The drilled item's label (from the panel state)."""
+        if self._drill_row_id is None:
+            return ""
+        parts = self._drill_row_id.split("-")
+        try:
+            items = self._gauntlet_rows[int(parts[-2])]["items"]
+            return items[int(parts[-1])]["label"]
+        except (IndexError, KeyError, ValueError):
+            return ""
 
     def on_mount(self) -> None:
         """Apply chrome + the initial advisory lines."""
@@ -585,23 +795,33 @@ class WizardModal(ModalScreen):
     # ===== Navigation: enter / b / esc =====
 
     async def action_advance(self) -> None:
-        """Enter: next step; last step submits; report/gauntlet return."""
-        if self._phase != "form":
-            await self._return_to_form()
-        elif self._step < len(self._steps) - 1:
-            self._step += 1
-            await self.recompose()
-            self._apply_chrome()
-            self._refresh_advisories()
+        """Enter: next step; last step submits; report returns; a
+        gauntlet ROW drills into its verbatim output; drill returns."""
+        if self._phase == "form":
+            if self._step < len(self._steps) - 1:
+                self._step += 1
+                await self.recompose()
+                self._apply_chrome()
+                self._refresh_advisories()
+            else:
+                await self._submit()
+        elif self._phase == "drill":
+            await self._show_gauntlet_panel()
+        elif self._phase == "gauntlet" and self._gauntlet_service is not None:
+            row = self.focused if isinstance(self.focused, _GauntletRow) \
+                else None
+            if row is not None:
+                await self._open_drill(row)
         else:
-            await self._submit()
+            await self._return_to_form()
 
     # ===== Submit: compose, validate, report / hand off (CUST-03) =====
 
     async def _submit(self) -> None:
         """Step-4 enter: run the injected validator; problems render as
-        the collect-all report (nothing applied), a clean pass hands the
-        candidate to the gauntlet seam (09-05 wires the real panel)."""
+        the collect-all report (nothing applied), a clean pass enters
+        the gauntlet phase — the real panel when the service seam is
+        wired, the 09-04 minimal pending view otherwise."""
         candidate = self._compose_candidate()
         problems = list(self._validator(candidate) or [])
         if problems:
@@ -613,8 +833,11 @@ class WizardModal(ModalScreen):
         else:
             self._candidate = candidate
             self._phase = "gauntlet"
-            await self.recompose()
-            self._apply_chrome()
+            if self._gauntlet_service is not None:
+                await self._begin_single_gauntlet(candidate)
+            else:
+                await self.recompose()
+                self._apply_chrome()
             if self._on_valid is not None:
                 self._on_valid(candidate)
 
@@ -628,6 +851,393 @@ class WizardModal(ModalScreen):
                 field_label=self._labels.get(field_key, field_key),
                 problem=message,
             ))
+
+    # ===== The gauntlet panel (CUST-04 UI, D-06/D-07/D-08 — 09-05) =====
+
+    class GauntletItemChecking(Message):
+        """One leg is starting (worker thread -> event loop).
+
+        Carries the run id it belongs to — handlers drop messages from a
+        superseded or abandoned run (WR-02).
+        """
+
+        def __init__(self, run_id: int, entry_key: str, leg: str) -> None:
+            self.run_id = run_id
+            self.entry_key = entry_key
+            self.leg = leg
+            super().__init__()
+
+    class GauntletItemDone(Message):
+        """One leg finished; carries the service's structured item.
+
+        Carries the run id it belongs to — the worker's OS thread cannot
+        be interrupted, so a cancelled run's in-flight leg can finish
+        and post AFTER the new run's messages; the handlers drop it
+        (WR-02) so a stale result never backfills a later row.
+        """
+
+        def __init__(self, run_id: int, item: GauntletItem) -> None:
+            self.run_id = run_id
+            self.item = item
+            super().__init__()
+
+    class GauntletEntryDone(Message):
+        """One entry's every leg finished; carries the aggregate ok.
+
+        The handler performs the ONLY write (the injected land seam) —
+        on the event loop, keyed to the CURRENT run, so an abandoned
+        run's all-✓ can never land (D-08).
+        """
+
+        def __init__(self, run_id: int, entry_key: str, ok: bool) -> None:
+            self.run_id = run_id
+            self.entry_key = entry_key
+            self.ok = ok
+            super().__init__()
+
+    class GauntletRunDone(Message):
+        """The whole run (single candidate or the whole import queue)
+        finished; carries the run id (dropped when superseded)."""
+
+        def __init__(self, run_id: int) -> None:
+            self.run_id = run_id
+            super().__init__()
+
+    def _init_gauntlet_rows(self) -> None:
+        """Build the panel state: one group per queued entry."""
+        self._gauntlet_rows = [
+            {"key": key,
+             "items": [{"leg": leg, "label": label, "status": "pending",
+                        "text": GAUNTLET_ROW_PENDING.format(item=label),
+                        "item": None}
+                       for leg, label in _legs_for_kind(self._kind)]}
+            for key, _entry, _declared in self._gauntlet_queue
+        ]
+
+    async def _begin_single_gauntlet(self, candidate: dict) -> None:
+        """Enter the panel for the wizard's own candidate and launch."""
+        key = candidate.get("key", "")
+        self._gauntlet_mode = "single"
+        self._gauntlet_key = key
+        self._gauntlet_queue = [(key, candidate, None)]
+        self._gauntlet_landed = 0
+        self._undo_available = False
+        self._init_gauntlet_rows()
+        await self._launch_gauntlet()
+
+    async def _launch_gauntlet(self) -> None:
+        """(Re)compose the panel view and start the exclusive worker.
+
+        ``self._run_id`` increments HERE, at every launch — the single
+        increment site; a superseded run's late messages are dropped by
+        id, and any message arriving outside a live gauntlet view is
+        dropped by the phase guard.
+        """
+        self._run_id += 1
+        await self.recompose()
+        self._apply_chrome()
+        self._style_gauntlet_panel()
+        self._gauntlet_worker()
+
+    def _style_gauntlet_panel(self) -> None:
+        """Apply row styles + initial focus (post-mount: probe-pinned)."""
+        for group_index, group in enumerate(self._gauntlet_rows):
+            head = self.query(f"#gauntlet-head-{group_index}").first(
+                Static) if self._gauntlet_mode == "import" else None
+            if head is not None:
+                head.update(Text(GAUNTLET_TITLE.format(key=group["key"]),
+                                 style=_ROW_STYLE_PASS))
+            for item_index, row_state in enumerate(group["items"]):
+                self._update_row_widget(group_index, item_index,
+                                        row_state["text"],
+                                        self._row_style(row_state["status"]))
+        restore = (self.query(f"#{self._drill_row_id}").first(_GauntletRow)
+                   if self._drill_row_id else None)
+        if restore is not None:
+            restore.focus()
+        else:
+            first = self.query(_GauntletRow).first(_GauntletRow)
+            if first is not None and self.focused is None:
+                first.focus()
+
+    @staticmethod
+    def _row_style(status):
+        """The row text style for one status state."""
+        if status == "pass":
+            return _ROW_STYLE_PASS
+        if status == "fail":
+            return _ROW_STYLE_FAIL
+        return _ROW_STYLE_DIM
+
+    def _update_row_widget(self, group_index, item_index, text, style):
+        """Update one row Static (state is already updated by callers)."""
+        row = self.query(
+            f"#gauntlet-row-{group_index}-{item_index}").first(_GauntletRow)
+        if row is not None:  # a drill view may hold the DOM
+            row.update(Text(text, style=style))
+
+    @work(exclusive=True, thread=True)
+    def _gauntlet_worker(self) -> None:
+        """Run every queued entry's legs in the worker thread (D-03).
+
+        A plain ``def`` (an OS thread, never the event loop): each
+        service call blocks here, not the UI — the console never
+        freezes. Per leg: post the checking state, call, post the
+        result (unconditionally — the cancelled thread's in-flight leg
+        finishes and posts; the run-id drop is the handler's job, the
+        exact WR-02 env-panel discipline); per entry: post the
+        aggregate; per run: post the completion. The cancellation poll
+        between legs/entries honors exclusive=True's cancel of a
+        still-running previous launch. The panel performs NO writes and
+        NO verdict computation — the service's parsed-artifact items are
+        the only truth (binding constraint 5).
+        """
+        worker = get_current_worker()
+        run_id = self._run_id  # the run this worker serves (WR-02)
+        service = self._gauntlet_service
+        if service is None:  # unreachable by construction (launch guard)
+            return
+        for entry_key, entry, declared in self._gauntlet_queue:
+            if worker.is_cancelled:
+                return
+            ok = True
+            for leg, _label in _legs_for_kind(self._kind):
+                if worker.is_cancelled:
+                    return
+                self.post_message(
+                    self.GauntletItemChecking(run_id, entry_key, leg))
+                item = self._run_leg(service, leg, entry_key, entry,
+                                     declared, run_id)
+                self.post_message(self.GauntletItemDone(run_id, item))
+                ok = ok and bool(item.ok)
+            if worker.is_cancelled:
+                return
+            self.post_message(self.GauntletEntryDone(run_id, entry_key, ok))
+        if worker.is_cancelled:
+            return
+        self.post_message(self.GauntletRunDone(run_id))
+
+    def _run_leg(self, service, leg, entry_key, entry, declared, run_id):
+        """Call the injected service's per-leg entry point (never here:
+        verdicts come from the service's parsed artifacts)."""
+        if leg == LEG_AUDIT:
+            return service.audit_reconciliation(
+                entry_key, entry, declared, run_id)
+        return service.dry_run_precheck(
+            self._kind, entry_key, entry, run_id)
+
+    def _gauntlet_stale(self, run_id) -> bool:
+        """True when a message no longer addresses a live gauntlet view
+        of the CURRENT run (WR-02 id drop + the abandoned-view guard —
+        an esc-then-resubmit window cannot backfill the form)."""
+        return (run_id != self._run_id
+                or self._phase not in ("gauntlet", "drill"))
+
+    def _find_row(self, entry_key, leg):
+        """Locate one item's (group, item) indices in the panel state."""
+        for group_index, group in enumerate(self._gauntlet_rows):
+            if group["key"] != entry_key:
+                continue
+            for item_index, row_state in enumerate(group["items"]):
+                if row_state["leg"] == leg:
+                    return group_index, item_index
+        return None
+
+    @staticmethod
+    def _item_row_text(leg, label, item):
+        """One finished item's row text (service data, never recomputed)."""
+        if not item.ok:
+            summary = ", ".join(item.details) or (item.raw_output or "")
+            return GAUNTLET_ROW_FAIL.format(item=label, summary=summary)
+        if leg == LEG_DRY_RUN:
+            return GAUNTLET_ROW_DRY_RUN_PASS.format(
+                cells=_detail_value(item.details, "planned_cells"))
+        return GAUNTLET_ROW_PASS.format(
+            item=label, summary=", ".join(item.details))
+
+    # ===== Message handlers (event-loop side: rendering + the one write) =====
+
+    def on_wizard_modal_gauntlet_item_checking(
+            self, message: GauntletItemChecking) -> None:
+        """Flip the in-flight row to the running state (inline fill)."""
+        if self._gauntlet_stale(message.run_id):
+            return
+        found = self._find_row(message.entry_key, message.leg)
+        if found is None:
+            return
+        group_index, item_index = found
+        row_state = self._gauntlet_rows[group_index]["items"][item_index]
+        row_state["status"] = "running"
+        row_state["text"] = GAUNTLET_ROW_RUNNING.format(
+            item=row_state["label"])
+        self._update_row_widget(group_index, item_index, row_state["text"],
+                                self._row_style("running"))
+
+    def on_wizard_modal_gauntlet_item_done(
+            self, message: GauntletItemDone) -> None:
+        """Record the verdict and flip its row to the final glyph row."""
+        if self._gauntlet_stale(message.run_id):
+            return  # a superseded run's late result — dropped (WR-02)
+        item = message.item
+        found = self._find_row(item.name, item.leg)
+        if found is None:
+            return
+        group_index, item_index = found
+        row_state = self._gauntlet_rows[group_index]["items"][item_index]
+        row_state["status"] = "pass" if item.ok else "fail"
+        row_state["item"] = item
+        row_state["text"] = self._item_row_text(
+            row_state["leg"], row_state["label"], item)
+        self._update_row_widget(group_index, item_index, row_state["text"],
+                                self._row_style(row_state["status"]))
+
+    def on_wizard_modal_gauntlet_entry_done(
+            self, message: GauntletEntryDone) -> None:
+        """All-✓ lands exactly once through the seam; any ✗ banners.
+
+        This handler is the panel's ONLY write call site (the injected
+        land seam — the 09-01 store's atomic write; this screen never
+        touches a file). It runs keyed to the current run and a live
+        gauntlet view, so an abandoned run can never land (D-08).
+        """
+        if self._gauntlet_stale(message.run_id):
+            return
+        is_import = self._gauntlet_mode == "import"
+        group_index = next(
+            (index for index, group in enumerate(self._gauntlet_rows)
+             if group["key"] == message.entry_key), None)
+        if group_index is None:
+            return
+        if message.ok:
+            land = self._land
+            if land is None:
+                return  # no store seam wired — nothing can land
+            entry = self._entry_for(message.entry_key)
+            try:
+                path = land(self._kind, message.entry_key, entry)
+            except Exception as exc:  # noqa: BLE001 — the store seam's
+                # failure must surface as a banner, never a crashed panel
+                self._render_entry_status(
+                    group_index, False, message.entry_key,
+                    extra=SEL_TEMPLATE_WRITE_FAILED.format(error=exc),
+                )
+                return
+            self._gauntlet_landed += 1
+            landed = GAUNTLET_ROW_LANDED.format(
+                key=message.entry_key, path=path)
+            self._render_entry_status(group_index, True, message.entry_key,
+                                      text=landed)
+            if not is_import:
+                # the success toast + the session-undo affordance (the
+                # toast reuses the landed-row copy verbatim); a land is
+                # one of the three form-clearing events
+                self.app.notify(landed)
+                self._undo_available = True
+                undo = self.query("#gauntlet-undo").first(Static)
+                if undo is not None:
+                    undo.update(GAUNTLET_UNDO_AFFORDANCE)
+                self._reset_form()
+        else:
+            self._render_entry_status(group_index, False,
+                                      message.entry_key)
+
+    def on_wizard_modal_gauntlet_run_done(
+            self, message: GauntletRunDone) -> None:
+        """Import completion toast (any n ≥ 1 landed; failures carry
+        their own banners — a zero-land import never toasts success)."""
+        if self._gauntlet_stale(message.run_id):
+            return
+        if (self._gauntlet_mode == "import" and self._gauntlet_landed > 0):
+            self.app.notify(GAUNTLET_IMPORTED_TOAST.format(
+                n=self._gauntlet_landed,
+                kind=KINDS[self._kind].kind_name))
+
+    def _entry_for(self, entry_key):
+        """The queued entry dict for one key (single mode: candidate)."""
+        for key, entry, _declared in self._gauntlet_queue:
+            if key == entry_key:
+                return entry
+        return self._candidate if self._gauntlet_mode == "single" else {}
+
+    def _render_entry_status(self, group_index, ok, entry_key, text=None,
+                             extra=""):
+        """Render one entry's landed row / failure banner.
+
+        Single mode renders the shared banner line; import mode renders
+        the entry group's own status line (entry-level rollback made
+        visible — earlier groups keep their landed rows).
+        """
+        if text is None:
+            text = GAUNTLET_BANNER_FAIL.format(key=entry_key)
+        if extra:
+            text = text + "\n" + extra
+        style = self._row_style("pass" if ok else "fail")
+        target = (self.query(f"#gauntlet-status-{group_index}").first(Static)
+                  if self._gauntlet_mode == "import" else
+                  self.query("#gauntlet-banner").first(Static))
+        if target is not None:
+            target.update(Text(text, style=style))
+
+    def _reset_form(self) -> None:
+        """Clear the form (a successful land clears it — one of the
+        three clearing events with esc-confirm and a used undo)."""
+        self._values = {"quirks": {name: False
+                                   for name, _, _ in QUIRK_FIELDS}}
+        self._step = 0
+
+    # ===== Drill-down (enter on a row -> verbatim subprocess output) =====
+
+    async def _open_drill(self, row) -> None:
+        """Swap to the drill view over one row's item (same modal — the
+        Pitfall 9 preservation contract)."""
+        parts = (row.id or "").split("-")
+        try:
+            group = self._gauntlet_rows[int(parts[-2])]
+            item = group["items"][int(parts[-1])]["item"]
+        except (IndexError, KeyError, TypeError, ValueError):
+            return
+        if item is None:
+            return  # a pending/running row has no output yet
+        self._drill_item = item
+        self._drill_row_id = row.id
+        self._phase = "drill"
+        await self.recompose()
+        self._apply_chrome()
+        log = self.query_one("#gauntlet-drill-log", RichLog)
+        log.styles.max_height = _DRILL_LOG_MAX_HEIGHT
+        for line in (item.raw_output or "").splitlines() or [""]:
+            log.write(line)  # data, verbatim — never translated
+
+    async def _show_gauntlet_panel(self) -> None:
+        """Return from the drill view to the panel (state unchanged)."""
+        self._phase = "gauntlet"
+        await self.recompose()
+        self._apply_chrome()
+        self._style_gauntlet_panel()
+
+    # ===== Session undo (D-08: explicit, immediately-after, once) =====
+
+    def action_undo_landed(self) -> None:
+        """``u``: remove exactly the just-landed key through the seam.
+
+        Guarded to the landed state and single-use — the affordance is
+        session-scoped (gone once the panel closes) and the toast is
+        the confirmation (the UI-SPEC destructive list).
+        """
+        if (self._phase != "gauntlet" or not self._undo_available
+                or self._undo is None):
+            return
+        self._undo_available = False
+        self._undo(self._kind, self._gauntlet_key)
+        toast = GAUNTLET_UNDO_TOAST.format(key=self._gauntlet_key)
+        self.app.notify(toast)
+        undo = self.query("#gauntlet-undo").first(Static)
+        if undo is not None:
+            undo.update("")
+        banner = self.query("#gauntlet-banner").first(Static)
+        if banner is not None:
+            # the panel's final view names the undone state honestly
+            banner.update(Text(toast, style=_ROW_STYLE_DIM))
 
     def _compose_candidate(self):
         """Assemble ``_values`` into the candidate dict the 09-01
@@ -687,9 +1297,17 @@ class WizardModal(ModalScreen):
             self._refresh_advisories()
 
     async def action_request_cancel(self) -> None:
-        """Esc: report/gauntlet return; a blank form cancels; entered
-        values confirm through the destructive gate first."""
+        """Esc: drill returns to the panel; report/gauntlet return to the
+        form; a blank form cancels; entered values confirm through the
+        destructive gate first."""
+        if self._phase == "drill":
+            await self._show_gauntlet_panel()
+            return
         if self._phase != "form":
+            # Leaving the gauntlet panel abandons any in-flight run: the
+            # phase guard in ``_gauntlet_stale`` drops its late messages,
+            # so an abandoned all-✓ can never land (D-08) — the operator
+            # resubmits and re-gauntlets.
             await self._return_to_form()
             return
         filled = self._filled_steps()

@@ -54,8 +54,8 @@ from tui.strings import (
     GAUNTLET_ROW_DRY_RUN_PASS,
     GAUNTLET_ROW_FAIL,
     GAUNTLET_ROW_LANDED,
-    GAUNTLET_ROW_PENDING,
     GAUNTLET_ROW_PASS,
+    GAUNTLET_ROW_PENDING,
     GAUNTLET_ROW_RUNNING,
     GAUNTLET_TITLE,
     GAUNTLET_UNDO_AFFORDANCE,
@@ -1078,6 +1078,11 @@ async def _settled(pilot, app):
     await pilot.pause()
 
 
+def _toasts(app):
+    """The app's toast messages in fire order (the selection-suite idiom)."""
+    return [notification.message for notification in app._notifications]
+
+
 async def test_gauntlet_panel_progression_pending_running_done():
     """Truth 1: kind-aware rows progress ◌ 待检 → ⠋ …运行中 → ✓ with the
     structured summaries; the console stays responsive (thread worker)."""
@@ -1179,7 +1184,7 @@ async def test_gauntlet_all_pass_lands_once_renders_undo_and_clears_form():
         # the landed row + success toast + the active undo affordance
         landed = GAUNTLET_ROW_LANDED.format(key="my-lm", path=_LAND_PATH)
         assert _gauntlet_banner(wizard) == landed
-        assert app._notifications[-1].message == landed
+        assert _toasts(app)[-1] == landed
         assert str(wizard.query_one(
             "#gauntlet-undo", Static).content) == GAUNTLET_UNDO_AFFORDANCE
         # u: session undo — removes exactly the just-landed key, once
@@ -1188,8 +1193,7 @@ async def test_gauntlet_all_pass_lands_once_renders_undo_and_clears_form():
         await pilot.press("u")
         await pilot.pause()
         assert store.undo_calls == [("models", "my-lm")]
-        assert app._notifications[-1].message == (
-            GAUNTLET_UNDO_TOAST.format(key="my-lm"))
+        assert _toasts(app)[-1] == GAUNTLET_UNDO_TOAST.format(key="my-lm")
         assert str(wizard.query_one("#gauntlet-undo", Static).content) == ""
         await pilot.press("u")  # the affordance is single-use
         await pilot.pause()
@@ -1241,7 +1245,7 @@ async def test_gauntlet_any_fail_banner_verbatim_never_lands_values_intact(
         assert banner == "✗ gauntlet 未通过 — my-lm 未落盘（官方注册表零触碰）"
         # no undo affordance, no success toast
         assert str(wizard.query_one("#gauntlet-undo", Static).content) == ""
-        assert not app._notifications
+        assert _toasts(app) == []
         # NEVER landed: zero seam calls and the custom file never created
         assert land_calls == []
         assert not custom_registry_path("models").exists()
@@ -1253,11 +1257,20 @@ async def test_gauntlet_any_fail_banner_verbatim_never_lands_values_intact(
         assert "sweep: ERROR bad entry my-lm" in joined
         await pilot.press("escape")
         await pilot.pause()
-        # esc returns to the form at step 4 with EVERY value intact
+        # esc returns to the form at step 4 with EVERY value intact (the
+        # model step 4 is the quirk trio — b back to step 1 reads the key)
         await pilot.press("escape")
         await pilot.pause()
         assert _plain_title(wizard) == (
             f"新增模型 — 步骤 4/4 · {WIZM_STEPS[3]}"
+        )
+        for _ in range(3):
+            wizard.set_focus(None)
+            await pilot.pause()
+            await pilot.press("b")
+            await pilot.pause()
+        assert _plain_title(wizard) == (
+            f"新增模型 — 步骤 1/4 · {WIZM_STEPS[0]}"
         )
         assert wizard.query_one("#wiz-key", Input).value == "my-lm"
         assert wizard.query_one(
