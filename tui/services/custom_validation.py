@@ -40,18 +40,31 @@ Contract (locked decisions):
 - Copy single home: every message composes from ``tui/strings.py``
   constants (the WIZ_PROBLEM_* family) — zero inline operator copy in
   this module.
+- D-11 (import validate-before-merge): ``validate_import_document``
+  validates an imported registry document against the committed
+  ``schemas/custom_registry.json`` ENTRY schema (strict draft 2020-12,
+  ``additionalProperties: false``) plus BOTH collision families,
+  collect-all in FILE order — nothing merges on any problem (the merge
+  itself is 09-05's per-entry gauntlet). Untrusted file reads are
+  tolerant (the ``read_import_candidates`` lane in ``custom_entries``).
 - Bool exclusion (D-14): ``bool`` is a subclass of ``int`` — every
-  numeric check excludes it explicitly before the ``isinstance`` test.
+  numeric check excludes it explicitly before the ``isinstance`` test
+  (jsonschema's integer/number types exclude bool by default on the
+  import lane).
 
 ZERO textual imports (the services-tier invariant declared in
 ``tui/services/__init__.py``; locked by
-``tests/tui/test_import_lock.py``). Dependencies: stdlib (csv/json-free)
-+ ``tui.strings`` (the i18n single home).
+``tests/tui/test_import_lock.py``). Dependencies: stdlib +
+jsonschema + ``artifact_loader`` (the D-19 tolerant seam) +
+``tui.strings`` (the i18n single home).
 """
 
 import csv
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
+import jsonschema
 
 from tui import strings
 
@@ -62,6 +75,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: base official ``models/...`` / ``datasets/...`` paths resolve against
 #: (tests inject a tmp root).
 PIPELINE_DIR = REPO_ROOT / "pipeline"
+#: The committed entry-shape contract (D-11) governing imported files.
+IMPORT_SCHEMA_PATH = REPO_ROOT / "schemas" / "custom_registry.json"
+
+#: Registry kind -> the schema $def describing that kind's entry shape.
+IMPORT_ENTRY_DEFS = {"models": "model_entry", "datasets": "dataset_entry"}
 
 # ===== The metric registry — the frozen 28-name SUITE_CANONICAL twin =====
 #
@@ -460,6 +478,107 @@ def _count_well_formed_rows(csv_path, label_column, field, problems):
                 file=csv_path.name, reason=exc))
         )
         return None
+
+
+# ===== Import validation (D-11 validate-before-merge) =====
+
+
+def load_import_schema():
+    """Load the committed custom-registry entry schema (D-11).
+
+    Returns:
+        dict: the parsed ``schemas/custom_registry.json`` document.
+
+    Raises:
+        RuntimeError: the committed schema is missing or unreadable — a
+            repo integrity failure (the schema is part of the code, not
+            operator input), the ``templates.load_schema`` discipline.
+    """
+    schema = artifact_loader.load_json_artifact(IMPORT_SCHEMA_PATH)
+    if not isinstance(schema, dict) or "$defs" not in schema:
+        raise RuntimeError(
+            f"custom_registry schema unreadable at {IMPORT_SCHEMA_PATH} — "
+            "the committed schemas/custom_registry.json is the D-11 entry "
+            "contract; a missing or corrupt schema is a repo integrity "
+            "failure, not an input problem"
+        )
+    return schema
+
+
+def validate_import_document(kind, doc, data_sources):
+    """Validate an imported registry document, collect-ALL (D-11).
+
+    The import gate (the run_template.json discipline over untrusted
+    files): structural top-level check (plain ``{key: entry}`` map — the
+    loader merge contract), then PER ENTRY in FILE order the schema
+    validation (jsonschema ``Draft202012Validator`` collect-all against
+    the kind's $def) plus BOTH collision families (official AND existing
+    custom, each listed once). NOTHING MERGES on any problem — this
+    function is pure; the 09-05 sequential gauntlet consumes the entries
+    only when the problem list is empty.
+
+    Args:
+        kind (str): ``custom_entries.KIND_MODELS`` or ``KIND_DATASETS``
+            (``"models"`` / ``"datasets"``).
+        doc: the parsed import document (any JSON value — non-object
+            shapes yield collected problems, never an exception).
+        data_sources (ValidationSources): the injected namespace (D-05)
+            — the official-key and existing-custom collision sets.
+
+    Returns:
+        list[tuple[str, str]]: every problem as ``(key, message)`` in
+        file order (``""`` for document-level problems); empty means the
+        document is importable.
+
+    Raises:
+        ValueError: ``kind`` is not one of the two registry kinds.
+    """
+    if kind not in IMPORT_ENTRY_DEFS:
+        raise ValueError(
+            f"unknown registry kind {kind!r} — expected one of "
+            f"{sorted(IMPORT_ENTRY_DEFS)}"
+        )
+    sources = data_sources or ValidationSources()
+    if not isinstance(doc, dict):
+        return [
+            ("", (
+                f"import document must be a JSON object mapping entry "
+                f"keys to entry objects, got {type(doc).__name__}"
+            ))
+        ]
+    if not doc:
+        return [("", "import document carries no entries")]
+    official_keys = (
+        sources.official_model_keys if kind == "models"
+        else sources.official_dataset_keys
+    )
+    existing_custom = (
+        sources.existing_custom_models if kind == "models"
+        else sources.existing_custom_datasets
+    )
+    entry_schema = load_import_schema()["$defs"][IMPORT_ENTRY_DEFS[kind]]
+    validator = jsonschema.Draft202012Validator(entry_schema)
+    problems = []
+    for key, entry in doc.items():  # dict order == file order
+        if not isinstance(entry, dict):
+            problems.append(
+                (key, (
+                    f"entry must be a JSON object, got "
+                    f"{type(entry).__name__}"
+                ))
+            )
+            continue
+        if key in official_keys:
+            problems.append(
+                (key, strings.WIZ_PROBLEM_COLLISION_OFFICIAL.format(key=key))
+            )
+        if isinstance(existing_custom, dict) and key in existing_custom:
+            problems.append(
+                (key, strings.WIZ_PROBLEM_COLLISION_CUSTOM.format(key=key))
+            )
+        for error in validator.iter_errors(entry):
+            problems.append((key, error.message))
+    return problems
 
 
 # ===== Small helpers =====

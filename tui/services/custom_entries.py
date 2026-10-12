@@ -58,6 +58,7 @@ atomic-write rails — no new path or write code).
 
 import json
 import os
+import shutil
 from pathlib import Path
 
 import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
@@ -238,6 +239,77 @@ def set_enabled(kind, key, enabled):
     entry["enabled"] = bool(enabled)
     _write_entries(kind, entries)
     return True
+
+
+def read_import_candidates(path, kind):
+    """Read an operator-provided import file tolerantly (D-11).
+
+    The read half of the import gate: a TOLERANT artifact_loader read
+    returning the entry dicts in FILE order (dict insertion order) — the
+    09-05 sequential gauntlet consumes them in the file's own order.
+    Validation is SEPARATE (``custom_validation.validate_import_document``
+    over the schema + collisions): this read never raises and merges
+    nothing; an unreadable/non-JSON/non-object file yields ``(None,
+    message)`` naming the path.
+
+    Args:
+        path: the import file to read.
+        kind (str): ``KIND_MODELS`` or ``KIND_DATASETS`` (validated; the
+            kind the caller intends to import).
+
+    Returns:
+        tuple[dict | None, str | None]: ``(entries, None)`` on success,
+        or ``(None, message)`` when the file is missing, not valid JSON,
+        or its top level is not a JSON object.
+
+    Raises:
+        ValueError: ``kind`` is not one of the two registry kinds.
+    """
+    if kind not in KIND_FILE_NAMES:
+        raise ValueError(
+            f"unknown registry kind {kind!r} — expected one of "
+            f"{sorted(KIND_FILE_NAMES)}"
+        )
+    target = Path(path)
+    if not target.exists():
+        return None, f"import file not found: {target}"
+    doc = artifact_loader.load_json_artifact(target)
+    if doc is None:
+        return None, f"import file unreadable or not valid JSON: {target}"
+    if not isinstance(doc, dict):
+        return None, (
+            f"import file top level must be a JSON object mapping entry "
+            f"keys to entry objects: {target}"
+        )
+    return doc, None
+
+
+def export_registry(kind, dest_path):
+    """Export the user-owned registry file as the share unit (D-11).
+
+    The registry FILE is the share unit: the copy is VERBATIM
+    (``shutil.copyfile`` — byte-identical, hash-pinned by test). An
+    absent, empty, or unreadable registry yields the EMPTY-STATE signal
+    — ``(False, diagnostic)`` — and creates nothing at the destination.
+
+    Args:
+        kind (str): ``KIND_MODELS`` or ``KIND_DATASETS``.
+        dest_path: the operator-chosen destination path.
+
+    Returns:
+        tuple[bool, str | None]: ``(True, None)`` after a successful
+        copy; ``(False, diagnostic)`` for the empty state. Write-side
+        OSErrors (unwritable destination) propagate — the screen wraps
+        them in the write-failure copy (the SEL_TEMPLATE_WRITE_FAILED
+        pattern).
+    """
+    entries, error = read_entries(kind)
+    if error is not None:
+        return False, f"custom registry unreadable: {error}"
+    if not entries:
+        return False, "no custom entries to export"
+    shutil.copyfile(custom_registry_path(kind), dest_path)
+    return True, None
 
 
 # ===== Internal: normalization + the single write rail =====

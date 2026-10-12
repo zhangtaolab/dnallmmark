@@ -46,7 +46,8 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from tui.services import custom_entries, custom_validation as cv
+from tui.services import custom_entries
+from tui.services import custom_validation as cv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "schemas" / "custom_registry.json"
@@ -195,8 +196,9 @@ def test_schema_enumerates_custom_only_and_inert_fields():
 
 def test_schema_comment_documents_the_two_load_bearing_rules():
     comment = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))["$comment"]
-    assert "relative" in comment          # pipeline-RELATIVE landed paths
-    assert "envelope" in comment          # plain {key: entry} top level
+    lowered = comment.lower()
+    assert "relative" in lowered      # pipeline-RELATIVE landed paths
+    assert "envelope" in lowered      # plain {key: entry} top level
 
 
 def test_model_entry_with_unknown_extra_field_fails_schema():
@@ -390,7 +392,7 @@ def test_export_empty_registry_yields_empty_state(tmp_path, monkeypatch):
     custom_entries.land(custom_entries.KIND_MODELS, key, model)
     assert custom_entries.undo(custom_entries.KIND_MODELS, key) is True
     dest = tmp_path / "dest.json"
-    ok, error = custom_entries.export_registry(
+    ok, _error = custom_entries.export_registry(
         custom_entries.KIND_MODELS, dest
     )
     assert ok is False
@@ -405,7 +407,7 @@ def test_export_unreadable_registry_yields_empty_state_signal(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{not json", encoding="utf-8")
     dest = tmp_path / "dest.json"
-    ok, error = custom_entries.export_registry(
+    ok, _error = custom_entries.export_registry(
         custom_entries.KIND_MODELS, dest
     )
     assert ok is False
