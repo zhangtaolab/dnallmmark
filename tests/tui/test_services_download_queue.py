@@ -3342,6 +3342,44 @@ def test_corrupt_load_diagnostic_remembered_for_the_session(
     assert fresh.last_load_diagnostic() is None
 
 
+def test_malformed_entries_dropped_with_diagnostic_in07(
+        monkeypatch, tmp_path):
+    """IN-07: a hand-edited file whose entries array carries one
+    non-dict entry loses THAT row with a diagnostic through the session
+    channel — never silent loss (the module contract), and the healthy
+    siblings all survive."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    state.mkdir(parents=True, exist_ok=True)
+    state_file(state).write_text(json.dumps({
+        "schema_version": 1,
+        "entries": [
+            {"key": "k__fine", "kind": "dataset", "state": "pending",
+             "attempts": 0, "enqueued_at": "2026-10-12T00:00:00+00:00",
+             "started_at": None, "finished_at": None,
+             "last_percent": None, "interrupted": False,
+             "log_path": None, "problems": [], "reconcile": None},
+            "not-an-entry-at-all",
+            42,
+        ],
+    }, indent=4, ensure_ascii=False), encoding="utf-8")
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+
+    diagnostic = service.load()
+
+    assert isinstance(diagnostic, str) and "2" in diagnostic and (
+        "dropped" in diagnostic), (
+        "the two malformed entries must be reported, never silently lost"
+    )
+    assert [entry.key for entry in service.entries()] == ["k__fine"]
+    assert service.last_load_diagnostic() == diagnostic, (
+        "the drop rides the session channel (the status line surfaces it)"
+    )
+    assert service.load() is None, (
+        "the healthy reload is clean — the diagnostic is remembered"
+    )
+
+
 # =====================================================================
 # WR-04: persistence failures never cross the never-raises boundary —
 # an unwritable state rail (read-only dir, full disk) degrades every

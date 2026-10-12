@@ -1035,10 +1035,14 @@ class DownloadQueueService:
         unparseable, or forward-dated file: moved aside to
         ``download_queue.json.corrupt``, entries empty, and the
         diagnostic returned (never an exception, never silent loss).
+        A valid file whose entries array carries non-dict rows drops
+        exactly those rows and returns a diagnostic through the same
+        never-silent-loss channel (IN-07 — the healthy siblings load).
 
         Returns:
-            str | None: the diagnostic when the file was quarantined;
-            None on every healthy path. Idempotent.
+            str | None: the diagnostic when the file was quarantined or
+            entries were dropped; None on every fully-healthy path.
+            Idempotent.
         """
         with self._lock:
             return self._load_locked()
@@ -1063,8 +1067,25 @@ class DownloadQueueService:
                 "unsupported schema_version "
                 + repr(doc.get("schema_version"))
                 + " (expected " + str(SCHEMA_VERSION) + ")")
-        entries = [_normalized_entry(raw)
-                   for raw in doc["entries"] if isinstance(raw, dict)]
+        entries = []
+        dropped = 0
+        for raw in doc["entries"]:
+            if not isinstance(raw, dict):
+                dropped += 1     # IN-07: never silent loss of a row
+                continue
+            entries.append(_normalized_entry(raw))
+        if dropped:
+            # the malformed-row diagnostic rides the SAME session
+            # channel as the corrupt-file one (the status line shows
+            # it); the CLEANED entries persist (the D-06
+            # downgrade-persists precedent), so the drop fires exactly
+            # once — the session memory keeps it visible after that
+            message = (str(dropped) + " malformed download queue "
+                       "entries dropped: " + str(path))
+            self._last_diagnostic = message
+            self._entries = entries
+            self._persist_locked()
+            return message
         downgraded = False
         for entry in entries:
             if entry["state"] != "downloading":
@@ -1098,14 +1119,16 @@ class DownloadQueueService:
         return message
 
     def last_load_diagnostic(self):
-        """The most recent corrupt-load diagnostic, or None.
+        """The most recent load diagnostic, or None.
 
         Session memory (10-06): ``load()`` returns the diagnostic string
         exactly once (the corrupt file is quarantined on that first
-        read, so every later load is healthy), but the degradation must
-        stay visible — the screen's snapshot reads this accessor so the
-        status line survives its reloads until the process exits. A
-        healthy session never sets it; a healthy load never clears it.
+        read, so every later load is healthy; the dropped-entries
+        diagnostic of IN-07 likewise fires on the read that dropped
+        them), but the degradation must stay visible — the screen's
+        snapshot reads this accessor so the status line survives its
+        reloads until the process exits. A fully-healthy session never
+        sets it; a healthy load never clears it.
 
         Returns:
             str | None: the remembered diagnostic, or None.
