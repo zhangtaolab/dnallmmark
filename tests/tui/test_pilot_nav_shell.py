@@ -38,6 +38,7 @@ import tui.screens.about as about_screen_module
 import tui.screens.nav as nav_module
 from tui.app import DnallmMarkTui, HelpModal
 from tui.screens.about import AboutScreen
+from tui.screens.data_manager import DataManagerScreen
 from tui.screens.env_check import EnvCheckScreen
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.selection import PresetMenu, SelectionData, SelectionScreen
@@ -115,6 +116,30 @@ class _SelectionFake:
         raise AssertionError("the nav-shell tests never export tiers")
 
 
+class _QueueDriverFake:
+    """The minimal download-queue fake (10-04): the driver surface only —
+    an empty inert queue plus the two read legs the slot-3 screen mount
+    needs; ``run_task`` can never legitimately run here."""
+
+    def load(self):
+        return None
+
+    def entries(self):
+        return ()
+
+    def claim_next(self):
+        return None
+
+    def missing_datasets(self):
+        return ()
+
+    def probe_zenodo(self):
+        return "not_public"
+
+    def run_task(self, *args, **kwargs):
+        raise AssertionError("the nav-shell tests never run queue tasks")
+
+
 def _pin_config_roots(monkeypatch, tmp_path):
     """Pin the config roots at tmp_path (the real home is never read)."""
     config = tmp_path / "config"
@@ -129,6 +154,7 @@ def _app():
     return DnallmMarkTui(
         env_check_service=_EnvCacheHitFake(),
         selection_service=_SelectionFake(),
+        download_queue_service=_QueueDriverFake(),
     )
 
 
@@ -175,13 +201,14 @@ async def test_top_bar_six_verbatim_slots_fit_80_triple_channel():
         texts = _slot_texts(app.screen)
         widgets = _slot_widgets(app.screen)
 
-        # six slots, the ratified verbatim resource-noun names, digit-first
+        # six slots, the ratified verbatim resource-noun names, digit-first;
+        # slot 3 is REAL since 10-04 (no placeholder suffix)
         assert len(texts) == 6, "the bar carries exactly six slots"
         assert texts[0] == f"◆ 1{NAV_LABEL_ENV}", (
             "the ACTIVE slot carries the ◆ prefix (glyph channel)"
         )
         assert texts[1] == f" 2{NAV_LABEL_SELECTION}"
-        assert texts[2] == f" 3{NAV_LABEL_DATA}{NAV_PLACEHOLDER_SUFFIX}"
+        assert texts[2] == f" 3{NAV_LABEL_DATA}"
         assert texts[3] == f" 4{NAV_LABEL_RUN_CONFIG}{NAV_PLACEHOLDER_SUFFIX}"
         assert texts[4] == f" 5{NAV_LABEL_MONITOR}{NAV_PLACEHOLDER_SUFFIX}"
         assert texts[5] == f" 6{NAV_LABEL_ABOUT}"
@@ -191,8 +218,9 @@ async def test_top_bar_six_verbatim_slots_fit_80_triple_channel():
         assert widgets[0].has_class("nav-slot-active"), (
             "the active slot must render bold + accent (color/weight channel)"
         )
-        # placeholders render dim (the muted class) — never dead-looking
-        for placeholder in widgets[2:5]:
+        # placeholders render dim (the muted class) — never dead-looking;
+        # only slots 4/5 remain placeholders (10-04 promoted slot 3)
+        for placeholder in widgets[3:5]:
             assert placeholder.has_class("nav-slot-placeholder"), (
                 "placeholder slots render dim with the suffix"
             )
@@ -241,11 +269,13 @@ async def test_digits_switch_live_screens_and_track_active_slot(
 
 
 async def test_placeholder_digits_fire_phase_toast_never_switch():
-    """3/4/5 are never silent: the phase toast fires, the screen holds."""
+    """4/5 are never silent: the phase toast fires, the screen holds;
+    digit 3 is REAL since 10-04 — it switches with zero placeholder
+    artifacts."""
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
-        for digit, phase in (("3", 10), ("4", 11), ("5", 12)):
+        for digit, phase in (("4", 11), ("5", 12)):
             await pilot.press(digit)
             await pilot.pause()
             assert NAV_PLACEHOLDER_TOAST.format(n=phase) in (
@@ -255,6 +285,19 @@ async def test_placeholder_digits_fire_phase_toast_never_switch():
             assert isinstance(app.screen, EnvCheckScreen), (
                 f"digit {digit} must never switch screens"
             )
+
+        # slot 3 (10-04): the real data-manager screen, no phase toast
+        await pilot.press("3")
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(app.screen, DataManagerScreen), (
+            "digit 3 must switch to the real data-manager screen"
+        )
+        assert NAV_PLACEHOLDER_TOAST.format(n=10) not in (
+            _toast_messages(app)), (
+            "slot 3 must never fire the placeholder phase toast"
+        )
 
 
 # =====================================================================
