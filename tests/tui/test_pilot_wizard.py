@@ -45,9 +45,7 @@ from tui.services.custom_validation import METRIC_REGISTRY
 from tui.strings import (
     ENV_STATE_PENDING,
     GAUNTLET_TITLE,
-    WIZD_FIELD_LABELS,
     WIZ_CANCEL_CONFIRM,
-    WIZD_STEPS,
     WIZ_FOOTER_HINT,
     WIZ_FOOTER_HINT_LAST,
     WIZ_GAUNTLET_BACK_HINT,
@@ -62,6 +60,8 @@ from tui.strings import (
     WIZ_QUIRK_SPECIAL_HEAD,
     WIZ_REPORT_BACK_HINT,
     WIZ_REPORT_TITLE,
+    WIZD_FIELD_LABELS,
+    WIZD_STEPS,
     WIZM_STEPS,
 )
 
@@ -602,11 +602,16 @@ async def test_esc_from_report_returns_to_step_4_with_values_intact():
         assert _plain_title(wizard) == (
             f"新增数据集 — 步骤 4/4 · {WIZD_STEPS[3]}"
         )
-        # b back to step 1 — the value survived report + back
-        wizard.set_focus(None)
-        await pilot.pause()
-        await pilot.press("b")
-        await pilot.pause()
+        # b back through the steps to step 1 — the value survived the
+        # report round-trip AND the back navigation
+        for _ in range(3):
+            wizard.set_focus(None)
+            await pilot.pause()
+            await pilot.press("b")
+            await pilot.pause()
+        assert _plain_title(wizard) == (
+            f"新增数据集 — 步骤 1/4 · {WIZD_STEPS[0]}"
+        )
         assert wizard.query_one("#wiz-key", Input).value == "my-ds"
         # re-submit reproduces the report (nothing was lost or applied)
         await _submit(pilot, wizard)
@@ -642,8 +647,12 @@ async def test_clean_pass_transitions_to_gauntlet_and_fires_on_valid():
         metric.focus()
         await pilot.press("enter")     # f1
         await pilot.pause()
+        await _advance(pilot, wizard)  # step 3 -> 4
         await _type(pilot, wizard, "citation", "Marin et al., 2026")
-        await _submit(pilot, wizard)
+        wizard.set_focus(None)
+        await pilot.pause()
+        await pilot.press("enter")     # submit on step 4
+        await pilot.pause()
         # the gauntlet pending view + the single on_valid call
         assert str(wizard.query_one(
             "#wiz-gauntlet-pending", Static).content) == ENV_STATE_PENDING

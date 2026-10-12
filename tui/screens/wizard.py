@@ -78,6 +78,8 @@ from textual.widgets.selection_list import Selection
 
 from tui.screens.selection import ConfirmModal
 from tui.services.custom_validation import (
+    DATASET_CATEGORY_VALUES,
+    DATASET_TYPE_VALUES,
     MODEL_TYPE_VALUES,
 )
 from tui.strings import (
@@ -90,16 +92,22 @@ from tui.strings import (
     WIZ_FOOTER_HINT,
     WIZ_FOOTER_HINT_LAST,
     WIZ_GAUNTLET_BACK_HINT,
+    WIZ_KIND_DATASETS,
     WIZ_KIND_MODELS,
     WIZ_NEXT_LABEL,
     WIZ_NUMERIC_HINT,
     WIZ_PATH_EXISTS,
     WIZ_PATH_MISSING_ADVISORY,
+    WIZ_PROBLEM_LINE,
+    WIZ_PROBLEMS_HEADER,
     WIZ_QUIRK_FP32_ONLY,
     WIZ_QUIRK_NO_SAFETENSORS,
     WIZ_QUIRK_SPECIAL_HEAD,
     WIZ_REPORT_BACK_HINT,
     WIZ_REPORT_TITLE,
+    WIZ_SPLIT_FILE_PLACEHOLDER,
+    WIZD_FIELD_LABELS,
+    WIZD_STEPS,
     WIZM_FIELD_LABELS,
     WIZM_STEPS,
 )
@@ -204,6 +212,42 @@ MODEL_STEPS = (
     )),
 )
 
+#: The dataset wizard's four steps (09-UI-SPEC step table, CUST-02).
+#: The step-2 split-file Inputs collect FILE NAMES (advisory live
+#: existence under the dataset path) — the Train/Dev/Test row counts
+#: are NEVER wizard fields: declarations derive at composition
+#: downstream (the 09-01 decision), so the composed candidate carries
+#: none of them. Task_type stores under the registry field name
+#: ``type`` (Auto-Default #11).
+DATASET_STEPS = (
+    StepSpec(WIZD_STEPS[0], (
+        FieldSpec("key", "key", "input"),
+        FieldSpec("Dataset_path", "dataset-path", "path"),
+        FieldSpec("Category", "category", "selection",
+                  vocabulary=tuple(DATASET_CATEGORY_VALUES)),
+    )),
+    StepSpec(WIZD_STEPS[1], (
+        FieldSpec("train_file", "train-file", "splitfile",
+                  label_key="Train"),
+        FieldSpec("dev_file", "dev-file", "splitfile", label_key="Dev"),
+        FieldSpec("test_file", "test-file", "splitfile", label_key="Test"),
+        FieldSpec("label_column", "label-column", "input"),
+        FieldSpec("labels", "labels", "numeric"),
+        FieldSpec("length", "length", "numeric"),
+    )),
+    StepSpec(WIZD_STEPS[2], (
+        FieldSpec("type", "type", "selection",
+                  vocabulary=tuple(DATASET_TYPE_VALUES)),
+        FieldSpec("metric", "metric", "selection"),
+    )),
+    StepSpec(WIZD_STEPS[3], (
+        FieldSpec("citation", "citation", "input"),
+        FieldSpec("source", "source", "input"),
+        FieldSpec("license", "license", "input"),
+        FieldSpec("preprocessing", "preprocessing", "input"),
+    )),
+)
+
 #: Kind -> the type-aware instance's tables + labels.
 KINDS: dict = {
     "models": KindSpec(
@@ -211,7 +255,18 @@ KINDS: dict = {
         labels=WIZM_FIELD_LABELS,
         kind_name=WIZ_KIND_MODELS,
     ),
+    "datasets": KindSpec(
+        steps=DATASET_STEPS,
+        labels=WIZD_FIELD_LABELS,
+        kind_name=WIZ_KIND_DATASETS,
+    ),
 }
+
+#: The numeric-input fields whose text composes as a JSON number when
+#: parseable (unparseable text passes through raw — the collect-all
+#: validator's numeric check flags it, never the screen).
+_NUMERIC_FIELDS = frozenset(
+    {"size (M)", "context_len (bp)", "labels", "length"})
 
 
 # ===== Default advisory probes (real fs, resolution mirroring 09-01) =====
@@ -339,7 +394,10 @@ class WizardModal(ModalScreen):
             )
             value = self._values.get(spec.field, "")
             if spec.control in ("input", "path", "numeric", "splitfile"):
+                placeholder = (WIZ_SPLIT_FILE_PLACEHOLDER
+                               if spec.control == "splitfile" else "")
                 yield Input(value="" if value is None else str(value),
+                            placeholder=placeholder,
                             id=f"wiz-{spec.wid}")
                 yield Static("", id=f"wiz-{spec.wid}-check",
                              classes="wiz-check")
@@ -498,6 +556,88 @@ class WizardModal(ModalScreen):
             await self.recompose()
             self._apply_chrome()
             self._refresh_advisories()
+        else:
+            await self._submit()
+
+    # ===== Submit: compose, validate, report / hand off (CUST-03) =====
+
+    async def _submit(self) -> None:
+        """Step-4 enter: run the injected validator; problems render as
+        the collect-all report (nothing applied), a clean pass hands the
+        candidate to the gauntlet seam (09-05 wires the real panel)."""
+        candidate = self._compose_candidate()
+        problems = list(self._validator(candidate) or [])
+        if problems:
+            self._problems = problems
+            self._phase = "report"
+            await self.recompose()
+            self._apply_chrome()
+            self._write_report()
+        else:
+            self._candidate = candidate
+            self._phase = "gauntlet"
+            await self.recompose()
+            self._apply_chrome()
+            if self._on_valid is not None:
+                self._on_valid(candidate)
+
+    def _write_report(self) -> None:
+        """Render the numbered collect-all list (validator emission order)."""
+        log = self.query_one("#wiz-report-log", RichLog)
+        log.write(WIZ_PROBLEMS_HEADER.format(n=len(self._problems)))
+        for index, (field_key, message) in enumerate(self._problems):
+            log.write(WIZ_PROBLEM_LINE.format(
+                i=index + 1,
+                field_label=self._labels.get(field_key, field_key),
+                problem=message,
+            ))
+
+    def _compose_candidate(self):
+        """Assemble ``_values`` into the candidate dict the 09-01
+        validator and the 09-05 gauntlet/land seam expect.
+
+        The screen stamps NOTHING the services own: no name stamps
+        (``Model_name``/``Dataset_name`` are the land service's), no
+        path relativization, no enabled flag. The split-file names are
+        advisory-only collection and never ride along (Train/Dev/Test
+        derive at composition downstream — the 09-01 decision).
+        Numeric-input text composes as a number when parseable; the
+        optional free-text fields compose as empty strings, never None.
+        """
+        candidate = {}
+        for step in self._steps:
+            for spec in step.fields:
+                if spec.control == "quirks":
+                    candidate["quirks"] = dict(self._values["quirks"])
+                    continue
+                if spec.control == "splitfile":
+                    continue
+                value = self._values.get(spec.field, "")
+                if spec.field in _NUMERIC_FIELDS:
+                    candidate[spec.field] = self._as_number(value)
+                else:
+                    candidate[spec.field] = (
+                        value if isinstance(value, str) else str(value))
+        return candidate
+
+    @staticmethod
+    def _as_number(value):
+        """Numeric-input text -> int/float when parseable (integral
+        text stays int); unparseable text passes through raw so the
+        collect-all validator reports it — the screen never hides a
+        defect an advisory already flagged."""
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if not text:
+            return ""
+        try:
+            return int(text)
+        except ValueError:
+            try:
+                return float(text)
+            except ValueError:
+                return value
 
     async def action_go_back(self) -> None:
         """b: one step back, values preserved (auto-default #4)."""
