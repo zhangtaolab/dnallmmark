@@ -80,14 +80,17 @@ and ``settings`` (state root + atomic write) services.
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
 import sys
 import threading
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import registry_loader  # top-level module (pipeline/ sys.path root)
 
@@ -100,6 +103,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: The queue state file name under the XDG state root (D-05).
 QUEUE_FILE_NAME = "download_queue.json"
 
+#: The log subdirectory + file naming under the state root (D-03).
+LOG_DIR_NAME = "logs"
+
 #: The persisted schema version (bump = corrupt-family on read — a
 #: forward-dated file is moved aside, never misread).
 SCHEMA_VERSION = 1
@@ -109,6 +115,91 @@ QUEUE_STATES = ("pending", "downloading", "done", "failed", "mismatch")
 
 #: The one entry kind this plan carries (models land in later plans).
 KIND_DATASET = "dataset"
+
+#: The canonical persisted entry field order — the exact set, nothing
+#: may ever appear outside it (SC5: zero credential surface).
+_ENTRY_FIELDS = (
+    "key", "kind", "state", "attempts", "enqueued_at", "started_at",
+    "finished_at", "last_percent", "interrupted", "log_path", "problems",
+    "reconcile",
+)
+
+# ===== R-02 channel shape table (code-owned external-repo data) =====
+#
+# The live-probed ModelScope repo census (10-RESEARCH, HubApi file trees
+# over all 15 repos): only 38/50 registry keys map cleanly onto "repo
+# task-subdir == registry task component". The table below is data
+# about EXTERNAL repos (not user config), hardcoded at module top like
+# gauntlet's ``_AUDIT_SPLIT_ORDER``. A repo id absent from the table
+# degrades to disabled-with-reason (registry/mirror evolution
+# tolerance), never a crash.
+
+#: Shape A — repo task subdir at repo root == the registry task
+#: component (38 keys: ``--local_dir pipeline/datasets/<Group>``,
+#: ``--include "<task>/*"``).
+SHAPE_A_REPOS = frozenset({
+    "forrestzhang/BEND",
+    "forrestzhang/Deep4mC_datasets",
+    "lgq12697/GUE",
+    "lgq12697/nucleotide_transformer_downstream_tasks",
+    "lgq12697/plant-genomic-benchmark",
+    "forrestzhang/iDNA_ABF_datasets",
+    "forrestzhang/iPro-WAEL_datasets",
+})
+
+#: Shape B — the whole repo is one task with CSVs at the repo root
+#: (5 keys: ``--local_dir pipeline/datasets/<Group>/<task>``, no
+#: include).
+SHAPE_B_REPOS = frozenset({
+    "zhangtaolab/cross_species_leaf_absolute_translation",
+    "zhangtaolab/cross_species_leaf_on_off_translation",
+    "zhangtaolab/plant-multi-species-core-promoters",
+    "zhangtaolab/plant-multi-species-lncRNAs",
+    "zhangtaolab/plant-multi-species-sequence-conservation",
+})
+
+#: Shape C — the repo subtree name differs from the registry dir name
+#: (3 histone keys: shape-A argv over the repo subtree, then a
+#: post-landing rename to the registry dir name).
+SHAPE_C_REPO = "zhangtaolab/plant-multi-species-histone-modifications"
+
+#: The shape-C per-key repo-subtree map (registry key -> repo subtree).
+SHAPE_C_SUBTREES = {
+    "PDLLMs_datasets__plant-multi-species-H3K27ac": "H3K27ac",
+    "PDLLMs_datasets__plant-multi-species-H3K27me3": "H3K27me3",
+    "PDLLMs_datasets__plant-multi-species-H3K4me3": "H3K4me3",
+}
+
+#: Shape D — upstream mirror layouts that are NOT one-click landable
+#: (Genomic_Benchmarks parquet demo dirs x3, open-chromatin
+#: full/mini): no argv is ever composed; the drill-down shows the URL.
+SHAPE_D_REPOS = frozenset({
+    "lgq12697/Genomic_Benchmarks",
+    "zhangtaolab/plant-multi-species-open-chromatin",
+})
+
+#: Reason codes (machine vocabulary — the screens render, never parse).
+REASON_SHAPE_D = "shape_d_layout"
+REASON_UNKNOWN_REPO = "unknown_repo_shape"
+REASON_NO_MIRROR = "no_modelscope_mirror"
+REASON_MALFORMED_REPO_ID = "malformed_repo_id"
+REASON_MALFORMED_PATH = "malformed_dataset_path"
+REASON_REGISTRY_UNREADABLE = "registry_unreadable"
+
+#: Reason codes whose channel disposition is "disabled" (a deliberate
+#: no-download policy); every other reason is the defensive "unknown".
+_DISABLED_REASONS = frozenset({REASON_SHAPE_D, REASON_UNKNOWN_REPO})
+
+#: The repo-id allowlist (T-10-01-01): a registry-derived value must
+#: match ``namespace/name`` word chars before it can ever reach argv.
+REPO_ID_RE_PART = r"[\w.-]+/[\w.-]+"
+
+#: The modelscope host test (R-01): the exact apex or any subdomain.
+_MODELSCOPE_HOST = "modelscope.cn"
+
+#: The CLI's own junk exclusion (live-probed: ``--include "<task>/*"``
+#: still admits ``.DS_Store``; harmless but excluded by default).
+EXCLUDE_PATTERNS = ("*.DS_Store",)
 
 
 @dataclass(frozen=True)
@@ -152,6 +243,46 @@ class EnqueueOutcome:
 
 
 @dataclass(frozen=True)
+class ChannelSpec:
+    """One dataset key's resolved download channel — pure data derived
+    from the official registry entry plus the R-02 shape table.
+
+    Attributes:
+        key: the dataset registry key.
+        repo_id: the modelscope ``namespace/repo`` (validated against
+            the allowlist regex) — None when no mirror resolved.
+        shape: "A" / "B" / "C" for the downloadable layouts; None for
+            every degraded disposition.
+        local_dir: the ABSOLUTE ``--local_dir`` target under
+            ``pipeline/datasets`` (None for degraded specs).
+        include: the ``--include`` patterns (empty for shape B).
+        exclude: the ``--exclude`` junk patterns.
+        rename: the shape-C post-landing rename pair
+            (``<Group>/<subtree>``, ``<Group>/<registry-task-dir>``)
+            relative to ``pipeline/datasets``; None otherwise.
+        final_task_dir: the registry task component the landing check
+            requires under ``pipeline/datasets/<Group>`` (None when the
+            ``Dataset_path`` itself is malformed).
+        source_url: the winning registry URL (R-01 data).
+        reason_code: None for a downloadable channel; the machine
+            reason otherwise (``shape_d_layout``,
+            ``unknown_repo_shape``, ``no_modelscope_mirror``,
+            ``malformed_repo_id``, ...).
+    """
+
+    key: str
+    repo_id: str | None
+    shape: str | None
+    local_dir: Path | None
+    include: tuple[str, ...]
+    exclude: tuple[str, ...]
+    rename: tuple[str, str] | None
+    final_task_dir: str | None
+    source_url: str | None
+    reason_code: str | None
+
+
+@dataclass(frozen=True)
 class MissingInfo:
     """One missing dataset row for the data-manager missing list
     (D-13's input; pure data, the screen renders)."""
@@ -163,9 +294,196 @@ class MissingInfo:
     source_url: str | None
 
 
+def _default_spawner(argv, **kwargs):
+    """The real Popen seam (the injectable default).
+
+    The service itself passes the fixed kwargs on every call
+    (``start_new_session=True``, ``stdout``/``stderr`` PIPEs, the exact
+    ``env``), so the default is a pure forward to ``subprocess.Popen``.
+
+    Args:
+        argv (list): the LIST argv (never a shell string).
+        **kwargs: ``env``/``start_new_session``/``stdout``/``stderr``.
+
+    Returns:
+        subprocess.Popen: the owned process handle.
+    """
+    return subprocess.Popen(argv, **kwargs)
+
+
+def resolve_modelscope_cli(cli_path=None):
+    """Resolve the modelscope console script (live-probed order).
+
+    ``python -m modelscope`` does NOT work (no ``__main__``) — only the
+    console script does. Resolution order:
+
+    1. the explicit ``cli_path`` argument, used verbatim;
+    2. ``Path(sys.executable).parent / "modelscope"`` when that sibling
+       exists (the venv layout this console runs under);
+    3. ``shutil.which("modelscope")`` (PATH installs).
+
+    Args:
+        cli_path (str | Path | None): an explicit console-script path.
+
+    Returns:
+        Path | None: the console-script path, or None on a CLI-absent
+        machine (the probed unavailable state — never an import).
+    """
+    if cli_path is not None:
+        return Path(cli_path)
+    sibling = Path(sys.executable).parent / "modelscope"
+    if sibling.is_file():
+        return sibling
+    found = shutil.which("modelscope")
+    return Path(found) if found is not None else None
+
+
+def channel_state(spec):
+    """Map one resolved ChannelSpec to its disposition vocabulary.
+
+    Args:
+        spec (ChannelSpec): a ``resolve_channel`` result.
+
+    Returns:
+        str: ``downloadable`` (reason None) / ``disabled`` (the
+        deliberate shape-D and unknown-repo reasons) / ``unknown``
+        (every defensive reason — no mirror, malformed values, an
+        unreadable registry).
+    """
+    if spec.reason_code is None:
+        return "downloadable"
+    if spec.reason_code in _DISABLED_REASONS:
+        return "disabled"
+    return "unknown"
+
+
+def _is_modelscope_url(url):
+    """True when ``url``'s host is modelscope.cn (apex or subdomain)."""
+    if not isinstance(url, str) or not url:
+        return False
+    host = urlparse(url).netloc.rpartition("@")[2].partition(":")[0]
+    host = host.lower()
+    return host == _MODELSCOPE_HOST or host.endswith(
+        "." + _MODELSCOPE_HOST)
+
+
+def _repo_id_from_url(url):
+    """Derive the ``namespace/repo`` id from a modelscope dataset URL.
+
+    The live-probed derivation: the urlparse path split on
+    ``/datasets/`` takes the last segment, stripped of slashes.
+
+    Args:
+        url (str): the winning modelscope URL.
+
+    Returns:
+        str | None: the repo id, or None when the path yields nothing.
+    """
+    path = urlparse(url).path
+    segment = path.split("/datasets/")[-1].strip("/")
+    return segment or None
+
+
+def _signal_group(proc, sig):
+    """Signal one owned process's WHOLE group (Pitfall 1).
+
+    Absorbs the already-dead races (the reap loop owns the outcome).
+    """
+    try:
+        os.killpg(os.getpgid(proc.pid), sig)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
+
+def _now_iso():
+    """The current local moment as an ISO-8601 string."""
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _int_or_zero(value):
+    """Coerce to a non-bool int, defaulting to 0 (the repo's defensive
+    numeric convention)."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return 0
+
+
+def _normalized_entry(raw):
+    """Coerce one persisted entry to the canonical field set.
+
+    Tolerant (D-06): absent fields default; an unknown persisted state
+    reruns as pending; problems coerce to a list of strings. The
+    output carries EXACTLY ``_ENTRY_FIELDS`` — nothing else survives.
+    """
+    state = raw.get("state")
+    if state not in QUEUE_STATES:
+        state = "pending"
+    problems = raw.get("problems")
+    problems = ([str(p) for p in problems]
+                if isinstance(problems, list) else [])
+    return {
+        "key": str(raw.get("key") or ""),
+        "kind": str(raw.get("kind") or KIND_DATASET),
+        "state": state,
+        "attempts": _int_or_zero(raw.get("attempts")),
+        "enqueued_at": str(raw.get("enqueued_at") or ""),
+        "started_at": raw.get("started_at"),
+        "finished_at": raw.get("finished_at"),
+        "last_percent": raw.get("last_percent"),
+        "interrupted": bool(raw.get("interrupted")),
+        "log_path": raw.get("log_path"),
+        "problems": problems,
+        "reconcile": raw.get("reconcile"),
+    }
+
+
+def _frozen(entry):
+    """One internal persisted-form dict as an immutable QueueEntry."""
+    return QueueEntry(
+        key=entry["key"],
+        kind=entry["kind"],
+        state=entry["state"],
+        attempts=entry["attempts"],
+        enqueued_at=entry["enqueued_at"],
+        started_at=entry["started_at"],
+        finished_at=entry["finished_at"],
+        last_percent=entry["last_percent"],
+        interrupted=entry["interrupted"],
+        log_path=entry["log_path"],
+        problems=tuple(entry["problems"]),
+        reconcile=entry["reconcile"],
+    )
+
+
+def _declared_total(entry):
+    """Sum the declared ``Train``/``Dev``/``Test`` ints (non-int
+    declarations contribute 0)."""
+    return sum(_int_or_zero(entry.get(field))
+               for field in ("Train", "Dev", "Test"))
+
+
+def _group_and_task(entry):
+    """Derive ``(Group, task)`` from the registry ``Dataset_path``.
+
+    The committed form is ``datasets/<Group>/{task}``: Group is
+    component 1 and task the last component. Anything shorter (or with
+    an empty component) is malformed.
+
+    Returns:
+        tuple[str, str] | None: the pair, or None when malformed.
+    """
+    raw = entry.get("Dataset_path")
+    if not isinstance(raw, str):
+        return None
+    parts = [part for part in raw.split("/")]
+    if len(parts) < 3 or not all(parts):
+        return None
+    return parts[1], parts[-1]
+
+
 class DownloadQueueService:
     """The persistent download queue (injectable spawner/CLI seams,
-    thread-safe mutators, temp-free state under the XDG state root)."""
+    thread-safe mutators, all state under the XDG state root)."""
 
     def __init__(self, repo_root=None, state_path=None, spawner=None,
                  runner=None, cli_path=None):
@@ -177,21 +495,23 @@ class DownloadQueueService:
                 module's own repo root (never CWD).
             state_path: the queue state file; None resolves
                 ``settings.state_dir() / QUEUE_FILE_NAME``.
-            spawner: the Popen-shaped subprocess seam (``argv, **kwargs``
-                -> Popen-like); None wraps ``subprocess.Popen`` with the
-                fixed kwargs (start_new_session=True, PIPEs).
+            spawner: the Popen-shaped subprocess seam (``argv,
+                **kwargs`` -> Popen-like); None wraps
+                ``subprocess.Popen`` with the fixed kwargs.
             runner: the completed-process seam reserved for the 10-02
                 reconcile leg (the gauntlet runner shape); stored, not
                 yet called by this plan.
             cli_path: an explicit modelscope console-script path; None
                 probes the standard resolution order at each use.
         """
-        self._repo_root = REPO_ROOT if repo_root is None else Path(repo_root)
+        self._repo_root = (REPO_ROOT if repo_root is None
+                           else Path(repo_root).resolve())
         self._pipeline_dir = self._repo_root / "pipeline"
         if state_path is None:
             state_path = settings.state_dir() / QUEUE_FILE_NAME
         self._state_path = Path(state_path)
-        self._spawner = spawner if spawner is not None else _default_spawner
+        self._spawner: Any = (_default_spawner if spawner is None
+                              else spawner)
         self._runner: Any = runner
         self._cli_path = cli_path
         self._lock = threading.Lock()
@@ -199,37 +519,398 @@ class DownloadQueueService:
         self._cancel_requested: set[str] = set()
         self._active: dict[str, Any] = {}
 
-    # ===== Lane 1 (Task 1): state machine + persistence =====
+    # ===== Load / snapshot (D-06 tolerant recovery) =====
 
     def load(self):
-        """Tolerantly load the queue state file (D-06)."""
-        raise NotImplementedError
+        """Tolerantly load the queue state file.
+
+        Absent file: empty queue, no error, no file created. Valid
+        file: entries loaded, with every entry persisted as
+        ``downloading`` downgraded to ``pending`` + ``interrupted``
+        (D-06 — the downgrade itself persists per D-05). Corrupt,
+        unparseable, or forward-dated file: moved aside to
+        ``download_queue.json.corrupt``, entries empty, and the
+        diagnostic returned (never an exception, never silent loss).
+
+        Returns:
+            str | None: the diagnostic when the file was quarantined;
+            None on every healthy path. Idempotent.
+        """
+        with self._lock:
+            return self._load_locked()
+
+    def _load_locked(self):
+        path = self._state_path
+        if not path.is_file():
+            self._entries = []
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, json.JSONDecodeError,
+                UnicodeDecodeError) as exc:
+            return self._quarantine_locked(repr(exc))
+        if not isinstance(doc, dict) \
+                or not isinstance(doc.get("entries"), list):
+            return self._quarantine_locked(
+                "top level must be a JSON object with an entries list")
+        if doc.get("schema_version") != SCHEMA_VERSION:
+            return self._quarantine_locked(
+                "unsupported schema_version "
+                + repr(doc.get("schema_version"))
+                + " (expected " + str(SCHEMA_VERSION) + ")")
+        entries = [_normalized_entry(raw)
+                   for raw in doc["entries"] if isinstance(raw, dict)]
+        downgraded = False
+        for entry in entries:
+            if entry["state"] == "downloading":
+                entry["state"] = "pending"
+                entry["interrupted"] = True
+                downgraded = True
+        self._entries = entries
+        if downgraded:
+            self._persist_locked()
+        return None
+
+    def _quarantine_locked(self, diagnostic):
+        """Move the corrupt state file aside and reset to empty."""
+        path = self._state_path
+        message = ("download queue state file unreadable, moved aside: "
+                   + str(path) + " (" + diagnostic + ")")
+        try:
+            os.replace(path, path.with_name(path.name + ".corrupt"))
+        except OSError as exc:
+            message += "; sidecar move failed: " + repr(exc)
+        self._entries = []
+        return message
 
     def entries(self):
-        """Immutable copies of the current entries, file order."""
-        raise NotImplementedError
+        """Immutable copies of the current entries, in file order.
+
+        Returns:
+            list[QueueEntry]: frozen snapshots — mutating them can
+            never touch the service's live state.
+        """
+        with self._lock:
+            return [_frozen(entry) for entry in self._entries]
+
+    def _persist_locked(self):
+        """Write the whole queue through the ONE atomic rail (D-05)."""
+        doc = {
+            "schema_version": SCHEMA_VERSION,
+            "entries": [{field: entry[field] for field in _ENTRY_FIELDS}
+                        for entry in self._entries],
+        }
+        settings.atomic_write(
+            self._state_path,
+            json.dumps(doc, indent=4, ensure_ascii=False))
+
+    # ===== Mutators (enqueue / retry / cancel) =====
 
     def enqueue(self, key):
-        """Idempotently append one pending dataset entry (D-08)."""
-        raise NotImplementedError
+        """Idempotently append one pending dataset entry (D-08).
+
+        Outcome order: an existing entry of ANY state yields
+        ``already_queued`` with no state change; an unknown official
+        key yields ``unknown_key`` (custom keys are not download
+        targets — the official registry is the only URL authority); a
+        disabled/degraded channel yields ``disabled`` carrying the
+        machine reason + the drill-down ``source_url``; a CLI-absent
+        machine yields ``cli_unavailable``; otherwise the pending entry
+        appends and persists (``enqueued``).
+
+        Args:
+            key (str): the dataset registry key.
+
+        Returns:
+            EnqueueOutcome: the structured result (never an exception).
+        """
+        cli = resolve_modelscope_cli(self._cli_path)
+        with self._lock:
+            if any(entry["key"] == key for entry in self._entries):
+                return EnqueueOutcome(
+                    action="already_queued", key=key)
+            spec = self.resolve_channel(key)
+            if spec is None:
+                return EnqueueOutcome(action="unknown_key", key=key)
+            if spec.reason_code is not None:
+                return EnqueueOutcome(
+                    action="disabled", key=key,
+                    reason_code=spec.reason_code,
+                    source_url=spec.source_url)
+            if cli is None:
+                return EnqueueOutcome(
+                    action="cli_unavailable", key=key)
+            self._entries.append({
+                "key": key,
+                "kind": KIND_DATASET,
+                "state": "pending",
+                "attempts": 0,
+                "enqueued_at": _now_iso(),
+                "started_at": None,
+                "finished_at": None,
+                "last_percent": None,
+                "interrupted": False,
+                "log_path": None,
+                "problems": [],
+                "reconcile": None,
+            })
+            self._persist_locked()
+            return EnqueueOutcome(action="enqueued", key=key)
 
     def enqueue_all_missing(self):
-        """Enqueue every missing downloadable key; return the count."""
-        raise NotImplementedError
+        """Enqueue every missing downloadable dataset key.
+
+        Rows whose channel is disabled or unknown are skipped silently
+        (the disabled drill-down is the operator's path, not a queue
+        row); already-queued keys contribute nothing to the count.
+
+        Returns:
+            int: the number of NEWLY enqueued keys.
+        """
+        count = 0
+        for row in self.missing_datasets():
+            if row.channel != "downloadable":
+                continue
+            outcome = self.enqueue(row.key)
+            if outcome.action == "enqueued":
+                count += 1
+        return count
 
     def retry(self, key):
-        """Re-queue one failed/mismatch entry; True when applied."""
-        raise NotImplementedError
+        """Re-queue one failed or mismatch entry as pending (D-06).
+
+        Args:
+            key (str): the dataset registry key.
+
+        Returns:
+            bool: True when the entry was failed/mismatch and is now
+            pending (persisted); False for every other state (and for
+            absent keys).
+        """
+        with self._lock:
+            for entry in self._entries:
+                if entry["key"] != key:
+                    continue
+                if entry["state"] not in ("failed", "mismatch"):
+                    return False
+                entry["state"] = "pending"
+                entry["problems"] = []
+                self._persist_locked()
+                return True
+            return False
 
     def cancel(self, key):
-        """Remove a pending entry, or signal the active download."""
-        raise NotImplementedError
+        """Cancel one entry.
+
+        ``pending``: the entry is REMOVED from the file. ``downloading``:
+        the cancel-requested flag is set and SIGTERM is sent via
+        ``os.killpg`` to the recorded process group — the worker's reap
+        loop completes the failed transition (partials are retained by
+        the channel, D-06 resume). Any other state or absent key: a
+        no-op.
+
+        Args:
+            key (str): the dataset registry key.
+
+        Returns:
+            str: ``removed`` / ``signalled`` / ``noop``.
+        """
+        proc = None
+        with self._lock:
+            entry = next((e for e in self._entries
+                          if e["key"] == key), None)
+            if entry is None:
+                return "noop"
+            if entry["state"] == "pending":
+                self._entries.remove(entry)
+                self._persist_locked()
+                return "removed"
+            if entry["state"] == "downloading":
+                self._cancel_requested.add(key)
+                proc = self._active.get(key)
+                outcome = "signalled"
+            else:
+                return "noop"
+        if proc is not None:
+            _signal_group(proc, signal.SIGTERM)
+        return outcome
+
+    # ===== The single-task claim (D-04) =====
+
+    def claim_next(self):
+        """Claim the head pending entry for the worker (D-04: one task
+        runs at a time; only the worker thread calls this).
+
+        Transitions the first ``pending`` entry in file order to
+        ``downloading`` with ``attempts`` incremented and ``started_at``
+        stamped, persisted before returning.
+
+        Returns:
+            QueueEntry | None: the claimed snapshot, or None when no
+            pending entry exists.
+        """
+        with self._lock:
+            for entry in self._entries:
+                if entry["state"] != "pending":
+                    continue
+                entry["state"] = "downloading"
+                entry["attempts"] = entry["attempts"] + 1
+                entry["started_at"] = _now_iso()
+                self._persist_locked()
+                return _frozen(entry)
+            return None
+
+    # ===== Missing-set derivation (the D-13 input) =====
 
     def missing_datasets(self):
-        """MissingInfo rows for official keys missing per n_audit."""
-        raise NotImplementedError
+        """MissingInfo rows for official keys missing per n_audit.
 
+        Computed over the official registry (direct file read, never
+        the custom overlay — download targets are the official
+        ModelScope mirrors) plus the committed ``n_audit.json``
+        presence view (``registries.load_n_audit``; the TUI computes
+        nothing). An absent/unreadable n_audit yields NO rows — the
+        missing set is unknowable, not "everything".
 
-def _default_spawner(argv, **kwargs):
-    """The real Popen seam (the injectable default)."""
-    raise NotImplementedError
+        Returns:
+            list[MissingInfo]: one frozen row per missing official key,
+            in registry file order.
+        """
+        audit_tasks = registries.load_n_audit()
+        if audit_tasks is None:
+            return []
+        try:
+            registry = self._official_registry()
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            return []
+        rows = []
+        for key, entry in registry.items():
+            if not isinstance(entry, dict):
+                continue
+            presence = registries.presence_for(key, audit_tasks)
+            if presence.status != registries.PRESENCE_MISSING:
+                continue
+            spec = self._spec_from_entry(key, entry)
+            rows.append(MissingInfo(
+                key=key,
+                declared_total=_declared_total(entry),
+                channel=channel_state(spec),
+                reason_code=spec.reason_code,
+                source_url=spec.source_url))
+        return rows
+
+    # ===== Channel resolution (R-01/R-02) =====
+
+    def resolve_channel(self, key):
+        """Resolve one dataset key's download channel.
+
+        R-01: the official entry's ``download_url`` first; only when
+        that host is not modelscope.cn does the modelscope mirror in
+        ``download_url_alternates`` win. The repo id is derived by
+        urlparse path parsing and validated against the allowlist
+        regex before anything reaches argv (T-10-01-01).
+
+        Args:
+            key (str): the dataset registry key.
+
+        Returns:
+            ChannelSpec | None: the resolved spec, or None when the
+            key is not an official registry key (custom keys are not
+            download targets).
+        """
+        try:
+            registry = self._official_registry()
+        except (OSError, json.JSONDecodeError,
+                UnicodeDecodeError):
+            return self._degraded_spec(
+                key, reason=REASON_REGISTRY_UNREADABLE)
+        entry = registry.get(key)
+        if not isinstance(entry, dict):
+            return None
+        return self._spec_from_entry(key, entry)
+
+    def _spec_from_entry(self, key, entry):
+        """Resolve the channel for one official registry entry."""
+        url = self._winning_url(entry)
+        if url is None:
+            return self._degraded_spec(
+                key, reason=REASON_NO_MIRROR, source_url=None)
+        repo_id = _repo_id_from_url(url)
+        if not repo_id or not re.fullmatch(REPO_ID_RE_PART, repo_id):
+            return self._degraded_spec(
+                key, reason=REASON_MALFORMED_REPO_ID, source_url=url)
+        derived = _group_and_task(entry)
+        if derived is None:
+            return self._degraded_spec(
+                key, reason=REASON_MALFORMED_PATH, source_url=url,
+                repo_id=repo_id)
+        group, task = derived
+        datasets_root = self._pipeline_dir / "datasets"
+        if repo_id in SHAPE_D_REPOS:
+            return self._degraded_spec(
+                key, reason=REASON_SHAPE_D, source_url=url,
+                repo_id=repo_id, shape=None, final_task_dir=task)
+        if repo_id not in SHAPE_A_REPOS and repo_id not in SHAPE_B_REPOS \
+                and repo_id != SHAPE_C_REPO:
+            return self._degraded_spec(
+                key, reason=REASON_UNKNOWN_REPO, source_url=url,
+                repo_id=repo_id, shape=None, final_task_dir=task)
+        exclude = EXCLUDE_PATTERNS
+        if repo_id in SHAPE_B_REPOS:
+            return ChannelSpec(
+                key=key, repo_id=repo_id, shape="B",
+                local_dir=datasets_root / group / task,
+                include=(), exclude=exclude, rename=None,
+                final_task_dir=task, source_url=url, reason_code=None)
+        if repo_id == SHAPE_C_REPO:
+            subtree = SHAPE_C_SUBTREES.get(key)
+            if subtree is None:
+                return self._degraded_spec(
+                    key, reason=REASON_UNKNOWN_REPO, source_url=url,
+                    repo_id=repo_id, shape=None, final_task_dir=task)
+            return ChannelSpec(
+                key=key, repo_id=repo_id, shape="C",
+                local_dir=datasets_root / group,
+                include=(subtree + "/*",), exclude=exclude,
+                rename=(group + "/" + subtree, group + "/" + task),
+                final_task_dir=task, source_url=url, reason_code=None)
+        return ChannelSpec(
+            key=key, repo_id=repo_id, shape="A",
+            local_dir=datasets_root / group,
+            include=(task + "/*",), exclude=exclude, rename=None,
+            final_task_dir=task, source_url=url, reason_code=None)
+
+    @staticmethod
+    def _winning_url(entry):
+        """R-01: the primary URL when it is the modelscope mirror,
+        else the modelscope alternate — None when neither qualifies."""
+        primary = entry.get("download_url")
+        if _is_modelscope_url(primary):
+            return primary
+        alternate = entry.get("download_url_alternates")
+        if _is_modelscope_url(alternate):
+            return alternate
+        return None
+
+    @staticmethod
+    def _degraded_spec(key, reason, source_url=None, repo_id=None,
+                       shape=None, final_task_dir=None):
+        """Build the never-crash degraded resolution (data, no argv)."""
+        return ChannelSpec(
+            key=key, repo_id=repo_id, shape=shape, local_dir=None,
+            include=(), exclude=(), rename=None,
+            final_task_dir=final_task_dir, source_url=source_url,
+            reason_code=reason)
+
+    def _official_registry(self):
+        """Read the OFFICIAL dataset registry directly (not the
+        overlay loader — download targets are the official ModelScope
+        mirrors regardless of any custom overlay state).
+
+        Returns:
+            dict: the parsed official registry (file order preserved).
+        """
+        with open(self._pipeline_dir / registry_loader.DATASETS_INFO_NAME,
+                  "r", encoding="utf-8") as fh:
+            return json.load(fh)
