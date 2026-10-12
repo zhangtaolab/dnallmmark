@@ -999,7 +999,13 @@ class DataManagerScreen(Screen):
         return False
 
     def action_enqueue_cursor(self) -> None:
-        """d: enqueue the missing-table cursor row's dataset key."""
+        """d: enqueue the missing-table cursor row's dataset key.
+
+        IN-04 (the documented fixed-target contract): ``d``/``r``/``x``
+        each act on their OWN table's cursor regardless of which table
+        holds focus (``d`` the missing list, ``r``/``x`` the queue) —
+        the D-15 verb-table pairing is deliberate; only ``enter`` routes
+        by focus (``_open_detail_for_focused``)."""
         key = self._missing_cursor_key()
         if key is None:
             return  # state rows / no rows: silent (the selection rule)
@@ -1017,7 +1023,9 @@ class DataManagerScreen(Screen):
             self._reload_snapshot()
 
     def action_retry_cursor(self) -> None:
-        """r: re-queue the queue cursor's failed/mismatch entry."""
+        """r: re-queue the queue cursor's failed/mismatch entry (the
+        fixed-target contract: always the QUEUE table's cursor — see
+        action_enqueue_cursor's IN-04 note)."""
         entry = self._queue_cursor_entry()
         if entry is None:
             return  # state rows: silent
@@ -1029,9 +1037,10 @@ class DataManagerScreen(Screen):
             self._reload_snapshot()
 
     def action_cancel_cursor(self) -> None:
-        """x: cancel the queue cursor's entry — ALWAYS behind the
-        ConfirmModal (the destructive list; the copy names the resume
-        retention for downloading rows, D-06)."""
+        """x: cancel the queue cursor's entry (the fixed-target
+        contract: always the QUEUE table's cursor — the IN-04 note) —
+        ALWAYS behind the ConfirmModal (the destructive list; the copy
+        names the resume retention for downloading rows, D-06)."""
         entry = self._queue_cursor_entry()
         if entry is None:
             return  # state rows: silent
