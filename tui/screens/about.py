@@ -65,10 +65,10 @@ from tui.strings import (
     NAV_LABEL_SELECTION,
 )
 
-# Dim style for absent-dependency values (theme token — the
-# absent-dependency state renders secondary; the word itself is the
-# NO_COLOR meaning-carrier).
-_STYLE_DIM = "$text-muted"
+# Dim style for absent-dependency values (rich `dim` — a Textual
+# `$token` cannot style a rich Text span on the Static render path,
+# probe-pinned 8.2.8; the word itself is the NO_COLOR meaning-carrier).
+_STYLE_DIM = "dim"
 
 
 class AboutServiceProtocol(Protocol):

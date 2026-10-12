@@ -465,15 +465,17 @@ async def test_models_registry_degraded_mounts_empty_copy_and_stays_alive():
 # App wiring — the env screen's s binding (08-UI-SPEC Keyboard map)
 # =====================================================================
 
-async def test_env_s_binding_opens_the_selection_screen():
-    """s on the env screen opens selection through the app factory."""
+async def test_digit_2_opens_the_selection_screen():
+    """Digit 2 (menu slot 2) opens selection through the app factory —
+    the successor of the retired env s binding (09-03 migration: one
+    navigation path per target)."""
     app = _app(_matrix_data())
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         from tui.screens.env_check import EnvCheckScreen
         assert isinstance(app.screen, EnvCheckScreen)
 
-        await pilot.press("s")
+        await pilot.press("2")
         await pilot.pause()
         assert isinstance(app.screen, SelectionScreen)
         # the shared-set contract: the factory wired the app's live sets
@@ -535,8 +537,8 @@ class _IntegrationFake(_MatrixFake):
 
 async def test_cross_screen_navigation_integration():
     """The composed navigation path end-to-end, headless with fakes:
-    env screen -> s to selection -> filter -> mark -> preset -> v to
-    matrix -> esc -> q — proving the app wiring as one flow."""
+    env screen -> digit 2 to selection -> filter -> mark -> preset -> v
+    to matrix -> esc -> q — proving the app wiring as one flow."""
     from tui.screens.env_check import EnvCheckScreen
 
     # the app directly (NOT via _app — that helper wraps its argument in
@@ -550,8 +552,9 @@ async def test_cross_screen_navigation_integration():
         # the app opens on the env screen (cache-hit fake — instant)
         assert isinstance(app.screen, EnvCheckScreen)
 
-        # s opens the selection screen through the app factory
-        await pilot.press("s")
+        # digit 2 (menu slot 2 — the retired s binding's successor)
+        # opens the selection screen through the app factory
+        await pilot.press("2")
         await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()

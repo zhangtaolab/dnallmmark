@@ -207,15 +207,6 @@ class DnallmMarkTui(App):
             marked_tasks=self._marked_tasks,
         )
 
-    def action_open_selection(self) -> None:
-        """The env screen's ``s`` key: open the selection screen.
-
-        The env screen declares the binding (scoped per-screen, the
-        08-UI-SPEC Keyboard map); the action targets the app because the
-        factory lives here (the qualified ``app.open_selection`` action).
-        """
-        self.push_screen(self.build_selection_screen())
-
     # ===== Digit navigation (D-13, 09-03) =====
 
     async def action_nav(self, slot: int) -> None:

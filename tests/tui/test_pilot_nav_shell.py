@@ -93,11 +93,26 @@ class _SelectionFake:
     def preset_menu(self):
         return PresetMenu(options=(), load_error=None)
 
+    def custom_names(self):
+        return ()
+
+    def save_preset(self, name, models, tasks):
+        raise AssertionError("the nav-shell tests never save presets")
+
     def parse_filter(self, query):
         return selection_service.parse_filter_query(query)
 
     def apply_filter(self, entries, parsed):
         return selection_service.apply_filter(entries, parsed.terms)
+
+    def import_template(self, path):
+        raise AssertionError("the nav-shell tests never import templates")
+
+    def export_template(self, path, models, tasks):
+        raise AssertionError("the nav-shell tests never export templates")
+
+    def export_tiers(self, path, models, tasks):
+        raise AssertionError("the nav-shell tests never export tiers")
 
 
 def _pin_config_roots(monkeypatch, tmp_path):
@@ -486,22 +501,30 @@ def _about_data(**overrides):
     from tui.services.about import AboutData
     from tui.services.registries import RegistryCounts
 
-    defaults = dict(
-        software_version="0.7.1",
-        git_sha="a8dba7c",
-        official_counts=RegistryCounts(62, 50),
-        custom_counts=(1, 0),
-        n_audit_present=True,
-        deps={
+    fields = {
+        "software_version": "0.7.1",
+        "git_sha": "a8dba7c",
+        "official_counts": RegistryCounts(62, 50),
+        "custom_counts": (1, 0),
+        "n_audit_present": True,
+        "deps": {
             "textual": "8.2.8",
             "platformdirs": "4.13.0",
             "jsonschema": "4.26.0",
             "numpy": "2.5.3",
             "torch": None,
         },
+    }
+    fields.update(overrides)
+    # explicit keyword construction (ty cannot type a dict **splat)
+    return AboutData(
+        software_version=fields["software_version"],
+        git_sha=fields["git_sha"],
+        official_counts=fields["official_counts"],
+        custom_counts=fields["custom_counts"],
+        n_audit_present=fields["n_audit_present"],
+        deps=fields["deps"],
     )
-    defaults.update(overrides)
-    return AboutData(**defaults)
 
 
 async def _open_about(pilot, app, data):

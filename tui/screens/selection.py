@@ -75,7 +75,6 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import (
     DataTable,
     Footer,
-    Header,
     Input,
     Label,
     ListItem,
@@ -909,8 +908,9 @@ class SelectionScreen(Screen):
     # ----- layout -----
 
     def compose(self) -> ComposeResult:
+        # The 09-03 migration retired the Textual Header/Footer (the two
+        # shell bars own those rows now — row-neutral, D-16).
         yield TopMenuBar()
-        yield Header()
         with Horizontal(id="selection-title-bar"):
             yield Label(SEL_SCREEN_TITLE_MODELS, id="selection-screen-title")
             yield Label("", id="selection-status")
@@ -922,9 +922,6 @@ class SelectionScreen(Screen):
                         id="selection-filter-count")
         yield Label("", id="selection-filter-warning")
         yield DataTable(id="selection-table")
-        # compact + no palette hint: the 80-column footer budget (the
-        # binding map is dense; ctrl+p keeps working, only the hint hides)
-        yield Footer(compact=True, show_command_palette=False)
         yield BottomBar()
 
     def on_mount(self) -> None:

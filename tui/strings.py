@@ -197,9 +197,10 @@ SEL_TEMPLATE_LABEL = "模板"
 SEL_SAVE_PRESET_LABEL = "保存预设"
 SEL_FILTER_KEY_LABEL = "过滤"
 
-# The env-screen s binding (08-UI-SPEC Keyboard map: "s | 环境检查 | switch
-# to 选择 screen"). Landed with the selection screen (08-07).
-SEL_OPEN_LABEL = "选择"
+# The env-screen s binding (08-UI-SPEC Keyboard map: "s | 环境检查 |
+# switch to 选择 screen") was RETIRED by the 09-03 nav-shell migration:
+# menu slot 2 supersedes it (one navigation path per target) — the
+# action and this label constant were removed with it.
 
 # Preset modal (08-UI-SPEC Keyboard map: tier-1 E2E 对 / tier-2 arena
 # 代表 / 全部 / 自定义保存…). Derived labels for the built-ins; customs
