@@ -124,6 +124,10 @@ from tui.strings import (
     SEL_COL_SPECIES,
     SEL_COL_TASK,
     SEL_COL_TYPE,
+    SEL_COUNT_CUSTOM_SEGMENT,
+    SEL_CUSTOM_BADGE,
+    SEL_DISABLED_MARK_WARNING,
+    SEL_DISABLED_SUFFIX,
     SEL_FILTER_COUNT,
     SEL_FILTER_KEY_LABEL,
     SEL_FILTER_LABEL,
@@ -832,6 +836,35 @@ def _presence_cell(data: SelectionData, key: str) -> Text:
     )
 
 
+def _key_cell(key: str, status: "dict | None", width: int,
+              accent_style: str) -> Text:
+    """One key cell with the D-10 custom badge — render only.
+
+    Custom entries carry the diamond prefix on the key cell: bold +
+    accent when enabled, dim (with the disabled suffix) when disabled —
+    the glyph + weight channel carries the meaning under NO_COLOR, the
+    color is the redundant channel. Official rows render the bare key
+    (the badge, never position, marks custom entries).
+
+    Probe-pinned on 8.2.8 (the 09-03 nav-bar fact): rich Text SPANS
+    styled with a Textual ``$token`` crash the render path
+    (MissingStyle) — only whole-text styles resolve tokens — so the
+    accent span carries the caller-resolved live theme accent and the
+    disabled spans use rich's native ``dim``.
+    """
+    if not status or not status.get("custom"):
+        return _cell(key, width)
+    if status.get("enabled", True):
+        return _truncate(Text.assemble(
+            Text(f"{SEL_CUSTOM_BADGE} ", style=accent_style), Text(key),
+        ), width)
+    return _truncate(Text.assemble(
+        Text(f"{SEL_CUSTOM_BADGE} ", style="dim"),
+        Text(key),
+        Text(SEL_DISABLED_SUFFIX, style="dim"),
+    ), width)
+
+
 def _preset_label(option: PresetOption) -> str:
     """The menu label for one preset option (derived ids map to copy)."""
     if option.kind == "custom":
@@ -1300,10 +1333,16 @@ class SelectionScreen(Screen):
             _presence_cell(data, key) if data is not None
             else Text(SEL_PRESENCE_UNKNOWN, style=_STYLE_PRESENCE_UNKNOWN)
         )
+        badge_status = (
+            data.custom_status.get(key) if data is not None else None
+        )
+        # The live theme's accent, resolved for the badge span (rich
+        # spans cannot carry $token styles — probe-pinned, see _key_cell).
+        accent_style = f"bold {self.app.current_theme.accent}"
         if self._view == _MODELS_VIEW:
             return [
                 mark_cell,
-                _cell(key, _MODEL_KEY_W),
+                _key_cell(key, badge_status, _MODEL_KEY_W, accent_style),
                 _cell(entry.get("type") or "", _MODEL_TYPE_W),
                 _cell(entry.get("species") or "", _MODEL_SPECIES_W),
                 _cell(_size_text(entry.get("size_m")), _MODEL_SIZE_W),
@@ -1311,7 +1350,7 @@ class SelectionScreen(Screen):
             ]
         return [
             mark_cell,
-            _cell(key, _DATASET_KEY_W),
+            _key_cell(key, badge_status, _DATASET_KEY_W, accent_style),
             _cell(entry.get("category") or "", _DATASET_CATEGORY_W),
             _cell(entry.get("type") or "", _DATASET_TYPE_W),
             _cell(entry.get("metric") or "", _DATASET_METRIC_W),
@@ -1321,16 +1360,43 @@ class SelectionScreen(Screen):
     # ----- readouts -----
 
     def _update_status_line(self) -> None:
-        """The zero-one-many marked-counts readout (top-right)."""
+        """The zero-one-many marked-counts readout (top-right) plus the
+        conditional D-10 custom segment: with at least one LANDED custom
+        entry a second dim segment appends the official/custom split
+        counting both states (visible = counted — the counts derive from
+        the management-read custom-status map, never the merged view);
+        zero customs renders the exact Phase 8 line (byte-identical)."""
         data = self._data
-        self.query_one("#selection-status", Label).update(
-            SEL_STATUS_LINE.format(
-                n=len(self._marked_models),
-                models_total=len(data.model_entries) if data else 0,
-                m=len(self._marked_tasks),
-                tasks_total=len(data.dataset_entries) if data else 0,
-            )
+        line = SEL_STATUS_LINE.format(
+            n=len(self._marked_models),
+            models_total=len(data.model_entries) if data else 0,
+            m=len(self._marked_tasks),
+            tasks_total=len(data.dataset_entries) if data else 0,
         )
+        custom = data.custom_status if data else {}
+        if not custom or data is None:
+            self.query_one("#selection-status", Label).update(line)
+            return
+        custom_models = sum(
+            1 for entry in data.model_entries
+            if entry["key"] in custom
+        )
+        custom_datasets = sum(
+            1 for entry in data.dataset_entries
+            if entry["key"] in custom
+        )
+        segment = SEL_COUNT_CUSTOM_SEGMENT.format(
+            official_models=len(data.model_entries) - custom_models,
+            official_datasets=len(data.dataset_entries) - custom_datasets,
+            custom_models=custom_models,
+            custom_datasets=custom_datasets,
+        )
+        self.query_one("#selection-status", Label).update(Text.assemble(
+            Text(line),
+            # rich spans cannot carry $token styles (probe-pinned) — the
+            # dim segment uses rich's native dim attribute
+            Text(f" · {segment}", style="dim"),
+        ))
 
     def _update_count_readout(self, visible: int, total: int) -> None:
         """The live (N/total) filter readout (right-aligned in the bar)."""
@@ -1384,6 +1450,17 @@ class SelectionScreen(Screen):
         key = str(row_key.value)
         if key not in self._view_keys:
             return  # state rows (loading/no-match/error) never mark
+        # T-09-13: marking a DISABLED custom row is blocked with the
+        # warning — a mark the sweep can never see (the loader-level
+        # skip) is refused at entry, never discovered at launch.
+        disabled_status = self._custom_status_for(key)
+        if disabled_status is not None and not disabled_status.get(
+                "enabled", True):
+            self.app.notify(
+                SEL_DISABLED_MARK_WARNING.format(key=key),
+                severity="warning",
+            )
+            return
         marks = (
             self._marked_models if self._view == _MODELS_VIEW
             else self._marked_tasks
@@ -1535,20 +1612,45 @@ class SelectionScreen(Screen):
             on_apply=self._apply_preset,
         ))
 
+    def _deliverable_keys(self, entries: "Sequence[dict]") -> frozenset[str]:
+        """The registry keys a run can deliver — the loud-skip key set.
+
+        Disabled customs stay visible in the table (the management read)
+        but the loader excludes them, so they are NOT deliverable: a
+        preset/template referencing one rides the Phase 8 unknown-key
+        loud skip (warned, skipped — never a silently-unusable mark).
+        """
+        custom_status = self._data.custom_status if self._data else {}
+
+        def _blocked(entry_key: str) -> bool:
+            status = custom_status.get(entry_key)
+            return bool(
+                status and status.get("custom")
+                and not status.get("enabled", True)
+            )
+
+        return frozenset(
+            entry["key"] for entry in entries
+            if not _blocked(entry["key"])
+        )
+
     def _apply_preset(self, option: PresetOption) -> None:
         """Apply one preset with REPLACING semantics (SEL-02).
 
         The relevant set(s) are cleared then filled; keys absent from the
         loaded registries are skipped with the loud warning (registry
         evolution tolerance — recomputed against the live view so stale
-        customs warn too, never silently dropped).
+        customs warn too, never silently dropped; a disabled custom key
+        is equally undeliverable and rides the same loud skip).
         """
-        model_keys = frozenset(
-            entry["key"] for entry in self._data.model_entries
-        ) if self._data else frozenset()
-        task_keys = frozenset(
-            entry["key"] for entry in self._data.dataset_entries
-        ) if self._data else frozenset()
+        model_keys = (
+            self._deliverable_keys(self._data.model_entries)
+            if self._data else frozenset()
+        )
+        task_keys = (
+            self._deliverable_keys(self._data.dataset_entries)
+            if self._data else frozenset()
+        )
         unknown = [
             key for key in option.models if key not in model_keys
         ] + [
@@ -1656,13 +1758,16 @@ class SelectionScreen(Screen):
     def _replace_marks(self, models: Iterable[str],
                        tasks: Iterable[str]) -> None:
         """Replace both mark sets, skipping keys unknown to the registry
-        with the loud warning (the same loud-skip discipline as presets)."""
-        model_keys = frozenset(
-            entry["key"] for entry in self._data.model_entries
-        ) if self._data else frozenset()
-        task_keys = frozenset(
-            entry["key"] for entry in self._data.dataset_entries
-        ) if self._data else frozenset()
+        with the loud warning (the same loud-skip discipline as presets
+        — disabled customs are equally undeliverable)."""
+        model_keys = (
+            self._deliverable_keys(self._data.model_entries)
+            if self._data else frozenset()
+        )
+        task_keys = (
+            self._deliverable_keys(self._data.dataset_entries)
+            if self._data else frozenset()
+        )
         unknown = [
             key for key in models if key not in model_keys
         ] + [
