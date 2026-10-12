@@ -530,3 +530,113 @@ fixed before ship; IN-09/IN-11 are one-line fixes recommended in the same
 commit; IN-10 tracks activation.
 
 _Re-review: 2026-10-13, Claude (gsd-code-reviewer), HEAD 0b3e1c9_
+
+## Re-review iteration 3 (HEAD ed34b87)
+
+**Fix diff audited:** `4079860..ed34b87` (0b31267 CR-02 / b01e523 IN-09 /
+63f18e6 IN-11 / 46ddd37 gauntlet twin / c781a8a style / ed34b87 disposition)
+**Method:** the CR-02 livelock scenario re-executed independently at HEAD
+(read-only root + two pending entries + real service + real driver), with
+boot-resume and rail-recovery variants; all four new regression lanes
+re-run against the pre-fix commit `4079860` in a throwaway worktree (RED
+verified); the whole fix diff re-audited as a fresh surface; full gates at
+HEAD: `tests/tui` 627 passed, `make lint`, `make typecheck` all green.
+
+### Per-item verdicts
+
+**CR-02 — CONFIRMED-FIXED.** Independent re-execution at HEAD: kick over
+the read-only rail → the driver EXITS after a bounded attempt count, busy
+flag released, no `run_download_queue` worker remains, and the new
+`QUEUE_PERSIST_DRIVER_TOAST` fires naming the refused key. Boot-resume
+over the still-broken rail: one bounded attempt, exit, no spin. Rail
+recovery + kick: claims succeed (both entries run to terminal states),
+driver exits, busy False, `last_claim_refusal()` reads None after the
+healthy claims. The regression lane is RED on `4079860` via the real
+livelock (`wait_for_complete` timeout). Exit-path edge audit:
+(a) **false refusal** — impossible by construction: only `claim_next`
+writes the flag (service-locked), it is cleared at the START of every
+attempt, and the single-driver guarantee (busy check-and-set) means no
+other claim can interleave between the worker's None-return and its read;
+a refusal therefore always describes THIS worker's just-failed claim over
+a memory-pending-but-not-persistable entry (the queue is wedged by
+definition — exit + toast is the honest state). (b) **refusal vs exit
+race** — busy is released under the shared lock BEFORE the return; a kick
+landing after the release succeeds at check-and-set and starts the next
+generation (over a still-broken rail: exactly one more bounded attempt
+and exit — proven by the re-kick execution, not just the test). The
+stalled message is generation-dropped when a successor exists, so a
+recovered rail suppresses the stale stall-toast correctly. (c) **boot
+resume** — spin-free (execution-verified). Fakes without the
+`last_claim_refusal` seam keep drained-only semantics via the getattr
+guard.
+
+**IN-09 — CONFIRMED-FIXED.** All three toast constants
+(`DL_UNKNOWN_TOAST`, `QUEUE_PERSIST_FAILED_TOAST`, and the new
+`QUEUE_PERSIST_DRIVER_TOAST`) are registered in the EXPECTED_ tuples, and
+the new reverse sweep makes the lock bidirectional (defined set ==
+registered set). The pre-fix RED replicated exactly: the reverse sweep at
+`4079860` semantics reports `unregistered: ['DL_UNKNOWN_TOAST',
+'QUEUE_PERSIST_FAILED_TOAST']` (the third name did not exist yet).
+Over-constraining check: a legitimate future constant fails with a
+two-direction message naming exactly what to register — that is the
+tripwire's documented contract working, one tuple line to satisfy; scope
+stays DL_/QUEUE_-prefixed constants in the constants-only module. Not
+over-constraining.
+
+**IN-11 — CONFIRMED-FIXED.** The D-06 downgrade pass now runs before the
+dropped-rows early return, with one persist covering drop + downgrade.
+Regression (compound file: non-dict row + downloading survivor) is RED on
+`4079860` (survivor stayed downloading); at HEAD the survivor downgrades
+to pending + interrupted, persists, and the diagnostic still rides the
+session channel — boot resume sees pending and kicks.
+
+**Gauntlet twin — CONFIRMED-FIXED.** `gauntlet.py:_invoke` now passes
+`errors="replace"` alongside `text=True` — kwargs-identical to the
+`download_queue._invoke` twin. The RED claim is credible and verified:
+the kwargs pin fails on `4079860` with `KeyError: 'errors'` (the runner
+call carried no errors kwarg). Committed separately as phase-9 follow-up,
+keeping the phase-10 diff pure — the recurring decode class is now closed
+repo-wide.
+
+**Iteration-3 introduced-findings sweep — none.** The CR-02 exit path
+reuses the audited busy-lock discipline (release under the lock, start
+outside it, generation-guarded finally — no new ordering); the
+`last_claim_refusal` read sits before the lock block but is stable
+(single-writer, same thread); `QueueStalledMessage` is generation-tagged
+and its toast is app-level (renders above modals); the bidirectional
+tripwire's failure mode is a precise assertion, not a confusing error;
+the CR-02 lane's monkeypatch claim seam wraps the instance attribute the
+driver actually calls (no interposition gap); the style commit touches
+test formatting only.
+
+**Kept-open set — fully dispositioned, no hidden CR/WR.**
+- IN-02 (`first_real_error_line` dead code): maintainer choice, tested
+  pure function, no runtime risk. Accepted (iteration 2).
+- IN-06 (bundle overwrite / member-size cap / staging prune): policy
+  calls, lane inert while record 19135551 404s; zip-slip guarded;
+  post-landing reconcile re-verifies content. Bound to the explicit
+  PRE-ACTIVATION GATE: the maintainer must rule overwrite/cap/staging
+  before the record publishes.
+- IN-10 (per-file cancel seam): same activation gate as IN-06 — the
+  per-chunk cancel check lands with the lane's activation work.
+- IN-03 progress half: accepted (indeterminate glyph renders regardless;
+  seam widening has no visible effect).
+
+### FINAL RELEASE VERDICT: **CLEAN**
+
+All 8 CR/WR-class findings from iterations 1-2 are fixed and
+fix-verified (each against its original failure scenario, each with a
+RED-on-pre-fix regression lane). Zero CR/WR/IN findings introduced by
+this iteration. The four kept-open items are IN-class, explicitly
+dispositioned, and either inert pending the documented Zenodo
+activation gate (IN-06, IN-10) or maintainer polish choices (IN-02,
+IN-03 progress half). The GB10 live smoke (10-06 §procedure) remains the
+maintainer's manual confirmation step, now with the missing-pane flip
+actually true of the real stack.
+
+_Cumulative ledger: iteration 1 — CR 1 / WR 6 / IN 8; iteration 2 —
+CR 1 / WR 0 / IN 3 introduced (all fixed this iteration); iteration 3 —
+0 introduced; open: IN-02, IN-03(progress), IN-06*, IN-10* (* =
+pre-activation gate)._
+
+_Re-review: 2026-10-13, Claude (gsd-code-reviewer), HEAD ed34b87_
