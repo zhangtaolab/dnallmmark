@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: TUI任务
 current_phase: 9
 current_phase_name: Custom Model & Dataset Onboarding (自定义接入向导)
-status: executing
-stopped_at: Completed 09-05-PLAN.md
-last_updated: "2026-10-12T06:42:11.498Z"
+status: verifying
+stopped_at: Completed 09-06-PLAN.md
+last_updated: "2026-10-12T08:27:23.441Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 9 execution started
-state_head: 13ede1c8b6668e172d551b5483d081e219943e3c
+state_head: 34f5d175b2f55d764d89770df2b54775379aac3b
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 18
+  completed_plans: 19
   percent: 33
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 
 Phase: 9 (Custom Model & Dataset Onboarding (自定义接入向导)) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-12 — Phase 9 execution started
 
 Progress (v1.2): [██████████] 100% (13/13 plans)
@@ -76,6 +76,8 @@ Progress (v1.2): [██████████] 100% (13/13 plans)
 | Phase 09 P09-03 | 44 min | 3 tasks | 13 files |
 | Phase 09 P09-04 | 41 min | 3 tasks | 4 files |
 | Phase 09 P09-05 | 95 min | 3 tasks | 3 files |
+| Phase 09 P09-06 | 91 min | 3 tasks | 6 files |
+
 ## Accumulated Context
 
 ### Decisions
@@ -146,6 +148,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 09]: 09-05: the gauntlet panel drives the service's two PUBLIC per-leg entry points (not the batch reconcile) — per-item progression needs a service call per row flip; reconcile's kind rule is mirrored 1:1
 - [Phase 09]: 09-05: run id increments at launch only; staleness = id mismatch OR phase not gauntlet/drill — esc mid-run abandons the run (late results drop, an abandoned all-pass never lands); the EntryDone event-loop handler is the panel's ONLY write call site (the injected land seam)
 - [Phase 09]: 09-05: imports continue past a failing entry (the others land); every status surface is state-then-DOM (verdicts landing while a drill view holds the DOM survive the return); panel entry rows scroll in a code-bounded region (grid minus chrome) after a probe-confirmed 6-entry clip at 80x24
+- [Phase 09]: 09-06: the w/e seams are an optional SelectionScreen constructor injection (custom_service = CustomOnboardingBackend) — the Phase 8 protocol and fakes stay byte-unchanged; the backend composes the real validator (official keys = merged minus landed customs), observed vocabularies, GauntletService, and the 09-01 store seams, with land/undo firing the refresh worker; WizardModal imports lazily (wizard imports ConfirmModal from selection — the cycle broken at call time)
+- [Phase 09]: 09-06: the management second read honors DNALLMMARK_CUSTOM_REGISTRY_DIR via the additive read_entries(registry_dir=None) param — the overlay-merged view and the management view always describe ONE file (Pitfall 7), and the Phase 8 backend tests stay machine-independent; disabled customs append after the merged entries with custom_status recording the truth
+- [Phase 09]: 09-06: disabled-entry marking is blocked at every mark entry (T-09-13): the spacebar guard refuses with the warning toast AND _deliverable_keys excludes disabled customs from the preset/template key sets so references ride the Phase 8 unknown-key loud skip — a mark the sweep can never see never exists
+- [Phase 09]: 09-06 probe re-encounter: rich Text SPANS cannot carry $token styles (MissingStyle; whole-text styles can) — the badge span resolves the live theme accent at render (the nav.py precedent), the disabled spans and the count segment use rich-native dim
 
 ### Pending Todos
 
@@ -169,8 +175,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T06:42:11.440Z
-Stopped at: Completed 09-05-PLAN.md
+Last session: 2026-10-12T08:27:23.398Z
+Stopped at: Completed 09-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
