@@ -2427,7 +2427,7 @@ def test_committed_artifacts_byte_unchanged_across_real_reconcile_run(
 # REAL reconcile subprocess over a tmp repo.
 # =====================================================================
 
-import io
+import email.message
 import urllib.error
 import zipfile
 
@@ -2615,7 +2615,8 @@ def test_run_task_zenodo_not_public_fails_record_not_public(
     repo = bundle_repo(tmp_path)
     pin_n_audit_missing(monkeypatch, tmp_path)
     fetch = UrlRouter({zenodo_bundle.ZENODO_API_URL: urllib.error.HTTPError(
-        zenodo_bundle.ZENODO_API_URL, 404, "NOT FOUND", None, None)})
+        zenodo_bundle.ZENODO_API_URL, 404, "NOT FOUND",
+        email.message.Message(), None)})
     service, _state = bundle_service(tmp_path, monkeypatch, fetch, repo)
     service.enqueue_zenodo()
     service.claim_next()
@@ -2786,3 +2787,96 @@ def test_run_task_zenodo_nothing_landed_fails(tmp_path, monkeypatch):
     assert event.state == "failed"
     assert "bundle_landed_zero" in event.problems
     assert "landed=0" in event.details
+
+
+# =====================================================================
+# The DL_/QUEUE_ string block + ENV_ROUTE amendment (10-03 Task 3,
+# I18N-01 single home) — the inventory tripwire the 10-04/10-05
+# consumers build against: every constant NAME they reference must
+# exist here, exactly once, in tui/strings.py.
+# =====================================================================
+
+from tui import strings as tui_strings
+
+#: The complete expected DL_ inventory (the screen chrome, the Zenodo
+#: four states + toasts/labels, the keycaps, the derived gap-fillers).
+EXPECTED_DL_CONSTANTS = (
+    "DL_SCREEN_TITLE", "DL_MISSING_TITLE", "DL_MISSING_COL_KEY",
+    "DL_MISSING_COL_ROWS", "DL_MISSING_EMPTY", "DL_PRESENCE_SUMMARY",
+    "DL_ZENODO_PROBING", "DL_ZENODO_NOT_PUBLIC", "DL_ZENODO_PUBLIC",
+    "DL_ZENODO_FAILED", "DL_ZENODO_DISABLED_TOAST",
+    "DL_ZENODO_KEY_LABEL", "DL_BUNDLE_TASK_NAME", "DL_DISABLED_TOAST",
+    "DL_ENQUEUE_LABEL", "DL_RETRY_LABEL", "DL_CANCEL_LABEL",
+    "DL_ENQUEUE_ALL_LABEL",
+)
+
+#: The complete expected QUEUE_ inventory (title/columns/empty, the
+#: five states, reconcile cells, restart note, banner, toasts,
+#: confirms, progress, the g label).
+EXPECTED_QUEUE_CONSTANTS = (
+    "QUEUE_TITLE", "QUEUE_COL_TASK", "QUEUE_COL_STATE",
+    "QUEUE_COL_PROGRESS", "QUEUE_COL_RECONCILE", "QUEUE_EMPTY",
+    "QUEUE_STATE_PENDING", "QUEUE_STATE_DOWNLOADING",
+    "QUEUE_STATE_DONE", "QUEUE_STATE_FAILED", "QUEUE_STATE_MISMATCH",
+    "QUEUE_RECONCILE_PASS", "QUEUE_RECONCILE_RUNNING",
+    "QUEUE_RECONCILE_MISMATCH", "QUEUE_RESTART_NOTE",
+    "QUEUE_BANNER_MISMATCH", "QUEUE_TOAST_ENQUEUED",
+    "QUEUE_TOAST_ENQUEUED_ALL", "QUEUE_TOAST_ALREADY_QUEUED",
+    "QUEUE_FLIP_TOAST", "QUEUE_RETRY_NOOP", "QUEUE_CANCEL_NOOP",
+    "QUEUE_CLI_UNAVAILABLE", "QUEUE_PROGRESS_INDETERMINATE",
+    "QUEUE_CONFIRM_CANCEL_PENDING", "QUEUE_CONFIRM_CANCEL_DOWNLOADING",
+    "QUEUE_REAUDIT_LABEL",
+)
+
+#: The selection-screen d-enqueue amendments (D-14).
+EXPECTED_SEL_CONSTANTS = ("SEL_ENQUEUE_LABEL", "SEL_ENQUEUE_PRESENT_TOAST")
+
+
+def test_dl_and_queue_string_inventory_defined():
+    """The drift tripwire: every DL_/QUEUE_/SEL_ name the 10-04/10-05
+    plans consume exists, non-empty, at module level in tui/strings.py
+    (the I18N-01 single home) — a rename or gap fails HERE, before any
+    screen lands."""
+    for prefix, names in (("DL_", EXPECTED_DL_CONSTANTS),
+                          ("QUEUE_", EXPECTED_QUEUE_CONSTANTS),
+                          ("SEL_", EXPECTED_SEL_CONSTANTS)):
+        for name in names:
+            assert hasattr(tui_strings, name), name
+            value = getattr(tui_strings, name)
+            assert isinstance(value, str) and value, name
+            assert name.startswith(prefix), name
+
+
+def test_queue_state_strings_glyph_first_and_distinct():
+    """The NO_COLOR redundancy contract: each of the five queue states
+    leads with its distinct glyph (◌ ⠋ ✓ ✗ ⚠)."""
+    state_glyphs = [
+        tui_strings.QUEUE_STATE_PENDING[0],
+        tui_strings.QUEUE_STATE_DOWNLOADING[0],
+        tui_strings.QUEUE_STATE_DONE[0],
+        tui_strings.QUEUE_STATE_FAILED[0],
+        tui_strings.QUEUE_STATE_MISMATCH[0],
+    ]
+    assert state_glyphs == ["◌", "⠋", "✓", "✗", "⚠"]
+    assert len(set(state_glyphs)) == 5
+
+
+def test_env_route_amendment_carries_keycap_and_cli_command():
+    """The ENV_ROUTE amendment (UI-SPEC verbatim hint): the [3] keycap
+    segment and the CLI audit command both present, the {n} field
+    preserved (the constant-derived env-check test stays green), and
+    the retired Phase-10-panel note gone."""
+    line = tui_strings.ENV_ROUTE_MISSING_DATASETS
+    assert "[3] 前往数据管理" in line
+    assert "python script/audit_n_frequencies.py" in line
+    assert "{n}" in line
+    assert line[0] == "⚠"
+    assert "Phase 10 提供" not in line
+
+
+def test_bundle_task_name_matches_queue_key_identity():
+    """The bundle row's task label renders the queue identity (the
+    zenodo-19135551 prefix is the shared anchor between strings and
+    the service constant)."""
+    assert tui_strings.DL_BUNDLE_TASK_NAME.startswith(
+        download_queue.ZENODO_BUNDLE_KEY)
