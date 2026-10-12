@@ -890,10 +890,16 @@ class FakePopen:
     def __init__(self, returncode=0, stdout=b"", stderr=b""):
         self.returncode_value = returncode
         self.pid = 424242
-        self.stdout = stdout if hasattr(stdout, "read") \
-            else io.BytesIO(stdout)
-        self.stderr = stderr if hasattr(stderr, "read") \
-            else io.BytesIO(stderr)
+
+        def as_stream(data):
+            if hasattr(data, "read"):
+                return data
+            if isinstance(data, str):
+                data = data.encode("utf-8")
+            return io.BytesIO(data)
+
+        self.stdout = as_stream(stdout)
+        self.stderr = as_stream(stderr)
         self.killed = False
 
     def wait(self, timeout=None):

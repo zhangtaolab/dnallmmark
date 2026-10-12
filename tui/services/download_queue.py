@@ -201,6 +201,108 @@ _MODELSCOPE_HOST = "modelscope.cn"
 #: still admits ``.DS_Store``; harmless but excluded by default).
 EXCLUDE_PATTERNS = ("*.DS_Store",)
 
+# ===== D-03 progress parsing (the live-probed stderr contract) =====
+#
+# stderr carries (1) a two-line pkg_resources deprecation warning to
+# skip when scanning for real errors (Pitfall 5) and (2) tqdm progress
+# with ANSI cursor-up escapes and CR updates because files download in
+# parallel. Parsing is BEST-EFFORT: unparsed output yields percent
+# None and the screen's indeterminate render carries the contract.
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+FILE_PCT_RE = re.compile(r"Downloading \[([^\]]+)\]:\s+(\d+)%")
+ITEMS_PCT_RE = re.compile(r"Processing (\d+) items:\s+(\d+)%")
+
+#: The two stdout markers (clean one-liners, live-probed verbatim).
+START_MARKER = "Downloading Dataset to directory"
+SUCCESS_MARKER = "Successfully Downloaded from dataset"
+
+#: The known pkg_resources noise lines skipped by
+#: ``first_real_error_line`` (the drill-down still shows everything).
+PKG_RESOURCES_NOISE = (
+    "UserWarning: pkg_resources is deprecated",
+    "import pkg_resources",
+)
+
+# ===== Engine problem codes (machine vocabulary) =====
+
+PROBLEM_CLI_UNAVAILABLE = "cli_unavailable"
+PROBLEM_CANCELLED = "cancelled_by_operator"
+PROBLEM_LANDING_INCOMPLETE = "landing_incomplete"
+PROBLEM_RENAME_TARGET_EXISTS = "rename_target_exists"
+PROBLEM_RENAME_ERROR = "rename_error"
+PROBLEM_SUBPROCESS_ERROR = "subprocess_error"
+
+#: The reap loop's wait chunk (re-checked for cancel between chunks —
+#: there is NO artificial total timeout by design: multi-GB legitimate
+#: transfers are normal; operator cancel is the bounded escape,
+#: T-10-01-04).
+REAP_INTERVAL_SECONDS = 5
+#: After SIGTERM, how long to wait before the SIGKILL escalation.
+SIGTERM_GRACE_SECONDS = 10
+#: The reader threads' pipe chunk size.
+READ_CHUNK_BYTES = 4096
+
+#: The landing gate's required split files (the audit kernel's own
+#: split order).
+LANDING_SPLITS = ("train.csv", "dev.csv", "test.csv")
+
+
+def clean_chunk(chunk):
+    """Normalize one stderr chunk: CR -> LF, then strip ANSI escapes.
+
+    Args:
+        chunk (str): the raw decoded chunk.
+
+    Returns:
+        str: the cleaned text (regex-safe for the percent patterns).
+    """
+    return ANSI_RE.sub("", chunk.replace("\r", "\n"))
+
+
+def parse_progress(chunk):
+    """Best-effort percent extraction from one stderr chunk.
+
+    Args:
+        chunk (str): the raw decoded chunk (CR/ANSI-laden is fine).
+
+    Returns:
+        tuple: ``(files, items)`` — ``files`` maps each seen file to
+        its latest INTEGER percent (empty when none parsed); ``items``
+        is the file-count roll-up integer percent or None
+        (indeterminate — the screen contract).
+    """
+    clean = clean_chunk(chunk)
+    files = FILE_PCT_RE.findall(clean)
+    items = ITEMS_PCT_RE.findall(clean)
+    return ({name: int(percent) for name, percent in files}
+            if files else {},
+            int(items[-1][1]) if items else None)
+
+
+def first_real_error_line(text):
+    """The first non-noise line of a captured stream (the failure
+    summary scan; the drill-down still shows everything, D-03).
+
+    Skips the two known pkg_resources warning lines the CLI emits at
+    boot (Pitfall 5) and blank lines.
+
+    Args:
+        text (str): the captured stream text.
+
+    Returns:
+        str | None: the first real line, or None when only noise.
+    """
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if any(line.startswith(prefix)
+               for prefix in PKG_RESOURCES_NOISE):
+            continue
+        return line
+    return None
+
 
 @dataclass(frozen=True)
 class QueueEntry:
@@ -292,6 +394,35 @@ class MissingInfo:
     channel: str
     reason_code: str | None
     source_url: str | None
+
+
+@dataclass(frozen=True)
+class QueueEvent:
+    """One task-run outcome (the WR-02 run-id-tagged event the future
+    screen consumes; DATA, never copy).
+
+    Attributes:
+        run_id: the caller's run tag, echoed verbatim.
+        key: the dataset registry key.
+        kind: the entry kind (``KIND_DATASET`` this plan).
+        state: the entry's persisted end state.
+        last_percent: the last parsed integer percent (None when
+            nothing parsed — indeterminate, the screen contract).
+        problems: machine problem codes (empty on done).
+        details: structured data tokens (``exit_code=0``,
+            ``success_marker=true``, ``missing=<relpath>`` ...).
+        log_path: the verbatim log file path relative to the state
+            root, or None when no log could be written.
+    """
+
+    run_id: str
+    key: str
+    kind: str
+    state: str
+    last_percent: int | None
+    problems: tuple[str, ...]
+    details: tuple[str, ...]
+    log_path: str | None
 
 
 def _default_spawner(argv, **kwargs):
@@ -417,6 +548,32 @@ def _repo_id_from_url(url):
     path = urlparse(url).path
     segment = path.split("/datasets/")[-1].strip("/")
     return segment or None
+
+
+def _sanitize_key(key):
+    """The repo filename convention: path separators -> underscores."""
+    return key.replace("/", "_").replace("\\", "_")
+
+
+def _pump(stream, on_chunk):
+    """Drain one pipe to EOF on the calling (daemon) thread.
+
+    Decodes each chunk with ``errors="replace"`` — the capture stays
+    verbatim-ish for the log while a mid-character chunk boundary can
+    never crash the reader (best-effort by contract).
+
+    Args:
+        stream: a binary pipe with ``read(n)`` (Popen PIPE or a fake).
+        on_chunk: callable(str) invoked per decoded chunk.
+    """
+    try:
+        while True:
+            chunk = stream.read(READ_CHUNK_BYTES)
+            if not chunk:
+                break
+            on_chunk(chunk.decode("utf-8", errors="replace"))
+    except (OSError, ValueError):
+        pass    # the pipe died with the process; the reap owns the rest
 
 
 def _signal_group(proc, sig):
@@ -795,6 +952,267 @@ class DownloadQueueService:
                 self._persist_locked()
                 return _frozen(entry)
             return None
+
+    # ===== The execution engine (Task 3: spawn/stream/reap/cancel) =====
+
+    def run_task(self, key, run_id, progress_cb=None):
+        """Execute one claimed task end-to-end; NEVER raises.
+
+        Re-probes the CLI (absent -> failed ``cli_unavailable``),
+        resolves the channel (degraded -> failed with the reason),
+        composes the argv, spawns through the injectable seam with
+        ``start_new_session=True`` and PIPEs and an env that is exactly
+        ``dict(os.environ)``, streams stderr through the best-effort
+        parser (``progress_cb(key, percent)`` at most once per
+        integer-percent change; None percent = indeterminate), reaps
+        in cancel-aware chunks, then classifies: nonzero exit ->
+        failed (``cancelled_by_operator`` when the flag is set, else
+        ``exit_<code>``); exit 0 -> the Pitfall-3 landing gate (shape-C
+        rename first, then all three split CSVs must exist) -> done or
+        failed ``landing_incomplete``. The verbatim stdout+stderr lands
+        in ``logs/<sanitized-key>.log`` under the state root (D-03).
+
+        Args:
+            key (str): the claimed dataset registry key.
+            run_id (str): the caller's run tag (echoed on the event).
+            progress_cb: optional ``callable(key, percent)`` fired from
+                the stderr reader thread.
+
+        Returns:
+            QueueEvent: the structured outcome (state persisted).
+        """
+        cli = resolve_modelscope_cli(self._cli_path)
+        if cli is None:
+            return self._finish(
+                key, run_id, "failed", None,
+                (PROBLEM_CLI_UNAVAILABLE,), ("cli=missing",),
+                argv=None, returncode=None)
+        spec = self.resolve_channel(key)
+        reason = spec.reason_code if spec is not None else "unknown_key"
+        if spec is None or reason is not None:
+            return self._finish(
+                key, run_id, "failed", None, (reason,),
+                ("channel_reason=" + reason,), argv=None,
+                returncode=None)
+        argv = compose_download_argv(spec, cli)
+        if argv is None:
+            return self._finish(
+                key, run_id, "failed", None, (reason,),
+                ("channel_reason=" + reason,), argv=None,
+                returncode=None)
+        try:
+            proc = self._spawner(
+                argv, env=dict(os.environ), start_new_session=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except Exception as exc:  # noqa: BLE001 — the service boundary
+            # (the _invoke discipline): ANY launch failure yields a
+            # failed event, never an exception crossing to the worker.
+            return self._finish(
+                key, run_id, "failed", None,
+                (PROBLEM_SUBPROCESS_ERROR,), (repr(exc),),
+                argv=argv, returncode=None)
+        with self._lock:
+            self._active[key] = proc
+        stdout_parts: list[str] = []
+        stderr_parts: list[str] = []
+        percent_state = {"last_fired": None}
+
+        def on_stdout(text):
+            stdout_parts.append(text)
+
+        def on_stderr(text):
+            stderr_parts.append(text)
+            if progress_cb is None:
+                return
+            files, items = parse_progress(text)
+            percent = items
+            if percent is None and files:
+                percent = next(reversed(files.values()))
+            if percent is None or percent == percent_state["last_fired"]:
+                return
+            percent_state["last_fired"] = percent
+            progress_cb(key, percent)
+
+        out_thread = threading.Thread(
+            target=_pump, args=(proc.stdout, on_stdout), daemon=True)
+        err_thread = threading.Thread(
+            target=_pump, args=(proc.stderr, on_stderr), daemon=True)
+        out_thread.start()
+        err_thread.start()
+        returncode = self._reap(proc, key)
+        out_thread.join(timeout=5)
+        err_thread.join(timeout=5)
+        with self._lock:
+            self._active.pop(key, None)
+        stdout_text = "".join(stdout_parts)
+        stderr_text = "".join(stderr_parts)
+        details = [
+            "exit_code=" + str(returncode),
+            "start_marker=" + str(START_MARKER in stdout_text).lower(),
+            "success_marker="
+            + str(SUCCESS_MARKER in stdout_text).lower(),
+        ]
+        if returncode != 0:
+            problem = (PROBLEM_CANCELLED
+                       if key in self._cancel_requested
+                       else "exit_" + str(returncode))
+            return self._finish(
+                key, run_id, "failed", percent_state["last_fired"],
+                (problem,), tuple(details), stdout_text, stderr_text,
+                argv=argv, returncode=returncode)
+        landing_problem, landing_details = self._landing_details(spec)
+        details.extend(landing_details)
+        if landing_problem is not None:
+            return self._finish(
+                key, run_id, "failed", percent_state["last_fired"],
+                (landing_problem,), tuple(details), stdout_text,
+                stderr_text, argv=argv, returncode=returncode)
+        return self._finish(
+            key, run_id, "done", percent_state["last_fired"], (),
+            tuple(details), stdout_text, stderr_text, argv=argv,
+            returncode=returncode)
+
+    def _reap(self, proc, key):
+        """Reap one owned process in cancel-aware chunks (Pitfall 1).
+
+        No artificial total timeout (T-10-01-04): waits in
+        ``REAP_INTERVAL_SECONDS`` chunks, re-checking the
+        cancel-requested flag; once cancel is seen, waits the SIGTERM
+        grace window then escalates to SIGKILL on the WHOLE group.
+        """
+        while True:
+            try:
+                return proc.wait(timeout=REAP_INTERVAL_SECONDS)
+            except subprocess.TimeoutExpired:
+                if key not in self._cancel_requested:
+                    continue
+                try:
+                    return proc.wait(timeout=SIGTERM_GRACE_SECONDS)
+                except subprocess.TimeoutExpired:
+                    _signal_group(proc, signal.SIGKILL)
+                    return proc.wait()
+
+    def _landing_details(self, spec):
+        """Run the shape-C rename then the Pitfall-3 landing gate.
+
+        Returns:
+            tuple[str | None, list[str]]: ``(problem, details)`` — the
+            problem code when the landing failed (None on success),
+            plus the data tokens (rename outcome, landing=ok or the
+            missing relative paths).
+        """
+        details = []
+        if spec.rename is not None:
+            applied = self._apply_rename(spec, details)
+            if applied is not None:
+                return applied, details
+        datasets_root = self._pipeline_dir / "datasets"
+        if spec.shape == "B":
+            landing_dir = spec.local_dir
+        else:
+            landing_dir = spec.local_dir / spec.final_task_dir
+        missing = []
+        try:
+            relative = landing_dir.relative_to(datasets_root)
+        except ValueError:
+            relative = Path(landing_dir.name)
+        for split in LANDING_SPLITS:
+            if not (landing_dir / split).is_file():
+                missing.append(str(relative / split))
+        if missing:
+            details.extend("missing=" + rel for rel in missing)
+            return PROBLEM_LANDING_INCOMPLETE, details
+        details.append("landing=ok")
+        return None, details
+
+    def _apply_rename(self, spec, details):
+        """The shape-C post-landing rename (the four explicit cases).
+
+        Returns:
+            str | None: a problem code when the rename must fail
+            (``rename_target_exists`` / ``rename_error``); None when
+            applied, skipped (target already complete), or fallen
+            through (source absent — the landing check names the
+            missing files).
+        """
+        datasets_root = self._pipeline_dir / "datasets"
+        source = datasets_root / spec.rename[0]
+        target = datasets_root / spec.rename[1]
+        if target.exists():
+            if self._missing_splits(target):
+                if source.exists():
+                    # operator data is NEVER overwritten
+                    return PROBLEM_RENAME_TARGET_EXISTS
+                details.append("rename=skip_source_absent")
+                return None
+            details.append("rename=skip_target_complete")
+            return None
+        if not source.exists():
+            details.append("rename=skip_source_absent")
+            return None
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.rename(source, target)
+        except OSError as exc:
+            details.append("rename_error=" + repr(exc))
+            return PROBLEM_RENAME_ERROR
+        details.append("rename=applied")
+        return None
+
+    @staticmethod
+    def _missing_splits(task_dir):
+        """The split files missing under one task dir (empty = all)."""
+        return [split for split in LANDING_SPLITS
+                if not (task_dir / split).is_file()]
+
+    def _finish(self, key, run_id, state, percent, problems, details,
+                stdout_text="", stderr_text="", argv=None,
+                returncode=None):
+        """Persist one terminal transition + write the verbatim log +
+        emit the event (the single exit path for every outcome)."""
+        log_rel = self._write_log(key, stdout_text, stderr_text, argv,
+                                  returncode)
+        kind = KIND_DATASET
+        with self._lock:
+            for entry in self._entries:
+                if entry["key"] != key:
+                    continue
+                entry["state"] = state
+                entry["finished_at"] = _now_iso()
+                entry["last_percent"] = percent
+                entry["problems"] = list(problems)
+                entry["log_path"] = log_rel
+                kind = entry["kind"]
+                self._persist_locked()
+                break
+        self._cancel_requested.discard(key)
+        return QueueEvent(
+            run_id=run_id, key=key, kind=kind, state=state,
+            last_percent=percent, problems=tuple(problems),
+            details=tuple(details), log_path=log_rel)
+
+    def _write_log(self, key, stdout_text, stderr_text, argv,
+                   returncode):
+        """Write the verbatim capture to ``logs/<sanitized-key>.log``
+        under the state root (D-03 drill-down content).
+
+        Returns:
+            str | None: the log path relative to the state root, or
+            None when the write itself failed (never a crash).
+        """
+        name = _sanitize_key(key) + ".log"
+        argv_lines = "\n".join(argv) if argv is not None else "(none)"
+        text = ("[argv]\n" + argv_lines
+                + "\n[exit] " + ("-" if returncode is None
+                                 else str(returncode))
+                + "\n[stdout]\n" + stdout_text
+                + "\n[stderr]\n" + stderr_text)
+        try:
+            settings.atomic_write(
+                self._state_path.parent / LOG_DIR_NAME / name, text)
+        except OSError:
+            return None
+        return LOG_DIR_NAME + "/" + name
 
     # ===== Missing-set derivation (the D-13 input) =====
 
