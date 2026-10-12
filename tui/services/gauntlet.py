@@ -71,6 +71,7 @@ import registry_loader  # top-level module (pipeline/ sys.path root)
 
 from tui.services import settings
 from tui.services.custom_entries import (
+    KIND_DATASETS,
     KIND_FILE_NAMES,
     KIND_MODELS,
     read_entries,
@@ -100,6 +101,15 @@ CUSTOM_DIR_ENV = "DNALLMMARK_CUSTOM_REGISTRY_DIR"
 #: both, n_audit being dataset-only by design).
 LEG_DRY_RUN = "dry_run"
 LEG_AUDIT = "audit"
+
+#: The audit kernel's own split order (``SPLIT_ORDER`` in the script)
+#: and the declared-count field each split reconciles against.
+_AUDIT_SPLIT_ORDER = ("train", "dev", "test")
+_DECLARED_SPLIT_FIELDS = (
+    ("train", "Train"),
+    ("dev", "Dev"),
+    ("test", "Test"),
+)
 
 #: The injectable subprocess seam's type: called as
 #: ``runner(argv, capture_output=True, text=True, timeout=..., env=...)``
@@ -298,7 +308,140 @@ class GauntletService:
             have rows > 0, unified_eval_n > 0, and declared == measured
             per split; non-ACGT census values ride the details as data.
         """
-        raise NotImplementedError("D-07 audit leg lands in 09-02 Task 3")
+        with tempfile.TemporaryDirectory(
+                prefix="dnallmmark-gauntlet-") as tmp:
+            tmp_path = Path(tmp)
+            registry_dir = tmp_path / "regdir"
+            registry_dir.mkdir()
+            audit_out = tmp_path / "audit-out"
+            audit_out.mkdir()
+            empty_overlay = tmp_path / "empty-overlay"
+            empty_overlay.mkdir()
+            datasets_root = tmp_path / "datasets-root"
+            datasets_root.mkdir()
+            staged_entry = _as_entry(entry)
+            # Pitfall 3: the LANDED Dataset_path is pipeline-relative;
+            # the audit's resolve_dataset_dir joins against
+            # --datasets-root one level differently than the trainer's
+            # string concat, so the staged copy carries the ABSOLUTE
+            # form (a pathlib absolute join replaces the root — the
+            # join against datasets_root is deliberately inert).
+            raw_path = staged_entry.get("Dataset_path")
+            if isinstance(raw_path, str) and raw_path:
+                staged_entry["Dataset_path"] = str(
+                    (self._pipeline_dir / raw_path).resolve())
+            (registry_dir / registry_loader.DATASETS_INFO_NAME).write_text(
+                json.dumps({candidate_key: staged_entry}, indent=4,
+                           ensure_ascii=False),
+                encoding="utf-8")
+            argv = [sys.executable,
+                    str(self._repo_root / "script" / AUDIT_SCRIPT_NAME),
+                    "--registry-dir", str(registry_dir),
+                    "--datasets-root", str(datasets_root),
+                    "--data-dir", str(audit_out),
+                    "--subsets-out", str(audit_out / "eval_subsets.json"),
+                    "--data-md", str(audit_out / "DATA.md")]
+            env = dict(os.environ)
+            env[CUSTOM_DIR_ENV] = str(empty_overlay)   # Pitfall 2
+            proc, launch_failure = self._invoke(
+                argv, env, self._timeout_audit)
+            if launch_failure is not None:
+                return self._failed_item(
+                    run_id, KIND_DATASETS, LEG_AUDIT, candidate_key,
+                    launch_failure)
+            raw = (proc.stdout or "") + (proc.stderr or "")
+            if proc.returncode != 0:
+                return self._failed_item(
+                    run_id, KIND_DATASETS, LEG_AUDIT, candidate_key,
+                    ("exit_nonzero",
+                     "exit_code=" + str(proc.returncode)),
+                    raw_output=raw)
+            audit = artifact_loader.load_json_artifact(
+                audit_out / N_AUDIT_NAME)
+            if audit is None:
+                return self._failed_item(
+                    run_id, KIND_DATASETS, LEG_AUDIT, candidate_key,
+                    ("n_audit_unreadable",), raw_output=raw)
+            record = None
+            if isinstance(audit, dict):
+                tasks = audit.get("tasks")
+                if isinstance(tasks, dict):
+                    maybe = tasks.get(candidate_key)
+                    if isinstance(maybe, dict):
+                        record = maybe
+            if record is None:
+                return self._failed_item(
+                    run_id, KIND_DATASETS, LEG_AUDIT, candidate_key,
+                    ("candidate_absent_from_n_audit",), raw_output=raw)
+            return self._audit_verdict(
+                run_id, candidate_key, record, declared_splits, raw)
+
+    def _audit_verdict(self, run_id, candidate_key, record,
+                       declared_splits, raw):
+        """Turn one parsed n_audit.json task record into an item.
+
+        Pass criteria (D-07, all from the parsed artifact — the audit
+        subprocess owns every benchmark semantic): ``missing`` false;
+        train/dev/test each present with rows > 0; ``unified_eval_n`` >
+        0 (subset survival); and the declared ``Train``/``Dev``/``Test``
+        ints equal the measured rows per split (the reconciliation). The
+        non-ACGT census and survivor counts ride the details as DATA —
+        never failure conditions.
+
+        Args:
+            run_id (str): the caller's run tag.
+            candidate_key (str): the candidate dataset key.
+            record (dict): the parsed ``tasks.{key}`` record.
+            declared_splits (dict | None): declared split counts keyed
+                by the official field names (``None`` skips the
+                reconciliation's declared side).
+            raw (str): the verbatim subprocess output.
+
+        Returns:
+            GauntletItem: the audit-leg verdict.
+        """
+        problems = []
+        data = []
+        if record.get("missing") is not False:
+            problems.append("missing=true")
+        splits = record.get("splits")
+        splits = splits if isinstance(splits, dict) else {}
+        measured = {}
+        for split in _AUDIT_SPLIT_ORDER:
+            stats = splits.get(split)
+            stats = stats if isinstance(stats, dict) else {}
+            rows = stats.get("rows")
+            if not isinstance(rows, int) or isinstance(rows, bool) \
+                    or rows <= 0:
+                problems.append(split + "_rows=" + repr(rows))
+            else:
+                measured[split] = rows
+                data.append(split + "_rows=" + str(rows))
+                data.append(split + "_non_acgt_chars="
+                            + str(stats.get("non_acgt_chars")))
+                data.append(split + "_strict_survivors="
+                            + str(stats.get("strict_survivors")))
+                data.append(split + "_n_tolerant_survivors="
+                            + str(stats.get("n_tolerant_survivors")))
+        unified = record.get("unified_eval_n")
+        if not isinstance(unified, int) or isinstance(unified, bool) \
+                or unified <= 0:
+            problems.append("unified_eval_n=" + repr(unified))
+        else:
+            data.append("unified_eval_n=" + str(unified))
+        for split, field in _DECLARED_SPLIT_FIELDS:
+            declared = (declared_splits or {}).get(field)
+            if declared is None or split not in measured:
+                continue    # absent declaration is legal; missing splits
+                            # already carry their own rows problem
+            if declared != measured[split]:
+                problems.append(
+                    field + "_mismatch_declared=" + str(declared)
+                    + "_measured=" + str(measured[split]))
+        return GauntletItem(
+            run_id=run_id, kind=KIND_DATASETS, leg=LEG_AUDIT,
+            name=candidate_key, ok=not problems,
+            details=tuple(problems) + tuple(data), raw_output=raw)
 
     def reconcile(self, kind, candidate_key, entry, run_id,
                   declared_splits=None):
@@ -321,7 +464,11 @@ class GauntletService:
             list[GauntletItem]: one (models) or two (datasets) items in
             execution order, all carrying ``run_id``.
         """
-        raise NotImplementedError("reconcile lands in 09-02 Task 3")
+        items = [self.dry_run_precheck(kind, candidate_key, entry, run_id)]
+        if kind == KIND_DATASETS:
+            items.append(self.audit_reconciliation(
+                candidate_key, entry, declared_splits, run_id))
+        return items
 
     # ===== Shared internals =====
 
