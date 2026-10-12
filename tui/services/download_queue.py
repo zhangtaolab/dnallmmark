@@ -1562,6 +1562,23 @@ class DownloadQueueService:
 
     # ===== The DATA-04 zenodo bundle branch (10-03, D-12) =====
 
+    # ===== The D-12 publication probe through this service (10-06) =====
+
+    def probe_zenodo(self):
+        """The D-12 publication probe through the service's fetch seam.
+
+        The data-manager Backend probes THROUGH the queue when it
+        carries this method (the shared-seam rule): routing the real
+        adapter's probe here means the constructor's ``zenodo_fetch``
+        injection governs it exactly like the bundle lane — the whole
+        queue surface is offline-testable by construction, and the
+        probe state stays session-memory only (D-12, zero persistence).
+
+        Returns:
+            str: ``public`` / ``not_public`` / ``failed``.
+        """
+        return zenodo_bundle.probe_zenodo_public(opener=self._zenodo_fetch)
+
     def _entry_kind(self, key):
         """The persisted kind of one entry (dataset when absent)."""
         with self._lock:

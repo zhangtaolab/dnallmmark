@@ -338,8 +338,10 @@ class DataManagerBackend:
         self._queue.load()
         diagnostic_getter = getattr(
             self._queue, "last_load_diagnostic", None)
-        diagnostic = (str(diagnostic_getter())
-                      if diagnostic_getter is not None else None)
+        diagnostic_value = (diagnostic_getter()
+                            if diagnostic_getter is not None else None)
+        diagnostic = (str(diagnostic_value)
+                      if diagnostic_value is not None else None)
         rows = self._queue.missing_datasets()
         audit = registries.load_n_audit()
         if audit is None:
@@ -385,7 +387,9 @@ class DataManagerBackend:
 
     def probe_zenodo(self) -> str:
         """The D-12 probe — through the queue when it carries one (the
-        injected fakes stay deterministic), else the real frozen-URL GET."""
+        real service's ``probe_zenodo`` routes its ``zenodo_fetch``
+        seam, and the Pilot fakes stay deterministic), else the real
+        frozen-URL GET (queues without the method)."""
         queue_probe = getattr(self._queue, "probe_zenodo", None)
         if queue_probe is not None:
             return str(queue_probe())
