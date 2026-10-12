@@ -27,9 +27,12 @@ See also:
 """
 
 import inspect
+import io
+import json
 import re
 import time
 import urllib.error
+import zipfile
 from pathlib import Path
 
 from tui.services import zenodo_bundle
@@ -44,17 +47,26 @@ NOT_REGISTERED_BODY = (
 
 
 class FakeResponse:
-    """A urlopen-shaped context manager (``.status`` + chunked ``read``)."""
+    """A urlopen-shaped context manager (``.status`` + ``.read``).
+
+    ``read`` honours the chunk-size argument with a cursor so the
+    streamed-download tests can pin the 64 KiB chunking contract.
+    """
 
     def __init__(self, status=200, payload=b""):
         self.status = status
         self._payload = payload
+        self._offset = 0
         self.read_calls = []
 
     def read(self, size=-1):
         self.read_calls.append(size)
-        payload, self._consumed = self._payload, True
-        return payload
+        if size is None or size < 0:
+            chunk = self._payload[self._offset:]
+        else:
+            chunk = self._payload[self._offset:self._offset + size]
+        self._offset += len(chunk)
+        return chunk
 
     def __enter__(self):
         return self
@@ -64,16 +76,19 @@ class FakeResponse:
 
 
 def recording_opener(response=None, exc=None):
-    """An opener fake recording ``(url, timeout)`` per call."""
+    """An opener fake recording ``(url, timeout)`` per call (the last
+    response is exposed for read-pattern assertions)."""
     calls = []
 
     def opener(url, timeout=None):
         calls.append({"url": url, "timeout": timeout})
         if exc is not None:
             raise exc
+        opener.last_response = response
         return response
 
     opener.calls = calls
+    opener.last_response = None
     return opener
 
 
@@ -220,3 +235,219 @@ def test_service_module_never_composes_or_heads_the_probe_url():
     assert "method=\"HEAD\"" not in source
     assert "method='HEAD'" not in source
     assert ".head(" not in source
+
+
+# =====================================================================
+# Task 2: the bundle driver (parse / download / extract) — offline
+# through the injected seams; the queue-integration lane lives in
+# test_services_download_queue.py (it needs the service + tmp repo).
+# =====================================================================
+
+#: A realistic Zenodo file URL (the links.self shape) for fixtures.
+ZIP_FILE_URL = (
+    "https://zenodo.org/api/records/19135551/files/Demo.zip/content")
+README_FILE_URL = (
+    "https://zenodo.org/api/records/19135551/files/README.md/content")
+
+
+def record_doc():
+    """The fixture record: BOTH documented spellings present in
+    different entries (A4 — the parser must accept either), plus three
+    non-conforming shapes that are skipped."""
+    return {
+        "files": [
+            # spelling 1: name from `key`, url from links.self
+            {"key": "Demo.zip", "size": 4096,
+             "links": {"self": ZIP_FILE_URL}},
+            # spelling 2: name from `filename`, url from links.download
+            {"filename": "README.md", "size": 12,
+             "links": {"download": README_FILE_URL}},
+            {"size": 5, "links": {"self": README_FILE_URL}},  # no name
+            {"key": "no-url.bin"},                          # no url
+            "not-a-dict",                                   # not a dict
+        ],
+    }
+
+
+def build_zip_bytes(members):
+    """Build one real zip archive in memory: ``{name: text}``."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, text in members.items():
+            archive.writestr(name, text)
+    return buffer.getvalue()
+
+
+def test_fetch_record_json_parses_the_document():
+    payload = json.dumps(record_doc()).encode("utf-8")
+    fetch = recording_opener(response=FakeResponse(200, payload))
+
+    record, error = zenodo_bundle.fetch_record_json(fetch=fetch)
+
+    assert error is None
+    assert record["files"][0]["key"] == "Demo.zip"
+    assert fetch.calls[0]["url"] == zenodo_bundle.ZENODO_API_URL
+
+
+def test_fetch_record_json_non_object_json_is_a_failure():
+    fetch = recording_opener(response=FakeResponse(200, b"[1, 2, 3]"))
+
+    record, error = zenodo_bundle.fetch_record_json(fetch=fetch)
+
+    assert record is None
+    assert error
+
+
+def test_fetch_record_json_absorbs_network_failure():
+    fetch = recording_opener(
+        exc=urllib.error.URLError("connection reset"))
+
+    record, error = zenodo_bundle.fetch_record_json(fetch=fetch)
+
+    assert record is None
+    assert "URLError" in error
+
+
+def test_parse_record_files_accepts_both_spellings_and_skips_junk():
+    files = zenodo_bundle.parse_record_files(record_doc())
+
+    assert files == (
+        zenodo_bundle.BundleFile(
+            name="Demo.zip", url=ZIP_FILE_URL, size=4096),
+        zenodo_bundle.BundleFile(
+            name="README.md", url=README_FILE_URL, size=12),
+    )
+
+
+def test_parse_record_files_zero_conforming_yields_empty():
+    """The explicit unreadable outcome the caller turns into a failed
+    run — never a guess, never a hardcoded list (T-10-03-02)."""
+    assert zenodo_bundle.parse_record_files({"files": []}) == ()
+    assert zenodo_bundle.parse_record_files({}) == ()
+    assert zenodo_bundle.parse_record_files(
+        {"files": [{"nonsense": True}]}) == ()
+    assert zenodo_bundle.parse_record_files(None) == ()
+    assert zenodo_bundle.parse_record_files(
+        {"files": "not-a-list"}) == ()
+
+
+def test_download_bundle_files_streams_in_64k_chunks(tmp_path):
+    payload = b"x" * (zenodo_bundle.DOWNLOAD_CHUNK_BYTES + 100)
+    fetch = recording_opener(response=FakeResponse(200, payload))
+    staging = tmp_path / "staging"
+
+    downloaded, failures = zenodo_bundle.download_bundle_files(
+        (zenodo_bundle.BundleFile(
+            name="Demo.zip", url=ZIP_FILE_URL, size=len(payload)),),
+        staging, fetch=fetch)
+
+    assert failures == []
+    assert downloaded == [staging / "Demo.zip"]
+    assert (staging / "Demo.zip").read_bytes() == payload
+    # the streaming contract: bounded 64 KiB reads, not one blob read
+    assert fetch.last_response.read_calls[:2] == [
+        zenodo_bundle.DOWNLOAD_CHUNK_BYTES,
+        zenodo_bundle.DOWNLOAD_CHUNK_BYTES]
+
+
+def test_download_bundle_files_collects_per_file_failures(tmp_path):
+    """A mid-download network failure is collected verbatim and the run
+    continues — the CALLER (queue branch) fails the whole task (no
+    byte-resume machinery in this lane by design)."""
+    state = {"n": 0}
+
+    def fetch(url, timeout=None):
+        state["n"] += 1
+        if state["n"] == 1:
+            return FakeResponse(200, b"good bytes")
+        raise urllib.error.URLError("connection reset mid-file")
+
+    staging = tmp_path / "staging"
+    files = (
+        zenodo_bundle.BundleFile(name="a.zip", url=ZIP_FILE_URL,
+                                 size=None),
+        zenodo_bundle.BundleFile(name="b.zip", url=README_FILE_URL,
+                                 size=None),
+    )
+
+    downloaded, failures = zenodo_bundle.download_bundle_files(
+        files, staging, fetch=fetch)
+
+    assert [path.name for path in downloaded] == ["a.zip"]
+    assert len(failures) == 1
+    assert failures[0].startswith("b.zip:")
+    assert "connection reset mid-file" in failures[0]
+
+
+def test_download_bundle_files_refuses_traversal_names(tmp_path):
+    """A record-sourced name carrying separators never writes outside
+    the staging dir (the download-side zip-slip class)."""
+    fetch = recording_opener(response=FakeResponse(200, b"evil"))
+    staging = tmp_path / "staging"
+
+    downloaded, failures = zenodo_bundle.download_bundle_files(
+        (zenodo_bundle.BundleFile(
+            name="../escape.zip", url=ZIP_FILE_URL, size=None),),
+        staging, fetch=fetch)
+
+    assert downloaded == []
+    assert failures == ["../escape.zip:unsafe_staging_name"]
+    assert list(staging.iterdir()) == []
+
+
+def test_extract_bundle_archives_lands_the_tree_under_root(tmp_path):
+    zip_path = tmp_path / "Demo.zip"
+    zip_path.write_bytes(build_zip_bytes({
+        "Demo/task/train.csv": "sequence,label\nACGT,0\n",
+        "Demo/task/dev.csv": "sequence,label\nACGT,0\n",
+        "Demo/task/test.csv": "sequence,label\nACGT,0\n",
+    }))
+    datasets_root = tmp_path / "datasets"
+
+    extracted, problems = zenodo_bundle.extract_bundle_archives(
+        [zip_path], datasets_root)
+
+    assert (extracted, problems) == (3, [])
+    assert (datasets_root / "Demo" / "task" / "train.csv").is_file()
+    assert (datasets_root / "Demo" / "task" / "dev.csv").is_file()
+    assert (datasets_root / "Demo" / "task" / "test.csv").is_file()
+
+
+def test_extract_bundle_archives_zip_slip_guard_skips_traversal(
+        tmp_path):
+    """T-10-03-01 pin: a ``../`` member is skipped with a problem and
+    NOTHING is written outside the datasets root."""
+    zip_path = tmp_path / "slip.zip"
+    zip_path.write_bytes(build_zip_bytes({
+        "Demo/task/train.csv": "sequence,label\nACGT,0\n",
+        "../evil.txt": "pwned",
+        "/absolute-evil.txt": "pwned",
+    }))
+    datasets_root = tmp_path / "datasets"
+
+    extracted, problems = zenodo_bundle.extract_bundle_archives(
+        [zip_path], datasets_root)
+
+    assert extracted == 1
+    assert "zip_slip_skipped=../evil.txt" in problems
+    assert "zip_slip_skipped=/absolute-evil.txt" in problems
+    assert not (tmp_path / "evil.txt").exists()
+    assert not Path("/absolute-evil.txt").exists()
+    assert (datasets_root / "Demo" / "task" / "train.csv").is_file()
+
+
+def test_extract_bundle_archives_ignores_non_zip_and_reports_corrupt(
+        tmp_path):
+    readme = tmp_path / "README.md"
+    readme.write_text("not a zip", encoding="utf-8")
+    corrupt = tmp_path / "corrupt.zip"
+    corrupt.write_bytes(b"PK\x03\x04 definitely not a real archive")
+    datasets_root = tmp_path / "datasets"
+
+    extracted, problems = zenodo_bundle.extract_bundle_archives(
+        [readme, corrupt], datasets_root)
+
+    assert extracted == 0
+    assert len(problems) == 1
+    assert problems[0].startswith("corrupt.zip:")
+    assert not list(datasets_root.rglob("*"))

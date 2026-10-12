@@ -2418,3 +2418,371 @@ def test_committed_artifacts_byte_unchanged_across_real_reconcile_run(
     assert entry.reconcile["measured"] == {"train": 4, "dev": 2,
                                            "test": 2}
     assert artifact_hashes() == before     # all four byte-unchanged
+
+
+# =====================================================================
+# The DATA-04 zenodo-kind queue lane (10-03 Task 2) — fully offline:
+# a URL-router fetch seam (probe + record + file downloads), a fixture
+# record, and a locally-built zip through the REAL extraction and the
+# REAL reconcile subprocess over a tmp repo.
+# =====================================================================
+
+import io
+import urllib.error
+import zipfile
+
+from tui.services import zenodo_bundle
+
+#: A realistic Zenodo file URL (the links.self spelling) for fixtures.
+BUNDLE_ZIP_URL = (
+    "https://zenodo.org/api/records/19135551/files/Demo.zip/content")
+
+
+def test_zenodo_kind_and_queue_key_constants_pinned():
+    """The bundle entry's kind + queue identity (the only Zenodo string
+    constants in the source beside the record id/URL)."""
+    assert download_queue.KIND_ZENODO_BUNDLE == "zenodo_bundle"
+    assert download_queue.ZENODO_BUNDLE_KEY == "zenodo-19135551"
+
+
+def test_enqueue_zenodo_appends_without_any_cli(tmp_path, monkeypatch):
+    """The bundle lane is stdlib HTTP — enqueue succeeds on a machine
+    with NO modelscope CLI (the dataset lane's probed unavailable state
+    does not apply here)."""
+    force_cli_absent(monkeypatch, tmp_path)
+    state = pin_state_dir(monkeypatch, tmp_path)
+    service = download_queue.DownloadQueueService()
+
+    outcome = service.enqueue_zenodo()
+
+    assert outcome.action == "enqueued"
+    assert outcome.key == download_queue.ZENODO_BUNDLE_KEY
+    (entry,) = service.entries()
+    assert entry.kind == download_queue.KIND_ZENODO_BUNDLE
+    assert entry.key == download_queue.ZENODO_BUNDLE_KEY
+    assert entry.state == "pending"
+    assert state_file(state).is_file()          # persisted immediately
+
+
+def test_enqueue_zenodo_dedupes_like_any_enqueue(tmp_path, monkeypatch):
+    make_service(tmp_path, monkeypatch)
+    service = download_queue.DownloadQueueService()
+
+    first = service.enqueue_zenodo()
+    second = service.enqueue_zenodo()
+
+    assert first.action == "enqueued"
+    assert second.action == "already_queued"
+    assert len(service.entries()) == 1
+
+
+def test_claim_next_treats_the_bundle_entry_like_any_pending(
+        tmp_path, monkeypatch):
+    make_service(tmp_path, monkeypatch)
+    service = download_queue.DownloadQueueService()
+    service.enqueue_zenodo()
+
+    claimed = service.claim_next()
+
+    assert claimed is not None
+    assert claimed.key == download_queue.ZENODO_BUNDLE_KEY
+    assert claimed.kind == download_queue.KIND_ZENODO_BUNDLE
+    assert claimed.state == "downloading"
+
+
+class FakeUrlResponse:
+    """A urlopen-shaped context manager for the router seam."""
+
+    def __init__(self, status=200, payload=b""):
+        self.status = status
+        self._payload = payload
+
+    def read(self, size=-1):
+        payload, self._payload = self._payload, b""
+        return payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class UrlRouter:
+    """The offline zenodo seam: ``url -> response | exception``."""
+
+    def __init__(self, table):
+        self.table = table
+        self.calls = []
+
+    def __call__(self, url, timeout=None):
+        self.calls.append(url)
+        entry = self.table[url]
+        if isinstance(entry, Exception):
+            raise entry
+        return entry
+
+
+def bundle_repo(tmp_path, declared=(4, 2, 2)):
+    """A tmp repo (the real_audit_repo shape) whose registry declares
+    Demo__task with NO datasets on disk — the CSVs arrive ONLY via the
+    bundle zip extraction (the real audit script + registry_loader are
+    copies, so the reconcile leg runs the REAL kernels)."""
+    repo = tmp_path / "bundle-repo"
+    (repo / "script").mkdir(parents=True)
+    shutil.copy(REPO_ROOT / "script" / "audit_n_frequencies.py",
+                repo / "script" / "audit_n_frequencies.py")
+    (repo / "pipeline").mkdir()
+    shutil.copy(REPO_ROOT / "pipeline" / "registry_loader.py",
+                repo / "pipeline" / "registry_loader.py")
+    train, dev, test = declared
+    (repo / "pipeline" / "datasets_info.json").write_text(json.dumps({
+        "Demo__task": {
+            "Dataset_path": "datasets/Demo/task",
+            "download_url":
+                "https://www.modelscope.cn/datasets/lgq12697/GUE",
+            "download_url_alternates":
+                "https://huggingface.co/datasets/whatever",
+            "Train": train, "Dev": dev, "Test": test,
+        }}), encoding="utf-8")
+    return repo
+
+
+def pin_n_audit_missing(monkeypatch, tmp_path, missing=True):
+    """Point ``registries.N_AUDIT_PATH`` at a tmp artifact declaring
+    Demo__task missing — the missing-set source the bundle branch's
+    landing check iterates (the committed n_audit.json stays
+    read-only; monkeypatch is the seam, never a file rewrite)."""
+    path = tmp_path / "n-audit" / "n_audit.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(
+        {"tasks": {"Demo__task": {"missing": missing}}}),
+        encoding="utf-8")
+    monkeypatch.setattr(registries, "N_AUDIT_PATH", path)
+    return path
+
+
+def bundle_zip_bytes(rows=(4, 2, 2), extra=None):
+    """A synthetic group archive: ``Demo/task/{train,dev,test}.csv``
+    with pure-ACGT rows (``rows=None`` builds only the extra members —
+    the nothing-lands fixture)."""
+    members = {}
+    if rows is not None:
+        for split, count in zip(("train", "dev", "test"), rows):
+            lines = ["sequence,label"]
+            lines += [f"ACGTACGTAC,{index}" for index in range(count)]
+            members[f"Demo/task/{split}.csv"] = (
+                "\n".join(lines) + "\n")
+    if extra:
+        members.update(extra)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, text in members.items():
+            archive.writestr(name, text)
+    return buffer.getvalue()
+
+
+def public_record_table(zip_value, files=None):
+    """The URL table for a PUBLIC record serving the given zip bytes
+    (``files`` overrides the record's file list)."""
+    if files is None:
+        files = [{"key": "Demo.zip", "size": len(zip_value),
+                  "links": {"self": BUNDLE_ZIP_URL}}]
+    record = {"files": files}
+    return {
+        zenodo_bundle.ZENODO_API_URL: FakeUrlResponse(
+            200, json.dumps(record).encode("utf-8")),
+        BUNDLE_ZIP_URL: FakeUrlResponse(200, zip_value),
+    }
+
+
+def bundle_service(tmp_path, monkeypatch, fetch, repo):
+    """A service over the tmp repo + tmp state root with the zenodo
+    fetch seam injected and NO CLI anywhere near the lane."""
+    state = tmp_path / "bundle-state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        zenodo_fetch=fetch)
+    return service, state
+
+
+def test_run_task_zenodo_not_public_fails_record_not_public(
+        tmp_path, monkeypatch):
+    """THE live-today state: the record 404s at run time -> failed
+    ``record_not_public`` with the probe state in details; activation
+    is exactly this answer flipping — zero code change."""
+    repo = bundle_repo(tmp_path)
+    pin_n_audit_missing(monkeypatch, tmp_path)
+    fetch = UrlRouter({zenodo_bundle.ZENODO_API_URL: urllib.error.HTTPError(
+        zenodo_bundle.ZENODO_API_URL, 404, "NOT FOUND", None, None)})
+    service, _state = bundle_service(tmp_path, monkeypatch, fetch, repo)
+    service.enqueue_zenodo()
+    service.claim_next()
+
+    event = service.run_task(
+        download_queue.ZENODO_BUNDLE_KEY, run_id="z1")
+
+    assert event.state == "failed"
+    assert "record_not_public" in event.problems
+    assert "probe=not_public" in event.details
+    (entry,) = service.entries()
+    assert entry.state == "failed"
+    assert entry.reconcile is None
+    # nothing landed, nothing extracted (the datasets dir never formed)
+    assert not (repo / "pipeline" / "datasets").exists()
+
+
+def test_run_task_zenodo_bundle_offline_end_to_end_done(
+        tmp_path, monkeypatch):
+    """The whole bundle path offline: fixture record -> zip through the
+    REAL extraction -> landing check -> REAL reconcile subprocess over
+    the tmp repo -> done carrying the per-key verdict map."""
+    repo = bundle_repo(tmp_path, declared=(4, 2, 2))
+    pin_n_audit_missing(monkeypatch, tmp_path)
+    fetch = UrlRouter(public_record_table(bundle_zip_bytes((4, 2, 2))))
+    service, state = bundle_service(tmp_path, monkeypatch, fetch, repo)
+    assert service.enqueue_zenodo().action == "enqueued"
+    service.claim_next()
+
+    event = service.run_task(
+        download_queue.ZENODO_BUNDLE_KEY, run_id="z2")
+
+    assert event.state == "done"
+    assert event.problems == ()
+    (entry,) = service.entries()
+    assert entry.reconcile == {"per_key": {"Demo__task": "pass"}}
+    # the CSVs landed through the real extraction...
+    task_dir = repo / "pipeline" / "datasets" / "Demo" / "task"
+    for split in ("train", "dev", "test"):
+        assert (task_dir / (split + ".csv")).is_file()
+    # ...only into the datasets tree (the branch writes nowhere else)
+    assert sorted(path.name for path in
+                  (repo / "pipeline" / "datasets").iterdir()) == ["Demo"]
+    # staging lives under the state root; the log carries the
+    # reconcile section (the REAL subprocess output, D-03 drill-down)
+    assert (state / "zenodo-19135551" / "Demo.zip").is_file()
+    log_text = (state / entry.log_path).read_text(encoding="utf-8")
+    assert "[reconcile]" in log_text
+
+
+def test_run_task_zenodo_zero_conforming_files_fails_unreadable(
+        tmp_path, monkeypatch):
+    """A record shape the defensive parser does not recognize is an
+    explicit failure — never a guess, never a hardcoded list."""
+    repo = bundle_repo(tmp_path)
+    pin_n_audit_missing(monkeypatch, tmp_path)
+    table = public_record_table(
+        b"", files=[{"nonsense": True}])
+    del table[BUNDLE_ZIP_URL]           # never reached
+    fetch = UrlRouter(table)
+    service, _state = bundle_service(tmp_path, monkeypatch, fetch, repo)
+    service.enqueue_zenodo()
+    service.claim_next()
+
+    event = service.run_task(
+        download_queue.ZENODO_BUNDLE_KEY, run_id="z3")
+
+    assert event.state == "failed"
+    assert "record_file_list_unreadable" in event.problems
+    assert "bundle_files=0" in event.details
+
+
+def test_run_task_zenodo_mid_download_failure_fails_with_diagnostics(
+        tmp_path, monkeypatch):
+    """A mid-download network failure fails the task with verbatim
+    diagnostics; the partial staging dir never affects presence (no
+    reconcile pass without the full landing check)."""
+    repo = bundle_repo(tmp_path)
+    pin_n_audit_missing(monkeypatch, tmp_path)
+    table = public_record_table(b"")
+    table[BUNDLE_ZIP_URL] = urllib.error.URLError(
+        "connection reset mid-file")
+    fetch = UrlRouter(table)
+    service, state = bundle_service(tmp_path, monkeypatch, fetch, repo)
+    service.enqueue_zenodo()
+    service.claim_next()
+
+    event = service.run_task(
+        download_queue.ZENODO_BUNDLE_KEY, run_id="z4")
+
+    assert event.state == "failed"
+    assert "bundle_download_failed" in event.problems
+    assert any("connection reset mid-file" in token
+               for token in event.details)
+    (entry,) = service.entries()
+    assert entry.state == "failed"
+    assert entry.reconcile is None
+    # verbatim diagnostics reach the drill-down log
+    log_text = (state / entry.log_path).read_text(encoding="utf-8")
+    assert "connection reset mid-file" in log_text
+    # nothing landed — presence untouched
+    assert not (repo / "pipeline" / "datasets" / "Demo").exists()
+
+
+def test_run_task_zenodo_zip_slip_member_skipped_run_still_lands(
+        tmp_path, monkeypatch):
+    """T-10-03-01 through the queue: a traversal member is skipped
+    with a problem and NOTHING appears outside the datasets root,
+    while the conforming tree still lands and reconciles."""
+    repo = bundle_repo(tmp_path)
+    pin_n_audit_missing(monkeypatch, tmp_path)
+    zip_value = bundle_zip_bytes(
+        (4, 2, 2), extra={"../evil.txt": "pwned"})
+    fetch = UrlRouter(public_record_table(zip_value))
+    service, _state = bundle_service(tmp_path, monkeypatch, fetch, repo)
+    service.enqueue_zenodo()
+    service.claim_next()
+
+    event = service.run_task(
+        download_queue.ZENODO_BUNDLE_KEY, run_id="z5")
+
+    assert event.state == "done"
+    assert "zip_slip_skipped=../evil.txt" in event.details
+    assert not (repo / "pipeline" / "evil.txt").exists()
+    assert (repo / "pipeline" / "datasets" / "Demo" / "task"
+            / "train.csv").is_file()
+
+
+def test_run_task_zenodo_mismatch_lands_mismatch_state_no_deletion(
+        tmp_path, monkeypatch):
+    """A landed key whose real count disproves the declared shape lands
+    the entry in mismatch carrying the per-key verdict — and deletes
+    nothing (D-07)."""
+    repo = bundle_repo(tmp_path, declared=(999, 2, 2))
+    pin_n_audit_missing(monkeypatch, tmp_path)
+    fetch = UrlRouter(public_record_table(bundle_zip_bytes((4, 2, 2))))
+    service, _state = bundle_service(tmp_path, monkeypatch, fetch, repo)
+    service.enqueue_zenodo()
+    service.claim_next()
+
+    event = service.run_task(
+        download_queue.ZENODO_BUNDLE_KEY, run_id="z6")
+
+    assert event.state == "mismatch"
+    assert any("Train_mismatch_declared=999_measured=4" in problem
+               for problem in event.problems)
+    (entry,) = service.entries()
+    assert entry.reconcile == {"per_key": {"Demo__task": "mismatch"}}
+    task_dir = repo / "pipeline" / "datasets" / "Demo" / "task"
+    assert (task_dir / "train.csv").is_file()    # nothing deleted
+
+
+def test_run_task_zenodo_nothing_landed_fails(tmp_path, monkeypatch):
+    """A bundle whose content lands no currently-missing key is a
+    failed run naming it — never a vacuous done."""
+    repo = bundle_repo(tmp_path)
+    pin_n_audit_missing(monkeypatch, tmp_path)
+    zip_value = bundle_zip_bytes(
+        rows=None, extra={"OtherGroup/thing.csv": "sequence,label\n"})
+    fetch = UrlRouter(public_record_table(zip_value))
+    service, _state = bundle_service(tmp_path, monkeypatch, fetch, repo)
+    service.enqueue_zenodo()
+    service.claim_next()
+
+    event = service.run_task(
+        download_queue.ZENODO_BUNDLE_KEY, run_id="z7")
+
+    assert event.state == "failed"
+    assert "bundle_landed_zero" in event.problems
+    assert "landed=0" in event.details
