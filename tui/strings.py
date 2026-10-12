@@ -353,6 +353,11 @@ WIZ_KIND_DATASETS = "数据集"
 WIZ_BORDER_TITLE = "新增{kind} — 步骤 {indicator} · {step}"
 # Model wizard step names (the border-title {step} values, in order).
 WIZM_STEPS = ("基本信息", "架构与分词", "来源链接", "quirk 勾选")
+# Dataset wizard step names (the same slot, the dataset instance).
+WIZD_STEPS = ("基本信息", "数据文件", "任务与指标", "溯源信息")
+# The step-2 split-file-name Inputs' shared placeholder (the UI-SPEC
+# wording renders the trio as train / dev / test 文件名).
+WIZ_SPLIT_FILE_PLACEHOLDER = "文件名"
 # Quirk checklist labels (D-02: exactly the three named quirks,
 # unchecked default; execution-side mapping is Phase 11's).
 WIZ_QUIRK_NO_SAFETENSORS = "不使用 safetensors"

@@ -35,23 +35,34 @@ keypad drives are real key events (a focused Input eats printable keys
 import re
 from pathlib import Path
 
-from textual.widgets import Checkbox, Input, SelectionList, Static
+from textual.widgets import Checkbox, Input, RichLog, SelectionList, Static
 
 from tui.app import DnallmMarkTui
 from tui.screens.selection import PresetMenu, SelectionData
 from tui.screens.wizard import WizardModal
 from tui.services import selection as selection_service
+from tui.services.custom_validation import METRIC_REGISTRY
 from tui.strings import (
-    WIZM_STEPS,
+    ENV_STATE_PENDING,
+    GAUNTLET_TITLE,
+    WIZD_FIELD_LABELS,
     WIZ_CANCEL_CONFIRM,
+    WIZD_STEPS,
     WIZ_FOOTER_HINT,
     WIZ_FOOTER_HINT_LAST,
+    WIZ_GAUNTLET_BACK_HINT,
     WIZ_NUMERIC_HINT,
     WIZ_PATH_EXISTS,
     WIZ_PATH_MISSING_ADVISORY,
+    WIZ_PROBLEM_COLLISION_OFFICIAL,
+    WIZ_PROBLEM_LINE,
+    WIZ_PROBLEMS_HEADER,
     WIZ_QUIRK_FP32_ONLY,
     WIZ_QUIRK_NO_SAFETENSORS,
     WIZ_QUIRK_SPECIAL_HEAD,
+    WIZ_REPORT_BACK_HINT,
+    WIZ_REPORT_TITLE,
+    WIZM_STEPS,
 )
 
 # The i18n grep gate target (the zero-Chinese-literals module).
@@ -59,6 +70,10 @@ _WIZARD_MODULE_FILE = Path(__file__).resolve().parents[2] / "tui" / "screens" / 
 
 _SPECIES_VOCAB = ("human", "plants")
 _TOKENIZER_VOCAB = ("BPE", "6-mer", "overlapped 6-mer")
+#: The report-line label map the numbered assertions render through.
+_DATASET_LABELS = WIZD_FIELD_LABELS
+#: A registry key of exactly the UAT-lesson length (68 chars).
+_KEY68 = "plant-dnamamba-" + "x" * 53
 
 
 # =====================================================================
@@ -153,6 +168,22 @@ def _model_wizard(seams, **kwargs):
     vocabularies.update(kwargs.pop("vocabularies", {}))
     return WizardModal(
         kind="models",
+        validator=seams.validator,
+        on_valid=seams.on_valid,
+        on_import=seams.on_import,
+        on_export=seams.on_export,
+        vocabularies=vocabularies,
+        **kwargs,
+    )
+
+
+def _dataset_wizard(seams, **kwargs):
+    """A dataset wizard; the metric vocabulary defaults to one fake name
+    (the real 28-name registry has its own dedicated test)."""
+    vocabularies = {"metric": ("f1",)}
+    vocabularies.update(kwargs.pop("vocabularies", {}))
+    return WizardModal(
+        kind="datasets",
         validator=seams.validator,
         on_valid=seams.on_valid,
         on_import=seams.on_import,
@@ -408,3 +439,309 @@ async def test_screen_module_carries_zero_chinese_literals():
         "Chinese literals must live in tui/strings.py only "
         f"({len(offenders)} found in {_WIZARD_MODULE_FILE.name})"
     )
+
+
+# =====================================================================
+# Task 2 — the dataset wizard + the submit -> collect-all report
+# =====================================================================
+
+async def _advance(pilot, wizard, times=1):
+    """Advance through ``times`` steps via the screen-level enter path."""
+    for _ in range(times):
+        wizard.set_focus(None)
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+
+
+async def _submit(pilot, wizard):
+    """Reach step 4 and press enter (the submit keycap)."""
+    await _advance(pilot, wizard, times=3)
+    wizard.set_focus(None)
+    await pilot.pause()
+    await pilot.press("enter")
+    await pilot.pause()
+
+
+def _report_text(wizard):
+    """The report log's full text: strips joined in strip order (the
+    wrap never elides — trailing padding alone is dropped)."""
+    log = wizard.query_one("#wiz-report-log", RichLog)
+    return [strip.text for strip in log.lines]
+
+
+async def test_dataset_form_renders_the_four_ui_spec_steps():
+    """The dataset steps carry the UI-SPEC field sets and controls."""
+    seams = _Seams()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(seams)
+        await _open(pilot, app, wizard)
+        # step 1: key + path (with advisory line) + the Category list
+        assert _plain_title(wizard) == (
+            f"新增数据集 — 步骤 1/4 · {WIZD_STEPS[0]}"
+        )
+        wizard.query_one("#wiz-key", Input)
+        wizard.query_one("#wiz-dataset-path", Input)
+        wizard.query_one("#wiz-dataset-path-check", Static)
+        category = wizard.query_one("#wiz-category", SelectionList)
+        assert [s.value for s in category.options] == [
+            "Animals", "Plants", "Microbe", "Multiple"]
+        # step 2: the three split-file Inputs + label column + numerics
+        await _advance(pilot, wizard)
+        assert _plain_title(wizard) == (
+            f"新增数据集 — 步骤 2/4 · {WIZD_STEPS[1]}"
+        )
+        for wid in ("train-file", "dev-file", "test-file"):
+            wizard.query_one(f"#wiz-{wid}", Input)
+            wizard.query_one(f"#wiz-{wid}-check", Static)
+        wizard.query_one("#wiz-label-column", Input)
+        wizard.query_one("#wiz-labels", Input)
+        wizard.query_one("#wiz-labels-check", Static)
+        wizard.query_one("#wiz-length", Input)
+        # step 3: Task_type + the injected metric vocabulary
+        await _advance(pilot, wizard)
+        assert _plain_title(wizard) == (
+            f"新增数据集 — 步骤 3/4 · {WIZD_STEPS[2]}"
+        )
+        task_type = wizard.query_one("#wiz-type", SelectionList)
+        assert [s.value for s in task_type.options] == [
+            "binary", "multiclass", "regression", "multilabel"]
+        metric = wizard.query_one("#wiz-metric", SelectionList)
+        assert [s.value for s in metric.options] == ["f1"]
+        # step 4: the four provenance Inputs
+        await _advance(pilot, wizard)
+        assert _plain_title(wizard) == (
+            f"新增数据集 — 步骤 4/4 · {WIZD_STEPS[3]}"
+        )
+        for wid in ("citation", "source", "license", "preprocessing"):
+            wizard.query_one(f"#wiz-{wid}", Input)
+
+
+async def test_split_file_advisory_checks_under_the_dataset_path(tmp_path):
+    """The split-file live line probes the file under the dataset dir."""
+    seams = _Seams()
+    dataset_dir = tmp_path / "datasets" / "my-ds"
+    dataset_dir.mkdir(parents=True)
+    (dataset_dir / "train.csv").write_text(
+        "sequence,label\nACGT,1\n", encoding="utf-8")
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(seams)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "dataset-path", str(dataset_dir))
+        await _advance(pilot, wizard)
+        check = wizard.query_one("#wiz-train-file-check", Static)
+        inp = await _type(pilot, wizard, "train-file", "nope.csv")
+        assert str(check.content) == WIZ_PATH_MISSING_ADVISORY
+        await _clear(pilot, inp)
+        await pilot.press(*list("train.csv"))
+        await pilot.pause()
+        assert str(check.content) == WIZ_PATH_EXISTS
+
+
+async def test_metric_selection_offers_the_28_name_registry():
+    """The injected metric vocabulary carries the full 28 names."""
+    seams = _Seams()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            seams, vocabularies={"metric": sorted(METRIC_REGISTRY)})
+        await _open(pilot, app, wizard)
+        await _advance(pilot, wizard, times=2)
+        metric = wizard.query_one("#wiz-metric", SelectionList)
+        assert len(metric.options) == 28
+        assert "spearmanr" in [s.value for s in metric.options]
+
+
+async def test_submit_renders_the_numbered_report_in_field_order():
+    """A failing submit renders every problem numbered, validator order."""
+    problems = [
+        ("key", "problem-one"),
+        ("Dataset_path", "problem-two"),
+        ("labels", "problem-three"),
+    ]
+    seams = _Seams(problems=problems)
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(seams)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "key", "my-ds")
+        await _submit(pilot, wizard)
+        assert _plain_title(wizard) == WIZ_REPORT_TITLE.format(kind="数据集")
+        assert str(wizard.query_one(
+            "#wiz-report-hint", Static).content) == WIZ_REPORT_BACK_HINT
+        joined = "".join(t.rstrip() for t in _report_text(wizard))
+        header = WIZ_PROBLEMS_HEADER.format(n=3)
+        assert header in joined
+        for index, (field_key, message) in enumerate(problems):
+            line = WIZ_PROBLEM_LINE.format(
+                i=index + 1,
+                field_label=_DATASET_LABELS[field_key],
+                problem=message)
+            assert line in joined, "field-definition order, numbered"
+        # nothing applied on failure — no callback ever fired
+        assert seams.valid_calls == []
+        # the validator saw the composed candidate (values keyed by field)
+        assert seams.validator_calls[0]["key"] == "my-ds"
+
+
+async def test_esc_from_report_returns_to_step_4_with_values_intact():
+    """Dismissing the report returns INTO the wizard, values intact."""
+    seams = _Seams(problems=[("key", "boom")])
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(seams)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "key", "my-ds")
+        await _submit(pilot, wizard)
+        wizard.set_focus(None)
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert _plain_title(wizard) == (
+            f"新增数据集 — 步骤 4/4 · {WIZD_STEPS[3]}"
+        )
+        # b back to step 1 — the value survived report + back
+        wizard.set_focus(None)
+        await pilot.pause()
+        await pilot.press("b")
+        await pilot.pause()
+        assert wizard.query_one("#wiz-key", Input).value == "my-ds"
+        # re-submit reproduces the report (nothing was lost or applied)
+        await _submit(pilot, wizard)
+        assert _plain_title(wizard) == WIZ_REPORT_TITLE.format(kind="数据集")
+
+
+async def test_clean_pass_transitions_to_gauntlet_and_fires_on_valid():
+    """A clean pass hands the composed candidate to the gauntlet seam."""
+    seams = _Seams()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(seams)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "key", "my-ds")
+        await _type(pilot, wizard, "dataset-path", "datasets/my-ds")
+        category = wizard.query_one("#wiz-category", SelectionList)
+        category.focus()
+        await pilot.pause()
+        await pilot.press("down")     # Plants
+        await pilot.press("enter")
+        await pilot.pause()
+        await _advance(pilot, wizard)
+        await _type(pilot, wizard, "label-column", "label")
+        await _type(pilot, wizard, "labels", "7")
+        await _type(pilot, wizard, "length", "512")
+        await _advance(pilot, wizard)
+        task_type = wizard.query_one("#wiz-type", SelectionList)
+        task_type.focus()
+        await pilot.pause()
+        await pilot.press("enter")     # binary
+        await pilot.pause()
+        metric = wizard.query_one("#wiz-metric", SelectionList)
+        metric.focus()
+        await pilot.press("enter")     # f1
+        await pilot.pause()
+        await _type(pilot, wizard, "citation", "Marin et al., 2026")
+        await _submit(pilot, wizard)
+        # the gauntlet pending view + the single on_valid call
+        assert str(wizard.query_one(
+            "#wiz-gauntlet-pending", Static).content) == ENV_STATE_PENDING
+        assert str(wizard.query_one(
+            "#wiz-gauntlet-hint", Static).content) == WIZ_GAUNTLET_BACK_HINT
+        assert _plain_title(wizard) == GAUNTLET_TITLE.format(key="my-ds")
+        assert len(seams.valid_calls) == 1
+        payload = seams.valid_calls[0]
+        assert payload == {
+            "key": "my-ds",
+            "Dataset_path": "datasets/my-ds",
+            "Category": "Plants",
+            "label_column": "label",
+            "labels": 7,           # numerics compose as numbers
+            "length": 512,
+            "type": "binary",      # Task_type stored under registry `type`
+            "metric": "f1",
+            "citation": "Marin et al., 2026",
+            "source": "",          # optional strings compose as ""
+            "license": "",
+            "preprocessing": "",
+        }
+        assert "Task_type" not in payload
+        # the split-file names are advisory-only: Train/Dev/Test derive
+        # at composition downstream (the 09-01 decision) — never carried
+        assert not any(k in payload for k in ("Train", "Dev", "Test"))
+        # esc from the gauntlet returns to the form, values intact
+        wizard.set_focus(None)
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert _plain_title(wizard) == (
+            f"新增数据集 — 步骤 4/4 · {WIZD_STEPS[3]}"
+        )
+        assert wizard.query_one("#wiz-citation", Input).value == (
+            "Marin et al., 2026")
+
+
+async def test_model_clean_pass_composes_quirks_and_numerics():
+    """The model candidate carries the quirks dict + numeric coercion."""
+    seams = _Seams()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _model_wizard(seams)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "key", "my-lm")
+        await _type(pilot, wizard, "size-m", "88")
+        await _advance(pilot, wizard)
+        type_list = wizard.query_one("#wiz-type", SelectionList)
+        type_list.focus()
+        await pilot.pause()
+        await pilot.press("down")      # CLM
+        await pilot.press("enter")
+        await pilot.pause()
+        await _advance(pilot, wizard)
+        await _advance(pilot, wizard)
+        # one quirk checked on step 4
+        fp32 = wizard.query_one("#wiz-quirk-fp32-only", Checkbox)
+        fp32.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert fp32.value is True
+        wizard.set_focus(None)
+        await pilot.pause()
+        await pilot.press("enter")     # submit
+        await pilot.pause()
+        assert len(seams.valid_calls) == 1
+        payload = seams.valid_calls[0]
+        assert payload == {
+            "key": "my-lm",
+            "Model_path": "",
+            "size (M)": 88,
+            "species": "",
+            "type": "CLM",
+            "architecture": "",
+            "Tokenizer": "",
+            "context_len (bp)": "",
+            "huggingface": "",
+            "modelscope": "",
+            "series": "",
+            "quirks": {"no_safetensors": False,
+                       "fp32_only": True,
+                       "special_head": False},
+        }
+
+
+async def test_report_wraps_the_68_char_key_never_elides():
+    """The overflow edge: a 68-char key in a problem wraps in the RichLog
+    (the full value rendered across strips, nothing truncated)."""
+    seams = _Seams(problems=[
+        ("key", WIZ_PROBLEM_COLLISION_OFFICIAL.format(key=_KEY68))])
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _model_wizard(seams)
+        await _open(pilot, app, wizard)
+        await _submit(pilot, wizard)
+        texts = _report_text(wizard)
+        assert len(texts) > 2, "the long problem must wrap, not fit one line"
+        joined = "".join(t.rstrip() for t in texts)
+        assert _KEY68 in joined, "the full key renders across the wrap"
