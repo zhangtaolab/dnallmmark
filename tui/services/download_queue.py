@@ -80,6 +80,12 @@ Contract (locked decisions):
   mismatch lands the entry in state ``mismatch`` carrying the declared
   and measured numbers for the banner — mismatch NEVER auto-deletes
   anything (D-07).
+- D-11: ``merge_presence(audit_tasks, reconcile_results)`` overlays
+  reconcile-PASS keys (``reconciled_rows()`` over the persisted done
+  entries) onto the committed n_audit view so the UNCHANGED
+  ``registries.presence_for`` flips to present — a landed-but-
+  mismatched dataset never flips (UI-SPEC semantic 6); the committed
+  ``n_audit.json`` itself is never written by this path.
 - D-10/R-03: the committed ``dnallm-mark/data/n_audit.json`` baseline
   is NEVER written by the reconcile or presence paths; only the
   explicit ``reaudit_baseline`` method runs the audit script with its
@@ -371,6 +377,105 @@ def first_real_error_line(text):
             continue
         return line
     return None
+
+
+# ===== The D-11 presence overlay (10-02 Task 2) =====
+
+
+def merge_presence(audit_tasks, reconcile_results):
+    """Overlay reconcile-pass rows onto the committed n_audit view.
+
+    The D-11 flip substrate (RESEARCH Pattern 3): a PURE data
+    composition — the committed ``n_audit.json`` alone can never flip a
+    freshly downloaded dataset's presence (that file only changes via
+    the explicit ``g`` re-audit), so the selection/env screens consume
+    ``merge_presence(load_n_audit(), reconciled_rows())`` and the
+    UNCHANGED Phase 8 ``registries.presence_for`` maps the merged view
+    (its four-status vocabulary stays the contract).
+
+    Only reconcile-PASS (done) keys belong in ``reconcile_results`` —
+    a landed-but-mismatched dataset NEVER flips (UI-SPEC semantic 6);
+    ``run_task``'s done gate is what enforces that upstream.
+
+    Args:
+        audit_tasks (dict | None): the committed tasks mapping from
+            ``registries.load_n_audit()`` (None = missing/corrupt —
+            the overlay alone still serves the column).
+        reconcile_results (dict): ``{key: (train, dev, test)}`` — the
+            measured row ints for done entries (from
+            ``reconciled_rows``).
+
+    Returns:
+        dict: a NEW tasks-shaped dict: ``dict(audit_tasks or {})``
+        overlaid with ``{key: {"missing": False, "splits": {...}}}``
+        per reconcile-pass key. Inputs are never mutated; zero I/O.
+    """
+    merged = dict(audit_tasks) if audit_tasks else {}
+    for key, rows in (reconcile_results or {}).items():
+        train, dev, test = rows
+        merged[key] = {
+            "missing": False,
+            "splits": {
+                "train": {"rows": train},
+                "dev": {"rows": dev},
+                "test": {"rows": test},
+            },
+        }
+    return merged
+
+
+def reconciled_rows(state_path=None):
+    """Derive the reconcile-pass overlay from the persisted queue state.
+
+    Read-only and tolerant (the artifact_loader None sentinel —
+    degrade, never crash): entries with state ``done`` and a populated
+    ``reconcile.measured`` contribute ``{key: (train, dev, test)}``;
+    every other shape (mismatch, failed, pending, done without a
+    reconcile, non-integer measured rows, an absent/corrupt file)
+    contributes nothing.
+
+    Args:
+        state_path: the queue state file; None resolves
+            ``settings.state_dir() / QUEUE_FILE_NAME``.
+
+    Returns:
+        dict: ``{key: (train, dev, test)}`` for done entries (empty
+        when nothing reconciled or the state is unreadable).
+    """
+    if state_path is None:
+        path = settings.state_dir() / QUEUE_FILE_NAME
+    else:
+        path = Path(state_path)
+    doc = artifact_loader.load_json_artifact(path)
+    if not isinstance(doc, dict):
+        return {}
+    entries = doc.get("entries")
+    if not isinstance(entries, list):
+        return {}
+    results: dict[str, tuple[int, int, int]] = {}
+    for raw in entries:
+        if not isinstance(raw, dict) or raw.get("state") != "done":
+            continue
+        key = raw.get("key")
+        if not isinstance(key, str) or not key:
+            continue
+        reconcile = raw.get("reconcile")
+        if not isinstance(reconcile, dict):
+            continue
+        measured = reconcile.get("measured")
+        if not isinstance(measured, dict):
+            continue
+        rows = []
+        for split in _AUDIT_SPLIT_ORDER:
+            value = measured.get(split)
+            if not isinstance(value, int) or isinstance(value, bool):
+                rows = None
+                break
+            rows.append(value)
+        if rows is None:
+            continue
+        results[key] = (rows[0], rows[1], rows[2])
+    return results
 
 
 @dataclass(frozen=True)
