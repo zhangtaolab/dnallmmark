@@ -33,6 +33,7 @@ keypad drives are real key events (a focused Input eats printable keys
 """
 
 import re
+import threading
 from pathlib import Path
 
 from textual.widgets import Checkbox, Input, RichLog, SelectionList, Static
@@ -41,10 +42,24 @@ from tui.app import DnallmMarkTui
 from tui.screens.selection import PresetMenu, SelectionData
 from tui.screens.wizard import WizardModal
 from tui.services import selection as selection_service
+from tui.services.custom_entries import custom_registry_path
 from tui.services.custom_validation import METRIC_REGISTRY
+from tui.services.gauntlet import LEG_AUDIT, LEG_DRY_RUN, GauntletItem
 from tui.strings import (
     ENV_STATE_PENDING,
+    GAUNTLET_BANNER_FAIL,
+    GAUNTLET_DRILL_HINT,
+    GAUNTLET_ITEM_AUDIT,
+    GAUNTLET_ITEM_DRY_RUN,
+    GAUNTLET_ROW_DRY_RUN_PASS,
+    GAUNTLET_ROW_FAIL,
+    GAUNTLET_ROW_LANDED,
+    GAUNTLET_ROW_PENDING,
+    GAUNTLET_ROW_PASS,
+    GAUNTLET_ROW_RUNNING,
     GAUNTLET_TITLE,
+    GAUNTLET_UNDO_AFFORDANCE,
+    GAUNTLET_UNDO_TOAST,
     WIZ_CANCEL_CONFIRM,
     WIZ_FOOTER_HINT,
     WIZ_FOOTER_HINT_LAST,
@@ -947,3 +962,351 @@ async def test_backstop_80x24_long_text_stays_enterable_and_readable():
         assert "…" not in joined and "..." not in joined, (
             "nothing elides in the report"
         )
+
+
+# =====================================================================
+# Task 4 (09-05 Task 1) — the gauntlet panel: async rows, run-id drop,
+# land-only-on-all-pass, the failure banner
+# =====================================================================
+
+_LAND_PATH = "/tmp/pinned/custom_models.json"
+
+
+class _FakeGauntlet:
+    """Deterministic gauntlet service (the 09-02 service's two per-leg
+    entry points, gated per (leg, run_id) — the 08-06 gated-fake idiom).
+
+    Outcome tables are a plain bool (every call) or a dict keyed by
+    candidate key / ``(run_id, key)`` (dict default True) — the (run_id,
+    key) form is the WR-02 fixture's per-run discrimination.
+    """
+
+    def __init__(self, dry_ok=True, audit_ok=True, gates=None):
+        self.dry_ok = dry_ok
+        self.audit_ok = audit_ok
+        self.gates = gates or {}
+        self.dry_calls = []
+        self.audit_calls = []
+
+    @staticmethod
+    def _outcome(table, run_id, key):
+        if isinstance(table, dict):
+            if (run_id, key) in table:
+                return table[(run_id, key)]
+            return table.get(key, True)
+        return bool(table)
+
+    def dry_run_precheck(self, kind, key, entry, run_id):
+        self.dry_calls.append((kind, key, run_id))
+        gate = self.gates.get((LEG_DRY_RUN, run_id))
+        if gate is not None:
+            gate.wait(timeout=10)  # deterministic gate, never a sleep
+        ok = self._outcome(self.dry_ok, run_id, key)
+        if ok:
+            return GauntletItem(
+                run_id=run_id, kind=kind, leg=LEG_DRY_RUN, name=key,
+                ok=True, details=("planned_cells=6",),
+                raw_output="planned 6 cell(s) for " + key)
+        return GauntletItem(
+            run_id=run_id, kind=kind, leg=LEG_DRY_RUN, name=key,
+            ok=False, details=("exit_nonzero", "exit_code=1"),
+            raw_output="sweep: ERROR bad entry " + key)
+
+    def audit_reconciliation(self, key, entry, declared_splits, run_id):
+        self.audit_calls.append((key, run_id))
+        ok = self._outcome(self.audit_ok, run_id, key)
+        if ok:
+            return GauntletItem(
+                run_id=run_id, kind="datasets", leg=LEG_AUDIT, name=key,
+                ok=True, details=("train_rows=8", "unified_eval_n=6"),
+                raw_output="audit ok " + key)
+        return GauntletItem(
+            run_id=run_id, kind="datasets", leg=LEG_AUDIT, name=key,
+            ok=False, details=("train_rows=0",),
+            raw_output="audit: empty train split " + key)
+
+
+class _StoreFake:
+    """Capture over the land/undo seams — the panel's ONLY write path."""
+
+    def __init__(self, land_path=_LAND_PATH):
+        self.land_calls = []
+        self.undo_calls = []
+        self._land_path = land_path
+
+    def land(self, kind, key, entry):
+        self.land_calls.append((kind, key, entry))
+        return self._land_path
+
+    def undo(self, kind, key):
+        self.undo_calls.append((kind, key))
+        return True
+
+
+def _gauntlet_row_text(wizard, group, item):
+    """One gauntlet row's current text (re-queried: recompose replaces)."""
+    row = wizard.query_one(f"#gauntlet-row-{group}-{item}", Static)
+    return str(row.content)
+
+
+def _gauntlet_banner(wizard):
+    return str(wizard.query_one("#gauntlet-banner", Static).content)
+
+
+async def _wait_row_becomes(pilot, wizard, group, item, expected):
+    """Pause-loop until one row's content equals ``expected`` (pauses
+    returning while a worker blocks IS the responsiveness proof)."""
+    for _ in range(100):
+        await pilot.pause()
+        if _gauntlet_row_text(wizard, group, item) == expected:
+            break
+    assert _gauntlet_row_text(wizard, group, item) == expected
+
+
+async def _wait_banner_becomes(pilot, wizard, expected):
+    for _ in range(100):
+        await pilot.pause()
+        if _gauntlet_banner(wizard) == expected:
+            break
+    assert _gauntlet_banner(wizard) == expected
+
+
+async def _settled(pilot, app):
+    """Every worker finished + its messages handed to the event loop."""
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+    await pilot.pause()
+
+
+async def test_gauntlet_panel_progression_pending_running_done():
+    """Truth 1: kind-aware rows progress ◌ 待检 → ⠋ …运行中 → ✓ with the
+    structured summaries; the console stays responsive (thread worker)."""
+    gate = threading.Event()
+    service = _FakeGauntlet(gates={(LEG_DRY_RUN, 1): gate})
+    seams = _Seams()
+    store = _StoreFake()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _model_wizard(
+            seams, gauntlet_service=service,
+            land=store.land, undo=store.undo)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "key", "my-lm")
+        await _submit(pilot, wizard)
+        # the model panel: exactly one row (dry-run leg only) with the
+        # panel title + drill hint; pending or already running (the
+        # worker races the first pause — both are the launch state)
+        assert _plain_title(wizard) == GAUNTLET_TITLE.format(key="my-lm")
+        hint = str(wizard.query_one("#gauntlet-hint", Static).content)
+        assert GAUNTLET_DRILL_HINT in hint and WIZ_GAUNTLET_BACK_HINT in hint
+        pending = GAUNTLET_ROW_PENDING.format(item=GAUNTLET_ITEM_DRY_RUN)
+        running = GAUNTLET_ROW_RUNNING.format(item=GAUNTLET_ITEM_DRY_RUN)
+        assert _gauntlet_row_text(wizard, 0, 0) in (pending, running)
+        await _wait_row_becomes(pilot, wizard, 0, 0, running)
+        gate.set()
+        await _settled(pilot, app)
+        assert _gauntlet_row_text(wizard, 0, 0) == (
+            GAUNTLET_ROW_DRY_RUN_PASS.format(cells="6"))
+        # enter on the focused row drills into the verbatim output; esc
+        # returns to the panel with every row intact
+        await pilot.press("enter")
+        await pilot.pause()
+        drill = wizard.query_one("#gauntlet-drill-log", RichLog)
+        joined = "".join(strip.text for strip in drill.lines)
+        assert "planned 6 cell(s) for my-lm" in joined
+        await pilot.press("escape")
+        await pilot.pause()
+        assert _gauntlet_row_text(wizard, 0, 0) == (
+            GAUNTLET_ROW_DRY_RUN_PASS.format(cells="6"))
+
+
+async def test_gauntlet_dataset_panel_runs_both_legs_in_order():
+    """The dataset panel renders BOTH item rows; the not-yet-started audit
+    row stays 待检 while the dry-run leg is in flight (the observable
+    per-item progression), then both complete with their summaries."""
+    gate = threading.Event()
+    service = _FakeGauntlet(gates={(LEG_DRY_RUN, 1): gate})
+    seams = _Seams()
+    store = _StoreFake()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            seams, gauntlet_service=service,
+            land=store.land, undo=store.undo)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "key", "my-ds")
+        await _submit(pilot, wizard)
+        running = GAUNTLET_ROW_RUNNING.format(item=GAUNTLET_ITEM_DRY_RUN)
+        await _wait_row_becomes(pilot, wizard, 0, 0, running)
+        # the audit leg has not started: its row is still pending
+        assert _gauntlet_row_text(wizard, 0, 1) == (
+            GAUNTLET_ROW_PENDING.format(item=GAUNTLET_ITEM_AUDIT))
+        gate.set()
+        await _settled(pilot, app)
+        assert _gauntlet_row_text(wizard, 0, 0) == (
+            GAUNTLET_ROW_DRY_RUN_PASS.format(cells="6"))
+        assert _gauntlet_row_text(wizard, 0, 1) == GAUNTLET_ROW_PASS.format(
+            item=GAUNTLET_ITEM_AUDIT,
+            summary="train_rows=8, unified_eval_n=6")
+        # both legs ran, dry-run first
+        assert service.dry_calls == [("datasets", "my-ds", 1)]
+        assert service.audit_calls == [("my-ds", 1)]
+
+
+async def test_gauntlet_all_pass_lands_once_renders_undo_and_clears_form():
+    """Truth 3: all-✓ lands exactly once through the store seam, renders
+    the landed row + toast + [u] affordance, and clears the form (a land
+    is one of the three clearing events)."""
+    service = _FakeGauntlet()
+    seams = _Seams()
+    store = _StoreFake()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _model_wizard(
+            seams, gauntlet_service=service,
+            land=store.land, undo=store.undo)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "key", "my-lm")
+        await _type(pilot, wizard, "model-path", "models/my-lm")
+        await _submit(pilot, wizard)
+        await _settled(pilot, app)
+        # land fired EXACTLY once with the composed candidate
+        assert len(store.land_calls) == 1
+        kind, key, entry = store.land_calls[0]
+        assert (kind, key) == ("models", "my-lm")
+        assert entry["key"] == "my-lm"
+        assert entry["Model_path"] == "models/my-lm"
+        # the landed row + success toast + the active undo affordance
+        landed = GAUNTLET_ROW_LANDED.format(key="my-lm", path=_LAND_PATH)
+        assert _gauntlet_banner(wizard) == landed
+        assert app._notifications[-1].message == landed
+        assert str(wizard.query_one(
+            "#gauntlet-undo", Static).content) == GAUNTLET_UNDO_AFFORDANCE
+        # u: session undo — removes exactly the just-landed key, once
+        wizard.set_focus(None)
+        await pilot.pause()
+        await pilot.press("u")
+        await pilot.pause()
+        assert store.undo_calls == [("models", "my-lm")]
+        assert app._notifications[-1].message == (
+            GAUNTLET_UNDO_TOAST.format(key="my-lm"))
+        assert str(wizard.query_one("#gauntlet-undo", Static).content) == ""
+        await pilot.press("u")  # the affordance is single-use
+        await pilot.pause()
+        assert store.undo_calls == [("models", "my-lm")]
+        # esc returns to the form CLEARED (land cleared it)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert _plain_title(wizard) == (
+            f"新增模型 — 步骤 1/4 · {WIZM_STEPS[0]}"
+        )
+        assert wizard.query_one("#wiz-key", Input).value == ""
+
+
+async def test_gauntlet_any_fail_banner_verbatim_never_lands_values_intact(
+        tmp_path, monkeypatch):
+    """Truth 2 / CUST-04 core: any ✗ renders the prominent banner
+    verbatim (官方注册表零触碰), never lands (the tmp custom root never
+    gains the file), drills down verbatim, and esc returns with every
+    value intact."""
+    from tui.services import custom_entries
+    from tui.services.settings import CONFIG_DIR_ENV
+
+    monkeypatch.setenv(CONFIG_DIR_ENV, str(tmp_path))
+    service = _FakeGauntlet(dry_ok=False)
+    seams = _Seams()
+    land_calls = []
+
+    def land_spy(kind, key, entry):
+        land_calls.append((kind, key))
+        return custom_entries.land(kind, key, entry)
+
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _model_wizard(
+            seams, gauntlet_service=service, land=land_spy,
+            undo=custom_entries.undo)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "key", "my-lm")
+        await _type(pilot, wizard, "model-path", "models/my-lm")
+        await _submit(pilot, wizard)
+        await _settled(pilot, app)
+        # the failed row renders the verbatim detail tokens
+        assert _gauntlet_row_text(wizard, 0, 0) == GAUNTLET_ROW_FAIL.format(
+            item=GAUNTLET_ITEM_DRY_RUN,
+            summary="exit_nonzero, exit_code=1")
+        # the banner is the Copywriting row VERBATIM (hardcoded pin)
+        banner = _gauntlet_banner(wizard)
+        assert banner == GAUNTLET_BANNER_FAIL.format(key="my-lm")
+        assert banner == "✗ gauntlet 未通过 — my-lm 未落盘（官方注册表零触碰）"
+        # no undo affordance, no success toast
+        assert str(wizard.query_one("#gauntlet-undo", Static).content) == ""
+        assert not app._notifications
+        # NEVER landed: zero seam calls and the custom file never created
+        assert land_calls == []
+        assert not custom_registry_path("models").exists()
+        # drill-down carries the subprocess's own output lines verbatim
+        await pilot.press("enter")
+        await pilot.pause()
+        drill = wizard.query_one("#gauntlet-drill-log", RichLog)
+        joined = "".join(strip.text for strip in drill.lines)
+        assert "sweep: ERROR bad entry my-lm" in joined
+        await pilot.press("escape")
+        await pilot.pause()
+        # esc returns to the form at step 4 with EVERY value intact
+        await pilot.press("escape")
+        await pilot.pause()
+        assert _plain_title(wizard) == (
+            f"新增模型 — 步骤 4/4 · {WIZM_STEPS[3]}"
+        )
+        assert wizard.query_one("#wiz-key", Input).value == "my-lm"
+        assert wizard.query_one(
+            "#wiz-model-path", Input).value == "models/my-lm"
+
+
+async def test_gauntlet_stale_result_from_cancelled_run_never_overwrites():
+    """Truth 4 / WR-02: run 1 blocks mid-leg carrying a FAIL; abandoning
+    the panel (esc) and resubmitting runs the fresh PASS to completion;
+    run 1's late result posts AFTER — the handlers drop it (the landed
+    state is never overwritten, run 1 never lands)."""
+    gate = threading.Event()
+    service = _FakeGauntlet(
+        dry_ok={(1, "my-lm"): False},          # run 1 carries a stale FAIL
+        gates={(LEG_DRY_RUN, 1): gate},
+    )
+    seams = _Seams()
+    store = _StoreFake()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _model_wizard(
+            seams, gauntlet_service=service,
+            land=store.land, undo=store.undo)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "key", "my-lm")
+        await _submit(pilot, wizard)
+        running = GAUNTLET_ROW_RUNNING.format(item=GAUNTLET_ITEM_DRY_RUN)
+        await _wait_row_becomes(pilot, wizard, 0, 0, running)
+
+        # abandon the in-flight run: esc returns to the form (values
+        # intact), the resubmit launches the fresh run
+        await pilot.press("escape")
+        await pilot.pause()
+        assert _plain_title(wizard) == (
+            f"新增模型 — 步骤 4/4 · {WIZM_STEPS[3]}"
+        )
+        await _submit(pilot, wizard)
+        # the fresh run completes and lands while run 1 still blocks
+        landed = GAUNTLET_ROW_LANDED.format(key="my-lm", path=_LAND_PATH)
+        await _wait_banner_becomes(pilot, wizard, landed)
+        assert len(store.land_calls) == 1
+
+        # release run 1's blocked leg — its late item posts after the
+        # fresh run completed; the drop keeps the fresh verdicts intact
+        gate.set()
+        await _settled(pilot, app)
+        assert _gauntlet_row_text(wizard, 0, 0) == (
+            GAUNTLET_ROW_DRY_RUN_PASS.format(cells="6")), (
+            "a stale result from the abandoned run must never overwrite"
+        )
+        assert _gauntlet_banner(wizard) == landed
+        assert len(store.land_calls) == 1, "run 1 never lands"

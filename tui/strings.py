@@ -396,6 +396,50 @@ GAUNTLET_TITLE = "接入 gauntlet — {key}"
 WIZ_IMPORT_LABEL = "从文件导入"
 WIZ_EXPORT_LABEL = "导出自定义注册表"
 
+# ===== 接入 gauntlet 面板 (GAUNTLET_, 09-05, CUST-04 UI + D-08/D-11) =====
+# The gauntlet panel's rows / banner / toasts (09-UI-SPEC Copywriting
+# Contract verbatim). Format fields: {item} is the item label below,
+# {cells} the planned-cell count parsed from the service's
+# ``planned_cells=N`` detail token, {summary} the item's remaining detail
+# tokens joined verbatim (data, never translated), {key} the candidate
+# registry key, {path} a filesystem path, {n} a count, {kind} 模型/数据集.
+# GAUNTLET_ROW_PENDING is the one derived row (the copy table defines no
+# panel-specific pending line): the ENV pending glyph composition with the
+# row's item identity — every gauntlet mockup row carries its item label.
+GAUNTLET_ITEM_DRY_RUN = "dry-run 预检"
+GAUNTLET_ITEM_AUDIT = "audit 对账"
+GAUNTLET_ROW_PENDING = "◌ {item} 待检"
+GAUNTLET_ROW_RUNNING = "⠋ {item} …运行中"
+GAUNTLET_ROW_DRY_RUN_PASS = "✓ dry-run 预检 — {cells} cell(s) 计划成功"
+GAUNTLET_ROW_PASS = "✓ {item} — {summary}"
+GAUNTLET_ROW_FAIL = "✗ {item} — {summary}"
+# The prominent CUST-04 failure banner — the 官方注册表零触碰 guarantee is
+# contract wording (binding constraint 11), never paraphrased.
+GAUNTLET_BANNER_FAIL = "✗ gauntlet 未通过 — {key} 未落盘（官方注册表零触碰）"
+GAUNTLET_ROW_LANDED = "✓ 已落盘: {key} → {path}"
+# The land success toast reuses GAUNTLET_ROW_LANDED verbatim (the copy
+# table names no separate toast — the landed row IS the success copy).
+# Session undo (D-08): the [u] affordance is session-scoped (gone once the
+# panel closes), explicit, immediately-after, toast-confirmed.
+GAUNTLET_UNDO_AFFORDANCE = "[u] 会话内撤销"
+GAUNTLET_UNDO_LABEL = "会话内撤销"   # binding description (affordance minus keycap)
+GAUNTLET_UNDO_TOAST = "✓ 已撤销 {key}"
+# Drill-down chrome (derived, the ENV detail-title idiom): the row's item
+# label over the subprocess's own verbatim output lines (data, no copy).
+GAUNTLET_DRILL_TITLE = "{item} — 详情"
+GAUNTLET_DRILL_HINT = "[enter] 详情"
+# D-11 import/export copy. The conflicts header names the collect-all
+# count; problem lines reuse the SEL_TEMPLATE_PROBLEM_LINE shape. The
+# exported toast deliberately differs from SEL_TEMPLATE_EXPORTED (that row
+# says 模板已导出 — the registry export is its own wording).
+GAUNTLET_IMPORT_CONFLICTS = "✗ 导入冲突 — 共 {n} 处："
+GAUNTLET_IMPORTED_TOAST = "✓ 已导入 {n} 条（{kind}）"
+GAUNTLET_EXPORTED_TOAST = "✓ 已导出: {path}"
+GAUNTLET_EXPORT_EMPTY_TOAST = "尚无自定义条目可导出"
+# Derived: the export path-prompt's problems header (write-failure lines
+# through the same numbered report surface).
+GAUNTLET_EXPORT_PROBLEMS = "✗ 导出失败 — 共 {n} 处："
+
 # ===== 导航壳 (NAV_, 09-03, D-13/D-15) =====
 # Top-menu slot names — the RATIFIED verbatim resource nouns (D-13,
 # 09-UI-SPEC Navigation Shell): never renamed, never re-translated. The
