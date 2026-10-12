@@ -31,6 +31,7 @@ import threading
 from pathlib import Path
 
 from env_smoke import CheckResult  # top-level module (pipeline/ sys.path root)
+from rich.text import Text
 from textual.binding import Binding
 
 from tui.app import DnallmMarkTui
@@ -304,7 +305,7 @@ async def test_kick_on_empty_queue_exits_and_wait_for_complete_returns():
 
 from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import RichLog, Static
+from textual.widgets import DataTable, RichLog, Static
 
 from tui.screens.data_manager import (
     ChannelDetail,
@@ -521,8 +522,7 @@ async def test_both_panes_render_from_fake_data():
 
         queue = _queue_table(screen)
         assert queue.row_count == 2
-        assert _row(queue, 0)[0] == "mouse__DMS"  # downloading first? no —
-        # file order for non-terminal states: fixture order holds
+        # no terminal states: stable file order holds
         assert [_row(queue, i)[0] for i in range(2)] == [
             "GUE__emperven_H3", "mouse__DMS"]
 
@@ -679,8 +679,8 @@ async def test_mismatch_banner_block_and_sort_to_top():
 
         table = _queue_table(screen)
         order = [_row(table, i)[0] for i in range(table.row_count)]
-        assert order == ["k-mismatch", "k-failed", "k-done"], (
-            "mismatch and failed sort to the top (stable file order)"
+        assert order == ["k-failed", "k-mismatch", "k-done"], (
+            "mismatch and failed sort to the top; stable file order within"
         )
 
 
@@ -688,7 +688,7 @@ async def test_recovered_rows_append_the_restart_note():
     """D-06 restart visibility: interrupted pending rows carry the dim
     note segment (the disabled-suffix append idiom)."""
     service = FakeDataManagerService(entries=(
-        _queue_entry("GUE__emp_H3", interrupted=True),))
+        _queue_entry("k1", interrupted=True),))
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_screen(pilot, app, service)
@@ -816,7 +816,7 @@ async def test_d_enqueues_missing_cursor_with_all_outcome_toasts():
         assert queue_fake.claim_next_calls >= 1, "enqueued -> kicked"
 
         # already queued: move to row 1
-        _missing_table(app.screen).cursor_down(1)
+        _missing_table(app.screen).move_cursor(row=1)
         await pilot.pause()
         await pilot.press("d")
         await pilot.pause()
@@ -824,7 +824,7 @@ async def test_d_enqueues_missing_cursor_with_all_outcome_toasts():
             key="mouse__DMS") in _toast_messages(app)
 
         # disabled channel: row 2
-        _missing_table(app.screen).cursor_down(1)
+        _missing_table(app.screen).move_cursor(row=2)
         await pilot.pause()
         await pilot.press("d")
         await pilot.pause()
@@ -877,7 +877,7 @@ async def test_r_retries_failed_and_mismatch_noops_others():
         assert service.retry_calls == ["k-failed"]
         assert queue_fake.claim_next_calls >= 1
 
-        _queue_table(app.screen).cursor_down(1)
+        _queue_table(app.screen).move_cursor(row=1)
         await pilot.pause()
         await pilot.press("r")
         await pilot.pause()
@@ -939,7 +939,7 @@ async def test_x_cancel_confirms_both_variants_and_noops_others():
         # done: the noop toast
         table = _queue_table(app.screen)
         table.focus()
-        table.cursor_down(1)
+        table.move_cursor(row=1)
         await pilot.pause()
         await pilot.press("x")
         await pilot.pause()
@@ -956,11 +956,17 @@ async def test_drill_down_renders_key_url_argv_reconcile_log(
     the composed argv, the reconcile numbers, and the verbatim log."""
     monkeypatch.setattr(download_queue_module, "resolve_modelscope_cli",
                         lambda cli_path=None: Path("/fake/modelscope"))
-    service = FakeDataManagerService(entries=(
-        _queue_entry("GUE__emp_H3", "done", last_percent=100,
-                     reconcile=_reconcile(
-                         declared={"Train": 3}, measured={"train": 3})),),
-        logs={"GUE__emp_H3": ("[argv]", "/fake download", "[exit] 0")})
+    service = FakeDataManagerService(
+        entries=(_queue_entry(
+            "GUE__emp_H3", "done", last_percent=100,
+            reconcile=_reconcile(
+                declared={"Train": 3}, measured={"train": 3})),),
+        logs={"GUE__emp_H3": ("[argv]", "/fake download", "[exit] 0")},
+        channel_details={"GUE__emp_H3": ChannelDetail(
+            key="GUE__emp_H3", source_url=_GUE_URL,
+            argv=("/fake/modelscope", "download", "--dataset",
+                  "lgq12697/GUE"),
+            channel="downloadable", reason_code=None)})
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_screen(pilot, app, service)

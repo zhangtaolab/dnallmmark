@@ -1,5 +1,5 @@
 """
-data_manager — the slot-3 数据管理 screen (Phase 10, 10-04;
+data_manager — the slot-3 data-manager screen (Phase 10, 10-04;
 D-13/D-14/D-15 + the D-12 Zenodo entry surface).
 
 The operator's window onto everything 10-01..10-03 built: the
@@ -23,14 +23,23 @@ Contract (locked decisions):
   ``Message`` (WR-02 — handlers drop stale ids); the console never
   freezes. The DOWNLOAD loop itself is the app-level driver worker
   (``tui/app.py``) — never started by this screen, only kicked.
-- D-15: the bottom bar is d 入队 / r 重试 / x 取消 / a 全部入队 /
-  enter 详情 (declaration order) + the constant ``?`` ``q`` right
-  segment; ``g`` (re-audit, mismatch rows) and ``z`` (Zenodo) are
-  show=False bindings (auto-defaults 7 and the D-12 entry).
+- Persisted-state-as-truth (T-10-04-01): the app-forwarded queue events
+  are applied by RE-READING the entry from the service and re-rendering
+  its row — a late or duplicated event can therefore never overwrite a
+  newer state; the row always shows the queue's own current truth.
+- D-15: the bottom bar is d enqueue / r retry / x cancel / a
+  enqueue-all / enter detail (declaration order) + the constant ``?``
+  ``q`` right segment; ``g`` (re-audit, mismatch rows) and ``z``
+  (Zenodo) are show=False bindings (auto-defaults 7 and the D-12
+  entry).
 - D-07/D-09: mismatch entries render one prominent banner row each
   directly under the queue title AND sort to the top of the queue table
   (with failed rows); presence never flips on mismatch (the service's
-  done gate owns that upstream, D-11).
+  done gate owns that upstream, D-11). Banners render only where the
+  reconcile payload carries the declared/measured numbers (dataset
+  granularity — the contract's {n}/{m} fields); a mismatched BUNDLE row
+  sorts to the top and carries its per-key map in the drill-down (no
+  number pair exists for the whole-package lane).
 - D-03: the drill-down renders data, never translated, never elided —
   the full key, the registry ``download_url`` (the only download
   authority, D-01/SC1), the composed LIST argv, the reconcile numbers,
@@ -40,38 +49,55 @@ Contract (locked decisions):
 - I18N-01: zero Chinese literals in this module — every operator-facing
   string renders through ``tui/strings.py`` constants (grep-enforced);
   dataset keys, URLs, argv, machine codes, and file paths stay English
-  verbatim (data, never copy).
+  verbatim (data, never copy). The ``—`` table dash and the probe-error
+  placeholder below are table symbols / data words, not copy.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 from rich.text import Text
+from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
-from textual.screen import Screen
-from textual.widgets import DataTable, Label
+from textual.message import Message
+from textual.screen import ModalScreen, Screen
+from textual.widgets import DataTable, Footer, Label, RichLog, Static
 
 from tui.screens.nav import BottomBar, TopMenuBar
+from tui.screens.selection import ConfirmModal
 from tui.services import download_queue, registries, settings, zenodo_bundle
 from tui.services.download_queue import (
+    KIND_ZENODO_BUNDLE,
+    ZENODO_BUNDLE_KEY,
     EnqueueOutcome,
     MissingInfo,
     QueueEntry,
+    QueueEvent,
     ReauditOutcome,
 )
 from tui.strings import (
+    APP_MODAL_BACK_LABEL,
+    DL_BUNDLE_TASK_NAME,
     DL_CANCEL_LABEL,
+    DL_DISABLED_TOAST,
     DL_ENQUEUE_ALL_LABEL,
     DL_ENQUEUE_LABEL,
     DL_MISSING_COL_KEY,
     DL_MISSING_COL_ROWS,
+    DL_MISSING_EMPTY,
     DL_MISSING_TITLE,
+    DL_PRESENCE_SUMMARY,
     DL_RETRY_LABEL,
     DL_SCREEN_TITLE,
+    DL_ZENODO_DISABLED_TOAST,
+    DL_ZENODO_FAILED,
     DL_ZENODO_KEY_LABEL,
+    DL_ZENODO_NOT_PUBLIC,
     DL_ZENODO_PROBING,
+    DL_ZENODO_PUBLIC,
     ENV_DETAIL_LABEL,
     NAV_LABEL_ABOUT,
     NAV_LABEL_DATA,
@@ -79,12 +105,32 @@ from tui.strings import (
     NAV_LABEL_MONITOR,
     NAV_LABEL_RUN_CONFIG,
     NAV_LABEL_SELECTION,
+    QUEUE_BANNER_MISMATCH,
+    QUEUE_CANCEL_NOOP,
+    QUEUE_CLI_UNAVAILABLE,
     QUEUE_COL_PROGRESS,
     QUEUE_COL_RECONCILE,
     QUEUE_COL_STATE,
     QUEUE_COL_TASK,
+    QUEUE_CONFIRM_CANCEL_DOWNLOADING,
+    QUEUE_CONFIRM_CANCEL_PENDING,
+    QUEUE_EMPTY,
+    QUEUE_PROGRESS_INDETERMINATE,
     QUEUE_REAUDIT_LABEL,
+    QUEUE_RECONCILE_MISMATCH,
+    QUEUE_RECONCILE_PASS,
+    QUEUE_RECONCILE_RUNNING,
+    QUEUE_RESTART_NOTE,
+    QUEUE_RETRY_NOOP,
+    QUEUE_STATE_DONE,
+    QUEUE_STATE_DOWNLOADING,
+    QUEUE_STATE_FAILED,
+    QUEUE_STATE_MISMATCH,
+    QUEUE_STATE_PENDING,
     QUEUE_TITLE,
+    QUEUE_TOAST_ALREADY_QUEUED,
+    QUEUE_TOAST_ENQUEUED,
+    QUEUE_TOAST_ENQUEUED_ALL,
 )
 
 if TYPE_CHECKING:
@@ -107,6 +153,9 @@ _TASK_W = 33
 _STATE_W = 10
 _PROGRESS_W = 17
 
+#: The DataTable's default per-side cell padding (content = width - 2).
+_CONTENT_PAD = 2
+
 #: (column key, header constant, width) — the column keys are the
 #: update_cell addressing scheme (English technical ids, I18N-01).
 _QUEUE_COLUMNS: tuple[tuple[str, str, int], ...] = (
@@ -124,6 +173,26 @@ _MISSING_COLUMNS: tuple[tuple[str, str, int], ...] = (
 # Row keys for the non-entry state rows (never action targets).
 _MISSING_EMPTY_ROW_KEY = "_missing-empty"
 _QUEUE_EMPTY_ROW_KEY = "_queue-empty"
+
+# Table symbols / data words (not operator copy — see the module header).
+_DASH = "—"
+_PROBE_ERROR_DETAIL = "unknown"  # the probe API answers a bare state
+
+# Per-cell rich Text styles: semantic theme tokens only (the glyph is
+# the meaning-carrier under NO_COLOR; color is the redundant channel).
+_STYLE_MUTED = "$text-muted"
+_STYLE_RUNNING = "dim"
+_STYLE_DONE = "bold $success"
+_STYLE_FAIL = "bold $error"
+_STYLE_WARN = "$warning"
+#: The five queue states -> (copy constant, style).
+_STATE_CELLS = {
+    "pending": (QUEUE_STATE_PENDING, _STYLE_MUTED),
+    "downloading": (QUEUE_STATE_DOWNLOADING, _STYLE_RUNNING),
+    "done": (QUEUE_STATE_DONE, _STYLE_DONE),
+    "failed": (QUEUE_STATE_FAILED, _STYLE_FAIL),
+    "mismatch": (QUEUE_STATE_MISMATCH, _STYLE_WARN),
+}
 
 
 @dataclass(frozen=True)
@@ -304,7 +373,7 @@ class DataManagerBackend:
 
     def channel_detail(self, key: str) -> ChannelDetail:
         """The drill-down channel data (registry authority + LIST argv)."""
-        if key == download_queue.ZENODO_BUNDLE_KEY:
+        if key == ZENODO_BUNDLE_KEY:
             return ChannelDetail(
                 key=key, source_url=zenodo_bundle.ZENODO_API_URL,
                 argv=None, channel="downloadable", reason_code=None)
@@ -351,6 +420,55 @@ def _cell(value: object, width: int, style: "str | None" = None) -> Text:
     )
 
 
+def _int_sum(values: object) -> int:
+    """Sum the non-bool int values of a mapping (defensive, 0 on junk)."""
+    if not isinstance(values, dict):
+        return 0
+    return sum(value for value in values.values()
+               if isinstance(value, int) and not isinstance(value, bool))
+
+
+def _sorted_entries(entries: "tuple[QueueEntry, ...]"
+                    ) -> "tuple[QueueEntry, ...]":
+    """Mismatch and failed rows first (stable file order within groups)."""
+    return tuple(sorted(
+        entries,
+        key=lambda entry: 0 if entry.state in ("mismatch", "failed") else 1,
+    ))
+
+
+class QueueDetailModal(ModalScreen):
+    """The drill-down modal: the row's own data, verbatim (D-03).
+
+    A wrapping, scrolling RichLog renders the composed data lines — the
+    full key, the registry URL, the LIST argv, the reconcile numbers,
+    the machine problems, and the verbatim CLI/audit log; long values
+    wrap, nothing is ever elided.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+    ]
+
+    def __init__(self, entry_key: str,
+                 lines: "tuple[str, ...]", **kwargs):
+        super().__init__(**kwargs)
+        self.entry_key = entry_key
+        self.detail_lines = tuple(lines)
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dl-detail-box", classes="modal-box"):
+            yield RichLog(wrap=True, id="dl-detail-log")
+            yield Footer()
+
+    def on_mount(self) -> None:
+        box = self.query_one("#dl-detail-box", Vertical)
+        box.border_title = self.entry_key
+        log = self.query_one("#dl-detail-log", RichLog)
+        for line in self.detail_lines:
+            log.write(line)
+
+
 class DataManagerScreen(Screen):
     """The data-manager screen: two panes over the shared queue service."""
 
@@ -383,6 +501,37 @@ class DataManagerScreen(Screen):
         Binding("6", "app.nav(6)", NAV_LABEL_ABOUT, show=False),
     ]
 
+    class SnapshotLoaded(Message):
+        """The mount/reload snapshot arrived (worker thread -> loop).
+
+        Carries the run id — handlers drop superseded reloads (WR-02).
+        """
+
+        def __init__(self, snapshot: MissingSnapshot,
+                     entries: "tuple[QueueEntry, ...]",
+                     run_id: int) -> None:
+            self.snapshot = snapshot
+            self.entries = entries
+            self.run_id = run_id
+            super().__init__()
+
+    class ZenodoProbed(Message):
+        """The D-12 probe answered (worker thread -> loop; WR-02)."""
+
+        def __init__(self, state: str, probed_at: str,
+                     run_id: int) -> None:
+            self.state = state
+            self.probed_at = probed_at
+            self.run_id = run_id
+            super().__init__()
+
+    class ReauditDone(Message):
+        """The g re-audit finished (worker thread -> loop; WR-02)."""
+
+        def __init__(self, run_id: int) -> None:
+            self.run_id = run_id
+            super().__init__()
+
     def __init__(self,
                  data_service: "DataManagerServiceProtocol | None" = None,
                  **kwargs):
@@ -391,6 +540,18 @@ class DataManagerScreen(Screen):
             data_service if data_service is not None
             else DataManagerBackend()
         )
+        self._snapshot: MissingSnapshot | None = None
+        self._queue_entries: tuple[QueueEntry, ...] = ()
+        # Live percents streamed from the driver (None = indeterminate).
+        self._live_percents: dict[str, int | None] = {}
+        # The per-worker run ids (WR-02): bumped on every reload so a
+        # superseded worker's late post drops.
+        self._snapshot_run_id = 0
+        self._probe_run_id = 0
+        self._reaudit_run_id = 0
+        # The Zenodo line state (None = probing, the compose default).
+        self._zenodo_state: str | None = None
+        self._zenodo_probed_at = ""
 
     def compose(self) -> ComposeResult:
         """The screen frame: nav bars, title bar, the two stacked regions.
@@ -418,7 +579,7 @@ class DataManagerScreen(Screen):
         yield BottomBar()
 
     def on_mount(self) -> None:
-        """Build the two empty tables and focus the missing list."""
+        """Build the two tables, focus the missing list, start the reads."""
         for table_id, columns in (("#dl-missing", _MISSING_COLUMNS),
                                   ("#dl-queue", _QUEUE_COLUMNS)):
             table = self.query_one(table_id, DataTable)
@@ -430,3 +591,478 @@ class DataManagerScreen(Screen):
                 else:
                     table.add_column(header, key=column_key)
         self.query_one("#dl-missing", DataTable).focus()
+        self._load_snapshot()
+        self._probe_zenodo()
+
+    # ===== The exclusive read workers (D-03/D-12/SC5) =====
+    #
+    # Each worker carries its OWN group: textual exclusivity cancels by
+    # (node, group), so a shared "default" group would make the mount
+    # pair (snapshot + probe) cancel each other — the probe's start
+    # kills the just-started snapshot thread (probe-pinned on 8.2.8;
+    # the env/selection screens never hit this only because their
+    # workers never overlap).
+
+    @work(exclusive=True, thread=True, group="dl-snapshot")
+    def _load_snapshot(self) -> None:
+        """Read the missing snapshot + queue entries off the event loop."""
+        run_id = self._snapshot_run_id  # the run this worker serves (WR-02)
+        snapshot = self._service.missing_snapshot()
+        entries = self._service.entries()
+        self.post_message(
+            self.SnapshotLoaded(snapshot, entries, run_id))
+
+    @work(exclusive=True, thread=True, group="dl-probe")
+    def _probe_zenodo(self) -> None:
+        """The D-12 publication probe (session-memory; auto-default 6)."""
+        run_id = self._probe_run_id
+        state = self._service.probe_zenodo()
+        # aware local (the _now_iso idiom) — the HH:MM is a wall-clock
+        probed_at = datetime.now().astimezone().strftime("%H:%M")
+        self.post_message(self.ZenodoProbed(state, probed_at, run_id))
+
+    @work(exclusive=True, thread=True, group="dl-reaudit")
+    def _run_reaudit(self) -> None:
+        """The explicit g re-audit — the audit subprocess stays inside
+        the worker (R-03: default outputs, the maintainer's review)."""
+        run_id = self._reaudit_run_id
+        self._service.reaudit(f"reaudit-{run_id}")
+        self.post_message(self.ReauditDone(run_id))
+
+    def _reload_snapshot(self) -> None:
+        """Bump the run id and reload both panes through the worker."""
+        self._snapshot_run_id += 1
+        self._load_snapshot()
+
+    # ===== Message handlers (event-loop side: render only) =====
+
+    def on_data_manager_screen_snapshot_loaded(
+            self, message: SnapshotLoaded) -> None:
+        """Both panes compose from the snapshot (the loading clears)."""
+        if message.run_id != self._snapshot_run_id:
+            return  # a superseded reload's late post (WR-02)
+        self._snapshot = message.snapshot
+        self._queue_entries = message.entries
+        self._render_presence_summary()
+        self._render_missing()
+        self._render_queue()
+
+    def on_data_manager_screen_zenodo_probed(
+            self, message: ZenodoProbed) -> None:
+        """The Zenodo line flips to its terminal probe state (D-12)."""
+        if message.run_id != self._probe_run_id:
+            return  # a superseded probe's late post (WR-02)
+        self._zenodo_state = message.state
+        self._zenodo_probed_at = message.probed_at
+        self._render_zenodo_line()
+
+    def on_data_manager_screen_reaudit_done(
+            self, message: ReauditDone) -> None:
+        """The re-audit finished: refresh both panes (the refreshed
+        baseline re-derives the missing set and the presence view)."""
+        if message.run_id != self._reaudit_run_id:
+            return  # a superseded re-audit's late post (WR-02)
+        self._reload_snapshot()
+
+    # ===== The app-forwarded queue events (persisted-state-as-truth) =====
+
+    def apply_queue_event(self, event: QueueEvent) -> None:
+        """One completed task: refresh its row from the queue's truth.
+
+        Re-reads the entries (never trusts the event payload for row
+        state — T-10-04-01) and re-renders the table + banners; a done
+        event additionally reloads the missing list (the D-11 flip
+        moment: the reconciled key left the missing set).
+        """
+        entries = self._service.entries()
+        self._queue_entries = tuple(entries)
+        self._live_percents.pop(event.key, None)
+        self._render_queue()
+        if event.state == "done":
+            self._reload_snapshot()
+
+    def apply_queue_progress(self, key: str,
+                             percent: "int | None") -> None:
+        """One live tick: update the downloading row's cells in place."""
+        self._live_percents[key] = percent
+        entry = next((item for item in self._queue_entries
+                      if item.key == key), None)
+        if entry is None or entry.state != "downloading":
+            return
+        table = self.query_one("#dl-queue", DataTable)
+        try:
+            table.update_cell(key, "progress", self._progress_cell(entry))
+            table.update_cell(key, "reconcile",
+                              self._reconcile_cell(entry))
+        except Exception:  # noqa: BLE001 — a vanished row mid-rebuild
+            return  # the next full render owns the row
+
+    # ===== Rendering (pure UI state mutation over service results) =====
+
+    def _render_presence_summary(self) -> None:
+        """The title-line presence summary (blank when n_audit absent)."""
+        snapshot = self._snapshot
+        if snapshot is None or snapshot.total == 0:
+            self.query_one("#dl-presence-summary", Label).update("")
+            return
+        self.query_one("#dl-presence-summary", Label).update(
+            DL_PRESENCE_SUMMARY.format(
+                present=snapshot.present, total=snapshot.total,
+                missing=snapshot.missing))
+
+    def _render_missing(self) -> None:
+        """The missing pane: one row per MissingInfo, the happy zero."""
+        table = self.query_one("#dl-missing", DataTable)
+        table.clear()
+        snapshot = self._snapshot
+        if snapshot is None:
+            return  # pre-snapshot emptiness (one worker hop)
+        self.query_one("#dl-missing-title", Label).update(
+            DL_MISSING_TITLE.format(n=snapshot.missing))
+        if not snapshot.rows:
+            if snapshot.total:
+                # the happy zero (DATA-03's goal state)
+                table.add_row(
+                    Text(DL_MISSING_EMPTY.format(total=snapshot.total),
+                         style=_STYLE_DONE),
+                    "", key=_MISSING_EMPTY_ROW_KEY)
+            return
+        for row in snapshot.rows:
+            key_cell = _truncate(Text.assemble(
+                Text("✗ ", style=_STYLE_FAIL), Text(row.key),
+            ), _TASK_W - _CONTENT_PAD)
+            table.add_row(
+                key_cell,
+                Text(f"{row.declared_total:,}", justify="right"),
+                key=row.key)
+
+    def _render_queue(self) -> None:
+        """The queue pane: five-state rows, banners, the empty state."""
+        table = self.query_one("#dl-queue", DataTable)
+        table.clear()
+        entries = self._queue_entries
+        self.query_one("#dl-queue-title", Label).update(
+            QUEUE_TITLE.format(n=len(entries)))
+        self._render_banners()
+        if not entries:
+            table.add_row(
+                Text(QUEUE_EMPTY, style=_STYLE_MUTED),
+                "", "", "", key=_QUEUE_EMPTY_ROW_KEY)
+            return
+        for entry in _sorted_entries(entries):
+            table.add_row(
+                self._task_cell(entry),
+                self._state_cell(entry),
+                self._progress_cell(entry),
+                self._reconcile_cell(entry),
+                key=entry.key)
+
+    def _render_banners(self) -> None:
+        """One prominent banner per number-carrying mismatch (D-07)."""
+        box = self.query_one("#dl-queue-banners", Vertical)
+        box.remove_children()
+        for entry in self._queue_entries:
+            if entry.state != "mismatch":
+                continue
+            reconcile = entry.reconcile if isinstance(
+                entry.reconcile, dict) else {}
+            declared = reconcile.get("declared")
+            measured = reconcile.get("measured")
+            if not (isinstance(declared, dict)
+                    and isinstance(measured, dict)):
+                continue  # the bundle lane carries per_key, not numbers
+            box.mount(Static(
+                Text(QUEUE_BANNER_MISMATCH.format(
+                    key=entry.key, n=_int_sum(declared),
+                    m=_int_sum(measured)),
+                    style=_STYLE_WARN),
+                classes="queue-banner-mismatch"))
+
+    def _render_zenodo_line(self) -> None:
+        """The Zenodo line's four-state render (D-12)."""
+        line = self.query_one("#dl-zenodo-line", Label)
+        state = self._zenodo_state
+        if state is None:
+            line.update(Text(DL_ZENODO_PROBING, style=_STYLE_MUTED))
+        elif state == zenodo_bundle.PROBE_PUBLIC:
+            line.update(Text(DL_ZENODO_PUBLIC, style=_STYLE_DONE))
+        elif state == zenodo_bundle.PROBE_NOT_PUBLIC:
+            # {HH:MM} is not a legal str.format field (the colon parses
+            # as a format spec) — the placeholder fills via replace
+            line.update(Text(
+                DL_ZENODO_NOT_PUBLIC.replace(
+                    "{HH:MM}", self._zenodo_probed_at),
+                style=_STYLE_MUTED))
+        else:
+            line.update(Text(
+                DL_ZENODO_FAILED.format(error=_PROBE_ERROR_DETAIL),
+                style=_STYLE_WARN))
+
+    def _task_cell(self, entry: QueueEntry) -> Text:
+        """The task cell: the key (bundle label for the bundle row) with
+        the dim restart note appended on recovered rows (the disabled-
+        suffix append idiom — truncation may clip it for long keys; the
+        full note rides the drill-down)."""
+        display = (DL_BUNDLE_TASK_NAME
+                   if entry.kind == KIND_ZENODO_BUNDLE else entry.key)
+        segments: list[Text] = [Text(display)]
+        if entry.interrupted:
+            segments.append(
+                Text(" " + QUEUE_RESTART_NOTE, style=_STYLE_RUNNING))
+        return _truncate(Text.assemble(*segments),
+                         _TASK_W - _CONTENT_PAD)
+
+    @staticmethod
+    def _state_cell(entry: QueueEntry) -> Text:
+        """The state cell: the glyph-first copy + its style vocabulary."""
+        copy, style = _STATE_CELLS.get(
+            entry.state, (entry.state, _STYLE_MUTED))
+        return Text(copy, style=style)
+
+    def _progress_cell(self, entry: QueueEntry) -> Text:
+        """The progress cell (D-03/auto-default 3: never a fabricated
+        percent; the bar's filled cells carry the live theme accent —
+        the probe-pinned span limitation)."""
+        percent = self._live_percents.get(
+            entry.key, entry.last_percent)
+        if entry.state == "downloading":
+            if percent is None:
+                return Text(QUEUE_PROGRESS_INDETERMINATE,
+                            style=_STYLE_RUNNING)
+            filled = max(0, min(10, round(percent / 10)))
+            accent = str(self.app.current_theme.accent)
+            return Text.assemble(
+                Text(f"{percent:>3}%", style=_STYLE_RUNNING),
+                Text(" "),
+                Text("█" * filled, style=accent),
+                Text("·" * (10 - filled), style=_STYLE_RUNNING),
+            )
+        if entry.state in ("done", "mismatch"):
+            return Text("100%", style=_STYLE_RUNNING)
+        if entry.state == "failed":
+            if percent is None:
+                return Text(_DASH, style=_STYLE_RUNNING)
+            return Text(f"{percent}%", style=_STYLE_RUNNING)
+        return Text(_DASH, style=_STYLE_RUNNING)
+
+    def _reconcile_cell(self, entry: QueueEntry) -> Text:
+        """The reconcile cell: pass / running / mismatch / dash."""
+        if entry.kind == KIND_ZENODO_BUNDLE:
+            # the bundle lane's per-key verdict map rides the drill-down
+            # (no declared/measured pair exists for the whole package)
+            return Text(_DASH, style=_STYLE_RUNNING)
+        reconcile = entry.reconcile if isinstance(
+            entry.reconcile, dict) else {}
+        measured = reconcile.get("measured")
+        if entry.state == "done" and isinstance(measured, dict):
+            return Text(
+                QUEUE_RECONCILE_PASS.format(n=_int_sum(measured)),
+                style=_STYLE_DONE)
+        if entry.state == "downloading":
+            percent = self._live_percents.get(
+                entry.key, entry.last_percent)
+            if percent == 100:
+                # the post-landing transient (auto-default 14)
+                return Text(QUEUE_RECONCILE_RUNNING,
+                            style=_STYLE_RUNNING)
+        if entry.state == "mismatch":
+            declared = reconcile.get("declared")
+            if isinstance(declared, dict) and isinstance(measured, dict):
+                return Text(
+                    QUEUE_RECONCILE_MISMATCH.format(
+                        n=_int_sum(declared), m=_int_sum(measured)),
+                    style=_STYLE_WARN)
+        return Text(_DASH, style=_STYLE_RUNNING)
+
+    # ===== Actions (user intent; toasts are never silent) =====
+
+    def _cursor_row_key(self, table_id: str) -> "str | None":
+        """The cursor row's key (None on state rows / empty tables)."""
+        table = self.query_one(table_id, DataTable)
+        if not table.is_valid_coordinate(table.cursor_coordinate):
+            return None  # coordinate_to_cell_key RAISES on invalid (CR-03)
+        return str(table.coordinate_to_cell_key(
+            table.cursor_coordinate)[0].value)
+
+    def _missing_cursor_key(self) -> "str | None":
+        """The missing-table cursor key (state rows never act)."""
+        key = self._cursor_row_key("#dl-missing")
+        if key is None or self._snapshot is None:
+            return None
+        return key if any(row.key == key
+                          for row in self._snapshot.rows) else None
+
+    def _queue_cursor_entry(self) -> "QueueEntry | None":
+        """The queue-table cursor entry (state rows never act)."""
+        key = self._cursor_row_key("#dl-queue")
+        if key is None:
+            return None
+        return next((entry for entry in self._queue_entries
+                     if entry.key == key), None)
+
+    def _toast_enqueue_outcome(self, outcome: EnqueueOutcome) -> bool:
+        """Render one enqueue outcome; True iff the kick should follow."""
+        if outcome.action == "enqueued":
+            self.app.notify(
+                QUEUE_TOAST_ENQUEUED.format(key=outcome.key))
+            return True
+        if outcome.action == "already_queued":
+            self.app.notify(
+                QUEUE_TOAST_ALREADY_QUEUED.format(key=outcome.key))
+        elif outcome.action == "disabled":
+            self.app.notify(
+                DL_DISABLED_TOAST.format(key=outcome.key),
+                severity="warning")
+        elif outcome.action == "cli_unavailable":
+            self.app.notify(QUEUE_CLI_UNAVAILABLE, severity="error")
+        return False
+
+    def action_enqueue_cursor(self) -> None:
+        """d: enqueue the missing-table cursor row's dataset key."""
+        key = self._missing_cursor_key()
+        if key is None:
+            return  # state rows / no rows: silent (the selection rule)
+        outcome = self._service.enqueue(key)
+        if self._toast_enqueue_outcome(outcome):
+            self.app.kick_download_queue()
+            self._reload_snapshot()
+
+    def action_enqueue_all(self) -> None:
+        """a: enqueue every missing downloadable key (the count toast)."""
+        count = self._service.enqueue_all()
+        self.app.notify(QUEUE_TOAST_ENQUEUED_ALL.format(n=count))
+        if count:
+            self.app.kick_download_queue()
+            self._reload_snapshot()
+
+    def action_retry_cursor(self) -> None:
+        """r: re-queue the queue cursor's failed/mismatch entry."""
+        entry = self._queue_cursor_entry()
+        if entry is None:
+            return  # state rows: silent
+        if entry.state not in ("failed", "mismatch"):
+            self.app.notify(QUEUE_RETRY_NOOP)
+            return
+        if self._service.retry(entry.key):
+            self.app.kick_download_queue()
+            self._reload_snapshot()
+
+    def action_cancel_cursor(self) -> None:
+        """x: cancel the queue cursor's entry — ALWAYS behind the
+        ConfirmModal (the destructive list; the copy names the resume
+        retention for downloading rows, D-06)."""
+        entry = self._queue_cursor_entry()
+        if entry is None:
+            return  # state rows: silent
+        if entry.state == "pending":
+            message = QUEUE_CONFIRM_CANCEL_PENDING.format(key=entry.key)
+        elif entry.state == "downloading":
+            message = QUEUE_CONFIRM_CANCEL_DOWNLOADING.format(
+                key=entry.key)
+        else:
+            self.app.notify(QUEUE_CANCEL_NOOP)
+            return
+        if self.app.below_minimum_grid:
+            return  # WR-06: no chrome over the guard
+        key = entry.key
+        self.app.push_screen(ConfirmModal(
+            message, on_confirm=lambda: self._do_cancel(key)))
+
+    def _do_cancel(self, key: str) -> None:
+        """The confirmed cancel: through the seam, then reload."""
+        self._service.cancel(key)
+        self._reload_snapshot()
+
+    def action_reaudit_cursor(self) -> None:
+        """g: rerun the audit for the mismatch cursor row (D-10/R-03)
+        in the exclusive worker — the audit subprocess never touches the
+        event loop (SC5); the outcome refreshes both panes."""
+        entry = self._queue_cursor_entry()
+        if entry is None or entry.state != "mismatch":
+            return  # the binding is live on mismatch rows only
+        self._reaudit_run_id += 1
+        self._run_reaudit()
+
+    def action_zenodo_bundle(self) -> None:
+        """z: enqueue the whole-package bundle when public; otherwise
+        the never-silent explanatory toast (D-12)."""
+        if self._zenodo_state != zenodo_bundle.PROBE_PUBLIC:
+            self.app.notify(DL_ZENODO_DISABLED_TOAST)
+            return
+        outcome = self._service.enqueue_zenodo()
+        if outcome.action == "enqueued":
+            # the toast carries the operator-facing bundle label (the
+            # queue identity is the raw record key — detail data)
+            self.app.notify(
+                QUEUE_TOAST_ENQUEUED.format(key=DL_BUNDLE_TASK_NAME))
+            self.app.kick_download_queue()
+            self._reload_snapshot()
+        else:
+            self.app.notify(
+                QUEUE_TOAST_ALREADY_QUEUED.format(key=DL_BUNDLE_TASK_NAME))
+
+    # ===== The drill-down (D-03: data, never translated, never elided) =====
+
+    def action_show_detail(self) -> None:
+        """enter (table unfocused edge): drill into the focused table."""
+        self._open_detail_for_focused()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected
+                                   ) -> None:
+        """enter on the focused table: its native select event."""
+        self._open_detail_for_focused()
+
+    def _open_detail_for_focused(self) -> None:
+        """Route enter to the focused table's cursor row detail."""
+        queue_table = self.query_one("#dl-queue", DataTable)
+        if self.focused is queue_table:
+            entry = self._queue_cursor_entry()
+            if entry is not None:
+                self._open_detail(entry.key)
+            return
+        key = self._missing_cursor_key()
+        if key is not None:
+            self._open_detail(key)
+
+    def _open_detail(self, key: str) -> None:
+        """Compose and push the drill-down modal for one key."""
+        if self.app.below_minimum_grid:
+            return  # WR-06: no chrome over the guard
+        detail = self._service.channel_detail(key)
+        entry = next((item for item in self._queue_entries
+                      if item.key == key), None)
+        lines: list[str] = [f"key: {key}"]
+        lines.append(
+            "download_url: " + (detail.source_url or "-"))
+        lines.append(
+            "argv: " + (" ".join(detail.argv)
+                        if detail.argv else "-"))
+        if detail.reason_code:
+            lines.append(f"channel: {detail.channel} ({detail.reason_code})")
+        if entry is not None:
+            lines.append(f"state: {entry.state}")
+            lines.append(f"attempts: {entry.attempts}")
+            if entry.last_percent is not None:
+                lines.append(f"last_percent: {entry.last_percent}")
+            if entry.interrupted:
+                lines.append(QUEUE_RESTART_NOTE)
+            if entry.problems:
+                lines.append("problems: " + ", ".join(entry.problems))
+            reconcile = entry.reconcile if isinstance(
+                entry.reconcile, dict) else None
+            if reconcile is not None:
+                per_key = reconcile.get("per_key")
+                if isinstance(per_key, dict):
+                    for one_key, verdict in per_key.items():
+                        lines.append(f"reconcile: {one_key}: {verdict}")
+                else:
+                    for field in ("verdict", "declared", "measured",
+                                  "unified_eval_n"):
+                        if field in reconcile:
+                            lines.append(
+                                f"reconcile: {field}: {reconcile[field]}")
+        log_lines = self._service.read_log(key)
+        if log_lines:
+            lines.append("")
+            lines.extend(log_lines)
+        self.app.push_screen(QueueDetailModal(key, tuple(lines)))
