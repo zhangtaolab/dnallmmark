@@ -941,9 +941,14 @@ SHAPE_A_ENTRY = {
 
 
 def engine_service(tmp_path, monkeypatch, spawner, entries=None,
-                   cli=None):
+                   cli=None, runner=None):
     """A service over a tmp repo (shape-A synthetic entry) + tmp state
-    root + injected spawner — the offline engine lane."""
+    root + injected spawner — the offline engine lane.
+
+    ``runner`` is the reconcile-leg seam (10-02): None injects the
+    default PASSING fake (the landed->done transition now requires a
+    passing reconcile — the 10-01 engine tests stay offline); tests of
+    the gate itself inject failing/mismatching runners explicitly."""
     repo = tmp_repo_with_registry(
         tmp_path / "repo", entries or {"Demo__task": SHAPE_A_ENTRY})
     state = tmp_path / "state"
@@ -951,7 +956,9 @@ def engine_service(tmp_path, monkeypatch, spawner, entries=None,
     cli_path = str(cli) if cli is not None else str(fake_cli(tmp_path))
     service = download_queue.DownloadQueueService(
         repo_root=repo, state_path=state / "download_queue.json",
-        spawner=spawner, cli_path=cli_path)
+        spawner=spawner, runner=(runner if runner is not None
+                                 else passing_reconcile_runner()),
+        cli_path=cli_path)
     assert service.enqueue("Demo__task").action == "enqueued"
     service.claim_next()
     return service, repo, state
@@ -1363,3 +1370,589 @@ def test_cancel_mid_run_terminates_process_group_real_subprocess(
     datasets_tree = repo / "pipeline" / "datasets"
     assert not datasets_tree.exists() or not any(
         datasets_tree.rglob("*"))
+
+
+# =====================================================================
+# Lane 4: the D-09/D-10 reconcile kernel (10-02 Task 1) — the audit
+# subprocess leg, the verdict semantics, and the run_task done gate
+# =====================================================================
+
+import shutil
+from types import SimpleNamespace
+
+#: The whole-dir overlay override env name (the registry_loader
+#: contract; the reconcile/reaudit legs pin it to an EMPTY temp dir).
+OVERLAY_ENV = "DNALLMMARK_CUSTOM_REGISTRY_DIR"
+
+#: The four flags the reconcile leg MUST carry on every invocation (the
+#: anti-clobber boundary, T-10-02-01 — with all four at temp values the
+#: audit subprocess can never reach its committed default outputs).
+RECONCILE_OUTPUT_FLAGS = ("--registry-dir", "--datasets-root",
+                          "--data-dir", "--subsets-out", "--data-md")
+
+
+class FakeReconcileRunner:
+    """The gauntlet FakeRunner idiom at the runner seam: records every
+    call; ``on_call`` executes while the service's staging tempdir is
+    still ALIVE, so tests capture the staged registry content and write
+    the temp n_audit.json the service will parse."""
+
+    def __init__(self, on_call=None, exc=None, result=None):
+        self.calls = []
+        self.on_call = on_call
+        self.exc = exc
+        self.result = result
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append({"argv": list(argv), "kwargs": dict(kwargs)})
+        if self.exc is not None:
+            raise self.exc
+        if self.on_call is not None:
+            self.on_call(list(argv), kwargs)
+        return (self.result if self.result is not None
+                else SimpleNamespace(returncode=0, stdout="", stderr=""))
+
+
+def write_temp_n_audit(argv, tasks):
+    """Write a tasks-shaped n_audit.json into the call's --data-dir (the
+    temp output the service parses)."""
+    data_dir = Path(argv[argv.index("--data-dir") + 1])
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "n_audit.json").write_text(
+        json.dumps({"tasks": tasks}), encoding="utf-8")
+
+
+def audit_record(train, dev, test):
+    """One present n_audit task record with the given measured rows."""
+    def split(rows):
+        return {"rows": rows, "non_acgt_chars": 0, "strict_survivors": rows,
+                "n_tolerant_survivors": rows}
+    return {
+        "missing": False,
+        "unified_eval_n": test,
+        "splits": {"train": split(train), "dev": split(dev),
+                   "test": split(test)},
+    }
+
+
+def passing_reconcile_runner(key="Demo__task", train=10, dev=2, test=2):
+    """The default engine-lane runner: writes a PASSING temp n_audit for
+    ``key`` with rows matching the synthetic entry's declarations."""
+    return FakeReconcileRunner(
+        on_call=lambda argv, kwargs: write_temp_n_audit(
+            argv, {key: audit_record(train, dev, test)}))
+
+
+def reconcile_service(tmp_path, monkeypatch, runner, entries=None):
+    """A service over a tmp repo + tmp state root with the reconcile
+    runner injected (reconcile_dataset never touches queue state — the
+    tmp state root exists only for constructor parity)."""
+    repo = tmp_repo_with_registry(
+        tmp_path / "rrepo", entries or {"Demo__task": SHAPE_A_ENTRY})
+    state = tmp_path / "rstate"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        runner=runner, cli_path=str(fake_cli(tmp_path)))
+    return service, repo
+
+
+# ===== vocabulary + constructor knobs =====
+
+
+def test_reconcile_vocabulary_verdicts_env_and_default_timeout():
+    """The verdict vocabulary, the overlay env constant, and the 300s
+    default reconcile timeout (T-10-02-05)."""
+    assert download_queue.VERDICT_PASS == "pass"
+    assert download_queue.VERDICT_MISMATCH == "mismatch"
+    assert download_queue.VERDICT_FAILED == "failed"
+    assert download_queue.CUSTOM_DIR_ENV == OVERLAY_ENV
+    assert download_queue.DEFAULT_TIMEOUT_RECONCILE == 300
+
+
+def test_reconcile_timeout_knob_overridable(tmp_path, monkeypatch):
+    captured = {}
+    runner = FakeReconcileRunner(on_call=lambda argv, kwargs:
+                                 captured.update(kwargs))
+    service, _ = reconcile_service(tmp_path, monkeypatch, runner)
+    service._timeout_reconcile = 7
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert captured["timeout"] == 7
+
+
+# ===== the staging discipline (T-10-02-01: four temp outputs, one env
+# override, candidate-only registry, ABSOLUTE Dataset_path) =====
+
+
+def capture_staging(captured, key="Demo__task"):
+    """on_call hook: snapshot argv/env/kwargs + the staged registry
+    while the tempdir is alive, then write a passing temp n_audit."""
+    def hook(argv, kwargs):
+        captured["argv"] = list(argv)
+        captured["env"] = kwargs["env"]
+        captured["kwargs"] = dict(kwargs)
+        registry_dir = Path(argv[argv.index("--registry-dir") + 1])
+        captured["registry_dir"] = registry_dir
+        captured["staged"] = json.loads(
+            (registry_dir / "datasets_info.json").read_text(
+                encoding="utf-8"))
+        write_temp_n_audit(argv, {key: audit_record(10, 2, 2)})
+    return hook
+
+
+def test_reconcile_argv_pins_all_output_flags_at_temp_paths(
+        tmp_path, monkeypatch):
+    """Every reconcile invocation carries ALL four output flags with
+    values under the service's own staging temp root — never the
+    script's committed repo defaults (the clobber boundary)."""
+    captured = {}
+    runner = FakeReconcileRunner(on_call=capture_staging(captured))
+    service, repo = reconcile_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.verdict == "pass"
+    argv = captured["argv"]
+    assert argv[0] == sys.executable                      # never a shell
+    assert argv[1] == str(repo / "script" / "audit_n_frequencies.py")
+    assert Path(argv[1]).is_absolute()
+    for flag in RECONCILE_OUTPUT_FLAGS:
+        assert flag in argv, flag
+    data_dir = Path(argv[argv.index("--data-dir") + 1])
+    registry_dir = captured["registry_dir"]
+    datasets_root = Path(argv[argv.index("--datasets-root") + 1])
+    staging_root = data_dir.parent
+    # all four outputs live under ONE staging temp root, outside the repo
+    assert registry_dir.parent == staging_root
+    assert datasets_root.parent == staging_root
+    assert Path(argv[argv.index("--subsets-out") + 1]).parent == data_dir
+    assert Path(argv[argv.index("--data-md") + 1]).parent == data_dir
+    for flag in RECONCILE_OUTPUT_FLAGS:
+        assert REPO_ROOT not in \
+            Path(argv[argv.index(flag) + 1]).parents, flag
+    # the runner-call kwargs (the gauntlet _invoke shape)
+    assert captured["kwargs"]["capture_output"] is True
+    assert captured["kwargs"]["text"] is True
+    assert captured["kwargs"]["timeout"] == 300
+
+
+def test_reconcile_env_exactly_one_override_pinned_to_empty_dir(
+        tmp_path, monkeypatch):
+    """env == os.environ plus EXACTLY the CUSTOM_DIR_ENV override, and
+    the pinned dir exists and is EMPTY at call time (the operator's real
+    custom overlay can never leak into a reconcile, T-10-02-02)."""
+    captured = {}
+    runner = FakeReconcileRunner(on_call=capture_staging(captured))
+    service, _ = reconcile_service(tmp_path, monkeypatch, runner)
+
+    service.reconcile_dataset("Demo__task", run_id="r1")
+
+    env = captured["env"]
+    overlay = Path(env[OVERLAY_ENV])
+    assert overlay.is_dir()
+    assert list(overlay.iterdir()) == []          # EMPTY at call time
+    expected = dict(os.environ)
+    expected[OVERLAY_ENV] = str(overlay)
+    assert env == expected                        # exactly one override
+
+
+def test_reconcile_stages_candidate_only_registry_absolute_path(
+        tmp_path, monkeypatch):
+    """The staged temp registry contains EXACTLY the one key, with its
+    Dataset_path ABSOLUTIZED against the pipeline dir (the pathlib join
+    replaces --datasets-root, making that root inert — gauntlet Pitfall
+    3)."""
+    captured = {}
+    runner = FakeReconcileRunner(on_call=capture_staging(captured))
+    service, repo = reconcile_service(tmp_path, monkeypatch, runner)
+
+    service.reconcile_dataset("Demo__task", run_id="r1")
+
+    staged = captured["staged"]
+    assert set(staged) == {"Demo__task"}          # candidate-only
+    staged_path = staged["Demo__task"]["Dataset_path"]
+    assert Path(staged_path).is_absolute()
+    assert staged_path == str(
+        (repo / "pipeline" / "datasets" / "Demo" / "task").resolve())
+    # the staged registry lives under the staging temp root, not the repo
+    assert captured["registry_dir"] not in repo.parents
+    assert (repo / "pipeline" / "datasets_info.json").read_text(
+        encoding="utf-8") != json.dumps(staged)   # official file untouched
+
+
+# ===== the failure edges (never an exception, never a done) =====
+
+
+def test_reconcile_timeout_absorbed_as_failed(tmp_path, monkeypatch):
+    runner = FakeReconcileRunner(
+        exc=subprocess.TimeoutExpired(cmd="audit", timeout=300))
+    service, _ = reconcile_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.ok is False
+    assert outcome.verdict == "failed"
+    assert outcome.problems[0] == "timeout"
+    assert "timeout_seconds=300" in outcome.problems
+    assert outcome.measured is None
+
+
+def test_reconcile_nonzero_exit_failed_with_verbatim_raw(tmp_path,
+                                                         monkeypatch):
+    result = SimpleNamespace(returncode=2, stdout="partial out\n",
+                             stderr="boom traceback\n")
+    runner = FakeReconcileRunner(result=result)
+    service, _ = reconcile_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.verdict == "failed"
+    assert "exit_nonzero" in outcome.problems
+    assert "exit_code=2" in outcome.problems
+    assert outcome.raw_output == "partial out\nboom traceback\n"
+
+
+def test_reconcile_launch_exception_absorbed(tmp_path, monkeypatch):
+    runner = FakeReconcileRunner(exc=OSError("[Errno 2] No such file"))
+    service, _ = reconcile_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.verdict == "failed"
+    assert "subprocess_error" in outcome.problems[0]
+    assert "No such file" in outcome.problems[1]
+
+
+def test_reconcile_unparseable_n_audit_failed(tmp_path, monkeypatch):
+    def write_garbage(argv, kwargs):
+        data_dir = Path(argv[argv.index("--data-dir") + 1])
+        data_dir.mkdir(parents=True, exist_ok=True)
+        (data_dir / "n_audit.json").write_text("{not json", encoding="utf-8")
+    runner = FakeReconcileRunner(on_call=write_garbage)
+    service, _ = reconcile_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.verdict == "failed"
+    assert "n_audit_unreadable" in outcome.problems
+
+
+def test_reconcile_key_absent_from_tasks_failed(tmp_path, monkeypatch):
+    runner = FakeReconcileRunner(on_call=lambda argv, kwargs:
+                                 write_temp_n_audit(
+                                     argv, {"Other__key": audit_record(1, 1, 1)}))
+    service, _ = reconcile_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.verdict == "failed"
+    assert "key_absent_from_n_audit" in outcome.problems
+
+
+def test_reconcile_registry_unreadable_failed_never_raises(
+        tmp_path, monkeypatch):
+    """A repo without a readable official registry is a failed outcome
+    (absorbed), never an exception across the service boundary."""
+    repo = tmp_path / "bare-repo"
+    (repo / "pipeline").mkdir(parents=True)      # NO datasets_info.json
+    state = tmp_path / "rstate"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, runner=FakeReconcileRunner(),
+        cli_path=str(fake_cli(tmp_path)))
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.verdict == "failed"
+    assert "registry_unreadable" in outcome.problems
+
+
+def test_reconcile_unknown_key_failed(tmp_path, monkeypatch):
+    service, _ = reconcile_service(tmp_path, monkeypatch,
+                                   FakeReconcileRunner())
+
+    outcome = service.reconcile_dataset("NotInRegistry__x", run_id="r1")
+
+    assert outcome.verdict == "failed"
+    assert "unknown_key" in outcome.problems
+
+
+# ===== the verdict semantics (the gauntlet _audit_verdict, official
+# declared side from the registry Train/Dev/Test) =====
+
+
+def test_reconcile_verdict_pass_carries_declared_and_measured(
+        tmp_path, monkeypatch):
+    runner = passing_reconcile_runner()          # rows 10/2/2 == declared
+    service, _ = reconcile_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.ok is True
+    assert outcome.verdict == "pass"
+    assert outcome.problems == ()
+    assert outcome.declared == {"Train": 10, "Dev": 2, "Test": 2}
+    assert outcome.measured == {"train": 10, "dev": 2, "test": 2}
+    assert outcome.unified_eval_n == 2
+
+
+def test_reconcile_verdict_mismatch_names_split_and_both_numbers(
+        tmp_path, monkeypatch):
+    """A declared-vs-measured inequality is a MISMATCH verdict whose
+    problem names the split and BOTH numbers (the banner's {n}/{m})."""
+    runner = passing_reconcile_runner(train=3)   # declared 10, measured 3
+    service, _ = reconcile_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.ok is False
+    assert outcome.verdict == "mismatch"
+    assert "Train_mismatch_declared=10_measured=3" in outcome.problems
+    assert outcome.declared == {"Train": 10, "Dev": 2, "Test": 2}
+    assert outcome.measured == {"train": 3, "dev": 2, "test": 2}
+
+
+def test_reconcile_verdict_missing_true_is_mismatch(tmp_path, monkeypatch):
+    runner = FakeReconcileRunner(
+        on_call=lambda argv, kwargs: write_temp_n_audit(
+            argv, {"Demo__task": {"missing": True, "unified_eval_n": None,
+                                  "splits": None}}))
+    service, _ = reconcile_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.verdict == "mismatch"
+    assert "missing=true" in outcome.problems
+
+
+def test_reconcile_verdict_zero_rows_is_mismatch_with_data(
+        tmp_path, monkeypatch):
+    record = audit_record(0, 2, 2)               # train measured zero
+    runner = FakeReconcileRunner(
+        on_call=lambda argv, kwargs: write_temp_n_audit(
+            argv, {"Demo__task": record}))
+    service, _ = reconcile_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.verdict == "mismatch"
+    assert "train_rows=0" in outcome.problems
+    assert outcome.measured["train"] == 0        # the banner's data
+
+
+def test_reconcile_verdict_bool_rows_rejected(tmp_path, monkeypatch):
+    record = audit_record(10, 2, 2)
+    record["splits"]["dev"]["rows"] = True       # bool is NOT an int
+    runner = FakeReconcileRunner(
+        on_call=lambda argv, kwargs: write_temp_n_audit(
+            argv, {"Demo__task": record}))
+    service, _ = reconcile_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.verdict == "mismatch"
+    assert "dev_rows=True" in outcome.problems
+
+
+def test_reconcile_verdict_zero_unified_eval_n_is_mismatch(
+        tmp_path, monkeypatch):
+    record = audit_record(10, 2, 2)
+    record["unified_eval_n"] = 0
+    runner = FakeReconcileRunner(
+        on_call=lambda argv, kwargs: write_temp_n_audit(
+            argv, {"Demo__task": record}))
+    service, _ = reconcile_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.verdict == "mismatch"
+    assert "unified_eval_n=0" in outcome.problems
+
+
+def test_reconcile_absent_declaration_skips_that_split(
+        tmp_path, monkeypatch):
+    """The gauntlet rule: an entry with NO Train declaration skips the
+    train comparison entirely — a differing measured train still PASSES
+    (rows>0 and unified_eval_n>0 are the only gates for that split)."""
+    entry = dict(SHAPE_A_ENTRY)
+    entry.pop("Train")                            # absent declaration
+    runner = passing_reconcile_runner(train=99)   # measured 99, declared absent
+    service, _ = reconcile_service(
+        tmp_path, monkeypatch, runner, entries={"Demo__task": entry})
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.ok is True
+    assert outcome.verdict == "pass"
+    assert outcome.declared == {"Dev": 2, "Test": 2}
+    assert outcome.measured == {"train": 99, "dev": 2, "test": 2}
+
+
+# ===== the REAL audit subprocess lane (CPU, sub-second, no GPU/dnallm;
+# the test_services_gauntlet.py precedent — the script + registry_loader
+# copied into a tmp repo so a controlled registry + fixture CSVs feed
+# the REAL kernels) =====
+
+
+def real_audit_repo(tmp_path, declared):
+    """A tmp repo carrying the REAL audit script + registry_loader, a
+    synthetic one-key registry, and fixture CSVs whose row counts equal
+    ``declared`` (pure-ACGT sequences: every row survives strict)."""
+    repo = tmp_path / "real-repo"
+    (repo / "script").mkdir(parents=True)
+    shutil.copy(REPO_ROOT / "script" / "audit_n_frequencies.py",
+                repo / "script" / "audit_n_frequencies.py")
+    (repo / "pipeline").mkdir()
+    shutil.copy(REPO_ROOT / "pipeline" / "registry_loader.py",
+                repo / "pipeline" / "registry_loader.py")
+    train, dev, test = declared
+    (repo / "pipeline" / "datasets_info.json").write_text(json.dumps({
+        "Demo__task": {
+            "Dataset_path": "datasets/Demo/task",
+            "download_url":
+                "https://www.modelscope.cn/datasets/lgq12697/GUE",
+            "download_url_alternates":
+                "https://huggingface.co/datasets/whatever",
+            "Train": train, "Dev": dev, "Test": test,
+        }}), encoding="utf-8")
+    task_dir = repo / "pipeline" / "datasets" / "Demo" / "task"
+    task_dir.mkdir(parents=True)
+    for split, count in (("train", train), ("dev", dev), ("test", test)):
+        lines = ["sequence,label"]
+        lines += [f"ACGTACGTAC,{index}" for index in range(count)]
+        (task_dir / (split + ".csv")).write_text(
+            "\n".join(lines) + "\n", encoding="utf-8")
+    return repo
+
+
+def real_reconcile_service(tmp_path, monkeypatch, repo):
+    state = tmp_path / "real-state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    return download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        cli_path=str(fake_cli(tmp_path)))         # default REAL runner
+
+
+def test_reconcile_real_subprocess_pass_over_fixture_csvs(
+        tmp_path, monkeypatch):
+    """D-09 end-to-end: the real audit script counts the fixture CSVs;
+    matching declarations reconcile to PASS with the measured ints."""
+    repo = real_audit_repo(tmp_path, declared=(4, 2, 2))
+    service = real_reconcile_service(tmp_path, monkeypatch, repo)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.ok is True
+    assert outcome.verdict == "pass"
+    assert outcome.problems == ()
+    assert outcome.measured == {"train": 4, "dev": 2, "test": 2}
+    assert outcome.unified_eval_n == 2
+    assert outcome.raw_output                        # verbatim captured
+
+
+def test_reconcile_real_subprocess_mismatch_names_numbers_no_deletion(
+        tmp_path, monkeypatch):
+    """A deliberately wrong declared count is a MISMATCH naming the split
+    and both numbers — and NOTHING is deleted (D-07)."""
+    repo = real_audit_repo(tmp_path, declared=(999, 2, 2))
+    service = real_reconcile_service(tmp_path, monkeypatch, repo)
+
+    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+
+    assert outcome.ok is False
+    assert outcome.verdict == "mismatch"
+    assert "Train_mismatch_declared=999_measured=4" in outcome.problems
+    assert outcome.measured == {"train": 4, "dev": 2, "test": 2}
+    task_dir = repo / "pipeline" / "datasets" / "Demo" / "task"
+    for split in ("train", "dev", "test"):
+        assert (task_dir / (split + ".csv")).is_file()   # D-07: intact
+
+
+# ===== the run_task done gate (the 10-01 amendment: done = landed AND
+# reconcile pass) =====
+
+
+def test_run_task_done_populates_entry_reconcile(monkeypatch, tmp_path):
+    """done now requires the reconcile pass; the entry's reconcile field
+    carries declared/measured/unified_eval_n/verdict (the overlay source
+    10-05 consumes via reconciled_rows)."""
+    spawner = FakeSpawner(FakePopen(returncode=0))
+    service, repo, _ = engine_service(tmp_path, monkeypatch, spawner)
+    land_csvs(repo, "Demo", "task")
+
+    event = service.run_task("Demo__task", run_id="r1")
+
+    assert event.state == "done"
+    assert "reconcile_verdict=pass" in event.details
+    (entry,) = service.entries()
+    assert entry.state == "done"
+    assert entry.reconcile == {
+        "verdict": "pass",
+        "declared": {"Train": 10, "Dev": 2, "Test": 2},
+        "measured": {"train": 10, "dev": 2, "test": 2},
+        "unified_eval_n": 2,
+    }
+
+
+def test_run_task_reconcile_mismatch_lands_mismatch_state(
+        monkeypatch, tmp_path):
+    """A reconcile mismatch lands the entry in state mismatch carrying
+    declared and measured numbers — and deletes nothing (D-07)."""
+    spawner = FakeSpawner(FakePopen(returncode=0))
+    runner = passing_reconcile_runner(train=3)    # declared 10, measured 3
+    service, repo, _ = engine_service(tmp_path, monkeypatch, spawner,
+                                      runner=runner)
+    landed = land_csvs(repo, "Demo", "task")
+
+    event = service.run_task("Demo__task", run_id="r1")
+
+    assert event.state == "mismatch"
+    assert "Train_mismatch_declared=10_measured=3" in event.problems
+    assert "reconcile_verdict=mismatch" in event.details
+    (entry,) = service.entries()
+    assert entry.state == "mismatch"
+    assert entry.reconcile["verdict"] == "mismatch"
+    assert entry.reconcile["declared"] == {"Train": 10, "Dev": 2, "Test": 2}
+    assert entry.reconcile["measured"] == {"train": 3, "dev": 2, "test": 2}
+    for split in ("train", "dev", "test"):
+        assert (landed / (split + ".csv")).is_file()   # D-07: intact
+
+
+def test_run_task_reconcile_failed_lands_failed_state(monkeypatch,
+                                                      tmp_path):
+    """A failed reconcile (timeout here) can never produce done — the
+    entry lands failed with the reconcile problem codes."""
+    spawner = FakeSpawner(FakePopen(returncode=0))
+    runner = FakeReconcileRunner(
+        exc=subprocess.TimeoutExpired(cmd="audit", timeout=300))
+    service, repo, _ = engine_service(tmp_path, monkeypatch, spawner,
+                                      runner=runner)
+    land_csvs(repo, "Demo", "task")
+
+    event = service.run_task("Demo__task", run_id="r1")
+
+    assert event.state == "failed"
+    assert "timeout" in event.problems
+    (entry,) = service.entries()
+    assert entry.state == "failed"
+    assert entry.reconcile is None
+
+
+def test_run_task_log_carries_reconcile_section(monkeypatch, tmp_path):
+    """The verbatim log gains a [reconcile] section carrying the audit
+    subprocess output (D-03 drill-down completeness)."""
+    result = SimpleNamespace(returncode=2, stdout="", stderr="audit blew up")
+    spawner = FakeSpawner(FakePopen(returncode=0))
+    service, repo, state = engine_service(
+        tmp_path, monkeypatch, spawner,
+        runner=FakeReconcileRunner(result=result))
+    land_csvs(repo, "Demo", "task")
+
+    service.run_task("Demo__task", run_id="r1")
+
+    log_text = (state / "logs" / "Demo__task.log").read_text(
+        encoding="utf-8")
+    assert "[reconcile]" in log_text
+    assert "audit blew up" in log_text
