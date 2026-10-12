@@ -357,6 +357,41 @@ def channel_state(spec):
     return "unknown"
 
 
+def compose_download_argv(spec, cli_path):
+    """Compose the modelscope CLI argv for one downloadable spec.
+
+    The live-probed invocation shape (console script, never
+    ``python -m modelscope`` — it has no ``__main__``):
+
+    - shape A: ``[cli, "download", "--dataset", repo, "--local_dir",
+      <pipeline/datasets/<Group>>, "--include", "<task>/*",
+      "--exclude", "*.DS_Store"]``
+    - shape B: the same minus ``--include``, with ``--local_dir``
+      pointing at ``<Group>/<task>`` (CSVs live at the repo root);
+    - shape C: the shape-A argv with the REPO subtree include (the
+      post-landing rename corrects the dir name).
+
+    Args:
+        spec (ChannelSpec): a ``resolve_channel`` result.
+        cli_path (str | Path): the resolved console-script path.
+
+    Returns:
+        list[str] | None: the LIST argv (values can never become flags
+        — no shell ever parses them), or None for every degraded spec
+        (nothing is composed for a disabled/unknown channel).
+    """
+    if spec.reason_code is not None or spec.local_dir is None:
+        return None
+    argv = [str(cli_path), "download",
+            "--dataset", spec.repo_id,
+            "--local_dir", str(spec.local_dir)]
+    for pattern in spec.include:
+        argv += ["--include", pattern]
+    for pattern in spec.exclude:
+        argv += ["--exclude", pattern]
+    return argv
+
+
 def _is_modelscope_url(url):
     """True when ``url``'s host is modelscope.cn (apex or subdomain)."""
     if not isinstance(url, str) or not url:
