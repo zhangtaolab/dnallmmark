@@ -30,8 +30,8 @@
 
 ### Data Management (数据管理)
 
-- [ ] **DATA-01**: 缺失数据集一键下载（ModelScope 通道，注册表 download_url 为唯一权威）
-- [ ] **DATA-02**: 下载队列持久化 + 断点续传（崩溃/重启后续跑）
+- [x] **DATA-01**: 缺失数据集一键下载（ModelScope 通道，注册表 download_url 为唯一权威）
+- [x] **DATA-02**: 下载队列持久化 + 断点续传（崩溃/重启后续跑）
 - [ ] **DATA-03**: 下载落地后行数对账（n_audit 基准）；不一致醒目报告
 - [ ] **DATA-04**: Zenodo 整包（record 19135551 公开后）作为备选整体入口
 
@@ -104,8 +104,8 @@
 | CUST-04 | Phase 9 | Complete |
 | CUST-05 | Phase 7 | Complete |
 | CUST-06 | Phase 9 | Complete |
-| DATA-01 | Phase 10 | Pending |
-| DATA-02 | Phase 10 | Pending |
+| DATA-01 | Phase 10 | Complete |
+| DATA-02 | Phase 10 | Complete |
 | DATA-03 | Phase 10 | Pending |
 | DATA-04 | Phase 10 | Pending |
 | CFG-01 | Phase 11 | Pending |

@@ -4,17 +4,18 @@ milestone: v1.2
 milestone_name: TUI任务
 current_phase: 10
 current_phase_name: Data Manager (Downloads & Verification)
-status: planning
-stopped_at: Phase 9 complete, ready to plan Phase 10
-last_updated: "2026-10-12T11:43:08.123Z"
+current_plan: 3
+status: executing
+stopped_at: Completed 10-01-PLAN.md
+last_updated: "2026-10-12T14:15:45.246Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 9 complete, transitioned to Phase 10
-state_head: e32ef2f013904b47d110a9608ed3deee24b070f2
+state_head: 93c4466287fe964e2c619276ec09285732826302
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 19
-  completed_plans: 19
+  total_plans: 25
+  completed_plans: 20
   percent: 50
 ---
 
@@ -30,8 +31,9 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 10 — Data Manager (Downloads & Verification)
-Plan: Not started
-Status: Ready to plan
+Current Plan: 2
+Total Plans in Phase: 6
+Status: Executing
 Last activity: 2026-10-12 — Phase 9 complete, transitioned to Phase 10
 
 Progress (v1.2): [██████████] 100% (13/13 plans)
@@ -77,6 +79,7 @@ Progress (v1.2): [██████████] 100% (13/13 plans)
 | Phase 09 P09-04 | 41 min | 3 tasks | 4 files |
 | Phase 09 P09-05 | 95 min | 3 tasks | 3 files |
 | Phase 09 P09-06 | 91 min | 3 tasks | 6 files |
+| Phase 10 P01 | 43m | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -152,6 +155,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 09]: 09-06: the management second read honors DNALLMMARK_CUSTOM_REGISTRY_DIR via the additive read_entries(registry_dir=None) param — the overlay-merged view and the management view always describe ONE file (Pitfall 7), and the Phase 8 backend tests stay machine-independent; disabled customs append after the merged entries with custom_status recording the truth
 - [Phase 09]: 09-06: disabled-entry marking is blocked at every mark entry (T-09-13): the spacebar guard refuses with the warning toast AND _deliverable_keys excludes disabled customs from the preset/template key sets so references ride the Phase 8 unknown-key loud skip — a mark the sweep can never see never exists
 - [Phase 09]: 09-06 probe re-encounter: rich Text SPANS cannot carry $token styles (MissingStyle; whole-text styles can) — the badge span resolves the live theme accent at render (the nav.py precedent), the disabled spans and the count segment use rich-native dim
+- [Phase 10]: 10-01: channel resolver + CLI probe landed inside Task 1 (the plan's ordering resolution — missing-set derivation needs resolve_channel)
+- [Phase 10]: 10-01: parse_progress returns integer percents (plan contract: integer-percent change throttling) though the research snippet returned strings
+- [Phase 10]: 10-01: enqueue precedence is existing-entry-first (D-08's unconditional already_queued) ahead of the unknown/disabled/cli gates; behavior tests chosen over the AST Lock pin (advisory)
 
 ### Pending Todos
 
@@ -175,8 +181,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T08:27:23.398Z
-Stopped at: Phase 9 complete, ready to plan Phase 10
+Last session: 2026-10-12T14:15:03.312Z
+Stopped at: Completed 10-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

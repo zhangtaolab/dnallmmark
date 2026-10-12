@@ -201,7 +201,7 @@ Plans:
 **Plans**: 6/6 planned
 Plans:
 **Wave 1**
-- [ ] 10-01-PLAN.md — queue service core (DATA-01/02 substrate): XDG-persisted five-state queue, R-01 channel resolution + R-02 shape table (46/4 census), CLI probe, Popen engine with progress parse, landing check, shape-C rename, killpg cancel
+- [x] 10-01-PLAN.md — queue service core (DATA-01/02 substrate): XDG-persisted five-state queue, R-01 channel resolution + R-02 shape table (46/4 census), CLI probe, Popen engine with progress parse, landing check, shape-C rename, killpg cancel
 
 **Wave 2** *(blocked on 10-01)*
 - [ ] 10-02-PLAN.md — reconcile kernel (DATA-03): audit subprocess leg (temp staging, absolute Dataset_path, artifact verdicts), done-gate + mismatch, presence overlay merge, `g` re-audit (R-03 default outputs) + byte-unchanged regression
@@ -261,7 +261,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 | 7. Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) | v1.2 | 6/6 | Complete    | 2026-10-11 |
 | 8. TUI Foundation (Env Check & Selection) | v1.2 | 7/7 | Complete    | 2026-10-12 |
 | 9. Custom Model & Dataset Onboarding | v1.2 | 6/6 | Complete    | 2026-10-12 |
-| 10. Data Manager (Downloads & Verification) | v1.2 | 0/6 | Not started | - |
+| 10. Data Manager (Downloads & Verification) | v1.2 | 1/6 | In Progress | - |
 | 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 0/TBD | Not started | - |
 | 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 0/TBD | Not started | - |
 
