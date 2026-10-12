@@ -1359,15 +1359,23 @@ class _ImportSeams:
 
 
 async def _press_step_one_key(pilot, app, key):
-    """Press a step-1 affordance with nothing focused (plain binding)."""
+    """Press a step-1 affordance with nothing focused (plain binding),
+    then settle the workers it may have spawned (WR-04, 09 review: the
+    o-flow's empty-state probe runs in the exclusive worker — the toast
+    / path prompt exist only after its report)."""
     app.screen.set_focus(None)
     await pilot.pause()
     await pilot.press(key)
     await pilot.pause()
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+    await pilot.pause()
 
 
 async def _submit_path(pilot, app, path):
-    """Type the path into the open path prompt and press enter."""
+    """Type the path into the open path prompt and press enter, then
+    settle the validation worker (WR-04: the f/o I/O runs off the event
+    loop; the report / accept exist only after its Validated message)."""
     inp = app.screen.query_one("#wizard-path-input", Input)
     inp.focus()
     await pilot.pause()
@@ -1375,6 +1383,63 @@ async def _submit_path(pilot, app, path):
     await pilot.pause()
     await pilot.press("enter")
     await pilot.pause()
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+    await pilot.pause()
+
+
+async def test_import_validation_runs_off_the_event_loop():
+    """WR-04 (09 review): the path-prompt validation (the import read —
+    real file I/O) runs in the exclusive thread worker, never on the
+    event loop: a blocked read (a network-mounted path, deterministically
+    gated) leaves the console responsive and the report renders only
+    when the read completes (the PresetMenuLoaded pattern)."""
+    gate = threading.Event()
+
+    class _GatedImports(_ImportSeams):
+        """The import read blocks until the gate opens — a cold or
+        network-mounted path, deterministically (never a timed sleep)."""
+
+        def read(self, path):
+            gate.wait(timeout=10)
+            return super().read(path)
+
+    imports = _GatedImports(
+        doc={"ds-x": {}}, problems=[("ds-x", "boom-problem")])
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            _Seams(), import_read=imports.read,
+            import_validate=imports.validate)
+        await _open(pilot, app, wizard)
+        await _press_step_one_key(pilot, app, "f")
+        prompt = app.screen
+        assert prompt is not wizard, "the import path prompt opens"
+        # type + enter WITHOUT settling workers (the read is gated)
+        inp = prompt.query_one("#wizard-path-input", Input)
+        inp.focus()
+        await pilot.pause()
+        await pilot.press(*list("/share/custom_datasets.json"))
+        await pilot.press("enter")
+        await pilot.pause()
+        # the read is in flight in the worker: no report yet, and the
+        # event loop keeps processing keys (the Input eats one — the
+        # responsiveness proof)
+        assert _prompt_log_text(app) == []
+        await pilot.press("x")
+        await pilot.pause()
+        assert inp.value.endswith("x"), (
+            "the console must stay responsive while the read blocks"
+        )
+        # the read completes -> the numbered report renders
+        gate.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.pause()
+        lines = _prompt_log_text(app)
+        assert lines[0].strip() == GAUNTLET_IMPORT_CONFLICTS.format(n=1)
+        assert "boom-problem" in "".join(lines)
+        assert app.screen is prompt, "fail-closed: the modal stays open"
 
 
 def _prompt_log_text(app):

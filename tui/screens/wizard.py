@@ -433,7 +433,11 @@ class _PathPromptModal(ModalScreen):
 
     ``validate(path)`` returns ``None`` on success or a problems
     sequence — the numbered report renders through the injected header
-    and the modal stays open (fail-closed: nothing was applied).
+    and the modal stays open (fail-closed: nothing was applied). WR-04
+    (09 review): the validate call runs in an exclusive thread worker
+    (the PresetMenuLoaded pattern) — the f/o seams perform real file
+    I/O (the import read, the export copy) and must never run on the
+    event loop (D-03: the console never freezes).
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -443,6 +447,15 @@ class _PathPromptModal(ModalScreen):
     #: The problems log's scroll bound (the wrap-never-elide rule; a
     #: height cap is not a spacing token — the env-detail precedent).
     _PROBLEMS_MAX_HEIGHT = 12
+
+    class Validated(Message, namespace="path_prompt"):
+        """The validation worker finished: the path and its verdict
+        (``None`` problems = clean pass)."""
+
+        def __init__(self, path: str, problems) -> None:
+            self.path = path
+            self.problems = problems
+            super().__init__()
 
     def __init__(self, title, placeholder, problems_header, validate,
                  accept, **kwargs):
@@ -468,21 +481,39 @@ class _PathPromptModal(ModalScreen):
         self.query_one("#wizard-path-input", Input).focus()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Submit the value; render the problems when the call fails."""
+        """Submit the value; the validation itself runs in the worker
+        (WR-04 — the I/O never runs on the event loop)."""
         value = event.value.strip()
         if not value:
             return
-        problems = self._validate(value)
-        if problems:
+        self._validate_in_worker(value)
+
+    @work(exclusive=True, thread=True)
+    def _validate_in_worker(self, path: str) -> None:
+        """Run the injected validate seam OFF the event loop (WR-04, the
+        D-03 discipline): a network-mounted import path or a slow disk
+        blocks here, not the console. The verdict crosses back as the
+        ``Validated`` message — the worker performs no DOM access and
+        the wizard-side stash (``_pending_import``) is written BEFORE
+        ``post_message``, so the message queue's happens-before ordering
+        keeps the accept-side read safe."""
+        problems = self._validate(path)
+        self.post_message(self.Validated(path, problems))
+
+    async def on_path_prompt_validated(self, message: Validated) -> None:
+        """Render the worker's verdict: the numbered problems report
+        (fail-closed, the modal stays open), or the dismiss into the
+        async accept continuation."""
+        if message.problems:
             log = self.query_one("#wizard-path-problems", RichLog)
             log.clear()
-            log.write(self._problems_header.format(n=len(problems)))
-            for index, (location, message) in enumerate(problems):
+            log.write(self._problems_header.format(n=len(message.problems)))
+            for index, (location, msg) in enumerate(message.problems):
                 log.write(SEL_TEMPLATE_PROBLEM_LINE.format(
-                    n=index + 1, location=location, message=message))
+                    n=index + 1, location=location, message=msg))
         else:
             self.dismiss()
-            await self._accept(value)
+            await self._accept(message.path)
 
 
 class WizardModal(ModalScreen):
@@ -1006,6 +1037,16 @@ class WizardModal(ModalScreen):
             self.run_id = run_id
             super().__init__()
 
+    class ExportStateReady(Message):
+        """The export empty-state probe finished OFF the event loop
+        (WR-04, 09 review): ``has_custom_entries`` is a registry read —
+        real file I/O the D-03 discipline routes through a worker; the
+        handler toasts the empty state or opens the path prompt."""
+
+        def __init__(self, empty: bool) -> None:
+            self.empty = empty
+            super().__init__()
+
     def _init_gauntlet_rows(self) -> None:
         """Build the panel state: one group per queued entry."""
         self._gauntlet_rows = [
@@ -1482,27 +1523,49 @@ class WizardModal(ModalScreen):
         """o on step 1: the D-11 registry-export flow.
 
         The empty state short-circuits BEFORE any path is asked (zero
-        landed customs → the toast, nothing written anywhere); otherwise
-        the path prompt routes to the injected export seam (the verbatim
-        byte copy). The plain ``on_export`` callback is the no-seam
-        fallback.
+        landed customs → the toast, nothing written anywhere); the probe
+        itself is a registry read, so it runs in the exclusive worker
+        (WR-04, 09 review — D-03: file I/O never runs on the event
+        loop); otherwise the worker's report routes to the injected
+        export seam (the verbatim byte copy). The plain ``on_export``
+        callback is the no-seam fallback.
         """
         if not (self._phase == "form" and self._step == 0):
             return
         if (self._export_registry is not None
                 and self._has_custom_entries is not None):
-            if not self._has_custom_entries():
-                self.app.notify(GAUNTLET_EXPORT_EMPTY_TOAST)
-                return
-            self.app.push_screen(_PathPromptModal(
-                title=WIZ_EXPORT_LABEL,
-                placeholder=SEL_TEMPLATE_PATH_PLACEHOLDER,
-                problems_header=GAUNTLET_EXPORT_PROBLEMS,
-                validate=self._validate_export_path,
-                accept=self._accept_export_path,
-            ))
+            self._check_export_state()
         elif self._on_export is not None:
             self._on_export()
+
+    @work(exclusive=True, thread=True)
+    def _check_export_state(self) -> None:
+        """Read the store's empty-state probe OFF the event loop (WR-04).
+        The worker performs no DOM access and no writes — the verdict
+        crosses back as the ``ExportStateReady`` message."""
+        probe = self._has_custom_entries
+        if probe is None:  # unreachable by construction (the action guard)
+            return
+        self.post_message(self.ExportStateReady(not probe()))
+
+    def on_wizard_modal_export_state_ready(
+            self, message: ExportStateReady) -> None:
+        """The probe's verdict: the empty-state toast, or the export path
+        prompt — only while the wizard is still the live screen (an esc
+        between the keypress and the report drops the flow, the same
+        stale-message discipline as ``_gauntlet_stale``)."""
+        if self.app.screen is not self:
+            return
+        if message.empty:
+            self.app.notify(GAUNTLET_EXPORT_EMPTY_TOAST)
+            return
+        self.app.push_screen(_PathPromptModal(
+            title=WIZ_EXPORT_LABEL,
+            placeholder=SEL_TEMPLATE_PATH_PLACEHOLDER,
+            problems_header=GAUNTLET_EXPORT_PROBLEMS,
+            validate=self._validate_export_path,
+            accept=self._accept_export_path,
+        ))
 
     # ===== Import flow (D-11: fail-closed collect-all -> per-entry gauntlet) =====
 
