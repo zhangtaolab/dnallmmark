@@ -395,3 +395,138 @@ toast).
 _Generated: 2026-10-13_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: deep_
+
+## Re-review iteration 2 (HEAD 0b3e1c9)
+
+**Fix diff audited:** `9aa0bdc..0b3e1c9` (16 commits: 12 fix, 1 style, 3 docs)
+**Method:** every CR/WR failure scenario re-executed against HEAD; every new
+regression lane re-run against the PRE-FIX commit in a throwaway worktree
+(`9aa0bdc` + the fix-commit test files; 18 lanes confirmed RED there);
+introduced-findings sweep of the fix diff itself (busy-lock ordering,
+screen-stack iteration, rollback paths, drain-recheck, string tripwire).
+Full gates re-verified at HEAD: `tests/tui` 623 passed, `make lint`,
+`make typecheck` all green.
+
+### Per-finding verdicts
+
+| ID | Verdict | Basis |
+|----|---------|-------|
+| CR-01 | **CONFIRMED-FIXED** | Original scenario re-executed at HEAD: seeded done+reconciled entry + committed-view n_audit → `missing_datasets()` now returns `[]` (was `['GUE__emp_H3']`). The regression lanes are real-service lanes, not fakes: tier-1 over a seeded real service + monkeypatched `registries.N_AUDIT_PATH` (mismatch sibling stays), the explicit-`state_path` lane, and the REAL `DataManagerBackend` over the REAL service asserting rows AND `present/total` flip together. All three verified RED on `9aa0bdc` (assertion failures: `['Demo__task', 'DemoM__mm'] == ['DemoM__mm']`, `['GUE__emp_H3'] == []`). `FakeQueueService` no longer masks the gap — its summary lane delegates to the production `merge_presence` rule, and `missing_snapshot`'s `present` counts over the merged view (denominator stays the committed count). |
+| WR-01 | **CONFIRMED-FIXED** (residual noted, IN-10) | Stage-boundary polls at every leg + the `should_cancel` seam inside `download_bundle_files` + `_finish_cancelled` (`cancelled_by_operator`, flag consumed by `_finish` so retry is never poisoned — regression asserts the retry claim). Both regressions (cancel-before-stages with `router.calls == []`; cancel fired from INSIDE the fetch seam mid-download) verified RED pre-fix. Residual: the seam is per-FILE — during a single-file transfer (a one-archive bundle) the cancel takes effect only after the current file completes (IN-10). |
+| WR-02 | **CONFIRMED-FIXED** | The deterministic `on_drain` hook reproduces the exact window and was RED pre-fix (entry stranded, `run_task_calls == ["k-one"]`). Lock audit: `kick`'s check-and-set and the worker's release-and-recheck are atomic under `_queue_busy_lock`; `run_download_queue()` is started OUTSIDE the lock; the only nested acquisition is busy-lock → service-lock (drain recheck's `entries()`), with no inverse path — no deadlock. No busy-strand path: the `finally` clear is generation-guarded and a generation bump requires a successful check-and-set (busy already False). No double-claim: the re-drive continues the SAME single worker, no second driver can start. **But the recheck pattern combined with WR-04 introduces CR-02 below.** |
+| WR-03 | **CONFIRMED-FIXED** | Forward iterates `screen_stack` to every screen defining the handler; both modal lanes (drill-down over the queue row; selection preset modal with the live flip) verified RED pre-fix. No double-apply: at most one non-modal screen exists in a textual stack (`switch_screen` replaces); modals define no queue handlers; each screen's apply is persisted-state-as-truth and idempotent regardless. |
+| WR-04 | **CONFIRMED-FIXED at the boundary* | Original scenario re-executed at HEAD: read-only state root → `enqueue` returns `persist_failed` with the in-memory append rolled back (no ghost row), `claim_next` returns None with the claim reverted to its exact prior shape (incl. `interrupted`), `_finish` still emits the event carrying `persist_error=<repr>` on both the event and the entry (worker survives, row surfaces it). All three mutator regressions verified RED pre-fix (the review's own `PermissionError`). *The absorbed claim-failure interacts with the WR-02 recheck → INTRODUCED CR-02. |
+| WR-05 | **CONFIRMED-FIXED** | `errors="replace"` rides the ONE shared seam (`_invoke`) serving both legs; both kwargs-pin regressions (reconcile + reaudit) verified RED pre-fix; the behavioral proof decodes real undecodable stdout bytes through `_default_runner` to replacement chars. Sibling sweep confirmed no other `text=True` leg in the phase diff. |
+| WR-06 | **CONFIRMED-FIXED** | `ACTION_UNKNOWN` carries its own reason for every non-`_DISABLED_REASONS` degradation; both screens render the neutral `DL_UNKNOWN_TOAST` naming the machine reason; the shape-D `disabled` keeps the mirror-layout copy. Tier-1 (no-mirror + bare-registry) and both screens' toast pins verified RED pre-fix (the bare-registry case previously collapsed to `disabled`). |
+| IN-01 | **CONFIRMED-FIXED** | `interrupted` clears at claim (the resume begins), restored on the WR-04 revert; regression RED pre-fix. The recovered PENDING row still carries the note (the 10-06 visible-recovery contract) — intended. |
+| IN-02 | kept open — **ACCEPTED** | Both dispositions are genuine trade-offs (new unrendered vocabulary vs deleting a SUMMARY-pinned surface); a tested pure function has no runtime risk. Reopen at the next engine touch. |
+| IN-03 | toast half **CONFIRMED-FIXED** (RED-verified: bundle done formats `DL_BUNDLE_TASK_NAME`, raw key never appears); progress half kept open — **ACCEPTED** (percent `None` renders the same indeterminate glyph the claim tick already shows; a per-file callback widens the seam with no visible cell change). |
+| IN-04 | fixed-as-documentation — **ACCEPTED** (the review's own zero-risk option; focus-gating `d` would create its own silent-noop class). |
+| IN-05 | **CONFIRMED-FIXED** | `state_root()` seam + `read_log` through it (getattr fallback keeps the fakes' surface); regression over a real service with a state_path OUTSIDE the env state root verified RED pre-fix (empty drill-down). |
+| IN-06 | kept open — **ACCEPTED with a condition** | The rationale holds (policy calls; lane inert while the record 404s; zip-slip already guarded; post-landing reconcile re-verifies content), and nothing CR/WR hides behind it — but the disposition's own "maintainer rules before the record goes public" must be tracked as an activation gate, not left implicit. |
+| IN-07 | **CONFIRMED-FIXED** (residual noted, IN-11) | Non-dict rows counted + reported through the `last_load_diagnostic` session channel; cleaned entries persist so the drop fires once; healthy siblings survive; regression RED pre-fix. The early return skips the downgrade pass — see INTRODUCED IN-11. |
+| IN-08 | **CONFIRMED-FIXED** | Empty missing set → done with `nothing_to_do` detail and an empty per-key map BEFORE any stage (zero network legs, nothing extracted); regression RED pre-fix. |
+
+### Introduced findings (iteration-2 sweep of the fix diff)
+
+### CR-02: WR-02's drain recheck × WR-04's claim-refusal = an unbounded driver livelock under a persistent persist failure
+
+**File:** `tui/app.py:426-452` (the drain-side release-and-recheck),
+`tui/services/download_queue.py:1400-1431` (`claim_next` returns None on
+persist failure with the entry still pending)
+**Issue:** when `claim_next` answers None because the claim could NOT
+PERSIST (read-only state root, full disk) while the entry is still pending
+in memory, the drain recheck's `any(state == "pending")` is true forever →
+`continue` → claim → persist fails → revert → None → recheck → … The loop
+has no sleep, no attempt cap, and no exit for this case; the busy flag
+never clears, so every later kick is a no-op and the worker never exits.
+**Failure scenario (verified by execution at HEAD 0b3e1c9: a real
+`DownloadQueueService` over a read-only state root seeded with two pending
+entries, driven by the real app driver):** 47,546 `claim_next` calls in one
+second, `_queue_busy` stays True, `run_download_queue` still running, one
+core pegged at 100%, the write path hammered continuously. Realistic
+trigger: the disk fills mid-session while a second entry is queued (task 1
+finishes with an absorbed `persist_error`, the driver claims task 2, and
+spins); with the condition persistent, a restart boots straight back into
+the spin (boot resume loads pending → kicks). The UI stays alive but the
+queue is permanently wedged with CPU burn — a hang-class regression in the
+exact degradation class WR-04 targeted (pre-fix, the same scenario raised
+once and the worker died quietly).
+**Fix:** distinguish "None because drained" from "None because the claim
+was refused" — e.g. `claim_next` records the refusal diagnostic
+(`last_claim_refusal()`), and the drain recheck exits the worker
+(generation-guarded busy clear, matching the WR-04 toast vocabulary for
+the surfaced failure) instead of `continue` when the last None was a
+refusal; alternatively bound the re-drive (backoff sleep + attempt cap).
+
+### IN-09: The two new toast constants are not registered in the string-inventory tripwire
+
+**File:** `tests/tui/test_services_download_queue.py:3134-3163`
+(`EXPECTED_DL_CONSTANTS` / `EXPECTED_QUEUE_CONSTANTS`)
+**Issue:** `DL_UNKNOWN_TOAST` and `QUEUE_PERSIST_FAILED_TOAST` landed in
+`tui/strings.py` and are imported directly by consumers (an ImportError
+would still catch absence), but the inventory tripwire — whose stated
+purpose is the complete DL_/QUEUE_ single-home lock — does not list them,
+so the tripwire no longer covers the full inventory.
+**Fix:** add both names to the expected tuples.
+
+### IN-10: WR-01 residual — a cancel during a single-file bundle transfer only takes effect after that file completes
+
+**File:** `tui/services/zenodo_bundle.py:238-240` (the `should_cancel`
+check sits before each FILE, not inside the chunk loop)
+**Issue:** a one-archive record (the likely publication shape) transfers
+as one large file; the operator's cancel is observed at the next
+stage boundary — after the whole file streams.
+**Fix (when the lane activates):** check `should_cancel` every N chunks
+inside the copy loop (e.g. per 64 KiB block or per second) and break.
+
+### IN-11: IN-07's dropped-entries early return skips the downloading→pending downgrade pass
+
+**File:** `tui/services/download_queue.py:1067-1086`
+**Issue:** when a file carries BOTH a non-dict row and a
+`downloading`-state entry, the dropped-rows branch returns before the
+D-06 downgrade loop — on that load the entry stays `downloading` in
+memory, so `boot_resume_queue` sees no pending entry and never kicks.
+**Failure scenario:** hand-edited/partially corrupted file with both
+shapes: boot skips the auto-resume; the entry sits unclaimed until the
+next `load()` (the screen snapshot) downgrades it and some user action
+kicks. Recoverable, silent, narrow.
+**Fix:** run the downgrade pass before the dropped-rows early return (or
+fall through instead of returning).
+
+### The gauntlet.py sibling (coordinator question 4)
+
+**Verified: YES — the same class.** `tui/services/gauntlet.py:550`
+(`_invoke`: `self._runner(argv, capture_output=True, text=True,
+timeout=..., env=...)`, no `errors=` policy) launches the same
+CJK/emoji-emitting scripts; on a non-UTF-8 `LC_CTYPE` host,
+`subprocess.run` raises `UnicodeDecodeError` inside `communicate()`,
+absorbed by `except Exception` as `("subprocess_error", repr(exc))` — a
+FAILED gauntlet item for a kernel that ran fine. Identical to WR-05 in
+mechanism and consequence; had `gauntlet.py` been in this phase's diff it
+would have been a WR.
+**Recommendation: fix now** — one line (`errors="replace"` in the same
+runner call) plus one kwargs-pin assertion in
+`tests/tui/test_services_gauntlet.py`. It is surgical (zero widening),
+the fixer already touched the deliberately-twinned seam in
+`download_queue._invoke` this iteration, and shipping with the two
+documented twins inconsistent re-opens the exact recurring decode class
+this review cycle exists to close. If the maintainer prefers strict scope
+purity, it must be the first commit of the next iteration — before
+release.
+
+### Iteration-2 counts
+
+| Class | Count | Detail |
+|-------|-------|--------|
+| CR (introduced) | 1 | CR-02 livelock |
+| WR (introduced) | 0 | — |
+| IN (introduced/residual) | 3 | IN-09, IN-10, IN-11 |
+| Original findings fixed | 12 of 15 | CR-01, WR-01..06, IN-01, IN-05, IN-07, IN-08 (+ IN-03 toast half) |
+| Original findings accepted-as-kept-open | 3 | IN-02, IN-06 (with the pre-activation ruling condition), IN-03 progress half; IN-04 accepted as documentation |
+
+**Release verdict: NOT clean** — CR-02 (the driver livelock) must be
+fixed before ship; IN-09/IN-11 are one-line fixes recommended in the same
+commit; IN-10 tracks activation.
+
+_Re-review: 2026-10-13, Claude (gsd-code-reviewer), HEAD 0b3e1c9_
