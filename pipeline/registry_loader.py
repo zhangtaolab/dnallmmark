@@ -20,6 +20,14 @@ Contract (locked decisions):
 - **collision fail-fast** (D-08): a custom key equal to an official key
   exits naming the key AND the paths of both files — custom entries may
   only ADD keys, never shadow official ones.
+- **enabled skip** (D-09, Phase 9 09-02): a custom entry whose
+  ``enabled`` field is the literal JSON ``false`` is skipped at load
+  time — the loader-level true disable. Absent and ``true`` both load
+  (D-09 缺席=启用); only the literal false disables (the string
+  ``"false"``, ``0``, and ``null`` load). Official entries carry no
+  ``enabled`` field, so the absent-overlay byte-identity contract above
+  is untouched; the skip sits AFTER the collision fail-fast, so a
+  disabled shadow attempt is still refused.
 - **fail-loud on malformed** (T-07-04): a present-but-malformed custom
   file (invalid JSON, non-object top level, unreadable) is a hard error
   naming the file — never a silent skip (宁可噪声不可静默少计).
@@ -95,6 +103,10 @@ def _load_registry(official_path, custom_path):
     Returns:
         dict: the official registry, with custom entries merged in when
         the custom file exists (custom keys appended in file order).
+        Custom entries whose ``enabled`` field is the literal JSON
+        ``false`` are skipped (D-09) — absent/``true`` load, and the
+        skip never applies to non-object entry values (no ``enabled``
+        field to read).
 
     Raises:
         OSError: the OFFICIAL file is missing/unreadable (propagates).
@@ -129,7 +141,24 @@ def _load_registry(official_path, custom_path):
                 f"keys, never shadow official ones) — custom file: "
                 f"{custom_path}; official file: {official_path}"
             )
-    registry.update(custom)
+    # D-09 (Phase 9 09-02): skip ONLY the explicitly disabled custom
+    # entries — ``entry.get("enabled") is not False`` semantics. The
+    # ``is not False`` sentinel (not ``not entry.get(...)``) is what
+    # keeps absence meaning enabled: official entries lack the field
+    # entirely, and a JSON null (None) must load. The isinstance guard
+    # preserves the pre-D-09 behavior for non-object entry values (they
+    # have no enabled field to read and previously merged as-is — an
+    # AttributeError here would be a new crash on formerly accepted
+    # input). The skip sits AFTER the collision loop above, so a
+    # disabled shadow attempt still fails fast.
+    registry.update(
+        {
+            key: entry
+            for key, entry in custom.items()
+            if not (isinstance(entry, dict)
+                    and entry.get("enabled") is False)
+        }
+    )
     return registry
 
 
