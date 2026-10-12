@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 16
+open_count: 13
 waived_count: 0
-fixed_count: 3
+fixed_count: 6
 total_count: 19
-last_updated: 2026-10-12T04:54:57.963Z
+last_updated: 2026-10-12T06:34:53.107Z
 ---
 
 # Broken Windows Ledger
@@ -31,9 +31,9 @@ last_updated: 2026-10-12T04:54:57.963Z
 | 14 | 06 | deviation | pipeline/env_smoke.py |  | matmul expected constant corrected 64.0->512.0 (Rule 1, found by first executed smoke) | open |  | 2026-10-10T18:29:17.849Z |  |
 | 15 | 06 | deviation | dnallm-mark/data/provenance.csv |  | 06-04 Task 4 blocking-human gate (maintainer provenance review, CONTEXT Area 2): execution paused at the gate with the Unspecified-default state committed — resolved 2026-10-11, maintainer selected 'reviewed 接受现状' (accept as-is; 35/7/9 Unspecified rows stand as honest unknowns), landed in c59f5f8 | fixed |  | 2026-10-10T23:55:42.192Z | 2026-10-10T23:55:51.180Z |
 | 16 | 07 | deviation | schemas/flops_report.json |  | layer_details/total_flops_exact typed number not integer (Rule-1: verbatim Hyena FFT formula emits fractional FLOPs) — resolved, documented in 07-01-SUMMARY | fixed |  | 2026-10-11T06:45:51.224Z | 2026-10-11T06:46:26.720Z |
-| 17 | 9 | stub | tui/screens/wizard.py | 419 | gauntlet phase renders a minimal pending view (title + 待检 line) — the real subprocess panel is 09-05's deliverable over the on_valid seam | open |  | 2026-10-12T04:54:51.935Z |  |
-| 18 | 9 | stub | tui/screens/wizard.py | 708 | f binding routes to the on_import seam with no view behind it — the file-import view is 09-05's deliverable (planned functionality gap, D-11) | open |  | 2026-10-12T04:54:57.893Z |  |
-| 19 | 9 | stub | tui/screens/wizard.py | 713 | o binding routes to the on_export seam with no view behind it — the registry-export view is 09-05's deliverable (planned functionality gap, D-11) | open |  | 2026-10-12T04:54:57.963Z |  |
+| 17 | 9 | stub | tui/screens/wizard.py | 381 | gauntlet phase renders a minimal pending view (title + 待检 line) — the real subprocess panel is 09-05's deliverable over the on_valid seam | fixed | 09-05 Task 1: the real gauntlet panel landed over the phase slot (async run-id-tagged rows, land-only-on-all-pass, drill-down); the minimal pending view remains only for the no-service construction | 2026-10-12T04:54:51.935Z | 2026-10-12T05:55:00.000Z |
+| 18 | 9 | stub | tui/screens/wizard.py | 470 | f binding routes to the on_import seam with no view behind it — the file-import view is 09-05's deliverable (planned functionality gap, D-11) | fixed | 09-05 Task 2: f routes to the import path prompt + per-entry sequential gauntlet with entry-level rollback (D-11 view behind the seam) | 2026-10-12T04:54:57.893Z | 2026-10-12T05:55:00.000Z |
+| 19 | 9 | stub | tui/screens/wizard.py | 475 | o binding routes to the on_export seam with no view behind it — the registry-export view is 09-05's deliverable (planned functionality gap, D-11) | fixed | 09-05 Task 2: o routes to the empty-state-checked export path prompt + the verbatim registry copy (D-11 view behind the seam) | 2026-10-12T04:54:57.963Z | 2026-10-12T05:55:00.000Z |
 
 ````json
 [
@@ -252,10 +252,10 @@ last_updated: 2026-10-12T04:54:57.963Z
     "file": "tui/screens/wizard.py",
     "line": 381,
     "description": "gauntlet phase renders a minimal pending view (title + 待检 line) — the real subprocess panel is 09-05's deliverable over the on_valid seam",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "09-05 Task 1: the real gauntlet panel landed over the phase slot (async run-id-tagged rows, land-only-on-all-pass, drill-down); the minimal pending view remains only for the no-service construction",
     "recorded_at": "2026-10-12T04:54:51.935Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-12T05:55:00.000Z",
     "milestone": "v1.2"
   },
   {
@@ -265,10 +265,10 @@ last_updated: 2026-10-12T04:54:57.963Z
     "file": "tui/screens/wizard.py",
     "line": 470,
     "description": "f binding routes to the on_import seam with no view behind it — the file-import view is 09-05's deliverable (planned functionality gap, D-11)",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "09-05 Task 2: f routes to the import path prompt + per-entry sequential gauntlet with entry-level rollback (D-11 view behind the seam)",
     "recorded_at": "2026-10-12T04:54:57.893Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-12T05:55:00.000Z",
     "milestone": "v1.2"
   },
   {
@@ -278,10 +278,10 @@ last_updated: 2026-10-12T04:54:57.963Z
     "file": "tui/screens/wizard.py",
     "line": 475,
     "description": "o binding routes to the on_export seam with no view behind it — the registry-export view is 09-05's deliverable (planned functionality gap, D-11)",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "09-05 Task 2: o routes to the empty-state-checked export path prompt + the verbatim registry copy (D-11 view behind the seam)",
     "recorded_at": "2026-10-12T04:54:57.963Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-12T05:55:00.000Z",
     "milestone": "v1.2"
   }
 ]

@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 9
 current_phase_name: Custom Model & Dataset Onboarding (自定义接入向导)
 status: executing
-stopped_at: Completed 09-04-PLAN.md
-last_updated: "2026-10-12T04:57:59.217Z"
+stopped_at: Completed 09-05-PLAN.md
+last_updated: "2026-10-12T06:42:11.498Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 9 execution started
-state_head: 9217a0d39d6e33be168453d9b423ae3c45a29f35
+state_head: 13ede1c8b6668e172d551b5483d081e219943e3c
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
   percent: 33
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 9 (Custom Model & Dataset Onboarding (自定义接入向导)) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-10-12 — Phase 9 execution started
 
@@ -75,7 +75,7 @@ Progress (v1.2): [██████████] 100% (13/13 plans)
 | Phase 09 P09-02 | 19 min | 3 tasks | 4 files |
 | Phase 09 P09-03 | 44 min | 3 tasks | 13 files |
 | Phase 09 P09-04 | 41 min | 3 tasks | 4 files |
-
+| Phase 09 P09-05 | 95 min | 3 tasks | 3 files |
 ## Accumulated Context
 
 ### Decisions
@@ -143,6 +143,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 9]: 09-04: wizard = one ModalScreen over declarative step tables (FieldSpec/StepSpec/KindSpec); compose renders only the active phase view and every value lives in self._values — report/gauntlet are VIEWS inside the same modal, so their dismissal structurally cannot destroy entered values (Pitfall 9); only esc-confirm / land / used undo clear the form
 - [Phase 9]: 09-04: dataset split-file Inputs collect file names advisory-only — Train/Dev/Test never compose into the candidate (the 09-01 derive-at-composition decision); Task_type stores under the registry field 'type' (#11); the candidate stamps nothing service-owned, numerics compose as numbers when parseable (raw text passes through for the collect-all to flag), optional strings as '' never None, quirks as the three-key dict
 - [Phase 9]: 09-04 probe-pinned textual 8.2.8 facts: TCSS has no min()/arithmetic (the wizard width amendment applies in code at min(100,w-4)); border_title parses console markup at set time so the step-indicator accent resolves app.current_theme.accent (no hardcoded hex); SelectionList.deselect accepts the option VALUE and fires no re-toggle (single-pick enforcement loop-free)
+- [Phase 09]: 09-05: the gauntlet panel drives the service's two PUBLIC per-leg entry points (not the batch reconcile) — per-item progression needs a service call per row flip; reconcile's kind rule is mirrored 1:1
+- [Phase 09]: 09-05: run id increments at launch only; staleness = id mismatch OR phase not gauntlet/drill — esc mid-run abandons the run (late results drop, an abandoned all-pass never lands); the EntryDone event-loop handler is the panel's ONLY write call site (the injected land seam)
+- [Phase 09]: 09-05: imports continue past a failing entry (the others land); every status surface is state-then-DOM (verdicts landing while a drill view holds the DOM survive the return); panel entry rows scroll in a code-bounded region (grid minus chrome) after a probe-confirmed 6-entry clip at 80x24
 
 ### Pending Todos
 
@@ -166,8 +169,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T04:57:59.174Z
-Stopped at: Completed 09-04-PLAN.md
+Last session: 2026-10-12T06:42:11.440Z
+Stopped at: Completed 09-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

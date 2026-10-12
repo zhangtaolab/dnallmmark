@@ -166,7 +166,7 @@ Plans:
   4. After submission the automatic error detection runs — dry-run precheck plus audit reconciliation (row counts / non-ACGT / subset survival); any failure is reported prominently and the failed entry never lands: the custom registry reverts cleanly at entry level (official files zero-risk), leaving no half-written state that could trip the registry chain's abort-on-wrong-count discipline
   5. Landed custom entries carry a visible custom marker in both lists (distinct from the official 62/50), can be individually enabled/disabled, and export as the shareable unit (the custom registry file itself); the official registries and the existing test suite stay green and untouched
 
-**Plans**: 4/6 plans executed
+**Plans**: 5/6 plans executed
 Plans:
 **Wave 1**
 - [x] 09-01-PLAN.md — custom-entry services core (CUST-01/02/03/06 tier): store (land/undo/toggle/import/export) + collect-all validator + schemas/custom_registry.json; tracer proves write → overlay-load end-to-end
@@ -179,7 +179,7 @@ Plans:
 - [x] 09-04-PLAN.md — wizard modal family, collection half (CUST-01/02 UI + CUST-03 report): 4-step forms, type-aware controls, value preservation, collect-all report view, 80×24 long-text backstop
 
 **Wave 4** *(blocked on 09-02 + 09-04)*
-- [ ] 09-05-PLAN.md — wizard writing half (CUST-04 UI + D-08/D-11): async gauntlet panel (land-only-on-all-✓), session undo, per-entry import gauntlet, export
+- [x] 09-05-PLAN.md — wizard writing half (CUST-04 UI + D-08/D-11): async gauntlet panel (land-only-on-all-✓), session undo, per-entry import gauntlet, export
 
 **Wave 5** *(blocked on 09-03 + 09-05)*
 - [ ] 09-06-PLAN.md — selection integration (CUST-06 + D-09/10/12/14): w entry with prefill, e toggle, ◇ badge + （已停用）visibility, count segment, disabled-mark block, full-loop test + phase gates
@@ -241,7 +241,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 |-------|-----------|----------------|--------|-----------|
 | 7. Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) | v1.2 | 6/6 | Complete    | 2026-10-11 |
 | 8. TUI Foundation (Env Check & Selection) | v1.2 | 7/7 | Complete    | 2026-10-12 |
-| 9. Custom Model & Dataset Onboarding | v1.2 | 4/6 | In Progress | - |
+| 9. Custom Model & Dataset Onboarding | v1.2 | 5/6 | In Progress | - |
 | 10. Data Manager (Downloads & Verification) | v1.2 | 0/TBD | Not started | - |
 | 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 0/TBD | Not started | - |
 | 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 0/TBD | Not started | - |
