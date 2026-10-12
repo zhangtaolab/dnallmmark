@@ -706,13 +706,16 @@ def _default_runner(argv, **kwargs):
     """The real completed-process seam (the injectable default; the
     gauntlet runner shape — used by the reconcile/reaudit legs).
 
-    The service itself passes ``capture_output=True, text=True`` (plus
-    ``timeout``/``env``) on every call — the same kwargs the fakes
-    record — so the default is a pure forward to ``subprocess.run``.
+    The service itself passes ``capture_output=True, text=True,
+    errors="replace"`` (plus ``timeout``/``env``) on every call — the
+    same kwargs the fakes record — so the default is a pure forward to
+    ``subprocess.run`` (the replace policy keeps a non-UTF-8-locale
+    decode a replacement-character capture, never an exception — WR-05).
 
     Args:
         argv (list): the LIST argv (never a shell string).
-        **kwargs: ``capture_output``/``text``/``timeout``/``env``.
+        **kwargs: ``capture_output``/``text``/``errors``/``timeout``/
+            ``env``.
 
     Returns:
         subprocess.CompletedProcess: with captured text stdout/stderr.
@@ -973,8 +976,8 @@ class DownloadQueueService:
                 ``subprocess.Popen`` with the fixed kwargs.
             runner: the completed-process seam for the reconcile/reaudit
                 legs (the gauntlet runner shape: ``argv,
-                capture_output=True, text=True, timeout=..., env=...``);
-                None wraps ``subprocess.run``.
+                capture_output=True, text=True, errors="replace",
+                timeout=..., env=...``); None wraps ``subprocess.run``.
             cli_path: an explicit modelscope console-script path; None
                 probes the standard resolution order at each use.
             timeout_reconcile: per-reconcile timeout seconds
@@ -2018,7 +2021,13 @@ class DownloadQueueService:
 
         Every launch failure is absorbed into a problems tuple — a
         timeout or a crash NEVER crosses the service boundary as an
-        exception (the gauntlet ``_invoke`` discipline).
+        exception (the gauntlet ``_invoke`` discipline). The runner
+        decodes with ``text=True, errors="replace"`` (WR-05, matching
+        ``_pump``'s policy): the audit script emits CJK/emoji markers,
+        and a non-UTF-8 ``LC_CTYPE`` host must decode them to
+        replacement characters — never raise ``UnicodeDecodeError``
+        inside ``subprocess.run`` and turn a healthy audit into a
+        spurious failed verdict (the phase-8/9 GBK class).
 
         Args:
             argv (list): the LIST argv (never a shell string).
@@ -2032,6 +2041,7 @@ class DownloadQueueService:
         """
         try:
             proc = self._runner(argv, capture_output=True, text=True,
+                                errors="replace",
                                 timeout=timeout, env=env)
         except subprocess.TimeoutExpired:
             return None, ("timeout",

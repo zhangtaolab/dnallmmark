@@ -1587,6 +1587,28 @@ def test_reconcile_vocabulary_verdicts_env_and_default_timeout():
     assert download_queue.DEFAULT_TIMEOUT_RECONCILE == 300
 
 
+def test_default_runner_replaces_undecodable_stdout_bytes(tmp_path):
+    """WR-05 behavioral proof: with the pinned kwargs (text=True +
+    errors="replace"), a subprocess emitting non-UTF-8 bytes decodes to
+    replacement characters — never a UnicodeDecodeError out of
+    communicate() (the GBK-locale failure class)."""
+    script = tmp_path / "emit.py"
+    script.write_text(
+        "import sys\n"
+        "sys.stdout.buffer.write(b'\\xff\\xfe mojibake\\n')\n",
+        encoding="utf-8")
+
+    proc = download_queue._default_runner(
+        [sys.executable, str(script)],
+        capture_output=True, text=True, errors="replace",
+        timeout=30, env=dict(os.environ))
+
+    assert proc.returncode == 0
+    assert "�" in proc.stdout, (
+        "the undecodable byte must decode to the replacement char"
+    )
+
+
 def test_reconcile_timeout_knob_overridable(tmp_path, monkeypatch):
     captured = {}
     runner = FakeReconcileRunner(on_call=lambda argv, kwargs:
@@ -1653,6 +1675,8 @@ def test_reconcile_argv_pins_all_output_flags_at_temp_paths(
     assert captured["kwargs"]["capture_output"] is True
     assert captured["kwargs"]["text"] is True
     assert captured["kwargs"]["timeout"] == 300
+    # WR-05: the reconcile leg's decode policy matches _pump's
+    assert captured["kwargs"]["errors"] == "replace"
 
 
 def test_reconcile_env_exactly_one_override_pinned_to_empty_dir(
@@ -2388,6 +2412,11 @@ def test_reaudit_argv_exactly_interpreter_and_script_no_flags(
     assert captured["kwargs"]["timeout"] == 300
     assert captured["kwargs"]["capture_output"] is True
     assert captured["kwargs"]["text"] is True
+    # WR-05: the decode policy — errors="replace" rides every runner
+    # call (the audit script emits CJK/emoji markers; a non-UTF-8
+    # LC_CTYPE must decode them, never raise UnicodeDecodeError and
+    # turn a healthy audit into a spurious failed verdict)
+    assert captured["kwargs"]["errors"] == "replace"
 
 
 def test_reaudit_env_exactly_one_override_empty_overlay(
