@@ -112,15 +112,15 @@ def make_dataset_entry(**overrides):
     return entry
 
 
-def import_sources(**overrides):
-    base = {
-        "official_model_keys": frozenset({"plant-dnabert-6mer"}),
-        "official_dataset_keys": frozenset({"GUE__emp_H3"}),
-        "existing_custom_models": {"my-prev-lm": {"size (M)": 1}},
-        "existing_custom_datasets": {"MyPrev__task": {"labels": 2}},
-    }
-    base.update(overrides)
-    return cv.ValidationSources(**base)
+def import_sources():
+    """Synthetic collision sets: one official + one existing custom key
+    per kind."""
+    return cv.ValidationSources(
+        official_model_keys=frozenset({"plant-dnabert-6mer"}),
+        official_dataset_keys=frozenset({"GUE__emp_H3"}),
+        existing_custom_models={"my-prev-lm": {"size (M)": 1}},
+        existing_custom_datasets={"MyPrev__task": {"labels": 2}},
+    )
 
 
 def write_import_file(tmp_path, doc, name="import.json"):

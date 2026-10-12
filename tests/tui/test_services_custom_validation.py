@@ -86,40 +86,47 @@ def make_dataset_fs(tmp_path):
     return root
 
 
-def model_sources(fs_root, **overrides):
+#: Synthetic observed vocabularies (the 09-04/09-05 screens build the
+#: real ones from the registries; the validator only checks membership
+#: in whatever is injected).
+OBSERVED_SPECIES = ("plants", "animals", "microbe")
+OBSERVED_TOKENIZERS = (
+    "BPE", "6mer", "singlebase", "one-hot", "6-mer", "overlapped 6-mer",
+)
+
+
+def model_sources(
+    fs_root,
+    existing_custom_models=None,
+    observed_species=OBSERVED_SPECIES,
+    observed_tokenizers=OBSERVED_TOKENIZERS,
+):
     """Synthetic sources with one official + one custom model key."""
-    base = {
-        "fs_root": fs_root,
-        "official_model_keys": frozenset({"plant-dnabert-6mer"}),
-        "official_dataset_keys": frozenset({"GUE__emp_H3"}),
-        "existing_custom_models": {"my-prev-lm": {"size (M)": 1}},
-        "existing_custom_datasets": {},
-        "observed_species": ("plants", "animals", "microbe"),
-        "observed_tokenizers": (
-            "BPE", "6mer", "singlebase", "one-hot", "6-mer",
-            "overlapped 6-mer",
+    return cv.ValidationSources(
+        fs_root=fs_root,
+        official_model_keys=frozenset({"plant-dnabert-6mer"}),
+        official_dataset_keys=frozenset({"GUE__emp_H3"}),
+        existing_custom_models=(
+            {"my-prev-lm": {"size (M)": 1}}
+            if existing_custom_models is None else existing_custom_models
         ),
-    }
-    base.update(overrides)
-    return cv.ValidationSources(**base)
+        existing_custom_datasets={},
+        observed_species=observed_species,
+        observed_tokenizers=observed_tokenizers,
+    )
 
 
-def dataset_sources(fs_root, **overrides):
+def dataset_sources(fs_root):
     """Synthetic sources with one official + one custom dataset key."""
-    base = {
-        "fs_root": fs_root,
-        "official_model_keys": frozenset({"plant-dnabert-6mer"}),
-        "official_dataset_keys": frozenset({"GUE__emp_H3"}),
-        "existing_custom_models": {},
-        "existing_custom_datasets": {"MyPrev__task": {"labels": 2}},
-        "observed_species": ("plants", "animals", "microbe"),
-        "observed_tokenizers": (
-            "BPE", "6mer", "singlebase", "one-hot", "6-mer",
-            "overlapped 6-mer",
-        ),
-    }
-    base.update(overrides)
-    return cv.ValidationSources(**base)
+    return cv.ValidationSources(
+        fs_root=fs_root,
+        official_model_keys=frozenset({"plant-dnabert-6mer"}),
+        official_dataset_keys=frozenset({"GUE__emp_H3"}),
+        existing_custom_models={},
+        existing_custom_datasets={"MyPrev__task": {"labels": 2}},
+        observed_species=OBSERVED_SPECIES,
+        observed_tokenizers=OBSERVED_TOKENIZERS,
+    )
 
 
 def full_model_values(fs_root):
@@ -600,13 +607,16 @@ def test_service_module_never_imports_export_runs():
 
     source = Path(cv.__file__).read_text(encoding="utf-8")
     for node in ast.walk(ast.parse(source)):
-        names = []
         if isinstance(node, ast.Import):
             names = [alias.name for alias in node.names]
         elif isinstance(node, ast.ImportFrom):
             names = [node.module or ""]
+        else:
+            continue
         for name in names:
-            assert name.split(".")[0] != "export_runs", f"line {node.lineno}"
+            assert name.split(".")[0] != "export_runs", (
+                f"import at line {getattr(node, 'lineno', '?')}"
+            )
 
 
 # ===== Untrusted input: problems, never exceptions =====
