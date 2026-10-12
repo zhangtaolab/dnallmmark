@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 9
 current_phase_name: Custom Model & Dataset Onboarding (自定义接入向导)
 status: executing
-stopped_at: Completed 09-03-PLAN.md
-last_updated: "2026-10-12T04:11:58.097Z"
+stopped_at: Completed 09-04-PLAN.md
+last_updated: "2026-10-12T04:57:59.217Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 9 execution started
-state_head: 942153477e3284cdd2c9143f9ab24fa619e91494
+state_head: 9217a0d39d6e33be168453d9b423ae3c45a29f35
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 16
+  completed_plans: 17
   percent: 33
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 9 (Custom Model & Dataset Onboarding (自定义接入向导)) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-10-12 — Phase 9 execution started
 
@@ -74,6 +74,7 @@ Progress (v1.2): [██████████] 100% (13/13 plans)
 | Phase 09 P09-01 | 47 min | 3 tasks | 7 files |
 | Phase 09 P09-02 | 19 min | 3 tasks | 4 files |
 | Phase 09 P09-03 | 44 min | 3 tasks | 13 files |
+| Phase 09 P09-04 | 41 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 09]: [Phase 09]: 09-03 probe-pinned textual 8.2.8 facts: (a) switch_screen away from the BOOT screen raises IndexError (missing result-callback bookkeeping) — one _push_result_callback shim in App.on_mount; (b) rich Text spans styled with $token strings crash the Static render path (MissingStyle) — keycap keys resolve app.current_theme.accent at mount, labels use rich dim; zero hardcoded hex
 - [Phase 09]: [Phase 09]: 09-03 about derivations: official counts read the committed registries directly (official-only 62/50 — the overlay-merged view would count customs into the 官方 row); 自定义 counts via the 09-01 direct store read; deps tolerance is per-package (one exploding probe → 未安装, never blanks neighbors); 里程碑阶段 is the one static milestone constant
 - [Phase 09]: [Phase 09]: 09-03 migration: env s binding retired (menu slot 2 supersedes — one navigation path per target; help modal auto-reflects), Header/Footer retired on the three base screens (modal Footer hints and matrix chrome kept per the migration table); placeholder slots 3/4/5 carry Phases 10/11/12 in NAV_SLOTS
+- [Phase 9]: 09-04: wizard = one ModalScreen over declarative step tables (FieldSpec/StepSpec/KindSpec); compose renders only the active phase view and every value lives in self._values — report/gauntlet are VIEWS inside the same modal, so their dismissal structurally cannot destroy entered values (Pitfall 9); only esc-confirm / land / used undo clear the form
+- [Phase 9]: 09-04: dataset split-file Inputs collect file names advisory-only — Train/Dev/Test never compose into the candidate (the 09-01 derive-at-composition decision); Task_type stores under the registry field 'type' (#11); the candidate stamps nothing service-owned, numerics compose as numbers when parseable (raw text passes through for the collect-all to flag), optional strings as '' never None, quirks as the three-key dict
+- [Phase 9]: 09-04 probe-pinned textual 8.2.8 facts: TCSS has no min()/arithmetic (the wizard width amendment applies in code at min(100,w-4)); border_title parses console markup at set time so the step-indicator accent resolves app.current_theme.accent (no hardcoded hex); SelectionList.deselect accepts the option VALUE and fires no re-toggle (single-pick enforcement loop-free)
 
 ### Pending Todos
 
@@ -162,8 +166,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T04:11:58.054Z
-Stopped at: Completed 09-03-PLAN.md
+Last session: 2026-10-12T04:57:59.174Z
+Stopped at: Completed 09-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
