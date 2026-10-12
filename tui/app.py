@@ -73,6 +73,7 @@ from tui.screens.selection import (
     SelectionServiceProtocol,
 )
 from tui.services.download_queue import (
+    KIND_ZENODO_BUNDLE,
     DownloadQueueService,
     QueueEntry,
     QueueEvent,
@@ -85,6 +86,7 @@ from tui.strings import (
     APP_MODAL_BACK_LABEL,
     APP_QUIT_LABEL,
     APP_TITLE,
+    DL_BUNDLE_TASK_NAME,
     NAV_PLACEHOLDER_TOAST,
     QUEUE_FLIP_TOAST,
 )
@@ -502,7 +504,12 @@ class DnallmMarkTui(App):
             return  # a superseded driver's late post (WR-02)
         event = message.event
         if event.state == "done":
-            self.notify(QUEUE_FLIP_TOAST.format(key=event.key))
+            # IN-03: the bundle row's flip toast formats the operator-
+            # facing bundle label (the ONE name the z-enqueue toast
+            # uses), never the raw queue key
+            label = (DL_BUNDLE_TASK_NAME
+                     if event.kind == KIND_ZENODO_BUNDLE else event.key)
+            self.notify(QUEUE_FLIP_TOAST.format(key=label))
         for screen in self.screen_stack:
             apply_event = getattr(screen, "apply_queue_event", None)
             if apply_event is not None:

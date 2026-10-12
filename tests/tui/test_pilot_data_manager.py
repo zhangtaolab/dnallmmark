@@ -153,9 +153,14 @@ class FakeQueueService:
         for index, entry in enumerate(self._entries):
             if entry.key == key:
                 self._entries[index] = _queue_entry(
-                    key, state=state, last_percent=percent)
+                    key, state=state, last_percent=percent,
+                    kind=entry.kind)
         return QueueEvent(
-            run_id=run_id, key=key, kind="dataset", state=state,
+            run_id=run_id, key=key,
+            kind=("zenodo_bundle"
+                  if key == download_queue_module.ZENODO_BUNDLE_KEY
+                  else "dataset"),
+            state=state,
             last_percent=percent, problems=(), details=(),
             log_path=None)
 
@@ -1661,6 +1666,33 @@ async def test_queue_event_reaches_the_screen_under_the_drill_down():
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, ModalScreen)
+
+
+async def test_bundle_done_flip_toast_uses_the_bundle_label_in03():
+    """IN-03 (toast half): a done zenodo bundle formats the flip toast
+    with the OPERATOR-FACING bundle label (the same DL_BUNDLE_TASK_NAME
+    the z-enqueue toast uses) — the two toasts for the same task carry
+    one name, never the raw queue key."""
+    bundle_key = download_queue_module.ZENODO_BUNDLE_KEY
+    fake = FakeQueueService(
+        entries=[_queue_entry(bundle_key, kind="zenodo_bundle")],
+        results={bundle_key: ("done", 100)})
+    app = _app(queue=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_data_manager(pilot, app)
+        app.kick_download_queue()
+        await asyncio.wait_for(
+            app.workers.wait_for_complete(), timeout=10)
+        await pilot.pause()
+
+        assert QUEUE_FLIP_TOAST.format(
+            key=DL_BUNDLE_TASK_NAME) in _toast_messages(app), (
+            "the bundle flip toast must format the bundle label"
+        )
+        assert not any(QUEUE_FLIP_TOAST.format(key=bundle_key)
+                       in message for message in _toast_messages(app)), (
+            "the raw queue key never appears in the flip toast"
+        )
 
 
 async def test_queue_event_reaches_selection_under_its_modal():
