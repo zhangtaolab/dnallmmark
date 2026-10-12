@@ -2907,6 +2907,90 @@ def test_run_task_zenodo_nothing_landed_fails(tmp_path, monkeypatch):
     assert "landed=0" in event.details
 
 
+def test_run_task_zenodo_cancel_before_stages_fails_never_probes(
+        tmp_path, monkeypatch):
+    """WR-01: a cancel that lands while the bundle entry is downloading
+    is honored at the FIRST stage boundary — failed
+    ``cancelled_by_operator`` with zero network legs (the probe never
+    fires), mirroring the CLI lane's reap-loop contract."""
+    repo = bundle_repo(tmp_path)
+    pin_n_audit_missing(monkeypatch, tmp_path)
+    router = UrlRouter(public_record_table(bundle_zip_bytes((4, 2, 2))))
+    service, _state = bundle_service(tmp_path, monkeypatch, router, repo)
+    service.enqueue_zenodo()
+    service.claim_next()
+
+    assert service.cancel(download_queue.ZENODO_BUNDLE_KEY) == "signalled"
+    event = service.run_task(
+        download_queue.ZENODO_BUNDLE_KEY, run_id="z-cancel-0")
+
+    assert event.state == "failed"
+    assert event.problems == (download_queue.PROBLEM_CANCELLED,)
+    assert router.calls == [], "the cancelled bundle never probes"
+    (entry,) = service.entries()
+    assert entry.state == "failed"
+    assert not (repo / "pipeline" / "datasets").exists()
+
+
+def test_run_task_zenodo_cancel_mid_download_fails_cancelled(
+        tmp_path, monkeypatch):
+    """WR-01 end-to-end: the operator's x-cancel lands mid-download (the
+    public ``cancel`` API, called from inside the fetch seam while the
+    entry is downloading) — the per-file loop STOPS at the should_cancel
+    seam, the run finishes failed ``cancelled_by_operator`` (never a
+    per-file failure), the partial staging stays retained, and nothing
+    extracts."""
+    repo = bundle_repo(tmp_path)
+    pin_n_audit_missing(monkeypatch, tmp_path)
+    second_url = "https://zenodo.org/api/files/record/Second.zip"
+    zip_value = bundle_zip_bytes((4, 2, 2))
+    router = UrlRouter(public_record_table(zip_value, files=[
+        {"key": "Demo.zip", "size": len(zip_value),
+         "links": {"self": BUNDLE_ZIP_URL}},
+        {"key": "Second.zip", "size": 6,
+         "links": {"self": second_url}},
+    ]))
+    router.table[second_url] = FakeUrlResponse(200, b"second")
+    cell: dict = {}
+
+    def cancelling_opener(url, timeout=None):
+        if url == BUNDLE_ZIP_URL:
+            # the operator presses x-confirm while file 1 streams
+            assert cell["service"].cancel(
+                download_queue.ZENODO_BUNDLE_KEY) == "signalled"
+        return router(url, timeout=timeout)
+
+    service, state = bundle_service(
+        tmp_path, monkeypatch, cancelling_opener, repo)
+    cell["service"] = service
+    service.enqueue_zenodo()
+    service.claim_next()
+
+    event = service.run_task(
+        download_queue.ZENODO_BUNDLE_KEY, run_id="z-cancel-1")
+
+    assert event.state == "failed"
+    assert event.problems == (download_queue.PROBLEM_CANCELLED,), (
+        "the cancelled bundle is the operator-cancel problem, never "
+        "bundle_download_failed"
+    )
+    assert "downloaded=1" in event.details, (
+        "the in-loop should_cancel seam stopped the loop after file 1"
+    )
+    (entry,) = service.entries()
+    assert entry.state == "failed"
+    # the partial staging stays retained (the lane re-runs from scratch
+    # on retry — no byte-resume by design); Second.zip never downloaded
+    staging = state / "zenodo-19135551"
+    assert (staging / "Demo.zip").is_file()
+    assert not (staging / "Second.zip").exists()
+    # cancelled BEFORE extract: nothing landed under pipeline/datasets
+    assert not (repo / "pipeline" / "datasets").exists()
+    # the flag is consumed by _finish (a later retry is never poisoned)
+    service.retry(download_queue.ZENODO_BUNDLE_KEY)
+    assert service.claim_next().state == "downloading"
+
+
 # =====================================================================
 # The DL_/QUEUE_ string block + ENV_ROUTE amendment (10-03 Task 3,
 # I18N-01 single home) — the inventory tripwire the 10-04/10-05

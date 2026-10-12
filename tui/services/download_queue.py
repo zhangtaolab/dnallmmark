@@ -1273,8 +1273,11 @@ class DownloadQueueService:
         the cancel-requested flag is set and SIGTERM is sent via
         ``os.killpg`` to the recorded process group — the worker's reap
         loop completes the failed transition (partials are retained by
-        the channel, D-06 resume). Any other state or absent key: a
-        no-op.
+        the channel, D-06 resume). For the zenodo bundle lane (no
+        process handle — stdlib HTTP) the flag alone carries the
+        cancel: ``_run_zenodo_bundle`` polls it at every stage boundary
+        and finishes failed ``cancelled_by_operator`` (WR-01). Any
+        other state or absent key: a no-op.
 
         Args:
             key (str): the dataset registry key.
@@ -1587,6 +1590,17 @@ class DownloadQueueService:
                     return entry["kind"]
         return KIND_DATASET
 
+    def _cancel_requested_for(self, key):
+        """True when the operator cancelled this in-flight key.
+
+        WR-01: the zenodo bundle lane has NO process handle to signal
+        (stdlib HTTP, not a Popen group), so its stage boundaries poll
+        this probe instead — the CLI lane's reap loop keeps its own
+        unlocked read (the owned-handle contract there).
+        """
+        with self._lock:
+            return key in self._cancel_requested
+
     def _run_zenodo_bundle(self, key, run_id):
         """Execute the whole-package bundle task (never raises).
 
@@ -1612,6 +1626,15 @@ class DownloadQueueService:
         6. per-key reconcile through the 10-02 leg for every LANDED
            key; ``entry.reconcile`` carries the per-key verdict map.
 
+        WR-01 (the operator's bounded escape, T-10-06-01's cancel): the
+        cancel-requested flag is honored at EVERY stage boundary (before
+        the probe, before the parse, before the download, inside the
+        per-file loop through the ``should_cancel`` seam, and before the
+        reconcile) — a cancelled bundle finishes failed with
+        ``cancelled_by_operator``, mirroring the CLI lane's reap-loop
+        contract; no artificial timeout bounds a legitimate multi-GB
+        transfer.
+
         Final state: done iff at least one key landed AND zero
         mismatches; mismatch if any landed key mismatched; failed if
         nothing landed or any stage failed. The branch writes NOTHING
@@ -1625,9 +1648,14 @@ class DownloadQueueService:
         Returns:
             QueueEvent: the structured outcome (state persisted).
         """
+        def cancelled():
+            return self._cancel_requested_for(key)
+
         details: list[str] = []
         missing_keys = [row.key for row in self.missing_datasets()]
         details.append("missing_keys=" + str(len(missing_keys)))
+        if cancelled():
+            return self._finish_cancelled(key, run_id, details)
         probe_state = zenodo_bundle.probe_zenodo_public(
             opener=self._zenodo_fetch)
         details.append("probe=" + probe_state)
@@ -1635,6 +1663,8 @@ class DownloadQueueService:
             return self._finish(
                 key, run_id, "failed", None,
                 (PROBLEM_RECORD_NOT_PUBLIC,), tuple(details))
+        if cancelled():
+            return self._finish_cancelled(key, run_id, details)
         record, record_error = zenodo_bundle.fetch_record_json(
             fetch=self._zenodo_fetch)
         if record is None:
@@ -1648,10 +1678,17 @@ class DownloadQueueService:
             return self._finish(
                 key, run_id, "failed", None,
                 (PROBLEM_FILE_LIST_UNREADABLE,), tuple(details))
+        if cancelled():
+            return self._finish_cancelled(key, run_id, details)
         staging = settings.state_dir() / zenodo_bundle.STAGING_DIR_NAME
         downloaded, failures = zenodo_bundle.download_bundle_files(
-            files, staging, fetch=self._zenodo_fetch)
+            files, staging, fetch=self._zenodo_fetch,
+            should_cancel=cancelled)
         details.append("downloaded=" + str(len(downloaded)))
+        if cancelled():
+            # a cancel that landed mid-loop (or during the last file's
+            # tail) — the loop already stopped at the seam
+            return self._finish_cancelled(key, run_id, details)
         if failures:
             details.extend("download_failure=" + failure
                            for failure in failures)
@@ -1663,6 +1700,8 @@ class DownloadQueueService:
             downloaded, self._pipeline_dir / "datasets")
         details.append("extracted=" + str(extracted))
         details.extend(extract_problems)
+        if cancelled():
+            return self._finish_cancelled(key, run_id, details)
         try:
             registry = self._official_registry()
         except (OSError, json.JSONDecodeError,
@@ -1681,6 +1720,8 @@ class DownloadQueueService:
                 key, run_id, "failed", None,
                 (PROBLEM_BUNDLE_LANDED_ZERO,), tuple(details),
                 stderr_text="\n".join(extract_problems))
+        if cancelled():
+            return self._finish_cancelled(key, run_id, details)
         per_key: dict[str, str] = {}
         problems_out: list[str] = []
         has_mismatch = False
@@ -2010,6 +2051,14 @@ class DownloadQueueService:
                     raw_output=raw)
             return ReauditOutcome(
                 ok=True, details=("exit_code=0",), raw_output=raw)
+
+    def _finish_cancelled(self, key, run_id, details):
+        """The zenodo bundle lane's cancel exit (WR-01): failed with the
+        shared ``cancelled_by_operator`` problem — the reap-loop
+        contract mirrored for the handle-less stdlib-HTTP lane."""
+        return self._finish(
+            key, run_id, "failed", None, (PROBLEM_CANCELLED,),
+            tuple(details))
 
     def _finish(self, key, run_id, state, percent, problems, details,
                 stdout_text="", stderr_text="", argv=None,

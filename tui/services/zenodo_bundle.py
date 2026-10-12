@@ -199,7 +199,7 @@ def parse_record_files(record):
     return tuple(parsed)
 
 
-def download_bundle_files(files, dest_dir, fetch=None):
+def download_bundle_files(files, dest_dir, fetch=None, should_cancel=None):
     """Stream every bundle file into the staging dir (never raises).
 
     Each file copies through the injectable fetch seam in
@@ -210,12 +210,19 @@ def download_bundle_files(files, dest_dir, fetch=None):
     A file name carrying path separators is refused (staging is one
     flat directory; anything else would be a traversal write).
 
+    ``should_cancel`` (WR-01) is checked before each file: a truthy
+    answer STOPS the loop and returns the partial list — the caller
+    classifies the stop as an operator cancel, never a per-file
+    failure.
+
     Args:
         files (iterable[BundleFile]): the parsed file list.
         dest_dir: the staging directory (created on demand; the caller
             resolves it under the XDG state root).
         fetch: the urlopen-shaped seam; None wraps
             ``urllib.request.urlopen``.
+        should_cancel: optional zero-arg callable checked before each
+            file (the queue branch passes the cancel-requested probe).
 
     Returns:
         tuple: ``(downloaded, failures)`` — the landed file paths
@@ -228,6 +235,8 @@ def download_bundle_files(files, dest_dir, fetch=None):
     downloaded: list[Path] = []
     failures: list[str] = []
     for item in files:
+        if should_cancel is not None and should_cancel():
+            break       # the operator cancel — partial list, no failure
         if Path(item.name).name != item.name or item.name in (".", ".."):
             failures.append(item.name + ":unsafe_staging_name")
             continue

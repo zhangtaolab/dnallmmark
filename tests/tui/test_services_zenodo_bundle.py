@@ -404,6 +404,33 @@ def test_download_bundle_files_refuses_traversal_names(tmp_path):
     assert list(staging.iterdir()) == []
 
 
+def test_download_bundle_files_should_cancel_stops_the_loop(tmp_path):
+    """WR-01: the ``should_cancel`` seam — checked before each file, a
+    truthy answer STOPS the loop (the partial list is the caller's to
+    classify as cancelled, never a per-file failure)."""
+    fetch = recording_opener(response=FakeResponse(200, b"bytes"))
+    staging = tmp_path / "staging"
+    files = (
+        zenodo_bundle.BundleFile(name="a.zip", url=ZIP_FILE_URL,
+                                 size=None),
+        zenodo_bundle.BundleFile(name="b.zip", url=README_FILE_URL,
+                                 size=None),
+    )
+    # cancel becomes visible after the FIRST file completes
+    checks = {"n": 0}
+
+    def should_cancel():
+        checks["n"] += 1
+        return checks["n"] > 1
+
+    downloaded, failures = zenodo_bundle.download_bundle_files(
+        files, staging, fetch=fetch, should_cancel=should_cancel)
+
+    assert [path.name for path in downloaded] == ["a.zip"]
+    assert failures == [], "the in-loop stop is never a per-file failure"
+    assert [path.name for path in staging.iterdir()] == ["a.zip"]
+
+
 def test_extract_bundle_archives_lands_the_tree_under_root(tmp_path):
     zip_path = tmp_path / "Demo.zip"
     zip_path.write_bytes(build_zip_bytes({
