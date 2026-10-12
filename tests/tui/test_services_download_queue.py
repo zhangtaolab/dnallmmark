@@ -2185,3 +2185,234 @@ def test_reconciled_rows_feeds_merge_presence_end_to_end(
     presence = registries.presence_for("GUE__missing_task", merged)
     assert presence.status == registries.PRESENCE_PRESENT
     assert presence.rows == (7, 3, 3)
+
+
+
+# =====================================================================
+# The R-03 g re-audit (10-02 Task 3) — the audit script's DEFAULT
+# outputs write the four worktree artifacts (maintainer review/commit);
+# every automatic path is pinned to temp outputs + byte-unchanged
+# =====================================================================
+
+import hashlib
+
+#: The four committed artifacts the audit script's DEFAULT outputs
+#: write (Pitfall 6) — byte-unchanged across every automatic path.
+COMMITTED_AUDIT_ARTIFACTS = (
+    REPO_ROOT / "dnallm-mark" / "data" / "n_audit.json",
+    REPO_ROOT / "dnallm-mark" / "data" / "n_audit.csv",
+    REPO_ROOT / "pipeline" / "eval_subsets.json",
+    REPO_ROOT / "DATA.md",
+)
+
+
+def artifact_hashes():
+    return {str(path): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in COMMITTED_AUDIT_ARTIFACTS}
+
+
+def reaudit_service(tmp_path, monkeypatch, runner,
+                    timeout_reaudit=None):
+    repo = tmp_repo_with_registry(
+        tmp_path / "arepo", {"Demo__task": SHAPE_A_ENTRY})
+    state = tmp_path / "astate"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    kwargs = {}
+    if timeout_reaudit is not None:
+        kwargs["timeout_reaudit"] = timeout_reaudit
+    return download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        runner=runner, cli_path=str(fake_cli(tmp_path)), **kwargs)
+
+
+def reaudit_ok_result():
+    return SimpleNamespace(
+        returncode=0,
+        stdout="Audited 50 registry task(s): 43 present, 7 missing\n",
+        stderr="")
+
+
+def test_reaudit_outcome_shape_and_default_timeout():
+    """ReauditOutcome exists as a frozen dataclass; the reaudit timeout
+    default is 300 (T-10-02-05)."""
+    outcome = download_queue.ReauditOutcome(
+        ok=True, details=("exit_code=0",), raw_output="x")
+    with pytest.raises(FrozenInstanceError):
+        outcome.ok = False
+    assert download_queue.DEFAULT_TIMEOUT_REAUDIT == 300
+
+
+def test_reaudit_argv_exactly_interpreter_and_script_no_flags(
+        tmp_path, monkeypatch):
+    """R-03 pinned: argv is EXACTLY [sys.executable, <absolute script
+    path>] — NO output flags, so the script's own defaults write the
+    four worktree artifacts for maintainer review (never temp+replace
+    narrow writes)."""
+    captured = {}
+
+    def hook(argv, kwargs):
+        captured["argv"] = list(argv)
+        captured["kwargs"] = dict(kwargs)
+
+    runner = FakeReconcileRunner(on_call=hook, result=reaudit_ok_result())
+    service = reaudit_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reaudit_baseline(run_id="r1")
+
+    assert outcome.ok is True
+    assert captured["argv"] == [
+        sys.executable,
+        str(service._repo_root / "script" / "audit_n_frequencies.py")]
+    for flag in RECONCILE_OUTPUT_FLAGS:
+        assert flag not in captured["argv"], flag
+    assert captured["kwargs"]["timeout"] == 300
+    assert captured["kwargs"]["capture_output"] is True
+    assert captured["kwargs"]["text"] is True
+
+
+def test_reaudit_env_exactly_one_override_empty_overlay(
+        tmp_path, monkeypatch):
+    """T-10-02-03: env == os.environ plus EXACTLY the CUSTOM_DIR_ENV
+    override pinned at an EMPTY temp dir while the subprocess runs — a
+    colliding local custom overlay can never leak into the refreshed
+    committed baseline. The existence pins run inside the hook (the
+    tempdir lives only for the subprocess's lifetime)."""
+    captured = {}
+
+    def hook(argv, kwargs):
+        overlay = Path(kwargs["env"][OVERLAY_ENV])
+        captured["env"] = kwargs["env"]
+        captured["overlay_is_dir"] = overlay.is_dir()
+        captured["overlay_empty"] = list(overlay.iterdir()) == []
+
+    runner = FakeReconcileRunner(on_call=hook, result=reaudit_ok_result())
+    service = reaudit_service(tmp_path, monkeypatch, runner)
+
+    service.reaudit_baseline(run_id="r1")
+
+    assert captured["overlay_is_dir"] is True
+    assert captured["overlay_empty"] is True
+    expected = dict(os.environ)
+    expected[OVERLAY_ENV] = captured["env"][OVERLAY_ENV]
+    assert captured["env"] == expected
+
+
+def test_reaudit_ok_carries_verbatim_raw(tmp_path, monkeypatch):
+    runner = FakeReconcileRunner(result=reaudit_ok_result())
+    service = reaudit_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reaudit_baseline(run_id="r1")
+
+    assert outcome.ok is True
+    assert outcome.details == ("exit_code=0",)
+    assert outcome.raw_output == reaudit_ok_result().stdout
+
+
+def test_reaudit_nonzero_exit_not_ok_verbatim_raw(tmp_path, monkeypatch):
+    result = SimpleNamespace(returncode=1, stdout="", stderr="boom\n")
+    runner = FakeReconcileRunner(result=result)
+    service = reaudit_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reaudit_baseline(run_id="r1")
+
+    assert outcome.ok is False
+    assert "exit_nonzero" in outcome.details
+    assert "exit_code=1" in outcome.details
+    assert outcome.raw_output == "boom\n"
+
+
+def test_reaudit_timeout_absorbed_not_ok(tmp_path, monkeypatch):
+    runner = FakeReconcileRunner(
+        exc=subprocess.TimeoutExpired(cmd="audit", timeout=300))
+    service = reaudit_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reaudit_baseline(run_id="r1")
+
+    assert outcome.ok is False
+    assert "timeout" in outcome.details
+    assert "timeout_seconds=300" in outcome.details
+
+
+def test_reaudit_launch_error_absorbed_not_ok(tmp_path, monkeypatch):
+    runner = FakeReconcileRunner(exc=OSError("[Errno 13] denied"))
+    service = reaudit_service(tmp_path, monkeypatch, runner)
+
+    outcome = service.reaudit_baseline(run_id="r1")
+
+    assert outcome.ok is False
+    assert any("subprocess_error" in token for token in outcome.details)
+    assert any("denied" in token for token in outcome.details)
+
+
+def test_reaudit_timeout_knob_overridable(tmp_path, monkeypatch):
+    captured = {}
+    runner = FakeReconcileRunner(
+        on_call=lambda argv, kwargs: captured.update(kwargs),
+        result=reaudit_ok_result())
+    service = reaudit_service(tmp_path, monkeypatch, runner,
+                              timeout_reaudit=7)
+
+    service.reaudit_baseline(run_id="r1")
+
+    assert captured["timeout"] == 7
+
+
+def test_no_automatic_path_ever_constructs_a_no_flag_audit_argv(
+        monkeypatch, tmp_path):
+    """The reachability invariant: ONLY reaudit_baseline invokes the
+    audit script without output flags — the automatic reconcile inside
+    run_task carries ALL FOUR output flags at temp values (recorded by
+    the shared runner seam; the reaudit call is the only no-flag one)."""
+    spawner = FakeSpawner(FakePopen(returncode=0))
+    runner = FakeReconcileRunner(on_call=lambda argv, kwargs:
+                                 write_temp_n_audit(
+                                     argv, {"Demo__task":
+                                            audit_record(10, 2, 2)})
+                                 if "--data-dir" in argv else None)
+    service, repo, _ = engine_service(tmp_path, monkeypatch, spawner,
+                                      runner=runner)
+    land_csvs(repo, "Demo", "task")
+
+    event = service.run_task("Demo__task", run_id="r1")
+
+    assert event.state == "done"
+    (reconcile_call,) = runner.calls
+    for flag in RECONCILE_OUTPUT_FLAGS:
+        assert flag in reconcile_call["argv"], flag
+
+    outcome = service.reaudit_baseline(run_id="r2")
+
+    assert outcome.ok is True
+    assert len(runner.calls) == 2
+    reaudit_argv = runner.calls[1]["argv"]
+    for flag in RECONCILE_OUTPUT_FLAGS:
+        assert flag not in reaudit_argv, flag
+
+
+def test_committed_artifacts_byte_unchanged_across_real_reconcile_run(
+        monkeypatch, tmp_path):
+    """THE anti-clobber gate (T-10-02-01): one full run_task whose
+    reconcile runs the REAL audit subprocess leaves the four committed
+    artifacts sha256-identical before/after (the reconcile path's
+    outputs are temp-only)."""
+    before = artifact_hashes()
+
+    repo = real_audit_repo(tmp_path, declared=(4, 2, 2))
+    state = tmp_path / "byte-state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    cli = tmp_path / "modelscope"
+    cli.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    cli.chmod(0o755)
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        cli_path=str(cli))                  # default REAL runner
+    assert service.enqueue("Demo__task").action == "enqueued"
+    service.claim_next()
+
+    event = service.run_task("Demo__task", run_id="byte-1")
+
+    assert event.state == "done"           # the real reconcile passed
+    (entry,) = service.entries()
+    assert entry.reconcile["measured"] == {"train": 4, "dev": 2,
+                                           "test": 2}
+    assert artifact_hashes() == before     # all four byte-unchanged
