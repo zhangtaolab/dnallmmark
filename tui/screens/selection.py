@@ -60,6 +60,7 @@ Contract (locked decisions):
 """
 
 import json
+import os
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -87,10 +88,19 @@ from textual.widgets.selection_list import Selection
 
 from tui.screens.matrix import MatrixScreen
 from tui.screens.nav import BottomBar, TopMenuBar
+from tui.services import custom_entries as custom_entries_service
 from tui.services import registries as registries_service
 from tui.services import selection as selection_service
 from tui.services import settings as settings_service
 from tui.services import templates as templates_service
+from tui.services.custom_validation import (
+    METRIC_REGISTRY,
+    ValidationSources,
+    validate_dataset_candidate,
+    validate_import_document,
+    validate_model_candidate,
+)
+from tui.services.gauntlet import GauntletService
 from tui.services.registries import (
     PRESENCE_MISSING,
     PRESENCE_PRESENT,
@@ -156,6 +166,11 @@ from tui.strings import (
     SEL_TEMPLATE_PROBLEMS,
     SEL_TEMPLATE_TITLE,
     SEL_TEMPLATE_WRITE_FAILED,
+    SEL_TOGGLE_DISABLED_TOAST,
+    SEL_TOGGLE_ENABLED_TOAST,
+    SEL_TOGGLE_LABEL,
+    SEL_TOGGLE_OFFICIAL_NOOP,
+    SEL_WIZARD_LABEL,
 )
 
 if TYPE_CHECKING:
@@ -189,6 +204,12 @@ class SelectionData:
     audit_available: bool = True
     models_load_error: "str | None" = None
     datasets_load_error: "str | None" = None
+    #: The custom-status map (09-06, additive — the default keeps every
+    #: Phase 8 fake conforming unchanged): registry key -> ``{"custom":
+    #: True, "enabled": bool}`` for every LANDED custom entry (both
+    #: states, from the management second read); official keys are absent
+    #: from the map entirely (D-10: the badge, not position, marks them).
+    custom_status: dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -314,6 +335,16 @@ class SelectionBackend:
         Both registry reads degrade independently (a failed models read
         leaves the dataset table healthy); presence fills per DATASET
         key from the committed n_audit through the pure 08-04 mapping.
+
+        The 09-06 composition: the overlay-merged entries (enabled
+        customs) are UNIONED with the management second read (ALL
+        customs) — disabled customs append after the merged entries so
+        the table renders every landed entry exactly once, and
+        ``custom_status`` records the custom/official + enabled truth the
+        badge, the toggle, and the count line render from. Both reads
+        resolve the SAME custom file (the overlay root when pinned), so
+        the two views can never disagree about which keys exist
+        (Pitfall 7).
         """
         model_entries, models_error = _load_entries(
             registries_service.load_model_entries, _MODELS_REGISTRY_PATH,
@@ -321,6 +352,26 @@ class SelectionBackend:
         dataset_entries, datasets_error = _load_entries(
             registries_service.load_dataset_entries, _DATASETS_REGISTRY_PATH,
         )
+        custom_status: dict[str, dict] = {}
+        for kind, entries, project in (
+            ("models", model_entries, _custom_model_entry),
+            ("datasets", dataset_entries, _custom_dataset_entry),
+        ):
+            management, _management_error = (
+                custom_entries_service.read_entries(
+                    kind, registry_dir=_overlay_registry_dir(),
+                )
+            )
+            merged_keys = {entry["key"] for entry in entries}
+            for key, entry in management.items():
+                if not isinstance(entry, dict):
+                    continue  # never a badge target (the loader's shape)
+                custom_status[key] = {
+                    "custom": True,
+                    "enabled": entry.get("enabled") is not False,
+                }
+                if key not in merged_keys:
+                    entries.append(project(key, entry))
         audit = registries_service.load_n_audit()
         presence: dict[str, Presence] = {}
         if audit is not None:
@@ -337,6 +388,7 @@ class SelectionBackend:
             audit_available=audit is not None,
             models_load_error=models_error,
             datasets_load_error=datasets_error,
+            custom_status=custom_status,
         )
 
     # ----- presets (SEL-02, D-06: derived, never hardcoded) -----
@@ -441,6 +493,139 @@ class SelectionBackend:
         )
 
 
+# ===== The custom-onboarding service (09-06: the w/e actions' seam) =====
+
+
+class CustomOnboardingBackend:
+    """Delegation glue over the 09-01/09-02 custom-onboarding services.
+
+    The ``w``/``e`` actions' service seam (the 08-06 injection pattern):
+    the management read (the w-prefill source), the atomic enable toggle
+    (D-09), and the fully-wired ``WizardModal`` composition (validator
+    pre-bound to its ``ValidationSources``, the real gauntlet, and the
+    09-01 store seams). Constructor defaults are the real services;
+    Pilot fakes inject. Like ``SelectionBackend``, this class only
+    composes — every semantic lives in the tested service modules
+    (binding constraint 5).
+    """
+
+    def __init__(self, gauntlet_service: "GauntletService | None" = None):
+        """Adapt the services (tests inject a fake gauntlet).
+
+        Args:
+            gauntlet_service: the 09-02 gauntlet orchestrator; None
+                builds the real one at wizard-composition time.
+        """
+        self._gauntlet_service = gauntlet_service
+
+    def read_entries(self, kind: str) -> "tuple[dict, str | None]":
+        """The management read (Pitfall 7): every landed entry of kind."""
+        return custom_entries_service.read_entries(kind)
+
+    def set_enabled(self, kind: str, key: str, enabled: bool) -> bool:
+        """The atomic enable/disable toggle (D-09, the single write seam)."""
+        return custom_entries_service.set_enabled(kind, key, enabled)
+
+    def build_wizard(self, kind: str, prefill: "dict | None",
+                     on_changed: "Callable[[], None] | None"):
+        """Compose the fully-wired wizard over the real services.
+
+        Args:
+            kind: ``"models"`` or ``"datasets"`` (the active table's kind).
+            prefill: the cursor custom row's one-item ``{key: entry}``
+                map (D-12), or None for a blank form.
+            on_changed: fires after every successful land/undo so the
+                table/badge/count refresh (the land-completion callback).
+
+        Returns:
+            WizardModal: the 09-04/09-05 modal with the validator, the
+            gauntlet, and the store seams pre-bound to real services.
+        """
+        # Lazy import: wizard imports ConfirmModal from THIS module — a
+        # module-top import would be circular (the composition only
+        # runs on a w press, long after both modules loaded).
+        from tui.screens.wizard import WizardModal
+
+        model_entries, _models_error = _load_entries(
+            registries_service.load_model_entries, _MODELS_REGISTRY_PATH,
+        )
+        dataset_entries, _datasets_error = _load_entries(
+            registries_service.load_dataset_entries, _DATASETS_REGISTRY_PATH,
+        )
+        custom_models, _models_read_error = (
+            custom_entries_service.read_entries("models"))
+        custom_datasets, _datasets_read_error = (
+            custom_entries_service.read_entries("datasets"))
+        observed_species = tuple(sorted({
+            entry["card"].get("species")
+            for entry in model_entries
+            if entry["card"].get("species")
+        }))
+        observed_tokenizers = tuple(sorted({
+            entry["card"].get(registries_service.MODEL_CARD_TOKENIZER_FIELD)
+            for entry in model_entries
+            if entry["card"].get(registries_service.MODEL_CARD_TOKENIZER_FIELD)
+        }))
+        # Official keys = merged minus landed customs — exact under the
+        # loader's collision fail-fast (a landed custom never shadows an
+        # official key, so the difference set IS the official key set).
+        sources = ValidationSources(
+            official_model_keys=(
+                frozenset(entry["key"] for entry in model_entries)
+                - frozenset(custom_models)
+            ),
+            official_dataset_keys=(
+                frozenset(entry["key"] for entry in dataset_entries)
+                - frozenset(custom_datasets)
+            ),
+            existing_custom_models=custom_models,
+            existing_custom_datasets=custom_datasets,
+            observed_species=observed_species,
+            observed_tokenizers=observed_tokenizers,
+        )
+
+        if kind == "models":
+            def validator(values):
+                return validate_model_candidate(values, sources)
+        else:
+            def validator(values):
+                return validate_dataset_candidate(values, sources)
+
+        def land(entry_kind, key, entry):
+            result = custom_entries_service.land(entry_kind, key, entry)
+            if on_changed is not None:
+                on_changed()
+            return result
+
+        def undo(entry_kind, key):
+            removed = custom_entries_service.undo(entry_kind, key)
+            if removed and on_changed is not None:
+                on_changed()
+            return removed
+
+        return WizardModal(
+            kind=kind,
+            validator=validator,
+            prefill=prefill,
+            vocabularies={
+                "species": observed_species,
+                "Tokenizer": observed_tokenizers,
+                "metric": tuple(sorted(METRIC_REGISTRY)),
+            },
+            gauntlet_service=self._gauntlet_service or GauntletService(),
+            land=land,
+            undo=undo,
+            import_read=lambda path: (
+                custom_entries_service.read_import_candidates(path, kind)),
+            import_validate=lambda doc: (
+                validate_import_document(kind, doc, sources)),
+            export_registry=lambda dest: (
+                custom_entries_service.export_registry(kind, dest)),
+            has_custom_entries=lambda: bool(
+                custom_entries_service.read_entries(kind)[0]),
+        )
+
+
 # ===== Locations (resolved through the 08-04 service's own REPO_ROOT) =====
 
 _MODELS_REGISTRY_PATH = (
@@ -468,6 +653,52 @@ def _load_entries(loader: Callable[[], list[dict]], registry_path: Path):
         return list(loader()), None
     except (OSError, SystemExit):
         return [], str(registry_path)
+
+
+def _overlay_registry_dir():
+    """The custom-registry root the overlay loader resolved (or None).
+
+    The management second read honors ``DNALLMMARK_CUSTOM_REGISTRY_DIR``
+    so the backend's two views — the overlay-merged entries and the
+    management read — always describe ONE file (an env-pinned overlay
+    must not be re-merged against the real home's customs; the default
+    resolution of both roots is the same ``~/.config/dnallmmark``).
+    """
+    return os.environ.get("DNALLMMARK_CUSTOM_REGISTRY_DIR") or None
+
+
+def _card_float(value) -> float:
+    """Tolerant card numeric coercion (the 08-04 registries projection's
+    own rule, mirrored here for management-read cards: absent or
+    garbage renders as 0.0, never an exception through the screen)."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _custom_model_entry(key: str, card: dict) -> dict:
+    """Project one custom card to the canonical model-entry view (the
+    08-04 field contract — the registries service's own projection
+    mirrored for the management read's appended rows)."""
+    return {
+        "key": key,
+        "type": card.get("type") or "",
+        "species": card.get("species") or "",
+        "size_m": _card_float(card.get(registries_service.MODEL_CARD_SIZE_FIELD)),
+        "card": card,
+    }
+
+
+def _custom_dataset_entry(key: str, card: dict) -> dict:
+    """Project one custom card to the canonical dataset-entry view."""
+    return {
+        "key": key,
+        "category": card.get("Category") or "",
+        "type": card.get("type") or "",
+        "metric": card.get("metric") or "",
+        "card": card,
+    }
 
 
 def _write_json(path: Path, doc: object) -> None:
@@ -835,6 +1066,12 @@ class SelectionScreen(Screen):
         Binding("s", "save_preset", SEL_SAVE_PRESET_LABEL),
         Binding("slash", "focus_filter", SEL_FILTER_KEY_LABEL,
                 key_display="/"),
+        # The 09-06 custom-entry actions (D-14/D-09): appended after the
+        # mark/preset bindings and BEFORE the auxiliary actions — the
+        # 09-UI-SPEC migration table's declaration order (the bottom
+        # bar renders it; the clip policy drops least-primary first).
+        Binding("w", "open_wizard", SEL_WIZARD_LABEL),
+        Binding("e", "toggle_enabled", SEL_TOGGLE_LABEL),
         Binding("v", "open_matrix", SEL_MATRIX_LABEL),
         Binding("enter", "show_detail", ENV_DETAIL_LABEL, show=False),
         Binding("escape", "clear_filter", show=False),
@@ -870,11 +1107,19 @@ class SelectionScreen(Screen):
     def __init__(self,
                  selection_service: "SelectionServiceProtocol | None" = None,
                  marked_models: "set[str] | None" = None,
-                 marked_tasks: "set[str] | None" = None, **kwargs):
+                 marked_tasks: "set[str] | None" = None,
+                 custom_service: "CustomOnboardingBackend | None" = None,
+                 **kwargs):
         super().__init__(**kwargs)
         self._service: SelectionServiceProtocol = (
             selection_service if selection_service is not None
             else SelectionBackend()
+        )
+        # The 09-06 custom-onboarding seam (optional injection, real
+        # default — existing Phase 8 fake injections run unchanged).
+        self._custom: CustomOnboardingBackend = (
+            custom_service if custom_service is not None
+            else CustomOnboardingBackend()
         )
         # The shared app-state mark sets (SEL-01: marks live OUTSIDE the
         # table; the composition root injects the same live sets the
@@ -1152,6 +1397,84 @@ class SelectionScreen(Screen):
             Text("✓", style=_STYLE_MARK) if key in marks else "",
         )
         self._update_status_line()
+
+    # ----- the custom-entry actions (09-06: w/e) -----
+
+    def _cursor_key(self) -> "str | None":
+        """The cursor row's registry key (None on state rows/empty)."""
+        table = self.query_one("#selection-table", DataTable)
+        if not table.is_valid_coordinate(table.cursor_coordinate):
+            # coordinate_to_cell_key RAISES for invalid coordinates
+            # (CR-03's crash class) — the guard is the None path
+            return None
+        key = str(table.coordinate_to_cell_key(
+            table.cursor_coordinate)[0].value)
+        return key if key in self._view_keys else None
+
+    def _custom_status_for(self, key: "str | None") -> "dict | None":
+        """The key's custom status (None = official or state row)."""
+        if key is None or self._data is None:
+            return None
+        status = self._data.custom_status.get(key)
+        if status is not None and status.get("custom"):
+            return status
+        return None
+
+    def _on_custom_registry_changed(self) -> None:
+        """A land/undo rewrote the user-owned registry — refresh the
+        table/badge/count views through the existing exclusive worker."""
+        self._load_data()
+
+    def action_open_wizard(self) -> None:
+        """w: open the new-entry wizard for the ACTIVE table's kind
+        (D-14 — models table -> model wizard, datasets table -> dataset
+        wizard; the menu carries no wizard item, the wizard is an
+        action). A cursor custom row prefills from its landed entry (the
+        D-12 re-record aid — the key rides along and the collect-all
+        collision check forces the change); every other cursor state
+        opens a blank form. The land-completion callback refreshes the
+        table so the badge and the count segment appear."""
+        if self._data is None:
+            return
+        key = self._cursor_key()
+        prefill = None
+        status = self._custom_status_for(key)
+        if status is not None:
+            entries, _error = self._custom.read_entries(self._view)
+            entry = entries.get(key or "")
+            if isinstance(entry, dict):
+                prefill = {key: entry}
+        self.app.push_screen(self._custom.build_wizard(
+            kind=self._view,
+            prefill=prefill,
+            on_changed=self._on_custom_registry_changed,
+        ))
+
+    def action_toggle_enabled(self) -> None:
+        """e: flip the cursor custom entry's enabled through the store's
+        atomic seam (D-09 — the disable is loader-level run removal),
+        toast the state pair, and refresh so the row's disabled state
+        updates. An official row is a no-op with the honest toast —
+        never silent; a state row (no registry key) stays silent like
+        every other action."""
+        key = self._cursor_key()
+        if key is None:
+            return
+        status = self._custom_status_for(key)
+        if status is None:
+            self.app.notify(SEL_TOGGLE_OFFICIAL_NOOP)
+            return
+        enable = not status.get("enabled", True)
+        if not self._custom.set_enabled(self._view, key, enable):
+            # vanished between load and press, or an unreadable file —
+            # refresh to the honest state rather than toasting a lie
+            self._load_data()
+            return
+        self.app.notify(
+            (SEL_TOGGLE_ENABLED_TOAST if enable
+             else SEL_TOGGLE_DISABLED_TOAST).format(key=key),
+        )
+        self._load_data()
 
     def action_switch_list(self) -> None:
         """m: toggle the model/dataset table (both mark sets persist)."""

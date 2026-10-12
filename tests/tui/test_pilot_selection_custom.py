@@ -36,14 +36,15 @@ never written).
 """
 
 from pathlib import Path
+from typing import ClassVar
 
+import registry_loader
 from env_smoke import CheckResult
 from rich.text import Text
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Static
 
-import registry_loader
 from tui.app import DnallmMarkTui
 from tui.screens.nav import NAV_SLOTS
 from tui.screens.selection import (
@@ -53,10 +54,7 @@ from tui.screens.selection import (
 )
 from tui.services import custom_entries
 from tui.services import selection as selection_service
-from tui.services.registries import (
-    PRESENCE_PRESENT,
-    Presence,
-)
+from tui.services.registries import PRESENCE_PRESENT, Presence
 from tui.strings import (
     ENV_KERNEL_LABELS,
     SEL_MATRIX_LABEL,
@@ -191,7 +189,9 @@ class _SelectionFake:
 class _StubWizard(ModalScreen):
     """The fake build_wizard product: a dismissible marker modal."""
 
-    BINDINGS = [Binding("escape", "dismiss", "back")]
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "dismiss", "back"),
+    ]
 
     def compose(self):
         yield Static("stub-wizard")
@@ -235,24 +235,21 @@ def _toasts(app):
     return [notification.message for notification in app._notifications]
 
 
-def _app(selection_fake, custom_fake=None):
-    """The real app over the cache-hit env fake + the selection fake; the
-    selection screen is pushed with the custom-service injection."""
-    app = DnallmMarkTui(
+def _app(selection_fake):
+    """The real app over the cache-hit env fake + the selection fake."""
+    return DnallmMarkTui(
         env_check_service=_EnvCacheHitFake(),
         selection_service=selection_fake,
     )
-    app._custom_fake = custom_fake
-    return app
 
 
-async def _open_selection(pilot, app):
+async def _open_selection(pilot, app, custom_fake=None):
     """Push the selection screen (the custom seam injected) and settle."""
     app.push_screen(SelectionScreen(
         selection_service=app._selection_service,
         marked_models=app._marked_models,
         marked_tasks=app._marked_tasks,
-        custom_service=app._custom_fake,
+        custom_service=custom_fake,
     ))
     await pilot.pause()
     await app.workers.wait_for_complete()
@@ -277,9 +274,9 @@ async def test_w_routes_by_active_table_and_prefills_from_the_custom_row():
     routes models (blank from an official cursor, prefilled from a custom
     cursor); the datasets table routes datasets with the same rule."""
     custom = _CustomServiceFake()
-    app = _app(_SelectionFake(), custom)
+    app = _app(_SelectionFake())
     async with app.run_test(size=(120, 40)) as pilot:
-        await _open_selection(pilot, app)
+        await _open_selection(pilot, app, custom)
         screen = app.screen
         table = screen.query_one(DataTable)
 
@@ -318,9 +315,9 @@ async def test_w_passes_a_refresh_callback_into_the_wizard_composition():
     """The land-completion callback reaches build_wizard (the badge/count
     refresh seam) — a callable, not None."""
     custom = _CustomServiceFake()
-    app = _app(_SelectionFake(), custom)
+    app = _app(_SelectionFake())
     async with app.run_test(size=(120, 40)) as pilot:
-        await _open_selection(pilot, app)
+        await _open_selection(pilot, app, custom)
         await pilot.press("w")
         await pilot.pause()
         _kind, _prefill, on_changed = custom.built[-1]
@@ -331,15 +328,15 @@ async def test_w_passes_a_refresh_callback_into_the_wizard_composition():
 # Task 1 — the e binding (D-09: the atomic toggle + honest toasts)
 # =====================================================================
 
-async def test_e_toggles_a_custom_row_through_the_store_seam():
-    """e on a custom row flips enabled through the injected seam with the
-    toast pair (disable carries the loader-level note) and refreshes the
-    data; a second press re-enables with its toast."""
+async def test_e_disables_a_custom_row_through_the_store_seam():
+    """e on an ENABLED custom row writes enabled=False through the
+    injected atomic seam with the disable toast (the loader-level note)
+    and refreshes the data."""
     custom = _CustomServiceFake()
     fake = _SelectionFake()
-    app = _app(fake, custom)
+    app = _app(fake)
     async with app.run_test(size=(120, 40)) as pilot:
-        await _open_selection(pilot, app)
+        await _open_selection(pilot, app, custom)
         screen = app.screen
         table = screen.query_one(DataTable)
         table.move_cursor(row=1)  # the custom model row
@@ -353,12 +350,22 @@ async def test_e_toggles_a_custom_row_through_the_store_seam():
             _toasts(app))
         assert fake.load_calls > loads_before  # the refresh fired
 
-        # the snapshot flips to disabled; the second press re-enables
-        fake.data = _custom_data(model_enabled=False)
+
+async def test_e_re_enables_a_disabled_custom_row():
+    """e on a DISABLED custom row writes enabled=True with the enable
+    toast — the toggle is reversible in both directions."""
+    custom = _CustomServiceFake()
+    fake = _SelectionFake(data=_custom_data(model_enabled=False))
+    app = _app(fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, custom)
+        table = app.screen.query_one(DataTable)
+        table.move_cursor(row=1)  # the disabled custom model row
+        await pilot.pause()
+
         await pilot.press("e")
         await pilot.pause()
-        assert custom.enabled_calls[-1] == (
-            "models", _KEY_CUSTOM_MODEL, True)
+        assert custom.enabled_calls == [("models", _KEY_CUSTOM_MODEL, True)]
         assert SEL_TOGGLE_ENABLED_TOAST.format(key=_KEY_CUSTOM_MODEL) in (
             _toasts(app))
 
@@ -368,9 +375,9 @@ async def test_e_on_an_official_row_is_a_noop_with_the_honest_toast():
     never silent, never a store call."""
     custom = _CustomServiceFake()
     fake = _SelectionFake()
-    app = _app(fake, custom)
+    app = _app(fake)
     async with app.run_test(size=(120, 40)) as pilot:
-        await _open_selection(pilot, app)
+        await _open_selection(pilot, app, custom)
         table = app.screen.query_one(DataTable)
         table.move_cursor(row=0)  # the official model row
         await pilot.pause()

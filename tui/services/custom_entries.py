@@ -95,7 +95,7 @@ OFFICIAL_REGISTRY_PATHS = (
 )
 
 
-def custom_registry_path(kind):
+def custom_registry_path(kind, registry_dir=None):
     """Resolve the user-owned custom-registry file path for ``kind``.
 
     The file lives under ``settings.config_dir()`` (the D-04 XDG config
@@ -105,6 +105,13 @@ def custom_registry_path(kind):
 
     Args:
         kind (str): ``KIND_MODELS`` or ``KIND_DATASETS``.
+        registry_dir (Path | str | None): the directory holding the
+            custom registry file; ``None`` (every pre-09-06 caller)
+            resolves ``settings.config_dir()``. The 09-06 selection
+            backend passes the overlay-loader root so its management
+            view and the overlay-merged view always describe ONE file
+            (Pitfall 7: the two views can never disagree about which
+            keys exist).
 
     Returns:
         Path: the custom-registry file path (may not exist yet — absence
@@ -118,10 +125,14 @@ def custom_registry_path(kind):
             f"unknown registry kind {kind!r} — expected one of "
             f"{sorted(KIND_FILE_NAMES)}"
         )
-    return settings.config_dir() / KIND_FILE_NAMES[kind]
+    base = (
+        Path(registry_dir) if registry_dir is not None
+        else settings.config_dir()
+    )
+    return base / KIND_FILE_NAMES[kind]
 
 
-def read_entries(kind):
+def read_entries(kind, registry_dir=None):
     """Read the user-owned custom registry tolerantly (Pitfall 7).
 
     The MANAGEMENT-VIEW direct read: unlike ``registry_loader`` (which
@@ -133,6 +144,10 @@ def read_entries(kind):
 
     Args:
         kind (str): ``KIND_MODELS`` or ``KIND_DATASETS``.
+        registry_dir (Path | str | None): the directory holding the
+            custom registry file; ``None`` resolves ``settings.config_dir()``
+            (see ``custom_registry_path`` — the write side and the default
+            read side always resolve the SAME root).
 
     Returns:
         tuple[dict, str | None]: ``(entries, None)`` — the plain
@@ -140,7 +155,7 @@ def read_entries(kind):
         ``({}, message)`` when the file exists but is unreadable or its
         top level is not a JSON object.
     """
-    path = custom_registry_path(kind)
+    path = custom_registry_path(kind, registry_dir)
     if not path.is_file():
         return {}, None
     doc = artifact_loader.load_json_artifact(path)

@@ -128,6 +128,8 @@ from tui.strings import (
     SEL_TEMPLATE_PROBLEM_LINE,
     SEL_TEMPLATE_PROBLEMS,
     SEL_TEMPLATE_WRITE_FAILED,
+    SEL_TOGGLE_LABEL,
+    SEL_WIZARD_LABEL,
 )
 
 _SCREEN_MODULE_FILE = Path(selection_screen_module.__file__)
@@ -1109,7 +1111,10 @@ async def test_help_modal_opens_on_the_selection_screen():
         # app rows first, then the screen's shown bindings in declaration
         # order; the / keycap renders as literal text (the row is a rich
         # Text content object, never markup-parsed) and the hidden
-        # enter/escape rows never list
+        # enter/escape rows never list. The w/e rows joined at 09-06
+        # (after the mark/preset bindings, before the auxiliary actions —
+        # the migration table's declaration order; the modal auto-reflects
+        # the declared surface, the 09-03 chrome-pin-update class).
         assert rows == [
             APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
             APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
@@ -1119,6 +1124,8 @@ async def test_help_modal_opens_on_the_selection_screen():
             APP_HELP_ROW.format(key="x", label=SEL_TEMPLATE_LABEL),
             APP_HELP_ROW.format(key="s", label=SEL_SAVE_PRESET_LABEL),
             APP_HELP_ROW.format(key="/", label=SEL_FILTER_KEY_LABEL),
+            APP_HELP_ROW.format(key="w", label=SEL_WIZARD_LABEL),
+            APP_HELP_ROW.format(key="e", label=SEL_TOGGLE_LABEL),
             APP_HELP_ROW.format(key="v", label=SEL_MATRIX_LABEL),
         ]
         # esc closes back to the selection screen
