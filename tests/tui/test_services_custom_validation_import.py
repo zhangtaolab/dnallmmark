@@ -232,6 +232,60 @@ def test_two_clean_entries_validate_with_zero_problems():
     assert problems == []
 
 
+def test_import_rejects_metric_outside_the_registry():
+    """WR-03 (09 review): the import lane runs the SAME metric enum the
+    wizard lane runs — a shared file with ``"metric": "bleu"`` passes the
+    schema (a plain string) but must NOT import: the downstream scripts
+    cannot compute an unregistered primary metric, a defect this gate
+    exists to catch before launch."""
+    doc = {"Imported__task_a": make_dataset_entry(metric="bleu")}
+    problems = cv.validate_import_document(
+        custom_entries.KIND_DATASETS, doc, import_sources()
+    )
+    assert len(problems) == 1
+    key, message = problems[0]
+    assert key == "Imported__task_a"
+    assert message.startswith("metric: ")
+    assert "bleu" in message
+
+
+def test_import_rejects_model_type_outside_the_frozen_triple():
+    """WR-03 (09 review): the model-side twin — ``"type": "RNN"`` passes
+    the schema but the wizard lane would refuse it; both lanes accept
+    exactly the same documents."""
+    doc = {"imported-lm-a": make_model_entry(type="RNN")}
+    problems = cv.validate_import_document(
+        custom_entries.KIND_MODELS, doc, import_sources()
+    )
+    assert len(problems) == 1
+    key, message = problems[0]
+    assert key == "imported-lm-a"
+    assert message.startswith("type: ")
+    assert "RNN" in message
+
+
+def test_import_metric_check_uses_the_injected_registry():
+    """The import enum resolves through the injected metric_registry (the
+    D-05 seam) — an injected vocabulary governs the import lane exactly
+    as it governs the wizard lane."""
+    sources = cv.ValidationSources(
+        metric_registry=frozenset({"accuracy"}),
+    )
+    problems_ok = cv.validate_import_document(
+        custom_entries.KIND_DATASETS,
+        {"Imported__task_a": make_dataset_entry(metric="accuracy")},
+        sources,
+    )
+    problems_bad = cv.validate_import_document(
+        custom_entries.KIND_DATASETS,
+        {"Imported__task_a": make_dataset_entry(metric="f1")},
+        sources,
+    )
+    assert problems_ok == []
+    assert len(problems_bad) == 1
+    assert problems_bad[0][1].startswith("metric: ")
+
+
 def test_both_collision_kinds_listed_once_in_one_pass():
     """One key colliding official AND one colliding existing custom —
     both in the SAME numbered pass, in file order, each exactly once."""

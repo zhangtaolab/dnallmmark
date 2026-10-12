@@ -513,9 +513,12 @@ def validate_import_document(kind, doc, data_sources):
     loader merge contract), then PER ENTRY in FILE order the schema
     validation (jsonschema ``Draft202012Validator`` collect-all against
     the kind's $def) plus BOTH collision families (official AND existing
-    custom, each listed once). NOTHING MERGES on any problem — this
-    function is pure; the 09-05 sequential gauntlet consumes the entries
-    only when the problem list is empty.
+    custom, each listed once) plus the same VOCABULARY checks the wizard
+    lane runs (model ``type``; dataset ``metric`` — WR-03, 09 review:
+    the schema types both as plain strings, so the Python layer owns the
+    enum parity between the two lanes). NOTHING MERGES on any problem —
+    this function is pure; the 09-05 sequential gauntlet consumes the
+    entries only when the problem list is empty.
 
     Args:
         kind (str): ``custom_entries.KIND_MODELS`` or ``KIND_DATASETS``
@@ -578,6 +581,25 @@ def validate_import_document(kind, doc, data_sources):
             )
         for error in validator.iter_errors(entry):
             problems.append((key, error.message))
+        # WR-03 (09 review): the schema types ``metric`` and model
+        # ``type`` as plain strings, so schema validation alone would
+        # import entries the WIZARD lane refuses — a landed entry whose
+        # primary metric the downstream scripts cannot compute, a defect
+        # discovered only after launch. Run the SAME vocabulary checks
+        # the wizard lane runs (the frozen model-type triple; the
+        # injected metric registry) over the same ``_check_enum`` seam,
+        # so both lanes accept exactly the same documents. Dataset
+        # ``Category``/``type`` are already schema enums — covered above.
+        field_problems: list[tuple[str, str]] = []
+        if kind == "models":
+            _check_enum(entry, "type", MODEL_TYPE_VALUES, field_problems)
+        else:
+            _check_enum(entry, "metric", sources.metric_registry,
+                        field_problems)
+        problems.extend(
+            (key, f"{field}: {message}")
+            for field, message in field_problems
+        )
     return problems
 
 
