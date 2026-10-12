@@ -41,11 +41,11 @@ overrides_applied: 0
 human_verification:
   - test: "GB10 live smoke (10-06-SUMMARY procedure steps 1-7): on the GB10 host, `make tui` -> 3 -> cursor GUE__emp_H3 -> d; observe the queue row run, land, reconcile; press 2 and confirm the selection presence cell flips to present; rerun env check (r) and confirm the dataset-dir item flips"
     expected: "Enqueued toast -> pending -> downloading with live percents -> done + QUEUE_FLIP_TOAST; the key leaves the data-manager missing list (在场 44/50); selection cell flips in-place; env dataset_dirs check no longer lists the key"
-    result: pass (2026-10-13 live, orchestrator per maintainer delegation; key GUE__virus_species_40 — emp_H3 already present on disk; evidence 10-UAT.md item 1: toast/pending/downloading-percents/done + 在场 43→44, selection cell ✓ 4,000/500/500, env re-run green)
+    result: "pass (2026-10-13 live, orchestrator per maintainer delegation; key GUE__virus_species_40 — emp_H3 already present on disk; evidence 10-UAT.md item 1: toast/pending/downloading-percents/done + 在场 43→44, selection cell ✓ 4,000/500/500, env re-run green)"
     why_human: "Requires the real modelscope CLI + SDK token + a real multi-GB network download on the GB10 host — CI is network-free by binding constraint; every seam below the CLI is machine-proven (fake spawner lanes, real audit subprocess, real landing checks, Pilot e2e through the real app forward) and the CLI's own behavior (progress format, .msc skip, SIGTERM/143, Range resume) was live-probed at research time against modelscope 1.34.0"
   - test: "The `g` re-audit four-artifact live check (10-06 procedure step 5): press g on a mismatch row (or run `python script/audit_n_frequencies.py` from repo root), then `git status`"
     expected: "EXACTLY four modified artifacts: dnallm-mark/data/n_audit.json, dnallm-mark/data/n_audit.csv, pipeline/eval_subsets.json, DATA.md — nothing else; maintainer reviews the diff and commits it as the new baseline (R-03)"
-    result: pass (2026-10-13 live, service-tier real run — same argv the g binding drives, 23.9s; git status EXACTLY the four artifacts; maintainer committed the refresh as the new baseline 2f7211d per R-03 ruling; evidence 10-UAT.md item 2)
+    result: "pass (2026-10-13 live, service-tier real run — same argv the g binding drives, 23.9s; git status EXACTLY the four artifacts; maintainer committed the refresh as the new baseline 2f7211d per R-03 ruling; evidence 10-UAT.md item 2)"
     why_human: "No CI test may execute a default-outputs audit (it would rewrite the four committed artifacts by design); the argv/no-flags/env contract is machine-pinned (test_reaudit_argv_exactly_interpreter_and_script_no_flags), the real invocation is deliberately maintainer-only"
 ---
 
