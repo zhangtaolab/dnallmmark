@@ -34,6 +34,7 @@ keypad drives are real key events (a focused Input eats printable keys
 
 import re
 import threading
+import time
 from functools import partial
 from pathlib import Path
 
@@ -1446,6 +1447,138 @@ def _prompt_log_text(app):
     """The open path prompt's problem report lines, joined."""
     log = app.screen.query_one("#wizard-path-problems", RichLog)
     return [strip.text for strip in log.lines]
+
+
+class _PathGatedImports(_ImportSeams):
+    """Import seams whose read blocks, PER PATH, on its own event —
+    deterministic overlapping submissions (WR-07, 09 review); each path
+    yields its own clean document."""
+
+    def __init__(self, docs):
+        super().__init__()
+        self.docs = dict(docs)
+        self.gates = {path: threading.Event() for path in docs}
+
+    def read(self, path):
+        self.gates[path].wait(timeout=10)
+        return self.docs[path], None
+
+
+async def test_esc_during_slow_validation_drops_stale_verdict():
+    """WR-07 (09 review): esc while the validation worker is blocked on
+    the import read cancels the flow ENTIRELY — the stale ``Validated``
+    (the worker thread finishes and posts after the esc; the modal's
+    pump is open until unmount, not closed synchronously at the pop)
+    must be dropped: running it would ``dismiss()`` a second time —
+    ``pop_screen()`` pops the stack top unconditionally, i.e. the
+    WIZARD beneath the already-popped modal — and the accept would land
+    a cancelled import on the detached wizard (the ``u`` undo
+    unreachable because the wizard is off the stack)."""
+    gate = threading.Event()
+
+    class _GatedImports(_ImportSeams):
+        def read(self, path):
+            gate.wait(timeout=10)
+            return super().read(path)
+
+    imports = _GatedImports(doc={"ds-x": {}})
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            _Seams(), import_read=imports.read,
+            import_validate=imports.validate)
+        await _open(pilot, app, wizard)
+        await _press_step_one_key(pilot, app, "f")
+        prompt = app.screen
+        assert prompt is not wizard, "the import path prompt opens"
+        inp = prompt.query_one("#wizard-path-input", Input)
+        inp.focus()
+        await pilot.pause()
+        await pilot.press(*list("/share/custom_datasets.json"))
+        await pilot.press("enter")
+        await pilot.pause()
+        # esc while the read is blocked: the modal pops — the operator
+        # cancelled this import
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.screen is wizard
+        # the worker thread still finishes and posts on the dismissed
+        # modal: the stale verdict must never run
+        gate.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.pause()
+        assert app.screen is wizard, (
+            "a stale Validated must not dismiss a second time and pop "
+            "the wizard beneath the already-popped modal")
+        assert wizard._phase == "form", (
+            "an esc-cancelled import must never land on the wizard")
+
+
+async def test_superseded_submission_is_dropped_current_one_accepts():
+    """WR-07 (09 review): two overlapping submissions — ``exclusive=True``
+    cancels the first WORKER object, but its thread still runs to
+    completion and posts (the pattern the module already acknowledges
+    for the gauntlet worker). Only the CURRENT submission's verdict may
+    dismiss the prompt and consume its stashed document: the superseded
+    verdict must be dropped, else its handler dismisses a second time
+    (``pop_screen()`` pops the wizard beneath) and its accept can
+    consume the other submission's document (the single-slot stash
+    last-writer-wins race)."""
+    path_a = "/share/custom_datasets_a.json"
+    path_b = "/share/custom_datasets_b.json"
+    imports = _PathGatedImports(
+        {path_a: {"ds-a": {}}, path_b: {"ds-b": {}}})
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            _Seams(), import_read=imports.read,
+            import_validate=imports.validate)
+        await _open(pilot, app, wizard)
+        await _press_step_one_key(pilot, app, "f")
+        prompt = app.screen
+        inp = prompt.query_one("#wizard-path-input", Input)
+        inp.focus()
+        await pilot.pause()
+        await pilot.press(*list(path_a))
+        await pilot.press("enter")
+        await pilot.pause()
+        # the second submit supersedes the first while BOTH reads are
+        # still gated in flight
+        inp.value = path_b
+        await pilot.press("enter")
+        await pilot.pause()
+        # both reads complete (same burst): the superseded verdict and
+        # the current verdict both post; only the current one may run.
+        # (No wait_for_complete here: the superseded WORKER node is
+        # deliberately cancelled by exclusive=True, and awaiting a
+        # cancelled worker raises WorkerCancelled — settle on the
+        # observable end state instead.)
+        imports.gates[path_a].set()
+        imports.gates[path_b].set()
+        deadline = time.monotonic() + 10.0
+        while not (app.screen is wizard
+                   and wizard._phase == "gauntlet"):
+            assert time.monotonic() < deadline, (
+                "the current submission's verdict never ran (one "
+                "dismiss into the accept)")
+            await pilot.pause()
+        # extra cycles: a regression would process the superseded
+        # verdict here — a SECOND dismiss popping the wizard and an
+        # accept landing on the detached wizard
+        await pilot.pause()
+        await pilot.pause()
+        assert app.screen is wizard, (
+            "exactly ONE dismiss — a superseded verdict running too "
+            "would pop the wizard beneath the prompt and leave a "
+            "landed import on the detached wizard (the u undo "
+            "unreachable)")
+        assert wizard._phase == "gauntlet", (
+            "the current submission's clean import enters the gauntlet")
+        assert [key for key, _entry, _declared
+                in wizard._gauntlet_queue] == ["ds-b"], (
+            "the accept must consume the current submission's own "
+            "document, never the superseded one's")
 
 
 #: A two-entry import document in FILE ORDER (ds-a declared before ds-b).

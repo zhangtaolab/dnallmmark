@@ -449,12 +449,16 @@ class _PathPromptModal(ModalScreen):
     _PROBLEMS_MAX_HEIGHT = 12
 
     class Validated(Message, namespace="path_prompt"):
-        """The validation worker finished: the path and its verdict
-        (``None`` problems = clean pass)."""
+        """The validation worker finished: the path, its verdict
+        (``None`` problems = clean pass), and the submit GENERATION the
+        worker served (WR-07, 09 review — a superseded submit's verdict
+        is dropped by the handler)."""
 
-        def __init__(self, path: str, problems) -> None:
+        def __init__(self, path: str, problems,
+                     generation: int) -> None:
             self.path = path
             self.problems = problems
+            self.generation = generation
             super().__init__()
 
     def __init__(self, title, placeholder, problems_header, validate,
@@ -465,6 +469,10 @@ class _PathPromptModal(ModalScreen):
         self._problems_header = problems_header
         self._validate = validate
         self._accept = accept
+        # WR-07 (09 review): the submit generation — bumped on every
+        # submit, captured by the worker it spawns; a Validated message
+        # from any but the CURRENT generation is a superseded verdict.
+        self._generation = 0
 
     def compose(self) -> ComposeResult:
         with Vertical(id="wizard-path-box", classes="modal-box"):
@@ -482,28 +490,44 @@ class _PathPromptModal(ModalScreen):
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Submit the value; the validation itself runs in the worker
-        (WR-04 — the I/O never runs on the event loop)."""
+        (WR-04 — the I/O never runs on the event loop). Each submit
+        bumps the generation: any verdict from an EARLIER submit is
+        superseded (WR-07 — exclusive=True cancels the worker object,
+        but its thread still runs to completion and posts)."""
         value = event.value.strip()
         if not value:
             return
-        self._validate_in_worker(value)
+        self._generation += 1
+        self._validate_in_worker(value, self._generation)
 
     @work(exclusive=True, thread=True)
-    def _validate_in_worker(self, path: str) -> None:
+    def _validate_in_worker(self, path: str, generation: int) -> None:
         """Run the injected validate seam OFF the event loop (WR-04, the
         D-03 discipline): a network-mounted import path or a slow disk
         blocks here, not the console. The verdict crosses back as the
-        ``Validated`` message — the worker performs no DOM access and
-        the wizard-side stash (``_pending_import``) is written BEFORE
-        ``post_message``, so the message queue's happens-before ordering
-        keeps the accept-side read safe."""
-        problems = self._validate(path)
-        self.post_message(self.Validated(path, problems))
+        ``Validated`` message tagged with the generation captured ON THE
+        EVENT LOOP before the I/O (WR-07 — the multi-event interleavings
+        the worker's existence makes reachable: an esc mid-validation or
+        a superseding submit must be able to drop the verdict; the
+        handler's guards plus the wizard-side generation-keyed stash
+        close them). The worker performs no DOM access."""
+        problems = self._validate(path, generation)
+        self.post_message(
+            self.Validated(path, problems, generation))
 
     async def on_path_prompt_validated(self, message: Validated) -> None:
         """Render the worker's verdict: the numbered problems report
         (fail-closed, the modal stays open), or the dismiss into the
-        async accept continuation."""
+        async accept continuation — only for the CURRENT generation on
+        a LIVE modal (WR-07: a superseded submit's verdict is dropped;
+        an esc/closed modal's verdict is dropped — the ExportStateReady
+        discipline — else dismiss() would fire twice and pop_screen()
+        would pop the WIZARD beneath, and the accept would land a
+        cancelled import on the detached wizard)."""
+        if message.generation != self._generation:
+            return  # superseded submit — drop
+        if self.app.screen is not self:
+            return  # esc/closed — drop
         if message.problems:
             log = self.query_one("#wizard-path-problems", RichLog)
             log.clear()
@@ -513,7 +537,7 @@ class _PathPromptModal(ModalScreen):
                     n=index + 1, location=location, message=msg))
         else:
             self.dismiss()
-            await self._accept(message.path)
+            await self._accept(message.path, message.generation)
 
 
 class WizardModal(ModalScreen):
@@ -644,7 +668,7 @@ class WizardModal(ModalScreen):
         self._undo_available = False
         self._drill_item: GauntletItem | None = None
         self._drill_row_id: str | None = None
-        self._pending_import = None
+        self._pending_import = {}  # generation -> stashed doc (WR-07)
 
     # ===== Prefill (D-12: edit = delete + re-record) =====
 
@@ -1569,27 +1593,32 @@ class WizardModal(ModalScreen):
 
     # ===== Import flow (D-11: fail-closed collect-all -> per-entry gauntlet) =====
 
-    def _validate_import_path(self, path):
+    def _validate_import_path(self, path, generation):
         """The path prompt's validation seam: read tolerantly, then the
         collect-all import validator. ANY problem (including the
         read failure itself) renders as numbered report lines and
-        nothing merges; a clean pass stashes the document for accept."""
+        nothing merges; a clean pass stashes the document for accept —
+        keyed by the submit GENERATION (WR-07, 09 review: overlapping
+        validations write separate slots, so an accept can never
+        consume another submission's document — the old single slot
+        raced last-writer-wins)."""
         read = self._import_read
         validate = self._import_validate
         if read is None or validate is None:
             return []  # unreachable by construction (the action guards)
         doc, read_error = read(path)
         if read_error is not None:
-            self._pending_import = None
+            self._pending_import.pop(generation, None)
             return [("", read_error)]
         problems = list(validate(doc) or [])
-        self._pending_import = None if problems else doc
+        self._pending_import[generation] = None if problems else doc
         return problems
 
-    async def _accept_import_path(self, path) -> None:
-        """A clean import file enters the grouped per-entry gauntlet."""
-        doc = self._pending_import
-        self._pending_import = None
+    async def _accept_import_path(self, path, generation) -> None:
+        """A clean import file enters the grouped per-entry gauntlet —
+        consuming THIS submission's stashed document (generation-keyed,
+        WR-07: a superseded accept cannot cross-consume)."""
+        doc = self._pending_import.pop(generation, None)
         if not isinstance(doc, dict):
             return
         await self._begin_import_gauntlet(doc)
@@ -1622,9 +1651,11 @@ class WizardModal(ModalScreen):
 
     # ===== Export flow (D-11: the registry file IS the share unit) =====
 
-    def _validate_export_path(self, path):
+    def _validate_export_path(self, path, generation):
         """Run the export through the seam; any failure renders as a
-        write-failure problem line (nothing at the destination)."""
+        write-failure problem line (nothing at the destination). The
+        generation parameter is the shared prompt-seam shape (WR-07) —
+        the export lane stashes nothing, so it is unused here."""
         export = self._export_registry
         if export is None:
             return []  # unreachable by construction (the action guards)
@@ -1637,8 +1668,9 @@ class WizardModal(ModalScreen):
         return [("", SEL_TEMPLATE_WRITE_FAILED.format(
             error=diagnostic or ""))]
 
-    async def _accept_export_path(self, path) -> None:
-        """Toast the exported path (the copy already happened)."""
+    async def _accept_export_path(self, path, generation) -> None:
+        """Toast the exported path (the copy already happened; the
+        generation parameter is the shared prompt-seam shape — WR-07)."""
         self.app.notify(GAUNTLET_EXPORTED_TOAST.format(path=path))
 
     async def _return_to_form(self) -> None:
