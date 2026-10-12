@@ -486,32 +486,39 @@ class DnallmMarkTui(App):
             self.kick_download_queue()
 
     def on_queue_event_message(self, message: QueueEventMessage) -> None:
-        """One task finished: flip-toast on done, forward to the screen.
+        """One task finished: flip-toast on done, forward to the screens.
 
         The done state IS the reconcile pass (the service's done gate,
         D-09), so done is exactly the D-11 presence-flip moment — the
-        app-level QUEUE_FLIP_TOAST fires here. The forward reaches the
-        current screen's ``apply_queue_event`` when the attribute exists
-        (the data-manager screen consumes it now; the selection screen
-        joins in 10-05 through the same forward).
+        app-level QUEUE_FLIP_TOAST fires here. WR-03: the forward
+        reaches EVERY screen in the stack that defines
+        ``apply_queue_event`` — while any modal is open (the drill-down,
+        the cancel confirms, the selection screen's preset/confirm
+        modals) ``self.screen`` is the modal, and a top-of-stack-only
+        forward would be a silent no-op, losing the row refresh and the
+        D-11 flip until some unrelated action reloaded the screen.
         """
         if message.generation != self._queue_generation:
             return  # a superseded driver's late post (WR-02)
         event = message.event
         if event.state == "done":
             self.notify(QUEUE_FLIP_TOAST.format(key=event.key))
-        apply_event = getattr(self.screen, "apply_queue_event", None)
-        if apply_event is not None:
-            apply_event(event)
+        for screen in self.screen_stack:
+            apply_event = getattr(screen, "apply_queue_event", None)
+            if apply_event is not None:
+                apply_event(event)
 
     def on_queue_progress_message(self, message: QueueProgressMessage) -> None:
-        """One live progress tick: forward to the screen's row updater."""
+        """One live progress tick: forward to every handler screen in
+        the stack (the WR-03 modal rule — an open modal must not freeze
+        the running row's cells)."""
         if message.generation != self._queue_generation:
             return  # a superseded driver's late post (WR-02)
-        apply_progress = getattr(
-            self.screen, "apply_queue_progress", None)
-        if apply_progress is not None:
-            apply_progress(message.key, message.percent)
+        for screen in self.screen_stack:
+            apply_progress = getattr(
+                screen, "apply_queue_progress", None)
+            if apply_progress is not None:
+                apply_progress(message.key, message.percent)
 
     # ===== Min-size guard (08-UI-SPEC Terminal Contract) =====
 

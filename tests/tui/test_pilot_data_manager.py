@@ -163,6 +163,12 @@ class FakeQueueService:
         self.cancel_calls.append(key)
         return "signalled"
 
+    def resolve_channel(self, key):
+        # the real Backend's drill-down reads the channel through the
+        # queue (the _QueueReadFake None convention — an unknown channel
+        # renders its detail honestly)
+        return None
+
     # ----- the screen-side reads the DataManagerBackend delegates to -----
 
     def missing_datasets(self):
@@ -1576,6 +1582,119 @@ async def test_x_on_downloading_row_confirms_and_signals_the_seam():
         assert fake.cancel_calls == ["k-dl"], (
             "the confirmed cancel reaches the shared queue seam"
         )
+
+
+async def test_queue_event_reaches_the_screen_under_the_drill_down():
+    """WR-03: while the drill-down modal is open (``self.screen`` IS the
+    modal, which defines no queue handler), a completed task's event
+    still reaches the data-manager screen beneath — the row flips to its
+    terminal state WITHOUT waiting for the modal to close."""
+    fake = FakeQueueService(
+        entries=[_queue_entry("k-modal")],
+        results={"k-modal": ("failed", 55)})
+    app = _app(queue=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_data_manager(pilot, app)
+        screen = app.screen
+        table = _queue_table(screen)
+        table.focus()
+        await pilot.pause()
+        await pilot.press("enter")    # the drill-down opens over the row
+        await pilot.pause()
+        assert isinstance(app.screen, ModalScreen)
+        assert getattr(app.screen, "apply_queue_event", None) is None, (
+            "the modal itself defines no queue handler (the premise)"
+        )
+
+        app.kick_download_queue()
+        await asyncio.wait_for(
+            app.workers.wait_for_complete(), timeout=10)
+        await pilot.pause()
+
+        # the row UNDER the modal already carries the terminal state
+        states = {_row(table, i)[0]: _row(table, i)[1]
+                  for i in range(table.row_count)}
+        assert states.get("k-modal") == QUEUE_STATE_FAILED, (
+            "the queue event must forward past the modal to the screen "
+            "beneath — a top-of-stack-only forward loses the refresh"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, ModalScreen)
+
+
+async def test_queue_event_reaches_selection_under_its_modal():
+    """WR-03's second consumer: a done event arriving while the
+    SELECTION screen has a modal open (the s-preset PathInputModal)
+    still reaches the selection screen's ``apply_queue_event`` — the
+    D-11 live flip is delayed by nothing, not even an open modal."""
+    fake = FakeQueueService(
+        entries=[_queue_entry("k-flip")],
+        results={"k-flip": ("done", 100)})
+    app = _app(queue=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.press("2")    # the selection screen
+        await pilot.pause()
+        screen = app.screen
+        assert type(screen).__name__ == "SelectionScreen"
+        received: list = []
+        original = screen.apply_queue_event
+
+        def spy(event):
+            received.append(event)
+            original(event)
+
+        screen.apply_queue_event = spy
+        await pilot.press("s")    # the save-preset modal opens on top
+        await pilot.pause()
+        assert isinstance(app.screen, ModalScreen)
+        assert getattr(app.screen, "apply_queue_event", None) is None
+
+        app.kick_download_queue()
+        await asyncio.wait_for(
+            app.workers.wait_for_complete(), timeout=10)
+        await pilot.pause()
+
+        assert [(event.key, event.state) for event in received] == [
+            ("k-flip", "done")], (
+            "the done event must reach the selection screen under the "
+            "modal — the D-11 live flip never waits on a modal"
+        )
+
+
+async def test_queue_event_reaches_screen_under_cancel_confirm():
+    """WR-03's ConfirmModal path: a completed task's event reaches the
+    data-manager screen while the x-cancel confirm is the top of the
+    stack — the row refreshes under the confirm, and dismissing it
+    shows the fresh state immediately."""
+    fake = FakeQueueService(
+        entries=[_queue_entry("k-confirm")],
+        results={"k-confirm": ("failed", 55)})
+    app = _app(queue=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_data_manager(pilot, app)
+        screen = app.screen
+        table = _queue_table(screen)
+        table.focus()
+        await pilot.pause()
+        await pilot.press("x")    # the pending-row cancel confirm opens
+        await pilot.pause()
+        assert isinstance(app.screen, ModalScreen)
+        assert getattr(app.screen, "apply_queue_event", None) is None
+
+        app.kick_download_queue()
+        await asyncio.wait_for(
+            app.workers.wait_for_complete(), timeout=10)
+        await pilot.pause()
+
+        states = {_row(table, i)[0]: _row(table, i)[1]
+                  for i in range(table.row_count)}
+        assert states.get("k-confirm") == QUEUE_STATE_FAILED, (
+            "the row must refresh under the open ConfirmModal too"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+        assert fake.cancel_calls == [], "esc backs out; no cancel ran"
 
 
 # =====================================================================
