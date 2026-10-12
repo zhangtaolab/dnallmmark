@@ -120,7 +120,7 @@ def planned_cell(kind, candidate_key, counterpart, status="planned"):
         "task": task,
         "seed": 42,
         "status": status,
-        "output_dir": "out/{}/{}/seed_42".format(model, task),
+        "output_dir": "out/" + model + "/" + task + "/seed_42",
     }
 
 

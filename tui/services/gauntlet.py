@@ -57,10 +57,24 @@ sibling ``custom_entries`` store (the existing-custom staging read) and
 """
 
 import json
+import os
 import subprocess
+import sys
+import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+
+import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
+import registry_loader  # top-level module (pipeline/ sys.path root)
+
+from tui.services import settings
+from tui.services.custom_entries import (
+    KIND_FILE_NAMES,
+    KIND_MODELS,
+    read_entries,
+)
 
 # ===== Locations (resolved from this module's own file, never CWD) =====
 
@@ -123,14 +137,18 @@ class GauntletItem:
 def _default_runner(argv, **kwargs):
     """The real subprocess seam (the injectable default).
 
+    The service itself passes ``capture_output=True, text=True`` (plus
+    ``timeout``/``env``) on every call — the same kwargs the fakes
+    record — so the default is a pure forward to ``subprocess.run``.
+
     Args:
         argv (list): the LIST argv (never a shell string).
-        **kwargs: ``timeout``/``env`` (forwarded to ``subprocess.run``).
+        **kwargs: ``capture_output``/``text``/``timeout``/``env``.
 
     Returns:
         subprocess.CompletedProcess: with captured text stdout/stderr.
     """
-    return subprocess.run(argv, capture_output=True, text=True, **kwargs)
+    return subprocess.run(argv, check=False, **kwargs)
 
 
 class GauntletService:
@@ -183,7 +201,76 @@ class GauntletService:
             cells contain the candidate key with status ``planned``;
             every failure path returns a failed item (never raises).
         """
-        raise NotImplementedError("D-06 dry-run precheck lands in GREEN")
+        counterpart = self._dry_run_counterpart(kind)
+        if counterpart is None:
+            return self._failed_item(
+                run_id, kind, LEG_DRY_RUN, candidate_key,
+                ("no_official_counterpart",))
+        existing, read_error = read_entries(kind)
+        if read_error is not None:
+            # A corrupt user-owned registry cannot be silently dropped
+            # from the staged view (the real pipeline would fail loud on
+            # it) — surface the read failure, launch nothing.
+            return self._failed_item(
+                run_id, kind, LEG_DRY_RUN, candidate_key,
+                ("existing_custom_registry_unreadable",),
+                raw_output=read_error)
+        with tempfile.TemporaryDirectory(
+                prefix="dnallmmark-gauntlet-") as tmp:
+            staging = Path(tmp) / "overlay"
+            staging.mkdir()
+            merged = dict(existing)
+            merged[candidate_key] = {**_as_entry(entry),
+                                     "enabled": True}
+            settings.atomic_write(
+                staging / KIND_FILE_NAMES[kind],
+                json.dumps(merged, indent=4, ensure_ascii=False))
+            out_root = Path(tmp) / "out"
+            argv = [sys.executable,
+                    str(self._pipeline_dir / RUN_SWEEP_NAME), "--dry-run"]
+            if kind == KIND_MODELS:
+                argv += ["--models", candidate_key,
+                         "--tasks", counterpart]
+            else:
+                argv += ["--models", counterpart,
+                         "--tasks", candidate_key]
+            argv += ["--seeds", "42", "--output-root", str(out_root)]
+            env = dict(os.environ)
+            env[CUSTOM_DIR_ENV] = str(staging)
+            proc, launch_failure = self._invoke(
+                argv, env, self._timeout_dry_run)
+            if launch_failure is not None:
+                return self._failed_item(
+                    run_id, kind, LEG_DRY_RUN, candidate_key,
+                    launch_failure)
+            raw = (proc.stdout or "") + (proc.stderr or "")
+            if proc.returncode != 0:
+                return self._failed_item(
+                    run_id, kind, LEG_DRY_RUN, candidate_key,
+                    ("exit_nonzero",
+                     "exit_code=" + str(proc.returncode)),
+                    raw_output=raw)
+            manifest = artifact_loader.load_json_artifact(
+                out_root / MANIFEST_NAME)
+            if manifest is None:
+                return self._failed_item(
+                    run_id, kind, LEG_DRY_RUN, candidate_key,
+                    ("manifest_unreadable",), raw_output=raw)
+            cells = manifest.get("cells") if isinstance(manifest, dict) \
+                else None
+            cells = cells if isinstance(cells, list) else []
+            planned = [
+                cell for cell in cells
+                if isinstance(cell, dict)
+                and candidate_key in (cell.get("model"), cell.get("task"))
+            ]
+            ok = bool(planned) and all(
+                cell.get("status") == "planned" for cell in planned)
+            return GauntletItem(
+                run_id=run_id, kind=kind, leg=LEG_DRY_RUN,
+                name=candidate_key, ok=ok,
+                details=("planned_cells=" + str(len(planned)),),
+                raw_output=raw)
 
     # ===== Leg 2: audit reconciliation (D-07) =====
 
@@ -238,6 +325,73 @@ class GauntletService:
 
     # ===== Shared internals =====
 
+    def _dry_run_counterpart(self, kind):
+        """Resolve the official counterpart for the OTHER matrix axis.
+
+        Derived deterministically at read time — never a hardcoded key
+        constant: the first official datasets key in file order with
+        truthy ``Train`` for model candidates (the dry-run refuses
+        Train-falsy tasks), the first official models key for dataset
+        candidates. Read DIRECTLY from the official files so overlay
+        state can never leak a custom key into the counterpart slot.
+
+        Args:
+            kind (str): ``KIND_MODELS`` or ``KIND_DATASETS``.
+
+        Returns:
+            str | None: the counterpart key, or ``None`` when the
+            committed official registry cannot supply one.
+        """
+        if kind == KIND_MODELS:
+            registry = self._official_registry(
+                registry_loader.DATASETS_INFO_NAME)
+            for key, entry in registry.items():
+                if isinstance(entry, dict) and entry.get("Train"):
+                    return key
+            return None
+        registry = self._official_registry(
+            registry_loader.MODELS_INFO_NAME)
+        for key in registry:
+            return key
+        return None
+
+    def _invoke(self, argv, env, timeout):
+        """Run one subprocess leg through the injectable seam.
+
+        Every launch failure is absorbed into a details tuple — a
+        timeout or a crash NEVER crosses the service boundary as an
+        exception (T-09-07); the caller turns the tuple into a failed
+        item.
+
+        Args:
+            argv (list): the LIST argv (never a shell string).
+            env (dict): the explicit env (os.environ + one override).
+            timeout (int): the leg's timeout seconds.
+
+        Returns:
+            tuple: ``(proc, None)`` with the CompletedProcess-shaped
+            result, or ``(None, details)`` when the runner timed out or
+            crashed.
+        """
+        try:
+            proc = self._runner(argv, capture_output=True, text=True,
+                                timeout=timeout, env=env)
+        except subprocess.TimeoutExpired:
+            return None, ("timeout",
+                          "timeout_seconds=" + str(timeout))
+        except Exception as exc:  # noqa: BLE001 — the service boundary
+            # (T-09-07): ANY launch failure yields a failed item, never
+            # an exception crossing to the panel worker.
+            return None, ("subprocess_error", repr(exc))
+        return proc, None
+
+    @staticmethod
+    def _failed_item(run_id, kind, leg, name, details, raw_output=""):
+        """Build one failed item (the shared failure-path shape)."""
+        return GauntletItem(
+            run_id=run_id, kind=kind, leg=leg, name=name, ok=False,
+            details=tuple(details), raw_output=raw_output)
+
     def _official_registry(self, filename):
         """Read one OFFICIAL registry file directly (not the overlay
         loader) — the counterpart must be an official key regardless of
@@ -251,3 +405,16 @@ class GauntletService:
         """
         with open(self._pipeline_dir / filename, "r", encoding="utf-8") as fh:
             return json.load(fh)
+
+
+def _as_entry(entry):
+    """Coerce one candidate value to the dict staging requires.
+
+    Args:
+        entry: the caller's candidate field values.
+
+    Returns:
+        dict: ``entry`` when it is already a dict, else ``{}`` (the
+        validator upstream owns shape problems — staging never crashes).
+    """
+    return dict(entry) if isinstance(entry, dict) else {}
