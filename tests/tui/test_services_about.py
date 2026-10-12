@@ -24,6 +24,7 @@ the real ~/.config/dnallmmark is never read.
 
 import importlib.metadata
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -304,3 +305,35 @@ def test_derive_about_data_default_root_is_the_repo_pyproject():
     repo_pyproject = Path(about.__file__).resolve().parents[2] / "pyproject.toml"
     assert repo_pyproject.is_file()
     assert data.software_version == "0.7.1"
+
+
+# =====================================================================
+# Module hygiene — the whole-services i18n lock (WR-05, 09 review)
+# =====================================================================
+
+#: The services-tier CJK scan — the same range the per-module locks in
+#: test_services_gauntlet.py / test_services_custom_validation.py use.
+_SERVICES_CJK_RE = re.compile("[一-鿿]")
+
+
+def test_every_services_module_carries_zero_chinese_source():
+    """WR-05 (09 review): the declared invariant is zero Chinese in
+    services SOURCE — every ``tui/services/*.py`` module, not just the
+    two the per-module locks happened to scan (about.py and
+    quick_check.py were uncovered holes; about.py's docstring carried
+    Chinese row-name glosses until this fix). Operator-facing copy
+    lives only in ``tui/strings.py``; docstrings/comments are English
+    per the repo convention."""
+    services_dir = Path(about.__file__).resolve().parent
+    modules = sorted(services_dir.glob("*.py"))
+    assert len(modules) >= 10, "the glob found the services tier"
+    offenders = {
+        module.name: _SERVICES_CJK_RE.findall(
+            module.read_text(encoding="utf-8"))
+        for module in modules
+        if _SERVICES_CJK_RE.search(module.read_text(encoding="utf-8"))
+    }
+    assert offenders == {}, (
+        f"inline Chinese in services modules (copy belongs in "
+        f"tui/strings.py): {offenders}"
+    )

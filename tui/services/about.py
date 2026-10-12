@@ -1,14 +1,15 @@
 """
-about — the 关于-screen derivation service (Phase 9, 09-03, D-13 slot 6).
+about — the about-screen derivation service (Phase 9, 09-03, D-13 slot 6).
 
-Read-only, tolerant derivations for the five fixed about rows (软件版本 /
-数据版本 / 里程碑阶段 / 依赖版本 / 仓库地址): software version from
+Read-only, tolerant derivations for the five fixed about rows (software
+version / data version / milestone stage / dependency versions /
+repository URL): software version from
 pyproject.toml plus the git short sha, OFFICIAL-only registry counts
 (62/50 — never the overlay-merged view, which would count customs twice
-next to the separate 自定义 segment), custom counts via the 09-01 store's
-direct management read, the n_audit 在场 signal, and per-package
-dependency probes via importlib.metadata (absent → None, rendered 未安装
-by the screen).
+next to the separate custom segment), custom counts via the 09-01 store's
+direct management read, the n_audit presence signal, and per-package
+dependency probes via importlib.metadata (absent → None, rendered as
+not-installed by the screen).
 
 Contract (locked decisions):
 
@@ -21,15 +22,15 @@ Contract (locked decisions):
   every probe call so even an unexpected raise degrades to the neutral
   value (the screen composes on any machine).
 - Auto-Default #13 (honest machine-derivable values only): every value
-  traces to a real source on the machine; the 里程碑阶段 row is the one
+  traces to a real source on the machine; the milestone-stage row is the one
   static milestone constant (rendered from ``tui/strings.py`` by the
   screen — it is milestone metadata, not a machine probe).
 - The deps vocabulary is the five locked names (textual / platformdirs /
   jsonschema / numpy / torch) — torch is legitimately absent on CPU
-  machines and renders 未安装 there.
+  machines and renders as not-installed there.
 - The official counts read the committed registry files DIRECTLY through
   ``artifact_loader`` (tolerant, official-only): the Phase 7 loader's
-  merged view is the pipeline's authority, but the 官方 row must stay
+  merged view is the pipeline's authority, but the official counts row must stay
   62/50 when customs are landed, and a display probe must degrade to 0
   where the loader would propagate an OSError (the fail-loud loader
   contract stays untouched — this module never routes through it).
@@ -60,14 +61,14 @@ from tui.services.registries import RegistryCounts
 REPO_ROOT = Path(__file__).resolve().parents[2]
 #: The official registries' directory (names imported from the loader).
 _PIPELINE_DIR = REPO_ROOT / "pipeline"
-#: The repo's own version source (the 软件版本 row).
+#: The repo's own version source (the software-version row).
 _PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 
 # ===== The five-name dependency probe vocabulary =====
 
 PROBED_PACKAGES = ("textual", "platformdirs", "jsonschema", "numpy", "torch")
 
-#: The 仓库地址 row value (English verbatim, I18N-01).
+#: The repository-URL row value (English verbatim, I18N-01).
 REPO_URL = "https://github.com/zhangtaolab/dnallmmark"
 
 #: T-09-08: the git probe is bounded — never a console-blocking subprocess.
@@ -92,7 +93,7 @@ class AboutData:
             from the 09-01 direct read (disabled included).
         n_audit_present: True when the committed n_audit artifact reads.
         deps: package → version-or-None over ``PROBED_PACKAGES`` order.
-        repo_url: the constant 仓库地址 value.
+        repo_url: the constant repository-URL value.
     """
 
     software_version: str = ""
@@ -138,7 +139,7 @@ def git_short_sha(repo_root=None) -> "str | None":
     LIST argv (never a shell), ``rev-parse --short HEAD`` only, a short
     timeout, and an omit-on-failure fallback: a git-less machine, a
     non-repo directory, or a timeout each yield None — the value is
-    simply omitted from the 软件版本 row.
+    simply omitted from the software-version row.
 
     Args:
         repo_root: the directory to probe; None means the repo root.
@@ -171,8 +172,8 @@ def package_version(package: str) -> "str | None":
 
     Returns:
         str | None: the version string, or None when the package is not
-        installed on this machine (the 未安装 row source — e.g. torch on
-        a CPU machine).
+        installed on this machine (the not-installed row source — e.g.
+        torch on a CPU machine).
     """
     try:
         return importlib.metadata.version(package)
@@ -186,9 +187,9 @@ def official_counts() -> RegistryCounts:
     """The OFFICIAL-only registry entry counts (62/50 committed).
 
     Reads the official registry files directly through
-    ``artifact_loader`` (the tolerant None sentinel): the 官方 row must
+    ``artifact_loader`` (the tolerant None sentinel): the official-counts row must
     not count a landed custom overlay (the merged view would double-count
-    customs next to the separate 自定义 segment), and a display probe
+    customs next to the separate custom segment), and a display probe
     must degrade to 0 rather than propagate the loader's fail-loud
     OSError. See the module docstring for why this is a display probe,
     not a second loader.

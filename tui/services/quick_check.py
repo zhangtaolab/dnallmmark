@@ -5,8 +5,8 @@ ENV-04/D-09).
 The light pre-launch check: revalidate the subset of env_smoke kernels
 a launch actually needs, skipping the heavyweight matmul smoke — a
 calibration-class GPU exercise that belongs to the FULL check, not to a
-launch pre-flight (D-09: 轻量子集重验 — the quick check is the
-lightweight subset re-validation).
+launch pre-flight (D-09: the quick check is the lightweight
+subset re-validation).
 
 Contract (locked decisions):
 
