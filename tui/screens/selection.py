@@ -89,6 +89,7 @@ from textual.widgets.selection_list import Selection
 from tui.screens.matrix import MatrixScreen
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.services import custom_entries as custom_entries_service
+from tui.services import download_queue as download_queue_service
 from tui.services import registries as registries_service
 from tui.services import selection as selection_service
 from tui.services import settings as settings_service
@@ -100,6 +101,7 @@ from tui.services.custom_validation import (
     validate_import_document,
     validate_model_candidate,
 )
+from tui.services.download_queue import EnqueueOutcome
 from tui.services.gauntlet import GauntletService
 from tui.services.registries import (
     PRESENCE_MISSING,
@@ -108,6 +110,7 @@ from tui.services.registries import (
 )
 from tui.strings import (
     APP_MODAL_BACK_LABEL,
+    DL_DISABLED_TOAST,
     ENV_DETAIL_LABEL,
     NAV_LABEL_ABOUT,
     NAV_LABEL_DATA,
@@ -115,6 +118,9 @@ from tui.strings import (
     NAV_LABEL_MONITOR,
     NAV_LABEL_RUN_CONFIG,
     NAV_LABEL_SELECTION,
+    QUEUE_CLI_UNAVAILABLE,
+    QUEUE_TOAST_ALREADY_QUEUED,
+    QUEUE_TOAST_ENQUEUED,
     SEL_COL_CATEGORY,
     SEL_COL_MARK,
     SEL_COL_METRIC,
@@ -128,6 +134,8 @@ from tui.strings import (
     SEL_CUSTOM_BADGE,
     SEL_DISABLED_MARK_WARNING,
     SEL_DISABLED_SUFFIX,
+    SEL_ENQUEUE_LABEL,
+    SEL_ENQUEUE_PRESENT_TOAST,
     SEL_FILTER_COUNT,
     SEL_FILTER_KEY_LABEL,
     SEL_FILTER_LABEL,
@@ -495,6 +503,55 @@ class SelectionBackend:
             Path(self._config_dir) if self._config_dir is not None
             else settings_service.config_dir()
         )
+
+
+# ===== The download-queue enqueue seam (10-05, D-14: the d action) =====
+
+
+class SelectionQueueServiceProtocol(Protocol):
+    """The enqueue surface the selection screen's ``d`` action consumes.
+
+    The minimal shared seam (D-14's one-vocabulary rule): enqueue is
+    the SAME service call the data-manager screen's ``d`` makes — the
+    app-level kick stays on the app (``app.kick_download_queue``), never
+    on this seam. The real adapter and the tier-2 Pilot fakes conform
+    structurally (the EnvCheckServiceProtocol pattern).
+    """
+
+    def enqueue(self, key: str) -> EnqueueOutcome:
+        """Idempotently enqueue one dataset key into the shared queue."""
+
+
+class SelectionQueueBackend:
+    """The real enqueue adapter — thin delegation glue (the
+    ``EnvCheckBackend`` idiom) over the app's SHARED queue instance.
+
+    The two-Protocol seam (the 10-04 ``DataManagerBackend`` shape): the
+    app's driver-surface ``QueueDriverProtocol`` does not declare
+    ``enqueue``, so this adapter bridges the app-level shared instance
+    into the screen's minimal Protocol — an enqueue from the selection
+    screen, the data-manager screen, and the driver all mutate ONE
+    queue. A default-constructed backend builds its own real service
+    for the never-injected path (inert until ``enqueue`` is called).
+    """
+
+    def __init__(self, queue: Any = None):
+        """Adapt over one (shared) queue service instance.
+
+        Args:
+            queue: the app-level queue service; None builds a fresh
+                real ``DownloadQueueService``. Typed ``Any``
+                deliberately — the adapter boundary between the app's
+                driver-surface Protocol and the screen's Protocol (the
+                documented DataManagerBackend boundary pattern).
+        """
+        self._queue: Any = (queue if queue is not None
+                            else download_queue_service
+                            .DownloadQueueService())
+
+    def enqueue(self, key: str) -> EnqueueOutcome:
+        """Delegate the idempotent enqueue (D-08 semantics)."""
+        return self._queue.enqueue(key)
 
 
 # ===== The custom-onboarding service (09-06: the w/e actions' seam) =====
@@ -1105,6 +1162,11 @@ class SelectionScreen(Screen):
         # bar renders it; the clip policy drops least-primary first).
         Binding("w", "open_wizard", SEL_WIZARD_LABEL),
         Binding("e", "toggle_enabled", SEL_TOGGLE_LABEL),
+        # The 10-05 enqueue action (D-14): between the e pair and the
+        # auxiliary actions — the [d] keycap renders after the toggle
+        # keycap and before the matrix keycap (one vocabulary with the
+        # data-manager screen's d; labels live in tui/strings.py).
+        Binding("d", "enqueue_dataset", SEL_ENQUEUE_LABEL),
         Binding("v", "open_matrix", SEL_MATRIX_LABEL),
         Binding("enter", "show_detail", ENV_DETAIL_LABEL, show=False),
         Binding("escape", "clear_filter", show=False),
@@ -1142,6 +1204,7 @@ class SelectionScreen(Screen):
                  marked_models: "set[str] | None" = None,
                  marked_tasks: "set[str] | None" = None,
                  custom_service: "CustomOnboardingBackend | None" = None,
+                 queue_service: "SelectionQueueServiceProtocol | None" = None,
                  **kwargs):
         super().__init__(**kwargs)
         self._service: SelectionServiceProtocol = (
@@ -1153,6 +1216,14 @@ class SelectionScreen(Screen):
         self._custom: CustomOnboardingBackend = (
             custom_service if custom_service is not None
             else CustomOnboardingBackend()
+        )
+        # The 10-05 enqueue seam (optional injection, real default —
+        # the D-14 shared queue; the app injects the app-level instance
+        # through build_selection_screen so every screen enqueues into
+        # ONE queue).
+        self._queue: SelectionQueueServiceProtocol = (
+            queue_service if queue_service is not None
+            else SelectionQueueBackend()
         )
         # The shared app-state mark sets (SEL-01: marks live OUTSIDE the
         # table; the composition root injects the same live sets the
@@ -1552,6 +1623,44 @@ class SelectionScreen(Screen):
              else SEL_TOGGLE_DISABLED_TOAST).format(key=key),
         )
         self._load_data()
+
+    def action_enqueue_dataset(self) -> None:
+        """d: enqueue the cursor's MISSING dataset row into the shared
+        download queue (10-05, D-14 — the SAME service call and the SAME
+        outcome toasts as the data-manager screen's ``d``; one
+        vocabulary). The outcome mapping mirrors the data-manager
+        screen's pair exactly: enqueued -> the toast + the app-level
+        kick; already_queued -> its toast; disabled (shape-D) ->
+        ``DL_DISABLED_TOAST`` carrying the key (always diagnosable,
+        R-02); cli_unavailable -> the probed-absent toast; unknown_key
+        -> silent. The models view returns before any service call
+        (models are not n_audit subjects — Phase 8 truth); a PRESENT
+        row is a no-op with the honest toast, never silent and never a
+        duplicate enqueue; state rows stay silent (the ``_cursor_key``
+        None path). Enqueuing never navigates away."""
+        if self._view == _MODELS_VIEW:
+            return
+        key = self._cursor_key()
+        if key is None:
+            return  # state rows (loading/no-match/error) never act
+        presence = (
+            self._data.presence.get(key) if self._data is not None else None
+        )
+        if presence is not None and presence.status == PRESENCE_PRESENT:
+            self.app.notify(SEL_ENQUEUE_PRESENT_TOAST)
+            return
+        outcome = self._queue.enqueue(key)
+        if outcome.action == "enqueued":
+            self.app.notify(QUEUE_TOAST_ENQUEUED.format(key=key))
+            self.app.kick_download_queue()
+        elif outcome.action == "already_queued":
+            self.app.notify(QUEUE_TOAST_ALREADY_QUEUED.format(key=key))
+        elif outcome.action == "disabled":
+            self.app.notify(
+                DL_DISABLED_TOAST.format(key=key), severity="warning")
+        elif outcome.action == "cli_unavailable":
+            self.app.notify(QUEUE_CLI_UNAVAILABLE, severity="error")
+        # unknown_key: silent return (the service already said it all)
 
     def action_switch_list(self) -> None:
         """m: toggle the model/dataset table (both mark sets persist)."""

@@ -35,7 +35,6 @@ discipline — the real home config is never read, official registries
 never written).
 """
 
-import json
 from pathlib import Path
 from typing import ClassVar
 

@@ -67,6 +67,7 @@ from tui.screens.data_manager import DataManagerBackend, DataManagerScreen
 from tui.screens.env_check import EnvCheckScreen, EnvCheckServiceProtocol
 from tui.screens.nav import NAV_SLOT_BY_INDEX, binding_row
 from tui.screens.selection import (
+    SelectionQueueBackend,
     SelectionScreen,
     SelectionServiceProtocol,
 )
@@ -292,18 +293,24 @@ class DnallmMarkTui(App):
         return EnvCheckScreen(env_check_service=self._env_check_service)
 
     def build_selection_screen(self) -> SelectionScreen:
-        """Build the selection screen over the shared mark sets.
+        """Build the selection screen over the shared mark sets + queue.
 
         The screen factory (08-07): the injected-or-real service plus the
         SAME live mark-set instances every selection/matrix screen
         shares — constructed here, never through a zero-arg SCREENS slot
         (a slot-built screen would carry fresh sets and silently lose
-        the SEL-01 persistence guarantee).
+        the SEL-01 persistence guarantee). 10-05 (D-14): the factory
+        also bridges the app-level SHARED queue instance into the
+        screen's enqueue seam (the SelectionQueueBackend two-Protocol
+        bridge — the build_data_manager_screen rationale), so the
+        selection screen's ``d``, the data-manager screen, and the
+        driver all mutate ONE queue.
         """
         return SelectionScreen(
             selection_service=self._selection_service,
             marked_models=self._marked_models,
             marked_tasks=self._marked_tasks,
+            queue_service=SelectionQueueBackend(self._download_queue),
         )
 
     def build_data_manager_screen(self) -> DataManagerScreen:
