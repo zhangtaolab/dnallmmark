@@ -16,7 +16,7 @@
     {
       "number": "9",
       "name": "Custom Model & Dataset Onboarding",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "10",
@@ -39,5 +39,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 9 of 6 · 33% · executing"
   },
-  "updated_at": "2026-10-12T02:51:35.977Z"
+  "updated_at": "2026-10-12T03:18:41.771Z"
 }

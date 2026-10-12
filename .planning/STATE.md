@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 9
 current_phase_name: Custom Model & Dataset Onboarding (自定义接入向导)
 status: executing
-stopped_at: Completed 09-01-PLAN.md
-last_updated: "2026-10-12T02:52:00.894Z"
+stopped_at: Completed 09-02-PLAN.md
+last_updated: "2026-10-12T03:18:51.883Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 9 execution started
-state_head: 501002145f152d63d4a96541fbf2eb7d8eb739c2
+state_head: bf4b630e23429bc97b6a91048b9cfed8bfcafa8c
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 14
+  completed_plans: 15
   percent: 33
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 9 (Custom Model & Dataset Onboarding (自定义接入向导)) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-10-12 — Phase 9 execution started
 
@@ -72,6 +72,7 @@ Progress (v1.2): [██████████] 100% (13/13 plans)
 | Phase 08 P08-06 | 43 min | 2 tasks | 6 files |
 | Phase 08 P08-07 | 79 min | 3 tasks | 13 files |
 | Phase 09 P09-01 | 47 min | 3 tasks | 7 files |
+| Phase 09 P09-02 | 19 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -129,6 +130,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 09]: 09-01: METRIC_REGISTRY = frozen 28-name SUITE_CANONICAL twin in tui/services/custom_validation, parity-locked by a tier-1 test importing export_runs via the tests/conftest.py sys.path; the service module never imports it (AST import lock) — IN-03 single authority preserved
 - [Phase 09]: 09-01: one-defect-one-problem collect-all semantics — numeric checks skip absent/empty values (the required check owns them), enum checks skip empty injected vocabularies; declared Train/Dev/Test are DERIVED from split counting (the wizard never collects them) and must equal well-formed row counts when present
 - [Phase 09]: 09-01: schemas/custom_registry.json = per-ENTRY contract (plain {key: entry} file top level, NO envelope; optional per-entry schema_version const 1; quirks model-only / label_column dataset-only; required = wizard-required subset; field types probed from the official 62/50)
+- [Phase 09]: [Phase 09]: 09-02: D-09 filter = skip iff isinstance(entry, dict) and entry.get('enabled') is False — the isinstance guard preserves the pre-D-09 merge of non-object entry values (a new AttributeError there would crash formerly accepted input); skip sits after the collision loop so disabled shadow attempts still fail fast
+- [Phase 09]: [Phase 09]: 09-02: gauntlet counterpart resolution is read-time deterministic (first official Train-truthy task / first official model key, read directly from the official files — overlay state can never leak a custom key into the slot); corrupt existing-custom registry = failed item launching nothing
+- [Phase 09]: [Phase 09]: 09-02: gauntlet verdicts from parsed artifacts only (manifest planned cells / n_audit fields — exit-0-but-absent is a FAIL); the service carries zero f-strings and zero copy (detail tokens are data: planned_cells=N, Train_mismatch_declared=N_measured=M); audit leg doubly isolated (candidate-only registry + empty overlay env) with all five output flags temp — committed artifacts hash-pinned clobber-safe
 
 ### Pending Todos
 
@@ -152,8 +156,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T02:52:00.851Z
-Stopped at: Completed 09-01-PLAN.md
+Last session: 2026-10-12T03:18:51.842Z
+Stopped at: Completed 09-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
