@@ -1363,9 +1363,12 @@ class DownloadQueueService:
 
         Transitions the first ``pending`` entry in file order to
         ``downloading`` with ``attempts`` incremented and ``started_at``
-        stamped, persisted before returning. WR-04: when that persist
-        fails (unwritable state rail), the claim is REVERTED to the
-        entry's exact prior shape and None is returned — never an
+        stamped, persisted before returning; the restart note's
+        ``interrupted`` flag clears HERE (IN-01) — the claim IS the
+        resume the note announces, so the flag must not linger on the
+        downloading/done/failed rows that follow. WR-04: when that
+        persist fails (unwritable state rail), the claim is REVERTED to
+        the entry's exact prior shape and None is returned — never an
         exception, never a persisted-downloading entry with no run.
 
         Returns:
@@ -1377,13 +1380,14 @@ class DownloadQueueService:
                 if entry["state"] != "pending":
                     continue
                 prior = (entry["state"], entry["attempts"],
-                         entry["started_at"])
+                         entry["started_at"], entry["interrupted"])
                 entry["state"] = "downloading"
                 entry["attempts"] = entry["attempts"] + 1
                 entry["started_at"] = _now_iso()
+                entry["interrupted"] = False
                 if self._persist_locked() is not None:
                     entry["state"], entry["attempts"], entry[
-                        "started_at"] = prior
+                        "started_at"], entry["interrupted"] = prior
                     return None
                 return _frozen(entry)
             return None

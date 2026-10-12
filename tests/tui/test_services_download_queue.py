@@ -465,6 +465,41 @@ def test_restart_downgrades_downloading_to_pending_interrupted(
         "k__midflight": "pending", "k__failed": "failed"}
 
 
+def test_claim_next_clears_the_interrupted_flag_in01(
+        monkeypatch, tmp_path):
+    """IN-01: the restart note's flag clears when the resume BEGINS —
+    claiming the recovered entry is the moment the note's promise is
+    being fulfilled, so downloading/done/failed rows never render the
+    stale 'last interrupted — the channel will resume' forever."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    state.mkdir(parents=True, exist_ok=True)
+    state_file(state).write_text(json.dumps({
+        "schema_version": 1,
+        "entries": [{
+            "key": "k__midflight", "kind": "dataset",
+            "state": "downloading", "attempts": 1,
+            "enqueued_at": "2026-10-12T00:00:00+00:00",
+            "started_at": "2026-10-12T00:01:00+00:00",
+            "finished_at": None, "last_percent": 62,
+            "interrupted": False, "log_path": None,
+            "problems": [], "reconcile": None}],
+    }, indent=4, ensure_ascii=False), encoding="utf-8")
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+    assert service.load() is None
+    (entry,) = service.entries()
+    assert entry.interrupted is True    # the downgrade set it
+
+    claimed = service.claim_next()
+
+    assert claimed.state == "downloading"
+    assert claimed.interrupted is False, (
+        "the claim IS the resume — the note's flag must clear here"
+    )
+    (entry,) = service.entries()
+    assert entry.interrupted is False
+
+
 def test_corrupt_file_moved_aside_with_diagnostic_then_usable(
         monkeypatch, tmp_path):
     """T-10-01-05: garbage bytes -> the .corrupt sidecar exists, a
