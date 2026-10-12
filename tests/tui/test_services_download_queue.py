@@ -853,3 +853,507 @@ def test_cli_probe_absent_yields_none(monkeypatch, tmp_path):
     monkeypatch.setattr("shutil.which", lambda name: None)
 
     assert download_queue.resolve_modelscope_cli() is None
+
+
+# =====================================================================
+# Lane 3: the Popen execution engine — spawn/stream/reap/cancel +
+# landing check + shape-C rename + the recorded-fixture parser
+# =====================================================================
+
+import io
+import os
+import subprocess
+import threading
+import time
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+SUCCESS_MARKER = "Successfully Downloaded from dataset"
+START_MARKER = "Downloading Dataset to directory"
+
+
+class ChunkedStream:
+    """A pipe-like stream that yields pre-scripted byte chunks (the
+    reader thread's incremental-parse view of a real stderr)."""
+
+    def __init__(self, chunks):
+        self.chunks = [c.encode("utf-8") if isinstance(c, str) else c
+                       for c in chunks]
+
+    def read(self, n=-1):
+        return self.chunks.pop(0) if self.chunks else b""
+
+
+class FakePopen:
+    """A Popen-shaped object (poll/wait/kill/terminate/pid + pipe
+    streams) — the FakeRunner idiom adapted to the Popen seam."""
+
+    def __init__(self, returncode=0, stdout=b"", stderr=b""):
+        self.returncode_value = returncode
+        self.pid = 424242
+        self.stdout = stdout if hasattr(stdout, "read") \
+            else io.BytesIO(stdout)
+        self.stderr = stderr if hasattr(stderr, "read") \
+            else io.BytesIO(stderr)
+        self.killed = False
+
+    def wait(self, timeout=None):
+        return self.returncode_value
+
+    def poll(self):
+        return self.returncode_value
+
+    def kill(self):
+        self.killed = True
+        self.returncode_value = -9
+
+    def terminate(self):
+        self.returncode_value = -15
+
+
+class FakeSpawner:
+    """The injectable Popen seam recording every spawn."""
+
+    def __init__(self, popen=None, exc=None):
+        self.popen = popen if popen is not None else FakePopen()
+        self.exc = exc
+        self.calls = []
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append({"argv": list(argv), "kwargs": dict(kwargs)})
+        if self.exc is not None:
+            raise self.exc
+        return self.popen
+
+
+SHAPE_A_ENTRY = {
+    "Dataset_path": "datasets/Demo/task",
+    "download_url": "https://www.modelscope.cn/datasets/lgq12697/GUE",
+    "download_url_alternates":
+        "https://huggingface.co/datasets/whatever",
+    "Train": 10, "Dev": 2, "Test": 2,
+}
+
+
+def engine_service(tmp_path, monkeypatch, spawner, entries=None,
+                   cli=None):
+    """A service over a tmp repo (shape-A synthetic entry) + tmp state
+    root + injected spawner — the offline engine lane."""
+    repo = tmp_repo_with_registry(
+        tmp_path / "repo", entries or {"Demo__task": SHAPE_A_ENTRY})
+    state = tmp_path / "state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    cli_path = str(cli) if cli is not None else str(fake_cli(tmp_path))
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        spawner=spawner, cli_path=cli_path)
+    assert service.enqueue("Demo__task").action == "enqueued"
+    service.claim_next()
+    return service, repo, state
+
+
+def land_csvs(repo, group, task, splits=("train", "dev", "test")):
+    task_dir = repo / "pipeline" / "datasets" / group / task
+    task_dir.mkdir(parents=True, exist_ok=True)
+    for split in splits:
+        (task_dir / (split + ".csv")).write_text(
+            "sequence,label\nACGT,0\n", encoding="utf-8")
+    return task_dir
+
+
+# ===== the parser over RECORDED captures (never synthetic ideals) =====
+
+
+def test_success_fixture_parses_to_full_completion():
+    text = (FIXTURES_DIR / "modelscope_stderr_success.txt").read_text(
+        encoding="utf-8")
+
+    files, items = download_queue.parse_progress(text)
+
+    assert items == 100
+    assert files["emp_H3/train.csv"] == 100
+    assert files["emp_H3/dev.csv"] == 100
+    assert len(files) == 4
+
+
+def test_interrupted_fixture_parses_midflight_and_strips_ansi():
+    """ANSI [A escapes + CR churn parse to the mid-file percent; no
+    completion percent exists anywhere in the capture."""
+    text = (FIXTURES_DIR / "modelscope_stderr_interrupted.txt").read_text(
+        encoding="utf-8")
+
+    files, items = download_queue.parse_progress(text)
+
+    assert items == 50
+    assert files["emp_H3/train.csv"] == 41
+    clean = download_queue.clean_chunk(text)
+    assert "\x1b" not in clean
+    assert "\r" not in clean
+
+
+def test_unparseable_chunk_yields_indeterminate_none():
+    files, items = download_queue.parse_progress("nothing to see here\n")
+    assert files == {}
+    assert items is None
+
+
+def test_first_real_error_line_skips_pkg_resources_noise():
+    text = ("UserWarning: pkg_resources is deprecated as an API. x\n"
+            "import pkg_resources\n"
+            "Traceback (most recent call last):\n"
+            "OSError: [Errno 2] boom")
+    assert download_queue.first_real_error_line(text) == \
+        "Traceback (most recent call last):"
+
+
+def test_first_real_error_line_none_on_noise_only():
+    text = "UserWarning: pkg_resources is deprecated as an API. x\n" \
+           "import pkg_resources\n\n"
+    assert download_queue.first_real_error_line(text) is None
+
+
+# ===== spawn discipline (argv/env/pipe pins over the fake spawner) =====
+
+
+def test_spawn_pins_list_argv_env_passthrough_pipes_session(
+        monkeypatch, tmp_path):
+    spawner = FakeSpawner(FakePopen(returncode=0))
+    service, repo, _ = engine_service(tmp_path, monkeypatch, spawner)
+    land_csvs(repo, "Demo", "task")
+
+    event = service.run_task("Demo__task", run_id="r1")
+
+    assert event.state == "done"
+    (call,) = spawner.calls
+    argv = call["argv"]
+    assert isinstance(argv, list)               # never a shell string
+    assert argv[0].endswith("modelscope-fake")  # the injected CLI
+    assert argv[argv.index("--dataset") + 1] == "lgq12697/GUE"
+    assert Path(argv[argv.index("--local_dir") + 1]).is_absolute()
+    kwargs = call["kwargs"]
+    assert kwargs["env"] == dict(os.environ)    # EXACTLY, zero overrides
+    assert kwargs["start_new_session"] is True
+    assert kwargs["stdout"] == subprocess.PIPE
+    assert kwargs["stderr"] == subprocess.PIPE
+
+
+def test_progress_callback_fires_once_per_integer_change(
+        monkeypatch, tmp_path):
+    """Duplicates never re-fire; the indeterminate-until-parsed contract
+    holds (nothing fires before the first parseable percent)."""
+    line = "Downloading [a/train.csv]: {p}%|x| y/y [00:00<00:00]\n"
+    stderr = ChunkedStream([
+        "some unparseable chatter\n",
+        line.format(p=0), line.format(p=0),
+        line.format(p=25), line.format(p=25),
+        line.format(p=50),
+        line.format(p=100), line.format(p=100),
+    ])
+    spawner = FakeSpawner(FakePopen(returncode=0, stderr=stderr))
+    service, repo, _ = engine_service(tmp_path, monkeypatch, spawner)
+    land_csvs(repo, "Demo", "task")
+    fired = []
+
+    event = service.run_task(
+        "Demo__task", run_id="r1",
+        progress_cb=lambda key, pct: fired.append((key, pct)))
+
+    assert fired == [("Demo__task", 0), ("Demo__task", 25),
+                     ("Demo__task", 50), ("Demo__task", 100)]
+    assert event.last_percent == 100
+
+
+def test_stdout_markers_detected_as_data_booleans(monkeypatch, tmp_path):
+    stdout = ("Downloading Dataset to directory: /tmp/x\n"
+              "Successfully Downloaded from dataset lgq12697/GUE.\n")
+    spawner = FakeSpawner(FakePopen(returncode=0, stdout=stdout))
+    service, repo, _ = engine_service(tmp_path, monkeypatch, spawner)
+    land_csvs(repo, "Demo", "task")
+
+    event = service.run_task("Demo__task", run_id="r1")
+
+    assert event.state == "done"
+    assert "start_marker=true" in event.details
+    assert "success_marker=true" in event.details
+
+
+# ===== exit classification + the Pitfall-3 landing gate =====
+
+
+def test_exit_zero_with_success_marker_but_no_files_fails_landing(
+        monkeypatch, tmp_path):
+    """THE exit-0-but-empty trap: the CLI reports success for an empty
+    filtered include set — exit 0 + the success marker still fails
+    unless every split CSV landed (Pitfall 3)."""
+    stdout = ("Downloading Dataset to directory: /tmp/x\n"
+              "Successfully Downloaded from dataset lgq12697/GUE.\n")
+    spawner = FakeSpawner(FakePopen(returncode=0, stdout=stdout))
+    service, _, _ = engine_service(tmp_path, monkeypatch, spawner)
+    # NOTE: no CSVs landed under pipeline/datasets/Demo/task
+
+    event = service.run_task("Demo__task", run_id="r1")
+
+    assert event.state == "failed"
+    assert event.problems == ("landing_incomplete",)
+    assert "missing=Demo/task/train.csv" in event.details
+    assert "missing=Demo/task/dev.csv" in event.details
+    assert "missing=Demo/task/test.csv" in event.details
+    (entry,) = service.entries()
+    assert entry.state == "failed"
+    assert entry.log_path == "logs/Demo__task.log"
+
+
+def test_partial_landing_missing_one_split_fails_naming_it(
+        monkeypatch, tmp_path):
+    spawner = FakeSpawner(FakePopen(returncode=0))
+    service, repo, _ = engine_service(tmp_path, monkeypatch, spawner)
+    land_csvs(repo, "Demo", "task", splits=("train", "dev"))
+
+    event = service.run_task("Demo__task", run_id="r1")
+
+    assert event.state == "failed"
+    assert event.problems == ("landing_incomplete",)
+    assert "missing=Demo/task/test.csv" in event.details
+
+
+def test_nonzero_exit_fails_with_code_and_log(monkeypatch, tmp_path):
+    spawner = FakeSpawner(FakePopen(returncode=7))
+    service, _, state = engine_service(tmp_path, monkeypatch, spawner)
+
+    event = service.run_task("Demo__task", run_id="r1")
+
+    assert event.state == "failed"
+    assert event.problems == ("exit_7",)
+    assert "exit_code=7" in event.details
+    log_file = state / "logs" / "Demo__task.log"
+    assert log_file.is_file()
+    assert event.log_path == "logs/Demo__task.log"
+
+
+def test_cli_absent_at_run_time_fails_without_spawning(
+        monkeypatch, tmp_path):
+    spawner = FakeSpawner()
+    service, _, _ = engine_service(tmp_path, monkeypatch, spawner,
+                                   cli=tmp_path / "absent-cli")
+    service._cli_path = None
+    force_cli_absent(monkeypatch, tmp_path)
+
+    event = service.run_task("Demo__task", run_id="r1")
+
+    assert event.state == "failed"
+    assert event.problems == ("cli_unavailable",)
+    assert spawner.calls == []
+
+
+def test_spawner_launch_failure_absorbed_as_failed_event(
+        monkeypatch, tmp_path):
+    spawner = FakeSpawner(exc=OSError("[Errno 13] Permission denied"))
+    service, _, _ = engine_service(tmp_path, monkeypatch, spawner)
+
+    event = service.run_task("Demo__task", run_id="r1")
+
+    assert event.state == "failed"
+    assert event.problems == ("subprocess_error",)
+    assert "Permission denied" in " ".join(event.details)
+
+
+# ===== the shape-C post-landing rename (four cases) =====
+
+
+SHAPE_C_ENTRY = {
+    "Dataset_path": "datasets/PDLLMs_datasets/plant-multi-species-H3K27ac",
+    "download_url": "https://www.modelscope.cn/datasets/zhangtaolab/"
+                    "plant-multi-species-histone-modifications",
+}
+
+
+def c_service(tmp_path, monkeypatch, spawner):
+    repo = tmp_repo_with_registry(
+        tmp_path / "repo",
+        {"PDLLMs_datasets__plant-multi-species-H3K27ac": SHAPE_C_ENTRY})
+    state = tmp_path / "state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        spawner=spawner, cli_path=str(fake_cli(tmp_path)))
+    assert service.enqueue(
+        "PDLLMs_datasets__plant-multi-species-H3K27ac").action == "enqueued"
+    service.claim_next()
+    return service, repo
+
+
+def test_shape_c_rename_source_present_target_absent(monkeypatch,
+                                                     tmp_path):
+    """Case 1: the repo subtree landed; rename to the registry dir name
+    then the landing check passes -> done."""
+    service, repo = c_service(tmp_path, monkeypatch, FakeSpawner())
+    land_csvs(repo, "PDLLMs_datasets", "H3K27ac")
+
+    event = service.run_task(
+        "PDLLMs_datasets__plant-multi-species-H3K27ac", run_id="r1")
+
+    assert event.state == "done"
+    assert not (repo / "pipeline" / "datasets" / "PDLLMs_datasets"
+                / "H3K27ac").exists()          # source moved
+    land_csvs(repo, "PDLLMs_datasets", "plant-multi-species-H3K27ac")
+
+
+def test_shape_c_rename_target_already_complete_skips(monkeypatch,
+                                                      tmp_path):
+    """Case 2: the target already carries all three CSVs (a prior run's
+    rename) — skip, idempotent done."""
+    service, repo = c_service(tmp_path, monkeypatch, FakeSpawner())
+    land_csvs(repo, "PDLLMs_datasets", "plant-multi-species-H3K27ac")
+
+    event = service.run_task(
+        "PDLLMs_datasets__plant-multi-species-H3K27ac", run_id="r1")
+
+    assert event.state == "done"
+
+
+def test_shape_c_rename_target_incomplete_source_present_fails(
+        monkeypatch, tmp_path):
+    """Case 3: an incomplete target exists while the source also exists
+    — operator data is NEVER overwritten; the failure names it."""
+    service, repo = c_service(tmp_path, monkeypatch, FakeSpawner())
+    land_csvs(repo, "PDLLMs_datasets", "H3K27ac")            # source
+    land_csvs(repo, "PDLLMs_datasets", "plant-multi-species-H3K27ac",
+              splits=("train",))                             # partial
+
+    event = service.run_task(
+        "PDLLMs_datasets__plant-multi-species-H3K27ac", run_id="r1")
+
+    assert event.state == "failed"
+    assert event.problems == ("rename_target_exists",)
+    # nothing was overwritten: both trees intact
+    assert (repo / "pipeline" / "datasets" / "PDLLMs_datasets"
+            / "H3K27ac" / "train.csv").is_file()
+    target = (repo / "pipeline" / "datasets" / "PDLLMs_datasets"
+              / "plant-multi-species-H3K27ac")
+    assert (target / "train.csv").is_file()
+    assert not (target / "dev.csv").exists()
+
+
+def test_shape_c_rename_source_absent_falls_to_landing_check(
+        monkeypatch, tmp_path):
+    """Case 4: neither source nor target — the rename is a no-op and
+    the landing check fails with the missing files named."""
+    service, _repo = c_service(tmp_path, monkeypatch, FakeSpawner())
+
+    event = service.run_task(
+        "PDLLMs_datasets__plant-multi-species-H3K27ac", run_id="r1")
+
+    assert event.state == "failed"
+    assert event.problems == ("landing_incomplete",)
+    assert "missing=PDLLMs_datasets/plant-multi-species-H3K27ac/train.csv" \
+        in event.details
+
+
+# ===== log capture (D-03) =====
+
+
+def test_log_file_round_trip_verbatim_with_pkg_resources_skip(
+        monkeypatch, tmp_path):
+    stdout = ("Downloading Dataset to directory: /tmp/x\n"
+              "Successfully Downloaded from dataset lgq12697/GUE.\n")
+    stderr = ("UserWarning: pkg_resources is deprecated as an API. x\n"
+              "import pkg_resources\n"
+              "some real stderr failure line\n")
+    spawner = FakeSpawner(FakePopen(returncode=1, stdout=stdout,
+                                    stderr=stderr))
+    service, _, state = engine_service(tmp_path, monkeypatch, spawner)
+
+    event = service.run_task("Demo__task", run_id="r1")
+
+    assert event.state == "failed"
+    log_file = state / event.log_path
+    text = log_file.read_text(encoding="utf-8")
+    assert "Downloading Dataset to directory: /tmp/x" in text   # verbatim
+    assert "UserWarning: pkg_resources is deprecated" in text   # verbatim
+    assert download_queue.first_real_error_line(text.split("[stderr]\n")[-1]) \
+        == "some real stderr failure line"
+    (entry,) = service.entries()
+    assert entry.log_path == "logs/Demo__task.log"
+
+
+# ===== claim_next (D-04) =====
+
+
+def test_claim_next_claims_head_pending_in_file_order(monkeypatch,
+                                                      tmp_path):
+    service, _ = make_service(tmp_path, monkeypatch)
+    service.enqueue(DOWNLOADABLE_KEY)
+    service.enqueue("GUE__fungi_species_20")
+
+    first = service.claim_next()
+    second = service.claim_next()
+    third = service.claim_next()
+
+    assert first.key == DOWNLOADABLE_KEY
+    assert first.state == "downloading"
+    assert first.attempts == 1
+    assert first.started_at is not None
+    assert second.key == "GUE__fungi_species_20"
+    assert third is None
+    # persisted: the file carries both downloading rows
+    doc = json.loads(
+        (service._state_path).read_text(encoding="utf-8"))
+    assert [e["state"] for e in doc["entries"]] == [
+        "downloading", "downloading"]
+
+
+# ===== the REAL-subprocess cancel lane (killpg, no modelscope) =====
+
+
+def test_cancel_mid_run_terminates_process_group_real_subprocess(
+        monkeypatch, tmp_path):
+    """A spawner-default run against an inline sleep script (injected
+    CLI + tmp local_dir) proves the killpg termination, the
+    cancelled_by_operator classification, and partials-retained
+    semantics — no modelscope dependency."""
+    repo = tmp_repo_with_registry(
+        tmp_path / "repo", {"Demo__task": SHAPE_A_ENTRY})
+    state = tmp_path / "state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    sleep_cli = tmp_path / "modelscope"
+    sleep_cli.write_text("#!/bin/sh\nexec sleep 60\n", encoding="utf-8")
+    sleep_cli.chmod(0o755)
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        cli_path=str(sleep_cli))
+    assert service.enqueue("Demo__task").action == "enqueued"
+    service.claim_next()
+
+    result = {}
+    worker = threading.Thread(
+        target=lambda: result.__setitem__(
+            "event", service.run_task("Demo__task", run_id="cancel-1")))
+    worker.start()
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline \
+            and "Demo__task" not in service._active:
+        time.sleep(0.02)
+    assert "Demo__task" in service._active, "spawn never became active"
+    proc = service._active["Demo__task"]
+    pgid = proc.pid          # start_new_session: pgid == child pid
+
+    outcome = service.cancel("Demo__task")
+
+    assert outcome == "signalled"
+    worker.join(timeout=20)
+    assert not worker.is_alive(), "run_task did not return after cancel"
+    event = result["event"]
+    assert event.state == "failed"
+    assert event.problems == ("cancelled_by_operator",)
+    assert "exit_code=" in " ".join(event.details)
+    (entry,) = service.entries()
+    assert entry.state == "failed"
+    assert entry.problems == ("cancelled_by_operator",)
+    # the WHOLE process group is gone (killpg reached sleep too — a
+    # bare terminate() would have orphaned it holding the group open)
+    assert proc.poll() is not None
+    with pytest.raises(ProcessLookupError):
+        os.killpg(pgid, 0)
+    # partials retained: the service wrote nothing into the repo tree
+    datasets_tree = repo / "pipeline" / "datasets"
+    assert not datasets_tree.exists() or not any(
+        datasets_tree.rglob("*"))
