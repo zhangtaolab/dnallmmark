@@ -27,8 +27,7 @@ import json
 import subprocess
 from pathlib import Path
 
-import tui.services.about as about
-import tui.services.registries as registries
+from tui.services import about, registries
 from tui.services.about import AboutData
 from tui.services.registries import RegistryCounts
 from tui.strings import (
@@ -40,7 +39,6 @@ from tui.strings import (
     ABOUT_ROW_SOFTWARE,
     ABOUT_TITLE,
 )
-
 
 # =====================================================================
 # Isolation helper (the 09-01 discipline)
@@ -292,7 +290,9 @@ def test_derive_about_data_never_raises_into_compose(monkeypatch, tmp_path):
     assert data.official_counts == RegistryCounts(0, 0)
     assert data.custom_counts == (0, 0)
     assert data.n_audit_present is False
-    assert data.deps == {}
+    # per-package tolerance: the deps probe wrapper degrades EACH package
+    # to None (absent) — one exploding package never blanks the others
+    assert data.deps == {name: None for name in about.PROBED_PACKAGES}
     assert data.repo_url == about.REPO_URL
 
 

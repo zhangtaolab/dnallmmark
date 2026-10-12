@@ -149,7 +149,7 @@ class DnallmMarkTui(App):
     # zero-arg registry: they share the live app-state mark sets, so they
     # are built through build_selection_screen / the pushing screen —
     # a slot-built screen would carry fresh sets and silently lose marks.
-    # The 关于 screen (09-03, D-13 slot 6) is STATELESS — it joins the
+    # The about screen (09-03, D-13 slot 6) is STATELESS — it joins the
     # zero-arg registry as permitted (the only live state it touches is
     # the derived snapshot inside one worker run).
     # Classes instantiate lazily on first name access; name-based access

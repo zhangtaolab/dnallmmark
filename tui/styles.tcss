@@ -236,3 +236,28 @@ MinSizeScreen {
     color: $warning;
     padding: 0 2;                /* 2-cell status-line exception */
 }
+
+/* ===== 关于屏 (09-03, D-13 slot 6) ===== */
+
+#about-box {
+    padding: 1 4;                /* md token: the rows sit like a panel */
+}
+
+#about-title {
+    text-style: bold;            /* Heading role */
+    height: 1;                   /* row token */
+}
+
+.about-row {
+    height: auto;                /* wrapping values grow the row, never elide */
+}
+
+.about-label {
+    width: 10;                   /* fixed 8-cell CJK label + 2-cell gap */
+    height: auto;
+}
+
+.about-value {
+    width: 1fr;                  /* the wrapping value column */
+    height: auto;
+}

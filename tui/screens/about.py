@@ -1,16 +1,17 @@
 """
-about — the 关于 screen (Phase 9, 09-03, D-13 slot 6).
+about — the About screen (Phase 9, 09-03, D-13 slot 6).
 
 The read-only info screen behind top-menu slot 6: five fixed rows
-(软件版本 / 数据版本 / 里程碑阶段 / 依赖版本 / 仓库地址) whose values
-derive through the injected ``AboutServiceProtocol`` seam — every value
-wraps, never elides; absent dependencies render the 未安装 constant dim;
+(software / data / milestone / dependencies / repository, rendered from
+the ABOUT_ROW_* strings constants) whose values derive through the
+injected ``AboutServiceProtocol`` seam — every value wraps, never
+elides; absent dependencies render the absent-dependency constant dim;
 the screen composes fully on any machine (the partial-tolerance edge —
 T-09-08 absorbs every probe failure into a neutral value upstream).
 
 Contract (locked decisions):
 
-- Read-only (D-13 只读信息屏): the ONLY bindings are the nav digits
+- Read-only (the D-13 read-only info screen): the ONLY bindings are the nav digits
   (plain per-screen declarations — a focused Input elsewhere consumes
   digit keystrokes first, Pattern 2) plus the app-level ``?`` / ``q``.
   No action keys, no refresh.
@@ -31,6 +32,7 @@ Contract (locked decisions):
 
 from typing import ClassVar, Protocol
 
+from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
@@ -39,6 +41,7 @@ from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Label, Static
 
+from tui.services import about as about_service
 from tui.services.about import AboutData
 from tui.strings import (
     ABOUT_DEP_ABSENT,
@@ -61,8 +64,9 @@ from tui.strings import (
     NAV_LABEL_SELECTION,
 )
 
-# Dim style for absent-dependency values (theme token — the 未安装 state
-# renders secondary; the word itself is the NO_COLOR meaning-carrier).
+# Dim style for absent-dependency values (theme token — the
+# absent-dependency state renders secondary; the word itself is the
+# NO_COLOR meaning-carrier).
 _STYLE_DIM = "$text-muted"
 
 
@@ -74,15 +78,21 @@ class AboutServiceProtocol(Protocol):
 
 
 class AboutBackend:
-    """The real about service adapter — thin delegation over 09-03."""
+    """The real about service adapter — thin delegation over 09-03.
+
+    Every semantic stays in ``tui/services/about`` (the tested service);
+    this adapter only presents the module function as the object seam the
+    screen's constructor injection consumes (the 08-06 EnvCheckBackend
+    pattern).
+    """
 
     def derive_about_data(self) -> AboutData:
         """Delegate to the tested service module."""
-        raise NotImplementedError  # GREEN lands the delegation
+        return about_service.derive_about_data()
 
 
 class AboutScreen(Screen):
-    """The read-only 关于 screen: five fixed rows over tolerant probes."""
+    """The read-only About screen: five fixed rows over tolerant probes."""
 
     # D-13 slot 6 (the top-menu active-slot marker the nav bar reads).
     NAV_SLOT: ClassVar[int] = 6
@@ -148,5 +158,63 @@ class AboutScreen(Screen):
         self.post_message(self.AboutLoaded(data))
 
     def on_about_screen_about_loaded(self, message: AboutLoaded) -> None:
-        """Render the five values from the loaded snapshot."""
-        raise NotImplementedError  # GREEN lands the row rendering
+        """Render the five values from the loaded snapshot.
+
+        Values wrap, never elide (the wrapping value column); absent
+        dependencies render the absent-dependency constant dim inside the
+        deps row; a missing sha renders the bare version.
+        """
+        data = message.data
+        self._set_value("software", self._software_value(data))
+        self._set_value("data", self._data_value(data))
+        self._set_value("milestone", ABOUT_MILESTONE_STAGE)
+        self._set_value("deps", self._deps_value(data))
+        self._set_value("repo", data.repo_url)
+
+    # ----- value composition (label-safe data -> renderable content) -----
+
+    def _set_value(self, row_id: str, content) -> None:
+        """Write one row's value column (str or rich Text)."""
+        self.query_one(f"#about-value-{row_id}", Static).update(content)
+
+    @staticmethod
+    def _software_value(data: AboutData) -> str:
+        """Software row: the version, with the git sha appended when resolved."""
+        if data.git_sha:
+            return ABOUT_VALUE_SOFTWARE_WITH_SHA.format(
+                version=data.software_version, sha=data.git_sha)
+        return data.software_version
+
+    @staticmethod
+    def _data_value(data: AboutData) -> str:
+        """Data row: official-only counts + custom counts + the n_audit signal."""
+        audit = (
+            ABOUT_N_AUDIT_PRESENT if data.n_audit_present
+            else ABOUT_N_AUDIT_ABSENT
+        )
+        return ABOUT_VALUE_DATA.format(
+            om=data.official_counts.models,
+            od=data.official_counts.datasets,
+            cm=data.custom_counts[0],
+            cd=data.custom_counts[1],
+            audit=audit,
+        )
+
+    @staticmethod
+    def _deps_value(data: AboutData) -> Text:
+        """Deps row: per-package version lines; absent renders the
+        absent-dependency constant dim.
+
+        The joiner is the halfwidth middle dot with spaces (the mockup
+        format); package names and versions stay English verbatim.
+        """
+        segments: list[Text] = []
+        for position, (package, version) in enumerate(data.deps.items()):
+            if position:
+                segments.append(Text(" · "))
+            segments.append(Text(f"{package} "))
+            if version is None:
+                segments.append(Text(ABOUT_DEP_ABSENT, style=_STYLE_DIM))
+            else:
+                segments.append(Text(version))
+        return Text.assemble(*segments)
