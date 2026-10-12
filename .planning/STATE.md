@@ -4,19 +4,19 @@ milestone: v1.2
 milestone_name: TUI任务
 current_phase: 10
 current_phase_name: Data Manager (Downloads & Verification)
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 10-03-PLAN.md
-last_updated: "2026-10-12T15:40:00.000Z"
+stopped_at: Completed 10-04-PLAN.md
+last_updated: "2026-10-12T16:50:00.000Z"
 last_activity: 2026-10-12
-last_activity_desc: Phase 10 executing (waves 1-3 of 6 complete)
-state_head: 8b9b063d54111cf72c769859bacb82a0fefb71da
+last_activity_desc: Phase 10 executing (waves 1-4 of 6 complete)
+state_head: 57d37fec7913160e92c305673088198f06c08fbf
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 25
-  completed_plans: 22
-  percent: 88
+  completed_plans: 23
+  percent: 92
 ---
 
 # Project State
@@ -31,10 +31,10 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 10 — Data Manager (Downloads & Verification)
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 6
 Status: Executing
-Last activity: 2026-10-12 — Phase 10 executing (waves 1-3 of 6 complete)
+Last activity: 2026-10-12 — Phase 10 executing (waves 1-4 of 6 complete)
 
 Progress (v1.2): [██████████] 100% (13/13 plans)
 
@@ -82,6 +82,7 @@ Progress (v1.2): [██████████] 100% (13/13 plans)
 | Phase 10 P01 | 43m | 3 tasks | 4 files |
 | Phase 10 P02 | 30 min | 3 tasks | 2 files |
 | Phase 10 P03 | 25 min | 3 tasks | 5 files |
+| Phase 10 P04 | 58 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -163,6 +164,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 10]: 10-02: reconcile verdicts split on artifact-disproof (parsed-record violations -> mismatch, the banner data) vs cannot-run (nonzero/timeout/unparseable/key-absent -> failed); the done gate populates entry.reconcile as the reconciled_rows overlay source, and ONLY reaudit_baseline may ever construct a no-flag audit argv (R-03 default outputs)
 - [Phase 10]: 10-03: the zenodo bundle entry carries {per_key: verdict} in entry.reconcile — reconciled_rows (the D-11 overlay source) deliberately contributes nothing for it; bundle-landed keys flip the env disk-scan kernel naturally, selection presence follows the g re-audit
 - [Phase 10]: 10-03: bundle final-state precedence is failed(nothing-landed/stage-failed) > mismatch > done, and done additionally requires zero FAILED reconciles (a swallowed infrastructure failure can never read as done); the string block landed with exactly the 47 constant names 10-04/10-05 reference (the W1 mirror), tripwired by inventory test
+- [Phase 10]: 10-04: per-worker @work groups are mandatory for concurrent exclusive workers — textual exclusivity cancels by (node, group), so the mount pair (snapshot + Zenodo probe) sharing the default group silently cancelled each other; probe-pinned on 8.2.8, fixed as dl-snapshot/dl-probe/dl-reaudit
+- [Phase 10]: 10-04: the driver posts one indeterminate (percent=None) claim tick so the row flips to downloading before any CLI percent parses (unparsed output may never fire a real tick); apply_queue_event/apply_queue_progress re-read the entry from the service (persisted-state-as-truth) so late/duplicate events can never overwrite newer state
+- [Phase 10]: 10-04: boot resume fires ONLY from tui/__main__ (call_later(boot_resume_queue)) — App.on_mount never kicks, so test-constructed apps stay provably inert while the operator's console resumes; the busy-guard proof is the generation counter staying at 1 across two rapid kicks
+- [Phase 10]: 10-04: the two-Protocol seam — QueueDriverProtocol (app: load/entries/claim_next/run_task) and DataManagerServiceProtocol (screen: snapshot/enqueue/probe/reaudit/channel_detail/read_log) bridged by the Any-typed DataManagerBackend over the ONE shared queue instance (the build_data_manager_screen factory prevents a zero-arg SCREENS slot from forking the state)
 
 ### Pending Todos
 

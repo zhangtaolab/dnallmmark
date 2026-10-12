@@ -210,7 +210,7 @@ Plans:
 - [x] 10-03-PLAN.md — Zenodo probe + bundle driver (DATA-04): 4-state GET probe, guarded download/extract, zenodo-kind queue integration, the full DL_/QUEUE_ string block + ENV_ROUTE amendment
 
 **Wave 4** *(blocked on 10-03)*
-- [ ] 10-04-PLAN.md — data-manager screen (slot 3): two-pane layout, five-state glyphs, progress cells, mismatch banners, drill-down, Zenodo line, d/r/x/a/enter/g/z; app-level driver worker + boot resume; nav promotion
+- [x] 10-04-PLAN.md — data-manager screen (slot 3): two-pane layout, five-state glyphs, progress cells, mismatch banners, drill-down, Zenodo line, d/r/x/a/enter/g/z; app-level driver worker + boot resume; nav promotion
 
 **Wave 5** *(blocked on 10-04)*
 - [ ] 10-05-PLAN.md — cross-screen integration (D-14/D-11): selection `d` enqueue on presence-✗ rows, presence overlay in the selection snapshot + live flip, env route hint proof
