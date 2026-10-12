@@ -535,3 +535,321 @@ def test_service_module_never_imports_modelscope():
     source = Path(download_queue.__file__).read_text(encoding="utf-8")
     for pattern in ("import modelscope", "from modelscope"):
         assert pattern not in source
+
+
+# =====================================================================
+# Lane 2: R-01/R-02 channel resolution + CLI probe + argv composition
+# =====================================================================
+
+
+def tmp_repo_with_registry(tmp_path, entries):
+    """A tmp repo root carrying a synthetic official dataset registry —
+    channel resolution is derived from registry fields, so the shape
+    pins run over controlled entries with a tmp local_dir."""
+    pipeline = tmp_path / "pipeline"
+    pipeline.mkdir(parents=True, exist_ok=True)
+    (pipeline / "datasets_info.json").write_text(
+        json.dumps(entries), encoding="utf-8")
+    return tmp_path
+
+
+def synth_entries():
+    """One synthetic entry per disposition (repos from the R-02 table)."""
+    return {
+        "Demo__task": {
+            "Dataset_path": "datasets/Demo/task",
+            "download_url":
+                "https://www.modelscope.cn/datasets/lgq12697/GUE",
+            "download_url_alternates":
+                "https://huggingface.co/datasets/whatever",
+            "Train": 10, "Dev": 2, "Test": 2},
+        "DemoA2__alt": {
+            "Dataset_path": "datasets/Demo/alt_task",
+            "download_url":
+                "https://drive.google.com/file/d/XYZ/view",
+            "download_url_alternates":
+                "https://www.modelscope.cn/datasets/lgq12697/GUE"},
+        "DemoB__leaf": {
+            "Dataset_path": "datasets/DemoB/leaf_task",
+            "download_url": "https://www.modelscope.cn/datasets/"
+                            "zhangtaolab/cross_species_leaf_absolute_"
+                            "translation"},
+        "PDLLMs_datasets__plant-multi-species-H3K27ac": {
+            "Dataset_path":
+                "datasets/PDLLMs_datasets/plant-multi-species-H3K27ac",
+            "download_url": "https://www.modelscope.cn/datasets/"
+                            "zhangtaolab/plant-multi-species-histone-"
+                            "modifications"},
+        "DemoD__parquet": {
+            "Dataset_path": "datasets/DemoD/parquet_task",
+            "download_url":
+                "https://www.modelscope.cn/datasets/lgq12697/"
+                "Genomic_Benchmarks"},
+        "DemoU__future": {
+            "Dataset_path": "datasets/DemoU/future_task",
+            "download_url": "https://www.modelscope.cn/datasets/"
+                            "someone/brand_new_repo"},
+        "DemoM__bad": {
+            "Dataset_path": "datasets/DemoM/bad_task",
+            "download_url":
+                "https://www.modelscope.cn/datasets/a/b/c"},
+        "DemoN__nomirror": {
+            "Dataset_path": "datasets/DemoN/nomirror_task",
+            "download_url":
+                "https://drive.google.com/file/d/ABC/view",
+            "download_url_alternates":
+                "https://huggingface.co/datasets/other"},
+    }
+
+
+def service_over(tmp_repo, tmp_path):
+    return download_queue.DownloadQueueService(
+        repo_root=tmp_repo, cli_path=str(fake_cli(tmp_path)))
+
+
+def is_modelscope(url):
+    from urllib.parse import urlparse
+    host = urlparse(url).netloc.lower()
+    return host == "modelscope.cn" or host.endswith(".modelscope.cn")
+
+
+def test_r02_census_46_downloadable_4_disabled_over_committed_registry(
+        monkeypatch, tmp_path):
+    """THE R-02 gate: over the committed official registry, exactly 46
+    keys resolve downloadable (38 shape A + 5 shape B + 3 shape C) and
+    4 are disabled with reason shape_d_layout; every downloadable
+    spec's repo_id matches its shape-table row (computed key-by-key —
+    registry/mirror drift surfaces here as a loud failure, never a
+    silent bad download)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+    registry = committed_registry()
+
+    per_shape = {"A": [], "B": [], "C": []}
+    disabled = {}
+    for key in registry:
+        spec = service.resolve_channel(key)
+        assert spec is not None, key
+        if spec.reason_code is None:
+            per_shape[spec.shape].append(key)
+        else:
+            disabled[key] = spec.reason_code
+
+    assert {shape: len(keys) for shape, keys in per_shape.items()} == {
+        "A": 38, "B": 5, "C": 3}
+    assert set(disabled) == {
+        "Genomic_Benchmarks__coding",
+        "Genomic_Benchmarks__human_vs_worm",
+        "Genomic_Benchmarks__regulatory_region_type",
+        "PDLLMs_datasets__plant-multi-species-open-chromatin"}
+    assert {reason for reason in disabled.values()} == {
+        download_queue.REASON_SHAPE_D}
+    table = {
+        "A": download_queue.SHAPE_A_REPOS,
+        "B": download_queue.SHAPE_B_REPOS,
+        "C": {download_queue.SHAPE_C_REPO},
+    }
+    for shape, keys in per_shape.items():
+        for key in keys:
+            spec = service.resolve_channel(key)
+            assert spec.repo_id in table[shape], (key, spec.repo_id)
+            assert spec.source_url is not None
+
+
+def test_r01_gue_primary_google_drive_resolves_via_alternates(
+        monkeypatch, tmp_path):
+    """R-01 pinned: a GUE key's primary is the shared Google Drive
+    file, so the modelscope mirror in download_url_alternates wins —
+    and the winning URL rides the spec as data."""
+    pin_state_dir(monkeypatch, tmp_path)
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+    registry = committed_registry()
+
+    spec = service.resolve_channel("GUE__EPI_GM12878")
+
+    assert spec.reason_code is None
+    assert spec.repo_id == "lgq12697/GUE"
+    assert spec.source_url == registry["GUE__EPI_GM12878"][
+        "download_url_alternates"]
+    assert is_modelscope(spec.source_url)
+
+
+def test_r01_modelscope_primary_ignores_alternates(monkeypatch, tmp_path):
+    """R-01 pinned (computed key): a key whose PRIMARY is already the
+    modelscope mirror resolves from the primary; the alternates field
+    is never consulted."""
+    pin_state_dir(monkeypatch, tmp_path)
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+    registry = committed_registry()
+    primary_ms = [key for key, entry in registry.items()
+                  if is_modelscope(entry.get("download_url", ""))]
+    assert primary_ms, "committed registry must carry modelscope primaries"
+
+    key = primary_ms[0]
+    spec = service.resolve_channel(key)
+
+    assert spec.reason_code is None
+    assert spec.source_url == registry[key]["download_url"]
+
+
+def test_shape_a_argv_list_absolute_exact_flag_order(monkeypatch,
+                                                     tmp_path):
+    repo = tmp_repo_with_registry(tmp_path / "repo", synth_entries())
+    service = service_over(repo, tmp_path)
+
+    spec = service.resolve_channel("Demo__task")
+    argv = download_queue.compose_download_argv(spec, "/fake/cli")
+
+    assert spec.shape == "A"
+    assert spec.final_task_dir == "task"
+    assert argv == [
+        "/fake/cli", "download", "--dataset", "lgq12697/GUE",
+        "--local_dir", str(repo / "pipeline" / "datasets" / "Demo"),
+        "--include", "task/*", "--exclude", "*.DS_Store"]
+    assert isinstance(argv, list)                 # never a shell string
+    assert Path(argv[argv.index("--local_dir") + 1]).is_absolute()
+
+
+def test_shape_b_argv_whole_repo_local_dir_no_include(monkeypatch,
+                                                      tmp_path):
+    repo = tmp_repo_with_registry(tmp_path / "repo", synth_entries())
+    service = service_over(repo, tmp_path)
+
+    spec = service.resolve_channel("DemoB__leaf")
+    argv = download_queue.compose_download_argv(spec, "/fake/cli")
+
+    assert spec.shape == "B"
+    assert argv == [
+        "/fake/cli", "download", "--dataset",
+        "zhangtaolab/cross_species_leaf_absolute_translation",
+        "--local_dir",
+        str(repo / "pipeline" / "datasets" / "DemoB" / "leaf_task"),
+        "--exclude", "*.DS_Store"]
+    assert "--include" not in argv
+
+
+def test_shape_c_argv_subtree_include_plus_rename_pair(monkeypatch,
+                                                       tmp_path):
+    repo = tmp_repo_with_registry(tmp_path / "repo", synth_entries())
+    service = service_over(repo, tmp_path)
+
+    spec = service.resolve_channel(
+        "PDLLMs_datasets__plant-multi-species-H3K27ac")
+    argv = download_queue.compose_download_argv(spec, "/fake/cli")
+
+    assert spec.shape == "C"
+    assert argv == [
+        "/fake/cli", "download", "--dataset",
+        "zhangtaolab/plant-multi-species-histone-modifications",
+        "--local_dir",
+        str(repo / "pipeline" / "datasets" / "PDLLMs_datasets"),
+        "--include", "H3K27ac/*", "--exclude", "*.DS_Store"]
+    assert spec.rename == (
+        "PDLLMs_datasets/H3K27ac",
+        "PDLLMs_datasets/plant-multi-species-H3K27ac")
+    assert spec.final_task_dir == "plant-multi-species-H3K27ac"
+
+
+def test_shape_d_composes_no_argv_carries_reason(monkeypatch, tmp_path):
+    repo = tmp_repo_with_registry(tmp_path / "repo", synth_entries())
+    service = service_over(repo, tmp_path)
+
+    spec = service.resolve_channel("DemoD__parquet")
+
+    assert spec.reason_code == download_queue.REASON_SHAPE_D
+    assert download_queue.channel_state(spec) == "disabled"
+    assert download_queue.compose_download_argv(spec, "/fake/cli") \
+        is None
+
+
+def test_malformed_repo_id_degrades_never_reaches_argv(monkeypatch,
+                                                       tmp_path):
+    """T-10-01-01: a registry URL whose path yields a multi-segment
+    repo id fails the allowlist regex — unknown disposition, no argv."""
+    repo = tmp_repo_with_registry(tmp_path / "repo", synth_entries())
+    service = service_over(repo, tmp_path)
+
+    spec = service.resolve_channel("DemoM__bad")
+
+    assert spec.reason_code == download_queue.REASON_MALFORMED_REPO_ID
+    assert download_queue.channel_state(spec) == "unknown"
+    assert download_queue.compose_download_argv(spec, "/fake/cli") \
+        is None
+
+
+def test_unknown_repo_degrades_disabled(monkeypatch, tmp_path):
+    """Registry/mirror evolution tolerance: a repo absent from the
+    R-02 table is disabled with reason unknown_repo_shape, never a
+    crash and never a guessed argv."""
+    repo = tmp_repo_with_registry(tmp_path / "repo", synth_entries())
+    service = service_over(repo, tmp_path)
+
+    spec = service.resolve_channel("DemoU__future")
+
+    assert spec.reason_code == download_queue.REASON_UNKNOWN_REPO
+    assert download_queue.channel_state(spec) == "disabled"
+    assert download_queue.compose_download_argv(spec, "/fake/cli") \
+        is None
+
+
+def test_no_modelscope_mirror_degrades_unknown(monkeypatch, tmp_path):
+    repo = tmp_repo_with_registry(tmp_path / "repo", synth_entries())
+    service = service_over(repo, tmp_path)
+
+    spec = service.resolve_channel("DemoN__nomirror")
+
+    assert spec.reason_code == download_queue.REASON_NO_MIRROR
+    assert download_queue.channel_state(spec) == "unknown"
+    assert spec.source_url is None
+
+
+# ===== CLI probe resolution order (live-probed; -m never works) =====
+
+
+def test_cli_probe_explicit_arg_wins(monkeypatch, tmp_path):
+    """An explicit cli_path returns verbatim even when a venv sibling
+    exists — the seam tests and the sleep-cancel lane inject here."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "modelscope").write_text("", encoding="utf-8")
+    monkeypatch.setattr(sys, "executable", str(bin_dir / "python"))
+
+    resolved = download_queue.resolve_modelscope_cli("/explicit/cli")
+
+    assert resolved == Path("/explicit/cli")
+
+
+def test_cli_probe_venv_sibling(monkeypatch, tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "modelscope").write_text("", encoding="utf-8")
+    monkeypatch.setattr(sys, "executable", str(bin_dir / "python"))
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    resolved = download_queue.resolve_modelscope_cli()
+
+    assert resolved == bin_dir / "modelscope"
+
+
+def test_cli_probe_which_fallback(monkeypatch, tmp_path):
+    bin_dir = tmp_path / "elsewhere"        # NO modelscope sibling
+    bin_dir.mkdir(parents=True)
+    monkeypatch.setattr(sys, "executable", str(bin_dir / "python"))
+    monkeypatch.setattr("shutil.which",
+                        lambda name: "/usr/local/bin/modelscope")
+
+    resolved = download_queue.resolve_modelscope_cli()
+
+    assert resolved == Path("/usr/local/bin/modelscope")
+
+
+def test_cli_probe_absent_yields_none(monkeypatch, tmp_path):
+    bin_dir = tmp_path / "empty"            # no sibling, which -> None
+    bin_dir.mkdir()
+    monkeypatch.setattr(sys, "executable", str(bin_dir / "python"))
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    assert download_queue.resolve_modelscope_cli() is None
