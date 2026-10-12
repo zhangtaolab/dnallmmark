@@ -45,14 +45,16 @@ from tui.strings import (
 # =====================================================================
 
 def _pin_config_roots(monkeypatch, tmp_path):
-    """Pin both config-root env overrides at tmp_path (never the real home)."""
+    """Pin both custom-registry env overrides at ONE tmp root (never the
+    real home). WR-01 (09 review): the store resolves ONE root — the
+    ``DNALLMMARK_CUSTOM_REGISTRY_DIR`` override first, else the TUI
+    config root — so the two pins must agree on the same directory
+    (pinning them divergently would write the customs where the overlay
+    reader never looks)."""
     config = tmp_path / "config"
     config.mkdir(exist_ok=True)
     monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(config))
-    # belt-and-braces: even if a probe ever routed through registry_loader,
-    # the overlay resolves to an empty tmp dir (absent file = no overlay)
-    monkeypatch.setenv(
-        "DNALLMMARK_CUSTOM_REGISTRY_DIR", str(tmp_path / "custom-empty"))
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(config))
     return config
 
 

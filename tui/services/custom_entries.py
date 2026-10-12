@@ -45,8 +45,13 @@ Contract (locked decisions):
   entries that lack the field (the loader-side skip lands in 09-02).
 - T-09-03 (write authorization): no code path here targets the official
   ``pipeline/{models,datasets}_info.json`` — writes resolve exclusively
-  under ``settings.config_dir()`` through ``settings.atomic_write``
-  (binding constraint 11, the cardinal separation).
+  under the env-aware custom-registry root (the
+  ``DNALLMMARK_CUSTOM_REGISTRY_DIR`` whole-dir override, else
+  ``settings.config_dir()`` — WR-01, 09 review: the SAME resolution the
+  overlay reader and the 09-06 management read apply, so a single-var
+  pin can never split the store across two files) through
+  ``settings.atomic_write`` (binding constraint 11, the cardinal
+  separation).
 
 ZERO textual imports (the services-tier invariant declared in
 ``tui/services/__init__.py``; locked by
@@ -75,6 +80,11 @@ from tui.services import settings
 KIND_MODELS = "models"
 KIND_DATASETS = "datasets"
 
+#: The overlay reader's whole-dir env override — the SAME name
+#: ``registry_loader.custom_registry_dir`` and the 09-06 management
+#: read resolve; imported-by-convention, never retyped.
+CUSTOM_DIR_ENV = "DNALLMMARK_CUSTOM_REGISTRY_DIR"
+
 KIND_FILE_NAMES = {
     KIND_MODELS: registry_loader.CUSTOM_MODELS_NAME,
     KIND_DATASETS: registry_loader.CUSTOM_DATASETS_NAME,
@@ -95,23 +105,50 @@ OFFICIAL_REGISTRY_PATHS = (
 )
 
 
+def _env_aware_config_root():
+    """The default custom-registry root every read AND write resolves
+    (WR-01, 09 review).
+
+    ``DNALLMMARK_CUSTOM_REGISTRY_DIR`` overrides the root ahead of the
+    settings config root — the SAME resolution the overlay reader
+    (``registry_loader.custom_registry_dir``) and the 09-06 management
+    read (``SelectionBackend._overlay_registry_dir``) apply — so the
+    write rail (land / undo / set_enabled / export) and every read
+    describe ONE file even when an operator pins only the overlay var
+    with ``DNALLMMARK_TUI_CONFIG_DIR`` unset. Unset/empty falls back to
+    ``settings.config_dir()`` (the unchanged default: both roots resolve
+    ``~/.config/dnallmmark`` there, and a pinned
+    ``DNALLMMARK_TUI_CONFIG_DIR`` keeps working because the overlay var
+    is unset in that configuration).
+
+    Returns:
+        Path: the custom-registry root (may not exist yet —
+        ``atomic_write`` creates parents on demand).
+    """
+    override = os.environ.get(CUSTOM_DIR_ENV)
+    if override:
+        return Path(override)
+    return settings.config_dir()
+
+
 def custom_registry_path(kind, registry_dir=None):
     """Resolve the user-owned custom-registry file path for ``kind``.
 
-    The file lives under ``settings.config_dir()`` (the D-04 XDG config
-    root — the same root the pipeline-side resolver yields on Linux), so
-    a file written here is what ``registry_loader`` reads through
-    ``custom_registry_dir()`` when both resolve the default root.
+    The file lives under the env-aware custom-registry root (see
+    ``_env_aware_config_root`` — the D-04 XDG config root by default,
+    the ``DNALLMMARK_CUSTOM_REGISTRY_DIR`` whole-dir override when
+    pinned), so a file written here is what ``registry_loader`` reads
+    through ``custom_registry_dir()`` when both resolve the same root.
 
     Args:
         kind (str): ``KIND_MODELS`` or ``KIND_DATASETS``.
         registry_dir (Path | str | None): the directory holding the
-            custom registry file; ``None`` (every pre-09-06 caller)
-            resolves ``settings.config_dir()``. The 09-06 selection
-            backend passes the overlay-loader root so its management
-            view and the overlay-merged view always describe ONE file
-            (Pitfall 7: the two views can never disagree about which
-            keys exist).
+            custom registry file; ``None`` (every default caller, read
+            AND write) resolves the env-aware root. The 09-06 selection
+            backend passes the overlay-loader root explicitly so its
+            management view and the overlay-merged view always describe
+            ONE file (Pitfall 7: the two views can never disagree about
+            which keys exist).
 
     Returns:
         Path: the custom-registry file path (may not exist yet — absence
@@ -127,7 +164,7 @@ def custom_registry_path(kind, registry_dir=None):
         )
     base = (
         Path(registry_dir) if registry_dir is not None
-        else settings.config_dir()
+        else _env_aware_config_root()
     )
     return base / KIND_FILE_NAMES[kind]
 
@@ -145,9 +182,9 @@ def read_entries(kind, registry_dir=None):
     Args:
         kind (str): ``KIND_MODELS`` or ``KIND_DATASETS``.
         registry_dir (Path | str | None): the directory holding the
-            custom registry file; ``None`` resolves ``settings.config_dir()``
-            (see ``custom_registry_path`` — the write side and the default
-            read side always resolve the SAME root).
+            custom registry file; ``None`` resolves the env-aware root
+            (see ``custom_registry_path`` — the write side and the
+            default read side always resolve the SAME root).
 
     Returns:
         tuple[dict, str | None]: ``(entries, None)`` — the plain

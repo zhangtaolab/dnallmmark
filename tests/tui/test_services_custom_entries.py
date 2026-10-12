@@ -176,6 +176,53 @@ def test_tracer_land_then_overlay_load_then_undo(tmp_path, monkeypatch):
     assert len(datasets) == 50
 
 
+def test_single_overlay_pin_routes_writes_to_the_pinned_root(
+        tmp_path, monkeypatch):
+    """WR-01 (09 review): pinning ONLY ``DNALLMMARK_CUSTOM_REGISTRY_DIR``
+    (the documented whole-dir override) routes every WRITE through the
+    pinned root — the same root the read side and the pipeline overlay
+    loader resolve. Pre-fix, the write rail resolved
+    ``settings.config_dir()`` unconditionally: a land/toggle/undo in a
+    single-var-pin configuration silently targeted the divergent config
+    root, so the toggle deterministically missed the key and a just-
+    landed entry was invisible to the table AND the loader."""
+    overlay = tmp_path / "overlay-root"
+    overlay.mkdir()
+    # The deliberately DIVERGENT TUI config root: a write landing here
+    # would be invisible to both read rails (and to the loader). Also
+    # keeps the test machine-safe pre-fix — the real home is never
+    # touched even while reproducing the divergence.
+    config = tmp_path / "config-root"
+    config.mkdir()
+    monkeypatch.setenv(OVERLAY_ENV, str(overlay))
+    monkeypatch.setenv(CONFIG_ENV, str(config))
+
+    path = custom_entries.land(custom_entries.KIND_MODELS, "pinned-lm", {
+        "Model_path": str(tmp_path / "models" / "pinned-lm"),
+        "type": "MLM",
+    })
+
+    # the land wrote the overlay loader's root, and the divergent config
+    # root stayed empty — never two files
+    assert path == overlay / registry_loader.CUSTOM_MODELS_NAME
+    assert list(config.iterdir()) == []
+    # the default read (the management view's root) sees it on the SAME
+    # file, as does the pipeline-side resolver
+    entries, error = custom_entries.read_entries(custom_entries.KIND_MODELS)
+    assert error is None and list(entries) == ["pinned-lm"]
+    assert registry_loader.custom_registry_dir() == overlay
+    # the toggle finds the key and rewrites the SAME file
+    assert custom_entries.set_enabled(
+        custom_entries.KIND_MODELS, "pinned-lm", False)
+    entries, _ = custom_entries.read_entries(custom_entries.KIND_MODELS)
+    assert entries["pinned-lm"]["enabled"] is False
+    assert list(config.iterdir()) == []
+    # undo removes it from the SAME file
+    assert custom_entries.undo(custom_entries.KIND_MODELS, "pinned-lm")
+    entries, _ = custom_entries.read_entries(custom_entries.KIND_MODELS)
+    assert entries == {}
+
+
 # ===== Read edge: absent file is empty, never an error, never created =====
 
 
