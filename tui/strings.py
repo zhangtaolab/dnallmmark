@@ -390,6 +390,11 @@ WIZ_REPORT_BACK_HINT = "[esc] 返回修改"
 # gauntlet title verbatim; the back hint is the gauntlet mockup's esc row.
 WIZ_GAUNTLET_BACK_HINT = "[esc] 返回"
 GAUNTLET_TITLE = "接入 gauntlet — {key}"
+# Step-1-only affordances (D-11; auto-default #7 placement) — the binding
+# labels; the views themselves are 09-05 against the on_import/on_export
+# seams.
+WIZ_IMPORT_LABEL = "从文件导入"
+WIZ_EXPORT_LABEL = "导出自定义注册表"
 
 # ===== 导航壳 (NAV_, 09-03, D-13/D-15) =====
 # Top-menu slot names — the RATIFIED verbatim resource nouns (D-13,

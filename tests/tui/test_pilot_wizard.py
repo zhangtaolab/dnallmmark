@@ -46,14 +46,17 @@ from tui.strings import (
     ENV_STATE_PENDING,
     GAUNTLET_TITLE,
     WIZ_CANCEL_CONFIRM,
+    WIZ_EXPORT_LABEL,
     WIZ_FOOTER_HINT,
     WIZ_FOOTER_HINT_LAST,
     WIZ_GAUNTLET_BACK_HINT,
+    WIZ_IMPORT_LABEL,
     WIZ_NUMERIC_HINT,
     WIZ_PATH_EXISTS,
     WIZ_PATH_MISSING_ADVISORY,
     WIZ_PROBLEM_COLLISION_OFFICIAL,
     WIZ_PROBLEM_LINE,
+    WIZ_PROBLEM_PATH_MISSING,
     WIZ_PROBLEMS_HEADER,
     WIZ_QUIRK_FP32_ONLY,
     WIZ_QUIRK_NO_SAFETENSORS,
@@ -64,7 +67,6 @@ from tui.strings import (
     WIZD_STEPS,
     WIZM_STEPS,
 )
-
 # The i18n grep gate target (the zero-Chinese-literals module).
 _WIZARD_MODULE_FILE = Path(__file__).resolve().parents[2] / "tui" / "screens" / "wizard.py"
 
@@ -754,3 +756,194 @@ async def test_report_wraps_the_68_char_key_never_elides():
         assert len(texts) > 2, "the long problem must wrap, not fit one line"
         joined = "".join(t.rstrip() for t in texts)
         assert _KEY68 in joined, "the full key renders across the wrap"
+
+
+# =====================================================================
+# Task 3 — prefill (D-12), the f/o seams, the 80x24 long-text backstop
+# =====================================================================
+
+#: A landed custom model entry the prefill source provides (the 09-01
+#: land shape: the key field is dropped, the name stamps + quirks ride).
+_PREFILL_MODEL = {
+    "my-custom-lm": {
+        "Model_name": "my-custom-lm",
+        "Model_path": "models/my-custom-lm",
+        "size (M)": 88,
+        "species": "plants",
+        "type": "CLM",
+        "architecture": "Bert",
+        "Tokenizer": "6-mer",
+        "context_len (bp)": 1000,
+        "huggingface": "org/my-custom-lm",
+        "modelscope": "org/my-custom-lm",
+        "series": "MySeries",
+        "quirks": {"no_safetensors": True, "fp32_only": False,
+                   "special_head": False},
+        "enabled": False,
+    },
+}
+
+
+async def test_prefill_fills_every_model_field_across_all_steps():
+    """D-12: a cursor custom entry prefills every field, quirks included."""
+    seams = _Seams()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _model_wizard(seams, prefill=_PREFILL_MODEL)
+        await _open(pilot, app, wizard)
+        # step 1 — the key included (collision validation forces changes)
+        assert wizard.query_one("#wiz-key", Input).value == "my-custom-lm"
+        assert wizard.query_one(
+            "#wiz-model-path", Input).value == "models/my-custom-lm"
+        assert str(wizard.query_one(
+            "#wiz-model-path-check", Static).content) == (
+            WIZ_PATH_MISSING_ADVISORY)  # prefill refreshes advisories too
+        assert wizard.query_one("#wiz-size-m", Input).value == "88"
+        assert wizard.query_one(
+            "#wiz-species", SelectionList).selected == ["plants"]
+        # step 2 — enum prefill renders selected, numerics as text
+        await _advance(pilot, wizard)
+        assert wizard.query_one("#wiz-type", SelectionList).selected == ["CLM"]
+        assert wizard.query_one(
+            "#wiz-architecture", Input).value == "Bert"
+        assert wizard.query_one(
+            "#wiz-tokenizer", SelectionList).selected == ["6-mer"]
+        assert wizard.query_one("#wiz-context-len", Input).value == "1000"
+        # step 3 — the source fields
+        await _advance(pilot, wizard)
+        assert wizard.query_one(
+            "#wiz-huggingface", Input).value == "org/my-custom-lm"
+        assert wizard.query_one("#wiz-series", Input).value == "MySeries"
+        # step 4 — the quirk checkbox states carried
+        await _advance(pilot, wizard)
+        assert wizard.query_one(
+            "#wiz-quirk-no-safetensors", Checkbox).value is True
+        assert wizard.query_one(
+            "#wiz-quirk-fp32-only", Checkbox).value is False
+        # b back to step 1 — the prefill survived navigation (D-12 re-record)
+        for _ in range(3):
+            wizard.set_focus(None)
+            await pilot.pause()
+            await pilot.press("b")
+            await pilot.pause()
+        assert wizard.query_one("#wiz-key", Input).value == "my-custom-lm"
+
+
+async def test_prefill_dataset_maps_entry_fields_not_split_names():
+    """The dataset prefill maps entry fields; the split-file inputs (no
+    entry counterpart — landed rows carry counts, not names) stay blank."""
+    seams = _Seams()
+    prefill = {"my-ds": {
+        "Dataset_name": "my-ds",
+        "Dataset_path": "datasets/my-ds",
+        "Category": "Plants",
+        "label_column": "label",
+        "labels": 7,
+        "length": 512,
+        "type": "multiclass",
+        "metric": "f1",
+        "citation": "Marin et al., 2026",
+        "Train": 3, "Dev": 2, "Test": 1,
+    }}
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(seams, prefill=prefill)
+        await _open(pilot, app, wizard)
+        assert wizard.query_one("#wiz-key", Input).value == "my-ds"
+        assert wizard.query_one(
+            "#wiz-dataset-path", Input).value == "datasets/my-ds"
+        assert wizard.query_one(
+            "#wiz-category", SelectionList).selected == ["Plants"]
+        await _advance(pilot, wizard)
+        for wid in ("train-file", "dev-file", "test-file"):
+            assert wizard.query_one(f"#wiz-{wid}", Input).value == ""
+        assert wizard.query_one("#wiz-label-column", Input).value == "label"
+        assert wizard.query_one("#wiz-labels", Input).value == "7"
+        await _advance(pilot, wizard)
+        assert wizard.query_one(
+            "#wiz-type", SelectionList).selected == ["multiclass"]
+        assert wizard.query_one(
+            "#wiz-metric", SelectionList).selected == ["f1"]
+
+
+async def test_prefill_unchanged_key_yields_the_collision_report():
+    """D-12 self-enforcement: submitting the unchanged key surfaces the
+    collision problem — the delete-and-rerecord discipline needs no edit
+    surface."""
+    seams = _Seams(problems=[
+        ("key", WIZ_PROBLEM_COLLISION_OFFICIAL.format(key="my-custom-lm"))])
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _model_wizard(seams, prefill=_PREFILL_MODEL)
+        await _open(pilot, app, wizard)
+        await _submit(pilot, wizard)
+        joined = "".join(t.rstrip() for t in _report_text(wizard))
+        assert WIZ_PROBLEM_LINE.format(
+            i=1,
+            field_label=WIZM_FIELD_LABELS["key"],
+            problem=WIZ_PROBLEM_COLLISION_OFFICIAL.format(
+                key="my-custom-lm"),
+        ) in joined
+        assert seams.valid_calls == []
+
+
+async def test_f_and_o_bindings_fire_only_on_step_one():
+    """The step-1 affordances route to the seams; later steps no-op."""
+    seams = _Seams()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _model_wizard(seams)
+        await _open(pilot, app, wizard)
+        wizard.set_focus(None)
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        assert seams.import_calls == [1]
+        await pilot.press("o")
+        await pilot.pause()
+        assert seams.export_calls == [1]
+        # step 2+: the bindings exist but no-op outside step 1
+        await _advance(pilot, wizard)
+        wizard.set_focus(None)
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.press("o")
+        await pilot.pause()
+        assert seams.import_calls == [1]
+        assert seams.export_calls == [1]
+
+
+async def test_backstop_80x24_long_text_stays_enterable_and_readable():
+    """The UI-Considerations long-text backstop (the structured lift):
+    at 80x24 a 68-char key and a >100-char path stay enterable (the
+    Input buffer holds them) and the report echoes the FULL values on
+    wrapped lines with no column collision."""
+    path_long = "/data/dnallm/models/" + "d" * 88 + "/my-lm"
+    assert len(path_long) > 100
+    seams = _Seams(problems=[
+        ("key", WIZ_PROBLEM_COLLISION_OFFICIAL.format(key=_KEY68)),
+        ("Model_path", WIZ_PROBLEM_PATH_MISSING.format(path=path_long)),
+    ])
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.resize_terminal(80, 24)
+        wizard = _model_wizard(seams)
+        await _open(pilot, app, wizard)
+        # the modal honors the amended width rule at the minimum grid
+        box = wizard.query_one("#wizard-box")
+        assert box.region.width == 76, (
+            "min(100, width-4) at 80 columns — the amendment's exact cap"
+        )
+        key_input = await _type(pilot, wizard, "key", _KEY68)
+        assert key_input.value == _KEY68, "the Input buffer holds all 68"
+        path_input = await _type(pilot, wizard, "model-path", path_long)
+        assert path_input.value == path_long
+        await _submit(pilot, wizard)
+        texts = _report_text(wizard)
+        assert len(texts) > 3, "both long problems wrap, never fit"
+        joined = "".join(t.rstrip() for t in texts)
+        assert _KEY68 in joined, "the full key echoes across the wrap"
+        assert path_long in joined, "the full path echoes across the wrap"
+        assert "…" not in joined and "..." not in joined, (
+            "nothing elides in the report"
+        )
