@@ -63,6 +63,28 @@ Contract (locked decisions):
   ``pipeline/datasets/<Group>/<final_task_dir>/{train,dev,test}.csv``
   to all exist BEFORE any done transition — the CLI reports success for
   an empty filtered include set, so exit 0 alone can never mean done.
+- D-09 (10-02): after every landed download the service automatically
+  runs the audit row-count kernel as a subprocess — a candidate-only
+  temp registry containing exactly the one key with an ABSOLUTE
+  ``Dataset_path``, ``--datasets-root`` pointed at an inert temp dir,
+  all four output flags at temp paths, and ``CUSTOM_DIR_ENV`` pinned to
+  an empty temp overlay (the gauntlet audit-leg shape re-implemented
+  in-module, 10-RESEARCH Q4). The TUI never counts CSV rows itself —
+  the kernels are the audit subprocess's alone; this service stages,
+  invokes, parses, and compares declared-vs-measured, nothing more.
+  Verdicts come from the parsed temp ``n_audit.json``: pass iff
+  ``missing`` false, train/dev/test each rows > 0 (bool excluded),
+  ``unified_eval_n`` > 0, and every declared ``Train``/``Dev``/``Test``
+  int equals the measured rows per split.
+- D-09 done gate: done = landed AND reconcile pass; a reconcile
+  mismatch lands the entry in state ``mismatch`` carrying the declared
+  and measured numbers for the banner — mismatch NEVER auto-deletes
+  anything (D-07).
+- D-10/R-03: the committed ``dnallm-mark/data/n_audit.json`` baseline
+  is NEVER written by the reconcile or presence paths; only the
+  explicit ``reaudit_baseline`` method runs the audit script with its
+  DEFAULT outputs (the four worktree artifacts, maintainer review and
+  commit) — no automatic path ever calls it.
 
 Subprocess discipline (the Phase 7 T-03-10 rule, Pitfall 1): argv is a
 LIST, the Popen handle is owned directly (never a wrapper PID — the
@@ -73,9 +95,10 @@ files); the committed registries and ``n_audit.json`` are read-only to
 this module.
 
 ZERO textual imports. Dependencies: stdlib (subprocess/threading/os/
-sys/re/json/shutil/signal) + ``registry_loader`` (official file-name
-constants) + the sibling ``registries`` (committed n_audit presence)
-and ``settings`` (state root + atomic write) services.
+sys/re/json/shutil/signal/tempfile) + ``artifact_loader`` (tolerant
+artifact parses) + ``registry_loader`` (official file-name constants)
++ the sibling ``registries`` (committed n_audit presence) and
+``settings`` (state root + atomic write) services.
 """
 
 import json
@@ -85,6 +108,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -92,6 +116,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
 import registry_loader  # top-level module (pipeline/ sys.path root)
 
 from tui.services import registries, settings
@@ -223,6 +248,50 @@ PKG_RESOURCES_NOISE = (
     "UserWarning: pkg_resources is deprecated",
     "import pkg_resources",
 )
+
+# ===== The D-09/D-10 reconcile kernel (10-02) =====
+#
+# After every landed download the service runs the audit row-count
+# kernel as a subprocess — the Phase 9 gauntlet audit-leg shape
+# re-implemented in-module (the 10-RESEARCH Q4 ruling: a thin
+# re-implementation, NOT a GauntletService import — the gauntlet's
+# candidate/custom staging semantics are not this leg's). The kernels
+# (row counting, non-ACGT census, subset survival) are the audit
+# script's alone; this service stages, invokes, parses, and compares
+# declared-vs-measured — nothing more (binding constraint 5).
+
+#: The subprocess legs' script name, resolved against the repo root.
+AUDIT_SCRIPT_NAME = "audit_n_frequencies.py"
+
+#: The audit leg's parsed artifact name (the writer's own constant,
+#: restated — importing the writer would violate the services-tier
+#: import discipline).
+N_AUDIT_NAME = "n_audit.json"
+
+#: The whole-dir overlay override (the registry_loader env contract):
+#: every reconcile/reaudit env pins it to an EMPTY temp dir so the
+#: operator's real custom overlay can never leak into a verdict or the
+#: refreshed baseline (T-10-02-02/03).
+CUSTOM_DIR_ENV = "DNALLMMARK_CUSTOM_REGISTRY_DIR"
+
+#: The audit kernel's own split order and the declared-count field each
+#: split reconciles against (the gauntlet's constants, verbatim).
+_AUDIT_SPLIT_ORDER = ("train", "dev", "test")
+_DECLARED_SPLIT_FIELDS = (
+    ("train", "Train"),
+    ("dev", "Dev"),
+    ("test", "Test"),
+)
+
+#: ReconcileOutcome.verdict values.
+VERDICT_PASS = "pass"
+VERDICT_MISMATCH = "mismatch"
+VERDICT_FAILED = "failed"
+
+#: The reconcile/reaudit subprocess timeouts (T-10-02-05: bounded,
+#: constructor-overridable; a hang is absorbed into a failed outcome).
+DEFAULT_TIMEOUT_RECONCILE = 300
+DEFAULT_TIMEOUT_REAUDIT = 300
 
 # ===== Engine problem codes (machine vocabulary) =====
 
@@ -425,6 +494,42 @@ class QueueEvent:
     log_path: str | None
 
 
+@dataclass(frozen=True)
+class ReconcileOutcome:
+    """One reconcile leg's structured verdict (D-09/D-10; DATA, never
+    screen copy — the 10-04 banner renders these).
+
+    Attributes:
+        ok: True iff verdict is ``pass`` (the done gate).
+        verdict: ``pass`` / ``mismatch`` / ``failed`` — ``mismatch`` is
+            a parsed-artifact verdict that disproves the declared shape
+            (declared-vs-measured inequality, missing still true, a
+            split with no positive rows, unified_eval_n not positive);
+            ``failed`` is every infrastructure failure (nonzero exit,
+            timeout, unparseable/absent n_audit.json, key absent from
+            the tasks map, launch error, unreadable registry).
+        declared: the registry entry's declared ``Train``/``Dev``/
+            ``Test`` ints that carried a declaration (None when the
+            entry declared none).
+        measured: the parsed per-split row counts (an int per split the
+            record carried, 0 included — the banner's data; None when
+            nothing was measured).
+        unified_eval_n: the parsed unified eval N (int or None).
+        problems: machine problem codes (on mismatch they name the
+            split and BOTH numbers, e.g.
+            ``Train_mismatch_declared=10_measured=3``).
+        raw_output: the verbatim captured subprocess output.
+    """
+
+    ok: bool
+    verdict: str
+    declared: dict | None
+    measured: dict | None
+    unified_eval_n: int | None
+    problems: tuple[str, ...]
+    raw_output: str = ""
+
+
 def _default_spawner(argv, **kwargs):
     """The real Popen seam (the injectable default).
 
@@ -440,6 +545,24 @@ def _default_spawner(argv, **kwargs):
         subprocess.Popen: the owned process handle.
     """
     return subprocess.Popen(argv, **kwargs)
+
+
+def _default_runner(argv, **kwargs):
+    """The real completed-process seam (the injectable default; the
+    gauntlet runner shape — used by the reconcile/reaudit legs).
+
+    The service itself passes ``capture_output=True, text=True`` (plus
+    ``timeout``/``env``) on every call — the same kwargs the fakes
+    record — so the default is a pure forward to ``subprocess.run``.
+
+    Args:
+        argv (list): the LIST argv (never a shell string).
+        **kwargs: ``capture_output``/``text``/``timeout``/``env``.
+
+    Returns:
+        subprocess.CompletedProcess: with captured text stdout/stderr.
+    """
+    return subprocess.run(argv, check=False, **kwargs)
 
 
 def resolve_modelscope_cli(cli_path=None):
@@ -678,7 +801,9 @@ class DownloadQueueService:
     thread-safe mutators, all state under the XDG state root)."""
 
     def __init__(self, repo_root=None, state_path=None, spawner=None,
-                 runner=None, cli_path=None):
+                 runner=None, cli_path=None,
+                 timeout_reconcile=DEFAULT_TIMEOUT_RECONCILE,
+                 timeout_reaudit=DEFAULT_TIMEOUT_REAUDIT):
         """Configure the service.
 
         Args:
@@ -690,11 +815,15 @@ class DownloadQueueService:
             spawner: the Popen-shaped subprocess seam (``argv,
                 **kwargs`` -> Popen-like); None wraps
                 ``subprocess.Popen`` with the fixed kwargs.
-            runner: the completed-process seam reserved for the 10-02
-                reconcile leg (the gauntlet runner shape); stored, not
-                yet called by this plan.
+            runner: the completed-process seam for the reconcile/reaudit
+                legs (the gauntlet runner shape: ``argv,
+                capture_output=True, text=True, timeout=..., env=...``);
+                None wraps ``subprocess.run``.
             cli_path: an explicit modelscope console-script path; None
                 probes the standard resolution order at each use.
+            timeout_reconcile: per-reconcile timeout seconds
+                (T-10-02-05; default 300).
+            timeout_reaudit: per-reaudit timeout seconds (default 300).
         """
         self._repo_root = (REPO_ROOT if repo_root is None
                            else Path(repo_root).resolve())
@@ -704,7 +833,10 @@ class DownloadQueueService:
         self._state_path = Path(state_path)
         self._spawner: Any = (_default_spawner if spawner is None
                               else spawner)
-        self._runner: Any = runner
+        self._runner: Any = (_default_runner if runner is None
+                             else runner)
+        self._timeout_reconcile = timeout_reconcile
+        self._timeout_reaudit = timeout_reaudit
         self._cli_path = cli_path
         self._lock = threading.Lock()
         self._entries: list[dict] = []
@@ -968,9 +1100,13 @@ class DownloadQueueService:
         in cancel-aware chunks, then classifies: nonzero exit ->
         failed (``cancelled_by_operator`` when the flag is set, else
         ``exit_<code>``); exit 0 -> the Pitfall-3 landing gate (shape-C
-        rename first, then all three split CSVs must exist) -> done or
-        failed ``landing_incomplete``. The verbatim stdout+stderr lands
-        in ``logs/<sanitized-key>.log`` under the state root (D-03).
+        rename first, then all three split CSVs must exist) -> the
+        D-09 reconcile gate: pass -> done (the entry's reconcile field
+        populated), mismatch -> state mismatch carrying the declared
+        and measured numbers (D-07: nothing is ever deleted), failed
+        reconcile -> state failed. The verbatim stdout+stderr plus the
+        reconcile output land in ``logs/<sanitized-key>.log`` under the
+        state root (D-03).
 
         Args:
             key (str): the claimed dataset registry key.
@@ -1067,10 +1203,25 @@ class DownloadQueueService:
                 key, run_id, "failed", percent_state["last_fired"],
                 (landing_problem,), tuple(details), stdout_text,
                 stderr_text, argv=argv, returncode=returncode)
+        # D-09: done = landed AND reconcile pass (the 10-01 amendment).
+        outcome = self.reconcile_dataset(key, run_id)
+        details.append("reconcile_verdict=" + outcome.verdict)
+        if outcome.ok:
+            return self._finish(
+                key, run_id, "done", percent_state["last_fired"], (),
+                tuple(details), stdout_text, stderr_text, argv=argv,
+                returncode=returncode,
+                reconcile=self._reconcile_payload(outcome),
+                reconcile_raw=outcome.raw_output)
+        state = ("mismatch" if outcome.verdict == VERDICT_MISMATCH
+                 else "failed")
         return self._finish(
-            key, run_id, "done", percent_state["last_fired"], (),
-            tuple(details), stdout_text, stderr_text, argv=argv,
-            returncode=returncode)
+            key, run_id, state, percent_state["last_fired"],
+            outcome.problems, tuple(details), stdout_text, stderr_text,
+            argv=argv, returncode=returncode,
+            reconcile=(self._reconcile_payload(outcome)
+                       if outcome.verdict == VERDICT_MISMATCH else None),
+            reconcile_raw=outcome.raw_output)
 
     def _reap(self, proc, key):
         """Reap one owned process in cancel-aware chunks (Pitfall 1).
@@ -1165,13 +1316,234 @@ class DownloadQueueService:
         return [split for split in LANDING_SPLITS
                 if not (task_dir / split).is_file()]
 
+    # ===== The reconcile leg (D-09: automatic post-landing audit) =====
+
+    def reconcile_dataset(self, key, run_id):
+        """Reconcile one landed key through the real audit subprocess.
+
+        The gauntlet audit-leg staging re-implemented for the
+        official-key variant (10-RESEARCH Pattern 2): a CANDIDATE-ONLY
+        temp registry dir holding exactly ``{key: entry}`` with the
+        ``Dataset_path`` ABSOLUTIZED against the pipeline dir (the
+        pathlib join replaces ``--datasets-root`` — that root is
+        deliberately inert, gauntlet Pitfall 3), an inert temp
+        datasets-root, ALL FOUR output flags at temp paths (the
+        committed artifacts are unreachable, T-10-02-01), and the env
+        pinned to ``os.environ`` plus exactly one override pointing
+        ``CUSTOM_DIR_ENV`` at an EMPTY temp dir (operator isolation).
+        The verdict comes from the PARSED temp ``n_audit.json``
+        (``tasks.{key}``), never the exit code alone; the declared side
+        is the official registry entry's ``Train``/``Dev``/``Test``
+        ints (an absent declaration skips that split's comparison — the
+        gauntlet rule).
+
+        This method NEVER raises and never mutates queue state — every
+        failure edge is absorbed into a ``failed`` outcome carrying the
+        verbatim captured output.
+
+        Args:
+            key (str): the landed dataset registry key.
+            run_id (str): the caller's run tag (future event wiring).
+
+        Returns:
+            ReconcileOutcome: the structured verdict.
+        """
+        try:
+            registry = self._official_registry()
+        except (OSError, json.JSONDecodeError,
+                UnicodeDecodeError) as exc:
+            return self._failed_reconcile("registry_unreadable",
+                                          repr(exc))
+        entry = registry.get(key)
+        if not isinstance(entry, dict):
+            return self._failed_reconcile("unknown_key", "key=" + key)
+        staged_entry = dict(entry)
+        raw_path = staged_entry.get("Dataset_path")
+        if isinstance(raw_path, str) and raw_path:
+            # ABSOLUTE form: the audit's resolve_dataset_dir joins
+            # ``datasets_root / rel``; a pathlib join against an
+            # absolute path REPLACES the root, so the inert temp
+            # datasets-root can never redirect the read.
+            staged_entry["Dataset_path"] = str(
+                (self._pipeline_dir / raw_path).resolve())
+        declared = {}
+        for _split, field in _DECLARED_SPLIT_FIELDS:
+            value = entry.get(field)
+            if isinstance(value, int) and not isinstance(value, bool):
+                declared[field] = value
+        with tempfile.TemporaryDirectory(
+                prefix="dnallmmark-reconcile-") as tmp:
+            tmp_path = Path(tmp)
+            registry_dir = tmp_path / "regdir"
+            registry_dir.mkdir()
+            audit_out = tmp_path / "audit-out"
+            audit_out.mkdir()
+            empty_overlay = tmp_path / "empty-overlay"
+            empty_overlay.mkdir()
+            datasets_root = tmp_path / "datasets-root"
+            datasets_root.mkdir()
+            (registry_dir / registry_loader.DATASETS_INFO_NAME).write_text(
+                json.dumps({key: staged_entry}, indent=4,
+                           ensure_ascii=False),
+                encoding="utf-8")
+            argv = [sys.executable,
+                    str(self._repo_root / "script" / AUDIT_SCRIPT_NAME),
+                    "--registry-dir", str(registry_dir),
+                    "--datasets-root", str(datasets_root),
+                    "--data-dir", str(audit_out),
+                    "--subsets-out", str(audit_out / "eval_subsets.json"),
+                    "--data-md", str(audit_out / "DATA.md")]
+            env = dict(os.environ)
+            env[CUSTOM_DIR_ENV] = str(empty_overlay)
+            proc, launch_failure = self._invoke(
+                argv, env, self._timeout_reconcile)
+            if launch_failure is not None:
+                return self._failed_reconcile(*launch_failure)
+            raw = (proc.stdout or "") + (proc.stderr or "")
+            if proc.returncode != 0:
+                return self._failed_reconcile(
+                    "exit_nonzero",
+                    "exit_code=" + str(proc.returncode), raw=raw)
+            audit = artifact_loader.load_json_artifact(
+                audit_out / N_AUDIT_NAME)
+            if audit is None:
+                return self._failed_reconcile("n_audit_unreadable",
+                                              raw=raw)
+            record = None
+            if isinstance(audit, dict):
+                tasks = audit.get("tasks")
+                if isinstance(tasks, dict):
+                    maybe = tasks.get(key)
+                    if isinstance(maybe, dict):
+                        record = maybe
+            if record is None:
+                return self._failed_reconcile("key_absent_from_n_audit",
+                                              raw=raw)
+            return self._reconcile_verdict(record, declared, raw)
+
+    def _reconcile_verdict(self, record, declared, raw):
+        """Turn one parsed n_audit task record into a verdict.
+
+        Pass criteria (the gauntlet ``_audit_verdict`` semantics
+        verbatim — the audit subprocess owns every benchmark semantic):
+        ``missing`` false; train/dev/test each rows > 0 (bool excluded);
+        ``unified_eval_n`` > 0; and every DECLARED ``Train``/``Dev``/
+        ``Test`` int equal to the measured rows per split. Every
+        parsed-record violation is a ``mismatch`` (the artifact
+        disproves the declared shape); infrastructure failures never
+        reach this method. The non-ACGT census rides the record as
+        data, never a failure condition.
+
+        Args:
+            record (dict): the parsed ``tasks.{key}`` record.
+            declared (dict): the declared split counts keyed by the
+                official field names (empty = nothing declared).
+            raw (str): the verbatim subprocess output.
+
+        Returns:
+            ReconcileOutcome: pass or mismatch (never failed).
+        """
+        problems = []
+        if record.get("missing") is not False:
+            problems.append("missing=true")
+        splits = record.get("splits")
+        splits = splits if isinstance(splits, dict) else {}
+        measured = {}
+        for split in _AUDIT_SPLIT_ORDER:
+            stats = splits.get(split)
+            stats = stats if isinstance(stats, dict) else {}
+            rows = stats.get("rows")
+            if isinstance(rows, int) and not isinstance(rows, bool):
+                measured[split] = rows
+            if not isinstance(rows, int) or isinstance(rows, bool) \
+                    or rows <= 0:
+                problems.append(split + "_rows=" + repr(rows))
+        unified = record.get("unified_eval_n")
+        unified_eval_n = (unified
+                          if isinstance(unified, int)
+                          and not isinstance(unified, bool)
+                          else None)
+        if unified_eval_n is None or unified_eval_n <= 0:
+            problems.append("unified_eval_n=" + repr(unified))
+        for split, field in _DECLARED_SPLIT_FIELDS:
+            declared_value = declared.get(field)
+            if declared_value is None or split not in measured:
+                continue    # absent declaration is legal; a split with
+                            # no measured int already carries its own
+                            # rows problem
+            if declared_value != measured[split]:
+                problems.append(
+                    field + "_mismatch_declared=" + str(declared_value)
+                    + "_measured=" + str(measured[split]))
+        return ReconcileOutcome(
+            ok=not problems,
+            verdict=(VERDICT_PASS if not problems else VERDICT_MISMATCH),
+            declared=dict(declared) if declared else None,
+            measured=measured if measured else None,
+            unified_eval_n=unified_eval_n,
+            problems=tuple(problems), raw_output=raw)
+
+    @staticmethod
+    def _failed_reconcile(*problems, raw=""):
+        """Build one failed reconcile outcome (the shared failure
+        path — machine codes + verbatim output, never an exception)."""
+        return ReconcileOutcome(
+            ok=False, verdict=VERDICT_FAILED, declared=None,
+            measured=None, unified_eval_n=None,
+            problems=tuple(problems), raw_output=raw)
+
+    @staticmethod
+    def _reconcile_payload(outcome):
+        """The persisted entry.reconcile dict for one outcome (the
+        overlay source reconciled_rows reads; None on failed)."""
+        return {
+            "verdict": outcome.verdict,
+            "declared": outcome.declared,
+            "measured": outcome.measured,
+            "unified_eval_n": outcome.unified_eval_n,
+        }
+
+    def _invoke(self, argv, env, timeout):
+        """Run one completed-process leg through the injectable seam.
+
+        Every launch failure is absorbed into a problems tuple — a
+        timeout or a crash NEVER crosses the service boundary as an
+        exception (the gauntlet ``_invoke`` discipline).
+
+        Args:
+            argv (list): the LIST argv (never a shell string).
+            env (dict): the explicit env (os.environ + one override).
+            timeout (int): the leg's timeout seconds.
+
+        Returns:
+            tuple: ``(proc, None)`` with the CompletedProcess-shaped
+            result, or ``(None, problems)`` when the runner timed out
+            or crashed.
+        """
+        try:
+            proc = self._runner(argv, capture_output=True, text=True,
+                                timeout=timeout, env=env)
+        except subprocess.TimeoutExpired:
+            return None, ("timeout",
+                          "timeout_seconds=" + str(timeout))
+        except Exception as exc:  # noqa: BLE001 — the service boundary
+            # (the _invoke discipline): ANY launch failure yields a
+            # failed outcome, never an exception crossing to the worker.
+            return None, ("subprocess_error", repr(exc))
+        return proc, None
+
     def _finish(self, key, run_id, state, percent, problems, details,
                 stdout_text="", stderr_text="", argv=None,
-                returncode=None):
+                returncode=None, reconcile=None, reconcile_raw=""):
         """Persist one terminal transition + write the verbatim log +
-        emit the event (the single exit path for every outcome)."""
+        emit the event (the single exit path for every outcome).
+
+        ``reconcile`` replaces the entry's reconcile field (None on
+        every path that did not reach a reconcile verdict); the
+        reconcile leg's verbatim output appends to the log under a
+        ``[reconcile]`` section (D-03 drill-down completeness)."""
         log_rel = self._write_log(key, stdout_text, stderr_text, argv,
-                                  returncode)
+                                  returncode, reconcile_raw)
         kind = KIND_DATASET
         with self._lock:
             for entry in self._entries:
@@ -1182,6 +1554,7 @@ class DownloadQueueService:
                 entry["last_percent"] = percent
                 entry["problems"] = list(problems)
                 entry["log_path"] = log_rel
+                entry["reconcile"] = reconcile
                 kind = entry["kind"]
                 self._persist_locked()
                 break
@@ -1192,7 +1565,7 @@ class DownloadQueueService:
             details=tuple(details), log_path=log_rel)
 
     def _write_log(self, key, stdout_text, stderr_text, argv,
-                   returncode):
+                   returncode, reconcile_raw=""):
         """Write the verbatim capture to ``logs/<sanitized-key>.log``
         under the state root (D-03 drill-down content).
 
@@ -1207,6 +1580,8 @@ class DownloadQueueService:
                                  else str(returncode))
                 + "\n[stdout]\n" + stdout_text
                 + "\n[stderr]\n" + stderr_text)
+        if reconcile_raw:
+            text += "\n[reconcile]\n" + reconcile_raw
         try:
             settings.atomic_write(
                 self._state_path.parent / LOG_DIR_NAME / name, text)

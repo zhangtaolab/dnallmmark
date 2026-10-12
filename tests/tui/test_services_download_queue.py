@@ -1179,17 +1179,20 @@ SHAPE_C_ENTRY = {
 }
 
 
+SHAPE_C_KEY = "PDLLMs_datasets__plant-multi-species-H3K27ac"
+
+
 def c_service(tmp_path, monkeypatch, spawner):
     repo = tmp_repo_with_registry(
-        tmp_path / "repo",
-        {"PDLLMs_datasets__plant-multi-species-H3K27ac": SHAPE_C_ENTRY})
+        tmp_path / "repo", {SHAPE_C_KEY: SHAPE_C_ENTRY})
     state = tmp_path / "state"
     monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
     service = download_queue.DownloadQueueService(
         repo_root=repo, state_path=state / "download_queue.json",
-        spawner=spawner, cli_path=str(fake_cli(tmp_path)))
-    assert service.enqueue(
-        "PDLLMs_datasets__plant-multi-species-H3K27ac").action == "enqueued"
+        spawner=spawner,
+        runner=passing_reconcile_runner(key=SHAPE_C_KEY),
+        cli_path=str(fake_cli(tmp_path)))
+    assert service.enqueue(SHAPE_C_KEY).action == "enqueued"
     service.claim_next()
     return service, repo
 
@@ -1201,8 +1204,7 @@ def test_shape_c_rename_source_present_target_absent(monkeypatch,
     service, repo = c_service(tmp_path, monkeypatch, FakeSpawner())
     land_csvs(repo, "PDLLMs_datasets", "H3K27ac")
 
-    event = service.run_task(
-        "PDLLMs_datasets__plant-multi-species-H3K27ac", run_id="r1")
+    event = service.run_task(SHAPE_C_KEY, run_id="r1")
 
     assert event.state == "done"
     assert not (repo / "pipeline" / "datasets" / "PDLLMs_datasets"
@@ -1217,8 +1219,7 @@ def test_shape_c_rename_target_already_complete_skips(monkeypatch,
     service, repo = c_service(tmp_path, monkeypatch, FakeSpawner())
     land_csvs(repo, "PDLLMs_datasets", "plant-multi-species-H3K27ac")
 
-    event = service.run_task(
-        "PDLLMs_datasets__plant-multi-species-H3K27ac", run_id="r1")
+    event = service.run_task(SHAPE_C_KEY, run_id="r1")
 
     assert event.state == "done"
 
@@ -1232,8 +1233,7 @@ def test_shape_c_rename_target_incomplete_source_present_fails(
     land_csvs(repo, "PDLLMs_datasets", "plant-multi-species-H3K27ac",
               splits=("train",))                             # partial
 
-    event = service.run_task(
-        "PDLLMs_datasets__plant-multi-species-H3K27ac", run_id="r1")
+    event = service.run_task(SHAPE_C_KEY, run_id="r1")
 
     assert event.state == "failed"
     assert event.problems == ("rename_target_exists",)
@@ -1252,8 +1252,7 @@ def test_shape_c_rename_source_absent_falls_to_landing_check(
     the landing check fails with the missing files named."""
     service, _repo = c_service(tmp_path, monkeypatch, FakeSpawner())
 
-    event = service.run_task(
-        "PDLLMs_datasets__plant-multi-species-H3K27ac", run_id="r1")
+    event = service.run_task(SHAPE_C_KEY, run_id="r1")
 
     assert event.state == "failed"
     assert event.problems == ("landing_incomplete",)
@@ -1477,7 +1476,7 @@ def test_reconcile_timeout_knob_overridable(tmp_path, monkeypatch):
     service, _ = reconcile_service(tmp_path, monkeypatch, runner)
     service._timeout_reconcile = 7
 
-    outcome = service.reconcile_dataset("Demo__task", run_id="r1")
+    service.reconcile_dataset("Demo__task", run_id="r1")
 
     assert captured["timeout"] == 7
 
@@ -1542,20 +1541,28 @@ def test_reconcile_env_exactly_one_override_pinned_to_empty_dir(
         tmp_path, monkeypatch):
     """env == os.environ plus EXACTLY the CUSTOM_DIR_ENV override, and
     the pinned dir exists and is EMPTY at call time (the operator's real
-    custom overlay can never leak into a reconcile, T-10-02-02)."""
+    custom overlay can never leak into a reconcile, T-10-02-02). The
+    existence/emptiness pins run INSIDE the hook — the staging tempdir
+    is cleaned before reconcile_dataset returns (by design)."""
     captured = {}
-    runner = FakeReconcileRunner(on_call=capture_staging(captured))
+
+    def hook(argv, kwargs):
+        overlay = Path(kwargs["env"][OVERLAY_ENV])
+        captured["env"] = kwargs["env"]
+        captured["overlay_is_dir"] = overlay.is_dir()
+        captured["overlay_empty"] = list(overlay.iterdir()) == []
+        write_temp_n_audit(argv, {"Demo__task": audit_record(10, 2, 2)})
+
+    runner = FakeReconcileRunner(on_call=hook)
     service, _ = reconcile_service(tmp_path, monkeypatch, runner)
 
     service.reconcile_dataset("Demo__task", run_id="r1")
 
-    env = captured["env"]
-    overlay = Path(env[OVERLAY_ENV])
-    assert overlay.is_dir()
-    assert list(overlay.iterdir()) == []          # EMPTY at call time
+    assert captured["overlay_is_dir"] is True
+    assert captured["overlay_empty"] is True       # EMPTY at call time
     expected = dict(os.environ)
-    expected[OVERLAY_ENV] = str(overlay)
-    assert env == expected                        # exactly one override
+    expected[OVERLAY_ENV] = captured["env"][OVERLAY_ENV]
+    assert captured["env"] == expected             # exactly one override
 
 
 def test_reconcile_stages_candidate_only_registry_absolute_path(
@@ -1796,10 +1803,12 @@ def test_reconcile_absent_declaration_skips_that_split(
 # the REAL kernels) =====
 
 
-def real_audit_repo(tmp_path, declared):
+def real_audit_repo(tmp_path, declared, rows=None):
     """A tmp repo carrying the REAL audit script + registry_loader, a
-    synthetic one-key registry, and fixture CSVs whose row counts equal
-    ``declared`` (pure-ACGT sequences: every row survives strict)."""
+    synthetic one-key registry with the given DECLARED counts, and
+    fixture CSVs whose actual row counts are ``rows`` (default = the
+    declared counts; pure-ACGT sequences so every row survives
+    strict)."""
     repo = tmp_path / "real-repo"
     (repo / "script").mkdir(parents=True)
     shutil.copy(REPO_ROOT / "script" / "audit_n_frequencies.py",
@@ -1808,6 +1817,8 @@ def real_audit_repo(tmp_path, declared):
     shutil.copy(REPO_ROOT / "pipeline" / "registry_loader.py",
                 repo / "pipeline" / "registry_loader.py")
     train, dev, test = declared
+    if rows is None:
+        rows = declared
     (repo / "pipeline" / "datasets_info.json").write_text(json.dumps({
         "Demo__task": {
             "Dataset_path": "datasets/Demo/task",
@@ -1819,7 +1830,8 @@ def real_audit_repo(tmp_path, declared):
         }}), encoding="utf-8")
     task_dir = repo / "pipeline" / "datasets" / "Demo" / "task"
     task_dir.mkdir(parents=True)
-    for split, count in (("train", train), ("dev", dev), ("test", test)):
+    for split, count in (("train", rows[0]), ("dev", rows[1]),
+                         ("test", rows[2])):
         lines = ["sequence,label"]
         lines += [f"ACGTACGTAC,{index}" for index in range(count)]
         (task_dir / (split + ".csv")).write_text(
@@ -1856,7 +1868,7 @@ def test_reconcile_real_subprocess_mismatch_names_numbers_no_deletion(
         tmp_path, monkeypatch):
     """A deliberately wrong declared count is a MISMATCH naming the split
     and both numbers — and NOTHING is deleted (D-07)."""
-    repo = real_audit_repo(tmp_path, declared=(999, 2, 2))
+    repo = real_audit_repo(tmp_path, declared=(999, 2, 2), rows=(4, 2, 2))
     service = real_reconcile_service(tmp_path, monkeypatch, repo)
 
     outcome = service.reconcile_dataset("Demo__task", run_id="r1")
