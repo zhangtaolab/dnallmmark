@@ -198,7 +198,26 @@ Plans:
   4. The Zenodo bulk bundle (record 19135551, once public) is reachable as an alternate whole-package entry
   5. Downloads run under subprocess/thread-worker discipline (the console never freezes) and no credentials are stored or echoed in logs or queue state
 
-**Plans**: TBD
+**Plans**: 6/6 planned
+Plans:
+**Wave 1**
+- [ ] 10-01-PLAN.md — queue service core (DATA-01/02 substrate): XDG-persisted five-state queue, R-01 channel resolution + R-02 shape table (46/4 census), CLI probe, Popen engine with progress parse, landing check, shape-C rename, killpg cancel
+
+**Wave 2** *(blocked on 10-01)*
+- [ ] 10-02-PLAN.md — reconcile kernel (DATA-03): audit subprocess leg (temp staging, absolute Dataset_path, artifact verdicts), done-gate + mismatch, presence overlay merge, `g` re-audit (R-03 default outputs) + byte-unchanged regression
+
+**Wave 3** *(blocked on 10-02)*
+- [ ] 10-03-PLAN.md — Zenodo probe + bundle driver (DATA-04): 4-state GET probe, guarded download/extract, zenodo-kind queue integration, the full DL_/QUEUE_ string block + ENV_ROUTE amendment
+
+**Wave 4** *(blocked on 10-03)*
+- [ ] 10-04-PLAN.md — data-manager screen (slot 3): two-pane layout, five-state glyphs, progress cells, mismatch banners, drill-down, Zenodo line, d/r/x/a/enter/g/z; app-level driver worker + boot resume; nav promotion
+
+**Wave 5** *(blocked on 10-04)*
+- [ ] 10-05-PLAN.md — cross-screen integration (D-14/D-11): selection `d` enqueue on presence-✗ rows, presence overlay in the selection snapshot + live flip, env route hint proof
+
+**Wave 6** *(blocked on 10-05)*
+- [ ] 10-06-PLAN.md — hardening + phase-goal verification: CLI-absent/corrupt/unknown-key/restart edge sweep, exhaustive transition table, full gates, SC1-5 goal-backward checklist + GB10 live-smoke procedure
+
 **UI hint**: yes
 
 ### Phase 11: Run Config, Launch Gates & Single-GPU Monitoring
@@ -242,7 +261,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 | 7. Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) | v1.2 | 6/6 | Complete    | 2026-10-11 |
 | 8. TUI Foundation (Env Check & Selection) | v1.2 | 7/7 | Complete    | 2026-10-12 |
 | 9. Custom Model & Dataset Onboarding | v1.2 | 6/6 | Complete    | 2026-10-12 |
-| 10. Data Manager (Downloads & Verification) | v1.2 | 0/TBD | Not started | - |
+| 10. Data Manager (Downloads & Verification) | v1.2 | 0/6 | Not started | - |
 | 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 0/TBD | Not started | - |
 | 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 0/TBD | Not started | - |
 
