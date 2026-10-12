@@ -34,6 +34,7 @@ keypad drives are real key events (a focused Input eats printable keys
 
 import re
 import threading
+from functools import partial
 from pathlib import Path
 
 from textual.widgets import Checkbox, Input, RichLog, SelectionList, Static
@@ -49,6 +50,10 @@ from tui.strings import (
     ENV_STATE_PENDING,
     GAUNTLET_BANNER_FAIL,
     GAUNTLET_DRILL_HINT,
+    GAUNTLET_EXPORT_EMPTY_TOAST,
+    GAUNTLET_EXPORTED_TOAST,
+    GAUNTLET_IMPORT_CONFLICTS,
+    GAUNTLET_IMPORTED_TOAST,
     GAUNTLET_ITEM_AUDIT,
     GAUNTLET_ITEM_DRY_RUN,
     GAUNTLET_ROW_DRY_RUN_PASS,
@@ -60,6 +65,7 @@ from tui.strings import (
     GAUNTLET_TITLE,
     GAUNTLET_UNDO_AFFORDANCE,
     GAUNTLET_UNDO_TOAST,
+    SEL_TEMPLATE_PROBLEM_LINE,
     WIZ_CANCEL_CONFIRM,
     WIZ_FOOTER_HINT,
     WIZ_FOOTER_HINT_LAST,
@@ -67,6 +73,7 @@ from tui.strings import (
     WIZ_NUMERIC_HINT,
     WIZ_PATH_EXISTS,
     WIZ_PATH_MISSING_ADVISORY,
+    WIZ_PROBLEM_COLLISION_CUSTOM,
     WIZ_PROBLEM_COLLISION_OFFICIAL,
     WIZ_PROBLEM_LINE,
     WIZ_PROBLEM_PATH_MISSING,
@@ -1323,3 +1330,302 @@ async def test_gauntlet_stale_result_from_cancelled_run_never_overwrites():
         )
         assert _gauntlet_banner(wizard) == landed
         assert len(store.land_calls) == 1, "run 1 never lands"
+
+
+# =====================================================================
+# Task 5 (09-05 Task 2) — session undo over the real store, the D-11
+# import view (per-entry sequential gauntlet), the export view
+# =====================================================================
+
+class _ImportSeams:
+    """Capture over the import read/validate seams (D-11)."""
+
+    def __init__(self, doc=None, read_error=None, problems=()):
+        self.doc = doc
+        self.read_error = read_error
+        self.problems = list(problems)
+        self.read_calls = []
+        self.validate_calls = []
+
+    def read(self, path):
+        self.read_calls.append(path)
+        if self.read_error is not None:
+            return None, self.read_error
+        return self.doc, None
+
+    def validate(self, doc):
+        self.validate_calls.append(doc)
+        return list(self.problems)
+
+
+async def _press_step_one_key(pilot, app, key):
+    """Press a step-1 affordance with nothing focused (plain binding)."""
+    app.screen.set_focus(None)
+    await pilot.pause()
+    await pilot.press(key)
+    await pilot.pause()
+
+
+async def _submit_path(pilot, app, path):
+    """Type the path into the open path prompt and press enter."""
+    inp = app.screen.query_one("#wizard-path-input", Input)
+    inp.focus()
+    await pilot.pause()
+    await pilot.press(*list(str(path)))
+    await pilot.pause()
+    await pilot.press("enter")
+    await pilot.pause()
+
+
+def _prompt_log_text(app):
+    """The open path prompt's problem report lines, joined."""
+    log = app.screen.query_one("#wizard-path-problems", RichLog)
+    return [strip.text for strip in log.lines]
+
+
+#: A two-entry import document in FILE ORDER (ds-a declared before ds-b).
+_IMPORT_DOC = {
+    "ds-a": {"Dataset_path": "datasets/ds-a", "Category": "Plants",
+             "type": "binary", "metric": "f1"},
+    "ds-b": {"Dataset_path": "datasets/ds-b", "Category": "Microbe",
+             "type": "multiclass", "metric": "mcc"},
+}
+
+
+async def test_import_conflicts_render_numbered_report_nothing_merges():
+    """D-11 fail-closed: any conflict renders the numbered conflicts
+    report (keys full-length) and NOTHING merges — the modal stays open."""
+    key68 = "d" * 68
+    problems = [
+        (key68, WIZ_PROBLEM_COLLISION_OFFICIAL.format(key=key68)),
+        ("ds-x", WIZ_PROBLEM_COLLISION_CUSTOM.format(key="ds-x")),
+    ]
+    imports = _ImportSeams(doc={"ds-x": {}}, problems=problems)
+    service = _FakeGauntlet()
+    store = _StoreFake()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            _Seams(), gauntlet_service=service,
+            land=store.land, undo=store.undo,
+            import_read=imports.read, import_validate=imports.validate)
+        await _open(pilot, app, wizard)
+        await _press_step_one_key(pilot, app, "f")
+        assert app.screen is not wizard, "the import path prompt opens"
+        await _submit_path(pilot, app, "/share/custom_datasets.json")
+        # the numbered conflicts report: header + both lines, key full
+        lines = _prompt_log_text(app)
+        joined = "".join(line.rstrip() for line in lines)
+        assert lines[0].strip() == GAUNTLET_IMPORT_CONFLICTS.format(n=2)
+        assert SEL_TEMPLATE_PROBLEM_LINE.format(
+            n=1, location=key68,
+            message=WIZ_PROBLEM_COLLISION_OFFICIAL.format(key=key68),
+        ).rstrip() in joined or key68 in joined, (
+            "the 68-char key renders full-length (wrap, not truncate)"
+        )
+        assert "ds-x" in joined
+        # the modal stays open — nothing merged, nothing landed
+        assert app.screen is not wizard
+        assert service.dry_calls == []
+        assert store.land_calls == []
+        assert imports.validate_calls and imports.validate_calls[0] == {
+            "ds-x": {}}
+        # esc closes the prompt back to the wizard at step 1
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.screen is wizard
+        assert _plain_title(wizard) == (
+            f"新增数据集 — 步骤 1/4 · {WIZD_STEPS[0]}"
+        )
+
+
+async def test_import_unreadable_file_yields_tolerant_problem_lines():
+    """The untrusted-input edge: an unreadable/malformed file renders
+    tolerant-loader problem lines through the same report surface —
+    nothing merges, no crash."""
+    read_error = "import file unreadable or not valid JSON: /nope/x.json"
+    imports = _ImportSeams(read_error=read_error)
+    service = _FakeGauntlet()
+    store = _StoreFake()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            _Seams(), gauntlet_service=service,
+            land=store.land, undo=store.undo,
+            import_read=imports.read, import_validate=imports.validate)
+        await _open(pilot, app, wizard)
+        await _press_step_one_key(pilot, app, "f")
+        await _submit_path(pilot, app, "/nope/x.json")
+        lines = _prompt_log_text(app)
+        joined = "".join(line.rstrip() for line in lines)
+        assert lines[0].strip() == GAUNTLET_IMPORT_CONFLICTS.format(n=1)
+        assert read_error in joined, "the tolerant-loader line verbatim"
+        # nothing merges, the modal stays open, no crash
+        assert app.screen is not wizard
+        assert service.dry_calls == []
+        assert store.land_calls == []
+        assert imports.validate_calls == []
+
+
+async def test_import_two_entries_sequential_entry_level_rollback():
+    """D-08 entry-level rollback: entries gauntlet sequentially in FILE
+    ORDER — ds-a lands and STAYS, ds-b fails and never lands, the banner
+    names ds-b only; the toast carries {n} for the landed count."""
+    service = _FakeGauntlet(dry_ok={"ds-b": False})
+    store = _StoreFake()
+    imports = _ImportSeams(doc=_IMPORT_DOC)
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            _Seams(), gauntlet_service=service,
+            land=store.land, undo=store.undo,
+            import_read=imports.read, import_validate=imports.validate)
+        await _open(pilot, app, wizard)
+        await _press_step_one_key(pilot, app, "f")
+        await _submit_path(pilot, app, "/share/custom_datasets.json")
+        assert app.screen is wizard, "the clean file enters the panel"
+        # grouped per entry: header rows carry each entry's gauntlet title
+        head_a = wizard.query_one("#gauntlet-head-0", Static)
+        head_b = wizard.query_one("#gauntlet-head-1", Static)
+        assert str(head_a.content) == GAUNTLET_TITLE.format(key="ds-a")
+        assert str(head_b.content) == GAUNTLET_TITLE.format(key="ds-b")
+        await _settled(pilot, app)
+        # sequential, in the file's declaration order
+        assert [call[1] for call in service.dry_calls] == ["ds-a", "ds-b"]
+        assert [call[0] for call in service.audit_calls] == ["ds-a", "ds-b"]
+        # entry-level rollback: exactly ds-a landed, ds-b never landed
+        assert [call[1] for call in store.land_calls] == ["ds-a"]
+        assert str(wizard.query_one(
+            "#gauntlet-status-0", Static).content) == (
+            GAUNTLET_ROW_LANDED.format(key="ds-a", path=_LAND_PATH))
+        assert str(wizard.query_one(
+            "#gauntlet-status-1", Static).content) == (
+            GAUNTLET_BANNER_FAIL.format(key="ds-b"))
+        # the import-completion toast carries the landed count
+        assert _toasts(app) == [GAUNTLET_IMPORTED_TOAST.format(
+            n=1, kind="数据集")]
+        # esc returns to the form — the import never touched its values
+        await pilot.press("escape")
+        await pilot.pause()
+        assert _plain_title(wizard) == (
+            f"新增数据集 — 步骤 1/4 · {WIZD_STEPS[0]}"
+        )
+
+
+async def test_import_all_pass_lands_every_entry_in_file_order():
+    """The many edge: a fully passing two-entry file lands BOTH entries
+    in file order and the toast carries {n} == 2."""
+    service = _FakeGauntlet()
+    store = _StoreFake()
+    imports = _ImportSeams(doc=_IMPORT_DOC)
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            _Seams(), gauntlet_service=service,
+            land=store.land, undo=store.undo,
+            import_read=imports.read, import_validate=imports.validate)
+        await _open(pilot, app, wizard)
+        await _press_step_one_key(pilot, app, "f")
+        await _submit_path(pilot, app, "/share/custom_datasets.json")
+        await _settled(pilot, app)
+        assert [call[1] for call in store.land_calls] == ["ds-a", "ds-b"]
+        for index, key in enumerate(("ds-a", "ds-b")):
+            assert str(wizard.query_one(
+                f"#gauntlet-status-{index}", Static).content) == (
+                GAUNTLET_ROW_LANDED.format(key=key, path=_LAND_PATH))
+        assert _toasts(app) == [GAUNTLET_IMPORTED_TOAST.format(
+            n=2, kind="数据集")]
+
+
+async def test_undo_via_real_store_removes_exactly_the_landed_key(
+        tmp_path, monkeypatch):
+    """Session undo through the REAL 09-01 store on a tmp config root:
+    after u the landed key is gone from the user-owned registry file."""
+    from tui.services import custom_entries
+    from tui.services.settings import CONFIG_DIR_ENV
+
+    monkeypatch.setenv(CONFIG_DIR_ENV, str(tmp_path))
+    service = _FakeGauntlet()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _model_wizard(
+            _Seams(), gauntlet_service=service,
+            land=custom_entries.land, undo=custom_entries.undo)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "key", "my-lm")
+        await _submit(pilot, wizard)
+        await _settled(pilot, app)
+        entries, error = custom_entries.read_entries("models")
+        assert error is None and list(entries) == ["my-lm"]
+        wizard.set_focus(None)
+        await pilot.pause()
+        await pilot.press("u")
+        await pilot.pause()
+        assert _toasts(app)[-1] == GAUNTLET_UNDO_TOAST.format(key="my-lm")
+        entries, error = custom_entries.read_entries("models")
+        assert error is None and entries == {}, (
+            "undo removes exactly the just-landed key from the file"
+        )
+
+
+async def test_export_with_zero_customs_toasts_writes_nothing(
+        tmp_path, monkeypatch):
+    """The empty edge: zero landed customs short-circuits to the toast
+    BEFORE any path is asked; nothing at the destination is created."""
+    from tui.services.settings import CONFIG_DIR_ENV
+
+    monkeypatch.setenv(CONFIG_DIR_ENV, str(tmp_path))
+    export_calls = []
+
+    def export_never(dest_path):
+        export_calls.append(dest_path)
+        return True, None
+
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            _Seams(), export_registry=export_never,
+            has_custom_entries=lambda: False)
+        await _open(pilot, app, wizard)
+        await _press_step_one_key(pilot, app, "o")
+        assert app.screen is wizard, "no path prompt in the empty state"
+        assert _toasts(app) == [GAUNTLET_EXPORT_EMPTY_TOAST]
+        assert export_calls == []
+        assert list(tmp_path.iterdir()) == [], "nothing created anywhere"
+
+
+async def test_export_copies_the_landed_registry_verbatim_bytes(
+        tmp_path, monkeypatch):
+    """The real-file integration variant: the exported file's bytes
+    equal the landed registry file's bytes (the file IS the share unit)."""
+    from tui.services import custom_entries
+    from tui.services.settings import CONFIG_DIR_ENV
+
+    monkeypatch.setenv(CONFIG_DIR_ENV, str(tmp_path))
+    custom_entries.land("datasets", "ds-a", {
+        "Dataset_path": "datasets/ds-a", "Category": "Plants"})
+    dest = tmp_path / "share" / "custom_datasets.json"
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            _Seams(),
+            export_registry=partial(custom_entries.export_registry,
+                                    "datasets"),
+            has_custom_entries=partial(_has_entries, "datasets"))
+        await _open(pilot, app, wizard)
+        await _press_step_one_key(pilot, app, "o")
+        assert app.screen is not wizard, "the export path prompt opens"
+        await _submit_path(pilot, app, dest)
+        assert app.screen is wizard
+        assert _toasts(app) == [GAUNTLET_EXPORTED_TOAST.format(path=dest)]
+        assert dest.is_file()
+        assert dest.read_bytes() == custom_registry_path(
+            "datasets").read_bytes(), "byte-verbatim copy"
+
+
+def _has_entries(kind):
+    """The real empty-state probe (the 09-06 wiring reads the store)."""
+    from tui.services import custom_entries
+
+    entries, error = custom_entries.read_entries(kind)
+    return error is None and bool(entries)
