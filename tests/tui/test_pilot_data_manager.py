@@ -1431,3 +1431,80 @@ async def test_x_on_downloading_row_confirms_and_signals_the_seam():
         assert fake.cancel_calls == ["k-dl"], (
             "the confirmed cancel reaches the shared queue seam"
         )
+
+
+# =====================================================================
+# Task 2 — the env-check route hint + the digit-3 path (10-05, D-14;
+# zero env_check.py edits this plan — the amended constant flows through
+# the existing render path, and digit 3 is the ONE navigation path)
+# =====================================================================
+
+from tui.strings import ENV_KERNEL_LABELS, ENV_ROUTE_MISSING_DATASETS  # noqa: E402
+
+
+class _EnvDatasetDirsFailFake:
+    """The env-check fake whose cached run carries the dataset_dirs FAIL
+    (the route fixture — the route line renders from the cache hit, no
+    kernel ever spawns)."""
+
+    def cached_results(self):
+        passes = tuple(
+            CheckResult(name=kernel_id, ok=True,
+                        lines=(f"PASS: {kernel_id}",))
+            for kernel_id in ENV_KERNEL_LABELS
+            if kernel_id != "dataset_dirs"
+        )
+        fail = CheckResult(name="dataset_dirs", ok=False, lines=(
+            ("FAIL: 2 of 50 registry dataset dir(s) missing on disk "
+             "(the E2' launch gate):"),
+            "  - GUE__EPI_GM12878",
+            "  - GUE__fungi_species_20",
+        ))
+        return ("2026-10-11 09:30", passes + (fail,))
+
+    def kernels(self):
+        raise AssertionError("a cache-hit boot must never spawn the worker")
+
+    def persist(self, results):
+        raise AssertionError("a cache-hit boot must never persist")
+
+
+async def test_env_route_hint_renders_and_digit3_is_the_one_path():
+    """ENV-03 landing: the RENDERED route line (the real verdict render
+    path over the dataset_dirs failure fixture) carries the [3] keycap
+    segment naming the data-manager screen, and pressing 3 from the env
+    screen switches to the real DataManagerScreen over the injected
+    fake queue (the shared-instance wiring)."""
+    app = DnallmMarkTui(
+        env_check_service=_EnvDatasetDirsFailFake(),
+        selection_service=_SelectionFake(),
+        download_queue_service=FakeQueueService(),
+    )
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        # the rendered verdict block: the ready verdict (every CRITICAL
+        # kernel passed) + the route line for the routing failure
+        lines = [
+            str(static.content)
+            for static in app.screen.query_one("#env-verdict").query(Static)
+        ]
+        route_line = ENV_ROUTE_MISSING_DATASETS.format(n=2)
+        assert route_line in lines, (
+            "the route line must render through the real render path"
+        )
+        # the [3] keycap segment IS in the rendered line (the ENV-03
+        # navigation affordance — the amended 10-03 constant, zero
+        # env_check.py code changes)
+        assert "[3]" in route_line
+        assert "前往数据管理" in route_line
+
+        # digit 3: the one navigation path — the data-manager screen
+        # mounts over the SHARED fake queue
+        await pilot.press("3")
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(app.screen, DataManagerScreen), (
+            "digit 3 from the env screen must switch to the "
+            "DataManagerScreen"
+        )

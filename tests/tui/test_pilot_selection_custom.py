@@ -35,6 +35,7 @@ discipline — the real home config is never read, official registries
 never written).
 """
 
+import json
 from pathlib import Path
 from typing import ClassVar
 
@@ -45,7 +46,7 @@ from textual.binding import Binding, BindingType
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Input, Static
 
-from tui.app import DnallmMarkTui
+from tui.app import DnallmMarkTui, QueueEventMessage
 from tui.screens.nav import NAV_SLOTS
 from tui.screens.selection import (
     PresetMenu,
@@ -57,8 +58,9 @@ from tui.screens.selection import (
 )
 from tui.screens.wizard import WizardModal
 from tui.services import custom_entries
+from tui.services import registries as registries_service
 from tui.services import selection as selection_service
-from tui.services.download_queue import EnqueueOutcome
+from tui.services.download_queue import EnqueueOutcome, QueueEvent
 from tui.services.gauntlet import (
     LEG_AUDIT,
     LEG_DRY_RUN,
@@ -72,6 +74,7 @@ from tui.services.registries import (
 from tui.strings import (
     DL_DISABLED_TOAST,
     ENV_KERNEL_LABELS,
+    QUEUE_FLIP_TOAST,
     QUEUE_TOAST_ALREADY_QUEUED,
     QUEUE_TOAST_ENQUEUED,
     SEL_COUNT_CUSTOM_SEGMENT,
@@ -81,6 +84,8 @@ from tui.strings import (
     SEL_ENQUEUE_LABEL,
     SEL_ENQUEUE_PRESENT_TOAST,
     SEL_MATRIX_LABEL,
+    SEL_PRESENCE_MISSING,
+    SEL_PRESENCE_PRESENT,
     SEL_PRESET_UNKNOWN_KEYS,
     SEL_STATUS_LINE,
     SEL_TOGGLE_DISABLED_TOAST,
@@ -1160,3 +1165,164 @@ async def test_bottom_bar_declares_d_between_e_and_v():
         assert f"[d]{SEL_ENQUEUE_LABEL}" in text
         assert text.index(f"[e]{SEL_TOGGLE_LABEL}") < text.index(
             f"[d]{SEL_ENQUEUE_LABEL}") < text.index(f"[v]{SEL_MATRIX_LABEL}")
+
+
+# =====================================================================
+# Task 2 — the D-11 presence overlay + the live flip (10-05; tier-1
+# grade: the REAL backend over the committed baseline + tmp roots)
+# =====================================================================
+
+def _seed_queue_state(state_root, entries):
+    """Write one queue state file (schema_version 1) under the tmp root."""
+    (state_root / "download_queue.json").write_text(json.dumps({
+        "schema_version": 1,
+        "entries": entries,
+    }, ensure_ascii=False), encoding="utf-8")
+
+
+def _queue_state_entry(key, state, measured=None):
+    """One canonical persisted entry (the service's _ENTRY_FIELDS shape)."""
+    return {
+        "key": key, "kind": "dataset", "state": state,
+        "attempts": 1, "enqueued_at": "2026-10-12T10:00:00",
+        "started_at": "2026-10-12T10:00:01", "finished_at": None,
+        "last_percent": 100, "interrupted": False, "log_path": None,
+        "problems": [],
+        "reconcile": ({"verdict": "pass", "declared": None,
+                       "measured": measured, "unified_eval_n": 1}
+                      if measured is not None else None),
+    }
+
+
+def _committed_missing_dataset_keys():
+    """The keys the committed n_audit marks missing (the flip targets —
+    the real baseline carries the Phase 10 missing set)."""
+    audit = registries_service.load_n_audit()
+    assert audit is not None, "the committed n_audit must be readable"
+    missing = sorted(
+        key for key, record in audit.items()
+        if isinstance(record, dict) and record.get("missing") is True
+    )
+    assert missing, "the committed baseline must carry missing keys"
+    return missing
+
+
+def _dataset_presence_cell(table, key):
+    """One dataset row's rendered presence cell (column 6 of 6)."""
+    keys = _row_keys(table)
+    assert key in keys, f"row {key} must render in the datasets table"
+    cell = table.get_row_at(keys.index(key))[5]
+    return cell.plain if isinstance(cell, Text) else str(cell)
+
+
+async def _open_datasets_view(pilot, app, backend):
+    """Mount selection over the REAL backend, switch to the datasets
+    table, and settle the snapshot worker."""
+    app.push_screen(SelectionScreen(
+        selection_service=backend,
+        marked_models=app._marked_models,
+        marked_tasks=app._marked_tasks,
+    ))
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+    await pilot.press("m")
+    await pilot.pause()
+    return app.screen
+
+
+async def test_overlay_flips_missing_presence_to_present_and_back(
+        monkeypatch, tmp_path):
+    """Tier-1-grade snapshot proof: a done entry with measured rows in
+    the pinned state file flips the committed-missing key's cell to
+    present WITH the measured counts (the D-11 flip); removing the
+    state file returns the row to missing — the committed baseline
+    rules when no overlay exists."""
+    _pin_roots(monkeypatch, tmp_path)
+    state_root = _pin_state_root(monkeypatch, tmp_path)
+    key = _committed_missing_dataset_keys()[0]
+    _seed_queue_state(state_root, [
+        _queue_state_entry(key, "done",
+                           {"train": 12345, "dev": 678, "test": 90})])
+    app = _app(SelectionBackend())
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open_datasets_view(pilot, app, SelectionBackend())
+        table = screen.query_one(DataTable)
+        assert _dataset_presence_cell(table, key) == (
+            SEL_PRESENCE_PRESENT.format(
+                train="12,345", dev="678", test="90")), (
+            "the reconciled key must render present with the "
+            "thousands-separated measured counts"
+        )
+
+        # remove the state file -> the committed baseline rules again
+        (state_root / "download_queue.json").unlink()
+        screen._load_data()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert _dataset_presence_cell(table, key) == SEL_PRESENCE_MISSING, (
+            "with no overlay the committed n_audit view rules"
+        )
+
+
+async def test_mismatch_and_failed_entries_never_flip_presence(
+        monkeypatch, tmp_path):
+    """UI-SPEC semantic 6: only reconcile-PASS (done) entries belong in
+    the overlay — mismatch and failed entries in the state file leave
+    the committed-missing cells missing (the number would be wrong)."""
+    _pin_roots(monkeypatch, tmp_path)
+    state_root = _pin_state_root(monkeypatch, tmp_path)
+    missing = _committed_missing_dataset_keys()
+    assert len(missing) >= 2, "the baseline carries 7 missing keys"
+    mismatch_key, failed_key = missing[0], missing[1]
+    _seed_queue_state(state_root, [
+        _queue_state_entry(mismatch_key, "mismatch",
+                           {"train": 1, "dev": 2, "test": 3}),
+        _queue_state_entry(failed_key, "failed",
+                           {"train": 4, "dev": 5, "test": 6}),
+    ])
+    app = _app(SelectionBackend())
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open_datasets_view(pilot, app, SelectionBackend())
+        table = screen.query_one(DataTable)
+        assert _dataset_presence_cell(
+            table, mismatch_key) == SEL_PRESENCE_MISSING
+        assert _dataset_presence_cell(
+            table, failed_key) == SEL_PRESENCE_MISSING
+
+
+async def test_live_flip_through_the_app_event_forward(
+        monkeypatch, tmp_path):
+    """The D-11 live flip: a done QueueEvent forwarded by the app (the
+    10-04 generic forward) reaches the MOUNTED selection screen's
+    apply_queue_event, re-runs the snapshot worker, and the presence
+    cell flips in place — the screen never remounts and the app-level
+    flip toast fires."""
+    _pin_roots(monkeypatch, tmp_path)
+    state_root = _pin_state_root(monkeypatch, tmp_path)
+    key = _committed_missing_dataset_keys()[0]
+    app = _app(SelectionBackend())
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = await _open_datasets_view(pilot, app, SelectionBackend())
+        table = screen.query_one(DataTable)
+        assert _dataset_presence_cell(table, key) == SEL_PRESENCE_MISSING
+
+        # the reconcile lands in the state file; the driver posts done
+        _seed_queue_state(state_root, [
+            _queue_state_entry(key, "done",
+                               {"train": 500, "dev": 50, "test": 5})])
+        event = QueueEvent(
+            run_id="driver-1", key=key, kind="dataset", state="done",
+            last_percent=100, problems=(), details=(), log_path=None)
+        app.on_queue_event_message(
+            QueueEventMessage(event, app._queue_generation))
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.pause()
+
+        assert _dataset_presence_cell(table, key) == (
+            SEL_PRESENCE_PRESENT.format(train="500", dev="50", test="5")), (
+                "the done event must flip the presence cell live"
+            )
+        assert app.screen is screen, "the flip never remounts the screen"
+        assert QUEUE_FLIP_TOAST.format(key=key) in _toasts(app)
