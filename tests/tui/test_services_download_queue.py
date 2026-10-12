@@ -267,6 +267,39 @@ def test_enqueue_shape_d_key_yields_disabled_with_reason_and_url(
     assert service.entries() == []
 
 
+def test_enqueue_unknown_reasons_yield_their_own_outcome(
+        monkeypatch, tmp_path):
+    """WR-06: the defensive reasons (no mirror, unreadable registry)
+    yield the ``unknown`` action carrying their OWN reason — never the
+    shape-D ``disabled`` collapse whose toast claims a mirror layout
+    the channel never resolved."""
+    repo = tmp_repo_with_registry(
+        tmp_path / "repo", {"DemoN__nomirror": synth_entries()[
+            "DemoN__nomirror"]})
+    pin_state_dir(monkeypatch, tmp_path)
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, cli_path=str(fake_cli(tmp_path)))
+
+    outcome = service.enqueue("DemoN__nomirror")
+
+    assert outcome.action == "unknown", (
+        "no_modelscope_mirror is a channel-unavailable state, not the "
+        "shape-D mirror-layout copy"
+    )
+    assert outcome.reason_code == "no_modelscope_mirror"
+    assert service.entries() == []
+
+    # a registry that cannot be read: unknown + registry_unreadable
+    bare = tmp_path / "bare"
+    (bare / "pipeline").mkdir(parents=True)   # NO datasets_info.json
+    degraded = download_queue.DownloadQueueService(
+        repo_root=bare, cli_path=str(fake_cli(tmp_path)))
+    outcome = degraded.enqueue("Any__key")
+
+    assert outcome.action == "unknown"
+    assert outcome.reason_code == "registry_unreadable"
+
+
 def test_enqueue_cli_unavailable_outcome(monkeypatch, tmp_path):
     """D-01: a CLI-absent machine yields the probed cli_unavailable
     outcome — never an import error, never an exception."""

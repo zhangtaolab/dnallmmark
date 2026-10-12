@@ -236,6 +236,13 @@ _DISABLED_REASONS = frozenset({REASON_SHAPE_D, REASON_UNKNOWN_REPO})
 #: state root, full disk, quota). The screens toast it, never silently.
 ACTION_PERSIST_FAILED = "persist_failed"
 
+#: The enqueue action for every defensive degraded reason outside
+#: ``_DISABLED_REASONS`` (WR-06): no mirror, malformed values, an
+#: unreadable registry — a channel-unavailable state carrying its OWN
+#: reason code, never collapsed into the shape-D ``disabled`` outcome
+#: whose toast claims a mirror layout the channel never resolved.
+ACTION_UNKNOWN = "unknown"
+
 #: The repo-id allowlist (T-10-01-01): a registry-derived value must
 #: match ``namespace/name`` word chars before it can ever reach argv.
 REPO_ID_RE_PART = r"[\w.-]+/[\w.-]+"
@@ -528,12 +535,15 @@ class EnqueueOutcome:
 
     Attributes:
         action: one of ``enqueued`` / ``already_queued`` /
-            ``unknown_key`` / ``disabled`` / ``cli_unavailable`` /
-            ``persist_failed`` (the unwritable-state-rail refusal,
-            WR-04).
+            ``unknown_key`` / ``disabled`` (the shape-D and
+            unknown-repo reasons only) / ``unknown`` (every defensive
+            reason — no mirror, malformed values, an unreadable
+            registry; WR-06) / ``cli_unavailable`` / ``persist_failed``
+            (the unwritable-state-rail refusal, WR-04).
         key: the requested dataset key.
-        reason_code: the machine reason when action is ``disabled``
-            (e.g. ``shape_d_layout``) — None otherwise.
+        reason_code: the machine reason when action is ``disabled`` or
+            ``unknown`` (e.g. ``shape_d_layout``,
+            ``registry_unreadable``) — None otherwise.
         source_url: the winning registry URL (drill-down data) when
             the channel resolved; None otherwise.
     """
@@ -1171,12 +1181,16 @@ class DownloadQueueService:
         ``already_queued`` with no state change; an unknown official
         key yields ``unknown_key`` (custom keys are not download
         targets — the official registry is the only URL authority); a
-        disabled/degraded channel yields ``disabled`` carrying the
-        machine reason + the drill-down ``source_url``; a CLI-absent
-        machine yields ``cli_unavailable``; a state file that cannot be
-        written yields ``persist_failed`` (the append is rolled back —
-        WR-04: never an exception, never a ghost row); otherwise the
-        pending entry appends and persists (``enqueued``).
+        shape-D/unknown-repo channel yields ``disabled`` and every
+        OTHER degraded reason (no mirror, malformed values, an
+        unreadable registry) yields ``unknown`` — each carrying the
+        machine reason + the drill-down ``source_url`` (WR-06: the
+        screens can never claim the mirror-layout copy for a reason
+        that is not it); a CLI-absent machine yields
+        ``cli_unavailable``; a state file that cannot be written yields
+        ``persist_failed`` (the append is rolled back — WR-04: never an
+        exception, never a ghost row); otherwise the pending entry
+        appends and persists (``enqueued``).
 
         Args:
             key (str): the dataset registry key.
@@ -1193,8 +1207,10 @@ class DownloadQueueService:
             if spec is None:
                 return EnqueueOutcome(action="unknown_key", key=key)
             if spec.reason_code is not None:
+                action = ("disabled" if spec.reason_code in _DISABLED_REASONS
+                          else ACTION_UNKNOWN)
                 return EnqueueOutcome(
-                    action="disabled", key=key,
+                    action=action, key=key,
                     reason_code=spec.reason_code,
                     source_url=spec.source_url)
             if cli is None:

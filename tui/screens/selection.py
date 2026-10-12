@@ -124,6 +124,7 @@ from tui.services.registries import (
 from tui.strings import (
     APP_MODAL_BACK_LABEL,
     DL_DISABLED_TOAST,
+    DL_UNKNOWN_TOAST,
     ENV_DETAIL_LABEL,
     NAV_LABEL_ABOUT,
     NAV_LABEL_DATA,
@@ -1705,6 +1706,11 @@ class SelectionScreen(Screen):
         elif outcome.action == "disabled":
             self.app.notify(
                 DL_DISABLED_TOAST.format(key=key), severity="warning")
+        elif outcome.action == "unknown":
+            self.app.notify(
+                DL_UNKNOWN_TOAST.format(
+                    key=key, reason=outcome.reason_code or "unknown"),
+                severity="warning")
         elif outcome.action == "cli_unavailable":
             self.app.notify(QUEUE_CLI_UNAVAILABLE, severity="error")
         elif outcome.action == "persist_failed":

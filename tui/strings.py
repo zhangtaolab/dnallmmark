@@ -551,6 +551,12 @@ DL_ENQUEUE_ALL_LABEL = "全部入队"
 DL_PRESENCE_SUMMARY = "在场 {present}/{total} · 缺失 {missing}"
 DL_DISABLED_TOAST = (
     "⚠ {key} 上游为镜像布局，不支持一键下载 — download_url 见详情")
+# WR-06: the channel-unavailable reasons that are NOT the shape-D
+# mirror layout (no mirror, malformed values, an unreadable registry)
+# get their own neutral toast naming the machine reason — never the
+# factually wrong mirror-layout copy.
+DL_UNKNOWN_TOAST = (
+    "⚠ {key} 下载通道暂不可用: {reason} — 详情见下钻")
 
 # ===== 下载队列 (QUEUE_, Phase 10, 10-03; D-02..D-09) =====
 # The queue table chrome, the five-state cells, the reconcile cells,

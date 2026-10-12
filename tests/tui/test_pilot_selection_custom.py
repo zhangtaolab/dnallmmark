@@ -73,6 +73,7 @@ from tui.services.registries import (
 )
 from tui.strings import (
     DL_DISABLED_TOAST,
+    DL_UNKNOWN_TOAST,
     ENV_KERNEL_LABELS,
     QUEUE_FLIP_TOAST,
     QUEUE_PERSIST_FAILED_TOAST,
@@ -1184,6 +1185,43 @@ async def test_d_persist_failed_outcome_toasts_never_silent(
             key=_KEY_MISSING_DATASET) in _toasts(app)
         assert queue.enqueue_calls == [_KEY_MISSING_DATASET]
         assert kicks == [], "a refused enqueue never kicks"
+
+
+async def test_d_unknown_outcome_toasts_the_reason_not_mirror_layout(
+        monkeypatch, tmp_path):
+    """WR-06 on the selection screen: an unknown-channel outcome (e.g.
+    a transient registry-read failure) renders the neutral
+    channel-unavailable toast naming the machine reason — never the
+    shape-D mirror-layout copy that would send the diagnosis the wrong
+    way."""
+    _pin_state_root(monkeypatch, tmp_path)
+    queue = _QueueFake(outcomes={
+        _KEY_MISSING_DATASET: EnqueueOutcome(
+            action="unknown", key=_KEY_MISSING_DATASET,
+            reason_code="registry_unreadable"),
+    })
+    kicks = []
+    monkeypatch.setattr(
+        DnallmMarkTui, "kick_download_queue",
+        lambda self: kicks.append(True),
+    )
+    app = _app(_SelectionFake(data=_d_fixture_data()))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, queue_fake=queue)
+        table = app.screen.query_one(DataTable)
+        await pilot.press("m")
+        await pilot.pause()
+        table.move_cursor(row=0)
+        await pilot.pause()
+
+        await pilot.press("d")
+        await pilot.pause()
+        assert DL_UNKNOWN_TOAST.format(
+            key=_KEY_MISSING_DATASET,
+            reason="registry_unreadable") in _toasts(app)
+        assert DL_DISABLED_TOAST.format(
+            key=_KEY_MISSING_DATASET) not in _toasts(app)
+        assert kicks == []
 
 
 async def test_bottom_bar_declares_d_between_e_and_v():

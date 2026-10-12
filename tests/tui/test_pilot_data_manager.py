@@ -387,6 +387,7 @@ from tui.services.download_queue import MissingInfo, ReauditOutcome
 from tui.strings import (
     DL_BUNDLE_TASK_NAME,
     DL_DISABLED_TOAST,
+    DL_UNKNOWN_TOAST,
     DL_MISSING_EMPTY,
     DL_MISSING_TITLE,
     DL_PRESENCE_SUMMARY,
@@ -936,6 +937,27 @@ async def test_d_enqueues_missing_cursor_with_all_outcome_toasts():
             "the refused enqueue must never be silent"
         )
         assert _queue_table(app.screen).row_count == rows_before
+
+    # unknown (WR-06): the neutral channel-unavailable toast names the
+    # machine reason — never the shape-D mirror-layout copy
+    service = FakeDataManagerService(
+        missing=(_missing_row("k-nfs"),),
+        enqueue_outcomes={"k-nfs": EnqueueOutcome(
+            action="unknown", key="k-nfs",
+            reason_code="registry_unreadable")})
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        await pilot.press("d")
+        await pilot.pause()
+        assert DL_UNKNOWN_TOAST.format(
+            key="k-nfs", reason="registry_unreadable"
+        ) in _toast_messages(app), (
+            "a registry-read failure must NOT render the mirror-layout "
+            "copy (a factually wrong diagnosis, WR-06)"
+        )
+        assert DL_DISABLED_TOAST.format(key="k-nfs") not in (
+            _toast_messages(app))
 
 
 async def test_a_enqueues_all_with_count_toast():

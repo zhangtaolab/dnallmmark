@@ -83,6 +83,7 @@ from tui.strings import (
     DL_BUNDLE_TASK_NAME,
     DL_CANCEL_LABEL,
     DL_DISABLED_TOAST,
+    DL_UNKNOWN_TOAST,
     DL_ENQUEUE_ALL_LABEL,
     DL_ENQUEUE_LABEL,
     DL_MISSING_COL_KEY,
@@ -973,6 +974,12 @@ class DataManagerScreen(Screen):
         elif outcome.action == "disabled":
             self.app.notify(
                 DL_DISABLED_TOAST.format(key=outcome.key),
+                severity="warning")
+        elif outcome.action == "unknown":
+            self.app.notify(
+                DL_UNKNOWN_TOAST.format(
+                    key=outcome.key,
+                    reason=outcome.reason_code or "unknown"),
                 severity="warning")
         elif outcome.action == "cli_unavailable":
             self.app.notify(QUEUE_CLI_UNAVAILABLE, severity="error")
