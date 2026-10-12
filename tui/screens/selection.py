@@ -41,6 +41,19 @@ Contract (locked decisions):
   and the n_audit-absent column state renders the documented copy. The
   ``missing`` flag decision is the service's (tier-1 tested); the screen
   never re-derives it.
+- D-11 (10-05): the presence snapshot is the MERGED audit — the
+  committed n_audit overlaid with the queue's reconcile-pass rows
+  (``download_queue.merge_presence`` over ``reconciled_rows``, a pure
+  read of the queue state file inside the exclusive worker; the
+  UNCHANGED ``registries.presence_for`` maps the merged view — the
+  10-02 contract). Presence flips ✗->✓ exactly on reconcile-pass; a
+  landed-but-mismatched dataset never flips. ``apply_queue_event``
+  re-runs the snapshot worker on a done event (the app-level forward
+  landed in 10-04), so the flip is live on the mounted screen.
+- D-14 (10-05): presence-✗ dataset rows enqueue into the SHARED
+  download queue through the same service call and the same outcome
+  toasts as the data-manager screen's ``d`` (one vocabulary) — the
+  kick lives on the app; the models view never enqueues.
 - D-03 (the read seam): every file-reading service call — the
   registry/n_audit load AND the preset-menu read (both registries, the
   priorities file, and presets.json) — runs in an exclusive
@@ -101,7 +114,7 @@ from tui.services.custom_validation import (
     validate_import_document,
     validate_model_candidate,
 )
-from tui.services.download_queue import EnqueueOutcome
+from tui.services.download_queue import EnqueueOutcome, QueueEvent
 from tui.services.gauntlet import GauntletService
 from tui.services.registries import (
     PRESENCE_MISSING,
@@ -357,6 +370,17 @@ class SelectionBackend:
         resolve the SAME custom file (the overlay root when pinned), so
         the two views can never disagree about which keys exist
         (Pitfall 7).
+
+        The 10-05 composition (D-11): the presence view is the MERGED
+        audit — the committed n_audit overlaid with the queue's
+        reconcile-pass rows (``merge_presence`` over ``reconciled_rows``,
+        a pure tolerant read of the queue state file — no service
+        instance, no write). The committed file alone can never flip a
+        freshly downloaded dataset (only the explicit ``g`` re-audit
+        refreshes it), so the flip rides here; the UNCHANGED
+        ``presence_for`` maps the merged view (semantic 6: a
+        landed-but-mismatched dataset never flips — only done entries
+        reach the overlay).
         """
         model_entries, models_error = _load_entries(
             registries_service.load_model_entries, _MODELS_REGISTRY_PATH,
@@ -384,9 +408,12 @@ class SelectionBackend:
                 }
                 if key not in merged_keys:
                     entries.append(project(key, entry))
-        audit = registries_service.load_n_audit()
+        committed_audit = registries_service.load_n_audit()
+        overlay_rows = download_queue_service.reconciled_rows()
+        audit = download_queue_service.merge_presence(
+            committed_audit, overlay_rows)
         presence: dict[str, Presence] = {}
-        if audit is not None:
+        if audit:
             presence = {
                 entry["key"]: registries_service.presence_for(
                     entry["key"], audit,
@@ -397,7 +424,12 @@ class SelectionBackend:
             model_entries=tuple(model_entries),
             dataset_entries=tuple(dataset_entries),
             presence=presence,
-            audit_available=audit is not None,
+            # the column renders whenever ANY truth source exists — the
+            # committed baseline OR live reconcile rows (an audit-less
+            # machine with a done queue entry still shows its flip;
+            # other keys render the unknown cell)
+            audit_available=(committed_audit is not None)
+            or bool(overlay_rows),
             models_load_error=models_error,
             datasets_load_error=datasets_error,
             custom_status=custom_status,
@@ -1305,6 +1337,20 @@ class SelectionScreen(Screen):
         self._data = message.data
         self._apply_filter()
         self._update_status_line()
+
+    # ----- the app-forwarded queue events (10-05, D-11 live flip) -----
+
+    def apply_queue_event(self, event: QueueEvent) -> None:
+        """One app-forwarded queue event (the 10-04 generic forward):
+        a done event IS a reconcile pass (the service's done gate,
+        D-09), so it re-runs the existing exclusive snapshot worker —
+        the overlay-wired presence view refreshes on the next render
+        and the cursor row's cell flips in place. The table stays
+        mounted; nothing navigates. A landed-but-mismatched dataset
+        never flips (``reconciled_rows`` overlays done entries only —
+        semantic 6)."""
+        if event.state == "done":
+            self._load_data()
 
     # ----- row composition (state rows vs data rows) -----
 

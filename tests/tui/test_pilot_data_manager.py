@@ -1439,7 +1439,7 @@ async def test_x_on_downloading_row_confirms_and_signals_the_seam():
 # the existing render path, and digit 3 is the ONE navigation path)
 # =====================================================================
 
-from tui.strings import ENV_KERNEL_LABELS, ENV_ROUTE_MISSING_DATASETS  # noqa: E402
+from tui.strings import ENV_KERNEL_LABELS, ENV_ROUTE_MISSING_DATASETS
 
 
 class _EnvDatasetDirsFailFake:
