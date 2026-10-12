@@ -67,22 +67,39 @@ class FakeQueueService:
 
     Deterministic and recording: ``claim_next`` transitions the head
     pending entry to ``downloading`` (the service contract), ``run_task``
-    resolves through the scripted ``results`` mapping (default: done),
-    and every call is recorded for the spine assertions. ``gate`` blocks
-    the FIRST claim_next on a ``threading.Event`` — the deliberately
-    blocked fake the busy-guard and responsiveness proofs use.
+    resolves through the scripted ``results`` mapping (default: done)
+    firing the optional ``progress_script`` percents through the
+    progress callback (duplicates included — the app-level throttle is
+    what dedupes), and every call is recorded for the spine assertions.
+    ``gate`` blocks the FIRST claim_next and ``progress_gate`` blocks
+    run_task after the scripted 40% tick — the deliberately blocked
+    fakes the busy-guard, live-progress, and responsiveness proofs use.
+
+    The missing set models the D-11 semantics exactly: a key is missing
+    until its entry reaches ``done`` (landing alone never flips).
     """
 
     def __init__(self, entries=(), results=None, gate=None,
-                 probe_state="not_public"):
+                 probe_state="not_public", progress_script=None,
+                 progress_gate=None):
         self._entries = [_queue_entry(*item) if isinstance(item, tuple)
                          else item for item in entries]
         self._results = dict(results) if results else {}
         self._gate = gate
         self.probe_state = probe_state
+        self._progress_script = dict(progress_script or {})
+        self._progress_gate = progress_gate
         self.load_calls = 0
         self.claim_next_calls = 0
         self.run_task_calls = []
+        self.cancel_calls = []
+        self.progress_fired = []
+        self.entries_calls = 0
+        self.missing_calls = 0
+
+    def add_entry(self, entry):
+        """Append one entry post-construction (the restart proof)."""
+        self._entries.append(entry)
 
     # ----- the driver surface (the app protocol) -----
 
@@ -90,6 +107,7 @@ class FakeQueueService:
         self.load_calls += 1
 
     def entries(self):
+        self.entries_calls += 1
         return list(self._entries)
 
     def claim_next(self):
@@ -108,6 +126,12 @@ class FakeQueueService:
 
     def run_task(self, key, run_id, progress_cb=None):
         self.run_task_calls.append(key)
+        for percent in self._progress_script.get(key, ()):
+            self.progress_fired.append((key, percent))
+            if progress_cb is not None:
+                progress_cb(key, percent)
+            if percent == 40 and self._progress_gate is not None:
+                self._progress_gate.wait(timeout=10)
         state, percent = self._results.get(key, ("done", 100))
         for index, entry in enumerate(self._entries):
             if entry.key == key:
@@ -118,10 +142,19 @@ class FakeQueueService:
             last_percent=percent, problems=(), details=(),
             log_path=None)
 
+    def cancel(self, key):
+        self.cancel_calls.append(key)
+        return "signalled"
+
     # ----- the screen-side reads the DataManagerBackend delegates to -----
 
     def missing_datasets(self):
-        return ()
+        # the D-11 shape: missing until the entry is done (reconcile
+        # pass) — landing alone never flips presence
+        self.missing_calls += 1
+        return tuple(
+            _missing_row(entry.key) for entry in self._entries
+            if entry.state != "done")
 
     def probe_zenodo(self):
         return self.probe_state
@@ -332,6 +365,7 @@ from tui.strings import (
     QUEUE_CONFIRM_CANCEL_DOWNLOADING,
     QUEUE_CONFIRM_CANCEL_PENDING,
     QUEUE_EMPTY,
+    QUEUE_FLIP_TOAST,
     QUEUE_PROGRESS_INDETERMINATE,
     QUEUE_RECONCILE_MISMATCH,
     QUEUE_RECONCILE_PASS,
@@ -1195,3 +1229,205 @@ def test_data_manager_module_carries_zero_chinese_literals():
         f"Chinese literals must live in tui/strings.py only "
         f"({len(offenders)} found in data_manager.py)"
     )
+
+
+# =====================================================================
+# Task 3 — the driver loop end-to-end + event application + gates
+# =====================================================================
+
+async def test_driver_e2e_rows_toast_and_missing_refresh():
+    """The enqueue -> kick -> worker -> event loop over the fake queue:
+    final states render, the done entry fires the flip toast, the
+    reconciled key leaves the missing list, and the FAILED row updated
+    through apply_queue_event WITHOUT a snapshot reload."""
+    fake = FakeQueueService(
+        entries=[_queue_entry("k-one"), _queue_entry("k-two")],
+        results={"k-one": ("done", 100), "k-two": ("failed", 55)})
+    app = _app(queue=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_data_manager(pilot, app)  # digit 3 over the shared fake
+        screen = app.screen
+        missing_reads_before = fake.missing_calls
+        # pre-state: both keys missing, both rows queued
+        assert _missing_table(screen).row_count == 2
+        assert _queue_table(screen).row_count == 2
+
+        app.kick_download_queue()
+        await asyncio.wait_for(
+            app.workers.wait_for_complete(), timeout=10)
+        await pilot.pause()
+        await asyncio.wait_for(
+            app.workers.wait_for_complete(), timeout=10)
+        await pilot.pause()
+
+        # final states on the rows (mismatch/failed sort first: k-two)
+        table = _queue_table(screen)
+        assert _row(table, 0)[0] == "k-two"
+        assert _row(table, 0)[1] == QUEUE_STATE_FAILED
+        assert _row(table, 1)[0] == "k-one"
+        assert _row(table, 1)[1] == QUEUE_STATE_DONE
+
+        # the done entry fired the app-level flip toast
+        assert QUEUE_FLIP_TOAST.format(key="k-one") in _toast_messages(app)
+        assert not any(QUEUE_FLIP_TOAST.format(key="k-two")
+                       in message for message in _toast_messages(app))
+
+        # the reconciled key left the missing list (the failed one stays)
+        assert _missing_table(screen).row_count == 1
+        assert _row(_missing_table(screen), 0)[0].endswith("k-two")
+
+        # row updates without a full reload: exactly ONE extra missing
+        # read ran (the done-triggered reload) — the failed row reached
+        # its final state through apply_queue_event alone, no snapshot
+        assert fake.run_task_calls == ["k-one", "k-two"]
+        assert fake.missing_calls == missing_reads_before + 1
+
+
+async def test_progress_streams_live_and_throttles_duplicates():
+    """Live progress: the row's cell updates at intermediate percents
+    while the task is mid-flight; duplicate consecutive percents never
+    post twice (the app-level throttle over the fake's duplicates)."""
+    gate = threading.Event()
+    fake = FakeQueueService(
+        entries=[_queue_entry("k-live")],
+        results={"k-live": ("done", 100)},
+        progress_script={"k-live": (10, 10, 25, 25, 40, 40, 100, 100)},
+        progress_gate=gate)
+    app = _app(queue=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_data_manager(pilot, app)
+        screen = app.screen
+        applied: list[int] = []
+        original = screen.apply_queue_progress
+
+        def spy(key, percent):
+            applied.append(percent)
+            original(key, percent)
+
+        screen.apply_queue_progress = spy
+
+        app.kick_download_queue()
+        # the task blocks after the 40% tick — poll pauses until the
+        # cell carries the live 40% bar (each returning pause IS the
+        # responsiveness evidence)
+        table = _queue_table(screen)
+        live = None
+        for _ in range(200):
+            await pilot.pause()
+            for index in range(table.row_count):
+                if _row(table, index)[0] == "k-live":
+                    live = _cell_text(table.get_row_at(index)[2])
+                    break
+            if live and live.startswith(" 40%"):
+                break
+        assert live is not None and live.startswith(" 40%"), (
+            "the progress cell must stream the live intermediate percent"
+        )
+        assert live == " 40% ████······", f"the live bar renders: {live!r}"
+
+        gate.set()
+        await asyncio.wait_for(
+            app.workers.wait_for_complete(), timeout=10)
+        await pilot.pause()
+        # the throttle: the claim tick (None) leads; duplicates in the
+        # script never post twice
+        assert applied == [None, 10, 25, 40, 100], (
+            "the claim tick + deduped percents are the exact post stream"
+        )
+        for index in range(table.row_count):
+            if _row(table, index)[0] == "k-live":
+                assert _cell_text(
+                    table.get_row_at(index)[2]) == "100%"
+                break
+
+
+async def test_blocked_task_never_freezes_the_console():
+    """T-10-04-05 (the T-08-07 lineage): while run_task blocks in its
+    thread, keypresses still reach the app — the r noop toast fires."""
+    gate = threading.Event()
+    fake = FakeQueueService(
+        entries=[_queue_entry("k-blocked")],
+        results={"k-blocked": ("failed", None)},
+        progress_script={"k-blocked": (40,)},
+        progress_gate=gate)
+    app = _app(queue=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_data_manager(pilot, app)
+        screen = app.screen
+        _queue_table(screen).focus()
+        await pilot.pause()
+        app.kick_download_queue()
+        # wait until the task is in flight (the downloading state shows)
+        table = _queue_table(screen)
+        for _ in range(200):
+            await pilot.pause()
+            if any(_row(table, i)[1] == QUEUE_STATE_DOWNLOADING
+                   for i in range(table.row_count)):
+                break
+        assert any(_row(table, i)[1] == QUEUE_STATE_DOWNLOADING
+                   for i in range(table.row_count)), (
+            "the blocked task renders the downloading state"
+        )
+        # the console is live: r on the downloading row fires the toast
+        await pilot.press("r")
+        await pilot.pause()
+        assert QUEUE_RETRY_NOOP in _toast_messages(app), (
+            "keypresses must reach the app while a task blocks"
+        )
+        gate.set()
+        await asyncio.wait_for(
+            app.workers.wait_for_complete(), timeout=10)
+        await pilot.pause()
+
+
+async def test_worker_exits_on_drain_and_restarts_on_next_kick():
+    """After the queue drains, no driver worker runs; a later enqueue +
+    kick restarts it (the busy flag re-arms)."""
+    fake = FakeQueueService(entries=[_queue_entry("k-one")])
+    app = _app(queue=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_data_manager(pilot, app)
+        app.kick_download_queue()
+        await asyncio.wait_for(
+            app.workers.wait_for_complete(), timeout=10)
+        await pilot.pause()
+        assert app._queue_busy is False
+        assert not any(worker.name == "run_download_queue"
+                       for worker in app.workers), (
+            "the driver must not linger after the drain"
+        )
+        assert fake.run_task_calls == ["k-one"]
+
+        # a later enqueue + kick restarts the driver
+        fake.add_entry(_queue_entry("k-two"))
+        app.kick_download_queue()
+        await asyncio.wait_for(
+            app.workers.wait_for_complete(), timeout=10)
+        await pilot.pause()
+        assert fake.run_task_calls == ["k-one", "k-two"]
+
+
+async def test_x_on_downloading_row_confirms_and_signals_the_seam():
+    """The cancel-through-app path: the confirm copy for a downloading
+    row names the resume retention; confirming reaches the queue seam."""
+    fake = FakeQueueService(
+        entries=[_queue_entry("k-dl", "downloading", last_percent=42)])
+    app = _app(queue=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_data_manager(pilot, app)
+        screen = app.screen
+        _queue_table(screen).focus()
+        await pilot.pause()
+        await pilot.press("x")
+        await pilot.pause()
+        assert isinstance(app.screen, ModalScreen)
+        texts = [str(widget.content) for widget in app.screen.query(Static)]
+        assert any(QUEUE_CONFIRM_CANCEL_DOWNLOADING.format(key="k-dl")
+                   in text for text in texts), (
+            "the downloading confirm copy renders"
+        )
+        await pilot.press("enter")
+        await pilot.pause()
+        assert fake.cancel_calls == ["k-dl"], (
+            "the confirmed cancel reaches the shared queue seam"
+        )
