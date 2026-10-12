@@ -1736,8 +1736,12 @@ class DownloadQueueService:
 
         Final state: done iff at least one key landed AND zero
         mismatches; mismatch if any landed key mismatched; failed if
-        nothing landed or any stage failed. The branch writes NOTHING
-        outside the staging dir + ``pipeline/datasets`` — the
+        nothing landed or any stage failed. IN-08: a run whose missing
+        set is EMPTY at start is the explicit nothing-to-do outcome —
+        done with a note, zero network legs — never a full download
+        followed by the misleading failed ``bundle_landed_zero``
+        (nothing was wrong; nothing needed landing). The branch writes
+        NOTHING outside the staging dir + ``pipeline/datasets`` — the
         committed registries and ``n_audit`` stay untouched.
 
         Args:
@@ -1753,6 +1757,14 @@ class DownloadQueueService:
         details: list[str] = []
         missing_keys = [row.key for row in self.missing_datasets()]
         details.append("missing_keys=" + str(len(missing_keys)))
+        if not missing_keys:
+            # IN-08: nothing is missing — the honest outcome is done
+            # with a note (an empty per-key map contributes nothing to
+            # the presence overlay), never a download that lands zero
+            details.append("nothing_to_do=missing_keys_empty")
+            return self._finish(
+                key, run_id, "done", None, (), tuple(details),
+                reconcile={"per_key": {}})
         if cancelled():
             return self._finish_cancelled(key, run_id, details)
         probe_state = zenodo_bundle.probe_zenodo_public(

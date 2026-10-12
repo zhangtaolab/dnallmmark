@@ -3004,6 +3004,38 @@ def test_run_task_zenodo_nothing_landed_fails(tmp_path, monkeypatch):
     assert "landed=0" in event.details
 
 
+def test_run_task_zenodo_nothing_missing_is_done_nothing_to_do_in08(
+        tmp_path, monkeypatch):
+    """IN-08: a bundle run on a machine where NOTHING is missing is the
+    explicit nothing-to-do outcome — done with a note, ZERO network
+    legs — never a multi-GB download followed by a misleading
+    failed bundle_landed_zero terminal state."""
+    repo = bundle_repo(tmp_path)
+    pin_n_audit_missing(monkeypatch, tmp_path, missing=False)
+    router = UrlRouter(public_record_table(bundle_zip_bytes((4, 2, 2))))
+    service, _state = bundle_service(tmp_path, monkeypatch, router, repo)
+    service.enqueue_zenodo()
+    service.claim_next()
+
+    event = service.run_task(
+        download_queue.ZENODO_BUNDLE_KEY, run_id="z-noop")
+
+    assert event.state == "done"
+    assert event.problems == ()
+    assert "missing_keys=0" in event.details
+    assert any(detail.startswith("nothing_to_do")
+               for detail in event.details), (
+        "the empty-missing-set run is the explicit nothing-to-do outcome"
+    )
+    assert router.calls == [], (
+        "the nothing-to-do bundle never probes, downloads, or extracts"
+    )
+    (entry,) = service.entries()
+    assert entry.state == "done"
+    assert entry.reconcile == {"per_key": {}}
+    assert not (repo / "pipeline" / "datasets").exists()
+
+
 def test_run_task_zenodo_cancel_before_stages_fails_never_probes(
         tmp_path, monkeypatch):
     """WR-01: a cancel that lands while the bundle entry is downloading
