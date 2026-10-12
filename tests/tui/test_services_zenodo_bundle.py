@@ -26,10 +26,12 @@ See also:
     ``tui/services/download_queue.py`` — the zenodo-kind queue branch.
 """
 
+import email.message
 import inspect
 import io
 import json
 import re
+import struct
 import time
 import urllib.error
 import zipfile
@@ -75,28 +77,35 @@ class FakeResponse:
         return False
 
 
-def recording_opener(response=None, exc=None):
+class RecordingOpener:
     """An opener fake recording ``(url, timeout)`` per call (the last
     response is exposed for read-pattern assertions)."""
-    calls = []
 
-    def opener(url, timeout=None):
-        calls.append({"url": url, "timeout": timeout})
-        if exc is not None:
-            raise exc
-        opener.last_response = response
-        return response
+    def __init__(self, response=None, exc=None):
+        self.response = response
+        self.exc = exc
+        self.calls = []
+        self.last_response = None
 
-    opener.calls = calls
-    opener.last_response = None
-    return opener
+    def __call__(self, url, timeout=None):
+        self.calls.append({"url": url, "timeout": timeout})
+        if self.exc is not None:
+            raise self.exc
+        self.last_response = self.response
+        return self.response
+
+
+def recording_opener(response=None, exc=None):
+    """The RecordingOpener factory (ty-clean attribute access)."""
+    return RecordingOpener(response=response, exc=exc)
 
 
 def http_error(code, reason):
     """A urlopen-raised HTTPError shape (fp unused — the probe reads
     only ``.code`` before the with-block ever opens)."""
     return urllib.error.HTTPError(
-        zenodo_bundle.ZENODO_API_URL, code, reason, None, None)
+        zenodo_bundle.ZENODO_API_URL, code, reason,
+        email.message.Message(), None)
 
 
 # =====================================================================
@@ -440,8 +449,14 @@ def test_extract_bundle_archives_ignores_non_zip_and_reports_corrupt(
         tmp_path):
     readme = tmp_path / "README.md"
     readme.write_text("not a zip", encoding="utf-8")
+    # garbage + a LYING end-of-central-directory record (it claims one
+    # entry at an offset that is not there): is_zipfile says yes (the
+    # EOCD signature is present), ZipFile raises BadZipFile — the
+    # corrupt-archive failure edge
+    lying_eocd = struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, 1, 1,
+                             50, 10, 0)
     corrupt = tmp_path / "corrupt.zip"
-    corrupt.write_bytes(b"PK\x03\x04 definitely not a real archive")
+    corrupt.write_bytes(b"garbage-before-eocd" + lying_eocd)
     datasets_root = tmp_path / "datasets"
 
     extracted, problems = zenodo_bundle.extract_bundle_archives(

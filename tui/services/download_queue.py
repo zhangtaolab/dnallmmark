@@ -125,7 +125,7 @@ from urllib.parse import urlparse
 import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
 import registry_loader  # top-level module (pipeline/ sys.path root)
 
-from tui.services import registries, settings
+from tui.services import registries, settings, zenodo_bundle
 
 # ===== Locations (resolved from this module's own file, never CWD) =====
 
@@ -146,6 +146,16 @@ QUEUE_STATES = ("pending", "downloading", "done", "failed", "mismatch")
 
 #: The one entry kind this plan carries (models land in later plans).
 KIND_DATASET = "dataset"
+
+#: The DATA-04 whole-package bundle kind (10-03): ``run_task``
+#: dispatches these entries to the zenodo branch — fresh probe ->
+#: defensive parse -> streamed download to staging -> guarded extract
+#: -> per-key landing check -> per-key reconcile (D-12).
+KIND_ZENODO_BUNDLE = "zenodo_bundle"
+
+#: The bundle entry's queue identity — the only Zenodo string constant
+#: in this module (the record id/URL live in ``zenodo_bundle``).
+ZENODO_BUNDLE_KEY = "zenodo-19135551"
 
 #: The canonical persisted entry field order — the exact set, nothing
 #: may ever appear outside it (SC5: zero credential surface).
@@ -307,6 +317,15 @@ PROBLEM_LANDING_INCOMPLETE = "landing_incomplete"
 PROBLEM_RENAME_TARGET_EXISTS = "rename_target_exists"
 PROBLEM_RENAME_ERROR = "rename_error"
 PROBLEM_SUBPROCESS_ERROR = "subprocess_error"
+
+#: The zenodo bundle branch's problem codes (10-03; machine
+#: vocabulary — the screens render, never parse).
+PROBLEM_RECORD_NOT_PUBLIC = "record_not_public"
+PROBLEM_RECORD_UNREADABLE = "record_unreadable"
+PROBLEM_FILE_LIST_UNREADABLE = "record_file_list_unreadable"
+PROBLEM_BUNDLE_DOWNLOAD_FAILED = "bundle_download_failed"
+PROBLEM_BUNDLE_LANDED_ZERO = "bundle_landed_zero"
+PROBLEM_BUNDLE_RECONCILE_FAILED = "bundle_reconcile_failed"
 
 #: The reap loop's wait chunk (re-checked for cancel between chunks —
 #: there is NO artificial total timeout by design: multi-GB legitimate
@@ -932,7 +951,8 @@ class DownloadQueueService:
     def __init__(self, repo_root=None, state_path=None, spawner=None,
                  runner=None, cli_path=None,
                  timeout_reconcile=DEFAULT_TIMEOUT_RECONCILE,
-                 timeout_reaudit=DEFAULT_TIMEOUT_REAUDIT):
+                 timeout_reaudit=DEFAULT_TIMEOUT_REAUDIT,
+                 zenodo_fetch=None):
         """Configure the service.
 
         Args:
@@ -953,6 +973,11 @@ class DownloadQueueService:
             timeout_reconcile: per-reconcile timeout seconds
                 (T-10-02-05; default 300).
             timeout_reaudit: per-reaudit timeout seconds (default 300).
+            zenodo_fetch: the urlopen-shaped seam for the whole
+                DATA-04 bundle branch (probe + record fetch + file
+                downloads); None uses the real ``urllib.request`` (the
+                bundle lane is stdlib HTTP — NO modelscope CLI is ever
+                involved, D-12).
         """
         self._repo_root = (REPO_ROOT if repo_root is None
                            else Path(repo_root).resolve())
@@ -967,6 +992,7 @@ class DownloadQueueService:
         self._timeout_reconcile = timeout_reconcile
         self._timeout_reaudit = timeout_reaudit
         self._cli_path = cli_path
+        self._zenodo_fetch = zenodo_fetch
         self._lock = threading.Lock()
         self._entries: list[dict] = []
         self._cancel_requested: set[str] = set()
@@ -1130,6 +1156,44 @@ class DownloadQueueService:
                 count += 1
         return count
 
+    def enqueue_zenodo(self):
+        """Idempotently append the whole-package bundle entry (D-12).
+
+        The DATA-04 alternate entry: ONE ``kind=zenodo_bundle`` task
+        keyed ``ZENODO_BUNDLE_KEY`` — the whole record lands in a
+        single queue row whose task cell renders the bundle task name.
+        NO CLI probe runs here: the bundle lane is stdlib HTTP (the
+        modelscope CLI's probed-unavailable state is irrelevant); the
+        publication probe happens at RUN time, so activation is the
+        probe flipping — zero code change.
+
+        Returns:
+            EnqueueOutcome: ``enqueued`` or ``already_queued`` (the
+            D-08 per-key idempotence, the key being the bundle key).
+        """
+        with self._lock:
+            if any(entry["key"] == ZENODO_BUNDLE_KEY
+                   for entry in self._entries):
+                return EnqueueOutcome(
+                    action="already_queued", key=ZENODO_BUNDLE_KEY)
+            self._entries.append({
+                "key": ZENODO_BUNDLE_KEY,
+                "kind": KIND_ZENODO_BUNDLE,
+                "state": "pending",
+                "attempts": 0,
+                "enqueued_at": _now_iso(),
+                "started_at": None,
+                "finished_at": None,
+                "last_percent": None,
+                "interrupted": False,
+                "log_path": None,
+                "problems": [],
+                "reconcile": None,
+            })
+            self._persist_locked()
+            return EnqueueOutcome(
+                action="enqueued", key=ZENODO_BUNDLE_KEY)
+
     def retry(self, key):
         """Re-queue one failed or mismatch entry as pending (D-06).
 
@@ -1246,6 +1310,8 @@ class DownloadQueueService:
         Returns:
             QueueEvent: the structured outcome (state persisted).
         """
+        if self._entry_kind(key) == KIND_ZENODO_BUNDLE:
+            return self._run_zenodo_bundle(key, run_id)
         cli = resolve_modelscope_cli(self._cli_path)
         if cli is None:
             return self._finish(
@@ -1444,6 +1510,175 @@ class DownloadQueueService:
         """The split files missing under one task dir (empty = all)."""
         return [split for split in LANDING_SPLITS
                 if not (task_dir / split).is_file()]
+
+    # ===== The DATA-04 zenodo bundle branch (10-03, D-12) =====
+
+    def _entry_kind(self, key):
+        """The persisted kind of one entry (dataset when absent)."""
+        with self._lock:
+            for entry in self._entries:
+                if entry["key"] == key:
+                    return entry["kind"]
+        return KIND_DATASET
+
+    def _run_zenodo_bundle(self, key, run_id):
+        """Execute the whole-package bundle task (never raises).
+
+        The D-12 activation lane — every stage defensive, every
+        failure an explicit problem code with verbatim diagnostics in
+        ``details``/the drill-down log:
+
+        1. FRESH ``probe_zenodo_public`` (not public -> failed
+           ``record_not_public`` with the probe state in details — the
+           live-today 404 state);
+        2. ``fetch_record_json`` + ``parse_record_files`` (defensive;
+           zero conforming entries -> failed
+           ``record_file_list_unreadable`` — derive-never-hardcode);
+        3. ``download_bundle_files`` into the staging dir under the
+           state root (ANY per-file failure -> failed
+           ``bundle_download_failed`` — the lane has no byte-resume
+           machinery by design; retry re-runs from scratch);
+        4. ``extract_bundle_archives`` into ``pipeline/datasets``
+           (zip-slip guarded — traversal members are skipped with a
+           problem, never extracted);
+        5. the post-landing existence check over every
+           currently-missing dataset key (the 10-01 checker per key);
+        6. per-key reconcile through the 10-02 leg for every LANDED
+           key; ``entry.reconcile`` carries the per-key verdict map.
+
+        Final state: done iff at least one key landed AND zero
+        mismatches; mismatch if any landed key mismatched; failed if
+        nothing landed or any stage failed. The branch writes NOTHING
+        outside the staging dir + ``pipeline/datasets`` — the
+        committed registries and ``n_audit`` stay untouched.
+
+        Args:
+            key (str): the claimed bundle key (``ZENODO_BUNDLE_KEY``).
+            run_id (str): the caller's run tag (echoed on the event).
+
+        Returns:
+            QueueEvent: the structured outcome (state persisted).
+        """
+        details: list[str] = []
+        missing_keys = [row.key for row in self.missing_datasets()]
+        details.append("missing_keys=" + str(len(missing_keys)))
+        probe_state = zenodo_bundle.probe_zenodo_public(
+            opener=self._zenodo_fetch)
+        details.append("probe=" + probe_state)
+        if probe_state != zenodo_bundle.PROBE_PUBLIC:
+            return self._finish(
+                key, run_id, "failed", None,
+                (PROBLEM_RECORD_NOT_PUBLIC,), tuple(details))
+        record, record_error = zenodo_bundle.fetch_record_json(
+            fetch=self._zenodo_fetch)
+        if record is None:
+            details.append("record_error=" + str(record_error))
+            return self._finish(
+                key, run_id, "failed", None,
+                (PROBLEM_RECORD_UNREADABLE,), tuple(details))
+        files = zenodo_bundle.parse_record_files(record)
+        details.append("bundle_files=" + str(len(files)))
+        if not files:
+            return self._finish(
+                key, run_id, "failed", None,
+                (PROBLEM_FILE_LIST_UNREADABLE,), tuple(details))
+        staging = settings.state_dir() / zenodo_bundle.STAGING_DIR_NAME
+        downloaded, failures = zenodo_bundle.download_bundle_files(
+            files, staging, fetch=self._zenodo_fetch)
+        details.append("downloaded=" + str(len(downloaded)))
+        if failures:
+            details.extend("download_failure=" + failure
+                           for failure in failures)
+            return self._finish(
+                key, run_id, "failed", None,
+                (PROBLEM_BUNDLE_DOWNLOAD_FAILED,), tuple(details),
+                stderr_text="\n".join(failures))
+        extracted, extract_problems = zenodo_bundle.extract_bundle_archives(
+            downloaded, self._pipeline_dir / "datasets")
+        details.append("extracted=" + str(extracted))
+        details.extend(extract_problems)
+        try:
+            registry = self._official_registry()
+        except (OSError, json.JSONDecodeError,
+                UnicodeDecodeError) as exc:
+            details.append("registry_unreadable=" + repr(exc))
+            return self._finish(
+                key, run_id, "failed", None,
+                (PROBLEM_SUBPROCESS_ERROR,), tuple(details),
+                stderr_text="\n".join(extract_problems))
+        landed, not_landed = self._bundle_landed_keys(
+            missing_keys, registry)
+        details.append("landed=" + str(len(landed)))
+        details.extend("not_landed=" + token for token in not_landed)
+        if not landed:
+            return self._finish(
+                key, run_id, "failed", None,
+                (PROBLEM_BUNDLE_LANDED_ZERO,), tuple(details),
+                stderr_text="\n".join(extract_problems))
+        per_key: dict[str, str] = {}
+        problems_out: list[str] = []
+        has_mismatch = False
+        reconcile_failed = False
+        reconcile_raw_parts: list[str] = []
+        for landed_key in landed:
+            outcome = self.reconcile_dataset(landed_key, run_id)
+            per_key[landed_key] = outcome.verdict
+            reconcile_raw_parts.append(outcome.raw_output)
+            if outcome.verdict == VERDICT_MISMATCH:
+                has_mismatch = True
+            elif outcome.verdict == VERDICT_FAILED:
+                reconcile_failed = True
+            if outcome.verdict != VERDICT_PASS:
+                problems_out.extend(
+                    landed_key + ":" + problem
+                    for problem in outcome.problems)
+        state = ("mismatch" if has_mismatch
+                 else "failed" if reconcile_failed else "done")
+        if state == "done":
+            problems_final: tuple[str, ...] = ()
+        elif not problems_out:
+            problems_final = (PROBLEM_BUNDLE_RECONCILE_FAILED,)
+        else:
+            problems_final = tuple(problems_out)
+        return self._finish(
+            key, run_id, state, None, problems_final, tuple(details),
+            stderr_text="\n".join(extract_problems),
+            reconcile={"per_key": per_key},
+            reconcile_raw="\n".join(reconcile_raw_parts))
+
+    def _bundle_landed_keys(self, missing_keys, registry):
+        """The post-landing existence check (the 10-01 checker per
+        key): every currently-missing key whose task dir now carries
+        all three split CSVs.
+
+        Args:
+            missing_keys (list[str]): the missing set from
+                ``missing_datasets`` (computed before the stages ran).
+            registry (dict): the official registry (already read).
+
+        Returns:
+            tuple: ``(landed, not_landed)`` — the landed keys and one
+            diagnostic token per still-missing key naming its missing
+            splits.
+        """
+        datasets_root = self._pipeline_dir / "datasets"
+        landed: list[str] = []
+        not_landed: list[str] = []
+        for missing_key in missing_keys:
+            entry = registry.get(missing_key)
+            derived = (_group_and_task(entry)
+                       if isinstance(entry, dict) else None)
+            if derived is None:
+                continue
+            group, task = derived
+            missing_splits = self._missing_splits(
+                datasets_root / group / task)
+            if missing_splits:
+                not_landed.append(
+                    missing_key + ":" + ",".join(missing_splits))
+            else:
+                landed.append(missing_key)
+        return landed, not_landed
 
     # ===== The reconcile leg (D-09: automatic post-landing audit) =====
 

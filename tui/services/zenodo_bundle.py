@@ -32,12 +32,17 @@ Contract (locked decisions + research rulings):
   are modelscope's dependencies, never the TUI's.
 
 ZERO textual imports (the services-tier invariant, locked by
-``tests/tui/test_import_lock.py``). Dependencies: stdlib urllib only at
-this task; Task 2 adds the zipfile/json driver surface.
+``tests/tui/test_import_lock.py``). Dependencies: stdlib (json/shutil/
+urllib/zipfile/dataclasses/pathlib).
 """
 
+import json
+import shutil
 import urllib.error
 import urllib.request
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
 
 # ===== The frozen probe target (D-12) =====
 
@@ -97,3 +102,196 @@ def probe_zenodo_public(timeout=PROBE_TIMEOUT_SECONDS, opener=None):
         return PROBE_NOT_PUBLIC if exc.code == 404 else PROBE_FAILED
     except Exception:               # noqa: BLE001 — service boundary
         return PROBE_FAILED
+
+
+def fetch_record_json(timeout=PROBE_TIMEOUT_SECONDS, fetch=None):
+    """GET + parse the record document (the bundle file-list source).
+
+    Runs only after ``probe_zenodo_public`` answered ``public`` — the
+    same frozen URL, the same injectable seam. Defensive by contract:
+    ANY failure (network, unparseable JSON, a non-object document)
+    yields ``(None, diagnostic)`` — never an exception, never a guessed
+    layout.
+
+    Args:
+        timeout (float): the per-request budget in seconds.
+        fetch: the urlopen-shaped seam (``url, timeout=...`` -> a
+            context manager with ``.read``); None wraps
+            ``urllib.request.urlopen``.
+
+    Returns:
+        tuple: ``(record, error)`` — the parsed record dict and None on
+        success, or ``(None, diagnostic)`` on every failure edge.
+    """
+    opener = fetch if fetch is not None else urllib.request.urlopen
+    try:
+        with opener(ZENODO_API_URL, timeout=timeout) as resp:
+            payload = resp.read()
+        record = json.loads(payload.decode("utf-8", errors="replace"))
+        if not isinstance(record, dict):
+            return None, "record_not_an_object"
+        return record, None
+    except Exception as exc:        # noqa: BLE001 — service boundary
+        return None, repr(exc)
+
+
+@dataclass(frozen=True)
+class BundleFile:
+    """One conforming entry from the record's file list — pure data.
+
+    Attributes:
+        name: the bare file name (no path separators — the staging
+            write refuses anything else).
+        url: the download URL (``links.self`` or ``links.download``).
+        size: the declared size in bytes (int or None — advisory
+            only, never a gate).
+    """
+
+    name: str
+    url: str
+    size: int | None
+
+
+def parse_record_files(record):
+    """Defensively extract the file list from one record document.
+
+    Accepts BOTH documented entry spellings per field — name from
+    ``key`` or ``filename``; url from ``links.self`` or
+    ``links.download`` (A4/T-10-03-02: the shape is verified at
+    activation, never assumed). Non-conforming entries are skipped; a
+    record with zero conforming entries yields an EMPTY tuple the
+    caller turns into a failed ``record_file_list_unreadable`` run —
+    never a hardcoded filename list, never a guess.
+
+    Args:
+        record (dict): the parsed record document.
+
+    Returns:
+        tuple[BundleFile, ...]: the conforming entries in record
+        order (possibly empty).
+    """
+    if not isinstance(record, dict):
+        return ()
+    raw_files = record.get("files")
+    if not isinstance(raw_files, list):
+        return ()
+    parsed = []
+    for raw in raw_files:
+        if not isinstance(raw, dict):
+            continue
+        name = raw.get("key")
+        if not isinstance(name, str) or not name:
+            name = raw.get("filename")
+        if not isinstance(name, str) or not name:
+            continue
+        links = raw.get("links")
+        url = None
+        if isinstance(links, dict):
+            url = links.get("self")
+            if not isinstance(url, str) or not url:
+                url = links.get("download")
+        if not isinstance(url, str) or not url:
+            continue
+        size = raw.get("size")
+        size = (size if isinstance(size, int)
+                and not isinstance(size, bool) else None)
+        parsed.append(BundleFile(name=name, url=url, size=size))
+    return tuple(parsed)
+
+
+def download_bundle_files(files, dest_dir, fetch=None):
+    """Stream every bundle file into the staging dir (never raises).
+
+    Each file copies through the injectable fetch seam in
+    ``DOWNLOAD_CHUNK_BYTES`` chunks (bounded memory); per-file failures
+    are collected and the run continues to the next file — the CALLER
+    decides that any failure fails the whole task (the bundle lane has
+    no byte-resume machinery by design; a re-run starts from scratch).
+    A file name carrying path separators is refused (staging is one
+    flat directory; anything else would be a traversal write).
+
+    Args:
+        files (iterable[BundleFile]): the parsed file list.
+        dest_dir: the staging directory (created on demand; the caller
+            resolves it under the XDG state root).
+        fetch: the urlopen-shaped seam; None wraps
+            ``urllib.request.urlopen``.
+
+    Returns:
+        tuple: ``(downloaded, failures)`` — the landed file paths
+        (list of Path) and per-file diagnostics (list of str,
+        ``"<name>:<repr>"`` shapes), either possibly empty.
+    """
+    opener = fetch if fetch is not None else urllib.request.urlopen
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    downloaded: list[Path] = []
+    failures: list[str] = []
+    for item in files:
+        if Path(item.name).name != item.name or item.name in (".", ".."):
+            failures.append(item.name + ":unsafe_staging_name")
+            continue
+        target = dest / item.name
+        try:
+            with opener(item.url, timeout=PROBE_TIMEOUT_SECONDS) as src, \
+                    open(target, "wb") as dst:
+                while True:
+                    chunk = src.read(DOWNLOAD_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    dst.write(chunk)
+        except Exception as exc:    # noqa: BLE001 — service boundary
+            failures.append(item.name + ":" + repr(exc))
+            continue
+        downloaded.append(target)
+    return downloaded, failures
+
+
+def extract_bundle_archives(archives, datasets_root):
+    """Extract the zip archives into the datasets tree, zip-slip
+    guarded (T-10-03-01).
+
+    Every member path resolves under ``datasets_root.resolve()`` —
+    anything else (``../`` traversal, absolute paths) is SKIPPED with
+    a problem, never extracted. Non-zip files are ignored (the record
+    may carry READMEs); parent directories are created on demand; the
+    extraction is a plain per-member copy, so a zipfile member can
+    never become a symlink here.
+
+    Args:
+        archives (iterable[Path]): the downloaded file paths.
+        datasets_root: the extraction root (``pipeline/datasets``).
+
+    Returns:
+        tuple: ``(extracted, problems)`` — the number of members
+        extracted (int) and the skip/failure diagnostics (list of
+        str, ``zip_slip_skipped=<member>`` / ``<archive>:<repr>``
+        shapes).
+    """
+    root = Path(datasets_root).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    extracted = 0
+    problems: list[str] = []
+    for archive in archives:
+        path = Path(archive)
+        try:
+            if not zipfile.is_zipfile(path):
+                continue        # non-zip bundle members are ignored
+            with zipfile.ZipFile(path) as bundle:
+                for member in bundle.infolist():
+                    if member.is_dir():
+                        continue
+                    target = (root / member.filename).resolve()
+                    if not target.is_relative_to(root):
+                        problems.append(
+                            "zip_slip_skipped=" + member.filename)
+                        continue
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with bundle.open(member) as src, \
+                            open(target, "wb") as dst:
+                        shutil.copyfileobj(
+                            src, dst, DOWNLOAD_CHUNK_BYTES)
+                    extracted += 1
+        except (zipfile.BadZipFile, OSError) as exc:
+            problems.append(path.name + ":" + repr(exc))
+    return extracted, problems
