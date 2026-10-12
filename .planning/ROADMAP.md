@@ -261,7 +261,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 | 7. Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) | v1.2 | 6/6 | Complete    | 2026-10-11 |
 | 8. TUI Foundation (Env Check & Selection) | v1.2 | 7/7 | Complete    | 2026-10-12 |
 | 9. Custom Model & Dataset Onboarding | v1.2 | 6/6 | Complete    | 2026-10-12 |
-| 10. Data Manager (Downloads & Verification) | v1.2 | 2/6 | In Progress | - |
+| 10. Data Manager (Downloads & Verification) | v1.2 | 4/6 | In Progress | - |
 | 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 0/TBD | Not started | - |
 | 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 0/TBD | Not started | - |
 

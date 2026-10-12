@@ -4,19 +4,19 @@ milestone: v1.2
 milestone_name: TUI任务
 current_phase: 10
 current_phase_name: Data Manager (Downloads & Verification)
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 10-04-PLAN.md
-last_updated: "2026-10-12T16:50:00.000Z"
+stopped_at: Completed 10-05-PLAN.md
+last_updated: "2026-10-12T17:27:02.614Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 10 executing (waves 1-4 of 6 complete)
-state_head: 57d37fec7913160e92c305673088198f06c08fbf
+state_head: 11c0ca2f60aec7c80d6bf1d816decddedc3d3455
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 25
-  completed_plans: 23
-  percent: 92
+  completed_plans: 24
+  percent: 50
 ---
 
 # Project State
@@ -31,9 +31,9 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 10 — Data Manager (Downloads & Verification)
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 6
-Status: Executing
+Status: Ready to execute
 Last activity: 2026-10-12 — Phase 10 executing (waves 1-4 of 6 complete)
 
 Progress (v1.2): [██████████] 100% (13/13 plans)
@@ -83,6 +83,7 @@ Progress (v1.2): [██████████] 100% (13/13 plans)
 | Phase 10 P02 | 30 min | 3 tasks | 2 files |
 | Phase 10 P03 | 25 min | 3 tasks | 5 files |
 | Phase 10 P04 | 58 min | 3 tasks | 8 files |
+| Phase 10 P05 | 31min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -168,6 +169,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 10]: 10-04: the driver posts one indeterminate (percent=None) claim tick so the row flips to downloading before any CLI percent parses (unparsed output may never fire a real tick); apply_queue_event/apply_queue_progress re-read the entry from the service (persisted-state-as-truth) so late/duplicate events can never overwrite newer state
 - [Phase 10]: 10-04: boot resume fires ONLY from tui/__main__ (call_later(boot_resume_queue)) — App.on_mount never kicks, so test-constructed apps stay provably inert while the operator's console resumes; the busy-guard proof is the generation counter staying at 1 across two rapid kicks
 - [Phase 10]: 10-04: the two-Protocol seam — QueueDriverProtocol (app: load/entries/claim_next/run_task) and DataManagerServiceProtocol (screen: snapshot/enqueue/probe/reaudit/channel_detail/read_log) bridged by the Any-typed DataManagerBackend over the ONE shared queue instance (the build_data_manager_screen factory prevents a zero-arg SCREENS slot from forking the state)
+- [Phase 10]: 10-05: the selection enqueue seam is SelectionQueueBackend — an Any-typed bridge over the app's shared queue (the DataManagerBackend two-Protocol shape); a direct pass would fail ty because the app field's declared QueueDriverProtocol does not carry enqueue
+- [Phase 10]: 10-05: the merged presence gates on truthiness (if audit:) not is-not-None — merge_presence returns {} for a None+empty input and truthiness preserves Phase 8's byte-exact degenerate render; audit_available = committed OR overlay non-empty so an audit-less machine still shows a done flip
+- [Phase 10]: 10-05: apply_queue_event reuses the existing exclusive _load_data worker (the _on_custom_registry_changed idiom) — the landed 10-04 app forward needed zero changes to reach the mounted selection screen; env_check.py stays pristine (the ENV-03 [3] hint is the amended constant through the existing render path, test-pinned)
 
 ### Pending Todos
 
@@ -191,8 +195,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T15:40:00.000Z
-Stopped at: Completed 10-03-PLAN.md
+Last session: 2026-10-12T17:26:29.602Z
+Stopped at: Completed 10-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
