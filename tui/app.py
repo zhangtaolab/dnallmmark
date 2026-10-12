@@ -89,6 +89,7 @@ from tui.strings import (
     DL_BUNDLE_TASK_NAME,
     NAV_PLACEHOLDER_TOAST,
     QUEUE_FLIP_TOAST,
+    QUEUE_PERSIST_DRIVER_TOAST,
 )
 
 # 08-UI-SPEC Terminal Contract: the minimum grid. Below this, only the
@@ -206,6 +207,25 @@ class QueueProgressMessage(Message):
                  generation: int) -> None:
         self.key = key
         self.percent = percent
+        self.generation = generation
+        super().__init__()
+
+
+class QueueStalledMessage(Message):
+    """The driver STOPPED because a claim could not persist (CR-02).
+
+    A refusal-None out of ``claim_next`` (an unwritable state rail over
+    a pending entry — the WR-04 absorbed refusal) exits the driver
+    instead of re-driving into the claim->refuse->recheck livelock; the
+    entry stays pending, the busy flag releases, and this message
+    surfaces the stall through the persist-failure toast vocabulary.
+    Carries the driver generation (dropped when superseded, WR-02).
+    """
+
+    def __init__(self, key: str, diagnostic: str,
+                 generation: int) -> None:
+        self.key = key
+        self.diagnostic = diagnostic
         self.generation = generation
         super().__init__()
 
@@ -426,6 +446,18 @@ class DnallmMarkTui(App):
                     return
                 entry = self._download_queue.claim_next()
                 if entry is None:
+                    # CR-02: a None answer is EITHER a drained queue or
+                    # a REFUSED claim (the WR-04 absorbed persist
+                    # failure over a still-pending entry). Driving on
+                    # after a refusal would re-claim and re-refuse
+                    # forever (the livelock) — the driver exits and
+                    # surfaces the stall instead. The signal is read
+                    # through the optional service seam (fakes without
+                    # it never refuse).
+                    refusal_getter = getattr(
+                        self._download_queue, "last_claim_refusal", None)
+                    refusal = (refusal_getter()
+                               if refusal_getter is not None else None)
                     # WR-02 (the lost-wakeup guard): an enqueue+kick that
                     # lands between this drain scan and the busy-flag
                     # release sees the flag still set and is a guarded
@@ -448,10 +480,13 @@ class DnallmMarkTui(App):
                                 in self._download_queue.entries())
                         except Exception:  # noqa: BLE001 — never raise here
                             pending = False
-                        if pending:
+                        if pending and refusal is None:
                             continue    # keep driving THIS worker
                         self._queue_busy = False
-                    return  # drained — the no-hang contract
+                    if refusal is not None:
+                        self.post_message(QueueStalledMessage(
+                            refusal[0], refusal[1], generation))
+                    return  # drained (or stalled) — the no-hang contract
                 if worker.is_cancelled:
                     return
                 # the claim tick: one indeterminate post flips the row
@@ -526,6 +561,16 @@ class DnallmMarkTui(App):
                 screen, "apply_queue_progress", None)
             if apply_progress is not None:
                 apply_progress(message.key, message.percent)
+
+    def on_queue_stalled_message(self, message: QueueStalledMessage) -> None:
+        """The driver stalled on a persist-refused claim (CR-02): the
+        operator-facing toast — the queue is wedged until the state rail
+        is fixed; the entry stays pending for the fixed-rail re-kick."""
+        if message.generation != self._queue_generation:
+            return  # a superseded driver's late post (WR-02)
+        self.notify(
+            QUEUE_PERSIST_DRIVER_TOAST.format(key=message.key),
+            severity="error")
 
     # ===== Min-size guard (08-UI-SPEC Terminal Contract) =====
 

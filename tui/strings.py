@@ -608,6 +608,11 @@ QUEUE_CLI_UNAVAILABLE = (
 # never a lie about the channel.
 QUEUE_PERSIST_FAILED_TOAST = (
     "✗ 队列状态写入失败: {key} 未入队 — 检查磁盘空间与权限")
+# CR-02: the driver-stall companion in the same vocabulary — a CLAIM
+# that cannot persist exits the driver (never the claim->refuse->recheck
+# livelock); the entry stays pending for the fixed-rail re-kick.
+QUEUE_PERSIST_DRIVER_TOAST = (
+    "✗ 队列状态写入失败，驱动已停止: {key} — 修复磁盘/权限后重新入队驱动")
 
 # Progress cell, indeterminate (auto-default #3: never a fabricated
 # percent from unparsed output).

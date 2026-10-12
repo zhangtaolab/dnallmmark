@@ -1017,6 +1017,12 @@ class DownloadQueueService:
         self._entries: list[dict] = []
         self._cancel_requested: set[str] = set()
         self._active: dict[str, Any] = {}
+        # CR-02: the MOST RECENT claim_next's persist-refusal, as
+        # ``(key, diagnostic)`` — None when the last claim succeeded or
+        # the queue drained. The driver's drain-side recheck reads it
+        # (via ``last_claim_refusal``) to tell a refusal-None (exit the
+        # worker — driving on would spin) from a drained-None.
+        self._last_claim_refusal: "tuple[str, str] | None" = None
         # The most recent corrupt-load diagnostic, remembered for the
         # session (10-06): ``load()`` returns it exactly once (the file
         # is quarantined on first read), but the screen's later
@@ -1407,12 +1413,16 @@ class DownloadQueueService:
         persist fails (unwritable state rail), the claim is REVERTED to
         the entry's exact prior shape and None is returned — never an
         exception, never a persisted-downloading entry with no run.
+        CR-02: such a refusal-None is distinguishable from a
+        drained-None through ``last_claim_refusal`` (the driver exits
+        instead of re-driving into the livelock).
 
         Returns:
             QueueEntry | None: the claimed snapshot, or None when no
             pending entry exists (or the claim could not persist).
         """
         with self._lock:
+            self._last_claim_refusal = None   # fresh per attempt (CR-02)
             for entry in self._entries:
                 if entry["state"] != "pending":
                     continue
@@ -1422,12 +1432,33 @@ class DownloadQueueService:
                 entry["attempts"] = entry["attempts"] + 1
                 entry["started_at"] = _now_iso()
                 entry["interrupted"] = False
-                if self._persist_locked() is not None:
+                persist_error = self._persist_locked()
+                if persist_error is not None:
                     entry["state"], entry["attempts"], entry[
                         "started_at"], entry["interrupted"] = prior
+                    self._last_claim_refusal = (entry["key"],
+                                                persist_error)
                     return None
                 return _frozen(entry)
             return None
+
+    def last_claim_refusal(self):
+        """The most recent claim_next's persist-refusal (CR-02).
+
+        Distinguishes the two None answers of ``claim_next``: a drained
+        queue (None, refusal None — the driver may re-check and exit) vs
+        a claim that could not persist (None, refusal set — the entry is
+        STILL pending in memory; driving on would re-claim and re-refuse
+        forever, so the driver exits and surfaces the stall). The value
+        is refreshed at the START of every claim attempt — it can never
+        go stale across calls.
+
+        Returns:
+            tuple[str, str] | None: ``(key, diagnostic)`` of the refused
+            claim, or None when the last claim succeeded or drained.
+        """
+        with self._lock:
+            return self._last_claim_refusal
 
     # ===== The execution engine (Task 3: spawn/stream/reap/cancel) =====
 

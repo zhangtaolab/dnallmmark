@@ -409,6 +409,7 @@ from tui.strings import (
     QUEUE_CONFIRM_CANCEL_PENDING,
     QUEUE_EMPTY,
     QUEUE_FLIP_TOAST,
+    QUEUE_PERSIST_DRIVER_TOAST,
     QUEUE_PERSIST_FAILED_TOAST,
     QUEUE_PROGRESS_INDETERMINATE,
     QUEUE_RECONCILE_MISMATCH,
@@ -1587,6 +1588,94 @@ async def test_worker_exits_on_drain_and_restarts_on_next_kick():
             app.workers.wait_for_complete(), timeout=10)
         await pilot.pause()
         assert fake.run_task_calls == ["k-one", "k-two"]
+
+
+async def test_driver_exits_bounded_when_claim_cannot_persist_cr02(
+        tmp_path, monkeypatch):
+    """CR-02 (the WR-02 x WR-04 interaction): over the REAL service with
+    a read-only state root and pending entries, a persist-REFUSED claim
+    must EXIT the driver after a bounded number of attempts — never the
+    claim->refuse->recheck livelock — clear the busy flag, surface the
+    persist-stall toast, and a boot-resume-shaped re-kick makes at most
+    one more attempt instead of re-entering the spin."""
+    import json as _json
+
+    from tui.services import settings as tui_settings
+
+    state = tmp_path / "state"
+    monkeypatch.setenv(tui_settings.STATE_DIR_ENV, str(state))
+    state.mkdir(parents=True, exist_ok=True)
+
+    def pending(key):
+        return {
+            "key": key, "kind": "dataset", "state": "pending",
+            "attempts": 0, "enqueued_at": "2026-10-12T00:00:00+00:00",
+            "started_at": None, "finished_at": None, "last_percent": None,
+            "interrupted": False, "log_path": None, "problems": [],
+            "reconcile": None,
+        }
+
+    (state / download_queue_module.QUEUE_FILE_NAME).write_text(_json.dumps({
+        "schema_version": 1,
+        "entries": [pending("k-one"), pending("k-two")],
+    }, indent=4, ensure_ascii=False), encoding="utf-8")
+    service = download_queue_module.DownloadQueueService()
+    # count the claim attempts through the seam the driver consumes
+    calls = {"n": 0}
+    real_claim = service.claim_next
+
+    def counting_claim():
+        calls["n"] += 1
+        return real_claim()
+
+    service.claim_next = counting_claim
+    state.chmod(0o500)    # the unwritable rail (WR-04's class)
+    app = DnallmMarkTui(
+        env_check_service=_EnvCacheHitFake(),
+        selection_service=_SelectionFake(),
+        download_queue_service=service)
+    try:
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            # the boot path (load + kick) — the realistic entry into the
+            # degradation: the disk filled before the restart
+            app.boot_resume_queue()
+            # RED on the livelock: the spin never completes (Timeout)
+            await asyncio.wait_for(
+                app.workers.wait_for_complete(), timeout=10)
+            await pilot.pause()
+
+            assert calls["n"] <= 3, (
+                "a persist-refused claim must exit after a bounded "
+                "attempt count, never spin (CR-02)"
+            )
+            assert app._queue_busy is False, (
+                "the exited driver must release the busy flag"
+            )
+            assert not any(worker.name == "run_download_queue"
+                           for worker in app.workers), (
+                "the driver worker must EXIT on the refusal"
+            )
+            assert QUEUE_PERSIST_DRIVER_TOAST.format(
+                key="k-one") in _toast_messages(app), (
+                "the stall surfaces through the persist-failure toast "
+                "vocabulary, never silently"
+            )
+
+            # the boot-resume shape: one re-kick = at most one more
+            # bounded attempt (the rail is still broken), never a spin
+            before = calls["n"]
+            app.boot_resume_queue()
+            await asyncio.wait_for(
+                app.workers.wait_for_complete(), timeout=10)
+            await pilot.pause()
+            assert calls["n"] <= before + 2, (
+                "boot resume over the still-broken rail must not "
+                "re-enter the spin"
+            )
+            assert app._queue_busy is False
+    finally:
+        state.chmod(0o700)
 
 
 async def test_kick_in_the_drain_window_never_strands_a_pending_entry():
