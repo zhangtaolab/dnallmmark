@@ -78,6 +78,12 @@ Progress (v1.2): [██████████] 100% (13/13 plans)
 | Phase 09 P09-05 | 95 min | 3 tasks | 3 files |
 | Phase 09 P09-06 | 91 min | 3 tasks | 6 files |
 
+## Deferred Verification
+
+| Phase | State | Resume |
+|-------|-------|--------|
+| 9 | verification_deferred_human | /gsd-verify-work 9 |
+
 ## Accumulated Context
 
 ### Decisions
