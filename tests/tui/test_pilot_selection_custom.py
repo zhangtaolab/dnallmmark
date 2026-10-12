@@ -35,6 +35,7 @@ discipline — the real home config is never read, official registries
 never written).
 """
 
+import json
 from pathlib import Path
 from typing import ClassVar
 
@@ -58,18 +59,28 @@ from tui.screens.selection import (
 from tui.screens.wizard import WizardModal
 from tui.services import custom_entries
 from tui.services import selection as selection_service
+from tui.services.download_queue import EnqueueOutcome
 from tui.services.gauntlet import (
     LEG_AUDIT,
     LEG_DRY_RUN,
     GauntletItem,
 )
-from tui.services.registries import PRESENCE_PRESENT, Presence
+from tui.services.registries import (
+    PRESENCE_MISSING,
+    PRESENCE_PRESENT,
+    Presence,
+)
 from tui.strings import (
+    DL_DISABLED_TOAST,
     ENV_KERNEL_LABELS,
+    QUEUE_TOAST_ALREADY_QUEUED,
+    QUEUE_TOAST_ENQUEUED,
     SEL_COUNT_CUSTOM_SEGMENT,
     SEL_CUSTOM_BADGE,
     SEL_DISABLED_MARK_WARNING,
     SEL_DISABLED_SUFFIX,
+    SEL_ENQUEUE_LABEL,
+    SEL_ENQUEUE_PRESENT_TOAST,
     SEL_MATRIX_LABEL,
     SEL_PRESET_UNKNOWN_KEYS,
     SEL_STATUS_LINE,
@@ -349,13 +360,15 @@ def _app(selection_fake):
     )
 
 
-async def _open_selection(pilot, app, custom_fake=None):
-    """Push the selection screen (the custom seam injected) and settle."""
+async def _open_selection(pilot, app, custom_fake=None, queue_fake=None):
+    """Push the selection screen (the custom + queue seams injected) and
+    settle."""
     app.push_screen(SelectionScreen(
         selection_service=app._selection_service,
         marked_models=app._marked_models,
         marked_tasks=app._marked_tasks,
         custom_service=custom_fake,
+        queue_service=queue_fake,
     ))
     await pilot.pause()
     await app.workers.wait_for_complete()
@@ -369,6 +382,16 @@ def _pin_roots(monkeypatch, tmp_path):
     monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(root))
     monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(root))
     return root
+
+
+def _pin_state_root(monkeypatch, tmp_path):
+    """Pin the XDG state root to the tmp dir (the 10-05 discipline: the
+    state-root pin joins the config-root pin — the queue seam's state
+    reads/writes can never reach the operator's real home)."""
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    monkeypatch.setenv("DNALLMMARK_TUI_STATE_DIR", str(state_root))
+    return state_root
 
 
 # =====================================================================
@@ -938,3 +961,203 @@ async def test_full_loop_datasets_wizard_runs_both_legs_and_disables(
         assert "loop-ds" not in registry_loader.load_datasets_registry()
 
         assert official.read_bytes() == before  # zero official writes
+
+
+# =====================================================================
+# Task 1 — the d binding (10-05, D-14: presence-✗ rows enqueue into the
+# shared queue; one vocabulary with the data-manager screen's d)
+# =====================================================================
+
+_KEY_MISSING_DATASET = "GUE__fake_missing"
+_KEY_PRESENT_DATASET = "GUE__fake_present"
+
+
+def _d_fixture_data():
+    """The d-binding fixture: datasets = one missing + one present; one
+    model row (the models-view no-op proof)."""
+    return SelectionData(
+        model_entries=(
+            {
+                "key": _KEY_OFFICIAL_MODEL, "type": "MLM",
+                "species": "plants", "size_m": 86.0,
+                "card": {"type": "MLM"},
+            },
+        ),
+        dataset_entries=(
+            {
+                "key": _KEY_MISSING_DATASET, "category": "Animals",
+                "type": "binary", "metric": "f1",
+                "card": {"Category": "Animals", "type": "binary",
+                         "metric": "f1"},
+            },
+            {
+                "key": _KEY_PRESENT_DATASET, "category": "Animals",
+                "type": "binary", "metric": "f1",
+                "card": {"Category": "Animals", "type": "binary",
+                         "metric": "f1"},
+            },
+        ),
+        presence={
+            _KEY_MISSING_DATASET: Presence(
+                status=PRESENCE_MISSING, rows=None),
+            _KEY_PRESENT_DATASET: Presence(
+                status=PRESENCE_PRESENT, rows=(100, 20, 20)),
+        },
+    )
+
+
+class _QueueFake:
+    """The enqueue-seam fake (the FakeEnvCheckService idiom): scripted
+    ``EnqueueOutcome`` per key (default enqueued), every call recorded —
+    no real registry read, no state write, no CLI probe."""
+
+    def __init__(self, outcomes=None):
+        self.outcomes = dict(outcomes or {})
+        self.enqueue_calls = []
+
+    def enqueue(self, key):
+        self.enqueue_calls.append(key)
+        outcome = self.outcomes.get(key)
+        if outcome is not None:
+            return outcome
+        return EnqueueOutcome(action="enqueued", key=key)
+
+
+async def test_d_enqueues_a_missing_row_through_the_shared_seam_and_kicks(
+        monkeypatch, tmp_path):
+    """d on a presence-✗ datasets row enqueues the cursor's key through
+    the SAME shared-queue seam the data-manager screen uses (recorded
+    key), fires the app-level kick, and toasts the enqueued copy — the
+    table stays mounted (enqueuing never navigates away)."""
+    _pin_state_root(monkeypatch, tmp_path)
+    queue = _QueueFake()
+    kicks = []
+    monkeypatch.setattr(
+        DnallmMarkTui, "kick_download_queue",
+        lambda self: kicks.append(True),
+    )
+    app = _app(_SelectionFake(data=_d_fixture_data()))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, queue_fake=queue)
+        screen = app.screen
+        table = screen.query_one(DataTable)
+        await pilot.press("m")  # the datasets table
+        await pilot.pause()
+        table.move_cursor(row=0)  # the missing row
+        await pilot.pause()
+
+        await pilot.press("d")
+        await pilot.pause()
+        assert queue.enqueue_calls == [_KEY_MISSING_DATASET], (
+            "d must enqueue the cursor's dataset key through the seam"
+        )
+        assert QUEUE_TOAST_ENQUEUED.format(
+            key=_KEY_MISSING_DATASET) in _toasts(app)
+        assert kicks == [True], "the enqueued outcome must kick the driver"
+        assert app.screen is screen, "enqueuing never navigates away"
+
+        # a second d on the same row -> the already-queued toast, no
+        # second kick (the D-08 idempotence surfaced, never silent)
+        queue.outcomes[_KEY_MISSING_DATASET] = EnqueueOutcome(
+            action="already_queued", key=_KEY_MISSING_DATASET)
+        await pilot.press("d")
+        await pilot.pause()
+        assert queue.enqueue_calls == [_KEY_MISSING_DATASET] * 2
+        assert QUEUE_TOAST_ALREADY_QUEUED.format(
+            key=_KEY_MISSING_DATASET) in _toasts(app)
+        assert kicks == [True], "already_queued never kicks"
+
+
+async def test_d_on_a_present_row_is_a_noop_with_the_honest_toast(
+        monkeypatch, tmp_path):
+    """d on a present row never reaches the service — the present toast
+    fires and nothing enqueues (never silent, never duplicate work)."""
+    _pin_state_root(monkeypatch, tmp_path)
+    queue = _QueueFake()
+    kicks = []
+    monkeypatch.setattr(
+        DnallmMarkTui, "kick_download_queue",
+        lambda self: kicks.append(True),
+    )
+    app = _app(_SelectionFake(data=_d_fixture_data()))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, queue_fake=queue)
+        table = app.screen.query_one(DataTable)
+        await pilot.press("m")
+        await pilot.pause()
+        table.move_cursor(row=1)  # the present row
+        await pilot.pause()
+
+        await pilot.press("d")
+        await pilot.pause()
+        assert SEL_ENQUEUE_PRESENT_TOAST in _toasts(app)
+        assert queue.enqueue_calls == []
+        assert kicks == []
+
+
+async def test_d_on_a_shape_d_row_renders_the_disabled_reason_toast(
+        monkeypatch, tmp_path):
+    """A disabled (shape-D) channel outcome renders the SAME disabled
+    toast the data-manager screen renders, carrying the key — always
+    diagnosable (R-02); never a kick."""
+    _pin_state_root(monkeypatch, tmp_path)
+    queue = _QueueFake(outcomes={
+        _KEY_MISSING_DATASET: EnqueueOutcome(
+            action="disabled", key=_KEY_MISSING_DATASET,
+            reason_code="shape_d_layout",
+            source_url="https://www.modelscope.cn/datasets/x/y"),
+    })
+    kicks = []
+    monkeypatch.setattr(
+        DnallmMarkTui, "kick_download_queue",
+        lambda self: kicks.append(True),
+    )
+    app = _app(_SelectionFake(data=_d_fixture_data()))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, queue_fake=queue)
+        table = app.screen.query_one(DataTable)
+        await pilot.press("m")
+        await pilot.pause()
+        table.move_cursor(row=0)
+        await pilot.pause()
+
+        await pilot.press("d")
+        await pilot.pause()
+        assert DL_DISABLED_TOAST.format(
+            key=_KEY_MISSING_DATASET) in _toasts(app)
+        assert queue.enqueue_calls == [_KEY_MISSING_DATASET]
+        assert kicks == []
+
+
+async def test_d_on_the_models_view_is_a_silent_noop(
+        monkeypatch, tmp_path):
+    """The models table never enqueues (models are not n_audit subjects
+    — Phase 8 truth): d returns before any service call, silently."""
+    _pin_state_root(monkeypatch, tmp_path)
+    queue = _QueueFake()
+    app = _app(_SelectionFake(data=_d_fixture_data()))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, queue_fake=queue)
+        table = app.screen.query_one(DataTable)
+        # the models view is the mount default; cursor row 0 is a model
+        table.move_cursor(row=0)
+        await pilot.pause()
+
+        await pilot.press("d")
+        await pilot.pause()
+        assert queue.enqueue_calls == []
+        assert _toasts(app) == [], "the models view stays silent"
+
+
+async def test_bottom_bar_declares_d_between_e_and_v():
+    """The bottom bar renders [d]入队 in binding-declaration order
+    between [e]停用 and [v]矩阵 (the migration-table disposition)."""
+    app = _app(_SelectionFake())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+        bar = app.screen.query_one("#nav-left-keycaps", Static)
+        content = bar.content
+        text = content.plain if isinstance(content, Text) else str(content)
+        assert f"[d]{SEL_ENQUEUE_LABEL}" in text
+        assert text.index(f"[e]{SEL_TOGGLE_LABEL}") < text.index(
+            f"[d]{SEL_ENQUEUE_LABEL}") < text.index(f"[v]{SEL_MATRIX_LABEL}")
