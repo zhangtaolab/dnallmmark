@@ -261,6 +261,32 @@ SEL_TEMPLATE_WRITE_FAILED = "✗ 写入失败: {error}"
 # they do not need a destructive clear).
 SEL_CLEAR_MARKS_CONFIRM = "清除全部标记？（模型 {n} · 数据集 {m}）— Enter 确认 / Esc 取消"
 
+# ===== 自定义条目呈现 (SEL_ custom additions, CUST-06/D-09/D-10/D-14, 09-06) =====
+# The w/e binding labels, the toggle/no-op toasts, the disabled-mark
+# warning, and the badge/count copy — 09-UI-SPEC Copywriting Contract
+# verbatim. The 停用 toast carries the loader-level note (D-09: the
+# disable is real run-removal, not a cosmetic dim).
+SEL_WIZARD_LABEL = "接入"
+SEL_TOGGLE_LABEL = "停用"
+SEL_TOGGLE_DISABLED_TOAST = "✓ 已停用 {key}（运行不再加载，loader 级）"
+SEL_TOGGLE_ENABLED_TOAST = "✓ 已启用 {key}"
+SEL_TOGGLE_OFFICIAL_NOOP = "官方条目不可停用"
+# Warning — spacebar on a disabled custom row (T-09-13: a mark the sweep
+# can never see is blocked at entry, never discovered at launch).
+SEL_DISABLED_MARK_WARNING = "⚠ {key} 已停用 — 运行不会加载该条目，标记无效"
+# The D-10 custom badge — the ◇ prefix on the key cell (bold + accent for
+# enabled; the dim variant pairs with the suffix for disabled; glyph +
+# weight carry the meaning under NO_COLOR).
+SEL_CUSTOM_BADGE = "◇"
+SEL_DISABLED_SUFFIX = "（已停用）"
+# Count-line segment (D-10) — appended (dim) iff at least one custom entry
+# is LANDED; counts cover both states (visible = counted; the sweep-visible
+# enabled count is derivable from the markers). Zero customs omits the
+# segment entirely (the Phase 8 look, byte-identical).
+SEL_COUNT_CUSTOM_SEGMENT = (
+    "官方 {official_models}/{official_datasets} · 自定义 {custom_models}/{custom_datasets}"
+)
+
 # ===== 矩阵总览 (matrix, SEL-01 auxiliary, 08-07) =====
 MATRIX_TITLE = "矩阵总览（只读）— {models} 模型 × {datasets} 数据集"
 MATRIX_SCROLL_HINT = "←/→ 横向滚动 · esc 返回"
