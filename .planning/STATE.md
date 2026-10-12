@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 9
 current_phase_name: Custom Model & Dataset Onboarding (自定义接入向导)
 status: executing
-stopped_at: Phase 9 UI-SPEC approved
-last_updated: "2026-10-12T01:59:29.382Z"
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-10-12T02:52:00.894Z"
 last_activity: 2026-10-12
-last_activity_desc: Phase 8 complete, transitioned to Phase 7
-state_head: 772ac57bac9aef24ac6a70c71aba3b459b0f8764
+last_activity_desc: Phase 9 execution started
+state_head: 501002145f152d63d4a96541fbf2eb7d8eb739c2
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 13
+  completed_plans: 14
   percent: 33
 ---
 
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-11)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 08 — TUI Foundation (Env Check & Selection)
+**Current focus:** Phase 9 — Custom Model & Dataset Onboarding (自定义接入向导)
 
 ## Current Position
 
-Phase: 9 (Custom Model & Dataset Onboarding (自定义接入向导)) — READY TO EXECUTE
-Plan: Not started
+Phase: 9 (Custom Model & Dataset Onboarding (自定义接入向导)) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
-Last activity: 2026-10-12 — Phase 8 complete, transitioned to Phase 7
+Last activity: 2026-10-12 — Phase 9 execution started
 
 Progress (v1.2): [██████████] 100% (13/13 plans)
 
@@ -71,6 +71,7 @@ Progress (v1.2): [██████████] 100% (13/13 plans)
 | Phase 08 P08-05 | 26 min | 2 tasks | 7 files |
 | Phase 08 P08-06 | 43 min | 2 tasks | 6 files |
 | Phase 08 P08-07 | 79 min | 3 tasks | 13 files |
+| Phase 09 P09-01 | 47 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 08]: 08-07 gap-filler copy landed and documented: SEL_PRESENCE_UNKNOWN (the four-status vocabulary lacked render copy), SEL_PRESET_SAVED / SEL_TEMPLATE_IMPORTED (the truths pin 'a toast fires' but only the applied/exported toasts were worded), and SEL_CLEAR_MARKS_CONFIRM landed unsurfaced per the contract's 'if surfaced' (the keyboard map defines no clear binding in Phase 8)
 - [Phase 08]: 08-07 Phase 8 console complete: selection + matrix + env surfaces composed over the shared mark sets, both 80-column backstops and the cross-screen integration green — roadmap criteria 4 and 5 TRUE (SEL-01..04 + I18N-01 closed with 167 green tests/tui, make test 728, lint/typecheck clean, CI byte-untouched)
 - [Phase 08]: UAT width feedback (2026-10-12): selection key columns widened to fit the longest committed registry keys (_MODEL_KEY_W 25→46, _DATASET_KEY_W 20→68; budget 80→128/101) — narrower terminals h-scroll (matrix precedent), 80x24 min grid intact, full keys always in row detail. Supersedes the 80-column pin recorded at 08-07. — UAT width feedback (2026-10-12): selection key columns widened to fit the longest committed registry keys (_MODEL_KEY_W 25→46, _DATASET_KEY_W 20→68; budget 80→128/101) — narrower terminals h-scroll (matrix precedent), 80x24 min grid intact, full keys always in row detail. Supersedes the 80-column pin recorded at 08-07.
+- [Phase 09]: 09-01: custom-registry store = single write seam (land/undo/set_enabled through settings.atomic_write); land relativizes absolute paths (Pitfall 4), stamps Model_name/Dataset_name = key (Pitfall 6/11), drops the wizard key field, coerces Train/Dev/Test ints with bool excluded
+- [Phase 09]: 09-01: METRIC_REGISTRY = frozen 28-name SUITE_CANONICAL twin in tui/services/custom_validation, parity-locked by a tier-1 test importing export_runs via the tests/conftest.py sys.path; the service module never imports it (AST import lock) — IN-03 single authority preserved
+- [Phase 09]: 09-01: one-defect-one-problem collect-all semantics — numeric checks skip absent/empty values (the required check owns them), enum checks skip empty injected vocabularies; declared Train/Dev/Test are DERIVED from split counting (the wizard never collects them) and must equal well-formed row counts when present
+- [Phase 09]: 09-01: schemas/custom_registry.json = per-ENTRY contract (plain {key: entry} file top level, NO envelope; optional per-entry schema_version const 1; quirks model-only / label_column dataset-only; required = wizard-required subset; field types probed from the official 62/50)
 
 ### Pending Todos
 
@@ -147,9 +152,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T01:10:42.211Z
-Stopped at: Phase 9 UI-SPEC approved
-Resume file: .planning/phases/09-custom-model-dataset-onboarding/09-UI-SPEC.md
+Last session: 2026-10-12T02:52:00.851Z
+Stopped at: Completed 09-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 

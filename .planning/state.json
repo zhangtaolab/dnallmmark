@@ -11,7 +11,7 @@
     {
       "number": "8",
       "name": "TUI Foundation (Env Check & Selection)",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "9",
@@ -36,8 +36,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 08)",
-    "reason": "Phase 08 of 6 — needs a plan"
+    "label": "Advance to the next step",
+    "reason": "Phase 9 of 6 · 33% · executing"
   },
-  "updated_at": "2026-10-11T14:38:58.572Z"
+  "updated_at": "2026-10-12T02:51:35.977Z"
 }
