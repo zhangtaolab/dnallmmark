@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 7: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)** - The four sanctioned `run_sweep.py` flags land CLI-first with argv-parity tests; FlopsCounter (20+ architecture hooks) ports from the legacy pipeline into `run_finetune.py`; the official+custom registry overlay seam lands byte-identical-when-absent; the shared tolerant JSON loader contract is pinned
 - [x] **Phase 8: TUI Foundation (Env Check & Selection)** - `make tui` opens the console with a persisted startup environment-check panel and k9s-style filter/mark-set selection over first-class model and dataset lists, with presets, templates, and presence columns — carrying all non-retrofittable architecture decisions
-- [ ] **Phase 9: Custom Model & Dataset Onboarding (自定义接入向导)** - Guided wizards land custom models/datasets in user-owned registries over the Phase-7 overlay — collect-all fail-fast field validation, dry-run + audit gauntlet, entry-level rollback; official registries are never written
+- [x] **Phase 9: Custom Model & Dataset Onboarding (自定义接入向导)** - Guided wizards land custom models/datasets in user-owned registries over the Phase-7 overlay — collect-all fail-fast field validation, dry-run + audit gauntlet, entry-level rollback; official registries are never written
 - [ ] **Phase 10: Data Manager (Downloads & Verification)** - One-click ModelScope download with a persistent resumable queue and n_audit row-count reconciliation, so missing datasets are closable in-session before launch
 - [ ] **Phase 11: Run Config, Launch Gates & Single-GPU Monitoring** - Full run-config surface with same-source dry-run preview, terraform-style launch gates (E2' stays maintainer-authorized), detached `run_sweep.py` execution, and the poll-and-attach monitor with failure re-run — proven by a bounded GB10 smoke
 - [ ] **Phase 12: Multi-GPU Orchestration & Console Hardening** - CLI-invocable static model sharding × CUDA_VISIBLE_DEVICES with per-worker views, artifact merge, and the DDP-vs-sharding decision, plus the static read-only web mirror and maintainer-verified snapshot goldens — hard-gated on Phase 11 validation
@@ -166,7 +166,7 @@ Plans:
   4. After submission the automatic error detection runs — dry-run precheck plus audit reconciliation (row counts / non-ACGT / subset survival); any failure is reported prominently and the failed entry never lands: the custom registry reverts cleanly at entry level (official files zero-risk), leaving no half-written state that could trip the registry chain's abort-on-wrong-count discipline
   5. Landed custom entries carry a visible custom marker in both lists (distinct from the official 62/50), can be individually enabled/disabled, and export as the shareable unit (the custom registry file itself); the official registries and the existing test suite stay green and untouched
 
-**Plans**: 6/6 plans executed
+**Plans**: 6/6 plans complete
 Plans:
 **Wave 1**
 - [x] 09-01-PLAN.md — custom-entry services core (CUST-01/02/03/06 tier): store (land/undo/toggle/import/export) + collect-all validator + schemas/custom_registry.json; tracer proves write → overlay-load end-to-end
@@ -241,7 +241,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 |-------|-----------|----------------|--------|-----------|
 | 7. Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) | v1.2 | 6/6 | Complete    | 2026-10-11 |
 | 8. TUI Foundation (Env Check & Selection) | v1.2 | 7/7 | Complete    | 2026-10-12 |
-| 9. Custom Model & Dataset Onboarding | v1.2 | 6/6 | In Progress | - |
+| 9. Custom Model & Dataset Onboarding | v1.2 | 6/6 | Complete    | 2026-10-12 |
 | 10. Data Manager (Downloads & Verification) | v1.2 | 0/TBD | Not started | - |
 | 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 0/TBD | Not started | - |
 | 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 0/TBD | Not started | - |
