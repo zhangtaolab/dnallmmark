@@ -55,6 +55,7 @@ Contract (locked decisions):
 
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 from rich.text import Text
@@ -430,7 +431,15 @@ class DataManagerBackend:
                       if item.key == key), None)
         if entry is None or not entry.log_path:
             return ()
-        path = settings.state_dir() / entry.log_path
+        # IN-05: resolve through the queue's OWN state root (the seam
+        # _write_log writes through) — a service constructed with an
+        # explicit state_path outside settings.state_dir() reads back
+        # its own logs; fakes without the accessor keep the state-dir
+        # default (the screen-protocol structural surface stays small)
+        root_getter = getattr(self._queue, "state_root", None)
+        root = (Path(root_getter()) if root_getter is not None
+                else settings.state_dir())
+        path = root / entry.log_path
         try:
             return tuple(path.read_text(encoding="utf-8").splitlines())
         except OSError:

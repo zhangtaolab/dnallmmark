@@ -1113,6 +1113,20 @@ class DownloadQueueService:
         with self._lock:
             return self._last_diagnostic
 
+    def state_root(self):
+        """The queue's OWN state root — the parent of the state file.
+
+        IN-05: entry ``log_path`` values resolve against THIS root (the
+        exact seam ``_write_log`` writes through), so a service
+        constructed with an explicit ``state_path`` outside
+        ``settings.state_dir()`` reads back the logs it wrote — the
+        drill-down never silently empties.
+
+        Returns:
+            Path: the state root the state file and logs live under.
+        """
+        return self._state_path.parent
+
     def entries(self):
         """Immutable copies of the current entries, in file order.
 

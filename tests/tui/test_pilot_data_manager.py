@@ -1274,6 +1274,47 @@ class _QueueReadFake:
         return ()
 
 
+def test_backend_read_log_resolves_through_the_queue_state_seam_in05(
+        tmp_path, monkeypatch):
+    """IN-05: the drill-down reads the log through the QUEUE's own state
+    path (a service constructed with an explicit state_path outside
+    settings.state_dir() reads back the log IT wrote — never an empty
+    drill-down)."""
+    from tui.services import settings as tui_settings
+
+    # the env state root points ELSEWHERE (the mismatch premise)
+    env_state = tmp_path / "env-state"
+    monkeypatch.setenv(tui_settings.STATE_DIR_ENV, str(env_state))
+    env_state.mkdir(parents=True, exist_ok=True)
+    # the service's own state root (an explicit path somewhere else)
+    own_state = tmp_path / "own-state" / "queue"
+    own_state.parent.mkdir(parents=True, exist_ok=True)
+    cli = tmp_path / "modelscope-fake"
+    cli.write_text("#!/bin/sh\n:", encoding="utf-8")
+    cli.chmod(0o755)
+    service = download_queue_module.DownloadQueueService(
+        state_path=own_state, cli_path=str(cli))   # never executed
+    # enqueue through the real registry, claim, then fail the run with
+    # a CLI pointer to nowhere (the log-writing _finish path)
+    assert service.enqueue("GUE__EPI_GM12878").action == "enqueued"
+    assert service.claim_next().state == "downloading"
+    service._cli_path = str(tmp_path / "nowhere" / "modelscope")
+    event = service.run_task("GUE__EPI_GM12878", run_id="in05")
+
+    assert event.state == "failed"
+    assert event.log_path, "the run wrote its verbatim log"
+
+    lines = DataManagerBackend(service).read_log("GUE__EPI_GM12878")
+
+    assert lines, (
+        "read_log must resolve through the queue's own state root "
+        "(IN-05), not settings.state_dir()"
+    )
+    assert any("[argv]" in line or "cli=missing" not in line
+               for line in lines)
+    assert (own_state.parent / event.log_path).is_file()
+
+
 def test_backend_channel_detail_composes_url_and_argv(monkeypatch):
     """The adapter: the registry URL wins; the argv composes only for
     downloadable channels with a resolved CLI; degraded carries the
