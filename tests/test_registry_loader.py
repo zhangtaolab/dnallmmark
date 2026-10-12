@@ -341,3 +341,179 @@ def test_run_finetune_module_level_loads_route_through_registry_loader():
             f"run_finetune.py must not open {name}.json directly — all "
             "registry reads route through registry_loader"
         )
+
+
+# ===== enabled:false skip (D-09, Phase 9 09-02 — additive tests only) =====
+#
+# The loader-level true disable: a custom entry whose ``enabled`` field
+# is the literal JSON ``false`` is skipped at load time — absent and
+# ``true`` both load (D-09 缺席=启用). Official entries carry no
+# ``enabled`` field, so the absent-overlay byte-identity contract above
+# and every pre-existing test are untouched; these functions are
+# APPEND-ONLY coverage over the new semantics.
+
+
+def test_disabled_custom_model_entry_is_skipped(tmp_path, monkeypatch):
+    """A custom model entry whose ``enabled`` is the literal JSON false
+    is ABSENT from load_models_registry() output (D-09); a sibling
+    enabled entry in the same file still loads."""
+    custom_dir = pin_custom_dir(monkeypatch, tmp_path)
+    registry_dir = make_official_registry(tmp_path)
+    (custom_dir / "custom_models.json").write_text(
+        json.dumps({
+            "model-off": {"Model_name": "model-off", "Model_path": "models/o",
+                          "enabled": False},
+            "model-on": {"Model_name": "model-on", "Model_path": "models/n",
+                         "enabled": True},
+        }),
+        encoding="utf-8")
+
+    merged = registry_loader.load_models_registry(registry_dir)
+
+    assert "model-off" not in merged
+    assert merged["model-on"]["Model_name"] == "model-on"
+    assert set(merged) == {"model-a", "model-b", "model-on"}
+
+
+def test_disabled_custom_dataset_entry_is_skipped(tmp_path, monkeypatch):
+    """A custom dataset entry with ``enabled: false`` is absent from
+    load_datasets_registry() output (D-09, datasets side)."""
+    custom_dir = pin_custom_dir(monkeypatch, tmp_path)
+    registry_dir = make_official_registry(tmp_path)
+    (custom_dir / "custom_datasets.json").write_text(
+        json.dumps({
+            "task-off": {"Dataset_name": "task-off", "Train": 10, "Dev": 1,
+                         "enabled": False},
+        }),
+        encoding="utf-8")
+
+    merged = registry_loader.load_datasets_registry(registry_dir)
+
+    assert set(merged) == {"task-x", "task-y"}
+
+
+def test_enabled_true_and_absent_field_both_load(tmp_path, monkeypatch):
+    """Absence means enabled (D-09 缺席=启用): entries with ``enabled:
+    true`` and with NO enabled field at all both merge — only the
+    literal JSON false disables."""
+    custom_dir = pin_custom_dir(monkeypatch, tmp_path)
+    registry_dir = make_official_registry(tmp_path)
+    (custom_dir / "custom_models.json").write_text(
+        json.dumps({
+            "model-explicit": {"Model_name": "model-explicit",
+                               "enabled": True},
+            "model-implicit": {"Model_name": "model-implicit"},
+        }),
+        encoding="utf-8")
+
+    merged = registry_loader.load_models_registry(registry_dir)
+
+    assert "model-explicit" in merged
+    assert "model-implicit" in merged
+
+
+def test_only_literal_false_disables_sentinels(tmp_path, monkeypatch):
+    """The sentinel is the JSON literal false ONLY (the ``is not False``
+    filter): the string ``"false"``, the int ``0``, and JSON null
+    (``None``) do NOT skip — every non-literal-false value loads."""
+    custom_dir = pin_custom_dir(monkeypatch, tmp_path)
+    registry_dir = make_official_registry(tmp_path)
+    (custom_dir / "custom_models.json").write_text(
+        json.dumps({
+            "model-str": {"Model_name": "model-str", "enabled": "false"},
+            "model-zero": {"Model_name": "model-zero", "enabled": 0},
+            "model-null": {"Model_name": "model-null", "enabled": None},
+        }),
+        encoding="utf-8")
+
+    merged = registry_loader.load_models_registry(registry_dir)
+
+    assert set(merged) == {
+        "model-a", "model-b", "model-str", "model-zero", "model-null",
+    }
+
+
+def test_disabled_entry_colliding_with_official_still_fails_fast(
+        tmp_path, monkeypatch):
+    """The skip sits AFTER the collision loop: a disabled entry whose
+    key collides with an official key still trips the D-08 fail-fast (a
+    disabled shadow attempt is refused, never silently ignored)."""
+    custom_dir = pin_custom_dir(monkeypatch, tmp_path)
+    registry_dir = make_official_registry(tmp_path)
+    (custom_dir / "custom_models.json").write_text(
+        json.dumps({"model-a": {"Model_name": "disabled-twin",
+                                "enabled": False}}),
+        encoding="utf-8")
+
+    with pytest.raises(SystemExit) as excinfo:
+        registry_loader.load_models_registry(registry_dir)
+
+    assert "model-a" in str(excinfo.value)
+
+
+def test_merged_key_order_official_file_order_then_custom_file_order(
+        tmp_path, monkeypatch):
+    """Ordering: official keys keep official-file order, then landed
+    custom keys in custom-file order — a disabled key is skipped without
+    disturbing the order of the entries around it."""
+    custom_dir = pin_custom_dir(monkeypatch, tmp_path)
+    registry_dir = tmp_path / "registry"
+    registry_dir.mkdir()
+    write_registry(
+        registry_dir,
+        models={
+            "zeta-model": {"Model_name": "zeta-model"},
+            "alpha-model": {"Model_name": "alpha-model"},
+        },
+        datasets={"task-x": {"Dataset_name": "task-x", "Train": 1}})
+    (custom_dir / "custom_models.json").write_text(
+        json.dumps({
+            "c-first": {"Model_name": "c-first"},
+            "c-disabled": {"Model_name": "c-disabled", "enabled": False},
+            "c-last": {"Model_name": "c-last"},
+        }),
+        encoding="utf-8")
+
+    merged = registry_loader.load_models_registry(registry_dir)
+
+    assert list(merged) == ["zeta-model", "alpha-model",
+                            "c-first", "c-last"]
+
+
+def test_no_custom_file_official_keys_in_file_order(tmp_path, monkeypatch):
+    """With no custom file, the official dict is returned untouched —
+    its key sequence equals the official file's own order (the D-06
+    byte-identity path executes no filtering at all)."""
+    pin_custom_dir(monkeypatch, tmp_path)
+    registry_dir = tmp_path / "registry"
+    registry_dir.mkdir()
+    official_order = ["m-three", "m-one", "m-two"]
+    write_registry(
+        registry_dir,
+        models={key: {"Model_name": key} for key in official_order},
+        datasets={"task-x": {"Dataset_name": "task-x", "Train": 1}})
+
+    merged = registry_loader.load_models_registry(registry_dir)
+
+    assert list(merged) == official_order
+
+
+def test_non_dict_custom_entry_still_merges_after_skip_filter(
+        tmp_path, monkeypatch):
+    """A custom entry whose value is not a JSON object merges exactly as
+    before the D-09 filter: the skip inspects ``enabled`` only on dict
+    entries — a non-dict value has no enabled field and must not crash
+    the loader where it previously merged."""
+    custom_dir = pin_custom_dir(monkeypatch, tmp_path)
+    registry_dir = make_official_registry(tmp_path)
+    (custom_dir / "custom_models.json").write_text(
+        json.dumps({
+            "model-scalar": [1, 2],
+            "model-off": {"Model_name": "model-off", "enabled": False},
+        }),
+        encoding="utf-8")
+
+    merged = registry_loader.load_models_registry(registry_dir)
+
+    assert merged["model-scalar"] == [1, 2]
+    assert "model-off" not in merged
