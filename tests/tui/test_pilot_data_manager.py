@@ -26,7 +26,9 @@ D-03 discipline):
 """
 
 import asyncio
+import re
 import threading
+from pathlib import Path
 
 from env_smoke import CheckResult  # top-level module (pipeline/ sys.path root)
 from textual.binding import Binding
@@ -36,7 +38,11 @@ from tui.screens.data_manager import DataManagerScreen
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.selection import PresetMenu, SelectionData
 from tui.services import selection as selection_service
-from tui.services.download_queue import QueueEntry, QueueEvent
+from tui.services.download_queue import (
+    EnqueueOutcome,
+    QueueEntry,
+    QueueEvent,
+)
 from tui.strings import NAV_PLACEHOLDER_TOAST
 
 # =====================================================================
@@ -290,3 +296,896 @@ async def test_kick_on_empty_queue_exits_and_wait_for_complete_returns():
         assert fake.claim_next_calls == 1, "one claim over the empty queue"
         assert fake.run_task_calls == []
         assert app._queue_busy is False, "the busy flag clears on exit"
+
+
+# =====================================================================
+# Task 2 — the full interaction surface (two panes, states, actions)
+# =====================================================================
+
+from textual.containers import Vertical
+from textual.screen import ModalScreen
+from textual.widgets import RichLog, Static
+
+from tui.screens.data_manager import (
+    ChannelDetail,
+    DataManagerBackend,
+    MissingSnapshot,
+)
+from tui.services import download_queue as download_queue_module
+from tui.services.download_queue import MissingInfo, ReauditOutcome
+from tui.strings import (
+    DL_BUNDLE_TASK_NAME,
+    DL_DISABLED_TOAST,
+    DL_MISSING_EMPTY,
+    DL_MISSING_TITLE,
+    DL_PRESENCE_SUMMARY,
+    DL_SCREEN_TITLE,
+    DL_ZENODO_DISABLED_TOAST,
+    DL_ZENODO_FAILED,
+    DL_ZENODO_NOT_PUBLIC,
+    DL_ZENODO_PROBING,
+    DL_ZENODO_PUBLIC,
+    QUEUE_BANNER_MISMATCH,
+    QUEUE_CANCEL_NOOP,
+    QUEUE_CLI_UNAVAILABLE,
+    QUEUE_CONFIRM_CANCEL_DOWNLOADING,
+    QUEUE_CONFIRM_CANCEL_PENDING,
+    QUEUE_EMPTY,
+    QUEUE_PROGRESS_INDETERMINATE,
+    QUEUE_RECONCILE_MISMATCH,
+    QUEUE_RECONCILE_PASS,
+    QUEUE_RECONCILE_RUNNING,
+    QUEUE_RESTART_NOTE,
+    QUEUE_RETRY_NOOP,
+    QUEUE_STATE_DONE,
+    QUEUE_STATE_DOWNLOADING,
+    QUEUE_STATE_FAILED,
+    QUEUE_STATE_MISMATCH,
+    QUEUE_STATE_PENDING,
+    QUEUE_TITLE,
+    QUEUE_TOAST_ALREADY_QUEUED,
+    QUEUE_TOAST_ENQUEUED,
+    QUEUE_TOAST_ENQUEUED_ALL,
+)
+
+#: The 68-char-key backstop fixture (the UAT lesson: the longest
+#: committed dataset key length).
+LONG_KEY = "x" * 68
+
+_GUE_URL = "https://www.modelscope.cn/datasets/lgq12697/GUE"
+
+
+def _missing_row(key, total=1000, channel="downloadable",
+                 reason=None, url=_GUE_URL):
+    return MissingInfo(key=key, declared_total=total, channel=channel,
+                       reason_code=reason, source_url=url)
+
+
+def _std_missing():
+    """The 3-missing standard fixture (the 80x24 mockup volume)."""
+    return (
+        _missing_row("GUE__emp_H3", 7349),
+        _missing_row("mouse__DMS", 12411),
+        _missing_row("plant__vista-100m", 64350),
+    )
+
+
+def _reconcile(declared=None, measured=None, verdict="pass"):
+    return {"verdict": verdict, "declared": declared,
+            "measured": measured, "unified_eval_n": None}
+
+
+class FakeDataManagerService:
+    """The screen-protocol fake (the injection seam's fake side).
+
+    Deterministic and recording: fixed snapshot/entries, scripted
+    enqueue outcomes, a mutable pending-removal cancel, per-key channel
+    details and logs, and an optionally gated re-audit (the blocking
+    fake the g-worker responsiveness proof uses).
+    """
+
+    def __init__(self, missing=(), total=50, present=47, entries=(),
+                 probe_state="not_public", enqueue_outcomes=None,
+                 enqueue_all_count=0, channel_details=None, logs=None,
+                 reaudit_gate=None, probe_gate=None):
+        self._missing = tuple(missing)
+        self._total = total
+        self._present = present
+        self.entries_list = [_queue_entry(*item) if isinstance(item, tuple)
+                             else item for item in entries]
+        self.probe_state = probe_state
+        self._enqueue_outcomes = dict(enqueue_outcomes or {})
+        self._enqueue_all_count = enqueue_all_count
+        self._channel_details = dict(channel_details or {})
+        self._logs = dict(logs or {})
+        self._reaudit_gate = reaudit_gate
+        self._probe_gate = probe_gate
+        self.snapshot_calls = 0
+        self.enqueue_calls = []
+        self.enqueue_all_calls = 0
+        self.zenodo_calls = 0
+        self.retry_calls = []
+        self.cancel_calls = []
+        self.reaudit_calls = 0
+
+    def missing_snapshot(self):
+        self.snapshot_calls += 1
+        return MissingSnapshot(rows=self._missing, total=self._total,
+                               present=self._present)
+
+    def entries(self):
+        return tuple(self.entries_list)
+
+    def enqueue(self, key):
+        self.enqueue_calls.append(key)
+        outcome = self._enqueue_outcomes.get(key)
+        if outcome is not None:
+            return outcome
+        self.entries_list.append(_queue_entry(key))
+        return EnqueueOutcome(action="enqueued", key=key)
+
+    def enqueue_all(self):
+        self.enqueue_all_calls += 1
+        return self._enqueue_all_count
+
+    def enqueue_zenodo(self):
+        self.zenodo_calls += 1
+        return EnqueueOutcome(
+            action="enqueued", key=download_queue_module.ZENODO_BUNDLE_KEY)
+
+    def retry(self, key):
+        self.retry_calls.append(key)
+        return True
+
+    def cancel(self, key):
+        self.cancel_calls.append(key)
+        self.entries_list = [entry for entry in self.entries_list
+                             if entry.key != key]
+        return "removed"
+
+    def reaudit(self, run_id):
+        self.reaudit_calls += 1
+        if self._reaudit_gate is not None:
+            self._reaudit_gate.wait(timeout=10)
+        return ReauditOutcome(ok=True, details=("exit_code=0",))
+
+    def probe_zenodo(self):
+        if self._probe_gate is not None:
+            self._probe_gate.wait(timeout=10)
+        return self.probe_state
+
+    def channel_detail(self, key):
+        detail = self._channel_details.get(key)
+        if detail is not None:
+            return detail
+        return ChannelDetail(key=key, source_url=_GUE_URL, argv=None,
+                             channel="downloadable", reason_code=None)
+
+    def read_log(self, key):
+        return self._logs.get(key, ())
+
+
+def _cell_text(value):
+    """Plain text of a DataTable cell (cells carry rich Text)."""
+    return value.plain if isinstance(value, Text) else str(value)
+
+
+def _row(table, index):
+    """A row's cell texts as plain strings."""
+    return [_cell_text(cell) for cell in table.get_row_at(index)]
+
+
+def _label_text(screen, selector):
+    content = screen.query_one(selector).content
+    return content.plain if isinstance(content, Text) else str(content)
+
+
+async def _open_screen(pilot, app, service):
+    """Push the screen over the fake service; await the mount workers."""
+    app.push_screen(DataManagerScreen(data_service=service))
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+
+
+def _queue_table(screen):
+    return screen.query_one("#dl-queue", DataTable)
+
+
+def _missing_table(screen):
+    return screen.query_one("#dl-missing", DataTable)
+
+
+# ---------------------------------------------------------------------
+# Rendering: the two panes from fake data
+# ---------------------------------------------------------------------
+
+async def test_both_panes_render_from_fake_data():
+    """The standard fixture: 3 missing rows + 2 queue rows + titles."""
+    service = FakeDataManagerService(
+        missing=_std_missing(),
+        entries=(_queue_entry("GUE__emperven_H3"),
+                 _queue_entry("mouse__DMS", "downloading",
+                              last_percent=42)))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        assert isinstance(screen, DataManagerScreen)
+
+        missing = _missing_table(screen)
+        assert missing.row_count == 3
+        first = _row(missing, 0)
+        assert first[0] == "✗ GUE__emp_H3"
+        assert first[1] == "7,349", "thousands separators, English digits"
+
+        queue = _queue_table(screen)
+        assert queue.row_count == 2
+        assert _row(queue, 0)[0] == "mouse__DMS"  # downloading first? no —
+        # file order for non-terminal states: fixture order holds
+        assert [_row(queue, i)[0] for i in range(2)] == [
+            "GUE__emperven_H3", "mouse__DMS"]
+
+        assert _label_text(screen, "#dl-missing-title") == (
+            DL_MISSING_TITLE.format(n=3))
+        assert _label_text(screen, "#dl-queue-title") == (
+            QUEUE_TITLE.format(n=2))
+        assert _label_text(screen, "#dl-screen-title") == DL_SCREEN_TITLE
+        assert _label_text(screen, "#dl-presence-summary") == (
+            DL_PRESENCE_SUMMARY.format(present=47, total=50, missing=3))
+
+
+async def test_five_queue_states_render_glyph_copy_and_style():
+    """Each of the five states renders its glyph-first copy + style."""
+    service = FakeDataManagerService(entries=(
+        _queue_entry("k-pending"),
+        _queue_entry("k-downloading", "downloading", last_percent=42),
+        _queue_entry("k-done", "done", last_percent=100,
+                     reconcile=_reconcile(
+                         declared={"Train": 3, "Dev": 4, "Test": 3},
+                         measured={"train": 3, "dev": 4, "test": 3})),
+        _queue_entry("k-failed", "failed", problems=("exit_1",)),
+        _queue_entry("k-mismatch", "mismatch", reconcile=_reconcile(
+            declared={"Train": 10}, measured={"train": 3},
+            verdict="mismatch")),
+    ))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        table = _queue_table(app.screen)
+
+        def row_of(key):
+            for index in range(table.row_count):
+                if _row(table, index)[0] == key:
+                    return table.get_row_at(index)
+            raise AssertionError(f"row {key} not found")
+
+        expected = (
+            ("k-pending", QUEUE_STATE_PENDING, "$text-muted"),
+            ("k-downloading", QUEUE_STATE_DOWNLOADING, "dim"),
+            ("k-done", QUEUE_STATE_DONE, "bold $success"),
+            ("k-failed", QUEUE_STATE_FAILED, "bold $error"),
+            ("k-mismatch", QUEUE_STATE_MISMATCH, "$warning"),
+        )
+        for key, copy, style in expected:
+            cell = row_of(key)[1]
+            assert _cell_text(cell) == copy, f"{key} state cell copy"
+            assert cell.style == style, f"{key} state cell style"
+
+
+async def test_progress_cell_percent_bar_and_indeterminate():
+    """D-03/auto-default 3: parsed percent + 10-cell bar; unparsed
+    renders the indeterminate glyph, never a fabricated percent."""
+    service = FakeDataManagerService(entries=(
+        _queue_entry("k-42", "downloading", last_percent=42),
+        _queue_entry("k-none", "downloading"),
+        _queue_entry("k-done", "done", last_percent=100),
+        _queue_entry("k-fail", "failed", last_percent=55),
+        _queue_entry("k-fail-none", "failed"),
+        _queue_entry("k-pend"),
+    ))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        table = _queue_table(app.screen)
+
+        def progress_of(key):
+            for index in range(table.row_count):
+                if _row(table, index)[0] == key:
+                    return table.get_row_at(index)[2]
+            raise AssertionError(f"row {key} not found")
+
+        bar42 = progress_of("k-42")
+        assert _cell_text(bar42) == " 42% ████······", (
+            "right-aligned 4-cell percent + 10-cell bar (4 filled)"
+        )
+        assert _cell_text(progress_of("k-none")) == (
+            QUEUE_PROGRESS_INDETERMINATE)
+        assert _cell_text(progress_of("k-done")) == "100%"
+        assert _cell_text(progress_of("k-fail")) == "55%"
+        assert _cell_text(progress_of("k-fail-none")) == "—"
+        assert _cell_text(progress_of("k-pend")) == "—"
+
+
+async def test_reconcile_cells_four_vocabularies():
+    """pass / running (post-landing transient) / mismatch / dash."""
+    service = FakeDataManagerService(entries=(
+        _queue_entry("k-pass", "done", last_percent=100,
+                     reconcile=_reconcile(
+                         measured={"train": 30, "dev": 4, "test": 3})),
+        _queue_entry("k-running", "downloading", last_percent=100),
+        _queue_entry("k-still-downloading", "downloading",
+                     last_percent=42),
+        _queue_entry("k-mismatch", "mismatch", reconcile=_reconcile(
+            declared={"Train": 10}, measured={"train": 3},
+            verdict="mismatch")),
+        _queue_entry("k-pending"),
+    ))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        table = _queue_table(app.screen)
+
+        def reconcile_of(key):
+            for index in range(table.row_count):
+                if _row(table, index)[0] == key:
+                    return _cell_text(table.get_row_at(index)[3])
+            raise AssertionError(f"row {key} not found")
+
+        assert reconcile_of("k-pass") == QUEUE_RECONCILE_PASS.format(n=37)
+        assert reconcile_of("k-running") == QUEUE_RECONCILE_RUNNING
+        assert reconcile_of("k-still-downloading") == "—"
+        assert reconcile_of("k-mismatch") == QUEUE_RECONCILE_MISMATCH.format(
+            n=10, m=3)
+        assert reconcile_of("k-pending") == "—"
+
+
+async def test_both_empty_states_render():
+    """The happy zero + the empty queue rows (SEL-01 empty edges)."""
+    service = FakeDataManagerService(missing=(), total=50, present=50,
+                                     entries=())
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        assert _row(_missing_table(screen), 0) == [
+            DL_MISSING_EMPTY.format(total=50), ""]
+        assert _row(_queue_table(screen), 0) == [QUEUE_EMPTY, "", "", ""]
+
+
+async def test_mismatch_banner_block_and_sort_to_top():
+    """D-07/D-09: one banner per mismatch under the queue title; the
+    mismatch and failed rows sort to the top of the table."""
+    service = FakeDataManagerService(entries=(
+        _queue_entry("k-done", "done", last_percent=100,
+                     reconcile=_reconcile(measured={"train": 1})),
+        _queue_entry("k-failed", "failed"),
+        _queue_entry("k-mismatch", "mismatch", reconcile=_reconcile(
+            declared={"Train": 7349}, measured={"train": 12},
+            verdict="mismatch")),
+    ))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        banners = [static for static
+                   in screen.query_one("#dl-queue-banners").query(Static)]
+        assert len(banners) == 1, "exactly one banner for one mismatch"
+        banner_text = banners[0].content.plain if isinstance(
+            banners[0].content, Text) else str(banners[0].content)
+        assert banner_text == QUEUE_BANNER_MISMATCH.format(
+            key="k-mismatch", n=7349, m=12)
+        assert banners[0].has_class("queue-banner-mismatch")
+
+        table = _queue_table(screen)
+        order = [_row(table, i)[0] for i in range(table.row_count)]
+        assert order == ["k-mismatch", "k-failed", "k-done"], (
+            "mismatch and failed sort to the top (stable file order)"
+        )
+
+
+async def test_recovered_rows_append_the_restart_note():
+    """D-06 restart visibility: interrupted pending rows carry the dim
+    note segment (the disabled-suffix append idiom)."""
+    service = FakeDataManagerService(entries=(
+        _queue_entry("GUE__emp_H3", interrupted=True),))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        task_cell = _row(_queue_table(app.screen), 0)[0]
+        assert QUEUE_RESTART_NOTE in task_cell, (
+            "the restart note renders on the recovered row"
+        )
+
+
+async def test_bundle_row_renders_the_task_name():
+    """The zenodo bundle row's task cell renders the bundle label."""
+    service = FakeDataManagerService(entries=(
+        _queue_entry(download_queue_module.ZENODO_BUNDLE_KEY,
+                     kind="zenodo_bundle"),))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        assert _row(_queue_table(app.screen), 0)[0] == DL_BUNDLE_TASK_NAME
+
+
+# ---------------------------------------------------------------------
+# The Zenodo line (D-12 four states) + the z behavior
+# ---------------------------------------------------------------------
+
+def _zenodo_line(screen):
+    return _label_text(screen, "#dl-zenodo-line")
+
+
+async def test_zenodo_line_four_states():
+    """probing dim / not-public dim with HH:MM / public actionable /
+    probe-failed warning — each with its contract copy."""
+    # probing: a gated probe keeps the mount worker in flight — the
+    # line holds the probing copy until the answer flips it
+    gate = threading.Event()
+    service = FakeDataManagerService(probe_state="public",
+                                     probe_gate=gate)
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.push_screen(DataManagerScreen(data_service=service))
+        for _ in range(20):
+            await pilot.pause()
+            if _zenodo_line(app.screen) == DL_ZENODO_PROBING:
+                break
+        assert _zenodo_line(app.screen) == DL_ZENODO_PROBING, (
+            "the line renders the probing copy while the probe runs"
+        )
+        gate.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert _zenodo_line(app.screen) == DL_ZENODO_PUBLIC, (
+            "the answer flips the line to the public copy"
+        )
+
+    for state, expected_text in (
+        ("not_public", DL_ZENODO_NOT_PUBLIC),
+        ("failed", DL_ZENODO_FAILED),
+    ):
+        service = FakeDataManagerService(probe_state=state)
+        app = _app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_screen(pilot, app, service)
+            line = _zenodo_line(app.screen)
+            if "{HH:MM}" in expected_text:
+                assert line.startswith(
+                    expected_text.split("{HH:MM}")[0]), (
+                    f"{state}: the not-public copy prefix")
+                assert line.endswith("）"), (
+                    f"{state}: the HH:MM suffix renders")
+            else:
+                assert expected_text.split("{error}")[0] in line, (
+                    f"{state}: the failed copy prefix")
+
+
+async def test_z_enqueues_only_when_public_never_silent_otherwise():
+    """public -> enqueue + kick; not-public/failed -> the explanatory
+    toast, zero enqueues (D-12: z is never silent)."""
+    for state in ("not_public", "failed"):
+        service = FakeDataManagerService(probe_state=state)
+        app = _app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_screen(pilot, app, service)
+            await pilot.press("z")
+            await pilot.pause()
+            assert service.zenodo_calls == 0
+            assert DL_ZENODO_DISABLED_TOAST in _toast_messages(app)
+
+    service = FakeDataManagerService(probe_state="public")
+    app = _app(queue=FakeQueueService())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        await pilot.press("z")
+        await pilot.pause()
+        assert service.zenodo_calls == 1
+        assert QUEUE_TOAST_ENQUEUED.format(
+            key=DL_BUNDLE_TASK_NAME) in _toast_messages(app)
+
+
+# ---------------------------------------------------------------------
+# The d/r/x/a actions over the fakes
+# ---------------------------------------------------------------------
+
+async def test_d_enqueues_missing_cursor_with_all_outcome_toasts():
+    """d happy path (toast + kick + reload), already-queued, disabled,
+    and cli-unavailable toasts — never silent."""
+    outcomes = {
+        "mouse__DMS": EnqueueOutcome(action="already_queued",
+                                     key="mouse__DMS"),
+        "plant__vista-100m": EnqueueOutcome(
+            action="disabled", key="plant__vista-100m",
+            reason_code="shape_d_layout", source_url=_GUE_URL),
+    }
+    service = FakeDataManagerService(missing=_std_missing(),
+                                     enqueue_outcomes=outcomes)
+    queue_fake = FakeQueueService()
+    app = _app(queue=queue_fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+
+        # happy: cursor row 0 (GUE__emp_H3, focused by default)
+        await pilot.press("d")
+        await pilot.pause()
+        assert service.enqueue_calls == ["GUE__emp_H3"]
+        assert QUEUE_TOAST_ENQUEUED.format(
+            key="GUE__emp_H3") in _toast_messages(app)
+        assert queue_fake.claim_next_calls >= 1, "enqueued -> kicked"
+
+        # already queued: move to row 1
+        _missing_table(app.screen).cursor_down(1)
+        await pilot.pause()
+        await pilot.press("d")
+        await pilot.pause()
+        assert QUEUE_TOAST_ALREADY_QUEUED.format(
+            key="mouse__DMS") in _toast_messages(app)
+
+        # disabled channel: row 2
+        _missing_table(app.screen).cursor_down(1)
+        await pilot.pause()
+        await pilot.press("d")
+        await pilot.pause()
+        assert DL_DISABLED_TOAST.format(
+            key="plant__vista-100m") in _toast_messages(app)
+
+    # cli-unavailable (its own fixture — a fresh notification list)
+    service = FakeDataManagerService(
+        missing=(_missing_row("k-cli"),),
+        enqueue_outcomes={"k-cli": EnqueueOutcome(
+            action="cli_unavailable", key="k-cli")})
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        await pilot.press("d")
+        await pilot.pause()
+        assert QUEUE_CLI_UNAVAILABLE in _toast_messages(app)
+
+
+async def test_a_enqueues_all_with_count_toast():
+    """a: the count toast carries {n} (an honest zero included)."""
+    service = FakeDataManagerService(missing=_std_missing(),
+                                     enqueue_all_count=3)
+    queue_fake = FakeQueueService()
+    app = _app(queue=queue_fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        await pilot.press("a")
+        await pilot.pause()
+        assert service.enqueue_all_calls == 1
+        assert QUEUE_TOAST_ENQUEUED_ALL.format(
+            n=3) in _toast_messages(app)
+        assert queue_fake.claim_next_calls >= 1
+
+
+async def test_r_retries_failed_and_mismatch_noops_others():
+    """r on failed -> retry + kick; on done -> the honest noop toast."""
+    service = FakeDataManagerService(entries=(
+        _queue_entry("k-failed", "failed"),
+        _queue_entry("k-done", "done"),
+    ))
+    queue_fake = FakeQueueService()
+    app = _app(queue=queue_fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        _queue_table(app.screen).focus()
+        await pilot.pause()
+        await pilot.press("r")
+        await pilot.pause()
+        assert service.retry_calls == ["k-failed"]
+        assert queue_fake.claim_next_calls >= 1
+
+        _queue_table(app.screen).cursor_down(1)
+        await pilot.pause()
+        await pilot.press("r")
+        await pilot.pause()
+        assert QUEUE_RETRY_NOOP in _toast_messages(app)
+        assert service.retry_calls == ["k-failed"]
+
+
+async def test_x_cancel_confirms_both_variants_and_noops_others():
+    """pending -> the remove confirm; downloading -> the signal
+    confirm; done -> the noop toast; esc always backs out."""
+    service = FakeDataManagerService(entries=(
+        _queue_entry("k-pending"),
+        _queue_entry("k-downloading", "downloading"),
+        _queue_entry("k-done", "done"),
+    ))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        table = _queue_table(app.screen)
+        table.focus()
+        await pilot.pause()
+
+        # pending: the confirm fires; esc cancels (no service call)
+        await pilot.press("x")
+        await pilot.pause()
+        assert isinstance(app.screen, ModalScreen)
+        assert QUEUE_CONFIRM_CANCEL_PENDING.format(
+            key="k-pending") in [
+                str(w.content) for w in app.screen.query(Static)]
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, ModalScreen)
+        assert service.cancel_calls == []
+
+        # pending: enter confirms -> the cancel seam runs
+        await pilot.press("x")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert service.cancel_calls == ["k-pending"]
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        # downloading (now the cursor row after the reload): the copy
+        # names the channel's own resume retention
+        table = _queue_table(app.screen)
+        table.focus()
+        await pilot.pause()
+        await pilot.press("x")
+        await pilot.pause()
+        assert isinstance(app.screen, ModalScreen)
+        texts = [str(w.content) for w in app.screen.query(Static)]
+        assert any(QUEUE_CONFIRM_CANCEL_DOWNLOADING.format(key=key)
+                   in text for key in ("k-downloading",)
+                   for text in texts), texts
+        await pilot.press("escape")
+        await pilot.pause()
+
+        # done: the noop toast
+        table = _queue_table(app.screen)
+        table.focus()
+        table.cursor_down(1)
+        await pilot.pause()
+        await pilot.press("x")
+        await pilot.pause()
+        assert QUEUE_CANCEL_NOOP in _toast_messages(app)
+
+
+# ---------------------------------------------------------------------
+# The drill-down (D-03 verbatim) + the guards
+# ---------------------------------------------------------------------
+
+async def test_drill_down_renders_key_url_argv_reconcile_log(
+        monkeypatch):
+    """enter on a queue row: the full key, the registry download_url,
+    the composed argv, the reconcile numbers, and the verbatim log."""
+    monkeypatch.setattr(download_queue_module, "resolve_modelscope_cli",
+                        lambda cli_path=None: Path("/fake/modelscope"))
+    service = FakeDataManagerService(entries=(
+        _queue_entry("GUE__emp_H3", "done", last_percent=100,
+                     reconcile=_reconcile(
+                         declared={"Train": 3}, measured={"train": 3})),),
+        logs={"GUE__emp_H3": ("[argv]", "/fake download", "[exit] 0")})
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        _queue_table(app.screen).focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, ModalScreen), "the detail opens"
+        log = app.screen.query_one("#dl-detail-log", RichLog)
+        rendered = "\n".join(strip.text for strip in log.lines)
+        assert "GUE__emp_H3" in rendered, "the full key"
+        assert _GUE_URL in rendered, "the registry download_url"
+        assert "/fake/modelscope download --dataset" in rendered, (
+            "the composed LIST argv"
+        )
+        assert "train" in rendered, "the reconcile numbers"
+        assert "/fake download" in rendered, "the verbatim log lines"
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, ModalScreen)
+
+
+async def test_drill_down_opens_for_missing_rows_too(monkeypatch):
+    """enter on a missing row: key + url + argv (the pre-queue detail)."""
+    monkeypatch.setattr(download_queue_module, "resolve_modelscope_cli",
+                        lambda cli_path=None: Path("/fake/modelscope"))
+    service = FakeDataManagerService(missing=_std_missing())
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        # the missing table is focused at mount
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, ModalScreen)
+        log = app.screen.query_one("#dl-detail-log", RichLog)
+        rendered = "\n".join(strip.text for strip in log.lines)
+        assert "GUE__emp_H3" in rendered
+        assert _GUE_URL in rendered
+
+
+async def test_no_modal_below_minimum_grid_enter_is_dead():
+    """WR-06: below 80x24 no chrome opens — enter over the guard does
+    nothing; growing back restores the screen."""
+    service = FakeDataManagerService(missing=_std_missing())
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_screen(pilot, app, service)
+        await pilot.resize_terminal(79, 23)
+        await pilot.pause()
+        from tui.app import MinSizeScreen
+        assert isinstance(app.screen, MinSizeScreen)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert not isinstance(app.screen, ModalScreen), (
+            "no modal may open over the min-size guard"
+        )
+        await pilot.resize_terminal(80, 24)
+        await pilot.pause()
+        assert isinstance(app.screen, DataManagerScreen)
+
+
+async def test_68_char_key_renders_in_both_tables_reads_full_in_detail():
+    """The UAT backstop: a 68-char key truncates in-cell in BOTH tables
+    without column collision and reads full in the detail."""
+    service = FakeDataManagerService(
+        missing=(_missing_row(LONG_KEY, 123456),),
+        entries=(_queue_entry(LONG_KEY, "downloading", last_percent=5),),
+        channel_details={LONG_KEY: ChannelDetail(
+            key=LONG_KEY, source_url=_GUE_URL, argv=None,
+            channel="downloadable", reason_code=None)})
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        missing_cell = _row(_missing_table(screen), 0)[0]
+        assert missing_cell.startswith("✗ ")
+        assert "…" in missing_cell, "in-cell truncation at the width"
+        assert len(missing_cell) <= 33
+
+        queue_cell = _row(_queue_table(screen), 0)[0]
+        assert "…" in queue_cell
+        assert len(queue_cell) <= 33
+
+        # no collision: the neighboring cells still render their content
+        assert _row(_queue_table(screen), 0)[1] == QUEUE_STATE_DOWNLOADING
+
+        # full key in detail
+        _queue_table(screen).focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        rendered = "\n".join(
+            strip.text
+            for strip in app.screen.query_one(
+                "#dl-detail-log", RichLog).lines)
+        assert LONG_KEY in rendered, "the detail reads the full key"
+
+
+async def test_both_regions_visible_at_80x24_standard_fixture():
+    """The 80x24 mockup geometry: 3 missing + 2 queued -> both regions
+    visible on the minimum grid."""
+    service = FakeDataManagerService(
+        missing=_std_missing(),
+        entries=(_queue_entry("GUE__emperven_H3"),
+                 _queue_entry("mouse__DMS", "downloading",
+                              last_percent=42)))
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        missing_region = screen.query_one("#dl-missing-region", Vertical)
+        queue_region = screen.query_one("#dl-queue-region", Vertical)
+        assert missing_region.region.height >= 5, (
+            "the missing region keeps its fixed budget"
+        )
+        assert queue_region.region.height >= 4, (
+            "the queue region stays visible at the minimum grid"
+        )
+        assert _missing_table(screen).visible
+        assert _queue_table(screen).visible
+
+
+# ---------------------------------------------------------------------
+# The g re-audit (D-10/R-03) — worker-proven
+# ---------------------------------------------------------------------
+
+async def test_g_reruns_reaudit_in_worker_ui_stays_responsive():
+    """g on a mismatch row reruns the audit in the worker (a blocking
+    fake + returning pauses IS the proof); the reload follows."""
+    gate = threading.Event()
+    service = FakeDataManagerService(
+        entries=(_queue_entry("k-mismatch", "mismatch", reconcile=(
+            _reconcile(declared={"Train": 9}, measured={"train": 3},
+                       verdict="mismatch"))),),
+        reaudit_gate=gate)
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        snapshot_calls_before = service.snapshot_calls
+        _queue_table(app.screen).focus()
+        await pilot.pause()
+        await pilot.press("g")
+        await pilot.pause()
+        # the audit blocks in the worker thread — these pauses return
+        for _ in range(10):
+            await pilot.pause()
+        assert service.reaudit_calls == 1, "the audit started in a worker"
+        gate.set()
+        await asyncio.wait_for(
+            app.workers.wait_for_complete(), timeout=10)
+        await pilot.pause()
+        assert service.snapshot_calls > snapshot_calls_before, (
+            "the outcome refreshes the tables via a reload"
+        )
+
+
+async def test_g_on_non_mismatch_row_is_a_silent_noop():
+    """The g binding is live on mismatch rows only."""
+    service = FakeDataManagerService(entries=(
+        _queue_entry("k-done", "done"),))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        _queue_table(app.screen).focus()
+        await pilot.press("g")
+        await pilot.pause()
+        assert service.reaudit_calls == 0
+
+
+# ---------------------------------------------------------------------
+# The Backend adapter + the per-screen i18n lock
+# ---------------------------------------------------------------------
+
+class _QueueReadFake:
+    """The queue-side fake for the Backend adapter unit checks."""
+
+    def __init__(self, spec):
+        self._spec = spec
+
+    def resolve_channel(self, key):
+        return self._spec if key == self._spec.key else None
+
+    def entries(self):
+        return ()
+
+
+def test_backend_channel_detail_composes_url_and_argv(monkeypatch):
+    """The adapter: the registry URL wins; the argv composes only for
+    downloadable channels with a resolved CLI; degraded carries the
+    machine reason."""
+    monkeypatch.setattr(download_queue_module, "resolve_modelscope_cli",
+                        lambda cli_path=None: Path("/fake/modelscope"))
+    from tui.services.download_queue import ChannelSpec
+
+    downloadable = ChannelSpec(
+        key="GUE__emp_H3", repo_id="lgq12697/GUE", shape="A",
+        local_dir=Path("/repo/pipeline/datasets/GUE"),
+        include=("emp_H3/*",), exclude=("*.DS_Store",), rename=None,
+        final_task_dir="emp_H3", source_url=_GUE_URL, reason_code=None)
+    detail = DataManagerBackend(_QueueReadFake(downloadable)
+                                ).channel_detail("GUE__emp_H3")
+    assert detail.source_url == _GUE_URL
+    assert detail.channel == "downloadable"
+    assert detail.argv is not None
+    assert detail.argv[0] == "/fake/modelscope"
+    assert "download" in detail.argv
+
+    degraded = ChannelSpec(
+        key="k-shape-d", repo_id="lgq12697/Genomic_Benchmarks", shape=None,
+        local_dir=None, include=(), exclude=(), rename=None,
+        final_task_dir="x", source_url=_GUE_URL,
+        reason_code="shape_d_layout")
+    detail = DataManagerBackend(
+        _QueueReadFake(degraded)).channel_detail("k-shape-d")
+    assert detail.channel == "disabled"
+    assert detail.reason_code == "shape_d_layout"
+    assert detail.argv is None
+
+
+def test_data_manager_module_carries_zero_chinese_literals():
+    """I18N-01 single home: no operator-facing copy in the screen."""
+    source = (Path(__file__).parents[2] / "tui" / "screens"
+              / "data_manager.py").read_text(encoding="utf-8")
+    offenders = re.findall(r"[一-鿿]", source)
+    assert not offenders, (
+        f"Chinese literals must live in tui/strings.py only "
+        f"({len(offenders)} found in data_manager.py)"
+    )
