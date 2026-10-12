@@ -1,6 +1,6 @@
 ---
-last_mapped_commit: ef56567
-last_mapped_at: 2026-10-11
+last_mapped_commit: d7fb66d6969d28a7f31e8f390c785011cedee23b
+last_mapped_at: 2026-10-12
 ---
 # External Integrations
 
