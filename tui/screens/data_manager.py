@@ -203,11 +203,17 @@ class MissingSnapshot:
         rows: one ``MissingInfo`` per missing official key (registry order).
         total: the audited dataset count (the committed n_audit view).
         present: the present count over the same view.
+        load_diagnostic: the queue file's corrupt-load diagnostic when
+            the last load quarantined a state file (None on every
+            healthy session) — rendered verbatim as the status line
+            (data, never copy); remembered for the session by the
+            service so reloads keep surfacing it (10-06).
     """
 
     rows: "tuple[MissingInfo, ...]"
     total: int
     present: int
+    load_diagnostic: "str | None" = None
 
     @property
     def missing(self) -> int:
@@ -314,26 +320,40 @@ class DataManagerBackend:
                             else download_queue.DownloadQueueService())
 
     def missing_snapshot(self) -> MissingSnapshot:
-        """The missing rows + the presence summary (the registries view).
+        """The missing rows + the presence summary + the load state.
 
-        The presence counts derive from the committed n_audit view
-        through the unchanged ``registries.presence_for`` (the same
-        loop shape ``SelectionBackend.load_selection_data`` runs); an
-        absent n_audit yields zero rows and a zero denominator — the
-        missing set is unknowable, not "everything" (the service rule).
+        Rehydrates the shared queue through its tolerant ``load()``
+        FIRST (10-06: a screen mounted over a not-yet-loaded service —
+        the test path, or any mount racing the boot resume — reads the
+        persisted entries; in production the boot resume has usually
+        loaded already and this is an idempotent no-op read), then
+        derives the presence counts from the committed n_audit view
+        through the unchanged ``registries.presence_for``; an absent
+        n_audit yields zero rows and a zero denominator — the missing
+        set is unknowable, not "everything" (the service rule). The
+        corrupt-load diagnostic rides the snapshot from the service's
+        SESSION memory (``load()`` returns it exactly once; the
+        remembered value survives this adapter's every reload).
         """
+        self._queue.load()
+        diagnostic_getter = getattr(
+            self._queue, "last_load_diagnostic", None)
+        diagnostic = (str(diagnostic_getter())
+                      if diagnostic_getter is not None else None)
         rows = self._queue.missing_datasets()
         audit = registries.load_n_audit()
         if audit is None:
             return MissingSnapshot(
-                rows=tuple(rows), total=0, present=0)
+                rows=tuple(rows), total=0, present=0,
+                load_diagnostic=diagnostic)
         present = sum(
             1 for key in audit
             if registries.presence_for(key, audit).status
             == registries.PRESENCE_PRESENT
         )
         return MissingSnapshot(
-            rows=tuple(rows), total=len(audit), present=present)
+            rows=tuple(rows), total=len(audit), present=present,
+            load_diagnostic=diagnostic)
 
     def entries(self) -> "tuple[QueueEntry, ...]":
         """The shared queue's entries (file order)."""
@@ -566,6 +586,13 @@ class DataManagerScreen(Screen):
         with Horizontal(id="dl-title-bar"):
             yield Label(DL_SCREEN_TITLE, id="dl-screen-title")
             yield Label("", id="dl-presence-summary")
+        # The corrupt-load status line (10-06): hidden by default (zero
+        # layout cost on the healthy path — the 80x24 budget keeps its
+        # geometry), shown verbatim when the snapshot carries the
+        # session's quarantine diagnostic.
+        diagnostic_line = Label("", id="dl-load-diagnostic")
+        diagnostic_line.display = False
+        yield diagnostic_line
         with Vertical(id="dl-missing-region"):
             with Horizontal(id="dl-missing-title-row"):
                 yield Label(
@@ -644,6 +671,7 @@ class DataManagerScreen(Screen):
         self._snapshot = message.snapshot
         self._queue_entries = message.entries
         self._render_presence_summary()
+        self._render_load_diagnostic()
         self._render_missing()
         self._render_queue()
 
@@ -718,6 +746,20 @@ class DataManagerScreen(Screen):
             DL_PRESENCE_SUMMARY.format(
                 present=snapshot.present, total=snapshot.total,
                 missing=snapshot.missing))
+
+    def _render_load_diagnostic(self) -> None:
+        """The corrupt-load status line (10-06): the service's verbatim
+        quarantine diagnostic when the session carries one, hidden on
+        the healthy path — the degradation is surfaced, never a crash,
+        never silent loss."""
+        line = self.query_one("#dl-load-diagnostic", Label)
+        diagnostic = (self._snapshot.load_diagnostic
+                      if self._snapshot is not None else None)
+        if diagnostic is None:
+            line.display = False
+            return
+        line.update(Text(diagnostic, style=_STYLE_WARN))
+        line.display = True
 
     def _render_missing(self) -> None:
         """The missing pane: one row per MissingInfo, the happy zero."""

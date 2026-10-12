@@ -997,6 +997,11 @@ class DownloadQueueService:
         self._entries: list[dict] = []
         self._cancel_requested: set[str] = set()
         self._active: dict[str, Any] = {}
+        # The most recent corrupt-load diagnostic, remembered for the
+        # session (10-06): ``load()`` returns it exactly once (the file
+        # is quarantined on first read), but the screen's later
+        # snapshot reloads must still surface it — never silent loss.
+        self._last_diagnostic: str | None = None
 
     # ===== Load / snapshot (D-06 tolerant recovery) =====
 
@@ -1042,10 +1047,18 @@ class DownloadQueueService:
                    for raw in doc["entries"] if isinstance(raw, dict)]
         downgraded = False
         for entry in entries:
-            if entry["state"] == "downloading":
-                entry["state"] = "pending"
-                entry["interrupted"] = True
-                downgraded = True
+            if entry["state"] != "downloading":
+                continue
+            if entry["key"] in self._active:
+                # a LIVE run owns this state: the boot-time downgrade is
+                # for interrupted restarts only — a mid-flight reload
+                # (the screen's snapshot worker re-loading the file
+                # while the driver executes) must never re-queue the
+                # entry currently being downloaded (10-06)
+                continue
+            entry["state"] = "pending"
+            entry["interrupted"] = True
+            downgraded = True
         self._entries = entries
         if downgraded:
             self._persist_locked()
@@ -1056,12 +1069,29 @@ class DownloadQueueService:
         path = self._state_path
         message = ("download queue state file unreadable, moved aside: "
                    + str(path) + " (" + diagnostic + ")")
+        self._last_diagnostic = message   # session memory (10-06)
         try:
             os.replace(path, path.with_name(path.name + ".corrupt"))
         except OSError as exc:
             message += "; sidecar move failed: " + repr(exc)
         self._entries = []
         return message
+
+    def last_load_diagnostic(self):
+        """The most recent corrupt-load diagnostic, or None.
+
+        Session memory (10-06): ``load()`` returns the diagnostic string
+        exactly once (the corrupt file is quarantined on that first
+        read, so every later load is healthy), but the degradation must
+        stay visible — the screen's snapshot reads this accessor so the
+        status line survives its reloads until the process exits. A
+        healthy session never sets it; a healthy load never clears it.
+
+        Returns:
+            str | None: the remembered diagnostic, or None.
+        """
+        with self._lock:
+            return self._last_diagnostic
 
     def entries(self):
         """Immutable copies of the current entries, in file order.
@@ -1086,6 +1116,25 @@ class DownloadQueueService:
 
     # ===== Mutators (enqueue / retry / cancel) =====
 
+    def _resolve_cli(self):
+        """Resolve the CLI with the AVAILABILITY gate (10-06).
+
+        ``resolve_modelscope_cli`` returns an explicit ``cli_path``
+        verbatim (the pinned 10-01 contract — a pure resolution
+        function). The availability gates (``enqueue``/``run_task``)
+        additionally refuse a resolved path that points NOWHERE: an
+        explicit pointer to nowhere IS the probed-unavailable state —
+        the honest ``cli_unavailable`` outcome, never a spawn attempt
+        of a nonexistent binary.
+
+        Returns:
+            Path | None: an existing console-script path, or None.
+        """
+        cli = resolve_modelscope_cli(self._cli_path)
+        if cli is not None and not cli.is_file():
+            return None
+        return cli
+
     def enqueue(self, key):
         """Idempotently append one pending dataset entry (D-08).
 
@@ -1104,7 +1153,7 @@ class DownloadQueueService:
         Returns:
             EnqueueOutcome: the structured result (never an exception).
         """
-        cli = resolve_modelscope_cli(self._cli_path)
+        cli = self._resolve_cli()
         with self._lock:
             if any(entry["key"] == key for entry in self._entries):
                 return EnqueueOutcome(
@@ -1312,7 +1361,7 @@ class DownloadQueueService:
         """
         if self._entry_kind(key) == KIND_ZENODO_BUNDLE:
             return self._run_zenodo_bundle(key, run_id)
-        cli = resolve_modelscope_cli(self._cli_path)
+        cli = self._resolve_cli()
         if cli is None:
             return self._finish(
                 key, run_id, "failed", None,

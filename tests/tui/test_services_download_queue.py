@@ -1145,8 +1145,11 @@ def test_nonzero_exit_fails_with_code_and_log(monkeypatch, tmp_path):
 def test_cli_absent_at_run_time_fails_without_spawning(
         monkeypatch, tmp_path):
     spawner = FakeSpawner()
-    service, _, _ = engine_service(tmp_path, monkeypatch, spawner,
-                                   cli=tmp_path / "absent-cli")
+    # enqueue through the existing fake CLI, THEN take the CLI away —
+    # a nowhere-pointing explicit path now refuses at enqueue time too
+    # (the 10-06 availability gate), so the run-time absence is staged
+    # by clearing the explicit pointer after the enqueue
+    service, _, _ = engine_service(tmp_path, monkeypatch, spawner)
     service._cli_path = None
     force_cli_absent(monkeypatch, tmp_path)
 
