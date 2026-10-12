@@ -42,7 +42,9 @@ from tui.screens.data_manager import DataManagerScreen
 from tui.screens.env_check import EnvCheckScreen
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.selection import PresetMenu, SelectionData, SelectionScreen
+from tui.services import registries as registries_service
 from tui.services import selection as selection_service
+from tui.services.download_queue import merge_presence
 from tui.strings import (
     APP_HELP_ROW,
     ENV_DETAIL_LABEL,
@@ -132,6 +134,11 @@ class _QueueDriverFake:
 
     def missing_datasets(self):
         return ()
+
+    def merged_audit_tasks(self):
+        # CR-01: the real Backend's presence-summary seam — delegate to
+        # the same pure rule (empty queue -> the committed view alone)
+        return merge_presence(registries_service.load_n_audit(), {})
 
     def probe_zenodo(self):
         return "not_public"

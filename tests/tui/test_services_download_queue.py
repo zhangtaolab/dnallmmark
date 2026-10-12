@@ -519,6 +519,121 @@ def test_missing_datasets_empty_when_n_audit_unavailable(
     assert service.missing_datasets() == []
 
 
+def tmp_n_audit_missing(monkeypatch, tmp_path, tasks):
+    """Point ``registries.N_AUDIT_PATH`` at a tmp committed view with the
+    given tasks mapping — the CR-01 regression lane's presence source
+    (the committed file stays read-only; monkeypatch is the seam)."""
+    path = tmp_path / "n-audit-view" / "n_audit.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"tasks": tasks}), encoding="utf-8")
+    monkeypatch.setattr(registries, "N_AUDIT_PATH", path)
+    return path
+
+
+def done_reconciled_entry(key, verdict="pass"):
+    """One persisted-form queue entry: done with a measured reconcile
+    (the D-11 overlay source ``reconciled_rows`` reads)."""
+    measured = ({"train": 10, "dev": 2, "test": 2}
+                if verdict == "pass" else None)
+    return {
+        "key": key, "kind": "dataset", "state": "done", "attempts": 1,
+        "enqueued_at": "2026-10-12T00:00:00+00:00",
+        "started_at": "2026-10-12T00:01:00+00:00",
+        "finished_at": "2026-10-12T00:02:00+00:00",
+        "last_percent": 100, "interrupted": False, "log_path": None,
+        "problems": [],
+        "reconcile": {"verdict": verdict, "declared": {"Train": 10},
+                      "measured": measured, "unified_eval_n": 2},
+    }
+
+
+def test_missing_datasets_flips_over_done_reconciled_entries_cr01(
+        monkeypatch, tmp_path):
+    """CR-01 (the release-blocking regression): the D-11 flip reaches the
+    missing pane — over a SEEDED REAL service + tmp committed n_audit, a
+    key whose committed record is missing but whose queue entry is done
+    with a measured reconcile LEAVES ``missing_datasets`` (the merged
+    view), while a mismatched key never flips (semantic 6)."""
+    repo = tmp_repo_with_registry(tmp_path / "repo", {
+        "Demo__task": SHAPE_A_ENTRY,
+        "DemoM__mm": {
+            "Dataset_path": "datasets/DemoM/mm_task",
+            "download_url":
+                "https://www.modelscope.cn/datasets/lgq12697/GUE",
+            "Train": 5, "Dev": 1, "Test": 1},
+    })
+    tmp_n_audit_missing(monkeypatch, tmp_path, tasks={
+        "Demo__task": {"missing": True},
+        "DemoM__mm": {"missing": True},
+    })
+    state = tmp_path / "state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    state.mkdir(parents=True, exist_ok=True)
+    mismatch_entry = done_reconciled_entry("DemoM__mm", verdict="mismatch")
+    mismatch_entry["state"] = "mismatch"
+    (state / download_queue.QUEUE_FILE_NAME).write_text(json.dumps({
+        "schema_version": download_queue.SCHEMA_VERSION,
+        "entries": [
+            done_reconciled_entry("Demo__task"),
+            mismatch_entry,
+        ],
+    }, indent=4, ensure_ascii=False), encoding="utf-8")
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        cli_path=str(fake_cli(tmp_path)))
+
+    rows = service.missing_datasets()
+
+    # the done+reconciled key LEFT the missing list; the mismatched key
+    # never flips (UI-SPEC semantic 6) — the pane mirrors the selection
+    # screen's merged view, not the committed file alone
+    assert [row.key for row in rows] == ["DemoM__mm"], (
+        "a reconcile-pass (done) key must leave the missing pane "
+        "(merge_presence over reconciled_rows); a mismatched key stays"
+    )
+    # the merged view through the service's OWN state path flips presence
+    merged = service.merged_audit_tasks()
+    assert registries.presence_for(
+        "Demo__task", merged).status == registries.PRESENCE_PRESENT
+    assert registries.presence_for(
+        "DemoM__mm", merged).status == registries.PRESENCE_MISSING
+    # the committed file is read-only to this path (the merge is pure)
+    assert registries.load_n_audit()["Demo__task"]["missing"] is True
+
+
+def test_merged_audit_tasks_overlays_this_services_state_path_cr01(
+        monkeypatch, tmp_path):
+    """The merged view reads the SERVICE's own state path (an explicit
+    ``state_path`` stays authoritative) and is committed-view-only when
+    nothing reconciled — the exact substrate the selection screen and
+    the data-manager summary both consume."""
+    repo = tmp_repo_with_registry(
+        tmp_path / "repo", {"Demo__task": SHAPE_A_ENTRY})
+    tmp_n_audit_missing(monkeypatch, tmp_path, tasks={
+        "Demo__task": {"missing": True}})
+    state_a = tmp_path / "state-a"
+    state_b = tmp_path / "state-b"
+    for state in (state_a, state_b):
+        state.mkdir(parents=True, exist_ok=True)
+    (state_a / download_queue.QUEUE_FILE_NAME).write_text(json.dumps({
+        "schema_version": download_queue.SCHEMA_VERSION,
+        "entries": [done_reconciled_entry("Demo__task")],
+    }, indent=4, ensure_ascii=False), encoding="utf-8")
+
+    seeded = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state_a / "download_queue.json",
+        cli_path=str(fake_cli(tmp_path)))
+    empty = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state_b / "download_queue.json",
+        cli_path=str(fake_cli(tmp_path)))
+
+    assert download_queue.merge_presence(
+        registries.load_n_audit(), {},
+    )["Demo__task"]["missing"] is True      # committed view unchanged
+    assert seeded.merged_audit_tasks()["Demo__task"]["missing"] is False
+    assert empty.merged_audit_tasks()["Demo__task"]["missing"] is True
+
+
 # =====================================================================
 # Lane 1: module hygiene (services-tier invariants)
 # =====================================================================

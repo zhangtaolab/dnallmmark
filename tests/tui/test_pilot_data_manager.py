@@ -38,11 +38,13 @@ from tui.app import DnallmMarkTui
 from tui.screens.data_manager import DataManagerScreen
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.selection import PresetMenu, SelectionData
+from tui.services import registries as registries_service
 from tui.services import selection as selection_service
 from tui.services.download_queue import (
     EnqueueOutcome,
     QueueEntry,
     QueueEvent,
+    merge_presence,
 )
 from tui.strings import NAV_PLACEHOLDER_TOAST
 
@@ -158,11 +160,25 @@ class FakeQueueService:
 
     def missing_datasets(self):
         # the D-11 shape: missing until the entry is done (reconcile
-        # pass) — landing alone never flips presence
+        # pass) — landing alone never flips presence. CR-01: this now
+        # MIRRORS the fixed real-service rule (the merged view over
+        # reconcile-pass entries), never masks it; the real service is
+        # pinned separately in test_services_download_queue.py and by
+        # the Backend lane over the seeded real service below.
         self.missing_calls += 1
         return tuple(
             _missing_row(entry.key) for entry in self._entries
             if entry.state != "done")
+
+    def merged_audit_tasks(self):
+        # CR-01: delegate to the REAL merge rule — the committed n_audit
+        # overlaid with this fake's done entries through the production
+        # pure function, so the Pilot summary lane and the production
+        # summary lane compute over the same semantics by construction.
+        committed = registries_service.load_n_audit() or {}
+        overlay = {entry.key: (1, 1, 1) for entry in self._entries
+                   if entry.state == "done"}
+        return merge_presence(committed, overlay)
 
     def probe_zenodo(self):
         return self.probe_state
@@ -1231,6 +1247,60 @@ def test_backend_channel_detail_composes_url_and_argv(monkeypatch):
     assert detail.channel == "disabled"
     assert detail.reason_code == "shape_d_layout"
     assert detail.argv is None
+
+
+def test_backend_missing_snapshot_flips_over_real_seeded_state_cr01(
+        monkeypatch, tmp_path):
+    """CR-01 at the tier the Pilot e2e previously faked: the REAL
+    DataManagerBackend over the REAL DownloadQueueService with a seeded
+    done+reconciled entry and a committed-view n_audit that still says
+    missing — the row LEAVES the missing pane AND the presence summary
+    counts it present (rows and DL_PRESENCE_SUMMARY move together)."""
+    import json
+    from email.message import Message
+    from urllib.error import HTTPError
+
+    from tui.services import settings as tui_settings
+
+    def offline_opener(url, timeout=None):
+        raise HTTPError(url, 404, "Not Found", Message(), None)
+
+    # the committed view: GUE__emp_H3 still missing (pre-`g` reality)
+    n_audit = tmp_path / "n-audit" / "n_audit.json"
+    n_audit.parent.mkdir(parents=True)
+    n_audit.write_text(json.dumps(
+        {"tasks": {"GUE__emp_H3": {"missing": True}}}), encoding="utf-8")
+    monkeypatch.setattr(registries_service, "N_AUDIT_PATH", n_audit)
+    state = tmp_path / "state"
+    monkeypatch.setenv(tui_settings.STATE_DIR_ENV, str(state))
+    state.mkdir(parents=True, exist_ok=True)
+    # the seeded queue: done WITH a measured reconcile (the overlay source)
+    (state / download_queue_module.QUEUE_FILE_NAME).write_text(json.dumps({
+        "schema_version": 1,
+        "entries": [{
+            "key": "GUE__emp_H3", "kind": "dataset", "state": "done",
+            "attempts": 1, "enqueued_at": "2026-10-12T00:00:00+00:00",
+            "started_at": None, "finished_at": None, "last_percent": 100,
+            "interrupted": False, "log_path": None, "problems": [],
+            "reconcile": {"verdict": "pass", "declared": {"Train": 10},
+                          "measured": {"train": 10, "dev": 2, "test": 2},
+                          "unified_eval_n": 2}}],
+    }, indent=4, ensure_ascii=False), encoding="utf-8")
+    real_service = download_queue_module.DownloadQueueService(
+        zenodo_fetch=offline_opener)
+
+    snapshot = DataManagerBackend(real_service).missing_snapshot()
+
+    assert [row.key for row in snapshot.rows] == [], (
+        "the reconciled key must leave the missing pane over the REAL "
+        "service (the merged view), not just over the Pilot fake"
+    )
+    assert snapshot.total == 1
+    assert snapshot.present == 1, (
+        "the presence summary must count the reconciled key present — "
+        "the summary moves with the rows (the CR-01 flip)"
+    )
+    assert snapshot.missing == 0
 
 
 def test_data_manager_module_carries_zero_chinese_literals():

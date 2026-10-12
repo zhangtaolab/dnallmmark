@@ -2071,14 +2071,21 @@ class DownloadQueueService:
     # ===== Missing-set derivation (the D-13 input) =====
 
     def missing_datasets(self):
-        """MissingInfo rows for official keys missing per n_audit.
+        """MissingInfo rows for official keys missing per the MERGED view.
 
         Computed over the official registry (direct file read, never
         the custom overlay — download targets are the official
-        ModelScope mirrors) plus the committed ``n_audit.json``
-        presence view (``registries.load_n_audit``; the TUI computes
-        nothing). An absent/unreadable n_audit yields NO rows — the
-        missing set is unknowable, not "everything".
+        ModelScope mirrors) plus the D-11 merged presence view: the
+        committed ``n_audit.json`` overlaid with this queue's
+        reconcile-pass rows (``merge_presence`` over ``reconciled_rows``
+        over this service's own state path — the exact substrate the
+        selection screen consumes; CR-01). A landed-and-reconciled key
+        therefore LEAVES the missing list the moment its queue entry
+        turns done; the committed file itself stays read-only (the
+        merge is pure). A landed-but-mismatched key never flips (only
+        done entries reach the overlay). An absent/unreadable committed
+        n_audit yields NO rows — the missing set is unknowable, not
+        "everything".
 
         Returns:
             list[MissingInfo]: one frozen row per missing official key,
@@ -2086,16 +2093,21 @@ class DownloadQueueService:
         """
         audit_tasks = registries.load_n_audit()
         if audit_tasks is None:
+            # the missing set is unknowable without the committed view
+            # (overlay keys read PRESENT and every other key UNKNOWN —
+            # no row either way), so the early return is equivalent.
             return []
         try:
             registry = self._official_registry()
         except (OSError, json.JSONDecodeError, UnicodeDecodeError):
             return []
+        merged = merge_presence(
+            audit_tasks, reconciled_rows(self._state_path))
         rows = []
         for key, entry in registry.items():
             if not isinstance(entry, dict):
                 continue
-            presence = registries.presence_for(key, audit_tasks)
+            presence = registries.presence_for(key, merged)
             if presence.status != registries.PRESENCE_MISSING:
                 continue
             spec = self._spec_from_entry(key, entry)
@@ -2106,6 +2118,26 @@ class DownloadQueueService:
                 reason_code=spec.reason_code,
                 source_url=spec.source_url))
         return rows
+
+    def merged_audit_tasks(self):
+        """The D-11 merged presence view through THIS service's state
+        path (CR-01): ``merge_presence(registries.load_n_audit(),
+        reconciled_rows(self._state_path))`` — the one substrate the
+        selection screen's snapshot, the missing pane, and the presence
+        summary all consume, served through the queue so an explicitly
+        constructed ``state_path`` stays authoritative. The committed
+        ``n_audit.json`` is never written by this path (the merge is
+        pure; only the explicit ``g`` re-audit refreshes the baseline).
+
+        Returns:
+            dict: the merged tasks view — the committed mapping
+            overlaid with ``{key: {"missing": False, "splits": ...}}``
+            per reconcile-pass key (the committed view alone when
+            nothing reconciled, the overlay alone when the committed
+            file is absent).
+        """
+        return merge_presence(
+            registries.load_n_audit(), reconciled_rows(self._state_path))
 
     # ===== Channel resolution (R-01/R-02) =====
 

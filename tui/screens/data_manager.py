@@ -311,10 +311,11 @@ class DataManagerBackend:
                 driver-surface Protocol (``QueueDriverProtocol``) and the
                 screen's Protocol: the REAL service and the tier-2 fakes
                 both satisfy the consumed surface structurally
-                (``missing_datasets``/``entries``/``enqueue``/
-                ``enqueue_all_missing``/``enqueue_zenodo``/``retry``/
-                ``cancel``/``reaudit_baseline``/``resolve_channel``, with
-                ``probe_zenodo`` optional via the getattr guard).
+                (``missing_datasets``/``merged_audit_tasks``/``entries``/
+                ``enqueue``/``enqueue_all_missing``/``enqueue_zenodo``/
+                ``retry``/``cancel``/``reaudit_baseline``/
+                ``resolve_channel``, with ``probe_zenodo`` optional via
+                the getattr guard).
         """
         self._queue: Any = (queue if queue is not None
                             else download_queue.DownloadQueueService())
@@ -327,8 +328,11 @@ class DataManagerBackend:
         the test path, or any mount racing the boot resume — reads the
         persisted entries; in production the boot resume has usually
         loaded already and this is an idempotent no-op read), then
-        derives the presence counts from the committed n_audit view
-        through the unchanged ``registries.presence_for``; an absent
+        derives BOTH surfaces from the D-11 MERGED view through the
+        queue's own state path (CR-01: rows AND present/total move
+        together — a reconcile-pass key leaves the missing list and
+        counts present the moment its queue entry turns done); the
+        denominator stays the committed view's audited count. An absent
         n_audit yields zero rows and a zero denominator — the missing
         set is unknowable, not "everything" (the service rule). The
         corrupt-load diagnostic rides the snapshot from the service's
@@ -343,18 +347,19 @@ class DataManagerBackend:
         diagnostic = (str(diagnostic_value)
                       if diagnostic_value is not None else None)
         rows = self._queue.missing_datasets()
-        audit = registries.load_n_audit()
-        if audit is None:
+        committed = registries.load_n_audit()
+        if committed is None:
             return MissingSnapshot(
                 rows=tuple(rows), total=0, present=0,
                 load_diagnostic=diagnostic)
+        merged = self._queue.merged_audit_tasks()
         present = sum(
-            1 for key in audit
-            if registries.presence_for(key, audit).status
+            1 for key in merged
+            if registries.presence_for(key, merged).status
             == registries.PRESENCE_PRESENT
         )
         return MissingSnapshot(
-            rows=tuple(rows), total=len(audit), present=present,
+            rows=tuple(rows), total=len(committed), present=present,
             load_diagnostic=diagnostic)
 
     def entries(self) -> "tuple[QueueEntry, ...]":
