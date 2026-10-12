@@ -202,6 +202,28 @@ def test_malformed_custom_models_json_fails_loud_naming_file(
     assert str(custom_dir / "custom_models.json") in str(excinfo.value)
 
 
+def test_non_utf8_custom_file_fails_loud_naming_file(tmp_path, monkeypatch):
+    """CR-01 (09 review): a custom registry saved in a non-UTF-8 encoding
+    (e.g. GBK entry names — a plausible operator artifact for this
+    project's audience; the schema tests themselves round-trip
+    ``自定义系列`` content) exits naming the file — the same fail-loud
+    contract as any other unreadable custom file. A raw
+    ``UnicodeDecodeError`` (a ``ValueError`` sibling of
+    ``json.JSONDecodeError``, caught by neither existing clause) would
+    crash ``run_finetune.py`` at module level with a bare traceback and
+    strand the selection screen's load worker (its tolerant seam
+    degrades only on ``(OSError, SystemExit)``)."""
+    custom_dir = pin_custom_dir(monkeypatch, tmp_path)
+    registry_dir = make_official_registry(tmp_path)
+    (custom_dir / "custom_models.json").write_bytes(
+        '{"k": "自定义"}'.encode("gbk"))
+
+    with pytest.raises(SystemExit) as excinfo:
+        registry_loader.load_models_registry(registry_dir)
+
+    assert str(custom_dir / "custom_models.json") in str(excinfo.value)
+
+
 def test_custom_datasets_top_level_not_object_fails_loud_naming_file(
         tmp_path, monkeypatch):
     """A custom file whose top level is not a JSON object exits naming

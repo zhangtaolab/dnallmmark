@@ -122,7 +122,14 @@ def _load_registry(official_path, custom_path):
     try:
         with open(custom_path, "r", encoding="utf-8") as f:
             custom = json.load(f)
-    except (OSError, json.JSONDecodeError) as exc:
+    # UnicodeDecodeError joins the tuple (CR-01, 09 review): it is a
+    # ValueError SIBLING of json.JSONDecodeError — not a subclass — so a
+    # non-UTF-8 custom file (e.g. GBK entry names) escaped both clauses
+    # as a raw traceback: a crash at run_finetune import time and a
+    # stranded selection-screen load worker (the tolerant seam degrades
+    # only on OSError/SystemExit). Same fail-loud SystemExit as every
+    # other unreadable custom file (T-07-04).
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise SystemExit(
             f"[Error] custom registry file {custom_path} is not readable "
             f"JSON: {exc}"
