@@ -207,7 +207,7 @@ Plans:
 - [x] 10-02-PLAN.md — reconcile kernel (DATA-03): audit subprocess leg (temp staging, absolute Dataset_path, artifact verdicts), done-gate + mismatch, presence overlay merge, `g` re-audit (R-03 default outputs) + byte-unchanged regression
 
 **Wave 3** *(blocked on 10-02)*
-- [ ] 10-03-PLAN.md — Zenodo probe + bundle driver (DATA-04): 4-state GET probe, guarded download/extract, zenodo-kind queue integration, the full DL_/QUEUE_ string block + ENV_ROUTE amendment
+- [x] 10-03-PLAN.md — Zenodo probe + bundle driver (DATA-04): 4-state GET probe, guarded download/extract, zenodo-kind queue integration, the full DL_/QUEUE_ string block + ENV_ROUTE amendment
 
 **Wave 4** *(blocked on 10-03)*
 - [ ] 10-04-PLAN.md — data-manager screen (slot 3): two-pane layout, five-state glyphs, progress cells, mismatch banners, drill-down, Zenodo line, d/r/x/a/enter/g/z; app-level driver worker + boot resume; nav promotion
