@@ -93,11 +93,15 @@ ENV_VERDICT_CRITICAL_FAIL = (
     "✗ 关键项未通过: {kernel_names} — 启动流程将被阻断（阻断接线于 Phase 11）"
 )
 
-# Missing-data routing (ENV-03/SEL-04): the count, the Phase-10 panel note,
-# and the CLI audit command — English verbatim (file paths and CLI commands
-# are never translated, I18N-01).
+# Missing-data routing (ENV-03/SEL-04; amended 10-03 per the 10-UI-SPEC
+# Existing-Surface Amendments): the count, the [3] keycap hint routing
+# to the data-manager screen (the nav digit 3 IS the one navigation
+# path — the hint surfaces it, no alias key), and the CLI audit
+# command — English verbatim (file paths and CLI commands are never
+# translated, I18N-01). The Phase-10-panel note is retired: the panel
+# exists now.
 ENV_ROUTE_MISSING_DATASETS = (
-    "⚠ {n} 个数据集目录缺失 — 数据下载面板于 Phase 10 提供；"
+    "⚠ {n} 个数据集目录缺失 — [3] 前往数据管理；"
     "CLI 重跑审计: python script/audit_n_frequencies.py"
 )
 
@@ -504,3 +508,117 @@ ABOUT_DEP_ABSENT = "未安装"
 # 里程碑阶段 value — the one static milestone constant (Auto-Default #13:
 # milestone metadata, not a machine probe; updated per milestone).
 ABOUT_MILESTONE_STAGE = "v1.2 TUI任务 — 已交付: Phase 7-8 · 本相位: 9 自定义接入"
+
+# ===== 数据管理屏 (DL_, Phase 10, 10-03; D-12/D-13 + I18N-01) =====
+# The data-manager screen chrome + Zenodo 整包 entry copy (10-UI-SPEC
+# Copywriting Contract verbatim). Format fields: {n}/{total}/
+# {present}/{missing} counts, {HH:MM} the probe moment, {error} a
+# diagnostic, {key} a dataset key. Record ids (19135551), dataset
+# keys, n_audit, and XDG state stay English verbatim.
+
+DL_SCREEN_TITLE = "数据管理"
+DL_MISSING_TITLE = "缺失数据集 ({n}) — 来自 n_audit"
+DL_MISSING_COL_KEY = "数据集"
+DL_MISSING_COL_ROWS = "n_audit 基线行数"
+DL_MISSING_EMPTY = "✓ 无缺失数据集 — 全部 {total} 个数据集在场"
+
+# The Zenodo 整包 four probe states (D-12; glyph+color dual channel on
+# every one — probing/not-public dim, public ✓ success, failed ⚠
+# warning; `z` on a disabled state is never silent).
+DL_ZENODO_PROBING = "⠋ Zenodo 公开探测中 …"
+DL_ZENODO_NOT_PUBLIC = "[z] Zenodo 整包 · 未公开（探测于 {HH:MM}）"
+DL_ZENODO_PUBLIC = "✓ Zenodo 整包已公开 — [z] 整包下载"
+DL_ZENODO_FAILED = "⚠ Zenodo 探测失败: {error}（稍后重试）"
+DL_ZENODO_DISABLED_TOAST = (
+    "Zenodo 记录 19135551 尚未公开 — 公开后此入口自动激活")
+# The bundle queue row's 任务 cell label + the z keycap's action noun.
+DL_BUNDLE_TASK_NAME = "zenodo-19135551（整包）"
+DL_ZENODO_KEY_LABEL = "Zenodo 整包"
+
+# Bottom-bar keycap labels (D-15, each ≤ 4 CJK chars; 详情 reuses the
+# existing ENV_DETAIL_LABEL — the shared-label precedent, one
+# vocabulary for the same verb across screens).
+DL_ENQUEUE_LABEL = "入队"
+DL_RETRY_LABEL = "重试"
+DL_CANCEL_LABEL = "取消"
+DL_ENQUEUE_ALL_LABEL = "全部入队"
+
+# Derived gap-fillers (the SEL_PRESENCE_UNKNOWN precedent — the
+# contract names no wording for these rows): the title-line presence
+# summary the UI-SPEC layout requires, and the R-02 shape-D
+# disabled-with-explanation toast (the drill-down carries the
+# download_url — always diagnosable).
+DL_PRESENCE_SUMMARY = "在场 {present}/{total} · 缺失 {missing}"
+DL_DISABLED_TOAST = (
+    "⚠ {key} 上游为镜像布局，不支持一键下载 — download_url 见详情")
+
+# ===== 下载队列 (QUEUE_, Phase 10, 10-03; D-02..D-09) =====
+# The queue table chrome, the five-state cells, the reconcile cells,
+# the restart note, the mismatch banner, the toasts, and the two
+# destructive cancel confirms (10-UI-SPEC Copywriting Contract
+# verbatim).
+
+QUEUE_TITLE = "下载队列 ({n}) — 串行 · 状态持久化于 XDG state"
+QUEUE_COL_TASK = "任务"
+QUEUE_COL_STATE = "状态"
+QUEUE_COL_PROGRESS = "进度"
+QUEUE_COL_RECONCILE = "行数对账"
+QUEUE_EMPTY = "队列为空 — 按 [d] 入队缺失数据集"
+
+# The five state cells (D-02 verbatim; glyph+color dual channel — the
+# leading glyph is the NO_COLOR carrier).
+QUEUE_STATE_PENDING = "◌ 待下载"
+QUEUE_STATE_DOWNLOADING = "⠋ 下载中"
+QUEUE_STATE_DONE = "✓ 完成"
+QUEUE_STATE_FAILED = "✗ 失败"
+QUEUE_STATE_MISMATCH = "⚠ 对账不一致"
+
+# Reconcile cells (D-09; the running cell covers the automatic
+# post-landing transient — auto-default #14).
+QUEUE_RECONCILE_PASS = "✓ {n} 行一致"
+QUEUE_RECONCILE_RUNNING = "⠋ 对账中 …"
+QUEUE_RECONCILE_MISMATCH = "⚠ {n}≠{m}"
+
+# Restart recovery note (D-06; dim render on recovered rows).
+QUEUE_RESTART_NOTE = "上次中断 — 通道将续传"
+
+# The prominent mismatch banner (D-07/D-09) — 不自动删除 is contract
+# wording, never paraphrased.
+QUEUE_BANNER_MISMATCH = (
+    "⚠ 对账不一致 — {key}: n_audit 基线 {n} 行, 实测 {m} 行（不自动删除）")
+
+# Toasts: enqueue feedback, the reconcile-pass presence flip, the
+# retry no-op, and the probed CLI-absent state (modelscope stays
+# English — a CLI name, never translated).
+QUEUE_TOAST_ENQUEUED = "✓ 已入队: {key}"
+QUEUE_TOAST_ENQUEUED_ALL = "✓ 已入队 {n} 个缺失数据集"
+QUEUE_TOAST_ALREADY_QUEUED = "{key} 已在队列中"
+QUEUE_FLIP_TOAST = "✓ {key} 下载完成且对账一致 — 在场已更新"
+QUEUE_RETRY_NOOP = "仅 失败/对账不一致 项可重试"
+QUEUE_CLI_UNAVAILABLE = (
+    "✗ modelscope CLI 不可用 — 请先安装 (pip install modelscope)")
+
+# Progress cell, indeterminate (auto-default #3: never a fabricated
+# percent from unparsed output).
+QUEUE_PROGRESS_INDETERMINATE = "⠋ …"
+
+# Destructive — the two x-cancel confirms (Enter/Esc; the downloading
+# copy names the channel's own resume retention, D-06).
+QUEUE_CONFIRM_CANCEL_PENDING = "移出队列 {key}？— Enter 移出 / Esc 继续"
+QUEUE_CONFIRM_CANCEL_DOWNLOADING = (
+    "取消下载 {key}？已下载部分将由通道续传保留 — Enter 取消 / Esc 继续")
+
+# Derived gap-filler: the x-on-non-cancellable no-op toast (mirrors
+# the retry toast's shape; the contract pins the retry row only).
+QUEUE_CANCEL_NOOP = "仅 待下载/下载中 项可取消"
+
+# The g re-audit binding's label (show=False binding, auto-default #7
+# — D-15's bottom bar is verbatim without it).
+QUEUE_REAUDIT_LABEL = "重新审计"
+
+# ===== 选择屏 d-入队 amendments (SEL_, Phase 10, 10-03; D-14) =====
+# The selection-screen enqueue keycap + the present-row no-op toast
+# (10-UI-SPEC 选择屏 amendments; 入队 is ONE vocabulary with the
+# data-manager screen's d — interaction semantic 8).
+SEL_ENQUEUE_LABEL = "入队"
+SEL_ENQUEUE_PRESENT_TOAST = "该数据集已在场"
