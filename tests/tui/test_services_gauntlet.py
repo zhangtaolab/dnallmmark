@@ -222,6 +222,28 @@ def test_dataset_dry_run_uses_first_official_model_counterpart(
     assert argv[argv.index("--tasks") + 1] == "my-custom-ds"
 
 
+def test_missing_official_registry_yields_failed_item_not_exception(
+        monkeypatch, tmp_path):
+    """WR-02 (09 review): a missing/corrupt OFFICIAL registry degrades to
+    a failed dry-run item naming the read failure — never an OSError
+    crossing the service boundary (the module contract: a timeout or a
+    crash yields a failed GauntletItem; an escaping exception would kill
+    the wizard's gauntlet worker before any item posts and the panel
+    rows would stay in-flight forever)."""
+    pin_config_dir(monkeypatch, tmp_path)
+    runner = FakeRunner(result=ok_result())
+    # repo_root without pipeline/ registries: _official_registry's bare
+    # open() raises FileNotFoundError (an OSError) pre-fix
+    service = gauntlet.GauntletService(runner=runner, repo_root=tmp_path)
+
+    item = service.dry_run_precheck(
+        KIND_MODELS, "my-custom-lm", model_candidate(), run_id="r1")
+
+    assert not item.ok
+    assert item.details[0] == "official_registry_unreadable"
+    assert runner.calls == [], "nothing launched when the registry is unreadable"
+
+
 # ===== env isolation + staging content (Pitfall 2 / D-08) =====
 
 

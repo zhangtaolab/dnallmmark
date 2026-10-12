@@ -211,7 +211,18 @@ class GauntletService:
             cells contain the candidate key with status ``planned``;
             every failure path returns a failed item (never raises).
         """
-        counterpart = self._dry_run_counterpart(kind)
+        counterpart, counterpart_error = self._dry_run_counterpart(kind)
+        if counterpart_error is not None:
+            # WR-02 (09 review): a missing/corrupt OFFICIAL registry is
+            # a failed item, never an exception across the service
+            # boundary (mirrors the existing_custom_registry_unreadable
+            # path below) — an escaping OSError would kill the wizard's
+            # gauntlet worker before any item posts and the panel rows
+            # would stay in-flight forever.
+            return self._failed_item(
+                run_id, kind, LEG_DRY_RUN, candidate_key,
+                ("official_registry_unreadable",),
+                raw_output=counterpart_error)
         if counterpart is None:
             return self._failed_item(
                 run_id, kind, LEG_DRY_RUN, candidate_key,
@@ -482,25 +493,34 @@ class GauntletService:
         candidates. Read DIRECTLY from the official files so overlay
         state can never leak a custom key into the counterpart slot.
 
+        WR-02 (09 review): the registry read is absorbed here — a
+        missing/corrupt official file yields ``(None, diagnostic)``
+        (the caller turns it into a failed item), never an exception
+        across the service boundary.
+
         Args:
             kind (str): ``KIND_MODELS`` or ``KIND_DATASETS``.
 
         Returns:
-            str | None: the counterpart key, or ``None`` when the
-            committed official registry cannot supply one.
+            tuple[str | None, str | None]: ``(counterpart, None)`` —
+            or ``(None, diagnostic)`` when the official registry cannot
+            be read, or ``(None, None)`` when it holds no usable key.
         """
-        if kind == KIND_MODELS:
+        try:
+            if kind == KIND_MODELS:
+                registry = self._official_registry(
+                    registry_loader.DATASETS_INFO_NAME)
+                for key, entry in registry.items():
+                    if isinstance(entry, dict) and entry.get("Train"):
+                        return key, None
+                return None, None
             registry = self._official_registry(
-                registry_loader.DATASETS_INFO_NAME)
-            for key, entry in registry.items():
-                if isinstance(entry, dict) and entry.get("Train"):
-                    return key
-            return None
-        registry = self._official_registry(
-            registry_loader.MODELS_INFO_NAME)
-        for key in registry:
-            return key
-        return None
+                registry_loader.MODELS_INFO_NAME)
+            for key in registry:
+                return key, None
+            return None, None
+        except (OSError, json.JSONDecodeError) as exc:
+            return None, repr(exc)
 
     def _invoke(self, argv, env, timeout):
         """Run one subprocess leg through the injectable seam.
