@@ -409,6 +409,11 @@ class DnallmMarkTui(App):
                     return  # drained — the no-hang contract
                 if worker.is_cancelled:
                     return
+                # the claim tick: one indeterminate post flips the row
+                # to its downloading state before any percent parses
+                # (unparsed CLI output may never fire a real tick)
+                self.post_message(
+                    QueueProgressMessage(entry.key, None, generation))
                 event = self._download_queue.run_task(
                     entry.key,
                     f"driver-{generation}-{entry.key}",

@@ -683,14 +683,23 @@ class DataManagerScreen(Screen):
 
     def apply_queue_progress(self, key: str,
                              percent: "int | None") -> None:
-        """One live tick: update the downloading row's cells in place."""
+        """One live tick: update the running row's cells in place.
+
+        Re-reads the entry from the service (persisted-state-as-truth,
+        T-10-04-01): the cached copy predates the claim, so the FIRST
+        tick (the driver's indeterminate claim post) is what flips the
+        row from pending to its downloading state. None percent is the
+        indeterminate contract — never a fabricated number.
+        """
         self._live_percents[key] = percent
-        entry = next((item for item in self._queue_entries
-                      if item.key == key), None)
+        entries = self._service.entries()
+        entry = next((item for item in entries if item.key == key), None)
         if entry is None or entry.state != "downloading":
             return
+        self._queue_entries = tuple(entries)
         table = self.query_one("#dl-queue", DataTable)
         try:
+            table.update_cell(key, "state", self._state_cell(entry))
             table.update_cell(key, "progress", self._progress_cell(entry))
             table.update_cell(key, "reconcile",
                               self._reconcile_cell(entry))
