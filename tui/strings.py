@@ -597,6 +597,11 @@ QUEUE_FLIP_TOAST = "✓ {key} 下载完成且对账一致 — 在场已更新"
 QUEUE_RETRY_NOOP = "仅 失败/对账不一致 项可重试"
 QUEUE_CLI_UNAVAILABLE = (
     "✗ modelscope CLI 不可用 — 请先安装 (pip install modelscope)")
+# WR-04: the refused enqueue when the queue state file cannot be
+# written (read-only state root, full disk, quota) — never silent,
+# never a lie about the channel.
+QUEUE_PERSIST_FAILED_TOAST = (
+    "✗ 队列状态写入失败: {key} 未入队 — 检查磁盘空间与权限")
 
 # Progress cell, indeterminate (auto-default #3: never a fabricated
 # percent from unparsed output).

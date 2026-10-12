@@ -416,6 +416,7 @@ from tui.strings import (
     QUEUE_STATE_PENDING,
     QUEUE_TITLE,
     QUEUE_TOAST_ALREADY_QUEUED,
+    QUEUE_PERSIST_FAILED_TOAST,
     QUEUE_TOAST_ENQUEUED,
     QUEUE_TOAST_ENQUEUED_ALL,
 )
@@ -918,6 +919,23 @@ async def test_d_enqueues_missing_cursor_with_all_outcome_toasts():
         await pilot.press("d")
         await pilot.pause()
         assert QUEUE_CLI_UNAVAILABLE in _toast_messages(app)
+
+    # persist_failed (WR-04): the honest never-wrote toast, no row
+    service = FakeDataManagerService(
+        missing=(_missing_row("k-ro"),),
+        enqueue_outcomes={"k-ro": EnqueueOutcome(
+            action="persist_failed", key="k-ro")})
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        rows_before = _queue_table(app.screen).row_count
+        await pilot.press("d")
+        await pilot.pause()
+        assert QUEUE_PERSIST_FAILED_TOAST.format(
+            key="k-ro") in _toast_messages(app), (
+            "the refused enqueue must never be silent"
+        )
+        assert _queue_table(app.screen).row_count == rows_before
 
 
 async def test_a_enqueues_all_with_count_toast():

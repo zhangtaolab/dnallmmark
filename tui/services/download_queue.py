@@ -231,6 +231,11 @@ REASON_REGISTRY_UNREADABLE = "registry_unreadable"
 #: no-download policy); every other reason is the defensive "unknown".
 _DISABLED_REASONS = frozenset({REASON_SHAPE_D, REASON_UNKNOWN_REPO})
 
+#: The enqueue action for a persistence refusal (WR-04): the entry
+#: never landed — the queue state file could not be written (read-only
+#: state root, full disk, quota). The screens toast it, never silently.
+ACTION_PERSIST_FAILED = "persist_failed"
+
 #: The repo-id allowlist (T-10-01-01): a registry-derived value must
 #: match ``namespace/name`` word chars before it can ever reach argv.
 REPO_ID_RE_PART = r"[\w.-]+/[\w.-]+"
@@ -523,7 +528,9 @@ class EnqueueOutcome:
 
     Attributes:
         action: one of ``enqueued`` / ``already_queued`` /
-            ``unknown_key`` / ``disabled`` / ``cli_unavailable``.
+            ``unknown_key`` / ``disabled`` / ``cli_unavailable`` /
+            ``persist_failed`` (the unwritable-state-rail refusal,
+            WR-04).
         key: the requested dataset key.
         reason_code: the machine reason when action is ``disabled``
             (e.g. ``shape_d_layout``) — None otherwise.
@@ -1104,15 +1111,34 @@ class DownloadQueueService:
             return [_frozen(entry) for entry in self._entries]
 
     def _persist_locked(self):
-        """Write the whole queue through the ONE atomic rail (D-05)."""
+        """Write the whole queue through the ONE atomic rail (D-05).
+
+        WR-04: an ``OSError`` from the rail (read-only state dir, full
+        disk, quota) is ABSORBED into a returned diagnostic — never an
+        exception across the pinned never-raises mutator boundary. The
+        callers own the degraded outcome: ``enqueue`` refuses and rolls
+        its append back, ``claim_next`` reverts the claim and answers
+        None, ``_finish`` still emits the event carrying a
+        ``persist_error=`` problem; the remaining mutators (retry,
+        cancel, the boot downgrade) simply keep their in-memory truth —
+        the state file catches up on the next successful write or the
+        restart downgrade.
+
+        Returns:
+            str | None: the failure diagnostic, or None on success.
+        """
         doc = {
             "schema_version": SCHEMA_VERSION,
             "entries": [{field: entry[field] for field in _ENTRY_FIELDS}
                         for entry in self._entries],
         }
-        settings.atomic_write(
-            self._state_path,
-            json.dumps(doc, indent=4, ensure_ascii=False))
+        try:
+            settings.atomic_write(
+                self._state_path,
+                json.dumps(doc, indent=4, ensure_ascii=False))
+        except OSError as exc:
+            return repr(exc)
+        return None
 
     # ===== Mutators (enqueue / retry / cancel) =====
 
@@ -1144,8 +1170,10 @@ class DownloadQueueService:
         targets — the official registry is the only URL authority); a
         disabled/degraded channel yields ``disabled`` carrying the
         machine reason + the drill-down ``source_url``; a CLI-absent
-        machine yields ``cli_unavailable``; otherwise the pending entry
-        appends and persists (``enqueued``).
+        machine yields ``cli_unavailable``; a state file that cannot be
+        written yields ``persist_failed`` (the append is rolled back —
+        WR-04: never an exception, never a ghost row); otherwise the
+        pending entry appends and persists (``enqueued``).
 
         Args:
             key (str): the dataset registry key.
@@ -1183,7 +1211,10 @@ class DownloadQueueService:
                 "problems": [],
                 "reconcile": None,
             })
-            self._persist_locked()
+            if self._persist_locked() is not None:
+                self._entries.pop()   # the refusal leaves no ghost row
+                return EnqueueOutcome(
+                    action=ACTION_PERSIST_FAILED, key=key)
             return EnqueueOutcome(action="enqueued", key=key)
 
     def enqueue_all_missing(self):
@@ -1313,20 +1344,28 @@ class DownloadQueueService:
 
         Transitions the first ``pending`` entry in file order to
         ``downloading`` with ``attempts`` incremented and ``started_at``
-        stamped, persisted before returning.
+        stamped, persisted before returning. WR-04: when that persist
+        fails (unwritable state rail), the claim is REVERTED to the
+        entry's exact prior shape and None is returned — never an
+        exception, never a persisted-downloading entry with no run.
 
         Returns:
             QueueEntry | None: the claimed snapshot, or None when no
-            pending entry exists.
+            pending entry exists (or the claim could not persist).
         """
         with self._lock:
             for entry in self._entries:
                 if entry["state"] != "pending":
                     continue
+                prior = (entry["state"], entry["attempts"],
+                         entry["started_at"])
                 entry["state"] = "downloading"
                 entry["attempts"] = entry["attempts"] + 1
                 entry["started_at"] = _now_iso()
-                self._persist_locked()
+                if self._persist_locked() is not None:
+                    entry["state"], entry["attempts"], entry[
+                        "started_at"] = prior
+                    return None
                 return _frozen(entry)
             return None
 
@@ -2069,10 +2108,19 @@ class DownloadQueueService:
         ``reconcile`` replaces the entry's reconcile field (None on
         every path that did not reach a reconcile verdict); the
         reconcile leg's verbatim output appends to the log under a
-        ``[reconcile]`` section (D-03 drill-down completeness)."""
+        ``[reconcile]`` section (D-03 drill-down completeness).
+
+        WR-04: a failing persist NEVER raises here — the event still
+        fires (the row refreshes, the driver survives) carrying a
+        ``persist_error=<repr>`` problem so the row and drill-down
+        surface the degradation; the in-memory entry keeps the terminal
+        state and the file catches up on the next successful write or
+        the restart downgrade.
+        """
         log_rel = self._write_log(key, stdout_text, stderr_text, argv,
                                   returncode, reconcile_raw)
         kind = KIND_DATASET
+        final_problems = list(problems)
         with self._lock:
             for entry in self._entries:
                 if entry["key"] != key:
@@ -2080,16 +2128,19 @@ class DownloadQueueService:
                 entry["state"] = state
                 entry["finished_at"] = _now_iso()
                 entry["last_percent"] = percent
-                entry["problems"] = list(problems)
                 entry["log_path"] = log_rel
                 entry["reconcile"] = reconcile
                 kind = entry["kind"]
-                self._persist_locked()
+                persist_error = self._persist_locked()
+                if persist_error is not None:
+                    final_problems.append(
+                        "persist_error=" + persist_error)
+                entry["problems"] = final_problems
                 break
         self._cancel_requested.discard(key)
         return QueueEvent(
             run_id=run_id, key=key, kind=kind, state=state,
-            last_percent=percent, problems=tuple(problems),
+            last_percent=percent, problems=tuple(final_problems),
             details=tuple(details), log_path=log_rel)
 
     def _write_log(self, key, stdout_text, stderr_text, argv,

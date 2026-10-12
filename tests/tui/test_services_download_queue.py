@@ -3246,6 +3246,96 @@ def test_corrupt_load_diagnostic_remembered_for_the_session(
 
 
 # =====================================================================
+# WR-04: persistence failures never cross the never-raises boundary —
+# an unwritable state rail (read-only dir, full disk) degrades every
+# mutator to an honest outcome instead of an exception.
+# =====================================================================
+
+
+def read_only_state(state):
+    """Make the state root unwritable (restored by the caller)."""
+    state.chmod(0o500)
+
+
+def writable_state(state):
+    state.chmod(0o700)
+
+
+def test_enqueue_persist_failure_refused_no_ghost_row(
+        tmp_path, monkeypatch):
+    """WR-04 (verified-by-execution class): with the state dir
+    read-only, ``enqueue`` returns the honest ``persist_failed``
+    outcome and rolls the in-memory append back — never a
+    PermissionError, never a ghost pending row."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    state.mkdir(parents=True, exist_ok=True)
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+    read_only_state(state)
+    try:
+        outcome = service.enqueue(DOWNLOADABLE_KEY)
+
+        assert outcome.action == "persist_failed"
+        assert outcome.key == DOWNLOADABLE_KEY
+        assert service.entries() == [], (
+            "the refused enqueue must roll its in-memory append back"
+        )
+    finally:
+        writable_state(state)
+
+
+def test_claim_next_persist_failure_reverts_returns_none(
+        tmp_path, monkeypatch):
+    """WR-04: a claim whose downloading transition cannot persist is
+    REVERTED (the entry returns to its exact prior shape) and
+    ``claim_next`` answers None — never an exception, never a stuck
+    in-memory downloading entry with no driver."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    hand_written_state_file(state, [(DOWNLOADABLE_KEY, "pending", 1, 40)])
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+    assert service.load() is None
+    read_only_state(state)
+    try:
+        claimed = service.claim_next()
+
+        assert claimed is None
+        (entry,) = service.entries()
+        assert entry.state == "pending"
+        assert entry.attempts == 1
+        assert entry.started_at is None
+    finally:
+        writable_state(state)
+
+
+def test_run_task_persist_failure_still_returns_event(
+        tmp_path, monkeypatch):
+    """WR-04: a failing ``_finish`` persist never raises out of
+    ``run_task`` — the event still fires (the row refreshes), carrying
+    a ``persist_error=`` problem so the row and drill-down surface the
+    degradation; the in-memory entry holds the terminal state."""
+    spawner = FakeSpawner()
+    service, _repo, state = engine_service(tmp_path, monkeypatch, spawner)
+    service._cli_path = str(tmp_path / "nowhere" / "modelscope")
+    read_only_state(state)
+    try:
+        event = service.run_task("Demo__task", run_id="persist-1")
+
+        assert event.state == "failed"
+        assert download_queue.PROBLEM_CLI_UNAVAILABLE in event.problems
+        assert any(problem.startswith("persist_error=")
+                   for problem in event.problems), (
+            "the persist failure rides the event as a problem token"
+        )
+        (entry,) = service.entries()
+        assert entry.state == "failed"
+        assert any(problem.startswith("persist_error=")
+                   for problem in entry.problems)
+    finally:
+        writable_state(state)
+
+
+# =====================================================================
 # Lane 8: the exhaustive state-machine transition table + the restart
 # rehydration chain (10-06 Task 2) — every legal edge applies, every
 # illegal edge is a no-op, and persist -> crash -> reboot -> rehydrate

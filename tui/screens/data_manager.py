@@ -108,6 +108,7 @@ from tui.strings import (
     QUEUE_BANNER_MISMATCH,
     QUEUE_CANCEL_NOOP,
     QUEUE_CLI_UNAVAILABLE,
+    QUEUE_PERSIST_FAILED_TOAST,
     QUEUE_COL_PROGRESS,
     QUEUE_COL_RECONCILE,
     QUEUE_COL_STATE,
@@ -975,6 +976,10 @@ class DataManagerScreen(Screen):
                 severity="warning")
         elif outcome.action == "cli_unavailable":
             self.app.notify(QUEUE_CLI_UNAVAILABLE, severity="error")
+        elif outcome.action == "persist_failed":
+            self.app.notify(
+                QUEUE_PERSIST_FAILED_TOAST.format(key=outcome.key),
+                severity="error")
         return False
 
     def action_enqueue_cursor(self) -> None:

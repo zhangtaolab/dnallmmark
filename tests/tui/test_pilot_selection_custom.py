@@ -75,6 +75,7 @@ from tui.strings import (
     DL_DISABLED_TOAST,
     ENV_KERNEL_LABELS,
     QUEUE_FLIP_TOAST,
+    QUEUE_PERSIST_FAILED_TOAST,
     QUEUE_TOAST_ALREADY_QUEUED,
     QUEUE_TOAST_ENQUEUED,
     SEL_COUNT_CUSTOM_SEGMENT,
@@ -1151,6 +1152,38 @@ async def test_d_on_the_models_view_is_a_silent_noop(
         await pilot.pause()
         assert queue.enqueue_calls == []
         assert _toasts(app) == [], "the models view stays silent"
+
+
+async def test_d_persist_failed_outcome_toasts_never_silent(
+        monkeypatch, tmp_path):
+    """WR-04 on the selection screen: the persist_failed outcome renders
+    the same honest never-wrote toast the data-manager screen renders —
+    one vocabulary, never silent, never a kick."""
+    _pin_state_root(monkeypatch, tmp_path)
+    queue = _QueueFake(outcomes={
+        _KEY_MISSING_DATASET: EnqueueOutcome(
+            action="persist_failed", key=_KEY_MISSING_DATASET),
+    })
+    kicks = []
+    monkeypatch.setattr(
+        DnallmMarkTui, "kick_download_queue",
+        lambda self: kicks.append(True),
+    )
+    app = _app(_SelectionFake(data=_d_fixture_data()))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, queue_fake=queue)
+        table = app.screen.query_one(DataTable)
+        await pilot.press("m")
+        await pilot.pause()
+        table.move_cursor(row=0)
+        await pilot.pause()
+
+        await pilot.press("d")
+        await pilot.pause()
+        assert QUEUE_PERSIST_FAILED_TOAST.format(
+            key=_KEY_MISSING_DATASET) in _toasts(app)
+        assert queue.enqueue_calls == [_KEY_MISSING_DATASET]
+        assert kicks == [], "a refused enqueue never kicks"
 
 
 async def test_bottom_bar_declares_d_between_e_and_v():

@@ -133,6 +133,7 @@ from tui.strings import (
     NAV_LABEL_SELECTION,
     QUEUE_CLI_UNAVAILABLE,
     QUEUE_TOAST_ALREADY_QUEUED,
+    QUEUE_PERSIST_FAILED_TOAST,
     QUEUE_TOAST_ENQUEUED,
     SEL_COL_CATEGORY,
     SEL_COL_MARK,
@@ -1706,6 +1707,10 @@ class SelectionScreen(Screen):
                 DL_DISABLED_TOAST.format(key=key), severity="warning")
         elif outcome.action == "cli_unavailable":
             self.app.notify(QUEUE_CLI_UNAVAILABLE, severity="error")
+        elif outcome.action == "persist_failed":
+            self.app.notify(
+                QUEUE_PERSIST_FAILED_TOAST.format(key=key),
+                severity="error")
         # unknown_key: silent return (the service already said it all)
 
     def action_switch_list(self) -> None:
