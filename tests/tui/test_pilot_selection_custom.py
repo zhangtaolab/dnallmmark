@@ -43,7 +43,7 @@ from env_smoke import CheckResult
 from rich.text import Text
 from textual.binding import Binding, BindingType
 from textual.screen import ModalScreen
-from textual.widgets import DataTable, Static
+from textual.widgets import DataTable, Input, Static
 
 from tui.app import DnallmMarkTui
 from tui.screens.nav import NAV_SLOTS
@@ -55,8 +55,14 @@ from tui.screens.selection import (
     SelectionData,
     SelectionScreen,
 )
+from tui.screens.wizard import WizardModal
 from tui.services import custom_entries
 from tui.services import selection as selection_service
+from tui.services.gauntlet import (
+    LEG_AUDIT,
+    LEG_DRY_RUN,
+    GauntletItem,
+)
 from tui.services.registries import PRESENCE_PRESENT, Presence
 from tui.strings import (
     ENV_KERNEL_LABELS,
@@ -596,9 +602,12 @@ async def test_landed_and_disabled_fixture_renders_the_full_custom_contract():
         enabled_cell = table.get_row_at(1)[1]
         disabled_cell = table.get_row_at(2)[1]
         assert official_cell.spans == []
-        assert enabled_cell.spans[0].style == "bold $accent"
-        assert any(
-            span.style == "$text-muted" for span in disabled_cell.spans)
+        # the accent span carries the resolved live-theme accent (rich
+        # spans cannot hold $token styles — probe-pinned, the nav-bar
+        # precedent); the disabled spans use rich's native dim
+        assert enabled_cell.spans[0].style == (
+            f"bold {app.current_theme.accent}")
+        assert any(span.style == "dim" for span in disabled_cell.spans)
 
         # the count segment: 官方 1/1 · 自定义 2/1 — the disabled model
         # counts (visible = counted), appended dim after the Phase 8 line
@@ -694,3 +703,236 @@ def test_the_real_backend_counts_disabled_customs_in_both_views(
     merged = registry_loader.load_models_registry()
     assert _KEY_CUSTOM_MODEL in merged
     assert _KEY_DISABLED_MODEL not in merged
+
+
+# =====================================================================
+# Task 3 — the full integration loop (w -> gauntlet -> land -> badge ->
+# count -> e -> disabled-visible + loader-excluded; both kinds)
+# =====================================================================
+
+class _AllPassGauntlet:
+    """The fake gauntlet: every leg returns an ok item (the full loop
+    never spawns a subprocess — the real service carries its own 09-02
+    tier-1 suite; this fake conforms to the panel's per-leg calls)."""
+
+    def __init__(self):
+        self.calls = []
+
+    def dry_run_precheck(self, kind, key, entry, run_id):
+        self.calls.append((LEG_DRY_RUN, kind, key))
+        return GauntletItem(
+            run_id=run_id, kind=kind, leg=LEG_DRY_RUN, name=key, ok=True,
+            details=("planned_cells=1",), raw_output="planned 1 cell",
+        )
+
+    def audit_reconciliation(self, key, entry, declared_splits, run_id):
+        self.calls.append((LEG_AUDIT, "datasets", key))
+        return GauntletItem(
+            run_id=run_id, kind="datasets", leg=LEG_AUDIT, name=key,
+            ok=True, details=("train_rows=8",), raw_output="audit ok",
+        )
+
+
+class _LoopCustomService:
+    """The full-loop custom service: the REAL 09-01 store over the
+    pinned tmp roots (read/toggle/land/undo) with the wizard composed
+    from the fake-clean validator + the all-pass gauntlet — one
+    operator story over one user-owned file."""
+
+    def __init__(self, gauntlet):
+        self.gauntlet = gauntlet
+        self.refreshes = 0
+
+    def read_entries(self, kind):
+        return custom_entries.read_entries(kind)
+
+    def set_enabled(self, kind, key, enabled):
+        return custom_entries.set_enabled(kind, key, enabled)
+
+    def build_wizard(self, kind, prefill, on_changed):
+        def _land(entry_kind, key, entry):
+            result = custom_entries.land(entry_kind, key, entry)
+            self.refreshes += 1
+            if on_changed is not None:
+                on_changed()
+            return result
+
+        return WizardModal(
+            kind=kind,
+            validator=lambda values: [],
+            prefill=prefill,
+            gauntlet_service=self.gauntlet,
+            land=_land,
+            undo=custom_entries.undo,
+        )
+
+
+async def _type_wizard_field(pilot, wizard, wid, text):
+    """Focus one wizard Input and type through real key events."""
+    inp = wizard.query_one(f"#wiz-{wid}", Input)
+    inp.focus()
+    await pilot.pause()
+    await pilot.press(*list(text))
+    await pilot.pause()
+
+
+async def _submit_wizard(pilot, app, wizard):
+    """Advance to step 4, submit, and settle the gauntlet worker."""
+    for _ in range(3):
+        wizard.set_focus(None)
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+    wizard.set_focus(None)
+    await pilot.pause()
+    await pilot.press("enter")
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+    await pilot.pause()
+
+
+async def test_full_loop_models_wizard_lands_badges_counts_and_disables(
+        monkeypatch, tmp_path):
+    """The CUST story over one user-owned file: w -> fill -> validation
+    pass -> gauntlet all-pass -> land -> dismiss -> the badge + the
+    count segment appear; e -> the suffix + the real-loader exclusion
+    while the table keeps the row (ROADMAP criteria 1/2/4/5 in one
+    executable story)."""
+    _pin_roots(monkeypatch, tmp_path)
+    official = Path(registry_loader.__file__).parent / "models_info.json"
+    before = official.read_bytes()
+    gauntlet = _AllPassGauntlet()
+    custom = _LoopCustomService(gauntlet)
+    app = _app(SelectionBackend())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, custom)
+        screen = app.screen
+        table = screen.query_one(DataTable)
+        # the zero-customs Phase 8 look over the committed registries
+        assert _status_line(screen) == SEL_STATUS_LINE.format(
+            n=0, models_total=62, m=0, tasks_total=50,
+        )
+
+        await pilot.press("w")
+        await pilot.pause()
+        wizard = app.screen
+        assert isinstance(wizard, WizardModal)
+        await _type_wizard_field(pilot, wizard, "key", "loop-model-lm")
+        await _type_wizard_field(pilot, wizard, "model-path",
+                                 "models/loop-lm")
+        await _submit_wizard(pilot, app, wizard)
+        # the gauntlet ran dry-run and the real store landed the entry
+        assert gauntlet.calls == [(LEG_DRY_RUN, "models", "loop-model-lm")]
+        landed, _error = custom_entries.read_entries("models")
+        assert "loop-model-lm" in landed
+        assert custom.refreshes == 1
+        # dismiss (a land clears the form: esc returns, esc dismisses)
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, SelectionScreen)
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        # the refreshed table: the badge on the new row + the count line
+        keys = _row_keys(table)
+        assert keys.index("loop-model-lm") == 62  # appended after official
+        assert _row(table, 62)[1] == f"{SEL_CUSTOM_BADGE} loop-model-lm"
+        assert _status_line(screen) == (
+            SEL_STATUS_LINE.format(
+                n=0, models_total=63, m=0, tasks_total=50,
+            ) + " · " + SEL_COUNT_CUSTOM_SEGMENT.format(
+                official_models=62, official_datasets=50,
+                custom_models=1, custom_datasets=0,
+            )
+        )
+
+        # e: the disable keeps the row visible with the suffix while the
+        # REAL loader drops it, and the count still counts it
+        table.move_cursor(row=62)
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert SEL_TOGGLE_DISABLED_TOAST.format(
+            key="loop-model-lm") in _toasts(app)
+        assert _row(table, 62)[1] == (
+            f"{SEL_CUSTOM_BADGE} loop-model-lm{SEL_DISABLED_SUFFIX}")
+        assert "loop-model-lm" not in (
+            registry_loader.load_models_registry())
+        assert SEL_COUNT_CUSTOM_SEGMENT.format(
+            official_models=62, official_datasets=50,
+            custom_models=1, custom_datasets=0,
+        ) in _status_line(screen)
+
+        assert official.read_bytes() == before  # zero official writes
+
+
+async def test_full_loop_datasets_wizard_runs_both_legs_and_disables(
+        monkeypatch, tmp_path):
+    """The dataset-kind loop once: both gauntlet legs run (dry-run +
+    audit), the landed entry badges the dataset table with the 自定义
+    count, and e disables with the loader exclusion."""
+    _pin_roots(monkeypatch, tmp_path)
+    official = Path(registry_loader.__file__).parent / (
+        "datasets_info.json")
+    before = official.read_bytes()
+    gauntlet = _AllPassGauntlet()
+    custom = _LoopCustomService(gauntlet)
+    app = _app(SelectionBackend())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, custom)
+        screen = app.screen
+        table = screen.query_one(DataTable)
+        await pilot.press("m")  # the datasets table routes the kind
+        await pilot.pause()
+
+        await pilot.press("w")
+        await pilot.pause()
+        wizard = app.screen
+        assert isinstance(wizard, WizardModal)
+        await _type_wizard_field(pilot, wizard, "key", "loop-ds")
+        await _type_wizard_field(pilot, wizard, "dataset-path",
+                                 "datasets/loop-ds")
+        await _submit_wizard(pilot, app, wizard)
+        # BOTH legs ran for the dataset kind, dry-run first
+        assert [call[0] for call in gauntlet.calls] == [
+            LEG_DRY_RUN, LEG_AUDIT]
+        landed, _error = custom_entries.read_entries("datasets")
+        assert "loop-ds" in landed
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, SelectionScreen)
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        keys = _row_keys(table)
+        assert keys.index("loop-ds") == 50  # appended after official
+        assert _row(table, 50)[1] == f"{SEL_CUSTOM_BADGE} loop-ds"
+        assert _status_line(screen) == (
+            SEL_STATUS_LINE.format(
+                n=0, models_total=62, m=0, tasks_total=51,
+            ) + " · " + SEL_COUNT_CUSTOM_SEGMENT.format(
+                official_models=62, official_datasets=50,
+                custom_models=0, custom_datasets=1,
+            )
+        )
+
+        table.move_cursor(row=50)
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert SEL_TOGGLE_DISABLED_TOAST.format(key="loop-ds") in _toasts(
+            app)
+        assert _row(table, 50)[1] == (
+            f"{SEL_CUSTOM_BADGE} loop-ds{SEL_DISABLED_SUFFIX}")
+        assert "loop-ds" not in registry_loader.load_datasets_registry()
+
+        assert official.read_bytes() == before  # zero official writes

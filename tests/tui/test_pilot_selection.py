@@ -61,7 +61,9 @@ from rich.text import Text
 from textual.keys import _character_to_key
 from textual.widgets import DataTable, RichLog, Static
 
+import tui.screens.about as about_screen_module
 import tui.screens.selection as selection_screen_module
+import tui.screens.wizard as wizard_screen_module
 from tui.app import DnallmMarkTui, HelpModal, MinSizeScreen
 from tui.screens.selection import (
     ConfirmModal,
@@ -133,6 +135,15 @@ from tui.strings import (
 )
 
 _SCREEN_MODULE_FILE = Path(selection_screen_module.__file__)
+
+# 09-06 i18n close-out: the zero-Chinese grep lock extends to the two
+# Phase 9 screen modules (wizard/about) — the scanned module list, the
+# assertion itself unchanged.
+_GREP_LOCK_MODULES = (
+    _SCREEN_MODULE_FILE,
+    Path(wizard_screen_module.__file__),
+    Path(about_screen_module.__file__),
+)
 
 # =====================================================================
 # Synthetic registry fixtures (three models, two datasets, mixed presence)
@@ -1307,12 +1318,13 @@ async def test_loading_row_covers_the_read_seam():
 
 def test_screen_module_carries_zero_chinese_literals():
     """I18N-01 single-home: no operator-facing copy outside tui/strings.py."""
-    source = _SCREEN_MODULE_FILE.read_text(encoding="utf-8")
-    offenders = re.findall(r"[一-鿿]", source)
-    assert not offenders, (
-        "Chinese literals must live in tui/strings.py only "
-        f"({len(offenders)} found in {_SCREEN_MODULE_FILE.name})"
-    )
+    for module_file in _GREP_LOCK_MODULES:
+        source = module_file.read_text(encoding="utf-8")
+        offenders = re.findall(r"[一-鿿]", source)
+        assert not offenders, (
+            "Chinese literals must live in tui/strings.py only "
+            f"({len(offenders)} found in {module_file.name})"
+        )
 
 
 # =====================================================================
