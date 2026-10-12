@@ -121,6 +121,14 @@
 
 </deferred>
 
+
+## Research-Phase Rulings (maintainer-approved 2026-10-12)
+
+- **R-01（细化 D-01 权威字段）:** 下载通道 URL 解析 = `download_url` 主字段优先，非 modelscope 则取 `download_url_alternates` 的 modelscope 镜像；注册表零改动（实测 18/50 主字段为 modelscope，并集 50/50 全覆盖）
+- **R-02（覆盖范围）:** 46 可下 + 4 禁用 —— 38 shape-A + 5 shape-B 一键落地；3 shape-C 由下载 worker 落地后自动重命名至注册表目录名；4 shape-D（Genomic_Benchmarks parquet ×3、open-chromatin 全量/迷你）UI 禁用 + 原因说明
+- **R-03（细化 D-10 重审计写回）:** `g` 重新审计 = audit 脚本默认输出（全量写 4 个仓库工件、含 git 跟踪的 n_audit.json，落工作区待维护者审查后提交为新基准）；不做 temp+replace 窄写
+
+
 ---
 
 *Phase: 10-Data Manager (Downloads & Verification)*
