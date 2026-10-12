@@ -225,6 +225,70 @@ MatrixKeyModal {
     max-height: 20;   /* scroll bound (not a spacing token) — wrap, never elide */
 }
 
+/* ===== Wizard modal (09-04, D-01/D-03 — the width-100 amendment) =====
+ * The onboarding wizard family. Modal token AMENDED from 60 to 100
+ * cells (09-UI-SPEC Spacing amendment — the UAT lesson: 68-char keys and
+ * long paths must fit). The exact min(100, width-4) cap is applied in
+ * code (WizardModal._apply_chrome): Textual CSS has no min() or cell
+ * arithmetic (probe-pinned on 8.2.8) — this base width is the ≥100-col
+ * terminal's steady state. Theme tokens only. */
+
+WizardModal {
+    align: center middle;        /* the bordered box centers on screen */
+}
+
+.wizard-box {
+    width: 100;                  /* amended modal token (code caps to w-4) */
+    height: auto;
+    max-height: 100%;            /* long steps scroll inside the modal */
+    padding: 1 4;                /* modal token */
+    border: solid $accent;       /* 1-cell border exception */
+    background: $surface;
+}
+
+.wiz-field-label {
+    height: 1;      /* row token: one label line per field */
+}
+
+/* The advisory lines under path/numeric fields (D-03): glyph first
+ * (NO_COLOR-legible), color the redundant channel. */
+.wiz-check {
+    height: 1;      /* row token: reserved — the layout never jumps */
+}
+
+.wiz-check-ok {
+    color: $success;
+}
+
+.wiz-check-bad {
+    color: $error;
+}
+
+/* The numeric hint renders DIM (the UI-SPEC "inline dim" wording). */
+.wiz-hint-bad {
+    color: $text-muted;          /* Secondary role */
+}
+
+.wiz-field-label,
+#wiz-footer-hint,
+#wiz-report-hint,
+#wiz-gauntlet-hint {
+    color: $text-muted;          /* Secondary role */
+}
+
+#wiz-footer-hint {
+    height: 1;      /* row token: the modal's own 1-row keycap hint */
+}
+
+#wiz-report-log {
+    height: auto;
+    max-height: 16;  /* scroll bound (not a spacing token) — wrap, never elide */
+}
+
+#wiz-gauntlet-pending {
+    height: 1;      /* row token: the minimal pending view (panel = 09-05) */
+}
+
 /* ===== Min-size guard screen ===== */
 
 MinSizeScreen {

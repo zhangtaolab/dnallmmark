@@ -376,6 +376,15 @@ WIZ_CANCEL_LABEL = "取消"
 # Destructive — wizard esc-cancel with entered values (ConfirmModal gate;
 # {n} is the filled-step count). Blank forms cancel silently.
 WIZ_CANCEL_CONFIRM = "放弃本次录入？已填 {n} 步 — Enter 放弃 / Esc 继续"
+# Validation report chrome: the report view's border title and the
+# return-to-form hint (the 09-UI-SPEC report mockup).
+WIZ_REPORT_TITLE = "新增{kind} — 校验"
+WIZ_REPORT_BACK_HINT = "[esc] 返回修改"
+# The gauntlet phase's pending view (this plan's minimal placeholder —
+# the real panel is 09-05): its title is the Copywriting Contract's
+# gauntlet title verbatim; the back hint is the gauntlet mockup's esc row.
+WIZ_GAUNTLET_BACK_HINT = "[esc] 返回"
+GAUNTLET_TITLE = "接入 gauntlet — {key}"
 
 # ===== 导航壳 (NAV_, 09-03, D-13/D-15) =====
 # Top-menu slot names — the RATIFIED verbatim resource nouns (D-13,
