@@ -342,6 +342,41 @@ WIZ_PROBLEM_SPLIT_NO_LABEL_COLUMN = "表头缺少标签列 {column} ({file})"
 WIZ_PROBLEM_SPLIT_ZERO_ROWS = "无数据行 (0 行)"
 WIZ_PROBLEM_SPLIT_COUNT_MISMATCH = "声明 {declared} 行，与实际 {counted} 行不符"
 
+# ===== 接入向导 chrome (WIZ_, CUST-01/02 UI, 09-04) =====
+# The wizard modal's own chrome copy (09-UI-SPEC Copywriting Contract
+# verbatim). Kind names slot into 新增{kind} (模型/数据集); {indicator}
+# renders the "{n}/{total}" step number — Typography amendment #9 styles
+# that segment accent+bold (the screen composes the markup; this module
+# never carries markup).
+WIZ_KIND_MODELS = "模型"
+WIZ_KIND_DATASETS = "数据集"
+WIZ_BORDER_TITLE = "新增{kind} — 步骤 {indicator} · {step}"
+# Model wizard step names (the border-title {step} values, in order).
+WIZM_STEPS = ("基本信息", "架构与分词", "来源链接", "quirk 勾选")
+# Quirk checklist labels (D-02: exactly the three named quirks,
+# unchecked default; execution-side mapping is Phase 11's).
+WIZ_QUIRK_NO_SAFETENSORS = "不使用 safetensors"
+WIZ_QUIRK_FP32_ONLY = "仅支持 fp32"
+WIZ_QUIRK_SPECIAL_HEAD = "需要特殊头 (head)"
+# Type-aware control advisory lines (D-03 — ADVISORY only, the collect-all
+# pass is authoritative; fool-proofing never blocks onboarding).
+WIZ_PATH_EXISTS = "✓ 路径存在"
+WIZ_PATH_MISSING_ADVISORY = "✗ 路径不存在（仍可继续，提交时统一校验）"
+WIZ_NUMERIC_HINT = "✗ 需为数字"
+# Footer hint (the modal's own 1-row keycap hint, migration table). The
+# last step substitutes the submit keycap for the next-step one.
+WIZ_FOOTER_HINT = "[enter] 下一步  [b] 上一步  [esc] 取消"
+WIZ_FOOTER_HINT_LAST = "[enter] 提交校验  [b] 上一步  [esc] 取消"
+# Binding labels (the hint's keycap segments; Binding descriptions use
+# the same wording).
+WIZ_NEXT_LABEL = "下一步"
+WIZ_BACK_LABEL = "上一步"
+WIZ_SUBMIT_LABEL = "提交校验"
+WIZ_CANCEL_LABEL = "取消"
+# Destructive — wizard esc-cancel with entered values (ConfirmModal gate;
+# {n} is the filled-step count). Blank forms cancel silently.
+WIZ_CANCEL_CONFIRM = "放弃本次录入？已填 {n} 步 — Enter 放弃 / Esc 继续"
+
 # ===== 导航壳 (NAV_, 09-03, D-13/D-15) =====
 # Top-menu slot names — the RATIFIED verbatim resource nouns (D-13,
 # 09-UI-SPEC Navigation Shell): never renamed, never re-translated. The
