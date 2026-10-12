@@ -463,6 +463,34 @@ def test_default_and_overridden_timeouts_reach_the_runner(
     assert runner.calls[1]["kwargs"]["timeout"] == 5    # overridable
 
 
+def test_runner_decode_policy_pins_errors_replace(
+        monkeypatch, tmp_path):
+    """The download_queue WR-05 twin (review follow-up): every _invoke
+    runner call carries ``errors="replace"`` alongside ``text=True`` —
+    the gauntlet launches the same CJK/emoji-emitting scripts, and a
+    non-UTF-8 LC_CTYPE host must decode their output to replacement
+    characters, never raise UnicodeDecodeError into the absorbed
+    ``subprocess_error`` (a healthy kernel turning into a failed item)."""
+    pin_config_dir(monkeypatch, tmp_path)
+    counterpart = first_official_task_with_train()
+    runner = FakeRunner(
+        result=ok_result(),
+        on_call=lambda argv, kwargs: write_manifest(argv, [
+            planned_cell(KIND_MODELS, "my-custom-lm", counterpart)]))
+    service = gauntlet.GauntletService(runner=runner, repo_root=REPO_ROOT)
+
+    service.dry_run_precheck(
+        KIND_MODELS, "my-custom-lm", model_candidate(), run_id="r1")
+
+    kwargs = runner.calls[0]["kwargs"]
+    assert kwargs["capture_output"] is True
+    assert kwargs["text"] is True
+    assert kwargs["errors"] == "replace", (
+        "the gauntlet _invoke must match the download_queue _invoke "
+        "twin's decode policy exactly"
+    )
+
+
 def test_runner_timeout_yields_failed_item_naming_timeout(
         monkeypatch, tmp_path):
     pin_config_dir(monkeypatch, tmp_path)

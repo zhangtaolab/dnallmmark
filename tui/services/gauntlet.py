@@ -547,7 +547,13 @@ class GauntletService:
             crashed.
         """
         try:
+            # errors="replace" (the download_queue WR-05 twin): the
+            # gauntlet launches CJK/emoji-emitting scripts; a non-UTF-8
+            # LC_CTYPE host decodes their output to replacement
+            # characters — never a UnicodeDecodeError absorbed as a
+            # spurious subprocess_error for a kernel that ran fine.
             proc = self._runner(argv, capture_output=True, text=True,
+                                errors="replace",
                                 timeout=timeout, env=env)
         except subprocess.TimeoutExpired:
             return None, ("timeout",
