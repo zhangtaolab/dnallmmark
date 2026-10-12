@@ -32,16 +32,15 @@ import re
 from pathlib import Path
 
 from rich.text import Text
-from textual.widgets import DataTable, Input, Static
+from textual.widgets import Input, Static
 
 import tui.screens.about as about_screen_module
 import tui.screens.nav as nav_module
-from tui.app import DnallmMarkTui, HelpModal, MinSizeScreen
+from tui.app import DnallmMarkTui, HelpModal
 from tui.screens.about import AboutScreen
 from tui.screens.env_check import EnvCheckScreen
 from tui.screens.nav import BottomBar, TopMenuBar
-from tui.screens.selection import SelectionScreen
-from tui.screens.selection import PresetMenu, SelectionData
+from tui.screens.selection import PresetMenu, SelectionData, SelectionScreen
 from tui.services import selection as selection_service
 from tui.strings import (
     APP_HELP_ROW,
@@ -71,6 +70,7 @@ class _EnvCacheHitFake:
 
     def cached_results(self):
         from env_smoke import CheckResult
+
         from tui.strings import ENV_KERNEL_LABELS
         return ("2026-10-11 09:30", tuple(
             CheckResult(name=k, ok=True, lines=(f"PASS: {k}",))
@@ -205,14 +205,17 @@ async def test_digits_switch_live_screens_and_track_active_slot(
         assert isinstance(app.screen, SelectionScreen), (
             "digit 2 must switch to the selection screen"
         )
-        assert _slot_texts(app.screen)[1] == f"◆ 2{NAV_LABEL_SELECTION}"
+        # non-first slots carry their single-space separator before the
+        # diamond prefix — strip compares the slot content itself
+        assert _slot_texts(app.screen)[1].strip() == (
+            f"◆ 2{NAV_LABEL_SELECTION}")
 
         await pilot.press("6")
         await pilot.pause()
         assert isinstance(app.screen, AboutScreen), (
             "digit 6 must switch to the About screen (slot 6)"
         )
-        assert _slot_texts(app.screen)[5] == f"◆ 6{NAV_LABEL_ABOUT}"
+        assert _slot_texts(app.screen)[5].strip() == f"◆ 6{NAV_LABEL_ABOUT}"
 
         await pilot.press("1")
         await pilot.pause()

@@ -87,6 +87,7 @@ from textual.widgets import (
 from textual.widgets.selection_list import Selection
 
 from tui.screens.matrix import MatrixScreen
+from tui.screens.nav import BottomBar, TopMenuBar
 from tui.services import registries as registries_service
 from tui.services import selection as selection_service
 from tui.services import settings as settings_service
@@ -99,6 +100,12 @@ from tui.services.registries import (
 from tui.strings import (
     APP_MODAL_BACK_LABEL,
     ENV_DETAIL_LABEL,
+    NAV_LABEL_ABOUT,
+    NAV_LABEL_DATA,
+    NAV_LABEL_ENV,
+    NAV_LABEL_MONITOR,
+    NAV_LABEL_RUN_CONFIG,
+    NAV_LABEL_SELECTION,
     SEL_COL_CATEGORY,
     SEL_COL_MARK,
     SEL_COL_METRIC,
@@ -810,6 +817,9 @@ class RowDetailModal(ModalScreen):
 class SelectionScreen(Screen):
     """The selection screen: tables, filter, mark-set, presets, presence."""
 
+    # D-13 slot 2 (the top-menu active-slot marker the nav bar reads).
+    NAV_SLOT: ClassVar[int] = 2
+
     if TYPE_CHECKING:
         # Narrows MessagePump's ``App[object]`` to the composition root so
         # the app's own API (``below_minimum_grid``, WR-06) type-checks —
@@ -829,6 +839,17 @@ class SelectionScreen(Screen):
         Binding("v", "open_matrix", SEL_MATRIX_LABEL),
         Binding("enter", "show_detail", ENV_DETAIL_LABEL, show=False),
         Binding("escape", "clear_filter", show=False),
+        # The nav digits (09-03) — PLAIN per-screen bindings routed to
+        # the app's ``nav`` action (never priority, Pattern 2); appended
+        # AFTER the action bindings so the declaration order the bottom
+        # bar renders is untouched. show=False: the top bar carries the
+        # digit labels.
+        Binding("1", "app.nav(1)", NAV_LABEL_ENV, show=False),
+        Binding("2", "app.nav(2)", NAV_LABEL_SELECTION, show=False),
+        Binding("3", "app.nav(3)", NAV_LABEL_DATA, show=False),
+        Binding("4", "app.nav(4)", NAV_LABEL_RUN_CONFIG, show=False),
+        Binding("5", "app.nav(5)", NAV_LABEL_MONITOR, show=False),
+        Binding("6", "app.nav(6)", NAV_LABEL_ABOUT, show=False),
     ]
 
     class DataLoaded(Message):
@@ -888,6 +909,7 @@ class SelectionScreen(Screen):
     # ----- layout -----
 
     def compose(self) -> ComposeResult:
+        yield TopMenuBar()
         yield Header()
         with Horizontal(id="selection-title-bar"):
             yield Label(SEL_SCREEN_TITLE_MODELS, id="selection-screen-title")
@@ -903,6 +925,7 @@ class SelectionScreen(Screen):
         # compact + no palette hint: the 80-column footer budget (the
         # binding map is dense; ctrl+p keeps working, only the hint hides)
         yield Footer(compact=True, show_command_palette=False)
+        yield BottomBar()
 
     def on_mount(self) -> None:
         """Compose the loading state, then the one exclusive read worker."""

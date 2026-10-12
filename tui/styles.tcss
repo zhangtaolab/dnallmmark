@@ -237,7 +237,45 @@ MinSizeScreen {
     padding: 0 2;                /* 2-cell status-line exception */
 }
 
-/* ===== 关于屏 (09-03, D-13 slot 6) ===== */
+/* ===== Navigation shell bars (09-03, D-13/D-15) =====
+ * Two 1-row chrome rows replacing Header+Footer on the base screens
+ * (row-neutral: 1+1 replaces 1+1; both count against the 80x24 budget,
+ * D-16). Theme tokens only; the ◆ glyph + bold + $accent triple channel
+ * marks the active slot, $text-muted dims the placeholder slots. */
+
+TopMenuBar {
+    height: 1;      /* row token: one menu row (no horizontal padding —
+                     * the six-slot fixed vocabulary owns the full 80) */
+}
+
+.nav-slot {
+    width: auto;
+}
+
+.nav-slot-active {
+    color: $accent;           /* color channel after the ◆ glyph */
+    text-style: bold;         /* weight channel (NO_COLOR-legible) */
+}
+
+.nav-slot-placeholder {
+    color: $text-muted;       /* Secondary role */
+}
+
+BottomBar {
+    height: 1;      /* row token: one submenu row */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#nav-left-keycaps {
+    width: 1fr;                /* clips at the width left of the right pair */
+}
+
+#nav-right-keycaps {
+    width: auto;               /* the constant help/quit keycap pair */
+    color: $text-muted;        /* labels muted (keys carry $accent inline) */
+}
+
+/* ===== About screen (09-03, D-13 slot 6) ===== */
 
 #about-box {
     padding: 1 4;                /* md token: the rows sit like a panel */

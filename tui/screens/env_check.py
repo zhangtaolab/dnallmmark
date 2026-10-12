@@ -55,6 +55,7 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Footer, Header, Label, RichLog, Static
 from textual.worker import get_current_worker
 
+from tui.screens.nav import BottomBar, TopMenuBar
 from tui.services import env_check, env_gate
 from tui.strings import (
     APP_MODAL_BACK_LABEL,
@@ -74,6 +75,12 @@ from tui.strings import (
     ENV_STATE_PENDING,
     ENV_VERDICT_CRITICAL_FAIL,
     ENV_VERDICT_PASS,
+    NAV_LABEL_ABOUT,
+    NAV_LABEL_DATA,
+    NAV_LABEL_ENV,
+    NAV_LABEL_MONITOR,
+    NAV_LABEL_RUN_CONFIG,
+    NAV_LABEL_SELECTION,
     SEL_OPEN_LABEL,
 )
 
@@ -254,16 +261,30 @@ def _missing_dataset_count(result: CheckResult | None) -> int:
 class EnvCheckScreen(Screen):
     """The env-check screen: seven rows, async fill, verdict, drill-down."""
 
+    # D-13 slot 1 (the top-menu active-slot marker the nav bar reads).
+    NAV_SLOT: ClassVar[int] = 1
+
     # The ClassVar annotation mirrors the App base declaration verbatim
     # (the 08-03 RUF012 resolution) — framework-read class constant.
     # The s binding (08-07, 08-UI-SPEC Keyboard map) opens the selection
     # screen; the action targets the app's screen factory via the
     # qualified ``app.open_selection`` action name (the shared mark sets
     # live on the composition root).
+    # The nav digits (09-03) are PLAIN per-screen bindings routed to the
+    # app's ``nav`` action — never priority (Pattern 2: priority fires
+    # before a focused Input and breaks typing); show=False keeps them
+    # out of the bottom-bar/help surfaces (the top bar carries the
+    # digit labels).
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("r", "refresh", ENV_REFRESH_LABEL),
         Binding("enter", "show_detail", ENV_DETAIL_LABEL),
         Binding("s", "app.open_selection", SEL_OPEN_LABEL),
+        Binding("1", "app.nav(1)", NAV_LABEL_ENV, show=False),
+        Binding("2", "app.nav(2)", NAV_LABEL_SELECTION, show=False),
+        Binding("3", "app.nav(3)", NAV_LABEL_DATA, show=False),
+        Binding("4", "app.nav(4)", NAV_LABEL_RUN_CONFIG, show=False),
+        Binding("5", "app.nav(5)", NAV_LABEL_MONITOR, show=False),
+        Binding("6", "app.nav(6)", NAV_LABEL_ABOUT, show=False),
     ]
 
     class CheckItemChecking(Message):
@@ -321,7 +342,8 @@ class EnvCheckScreen(Screen):
         self._run_id = 0
 
     def compose(self) -> ComposeResult:
-        """The screen frame: header, title bar, kernel table, verdict slot."""
+        """The screen frame: nav bars, title bar, kernel table, verdict."""
+        yield TopMenuBar()
         yield Header()
         with Horizontal(id="env-title-bar"):
             yield Label(ENV_SCREEN_TITLE, id="env-screen-title")
@@ -329,6 +351,7 @@ class EnvCheckScreen(Screen):
         yield DataTable(id="env-kernels")
         yield Vertical(id="env-verdict")
         yield Footer()
+        yield BottomBar()
 
     def on_mount(self) -> None:
         """Build the seven fixed rows, then cache-hit-or-worker (D-05).

@@ -41,6 +41,7 @@ from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Label, Static
 
+from tui.screens.nav import BottomBar, TopMenuBar
 from tui.services import about as about_service
 from tui.services.about import AboutData
 from tui.strings import (
@@ -128,6 +129,7 @@ class AboutScreen(Screen):
 
     def compose(self) -> ComposeResult:
         """The five fixed rows: 8-cell CJK label + wrapping value column."""
+        yield TopMenuBar()
         with Vertical(id="about-box"):
             yield Label(ABOUT_TITLE, id="about-title")
             for row_id, row_label in self._rows():
@@ -135,6 +137,7 @@ class AboutScreen(Screen):
                     yield Label(row_label, classes="about-label")
                     yield Static("", id=f"about-value-{row_id}",
                                  classes="about-value")
+        yield BottomBar()
 
     @staticmethod
     def _rows() -> "tuple[tuple[str, str], ...]":

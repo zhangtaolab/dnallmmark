@@ -44,6 +44,7 @@ from textual.widgets import Footer, Static
 
 from tui.screens.about import AboutScreen
 from tui.screens.env_check import EnvCheckScreen, EnvCheckServiceProtocol
+from tui.screens.nav import NAV_SLOT_BY_INDEX, binding_row
 from tui.screens.selection import (
     SelectionScreen,
     SelectionServiceProtocol,
@@ -56,6 +57,7 @@ from tui.strings import (
     APP_MODAL_BACK_LABEL,
     APP_QUIT_LABEL,
     APP_TITLE,
+    NAV_PLACEHOLDER_TOAST,
 )
 
 # 08-UI-SPEC Terminal Contract: the minimum grid. Below this, only the
@@ -214,10 +216,50 @@ class DnallmMarkTui(App):
         """
         self.push_screen(self.build_selection_screen())
 
+    # ===== Digit navigation (D-13, 09-03) =====
+
+    async def action_nav(self, slot: int) -> None:
+        """Route one top-menu digit press (the nav bars only render).
+
+        Live slots switch the screen (switch_screen replaces the top of
+        the stack — the depth never grows under digit navigation);
+        placeholder slots are NEVER silent: the toast names the
+        delivering phase (D-13). A press targeting the screen already
+        active is a no-op (no redundant rebuild, no worker restart).
+        """
+        target = NAV_SLOT_BY_INDEX.get(slot)
+        if target is None:
+            return
+        if target.phase is not None:
+            self.notify(NAV_PLACEHOLDER_TOAST.format(n=target.phase))
+            return
+        current = self.screen
+        if target.target == "env_check":
+            if isinstance(current, EnvCheckScreen):
+                return
+            await self.switch_screen(self.get_default_screen())
+        elif target.target == "selection":
+            if isinstance(current, SelectionScreen):
+                return
+            await self.switch_screen(self.build_selection_screen())
+        elif target.target == "about":
+            if isinstance(current, AboutScreen):
+                return
+            # the stateless zero-arg SCREENS slot (D-13; the injected
+            # service path does not exist for about — tests pin env roots)
+            await self.switch_screen("about")
+
     # ===== Min-size guard (08-UI-SPEC Terminal Contract) =====
 
     def on_mount(self) -> None:
         """Check the grid once at mount (resize events re-check live)."""
+        # textual 8.2.8 probe-pinned fact (09-03): the boot screen is
+        # appended to the stack WITHOUT push bookkeeping, so switching
+        # away from it (switch_screen/pop_screen's _pop_result_callback)
+        # raises IndexError on the empty callback list. Register the one
+        # missing result-callback entry here so digit navigation can
+        # switch away from the opening screen.
+        self.screen._push_result_callback(self.screen, None)
         if self.size.width and self.size.height:
             self._apply_min_size_guard(self.size.width, self.size.height)
 
@@ -285,30 +327,13 @@ class DnallmMarkTui(App):
         always reflects the live key map (k9s-style contextual help).
         The descriptions are the strings-module constants wired into the
         BINDINGS declarations — no copy is redefined here (I18N-01).
+        The row projection itself is ``tui.screens.nav.binding_row``
+        (moved there in 09-03 so the nav bars and the help modal share
+        the ONE key-map source).
         """
-        rows = [row for row in map(_binding_row, self.BINDINGS)
+        rows = [row for row in map(binding_row, self.BINDINGS)
                 if row is not None]
         rows.extend(row for row
-                    in map(_binding_row, getattr(self.screen, "BINDINGS", []))
+                    in map(binding_row, getattr(self.screen, "BINDINGS", []))
                     if row is not None)
         return rows
-
-
-def _binding_row(binding: BindingType) -> "tuple[str, str] | None":
-    """One binding declaration -> its (display key, label) help row.
-
-    Handles both BINDINGS forms: ``Binding`` objects (key_display shown
-    when set) and the tuple shorthands ``(key, action[, description])``
-    (the 2-tuple carries no footer label — no help row for it). Hidden
-    bindings (``show=False``) and description-less bindings never
-    help-render — the same set the Footer renders (a hidden binding
-    listed in help would advertise a key the footer deliberately hides,
-    and a description-less row renders a ``None`` label).
-    """
-    if isinstance(binding, Binding):
-        if not binding.show or not binding.description:
-            return None  # hidden bindings never help-render (Footer contract)
-        return (binding.key_display or binding.key, binding.description)
-    if len(binding) >= 3 and binding[2]:
-        return (binding[0], binding[2])
-    return None
