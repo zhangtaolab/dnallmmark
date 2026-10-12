@@ -16,7 +16,7 @@
     {
       "number": "9",
       "name": "Custom Model & Dataset Onboarding",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "10",
@@ -36,8 +36,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 9 of 6 · 33% · ready to verify"
+    "label": "Advance to the next step (plan phase 10)",
+    "reason": "Phase 10 of 6 — needs a plan"
   },
-  "updated_at": "2026-10-12T08:27:01.918Z"
+  "updated_at": "2026-10-12T11:43:08.129Z"
 }
