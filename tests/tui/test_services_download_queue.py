@@ -1968,3 +1968,220 @@ def test_run_task_log_carries_reconcile_section(monkeypatch, tmp_path):
         encoding="utf-8")
     assert "[reconcile]" in log_text
     assert "audit blew up" in log_text
+
+
+# =====================================================================
+# The D-11 presence overlay (10-02 Task 2) — merge_presence +
+# reconciled_rows, the pure substrate the unchanged Phase 8
+# presence_for consumes (semantic 6: only reconcile-PASS keys flip)
+# =====================================================================
+
+
+def committed_tasks_shape():
+    """A tasks-shaped dict in the committed n_audit form: one present
+    key with real splits, one missing key (splits null)."""
+    return {
+        "GUE__present_task": {
+            "missing": False,
+            "unified_eval_n": 2000,
+            "splits": {
+                "train": {"rows": 10000, "non_acgt_chars": 0},
+                "dev": {"rows": 2000, "non_acgt_chars": 0},
+                "test": {"rows": 2000, "non_acgt_chars": 0},
+            },
+        },
+        "GUE__missing_task": {
+            "missing": True, "unified_eval_n": None, "splits": None},
+    }
+
+
+def test_merge_presence_flips_missing_to_present_with_measured_ints():
+    """THE flip (semantic 6): a reconcile-pass key overlaid onto the
+    committed view reads PRESENCE_PRESENT through the UNCHANGED
+    presence_for, with the exact measured integers."""
+    merged = download_queue.merge_presence(
+        committed_tasks_shape(), {"GUE__missing_task": (7, 3, 3)})
+
+    presence = registries.presence_for("GUE__missing_task", merged)
+
+    assert presence.status == registries.PRESENCE_PRESENT
+    assert presence.rows == (7, 3, 3)
+
+
+def test_merge_presence_non_overlaid_keys_read_exactly_as_before():
+    audit_tasks = committed_tasks_shape()
+    before = json.loads(json.dumps(audit_tasks["GUE__present_task"]))
+
+    merged = download_queue.merge_presence(
+        audit_tasks, {"GUE__missing_task": (7, 3, 3)})
+
+    assert merged["GUE__present_task"] == before
+    assert registries.presence_for(
+        "GUE__present_task", merged).rows == (10000, 2000, 2000)
+    assert set(merged) == {"GUE__present_task", "GUE__missing_task"}
+
+
+def test_merge_presence_none_audit_tasks_overlay_only_serves_presence():
+    """A missing/corrupt committed n_audit + a non-empty overlay still
+    serves presence_for (the column stays usable from live truth
+    alone)."""
+    merged = download_queue.merge_presence(None, {"K__x": (5, 2, 2)})
+
+    assert merged == {"K__x": {
+        "missing": False,
+        "splits": {"train": {"rows": 5}, "dev": {"rows": 2},
+                   "test": {"rows": 2}},
+    }}
+    assert registries.presence_for(
+        "K__x", merged).status == registries.PRESENCE_PRESENT
+
+
+def test_merge_presence_registry_drift_key_absent_from_audit_appears():
+    """An overlay key the committed audit never carried simply appears —
+    the overlay IS the newer truth (drift tolerance)."""
+    merged = download_queue.merge_presence(
+        committed_tasks_shape(), {"Brand__new_key": (9, 1, 1)})
+
+    assert registries.presence_for(
+        "Brand__new_key", merged).rows == (9, 1, 1)
+
+
+def test_merge_presence_is_pure_no_mutation_no_io():
+    """Pure data composition: the inputs are never mutated (deep copy
+    compare), and an empty overlay returns an equal-but-new dict."""
+    audit_tasks = committed_tasks_shape()
+    snapshot = json.loads(json.dumps(audit_tasks))
+    overlay = {"GUE__missing_task": (7, 3, 3)}
+
+    merged = download_queue.merge_presence(audit_tasks, overlay)
+
+    assert audit_tasks == snapshot                    # input untouched
+    assert overlay == {"GUE__missing_task": (7, 3, 3)}
+    assert merged is not audit_tasks                  # a NEW dict
+    empty = download_queue.merge_presence(audit_tasks, {})
+    assert empty == audit_tasks and empty is not audit_tasks
+
+
+def test_merge_presence_overlaid_value_shape_is_tasks_shaped():
+    """The overlaid record carries exactly the fields presence_for
+    reads: missing False + splits.{train,dev,test}.rows."""
+    merged = download_queue.merge_presence({}, {"K__y": (1, 2, 3)})
+    record = merged["K__y"]
+    assert record["missing"] is False
+    assert set(record["splits"]) == {"train", "dev", "test"}
+    assert [record["splits"][s]["rows"] for s in ("train", "dev", "test")] \
+        == [1, 2, 3]
+
+
+# ===== reconciled_rows (the overlay source; read-only + tolerant) =====
+
+
+def queue_doc(entries):
+    return {"schema_version": 1, "entries": entries}
+
+
+def entry_raw(key, state, measured=None, verdict="pass"):
+    reconcile = (None if measured is None else {
+        "verdict": verdict,
+        "declared": {"Train": measured[0], "Dev": measured[1],
+                     "Test": measured[2]},
+        "measured": {"train": measured[0], "dev": measured[1],
+                     "test": measured[2]},
+        "unified_eval_n": measured[2],
+    })
+    return {"key": key, "kind": "dataset", "state": state,
+            "attempts": 1, "enqueued_at": "2026-10-12T00:00:00+00:00",
+            "started_at": None, "finished_at": None, "last_percent": 100,
+            "interrupted": False, "log_path": None, "problems": [],
+            "reconcile": reconcile}
+
+
+def write_queue_state(state, doc):
+    state.mkdir(parents=True, exist_ok=True)
+    state_file(state).write_text(
+        json.dumps(doc, indent=4, ensure_ascii=False), encoding="utf-8")
+
+
+def test_reconciled_rows_derives_from_done_entries_only(
+        monkeypatch, tmp_path):
+    """Only state-done entries with a populated reconcile.measured
+    contribute {key: (train, dev, test)} — mismatch and failed entries
+    NEVER enter the overlay (semantic 6), and done-without-reconcile is
+    skipped."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    write_queue_state(state, queue_doc([
+        entry_raw("K__done", "done", measured=(10, 2, 2)),
+        entry_raw("K__mismatch", "mismatch", measured=(3, 2, 2),
+                  verdict="mismatch"),
+        entry_raw("K__failed_reconcile", "failed"),
+        entry_raw("K__done_no_reconcile", "done", measured=None),
+        entry_raw("K__pending", "pending"),
+    ]))
+
+    rows = download_queue.reconciled_rows()
+
+    assert rows == {"K__done": (10, 2, 2)}
+
+
+def test_reconciled_rows_skips_non_integer_measured(
+        monkeypatch, tmp_path):
+    """Degrade, never crash: a measured split that is not a non-bool
+    int disqualifies that entry (presence_for would read UNKNOWN
+    anyway)."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    doc = queue_doc([entry_raw("K__ok", "done", measured=(4, 2, 2))])
+    bad = entry_raw("K__bad", "done", measured=(4, 2, 2))
+    bad["reconcile"]["measured"]["dev"] = "2"
+    doc["entries"].append(bad)
+    write_queue_state(state, doc)
+
+    rows = download_queue.reconciled_rows()
+
+    assert rows == {"K__ok": (4, 2, 2)}
+
+
+def test_reconciled_rows_corrupt_file_yields_empty(
+        monkeypatch, tmp_path):
+    state = pin_state_dir(monkeypatch, tmp_path)
+    state.mkdir(parents=True, exist_ok=True)
+    state_file(state).write_bytes(b"{garbage")
+
+    assert download_queue.reconciled_rows() == {}
+
+
+def test_reconciled_rows_absent_file_yields_empty(
+        monkeypatch, tmp_path):
+    pin_state_dir(monkeypatch, tmp_path)
+
+    assert download_queue.reconciled_rows() == {}
+
+
+def test_reconciled_rows_explicit_path_overrides_state_dir(
+        monkeypatch, tmp_path):
+    """The state_path argument reads exactly that file (the 10-05
+    screens/other callers may point at a snapshot)."""
+    explicit = tmp_path / "elsewhere" / "download_queue.json"
+    explicit.parent.mkdir(parents=True)
+    explicit.write_text(json.dumps(
+        queue_doc([entry_raw("K__elsewhere", "done", measured=(6, 3, 3))]),
+        indent=4), encoding="utf-8")
+
+    rows = download_queue.reconciled_rows(state_path=explicit)
+
+    assert rows == {"K__elsewhere": (6, 3, 3)}
+
+
+def test_reconciled_rows_feeds_merge_presence_end_to_end(
+        monkeypatch, tmp_path):
+    """The substrate chain: persisted done entries -> reconciled_rows ->
+    merge_presence -> the UNCHANGED presence_for flips to PRESENT."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    write_queue_state(state, queue_doc([
+        entry_raw("GUE__missing_task", "done", measured=(7, 3, 3))]))
+
+    merged = download_queue.merge_presence(
+        committed_tasks_shape(), download_queue.reconciled_rows())
+
+    presence = registries.presence_for("GUE__missing_task", merged)
+    assert presence.status == registries.PRESENCE_PRESENT
+    assert presence.rows == (7, 3, 3)
