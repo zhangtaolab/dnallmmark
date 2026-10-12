@@ -422,7 +422,7 @@ class FakeDataManagerService:
     def __init__(self, missing=(), total=50, present=47, entries=(),
                  probe_state="not_public", enqueue_outcomes=None,
                  enqueue_all_count=0, channel_details=None, logs=None,
-                 reaudit_gate=None, probe_gate=None):
+                 reaudit_gate=None, probe_gate=None, load_diagnostic=None):
         self._missing = tuple(missing)
         self._total = total
         self._present = present
@@ -435,6 +435,7 @@ class FakeDataManagerService:
         self._logs = dict(logs or {})
         self._reaudit_gate = reaudit_gate
         self._probe_gate = probe_gate
+        self._load_diagnostic = load_diagnostic
         self.snapshot_calls = 0
         self.enqueue_calls = []
         self.enqueue_all_calls = 0
@@ -445,8 +446,12 @@ class FakeDataManagerService:
 
     def missing_snapshot(self):
         self.snapshot_calls += 1
+        # the diagnostic kwarg rides only when set — the fake stays
+        # constructible against a snapshot shape that predates it
+        extra = ({"load_diagnostic": self._load_diagnostic}
+                 if self._load_diagnostic is not None else {})
         return MissingSnapshot(rows=self._missing, total=self._total,
-                               present=self._present)
+                               present=self._present, **extra)
 
     def entries(self):
         return tuple(self.entries_list)
@@ -1507,4 +1512,109 @@ async def test_env_route_hint_renders_and_digit3_is_the_one_path():
         assert isinstance(app.screen, DataManagerScreen), (
             "digit 3 from the env screen must switch to the "
             "DataManagerScreen"
+        )
+
+
+# =====================================================================
+# Task 1 (10-06) — the degradation edge sweep at the screen tier: the
+# CLI-absent state is a first-class UI state (toast, no row, screen
+# usable), the corrupt-load diagnostic surfaces as a status line, and
+# a registry-unknown queue row renders with its state intact.
+# =====================================================================
+
+async def test_cli_unavailable_enqueue_never_adds_a_row_screen_usable():
+    """SC5/D-01 degradation: a cli_unavailable enqueue outcome renders
+    its error toast, adds NO queue row, and the screen stays fully
+    usable (missing list, existing entries, the Zenodo line)."""
+    service = FakeDataManagerService(
+        missing=_std_missing(),
+        entries=(_queue_entry("k-existing", "failed"),),
+        enqueue_outcomes={"GUE__emp_H3": EnqueueOutcome(
+            action="cli_unavailable", key="GUE__emp_H3")})
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        rows_before = _queue_table(screen).row_count
+
+        await pilot.press("d")
+        await pilot.pause()
+
+        assert QUEUE_CLI_UNAVAILABLE in _toast_messages(app)
+        assert _queue_table(screen).row_count == rows_before, (
+            "a refused enqueue must never add a queue row"
+        )
+        assert not any(entry.key == "GUE__emp_H3"
+                       for entry in service.entries_list)
+        # the screen stays fully usable
+        assert _missing_table(screen).row_count == 3
+        assert _row(_queue_table(screen), 0)[1] == QUEUE_STATE_FAILED
+        assert _zenodo_line(screen) != ""
+
+
+async def test_load_diagnostic_surfaces_as_status_line():
+    """The corrupt-state contract at the screen tier: a load diagnostic
+    from the snapshot renders as a VISIBLE status line under the title
+    bar (never a crash, never silent loss) while both panes keep
+    rendering; a healthy snapshot renders no diagnostic line at all."""
+    diagnostic = ("download queue state file unreadable, moved aside: "
+                  "/tmp/x/download_queue.json (Expecting value: line 1 "
+                  "column 1 (char 0))")
+    service = FakeDataManagerService(
+        missing=_std_missing(),
+        entries=(_queue_entry("k-existing"),),
+        load_diagnostic=diagnostic)
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        line = screen.query_one("#dl-load-diagnostic")
+        assert line.display is True, (
+            "the diagnostic must surface as a visible status line"
+        )
+        content = line.content
+        rendered = content.plain if isinstance(content, Text) else str(
+            content)
+        assert diagnostic in rendered, (
+            "the diagnostic renders verbatim (data, never translated)"
+        )
+        # both panes still render their rows
+        assert _missing_table(screen).row_count == 3
+        assert _queue_table(screen).row_count == 1
+
+    # the healthy path: no diagnostic line occupies the layout
+    service = FakeDataManagerService(missing=_std_missing())
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        assert app.screen.query_one("#dl-load-diagnostic").display is False
+
+
+async def test_unknown_channel_queue_row_renders_state_intact():
+    """Registry evolution at the screen tier: a queue row whose key has
+    vanished from the registry renders with its state intact, and the
+    drill-down names the unknown channel + machine reason."""
+    service = FakeDataManagerService(
+        entries=(_queue_entry("VanishedRepo__gone_task", "failed",
+                              problems=("unknown_key",)),),
+        channel_details={"VanishedRepo__gone_task": ChannelDetail(
+            key="VanishedRepo__gone_task", source_url=None, argv=None,
+            channel="unknown", reason_code="unknown_key")})
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        assert _row(_queue_table(screen), 0)[0] == "VanishedRepo__gone_task"
+        assert _row(_queue_table(screen), 0)[1] == QUEUE_STATE_FAILED, (
+            "the unknown-channel row renders with its state intact"
+        )
+        _queue_table(screen).focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        rendered = "\n".join(
+            strip.text for strip in app.screen.query_one(
+                "#dl-detail-log", RichLog).lines)
+        assert "channel: unknown (unknown_key)" in rendered, (
+            "the drill-down names the degraded channel disposition"
         )

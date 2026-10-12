@@ -2880,3 +2880,164 @@ def test_bundle_task_name_matches_queue_key_identity():
     the service constant)."""
     assert tui_strings.DL_BUNDLE_TASK_NAME.startswith(
         download_queue.ZENODO_BUNDLE_KEY)
+
+
+# =====================================================================
+# Lane 7: the degradation edge sweep (10-06 Task 1) — CLI absent via a
+# nowhere-pointing explicit path, registry-evolution entries, and the
+# corrupt-diagnostic session memory. Every degradation is a designed
+# state, never a crash and never silent loss.
+# =====================================================================
+
+#: A registry-evolution fixture key (valid queue identity, absent from
+#: the official registry — the D-06 tolerance case).
+VANISHED_KEY = "VanishedRepo__gone_task"
+
+
+def hand_written_state_file(state, entries):
+    """Seed the queue state file with hand-written entries (the
+    registry-evolution / crash-restart fixtures)."""
+    state.mkdir(parents=True, exist_ok=True)
+    doc = {"schema_version": download_queue.SCHEMA_VERSION, "entries": [
+        {
+            "key": key, "kind": "dataset", "state": entry_state,
+            "attempts": attempts,
+            "enqueued_at": "2026-10-12T00:00:00+00:00",
+            "started_at": None, "finished_at": None,
+            "last_percent": last_percent, "interrupted": False,
+            "log_path": None, "problems": [], "reconcile": None,
+        }
+        for key, entry_state, attempts, last_percent in entries
+    ]}
+    state_file(state).write_text(
+        json.dumps(doc, indent=4, ensure_ascii=False), encoding="utf-8")
+    return state_file(state)
+
+
+def test_enqueue_cli_absent_via_nonexistent_explicit_path(
+        monkeypatch, tmp_path):
+    """D-01 degradation (the constructor override needs no PATH games):
+    a cli_path pointing NOWHERE is the probed-unavailable state —
+    enqueue yields ``cli_unavailable``, NO entry is created, and the
+    queue file is byte-identical before and after (an absent file stays
+    absent; a populated file keeps its exact bytes)."""
+    nowhere = tmp_path / "nowhere" / "modelscope"
+    state = pin_state_dir(monkeypatch, tmp_path)
+    state.mkdir(parents=True, exist_ok=True)
+    service = download_queue.DownloadQueueService(cli_path=str(nowhere))
+
+    outcome = service.enqueue(DOWNLOADABLE_KEY)
+
+    assert outcome.action == "cli_unavailable"
+    assert outcome.key == DOWNLOADABLE_KEY
+    assert service.entries() == []
+    assert not state_file(state).exists(), (
+        "the refused enqueue must never create the state file"
+    )
+
+    # a populated file stays byte-identical across the refused enqueue
+    raw = hand_written_state_file(state, [
+        ("GUE__fungi_species_20", "done", 1, 100)]).read_text(
+        encoding="utf-8")
+    fresh = download_queue.DownloadQueueService(cli_path=str(nowhere))
+    assert fresh.load() is None
+
+    refused = fresh.enqueue(DOWNLOADABLE_KEY)
+
+    assert refused.action == "cli_unavailable"
+    assert state_file(state).read_text(encoding="utf-8") == raw, (
+        "the refused enqueue must never rewrite the queue file"
+    )
+    assert [entry.key for entry in fresh.entries()] == [
+        "GUE__fungi_species_20"]
+
+
+def test_run_task_nonexistent_explicit_cli_fails_cli_unavailable(
+        monkeypatch, tmp_path):
+    """The run-time availability gate: an explicit CLI path pointing
+    nowhere fails as the honest probed ``cli_unavailable`` state —
+    never a spawn attempt (which would surface as a confusing
+    subprocess_error at best, a wrong-machine exec at worst)."""
+    spawner = FakeSpawner()
+    service, _, _ = engine_service(tmp_path, monkeypatch, spawner)
+    service._cli_path = str(tmp_path / "nowhere" / "modelscope")
+
+    event = service.run_task("Demo__task", run_id="r1")
+
+    assert event.state == "failed"
+    assert event.problems == (download_queue.PROBLEM_CLI_UNAVAILABLE,)
+    assert spawner.calls == []
+    (entry,) = service.entries()
+    assert entry.state == "failed"
+
+
+def test_unknown_registry_key_entry_tolerated_end_to_end(
+        monkeypatch, tmp_path):
+    """Registry evolution (D-06 tolerance): an entry whose key has
+    vanished from the official registry loads, survives ``entries()``,
+    never breaks ``missing_datasets``/``enqueue``, resolves to the
+    unknown channel, and fails honestly at run time — never a crash,
+    never silent loss of the OTHER entries."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    hand_written_state_file(state, [
+        (VANISHED_KEY, "pending", 0, None),
+        (DOWNLOADABLE_KEY, "done", 1, 100)])
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+    assert service.load() is None
+
+    by_key = {entry.key: entry for entry in service.entries()}
+    assert by_key[VANISHED_KEY].state == "pending"
+    assert by_key[DOWNLOADABLE_KEY].state == "done"
+
+    # the channel resolution degrades to unknown (None spec) — the
+    # screen's drill-down renders the unknown disposition from it
+    assert service.resolve_channel(VANISHED_KEY) is None
+
+    # missing_datasets runs clean over the committed registry and never
+    # admits the vanished key (the registry is the only authority)
+    rows = service.missing_datasets()
+    assert VANISHED_KEY not in {row.key for row in rows}
+
+    # enqueue: the existing entry wins (D-08 idempotence) — no crash
+    assert service.enqueue(VANISHED_KEY).action == "already_queued"
+
+    # run_task on the vanished key: the honest failed state, the other
+    # entry untouched
+    event = service.run_task(VANISHED_KEY, run_id="r1")
+    assert event.state == "failed"
+    assert "unknown_key" in event.problems
+    by_key = {entry.key: entry for entry in service.entries()}
+    assert by_key[VANISHED_KEY].state == "failed"
+    assert by_key[DOWNLOADABLE_KEY].state == "done"
+
+
+def test_corrupt_load_diagnostic_remembered_for_the_session(
+        monkeypatch, tmp_path):
+    """The corrupt-state contract (10-06): the diagnostic returns from
+    ``load()`` once AND is remembered on the service for the session —
+    the screen's later snapshot reads (its reloads) still surface it;
+    the sidecar + the usable empty queue are the 10-01 pins."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    state.mkdir(parents=True, exist_ok=True)
+    garbage = b"{not json at all"
+    state_file(state).write_bytes(garbage)
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+
+    error = service.load()
+
+    assert isinstance(error, str) and "moved aside" in error
+    # a second (now-healthy) load returns None — the diagnostic PERSISTS
+    assert service.load() is None
+    assert service.last_load_diagnostic() == error
+    # the queue stays usable and the memory survives the mutation
+    assert service.enqueue(DOWNLOADABLE_KEY).action == "enqueued"
+    assert service.last_load_diagnostic() == error
+    assert (state / (download_queue.QUEUE_FILE_NAME
+                     + ".corrupt")).read_bytes() == garbage
+    # a fresh service over the (now quarantined-away) file: no memory
+    fresh = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+    fresh.load()
+    assert fresh.last_load_diagnostic() is None
