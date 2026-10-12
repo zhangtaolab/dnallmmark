@@ -5,16 +5,16 @@ milestone_name: TUI任务
 current_phase: 9
 current_phase_name: Custom Model & Dataset Onboarding (自定义接入向导)
 status: executing
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-10-12T03:18:51.883Z"
+stopped_at: Completed 09-03-PLAN.md
+last_updated: "2026-10-12T04:11:58.097Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 9 execution started
-state_head: bf4b630e23429bc97b6a91048b9cfed8bfcafa8c
+state_head: 942153477e3284cdd2c9143f9ab24fa619e91494
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 19
-  completed_plans: 15
+  completed_plans: 16
   percent: 33
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 9 (Custom Model & Dataset Onboarding (自定义接入向导)) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-10-12 — Phase 9 execution started
 
@@ -73,6 +73,7 @@ Progress (v1.2): [██████████] 100% (13/13 plans)
 | Phase 08 P08-07 | 79 min | 3 tasks | 13 files |
 | Phase 09 P09-01 | 47 min | 3 tasks | 7 files |
 | Phase 09 P09-02 | 19 min | 3 tasks | 4 files |
+| Phase 09 P09-03 | 44 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -133,6 +134,11 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 09]: [Phase 09]: 09-02: D-09 filter = skip iff isinstance(entry, dict) and entry.get('enabled') is False — the isinstance guard preserves the pre-D-09 merge of non-object entry values (a new AttributeError there would crash formerly accepted input); skip sits after the collision loop so disabled shadow attempts still fail fast
 - [Phase 09]: [Phase 09]: 09-02: gauntlet counterpart resolution is read-time deterministic (first official Train-truthy task / first official model key, read directly from the official files — overlay state can never leak a custom key into the slot); corrupt existing-custom registry = failed item launching nothing
 - [Phase 09]: [Phase 09]: 09-02: gauntlet verdicts from parsed artifacts only (manifest planned cells / n_audit fields — exit-0-but-absent is a FAIL); the service carries zero f-strings and zero copy (detail tokens are data: planned_cells=N, Train_mismatch_declared=N_measured=M); audit leg doubly isolated (candidate-only registry + empty overlay env) with all five output flags temp — committed artifacts hash-pinned clobber-safe
+- [Phase 09]: [Phase 09]: 09-03 nav shell landed: top-bar slot format is the D-13 verbatim digit+label attachment (1环境检查, 未开放 attached) — the only fixed-vocabulary formulation fitting 80 columns with the ◆ prefix (78 cells, Pilot-asserted); digit bindings are show=False plain per-screen bindings (the top bar carries the digit labels; never priority)
+- [Phase 09]: [Phase 09]: 09-03: tui/screens/nav.py is a NEW screens-tier chrome module (12th file over the deliberate 11-file budget, Rule 3): bars cannot live in app.py (screens import them; app imports screens — a cycle); binding_row moved there as the single key-map projection the help modal and bottom bar share
+- [Phase 09]: [Phase 09]: 09-03 probe-pinned textual 8.2.8 facts: (a) switch_screen away from the BOOT screen raises IndexError (missing result-callback bookkeeping) — one _push_result_callback shim in App.on_mount; (b) rich Text spans styled with $token strings crash the Static render path (MissingStyle) — keycap keys resolve app.current_theme.accent at mount, labels use rich dim; zero hardcoded hex
+- [Phase 09]: [Phase 09]: 09-03 about derivations: official counts read the committed registries directly (official-only 62/50 — the overlay-merged view would count customs into the 官方 row); 自定义 counts via the 09-01 direct store read; deps tolerance is per-package (one exploding probe → 未安装, never blanks neighbors); 里程碑阶段 is the one static milestone constant
+- [Phase 09]: [Phase 09]: 09-03 migration: env s binding retired (menu slot 2 supersedes — one navigation path per target; help modal auto-reflects), Header/Footer retired on the three base screens (modal Footer hints and matrix chrome kept per the migration table); placeholder slots 3/4/5 carry Phases 10/11/12 in NAV_SLOTS
 
 ### Pending Todos
 
@@ -156,8 +162,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T03:18:51.842Z
-Stopped at: Completed 09-02-PLAN.md
+Last session: 2026-10-12T04:11:58.054Z
+Stopped at: Completed 09-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
