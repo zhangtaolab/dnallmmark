@@ -3137,6 +3137,7 @@ EXPECTED_DL_CONSTANTS = (
     "DL_ZENODO_PROBING", "DL_ZENODO_NOT_PUBLIC", "DL_ZENODO_PUBLIC",
     "DL_ZENODO_FAILED", "DL_ZENODO_DISABLED_TOAST",
     "DL_ZENODO_KEY_LABEL", "DL_BUNDLE_TASK_NAME", "DL_DISABLED_TOAST",
+    "DL_UNKNOWN_TOAST",
     "DL_ENQUEUE_LABEL", "DL_RETRY_LABEL", "DL_CANCEL_LABEL",
     "DL_ENQUEUE_ALL_LABEL",
 )
@@ -3154,7 +3155,8 @@ EXPECTED_QUEUE_CONSTANTS = (
     "QUEUE_BANNER_MISMATCH", "QUEUE_TOAST_ENQUEUED",
     "QUEUE_TOAST_ENQUEUED_ALL", "QUEUE_TOAST_ALREADY_QUEUED",
     "QUEUE_FLIP_TOAST", "QUEUE_RETRY_NOOP", "QUEUE_CANCEL_NOOP",
-    "QUEUE_CLI_UNAVAILABLE", "QUEUE_PROGRESS_INDETERMINATE",
+    "QUEUE_CLI_UNAVAILABLE", "QUEUE_PERSIST_FAILED_TOAST",
+    "QUEUE_PERSIST_DRIVER_TOAST", "QUEUE_PROGRESS_INDETERMINATE",
     "QUEUE_CONFIRM_CANCEL_PENDING", "QUEUE_CONFIRM_CANCEL_DOWNLOADING",
     "QUEUE_REAUDIT_LABEL",
 )
@@ -3176,6 +3178,21 @@ def test_dl_and_queue_string_inventory_defined():
             value = getattr(tui_strings, name)
             assert isinstance(value, str) and value, name
             assert name.startswith(prefix), name
+
+
+def test_dl_queue_inventory_complete_no_unlisted_constants():
+    """IN-09: the single-home lock is BIDIRECTIONAL — every DL_/QUEUE_
+    constant tui/strings.py defines is listed in the expected tuples, so
+    a new toast that skips registration fails here instead of silently
+    drifting out of the inventory's coverage."""
+    listed = set(EXPECTED_DL_CONSTANTS) | set(EXPECTED_QUEUE_CONSTANTS)
+    defined = {name for name in dir(tui_strings)
+               if name.startswith(("DL_", "QUEUE_"))}
+    assert defined == listed, (
+        "the string inventory and the tripwire must match exactly — "
+        f"unregistered: {sorted(defined - listed)}; "
+        f"stale registrations: {sorted(listed - defined)}"
+    )
 
 
 def test_queue_state_strings_glyph_first_and_distinct():
