@@ -1336,7 +1336,11 @@ def test_screen_module_carries_zero_chinese_literals():
 
 def test_backend_loads_the_committed_registries_and_presence(
         monkeypatch, tmp_path):
-    """The real seam: 62/50 entries, presence from the committed n_audit."""
+    """The real seam: 62/50 entries, presence from the committed n_audit.
+    Refresh-stable presence pins (the R-03 follow-up rule: the baseline
+    is maintainer-refreshable — 43/50 -> 50/50 landed as a data commit —
+    so the asserts cover structure and DEFINITE presence, never a
+    specific missing count or key set)."""
     empty_overlay = tmp_path / "custom"
     empty_overlay.mkdir()
     monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
@@ -1346,20 +1350,14 @@ def test_backend_loads_the_committed_registries_and_presence(
     assert data.models_load_error is None
     assert data.datasets_load_error is None
     assert data.audit_available is True
-    # every dataset key carries a presence entry; the committed artifact
-    # has exactly the 7 missing GUE tasks
+    # every dataset key carries a presence entry, definite for all of
+    # them (present or missing — whichever the current baseline says)
     assert set(data.presence) == {
         entry["key"] for entry in data.dataset_entries
     }
     statuses = {presence.status for presence in data.presence.values()}
-    assert PRESENCE_MISSING in statuses
-    assert PRESENCE_PRESENT in statuses
-    missing = [
-        key for key, presence in data.presence.items()
-        if presence.status == PRESENCE_MISSING
-    ]
-    assert len(missing) == 7
-    assert all(key.startswith("GUE__") for key in missing)
+    assert statuses <= {PRESENCE_PRESENT, PRESENCE_MISSING}
+    assert statuses, "at least one dataset presence resolved"
 
 
 def test_backend_registry_failure_degrades_to_the_error_state(

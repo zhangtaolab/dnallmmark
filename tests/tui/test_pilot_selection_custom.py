@@ -1265,17 +1265,35 @@ def _queue_state_entry(key, state, measured=None):
     }
 
 
-def _committed_missing_dataset_keys():
-    """The keys the committed n_audit marks missing (the flip targets —
-    the real baseline carries the Phase 10 missing set)."""
-    audit = registries_service.load_n_audit()
-    assert audit is not None, "the committed n_audit must be readable"
-    missing = sorted(
-        key for key, record in audit.items()
-        if isinstance(record, dict) and record.get("missing") is True
+def _stage_missing_dataset_keys(monkeypatch, tmp_path, count=1):
+    """Stage a fixture n_audit marking the first ``count`` REAL registry
+    dataset keys missing (the flip targets).
+
+    The R-03 follow-up rule: the committed baseline is
+    maintainer-refreshable (43/50 -> 50/50 landed as a data commit), so
+    flip/overlay lanes NEVER derive missing-ness from it — they pin
+    their own missing set through the same ``N_AUDIT_PATH`` seam the
+    corrupt-file tests use, over real registry keys so the datasets
+    table renders the rows. Every other key stages present. Returns the
+    staged missing keys.
+    """
+    dataset_keys = sorted(
+        entry["key"]
+        for entry in registries_service.load_dataset_entries())
+    assert len(dataset_keys) >= count, (
+        "the committed registry must carry enough dataset keys"
     )
-    assert missing, "the committed baseline must carry missing keys"
-    return missing
+    staged = dataset_keys[:count]
+    present = {"missing": False, "splits": {
+        "train": {"rows": 1}, "dev": {"rows": 1}, "test": {"rows": 1}}}
+    path = tmp_path / "n-audit-fixture" / "n_audit.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"tasks": {
+        key: ({"missing": True} if key in staged else dict(present))
+        for key in dataset_keys
+    }}), encoding="utf-8")
+    monkeypatch.setattr(registries_service, "N_AUDIT_PATH", path)
+    return staged
 
 
 def _dataset_presence_cell(table, key):
@@ -1305,13 +1323,15 @@ async def _open_datasets_view(pilot, app, backend):
 async def test_overlay_flips_missing_presence_to_present_and_back(
         monkeypatch, tmp_path):
     """Tier-1-grade snapshot proof: a done entry with measured rows in
-    the pinned state file flips the committed-missing key's cell to
+    the pinned state file flips the staged-missing key's cell to
     present WITH the measured counts (the D-11 flip); removing the
-    state file returns the row to missing — the committed baseline
-    rules when no overlay exists."""
+    state file returns the row to missing — the fixture n_audit view
+    rules when no overlay exists. (The missing target is STAGED — the
+    R-03 follow-up rule: the committed baseline is maintainer-
+    refreshable and carries no missing keys today.)"""
     _pin_roots(monkeypatch, tmp_path)
     state_root = _pin_state_root(monkeypatch, tmp_path)
-    key = _committed_missing_dataset_keys()[0]
+    (key,) = _stage_missing_dataset_keys(monkeypatch, tmp_path, count=1)
     _seed_queue_state(state_root, [
         _queue_state_entry(key, "done",
                            {"train": 12345, "dev": 678, "test": 90})])
@@ -1326,13 +1346,13 @@ async def test_overlay_flips_missing_presence_to_present_and_back(
             "thousands-separated measured counts"
         )
 
-        # remove the state file -> the committed baseline rules again
+        # remove the state file -> the fixture n_audit view rules again
         (state_root / "download_queue.json").unlink()
         screen._load_data()
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert _dataset_presence_cell(table, key) == SEL_PRESENCE_MISSING, (
-            "with no overlay the committed n_audit view rules"
+            "with no overlay the staged n_audit view rules"
         )
 
 
@@ -1340,12 +1360,11 @@ async def test_mismatch_and_failed_entries_never_flip_presence(
         monkeypatch, tmp_path):
     """UI-SPEC semantic 6: only reconcile-PASS (done) entries belong in
     the overlay — mismatch and failed entries in the state file leave
-    the committed-missing cells missing (the number would be wrong)."""
+    the staged-missing cells missing (the number would be wrong)."""
     _pin_roots(monkeypatch, tmp_path)
     state_root = _pin_state_root(monkeypatch, tmp_path)
-    missing = _committed_missing_dataset_keys()
-    assert len(missing) >= 2, "the baseline carries 7 missing keys"
-    mismatch_key, failed_key = missing[0], missing[1]
+    mismatch_key, failed_key = _stage_missing_dataset_keys(
+        monkeypatch, tmp_path, count=2)
     _seed_queue_state(state_root, [
         _queue_state_entry(mismatch_key, "mismatch",
                            {"train": 1, "dev": 2, "test": 3}),
@@ -1368,10 +1387,11 @@ async def test_live_flip_through_the_app_event_forward(
     10-04 generic forward) reaches the MOUNTED selection screen's
     apply_queue_event, re-runs the snapshot worker, and the presence
     cell flips in place — the screen never remounts and the app-level
-    flip toast fires."""
+    flip toast fires. (Missing target staged per the R-03 follow-up
+    rule — never derived from the refreshable committed baseline.)"""
     _pin_roots(monkeypatch, tmp_path)
     state_root = _pin_state_root(monkeypatch, tmp_path)
-    key = _committed_missing_dataset_keys()[0]
+    (key,) = _stage_missing_dataset_keys(monkeypatch, tmp_path, count=1)
     app = _app(SelectionBackend())
     async with app.run_test(size=(120, 40)) as pilot:
         screen = await _open_datasets_view(pilot, app, SelectionBackend())

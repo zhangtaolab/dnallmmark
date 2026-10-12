@@ -245,31 +245,55 @@ def test_presence_unavailable_when_audit_is_none():
 
 
 def test_load_n_audit_reads_the_real_committed_artifact():
-    """The committed n_audit.json: 50 tasks, real presence data."""
+    """The committed n_audit.json is readable and structurally sound.
+    Refresh-stable truths ONLY (the R-03 follow-up rule: the baseline is
+    maintainer-refreshable — 43/50 -> 50/50 landed as a data commit — so
+    the pin asserts the SCHEMA the services consume, never specific
+    keys, counts, or a specific missing set)."""
     tasks = load_n_audit()
     assert tasks is not None
-    assert len(tasks) == 50
-    present = presence_for("BEND__CpG_methylation", tasks)
-    assert present.status == PRESENCE_PRESENT
-    assert present.rows == (743095, 109717, 106227)
-    missing = presence_for("GUE__EPI_GM12878", tasks)
-    assert missing.status == PRESENCE_MISSING
-    assert missing.rows is None
+    assert tasks, "the artifact carries a non-empty tasks mapping"
+    for key, record in tasks.items():
+        assert isinstance(key, str) and key, key
+        assert isinstance(record, dict), key
+        assert isinstance(record.get("missing"), bool), key
+        if record.get("missing") is False:
+            splits = record.get("splits")
+            assert isinstance(splits, dict), key
+            rows = presence_for(key, tasks).rows
+            assert rows is not None and all(
+                isinstance(count, int) and count > 0
+                for count in rows), (
+                f"{key}: a present record carries three positive "
+                "integer split rows"
+            )
 
 
 def test_every_registry_dataset_key_maps_to_a_definite_presence(
         monkeypatch, tmp_path):
-    """Real-data adjacency: all 50 registry keys resolve to present or
-    missing against the committed audit — no unknown, no exception."""
+    """Real-data adjacency, refresh-stable (the R-03 follow-up rule):
+    every registry dataset key resolves to a DEFINITE presence — present
+    or missing, whichever the current baseline says — never unknown
+    (registry/audit drift) and never unavailable; and the committed
+    artifact's key set stays exactly the registry's dataset key set."""
     empty_overlay = tmp_path / "custom"
     empty_overlay.mkdir()
     monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
     tasks = load_n_audit()
+    registry_keys = {entry["key"] for entry in load_dataset_entries()}
+    assert set(tasks) == registry_keys, (
+        "the committed n_audit keys and the registry dataset keys must "
+        "stay in lockstep across refreshes"
+    )
     statuses = {
         presence_for(entry["key"], tasks).status
         for entry in load_dataset_entries()
     }
-    assert statuses == {PRESENCE_PRESENT, PRESENCE_MISSING}
+    assert statuses <= {PRESENCE_PRESENT, PRESENCE_MISSING}, (
+        "definite presence for every key — the artifact's key-set pin "
+        "above makes unknown impossible; this catches any drift class"
+    )
+    assert statuses, "at least one dataset key exists"
 
 
 def test_load_n_audit_corrupt_file_yields_none(tmp_path, monkeypatch):

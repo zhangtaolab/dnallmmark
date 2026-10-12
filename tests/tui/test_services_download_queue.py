@@ -316,17 +316,33 @@ def test_enqueue_cli_unavailable_outcome(monkeypatch, tmp_path):
 
 def test_enqueue_all_missing_enqueues_downloadable_missing_only(
         monkeypatch, tmp_path):
-    """Over the committed n_audit (7 missing GUE keys, all shape A):
-    enqueue_all_missing enqueues every one, returns 7, and is a no-op
-    count of 0 on the second call."""
+    """Over a STAGED n_audit view (the R-03 follow-up rule: the
+    committed baseline is maintainer-refreshable — 50/50 present today —
+    so a missing-set test pins its own missing keys through the
+    N_AUDIT_PATH seam, never the baseline): every missing DOWNLOADABLE
+    row enqueues, a disabled (shape-D) missing row is skipped, and the
+    second call is a no-op count of 0."""
     service, _ = make_service(tmp_path, monkeypatch)
-    missing = [row.key for row in service.missing_datasets()]
-    assert missing, "committed n_audit must carry missing tasks"
+    registry = committed_registry()
+    downloadable = sorted(
+        key for key in registry
+        if service.resolve_channel(key) is not None
+        and service.resolve_channel(key).reason_code is None)
+    staged = downloadable[:2] + [SHAPE_D_KEY]
+    tmp_n_audit_missing(monkeypatch, tmp_path, tasks={
+        key: ({"missing": True} if key in staged
+              else dict(_PRESENT_TASK_RECORD))
+        for key in registry})
+    missing_rows = [row.key for row in service.missing_datasets()]
+    assert set(missing_rows) == set(staged), (
+        "the staged view drives the missing set (2 downloadable + "
+        "1 shape-D), never the committed baseline"
+    )
 
     count = service.enqueue_all_missing()
 
-    assert count == len(missing)
-    assert {e.key for e in service.entries()} == set(missing)
+    assert count == 2, "only the downloadable missing rows enqueue"
+    assert {e.key for e in service.entries()} == set(downloadable[:2])
     assert all(e.state == "pending" for e in service.entries())
     assert service.enqueue_all_missing() == 0   # second call: nothing new
 
@@ -550,23 +566,30 @@ def test_unknown_schema_version_treated_as_corrupt(monkeypatch, tmp_path):
 
 def test_missing_datasets_computed_over_committed_registry_and_n_audit(
         monkeypatch, tmp_path):
-    """Rows exist exactly for official keys whose committed n_audit
-    presence is MISSING (computed in the test from the same two
-    committed files — never a hardcoded key list); each row carries the
-    declared total and the channel disposition."""
+    """Rows exist exactly for official keys whose n_audit presence is
+    MISSING (computed in the test from the same registry + view — never
+    a hardcoded key list); each row carries the declared total and the
+    channel disposition. The R-03 follow-up rule: the presence view is a
+    STAGED fixture over real registry keys (the committed baseline is
+    maintainer-refreshable — 50/50 present today — so this lane never
+    depends on the baseline carrying missing keys)."""
     service, _ = make_service(tmp_path, monkeypatch)
+    registry = committed_registry()
+    staged_missing = sorted(registry)[:2]
+    tmp_n_audit_missing(monkeypatch, tmp_path, tasks={
+        key: ({"missing": True} if key in staged_missing
+              else dict(_PRESENT_TASK_RECORD))
+        for key in registry})
 
     rows = service.missing_datasets()
 
     audit_tasks = registries.load_n_audit()
     expected = {
-        key for key in committed_registry()
+        key for key in registry
         if registries.presence_for(key, audit_tasks).status
         == registries.PRESENCE_MISSING
     }
-    assert {row.key for row in rows} == expected
-    assert expected, "committed n_audit must carry missing tasks"
-    registry = committed_registry()
+    assert {row.key for row in rows} == expected == set(staged_missing)
     for row in rows:
         assert isinstance(row, download_queue.MissingInfo)
         entry = registry[row.key]
@@ -576,6 +599,14 @@ def test_missing_datasets_computed_over_committed_registry_and_n_audit(
         assert row.channel in ("downloadable", "disabled", "unknown")
         assert row.reason_code is None or isinstance(row.reason_code, str)
         assert row.source_url is None or "modelscope.cn" in row.source_url
+
+
+#: A present n_audit task record — the refresh-stable fixture filler
+#: (missing-set lanes stage real registry keys as missing around it;
+#: the committed baseline itself is never expected to carry either
+#: state — R-03 refreshes it).
+_PRESENT_TASK_RECORD = {"missing": False, "splits": {
+    "train": {"rows": 1}, "dev": {"rows": 1}, "test": {"rows": 1}}}
 
 
 def test_missing_datasets_empty_when_n_audit_unavailable(
