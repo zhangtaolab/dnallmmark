@@ -528,7 +528,7 @@ def run_dry_run_gauntlet(self, kind, candidate_key, entry) -> GauntletItem:
 | A5 | `modelscope`/`huggingface` URL format is free text (no URL syntax validation beyond non-empty) | Validation | Low — official values are org/repo strings, not full URLs; over-validating would reject official-shaped values |
 | A6 | The audit gauntlet runs for IMPORTED dataset entries too (per-entry sequential, UI-SPEC #6) — same staged mechanics | Gauntlet | Low — already pinned by UI-SPEC Auto-Default #6 |
 
-## Open Questions
+## Open Questions (RESOLVED 2026-10-12 — dispositions inline)
 
 1. **Does the model-side gauntlet need more than the dry-run?**
    - What we know: UI-SPEC says model entry → `dry-run 预检` only; dataset entry → dry-run AND audit (there is no audit equivalent for models — n_audit is dataset-only, verified).
