@@ -48,6 +48,9 @@ from textual.widgets import DataTable, Static
 from tui.app import DnallmMarkTui
 from tui.screens.nav import NAV_SLOTS
 from tui.screens.selection import (
+    PresetMenu,
+    PresetModal,
+    PresetOption,
     SelectionBackend,
     SelectionData,
     SelectionScreen,
@@ -57,7 +60,13 @@ from tui.services import selection as selection_service
 from tui.services.registries import PRESENCE_PRESENT, Presence
 from tui.strings import (
     ENV_KERNEL_LABELS,
+    SEL_COUNT_CUSTOM_SEGMENT,
+    SEL_CUSTOM_BADGE,
+    SEL_DISABLED_MARK_WARNING,
+    SEL_DISABLED_SUFFIX,
     SEL_MATRIX_LABEL,
+    SEL_PRESET_UNKNOWN_KEYS,
+    SEL_STATUS_LINE,
     SEL_TOGGLE_DISABLED_TOAST,
     SEL_TOGGLE_ENABLED_TOAST,
     SEL_TOGGLE_LABEL,
@@ -131,6 +140,82 @@ def _custom_data(model_enabled=True, task_enabled=True):
     )
 
 
+_KEY_DISABLED_MODEL = "my-other-lm"
+
+
+def _landed_fixture_data():
+    """The D-10 presentation fixture: models = official + enabled custom +
+    DISABLED custom; datasets = official + enabled custom — the one table
+    state carrying badge, suffix, counts, mark-block, and preset loud-skip
+    in a single snapshot."""
+    return SelectionData(
+        model_entries=(
+            {
+                "key": _KEY_OFFICIAL_MODEL, "type": "MLM",
+                "species": "plants", "size_m": 86.0,
+                "card": {"type": "MLM", "species": "plants",
+                         "size (M)": 86},
+            },
+            {
+                "key": _KEY_CUSTOM_MODEL, "type": "MLM",
+                "species": "plants", "size_m": 88.0,
+                "card": dict(_CUSTOM_MODEL_ENTRY),
+            },
+            {
+                "key": _KEY_DISABLED_MODEL, "type": "CLM",
+                "species": "human", "size_m": 310.0,
+                "card": {"type": "CLM", "species": "human",
+                         "size (M)": 310, "enabled": False},
+            },
+        ),
+        dataset_entries=(
+            {
+                "key": _KEY_OFFICIAL_TASK, "category": "Animals",
+                "type": "binary", "metric": "f1",
+                "card": {"Category": "Animals", "type": "binary",
+                         "metric": "f1"},
+            },
+            {
+                "key": _KEY_CUSTOM_TASK, "category": "Plants",
+                "type": "binary", "metric": "f1",
+                "card": dict(_CUSTOM_DATASET_ENTRY),
+            },
+        ),
+        presence={},
+        custom_status={
+            _KEY_CUSTOM_MODEL: {"custom": True, "enabled": True},
+            _KEY_DISABLED_MODEL: {"custom": True, "enabled": False},
+            _KEY_CUSTOM_TASK: {"custom": True, "enabled": True},
+        },
+    )
+
+
+def _official_only_data():
+    """The zero-customs snapshot (custom_status defaults to {})."""
+    return SelectionData(
+        model_entries=(
+            {
+                "key": _KEY_OFFICIAL_MODEL, "type": "MLM",
+                "species": "plants", "size_m": 86.0,
+                "card": {"type": "MLM"},
+            },
+            {
+                "key": "plant-dnamamba-6mer", "type": "MLM",
+                "species": "plants", "size_m": 396.0,
+                "card": {"type": "MLM"},
+            },
+        ),
+        dataset_entries=(
+            {
+                "key": _KEY_OFFICIAL_TASK, "category": "Animals",
+                "type": "binary", "metric": "f1",
+                "card": {"Category": "Animals"},
+            },
+        ),
+        presence={},
+    )
+
+
 class _EnvCacheHitFake:
     """The env-check boot fake: a same-day cache hit, zero kernels."""
 
@@ -150,10 +235,12 @@ class _EnvCacheHitFake:
 class _SelectionFake:
     """Deterministic selection-service fake (the Phase 8 shape): the real
     08-05 grammar over synthetic entries, a mutable ``data`` snapshot the
-    tests flip between presses, and a load counter for refresh proofs."""
+    tests flip between presses, a load counter for refresh proofs, and
+    injectable preset options for the loud-skip cases."""
 
-    def __init__(self, data=None):
+    def __init__(self, data=None, presets=()):
         self.data = data if data is not None else _custom_data()
+        self.presets = tuple(presets)
         self.load_calls = 0
 
     def load_selection_data(self):
@@ -161,8 +248,7 @@ class _SelectionFake:
         return self.data
 
     def preset_menu(self):
-        from tui.screens.selection import PresetMenu
-        return PresetMenu(options=())
+        return PresetMenu(options=self.presets)
 
     def custom_names(self):
         return ()
@@ -229,6 +315,20 @@ class _CustomServiceFake:
 
 def _row_keys(table):
     return [str(key.value) for key in table.rows]
+
+
+def _row(table, index):
+    """A row's cell texts as plain strings (the Phase 8 idiom)."""
+    return [
+        cell.plain if isinstance(cell, Text) else str(cell)
+        for cell in table.get_row_at(index)
+    ]
+
+
+def _status_line(screen):
+    """The status-line Label's plain text (badge/count assertions)."""
+    content = screen.query_one("#selection-status").content
+    return content.plain if isinstance(content, Text) else str(content)
 
 
 def _toasts(app):
@@ -463,3 +563,134 @@ def test_the_menu_carries_no_wizard_item():
         for slot in NAV_SLOTS
     )
     assert all(SEL_WIZARD_LABEL not in slot.label for slot in NAV_SLOTS)
+
+
+# =====================================================================
+# Task 2 — the D-10 presentation contract (badge, suffix, counts, block)
+# =====================================================================
+
+async def test_landed_and_disabled_fixture_renders_the_full_custom_contract():
+    """One table state carries every CUST-06 presentation truth: the ◇
+    badge on both custom states (bold+accent enabled, dim + （已停用）
+    disabled), official rows untouched (the adjacency edge), the count
+    segment counting landed entries of BOTH states, the disabled-mark
+    block, and the preset loud-skip over a disabled key."""
+    preset = PresetOption(
+        id="mine", kind="derived", name=None,
+        models=(_KEY_OFFICIAL_MODEL, _KEY_DISABLED_MODEL), tasks=(),
+    )
+    fake = _SelectionFake(data=_landed_fixture_data(), presets=(preset,))
+    app = _app(fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+        screen = app.screen
+        table = screen.query_one(DataTable)
+
+        # the badge renders in the key cell: enabled bold+accent, disabled
+        # dim with the suffix, official rows carry neither (D-10)
+        assert _row(table, 0)[1] == _KEY_OFFICIAL_MODEL
+        assert _row(table, 1)[1] == f"{SEL_CUSTOM_BADGE} {_KEY_CUSTOM_MODEL}"
+        assert _row(table, 2)[1] == (
+            f"{SEL_CUSTOM_BADGE} {_KEY_DISABLED_MODEL}{SEL_DISABLED_SUFFIX}")
+        official_cell = table.get_row_at(0)[1]
+        enabled_cell = table.get_row_at(1)[1]
+        disabled_cell = table.get_row_at(2)[1]
+        assert official_cell.spans == []
+        assert enabled_cell.spans[0].style == "bold $accent"
+        assert any(
+            span.style == "$text-muted" for span in disabled_cell.spans)
+
+        # the count segment: 官方 1/1 · 自定义 2/1 — the disabled model
+        # counts (visible = counted), appended dim after the Phase 8 line
+        assert _status_line(screen) == (
+            SEL_STATUS_LINE.format(n=0, models_total=3, m=0, tasks_total=2)
+            + " · " + SEL_COUNT_CUSTOM_SEGMENT.format(
+                official_models=1, official_datasets=1,
+                custom_models=2, custom_datasets=1,
+            )
+        )
+
+        # marking a DISABLED custom row is blocked with the warning toast
+        # and the shared mark set is unchanged (T-09-13)
+        table.move_cursor(row=2)
+        await pilot.pause()
+        await pilot.press("space")
+        await pilot.pause()
+        assert SEL_DISABLED_MARK_WARNING.format(
+            key=_KEY_DISABLED_MODEL) in _toasts(app)
+        assert screen.marked_models == set()
+        assert _row(table, 2)[0] == ""
+
+        # marking the ENABLED custom row still works (the block is
+        # state-specific, never a blanket custom-mark ban)
+        table.move_cursor(row=1)
+        await pilot.pause()
+        await pilot.press("space")
+        await pilot.pause()
+        assert screen.marked_models == {_KEY_CUSTOM_MODEL}
+
+        # a preset referencing the disabled custom key rides the Phase 8
+        # unknown-key loud skip: warned, skipped, never silently marked
+        await pilot.press("p")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(app.screen, PresetModal)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert not isinstance(app.screen, PresetModal)
+        assert screen.marked_models == {_KEY_OFFICIAL_MODEL}
+        assert SEL_PRESET_UNKNOWN_KEYS.format(
+            n=1, keys=_KEY_DISABLED_MODEL) in _toasts(app)
+
+        # BOTH tables: m -> the dataset table carries the same badge
+        await pilot.press("m")
+        await pilot.pause()
+        assert _row(table, 0)[1] == _KEY_OFFICIAL_TASK
+        assert _row(table, 1)[1] == f"{SEL_CUSTOM_BADGE} {_KEY_CUSTOM_TASK}"
+
+
+async def test_zero_customs_status_line_is_byte_identical_phase8():
+    """The zero-one-many edge: zero customs omits the segment — the
+    status line is EXACTLY the Phase 8 shape (byte-comparable)."""
+    fake = _SelectionFake(data=_official_only_data())
+    app = _app(fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+        screen = app.screen
+        assert _status_line(screen) == SEL_STATUS_LINE.format(
+            n=0, models_total=2, m=0, tasks_total=1,
+        )
+
+
+def test_the_real_backend_counts_disabled_customs_in_both_views(
+        monkeypatch, tmp_path):
+    """The real composition: a landed+disabled custom stays in the
+    entries AND the custom-status map (counts include it) while the
+    loader view drops it — the count truth is the management read."""
+    _pin_roots(monkeypatch, tmp_path)
+    custom_entries.land("models", _KEY_CUSTOM_MODEL, {
+        "Model_path": "models/a", "type": "MLM", "size (M)": 1,
+    })
+    custom_entries.land("models", _KEY_DISABLED_MODEL, {
+        "Model_path": "models/b", "type": "CLM", "size (M)": 2,
+    })
+    custom_entries.set_enabled("models", _KEY_DISABLED_MODEL, False)
+    data = SelectionBackend().load_selection_data()
+    keys = [entry["key"] for entry in data.model_entries]
+    # both landed customs render (the disabled one appended after the
+    # merged entries); both carry the custom-status truth
+    assert keys.index(_KEY_CUSTOM_MODEL) < keys.index(_KEY_DISABLED_MODEL)
+    assert data.custom_status[_KEY_DISABLED_MODEL] == {
+        "custom": True, "enabled": False,
+    }
+    # the projection fields render (the canonical entry view shape)
+    disabled_entry = next(
+        entry for entry in data.model_entries
+        if entry["key"] == _KEY_DISABLED_MODEL
+    )
+    assert disabled_entry["type"] == "CLM"
+    assert disabled_entry["size_m"] == 2.0
+    # the loader view drops exactly the disabled one
+    merged = registry_loader.load_models_registry()
+    assert _KEY_CUSTOM_MODEL in merged
+    assert _KEY_DISABLED_MODEL not in merged
