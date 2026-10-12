@@ -1,10 +1,21 @@
 ---
 phase: 09-custom-model-dataset-onboarding
-verified: 2026-10-12T11:13:37Z
+verified: 2026-10-12T23:38:33Z
 status: passed
 score: 5/5 must-haves verified
 covered_files: [".planning/phases/09-custom-model-dataset-onboarding/09-01-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-01-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-02-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-02-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-03-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-03-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-04-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-04-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-05-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-05-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-06-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-06-SUMMARY.md", "pipeline/registry_loader.py", "schemas/custom_registry.json", "tests/test_registry_loader.py", "tests/tui/test_pilot_env_check.py", "tests/tui/test_pilot_nav_shell.py", "tests/tui/test_pilot_selection.py", "tests/tui/test_pilot_selection_custom.py", "tests/tui/test_pilot_wizard.py", "tests/tui/test_services_about.py", "tests/tui/test_services_custom_entries.py", "tests/tui/test_services_custom_validation.py", "tests/tui/test_services_gauntlet.py", "tui/app.py", "tui/screens/about.py", "tui/screens/env_check.py", "tui/screens/selection.py", "tui/screens/wizard.py", "tui/services/about.py", "tui/services/custom_entries.py", "tui/services/custom_validation.py", "tui/services/gauntlet.py", "tui/strings.py", "tui/styles.tcss"]
-covered_digest: "v3:sha256:f5d773e8159c72dd37f459157385f6530b35f5097490a4a1c9ce4e4a66678b8d"
+covered_digest: "v3:sha256:95a3dfb5395885982a87d2751f71c8ba9458d7cfd833f1e654d0407f341ce9cd"
+re_verification:
+  previous_status: passed
+  previous_score: 5/5
+  gaps_closed: []
+  gaps_remaining: []
+  regressions: []
+advisory:
+  - finding: "Three phase-10 10-05 overlay-flip tests red at HEAD (introduced by phase-10 commit f417862, stale-dated by phase-10 baseline refresh 2f7211d)"
+    category: other
+    reason: "Out of phase-9 scope (DATA-phase presence semantics; the tests postdate phase-9 verification): their fixture helper _committed_missing_dataset_keys() asserts the committed n_audit carries missing keys, but the R-03 maintainer-ruled refresh made it 50/50 present. Resolution belongs to a phase-10 follow-up: stage a missing-key fixture instead of reading the committed baseline's missing set."
+    evidence_status: "deterministic: named tests fail at HEAD 26280d5 (AssertionError: the committed baseline must carry missing keys); direct parse of dnallm-mark/data/n_audit.json: 50 records, 0 missing"
 behavior_unverified: 1
 behavior_unverified_items:
   - truth: "CUST-06 share unit is consumable cross-machine/cross-version (an exported custom registry file lands on another operator's machine through the same import + gauntlet path)"
@@ -137,3 +148,54 @@ No gaps. All five ROADMAP Success Criteria are verified against the codebase wit
 
 _Verified: 2026-10-12T11:13:37Z_
 _Verifier: Claude (gsd-verifier)_
+
+---
+
+## Re-verification (stale refresh, HEAD 26280d5, 2026-10-13)
+
+**Route:** #4682 narrow-delta stale refresh. The previous PASS (2026-10-12T11:13:37Z) plus UAT (09-UAT.md, 2/2 passed live) went stale after 83 phase-10 commits. Goal-backward re-verified at HEAD `26280d5cf48d65a47205eac05530b572f67fdc35` (branch autorun; working tree clean over every phase-9 surface).
+
+### Delta since previous verification (phase-9 surfaces touched by phase 10)
+
+| Surface | Delta | Phase-9 impact |
+| ------- | ----- | -------------- |
+| `tui/services/gauntlet.py` (+ its test) | 46ddd37: `_invoke` passes `errors="replace"` alongside `text=True` (1 kwarg + 6 comment lines) | none — hardening twin of download_queue's WR-05 fix; kwargs-pin regression `test_runner_decode_policy_pins_errors_replace` is present (asserts `kwargs["errors"] == "replace"`, KeyError-RED before the line) and passing |
+| `tui/screens/selection.py` | phase-10 10-05 + review-fix commits: `d` enqueue Binding inserted between the `e` pair and `v` (D-14, comment-documented); additive `SelectionQueueBackend` adapter (:559); presence overlay in `load_selection_data` (`merge_presence(committed_audit, reconciled_rows())` feeding only `presence`/`audit_available`); `apply_queue_event` (done event -> `_load_data()` re-run) | none — the 09-06 custom composition is context-unchanged: overlay-merged UNION management read, `custom_status` build (:393-411), `_compose_wizard` land/undo seams (:620-712), `w`/`e`/`v` bindings, `action_toggle_enabled` -> `set_enabled` (:1649-1664), `_key_cell` badge render; no delta hunk touches the custom/badge/toggle/wizard paths |
+| `tui/app.py` | `build_selection_screen` additionally injects `queue_service=SelectionQueueBackend(self._download_queue)`; queue event forwards past modals | none — additive constructor kwarg; `selection_service` + shared mark-set injection unchanged |
+| `tui/strings.py` | +121 constants (DL_/QUEUE_ block); the 4 removed lines amend the phase-10 `ENV_ROUTE_MISSING_DATASETS` env-route string, not any phase-9 constant | none |
+| `dnallm-mark/data/n_audit.json` (2f7211d) | committed baseline refreshed to 50/50 present (R-03 maintainer ruling) | none for the wizard/gauntlet/custom surfaces — presence columns only; but it stale-dated three phase-10 tests (cross-phase warning below) |
+| `pipeline/registry_loader.py`, `pipeline/models_info.json`, `pipeline/datasets_info.json`, `tui/screens/wizard.py`, `tui/services/custom_entries.py`, `tui/services/custom_validation.py`, `schemas/custom_registry.json` | zero commits since 2026-10-12T11:13:37Z; `git status` clean | untouched — D-09 skip, official-registry prohibition, wizard modal (`u` undo :601, `f`/`o` import/export :597-598), store, and validator all byte-stable |
+
+Phase-10 additions to `tests/tui/test_pilot_selection_custom.py` are additive test functions (10 new, 0 phase-9 tests deleted or weakened; the 5 changed non-test lines are the `_open_selection` helper gaining the `queue_service` injection and the nav-slot whitelist gaining `data_manager`).
+
+### Per-must-have still-holds verdicts
+
+| # | Truth (SC) | Verdict at HEAD | Evidence |
+| - | ---------- | --------------- | -------- |
+| 1 | SC1 model wizard -> `custom_models.json` over the overlay; `models_info.json` never written | STILL HOLDS | `w`->`open_wizard` Binding (:1197); `_compose_wizard` land/undo seams intact; `test_full_loop_models_wizard_lands_badges_counts_and_disables` PASS; `test_tracer_land_then_overlay_load_then_undo` PASS; `pipeline/models_info.json` zero commits since prior verification |
+| 2 | SC2 dataset twin -> `custom_datasets.json`; `datasets_info.json` never written | STILL HOLDS | `test_full_loop_datasets_wizard_runs_both_legs_and_disables` PASS; `pipeline/datasets_info.json` zero commits |
+| 3 | SC3 collect-all fail-fast validation | STILL HOLDS | `custom_validation.py` byte-stable; its 43-test suite green incl. `test_metric_registry_parity_with_suite_canonical` |
+| 4 | SC4 gauntlet (dry-run + audit), entry-level rollback, no half-written state | STILL HOLDS | gauntlet suite 32/32 green incl. the real-subprocess legs and the committed-artifact byte-unchanged regression; the 46ddd37 decode fix hardens `_invoke` only and carries its own kwargs-pin regression (green); wizard session-undo `u` binding in an untouched file |
+| 5 | SC5 badge / e toggle / export share unit; official registries + existing suite green | STILL HOLDS | `test_disabled_entry_stays_in_the_table_while_the_real_loader_skips_it` PASS; badge + toggle + `registry_loader.py` enabled-skip untouched; every phase-9-era test green at HEAD (178/181 spot-run green — the 3 red are phase-10's, see warning) |
+
+### Spot runs at HEAD
+
+- `.venv/bin/pytest tests/tui/test_services_gauntlet.py tests/tui/test_services_custom_entries.py tests/tui/test_pilot_selection_custom.py tests/tui/test_pilot_wizard.py tests/test_registry_loader.py -q` -> **135 passed, 3 failed** (119.76s)
+- `.venv/bin/pytest tests/tui/test_services_custom_validation.py -q` -> **43 passed**
+- Named must-have tests, single `-k "full_loop or disabled_entry_stays or tracer_land or decode_policy"` run -> **5 passed**
+- Per-file: gauntlet 32/32 - custom_entries 17/17 - pilot_selection_custom 20/23 - pilot_wizard 42/42 - registry_loader 24/24 - custom_validation 43/43 = **178/181 green**
+
+**Cross-phase warning (phase-10 scope, NOT a phase-9 gap):** the 3 red tests — `test_overlay_flips_missing_presence_to_present_and_back`, `test_mismatch_and_failed_entries_never_flip_presence`, `test_live_flip_through_the_app_event_forward` — were introduced by phase-10 commit f417862 and stale-dated by phase-10's own baseline refresh 2f7211d: their fixture helper `_committed_missing_dataset_keys()` asserts the committed n_audit carries missing keys, and the R-03 refresh made it 50 records / 0 missing (verified by direct parse). Deterministic root cause, no phase-9 surface involved; the fix (stage a missing-key fixture instead of reading the committed baseline) belongs to a phase-10 follow-up. Any "full suite green at HEAD" claim predating 2f7211d is stale — these three are red at `26280d5`.
+
+### Fingerprint refresh
+
+`covered_files` unchanged (the same 36-file phase-9 surface; recomputed via `gsd-tools verification fingerprint`):
+
+`covered_digest: "v3:sha256:95a3dfb5395885982a87d2751f71c8ba9458d7cfd833f1e654d0407f341ce9cd"`
+
+**Verdict: passed.** All five SCs still hold at HEAD; the two UAT items remain discharged (09-UAT.md, 2/2, 2026-10-12); no regression on any phase-9 must-have; the one finding is a phase-10 test-baseline staleness recorded in `advisory:`.
+
+---
+
+_Re-verified: 2026-10-12T23:38:33Z (local 2026-10-13)_
+_Verifier: Claude (gsd-verifier, #4682 stale-refresh route)_
