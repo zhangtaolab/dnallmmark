@@ -50,6 +50,7 @@ onto this root.
 """
 
 from collections.abc import Callable
+from threading import Lock
 from typing import Any, ClassVar, Protocol
 
 from rich.text import Text
@@ -272,12 +273,15 @@ class DnallmMarkTui(App):
             else DownloadQueueService()
         )
         # The driver state (T-10-04-02): the busy flag is set
-        # SYNCHRONOUSLY in kick and cleared in the worker's finally, so
-        # two rapid enqueues can never start (and exclusive-cancel) a
+        # SYNCHRONOUSLY in kick and cleared in the worker's drain exit,
+        # so two rapid enqueues can never start (and exclusive-cancel) a
         # second driver while a download is in flight. The generation
-        # tags every driver post (WR-02).
+        # tags every driver post (WR-02). The lock makes the flag's
+        # check-and-set (kick) atomic against the drain-side
+        # release-and-recheck (WR-02's lost-wakeup guard).
         self._queue_busy = False
         self._queue_generation = 0
+        self._queue_busy_lock = Lock()
         # The shared app-state mark sets (SEL-01): marks live HERE, never
         # inside a DataTable — the selection screen and the matrix screen
         # read the same live sets, so filter rebuilds, table switches,
@@ -368,17 +372,24 @@ class DnallmMarkTui(App):
     def kick_download_queue(self) -> None:
         """Start the driver iff it is idle (the T-10-04-02 busy guard).
 
-        The flag is set SYNCHRONOUSLY here — before any await — so two
-        rapid enqueues (or an enqueue racing boot resume) can never both
-        reach ``run_download_queue``: an exclusive restart would CANCEL
-        the in-flight download's worker thread mid-task. The worker's
-        ``finally`` clears the flag exactly when the queue has drained
-        (``claim_next`` returned None), so a later enqueue restarts it.
+        The check-and-set runs under the busy lock (WR-02) — atomic
+        against the worker's drain-side release-and-recheck, so a kick
+        racing the drain either sees the flag released and starts the
+        next driver itself, or is a guarded no-op while the SAME worker
+        absorbs the entry it was racing. The flag is set SYNCHRONOUSLY
+        here — before any await — so two rapid enqueues (or an enqueue
+        racing boot resume) can never both reach ``run_download_queue``:
+        an exclusive restart would CANCEL the in-flight download's
+        worker thread mid-task. The worker's drain exit clears the flag
+        under the same lock exactly when the queue has drained
+        (``claim_next`` returned None and no pending entry exists), so
+        a later enqueue restarts it.
         """
-        if self._queue_busy:
-            return
-        self._queue_busy = True
-        self._queue_generation += 1
+        with self._queue_busy_lock:
+            if self._queue_busy:
+                return
+            self._queue_busy = True
+            self._queue_generation += 1
         self.run_download_queue()
 
     @work(exclusive=True, thread=True)
@@ -413,6 +424,31 @@ class DnallmMarkTui(App):
                     return
                 entry = self._download_queue.claim_next()
                 if entry is None:
+                    # WR-02 (the lost-wakeup guard): an enqueue+kick that
+                    # lands between this drain scan and the busy-flag
+                    # release sees the flag still set and is a guarded
+                    # no-op — the entry would strand with no driver. The
+                    # release-and-recheck below is ATOMIC against kick's
+                    # check-and-set (the shared lock): if the pending
+                    # entry is already visible HERE, this SAME worker
+                    # keeps driving it (no restart, no second driver —
+                    # D-04 serial stays guaranteed); if not, the flag is
+                    # released and any concurrent kick starts the next
+                    # driver itself.
+                    with self._queue_busy_lock:
+                        if self._queue_generation != generation:
+                            return  # a successor owns the flag
+                        pending = False
+                        try:
+                            pending = any(
+                                item.state == "pending"
+                                for item
+                                in self._download_queue.entries())
+                        except Exception:  # noqa: BLE001 — never raise here
+                            pending = False
+                        if pending:
+                            continue    # keep driving THIS worker
+                        self._queue_busy = False
                     return  # drained — the no-hang contract
                 if worker.is_cancelled:
                     return
@@ -428,7 +464,12 @@ class DnallmMarkTui(App):
                 )
                 self.post_message(QueueEventMessage(event, generation))
         finally:
-            self._queue_busy = False
+            with self._queue_busy_lock:
+                if self._queue_generation == generation:
+                    self._queue_busy = False
+                # a superseded generation owns the flag now — never
+                # clear a successor's guard (the release-and-recheck
+                # below is the only drain-side clear)
 
     def boot_resume_queue(self) -> None:
         """D-06 boot resume: load the persisted queue; kick iff work

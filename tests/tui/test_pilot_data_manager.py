@@ -83,7 +83,7 @@ class FakeQueueService:
 
     def __init__(self, entries=(), results=None, gate=None,
                  probe_state="not_public", progress_script=None,
-                 progress_gate=None, load_seed=()):
+                 progress_gate=None, load_seed=(), on_drain=None):
         self._entries = [_queue_entry(*item) if isinstance(item, tuple)
                          else item for item in entries]
         self._results = dict(results) if results else {}
@@ -96,6 +96,9 @@ class FakeQueueService:
         # fresh boot would read them
         self._load_seed = [_queue_entry(*item) if isinstance(item, tuple)
                            else item for item in load_seed]
+        # WR-02: fired at the drain instant (claim_next found nothing,
+        # the busy flag still set) — the lost-wakeup race window hook
+        self._on_drain = on_drain
         self.load_calls = 0
         self.claim_next_calls = 0
         self.run_task_calls = []
@@ -132,6 +135,10 @@ class FakeQueueService:
                 attempts=entry.attempts + 1, started_at="2026-10-12T10:00:01")
             self._entries[index] = claimed
             return claimed
+        if self._on_drain is not None:
+            # the drain instant: nothing pending, the busy flag is STILL
+            # set — WR-02's lost-wakeup window opens exactly here
+            self._on_drain()
         return None
 
     def run_task(self, key, run_id, progress_cb=None):
@@ -1488,6 +1495,61 @@ async def test_worker_exits_on_drain_and_restarts_on_next_kick():
             app.workers.wait_for_complete(), timeout=10)
         await pilot.pause()
         assert fake.run_task_calls == ["k-one", "k-two"]
+
+
+async def test_kick_in_the_drain_window_never_strands_a_pending_entry():
+    """WR-02 (the lost-wakeup race, made deterministic): an enqueue+kick
+    landing INSIDE the window between the worker's final claim_next
+    (the drain scan) and the finally busy-clear sees the flag still set
+    and is a guarded no-op — the finally's pending re-check must re-kick
+    so the newly appended entry never strands with no driver running."""
+    holder: dict = {}
+    fired = {"once": False}
+
+    def enqueue_and_kick_in_the_lost_window():
+        # exactly the operator's d-press racing the drain: appends a
+        # pending entry, kicks, and the kick hits the STILL-SET busy
+        # flag (a guarded no-op — the generation must not advance here).
+        # Fires ONCE (a permanently-armed hook would re-arm the race on
+        # every later drain and never let the driver exit).
+        if fired["once"]:
+            return
+        fired["once"] = True
+        holder["fake"].add_entry(_queue_entry("k-two"))
+        holder["app"].kick_download_queue()
+
+    fake = FakeQueueService(
+        entries=[_queue_entry("k-one")],
+        results={"k-one": ("done", 100), "k-two": ("done", 100)},
+        on_drain=enqueue_and_kick_in_the_lost_window)
+    app = _app(queue=fake)
+    holder["fake"] = fake
+    holder["app"] = app
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app.kick_download_queue()
+        # the window kick happens on the worker thread; both the first
+        # driver AND the re-kicked successor must drain to completion
+        for _ in range(3):
+            await asyncio.wait_for(
+                app.workers.wait_for_complete(), timeout=10)
+            await pilot.pause()
+
+        assert fake.run_task_calls == ["k-one", "k-two"], (
+            "the entry enqueued inside the drain window must still run — "
+            "the drain-side release-and-recheck keeps the SAME driver "
+            "going (WR-02, no restart, no stranded pending entry)"
+        )
+        assert app._queue_generation == 1, (
+            "the window kick itself was the guarded no-op (no generation "
+            "bump); the SAME driver absorbed the racing entry"
+        )
+        assert app._queue_busy is False
+        assert not any(worker.name == "run_download_queue"
+                       for worker in app.workers), (
+            "the driver must fully drain and exit after absorbing the "
+            "racing entry"
+        )
 
 
 async def test_x_on_downloading_row_confirms_and_signals_the_seam():
