@@ -1630,3 +1630,155 @@ def _has_entries(kind):
 
     entries, error = custom_entries.read_entries(kind)
     return error is None and bool(entries)
+
+
+# =====================================================================
+# Task 6 (09-05 Task 3) — panel hardening: 80x24 wrap + scroll bounds,
+# drill-down bounds, the guard round trip with the wizard open
+# =====================================================================
+
+async def test_import_panel_many_entries_scroll_within_bound_at_80x24():
+    """The overflow edge (UI-Considerations: gauntlet lists wrap+scroll
+    with the Phase 8 max-height bound): a 6-entry import at 80x24 keeps
+    the modal inside the grid — the entry rows live in a bounded
+    scrollable region whose bottom is REACHABLE (no clipped statuses)."""
+    doc = {f"ds-{i}": {"Dataset_path": f"datasets/ds-{i}",
+                       "Category": "Plants"} for i in range(6)}
+    service = _FakeGauntlet()
+    store = _StoreFake()
+    imports = _ImportSeams(doc=doc)
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            _Seams(), gauntlet_service=service,
+            land=store.land, undo=store.undo,
+            import_read=imports.read, import_validate=imports.validate)
+        await _open(pilot, app, wizard)
+        await _press_step_one_key(pilot, app, "f")
+        await _submit_path(pilot, app, "/share/custom_datasets.json")
+        await _settled(pilot, app)
+        assert len(store.land_calls) == 6
+        box = wizard.query_one("#wizard-box")
+        assert box.region.height <= 24 and box.region.width <= 80, (
+            "the modal never exceeds the 80x24 grid"
+        )
+        rows = wizard.query_one("#gauntlet-rows")
+        assert rows.styles.max_height is not None, (
+            "the entry rows carry an explicit scroll bound"
+        )
+        assert rows.virtual_size.height > rows.size.height, (
+            "6 entries overflow the bound — the region must scroll"
+        )
+        assert rows.max_scroll_y > 0, "the bottom is reachable by scroll"
+        rows.scroll_to(y=rows.max_scroll_y, animate=False)
+        await pilot.pause()
+        last_status = wizard.query_one("#gauntlet-status-5", Static)
+        assert last_status.region.y < 24, (
+            "after scrolling, the last entry's status renders inside the "
+            "grid (nothing permanently clipped)"
+        )
+
+
+async def test_drill_down_50_lines_scroll_within_bound_at_80x24():
+    """A drill-down with 50 verbatim ~90-char output lines: the log
+    wraps (no line elided) and scrolls inside its bound; the modal never
+    exceeds the grid."""
+    raw = "\n".join(f"LINE-{i:02d}-" + "y" * 80 for i in range(50))
+    service = _FakeGauntlet()
+    service._raw_override = raw
+    original = service.dry_run_precheck
+
+    def dry_with_raw(kind, key, entry, run_id):
+        item = original(kind, key, entry, run_id)
+        return GauntletItem(run_id=item.run_id, kind=item.kind,
+                            leg=item.leg, name=item.name, ok=item.ok,
+                            details=item.details, raw_output=raw)
+
+    service.dry_run_precheck = dry_with_raw
+    store = _StoreFake()
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _model_wizard(
+            _Seams(), gauntlet_service=service,
+            land=store.land, undo=store.undo)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "key", "my-lm")
+        await _submit(pilot, wizard)
+        await _settled(pilot, app)
+        await pilot.press("enter")  # drill into the focused row
+        await pilot.pause()
+        drill = wizard.query_one("#gauntlet-drill-log", RichLog)
+        joined = "".join(strip.text for strip in drill.lines)
+        assert "LINE-00" in joined and "LINE-49" in joined, (
+            "every verbatim line present — nothing elided"
+        )
+        assert drill.styles.max_height is not None, "the bound is set"
+        assert len(drill.lines) > 50, "the long lines wrap (never fit)"
+        assert drill.max_scroll_y > 0, "the log scrolls within its bound"
+        box = wizard.query_one("#wizard-box")
+        assert box.region.height <= 24, "the modal never exceeds the grid"
+
+
+async def test_import_conflict_report_wraps_long_values_at_80x24():
+    """The report wrap at 80x24: a 68-char key and a >100-char path in
+    conflict problem lines render FULL across wrapped lines in the
+    scroll-bounded report — never truncated, never elided."""
+    key68 = "k" * 68
+    path_long = "/data/dnallm/datasets/" + "d" * 90 + "/x.json"
+    problems = [
+        (key68, WIZ_PROBLEM_COLLISION_OFFICIAL.format(key=key68)),
+        (path_long, WIZ_PROBLEM_PATH_MISSING.format(path=path_long)),
+    ]
+    imports = _ImportSeams(doc={"ds-x": {}}, problems=problems)
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        wizard = _dataset_wizard(
+            _Seams(), gauntlet_service=_FakeGauntlet(),
+            land=_StoreFake().land, undo=_StoreFake().undo,
+            import_read=imports.read, import_validate=imports.validate)
+        await _open(pilot, app, wizard)
+        await _press_step_one_key(pilot, app, "f")
+        await _submit_path(pilot, app, path_long)
+        lines = _prompt_log_text(app)
+        joined = "".join(line.rstrip() for line in lines)
+        assert key68 in joined, "the full key renders across the wrap"
+        assert path_long in joined, "the full path renders across the wrap"
+        assert "…" not in joined and "..." not in joined, (
+            "nothing elides in the conflict report"
+        )
+
+
+async def test_resize_below_minimum_mid_gauntlet_guard_round_trip():
+    """WR-01 with the wizard open: below 80x24 mid-gauntlet the min-size
+    guard takes over; growing back restores the panel with its in-flight
+    row state intact — and the gated run still completes and lands."""
+    gate = threading.Event()
+    service = _FakeGauntlet(gates={(LEG_DRY_RUN, 1): gate})
+    store = _StoreFake()
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        from tui.app import MinSizeScreen
+
+        wizard = _model_wizard(
+            _Seams(), gauntlet_service=service,
+            land=store.land, undo=store.undo)
+        await _open(pilot, app, wizard)
+        await _type(pilot, wizard, "key", "my-lm")
+        await _submit(pilot, wizard)
+        running = GAUNTLET_ROW_RUNNING.format(item=GAUNTLET_ITEM_DRY_RUN)
+        await _wait_row_becomes(pilot, wizard, 0, 0, running)
+        # shrink below the minimum grid mid-gauntlet -> the guard swaps in
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+        # grow back -> the panel restores with the in-flight row intact
+        await pilot.resize_terminal(120, 40)
+        await pilot.pause()
+        assert app.screen is wizard
+        assert _gauntlet_row_text(wizard, 0, 0) == running
+        # the gated run completes and lands across the round trip
+        gate.set()
+        await _settled(pilot, app)
+        assert len(store.land_calls) == 1
+        assert _gauntlet_row_text(wizard, 0, 0) == (
+            GAUNTLET_ROW_DRY_RUN_PASS.format(cells="6"))
