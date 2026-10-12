@@ -1080,18 +1080,10 @@ class DownloadQueueService:
                 dropped += 1     # IN-07: never silent loss of a row
                 continue
             entries.append(_normalized_entry(raw))
-        if dropped:
-            # the malformed-row diagnostic rides the SAME session
-            # channel as the corrupt-file one (the status line shows
-            # it); the CLEANED entries persist (the D-06
-            # downgrade-persists precedent), so the drop fires exactly
-            # once — the session memory keeps it visible after that
-            message = (str(dropped) + " malformed download queue "
-                       "entries dropped: " + str(path))
-            self._last_diagnostic = message
-            self._entries = entries
-            self._persist_locked()
-            return message
+        # IN-11: the D-06 downgrade runs BEFORE the dropped-rows branch
+        # — a compound hand-edited file (a malformed row AND a
+        # downloading entry) must still downgrade the survivor on THIS
+        # load, or boot resume would see no pending entry and never kick
         downgraded = False
         for entry in entries:
             if entry["state"] != "downloading":
@@ -1106,6 +1098,19 @@ class DownloadQueueService:
             entry["state"] = "pending"
             entry["interrupted"] = True
             downgraded = True
+        if dropped:
+            # the malformed-row diagnostic rides the SAME session
+            # channel as the corrupt-file one (the status line shows
+            # it); the CLEANED entries persist (the D-06
+            # downgrade-persists precedent — one write covers the drop
+            # and any downgrades), so the drop fires exactly once — the
+            # session memory keeps it visible after that
+            message = (str(dropped) + " malformed download queue "
+                       "entries dropped: " + str(path))
+            self._last_diagnostic = message
+            self._entries = entries
+            self._persist_locked()
+            return message
         self._entries = entries
         if downgraded:
             self._persist_locked()

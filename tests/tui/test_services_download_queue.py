@@ -3429,6 +3429,49 @@ def test_malformed_entries_dropped_with_diagnostic_in07(
     )
 
 
+def test_dropped_rows_load_still_downgrades_downloading_in11(
+        monkeypatch, tmp_path):
+    """IN-11: the dropped-rows path must not skip the D-06
+    downloading->pending downgrade — a compound hand-edited file (one
+    non-dict row AND one downloading entry) reports the drop AND
+    downgrades the survivor, so boot resume still sees a pending entry
+    and kicks."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    state.mkdir(parents=True, exist_ok=True)
+    state_file(state).write_text(json.dumps({
+        "schema_version": 1,
+        "entries": [
+            "not-an-entry-at-all",
+            {"key": "k__midflight", "kind": "dataset",
+             "state": "downloading", "attempts": 1,
+             "enqueued_at": "2026-10-12T00:00:00+00:00",
+             "started_at": "2026-10-12T00:01:00+00:00",
+             "finished_at": None, "last_percent": 62,
+             "interrupted": False, "log_path": None,
+             "problems": [], "reconcile": None},
+        ],
+    }, indent=4, ensure_ascii=False), encoding="utf-8")
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+
+    diagnostic = service.load()
+
+    assert isinstance(diagnostic, str) and "1" in diagnostic, (
+        "the dropped row is still reported (the IN-07 contract)"
+    )
+    (entry,) = service.entries()
+    assert entry.key == "k__midflight"
+    assert entry.state == "pending", (
+        "the compound load must still downgrade the downloading entry "
+        "(D-06) — boot resume kicks off this pending view"
+    )
+    assert entry.interrupted is True
+    # the downgrade persisted alongside the cleaned rows
+    on_disk = json.loads(state_file(state).read_text(encoding="utf-8"))
+    assert on_disk["entries"][0]["state"] == "pending"
+    assert on_disk["entries"][0]["interrupted"] is True
+
+
 # =====================================================================
 # WR-04: persistence failures never cross the never-raises boundary —
 # an unwritable state rail (read-only dir, full disk) degrades every
