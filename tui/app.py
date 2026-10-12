@@ -29,25 +29,51 @@ onto this root.
   pattern) plus the shared app-state mark sets — every selection/matrix
   screen is built through ``build_selection_screen`` so the sets are the
   same live instances (SEL-01 persistence).
+
+10-04 wiring (the D-02/SC5 execution spine):
+
+- The queue seam: the constructor accepts ``download_queue_service``
+  (the driver-surface Protocol; None builds the real
+  ``DownloadQueueService``). The app owns ONE shared instance — the
+  driver worker, the data-manager screen, and (in 10-05) the
+  selection/env screens all mutate the same queue.
+- The driver worker: ONE exclusive ``@work(exclusive=True, thread=True)``
+  loop over ``claim_next -> run_task -> post QueueEventMessage`` that
+  RETURNS when no pending entry remains — ``wait_for_complete`` can
+  never hang. ``kick_download_queue`` is guarded by a deterministic busy
+  flag (set synchronously in kick, cleared in the worker finally) so a
+  second enqueue never cancels an in-flight download (T-10-04-02).
+- Boot resume (D-06): ``boot_resume_queue`` (service.load + kick iff
+  pending entries exist) is scheduled ONLY by ``tui/__main__.main`` —
+  never by ``App.on_mount``; test-constructed apps stay provably inert
+  (T-10-04-03).
 """
 
 from collections.abc import Callable
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Protocol
 
 from rich.text import Text
-from textual import events
+from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
+from textual.message import Message
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Footer, Static
+from textual.worker import get_current_worker
 
 from tui.screens.about import AboutScreen
+from tui.screens.data_manager import DataManagerBackend, DataManagerScreen
 from tui.screens.env_check import EnvCheckScreen, EnvCheckServiceProtocol
 from tui.screens.nav import NAV_SLOT_BY_INDEX, binding_row
 from tui.screens.selection import (
     SelectionScreen,
     SelectionServiceProtocol,
+)
+from tui.services.download_queue import (
+    DownloadQueueService,
+    QueueEntry,
+    QueueEvent,
 )
 from tui.strings import (
     APP_HELP_LABEL,
@@ -58,6 +84,7 @@ from tui.strings import (
     APP_QUIT_LABEL,
     APP_TITLE,
     NAV_PLACEHOLDER_TOAST,
+    QUEUE_FLIP_TOAST,
 )
 
 # 08-UI-SPEC Terminal Contract: the minimum grid. Below this, only the
@@ -123,6 +150,62 @@ class MinSizeScreen(Screen):
         self.query_one("#min-size-message", Static).update(self._message())
 
 
+class QueueDriverProtocol(Protocol):
+    """The driver-surface queue Protocol the app consumes (10-04).
+
+    The structural seam the tier-2 Pilot fakes conform to: the app only
+    ever drives the queue (load/claim/run) — the screen-facing surface
+    (snapshot reads, enqueue toasts, drill-down seams) lives behind
+    ``DataManagerServiceProtocol`` in ``tui/screens/data_manager``.
+    """
+
+    def load(self) -> "str | None":
+        """Tolerantly load the persisted queue state (D-06)."""
+
+    def entries(self) -> "list[QueueEntry]":
+        """The immutable entry snapshots, in file order."""
+
+    def claim_next(self) -> "QueueEntry | None":
+        """Claim the head pending entry (None when the queue is idle)."""
+
+    def run_task(self, key: str, run_id: str,
+                 progress_cb: Callable[[str, "int | None"], None] | None
+                 = None) -> QueueEvent:
+        """Execute one claimed task; NEVER raises (the service boundary)."""
+
+
+class QueueEventMessage(Message):
+    """One completed queue task (driver worker thread -> event loop).
+
+    Carries the driver generation it belongs to (WR-02) — the handler
+    drops posts from a superseded generation. Behind the kick busy-guard
+    two drivers can never overlap, so the drop path guards only the
+    teardown-time exclusive cancellation.
+    """
+
+    def __init__(self, event: QueueEvent, generation: int) -> None:
+        self.event = event
+        self.generation = generation
+        super().__init__()
+
+
+class QueueProgressMessage(Message):
+    """One live progress tick (driver worker thread -> event loop).
+
+    Throttled to integer-percent changes at BOTH layers (the service's
+    parser dedupes within a task; the driver dedupes across posts);
+    percent None is the indeterminate contract (the screen renders the
+    indeterminate glyph, never a fabricated number).
+    """
+
+    def __init__(self, key: str, percent: "int | None",
+                 generation: int) -> None:
+        self.key = key
+        self.percent = percent
+        self.generation = generation
+        super().__init__()
+
+
 class DnallmMarkTui(App):
     """DNALLM-Mark operator console — composition root."""
 
@@ -163,7 +246,8 @@ class DnallmMarkTui(App):
     }
 
     def __init__(self, env_check_service: EnvCheckServiceProtocol | None = None,
-                 selection_service: SelectionServiceProtocol | None = None):
+                 selection_service: SelectionServiceProtocol | None = None,
+                 download_queue_service: QueueDriverProtocol | None = None):
         """Compose the console with injectable services.
 
         Args:
@@ -174,10 +258,25 @@ class DnallmMarkTui(App):
             selection_service: optional service override for the selection
                 screen (the same seam pattern, 08-07). None means the real
                 service (SelectionBackend over the 08-04/08-05 modules).
+            download_queue_service: optional override for the shared
+                download-queue service (the 10-04 seam — the driver loop
+                AND the data-manager screen run over this ONE instance).
+                None means the real ``DownloadQueueService``.
         """
         super().__init__()
         self._env_check_service = env_check_service
         self._selection_service = selection_service
+        self._download_queue: QueueDriverProtocol = (
+            download_queue_service if download_queue_service is not None
+            else DownloadQueueService()
+        )
+        # The driver state (T-10-04-02): the busy flag is set
+        # SYNCHRONOUSLY in kick and cleared in the worker's finally, so
+        # two rapid enqueues can never start (and exclusive-cancel) a
+        # second driver while a download is in flight. The generation
+        # tags every driver post (WR-02).
+        self._queue_busy = False
+        self._queue_generation = 0
         # The shared app-state mark sets (SEL-01): marks live HERE, never
         # inside a DataTable — the selection screen and the matrix screen
         # read the same live sets, so filter rebuilds, table switches,
@@ -207,6 +306,19 @@ class DnallmMarkTui(App):
             marked_tasks=self._marked_tasks,
         )
 
+    def build_data_manager_screen(self) -> DataManagerScreen:
+        """Build the data-manager screen over the SHARED queue service.
+
+        The 10-04 factory (the build_selection_screen rationale): the
+        screen's Backend adapter wraps the SAME app-level queue instance
+        the driver worker drives, so an enqueue from the screen, a boot
+        resume, and a driver event all mutate one queue — a zero-arg
+        SCREENS slot would build a second service and silently fork the
+        state.
+        """
+        return DataManagerScreen(
+            data_service=DataManagerBackend(self._download_queue))
+
     # ===== Digit navigation (D-13, 09-03) =====
 
     async def action_nav(self, slot: int) -> None:
@@ -233,12 +345,120 @@ class DnallmMarkTui(App):
             if isinstance(current, SelectionScreen):
                 return
             await self.switch_screen(self.build_selection_screen())
+        elif target.target == "data_manager":
+            if isinstance(current, DataManagerScreen):
+                return
+            await self.switch_screen(self.build_data_manager_screen())
         elif target.target == "about":
             if isinstance(current, AboutScreen):
                 return
             # the stateless zero-arg SCREENS slot (D-13; the injected
             # service path does not exist for about — tests pin env roots)
             await self.switch_screen("about")
+
+    # ===== The download-queue execution spine (10-04, D-02/SC5) =====
+
+    def kick_download_queue(self) -> None:
+        """Start the driver iff it is idle (the T-10-04-02 busy guard).
+
+        The flag is set SYNCHRONOUSLY here — before any await — so two
+        rapid enqueues (or an enqueue racing boot resume) can never both
+        reach ``run_download_queue``: an exclusive restart would CANCEL
+        the in-flight download's worker thread mid-task. The worker's
+        ``finally`` clears the flag exactly when the queue has drained
+        (``claim_next`` returned None), so a later enqueue restarts it.
+        """
+        if self._queue_busy:
+            return
+        self._queue_busy = True
+        self._queue_generation += 1
+        self.run_download_queue()
+
+    @work(exclusive=True, thread=True)
+    def run_download_queue(self) -> None:
+        """Drive the serial queue until it drains (never on the loop).
+
+        One claim -> one task -> one event post, repeated; RETURNS when
+        ``claim_next`` finds no pending entry — ``wait_for_complete`` can
+        therefore never hang on an idle queue. All subprocess/HTTP I/O
+        lives inside the service's ``run_task`` (D-02: spawn/reap/parse
+        in this OS thread, never in-process, never on the event loop —
+        SC5). Progress crosses as a second message throttled to
+        integer-percent changes; every post carries the driver
+        generation (WR-02).
+        """
+        worker = get_current_worker()
+        generation = self._queue_generation
+        last_percent: dict[str, int | None] = {}
+
+        def on_progress(key: str, percent: "int | None") -> None:
+            # throttle: the service dedupes within a task; this dedupes
+            # the post itself across tasks/retries of the same key
+            if percent is not None and last_percent.get(key) == percent:
+                return
+            last_percent[key] = percent
+            self.post_message(
+                QueueProgressMessage(key, percent, generation))
+
+        try:
+            while True:
+                if worker.is_cancelled:
+                    return
+                entry = self._download_queue.claim_next()
+                if entry is None:
+                    return  # drained — the no-hang contract
+                if worker.is_cancelled:
+                    return
+                event = self._download_queue.run_task(
+                    entry.key,
+                    f"driver-{generation}-{entry.key}",
+                    progress_cb=on_progress,
+                )
+                self.post_message(QueueEventMessage(event, generation))
+        finally:
+            self._queue_busy = False
+
+    def boot_resume_queue(self) -> None:
+        """D-06 boot resume: load the persisted queue; kick iff work
+        is pending (a restart with queued work resumes automatically).
+
+        Scheduled ONLY by ``tui/__main__.main`` via ``call_later`` —
+        never by ``App.on_mount``: test-constructed apps stay provably
+        inert (T-10-04-03 — no real download can ever start from a Pilot
+        test), while the operator's console resumes on boot.
+        """
+        self._download_queue.load()
+        if any(entry.state == "pending"
+               for entry in self._download_queue.entries()):
+            self.kick_download_queue()
+
+    def on_queue_event_message(self, message: QueueEventMessage) -> None:
+        """One task finished: flip-toast on done, forward to the screen.
+
+        The done state IS the reconcile pass (the service's done gate,
+        D-09), so done is exactly the D-11 presence-flip moment — the
+        app-level QUEUE_FLIP_TOAST fires here. The forward reaches the
+        current screen's ``apply_queue_event`` when the attribute exists
+        (the data-manager screen consumes it now; the selection screen
+        joins in 10-05 through the same forward).
+        """
+        if message.generation != self._queue_generation:
+            return  # a superseded driver's late post (WR-02)
+        event = message.event
+        if event.state == "done":
+            self.notify(QUEUE_FLIP_TOAST.format(key=event.key))
+        apply_event = getattr(self.screen, "apply_queue_event", None)
+        if apply_event is not None:
+            apply_event(event)
+
+    def on_queue_progress_message(self, message: QueueProgressMessage) -> None:
+        """One live progress tick: forward to the screen's row updater."""
+        if message.generation != self._queue_generation:
+            return  # a superseded driver's late post (WR-02)
+        apply_progress = getattr(
+            self.screen, "apply_queue_progress", None)
+        if apply_progress is not None:
+            apply_progress(message.key, message.percent)
 
     # ===== Min-size guard (08-UI-SPEC Terminal Contract) =====
 

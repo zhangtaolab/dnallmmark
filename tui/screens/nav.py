@@ -68,20 +68,21 @@ class NavSlot(NamedTuple):
 
     index: int
     label: str
-    #: The routing target ("env_check" | "selection" | "about"); None
-    #: marks a placeholder slot delivered by a later phase.
+    #: The routing target ("env_check" | "selection" | "data_manager" |
+    #: "about"); None marks a placeholder slot delivered by a later phase.
     target: "str | None"
     #: The delivering phase for placeholder slots (the toast's {n}).
     phase: "int | None"
 
 
 #: The six D-13 slots in bar order — the fixed vocabulary. Slot names are
-#: the RATIFIED verbatim resource nouns; slots 3/4/5 are placeholders
-#: delivered by Phases 10/11/12 (data manager / run config / monitor).
+#: the RATIFIED verbatim resource nouns; slot 3 is REAL since Phase 10
+#: (the data manager, 10-04); slots 4/5 remain placeholders delivered by
+#: Phases 11/12 (run config / monitor).
 NAV_SLOTS: "tuple[NavSlot, ...]" = (
     NavSlot(1, NAV_LABEL_ENV, "env_check", None),
     NavSlot(2, NAV_LABEL_SELECTION, "selection", None),
-    NavSlot(3, NAV_LABEL_DATA, None, 10),
+    NavSlot(3, NAV_LABEL_DATA, "data_manager", None),
     NavSlot(4, NAV_LABEL_RUN_CONFIG, None, 11),
     NavSlot(5, NAV_LABEL_MONITOR, None, 12),
     NavSlot(6, NAV_LABEL_ABOUT, "about", None),

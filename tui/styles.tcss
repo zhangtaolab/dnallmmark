@@ -289,6 +289,78 @@ WizardModal {
     height: 1;      /* row token: the minimal pending view (panel = 09-05) */
 }
 
+/* ===== Data-manager screen (10-04, D-13/D-14/D-15) =====
+ * Two stacked regions (auto-default 1): the missing list fixed-height
+ * (title row + header + ~3 rows, scrolls), the queue the flex remainder
+ * (scrolls); the full-width rule separates them (the existing treatment
+ * — borders stay reserved for modals). Theme tokens only. */
+
+#dl-title-bar {
+    height: 1;      /* row token: one status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#dl-screen-title {
+    text-style: bold;          /* Heading role */
+    width: auto;
+}
+
+#dl-presence-summary {
+    width: 1fr;                /* right edge of the same status line */
+    text-align: right;
+    color: $text-muted;        /* Secondary role */
+}
+
+#dl-missing-region {
+    height: 5;      /* fixed: the title row + header + ~3 visible rows */
+}
+
+#dl-missing-title-row {
+    height: 1;      /* row token: the missing title + the Zenodo line */
+    padding: 0 1;   /* 1-cell status-line exception */
+}
+
+#dl-missing-title {
+    width: auto;
+}
+
+#dl-zenodo-line {
+    width: 1fr;                /* the right-aligned D-12 entry line */
+    text-align: right;
+    color: $text-muted;        /* probing/not-public render dim */
+}
+
+#dl-missing {
+    height: 1fr;   /* scrolls below the three visible rows */
+}
+
+#dl-queue-region {
+    height: 1fr;                /* the flex remainder */
+    border-top: solid $border;  /* 1-cell border exception — separator */
+}
+
+#dl-queue-title {
+    height: 1;      /* row token */
+    padding: 0 1;   /* 1-cell status-line exception */
+}
+
+#dl-queue-banners {
+    height: auto;   /* 0..N banner rows under the queue title (D-07) */
+}
+
+.queue-banner-mismatch {
+    height: auto;                /* long keys wrap, never elide */
+    padding: 0 2;                /* 2-cell status-line exception */
+    color: $warning;             /* the ⚠ redundant color channel */
+}
+
+#dl-missing > .datatable--header,
+#dl-queue > .datatable--header {
+    text-style: bold;
+    color: $text-muted;
+    background: $surface;
+}
+
 /* ===== Min-size guard screen ===== */
 
 MinSizeScreen {

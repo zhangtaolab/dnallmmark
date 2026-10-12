@@ -565,7 +565,9 @@ def test_the_menu_carries_no_wizard_item():
     """D-14: the wizard is an action, not a screen — no top-menu slot
     targets it and no slot label carries the wizard wording."""
     assert all(
-        slot.target in ("env_check", "selection", "about", None)
+        # "data_manager" joined at 10-04 (the slot-3 promotion)
+        slot.target in ("env_check", "selection", "data_manager",
+                        "about", None)
         for slot in NAV_SLOTS
     )
     assert all(SEL_WIZARD_LABEL not in slot.label for slot in NAV_SLOTS)

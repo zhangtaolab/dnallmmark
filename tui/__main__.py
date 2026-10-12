@@ -40,10 +40,18 @@ from tui.app import DnallmMarkTui
 def main() -> int:
     """Run the DNALLM-Mark console (display runtime; blocks until quit).
 
+    Schedules ``boot_resume_queue`` BEFORE ``run`` (the D-06 boot path):
+    a restart with persisted pending work resumes the download queue
+    automatically. This ``call_later`` is the ONLY auto-start path in
+    the codebase — ``App.on_mount`` never kicks, so test-constructed
+    apps stay inert (10-04, T-10-04-03).
+
     Returns:
         Process exit code — 0 on a clean quit.
     """
-    DnallmMarkTui().run()
+    app = DnallmMarkTui()
+    app.call_later(app.boot_resume_queue)
+    app.run()
     return 0
 
 

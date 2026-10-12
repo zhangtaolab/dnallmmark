@@ -28,17 +28,16 @@ D-03 discipline):
 import asyncio
 import threading
 
-from rich.text import Text
-
 from env_smoke import CheckResult  # top-level module (pipeline/ sys.path root)
+from textual.binding import Binding
+
 from tui.app import DnallmMarkTui
 from tui.screens.data_manager import DataManagerScreen
 from tui.screens.nav import BottomBar, TopMenuBar
-from tui.screens.selection import PresetMenu, SelectionData, SelectionScreen
+from tui.screens.selection import PresetMenu, SelectionData
 from tui.services import selection as selection_service
 from tui.services.download_queue import QueueEntry, QueueEvent
 from tui.strings import NAV_PLACEHOLDER_TOAST
-
 
 # =====================================================================
 # Deterministic fakes (D-03: no real kernel / registry / network / spawn)
@@ -82,7 +81,6 @@ class FakeQueueService:
 
     def load(self):
         self.load_calls += 1
-        return None
 
     def entries(self):
         return list(self._entries)
@@ -214,7 +212,7 @@ async def test_digit3_switches_to_shell_both_bars_zero_placeholder():
         )
         # the digit-nav bindings exist on the screen (the shell contract)
         keys = {binding.key for binding in DataManagerScreen.BINDINGS
-                if isinstance(binding.key, str)}
+                if isinstance(binding, Binding)}
         for digit in ("1", "2", "3", "4", "5", "6"):
             assert digit in keys, f"nav digit {digit} must be bound"
 
@@ -262,10 +260,19 @@ async def test_busy_guard_two_rapid_kicks_start_exactly_one_worker():
         await asyncio.wait_for(
             app.workers.wait_for_complete(), timeout=10)
         await pilot.pause()
-        assert fake.claim_next_calls == 1, (
-            "the drain must not re-claim through a second worker"
+        # ONE worker ran: one task claim + one drain check (claim None)
+        # — and the generation never advanced past 1, the direct proof
+        # the second kick was a guarded no-op (an unguarded second kick
+        # would have cancelled and restarted the driver at generation 2)
+        assert fake.claim_next_calls == 2, (
+            "exactly one worker: the task claim + the drain check"
         )
-        assert fake.run_task_calls == ["GUE__emp_H3"]
+        assert app._queue_generation == 1, (
+            "the busy guard must keep the second kick a no-op"
+        )
+        assert fake.run_task_calls == ["GUE__emp_H3"], (
+            "the task executed exactly once"
+        )
 
 
 async def test_kick_on_empty_queue_exits_and_wait_for_complete_returns():
