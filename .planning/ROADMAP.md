@@ -213,10 +213,10 @@ Plans:
 - [x] 10-04-PLAN.md — data-manager screen (slot 3): two-pane layout, five-state glyphs, progress cells, mismatch banners, drill-down, Zenodo line, d/r/x/a/enter/g/z; app-level driver worker + boot resume; nav promotion
 
 **Wave 5** *(blocked on 10-04)*
-- [ ] 10-05-PLAN.md — cross-screen integration (D-14/D-11): selection `d` enqueue on presence-✗ rows, presence overlay in the selection snapshot + live flip, env route hint proof
+- [x] 10-05-PLAN.md — cross-screen integration (D-14/D-11): selection `d` enqueue on presence-✗ rows, presence overlay in the selection snapshot + live flip, env route hint proof
 
 **Wave 6** *(blocked on 10-05)*
-- [ ] 10-06-PLAN.md — hardening + phase-goal verification: CLI-absent/corrupt/unknown-key/restart edge sweep, exhaustive transition table, full gates, SC1-5 goal-backward checklist + GB10 live-smoke procedure
+- [x] 10-06-PLAN.md — hardening + phase-goal verification: CLI-absent/corrupt/unknown-key/restart edge sweep, exhaustive transition table, full gates, SC1-5 goal-backward checklist + GB10 live-smoke procedure
 
 **UI hint**: yes
 
@@ -261,7 +261,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 | 7. Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) | v1.2 | 6/6 | Complete    | 2026-10-11 |
 | 8. TUI Foundation (Env Check & Selection) | v1.2 | 7/7 | Complete    | 2026-10-12 |
 | 9. Custom Model & Dataset Onboarding | v1.2 | 6/6 | Complete    | 2026-10-12 |
-| 10. Data Manager (Downloads & Verification) | v1.2 | 4/6 | In Progress | - |
+| 10. Data Manager (Downloads & Verification) | v1.2 | 6/6 | In Progress | - |
 | 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 0/TBD | Not started | - |
 | 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 0/TBD | Not started | - |
 

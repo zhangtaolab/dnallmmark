@@ -5,17 +5,17 @@ milestone_name: TUI任务
 current_phase: 10
 current_phase_name: Data Manager (Downloads & Verification)
 current_plan: 6
-status: executing
-stopped_at: Completed 10-05-PLAN.md
-last_updated: "2026-10-12T17:27:02.614Z"
+status: verifying
+stopped_at: "Completed 10-06-PLAN.md (Phase 10 complete: all 6 plans; ready for verification)"
+last_updated: "2026-10-12T18:03:44.492Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 10 executing (waves 1-4 of 6 complete)
-state_head: 11c0ca2f60aec7c80d6bf1d816decddedc3d3455
+state_head: 2728fba0967388bac98541f3ecd06d359f4c64af
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 25
-  completed_plans: 24
+  completed_plans: 25
   percent: 50
 ---
 
@@ -33,7 +33,7 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 Phase: 10 — Data Manager (Downloads & Verification)
 Current Plan: 6
 Total Plans in Phase: 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-12 — Phase 10 executing (waves 1-4 of 6 complete)
 
 Progress (v1.2): [██████████] 100% (13/13 plans)
@@ -84,6 +84,7 @@ Progress (v1.2): [██████████] 100% (13/13 plans)
 | Phase 10 P03 | 25 min | 3 tasks | 5 files |
 | Phase 10 P04 | 58 min | 3 tasks | 8 files |
 | Phase 10 P05 | 31min | 2 tasks | 5 files |
+| Phase 10 P06 | 41min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -172,6 +173,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 10]: 10-05: the selection enqueue seam is SelectionQueueBackend — an Any-typed bridge over the app's shared queue (the DataManagerBackend two-Protocol shape); a direct pass would fail ty because the app field's declared QueueDriverProtocol does not carry enqueue
 - [Phase 10]: 10-05: the merged presence gates on truthiness (if audit:) not is-not-None — merge_presence returns {} for a None+empty input and truthiness preserves Phase 8's byte-exact degenerate render; audit_available = committed OR overlay non-empty so an audit-less machine still shows a done flip
 - [Phase 10]: 10-05: apply_queue_event reuses the existing exclusive _load_data worker (the _on_custom_registry_changed idiom) — the landed 10-04 app forward needed zero changes to reach the mounted selection screen; env_check.py stays pristine (the ENV-03 [3] hint is the amended constant through the existing render path, test-pinned)
+- [Phase 10]: CLI availability gate lives at the consumers (enqueue/run_task), not the resolver: resolve_modelscope_cli keeps the pinned verbatim-explicit contract while a nowhere-pointing explicit path is the honest cli_unavailable state (10-06)
+- [Phase 10]: The corrupt-load diagnostic is session memory (last_load_diagnostic): load() returns it once, the screen's reloads surface the remembered value; the restart downgrade skips keys with a live process so a mid-flight reload can never re-queue the running entry (10-06)
+- [Phase 10]: The real service's probe_zenodo routes the zenodo_fetch seam — the whole queue surface (probe included) is offline-injectable; no queue test lane can reach the wire (10-06)
 
 ### Pending Todos
 
@@ -195,8 +199,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T17:26:29.602Z
-Stopped at: Completed 10-05-PLAN.md
+Last session: 2026-10-12T18:03:44.441Z
+Stopped at: Completed 10-06-PLAN.md (Phase 10 complete: all 6 plans; ready for verification)
 Resume file: None
 
 ## Operator Next Steps
