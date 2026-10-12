@@ -2,14 +2,14 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: TUI任务
-current_phase: 08
-current_phase_name: TUI Foundation (Env Check & Selection)
+current_phase: 9
+current_phase_name: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
 status: planning
-stopped_at: Completed 08-07-PLAN.md
-last_updated: "2026-10-12T00:43:54.886Z"
-last_activity: 2026-10-11
-last_activity_desc: Phase 7 complete, transitioned to Phase 08
-state_head: a8dba7c39e9dfd5808d3e554d4db48379bd8e697
+stopped_at: Phase 8 complete, ready to plan Phase 9
+last_updated: "2026-10-12T00:45:06.958Z"
+last_activity: 2026-10-12
+last_activity_desc: Phase 8 complete, transitioned to Phase 7
+state_head: 57e46010c3703cbf3271bd06ec901d31d1441970
 progress:
   total_phases: 6
   completed_phases: 2
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 
 ## Current Position
 
-Phase: 08 — TUI Foundation (Env Check & Selection)
-Plan: 08-07 complete (the final Phase 8 plan — all 7/7 executed)
-Status: Phase 8 execution complete; ready for phase close-out
-Last activity: 2026-10-11 — 08-07 selection + matrix screens landed (SEL-01..04 + I18N-01)
+Phase: 7 — Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-12 — Phase 8 complete, transitioned to Phase 7
 
 Progress (v1.2): [██████████] 100% (13/13 plans)
 
@@ -148,7 +148,7 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-11T16:03:39.302Z
-Stopped at: Completed 08-07-PLAN.md
+Stopped at: Phase 8 complete, ready to plan Phase 9
 Resume file: None
 
 ## Operator Next Steps

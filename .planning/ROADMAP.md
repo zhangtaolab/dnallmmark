@@ -17,8 +17,8 @@ v1.2 builds the operator-facing terminal console on top of the hardened v0.7.1 p
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 7: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)** - The four sanctioned `run_sweep.py` flags land CLI-first with argv-parity tests; FlopsCounter (20+ architecture hooks) ports from the legacy pipeline into `run_finetune.py`; the official+custom registry overlay seam lands byte-identical-when-absent; the shared tolerant JSON loader contract is pinned
-- [ ] **Phase 8: TUI Foundation (Env Check & Selection)** - `make tui` opens the console with a persisted startup environment-check panel and k9s-style filter/mark-set selection over first-class model and dataset lists, with presets, templates, and presence columns — carrying all non-retrofittable architecture decisions
+- [x] **Phase 7: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)** - The four sanctioned `run_sweep.py` flags land CLI-first with argv-parity tests; FlopsCounter (20+ architecture hooks) ports from the legacy pipeline into `run_finetune.py`; the official+custom registry overlay seam lands byte-identical-when-absent; the shared tolerant JSON loader contract is pinned
+- [x] **Phase 8: TUI Foundation (Env Check & Selection)** - `make tui` opens the console with a persisted startup environment-check panel and k9s-style filter/mark-set selection over first-class model and dataset lists, with presets, templates, and presence columns — carrying all non-retrofittable architecture decisions
 - [ ] **Phase 9: Custom Model & Dataset Onboarding (自定义接入向导)** - Guided wizards land custom models/datasets in user-owned registries over the Phase-7 overlay — collect-all fail-fast field validation, dry-run + audit gauntlet, entry-level rollback; official registries are never written
 - [ ] **Phase 10: Data Manager (Downloads & Verification)** - One-click ModelScope download with a persistent resumable queue and n_audit row-count reconciliation, so missing datasets are closable in-session before launch
 - [ ] **Phase 11: Run Config, Launch Gates & Single-GPU Monitoring** - Full run-config surface with same-source dry-run preview, terraform-style launch gates (E2' stays maintainer-authorized), detached `run_sweep.py` execution, and the poll-and-attach monitor with failure re-run — proven by a bounded GB10 smoke
@@ -133,7 +133,7 @@ Plans:
   4. The model list and dataset list are first-class selectable surfaces — browsed independently with key card fields as columns (62 models / 50 datasets); operators filter them k9s-style (arena/type/species/scale), spacebar-mark rows into a stable row_key selection set, apply presets (tier-1 E2E pair, tier-2 arena representatives, all, saved customs), and consult a read-only matrix overview as an auxiliary view — never an editable grid
   5. Every row shows local data presence (✓ present / ✗ missing + n_audit row count) and run-config templates round-trip as validated JSON with `sweep_priorities.json` tier interop; all operator-facing copy is Chinese-primary through the constants module with technical terms in English — and the foundation invariants hold (services layer imports zero textual symbols by test, `[tui]` group keeps textual out of data/gpu lanes, Pilot tests green CPU-side in CI)
 
-**Plans**: 7/7 plans executed
+**Plans**: 7/7 plans complete
 Plans:
 **Wave 1**
 - [x] 08-01-PLAN.md — env_smoke D-02 structured-return refactor (ENV-01 substrate): golden byte-characterization suite + kernels-return-CheckResult + renderer main(), E2' contract byte-stable
@@ -223,7 +223,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 7. Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) | v1.2 | 6/6 | Complete    | 2026-10-11 |
-| 8. TUI Foundation (Env Check & Selection) | v1.2 | 7/7 | In Progress | - |
+| 8. TUI Foundation (Env Check & Selection) | v1.2 | 7/7 | Complete    | 2026-10-12 |
 | 9. Custom Model & Dataset Onboarding | v1.2 | 0/TBD | Not started | - |
 | 10. Data Manager (Downloads & Verification) | v1.2 | 0/TBD | Not started | - |
 | 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 0/TBD | Not started | - |
