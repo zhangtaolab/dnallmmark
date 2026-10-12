@@ -89,9 +89,11 @@ from tui.strings import (
     WIZ_BORDER_TITLE,
     WIZ_CANCEL_CONFIRM,
     WIZ_CANCEL_LABEL,
+    WIZ_EXPORT_LABEL,
     WIZ_FOOTER_HINT,
     WIZ_FOOTER_HINT_LAST,
     WIZ_GAUNTLET_BACK_HINT,
+    WIZ_IMPORT_LABEL,
     WIZ_KIND_DATASETS,
     WIZ_KIND_MODELS,
     WIZ_NEXT_LABEL,
@@ -326,6 +328,10 @@ class WizardModal(ModalScreen):
         Binding("escape", "request_cancel", WIZ_CANCEL_LABEL, show=False),
         Binding("enter", "advance", WIZ_NEXT_LABEL, show=False),
         Binding("b", "go_back", WIZ_BACK_LABEL, show=False),
+        # Step-1-only affordances (D-11): declared once, the actions
+        # no-op outside step 1; the views are 09-05 against the seams.
+        Binding("f", "do_import", WIZ_IMPORT_LABEL, show=False),
+        Binding("o", "do_export", WIZ_EXPORT_LABEL, show=False),
     ]
 
     def __init__(self, kind, validator, on_valid=None, on_import=None,
@@ -362,10 +368,41 @@ class WizardModal(ModalScreen):
         # quirk checkbox state dict (D-02) — plain dict, Any values.
         self._values: dict = {"quirks": {name: False
                                        for name, _, _ in QUIRK_FIELDS}}
-        # The prefill entry map (D-12) — the fold into ``_values`` lands
-        # with the Task-3 prefill behavior; the seam exists from day one
-        # so the 09-06 ``w``-key push signature never changes.
-        self._prefill = prefill
+        self._apply_prefill(prefill)
+
+    # ===== Prefill (D-12: edit = delete + re-record) =====
+
+    def _apply_prefill(self, prefill):
+        """Fold a one-item ``{key: entry}`` custom map into ``_values``.
+
+        Every entry field that maps to a wizard field prefills it — the
+        key included, so the collect-all collision check forces the
+        change (the D-12 discipline needs no edit surface); fields the
+        entry does not carry stay blank. The split-file-name inputs have
+        no entry counterpart (landed rows carry row counts, not file
+        names) and are never prefilled; ``enabled`` and the name stamps
+        are land-time service fields the form never collects.
+        """
+        if not prefill:
+            return
+        items = list(prefill.items())
+        if len(items) != 1 or not isinstance(items[0][1], dict):
+            raise ValueError(
+                "prefill must be a one-item {key: entry} custom-entry map"
+            )
+        key, entry = items[0]
+        self._values["key"] = key
+        for step in self._steps:
+            for spec in step.fields:
+                if spec.control == "quirks":
+                    quirks = entry.get("quirks")
+                    if isinstance(quirks, dict):
+                        for name, _, _ in QUIRK_FIELDS:
+                            self._values["quirks"][name] = bool(
+                                quirks.get(name, False))
+                    continue
+                if spec.field in entry:
+                    self._values[spec.field] = entry[spec.field]
 
     # ===== Compose (the active phase view) =====
 
@@ -667,6 +704,16 @@ class WizardModal(ModalScreen):
     def _abandon(self) -> None:
         """The confirm's destructive choice: discard the form."""
         self.dismiss()
+
+    def action_do_import(self) -> None:
+        """f on step 1: the file-import seam (the view is 09-05's)."""
+        if self._phase == "form" and self._step == 0 and self._on_import:
+            self._on_import()
+
+    def action_do_export(self) -> None:
+        """o on step 1: the registry-export seam (the view is 09-05's)."""
+        if self._phase == "form" and self._step == 0 and self._on_export:
+            self._on_export()
 
     async def _return_to_form(self) -> None:
         """Report/gauntlet dismissal: same step, every value intact."""

@@ -46,11 +46,9 @@ from tui.strings import (
     ENV_STATE_PENDING,
     GAUNTLET_TITLE,
     WIZ_CANCEL_CONFIRM,
-    WIZ_EXPORT_LABEL,
     WIZ_FOOTER_HINT,
     WIZ_FOOTER_HINT_LAST,
     WIZ_GAUNTLET_BACK_HINT,
-    WIZ_IMPORT_LABEL,
     WIZ_NUMERIC_HINT,
     WIZ_PATH_EXISTS,
     WIZ_PATH_MISSING_ADVISORY,
@@ -65,8 +63,10 @@ from tui.strings import (
     WIZ_REPORT_TITLE,
     WIZD_FIELD_LABELS,
     WIZD_STEPS,
+    WIZM_FIELD_LABELS,
     WIZM_STEPS,
 )
+
 # The i18n grep gate target (the zero-Chinese-literals module).
 _WIZARD_MODULE_FILE = Path(__file__).resolve().parents[2] / "tui" / "screens" / "wizard.py"
 
