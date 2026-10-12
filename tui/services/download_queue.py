@@ -1022,7 +1022,7 @@ class DownloadQueueService:
         # the queue drained. The driver's drain-side recheck reads it
         # (via ``last_claim_refusal``) to tell a refusal-None (exit the
         # worker — driving on would spin) from a drained-None.
-        self._last_claim_refusal: "tuple[str, str] | None" = None
+        self._last_claim_refusal: tuple[str, str] | None = None
         # The most recent corrupt-load diagnostic, remembered for the
         # session (10-06): ``load()`` returns it exactly once (the file
         # is quarantined on first read), but the screen's later

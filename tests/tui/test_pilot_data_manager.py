@@ -1628,7 +1628,7 @@ async def test_driver_exits_bounded_when_claim_cannot_persist_cr02(
         calls["n"] += 1
         return real_claim()
 
-    service.claim_next = counting_claim
+    monkeypatch.setattr(service, "claim_next", counting_claim)
     state.chmod(0o500)    # the unwritable rail (WR-04's class)
     app = DnallmMarkTui(
         env_check_service=_EnvCacheHitFake(),
