@@ -244,6 +244,32 @@ def test_missing_official_registry_yields_failed_item_not_exception(
     assert runner.calls == [], "nothing launched when the registry is unreadable"
 
 
+def test_gbk_official_registry_yields_failed_item_not_exception(
+        monkeypatch, tmp_path):
+    """WR-06 (09 review): a NON-UTF-8 official registry (GBK bytes)
+    degrades to the same failed dry-run item as a missing/corrupt one —
+    ``UnicodeDecodeError`` (the ``ValueError`` sibling CR-01 judged
+    plausible enough at the loader seam to fix and regression-test) must
+    never cross the service boundary: escaping would kill the wizard's
+    gauntlet worker and strand the panel rows in-flight forever."""
+    pin_config_dir(monkeypatch, tmp_path)
+    runner = FakeRunner(result=ok_result())
+    pipeline_dir = tmp_path / "pipeline"
+    pipeline_dir.mkdir()
+    # KIND_MODELS' counterpart reads the OFFICIAL datasets registry; GBK
+    # bytes fail the utf-8 decode inside open()/json.load
+    (pipeline_dir / gauntlet.registry_loader.DATASETS_INFO_NAME).write_bytes(
+        '{"k": "自定义"}'.encode("gbk"))
+    service = gauntlet.GauntletService(runner=runner, repo_root=tmp_path)
+
+    item = service.dry_run_precheck(
+        KIND_MODELS, "my-custom-lm", model_candidate(), run_id="r1")
+
+    assert not item.ok
+    assert item.details[0] == "official_registry_unreadable"
+    assert runner.calls == [], "nothing launched when the registry is unreadable"
+
+
 # ===== env isolation + staging content (Pitfall 2 / D-08) =====
 
 

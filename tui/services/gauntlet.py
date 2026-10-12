@@ -519,7 +519,13 @@ class GauntletService:
             for key in registry:
                 return key, None
             return None, None
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, json.JSONDecodeError,
+                UnicodeDecodeError) as exc:
+            # WR-06 (09 review): UnicodeDecodeError is the ValueError
+            # SIBLING of json.JSONDecodeError (not a subclass — the
+            # CR-01 registry_loader.py:132 reasoning): a non-UTF-8
+            # official registry must degrade to the same failed item,
+            # never cross the service boundary.
             return None, repr(exc)
 
     def _invoke(self, argv, env, timeout):
