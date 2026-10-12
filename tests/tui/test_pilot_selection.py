@@ -1472,10 +1472,12 @@ _LONGEST_TASK_KEY = (
 
 
 async def test_backstop_longest_task_key_at_80x24():
-    """Backstop (08-UI-SPEC UI Considerations, long-text): at 80x24 the
-    longest real registry task key causes no column collision and no
-    wrap-induced row-height change — every data row stays height 1 and
-    the presence column remains on-screen."""
+    """Backstop (08-UI-SPEC UI Considerations, long-text; UAT geometry):
+    at 80x24 the longest real registry task key causes no wrap-induced
+    row-height change — every data row stays height 1 — and the key cell
+    carries the FULL key; the over-budget table h-scrolls (the matrix
+    precedent) and the presence column stays reachable by scrolling
+    right."""
     task_keys = tuple(
         _LONGEST_TASK_KEY if index == 0 else f"GUE__task_{index}"
         for index in range(12)  # enough rows to force the v-scrollbar
@@ -1506,34 +1508,113 @@ async def test_backstop_longest_task_key_at_80x24():
         assert table.row_count == 12
 
         # no wrap-induced row-height change: every data row stays height 1
+        # (the over-budget table clips + h-scrolls; it never wraps)
         heights = {row.height for row in table.rows.values()}
         assert heights == {1}, "long keys must never wrap a row taller"
 
-        # no column collision: the column budget fits the 80-column
-        # minimum exactly (widths + per-column padding + the scrollbar)
+        # the UAT geometry: the key column fits the longest real key
+        # exactly (68) and the total budget (widths + per-column padding
+        # + the scrollbar) is 128 — past 80, so the table h-scrolls
         widths = [
             table.columns[key].width for key in _DATASET_COLUMNS_KEYS
         ]
-        assert sum(widths) + 2 * len(widths) + 2 <= 80
+        assert table.columns["key"].width == 68
+        assert sum(widths) + 2 * len(widths) + 2 == 128
+        assert table.max_scroll_x > 0, (
+            "the 128-wide table must h-scroll at the 80-column grid"
+        )
 
-        # the presence column remains on-screen: its header renders
-        # within the table's viewport (the rendered header strip carries
-        # the presence column header and the presence glyphs render)
+        # the key cell carries the FULL key — no ellipsis (the DataTable
+        # clips the display on narrow terminals; the full value stays in
+        # the enter row detail)
+        key_cell = _row(table, 0)[1]
+        assert key_cell == _LONGEST_TASK_KEY
+        assert Text(key_cell).cell_len == 68  # the dataset key-column budget
+
+        # the viewport origin renders the key column header...
         from textual.geometry import Region
         strips = table.render_lines(
             Region(0, 0, table.size.width, min(table.size.height, 3)),
         )
         header = "".join(segment.text for segment in strips[0])
-        assert SEL_COL_PRESENCE in header
+        assert SEL_COL_TASK in header
+
+        # ...and the presence column stays reachable: scrolled to the
+        # right end its header and glyphs render in the viewport
+        table.scroll_to(x=table.max_scroll_x, animate=False)
+        await pilot.pause()
+        strips = table.render_lines(
+            Region(0, 0, table.size.width, min(table.size.height, 3)),
+        )
+        header_right = "".join(segment.text for segment in strips[0])
+        assert SEL_COL_PRESENCE in header_right
         first_data_row = "".join(segment.text for segment in strips[1])
         assert "✓" in first_data_row
 
-        # the long key truncates with the ellipsis inside its column
-        # budget (the full key stays available in the enter row detail)
+
+async def test_backstop_longest_task_key_fits_in_full_at_160():
+    """Regression (UAT feedback, 「部分数据集名称过长看不到全部」): on a
+    normal wide terminal (160x40) the longest real registry task key
+    renders IN FULL in its key cell — no ellipsis, the whole table fits
+    without h-scroll — and the h-scroll geometry never disturbs the
+    min-size guard (below 80x24 the guard still takes over)."""
+    task_keys = tuple(
+        _LONGEST_TASK_KEY if index == 0 else f"GUE__task_{index}"
+        for index in range(12)  # enough rows to force the v-scrollbar
+    )
+    data = SelectionData(
+        model_entries=_default_data().model_entries,
+        dataset_entries=tuple(
+            {"key": key, "category": "Plants", "type": "binary",
+             "metric": "f1", "card": {}}
+            for key in task_keys
+        ),
+        presence={
+            key: Presence(
+                status=PRESENCE_PRESENT, rows=(743095, 109717, 106227),
+            )
+            for key in task_keys
+        },
+    )
+    app = _app(FakeSelectionService(data=data))
+    async with app.run_test(size=(160, 40)) as pilot:
+        await _open_selection(pilot, app)
+        table = app.screen.query_one(DataTable)
+
+        # the dataset table is the long-key surface
+        await pilot.press("m")
+        await pilot.pause()
+        assert table.row_count == 12
+
+        # the 128-wide table fits a 160-column terminal whole — no
+        # h-scroll, and both edge columns render on-screen
+        assert table.max_scroll_x == 0, (
+            "the 128-wide table must fit a 160-column terminal"
+        )
+        from textual.geometry import Region
+        strips = table.render_lines(
+            Region(0, 0, table.size.width, min(table.size.height, 3)),
+        )
+        header = "".join(segment.text for segment in strips[0])
+        assert SEL_COL_TASK in header
+        assert SEL_COL_PRESENCE in header
+
+        # the longest real key renders in full — no ellipsis
         key_cell = _row(table, 0)[1]
-        assert key_cell.startswith("PlantCAD2_fine_t")
-        assert key_cell.endswith("…")
-        assert Text(key_cell).cell_len == 20  # the dataset key-column budget
+        assert key_cell == _LONGEST_TASK_KEY
+        assert "…" not in key_cell
+        assert Text(key_cell).cell_len == 68
+
+        # the h-scroll geometry never disturbs the min-size guard:
+        # shrink below the grid and the guard takes over; grow back and
+        # the selection screen restores (the WR-06 semantics)
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+        await pilot.resize_terminal(160, 40)
+        await pilot.pause()
+        assert isinstance(app.screen, SelectionScreen)
+        assert app._min_size_screen is None
 
 
 async def test_backstop_footer_renders_every_binding_label_at_80():

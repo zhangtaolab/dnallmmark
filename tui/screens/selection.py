@@ -471,14 +471,21 @@ def _write_json(path: Path, doc: object) -> None:
     )
 
 
-# ===== Column geometry (the 80-column budget, 08-UI-SPEC Screen 2) =====
+# ===== Column geometry (key columns fit the real registry keys) =====
 #
 # DataTable columns render with 1 cell of padding on each side (the
 # textual default ``cell_padding``) and the vertical scrollbar consumes 2
-# more cells once rows exceed the height — so a six-column view fits the
-# 80-column minimum exactly when the width sum is 66:
-# 66 + 12 (padding) + 2 (scrollbar) == 80. Wider content truncates with
-# the ellipsis; full values always render in the enter row-detail modal.
+# more cells once rows exceed the height. The two key columns are pinned
+# to the longest committed registry keys (UAT feedback: the old 80-col
+# pin truncated real keys to a stub — 46 = the longest model key, 68 =
+# the longest dataset key in ``pipeline/models_info.json`` /
+# ``pipeline/datasets_info.json``), so the total budget (widths + 12
+# padding + 2 scrollbar) grew past 80: 101 for the model view, 128 for
+# the dataset view. On terminals narrower than the budget the DataTable
+# scrolls horizontally — the matrix screen's h-scroll precedent; 80x24
+# stays the minimum grid (the min-size guard), where the DataTable's own
+# clipping/ellipsis applies — and full keys always render in the enter
+# row-detail modal.
 
 _MODELS_VIEW = "models"
 _DATASETS_VIEW = "datasets"
@@ -489,13 +496,15 @@ _COL_PRESENCE_KEY = "presence"
 
 #: (column key, header constant, width) — the column keys are the
 #: update_cell addressing scheme (English technical ids, I18N-01).
-_MODEL_KEY_W = 25
+#: 46 — the longest committed model key fits exactly (UAT geometry).
+_MODEL_KEY_W = 46
 _MODEL_TYPE_W = 4
 _MODEL_SPECIES_W = 8
 _MODEL_SIZE_W = 7
 _MODEL_PRESENCE_W = 20
 
-_DATASET_KEY_W = 20
+#: 68 — the longest committed dataset key fits exactly (UAT geometry).
+_DATASET_KEY_W = 68
 _DATASET_CATEGORY_W = 8
 _DATASET_TYPE_W = 10
 _DATASET_METRIC_W = 8
