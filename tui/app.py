@@ -42,6 +42,7 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Footer, Static
 
+from tui.screens.about import AboutScreen
 from tui.screens.env_check import EnvCheckScreen, EnvCheckServiceProtocol
 from tui.screens.selection import (
     SelectionScreen,
@@ -148,11 +149,15 @@ class DnallmMarkTui(App):
     # zero-arg registry: they share the live app-state mark sets, so they
     # are built through build_selection_screen / the pushing screen —
     # a slot-built screen would carry fresh sets and silently lose marks.
+    # The 关于 screen (09-03, D-13 slot 6) is STATELESS — it joins the
+    # zero-arg registry as permitted (the only live state it touches is
+    # the derived snapshot inside one worker run).
     # Classes instantiate lazily on first name access; name-based access
     # builds the default (real) service — the injected-service path is
     # get_default_screen below.
     SCREENS: ClassVar[dict[str, Callable[[], Screen[Any]]]] = {
         "env_check": EnvCheckScreen,
+        "about": AboutScreen,
     }
 
     def __init__(self, env_check_service: EnvCheckServiceProtocol | None = None,

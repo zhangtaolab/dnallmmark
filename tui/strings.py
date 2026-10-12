@@ -340,3 +340,42 @@ WIZ_PROBLEM_SPLIT_NO_SEQUENCE = "表头缺少 sequence 列 ({file})"
 WIZ_PROBLEM_SPLIT_NO_LABEL_COLUMN = "表头缺少标签列 {column} ({file})"
 WIZ_PROBLEM_SPLIT_ZERO_ROWS = "无数据行 (0 行)"
 WIZ_PROBLEM_SPLIT_COUNT_MISMATCH = "声明 {declared} 行，与实际 {counted} 行不符"
+
+# ===== 导航壳 (NAV_, 09-03, D-13/D-15) =====
+# Top-menu slot names — the RATIFIED verbatim resource nouns (D-13,
+# 09-UI-SPEC Navigation Shell): never renamed, never re-translated. The
+# digit prefix and 未开放 suffix are composed by the bar from NAV_SLOTS.
+NAV_LABEL_ENV = "环境检查"
+NAV_LABEL_SELECTION = "模型·数据集"
+NAV_LABEL_DATA = "数据管理"
+NAV_LABEL_RUN_CONFIG = "运行配置"
+NAV_LABEL_MONITOR = "任务监控"
+NAV_LABEL_ABOUT = "关于"
+# Placeholder suffix (slots 3/4/5 — implemented by their delivering
+# phases) and the never-silent activation toast (D-13: 按相应相位实装).
+NAV_PLACEHOLDER_SUFFIX = "未开放"
+NAV_PLACEHOLDER_TOAST = "该功能区于 Phase {n} 提供"
+
+# ===== 关于屏 (ABOUT_, D-13 slot 6, 09-03) =====
+# The five fixed row labels (D-13: 软件版本/数据版本/里程碑阶段/依赖版本/
+# 仓库地址) + the title. Values are service-derived (tui/services/about);
+# absent dependencies render the 未安装 value (dim, per-package tolerant).
+ABOUT_TITLE = "关于 DNALLM-Mark"
+ABOUT_ROW_SOFTWARE = "软件版本"
+ABOUT_ROW_DATA = "数据版本"
+ABOUT_ROW_MILESTONE = "里程碑阶段"
+ABOUT_ROW_DEPS = "依赖版本"
+ABOUT_ROW_REPO = "仓库地址"
+# 软件版本 value with a resolved git sha (sha omitted → bare version).
+ABOUT_VALUE_SOFTWARE_WITH_SHA = "{version} (git {sha})"
+# 数据版本 value: official-only counts + the 自定义 landed counts + the
+# n_audit 在场 signal (the honest machine-derivable data-state wording).
+ABOUT_VALUE_DATA = (
+    "官方注册表 {om} 模型 / {od} 数据集 · 自定义 {cm}/{cd} · {audit}"
+)
+ABOUT_N_AUDIT_PRESENT = "n_audit.json 在场"
+ABOUT_N_AUDIT_ABSENT = "n_audit.json 缺失"
+ABOUT_DEP_ABSENT = "未安装"
+# 里程碑阶段 value — the one static milestone constant (Auto-Default #13:
+# milestone metadata, not a machine probe; updated per milestone).
+ABOUT_MILESTONE_STAGE = "v1.2 TUI任务 — 已交付: Phase 7-8 · 本相位: 9 自定义接入"
