@@ -96,6 +96,7 @@ from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import (
     Checkbox,
+    Footer,
     Input,
     RichLog,
     SelectionList,
@@ -112,10 +113,15 @@ from tui.services.custom_validation import (
 )
 from tui.services.gauntlet import LEG_AUDIT, LEG_DRY_RUN, GauntletItem
 from tui.strings import (
+    APP_MODAL_BACK_LABEL,
     ENV_STATE_PENDING,
     GAUNTLET_BANNER_FAIL,
     GAUNTLET_DRILL_HINT,
     GAUNTLET_DRILL_TITLE,
+    GAUNTLET_EXPORT_EMPTY_TOAST,
+    GAUNTLET_EXPORT_PROBLEMS,
+    GAUNTLET_EXPORTED_TOAST,
+    GAUNTLET_IMPORT_CONFLICTS,
     GAUNTLET_IMPORTED_TOAST,
     GAUNTLET_ITEM_AUDIT,
     GAUNTLET_ITEM_DRY_RUN,
@@ -129,6 +135,8 @@ from tui.strings import (
     GAUNTLET_UNDO_AFFORDANCE,
     GAUNTLET_UNDO_LABEL,
     GAUNTLET_UNDO_TOAST,
+    SEL_TEMPLATE_PATH_PLACEHOLDER,
+    SEL_TEMPLATE_PROBLEM_LINE,
     SEL_TEMPLATE_WRITE_FAILED,
     WIZ_BACK_LABEL,
     WIZ_BORDER_TITLE,
@@ -398,6 +406,69 @@ def _detail_value(details, token):
         if detail.startswith(prefix):
             return detail[len(prefix):]
     return ""
+
+
+class _PathPromptModal(ModalScreen):
+    """The f/o path entry prompt (the PathInputModal idiom, 09-05).
+
+    Differences from the selection-screen idiom, both plan-owned: the
+    problems view is a wrapping scroll-bounded RichLog (import conflict
+    lists carry 68-char keys and wrap, never truncate), and a clean pass
+    dismisses into an ASYNC accept continuation (the import transition
+    recomposes the wizard beneath this modal).
+
+    ``validate(path)`` returns ``None`` on success or a problems
+    sequence — the numbered report renders through the injected header
+    and the modal stays open (fail-closed: nothing was applied).
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+    ]
+
+    #: The problems log's scroll bound (the wrap-never-elide rule; a
+    #: height cap is not a spacing token — the env-detail precedent).
+    _PROBLEMS_MAX_HEIGHT = 12
+
+    def __init__(self, title, placeholder, problems_header, validate,
+                 accept, **kwargs):
+        super().__init__(**kwargs)
+        self._title = title
+        self._placeholder = placeholder
+        self._problems_header = problems_header
+        self._validate = validate
+        self._accept = accept
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="wizard-path-box", classes="modal-box"):
+            yield Input(placeholder=self._placeholder,
+                        id="wizard-path-input")
+            yield RichLog(wrap=True, id="wizard-path-problems")
+            yield Footer()
+
+    def on_mount(self) -> None:
+        box = self.query_one("#wizard-path-box", Vertical)
+        box.border_title = self._title
+        log = self.query_one("#wizard-path-problems", RichLog)
+        log.styles.max_height = self._PROBLEMS_MAX_HEIGHT
+        self.query_one("#wizard-path-input", Input).focus()
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Submit the value; render the problems when the call fails."""
+        value = event.value.strip()
+        if not value:
+            return
+        problems = self._validate(value)
+        if problems:
+            log = self.query_one("#wizard-path-problems", RichLog)
+            log.clear()
+            log.write(self._problems_header.format(n=len(problems)))
+            for index, (location, message) in enumerate(problems):
+                log.write(SEL_TEMPLATE_PROBLEM_LINE.format(
+                    n=index + 1, location=location, message=message))
+        else:
+            self.dismiss()
+            await self._accept(value)
 
 
 class WizardModal(ModalScreen):
@@ -956,8 +1027,12 @@ class WizardModal(ModalScreen):
         if restore is not None:
             restore.focus()
         else:
+            # Always focus a live row: the pre-panel focus target (a form
+            # Input) is gone after the recompose, and a stale focused
+            # widget would swallow keys aimed at the panel (probe-pinned
+            # by the import flow — esc from the panel must return).
             first = self.query(_GauntletRow).first(_GauntletRow)
-            if first is not None and self.focused is None:
+            if first is not None:
                 first.focus()
 
     @staticmethod
@@ -1324,14 +1399,125 @@ class WizardModal(ModalScreen):
         self.dismiss()
 
     def action_do_import(self) -> None:
-        """f on step 1: the file-import seam (the view is 09-05's)."""
-        if self._phase == "form" and self._step == 0 and self._on_import:
+        """f on step 1: the D-11 file-import flow.
+
+        With the import seams wired this pushes the import path prompt
+        (collect-all validation, fail-closed conflicts report, then the
+        per-entry sequential gauntlet); the plain ``on_import`` callback
+        remains the no-seam fallback (the 09-04 shape).
+        """
+        if not (self._phase == "form" and self._step == 0):
+            return
+        if self._import_read is not None and self._import_validate is not None:
+            self.app.push_screen(_PathPromptModal(
+                title=WIZ_IMPORT_LABEL,
+                placeholder=SEL_TEMPLATE_PATH_PLACEHOLDER,
+                problems_header=GAUNTLET_IMPORT_CONFLICTS,
+                validate=self._validate_import_path,
+                accept=self._accept_import_path,
+            ))
+        elif self._on_import is not None:
             self._on_import()
 
     def action_do_export(self) -> None:
-        """o on step 1: the registry-export seam (the view is 09-05's)."""
-        if self._phase == "form" and self._step == 0 and self._on_export:
+        """o on step 1: the D-11 registry-export flow.
+
+        The empty state short-circuits BEFORE any path is asked (zero
+        landed customs → the toast, nothing written anywhere); otherwise
+        the path prompt routes to the injected export seam (the verbatim
+        byte copy). The plain ``on_export`` callback is the no-seam
+        fallback.
+        """
+        if not (self._phase == "form" and self._step == 0):
+            return
+        if (self._export_registry is not None
+                and self._has_custom_entries is not None):
+            if not self._has_custom_entries():
+                self.app.notify(GAUNTLET_EXPORT_EMPTY_TOAST)
+                return
+            self.app.push_screen(_PathPromptModal(
+                title=WIZ_EXPORT_LABEL,
+                placeholder=SEL_TEMPLATE_PATH_PLACEHOLDER,
+                problems_header=GAUNTLET_EXPORT_PROBLEMS,
+                validate=self._validate_export_path,
+                accept=self._accept_export_path,
+            ))
+        elif self._on_export is not None:
             self._on_export()
+
+    # ===== Import flow (D-11: fail-closed collect-all -> per-entry gauntlet) =====
+
+    def _validate_import_path(self, path):
+        """The path prompt's validation seam: read tolerantly, then the
+        collect-all import validator. ANY problem (including the
+        read failure itself) renders as numbered report lines and
+        nothing merges; a clean pass stashes the document for accept."""
+        read = self._import_read
+        validate = self._import_validate
+        if read is None or validate is None:
+            return []  # unreachable by construction (the action guards)
+        doc, read_error = read(path)
+        if read_error is not None:
+            self._pending_import = None
+            return [("", read_error)]
+        problems = list(validate(doc) or [])
+        self._pending_import = None if problems else doc
+        return problems
+
+    async def _accept_import_path(self, path) -> None:
+        """A clean import file enters the grouped per-entry gauntlet."""
+        doc = self._pending_import
+        self._pending_import = None
+        if not isinstance(doc, dict):
+            return
+        await self._begin_import_gauntlet(doc)
+
+    async def _begin_import_gauntlet(self, doc) -> None:
+        """Queue the imported entries in FILE order and launch.
+
+        Imported entries may carry declared ``Train``/``Dev``/``Test``
+        counts — extracted verbatim as the audit leg's declared side
+        (data pass-through, never computed here); the wizard's own
+        candidate declares none (derive-at-composition downstream).
+        """
+        queue = []
+        for key, entry in doc.items():
+            declared = None
+            if isinstance(entry, dict):
+                counts = {field: entry[field] for field in
+                          ("Train", "Dev", "Test") if field in entry}
+                declared = counts or None
+            queue.append((key, entry, declared))
+        self._gauntlet_mode = "import"
+        self._gauntlet_key = ""
+        self._gauntlet_queue = queue
+        self._gauntlet_landed = 0
+        self._undo_available = False
+        self._drill_row_id = None
+        self._init_gauntlet_rows()
+        self._phase = "gauntlet"
+        await self._launch_gauntlet()
+
+    # ===== Export flow (D-11: the registry file IS the share unit) =====
+
+    def _validate_export_path(self, path):
+        """Run the export through the seam; any failure renders as a
+        write-failure problem line (nothing at the destination)."""
+        export = self._export_registry
+        if export is None:
+            return []  # unreachable by construction (the action guards)
+        try:
+            ok, diagnostic = export(path)
+        except OSError as exc:
+            return [("", SEL_TEMPLATE_WRITE_FAILED.format(error=exc))]
+        if ok:
+            return None
+        return [("", SEL_TEMPLATE_WRITE_FAILED.format(
+            error=diagnostic or ""))]
+
+    async def _accept_export_path(self, path) -> None:
+        """Toast the exported path (the copy already happened)."""
+        self.app.notify(GAUNTLET_EXPORTED_TOAST.format(path=path))
 
     async def _return_to_form(self) -> None:
         """Report/gauntlet dismissal: same step, every value intact."""

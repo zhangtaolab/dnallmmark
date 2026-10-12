@@ -1605,6 +1605,7 @@ async def test_export_copies_the_landed_registry_verbatim_bytes(
     custom_entries.land("datasets", "ds-a", {
         "Dataset_path": "datasets/ds-a", "Category": "Plants"})
     dest = tmp_path / "share" / "custom_datasets.json"
+    dest.parent.mkdir(parents=True)  # copyfile needs an existing parent
     app = _app()
     async with app.run_test(size=(80, 24)) as pilot:
         wizard = _dataset_wizard(
