@@ -3044,3 +3044,233 @@ def test_corrupt_load_diagnostic_remembered_for_the_session(
         cli_path=str(fake_cli(tmp_path)))
     fresh.load()
     assert fresh.last_load_diagnostic() is None
+
+
+# =====================================================================
+# Lane 8: the exhaustive state-machine transition table + the restart
+# rehydration chain (10-06 Task 2) — every legal edge applies, every
+# illegal edge is a no-op, and persist -> crash -> reboot -> rehydrate
+# -> resume is proven end-to-end at the service tier.
+# =====================================================================
+
+#: The exhaustive (from_state, action, expectation) table. expectation
+#: is (kind, after_state): ``applied`` transitions, ``refused``/
+#: ``noop``/``already`` leave the state untouched with a falsy return,
+#: ``removed`` deletes the entry, ``signalled`` flags without a state
+#: change (the reap owns that transition).
+STATE_MACHINE_TABLE = [
+    # claim_next: the ONLY pending -> downloading edge (D-04)
+    ("pending", "claim_next", ("applied", "downloading")),
+    ("downloading", "claim_next", ("noop", None)),
+    ("done", "claim_next", ("noop", None)),
+    ("failed", "claim_next", ("noop", None)),
+    ("mismatch", "claim_next", ("noop", None)),
+    # retry: the ONLY failed/mismatch -> pending edge (D-06)
+    ("failed", "retry", ("applied", "pending")),
+    ("mismatch", "retry", ("applied", "pending")),
+    ("pending", "retry", ("refused", "pending")),
+    ("downloading", "retry", ("refused", "downloading")),
+    ("done", "retry", ("refused", "done")),
+    # cancel: pending removed / downloading signalled / terminal noop
+    ("pending", "cancel", ("removed", None)),
+    ("downloading", "cancel", ("signalled", "downloading")),
+    ("done", "cancel", ("noop", "done")),
+    ("failed", "cancel", ("noop", "failed")),
+    ("mismatch", "cancel", ("noop", "mismatch")),
+    # enqueue: idempotent over ANY existing state (D-08) — never coerces
+    ("pending", "enqueue", ("already", "pending")),
+    ("downloading", "enqueue", ("already", "downloading")),
+    ("done", "enqueue", ("already", "done")),
+    ("failed", "enqueue", ("already", "failed")),
+    ("mismatch", "enqueue", ("already", "mismatch")),
+]
+
+
+@pytest.mark.parametrize("from_state,action,expected", STATE_MACHINE_TABLE)
+def test_state_machine_transition_table_exhaustive(
+        monkeypatch, tmp_path, from_state, action, expected):
+    """The exhaustive D-02/D-06/D-08 pin: every legal transition
+    applies through its owning mutator; every illegal one is a no-op
+    with a falsy return and a byte-identical queue file — no action
+    silently coerces a state it does not own."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    # the downloading state exists ONLY through its owning edge (a
+    # seeded downloading entry downgrades to pending at load — D-06),
+    # so those rows seed pending and claim first
+    seed_state = ("pending" if from_state == "downloading"
+                  else from_state)
+    path = hand_written_state_file(state, [
+        (DOWNLOADABLE_KEY, seed_state, 1, 40)])
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+    assert service.load() is None
+    if from_state == "downloading":
+        assert service.claim_next().state == "downloading"
+    before = path.read_text(encoding="utf-8")
+
+    kind, after_state = expected
+    if action == "claim_next":
+        claimed = service.claim_next()
+        if kind == "applied":
+            assert claimed is not None
+            assert claimed.state == "downloading"
+            assert claimed.attempts == 2
+            assert service.entries()[0].state == "downloading"
+        else:
+            assert claimed is None
+            assert service.entries()[0].state == from_state
+            assert path.read_text(encoding="utf-8") == before, (
+                "a refused claim must never rewrite the file")
+    elif action == "retry":
+        outcome = service.retry(DOWNLOADABLE_KEY)
+        if kind == "applied":
+            assert outcome is True
+            assert service.entries()[0].state == "pending"
+        else:
+            assert outcome is False
+            assert service.entries()[0].state == after_state
+            assert path.read_text(encoding="utf-8") == before, (
+                "a refused retry must never rewrite the file")
+    elif action == "cancel":
+        outcome = service.cancel(DOWNLOADABLE_KEY)
+        assert outcome == kind
+        if kind == "removed":
+            assert service.entries() == []
+        else:
+            assert service.entries()[0].state == after_state
+            if kind == "noop":
+                assert path.read_text(encoding="utf-8") == before, (
+                    "a terminal-state cancel must never rewrite the file")
+    else:   # enqueue
+        outcome = service.enqueue(DOWNLOADABLE_KEY)
+        assert outcome.action == "already_queued"
+        assert service.entries()[0].state == after_state
+        assert len(service.entries()) == 1
+        assert path.read_text(encoding="utf-8") == before, (
+            "an already-queued enqueue must never rewrite the file")
+
+
+@pytest.mark.parametrize("scenario,expected_state,expected_problems", [
+    ("pass", "done", ()),
+    ("exit_nonzero", "failed", ("exit_7",)),
+    ("mismatch_verdict", "mismatch",
+     ("Train_mismatch_declared=10_measured=3",)),
+])
+def test_run_task_terminal_transitions_from_downloading(
+        monkeypatch, tmp_path, scenario, expected_state, expected_problems):
+    """downloading -> done | failed | mismatch happens ONLY through
+    run_task outcomes (the table's terminal leg): the passing verdict
+    lands done, a nonzero exit lands failed carrying its code, and a
+    mismatching reconcile verdict lands mismatch carrying BOTH
+    numbers."""
+    stdout = ("Downloading Dataset to directory: /tmp/x\n"
+              "Successfully Downloaded from dataset lgq12697/GUE.\n")
+    if scenario == "exit_nonzero":
+        spawner = FakeSpawner(FakePopen(returncode=7))
+        runner = passing_reconcile_runner()
+    elif scenario == "mismatch_verdict":
+        spawner = FakeSpawner(FakePopen(returncode=0, stdout=stdout))
+        runner = FakeReconcileRunner(
+            on_call=lambda argv, kwargs: write_temp_n_audit(
+                argv, {"Demo__task": audit_record(3, 2, 2)}))
+    else:
+        spawner = FakeSpawner(FakePopen(returncode=0, stdout=stdout))
+        runner = passing_reconcile_runner()
+    repo = tmp_repo_with_registry(
+        tmp_path / "repo", {"Demo__task": SHAPE_A_ENTRY})
+    state = tmp_path / "state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        spawner=spawner, runner=runner,
+        cli_path=str(fake_cli(tmp_path)))
+    assert service.enqueue("Demo__task").action == "enqueued"
+    assert service.claim_next().state == "downloading"
+    land_csvs(repo, "Demo", "task")   # the landing gate passes
+
+    event = service.run_task("Demo__task", run_id="t-" + scenario)
+
+    assert event.state == expected_state
+    assert event.problems == expected_problems
+    assert service.entries()[0].state == expected_state
+
+
+def test_restart_resume_end_to_end_service_tier(monkeypatch, tmp_path):
+    """SC2 at the service tier, the full chain: persisted mid-download
+    (state downloading) -> crash -> a fresh service's load() rehydrates
+    with the downgrade (pending + interrupted, persisted) -> claim ->
+    the channel's own resume fast path (exit 0 + the success marker
+    over the ALREADY COMPLETE local dir — the .msc skip, no transfer
+    work) -> the landing check passes on the existing tree -> reconcile
+    pass -> done."""
+    repo = tmp_repo_with_registry(
+        tmp_path / "repo", {"Demo__task": SHAPE_A_ENTRY})
+    state = tmp_path / "state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    state.mkdir(parents=True, exist_ok=True)
+    queue_path = state / download_queue.QUEUE_FILE_NAME
+    queue_path.write_text(json.dumps({
+        "schema_version": 1,
+        "entries": [{
+            "key": "Demo__task", "kind": "dataset",
+            "state": "downloading", "attempts": 1,
+            "enqueued_at": "2026-10-12T00:00:00+00:00",
+            "started_at": "2026-10-12T00:01:00+00:00",
+            "finished_at": None, "last_percent": 62,
+            "interrupted": False, "log_path": None,
+            "problems": [], "reconcile": None}],
+    }, indent=4, ensure_ascii=False), encoding="utf-8")
+    # the prior run's progress: the three split CSVs already complete
+    land_csvs(repo, "Demo", "task")
+    # the resumed CLI invoke returns immediately (the .msc skip)
+    stdout = ("Downloading Dataset to directory: /tmp/x\n"
+              "Successfully Downloaded from dataset lgq12697/GUE.\n")
+    spawner = FakeSpawner(FakePopen(returncode=0, stdout=stdout))
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=queue_path, spawner=spawner,
+        runner=passing_reconcile_runner(),
+        cli_path=str(fake_cli(tmp_path)))
+
+    assert service.load() is None          # the reboot's tolerant read
+    (entry,) = service.entries()
+    assert entry.state == "pending"
+    assert entry.interrupted is True
+
+    claimed = service.claim_next()         # the driver's re-invoke
+    assert claimed.state == "downloading"
+    event = service.run_task("Demo__task", run_id="resume-1")
+
+    assert event.state == "done"
+    assert "landing=ok" in event.details
+    assert "success_marker=true" in event.details
+    (entry,) = service.entries()
+    assert entry.state == "done"
+    assert entry.reconcile is not None
+    assert entry.reconcile["verdict"] == "pass"
+
+
+def test_probe_zenodo_routes_through_the_service_fetch_seam():
+    """The D-12 probe rides the service's zenodo_fetch seam (10-06):
+    the screen Backend probes THROUGH the queue, so the real adapter —
+    not just the Pilot fakes — is offline-injectable; no queue lane can
+    ever reach the network by construction."""
+    from email.message import Message
+    from urllib.error import HTTPError
+
+    from tui.services import zenodo_bundle
+
+    probe_calls = []
+
+    def offline_opener(url, timeout=None):
+        probe_calls.append(url)
+        raise HTTPError(url, 404, "Not Found", Message(), None)
+
+    service = download_queue.DownloadQueueService(
+        zenodo_fetch=offline_opener)
+
+    probe_state = service.probe_zenodo()
+
+    assert probe_state == zenodo_bundle.PROBE_NOT_PUBLIC
+    assert probe_calls and "zenodo.org" in probe_calls[0], (
+        "the probe must route through the injected seam, never the wire"
+    )

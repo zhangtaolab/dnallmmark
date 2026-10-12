@@ -81,7 +81,7 @@ class FakeQueueService:
 
     def __init__(self, entries=(), results=None, gate=None,
                  probe_state="not_public", progress_script=None,
-                 progress_gate=None):
+                 progress_gate=None, load_seed=()):
         self._entries = [_queue_entry(*item) if isinstance(item, tuple)
                          else item for item in entries]
         self._results = dict(results) if results else {}
@@ -89,6 +89,11 @@ class FakeQueueService:
         self.probe_state = probe_state
         self._progress_script = dict(progress_script or {})
         self._progress_gate = progress_gate
+        # the boot-read seed (10-06 Task 2): load() rehydrates these
+        # entries exactly once — the persisted file's contents as the
+        # fresh boot would read them
+        self._load_seed = [_queue_entry(*item) if isinstance(item, tuple)
+                           else item for item in load_seed]
         self.load_calls = 0
         self.claim_next_calls = 0
         self.run_task_calls = []
@@ -105,6 +110,9 @@ class FakeQueueService:
 
     def load(self):
         self.load_calls += 1
+        if self._load_seed:
+            self._entries.extend(self._load_seed)
+            self._load_seed = []   # the boot read happens once
 
     def entries(self):
         self.entries_calls += 1
@@ -1618,3 +1626,160 @@ async def test_unknown_channel_queue_row_renders_state_intact():
         assert "channel: unknown (unknown_key)" in rendered, (
             "the drill-down names the degraded channel disposition"
         )
+
+
+# =====================================================================
+# Task 2 (10-06) — restart rehydration end-to-end: the boot-resume app
+# tier (kick exactly when pending work exists, never twice) and the
+# D-06 visible-recovery screen proof over the REAL Backend + real
+# service + a pinned state root.
+# =====================================================================
+
+async def test_boot_resume_rehydrates_and_kicks_once():
+    """D-06 at the app tier: boot_resume_queue over a rehydrated
+    pending entry kicks the driver exactly once — the entry runs to
+    done and the generation never advances past 1."""
+    fake = FakeQueueService(
+        load_seed=[("GUE__emp_H3",)],
+        results={"GUE__emp_H3": ("done", 100)})
+    app = _app(queue=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app.boot_resume_queue()
+        await asyncio.wait_for(
+            app.workers.wait_for_complete(), timeout=10)
+        await pilot.pause()
+        assert fake.load_calls == 1, "the boot read ran"
+        assert fake.run_task_calls == ["GUE__emp_H3"], (
+            "the rehydrated pending entry resumed through the driver"
+        )
+        assert app._queue_generation == 1
+        assert app._queue_busy is False
+
+
+async def test_boot_resume_without_pending_never_kicks():
+    """Zero pending (an empty seed / only-terminal entries) -> no kick:
+    the driver never claims, the busy flag stays down."""
+    for seed in ([], [("k-done", "done")]):
+        fake = FakeQueueService(load_seed=seed)
+        app = _app(queue=fake)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.boot_resume_queue()
+            await pilot.pause()
+            assert fake.claim_next_calls == 0, (
+                "boot resume must never kick without pending work"
+            )
+            assert app._queue_busy is False
+            assert app._queue_generation == 0
+
+
+async def test_second_boot_resume_while_busy_starts_no_second_worker():
+    """The busy guard through the boot path: while the driver is
+    mid-claim, a second boot_resume call is a guarded no-op — the
+    generation stays 1 and exactly one worker runs the task."""
+    gate = threading.Event()
+    fake = FakeQueueService(load_seed=[("k-one",)], gate=gate)
+    app = _app(queue=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app.boot_resume_queue()
+        for _ in range(100):
+            await pilot.pause()
+            if fake.claim_next_calls >= 1:
+                break
+        assert fake.claim_next_calls == 1
+
+        app.boot_resume_queue()   # while the first claim is gated
+        await pilot.pause()
+
+        assert fake.claim_next_calls == 1, (
+            "the second boot resume must not start a second worker"
+        )
+        assert app._queue_generation == 1
+        gate.set()
+        await asyncio.wait_for(
+            app.workers.wait_for_complete(), timeout=10)
+        await pilot.pause()
+        assert fake.run_task_calls == ["k-one"]
+        assert app._queue_generation == 1, (
+            "the guarded second boot resume never restarted the driver"
+        )
+
+
+async def test_data_manager_rehydrates_real_backend_seeded_downloading(
+        monkeypatch, tmp_path):
+    """The D-06 visible-recovery contract through the REAL Backend over
+    the REAL DownloadQueueService + a pinned state root: a state file
+    persisted mid-download rehydrates at mount (the Backend's tolerant
+    load + the downgrade) and the row renders the pending glyph with
+    the QUEUE_RESTART_NOTE segment; the queue never kicks (the test app
+    is inert, T-10-04-03), and the Zenodo probe rides the service's
+    fetch seam — the lane is provably offline."""
+    import json
+    from email.message import Message
+    from urllib.error import HTTPError
+
+    from tui.services import download_queue as download_queue_module_
+    from tui.services import settings as tui_settings
+
+    probe_calls = []
+
+    def offline_opener(url, timeout=None):
+        probe_calls.append(url)
+        raise HTTPError(url, 404, "Not Found", Message(), None)
+
+    state = tmp_path / "state"
+    monkeypatch.setenv(tui_settings.STATE_DIR_ENV, str(state))
+    state.mkdir(parents=True, exist_ok=True)
+    (state / download_queue_module_.QUEUE_FILE_NAME).write_text(json.dumps({
+        "schema_version": 1,
+        "entries": [{
+            "key": "GUE__emp_H3", "kind": "dataset",
+            "state": "downloading", "attempts": 1,
+            "enqueued_at": "2026-10-12T00:00:00+00:00",
+            "started_at": "2026-10-12T00:01:00+00:00",
+            "finished_at": None, "last_percent": 62,
+            "interrupted": False, "log_path": None,
+            "problems": [], "reconcile": None}],
+    }, indent=4, ensure_ascii=False), encoding="utf-8")
+    real_service = download_queue_module_.DownloadQueueService(
+        zenodo_fetch=offline_opener)
+    app = DnallmMarkTui(
+        env_check_service=_EnvCacheHitFake(),
+        selection_service=_SelectionFake(),
+        download_queue_service=real_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_data_manager(pilot, app)   # digit 3 -> real Backend
+        screen = app.screen
+        table = _queue_table(screen)
+        assert table.row_count == 1, "the seeded entry rehydrated"
+        row = _row(table, 0)
+        assert row[0].startswith("GUE__emp_H3")
+        assert QUEUE_RESTART_NOTE[:4] in row[0], (
+            "the recovered row carries the visible restart-note segment "
+            "(in-cell truncation may clip its tail — the 10-04 contract; "
+            "the full note rides the drill-down)"
+        )
+        assert row[1] == QUEUE_STATE_PENDING, (
+            "the interrupted entry renders as pending (the downgrade)"
+        )
+        # the drill-down carries the FULL note (the D-03 completeness)
+        table.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        rendered = "\n".join(
+            strip.text for strip in app.screen.query_one(
+                "#dl-detail-log", RichLog).lines)
+        assert QUEUE_RESTART_NOTE in rendered
+        await pilot.press("escape")
+        await pilot.pause()
+        # the queue never kicked: the test app is inert (T-10-04-03)
+        assert app._queue_busy is False
+        assert screen.query_one("#dl-load-diagnostic").display is False
+        # the probe rode the service seam — the lane is offline
+        assert probe_calls and "zenodo.org" in probe_calls[0], (
+            "the real adapter's probe must route through the fetch seam"
+        )
+        assert _zenodo_line(screen) != DL_ZENODO_PROBING
