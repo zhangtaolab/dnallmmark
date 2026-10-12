@@ -6,16 +6,16 @@ current_phase: 08
 current_phase_name: TUI Foundation (Env Check & Selection)
 status: planning
 stopped_at: Completed 08-07-PLAN.md
-last_updated: "2026-10-11T16:03:39.335Z"
+last_updated: "2026-10-12T00:43:54.886Z"
 last_activity: 2026-10-11
 last_activity_desc: Phase 7 complete, transitioned to Phase 08
-state_head: 42c82a5da175524aa47bd5d8a951e9c28d36cba5
+state_head: a8dba7c39e9dfd5808d3e554d4db48379bd8e697
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 13
   completed_plans: 13
-  percent: 17
+  percent: 33
 ---
 
 # Project State
@@ -123,6 +123,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 08]: 08-07 jsonschema>=4.26.0 joined the [tui] group (the 08-05 handoff flag closed): the selection backend imports tui.services.templates at module top, so the make tui display lane needs it — same locked range as dev
 - [Phase 08]: 08-07 gap-filler copy landed and documented: SEL_PRESENCE_UNKNOWN (the four-status vocabulary lacked render copy), SEL_PRESET_SAVED / SEL_TEMPLATE_IMPORTED (the truths pin 'a toast fires' but only the applied/exported toasts were worded), and SEL_CLEAR_MARKS_CONFIRM landed unsurfaced per the contract's 'if surfaced' (the keyboard map defines no clear binding in Phase 8)
 - [Phase 08]: 08-07 Phase 8 console complete: selection + matrix + env surfaces composed over the shared mark sets, both 80-column backstops and the cross-screen integration green — roadmap criteria 4 and 5 TRUE (SEL-01..04 + I18N-01 closed with 167 green tests/tui, make test 728, lint/typecheck clean, CI byte-untouched)
+- [Phase 08]: UAT width feedback (2026-10-12): selection key columns widened to fit the longest committed registry keys (_MODEL_KEY_W 25→46, _DATASET_KEY_W 20→68; budget 80→128/101) — narrower terminals h-scroll (matrix precedent), 80x24 min grid intact, full keys always in row detail. Supersedes the 80-column pin recorded at 08-07. — UAT width feedback (2026-10-12): selection key columns widened to fit the longest committed registry keys (_MODEL_KEY_W 25→46, _DATASET_KEY_W 20→68; budget 80→128/101) — narrower terminals h-scroll (matrix precedent), 80x24 min grid intact, full keys always in row detail. Supersedes the 80-column pin recorded at 08-07.
 
 ### Pending Todos
 
