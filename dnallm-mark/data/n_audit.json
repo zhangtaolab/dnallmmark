@@ -145,9 +145,37 @@
             "unified_eval_n": 3721
         },
         "GUE__EPI_GM12878": {
-            "missing": true,
-            "splits": null,
-            "unified_eval_n": null
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2000,
+                    "non_acgt_chars": 0,
+                    "rows": 2000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2000,
+                    "total_chars": 10002000
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 2000,
+                    "non_acgt_chars": 0,
+                    "rows": 2000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 2000,
+                    "total_chars": 10002000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 10000,
+                    "non_acgt_chars": 0,
+                    "rows": 10000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 10000,
+                    "total_chars": 50010000
+                }
+            },
+            "unified_eval_n": 2000
         },
         "GUE__emp_H3": {
             "missing": false,
@@ -414,24 +442,138 @@
             "unified_eval_n": 3410
         },
         "GUE__fungi_species_20": {
-            "missing": true,
-            "splits": null,
-            "unified_eval_n": null
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 1000,
+                    "non_acgt_chars": 0,
+                    "rows": 1000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 1000,
+                    "total_chars": 10000000
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 1000,
+                    "non_acgt_chars": 0,
+                    "rows": 1000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 1000,
+                    "total_chars": 10000000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 8000,
+                    "non_acgt_chars": 0,
+                    "rows": 8000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 8000,
+                    "total_chars": 80000000
+                }
+            },
+            "unified_eval_n": 1000
         },
         "GUE__human_tf_0": {
-            "missing": true,
-            "splits": null,
-            "unified_eval_n": null
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 1000,
+                    "non_acgt_chars": 0,
+                    "rows": 1000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 1000,
+                    "total_chars": 101000
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 1000,
+                    "non_acgt_chars": 0,
+                    "rows": 1000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 1000,
+                    "total_chars": 101000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 32378,
+                    "non_acgt_chars": 0,
+                    "rows": 32378,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 32378,
+                    "total_chars": 3270178
+                }
+            },
+            "unified_eval_n": 1000
         },
         "GUE__mouse_1": {
-            "missing": true,
-            "splits": null,
-            "unified_eval_n": null
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 6745,
+                    "non_acgt_chars": 0,
+                    "rows": 6745,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 6745,
+                    "total_chars": 681245
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 6745,
+                    "non_acgt_chars": 0,
+                    "rows": 6745,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 6745,
+                    "total_chars": 681245
+                },
+                "train": {
+                    "by_char": {
+                        "N": 38
+                    },
+                    "n_tolerant_survivors": 53952,
+                    "non_acgt_chars": 38,
+                    "rows": 53952,
+                    "rows_with_non_acgt": 2,
+                    "strict_survivors": 53950,
+                    "total_chars": 5449152
+                }
+            },
+            "unified_eval_n": 6745
         },
         "GUE__mouse_4": {
-            "missing": true,
-            "splits": null,
-            "unified_eval_n": null
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 1883,
+                    "non_acgt_chars": 0,
+                    "rows": 1883,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 1883,
+                    "total_chars": 190183
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 1883,
+                    "non_acgt_chars": 0,
+                    "rows": 1883,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 1883,
+                    "total_chars": 190183
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 15064,
+                    "non_acgt_chars": 0,
+                    "rows": 15064,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 15064,
+                    "total_chars": 1521464
+                }
+            },
+            "unified_eval_n": 1883
         },
         "GUE__prom_300_all": {
             "missing": false,
@@ -502,14 +644,97 @@
             "unified_eval_n": 5920
         },
         "GUE__virus_covid": {
-            "missing": true,
-            "splits": null,
-            "unified_eval_n": null
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {
+                        "H": 1,
+                        "K": 66,
+                        "M": 35,
+                        "R": 83,
+                        "S": 15,
+                        "W": 37,
+                        "Y": 196
+                    },
+                    "n_tolerant_survivors": 8843,
+                    "non_acgt_chars": 433,
+                    "rows": 9166,
+                    "rows_with_non_acgt": 323,
+                    "strict_survivors": 8843,
+                    "total_chars": 9156834
+                },
+                "test": {
+                    "by_char": {
+                        "B": 1,
+                        "K": 63,
+                        "M": 41,
+                        "R": 92,
+                        "S": 33,
+                        "W": 61,
+                        "Y": 242
+                    },
+                    "n_tolerant_survivors": 8834,
+                    "non_acgt_chars": 533,
+                    "rows": 9168,
+                    "rows_with_non_acgt": 334,
+                    "strict_survivors": 8834,
+                    "total_chars": 9158832
+                },
+                "train": {
+                    "by_char": {
+                        "B": 3,
+                        "D": 7,
+                        "H": 2,
+                        "K": 471,
+                        "M": 288,
+                        "R": 696,
+                        "S": 139,
+                        "V": 3,
+                        "W": 444,
+                        "Y": 1745
+                    },
+                    "n_tolerant_survivors": 70605,
+                    "non_acgt_chars": 3798,
+                    "rows": 73335,
+                    "rows_with_non_acgt": 2730,
+                    "strict_survivors": 70605,
+                    "total_chars": 73261665
+                }
+            },
+            "unified_eval_n": 8834
         },
         "GUE__virus_species_40": {
-            "missing": true,
-            "splits": null,
-            "unified_eval_n": null
+            "missing": false,
+            "splits": {
+                "dev": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 500,
+                    "non_acgt_chars": 0,
+                    "rows": 500,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 500,
+                    "total_chars": 2500000
+                },
+                "test": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 500,
+                    "non_acgt_chars": 0,
+                    "rows": 500,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 500,
+                    "total_chars": 2500000
+                },
+                "train": {
+                    "by_char": {},
+                    "n_tolerant_survivors": 4000,
+                    "non_acgt_chars": 0,
+                    "rows": 4000,
+                    "rows_with_non_acgt": 0,
+                    "strict_survivors": 4000,
+                    "total_chars": 20000000
+                }
+            },
+            "unified_eval_n": 500
         },
         "Genomic_Benchmarks__coding": {
             "missing": false,
