@@ -27,7 +27,8 @@ suite; the service protocol is the injection seam):
 - the last-check line matches the persisted checked_at string format
   exactly (ENV-02, halfwidth colon);
 - the state strings are glyph-first and distinct (NO_COLOR legibility);
-- 08-06 Task 2, the composed app at rest: Footer visible on boot, the
+- 08-06 Task 2, the composed app at rest: the two nav-shell bars
+  visible on boot (the 09-03 migration replaced the Footer), the
   ``?`` help modal (every binding, Chinese labels, esc closes), the
   80x24 min-size guard (swap, live dimension updates, restore), the
   NO_COLOR scenario (rendered glyphs stay distinct), and the styles
@@ -47,7 +48,7 @@ from pathlib import Path
 
 from env_smoke import CheckResult
 from rich.text import Text
-from textual.widgets import DataTable, Footer, RichLog, Static
+from textual.widgets import DataTable, RichLog, Static
 
 import tui.app as tui_app_module
 import tui.screens.env_check as env_check_screen_module
@@ -57,6 +58,7 @@ from tui.app import (
     MinSizeScreen,
 )
 from tui.screens.env_check import EnvCheckBackend, EnvCheckScreen, EnvDetailModal
+from tui.screens.nav import BottomBar, TopMenuBar
 from tui.services import env_check as env_check_service
 from tui.strings import (
     APP_HELP_LABEL,
@@ -76,7 +78,6 @@ from tui.strings import (
     ENV_STATE_PENDING,
     ENV_VERDICT_CRITICAL_FAIL,
     ENV_VERDICT_PASS,
-    SEL_OPEN_LABEL,
 )
 
 # The seven kernel ids in main() order — the row-order contract (08-01).
@@ -645,15 +646,21 @@ def test_app_module_carries_zero_chinese_literals():
 # Task 2 — the composed app at rest (footer, help modal, min-size, styles)
 # =====================================================================
 
-async def test_app_boots_with_footer_visible_on_env_check():
-    """The composed console boots on env check with the binding Footer."""
+async def test_app_boots_with_nav_bars_visible_on_env_check():
+    """The composed console boots on env check with the two shell bars
+    (the 09-03 migration: the bars replaced the retired Header/Footer —
+    the former footer-visibility assertion migrated with the chrome)."""
     fake = FakeEnvCheckService(cached=("2026-10-11 09:30", _mixed_results()))
     app = DnallmMarkTui(env_check_service=fake)
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         assert isinstance(app.screen, EnvCheckScreen)
-        footer = app.screen.query_one(Footer)
-        assert footer.display, "the Footer must render the binding map"
+        assert app.screen.query_one(TopMenuBar).display, (
+            "the top menu bar must render (D-13)"
+        )
+        assert app.screen.query_one(BottomBar).display, (
+            "the bottom submenu bar must render (D-15)"
+        )
 
 
 async def test_help_modal_lists_bindings_and_esc_closes():
@@ -670,14 +677,15 @@ async def test_help_modal_lists_bindings_and_esc_closes():
         assert modal.query_one("#help-box").border_title == APP_HELP_TITLE
         rows = [str(static.content) for static in modal.query(Static)]
         # every binding row, Chinese labels from strings via APP_HELP_ROW
-        # (app: q quit + ? help; env screen: r refresh + enter detail +
-        # s open-selection — the 08-07 wiring)
+        # (app: q quit + ? help; env screen: r refresh + enter detail —
+        # the s row retired with the 09-03 nav-shell migration: menu slot
+        # 2 supersedes the alias, and the digit bindings are show=False
+        # so the modal's rows are exactly this map)
         expected_rows = [
             APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
             APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
             APP_HELP_ROW.format(key="r", label=ENV_REFRESH_LABEL),
             APP_HELP_ROW.format(key="enter", label=ENV_DETAIL_LABEL),
-            APP_HELP_ROW.format(key="s", label=SEL_OPEN_LABEL),
         ]
         assert rows == expected_rows
 

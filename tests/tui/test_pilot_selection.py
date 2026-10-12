@@ -53,7 +53,6 @@ pilot.pause()`` before every assertion; worker completion is awaited via
 import json
 import re
 import threading
-from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -1617,53 +1616,10 @@ async def test_backstop_longest_task_key_fits_in_full_at_160():
         assert app._min_size_screen is None
 
 
-async def test_backstop_footer_renders_every_binding_label_at_80():
-    """Backstop (08-UI-SPEC UI Considerations, CJK width): at 80 columns
-    the Footer renders every binding label untruncated with the shipped
-    strings — walk the active screen bindings and check each
-    keycap+label renders inside the footer width without overlaps."""
-    from textual.binding import Binding as BindingType
-    from textual.widgets import Footer
-
-    app = _app(FakeSelectionService())
-    async with app.run_test(size=(80, 24)) as pilot:
-        await _open_selection(pilot, app)
-        screen = app.screen
-        footer = screen.query_one(Footer)
-
-        # the shown bindings of the app + the active screen (the Footer's
-        # own source set; hidden bindings never footer-render)
-        expected = {}
-        for binding in (*app.BINDINGS, *screen.BINDINGS):
-            if isinstance(binding, BindingType) and binding.show:
-                key = binding.key_display or binding.key
-                expected[key] = binding.description
-        assert expected, "the selection screen must carry footer bindings"
-        assert "space" in expected and "/" in expected
-
-        footer_keys = list(footer.query("FooterKey"))
-        assert footer_keys, "the Footer must render the binding map"
-        rendered = {item.key_display: item for item in footer_keys}
-        for key_display, description in expected.items():
-            assert key_display in rendered, (
-                f"the [{key_display}] binding must render in the footer"
-            )
-            item = rendered[key_display]
-            text = item.render()
-            # the label renders UNTRUNCATED with the shipped string
-            assert description in text.plain, (
-                f"the {key_display!r} label {description!r} must render "
-                "untruncated at 80 columns"
-            )
-            # and the whole item fits inside the footer width
-            assert item.region.x + item.region.width <= footer.size.width
-
-        # no two footer items overlap (the 80-column collision guard)
-        spans = sorted(
-            (item.region.x, item.region.x + item.region.width)
-            for item in footer_keys
-        )
-        for (left_start, left_end), (right_start, _) in pairwise(spans):
-            assert right_start >= left_end, (
-                f"footer items overlap at {right_start} < {left_end}"
-            )
+# test_backstop_footer_renders_every_binding_label_at_80 was REMOVED by
+# the 09-03 nav-shell migration: the selection screen no longer yields
+# the Textual Footer (the bottom bar owns the keycap row). The successor
+# assertions live in tests/tui/test_pilot_nav_shell.py — the 80-column
+# clip-with-ellipsis policy and the ? help-modal completeness backstop
+# (every shown binding listed, the CJK labels untruncated in the modal
+# rows).

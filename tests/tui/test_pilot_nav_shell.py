@@ -357,3 +357,254 @@ async def test_no_priority_digit_binding_exists_anywhere():
         if re.search(r"priority\s*=\s*True", source):
             offenders.append(py.name)
     assert not offenders, f"priority bindings are prohibited: {offenders}"
+
+
+# =====================================================================
+# Task 3 — the Header/Footer migration, reflection, and guard interplay
+# =====================================================================
+
+async def test_env_help_modal_reflects_the_s_removal():
+    """The checker note: after the env s binding retires (superseded by
+    menu slot 2), the ? help modal lists NO s row — its rows derive from
+    the same BINDINGS declarations, so the removal auto-reflects."""
+    from tui.strings import APP_HELP_LABEL, APP_QUIT_LABEL
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpModal)
+        rows = [str(static.content) for static in app.screen.query(Static)]
+        # the live map after the migration: q, ?, r, enter — and NO s
+        assert rows == [
+            APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
+            APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
+            APP_HELP_ROW.format(key="r", label=ENV_REFRESH_LABEL),
+            APP_HELP_ROW.format(key="enter", label=ENV_DETAIL_LABEL),
+        ], "the help rows must auto-reflect the retired s binding"
+        assert not any(row.startswith("[s]") for row in rows)
+
+
+async def test_base_screens_retire_header_and_footer():
+    """The migration: no base screen yields the retired Textual Header
+    or Footer widgets (their rows belong to the two bars now; modals
+    keep their own 1-row hints)."""
+    from textual.widgets import Footer, Header
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert not list(app.screen.query(Header)), (
+            "the env screen must not yield a Header (the top bar owns it)"
+        )
+        assert not list(app.screen.query(Footer)), (
+            "the env screen must not yield a Footer (the bottom bar owns it)"
+        )
+        await pilot.press("2")
+        await pilot.pause()
+        assert not list(app.screen.query(Header))
+        assert not list(app.screen.query(Footer))
+        await pilot.press("6")
+        await pilot.pause()
+        assert not list(app.screen.query(Header))
+        assert not list(app.screen.query(Footer))
+
+
+async def test_matrix_renders_without_bars_and_never_navigates_on_digits():
+    """The matrix auxiliary view renders WITHOUT the shell bars and
+    digits never navigate there (no digit bindings exist on it)."""
+    from tui.screens.matrix import MatrixScreen
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+        await pilot.press("v")
+        await pilot.pause()
+        assert isinstance(app.screen, MatrixScreen)
+        assert not list(app.screen.query(TopMenuBar)), (
+            "the matrix renders no menu bars (the migration table)"
+        )
+        assert not list(app.screen.query(BottomBar))
+        # digits are dead on the matrix — the screen never switches
+        for digit in ("1", "6"):
+            await pilot.press(digit)
+            await pilot.pause()
+            assert isinstance(app.screen, MatrixScreen), (
+                "digit navigation must never fire on the matrix view"
+            )
+        # esc still pops back to the selection screen (unchanged)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, SelectionScreen)
+
+
+async def test_bars_hidden_below_minimum_grid_guard_takes_over():
+    """D-16 interplay: below 80x24 the min-size guard is the whole
+    surface (no bars render); growing back restores the screen WITH its
+    bars — zero guard-code changes."""
+    from tui.app import MinSizeScreen
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert list(app.screen.query(TopMenuBar)), "bars render above minimum"
+
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+        assert not list(app.screen.query(TopMenuBar)), (
+            "the guard screen renders NO bars (the message is the surface)"
+        )
+        assert not list(app.screen.query(BottomBar))
+
+        await pilot.resize_terminal(120, 40)
+        await pilot.pause()
+        assert isinstance(app.screen, EnvCheckScreen)
+        assert list(app.screen.query(TopMenuBar)), (
+            "growing back restores the bars with the screen"
+        )
+        assert list(app.screen.query(BottomBar))
+
+
+# =====================================================================
+# Task 3 — the About screen over a fake service (rows, tolerance, wrap)
+# =====================================================================
+
+class _AboutFake:
+    """Deterministic about-service fake (the injection seam's fake side)."""
+
+    def __init__(self, data):
+        self._data = data
+
+    def derive_about_data(self):
+        return self._data
+
+
+def _about_data(**overrides):
+    """A representative snapshot (torch absent — the CPU-lane case)."""
+    from tui.services.about import AboutData
+    from tui.services.registries import RegistryCounts
+
+    defaults = dict(
+        software_version="0.7.1",
+        git_sha="a8dba7c",
+        official_counts=RegistryCounts(62, 50),
+        custom_counts=(1, 0),
+        n_audit_present=True,
+        deps={
+            "textual": "8.2.8",
+            "platformdirs": "4.13.0",
+            "jsonschema": "4.26.0",
+            "numpy": "2.5.3",
+            "torch": None,
+        },
+    )
+    defaults.update(overrides)
+    return AboutData(**defaults)
+
+
+async def _open_about(pilot, app, data):
+    app.push_screen(AboutScreen(about_service=_AboutFake(data)))
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+
+
+def _about_value(screen, row_id) -> str:
+    content = screen.query_one(f"#about-value-{row_id}", Static).content
+    return content.plain if isinstance(content, Text) else str(content)
+
+
+async def test_about_screen_renders_five_rows_with_tolerant_values():
+    """Five fixed rows; absent deps render the constant; counts honest."""
+    from tui.strings import (
+        ABOUT_DEP_ABSENT,
+        ABOUT_MILESTONE_STAGE,
+        ABOUT_N_AUDIT_PRESENT,
+        ABOUT_ROW_DATA,
+        ABOUT_ROW_DEPS,
+        ABOUT_ROW_MILESTONE,
+        ABOUT_ROW_REPO,
+        ABOUT_ROW_SOFTWARE,
+        ABOUT_TITLE,
+        ABOUT_VALUE_DATA,
+        ABOUT_VALUE_SOFTWARE_WITH_SHA,
+    )
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await _open_about(pilot, app, _about_data())
+        screen = app.screen
+        assert isinstance(screen, AboutScreen)
+
+        labels = [str(label.content) for label in screen.query(".about-label")]
+        assert labels == [
+            ABOUT_ROW_SOFTWARE, ABOUT_ROW_DATA, ABOUT_ROW_MILESTONE,
+            ABOUT_ROW_DEPS, ABOUT_ROW_REPO,
+        ]
+        assert str(screen.query_one("#about-title").content) == ABOUT_TITLE
+
+        assert _about_value(screen, "software") == (
+            ABOUT_VALUE_SOFTWARE_WITH_SHA.format(
+                version="0.7.1", sha="a8dba7c"))
+        assert _about_value(screen, "data") == ABOUT_VALUE_DATA.format(
+            om=62, od=50, cm=1, cd=0, audit=ABOUT_N_AUDIT_PRESENT)
+        assert _about_value(screen, "milestone") == ABOUT_MILESTONE_STAGE
+        deps = _about_value(screen, "deps")
+        assert f"torch {ABOUT_DEP_ABSENT}" in deps, (
+            "an absent package renders the constant (dim, per-package)"
+        )
+        assert "textual 8.2.8" in deps
+        from tui.services.about import REPO_URL
+        assert _about_value(screen, "repo") == REPO_URL
+
+
+async def test_about_values_wrap_never_elide():
+    """Long values wrap onto extra rows — nothing is ever elided (the
+    wrapping value column contract; at 80 columns a long deps line
+    exceeds the column budget)."""
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        data = _about_data(deps={
+            "textual": "8.2.8",
+            "platformdirs": "4.13.0",
+            "jsonschema": "4.26.0",
+            "numpy": "2.5.3",
+            "torch": "2.11.0+cu130-with-a-very-long-local-version-string",
+        })
+        await _open_about(pilot, app, data)
+        screen = app.screen
+        value = screen.query_one("#about-value-deps", Static)
+        plain = _about_value(screen, "deps")
+        assert Text(plain).cell_len > 60, "the fixture value must be long"
+        assert "…" not in plain, "values are never elided"
+        assert value.size.height >= 2, (
+            "a value longer than the column wraps onto extra rows"
+        )
+
+
+# =====================================================================
+# Task 3 — i18n greps over the new screen modules
+# =====================================================================
+
+def test_nav_module_carries_zero_chinese_literals():
+    """I18N-01 single home: no operator-facing copy in tui/screens/nav.py."""
+    source = _NAV_MODULE_FILE.read_text(encoding="utf-8")
+    offenders = re.findall(r"[一-鿿]", source)
+    assert not offenders, (
+        "Chinese literals must live in tui/strings.py only "
+        f"({len(offenders)} found in {_NAV_MODULE_FILE.name})"
+    )
+
+
+def test_about_screen_module_carries_zero_chinese_literals():
+    """I18N-01 single home: no operator-facing copy in the about screen."""
+    source = _ABOUT_SCREEN_FILE.read_text(encoding="utf-8")
+    offenders = re.findall(r"[一-鿿]", source)
+    assert not offenders, (
+        "Chinese literals must live in tui/strings.py only "
+        f"({len(offenders)} found in {_ABOUT_SCREEN_FILE.name})"
+    )
