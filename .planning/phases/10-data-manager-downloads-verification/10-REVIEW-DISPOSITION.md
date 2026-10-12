@@ -281,4 +281,104 @@ All green, run from the review-fix worktree:
 
 ---
 
-_Disposition written by the gsd-code-fixer iteration 1, 2026-10-13._
+## Iteration 2 (re-review verdicts at HEAD 0b3e1c9)
+
+**Re-review:** `## Re-review iteration 2` in `10-REVIEW.md` (all 12
+iteration-1 fixes CONFIRMED-FIXED; 1 introduced CR, 3 introduced/
+residual INs; the gauntlet twin ruled fix-now). Iteration-2 commits on
+top of `0b3e1c9`:
+
+| ID | Disposition | Commit |
+|----|-------------|--------|
+| CR-02 | **fixed** | `0b31267` |
+| IN-09 | **fixed** (tripwire made bidirectional) | `b01e523` |
+| IN-11 | **fixed** | `63f18e6` |
+| IN-10 | kept open — activation-time item, tracked alongside IN-06 below | — |
+| gauntlet twin | **fixed** (phase-9 code, separate commit per the ruling) | `46ddd37` |
+
+### CR-02 — the persist-refused claim exits the driver (`0b31267`)
+
+The WR-02 drain recheck x WR-04 absorbed refusal: `claim_next` answered
+None with the entry still pending in memory, and the recheck's
+`any(pending)` drove claim->refuse->recheck forever (the reviewer's
+47,546 calls/sec; busy stuck; restart re-entered the spin). Fix per the
+reviewer's direction: `claim_next` records its refusal as
+`(key, diagnostic)` — refreshed at the START of every attempt under the
+service lock, so it can never go stale — surfaced through the optional
+`last_claim_refusal()` seam; the driver's drain branch reads it and a
+refusal-None EXITS the worker (generation-guarded busy release) posting
+`QueueStalledMessage`, which renders the new
+`QUEUE_PERSIST_DRIVER_TOAST` (the persist-failure vocabulary's
+driver-stall companion; the enqueue toast's "未入队" copy would be a lie
+for a claim). The entry stays pending for the fixed-rail re-kick; a
+still-broken rail makes each kick exactly one bounded attempt. Fakes
+without the seam keep drained-only behavior.
+
+**Sibling audit (the coordinator's questions):** (a) *can the worker
+exit while an entry is claimable?* — only on a refusal, where the entry
+is memory-pending but NOT persistable-claimable (the queue is wedged by
+definition; exiting + toast is the honest state, and D-04 serial is
+preserved — no second driver can start while the loop runs). On a
+drained exit the recheck proves no pending entry exists. (b) *can
+refusal-clearing race the exit?* — the flag is cleared at claim start
+under the service lock and read on the same worker thread immediately
+after the None return; a single-driver guarantee (the busy lock) means
+no other claim can interleave; a concurrent kick either no-ops (busy)
+or starts the NEXT generation whose own claim refreshes the flag. A
+healthy claim can therefore never be mistaken for a refusal.
+
+### IN-09 — the string tripwire is bidirectional (`b01e523`)
+
+`DL_UNKNOWN_TOAST`, `QUEUE_PERSIST_FAILED_TOAST`, and the new
+`QUEUE_PERSIST_DRIVER_TOAST` are registered in the EXPECTED_ tuples,
+and a new reverse sweep asserts every `DL_`/`QUEUE_` constant
+`tui/strings.py` defines IS listed — the single-home inventory can no
+longer lapse out of coverage (RED before registration: exactly the
+three names).
+
+### IN-11 — the dropped-rows load still downgrades (`63f18e6`)
+
+The D-06 downloading->pending downgrade pass now runs BEFORE the
+dropped-rows early return; the dropped branch's single persist covers
+the cleaned rows and any downgrades together. A compound hand-edited
+file (a non-dict row AND a downloading entry) reports the drop AND
+downgrades the survivor on the same load — boot resume sees the pending
+entry and kicks (RED: the survivor stayed downloading).
+
+### IN-10 — kept open, activation-time (tracked with IN-06)
+
+WR-01's residual: the `should_cancel` seam is per-FILE, so a cancel
+during a single-archive transfer takes effect after that file
+completes. The fix (check `should_cancel` every N chunks inside the
+copy loop) lands WITH the lane's activation work, in the same
+pre-publication window as IN-06's overwrite/cap/staging rulings — both
+are inert while record 19135551 404s and both must be ruled before the
+record goes public (the reviewer's activation-gate condition on IN-06
+applies to IN-10 verbatim).
+
+### The gauntlet twin — fixed (`46ddd37`)
+
+`tui/services/gauntlet.py` `_invoke` now passes `errors="replace"`
+alongside `text=True`, identical to the `download_queue._invoke` twin
+fixed in WR-05 — the same GBK-locale class turned a healthy kernel into
+a spurious `subprocess_error` gauntlet item. One kwargs-pin regression
+(RED with KeyError before the line). Phase-9 code, committed separately
+as `fix(tui): gauntlet runner decode errors policy (review follow-up)`
+so the phase-10 diff stays pure.
+
+### Iteration-2 gates
+
+All green from the iteration-2 worktree:
+
+- `make test` — exit 0 (pytest lane + the node:test JS suite, 18/18)
+- `uv run --group dev --group tui pytest -q` — **1197 passed** (the
+  iteration-1 1193 + 4 iteration-2 regression lanes; zero failures)
+- `make lint` — all checks passed (two one-liner cleanups in the CR-02
+  lane — an unquoted annotation and the monkeypatch claim seam —
+  committed as the style commit)
+- `make typecheck` (`ty`) — all checks passed
+
+---
+
+_Disposition written by the gsd-code-fixer iteration 1, 2026-10-13;
+iteration-2 appended 2026-10-13._
