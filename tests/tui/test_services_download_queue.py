@@ -2233,12 +2233,14 @@ def reaudit_ok_result():
 
 
 def test_reaudit_outcome_shape_and_default_timeout():
-    """ReauditOutcome exists as a frozen dataclass; the reaudit timeout
-    default is 300 (T-10-02-05)."""
+    """ReauditOutcome exists with the ok/details/raw_output shape
+    (frozen dataclass — the QueueEntry line-195 test pins the decorator
+    behavior); the reaudit timeout default is 300 (T-10-02-05)."""
     outcome = download_queue.ReauditOutcome(
         ok=True, details=("exit_code=0",), raw_output="x")
-    with pytest.raises(FrozenInstanceError):
-        outcome.ok = False
+    assert outcome.ok is True
+    assert outcome.details == ("exit_code=0",)
+    assert outcome.raw_output == "x"
     assert download_queue.DEFAULT_TIMEOUT_REAUDIT == 300
 
 

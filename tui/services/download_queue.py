@@ -635,6 +635,30 @@ class ReconcileOutcome:
     raw_output: str = ""
 
 
+@dataclass(frozen=True)
+class ReauditOutcome:
+    """One explicit ``g`` re-audit's structured result (D-10/R-03;
+    DATA, never screen copy).
+
+    The re-audit runs the audit script with its DEFAULT outputs — the
+    four artifacts land in the WORKTREE exactly as the CLI command
+    writes them (``python script/audit_n_frequencies.py``, the command
+    ENV_ROUTE already prints); the git diff is the maintainer's review
+    surface and the maintainer commits the refreshed baseline. There is
+    deliberately NO atomic-replace trickery and NO narrow write here.
+
+    Attributes:
+        ok: True iff the subprocess exited 0.
+        details: machine data tokens (``exit_code=0``, ``timeout``,
+            ``timeout_seconds=N``, ``subprocess_error=<repr>``).
+        raw_output: the verbatim captured subprocess output.
+    """
+
+    ok: bool
+    details: tuple[str, ...]
+    raw_output: str = ""
+
+
 def _default_spawner(argv, **kwargs):
     """The real Popen seam (the injectable default).
 
@@ -1636,6 +1660,55 @@ class DownloadQueueService:
             # failed outcome, never an exception crossing to the worker.
             return None, ("subprocess_error", repr(exc))
         return proc, None
+
+    # ===== The explicit g re-audit (D-10/R-03: default outputs) =====
+
+    def reaudit_baseline(self, run_id):
+        """Refresh the committed audit baseline via the audit script's
+        DEFAULT outputs (the maintainer's ``g`` action semantics).
+
+        R-03: argv is EXACTLY ``[sys.executable, <absolute script
+        path>]`` with NO output flags — the script writes its four repo
+        artifacts (``dnallm-mark/data/n_audit.json``,
+        ``n_audit.csv``, ``pipeline/eval_subsets.json``, ``DATA.md``)
+        into the WORKTREE for maintainer review and commit; no
+        temp+replace, no narrow write. The env is ``os.environ`` plus
+        exactly one override pinning ``CUSTOM_DIR_ENV`` at an EMPTY
+        temp dir (custom entries never leak into the refreshed
+        baseline, T-10-02-03). Reachable ONLY through this explicit
+        method — no automatic path (reconcile, presence) ever calls
+        it; the committed baseline is otherwise read-only to this
+        module.
+
+        NEVER raises: nonzero exit, timeout, and launch errors are
+        absorbed into a not-ok outcome carrying the verbatim output.
+
+        Args:
+            run_id (str): the caller's run tag (future event wiring).
+
+        Returns:
+            ReauditOutcome: the structured result.
+        """
+        with tempfile.TemporaryDirectory(
+                prefix="dnallmmark-reaudit-") as tmp:
+            argv = [sys.executable,
+                    str(self._repo_root / "script" / AUDIT_SCRIPT_NAME)]
+            env = dict(os.environ)
+            env[CUSTOM_DIR_ENV] = str(Path(tmp))   # the empty overlay
+            proc, launch_failure = self._invoke(
+                argv, env, self._timeout_reaudit)
+            if launch_failure is not None:
+                return ReauditOutcome(
+                    ok=False, details=launch_failure)
+            raw = (proc.stdout or "") + (proc.stderr or "")
+            if proc.returncode != 0:
+                return ReauditOutcome(
+                    ok=False,
+                    details=("exit_nonzero",
+                             "exit_code=" + str(proc.returncode)),
+                    raw_output=raw)
+            return ReauditOutcome(
+                ok=True, details=("exit_code=0",), raw_output=raw)
 
     def _finish(self, key, run_id, state, percent, problems, details,
                 stdout_text="", stderr_text="", argv=None,
