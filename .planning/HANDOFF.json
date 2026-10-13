@@ -6,18 +6,33 @@
   "phase_progress": "12: 2/5 plans committed (12-01 shard ✓, 12-02 web mirror ✓); 12-03 goldens+focus-fix dispatched 20:01, executor stalled/reset mid-task-1 (RED evidence captured, code edits reverted by itself); 12-04 (merge+docs/multi-gpu.md) and 12-05 (integration close) not started",
   "phases_status": "7/8/9/10/11 ALL Complete + verification passed with fresh fingerprints (0 stale); milestone at 35/38 requirements",
   "test_baseline": "1531 pytest + 26 node green at HEAD 156c497 (pushed to origin/autorun)",
-  "resume_action": "1) Inspect tree: untracked .planning/phases/12-*/evidence/ (12-03 RED evidence, harmless). 2) Re-dispatch 12-03 executor fresh (plan file + same dispatch brief as 20:01; the RED evidence may inform but plan is self-contained). 3) Then 12-04 → 12-05 sequential (dispatch briefs pattern: SPEED DIRECTIVE, sentinel force-none first, heartbeat). 4) After 12-05: review loop → regression → verifier → UAT (goldens need MAINTAINER EYE REVIEW - D-03 human gate) → phase complete (tick ROADMAP checkbox manually!) → milestone audit → complete → cleanup.",
+  "resume_action": "1) Inspect tree: untracked .planning/phases/12-*/evidence/ (12-03 RED evidence, harmless). 2) Re-dispatch 12-03 executor fresh. STALL BREADCRUMB: the killed executor's last note was 'The Input values aren't rendering' — it was debugging why param Input values do not render (same phenomenon observed live in phase-11 UAT: seeds input showed empty bars despite value 42,43,44). Likely a widget width/styling issue in the params column; the resume executor should diagnose that rendering seam FIRST (it may affect the goldens' fidelity AND is UAT advisory #2's root). 3) Then 12-04 → 12-05 sequential (dispatch briefs pattern: SPEED DIRECTIVE, sentinel force-none first, heartbeat). 4) After 12-05: review loop → regression → verifier → UAT (goldens need MAINTAINER EYE REVIEW - D-03 human gate) → phase complete (tick ROADMAP checkbox manually!) → milestone audit → complete → cleanup.",
   "human_pending": [
     "他机 N=2 multi-GPU smoke (WINDOWS.md entry #21, 9-step procedure lands in 12-04-SUMMARY) — maintainer-run on the multi-GPU machine per D-05",
     "8 snapshot SVG goldens review+commit gate after 12-03 lands (D-03)",
     "auto-push preference question unanswered (offered after each wave?)"
   ],
   "blocking_constraints": [
-    {"severity": "blocking", "item": "Force dispatch-isolation to none before EVERY Agent dispatch: node ~/.claude/gsd-core/bin/gsd-tools.cjs query dispatch-isolation --raw --phase 12 --force-isolation none (executor runs re-flip the sentinel)"},
-    {"severity": "blocking", "item": "phase.complete NEVER ticks the ROADMAP overview '- [ ]' checkbox and body STATE needs manual focus-fix; also phase.complete requires VERIFICATION.md frontmatter status: passed (flip human_needed→passed after UAT)"},
-    {"severity": "blocking", "item": "Full-suite gates must run AFTER data-artifact commits (baseline refresh taught this: R-03 refresh reddened 8 test pins; fixed 420411e with fixture-staged n_audit; tests pin refresh-stable truths, never committed-baseline content)"},
-    {"severity": "advisory", "item": "AskUserQuestion payloads hit the maintainer's terminal as mojibake twice — protocol: plain-markdown one-question-at-a-time with ASCII mockups; user answers single letters"},
-    {"severity": "advisory", "item": "Executor speed directive active: module suites during TDD, full make test ONCE per wave (maintainer complained about pace)"}
+    {
+      "severity": "blocking",
+      "item": "Force dispatch-isolation to none before EVERY Agent dispatch: node ~/.claude/gsd-core/bin/gsd-tools.cjs query dispatch-isolation --raw --phase 12 --force-isolation none (executor runs re-flip the sentinel)"
+    },
+    {
+      "severity": "blocking",
+      "item": "phase.complete NEVER ticks the ROADMAP overview '- [ ]' checkbox and body STATE needs manual focus-fix; also phase.complete requires VERIFICATION.md frontmatter status: passed (flip human_needed→passed after UAT)"
+    },
+    {
+      "severity": "blocking",
+      "item": "Full-suite gates must run AFTER data-artifact commits (baseline refresh taught this: R-03 refresh reddened 8 test pins; fixed 420411e with fixture-staged n_audit; tests pin refresh-stable truths, never committed-baseline content)"
+    },
+    {
+      "severity": "advisory",
+      "item": "AskUserQuestion payloads hit the maintainer's terminal as mojibake twice — protocol: plain-markdown one-question-at-a-time with ASCII mockups; user answers single letters"
+    },
+    {
+      "severity": "advisory",
+      "item": "Executor speed directive active: module suites during TDD, full make test ONCE per wave (maintainer complained about pace)"
+    }
   ],
   "machine_roles": "GB10 dev/test only (1-2 models × 3-4 datasets partial; single GPU). Full sweeps AND multi-GPU validation on OTHER machines (D-05).",
   "pushed": "origin/autorun == 156c497 (everything through 12-02)"
