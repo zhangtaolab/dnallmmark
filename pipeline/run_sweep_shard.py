@@ -75,7 +75,9 @@ functions, so launch and merge can never disagree about where worker
 artifacts live)::
 
     worker root: {output-root}-mgpu-w{i}      (a SIBLING of the base root)
-    worker log:  {output-root}-mgpu-w{i}.log  (a SIBLING of the worker root)
+    worker log:  {output-root}-mgpu-w{i}-{launch-stamp}.log  (one file per
+                 launch — the launcher's tee idiom, WR-02: a resume
+                 relaunch never truncates the prior crash log)
 
 Disjointness proof, three lines (D-06 — the concurrency invariant):
 
@@ -117,13 +119,16 @@ VERBATIM plus exactly one added env key):
   ``--workers``) and never probes nvidia-smi or assumes any device
   count (D-05 — this module must stay CPU-testable; GPU assignment is
   CLI input, not runtime discovery).
-- Worker stdout/stderr tee into the per-worker sibling log (stderr is
-  redirected onto stdout's handle); the orchestrator waits ALL workers
-  and reports an aggregated verdict — exit 0 iff every worker exited 0,
-  otherwise exit 1 after a per-worker verdict table (exit code, worker
-  root, log path, failed-cell count read from that worker's
-  ``sweep_failures.json`` when present). A dead worker never touches
-  its siblings: independent sessions + disjoint roots (SC2).
+- Worker stdout/stderr tee into the per-launch timestamped sibling log
+  (``{base}-mgpu-w{i}-{stamp}.log`` — the launcher's own tee idiom,
+  WR-02: a resume relaunch writes a NEW log instead of truncating the
+  crash evidence; stderr is redirected onto stdout's handle); the
+  orchestrator waits ALL workers and reports an aggregated verdict —
+  exit 0 iff every worker exited 0, otherwise exit 1 after a
+  per-worker verdict table (exit code, worker root, log path,
+  failed-cell count read from that worker's ``sweep_failures.json``
+  when present). A dead worker never touches its siblings:
+  independent sessions + disjoint roots (SC2).
 
 Sharding: LPT (longest-processing-time-first) by the registry's
 ``size (M)`` — models sorted size-descending (registry-name ascending
@@ -170,12 +175,21 @@ import os
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import registry_loader  # sibling module (pipeline/ on sys.path)
 import run_sweep  # sibling module: PIPELINE_DIR + the worker entry
 
 WORKER_SCRIPT = run_sweep.PIPELINE_DIR / "run_sweep.py"
+
+#: Per-launch worker-log timestamp format — the ``sweep_launcher``
+#: ``TEE_TIMESTAMP_FORMAT`` discipline: every (re)launch derives a FRESH
+#: tee filename, so the documented resume relaunch (a worker dies;
+#: relaunch the orchestrator — workers are resume-safe via the marker,
+#: A4/D-08) never opens the previous launch's crash log with ``"w"`` and
+#: truncates the exact evidence that explains the crash (WR-02).
+WORKER_LOG_TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
 
 # The injectable spawner seam (the sweep_launcher :475 idiom): tests run
 # CPU-only by injecting a fake; the real path is Popen with the launcher's
@@ -202,11 +216,28 @@ def worker_root(base_root, index):
     return Path(f"{base}-mgpu-w{index}")
 
 
-def worker_log_path(base_root, index):
-    """Return the per-worker tee log path — the worker root's ``.log``
-    sibling (a sibling of the root, never inside it: the artifact tree
-    stays pure and the log survives root-cleanup decisions)."""
-    return Path(f"{worker_root(base_root, index)}.log")
+def worker_log_path(base_root, index, timestamp):
+    """Return the per-launch worker tee log path — a timestamped
+    ``.log`` SIBLING of the worker root.
+
+    ``{base}-mgpu-w{index}-{timestamp}.log`` — the sweep_launcher's
+    per-launch tee discipline (WR-02): the worker ROOT naming stays the
+    single frozen authority for where worker artifacts live, while the
+    LOG gets one file per launch so a resume relaunch never truncates
+    the previous launch's diagnostic log.
+
+    Args:
+        base_root (Path | str): the RESOLVED base output root.
+        index (int): the worker index (0-based).
+        timestamp (str): the per-launch stamp (one for every worker —
+            ``WORKER_LOG_TIMESTAMP_FORMAT`` over the launch instant).
+
+    Returns:
+        Path: ``{base}-mgpu-w{index}-{timestamp}.log`` (not created
+        here).
+    """
+    base = Path(base_root)
+    return Path(f"{base}-mgpu-w{index}-{timestamp}.log")
 
 
 def _coerce_size(value):
@@ -325,8 +356,10 @@ def parse_args(argv=None):
         default="./finetuned",
         help="Base sweep output root (default: ./finetuned, resolved "
              "absolute). Worker i writes under the frozen SIBLING root "
-             "{base}-mgpu-w{i} with its tee log at {base}-mgpu-w{i}.log — "
-             "shared roots are forbidden (root-level manifests collide)"
+             "{base}-mgpu-w{i} with its tee log at "
+             "{base}-mgpu-w{i}-{launch-stamp}.log (one log per launch, "
+             "WR-02) — shared roots are forbidden (root-level manifests "
+             "collide)"
     )
     parser.add_argument(
         "--dry-run",
@@ -929,7 +962,7 @@ def run_merge(args, passthrough):
           "gen_progress together (double-counted sweeps)")
 
 
-def main(spawner=None):
+def main(spawner=None, clock=None):
     """Validate, shard, spawn, wait, and report the aggregated verdict.
 
     Refuses collect-all (every problem listed together, then one
@@ -948,6 +981,11 @@ def main(spawner=None):
             idiom) — a callable with Popen's signature; None uses the
             module default (subprocess.Popen). Tests inject a fake to
             prove the launch kwargs CPU-only.
+        clock: an injectable ``datetime.now``-shaped callable (the
+            sweep_launcher ``clock`` idiom); None uses the real
+            ``datetime.now``. ONE stamp per launch names every worker
+            tee log (WR-02: a resume relaunch derives a fresh stamp and
+            never truncates the prior launch's crash log).
     """
     args, passthrough = parse_args()
     if args.merge:
@@ -1049,12 +1087,18 @@ def main(spawner=None):
     shards = lpt_shard(models, workers, sizes)
 
     seam = _DEFAULT_SPAWNER if spawner is None else spawner
+    # ONE stamp per launch, shared by every worker tee log (WR-02: the
+    # sweep_launcher TEE_TIMESTAMP_FORMAT discipline — each relaunch
+    # derives a fresh filename instead of truncating the prior crash log)
+    now = datetime.now if clock is None else clock
+    launch_stamp = now().strftime(WORKER_LOG_TIMESTAMP_FORMAT)
     procs = []
     tees = []
+    log_paths = []
     try:
         for i in range(workers):
             root_i = worker_root(base_root, i)
-            log_i = worker_log_path(base_root, i)
+            log_i = worker_log_path(base_root, i, launch_stamp)
             argv = [
                 sys.executable,
                 str(WORKER_SCRIPT),
@@ -1076,6 +1120,7 @@ def main(spawner=None):
             tee = open(  # noqa: SIM115
                 log_i, "w", encoding="utf-8")
             tees.append(tee)
+            log_paths.append(log_i)
             procs.append(seam(
                 list(argv),
                 start_new_session=True,
@@ -1110,7 +1155,7 @@ def main(spawner=None):
         print(
             f"  worker {i}: exit={codes[i]} failed={failed_display} "
             f"root={worker_root(base_root, i)} "
-            f"log={worker_log_path(base_root, i)}"
+            f"log={log_paths[i]}"
         )
     failed_workers = sum(1 for code in codes if code != 0)
     if failed_workers == 0:

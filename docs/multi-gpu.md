@@ -42,7 +42,9 @@ deferred with the seam documented, not silently missing.
 All commands run from the repository root. Frozen naming (one authority,
 `run_sweep_shard.worker_root()`): worker i writes under
 `{output-root}-mgpu-w{i}` with its tee log at
-`{output-root}-mgpu-w{i}.log` — sibling roots are a hard invariant (two
+`{output-root}-mgpu-w{i}-{launch-stamp}.log` — one log file per launch
+(the launcher's tee idiom, WR-02: a resume relaunch never truncates the
+prior launch's crash log). Sibling roots are a hard invariant (two
 workers on one root would collide last-writer-wins over the root-level
 `sweep_manifest.json` / `sweep_failures.json`).
 
@@ -153,8 +155,9 @@ python pipeline/run_sweep_shard.py --merge --workers 2 \
   a different experiment than either).
 - **Never mutates a worker root and never deletes anything.** Cleanup is
   an explicit maintainer step: after verifying the merged root (export a
-  model from it, check the manifest), delete the worker roots and logs:
-  `rm -rf pipeline/finetuned-mgpu-w{0,1}{,.log}`
+  model from it, check the manifest), delete the worker roots and their
+  per-launch logs: `rm -rf pipeline/finetuned-mgpu-w{0,1}`
+  `rm -f pipeline/finetuned-mgpu-w{0,1}-*.log`
 
 ### 6. Web mirror (offline regeneration, never both roots)
 
@@ -214,7 +217,8 @@ He机多 GPU 冒烟（maintainer-executed，N=2，有界：2 模型 × 1 任务 
       模型集不相交、并集 == 请求集。（已知边界：dry-run 写入的 planned manifest 会让
       scanner 先 classify 该根 finished——真实启动后同根复写即正常。）
  2. 启动：同一命令去掉 --dry-run → 2 个 run_sweep 进程，CUDA_VISIBLE_DEVICES=0/1，
-    每个 worker 1 个模型；tee 日志 {root}-mgpu-w{0,1}.log。
+    每个 worker 1 个模型；tee 日志 {root}-mgpu-w{0,1}-{launch-stamp}.log（每次
+    启动新文件，WR-02：重跑不截断上次崩溃日志）。
  3. TUI 视图：make tui → 槽 5 [a] 附加两个 worker 根（各一次，持久化）→ 发现列表 2 行
     （finetuned-smoke-mgpu-w0/-w1），Enter 切换视图，进度/ETA 独立（D-01/SC2 操作面证明）。
  4. 隔离证明：等待或促使一个 worker 的 cell 失败（或直接观察两 worker 完成时间差）→
@@ -237,7 +241,8 @@ He机多 GPU 冒烟（maintainer-executed，N=2，有界：2 模型 × 1 任务 
       uv run --group data python script/export_runs.py \
         --input-root pipeline/finetuned-smoke ...
  9. 清理：确认合并根校验通过后删除 worker 根与日志
-    （rm -rf pipeline/finetuned-smoke-mgpu-w{0,1}{,.log}）；记录全部输出到相位 VERIFICATION。
+    （rm -rf pipeline/finetuned-smoke-mgpu-w{0,1} &&
+     rm -f pipeline/finetuned-smoke-mgpu-w{0,1}-*.log）；记录全部输出到相位 VERIFICATION。
 ```
 
 Every numbered step is a human-check with expected output; a step whose

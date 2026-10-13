@@ -94,6 +94,7 @@ See also:
 import json
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import export_runs  # conftest puts script/ on sys.path
@@ -171,11 +172,13 @@ def make_registry(tmp_path):
     return registry_dir
 
 
-def run_cli(monkeypatch, argv, spawner=None):
-    """Invoke ``run_sweep_shard.main()`` with a patched argv."""
+def run_cli(monkeypatch, argv, spawner=None, clock=None):
+    """Invoke ``run_sweep_shard.main()`` with a patched argv (the
+    injectable clock pins deterministic per-launch log stamps — the
+    sweep_launcher ``clock`` idiom)."""
     full_argv = ["run_sweep_shard.py", *argv]
     monkeypatch.setattr(sys, "argv", full_argv)
-    run_sweep_shard.main(spawner=spawner)
+    run_sweep_shard.main(spawner=spawner, clock=clock)
     return full_argv
 
 
@@ -305,8 +308,10 @@ def test_lpt_workers_equal_model_count_one_each():
 
 def test_worker_root_and_log_naming_is_frozen(tmp_path):
     """worker_root is the SIBLING {base}-mgpu-w{i} of the base root; the
-    tee log is its .log-suffixed sibling. 12-04's --merge imports these
-    exact functions — one naming authority."""
+    tee log is a PER-LAUNCH timestamped ``.log`` sibling of the worker
+    root (WR-02: one file per launch, the launcher's tee idiom — a
+    resume relaunch never truncates the prior crash log). 12-04's
+    --merge imports worker_root — one naming authority."""
     base = tmp_path / "finetuned"
     assert run_sweep_shard.worker_root(base, 0) == \
         tmp_path / "finetuned-mgpu-w0"
@@ -314,10 +319,50 @@ def test_worker_root_and_log_naming_is_frozen(tmp_path):
         tmp_path / "finetuned-mgpu-w1"
     assert run_sweep_shard.worker_root(base, 12) == \
         tmp_path / "finetuned-mgpu-w12"
-    assert run_sweep_shard.worker_log_path(base, 0) == \
-        tmp_path / "finetuned-mgpu-w0.log"
-    assert run_sweep_shard.worker_log_path(base, 1) == \
-        tmp_path / "finetuned-mgpu-w1.log"
+    assert run_sweep_shard.worker_log_path(base, 0, "20261013_090000") == \
+        tmp_path / "finetuned-mgpu-w0-20261013_090000.log"
+    assert run_sweep_shard.worker_log_path(base, 1, "20261013_090500") == \
+        tmp_path / "finetuned-mgpu-w1-20261013_090500.log"
+
+
+def test_resume_relaunch_never_truncates_prior_worker_log(
+        tmp_path, monkeypatch):
+    """WR-02: the documented recovery path (a worker dies; relaunch the
+    orchestrator — workers are resume-safe via the trainer_state marker,
+    A4/D-08) must not destroy the evidence: the relaunch derives a FRESH
+    per-launch tee filename (the sweep_launcher timestamp idiom), so the
+    previous launch's crash log survives verbatim instead of being
+    opened \"w\" and truncated at the frozen path."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    argv = [
+        "--workers", "1",
+        "--models", "model-a",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+        "--tasks", "task-x", "--seeds", "42",
+    ]
+    clocks = iter([datetime(2026, 10, 13, 9, 0, 0),
+                   datetime(2026, 10, 13, 9, 5, 0)])
+    clock = lambda: next(clocks)  # noqa: E731 — one stamp per launch
+
+    # launch 1: the worker crashes (its tee log is the diagnostic)
+    with pytest.raises(SystemExit):
+        run_cli(monkeypatch, argv, spawner=make_fake_spawner(
+            [], returncodes=[1]), clock=clock)
+    first_log = run_sweep_shard.worker_log_path(base, 0, "20261013_090000")
+    assert first_log.is_file(), "the crashed launch teed into its log"
+    crash_evidence = "CUDA OOM boom — the crash evidence\n"
+    first_log.write_text(crash_evidence, encoding="utf-8")
+
+    # the resume relaunch (worker 0 re-runs resume-safe): a NEW log
+    run_cli(monkeypatch, argv, spawner=make_fake_spawner(
+        [], returncodes=[0]), clock=clock)
+    assert first_log.read_text(encoding="utf-8") == crash_evidence, (
+        "the relaunch must NOT truncate the prior launch's log"
+    )
+    second_log = run_sweep_shard.worker_log_path(base, 0, "20261013_090500")
+    assert second_log.is_file(), "the relaunch tees into a fresh log"
 
 
 # ===== fake-spawner proofs: argv + the verbatim launch kwargs =====
@@ -339,13 +384,14 @@ def test_worker_argv_and_spawn_kwargs_under_default_gpus(
                    "--num_train_epochs", "1"]
     calls = []
     monkeypatch.setenv("SHARD_TEST_SENTINEL", "xyz")
+    clock = lambda: datetime(2026, 10, 13, 8, 30, 0)  # noqa: E731
     run_cli(monkeypatch, [
         "--workers", "2",
         "--models", "model-a,model-b,model-c",
         "--output-root", str(base),
         "--dry-run",
         *passthrough,
-    ], spawner=make_fake_spawner(calls))
+    ], spawner=make_fake_spawner(calls), clock=clock)
     assert len(calls) == 2, "one spawn per worker"
     expected_shards = [["model-a"], ["model-b", "model-c"]]
     for i, call in enumerate(calls):
@@ -379,8 +425,10 @@ def test_worker_argv_and_spawn_kwargs_under_default_gpus(
             "default --gpus assigns the worker index as the GPU id"
         )
         assert kwargs["stdout"].name == str(
-            run_sweep_shard.worker_log_path(base, i)), (
-            "stdout tees into the per-worker sibling log handle"
+            run_sweep_shard.worker_log_path(
+                base, i, "20261013_083000")), (
+            "stdout tees into the per-launch timestamped sibling log "
+            "handle (WR-02 — never the prior launch's frozen path)"
         )
 
 
@@ -616,6 +664,7 @@ def test_nonzero_worker_exits_one_with_verdict_table(
     (dead_root / "sweep_failures.json").write_text(
         json.dumps(failures), encoding="utf-8")
     calls = []
+    clock = lambda: datetime(2026, 10, 13, 8, 30, 0)  # noqa: E731
     with pytest.raises(SystemExit) as excinfo:
         run_cli(monkeypatch, [
             "--workers", "2",
@@ -623,7 +672,8 @@ def test_nonzero_worker_exits_one_with_verdict_table(
             "--output-root", str(base),
             "--registry-dir", str(registry_dir),
             "--tasks", "task-x", "--seeds", "42",
-        ], spawner=make_fake_spawner(calls, returncodes=[1, 0]))
+        ], spawner=make_fake_spawner(calls, returncodes=[1, 0]),
+            clock=clock)
     assert excinfo.value.code == 1
     assert len(calls) == 2
     out = capsys.readouterr().out
@@ -638,7 +688,10 @@ def test_nonzero_worker_exits_one_with_verdict_table(
     )
     for i in (0, 1):
         assert str(run_sweep_shard.worker_root(base, i)) in out
-        assert str(run_sweep_shard.worker_log_path(base, i)) in out
+        assert str(run_sweep_shard.worker_log_path(
+            base, i, "20261013_083000")) in out, (
+            "the verdict table names the log THIS launch teed into"
+        )
     assert "1/2 worker(s) failed" in out
 
 
@@ -760,6 +813,7 @@ def test_real_two_worker_dry_run_subprocess_chain(tmp_path, monkeypatch):
     shape — never N>1 GPUs, never real training)."""
     registry_dir = make_registry(tmp_path)
     base = (tmp_path / "finetuned").resolve()
+    clock = lambda: datetime(2026, 10, 13, 12, 0, 0)  # noqa: E731
     run_cli(monkeypatch, [
         "--workers", "2",
         "--models", "model-a,model-b",
@@ -768,7 +822,7 @@ def test_real_two_worker_dry_run_subprocess_chain(tmp_path, monkeypatch):
         "--dry-run",
         "--output-root", str(base),
         "--registry-dir", str(registry_dir),
-    ])  # real spawner: main(spawner=None) -> subprocess.Popen
+    ], clock=clock)  # real spawner: main(spawner=None) -> subprocess.Popen
 
     identities = {}
     for i, expected_models in ((0, ["model-a"]), (1, ["model-b"])):
@@ -783,7 +837,7 @@ def test_real_two_worker_dry_run_subprocess_chain(tmp_path, monkeypatch):
         assert all(cell[1] == "task-x" and cell[2] == 42
                    for cell in worker_identities)
         identities[i] = worker_identities
-        log = run_sweep_shard.worker_log_path(base, i)
+        log = run_sweep_shard.worker_log_path(base, i, "20261013_120000")
         assert log.is_file(), f"worker {i} tee log must exist"
         assert log.read_text(encoding="utf-8").strip(), (
             f"worker {i} tee log must capture the child's output"
@@ -1429,6 +1483,7 @@ def test_n1_degenerate_real_subprocess_smoke(tmp_path, monkeypatch):
     never an executor or CI run (D-05)."""
     registry_dir = make_registry(tmp_path)
     base = (tmp_path / "finetuned").resolve()
+    clock = lambda: datetime(2026, 10, 13, 12, 0, 0)  # noqa: E731
     run_cli(monkeypatch, [
         "--workers", "1",
         "--gpus", "0",
@@ -1438,7 +1493,7 @@ def test_n1_degenerate_real_subprocess_smoke(tmp_path, monkeypatch):
         "--dry-run",
         "--output-root", str(base),
         "--registry-dir", str(registry_dir),
-    ])  # real spawner: main(spawner=None) -> subprocess.Popen
+    ], clock=clock)  # real spawner: main(spawner=None) -> subprocess.Popen
 
     w0 = run_sweep_shard.worker_root(base, 0)
     assert (w0 / "sweep_manifest.json").is_file(), (
@@ -1454,7 +1509,7 @@ def test_n1_degenerate_real_subprocess_smoke(tmp_path, monkeypatch):
         ("model-a", "task-x", 42), ("model-b", "task-x", 42)}, (
         "the degenerate worker planned exactly the 2-model matrix"
     )
-    log = run_sweep_shard.worker_log_path(base, 0)
+    log = run_sweep_shard.worker_log_path(base, 0, "20261013_120000")
     assert log.is_file() and log.read_text(encoding="utf-8").strip(), (
         "the sibling tee log exists and captured the child's output"
     )
