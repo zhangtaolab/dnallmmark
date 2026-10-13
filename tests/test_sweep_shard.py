@@ -1344,6 +1344,23 @@ def test_merge_refuses_stray_passthrough(tmp_path, monkeypatch):
     assert "--seeds" in str(excinfo.value)
 
 
+def test_merge_refuses_models_flag(tmp_path, monkeypatch):
+    """WR-06: --merge with --models refuses collect-all — a launch-mode
+    command line reused with --merge added (an easy copy-paste) must
+    not SILENTLY ignore its --models; the worker manifests are the
+    merge's source of truth, and the module's own discipline is
+    collect-all fail-fast, never silent."""
+    base, _roots = make_worker_pair(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_merge_cli(monkeypatch, base, extra=["--models", "model-a"])
+    message = str(excinfo.value)
+    assert "--models" in message
+    assert "source of truth" in message
+    assert not (base / run_sweep.MANIFEST_NAME).exists(), (
+        "the refusal must land BEFORE any merged manifest is written"
+    )
+
+
 def test_merged_root_is_consumer_equivalent(tmp_path, monkeypatch):
     """The D-09 acceptance: export_runs.load_run_records over the merged
     root returns EXACTLY the union of the per-worker record sets (the

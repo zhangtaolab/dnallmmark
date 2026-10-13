@@ -717,7 +717,9 @@ def run_merge(args, passthrough):
 
     Validation is collect-all fail-fast (the ``_validate_filters``
     discipline): ``--workers < 1``, a non-empty passthrough (merge takes
-    no sweep flags), ``--dry-run`` combined with ``--merge``, a missing
+    no sweep flags), a provided ``--models`` (WR-06: the worker
+    manifests are the merge's source of truth — never silently
+    ignored), ``--dry-run`` combined with ``--merge``, a missing
     worker root, a worker root without its sweep_manifest.json, an
     unreadable/non-object manifest or failures file, a manifest whose
     matrix/cells are the wrong shape, a cell whose output_dir does not
@@ -769,6 +771,14 @@ def run_merge(args, passthrough):
         problems.append(
             "--merge takes no sweep flags; unrecognized token(s): "
             f"{passthrough}"
+        )
+    # --models is an orchestrator-owned flag, so it never lands in the
+    # passthrough — refuse it explicitly (WR-06): a reused launch-mode
+    # command line must fail loudly, never silently ignore --models
+    if args.models is not None:
+        problems.append(
+            "--merge takes no --models (the worker manifests are the "
+            "merge's source of truth)"
         )
     if args.dry_run:
         problems.append(
