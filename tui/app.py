@@ -50,6 +50,7 @@ onto this root.
 """
 
 from collections.abc import Callable
+from pathlib import Path
 from threading import Lock
 from typing import Any, ClassVar, Protocol
 
@@ -67,6 +68,13 @@ from tui.screens.about import AboutScreen
 from tui.screens.data_manager import DataManagerBackend, DataManagerScreen
 from tui.screens.env_check import EnvCheckScreen, EnvCheckServiceProtocol
 from tui.screens.nav import NAV_SLOT_BY_INDEX, binding_row
+from tui.screens.run_config import (
+    LauncherBackend,
+    LauncherServiceProtocol,
+    RunConfigBackend,
+    RunConfigScreen,
+    RunConfigServiceProtocol,
+)
 from tui.screens.selection import (
     SelectionQueueBackend,
     SelectionScreen,
@@ -86,7 +94,10 @@ from tui.strings import (
     APP_MODAL_BACK_LABEL,
     APP_QUIT_LABEL,
     APP_TITLE,
+    CFG_VALUE_ABSENT,
     DL_BUNDLE_TASK_NAME,
+    LNC_EXIT_MESSAGE,
+    LNC_EXIT_TITLE,
     NAV_PLACEHOLDER_TOAST,
     QUEUE_FLIP_TOAST,
     QUEUE_PERSIST_DRIVER_TOAST,
@@ -153,6 +164,50 @@ class MinSizeScreen(Screen):
         self._width = width
         self._height = height
         self.query_one("#min-size-message", Static).update(self._message())
+
+
+class ExitModal(ModalScreen):
+    """The D-06 exit triple: [enter] detach (default) / [k] kill / [esc]
+    return — pushed by ``action_quit`` when a live sweep exists.
+
+    The kill path blocks up to the launcher's kill grace (SIGTERM ->
+    poll -> SIGKILL escalation) — the brief wait the plan names; the
+    app is exiting either way. 11-06 formats the done/total fields
+    with the absent marker (the launcher carries no progress; the
+    monitor's live counts land in 11-07).
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("enter", "detach_quit", show=False),
+        Binding("k", "kill_quit", show=False),
+        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+    ]
+
+    def __init__(self, root: str, launcher, message: str, **kwargs):
+        super().__init__(**kwargs)
+        self._root = root
+        self._launcher = launcher
+        self._message = message
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="exit-modal-box", classes="modal-box"):
+            yield Static(self._message)
+            yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one("#exit-modal-box", Vertical).border_title = (
+            LNC_EXIT_TITLE)
+
+    def action_detach_quit(self) -> None:
+        """[enter] the default: drop the handle, the sweep survives
+        (resume-safe by the trainer_state marker contract), then exit."""
+        self._launcher.detach(self._root)
+        self.app.exit()
+
+    def action_kill_quit(self) -> None:
+        """[k] SIGTERM the process group (killpg), then exit."""
+        self._launcher.kill_sweep(self._root)
+        self.app.exit()
 
 
 class QueueDriverProtocol(Protocol):
@@ -271,7 +326,9 @@ class DnallmMarkTui(App):
 
     def __init__(self, env_check_service: EnvCheckServiceProtocol | None = None,
                  selection_service: SelectionServiceProtocol | None = None,
-                 download_queue_service: QueueDriverProtocol | None = None):
+                 download_queue_service: QueueDriverProtocol | None = None,
+                 run_config_service: RunConfigServiceProtocol | None = None,
+                 launcher_service: LauncherServiceProtocol | None = None):
         """Compose the console with injectable services.
 
         Args:
@@ -286,6 +343,15 @@ class DnallmMarkTui(App):
                 download-queue service (the 10-04 seam — the driver loop
                 AND the data-manager screen run over this ONE instance).
                 None means the real ``DownloadQueueService``.
+            run_config_service: optional override for the run-config
+                screen's service (the 11-06 seam — tests inject fakes so
+                no registry read or XDG write executes). None means the
+                real service, built per screen in the factory.
+            launcher_service: optional override for the shared launcher
+                service (the 11-06 seam). None builds the real
+                ``LauncherBackend`` over ONE app-owned ``SweepLauncher``
+                — the run-config gate, the ExitModal, and (11-07) the
+                monitor's live-root scans all read this instance.
         """
         super().__init__()
         self._env_check_service = env_check_service
@@ -293,6 +359,13 @@ class DnallmMarkTui(App):
         self._download_queue: QueueDriverProtocol = (
             download_queue_service if download_queue_service is not None
             else DownloadQueueService()
+        )
+        self._run_config_service = run_config_service
+        # The app-owned shared launcher (the ExitModal predicate + the
+        # 11-06 gate + 11-07's auto-nav/monitor read ONE registry).
+        self._launcher: LauncherServiceProtocol = (
+            launcher_service if launcher_service is not None
+            else LauncherBackend()
         )
         # The driver state (T-10-04-02): the busy flag is set
         # SYNCHRONOUSLY in kick and cleared in the worker's drain exit,
@@ -352,6 +425,25 @@ class DnallmMarkTui(App):
         return DataManagerScreen(
             data_service=DataManagerBackend(self._download_queue))
 
+    def build_run_config_screen(self) -> RunConfigScreen:
+        """Build the run-config screen over the injected-or-real
+        services + the SHARED launcher.
+
+        The 11-06 factory (the build_data_manager_screen rationale):
+        the launcher is the app-owned shared instance so the screen's
+        gate, the app's ExitModal, and (11-07) the monitor all read ONE
+        live-sweep registry — a zero-arg SCREENS slot would build a
+        second launcher and silently fork the live-sweep truth. The
+        run-config service builds per screen (stateless adapter; the
+        Pilot seam injects the fake here).
+        """
+        return RunConfigScreen(
+            run_config_service=(self._run_config_service
+                                if self._run_config_service is not None
+                                else RunConfigBackend()),
+            launcher_service=self._launcher,
+        )
+
     # ===== Digit navigation (D-13, 09-03) =====
 
     async def action_nav(self, slot: int) -> None:
@@ -382,6 +474,10 @@ class DnallmMarkTui(App):
             if isinstance(current, DataManagerScreen):
                 return
             await self.switch_screen(self.build_data_manager_screen())
+        elif target.target == "run_config":
+            if isinstance(current, RunConfigScreen):
+                return
+            await self.switch_screen(self.build_run_config_screen())
         elif target.target == "about":
             if isinstance(current, AboutScreen):
                 return
@@ -630,6 +726,27 @@ class DnallmMarkTui(App):
         return self._min_size_screen is not None
 
     # ===== Actions (app-level) =====
+
+    def action_quit(self) -> None:
+        """The D-06 q intercept: a live sweep (``live_sweeps`` non-empty)
+        pushes the ExitModal (kill/detach/cancel, default detach) instead
+        of quitting; with none, q quits directly (the inherited path).
+        Never pushes over the min-size guard (WR-06). 11-07 extends the
+        predicate to attached running sweeps.
+        """
+        roots = self._launcher.live_sweeps()
+        if roots and not self.below_minimum_grid:
+            root = roots[0]
+            message = LNC_EXIT_MESSAGE.format(
+                # 11-06: the launcher carries no progress counts — the
+                # honest absent markers; 11-07 threads the live counts.
+                done=CFG_VALUE_ABSENT, total=CFG_VALUE_ABSENT,
+                root=Path(root).name)
+            self.push_screen(
+                ExitModal(root=root, launcher=self._launcher,
+                          message=message))
+            return
+        self.exit()
 
     def action_help(self) -> None:
         """The ``?`` key: the help modal over the current screen.

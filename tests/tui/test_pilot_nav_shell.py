@@ -7,12 +7,14 @@ kernel, no real registry read — the D-03 discipline):
 
 - the top menu bar: six slots with the RATIFIED verbatim resource-noun
   names, digit-prefixed, the active slot carrying the ◆ prefix (glyph +
-  bold + accent triple channel), placeholders 3/4/5 dim with the
-  未开放 suffix, and the whole slot set fitting within 80 columns at
+  bold + accent triple channel), placeholder 5 dim with the
+  未开放 suffix (slots 3/4 are REAL since 10-04/11-06), and the whole
+  slot set fitting within 80 columns at
   80x24 (the fixed-vocabulary overflow edge);
-- placeholder activation is never silent: digits 3/4/5 fire the
-  Phase-naming toast and never switch screens; digits 1/2/6 switch to
-  the live screens (slot 6 = the About screen) with the ◆ tracking the
+- placeholder activation is never silent: digit 5 fires the
+  Phase-naming toast and never switches screens; digits 1/2/4/6 switch
+  to the live screens (slot 4 = the run-config screen, 11-06; slot 6 =
+  the About screen) with the ◆ tracking the
   active slot;
 - the bottom bar: the left segment renders the active screen's command
   keycaps in binding-declaration order (the ``_binding_row`` source the
@@ -41,10 +43,12 @@ from tui.screens.about import AboutScreen
 from tui.screens.data_manager import DataManagerScreen
 from tui.screens.env_check import EnvCheckScreen
 from tui.screens.nav import BottomBar, TopMenuBar
+from tui.screens.run_config import PickerEntries, RunConfigScreen
 from tui.screens.selection import PresetMenu, SelectionData, SelectionScreen
 from tui.services import registries as registries_service
 from tui.services import selection as selection_service
 from tui.services.download_queue import merge_presence
+from tui.services.run_config import PreviewResult, RunSpec
 from tui.strings import (
     APP_HELP_ROW,
     ENV_DETAIL_LABEL,
@@ -147,6 +151,87 @@ class _QueueDriverFake:
         raise AssertionError("the nav-shell tests never run queue tasks")
 
 
+class _RunConfigShellFake:
+    """The minimal run-config service fake (11-06): empty registries,
+    the default spec, the real pure grammar legs — the slot-4 screen
+    mounts deterministically without a registry read or XDG write."""
+
+    def picker_entries(self):
+        return PickerEntries()
+
+    def load_state(self):
+        return RunSpec(models=(), tasks=())
+
+    def save_state(self, spec):
+        del spec
+
+    def preview(self, spec):
+        return PreviewResult(
+            models_count=len(spec.models), tasks_count=len(spec.tasks),
+            seeds_count=len(spec.seeds), fractions_count=None,
+            cells_count=0, cells=(),
+            problems=(("empty_selection", None),))
+
+    def parse_params(self, raw):
+        from tui.services import run_config as run_config_module
+
+        return run_config_module.parse_params(raw)
+
+    def resolve_dirs(self, spec):
+        from tui.services import run_config as run_config_module
+
+        return run_config_module.resolve_dirs(spec)
+
+    def probe_ineligible(self):
+        return frozenset()
+
+    def path_state(self, value):
+        return "unset" if not value else "missing"
+
+    def parse_filter(self, query):
+        return selection_service.parse_filter_query(query)
+
+    def apply_filter(self, entries, parsed):
+        return selection_service.apply_filter(entries, parsed.terms)
+
+    def compose_argv(self, spec):
+        raise AssertionError("the nav-shell tests never compose argv")
+
+    def expected_phrase(self, output_root):
+        return Path(output_root).name
+
+    def phrase_matches(self, typed, output_root):
+        return typed == self.expected_phrase(output_root)
+
+
+class _LauncherShellFake:
+    """The minimal launcher fake (11-06): no live sweeps, no launches."""
+
+    def env_preflight(self, kernels=None):
+        from tui.services.sweep_launcher import EnvPreflight
+
+        return EnvPreflight(
+            can_launch=True, reasons=(), failed_kernels=())
+
+    def gate_confirm_data(self, spec):
+        raise AssertionError("the nav-shell tests never gate")
+
+    def launch_spec(self, spec, phrase=None):
+        raise AssertionError("the nav-shell tests never launch")
+
+    def kill_sweep(self, root):
+        raise AssertionError("the nav-shell tests never kill")
+
+    def detach(self, root):
+        raise AssertionError("the nav-shell tests never detach")
+
+    def live_sweeps(self):
+        return ()
+
+    def tee_path_for(self, root):
+        return None
+
+
 def _pin_config_roots(monkeypatch, tmp_path):
     """Pin the config roots at tmp_path (the real home is never read)."""
     config = tmp_path / "config"
@@ -157,11 +242,13 @@ def _pin_config_roots(monkeypatch, tmp_path):
 
 
 def _app():
-    """The real app with cache-hit env fake + the empty selection fake."""
+    """The real app with cache-hit env fake + the empty fakes."""
     return DnallmMarkTui(
         env_check_service=_EnvCacheHitFake(),
         selection_service=_SelectionFake(),
         download_queue_service=_QueueDriverFake(),
+        run_config_service=_RunConfigShellFake(),
+        launcher_service=_LauncherShellFake(),
     )
 
 
@@ -209,14 +296,16 @@ async def test_top_bar_six_verbatim_slots_fit_80_triple_channel():
         widgets = _slot_widgets(app.screen)
 
         # six slots, the ratified verbatim resource-noun names, digit-first;
-        # slot 3 is REAL since 10-04 (no placeholder suffix)
+        # slot 3 is REAL since 10-04 and slot 4 since 11-06 (no suffix)
         assert len(texts) == 6, "the bar carries exactly six slots"
         assert texts[0] == f"◆ 1{NAV_LABEL_ENV}", (
             "the ACTIVE slot carries the ◆ prefix (glyph channel)"
         )
         assert texts[1] == f" 2{NAV_LABEL_SELECTION}"
         assert texts[2] == f" 3{NAV_LABEL_DATA}"
-        assert texts[3] == f" 4{NAV_LABEL_RUN_CONFIG}{NAV_PLACEHOLDER_SUFFIX}"
+        assert texts[3] == f" 4{NAV_LABEL_RUN_CONFIG}", (
+            "slot 4 is REAL since 11-06 — no placeholder suffix"
+        )
         assert texts[4] == f" 5{NAV_LABEL_MONITOR}{NAV_PLACEHOLDER_SUFFIX}"
         assert texts[5] == f" 6{NAV_LABEL_ABOUT}"
 
@@ -226,11 +315,14 @@ async def test_top_bar_six_verbatim_slots_fit_80_triple_channel():
             "the active slot must render bold + accent (color/weight channel)"
         )
         # placeholders render dim (the muted class) — never dead-looking;
-        # only slots 4/5 remain placeholders (10-04 promoted slot 3)
-        for placeholder in widgets[3:5]:
+        # only slot 5 remains a placeholder (11-06 promoted slot 4)
+        for placeholder in widgets[4:5]:
             assert placeholder.has_class("nav-slot-placeholder"), (
                 "placeholder slots render dim with the suffix"
             )
+        assert not widgets[3].has_class("nav-slot-placeholder"), (
+            "the promoted slot 4 must not render the placeholder class"
+        )
 
         # the fixed vocabulary fits within 80 columns at 80x24
         bar = app.screen.query_one(TopMenuBar)
@@ -276,13 +368,13 @@ async def test_digits_switch_live_screens_and_track_active_slot(
 
 
 async def test_placeholder_digits_fire_phase_toast_never_switch():
-    """4/5 are never silent: the phase toast fires, the screen holds;
-    digit 3 is REAL since 10-04 — it switches with zero placeholder
-    artifacts."""
+    """5 is never silent: the phase toast fires, the screen holds; slot
+    3 (10-04) and slot 4 (11-06) are REAL — digit 4 switches to the
+    run-config screen with zero placeholder artifacts."""
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
-        for digit, phase in (("4", 11), ("5", 12)):
+        for digit, phase in (("5", 12),):
             await pilot.press(digit)
             await pilot.pause()
             assert NAV_PLACEHOLDER_TOAST.format(n=phase) in (
@@ -292,6 +384,19 @@ async def test_placeholder_digits_fire_phase_toast_never_switch():
             assert isinstance(app.screen, EnvCheckScreen), (
                 f"digit {digit} must never switch screens"
             )
+
+        # slot 4 (11-06): the real run-config screen, no phase toast
+        await pilot.press("4")
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(app.screen, RunConfigScreen), (
+            "digit 4 must switch to the real run-config screen"
+        )
+        assert NAV_PLACEHOLDER_TOAST.format(n=11) not in (
+            _toast_messages(app)), (
+            "slot 4 must never fire the placeholder phase toast"
+        )
 
         # slot 3 (10-04): the real data-manager screen, no phase toast
         await pilot.press("3")

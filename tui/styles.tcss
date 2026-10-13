@@ -411,6 +411,186 @@ BottomBar {
     color: $text-muted;        /* labels muted (keys carry $accent inline) */
 }
 
+/* ===== Run-config screen (11-06, slot 4 — D-01..D-05/D-14) =====
+ * Two columns (picker | params) inside full-width rules — borders stay
+ * reserved for modals (the dl-region precedent). The picker column is
+ * a WIDTH RATIO (~47% — ~56 cells at 120, ~38 at 80), not a spacing
+ * token; Textual re-derives it on every resize. Theme tokens only. */
+
+#cfg-title-bar {
+    height: 1;      /* row token: one status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#cfg-screen-title {
+    text-style: bold;          /* Heading role */
+    width: auto;
+}
+
+#cfg-status-line {
+    width: 1fr;                /* right edge of the same status line */
+    text-align: right;
+    color: $text-muted;        /* Secondary role */
+}
+
+#cfg-columns {
+    height: 1fr;                /* the split owns the content rows */
+    border-top: solid $border;  /* 1-cell border exception — separator */
+    border-bottom: solid $border;
+}
+
+#cfg-picker-col {
+    width: 47%;    /* the column-split ratio (auto-default 2) */
+    height: auto;
+}
+
+#cfg-picker-title {
+    height: 1;      /* row token: the picker title with live counts */
+    padding: 0 1;   /* 1-cell status-line exception */
+    text-style: bold;          /* Heading role */
+}
+
+#cfg-filter-bar {
+    height: 1;      /* the compact Input renders one row */
+    padding: 0 1;   /* 1-cell status-line exception */
+}
+
+#cfg-filter-label {
+    width: auto;
+    color: $text-muted;        /* Secondary role */
+}
+
+#cfg-filter {
+    width: 1fr;                /* the Input owns the bar's remaining width */
+}
+
+#cfg-filter-count {
+    width: auto;               /* the (N/total) readout right-aligns after it */
+    color: $text-muted;        /* Secondary role */
+}
+
+#cfg-picker {
+    height: 1fr;    /* the list owns the picker's remaining rows; scrolls */
+}
+
+#cfg-params-col {
+    width: 1fr;                /* the params column keeps the remainder */
+    height: auto;
+    padding: 0 1;   /* 1-cell status-line exception */
+}
+
+#cfg-params-title {
+    height: 1;      /* row token */
+    text-style: bold;          /* Heading role */
+}
+
+.cfg-param-row {
+    height: 1;      /* row token: one label/value row per field */
+}
+
+.cfg-param-label {
+    width: 22;      /* 20-cell effective_batch_size + 2-cell gap */
+}
+
+/* The 80-col degradation: the narrow label column (eff_batch_size). */
+#cfg-params-col.cfg-narrow .cfg-param-label {
+    width: 16;
+}
+
+.cfg-param-input {
+    width: 1fr;                /* the value column keeps the remainder */
+}
+
+.cfg-param-value {
+    width: 1fr;
+}
+
+.cfg-subset-toggle {
+    width: auto;               /* the bare toggle box sits before the value */
+}
+
+.cfg-choice-value {
+    width: 1fr;
+}
+
+/* Focus visibility on the choice rows (the keyboard-first contract). */
+.cfg-choice-value:focus {
+    background: $boost;
+    text-style: bold;
+}
+
+.cfg-hint {
+    height: 1;      /* row token: the derived dim hint lines */
+    color: $text-muted;        /* Secondary role (the UI-SPEC dim hints) */
+}
+
+.cfg-adv {
+    height: 1;      /* row token: the path advisory lines */
+}
+
+.cfg-section-title {
+    height: 2;                    /* the ─ rule row + the section title row */
+    border-top: solid $border;    /* 1-cell border exception — separator */
+    color: $text-muted;           /* Secondary role */
+}
+
+#cfg-preview-line {
+    height: 1;      /* row token: the 1-row preview status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+/* Problems render the ⚠ warning channel (glyph first — NO_COLOR-safe). */
+.cfg-preview-problem {
+    color: $warning;
+}
+
+/* ===== Run-config modals (11-06 — the shared box pattern) ===== */
+
+PreviewModal,
+ProblemsModal,
+EnvBlockModal,
+E2PhraseModal,
+ChoiceModal,
+ExitModal {
+    align: center middle;      /* the bordered box centers on screen */
+}
+
+#cfg-preview-log,
+#cfg-problems-log {
+    height: auto;
+    max-height: 20;  /* scroll bound (not a spacing token) — wrap, never elide */
+}
+
+#cfg-envblock-log {
+    height: auto;
+    max-height: 20;  /* the bounded reasons RichLog (the inherited bound) */
+}
+
+#cfg-envblock-header {
+    color: $error;              /* the ✗ refusal channel */
+    text-style: bold;           /* Emphasis role */
+}
+
+#cfg-envblock-hint {
+    color: $text-muted;         /* the [1] route hint renders dim */
+}
+
+.cfg-e2-warning {
+    color: $warning;            /* the ⚠ block (glyph first) */
+}
+
+/* Color amendment 12: the E2' match indicator — the moment the
+ * destructive authorization becomes actionable is the focus of
+ * attention (accent + bold; the mismatch renders the ✗ error family). */
+.cfg-e2-match {
+    color: $accent;
+    text-style: bold;
+}
+
+.cfg-e2-mismatch {
+    color: $error;
+}
+
 /* ===== About screen (09-03, D-13 slot 6) ===== */
 
 #about-box {

@@ -500,7 +500,7 @@ async def test_space_marks_model_and_persists_roundtrip():
         picker = screen.query_one("#cfg-picker", SelectionList)
         assert app.focused is picker, "the picker takes the initial focus"
         await pilot.press("space")
-        await pilot.pause()
+        await _settle(pilot, app)
         assert run_service.saved_specs, "the mark persisted through save"
         saved = run_service.saved_specs[-1]
         assert saved.models == ("model-a",), (
@@ -510,7 +510,7 @@ async def test_space_marks_model_and_persists_roundtrip():
         await pilot.press("m")
         await pilot.pause()
         await pilot.press("space")
-        await pilot.pause()
+        await _settle(pilot, app)
         assert run_service.saved_specs[-1].tasks == ("task-1",)
         assert _label_text(screen, "#cfg-picker-title") == (
             CFG_PICKER_DATASETS.format(n=1, total=2))
@@ -608,12 +608,9 @@ async def test_preview_line_renders_and_updates_on_mark():
         await _settle(pilot, app)
         assert _label_text(screen, "#cfg-preview-line") == (
             CFG_PREVIEW_PROBLEMS.format(n=1))
-        # re-mark, then mark a dataset too: 1 x 2 x 3 = 6 cells
+        # re-mark: the counts return (the loaded spec already carries
+        # task-1 — 1 model x 1 task x 3 seeds = 3 cells)
         await pilot.press("space")
-        await _settle(pilot, app)
-        await pilot.press("m")
-        await pilot.pause()
-        await pilot.press("space")   # marks task-1
         await _settle(pilot, app)
         assert _label_text(screen, "#cfg-preview-line") == (
             CFG_PREVIEW_LINE.format(models=1, tasks=1, seeds=3, cells=3))

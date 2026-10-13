@@ -77,13 +77,15 @@ class NavSlot(NamedTuple):
 
 #: The six D-13 slots in bar order — the fixed vocabulary. Slot names are
 #: the RATIFIED verbatim resource nouns; slot 3 is REAL since Phase 10
-#: (the data manager, 10-04); slots 4/5 remain placeholders delivered by
-#: Phases 11/12 (run config / monitor).
+#: (the data manager, 10-04); slot 4 is REAL since Phase 11 (the run
+#: config, 11-06); slot 5 remains a placeholder delivered by Phase 11
+#: (the monitor, 11-07 — its delivered-by-Phase-12 annotation is stale
+#: per D-16 and is corrected in 11-07's promotion).
 NAV_SLOTS: "tuple[NavSlot, ...]" = (
     NavSlot(1, NAV_LABEL_ENV, "env_check", None),
     NavSlot(2, NAV_LABEL_SELECTION, "selection", None),
     NavSlot(3, NAV_LABEL_DATA, "data_manager", None),
-    NavSlot(4, NAV_LABEL_RUN_CONFIG, None, 11),
+    NavSlot(4, NAV_LABEL_RUN_CONFIG, "run_config", None),
     NavSlot(5, NAV_LABEL_MONITOR, None, 12),
     NavSlot(6, NAV_LABEL_ABOUT, "about", None),
 )
