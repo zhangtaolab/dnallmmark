@@ -143,7 +143,8 @@ class FakeMonitorService:
     def __init__(self, scans=None, cells=None, stats=None,
                  frontiers=None, failures=None, tails=None,
                  resume_counts=None, scales=None,
-                 valid_roots=(), manual_roundtrip=None, records=None):
+                 valid_roots=(), manual_roundtrip=None, records=None,
+                 rerun_lanes=None):
         self._scans = list(scans) if scans else []
         self._cells = dict(cells or {})
         self._stats = dict(stats or {})
@@ -156,6 +157,7 @@ class FakeMonitorService:
         self._manual_roundtrip = (
             manual_roundtrip if manual_roundtrip is not None else [])
         self._records = dict(records or {})
+        self._rerun_lanes = dict(rerun_lanes or {})
         self.full_calls = []
         self.frontier_calls = []
         self.cells_calls = []
@@ -163,6 +165,7 @@ class FakeMonitorService:
         self.failures_calls = []
         self.tail_calls = []
         self.record_calls = []
+        self.rerun_lane_calls = []
         self.added_roots = []
 
     # ----- the scan surface -----
@@ -213,6 +216,10 @@ class FakeMonitorService:
     def failures_view(self, root):
         self.failures_calls.append(str(root))
         return self._failures.get(str(root), ())
+
+    def rerun_lane(self, root):
+        self.rerun_lane_calls.append(str(root))
+        return self._rerun_lanes.get(str(root), ("none", "none"))
 
     def cell_record(self, root, model, task, seed):
         self.record_calls.append((str(root), model, task, seed))
@@ -1043,6 +1050,47 @@ async def test_rerun_confirm_routes_launch_from_failures_and_attaches():
         assert MON_RERUN_TOAST.format(
             cells="—", root="finetuned") in _toast_messages(app)
         assert str(app.screen._attached_root) == "/scans/finetuned"
+
+
+async def test_rerun_carries_source_sweep_lane_never_base_default():
+    """WR-01: a --peft lora sweep's [r] re-run threads the SOURCE lane
+    into launch_from_failures (recovered via the service's rerun_lane)
+    — never a none/none default that would re-train BASE cells of the
+    failed pairs instead of the confirmed alias cells."""
+    from tui.screens.monitor import FailuresModal
+
+    failures = (FailureRow(model="model-a+lora", task="task-1", seed=42,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=3, total=5),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a+lora", "task-1", {42: CELL_FAILED, 43: CELL_QUEUED}),)},
+        stats={"/scans/finetuned": _stats(done=3, total=5)},
+        failures={"/scans/finetuned": failures},
+        rerun_lanes={"/scans/finetuned": ("lora", "none")},
+    )
+    launcher = FakeMonitorLauncher()
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.press("enter")   # confirm the re-run
+        await _settle(pilot, app)
+        assert monitor.rerun_lane_calls == ["/scans/finetuned"], (
+            "the lane is read through the service seam"
+        )
+        assert len(launcher.rerun_calls) == 1
+        _path, _seeds, _root, peft, variant, _phrase = (
+            launcher.rerun_calls[0])
+        assert peft == "lora", "the source sweep's lane threads through"
+        assert variant == "none"
 
 
 async def test_rerun_env_block_renders_the_same_modal():

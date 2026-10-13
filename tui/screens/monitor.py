@@ -306,6 +306,10 @@ class MonitorServiceProtocol(Protocol):
     def failures_view(self, root) -> Any:
         """The failure list (live records / the end-of-sweep file)."""
 
+    def rerun_lane(self, root) -> "tuple[str, str]":
+        """The (peft, config_variant) lane the [r] re-run must carry
+        (WR-01 — recovered from the source sweep's own artifacts)."""
+
     def cell_record(self, root, model: str, task: str,
                     seed: int) -> "dict | None":
         """One cell's run_record fields verbatim (None when absent) —
@@ -416,6 +420,11 @@ class MonitorBackend:
 
     def failures_view(self, root) -> Any:
         return sweep_monitor.failures_view(root)
+
+    def rerun_lane(self, root) -> "tuple[str, str]":
+        """WR-01: the source sweep's lane, recovered from its artifacts
+        (the worker-side read for the [r] re-run)."""
+        return sweep_monitor.rerun_lane(root)
 
     def cell_record(self, root, model: str, task: str,
                     seed: int) -> "dict | None":
@@ -1111,18 +1120,23 @@ class MonitorScreen(Screen):
     def _run_rerun_launch(self, root: str, run_id: int,
                           phrase: "str | None" = None) -> None:
         """The from-failures launch over the SAME seam (D-11): the
-        re-run re-enters the sweep's own seeds at its own root. CR-01:
-        ``phrase`` threads the E2' re-prompt's answer (None on the
-        first attempt — the service's gate refuses an E2'-class
-        effective matrix and this screen re-prompts)."""
+        re-run re-enters the sweep's own seeds at its own root, carrying
+        the source sweep's OWN lane (WR-01 — the lane is recovered from
+        the root's artifacts inside this worker, never defaulted, so a
+        --peft/--config-variant sweep's failures re-run as that lane,
+        not as base cells). CR-01: ``phrase`` threads the E2' re-prompt's
+        answer (None on the first attempt — the service's gate refuses
+        an E2'-class effective matrix and this screen re-prompts)."""
         seeds = sorted({
             cell_seed.seed
             for row in self._cell_rows.values()
             for cell_seed in row.seeds
         }) or [42]
         failures_path = str(Path(root) / sweep_monitor.FAILURES_NAME)
+        peft, config_variant = self._service.rerun_lane(root)
         outcome = self._launcher.launch_from_failures(
-            failures_path, seeds, root, phrase=phrase)
+            failures_path, seeds, root,
+            peft=peft, config_variant=config_variant, phrase=phrase)
         self.post_message(self.RerunFinished(outcome, root, run_id))
 
     def on_monitor_screen_rerun_finished(

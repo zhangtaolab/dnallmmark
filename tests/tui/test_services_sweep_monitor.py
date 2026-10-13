@@ -912,6 +912,64 @@ def test_eta_malformed_and_skewed_stamps_dropped_never_crash():
     assert estimate.point_seconds == 200.0  # the one good 100s x remaining 2
 
 
+def test_rerun_lane_derives_peft_and_variant_from_source_sweep(tmp_path):
+    """WR-01: the re-run lane recovers from the SOURCE sweep's own
+    artifacts — the manifest's merged config_variant flag + the failure
+    entries' alias/base pair — never a silent none/none default that
+    would re-train BASE cells instead of the confirmed alias cells."""
+    root = tmp_path / "finetuned"
+    write_json(root / MANIFEST_NAME, manifest_payload([
+        {**manifest_cell("model-a+lora", "task-1", 42, "failed"),
+         "config_variant": "probe"},
+    ]))
+    write_json(root / FAILURES_NAME, [
+        {"model": "model-a+lora", "base_model": "model-a",
+         "task": "task-1", "seed": 42, "output_dir": "/x",
+         "error": "boom"},
+    ])
+
+    assert sweep_monitor.rerun_lane(root) == ("lora", "probe")
+
+
+def test_rerun_lane_head_variant_comes_from_manifest_flags(tmp_path):
+    """The ``head`` lane KEEPS base names for the frozen pair, so an
+    alias-name derivation would miss it — the manifest's merged
+    config_variant flag is the authoritative source."""
+    root = tmp_path / "finetuned"
+    write_json(root / MANIFEST_NAME, manifest_payload([
+        {**manifest_cell("model-a", "task-1", 42, "failed"),
+         "config_variant": "head"},
+    ]))
+    write_json(root / FAILURES_NAME, [
+        {"model": "model-a", "base_model": "model-a",
+         "task": "task-1", "seed": 42, "output_dir": "/x",
+         "error": "boom"},
+    ])
+
+    assert sweep_monitor.rerun_lane(root) == ("none", "head")
+
+
+def test_rerun_lane_base_sweep_and_missing_artifacts_default_none(
+        tmp_path):
+    """A BASE sweep's artifacts (no flags, plain names — and a manifest
+    whose cells carry no config_variant key) and a root with no
+    artifacts at all both derive the honest none/none lane."""
+    base_root = tmp_path / "base"
+    write_json(base_root / MANIFEST_NAME, manifest_payload([
+        manifest_cell("model-a", "task-1", 42, "failed"),
+    ]))
+    write_json(base_root / FAILURES_NAME, [
+        {"model": "model-a", "base_model": "model-a",
+         "task": "task-1", "seed": 42, "output_dir": "/x",
+         "error": "boom"},
+    ])
+    assert sweep_monitor.rerun_lane(base_root) == ("none", "none")
+
+    empty_root = tmp_path / "empty"
+    empty_root.mkdir()
+    assert sweep_monitor.rerun_lane(empty_root) == ("none", "none")
+
+
 def test_failures_view_records_while_running_file_when_finished(tmp_path):
     """MON-03's source switch (O3): records with status failed are the
     LIVE source while running (sweep_failures.json does not exist yet);

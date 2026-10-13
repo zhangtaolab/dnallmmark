@@ -56,7 +56,10 @@ from run_sweep import (  # D-05 same-source: the driver's own names
     RESUME_MARKER,
 )
 
-from tui.services import settings
+from tui.services import (
+    run_config,  # the lane vocabularies (WR-01)
+    settings,
+)
 
 # ===== Locations + pinned constants =====
 
@@ -1082,6 +1085,64 @@ def failures_view(root) -> tuple[FailureRow, ...]:
             if row is not None:
                 rows.append(row)
     return tuple(sorted(rows, key=lambda row: (row.model, row.task, row.seed)))
+
+
+def rerun_lane(root) -> tuple[str, str]:
+    """WR-01 (phase-11 review): the ``(peft, config_variant)`` lane the
+    [r] re-run must carry — recovered from the SOURCE sweep's own
+    artifacts, never a silent none/none default (which would enumerate
+    and re-train the BASE cells of the failed pairs while the confirmed
+    alias cells are never re-attempted — a different experiment than
+    the one the operator confirmed, landing in the same root).
+
+    ``config_variant`` derives from the manifest's merged per-cell
+    ``config_variant`` sweep flag (present exactly when the source
+    sweep ran a variant — and the ONLY source that catches ``head``,
+    which keeps BASE names for the frozen pair). ``peft`` derives from
+    the failures entries' alias/base pair: the entry ``model`` equals
+    ``base_model + "+{mode}"`` (legacy entries without ``base_model``
+    fall back to the alias suffix alone). Tolerant throughout:
+    unreadable/missing artifacts and shape-invalid values derive the
+    honest ``("none", "none")``.
+
+    Args:
+        root: the source sweep's output root.
+
+    Returns:
+        tuple[str, str]: ``(peft, config_variant)`` over the
+        ``run_config.PEFT_MODES`` / ``CONFIG_VARIANTS`` vocabularies.
+    """
+    root_path = Path(root)
+    config_variant = "none"
+    for cell in _manifest_cells(load_manifest(root_path / MANIFEST_NAME)):
+        value = (
+            cell.get("config_variant") if isinstance(cell, dict) else None)
+        if (isinstance(value, str)
+                and value in run_config.CONFIG_VARIANTS
+                and value != "none"):
+            config_variant = value
+            break
+    peft = "none"
+    for entry in load_failures(root_path / FAILURES_NAME) or []:
+        if not isinstance(entry, dict):
+            continue
+        model = entry.get("model")
+        if not isinstance(model, str) or not model:
+            continue
+        base = entry.get("base_model")
+        has_base = isinstance(base, str) and bool(base)
+        reference = base if has_base else model
+        for mode in run_config.PEFT_MODES:
+            if mode == "none":
+                continue
+            suffixed = f"+{mode}"
+            if model == reference + suffixed or (
+                    not has_base and model.endswith(suffixed)):
+                peft = mode
+                break
+        if peft != "none":
+            break
+    return (peft, config_variant)
 
 
 def read_log_tail(path, max_lines=200, max_bytes=65536):
