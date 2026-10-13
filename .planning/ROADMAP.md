@@ -256,7 +256,20 @@ Plans:
   4. A read-only web progress mirror generated from sweep artifacts lets the team follow progress in a browser — static files only, no backend (static-hosting constraint holds)
   5. Canonical screens are pinned by Textual snapshot SVG goldens reviewed and committed by the maintainer, failing CI CPU-side on visual regression
 
-**Plans**: TBD
+**Plans**: 5 plans
+Plans:
+
+**Wave 1** *(parallel)*
+- [ ] 12-01-PLAN.md — run_sweep_shard.py launch mode (D-07 new entry): collect-all validation, LPT size-weighted sharding (pure fn + property tests), verbatim-launcher spawn + CUDA_VISIBLE_DEVICES per worker, frozen `{root}-mgpu-w{i}` sibling roots/logs, aggregated exit verdict; Makefile lint guard
+- [ ] 12-02-PLAN.md — web mirror (D-02): script/gen_progress.py over the pure scanner (frozen data contract, newest_mtime dropped, byte-stable), progress.html/js/css + DataAPI.loadProgress + NAV_LINKS, JS-lane extension, golden-JSON generator tests
+
+**Wave 2** *(blocked on wave 1)*
+- [ ] 12-03-PLAN.md — TEST-01 goldens (fallback lane, zero pyproject changes): export_screenshot string-compare harness, 8-SVG corpus, determinism + sensitivity, make snapshot-update + D-03 review gate; PLUS delta B — the one dismiss() override focus fix (10 paths, B1-B5 Pilot proof)
+- [ ] 12-04-PLAN.md — `--merge` mode (D-09: allowlist copy + SHA256 verify, manifest union + output_dir rewrite, lane-flag equality) + consumer-equivalence tests; docs/multi-gpu.md (D-04 decision matrix + runbook + 9-step other-machine procedure, D-05) + README link
+
+**Wave 3** *(blocked on wave 2)*
+- [ ] 12-05-PLAN.md — phase close: delta A N-root Pilot proof (zero monitor code), D-08 isolation re-run test, N=1 degenerate local smoke, SC1-5 ledger with named tests, WINDOWS.md unrun-verify entry for the maintainer's other-machine N=2 smoke
+
 **UI hint**: yes
 
 ## Progress
