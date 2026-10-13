@@ -38,6 +38,7 @@ See also:
 import json
 import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from run_sweep import (
@@ -676,3 +677,348 @@ def test_frontier_scan_states_and_newest_cell(tmp_path):
     live = sweep_monitor.frontier_scan(
         root, live_roots=[root], now=NOW_REAL() + 7200.0)
     assert live.state == "running"
+
+
+# =====================================================================
+# Lane 3 (Task 3): stats/elapsed/ETA (D-17) + failures + log tail
+# =====================================================================
+
+#: The D-17 clock basis: EPOCH0 is 2023-11-14T22:13:20Z — every record
+#: stamp is a fixed offset from it, every `now` an epoch float.
+EPOCH0 = 1_700_000_000.0
+
+
+def stamp(offset_seconds):
+    """An ISO-8601 UTC stamp at EPOCH0 + offset (the record shape)."""
+    return datetime.fromtimestamp(EPOCH0 + offset_seconds, tz=UTC).isoformat()
+
+
+def completed(model, task, seed, start, finish):
+    """A completed record with wall-clock stamps."""
+    return make_record(model, task, seed, status="completed",
+                       started_at=stamp(start), finished_at=stamp(finish))
+
+
+def eta_of(root, **kwargs):
+    """stats(root, ...).eta — the D-17 verdict under test."""
+    return sweep_monitor.stats(root, **kwargs).eta
+
+
+def test_stats_done_total_current_elapsed_exact(tmp_path):
+    """Five staggered completed records: done/total/current/elapsed are
+    exact under an injected now; every duration 60s => the point ETA is
+    median(60) x remaining."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "model-a", "task-1", 42,
+                 completed("model-a", "task-1", 42, 0, 60))
+    plant_record(root, "model-a", "task-1", 43,
+                 completed("model-a", "task-1", 43, 100, 160))
+    plant_record(root, "model-a", "task-2", 42,
+                 completed("model-a", "task-2", 42, 200, 260))
+    plant_record(root, "model-b", "task-1", 42,
+                 completed("model-b", "task-1", 42, 300, 360))
+    plant_record(root, "model-b", "task-2", 43,
+                 completed("model-b", "task-2", 43, 400, 460))
+
+    result = sweep_monitor.stats(
+        root, expected_total=10, now=EPOCH0 + 1000.0)
+
+    assert result.done == 5
+    assert result.total == 10
+    assert result.current == sweep_monitor.CurrentCell(
+        model="model-b", task="task-2", seed=43)
+    assert result.elapsed_seconds == 1000.0  # now - earliest started_at
+    assert result.eta == sweep_monitor.EtaEstimate(
+        mode="point", point_seconds=300.0, lo_seconds=None, hi_seconds=None)
+
+
+def test_stats_elapsed_none_before_first_record_without_fallback(tmp_path):
+    """No records and no fallback_start: elapsed is None (the dash
+    rendering) and the ETA is pending; done 0; total threads through."""
+    root = tmp_path / "finetuned"
+    root.mkdir(parents=True)
+
+    result = sweep_monitor.stats(root, expected_total=4, now=EPOCH0)
+
+    assert result.elapsed_seconds is None
+    assert result.current is None
+    assert result.done == 0
+    assert result.total == 4
+    assert result.eta.mode == "pending"
+
+
+def test_stats_fallback_start_before_first_record(tmp_path):
+    """A TUI-launched sweep before its first record: elapsed accrues
+    from the injected launcher start."""
+    root = tmp_path / "finetuned"
+    root.mkdir(parents=True)
+
+    result = sweep_monitor.stats(
+        root, fallback_start=EPOCH0 + 100.0, now=EPOCH0 + 1000.0)
+
+    assert result.elapsed_seconds == 900.0
+
+
+def test_stats_current_from_newest_activity_dir_when_no_records(tmp_path):
+    """No records yet: current derives from the newest-activity seed
+    dir (the mkdir-before-executor cell)."""
+    root = tmp_path / "finetuned"
+    old_dir = seed_dir(root, "model-a", "task-1", 42)
+    old_dir.mkdir(parents=True, exist_ok=True)
+    set_mtime(old_dir, NOW_REAL() - 7200.0)
+    fresh_dir = seed_dir(root, "model-a", "task-2", 43)
+    fresh_dir.mkdir(parents=True, exist_ok=True)
+    set_mtime(fresh_dir, NOW_REAL() - 5.0)
+
+    result = sweep_monitor.stats(root, now=NOW_REAL())
+
+    assert result.current == sweep_monitor.CurrentCell(
+        model="model-a", task="task-2", seed=43)
+
+
+def test_stats_manifest_derives_total_and_model_plan(tmp_path):
+    """No expected_total: the manifest's cell count is the total and
+    its per-model plan threads the per-model ETA (manifest cells carry
+    sweep_flags merges — only model/task/seed/status are read)."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "model-a", "task-1", 42,
+                 completed("model-a", "task-1", 42, 0, 100))
+    write_json(root / MANIFEST_NAME, manifest_payload([
+        manifest_cell("model-a", "task-1", 42, "completed"),
+        manifest_cell("model-a", "task-1", 43, "planned"),
+        manifest_cell("model-a", "task-1", 44, "planned"),
+    ]))
+
+    result = sweep_monitor.stats(root, now=EPOCH0 + 500.0)
+
+    assert result.total == 3
+    assert result.done == 1
+    # remaining 2 x model-a's own median (100) — per-model plan derivable
+    assert result.eta == sweep_monitor.EtaEstimate(
+        mode="point", point_seconds=200.0, lo_seconds=None, hi_seconds=None)
+
+
+def test_eta_pending_before_first_completion():
+    """< 1 completed duration => pending (the estimating degradation),
+    whatever else is known — skipped records never count as data."""
+    records = [make_record("m", "t", 42, status="skipped",
+                           started_at=stamp(0), finished_at=stamp(1))]
+    estimate = sweep_monitor.eta_estimate(records, done=1, total=5)
+    assert estimate.mode == "pending"
+    assert estimate == sweep_monitor.EtaEstimate(
+        mode="pending", point_seconds=None, lo_seconds=None, hi_seconds=None)
+
+    assert sweep_monitor.eta_estimate([], done=0, total=5).mode == "pending"
+
+
+def test_eta_point_median_times_remaining_exact():
+    """Durations [60, 60, 60]: the point is median x remaining exactly."""
+    records = [
+        completed("m", "t", 42, 0, 60),
+        completed("m", "t", 43, 100, 160),
+        completed("m", "t", 44, 200, 260),
+    ]
+    estimate = sweep_monitor.eta_estimate(records, done=3, total=6)
+    assert estimate.mode == "point"
+    assert estimate.point_seconds == 180.0
+    assert estimate.lo_seconds is None and estimate.hi_seconds is None
+
+
+def test_eta_range_when_variance_exceeds_ratio():
+    """Durations [60, 60, 300] (max/min 5 > 3.0): the point is replaced
+    by the min-max range over the remaining count."""
+    records = [
+        completed("m", "t", 42, 0, 60),
+        completed("m", "t", 43, 100, 160),
+        completed("m", "t", 44, 200, 500),
+    ]
+    estimate = sweep_monitor.eta_estimate(records, done=3, total=6)
+    assert estimate.mode == "range"
+    assert estimate.lo_seconds == 180.0  # min 60 x remaining 3
+    assert estimate.hi_seconds == 900.0  # max 300 x remaining 3
+    assert estimate.point_seconds is None
+
+
+def test_eta_point_at_exactly_the_ratio_boundary():
+    """max/min == 3.0 exactly: NOT exceeded — the point stands (the
+    pinned ratio is a strict inequality)."""
+    records = [completed("m", "t", 42, 0, 60), completed("m", "t", 43, 0, 180)]
+    estimate = sweep_monitor.eta_estimate(records, done=2, total=4)
+    assert estimate.mode == "point"
+    assert estimate.point_seconds == 240.0  # median 120 x remaining 2
+
+
+def test_eta_skipped_duration_excluded():
+    """A skipped record's ~zero duration must not shift the median:
+    completed [60, 180] (median 120) + skipped 0-duration stays 120 —
+    had it leaked in, the median would be 60."""
+    records = [
+        completed("m", "t", 42, 0, 60),
+        completed("m", "t", 43, 0, 180),
+        make_record("m", "t", 44, status="skipped",
+                    started_at=stamp(0), finished_at=stamp(0)),
+    ]
+    estimate = sweep_monitor.eta_estimate(records, done=3, total=5)
+    assert estimate.mode == "point"
+    assert estimate.point_seconds == 240.0  # 120 x remaining 2
+
+
+def test_eta_none_when_total_unknown_or_nothing_remaining():
+    """Unknown total => none (no fabricated totals, T-11-04-03);
+    nothing remaining => none."""
+    records = [completed("m", "t", 42, 0, 60)]
+    assert sweep_monitor.eta_estimate(records, done=1, total=None).mode == \
+        "none"
+    assert sweep_monitor.eta_estimate(records, done=1, total=1).mode == \
+        "none"
+
+
+def test_eta_per_model_median_else_global():
+    """model-a has a completion (its own median), model-b none (the
+    global median): point = 3 x 180 + 1 x 60 = 600 with the manifest
+    plan; the model-less fallback is global-median x remaining. The
+    durations sit exactly AT the variance ratio (180/60 == 3.0, not
+    exceeded) so the point mode is under test, not the range."""
+    records = [
+        completed("model-a", "t", 42, 0, 180),
+        completed("model-b", "t", 42, 0, 60),
+        completed("model-b", "t", 43, 0, 60),
+        completed("model-b", "t", 44, 0, 60),
+    ]
+    per_model = sweep_monitor.eta_estimate(
+        records, done=4, total=8,
+        model_totals={"model-a": 4, "model-b": 4})
+    assert per_model.mode == "point"
+    assert per_model.point_seconds == 600.0  # 3 x 180 + 1 x 60
+
+    fallback = sweep_monitor.eta_estimate(records, done=4, total=8)
+    # global median of [180, 60, 60, 60] is 60 -> 60 x remaining 4
+    assert fallback.point_seconds == 240.0
+
+
+def test_eta_malformed_and_skewed_stamps_dropped_never_crash():
+    """A malformed ISO stamp or a finished-before-started skew drops
+    that record from the math (T-11-04-01 tolerance), never a crash."""
+    records = [
+        completed("m", "t", 42, 0, 100),
+        make_record("m", "t", 43, status="completed",
+                    started_at="not-a-timestamp",
+                    finished_at=stamp(999)),
+        make_record("m", "t", 44, status="completed",
+                    started_at=stamp(500), finished_at=stamp(100)),  # skew
+    ]
+    estimate = sweep_monitor.eta_estimate(records, done=3, total=5)
+    assert estimate.mode == "point"
+    assert estimate.point_seconds == 200.0  # the one good 100s x remaining 2
+
+
+def test_failures_view_records_while_running_file_when_finished(tmp_path):
+    """MON-03's source switch (O3): records with status failed are the
+    LIVE source while running (sweep_failures.json does not exist yet);
+    once finished the file is authoritative — its base_model field
+    never leaks into the row (alias identity only)."""
+    root = tmp_path / "finetuned"
+    failed_dir = str(seed_dir(root, "model-a", "task-2", 43))
+    plant_record(root, "model-a", "task-1", 42,
+                 completed("model-a", "task-1", 42, 0, 60))
+    plant_record(root, "model-a", "task-2", 43,
+                 make_record("model-a", "task-2", 43, status="failed",
+                             started_at=stamp(0), finished_at=stamp(10),
+                             error="executor exited 0 but "
+                                   "final_metrics.json is missing",
+                             output_dir=failed_dir))
+    plant_record(root, "model-b", "task-1", 42,
+                 make_record("model-b", "task-1", 42, status="failed",
+                             started_at=stamp(0), finished_at=stamp(10),
+                             error="OSError: boom",
+                             output_dir=str(
+                                 seed_dir(root, "model-b", "task-1", 42))))
+
+    live = sweep_monitor.failures_view(root)
+    assert live == (
+        sweep_monitor.FailureRow(
+            model="model-a", task="task-2", seed=43,
+            error="executor exited 0 but final_metrics.json is missing",
+            output_dir=failed_dir),
+        sweep_monitor.FailureRow(
+            model="model-b", task="task-1", seed=42, error="OSError: boom",
+            output_dir=str(seed_dir(root, "model-b", "task-1", 42))),
+    )
+
+    write_json(root / MANIFEST_NAME, manifest_payload([
+        manifest_cell("model-a", "task-1", 42, "completed"),
+        manifest_cell("model-a", "task-2", 43, "failed"),
+        manifest_cell("model-b", "task-1", 42, "failed"),
+    ]))
+    write_json(root / "sweep_failures.json", [
+        {"model": "model-a+lora", "base_model": "model-a",
+         "task": "task-2", "seed": 43, "output_dir": failed_dir,
+         "error": "recorded failure"},
+    ])
+
+    finished = sweep_monitor.failures_view(root)
+    assert finished == (
+        sweep_monitor.FailureRow(
+            model="model-a+lora", task="task-2", seed=43,
+            error="recorded failure", output_dir=failed_dir),
+    )
+
+
+#: The live-captured dry-run line (11-04 RESEARCH Area 7) — the tee
+#: fixture's first line, verbatim.
+DRY_RUN_LINE = (
+    "[Dry-run] 1 planned cell(s) over 1 model(s) x 1 task(s) x 1 "
+    "seed(s); manifest: /tmp/sw-dry/sweep_manifest.json")
+
+
+def test_read_log_tail_bounded_lines_and_bytes(tmp_path):
+    """The tail is bounded by max_lines (default 200) and max_bytes
+    (seek from end, partial leading line dropped); the captured
+    dry-run line rides the head of a full tee-like file."""
+    tee = tmp_path / "sweep_20261013_finetuned.log"
+    tee.write_text(
+        "\n".join([DRY_RUN_LINE] + [f"line-{i}" for i in range(1, 300)])
+        + "\n", encoding="utf-8")
+
+    window = sweep_monitor.read_log_tail(tee, max_lines=50)
+    assert len(window) == 50
+    assert window[-1] == "line-299"
+    assert window[0] == "line-250"  # exactly the last 50 lines
+
+    default_window = sweep_monitor.read_log_tail(tee)
+    assert len(default_window) == 200
+    assert default_window[-1] == "line-299"
+
+    # byte-bound: 100 long lines x 2KB; the 8KB window keeps only the
+    # last few lines and never more than the window can hold
+    big = tmp_path / "big.log"
+    big.write_text(
+        "\n".join(f"{i:06d} " + "x" * 2000 for i in range(100)) + "\n",
+        encoding="utf-8")
+    byte_window = sweep_monitor.read_log_tail(big, max_bytes=8192)
+    assert 0 < len(byte_window) < 10
+    assert byte_window[-1].startswith("000099 ")
+
+
+def test_read_log_tail_missing_and_unreadable_return_none(tmp_path):
+    """A missing file (and an unreadable path) return None — the screen
+    renders the designed unavailable state, never a fabricated log."""
+    assert sweep_monitor.read_log_tail(tmp_path / "no-such.log") is None
+    assert sweep_monitor.read_log_tail(tmp_path) is None  # a directory
+    empty = tmp_path / "empty.log"
+    empty.write_text("", encoding="utf-8")
+    assert sweep_monitor.read_log_tail(empty) == ()
+
+
+def test_format_hms_and_format_eta_table():
+    """The auto-default 17 formats: H:MM:SS elapsed; minute / one-decimal
+    hour / day+hour ETA humanization, numeric-English only."""
+    assert sweep_monitor.format_hms(4360) == "1:12:40"
+    assert sweep_monitor.format_hms(0) == "0:00:00"
+    assert sweep_monitor.format_hms(59) == "0:00:59"
+
+    assert sweep_monitor.format_eta(2100) == "≈35m"
+    assert sweep_monitor.format_eta(30) == "≈1m"  # never ≈0m
+    assert sweep_monitor.format_eta(3600) == "≈1h"  # trailing zero drops
+    assert sweep_monitor.format_eta(7560) == "≈2.1h"
+    assert sweep_monitor.format_eta(97200) == "≈1d3h"
