@@ -938,6 +938,36 @@ def test_merge_refuses_unequal_num_train_epochs_lane(
         assert str(root) in message
 
 
+class _ReversedIterSet(set):
+    """A set whose iteration order is deterministically reversed — the
+    stand-in for the hash-order fragility WR-05 pins (PYTHONHASHSEED
+    across processes, insertion history even within one: two
+    equal-content sets with different iteration orders)."""
+
+    def __iter__(self):
+        return iter(sorted(set.__iter__(self), reverse=True))
+
+
+def test_lane_set_canonicalization_is_iteration_order_independent():
+    """WR-05: the lane-equality canonical form of a per-root value SET
+    must not depend on the set's iteration order — the old
+    json.dumps(value, sort_keys=True, default=str) serialized str(set),
+    whose element order is the internal iteration order, so two workers
+    with IDENTICAL lane values could be falsely refused ('lane flag
+    differs'). Canonicalization goes through sorted() first."""
+    plain = {"none", "lora", "ia3"}
+    scrambled = _ReversedIterSet(plain)
+    assert run_sweep_shard._canonical_lane_value(plain) == \
+        run_sweep_shard._canonical_lane_value(scrambled), (
+        "equal-content lane sets must canonicalize identically however "
+        "they iterate"
+    )
+    assert run_sweep_shard._canonical_lane_value(plain) == \
+        json.dumps(sorted(plain))
+    # a root LACKING the flag (None) canonicalizes deterministically too
+    assert run_sweep_shard._canonical_lane_value(None) == "null"
+
+
 def test_rewrite_output_dir_swaps_worker_prefix_to_merged():
     """The prefix swap: a worker-rooted output_dir rewrites onto the
     merged root, preserving the {model}/{task}/seed_{n} suffix verbatim

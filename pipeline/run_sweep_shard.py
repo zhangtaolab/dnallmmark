@@ -633,6 +633,30 @@ def _lane_signature(manifest):
     return lanes
 
 
+def _canonical_lane_value(value):
+    """Deterministic canonical form for one root's lane-value collection.
+
+    A lane's per-root value is a SET of per-cell canonical strings (or
+    None when the root lacks the flag): sets canonicalize through
+    ``sorted()`` first — ``json.dumps(value, default=str)`` alone would
+    serialize ``str(set)``, whose element order is the set's internal
+    iteration order (PYTHONHASHSEED-dependent across processes and
+    insertion-history-dependent even within one), so two IDENTICAL
+    lanes could be falsely refused (WR-05). Anything else (None, dict,
+    scalar) canonicalizes with sorted keys, unchanged.
+
+    Args:
+        value: the per-root lane value (set | frozenset | None | other
+            JSON-shaped value).
+
+    Returns:
+        str: the deterministic canonical string.
+    """
+    if isinstance(value, (set, frozenset)):
+        return json.dumps(sorted(value), default=str)
+    return json.dumps(value, sort_keys=True, default=str)
+
+
 def _load_json_object(path, problems, what):
     """Load a JSON file that must be an object, collecting problems.
 
@@ -823,7 +847,7 @@ def run_merge(args, passthrough):
             per_root = {
                 index: signatures[index].get(flag)
                 for index in sorted(signatures)}
-            if len({json.dumps(value, sort_keys=True, default=str)
+            if len({_canonical_lane_value(value)
                     for value in per_root.values()}) > 1:
                 listed = "; ".join(
                     f"worker {index} ({worker_roots[index]}) = "
