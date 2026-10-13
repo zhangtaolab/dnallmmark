@@ -526,6 +526,41 @@ class SweepLauncher:
         """
         return self._spawn(argv, output_root, spawner=spawner, clock=clock)
 
+    def launch_from_failures(self, failures_path, seeds, output_root,
+                             peft="none", config_variant="none",
+                             spawner=None, clock=None):
+        """The [r] failure re-run launch (D-11).
+
+        Composes via ``run_config.compose_from_failures_argv`` and
+        routes through ``launch_argv`` — the SAME launch pipeline every
+        launch source shares. D-11's design, recorded: the re-run
+        re-enters the pipeline the screen gates (the env preflight is
+        the screen's PRECEDING step — the operator confirms the re-run
+        independently), and a from-failures enumeration is
+        failure-pairs-only, so the E2' typed gate cannot apply by
+        construction. The child re-validates the failures manifest
+        itself (``run_sweep.load_failure_pairs`` fail-fast).
+
+        Args:
+            failures_path: the prior sweep's
+                ``sweep_failures.json`` path.
+            seeds: the re-run seed fan-out.
+            output_root: the re-run output root.
+            peft: adapter mode (none = absent from argv).
+            config_variant: variant lane (none = absent).
+            spawner: a per-call seam override; None uses the
+                instance seam.
+            clock: an injectable ``datetime.now``-shaped callable.
+
+        Returns:
+            LaunchOutcome: the spawn outcome.
+        """
+        argv = run_config.compose_from_failures_argv(
+            failures_path, seeds, output_root,
+            peft=peft, config_variant=config_variant)
+        return self.launch_argv(
+            argv, output_root, spawner=spawner, clock=clock)
+
     # ===== The exit triple (D-06) =====
 
     @staticmethod
