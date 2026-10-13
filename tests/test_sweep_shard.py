@@ -473,9 +473,32 @@ def test_unknown_model_names_refuse(tmp_path, monkeypatch):
     assert "ghost-model" in str(excinfo.value)
 
 
+def test_gpus_non_numeric_tokens_forward_verbatim(tmp_path, monkeypatch):
+    """WR-01: --gpus tokens are OPERATOR-OWNED strings — a GPU UUID or a
+    MIG instance id is a legitimate CUDA_VISIBLE_DEVICES value and must
+    forward VERBATIM (the documented contract: ARITY-validated only, no
+    int coercion, D-05)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    mig = "MIG-GPU-9f3c2e1b/1/0"
+    run_cli(monkeypatch, [
+        "--workers", "2",
+        "--gpus", f"0,{mig}",
+        "--models", "model-a,model-b",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+        "--tasks", "task-x", "--seeds", "42",
+    ], spawner=make_fake_spawner(calls))
+    assert len(calls) == 2, "non-numeric tokens must not refuse"
+    assert [c["kwargs"]["env"]["CUDA_VISIBLE_DEVICES"] for c in calls] == \
+        ["0", mig]
+
+
 def test_gpus_problems_refuse_collect_all(tmp_path, monkeypatch):
-    """A malformed --gpus token and an arity mismatch each refuse with
-    every problem listed together."""
+    """An empty --gpus element and an arity mismatch each refuse with
+    every problem listed together (malformed = an EMPTY element; a
+    non-decimal token is a verbatim operator-owned string, WR-01)."""
     registry_dir = make_registry(tmp_path)
     common = [
         "--models", "model-a,model-b",
@@ -483,11 +506,11 @@ def test_gpus_problems_refuse_collect_all(tmp_path, monkeypatch):
         "--registry-dir", str(registry_dir),
         "--tasks", "task-x", "--seeds", "42",
     ]
-    with pytest.raises(SystemExit) as malformed:
+    with pytest.raises(SystemExit) as empty_element:
         run_cli(monkeypatch, [
-            "--workers", "2", "--gpus", "0,zero", *common,
+            "--workers", "2", "--gpus", "0,,1", *common,
         ], spawner=make_fake_spawner([]))
-    assert "zero" in str(malformed.value)
+    assert "empty GPU id element" in str(empty_element.value)
 
     with pytest.raises(SystemExit) as arity:
         run_cli(monkeypatch, [

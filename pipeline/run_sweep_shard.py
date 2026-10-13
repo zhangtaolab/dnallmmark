@@ -364,15 +364,23 @@ def parse_args(argv=None):
 
 
 def _parse_gpus(raw, problems):
-    """Parse the ``--gpus`` comma list into ints, collecting problems.
+    """Parse the ``--gpus`` comma list into verbatim operator-owned
+    STRINGS, collecting problems.
+
+    Each token forwards verbatim as one worker's
+    ``CUDA_VISIBLE_DEVICES`` — a decimal index, a GPU UUID, or a MIG
+    instance id are all legitimate values (WR-01: the documented
+    contract is ARITY-validated only; int coercion here would refuse a
+    legal UUID/MIG pin on the very hosts that need it, D-05). The only
+    malformed token is an EMPTY element.
 
     Args:
         raw (str | None): the flag value (None = default 0..workers-1).
         problems (list[str]): the collect-all problems list.
 
     Returns:
-        list[int] | None: parsed ids, or None when the flag is absent or
-        unusable (the caller decides the default).
+        list[str] | None: the verbatim tokens, or None when the flag is
+        absent (the caller decides the default).
     """
     if raw is None:
         return None
@@ -382,10 +390,7 @@ def _parse_gpus(raw, problems):
         if not stripped:
             problems.append(f"empty GPU id element in --gpus {raw!r}")
             continue
-        try:
-            gpus.append(int(stripped))
-        except ValueError:
-            problems.append(f"non-numeric GPU id {stripped!r} in --gpus")
+        gpus.append(stripped)  # verbatim operator-owned string (D-05)
     return gpus
 
 
@@ -1033,10 +1038,10 @@ def main(spawner=None):
     if problems:
         sys.exit(f"[Error] {'; '.join(problems)}")
 
-    # Default GPU assignment: the worker index (operator-owned strings;
-    # no device probing, D-05)
+    # Default GPU assignment: the worker index as a string (operator-
+    # owned strings; no device probing, D-05)
     if gpus is None:
-        gpus = list(range(workers))
+        gpus = [str(i) for i in range(workers)]
 
     # LPT shard over the registry's size (M) weights (0.0 when unusable)
     sizes = {name: entry.get("size (M)") for name, entry
@@ -1078,7 +1083,7 @@ def main(spawner=None):
                 env={
                     **os.environ,
                     "PYTHONUNBUFFERED": "1",
-                    "CUDA_VISIBLE_DEVICES": str(gpus[i]),
+                    "CUDA_VISIBLE_DEVICES": gpus[i],
                 },
                 stdout=tee,
                 stderr=subprocess.STDOUT,
