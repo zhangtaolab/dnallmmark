@@ -21,7 +21,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 8: TUI Foundation (Env Check & Selection)** - `make tui` opens the console with a persisted startup environment-check panel and k9s-style filter/mark-set selection over first-class model and dataset lists, with presets, templates, and presence columns — carrying all non-retrofittable architecture decisions
 - [x] **Phase 9: Custom Model & Dataset Onboarding (自定义接入向导)** - Guided wizards land custom models/datasets in user-owned registries over the Phase-7 overlay — collect-all fail-fast field validation, dry-run + audit gauntlet, entry-level rollback; official registries are never written
 - [x] **Phase 10: Data Manager (Downloads & Verification)** - One-click ModelScope download with a persistent resumable queue and n_audit row-count reconciliation, so missing datasets are closable in-session before launch
-- [ ] **Phase 11: Run Config, Launch Gates & Single-GPU Monitoring** - Full run-config surface with same-source dry-run preview, terraform-style launch gates (E2' stays maintainer-authorized), detached `run_sweep.py` execution, and the poll-and-attach monitor with failure re-run — proven by a bounded GB10 smoke
+- [x] **Phase 11: Run Config, Launch Gates & Single-GPU Monitoring** - Full run-config surface with same-source dry-run preview, terraform-style launch gates (E2' stays maintainer-authorized), detached `run_sweep.py` execution, and the poll-and-attach monitor with failure re-run — proven by a bounded GB10 smoke
 - [ ] **Phase 12: Multi-GPU Orchestration & Console Hardening** - CLI-invocable static model sharding × CUDA_VISIBLE_DEVICES with per-worker views, artifact merge, and the DDP-vs-sharding decision, plus the static read-only web mirror and maintainer-verified snapshot goldens — hard-gated on Phase 11 validation
 
 ## Phase Details
@@ -232,7 +232,7 @@ Plans:
   4. The monitor dashboard shows cell-level state (queued/running/done/failed/skipped, seed-adjacent) via 2s frontier + 60s full tolerant scans, progress stats (done/total, current cell, elapsed), attach mode for externally (CLI) launched sweeps, a live failure list with confirmation-gated `--from-failures` re-run, bounded log tailing with tee-to-disk persistence, and resume recognition from `trainer_state.json` markers
   5. A maintainer-authorized bounded smoke (1 model × 1 task × 1 seed, 1 epoch) runs launch → monitor → failure-re-run end-to-end on GB10 while the E2' full-sweep gate demonstrably blocks; every capability remains reachable headless via CLI
 
-**Plans**: 7/7 plans executed
+**Plans**: 7/7 plans complete
 Plans:
 - [x] 11-01-PLAN.md — run_sweep `--config-variant` via the peft ALIASING machinery (D-18; not pass-through), argv-parity + frozen-pair read-source tests
 - [x] 11-02-PLAN.md — run_config service: XDG-persisted own pickers state, full params model, dirs, same-source preview (imported enumerate_matrix), E2' verdict + typed phrase, PROBE_INELIGIBLE extraction
@@ -271,7 +271,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 | 8. TUI Foundation (Env Check & Selection) | v1.2 | 7/7 | Complete    | 2026-10-12 |
 | 9. Custom Model & Dataset Onboarding | v1.2 | 6/6 | Complete    | 2026-10-12 |
 | 10. Data Manager (Downloads & Verification) | v1.2 | 6/6 | Complete    | 2026-10-13 |
-| 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 7/7 | In Progress | - |
+| 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 7/7 | Complete    | 2026-10-13 |
 | 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 0/TBD | Not started | - |
 
 ---
