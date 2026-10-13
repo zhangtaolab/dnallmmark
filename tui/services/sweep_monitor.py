@@ -40,10 +40,9 @@ Clock discipline: every wall-clock input is injectable (``now=`` epoch
 seconds); with no injection the real clock is read once per call.
 """
 
-import statistics
+import json
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 
 import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
@@ -116,9 +115,10 @@ CELL_QUEUED = "queued"
 TERMINAL_RECORD_STATUSES = frozenset(
     {CELL_COMPLETED, CELL_FAILED, CELL_SKIPPED})
 
-#: EtaEstimate modes: ``pending`` (< 1 completed cell — 估算中),
-#: ``point`` (median-based), ``range`` (high variance, min-max),
-#: ``none`` (unknown total or nothing remaining — 总数未知/—).
+#: EtaEstimate modes: ``pending`` (< 1 completed cell — the estimating
+#: degradation), ``point`` (median-based), ``range`` (high variance,
+#: min-max), ``none`` (unknown total or nothing remaining — the
+#: unknown-total / dash renderings).
 ETA_PENDING = "pending"
 ETA_POINT = "point"
 ETA_RANGE = "range"
@@ -134,7 +134,7 @@ class SweepSummary:
     root: Path
     state: str
     done: int | None
-    total: int | None  # None -> the unknown-total rendering (总数未知)
+    total: int | None  # None -> the unknown-total rendering
     newest_mtime: float | None
 
 
@@ -237,6 +237,9 @@ class FailureRow:
 # Task 1: discovery scan + three-state classification + manual roots
 # =====================================================================
 
+_SEED_DIR_PREFIX = "seed_"
+_FRAC_DIR_PREFIX = "frac_"
+
 
 def _utc_now_epoch() -> float:
     """The real-clock fallback (tests always inject ``now``)."""
@@ -247,10 +250,119 @@ def _now_epoch(now: float | None) -> float:
     return _utc_now_epoch() if now is None else float(now)
 
 
+def _sorted_children(path: Path) -> list[Path]:
+    """Sorted child entries; an unreadable dir reads empty (D-09 —
+    degrade, never crash)."""
+    try:
+        return sorted(path.iterdir())
+    except OSError:
+        return []
+
+
+def _is_dir(path: Path) -> bool:
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
+def _is_file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
+def _seed_number(name: str) -> int | None:
+    """seed_42 -> 42; anything else -> None."""
+    if name.startswith(_SEED_DIR_PREFIX):
+        digits = name[len(_SEED_DIR_PREFIX):]
+        if digits.isdigit():
+            return int(digits)
+    return None
+
+
+def _iter_files_bounded(root: Path, max_depth: int):
+    """Yield files under root up to ``max_depth`` directory levels below
+    it (files only, per the watermark contract) — the depth guard that
+    keeps a full scan off unbounded trees (T-11-04-04)."""
+    stack: list[tuple[Path, int]] = [(Path(root), 0)]
+    while stack:
+        directory, depth = stack.pop()
+        for entry in _sorted_children(directory)[:_SCAN_DIR_ENTRY_CAP]:
+            if _is_file(entry):
+                yield entry
+            elif depth + 1 <= max_depth and _is_dir(entry):
+                stack.append((entry, depth + 1))
+
+
+def _newest_file_mtime(
+        root: Path, max_depth: int = _MAX_FULL_WALK_DEPTH) -> float | None:
+    """The mtime watermark: max st_mtime over the bounded files-only
+    walk (None for an empty/unreadable tree)."""
+    newest: float | None = None
+    for file_path in _iter_files_bounded(root, max_depth):
+        try:
+            mtime = file_path.stat().st_mtime
+        except OSError:
+            continue
+        if newest is None or mtime > newest:
+            newest = mtime
+    return newest
+
+
+def _iter_seed_dirs(root: Path):
+    """Yield (model, task, seed, seed_dir) over the bounded
+    {model}/{task}/seed_{n} walk (the frontier's depth bound); an
+    unreadable or absent root yields nothing."""
+    root = Path(root)
+    for model_dir in _sorted_children(root)[:_SCAN_DIR_ENTRY_CAP]:
+        if not _is_dir(model_dir):
+            continue
+        for task_dir in _sorted_children(model_dir)[:_SCAN_DIR_ENTRY_CAP]:
+            if not _is_dir(task_dir):
+                continue
+            for entry in _sorted_children(task_dir)[:_SCAN_DIR_ENTRY_CAP]:
+                seed = _seed_number(entry.name)
+                if seed is None or not _is_dir(entry):
+                    continue
+                yield model_dir.name, task_dir.name, seed, entry
+
+
+def _manual_roots_path() -> Path:
+    return settings.state_dir() / MANUAL_ROOTS_FILE_NAME
+
+
+def _save_manual_roots(roots: list[Path]) -> None:
+    settings.atomic_write(
+        _manual_roots_path(),
+        json.dumps(
+            {
+                "schema_version": MANUAL_ROOTS_SCHEMA_VERSION,
+                "roots": [str(path) for path in roots],
+            },
+            indent=4,
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+    )
+
+
 def manual_roots() -> tuple[Path, ...]:
     """The XDG-persisted operator-attached roots (D-03), resolved
     absolute and deduped in attach order; a corrupt file reads empty."""
-    raise NotImplementedError
+    data = artifact_loader.load_json_artifact(_manual_roots_path())
+    if not isinstance(data, dict):
+        return ()
+    entries = data.get("roots")
+    if not isinstance(entries, list):
+        return ()
+    resolved: dict[Path, None] = {}
+    for entry in entries:
+        if not isinstance(entry, str) or not entry.strip():
+            continue
+        resolved.setdefault(Path(entry).expanduser().resolve())
+    return tuple(resolved)
 
 
 def add_manual_root(path) -> bool:
@@ -261,12 +373,26 @@ def add_manual_root(path) -> bool:
     never silently added. Adding an already-attached root is a no-op
     returning True.
     """
-    raise NotImplementedError
+    resolved = Path(path).expanduser().resolve()
+    if not is_sweep_root(resolved):
+        return False
+    roots = list(manual_roots())
+    if resolved in roots:
+        return True
+    roots.append(resolved)
+    _save_manual_roots(roots)
+    return True
 
 
 def remove_manual_root(path) -> bool:
     """Detach a manual root; True when it was attached, False when not."""
-    raise NotImplementedError
+    resolved = Path(path).expanduser().resolve()
+    roots = list(manual_roots())
+    if resolved not in roots:
+        return False
+    roots.remove(resolved)
+    _save_manual_roots(roots)
+    return True
 
 
 def is_sweep_root(path) -> bool:
@@ -274,7 +400,56 @@ def is_sweep_root(path) -> bool:
     a sweep manifest / failures manifest, at least one run record
     (bounded depth-guarded scan), or the {model}/{task}/seed_* layout
     with cell artifacts (resume marker / metrics / runs dir)."""
-    raise NotImplementedError
+    root = Path(path)
+    if not _is_dir(root):
+        return False
+    if _is_file(root / MANIFEST_NAME) or _is_file(root / FAILURES_NAME):
+        return True
+    for _model, _task, _seed, seed_dir in _iter_seed_dirs(root):
+        if _is_file(seed_dir / RECORD_NAME):
+            return True
+        if _is_file(seed_dir / RESUME_MARKER):
+            return True
+        if _is_file(seed_dir / METRICS_NAME):
+            return True
+        if _is_dir(seed_dir / "runs"):
+            return True
+    return False
+
+
+def _completed_and_terminal_counts(root: Path) -> tuple[int, int]:
+    """(completed, terminal) record counts over the bounded seed walk —
+    SweepSummary.done for non-finished roots (records are the only
+    source while no manifest exists)."""
+    completed = 0
+    terminal = 0
+    for record in _collect_records(root):
+        status = record.get("status")
+        if status == CELL_COMPLETED:
+            completed += 1
+        if status in TERMINAL_RECORD_STATUSES:
+            terminal += 1
+    return completed, terminal
+
+
+def _manifest_cells(manifest: dict | None) -> list[dict]:
+    """The manifest's cells list, shape-checked (non-lists read
+    empty)."""
+    if not isinstance(manifest, dict):
+        return []
+    cells = manifest.get("cells")
+    return cells if isinstance(cells, list) else []
+
+
+def _count_terminal_cells(cells: list) -> int:
+    """Terminal-status cells over a manifest cells list (planned never
+    counts — a dry-run manifest is 0 done over N total)."""
+    return sum(
+        1
+        for cell in cells
+        if isinstance(cell, dict)
+        and cell.get("status") in TERMINAL_RECORD_STATUSES
+    )
 
 
 def full_scan(roots=None, live_roots=(), prev_watermarks=None, now=None):
@@ -289,17 +464,123 @@ def full_scan(roots=None, live_roots=(), prev_watermarks=None, now=None):
     STALE_GRACE_SECONDS of now -> running; else artifacts_only (prior
     standalone-run artifacts — unknown totals, never a running glyph).
 
+    Known edge (accepted, plan-pinned predicate order): a re-run at a
+    root that already holds a finished manifest classifies finished
+    until the new run's own manifest lands — the manifest is written
+    only at sweep end, so the stale file wins over the churn signals.
+
     Returns ScanResult(sweeps sorted by root, watermarks for the next
     scan's churn comparison).
     """
-    raise NotImplementedError
+    now = _now_epoch(now)
+    if roots is None:
+        roots = DEFAULT_OUTPUT_ROOTS + manual_roots()
+    live = {Path(root).expanduser().resolve() for root in live_roots}
+    previous: dict[str, float] = {
+        str(key): float(value)
+        for key, value in (prev_watermarks or {}).items()
+    }
+    sweeps: list[SweepSummary] = []
+    watermarks: dict[str, float] = {}
+    for root in roots:
+        resolved = Path(root).expanduser().resolve()
+        manifest = load_manifest(resolved / MANIFEST_NAME)
+        if manifest is not None:
+            cells = _manifest_cells(manifest)
+            newest = _newest_file_mtime(resolved)
+            if newest is not None:
+                watermarks[str(resolved)] = newest
+            sweeps.append(SweepSummary(
+                root=resolved,
+                state=SWEEP_FINISHED,
+                done=_count_terminal_cells(cells),
+                total=len(cells),
+                newest_mtime=newest,
+            ))
+            continue
+        if not _is_dir(resolved):
+            continue  # nonexistent/unreadable: skipped silently
+        newest = _newest_file_mtime(resolved)
+        if newest is not None:
+            watermarks[str(resolved)] = newest
+        running = (
+            resolved in live
+            or (
+                str(resolved) in previous
+                and newest is not None
+                and newest > previous[str(resolved)]
+            )
+            or (newest is not None and (now - newest) <= STALE_GRACE_SECONDS)
+        )
+        _completed, terminal = _completed_and_terminal_counts(resolved)
+        sweeps.append(SweepSummary(
+            root=resolved,
+            state=SWEEP_RUNNING if running else SWEEP_ARTIFACTS_ONLY,
+            done=terminal,
+            total=None,
+            newest_mtime=newest,
+        ))
+    return ScanResult(
+        sweeps=tuple(sorted(sweeps, key=lambda summary: str(summary.root))),
+        watermarks=watermarks,
+    )
+
+
+def _seed_dir_mtime(seed_dir: Path) -> float | None:
+    try:
+        return seed_dir.stat().st_mtime
+    except OSError:
+        return None
 
 
 def frontier_scan(root, live_roots=(), now=None):
     """The light 2s pass (D-09): re-derive ONLY this root's newest
     seed-dir activity + record states — no manifest read, no walk
-    beyond {model}/{task}/seed_* and the seed dirs' direct children."""
-    raise NotImplementedError
+    beyond {model}/{task}/seed_* and the seed dirs' direct children
+    (runs/, checkpoint-*/, frac_*/, records — never a recursive walk
+    into checkpoint contents)."""
+    resolved = Path(root).expanduser().resolve()
+    now = _now_epoch(now)
+    live = {Path(item).expanduser().resolve() for item in live_roots}
+
+    newest_cell: tuple[str, str, int] | None = None
+    newest_seed_dir: Path | None = None
+    newest_seed_mtime: float | None = None
+    seed_dirs: list[tuple[str, str, int, Path]] = []
+    for model, task, seed, seed_dir in _iter_seed_dirs(resolved):
+        seed_dirs.append((model, task, seed, seed_dir))
+        mtime = _seed_dir_mtime(seed_dir)
+        if mtime is not None and (
+                newest_seed_mtime is None or mtime >= newest_seed_mtime):
+            newest_seed_mtime = mtime
+            newest_cell = (model, task, seed)
+            newest_seed_dir = seed_dir
+
+    cell_states: dict[tuple[str, str, int], str] = {}
+    newest_child_mtime: float | None = newest_seed_mtime
+    for model, task, seed, seed_dir in seed_dirs:
+        state, _fraction_states = _seed_state_from_dir(
+            seed_dir, now=now, frontier_newest=(seed_dir == newest_seed_dir))
+        cell_states[(model, task, seed)] = state
+        for child in _sorted_children(seed_dir)[:_SCAN_DIR_ENTRY_CAP]:
+            try:
+                mtime = child.stat().st_mtime
+            except OSError:
+                continue
+            if newest_child_mtime is None or mtime > newest_child_mtime:
+                newest_child_mtime = mtime
+
+    running = resolved in live or (
+        newest_child_mtime is not None
+        and (now - newest_child_mtime) <= STALE_GRACE_SECONDS
+    )
+    return FrontierSnapshot(
+        root=resolved,
+        state=SWEEP_RUNNING if running else SWEEP_ARTIFACTS_ONLY,
+        newest_mtime=newest_child_mtime,
+        newest_cell=newest_cell,
+        cell_states=cell_states,
+    )
 
 
 # =====================================================================
@@ -323,21 +604,123 @@ def load_record(path):
     """Tolerantly load one run_record.json (D-09): None when absent or
     shape-invalid (non-dict); a damaged (present-but-unparseable) file
     returns its LAST-KNOWN-GOOD parse when one exists — the previous
-    view stands, never a crash."""
-    raise NotImplementedError
+    view stands, never a crash. A MISSING file (not damaged) reads as
+    absent — deleting a record never resurrects a stale view."""
+    file_path = Path(path)
+    if not _is_file(file_path):
+        return None
+    data = artifact_loader.load_json_artifact(file_path)
+    if isinstance(data, dict):
+        _LAST_GOOD_RECORDS[str(file_path)] = data
+        return data
+    return _LAST_GOOD_RECORDS.get(str(file_path))
 
 
 def load_manifest(path):
     """Tolerantly load a sweep_manifest.json: the parsed dict, or None
     when absent/unparseable/non-dict (corrupt = treated absent — the
     classification falls back to the churn/mtime rules)."""
-    raise NotImplementedError
+    data = artifact_loader.load_json_artifact(Path(path))
+    return data if isinstance(data, dict) else None
 
 
 def load_failures(path):
     """Tolerantly load sweep_failures.json: the parsed list, or None
     when absent/unparseable/not a list."""
-    raise NotImplementedError
+    data = artifact_loader.load_json_artifact(Path(path))
+    return data if isinstance(data, list) else None
+
+
+def _frac_children(seed_dir: Path) -> list[Path]:
+    """The seed dir's frac_* child dirs, name-sorted."""
+    return [
+        child
+        for child in _sorted_children(seed_dir)[:_SCAN_DIR_ENTRY_CAP]
+        if child.name.startswith(_FRAC_DIR_PREFIX) and _is_dir(child)
+    ]
+
+
+def _dir_shows_activity(directory: Path, now: float) -> bool:
+    """The churn signals inside one cell dir (11-04 RESEARCH Area 4):
+    a runs/ or checkpoint-* child, or the dir mtime within the stale
+    grace (mkdir-before-executor + tensorboard/checkpoint appearance)."""
+    for child in _sorted_children(directory)[:_SCAN_DIR_ENTRY_CAP]:
+        if child.name == "runs" and _is_dir(child):
+            return True
+        if child.name.startswith("checkpoint-") and _is_dir(child):
+            return True
+    mtime = _seed_dir_mtime(directory)
+    return mtime is not None and (now - mtime) <= STALE_GRACE_SECONDS
+
+
+def _cell_state_from_dir(cell_dir: Path, now: float) -> str:
+    """First-match state for ONE cell dir (seed or fraction level):
+    record status (unrecognized statuses render VERBATIM — honest,
+    never translated) -> resume marker -> activity -> queued (an inert
+    dir never started). Running detection NEVER depends on records
+    (the record lands post-cell — Pitfall 2)."""
+    record = load_record(cell_dir / RECORD_NAME)
+    if record is not None:
+        status = record.get("status")
+        if isinstance(status, str) and status:
+            return status
+    if _is_file(cell_dir / RESUME_MARKER):
+        return CELL_SKIPPED
+    if _dir_shows_activity(cell_dir, now):
+        return CELL_RUNNING
+    return CELL_QUEUED
+
+
+def _fold_frac_states(states) -> str:
+    """Fold fraction states into the seed cell's state: any running ->
+    running, any failed -> failed, all terminal -> completed, else
+    queued."""
+    states = list(states)
+    if any(state == CELL_RUNNING for state in states):
+        return CELL_RUNNING
+    if any(state == CELL_FAILED for state in states):
+        return CELL_FAILED
+    if states and all(
+            state in (CELL_COMPLETED, CELL_SKIPPED) for state in states):
+        return CELL_COMPLETED
+    return CELL_QUEUED
+
+
+def _seed_state_from_dir(
+        seed_dir: Path, now: float,
+        frontier_newest: bool = False) -> tuple[str, tuple[tuple[str, str], ...] | None]:
+    """Derive (state, fraction_states) for one seed dir. Curve cells
+    carry one (frac_name, state) pair per fraction and fold; the
+    frontier's newest seed dir renders running even before its first
+    artifact lands (the driver mkdirs before the executor runs)."""
+    fracs = _frac_children(seed_dir)
+    if fracs:
+        fraction_states = tuple(
+            (frac.name, _cell_state_from_dir(frac, now)) for frac in fracs)
+        state = _fold_frac_states(
+            [state for _name, state in fraction_states])
+        if frontier_newest and state == CELL_QUEUED:
+            return CELL_RUNNING, fraction_states
+        return state, fraction_states
+    if frontier_newest:
+        record = load_record(seed_dir / RECORD_NAME)
+        status = (record or {}).get("status")
+        if not (isinstance(status, str) and status) and not _is_file(
+                seed_dir / RESUME_MARKER):
+            return CELL_RUNNING, None
+    return _cell_state_from_dir(seed_dir, now), None
+
+
+def _collect_records(root: Path) -> list[dict]:
+    """Every parsed run_record.json over the bounded seed/frac walk,
+    iteration-ordered deterministically (model, task, seed, frac)."""
+    records: list[dict] = []
+    for _model, _task, _seed, seed_dir in _iter_seed_dirs(root):
+        for cell_dir in [seed_dir, *_frac_children(seed_dir)]:
+            record = load_record(cell_dir / RECORD_NAME)
+            if record is not None:
+                records.append(record)
+    return records
 
 
 def cells_view(root, expected_seeds=None) -> tuple[CellRow, ...]:

@@ -298,7 +298,7 @@ def test_full_scan_now_injection_is_deterministic(tmp_path):
 def test_full_scan_default_roots_compose_manual_roots(
         monkeypatch, tmp_path):
     """roots=None scans DEFAULT_OUTPUT_ROOTS + manual_roots() (D-03)."""
-    state = pin_state_dir(monkeypatch, tmp_path)
+    pin_state_dir(monkeypatch, tmp_path)
     default_root = tmp_path / "default-finetuned"
     manual_root = tmp_path / "manual-finetuned"
     for root in (default_root, manual_root):
