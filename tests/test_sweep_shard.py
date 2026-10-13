@@ -69,6 +69,7 @@ import subprocess
 import sys
 
 import pytest
+import registry_loader  # conftest puts pipeline/ on sys.path
 import run_sweep  # conftest puts pipeline/ on sys.path
 import run_sweep_shard
 
@@ -482,3 +483,249 @@ def test_workers_must_be_at_least_one(tmp_path, monkeypatch):
             "--tasks", "task-x", "--seeds", "42",
         ], spawner=make_fake_spawner([]))
     assert "--workers" in str(excinfo.value)
+
+
+def test_frozen_root_collision_refuses_collect_all(tmp_path, monkeypatch):
+    """A worker root that would alias the base root (or another worker
+    root) refuses collect-all before any spawn (T-12-01-01: shared roots
+    collide last-writer-wins over the root-level manifests — Pitfall 1).
+    With the frozen naming function the sibling roots are distinct by
+    construction, so the guard is proven by pinning a colliding naming
+    function: the point is that the guard is WIRED and fires."""
+    registry_dir = make_registry(tmp_path)
+    calls = []
+
+    def colliding_worker_root(base_root, index):
+        # every worker aliased onto the base root — the forbidden shape
+        return base_root
+
+    monkeypatch.setattr(run_sweep_shard, "worker_root",
+                        colliding_worker_root)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--workers", "2",
+            "--models", "model-a,model-b",
+            "--output-root", str(tmp_path / "finetuned"),
+            "--registry-dir", str(registry_dir),
+            "--tasks", "task-x", "--seeds", "42",
+        ], spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "equal the base output root" in message
+    assert not calls, "the collision must refuse BEFORE any spawn"
+
+
+# ===== aggregated exit honesty (T-12-01-04) =====
+
+
+def test_all_zero_workers_exit_zero(tmp_path, monkeypatch, capsys):
+    """Every worker exiting 0 means the orchestrator exits 0 (main
+    returns normally) after printing the verdict table."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    run_cli(monkeypatch, [
+        "--workers", "2",
+        "--models", "model-a,model-b",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+        "--tasks", "task-x", "--seeds", "42",
+    ], spawner=make_fake_spawner([], returncodes=[0, 0]))
+    out = capsys.readouterr().out
+    assert "All 2 worker(s) exited 0." in out
+
+
+def test_nonzero_worker_exits_one_with_verdict_table(
+        tmp_path, monkeypatch, capsys):
+    """Any nonzero worker exits the orchestrator 1 after the verdict
+    table lists EVERY worker (exit code, root, log path, failed-cell
+    count from that worker's sweep_failures.json); a dead worker never
+    prevents siblings from being waited and reported (death isolation)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    # worker 0 died after 3 failed cells: its root carries the failures
+    # manifest the verdict table must count
+    dead_root = run_sweep_shard.worker_root(base, 0)
+    dead_root.mkdir(parents=True)
+    failures = [
+        {"model": "model-a", "task": "task-x", "seed": seed,
+         "output_dir": f"{dead_root}/model-a/task-x/seed_{seed}",
+         "error": "boom"}
+        for seed in (42, 43, 44)
+    ]
+    (dead_root / "sweep_failures.json").write_text(
+        json.dumps(failures), encoding="utf-8")
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--workers", "2",
+            "--models", "model-a,model-b",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+            "--tasks", "task-x", "--seeds", "42",
+        ], spawner=make_fake_spawner(calls, returncodes=[1, 0]))
+    assert excinfo.value.code == 1
+    assert len(calls) == 2
+    out = capsys.readouterr().out
+    # every worker reported: exit codes, roots, log paths, failed counts
+    assert "exit=1" in out and "exit=0" in out
+    assert "failed=3" in out, (
+        "the dead worker's failed-cell count comes from its "
+        "sweep_failures.json"
+    )
+    assert "failed=-" in out, (
+        "the healthy worker has no failures manifest — displayed as '-'"
+    )
+    for i in (0, 1):
+        assert str(run_sweep_shard.worker_root(base, i)) in out
+        assert str(run_sweep_shard.worker_log_path(base, i)) in out
+    assert "1/2 worker(s) failed" in out
+
+
+def test_dead_worker_does_not_prevent_sibling_wait(
+        tmp_path, monkeypatch):
+    """Worker 0 exits nonzero FIRST (scripted) — worker 1 is still
+    waited: wait-all is unconditional (death isolation)."""
+    registry_dir = make_registry(tmp_path)
+    procs = []
+
+    def tracking_spawn(argv, **kwargs):
+        proc = FakeProc(1 if len(procs) == 0 else 0)
+        procs.append(proc)
+        return proc
+
+    with pytest.raises(SystemExit):
+        run_cli(monkeypatch, [
+            "--workers", "2",
+            "--models", "model-a,model-b",
+            "--output-root", str(tmp_path / "finetuned"),
+            "--registry-dir", str(registry_dir),
+            "--tasks", "task-x", "--seeds", "42",
+        ], spawner=tracking_spawn)
+    assert len(procs) == 2
+    assert all(proc.waited for proc in procs), (
+        "wait-all: the dead worker 0 never prevents worker 1 from being "
+        "waited and reported"
+    )
+
+
+# ===== the disjointness proof (D-06) =====
+
+
+def _manifest_cells(root):
+    """Parse a dry-run manifest: (cell identities, matrix models)."""
+    manifest = json.loads(
+        (root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    identities = {
+        (cell["model"], cell["task"], cell["seed"])
+        for cell in manifest["cells"]
+    }
+    output_dirs = {cell["output_dir"] for cell in manifest["cells"]}
+    return identities, output_dirs, manifest["matrix"]["models"]
+
+
+def test_dry_run_disjointness_in_process(tmp_path, monkeypatch):
+    """Per-worker dry-run manifests over lpt shards: pairwise-disjoint
+    cell identities, union == the unsharded dry-run's cells, each
+    manifest's matrix.models == its shard (the D-06 static proof)."""
+    registry_dir = make_registry(tmp_path)
+    sizes = {"model-a": 100, "model-b": 50, "model-c": 10}
+    shards = run_sweep_shard.lpt_shard(
+        ["model-a", "model-b", "model-c"], 2, sizes)
+    assert shards == [["model-a"], ["model-b", "model-c"]]
+    base = tmp_path / "finetuned"
+
+    per_worker = []
+    for i, shard in enumerate(shards):
+        root = run_sweep_shard.worker_root(base, i)
+        run_sweep_cli(monkeypatch, [
+            "--dry-run",
+            "--models", ",".join(shard),
+            "--tasks", "task-x,task-z",
+            "--seeds", "42,43",
+            "--output-root", str(root),
+            "--registry-dir", str(registry_dir),
+        ])
+        per_worker.append(_manifest_cells(root))
+
+    # pairwise disjoint identities AND literally disjoint output dirs
+    identities_0, dirs_0, models_0 = per_worker[0]
+    identities_1, dirs_1, models_1 = per_worker[1]
+    assert not (identities_0 & identities_1)
+    assert not (dirs_0 & dirs_1)
+    assert models_0 == ["model-a"]
+    assert models_1 == ["model-b", "model-c"]
+
+    # union == the unsharded dry-run over the same task/seed axes
+    unsharded_root = tmp_path / "finetuned-unsharded"
+    run_sweep_cli(monkeypatch, [
+        "--dry-run",
+        "--models", "model-a,model-b,model-c",
+        "--tasks", "task-x,task-z",
+        "--seeds", "42,43",
+        "--output-root", str(unsharded_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    unsharded = _manifest_cells(unsharded_root)
+    assert identities_0 | identities_1 == unsharded[0], (
+        "the shards must cover exactly the unsharded matrix"
+    )
+
+
+def test_lpt_partitions_the_official_registry():
+    """lpt over the committed official registry's model names partitions
+    ALL of them across 2 and 4 workers — disjoint and covering over the
+    live 62-model view (env-pinned: official registry only)."""
+    models_info = registry_loader.load_models_registry()
+    names = sorted(models_info)
+    sizes = {
+        name: entry.get("size (M)")
+        for name, entry in models_info.items()
+    }
+    assert len(names) >= 4
+    for workers in (2, 4):
+        shards = run_sweep_shard.lpt_shard(names, workers, sizes)
+        assert len(shards) == workers
+        assert all(shards), "no empty shard when models >= workers"
+        flattened = [name for shard in shards for name in shard]
+        assert sorted(flattened) == names
+        assert len(flattened) == len(set(flattened))
+
+
+def test_real_two_worker_dry_run_subprocess_chain(tmp_path, monkeypatch):
+    """The REAL spawner end-to-end, CPU-only: two real python subprocesses
+    run real run_sweep.py --dry-run over a tmp registry fixture; both
+    frozen-root manifests exist with disjoint planned cells, both sibling
+    tee logs exist and are non-empty, and main returns 0 (the D-05 local
+    shape — never N>1 GPUs, never real training)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    run_cli(monkeypatch, [
+        "--workers", "2",
+        "--models", "model-a,model-b",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ])  # real spawner: main(spawner=None) -> subprocess.Popen
+
+    identities = {}
+    for i, expected_models in ((0, ["model-a"]), (1, ["model-b"])):
+        root = run_sweep_shard.worker_root(base, i)
+        manifest_path = root / "sweep_manifest.json"
+        assert manifest_path.is_file(), (
+            f"worker {i} must have written its frozen-root manifest"
+        )
+        worker_identities, _worker_dirs, matrix_models = \
+            _manifest_cells(root)
+        assert matrix_models == expected_models
+        assert all(cell[1] == "task-x" and cell[2] == 42
+                   for cell in worker_identities)
+        identities[i] = worker_identities
+        log = run_sweep_shard.worker_log_path(base, i)
+        assert log.is_file(), f"worker {i} tee log must exist"
+        assert log.read_text(encoding="utf-8").strip(), (
+            f"worker {i} tee log must capture the child's output"
+        )
+    assert not (identities[0] & identities[1]), (
+        "the two real workers planned disjoint cells"
+    )

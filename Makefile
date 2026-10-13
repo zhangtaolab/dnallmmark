@@ -22,8 +22,9 @@
 #                   run_finetune.py, run_sweep.py, env_smoke.py,
 #                   compare.py, permutation_tests.py,
 #                   run_migration_inventory.py, audit_n_frequencies.py)
-#                   plus the Phase 6/7/8 extension modules (existence-guard
-#                   lists PHASE6_SCRIPTS / PHASE7_MODULES / PHASE8_TUI below)
+#                   plus the Phase 6/7/8/12 extension modules (existence-guard
+#                   lists PHASE6_SCRIPTS / PHASE7_MODULES / PHASE8_TUI /
+#                   PHASE12_MODULES below)
 #   make typecheck  ty type check over script/, baseline/, tests/, scripts/,
 #                   pipeline/, and tui/ (GPU-side imports replaced with Any —
 #                   they are never installed CPU-side, D-05)
@@ -152,8 +153,15 @@ PHASE7_MODULES := $(foreach s,pipeline/flops_counter.py pipeline/registry_loader
 # that does not exist can never be referenced by the gate, so later Phase 8
 # plans add screens/services without touching this Makefile again).
 PHASE8_TUI := $(wildcard tui/*.py tui/screens/*.py tui/services/*.py)
+# Phase-12 extension (12-01): the new orchestration module joins the
+# fixed-findings list ONLY when present on disk — same existence-guard
+# idiom as PHASE6_SCRIPTS/PHASE7_MODULES. script/gen_progress.py (12-02's
+# web-mirror generator) is listed here TOO, so it joins lint coverage
+# automatically the moment it lands, with NO later Makefile edit (12-02
+# must not touch this file).
+PHASE12_MODULES := $(foreach s,pipeline/run_sweep_shard.py script/gen_progress.py,$(if $(wildcard $(s)),$(s)))
 lint:
-	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py $(PHASE6_SCRIPTS) $(PHASE7_MODULES) $(PHASE8_TUI)
+	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py $(PHASE6_SCRIPTS) $(PHASE7_MODULES) $(PHASE8_TUI) $(PHASE12_MODULES)
 
 # Type check (ty, maintainer directive 2026-10-09): zero-diagnostics baseline
 # verified empirically at research time. [tool.ty] in pyproject.toml carries
