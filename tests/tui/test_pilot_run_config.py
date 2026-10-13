@@ -827,6 +827,33 @@ async def test_gate_problems_blocked_launch_never_called():
         assert launcher.launch_calls == []
 
 
+async def test_gate_live_root_refusal_names_the_root():
+    """CR-02: a launch into an already-LIVE output root is refused at
+    the problems stage naming the root — the operator must kill/detach
+    or pick a different root first; the gate never reaches the env
+    preflight, the confirm, or the spawn."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    live_root = str(Path("./finetuned").resolve())
+    launcher = FakeLauncherService(live=(live_root,))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.run_config import ProblemsModal
+
+        assert isinstance(app.screen, ProblemsModal)
+        log = app.screen.query_one("#cfg-problems-log")
+        joined = "\n".join(line.text for line in log.lines)
+        assert live_root in joined.replace("\n", ""), (
+            "the refusal names the live output root"
+        )
+        assert launcher.env_calls == 0, "blocked before the env preflight"
+        assert launcher.confirm_calls == [], "blocked before the confirm"
+        assert launcher.launch_calls == [], "nothing ever spawns"
+
+
 async def test_gate_env_block_renders_reasons_verbatim():
     """Env preflight FAIL: the failing kernel names, the reasons
     VERBATIM, and the [1] route hint — launch never called."""

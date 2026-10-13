@@ -1498,6 +1498,19 @@ class RunConfigScreen(Screen):
             if not self.app.below_minimum_grid:
                 self.app.push_screen(ProblemsModal(problems))
             return
+        # CR-02 (phase-11 review): refuse a launch into an already-LIVE
+        # output root at the problems stage, naming the root — the
+        # service's own _spawn guard is the structural backstop, but
+        # the operator must see WHY before any confirm (kill/detach or
+        # pick a different root first).
+        spec, _ = self._compose_spec()
+        root_key = str(Path(spec.output_root).resolve())
+        if root_key in set(self._launcher.live_sweeps()):
+            self._gate_active = False
+            if not self.app.below_minimum_grid:
+                self.app.push_screen(ProblemsModal(
+                    (("live_root", root_key),)))
+            return
         self._gate_stage_id += 1
         self._run_env_preflight(self._gate_stage_id)
 

@@ -416,6 +416,17 @@ class SweepLauncher:
         tee file — nothing launched leaves no log. On success the
         registry claims the resolved root.
 
+        CR-02 (phase-11 review): the spawn is REFUSED when the resolved
+        root already holds a LIVE registry entry (``poll() is None``) —
+        a second launch would silently overwrite the entry (orphaning
+        the first Popen and leaking its tee fd) and leave two run_sweep
+        processes racing the identical cell dirs into the identical
+        output root: colliding checkpoints, double-written
+        final_metrics/trainer_state/run_record, corrupted "completed"
+        artifacts destined for the public leaderboard. A DEAD entry
+        (poll() reaped) is pruned — handle dropped, tee closed — and
+        the root stays claimable.
+
         Args:
             argv: the launch argv (LIST-shaped; threaded verbatim —
                 composition is run_config's, never re-derived here).
@@ -430,6 +441,20 @@ class SweepLauncher:
             LaunchOutcome: the spawn outcome.
         """
         root = str(Path(output_root).resolve())
+        prior = self._live.get(root)
+        if prior is not None:
+            if prior["handle"].poll() is None:
+                return LaunchOutcome(
+                    spawned=False, root=root, tee_path=None,
+                    error=(
+                        f"output root {root} already has a live sweep "
+                        "registered — kill or detach it (the slot-5 exit "
+                        "modal) or pick a different output root before "
+                        "launching"))
+            # the prior sweep exited without detach/kill: reclaim the
+            # root (drop the dead entry + close its parent-side tee)
+            self._live.pop(root, None)
+            self._drop_entry(prior)
         logs_dir = settings.state_dir() / TEE_DIR_NAME
         logs_dir.mkdir(parents=True, exist_ok=True)
         now = datetime.now if clock is None else clock

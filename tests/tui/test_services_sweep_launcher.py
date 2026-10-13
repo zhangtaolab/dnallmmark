@@ -230,6 +230,60 @@ def test_spawn_oserror_failed_outcome_no_log_empty_registry(
     assert len(spawner.calls) == 1   # the seam WAS attempted (recorded)
 
 
+def test_spawn_refuses_second_live_sweep_at_same_root(
+        monkeypatch, tmp_path):
+    """CR-02: launching a second sweep into a LIVE root is refused —
+    the first registry entry survives (its Popen stays killable, its
+    tee handle stays owned), the second spawner is never called, and
+    the diagnostic names the live root (two run_sweep processes would
+    otherwise race the identical cell dirs and corrupt run artifacts)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    first_spawner = FakeSpawner(FakeSweepPopen(poll_returns=[None]))
+    launcher = sweep_launcher.SweepLauncher()
+    out_root = tmp_path / "out"
+
+    first = launcher._spawn(
+        ["py"], out_root, spawner=first_spawner, clock=FixedClock(CLOCK_MOMENT))
+    assert first.spawned is True
+
+    second_spawner = FakeSpawner(FakeSweepPopen(poll_returns=[None]))
+    second = launcher._spawn(
+        ["py"], out_root, spawner=second_spawner,
+        clock=FixedClock(CLOCK_MOMENT))
+
+    root_key = str(out_root.resolve())
+    assert second.spawned is False
+    assert root_key in second.error, "the diagnostic names the live root"
+    assert second.tee_path is None
+    assert second_spawner.calls == [], "the seam was never consulted"
+    assert launcher.live_sweeps() == (root_key,), "the first entry stands"
+    assert launcher.tee_path_for(out_root) == first.tee_path
+
+
+def test_spawn_reclaims_root_after_prior_sweep_exited(
+        monkeypatch, tmp_path):
+    """CR-02 self-heal: a registered entry whose Popen has exited is
+    pruned (its tee handle closed) and the root is claimable again —
+    a dead sweep never wedges its output root forever."""
+    pin_state_dir(monkeypatch, tmp_path)
+    dead = FakeSweepPopen(poll_returns=[0])
+    launcher = sweep_launcher.SweepLauncher()
+    out_root = tmp_path / "out"
+
+    first = launcher._spawn(
+        ["py"], out_root, spawner=FakeSpawner(dead),
+        clock=FixedClock(CLOCK_MOMENT))
+    assert first.spawned is True
+
+    second = launcher._spawn(
+        ["py"], out_root, spawner=FakeSpawner(FakeSweepPopen()),
+        clock=FixedClock(CLOCK_MOMENT))
+
+    assert second.spawned is True
+    assert launcher.live_sweeps() == (str(out_root.resolve()),)
+    assert launcher.tee_path_for(out_root) == second.tee_path
+
+
 def test_kill_sweep_sigterm_with_clean_exit(monkeypatch, tmp_path):
     """SIGTERM to the process group; the poll converges inside the
     grace window; NO SIGKILL; the registry entry drops."""
