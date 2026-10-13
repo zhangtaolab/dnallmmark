@@ -1411,6 +1411,70 @@ async def test_rescan_fires_immediate_full_scan_with_toast():
         assert MON_RESCAN_TOAST.format(n=3) in _toast_messages(app)
 
 
+async def test_table_updates_preserve_cursor_across_ticks():
+    """WR-05 (phase-11 review): the cadence rebuilds are diff-preserving
+    (the PickerList.set_rows precedent) — a 2s frontier tick or a 60s
+    full scan never resets the focused table's cursor to row 0, so an
+    [enter] pressed after a tick acts on the row the operator SEES
+    (the cell detail of the highlighted row, the attach of the
+    highlighted root)."""
+    monitor = FakeMonitorService(
+        scans=[_three_state_scan()],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING, 43: CELL_QUEUED}),
+            _row("model-b", "task-2", {42: CELL_FAILED, 43: CELL_QUEUED}),
+            _row("model-c", "task-3", {42: CELL_COMPLETED, 43: CELL_QUEUED}),
+        )},
+        stats={"/scans/finetuned": _stats(done=3, total=9, elapsed=60.0)},
+        frontiers={"/scans/finetuned": FrontierSnapshot(
+            root=Path("/scans/finetuned"), state=SWEEP_RUNNING,
+            newest_mtime=None, newest_cell=("model-a", "task-1", 42),
+            cell_states={
+                ("model-a", "task-1", 42): CELL_RUNNING,
+                ("model-b", "task-2", 42): CELL_FAILED,
+                ("model-c", "task-3", 42): CELL_COMPLETED,
+                ("model-a", "task-1", 43): CELL_RUNNING,
+            })},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+
+        cells_table = screen.query_one("#mon-cells", DataTable)
+        cells_table.focus()
+        await pilot.pause()
+        cells_table.action_cursor_down()
+        cells_table.action_cursor_down()   # row 2: model-c x task-3
+        await pilot.pause()
+        key_before = str(cells_table.coordinate_to_cell_key(
+            cells_table.cursor_coordinate)[0].value)
+        assert key_before == "model-c__task-3"
+        screen._tick_frontier()            # the 2s rebuild
+        await _settle(pilot, app)
+        assert str(cells_table.coordinate_to_cell_key(
+            cells_table.cursor_coordinate)[0].value) == key_before, (
+            "a frontier tick must not snap the cursor back to row 0"
+        )
+
+        discovered = screen.query_one("#mon-discovered", DataTable)
+        discovered.focus()
+        await pilot.pause()
+        discovered.action_cursor_down()    # row 1: the finished root
+        await pilot.pause()
+        root_before = str(discovered.coordinate_to_cell_key(
+            discovered.cursor_coordinate)[0].value)
+        assert root_before == "/scans/finetuned-e2e-rerun"
+        screen._tick_full()                # the 60s rebuild
+        await _settle(pilot, app)
+        assert str(discovered.coordinate_to_cell_key(
+            discovered.cursor_coordinate)[0].value) == root_before, (
+            "a full-scan rebuild must not snap the cursor back to row 0"
+        )
+
+
 async def test_long_keys_backstop_both_tables():
     """The 68-char-key lesson: long model/task keys truncate in-cell
     (never breaking the grid) and the full key rides the detail."""

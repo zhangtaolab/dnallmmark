@@ -702,6 +702,59 @@ class CellDetailModal(ModalScreen):
                     log.write(f"  {field_name}: {value}")
 
 
+def _set_table_rows(table: DataTable, columns, rows) -> None:
+    """WR-05 (phase-11 review): diff-preserving row update — the
+    ``PickerList.set_rows`` precedent (tui/screens/run_config.py)
+    carried to DataTable.
+
+    Textual 8.2.8's ``DataTable.clear()`` resets ``cursor_coordinate``
+    to (0,0) and zeroes scroll, so the clear+rebuild the cadence
+    handlers used on every 2s tick made keyboard navigation snap back
+    to row 0 continuously — and an ``[enter]`` pressed after a tick
+    landed mid-reset, acting on ROW 0 (attaching the wrong sweep root,
+    opening the wrong cell detail out of a 3100-row table). Here
+    columns rebuild ONLY when their key set changes (the narrow
+    toggle, a new seed column); known rows update in place via
+    ``update_cell``, new rows append, vanished rows drop; the cursor
+    is re-pinned to its ROW KEY (identity, not coordinate) with
+    ``scroll=False`` so the operator's view never jumps.
+
+    Args:
+        table: the target DataTable.
+        columns: ``[(label, key), ...]`` in display order.
+        rows: ``{row_key: [cell, ...]}`` in display order (each cell
+            list parallel to ``columns``).
+    """
+    wanted = [key for _label, key in columns]
+    current = [str(key.value) for key in table.columns]
+    if current != wanted:
+        table.clear(columns=True)
+        for label, key in columns:
+            table.add_column(label, key=key)
+    cursor_key = None
+    try:
+        cursor_key = str(table.coordinate_to_cell_key(
+            table.cursor_coordinate)[0].value)
+    except Exception:  # noqa: BLE001 — an empty table has no cell key
+        cursor_key = None
+    existing = {str(key.value) for key in table.rows}
+    for row_key in existing - set(rows):
+        table.remove_row(row_key)
+    for row_key, cells in rows.items():
+        if row_key in existing:
+            for column_key, value in zip(wanted, cells, strict=True):
+                table.update_cell(row_key, column_key, value)
+        else:
+            table.add_row(*cells, key=row_key)
+    if cursor_key is not None and cursor_key in rows:
+        try:
+            table.move_cursor(
+                row=table.get_row_index(cursor_key),
+                animate=False, scroll=False)
+        except Exception:  # noqa: BLE001 — the row vanished
+            return  # mid-diff: the cursor simply stays where it is
+
+
 # =====================================================================
 # The screen
 # =====================================================================
@@ -866,7 +919,7 @@ class MonitorScreen(Screen):
         discovered = self.query_one("#mon-discovered", DataTable)
         discovered.cursor_type = "row"
         discovered.zebra_stripes = True
-        self._rebuild_discovered_columns(discovered)
+        self._render_discovered()
         cells = self.query_one("#mon-cells", DataTable)
         cells.cursor_type = "row"
         cells.zebra_stripes = True
@@ -1233,81 +1286,85 @@ class MonitorScreen(Screen):
 
     # ===== rendering (event-loop side only) =====
 
-    def _rebuild_discovered_columns(self, table: DataTable) -> None:
-        """The discovered columns; the scale column drops below the
-        width threshold (the UI-SPEC responsive rule)."""
-        table.clear(columns=True)
-        table.add_column("", key="state")
-        table.add_column(MON_COL_ROOT, key="root")
+    def _discovered_columns(self) -> "list[tuple[str, str]]":
+        """The discovered (label, key) columns; the scale column drops
+        below the width threshold (the UI-SPEC responsive rule)."""
+        columns = [("", "state"), (MON_COL_ROOT, "root")]
         if not self._narrow:
-            table.add_column(MON_COL_SCALE, key="scale")
-        table.add_column(MON_COL_PROGRESS, key="progress")
-        table.add_column(MON_COL_ETA, key="eta")
+            columns.append((MON_COL_SCALE, "scale"))
+        columns.append((MON_COL_PROGRESS, "progress"))
+        columns.append((MON_COL_ETA, "eta"))
+        return columns
 
     def _render_discovered(self) -> None:
-        """Rebuild the discovered table from the last scan."""
+        """Diff the discovered table to the last scan (WR-05: the
+        cursor row identity survives every cadence rebuild)."""
         if not self.is_running:
             return
         table = self.query_one("#mon-discovered", DataTable)
-        self._rebuild_discovered_columns(table)
         sweeps = self._scan.sweeps if self._scan is not None else ()
         title = self.query_one("#mon-discovered-title", Label)
         title.update(MON_DISCOVERED_TITLE.format(n=len(sweeps)))
+        rows: dict[str, list] = {}
         if not sweeps:
             row: list = [MON_DISCOVERED_EMPTY]
             row.extend([""] * (3 if self._narrow else 4))
-            table.add_row(*row, key="__empty__")
-            return
-        attached_key = (str(self._attached_root)
-                        if self._attached_root is not None else None)
-        for summary in sweeps:
-            root_key = str(summary.root)
-            copy, style = _SWEEP_STATE_CELLS.get(
-                summary.state, (summary.state, _STYLE_DIM))
-            state_cell = Text(copy, style=style)
-            attached = root_key == attached_key
-            if attached and not self._narrow:
-                # the ◆ accent marker rides the state cell (amend. 13)
-                state_cell = Text.assemble(Text("◆ "), state_cell)
-            row = [state_cell, Text(summary.root.name)]
-            if not self._narrow:
-                scale = self._scales.get(root_key)
-                row.append(Text(
-                    "×".join(str(part) for part in scale)
-                    if scale else MON_ETA_UNKNOWN))
-            row.append(_progress_cell(summary))
-            eta_cell = _discovered_eta_cell(
-                summary, self._root_stats.get(root_key))
-            if attached and self._narrow:
-                # the 80-col form carries the marker at the row end
-                eta_cell = Text.assemble(eta_cell, Text(" ◆"))
-            row.append(eta_cell)
-            table.add_row(*row, key=root_key)
+            rows["__empty__"] = row
+        else:
+            attached_key = (str(self._attached_root)
+                            if self._attached_root is not None else None)
+            for summary in sweeps:
+                root_key = str(summary.root)
+                copy, style = _SWEEP_STATE_CELLS.get(
+                    summary.state, (summary.state, _STYLE_DIM))
+                state_cell = Text(copy, style=style)
+                attached = root_key == attached_key
+                if attached and not self._narrow:
+                    # the ◆ accent marker rides the state cell (amend. 13)
+                    state_cell = Text.assemble(Text("◆ "), state_cell)
+                row = [state_cell, Text(summary.root.name)]
+                if not self._narrow:
+                    scale = self._scales.get(root_key)
+                    row.append(Text(
+                        "×".join(str(part) for part in scale)
+                        if scale else MON_ETA_UNKNOWN))
+                row.append(_progress_cell(summary))
+                eta_cell = _discovered_eta_cell(
+                    summary, self._root_stats.get(root_key))
+                if attached and self._narrow:
+                    # the 80-col form carries the marker at the row end
+                    eta_cell = Text.assemble(eta_cell, Text(" ◆"))
+                row.append(eta_cell)
+                rows[root_key] = row
+        _set_table_rows(table, self._discovered_columns(), rows)
 
     def _render_cells(self) -> None:
-        """Rebuild the cell table from the merged rows + seed columns."""
+        """Diff the cell table to the merged rows + seed columns (WR-05:
+        the cursor row identity survives every cadence rebuild)."""
         if not self.is_running:
             return
         table = self.query_one("#mon-cells", DataTable)
         self._render_cells_title()
-        table.clear(columns=True)
-        table.add_column(MON_COL_MODEL, key="model")
-        table.add_column(MON_COL_TASK, key="task")
-        rows = self._cell_rows
-        if self._attached_root is None or not rows:
-            table.add_column("", key="seed_0")
-            table.add_row(MON_CELLS_EMPTY, "", "", key="__empty__")
+        rows_map = self._cell_rows
+        if self._attached_root is None or not rows_map:
+            _set_table_rows(
+                table,
+                [(MON_COL_MODEL, "model"), (MON_COL_TASK, "task"),
+                 ("", "seed_0")],
+                {"__empty__": [MON_CELLS_EMPTY, "", ""]})
             return
         seeds = sorted({
             cell_seed.seed
-            for row in rows.values()
+            for row in rows_map.values()
             for cell_seed in row.seeds})
-        for seed in seeds:
-            table.add_column(MON_COL_SEED.format(seed=seed),
-                             key=f"seed_{seed}")
+        columns = [(MON_COL_MODEL, "model"), (MON_COL_TASK, "task")]
+        columns.extend(
+            (MON_COL_SEED.format(seed=seed), f"seed_{seed}")
+            for seed in seeds)
         key_width = max(8, self.size.width // 3 - 2)
-        for key in sorted(rows):
-            row = rows[key]
+        rows: dict[str, list] = {}
+        for key in sorted(rows_map):
+            row = rows_map[key]
             model_cell = Text(row.model)
             model_cell.truncate(key_width, overflow="ellipsis", pad=False)
             task_cell = Text(row.task)
@@ -1323,7 +1380,8 @@ class MonitorScreen(Screen):
                 else:
                     cells.append(
                         _seed_cell(cell_seed, wide=not self._narrow))
-            table.add_row(*cells, key=key)
+            rows[key] = cells
+        _set_table_rows(table, columns, rows)
 
     def _render_cells_title(self) -> None:
         """The cells title + the standing resume note (MON-05)."""
