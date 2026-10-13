@@ -1,10 +1,10 @@
 ---
 phase: 09-custom-model-dataset-onboarding
-verified: 2026-10-13T00:18:15Z
+verified: 2026-10-13T09:30:34Z
 status: passed
 score: 5/5 must-haves verified
 covered_files: [".planning/phases/09-custom-model-dataset-onboarding/09-01-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-01-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-02-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-02-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-03-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-03-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-04-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-04-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-05-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-05-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-06-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-06-SUMMARY.md", "pipeline/registry_loader.py", "schemas/custom_registry.json", "tests/test_registry_loader.py", "tests/tui/test_pilot_env_check.py", "tests/tui/test_pilot_nav_shell.py", "tests/tui/test_pilot_selection.py", "tests/tui/test_pilot_selection_custom.py", "tests/tui/test_pilot_wizard.py", "tests/tui/test_services_about.py", "tests/tui/test_services_custom_entries.py", "tests/tui/test_services_custom_validation.py", "tests/tui/test_services_gauntlet.py", "tui/app.py", "tui/screens/about.py", "tui/screens/env_check.py", "tui/screens/selection.py", "tui/screens/wizard.py", "tui/services/about.py", "tui/services/custom_entries.py", "tui/services/custom_validation.py", "tui/services/gauntlet.py", "tui/strings.py", "tui/styles.tcss"]
-covered_digest: "v3:sha256:a3d9fe54c5faad43a602a04cc43a7615023776ebb6313fc656382f69ceb0b122"
+covered_digest: "v3:sha256:96d202f0daeb02de6f111056e5ea9db9e2592f6b6d6bf9e2f625281badc08bb6"
 re_verification:
   previous_status: passed
   previous_score: 5/5
@@ -15,7 +15,7 @@ advisory:
   - finding: "Three phase-10 10-05 overlay-flip tests red at HEAD (introduced by phase-10 commit f417862, stale-dated by phase-10 baseline refresh 2f7211d)"
     category: other
     reason: "Out of phase-9 scope (DATA-phase presence semantics; the tests postdate phase-9 verification): their fixture helper _committed_missing_dataset_keys() asserts the committed n_audit carries missing keys, but the R-03 maintainer-ruled refresh made it 50/50 present. Resolution belongs to a phase-10 follow-up: stage a missing-key fixture instead of reading the committed baseline's missing set."
-    evidence_status: "deterministic: named tests fail at HEAD 26280d5 (AssertionError: the committed baseline must carry missing keys); direct parse of dnallm-mark/data/n_audit.json: 50 records, 0 missing; RESOLVED at 84b0fcf (420411e fixture-staged pins) — re-run 3 passed"
+    evidence_status: "deterministic: named tests fail at HEAD 26280d5 (AssertionError: the committed baseline must carry missing keys); direct parse of dnallm-mark/data/n_audit.json: 50 records, 0 missing; RESOLVED at 84b0fcf (420411e fixture-staged pins) — re-run 3 passed; still green at 8b92766 (inside the 114-test spot run)"
 behavior_unverified: 1
 behavior_unverified_items:
   - truth: "CUST-06 share unit is consumable cross-machine/cross-version (an exported custom registry file lands on another operator's machine through the same import + gauntlet path)"
@@ -45,7 +45,7 @@ human_verification:
 Merged must-haves: the five ROADMAP Success Criteria (the contract), cross-checked against the six PLAN frontmatter truth blocks (09-01 services, 09-02 gauntlet + D-09, 09-03 nav shell, 09-04 wizard collection, 09-05 wizard writing, 09-06 selection integration). Every plan truth maps into one of the five SCs below.
 
 | # | Truth | Status | Evidence |
-| --- | --- | --- | --- |
+| --- | ------- | ---------- | -------------- |
 | 1 | SC1: one action from the model list opens the custom-model wizard; a validated submission lands in `~/.config/dnallmmark/custom_models.json` and the model appears via the overlay; `pipeline/models_info.json` never written | ✓ VERIFIED | `tui/screens/selection.py` composes the real wizard over real services (`_compose_wizard`, lines ~535-630); `WizardModal` (tui/screens/wizard.py:543) with `on_valid` handoff; `custom_entries.land` (custom_entries.py:209) writes through `settings.atomic_write` to `custom_registry_path(kind)` → `custom_models.json`; tracer test `test_tracer_land_then_overlay_load_then_undo` (test_services_custom_entries.py:139) proves land → `registry_loader.load_models_registry` visibility end-to-end; full-loop Pilot `test_full_loop_models_wizard_lands_badges_counts_and_disables` passes over tmp roots. Official registries: zero write paths in tui/ (grep), git-clean, last touched Phase 4/6 commits |
 | 2 | SC2: same for datasets → `~/.config/dnallmmark/custom_datasets.json`, `pipeline/datasets_info.json` never written | ✓ VERIFIED | Same store with `KIND_DATASETS`; `KIND_FILE_NAMES` in gauntlet/entries seams; `test_full_loop_datasets_wizard_runs_both_legs_and_disables` (dataset candidate runs both gauntlet legs) passes; dataset landing path and official-file zero-touch share the SC1 evidence |
 | 3 | SC3: submission blocked until validation passes; collect-all fail-fast one-pass report (required/type/enum/collisions vs official AND custom/path existence/split parseability/rows>0/label column/metric-in-registry), every problem itemized | ✓ VERIFIED | `validate_model_candidate`/`validate_dataset_candidate` (custom_validation.py:193,237) collect `(field_key, message)` pairs through `_check_key/_check_required/_check_numeric/_check_enum/_check_path_exists/_check_split_fields/_count_well_formed_rows`; collision check covers official + existing custom keys; `METRIC_REGISTRY` frozenset parity-locked to `SUITE_CANONICAL` by `test_metric_registry_parity_with_suite_canonical` (:583); collect-all behavior proven by `test_three_simultaneous_defects_yield_three_ordered_problems`, `test_dataset_collect_all_spans_all_required_fields`, `test_problems_follow_field_definition_order_not_dict_order` (:208-238); wizard renders the numbered report view and hands off only on clean pass (wizard.py `_phase` form/report/gauntlet state machine) |
@@ -210,4 +210,55 @@ pins are part of the covered state this digest attests.
 ---
 
 _Re-verified: 2026-10-13T00:18:15Z (local 2026-10-13; digest refreshed over the 84b0fcf code state)_
+_Verifier: Claude (gsd-verifier, #4682 stale-refresh route)_
+
+---
+
+## Re-verification (stale refresh, HEAD 8b92766, 2026-10-13)
+
+**Route:** #4682 narrow-delta stale refresh (second refresh of this phase). The prior PASS (2026-10-13T00:18:15Z, digest `v3:sha256:a3d9fe54…` over the 84b0fcf code state) went stale after phase 11 landed. Goal-backward re-verified at HEAD `8b927669a03314ea11032d9ce8179db567bd8214` (branch autorun; working tree clean over every phase-9 surface — only `.planning/` state files differ).
+
+### Delta since the previous verification (84b0fcf → 8b92766, 75 commits — all phase 11)
+
+| Surface | Delta | Phase-9 impact |
+| ------- | ----- | -------------- |
+| `tui/app.py` (+212/−1) | purely additive: monitor/run_config imports, `ExitModal` (D-06 q-intercept), `MonitorSwitchRequested`, 4 new optional ctor kwargs (`run_config_service`/`launcher_service`/`monitor_service`/`monitor_launcher`, all `None`-defaulted), `build_run_config_screen`/`build_monitor_screen` factories, two new `action_nav` branches, `sweep_launched` D-13 hook, async `action_quit`. The 12-hunk diff map touches NO phase-9 seam: `build_selection_screen` (:426) and the phase-10 queue seams are byte-identical | none |
+| `tui/strings.py` (+230/−2) | additive `CFG_`/`LNC_`/`MON_` blocks (b113627) + one amended constant `ENV_VERDICT_CRITICAL_FAIL` (7e9fba7, 11-05 present-tense amendment — a Phase-8-era surface amended per 11-UI-SPEC, not a wizard/gauntlet/custom constant) | none |
+| `tui/styles.tcss` (+259/−0) | additive monitor/run-config/exit-modal styles | none |
+| `tui/screens/nav.py` | slots 4/5 promoted to real targets (`run_config` 11-06, `monitor` 11-07); slot vocabulary, digit nav, ◆ tracking unchanged | none — 09-03 nav-shell truths (six verbatim slots, triple channel, 80-col fit) still asserted by the amended nav tests |
+| `tests/tui/test_pilot_env_check.py` | 631a40d: pins the ENV_VERDICT present-tense amendment (assert strengthened, none deleted) | none |
+| `tests/tui/test_pilot_nav_shell.py` | promotion-consistent rewrite (fakes for the new screens; placeholder assertions retired with the last placeholder slot) | none — zero phase-9 tests deleted or weakened |
+| `tests/tui/test_pilot_selection_custom.py` (+4/−2) | ONLY the D-14 nav-slot whitelist gaining `run_config`/`monitor` | none |
+| `pipeline/run_sweep.py` (+181/−34) | phase-11 launcher work incl. `--config-variant` aliasing — NOT a phase-9 covered file, but the gauntlet invokes it as a real subprocess | contract proven at HEAD: `test_real_subprocess_dry_run_passes_for_synthetic_model_candidate` (real `run_sweep.py --dry-run` subprocess, `planned_cells=1`, exit 0) PASS |
+| `tui/screens/selection.py`, `tui/screens/wizard.py`, `tui/services/custom_entries.py`, `tui/services/custom_validation.py`, `tui/services/gauntlet.py`, `pipeline/registry_loader.py`, `schemas/custom_registry.json`, their 8 test files, `tui/screens/about.py`, `tui/screens/env_check.py`, `tui/services/about.py` | zero commits since 84b0fcf; `git status` clean | untouched — wizard, store, validator, gauntlet, D-09 skip all byte-stable |
+| `pipeline/models_info.json` / `pipeline/datasets_info.json` | zero commits (last touched 84f56ad Phase 4 / 47d057f Phase 6); zero write paths in `tui/` (grep) | the cardinal prohibition held |
+
+### Per-must-have still-holds verdicts
+
+| # | Truth (SC) | Verdict at HEAD | Evidence |
+| - | ---------- | --------------- | -------- |
+| 1 | SC1 model wizard → `custom_models.json` over the overlay; `models_info.json` never written | STILL HOLDS | `selection.py` byte-stable (last commit 9fb9603, phase-10 era); `test_full_loop_models_wizard_lands_badges_counts_and_disables` + `test_tracer_land_then_overlay_load_then_undo` PASS (inside the 114-green spot run); official registry zero-delta |
+| 2 | SC2 dataset twin → `custom_datasets.json`; `datasets_info.json` never written | STILL HOLDS | `test_full_loop_datasets_wizard_runs_both_legs_and_disables` PASS; `datasets_info.json` last touched Phase 6 |
+| 3 | SC3 collect-all fail-fast validation | STILL HOLDS | `custom_validation.py` byte-stable; `test_metric_registry_parity_with_suite_canonical` PASS (named lane) |
+| 4 | SC4 gauntlet (dry-run + audit), entry-level rollback, no half-written state | STILL HOLDS | gauntlet suite 32/32 green incl. `test_runner_decode_policy_pins_errors_replace`, `test_committed_audit_artifacts_byte_unchanged_across_real_gauntlet`, and the real-subprocess dry-run leg over the phase-11-modified `run_sweep.py`; `wizard.py` byte-stable (u/f/o seams intact) |
+| 5 | SC5 badge / e toggle / export share unit; official registries + existing suite green | STILL HOLDS | `test_disabled_entry_stays_in_the_table_while_the_real_loader_skips_it` PASS; `registry_loader.py` enabled-skip byte-stable; the nav-whitelist widening is the only selection_custom delta |
+
+### Spot runs at HEAD
+
+- `.venv/bin/pytest tests/tui/test_services_gauntlet.py tests/tui/test_services_custom_entries.py tests/tui/test_pilot_wizard.py tests/tui/test_pilot_selection_custom.py -q` → **114 passed** (116.47s) — gauntlet 32 + custom_entries 17 + wizard 42 + selection_custom 23, zero failures
+- Named lanes: `-k "metric_registry_parity"` over custom_validation + registry_loader → **1 passed**; `-k "real_subprocess"` gauntlet → **1 passed**. All 7 named phase-9 must-have tests enumerated present and green at HEAD (the other 5 inside the 114)
+
+### Fingerprint refresh
+
+`covered_files` unchanged (the same 35-file set). Fresh digest over the 8b92766 code state:
+
+`covered_digest: "v3:sha256:96d202f0daeb02de6f111056e5ea9db9e2592f6b6d6bf9e2f625281badc08bb6"`
+
+(supersedes `v3:sha256:a3d9fe54…`, which attested the 84b0fcf state and is preserved in git history at b06b3f2)
+
+**Verdict: passed.** All five SCs still hold at HEAD 8b92766; the two UAT items remain discharged (09-UAT.md, 2/2, 2026-10-12); no regression on any phase-9 must-have; no debt markers in any delta file; the phase-11 delta over phase-9 surfaces is additive (nav promotions + seams) with zero phase-9 behavior paths touched.
+
+---
+
+_Re-verified: 2026-10-13T09:30:34Z (HEAD 8b92766)_
 _Verifier: Claude (gsd-verifier, #4682 stale-refresh route)_
