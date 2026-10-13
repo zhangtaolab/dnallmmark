@@ -547,9 +547,12 @@ def _copy_verified(src, dst):
     COPY + SHA256-VERIFY — never a symlink, never a move. The
     destination's parents are created; the copy OVERWRITES (idempotent
     re-merge: re-copying identical bytes re-verifies green). Any mismatch
-    — or an unreadable source — returns False; the caller collects the
-    failure and refuses the whole merge before any merged manifest lands
-    (a partial corrupt merge never becomes a sweep root).
+    — an unreadable source, or an OSError from the mkdir/copy step
+    itself (ENOSPC / EACCES / a read-only destination — WR-04: converted
+    here so the operator gets the designed merge-refusal diagnostic,
+    never a raw traceback) — returns False; the caller collects the
+    failure and refuses the whole merge before any merged manifest
+    lands (a partial corrupt merge never becomes a sweep root).
 
     Args:
         src (Path): the worker-root source file.
@@ -562,8 +565,11 @@ def _copy_verified(src, dst):
     src_hash = _sha256_file(src)
     if src_hash is None:
         return False
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(src, dst)
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dst)
+    except OSError:
+        return False
     return _sha256_file(dst) == src_hash
 
 

@@ -1218,6 +1218,51 @@ def test_copy_verified_unit_detects_corruption(tmp_path, monkeypatch):
     )
 
 
+def test_copy_verified_unit_oserror_converts_to_refusal(
+        tmp_path, monkeypatch):
+    """WR-04: an OSError raised by the copy step (ENOSPC / EACCES / a
+    read-only destination) converts to the designed refusal path —
+    False — never a raw traceback out of the verify pass."""
+    src = tmp_path / "src.json"
+    src.write_text('{"a": 1}', encoding="utf-8")
+
+    def raising_copyfile(src_path, dst_path):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(
+        run_sweep_shard.shutil, "copyfile", raising_copyfile)
+    assert run_sweep_shard._copy_verified(
+        src, tmp_path / "nested" / "dst.json") is False, (
+        "an OSError from the copy must land in the mismatch-refusal "
+        "path, not propagate as a traceback"
+    )
+
+
+def test_merge_refuses_with_designed_diagnostic_on_copy_oserror(
+        tmp_path, monkeypatch):
+    """WR-04 merge level: a copy step that raises OSError refuses with
+    the designed collect-all diagnostic (not a stack trace) and the
+    merged manifests are NOT written."""
+    base, _roots = make_worker_pair(tmp_path)
+
+    def oserror_copyfile(src_path, dst_path):
+        raise OSError(13, "Permission denied")
+
+    monkeypatch.setattr(
+        run_sweep_shard.shutil, "copyfile", oserror_copyfile)
+    with pytest.raises(SystemExit) as excinfo:
+        run_merge_cli(monkeypatch, base)
+    message = str(excinfo.value)
+    assert "merge refused" in message, (
+        "the operator must get the designed merge-refusal diagnostic, "
+        "not an OSError traceback"
+    )
+    assert not (base / run_sweep.MANIFEST_NAME).exists(), (
+        "the merged manifest must never land on a failed copy"
+    )
+    assert not (base / run_sweep.FAILURES_NAME).exists()
+
+
 def test_merge_refuses_on_hash_mismatch_without_manifests(
         tmp_path, monkeypatch):
     """Merge level: a monkeypatched copy that corrupts every file makes
