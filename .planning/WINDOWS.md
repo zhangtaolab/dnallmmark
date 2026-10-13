@@ -300,3 +300,5 @@ last_updated: 2026-10-13T06:06:35.033Z
   }
 ]
 ````
+
+- 2026-10-13: GB10 bounded smoke EXECUTED live (11-UAT.md, maintainer auth) — entry #20 resolved.

@@ -1,7 +1,9 @@
 ---
 phase: 11-run-config-launch-gates-single-gpu-monitoring
-verified: 2026-10-13T16:20:00Z
-status: human_needed
+verified: 2026-10-13T17:35:00Z
+smoke_executed: 2026-10-13 live (11-UAT.md, maintainer "跑")
+orig_verified: 2026-10-13T16:20:00Z
+status: passed
 score: 4/5 must-haves verified
 covered_files:
   - .planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-01-PLAN.md
