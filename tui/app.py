@@ -727,12 +727,13 @@ class DnallmMarkTui(App):
 
     # ===== Actions (app-level) =====
 
-    def action_quit(self) -> None:
+    async def action_quit(self) -> None:
         """The D-06 q intercept: a live sweep (``live_sweeps`` non-empty)
         pushes the ExitModal (kill/detach/cancel, default detach) instead
         of quitting; with none, q quits directly (the inherited path).
         Never pushes over the min-size guard (WR-06). 11-07 extends the
-        predicate to attached running sweeps.
+        predicate to attached running sweeps. Async — the App base
+        declares the coroutine signature (ty LSP).
         """
         roots = self._launcher.live_sweeps()
         if roots and not self.below_minimum_grid:

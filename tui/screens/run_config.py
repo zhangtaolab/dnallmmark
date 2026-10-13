@@ -457,8 +457,11 @@ class PickerList(SelectionList):
         """Delegate to the screen's gate action — unprefixed actions do
         NOT resolve across the widget->screen boundary on 8.2.8 (a
         missing widget action falls through to the SAME screen binding;
-        probe-pinned in this plan's development)."""
-        self.screen.action_open_gate()
+        probe-pinned in this plan's development). The getattr guard
+        narrows the generic Screen type (ty)."""
+        handler = getattr(self.screen, "action_open_gate", None)
+        if handler is not None:
+            handler()
 
     def set_rows(self, keys: Sequence[str], prompts: Sequence[Text],
                  marked: Sequence[bool], disabled: Sequence[bool]) -> None:
@@ -532,7 +535,9 @@ class ChoiceRow(Static, can_focus=True):
     def action_pick_choice(self) -> None:
         """Delegate to the screen's choice action (the 8.2.8 action
         boundary — see PickerList.action_open_gate)."""
-        self.screen.action_pick_choice()
+        handler = getattr(self.screen, "action_pick_choice", None)
+        if handler is not None:
+            handler()
 
     def set_value(self, value: str) -> None:
         """Render one choice value with the dim ▾ affordance."""
@@ -1245,7 +1250,7 @@ class RunConfigScreen(Screen):
         else:
             text = f"{CFG_SUBSET_OFF}（{path}）"
         self.query_one("#cfg-subset-value", Static).update(
-            Text(text, style=_STYLE_DIM if not self._subset_on else None))
+            Text(text, style=_STYLE_DIM if not self._subset_on else ""))
 
     def _render_dir_advisories(self, dir_states: dict) -> None:
         """The wizard advisories: exists / missing; unset renders
