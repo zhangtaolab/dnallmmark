@@ -4,19 +4,19 @@ milestone: v1.2
 milestone_name: TUI任务
 current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
-current_plan: 3
+current_plan: 2
 status: executing
-stopped_at: Completed 12-02-PLAN.md
-last_updated: "2026-10-13T11:58:00.000Z"
+stopped_at: Completed 12-03-PLAN.md
+last_updated: "2026-10-13T13:07:30.044Z"
 last_activity: 2026-10-13
-last_activity_desc: 12-02 web progress mirror complete (generator + static page)
-state_head: c9058b8353f24ae293ec11bd6db92b88c50ff490
+last_activity_desc: Phase 12 execution started
+state_head: 83eeef4bde425ecce2f74a8ef2fc57902521a279
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 37
-  completed_plans: 34
-  percent: 92
+  completed_plans: 35
+  percent: 83
 ---
 
 # Project State
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 
 ## Current Position
 
-Phase: 12 — Multi-GPU Orchestration & Console Hardening
-Current Plan: Not started
-Total Plans in Phase: 7
-Status: Ready to plan
-Last activity: 2026-10-13 — Phase 11 complete, transitioned to Phase 12
+Phase: 12 (Multi-GPU Orchestration & Console Hardening) — EXECUTING
+Current Plan: 2
+Total Plans in Phase: 5
+Status: Ready to execute
+Last activity: 2026-10-13 — Phase 12 execution started
 
 Progress (v1.2): [██████░░░░] 67% (4/6 phases; 30/32 planned plans)
 
@@ -94,6 +94,7 @@ Progress (v1.2): [██████░░░░] 67% (4/6 phases; 30/32 planned
 | Phase 11 P07 | 62min | 3 tasks | 9 files |
 | Phase 12 P01 | 29m | 2 tasks | 3 files |
 | Phase 12 P02 | 30m | 2 tasks | 10 files |
+| Phase 12 P03 | 65m | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -209,6 +210,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 12]: 12-02: gen_progress serializes the scanner's dataclasses VERBATIM (full_scan classification + cells_view rows + stats done/total/current/elapsed/eta — one consistent source per field group; newest_mtime dropped, state_counts five-key from the same cells pass); skip predicate = scanner-yields-nothing (no summary OR non-finished root with empty cells_view) — zero new walks or derivations
 - [Phase 12]: 12-02: data/progress/ landed .gitkeep ONLY — no fabricated sample JSON on the public site (every-number-is-real); the live page honestly shows the fetch-error empty state until the maintainer first regenerates; running CLI sweeps (no manifest) mirror total:null -> Unknown total/empty bar/ETA —
 - [Phase 12]: 12-02: page contract frozen web-side — zero CDN scripts (structurally pinned), zero timers (deferred auto-refresh stays deferred), generated_at rendered VERBATIM (never a client clock), controls via .category-nav + change/click delegation on the persistent wrapper, progress.css spends only the five .cell-state--* classes + stat-card refinement (tokens only; truncation via layout-only inline styles)
+- [Phase 12]: 12-03: slot-4 focus trap fixed at ONE site — shared _PickerReturnModal.dismiss() override (super then call_after_refresh refocus of #cfg-picker); 5 modal re-parents + local _GateConfirmModal; selection/strings/styles byte-identical
+- [Phase 12]: 12-03: goldens ride the FALLBACK lane (plugin resolver conflict vs pytest>=9.1.1): run_test(size=(120,40)) + export_screenshot + UTF-8 string equality vs committed SVGs; make snapshot-update is the ONLY regen path, maintainer-only (D-03)
+- [Phase 12]: 12-03 Rule-1 deviation: compact=True on the 8 height-1-row Inputs — the default bordered height-3 Input clipped to its top border hid the VALUE row (the live 11-UAT empty-bar phenomenon, advisory #2 root cause); the #selection-filter precedent; E2' modal + subset inputs untouched
 
 ### Pending Todos
 
@@ -232,8 +236,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T11:58:00.000Z
-Stopped at: Completed 12-02-PLAN.md
+Last session: 2026-10-13T13:07:29.981Z
+Stopped at: Completed 12-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
