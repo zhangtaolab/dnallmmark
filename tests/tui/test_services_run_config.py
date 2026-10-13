@@ -45,6 +45,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import run_sweep  # top-level module (pipeline/ sys.path root) — same-source parity
 
 from tui.services import run_config, settings
 
@@ -460,3 +461,386 @@ def test_resolve_dirs_nonexistent_output_root_is_advisory_only():
     plan = run_config.resolve_dirs(spec)
     assert plan.output_root_abs == str(
         (REPO_ROOT / "does" / "not" / "exist" / "yet").resolve())
+
+
+# =====================================================================
+# Lane 2 — PROBE_INELIGIBLE read-source extraction (Task 2)
+# =====================================================================
+
+
+FIXTURE_SOURCE = '''"""fake pipeline module for the extractor lane."""
+import torch  # the reason this is read as text, never imported
+
+PROBE_INELIGIBLE = [
+    "model-a",   # a dedicated loader
+    "model-b",   # another one
+    "SPACE",     # case-sensitive twin
+]
+
+OTHER_LIST = ["unrelated", "names"]
+'''
+
+
+def test_load_probe_ineligible_extracts_from_fixture_text():
+    """The extractor regex-scans the literal inside ANY source text and
+    string-literal-scans inside the brackets — the read-source pattern
+    (run_finetune imports torch at module top; import is impossible)."""
+    names = run_config.load_probe_ineligible(FIXTURE_SOURCE)
+    assert names == frozenset({"model-a", "model-b", "SPACE"})
+
+
+def test_load_probe_ineligible_raises_without_literal():
+    with pytest.raises(ValueError):
+        run_config.load_probe_ineligible("OTHER_LIST = [1, 2]\nx = 1\n")
+
+
+def test_probe_ineligible_real_file_pinned_to_nine_names():
+    """Parity tripwire (T-11-02-04 / Pitfall 7): the extraction over
+    the REAL pipeline source equals the frozen 9-name literal — both
+    space spellings, evo2/megaDNA, gpn-brassicales, Omni-DNA-700M.
+    The names are NEVER duplicated in the service or strings.py; this
+    pin is the single drift alarm (the UI-SPEC's stale '7 names' claim
+    is corrected by this literal)."""
+    names = run_config.probe_ineligible()
+    assert names == PROBE_INELIGIBLE_NAMES
+    assert len(names) == 9
+    for anchor in ("SPACE", "space", "evo2_1b_base", "megaDNA_updated",
+                   "gpn-brassicales", "Omni-DNA-700M"):
+        assert anchor in names
+
+
+@pytest.mark.parametrize("model", sorted(PROBE_INELIGIBLE_NAMES))
+def test_validate_composition_probe_refuses_every_real_frozen_name(model):
+    """Each of the REAL 9 frozen names, under variant=probe, yields its
+    own probe_ineligible problem (the full-matrix sweep over the real
+    list, not a fixture subset)."""
+    spec = run_config.RunSpec(
+        models=(model,), tasks=("GUE__emp_H3",), config_variant="probe",
+    )
+    problems = run_config.validate_composition(spec, run_config.probe_ineligible())
+    assert problems == (("probe_ineligible", model),)
+
+
+# =====================================================================
+# Lane 2 — same-source preview (Task 2)
+# =====================================================================
+
+
+def test_preview_real_registry_count_parity():
+    """2 models x 3 tasks x 3 seeds = 18 cells; the cells ARE the
+    imported enumerate_matrix output VERBATIM (D-05 same-source — the
+    test re-derives them through run_sweep directly)."""
+    spec = run_config.RunSpec(
+        models=PREVIEW_MODELS, tasks=PREVIEW_TASKS, seeds=(42, 43, 44),
+    )
+    result = run_config.preview(spec)
+    assert result.models_count == 2
+    assert result.tasks_count == 3
+    assert result.seeds_count == 3
+    assert result.fractions_count is None
+    assert result.cells_count == 18
+    assert result.problems == ()
+    assert all(len(cell) == 3 for cell in result.cells)
+    expected = run_sweep.enumerate_matrix(
+        list(PREVIEW_MODELS), list(PREVIEW_TASKS), [42, 43, 44],
+        REAL_REGISTRY_DIR,
+    )
+    assert list(result.cells) == expected
+
+
+def test_preview_curve_expansion_four_tuples():
+    """Curve fractions expand each cell to (model, task, seed,
+    fraction) 4-tuples — the layout contract lives in the imported
+    enumeration, never re-implemented here."""
+    spec = run_config.RunSpec(
+        models=("plant-dnabert-6mer",), tasks=("GUE__emp_H3",),
+        seeds=(42,), curve_fractions=(0.25, 0.5),
+    )
+    result = run_config.preview(spec)
+    assert result.fractions_count == 2
+    assert result.cells_count == 2
+    assert result.cells == (
+        ("plant-dnabert-6mer", "GUE__emp_H3", 42, 0.25),
+        ("plant-dnabert-6mer", "GUE__emp_H3", 42, 0.5),
+    )
+
+
+def test_preview_peft_alias_names_in_cells():
+    """peft=lora enumerates under the alias name — the 11-01/06-02
+    aliasing seen through the same-source preview."""
+    spec = run_config.RunSpec(
+        models=("plant-dnabert-6mer",), tasks=("GUE__emp_H3",),
+        seeds=(42,), peft="lora",
+    )
+    result = run_config.preview(spec)
+    assert result.cells == (("plant-dnabert-6mer+lora", "GUE__emp_H3", 42),)
+
+
+def test_preview_variant_alias_names_in_cells():
+    """variant=probe aliases {model}+probe; head keeps the BASE name
+    for the frozen pair (evo2_1b_base) while aliasing the rest."""
+    spec = run_config.RunSpec(
+        models=("evo2_1b_base", "plant-dnabert-6mer"),
+        tasks=("GUE__emp_H3",), seeds=(42,), config_variant="head",
+    )
+    result = run_config.preview(spec)
+    assert {cell[0] for cell in result.cells} == {
+        "evo2_1b_base", "plant-dnabert-6mer+head"}
+    probe_spec = run_config.RunSpec(
+        models=("plant-dnabert-6mer",), tasks=("GUE__emp_H3",),
+        seeds=(42,), config_variant="probe",
+    )
+    assert run_config.preview(probe_spec).cells == (
+        ("plant-dnabert-6mer+probe", "GUE__emp_H3", 42),)
+
+
+def test_preview_problems_empty_selection():
+    spec = run_config.RunSpec(models=(), tasks=PREVIEW_TASKS)
+    result = run_config.preview(spec)
+    assert result.problems == (("empty_selection", None),)
+    assert result.cells == ()
+    assert result.cells_count == 0
+
+
+def test_preview_problems_variant_peft():
+    spec = run_config.RunSpec(
+        models=PREVIEW_MODELS, tasks=PREVIEW_TASKS,
+        peft="ia3", config_variant="curve",
+    )
+    result = run_config.preview(spec)
+    assert result.problems == (("variant_peft", "curve+ia3"),)
+
+
+def test_preview_problems_probe_ineligible_real_name():
+    """A real frozen name under variant=probe: the cells still preview
+    (honest about what would run) AND the composition problem is
+    carried — preview never hides a launch blocker."""
+    spec = run_config.RunSpec(
+        models=("evo2_1b_base",), tasks=("GUE__emp_H3",),
+        seeds=(42,), config_variant="probe",
+    )
+    result = run_config.preview(spec)
+    assert result.problems == (("probe_ineligible", "evo2_1b_base"),)
+    assert result.cells == (("evo2_1b_base+probe", "GUE__emp_H3", 42),)
+
+
+def test_preview_unknown_names_intersect_to_zero_cells():
+    """Unknown filter names intersect to an empty enumeration — the
+    preview reports the honest zero (run_sweep's own start-time
+    validation stays the loud guard)."""
+    spec = run_config.RunSpec(
+        models=("no-such-model",), tasks=("GUE__emp_H3",), seeds=(42,),
+    )
+    result = run_config.preview(spec)
+    assert result.cells_count == 0
+    assert result.models_count == 0
+
+
+# =====================================================================
+# Lane 2 — official-only key sets (Task 2)
+# =====================================================================
+
+
+def test_official_keys_real_registries():
+    """The committed official registries: 62 models, 50 trainable
+    tasks, no diagnostic (the 08-03 RegistryCounts(62, 50) precedent —
+    committed data, pinned as counts)."""
+    official = run_config.official_keys()
+    assert official.diagnostic is None
+    assert len(official.models) == 62
+    assert len(official.tasks) == 50
+
+
+def test_official_keys_is_overlay_free(monkeypatch, tmp_path):
+    """Pitfall 5 behavioral pin: a custom overlay entry NEVER joins the
+    official key sets — direct json.load, never registry_loader (the
+    overlay merges customs into the enumeration; comparing against the
+    merged view would under-gate E2')."""
+    custom_dir = tmp_path / "custom"
+    custom_dir.mkdir()
+    (custom_dir / "custom_models.json").write_text(
+        json.dumps({"custom-model-x": {"size (M)": 1}}), encoding="utf-8")
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(custom_dir))
+    official = run_config.official_keys()
+    assert "custom-model-x" not in official.models
+    assert official.diagnostic is None
+
+
+def test_official_keys_trainable_tasks_only(tmp_path):
+    """Official tasks are the TRAINABLE entries (truthy Train) — an
+    untrainable entry can never be part of the full matrix, so
+    including it would make E2' unreachable."""
+    (tmp_path / "models_info.json").write_text(
+        json.dumps({"m1": {}, "m2": {}}), encoding="utf-8")
+    (tmp_path / "datasets_info.json").write_text(
+        json.dumps({
+            "t1": {"Train": 1},
+            "t2": {"Train": 0},
+            "t3": {"Train": 2110},
+        }), encoding="utf-8")
+    official = run_config.official_keys(tmp_path)
+    assert official.diagnostic is None
+    assert official.models == frozenset({"m1", "m2"})
+    assert official.tasks == frozenset({"t1", "t3"})
+
+
+def test_official_keys_missing_file_fail_closed(tmp_path):
+    """An absent registry file: empty sets + a diagnostic naming the
+    path — never a silent empty compare (T-11-02-02)."""
+    official = run_config.official_keys(tmp_path)
+    assert official.models == frozenset()
+    assert official.tasks == frozenset()
+    assert official.diagnostic is not None
+    assert "models_info.json" in official.diagnostic
+    assert "datasets_info.json" in official.diagnostic
+
+
+def test_official_keys_corrupt_json_fail_closed(tmp_path):
+    (tmp_path / "models_info.json").write_text("{not json", encoding="utf-8")
+    (tmp_path / "datasets_info.json").write_text("{}", encoding="utf-8")
+    official = run_config.official_keys(tmp_path)
+    assert official.models == frozenset()
+    assert official.tasks == frozenset()
+    assert "models_info.json" in official.diagnostic
+
+
+def test_official_keys_shape_invalid_fail_closed(tmp_path):
+    """A JSON list is shape-invalid for a registry (must be a dict of
+    entries)."""
+    (tmp_path / "models_info.json").write_text("[]", encoding="utf-8")
+    (tmp_path / "datasets_info.json").write_text("{}", encoding="utf-8")
+    official = run_config.official_keys(tmp_path)
+    assert official.models == frozenset()
+    assert official.diagnostic is not None
+
+
+# =====================================================================
+# Lane 2 — the E2' verdict (Task 2)
+# =====================================================================
+
+
+def _full_official_spec(official, seeds=(42, 43, 44)):
+    return run_config.RunSpec(
+        models=tuple(official.models),
+        tasks=tuple(official.tasks),
+        seeds=seeds,
+    )
+
+
+def test_is_full_e2x_full_official_three_seeds_true():
+    official = run_config.official_keys()
+    assert run_config.is_full_e2x(_full_official_spec(official), official)
+
+
+def test_is_full_e2x_missing_one_model_false():
+    official = run_config.official_keys()
+    models = tuple(sorted(official.models)[:-1])  # drop one
+    spec = run_config.RunSpec(models=models, tasks=tuple(official.tasks))
+    assert not run_config.is_full_e2x(spec, official)
+
+
+def test_is_full_e2x_missing_one_task_false():
+    official = run_config.official_keys()
+    tasks = tuple(sorted(official.tasks)[:-1])
+    spec = run_config.RunSpec(models=tuple(official.models), tasks=tasks)
+    assert not run_config.is_full_e2x(spec, official)
+
+
+def test_is_full_e2x_two_seeds_false():
+    official = run_config.official_keys()
+    spec = _full_official_spec(official, seeds=(42, 43))
+    assert not run_config.is_full_e2x(spec, official)
+
+
+def test_is_full_e2x_custom_only_false():
+    official = run_config.official_keys()
+    spec = run_config.RunSpec(
+        models=("custom-model-x",), tasks=tuple(official.tasks))
+    assert not run_config.is_full_e2x(spec, official)
+
+
+def test_is_full_e2x_superset_escalation_true():
+    """O4 resolution: official UNION customs still escalates to the
+    typed gate — the run contains the full re-run; under-gating is the
+    hazard (supersedes UI-SPEC #9's 'custom => never E2'' reading)."""
+    official = run_config.official_keys()
+    spec = run_config.RunSpec(
+        models=tuple(official.models) + ("custom-model-x",),
+        tasks=tuple(official.tasks) + ("custom-task-y",),
+    )
+    assert run_config.is_full_e2x(spec, official)
+
+
+def test_is_full_e2x_alias_names_strip_to_base_peft():
+    """Selection carrying +lora alias names under peft=lora: the
+    verdict compares BASE names (run_sweep.base_model_name strip)."""
+    official = run_config.official_keys()
+    spec = run_config.RunSpec(
+        models=tuple(f"{model}+lora" for model in official.models),
+        tasks=tuple(official.tasks),
+        peft="lora",
+    )
+    assert run_config.is_full_e2x(spec, official)
+
+
+def test_is_full_e2x_alias_names_strip_to_base_variant():
+    official = run_config.official_keys()
+    spec = run_config.RunSpec(
+        models=tuple(f"{model}+probe" for model in official.models),
+        tasks=tuple(official.tasks),
+        config_variant="probe",
+    )
+    assert run_config.is_full_e2x(spec, official)
+
+
+def test_is_full_e2x_diagnostic_never_true():
+    """Fail-closed (T-11-02-02): a diagnostic-bearing OfficialKeys
+    blocks the gate even over a spec that would otherwise qualify —
+    empty official sets must never satisfy the superset predicate by
+    vacuity. The caller surfaces the diagnostic as a problem."""
+    diagnostic = run_config.OfficialKeys(
+        frozenset(), frozenset(), "unreadable or shape-invalid: ...")
+    assert not run_config.is_full_e2x(
+        run_config.RunSpec(
+            models=tuple("m" for _ in range(3)), tasks=("t",)),
+        diagnostic)
+
+
+def test_is_full_e2x_diagnostic_from_missing_registry_never_true(tmp_path):
+    """The caller-visible rule end-to-end: a tmp registry dir with a
+    missing file yields the diagnostic OfficialKeys, over which a
+    full-selection spec never reads True."""
+    official = run_config.official_keys(tmp_path)
+    assert official.diagnostic is not None
+    real = run_config.official_keys()
+    spec = _full_official_spec(real)
+    assert not run_config.is_full_e2x(spec, official)
+
+
+# =====================================================================
+# Lane 2 — the typed phrase (Task 2)
+# =====================================================================
+
+
+def test_expected_phrase_nested_root_basename():
+    assert run_config.expected_phrase("/data/sweeps/run-2026-10") == "run-2026-10"
+
+
+def test_expected_phrase_trailing_slash_root():
+    assert run_config.expected_phrase("/data/sweeps/run-a/") == "run-a"
+
+
+def test_expected_phrase_relative_default_root():
+    assert run_config.expected_phrase("./finetuned") == "finetuned"
+
+
+def test_phrase_matches_exact_equality():
+    assert run_config.phrase_matches("run-a", "/data/sweeps/run-a") is True
+
+
+@pytest.mark.parametrize("typed", ["run-a ", " run-a", "RUN-A", "run", "run-a/"])
+def test_phrase_matches_every_non_exact_variant_fails(typed):
+    """Exact string equality — no stripping, no case folding, no
+    prefix (D-07: the typed-phrase gate is spawner-refusal-proof
+    because nothing normalizes the operator's input)."""
+    assert run_config.phrase_matches(typed, "/data/sweeps/run-a") is False
