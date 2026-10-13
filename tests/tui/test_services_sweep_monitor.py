@@ -37,6 +37,7 @@ See also:
 
 import json
 import os
+import time
 from pathlib import Path
 
 from run_sweep import (
@@ -144,10 +145,22 @@ def set_mtime(path, epoch):
     os.utime(path, (epoch, epoch))
 
 
-def age_tree(root, now=NOW, age_seconds=7200.0):
+def NOW_REAL():
+    """The real clock for the un-injectable cells_view/frontier grace
+    checks — fixtures pin mtimes RELATIVE to it (margin 600s)."""
+    return time.time()
+
+
+def age_tree(root, now=NOW, age_seconds=7200.0, skip=()):
     """Set EVERY file mtime under root to now - age (the stale-tree
-    shape: explicitly old, never accidentally inside the grace)."""
+    shape: explicitly old, never accidentally inside the grace).
+    ``skip`` exempts paths (and their subtrees) that must stay fresh."""
+    skip = {Path(item).resolve() for item in skip}
     for path in sorted(Path(root).rglob("*")):
+        resolved = path.resolve()
+        if any(resolved == item or item in resolved.parents
+               for item in skip):
+            continue
         set_mtime(path, now - age_seconds)
 
 
@@ -396,3 +409,268 @@ def test_is_sweep_root_rejects_empty_and_plain_dirs(tmp_path):
     plain.mkdir()
     (plain / "readme.txt").write_text("not a sweep", encoding="utf-8")
     assert sweep_monitor.is_sweep_root(plain) is False
+
+
+# =====================================================================
+# Lane 2 (Task 2): cell derivation + tolerant readers + resume count
+# =====================================================================
+
+
+def test_cells_view_mixed_tree_exact_per_seed_states(tmp_path):
+    """One row per (model, task), per-seed states exact: record statuses
+    map directly, marker-only => skipped (distinct provenance), churn
+    (runs/ + checkpoint-*) => running without any record."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "model-a", "task-1", 42,
+                 make_record("model-a", "task-1", 42, status="completed"))
+    plant_record(root, "model-a", "task-1", 43,
+                 make_record("model-a", "task-1", 43, status="failed"))
+    plant_record(root, "model-a", "task-1", 44,
+                 make_record("model-a", "task-1", 44, status="skipped"))
+    marker_dir = seed_dir(root, "model-a", "task-2", 42)
+    marker_dir.mkdir(parents=True, exist_ok=True)
+    (marker_dir / RESUME_MARKER).write_text("{}", encoding="utf-8")
+    churn_dir = seed_dir(root, "model-b", "task-1", 42)
+    (churn_dir / "runs").mkdir(parents=True, exist_ok=True)
+    (churn_dir / "checkpoint-520").mkdir(parents=True, exist_ok=True)
+    age_tree(root)  # churn presence must not depend on fresh mtimes
+
+    rows = sweep_monitor.cells_view(root)
+
+    assert rows == (
+        sweep_monitor.CellRow(
+            model="model-a", task="task-1",
+            seeds=(
+                sweep_monitor.CellSeed(42, "completed", None),
+                sweep_monitor.CellSeed(43, "failed", None),
+                sweep_monitor.CellSeed(44, "skipped", None),
+            )),
+        sweep_monitor.CellRow(
+            model="model-a", task="task-2",
+            seeds=(sweep_monitor.CellSeed(42, "skipped", None),)),
+        sweep_monitor.CellRow(
+            model="model-b", task="task-1",
+            seeds=(sweep_monitor.CellSeed(42, "running", None),)),
+    )
+
+
+def test_cells_view_running_never_depends_on_records(tmp_path):
+    """The record lands POST-cell (Pitfall 2): a freshly mkdir'd seed
+    dir with NO record, NO marker renders running (the driver mkdirs
+    before the executor — mtime within grace)."""
+    root = tmp_path / "finetuned"
+    churn_dir = seed_dir(root, "model-a", "task-1", 42)
+    churn_dir.mkdir(parents=True, exist_ok=True)  # nothing inside yet
+
+    rows = sweep_monitor.cells_view(root)
+
+    assert rows[0].seeds[0].state == "running"
+
+
+def test_cells_view_curve_fraction_states(tmp_path):
+    """Curve nesting: seed cells with frac_* children carry
+    fraction_states per fraction and fold (any running -> running; all
+    terminal -> completed). Curve records live UNDER the frac dirs (the
+    curve cell_dir is seed_{n}/frac_{f})."""
+    root = tmp_path / "finetuned"
+    partial = seed_dir(root, "model-a", "task-1", 42)
+    done_frac = partial / "frac_0.25"
+    write_json(done_frac / RECORD_NAME,
+               make_record("model-a", "task-1", 42, train_fraction=0.25))
+    (partial / "frac_0.5").mkdir(parents=True, exist_ok=True)  # live frac
+
+    full = seed_dir(root, "model-a", "task-2", 43)
+    record = make_record("model-a", "task-2", 43, train_fraction=0.25)
+    write_json(full / "frac_0.25" / RECORD_NAME, record)
+    write_json(full / "frac_0.5" / RECORD_NAME,
+               dict(record, train_fraction=0.5))
+
+    rows = {row.model + "/" + row.task: row for row in
+            sweep_monitor.cells_view(root)}
+
+    partial_row = rows["model-a/task-1"]
+    assert partial_row.seeds[0].state == "running"  # any running frac
+    assert partial_row.seeds[0].fraction_states == (
+        ("frac_0.25", "completed"),
+        ("frac_0.5", "running"),  # fresh dir, no record
+    )
+
+    full_row = rows["model-a/task-2"]
+    assert full_row.seeds[0].state == "completed"  # all terminal
+    assert full_row.seeds[0].fraction_states == (
+        ("frac_0.25", "completed"),
+        ("frac_0.5", "completed"),
+    )
+
+
+def test_cells_view_queued_from_manifest_and_expected_seeds(tmp_path):
+    """Manifest-known cells not yet started render queued (dry-run
+    manifests show the whole plan); expected_seeds threads configured
+    seeds as queued columns for discovered rows."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "model-a", "task-1", 42,
+                 make_record("model-a", "task-1", 42))
+    write_json(root / MANIFEST_NAME, manifest_payload([
+        manifest_cell("model-c", "task-9", 42, "planned"),
+        manifest_cell("model-c", "task-9", 43, "planned"),
+    ]))
+
+    rows = {row.model + "/" + row.task: row for row in
+            sweep_monitor.cells_view(root, expected_seeds=(42, 43, 44))}
+
+    assert rows["model-c/task-9"].seeds == (
+        sweep_monitor.CellSeed(42, "queued", None),
+        sweep_monitor.CellSeed(43, "queued", None),
+        sweep_monitor.CellSeed(44, "queued", None),
+    )
+    assert rows["model-a/task-1"].seeds == (
+        sweep_monitor.CellSeed(42, "completed", None),
+        sweep_monitor.CellSeed(43, "queued", None),
+        sweep_monitor.CellSeed(44, "queued", None),
+    )
+
+
+def test_cells_view_alias_model_names_verbatim(tmp_path):
+    """Model identity = the dir/record name VERBATIM — the alias under
+    peft/config-variant, never translated to the base registry name."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "plant-dnabert-6mer+lora", "GUE__emp_H3", 42,
+                 make_record("plant-dnabert-6mer+lora", "GUE__emp_H3", 42,
+                             peft="lora"))
+
+    rows = sweep_monitor.cells_view(root)
+
+    assert rows[0].model == "plant-dnabert-6mer+lora"
+
+
+def test_cells_view_unknown_record_status_renders_verbatim(tmp_path):
+    """A record with an unrecognized status renders that status
+    verbatim (honest, never translated into a known state)."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "model-a", "task-1", 42,
+                 make_record("model-a", "task-1", 42, status="planned"))
+
+    rows = sweep_monitor.cells_view(root)
+
+    assert rows[0].seeds[0].state == "planned"
+
+
+def test_load_record_tolerant_faces(tmp_path):
+    """Missing => None; valid => dict; damaged => last-known-good;
+    a fresh non-dict with no prior parse => None (treated absent)."""
+    fresh = tmp_path / "fresh-record.json"
+    assert sweep_monitor.load_record(fresh) is None
+
+    record = make_record("m", "t", 42)
+    fresh.write_text(json.dumps(record), encoding="utf-8")
+    assert sweep_monitor.load_record(fresh) == record
+
+    fresh.write_text('{"model": "m", "task": "t", "seed"', encoding="utf-8")
+    assert sweep_monitor.load_record(fresh) == record  # last-known-good
+
+    no_prior = tmp_path / "non-dict.json"
+    no_prior.write_text("[1, 2]", encoding="utf-8")
+    assert sweep_monitor.load_record(no_prior) is None
+
+
+def test_cells_view_retains_last_known_good_across_scans(tmp_path):
+    """A record truncated mid-write is skipped and the previous
+    snapshot stands (MON-01's tolerant contract — never a crash, never
+    a state flip from damage)."""
+    sweep_monitor._reset_last_known_good()
+    root = tmp_path / "finetuned"
+    record_path = plant_record(root, "model-a", "task-1", 42,
+                               make_record("model-a", "task-1", 42))
+
+    first = sweep_monitor.cells_view(root)
+    assert first[0].seeds[0].state == "completed"
+
+    record_path.write_text(
+        '{"model": "model-a", "task": "task-1", "seed": 42, "sta',
+        encoding="utf-8")  # half a JSON — the mid-write window
+
+    second = sweep_monitor.cells_view(root)
+    assert second[0].seeds[0].state == "completed"  # last-known-good
+
+    # A damaged record with NO prior parse reads absent: an inert aged
+    # dir renders queued (never fabricated from damage).
+    inert = seed_dir(root, "model-b", "task-1", 43)
+    inert.mkdir(parents=True, exist_ok=True)
+    (inert / RECORD_NAME).write_text("{broken", encoding="utf-8")
+    set_mtime(inert, NOW_REAL() - 7200.0)
+    rows = {row.model: row for row in sweep_monitor.cells_view(root)}
+    assert rows["model-b"].seeds[0].state == "queued"
+
+
+def test_corrupt_manifest_treated_absent_state_falls_back(tmp_path):
+    """A corrupt/non-dict manifest is treated absent — classification
+    falls back to the churn/mtime rules (D-09), never finished."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "model-a", "task-1", 42,
+                 make_record("model-a", "task-1", 42))
+    age_tree(root)
+
+    (root / MANIFEST_NAME).write_text('{"matrix": {"cells": [',
+                                       encoding="utf-8")
+    corrupt = sweep_monitor.full_scan(roots=[root], now=NOW)
+    assert sweep_row(corrupt, root).state == "artifacts_only"
+
+    (root / MANIFEST_NAME).write_text("[]", encoding="utf-8")  # non-dict
+    non_dict = sweep_monitor.full_scan(roots=[root], now=NOW)
+    assert sweep_row(non_dict, root).state == "artifacts_only"
+
+    (root / MANIFEST_NAME).unlink()
+    assert sweep_monitor.load_manifest(root / MANIFEST_NAME) is None
+    assert sweep_monitor.load_failures(root / "no-such-failures.json") is None
+    (root / "non-list.json").write_text('{"a": 1}', encoding="utf-8")
+    assert sweep_monitor.load_failures(root / "non-list.json") is None
+
+
+def test_resume_count_from_records_then_manifest(tmp_path):
+    """While running: the skipped RECORDS on disk; once finished: the
+    manifest's skipped cells (this run's view — WR-12 keeps the on-disk
+    record of the run that trained the cell)."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "model-a", "task-1", 42,
+                 make_record("model-a", "task-1", 42, status="skipped"))
+    plant_record(root, "model-a", "task-2", 43,
+                 make_record("model-a", "task-2", 43, status="skipped"))
+    plant_record(root, "model-b", "task-1", 42,
+                 make_record("model-b", "task-1", 42, status="completed"))
+
+    assert sweep_monitor.resume_count(root) == 2
+
+    # A later finished manifest reports THIS run's skips: the seed that
+    # trained earlier (on-disk record completed, WR-12) counts skipped.
+    write_json(root / MANIFEST_NAME, manifest_payload([
+        manifest_cell("model-a", "task-1", 42, "skipped"),
+        manifest_cell("model-a", "task-2", 43, "skipped"),
+        manifest_cell("model-b", "task-1", 42, "skipped"),
+    ]))
+    assert sweep_monitor.resume_count(root) == 3
+
+
+def test_frontier_scan_states_and_newest_cell(tmp_path):
+    """The light pass: newest seed-dir activity + record states only.
+    Fresh churn => running with the newest cell located; live
+    injection beats staleness."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "model-a", "task-1", 42,
+                 make_record("model-a", "task-1", 42))
+    churn_dir = seed_dir(root, "model-a", "task-2", 43)
+    churn_dir.mkdir(parents=True, exist_ok=True)
+    set_mtime(churn_dir, NOW_REAL() - 10.0)  # fresh, no record
+    age_tree(root, skip=[churn_dir])
+
+    fresh = sweep_monitor.frontier_scan(root)
+    assert fresh.state == "running"
+    assert fresh.newest_cell == ("model-a", "task-2", 43)
+    assert fresh.cell_states[("model-a", "task-1", 42)] == "completed"
+    assert fresh.cell_states[("model-a", "task-2", 43)] == "running"
+
+    stale = sweep_monitor.frontier_scan(root, now=NOW_REAL() + 7200.0)
+    assert stale.state == "artifacts_only"
+
+    live = sweep_monitor.frontier_scan(
+        root, live_roots=[root], now=NOW_REAL() + 7200.0)
+    assert live.state == "running"
