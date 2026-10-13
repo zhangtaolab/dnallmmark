@@ -94,7 +94,7 @@ See also:
 import json
 import subprocess
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import export_runs  # conftest puts script/ on sys.path
@@ -342,9 +342,9 @@ def test_resume_relaunch_never_truncates_prior_worker_log(
         "--registry-dir", str(registry_dir),
         "--tasks", "task-x", "--seeds", "42",
     ]
-    clocks = iter([datetime(2026, 10, 13, 9, 0, 0),
-                   datetime(2026, 10, 13, 9, 5, 0)])
-    clock = lambda: next(clocks)  # noqa: E731 — one stamp per launch
+    clocks = iter([datetime(2026, 10, 13, 9, 0, 0, tzinfo=UTC),
+                   datetime(2026, 10, 13, 9, 5, 0, tzinfo=UTC)])
+    clock = lambda: next(clocks)
 
     # launch 1: the worker crashes (its tee log is the diagnostic)
     with pytest.raises(SystemExit):
@@ -384,7 +384,7 @@ def test_worker_argv_and_spawn_kwargs_under_default_gpus(
                    "--num_train_epochs", "1"]
     calls = []
     monkeypatch.setenv("SHARD_TEST_SENTINEL", "xyz")
-    clock = lambda: datetime(2026, 10, 13, 8, 30, 0)  # noqa: E731
+    clock = lambda: datetime(2026, 10, 13, 8, 30, 0, tzinfo=UTC)
     run_cli(monkeypatch, [
         "--workers", "2",
         "--models", "model-a,model-b,model-c",
@@ -664,7 +664,7 @@ def test_nonzero_worker_exits_one_with_verdict_table(
     (dead_root / "sweep_failures.json").write_text(
         json.dumps(failures), encoding="utf-8")
     calls = []
-    clock = lambda: datetime(2026, 10, 13, 8, 30, 0)  # noqa: E731
+    clock = lambda: datetime(2026, 10, 13, 8, 30, 0, tzinfo=UTC)
     with pytest.raises(SystemExit) as excinfo:
         run_cli(monkeypatch, [
             "--workers", "2",
@@ -813,7 +813,7 @@ def test_real_two_worker_dry_run_subprocess_chain(tmp_path, monkeypatch):
     shape — never N>1 GPUs, never real training)."""
     registry_dir = make_registry(tmp_path)
     base = (tmp_path / "finetuned").resolve()
-    clock = lambda: datetime(2026, 10, 13, 12, 0, 0)  # noqa: E731
+    clock = lambda: datetime(2026, 10, 13, 12, 0, 0, tzinfo=UTC)
     run_cli(monkeypatch, [
         "--workers", "2",
         "--models", "model-a,model-b",
@@ -1623,7 +1623,7 @@ def test_n1_degenerate_real_subprocess_smoke(tmp_path, monkeypatch):
     never an executor or CI run (D-05)."""
     registry_dir = make_registry(tmp_path)
     base = (tmp_path / "finetuned").resolve()
-    clock = lambda: datetime(2026, 10, 13, 12, 0, 0)  # noqa: E731
+    clock = lambda: datetime(2026, 10, 13, 12, 0, 0, tzinfo=UTC)
     run_cli(monkeypatch, [
         "--workers", "1",
         "--gpus", "0",
