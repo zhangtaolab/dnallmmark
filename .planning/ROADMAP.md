@@ -232,11 +232,11 @@ Plans:
   4. The monitor dashboard shows cell-level state (queued/running/done/failed/skipped, seed-adjacent) via 2s frontier + 60s full tolerant scans, progress stats (done/total, current cell, elapsed), attach mode for externally (CLI) launched sweeps, a live failure list with confirmation-gated `--from-failures` re-run, bounded log tailing with tee-to-disk persistence, and resume recognition from `trainer_state.json` markers
   5. A maintainer-authorized bounded smoke (1 model × 1 task × 1 seed, 1 epoch) runs launch → monitor → failure-re-run end-to-end on GB10 while the E2' full-sweep gate demonstrably blocks; every capability remains reachable headless via CLI
 
-**Plans**: 4/7 plans executed
+**Plans**: 5/7 plans executed
 Plans:
 - [x] 11-01-PLAN.md — run_sweep `--config-variant` via the peft ALIASING machinery (D-18; not pass-through), argv-parity + frozen-pair read-source tests
 - [x] 11-02-PLAN.md — run_config service: XDG-persisted own pickers state, full params model, dirs, same-source preview (imported enumerate_matrix), E2' verdict + typed phrase, PROBE_INELIGIBLE extraction
-- [ ] 11-03-PLAN.md — sweep_launcher service: spawner seam + detached Popen/tee (D-10 single root), env preflight over the frozen face, structural E2' phrase gate, kill/detach registry, from-failures launch
+- [x] 11-03-PLAN.md — sweep_launcher service: spawner seam + detached Popen/tee (D-10 single root), env preflight over the frozen face, structural E2' phrase gate, kill/detach registry, from-failures launch
 - [x] 11-04-PLAN.md — sweep_monitor service: three-state discovery, tolerant record readers, cell states + resume, D-17 elapsed/median-ETA math, live failures, bounded log tail
 - [x] 11-05-PLAN.md — CFG_/LNC_/MON_ strings verbatim + bidirectional tripwire + ENV_VERDICT amendment + the 7→9 spec-prose correction
 - [ ] 11-06-PLAN.md — slot-4 运行配置 screen: pickers/params/dirs/preview line, [p] modal, the 启动门 modals (env-block, confirm, E2' typed phrase), ExitModal + q intercept, nav promotion

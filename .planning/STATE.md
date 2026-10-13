@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: TUI任务
 current_phase: 11
 current_phase_name: Run Config, Launch Gates & Single-GPU Monitoring
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 11-02-PLAN.md
-last_updated: "2026-10-13T03:26:08.000Z"
+stopped_at: Completed 11-03-PLAN.md
+last_updated: "2026-10-13T03:56:41.000Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 complete, transitioned to Phase 11
-state_head: 8fe61a2a125e00a5607b58d6dc836801dc434a3a
+state_head: 7a3430f
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 32
-  completed_plans: 29
+  completed_plans: 30
   percent: 67
 ---
 
@@ -31,12 +31,12 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 11 — Run Config, Launch Gates & Single-GPU Monitoring
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 7
-Status: Ready to execute
+Status: Executing — plans 01-05 complete; 11-06 next
 Last activity: 2026-10-13 — Phase 10 complete, transitioned to Phase 11
 
-Progress (v1.2): [██████░░░░] 67% (4/6 phases; 25/25 planned plans)
+Progress (v1.2): [██████░░░░] 67% (4/6 phases; 30/32 planned plans)
 
 ## Performance Metrics
 
@@ -89,6 +89,7 @@ Progress (v1.2): [██████░░░░] 67% (4/6 phases; 25/25 planned
 | Phase 11 P05 | 12min | 2 tasks | 4 files |
 | Phase 11 P04 | 24m | 3 tasks | 2 files |
 | Phase 11 P02 | 36min | 3 tasks | 2 files |
+| Phase 11 P03 | 26min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -191,6 +192,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 11]: 11-02: preview guards the empty selection itself — run_sweep's falsy-filter semantics (None and [] both mean no-filter) would silently enumerate the FULL registry through the preview, so empty previews zero cells + the empty_selection problem (the driver's WR-07 start-refusal mirrored)
 - [Phase 11]: 11-02: E2' official reference is overlay-free by construction (direct json.load of the two official files, never registry_loader) and fail-closed (diagnostic ⇒ empty sets ⇒ is_full_e2x never True); superset semantics locked (O4): official ∪ customs still escalates to the typed gate — under-gating is the hazard
 - [Phase 11]: 11-02: PROBE_INELIGIBLE extracted from run_finetune.py as SOURCE TEXT (torch at its module top forbids import) and pinned to the real 9-name literal; import-purity probes must run in a fresh python -I subprocess (the GB10 dev venv holds torch, so an in-process assert proves nothing under the full suite)
+- [Phase 11]: 11-03: the launch refusal chain is ordered and each stage precedes the spawner (preview problems -> official-keys diagnostic -> E2' exact phrase); spawner-silence is proven by CALL COUNTS per stage — the LNC-03 evidence style; the official-keys diagnostic surfaces as an (official_keys, diagnostic) problem tuple, fail-closed
+- [Phase 11]: 11-03: the registry entry holds the tee file reference (parent-side fd pinned open for the child's lifetime; _drop_entry closes it on kill/detach — the child's inherited descriptor is unaffected); kill_grace/kill_interval constructor-injectable so escalation tests run at grace 0
+- [Phase 11]: 11-03: LNC-02/LNC-03/MON-04 left Pending despite the service tier landing — each requirement text names screen-visible surface (exit prompt / typed-phrase modal / on-screen RichLog tail) landing in 11-06/11-07 (the 11-01 revert discipline)
 
 ### Pending Todos
 
@@ -214,8 +218,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T03:26:08.000Z
-Stopped at: Completed 11-02-PLAN.md
+Last session: 2026-10-13T03:56:41.000Z
+Stopped at: Completed 11-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
