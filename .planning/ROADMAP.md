@@ -256,7 +256,7 @@ Plans:
   4. A read-only web progress mirror generated from sweep artifacts lets the team follow progress in a browser — static files only, no backend (static-hosting constraint holds)
   5. Canonical screens are pinned by Textual snapshot SVG goldens reviewed and committed by the maintainer, failing CI CPU-side on visual regression
 
-**Plans**: 3/5 plans executed
+**Plans**: 4/5 plans executed
 Plans:
 
 **Wave 1** *(parallel)*
@@ -265,7 +265,7 @@ Plans:
 
 **Wave 2** *(blocked on wave 1)*
 - [x] 12-03-PLAN.md — TEST-01 goldens (fallback lane, zero pyproject changes): export_screenshot string-compare harness, 8-SVG corpus, determinism + sensitivity, make snapshot-update + D-03 review gate; PLUS delta B — the one dismiss() override focus fix (10 paths, B1-B5 Pilot proof)
-- [ ] 12-04-PLAN.md — `--merge` mode (D-09: allowlist copy + SHA256 verify, manifest union + output_dir rewrite, lane-flag equality) + consumer-equivalence tests; docs/multi-gpu.md (D-04 decision matrix + runbook + 9-step other-machine procedure, D-05) + README link
+- [x] 12-04-PLAN.md — `--merge` mode (D-09: allowlist copy + SHA256 verify, manifest union + output_dir rewrite, lane-flag equality) + consumer-equivalence tests; docs/multi-gpu.md (D-04 decision matrix + runbook + 9-step other-machine procedure, D-05) + README link
 
 **Wave 3** *(blocked on wave 2)*
 - [ ] 12-05-PLAN.md — phase close: delta A N-root Pilot proof (zero monitor code), D-08 isolation re-run test, N=1 degenerate local smoke, SC1-5 ledger with named tests, WINDOWS.md unrun-verify entry for the maintainer's other-machine N=2 smoke
@@ -285,7 +285,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 | 9. Custom Model & Dataset Onboarding | v1.2 | 6/6 | Complete    | 2026-10-12 |
 | 10. Data Manager (Downloads & Verification) | v1.2 | 6/6 | Complete    | 2026-10-13 |
 | 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 7/7 | Complete    | 2026-10-13 |
-| 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 3/5 | In Progress | - |
+| 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 4/5 | In Progress | - |
 
 ---
 *v0.7.1 (Phases 1-6) shipped 2026-10-11 — collapsed above; full record in `.planning/MILESTONES.md`.*
