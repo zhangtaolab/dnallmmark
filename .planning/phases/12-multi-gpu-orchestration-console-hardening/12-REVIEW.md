@@ -1,318 +1,160 @@
 ---
 phase: 12-multi-gpu-orchestration-console-hardening
-reviewed: 2026-10-13T14:19:48Z
-depth: standard
-files_reviewed: 27
+reviewed: 2026-10-13T15:04:41Z
+depth: quick
+files_reviewed: 6
 files_reviewed_list:
-  - Makefile
-  - README.md
-  - dnallm-mark/css/progress.css
-  - dnallm-mark/css/styles.css
-  - dnallm-mark/data/progress/.gitkeep
-  - dnallm-mark/js/config.js
-  - dnallm-mark/js/data.js
-  - dnallm-mark/js/progress.js
-  - dnallm-mark/progress.html
-  - docs/multi-gpu.md
   - pipeline/run_sweep_shard.py
-  - script/gen_progress.py
-  - tests/js/progress-page.test.js
   - tests/test_sweep_shard.py
-  - tests/tui/__snapshots__/data_manager.svg
-  - tests/tui/__snapshots__/env_check.svg
-  - tests/tui/__snapshots__/monitor_empty.svg
-  - tests/tui/__snapshots__/monitor_running.svg
-  - tests/tui/__snapshots__/run_config.svg
-  - tests/tui/__snapshots__/selection_datasets.svg
-  - tests/tui/__snapshots__/selection_models.svg
-  - tests/tui/__snapshots__/wizard.svg
-  - tests/tui/test_gen_progress.py
-  - tests/tui/test_pilot_monitor.py
-  - tests/tui/test_pilot_run_config.py
-  - tests/tui/test_snapshots.py
   - tui/screens/run_config.py
+  - tests/tui/test_pilot_run_config.py
+  - tui/strings.py
+  - tests/tui/test_strings_phase11.py
 findings:
   critical: 0
-  warning: 8
-  info: 3
-  total: 11
+  warning: 0
+  info: 1
+  total: 1
 status: issues_found
 ---
 
-# Phase 12: Code Review Report
+# Phase 12: Code Review Report — Delta Re-Review (Iteration 2)
 
-**Reviewed:** 2026-10-13T14:19:48Z
-**Depth:** standard
-**Files Reviewed:** 27
-**Status:** issues_found
+**Reviewed:** 2026-10-13T15:04:41Z
+**Depth:** quick (delta convergence pass)
+**Files Reviewed:** 6 (the WR-01..WR-08 fix surface)
+**Status:** issues_found (0 new critical / 0 new warning / 1 new info)
 
-## Summary
+## Convergence Note
 
-Reviewed the Phase 12 multi-GPU orchestration surface at standard depth:
-`pipeline/run_sweep_shard.py` (LPT shard + per-worker Popen + merge mode with
-SHA256 verification) was traced end-to-end including its merge-mode validation,
-copy/verify passes, and manifest-union loops; `script/gen_progress.py` and the
-static web mirror (`progress.html` / `js/progress.js` / `css/progress.css` /
-`js/data.js` / `js/config.js`) were reviewed for XSS escaping, state handling,
-and data-contract consistency; `tui/screens/run_config.py` was reviewed around
-the slot-4 focus-trap base (`_PickerReturnModal`) and the `compact=True`
-rendering fix; all five test modules were read in full; the 8 committed SVG
-goldens were inspected for corruption/emptiness (all are well-formed Rich
-terminal SVGs, 223-235 lines each, non-empty, consistent shape — no findings).
+- **Iteration:** 2 (delta re-review after the fix loop)
+- **Delta scope:** commits `d8c54a8..b010e65` — the 8 warning fixes WR-01..WR-08
+- **Prior review (iteration 1, standard depth):** 0 critical / 8 warnings /
+  3 info. All 8 warnings fixed per `12-REVIEW-FIX.md` (one atomic commit per
+  finding, RED→GREEN); the 3 IN- items stay open per the disposition and are
+  NOT re-reported here.
+- **Verdict:** every one of the 8 fixes was independently re-verified against
+  the current source and resolves its finding without introducing a new
+  Critical or Warning defect. One new Info-level hardening note (IN-04, an
+  edge of the WR-07 fix) is recorded below; it is conservative in impact and
+  can be dispositioned like the standing IN- items.
 
-The core mechanisms are sound: the LPT partition is provably disjoint and
-covering, the merge validates collect-all before any copy, refuses on any
-SHA256 mismatch before manifests land, and the lane-equality guard correctly
-mirrors `run_sweep._manifest_payload`'s identity projection (verified against
-the real projection). No BLOCKER-severity defects were found. Eight WARNINGs
-were identified, concentrated in `run_sweep_shard.py` (doc/behavior mismatch
-on `--gpus` validation, worker-log truncation on the documented resume path,
-stale-file accumulation on re-merge over a changed worker set, unhandled
-`OSError` in the verified-copy step, hash-order-fragile lane-value
-canonicalization, silently-ignored `--models` in merge mode) and in
-`tui/screens/run_config.py` (a marked-then-disabled custom model is stuck in
-the run spec and cannot be unmarked from the UI; operator-facing CJK
-punctuation composed in the screen module, invisible to the i18n grep lock).
+### Fix verification (WR-01..WR-08)
 
-## Warnings
+- **WR-01 (verbatim `--gpus`)** — VERIFIED. `_parse_gpus`
+  (`pipeline/run_sweep_shard.py:399-427`) keeps stripped tokens as verbatim
+  strings; the only malformed token is an empty element; the default builds
+  `"0".."N-1"` strings (`:1159`) and the spawn env forwards `gpus[i]` with no
+  `str()` wrap (`:1208`). Edge traces: an all-empty `--gpus` value yields
+  arity 0≠N (refused), a partially-empty list whose surviving arity happens
+  to match is still refused by the collected empty-element problem, and
+  duplicate/MIG/UUID tokens forward verbatim (pinned by
+  `test_gpus_non_numeric_tokens_forward_verbatim`,
+  `test_gpus_override_and_duplicate_tokens_forward_verbatim` — non-vacuous:
+  both fail under int coercion).
+- **WR-02 (per-launch timestamped worker logs)** — VERIFIED.
+  `WORKER_LOG_TIMESTAMP_FORMAT` (`:192`) matches the launcher's
+  `%Y%m%d_%H%M%S`; `worker_log_path` (`:219-240`) returns
+  `{base}-mgpu-w{i}-{stamp}.log`; `main()` derives ONE stamp before the spawn
+  loop via the injectable `clock` seam (`:1170-1171`); the verdict table
+  reports the log THIS launch teed into (`:1235`).
+  `test_resume_relaunch_never_truncates_prior_worker_log` is non-vacuous —
+  under the old frozen naming both launches open the same `"w"` path. (A
+  same-second relaunch would reuse a stamp, but that property is inherent to
+  the launcher tee idiom the dispatch directed this fix to copy — not a new
+  defect.)
+- **WR-03 (stale-cell refusal on re-merge)** — VERIFIED. The guard
+  (`:943-962`) enumerates the merged root's `MERGE_ALLOWLIST`-named files not
+  covered by this merge's copy plan and refuses BEFORE any copy with count +
+  up to 5 paths + remedy; the root-level manifests themselves are correctly
+  excluded (they are rewritten every merge). Identical worker sets stay
+  idempotent (pinned positive control
+  `test_remerge_unchanged_worker_set_stays_idempotent_under_stale_guard`).
+  Edge traces: a worker file that vanished since the last merge under an
+  UNCHANGED worker set refuses fail-closed (safe direction, remedy text still
+  applies); `--include-checkpoints` asymmetry between merges leaves only
+  checkpoint residue, which no downstream consumer reads (the guard is
+  deliberately scoped to the exporter-visible allowlist — the finding's
+  subject).
+- **WR-04 (copy-step OSError → designed refusal)** — VERIFIED. The
+  `mkdir`+`copyfile` pair in `_copy_verified` (`:568-572`) converts
+  `OSError` to `False`, landing in the collect-all mismatch refusal with
+  src→dst entries and NO merged manifests written; `PermissionError` and
+  shutil's `SameFileError`/`SpecialReadError` are `OSError` subclasses; the
+  post-copy re-hash failure path (`_sha256_file` → `None`) also returns
+  `False`. Pinned at both unit and merge level
+  (`test_copy_verified_unit_oserror_converts_to_refusal`,
+  `test_merge_refuses_with_designed_diagnostic_on_copy_oserror`).
+- **WR-05 (deterministic lane-set canonicalization)** — VERIFIED.
+  `_canonical_lane_value` (`:636-657`) canonicalizes sets/frozensets through
+  `sorted()` before `json.dumps` (the sets are always sets of canonical
+  strings, so sorting is total); `None → "null"` stays distinct from
+  `"[]"`; `isinstance(value, (set, frozenset))` catches subclasses (the
+  `_ReversedIterSet` pin is non-vacuous); the refusal diagnostic sorts the
+  set for display. False-refusal and false-accept both re-traced clean.
+- **WR-06 (refuse `--models` in merge mode)** — VERIFIED. `run_merge`
+  (`:777-782`) refuses a provided `--models` — including a provided-but-empty
+  string value (`is not None`) — collect-all before any worker-root read;
+  docstring and `--models` help text aligned;
+  `test_merge_refuses_models_flag` pins message + no merged manifest.
+- **WR-07 (sanitize marked-then-disabled customs at load)** — VERIFIED, one
+  Info-level edge recorded as IN-04 below. `_sanitize_disabled_custom_marks`
+  (`tui/screens/run_config.py:1124-1149`) runs in
+  `on_run_config_screen_loaded` right after the entries land and before any
+  render/preview, so spec, status line, preview, and launch enumeration agree;
+  the first preview-worker save persists the sanitized spec (pinned:
+  `test_marked_then_disabled_custom_leaves_spec_at_load` covers BOTH axes and
+  is non-vacuous — the spec retains the keys without the fix); the
+  render-side `and not is_disabled` suppression stays as defense-in-depth.
+- **WR-08 (subset-OFF copy wholly in `tui/strings.py`)** — VERIFIED.
+  `CFG_SUBSET_OFF_WITH_PATH = "关（{path}）"` (`tui/strings.py:696`); the
+  screen renders it via `.format(path=path)` (`run_config.py:1385`) and the
+  now-unused `CFG_SUBSET_OFF` import is gone from the screen module; the
+  constant is registered in the bidirectional phase-11 inventory
+  (`tests/tui/test_strings_phase11.py:44-45`); the grep lock's extended ranges
+  `[一-鿿　-〿＀-￯]` were verified to cover U+3000–U+303F + U+FF00–U+FFEF
+  (U+FF08/U+FF09 included); `test_params_defaults_render` pins the exact
+  constant shape. A repo-wide scan confirms ZERO CJK
+  punctuation/fullwidth literals in any other `tui/` module today, so the
+  deliberately narrower (run_config-only) lock extension leaves no live
+  violation in the sibling suites.
 
-### WR-01: `--gpus` is int-validated although documented as verbatim "operator-owned strings, ARITY-validated only"
+### Verification gates re-run for this pass
 
-**File:** `pipeline/run_sweep_shard.py:385-388` (vs. help text at `:303-311` and module docstring at `:114-119`)
-**Issue:** The `--gpus` help text and module docstring state each value "is
-passed verbatim as that worker's CUDA_VISIBLE_DEVICES — operator-owned
-strings, ARITY-validated only (no nvidia-smi probing)". But `_parse_gpus`
-coerces every token with `int(stripped)` and collects
-`non-numeric GPU id {stripped!r}` as a problem — so a legitimate
-`CUDA_VISIBLE_DEVICES` value that is not a decimal integer (a GPU UUID or a
-MIG instance id like `MIG-GPU-xxxx/...`, both legal and commonly used on
-multi-GPU hosts to pin devices robustly) is refused at validation. Either the
-docs over-promise or the code over-validates; on the machine where N>2 smoke
-runs (D-05), UUID pinning is a realistic operator need.
-**Fix:** Validate arity and emptiness only, keeping the tokens as strings:
-
-```python
-def _parse_gpus(raw, problems):
-    if raw is None:
-        return None
-    gpus = []
-    for token in raw.split(","):
-        stripped = token.strip()
-        if not stripped:
-            problems.append(f"empty GPU id element in --gpus {raw!r}")
-            continue
-        gpus.append(stripped)   # verbatim operator-owned string (D-05)
-    return gpus
-```
-
-(and drop the `str(gpus[i])` at the spawn site — it is already a string). If
-int-only is the intended contract, fix the help text and module docstring
-instead so the runbook does not promise verbatim forwarding.
-
-### WR-02: Frozen worker-log path opened `"w"` — a resume relaunch destroys the previous run's diagnostic log
-
-**File:** `pipeline/run_sweep_shard.py:1071-1072` (naming at `:205-209`)
-**Issue:** The tee log is opened `open(log_i, "w", ...)` at the frozen,
-NON-unique path `{base}-mgpu-w{i}.log`. The module docstring says the spawn
-discipline is "the `sweep_launcher._spawn` discipline, copied VERBATIM" — but
-the launcher derives its tee path with a per-launch timestamp
-(`tui/services/sweep_launcher.py:466-474`,
-`TEE_TIMESTAMP_FORMAT`/`TEE_FILENAME_FORMAT`), so its `"w"` open never
-clobbers a prior log. Here the frozen path plus `"w"` means the documented
-recovery path (a worker dies; relaunch the orchestrator — workers are
-resume-safe via the `trainer_state.json` marker, A4/D-08) TRUNCATES the exact
-log that would explain the crash. The recovery action destroys the evidence.
-**Fix:** Either append (`open(log_i, "a", encoding="utf-8")`) or make the log
-name per-launch (e.g. `{base}-mgpu-w{i}-{timestamp}.log`, the launcher's own
-discipline). Append is the smallest change consistent with the frozen-naming
-authority.
-
-### WR-03: Re-merge over a previously-merged root with a changed worker set leaves stale cell files that downstream consumers will export
-
-**File:** `pipeline/run_sweep_shard.py:506-529` (`_copy_verified` overwrite-only semantics), copy pass `:839-865`, manifest write `:906-909`
-**Issue:** The merge never deletes anything (by design) and `_copy_verified`
-only overwrites destinations it copies to. The idempotency guarantee
-("idempotent re-merge: re-copying identical bytes re-verifies green", pinned
-by `test_merge_is_idempotent_byte_stable`) holds only for an UNCHANGED worker
-set. Reachable sequence: launch workers over `{a,b}`/`{c}` under base
-`finetuned`, merge (merged root now holds `a`,`b`,`c`), later delete one
-worker root and relaunch the orchestrator with a smaller `--models` set, then
-merge again — the merged `sweep_manifest.json` correctly lists only the new
-union, but the previously-copied `c` cell files remain on disk under the
-merged root. `script/export_runs.load_run_records` walks the FILE TREE (model
-dirs × `seed_\d+` dirs), not the manifest (this is exactly what
-`test_merged_root_is_consumer_equivalent` asserts), so the stale cells leak
-into the exported leaderboard data while the manifest claims they are absent
-— a silent wrong-number path in a repo whose stated core value is "every
-number on the public leaderboard is correct".
-**Fix:** Before the copy pass, enumerate the merged root's existing
-allowlisted files under `base_root` and (a) refuse if any exists that the
-current copy plan does not cover, or (b) at minimum print a loud
-`[Merge] warning: N pre-existing file(s) under the merged root are not part
-of this merge` so the operator can clean the root first. Refusal is
-consistent with the module's own collect-all discipline.
-
-### WR-04: Unhandled `OSError` from `shutil.copyfile`/`mkdir` bypasses the designed merge-refusal message
-
-**File:** `pipeline/run_sweep_shard.py:527-529`
-**Issue:** `_copy_verified` handles an unreadable source hash (`_sha256_file`
-returns `None` → `False`), but the copy step itself is unprotected:
-`dst.parent.mkdir(...)` and `shutil.copyfile(src, dst)` raise on ENOSPC,
-EACCES, or a read-only destination. The exception propagates out of the
-verify pass as a raw traceback instead of the designed
-`[Error] SHA256 mismatch ... merge refused, merged manifests NOT written`
-collect-all diagnostic. The safety property accidentally holds (the crash
-still lands before the manifests are written), but the operator gets a stack
-trace, not a diagnosis, and the failure is indistinguishable from a bug.
-**Fix:** Wrap the copy step and convert to the mismatch path:
-
-```python
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        shutil.copyfile(src, dst)
-    except OSError:
-        return False
-    return _sha256_file(dst) == src_hash
-```
-
-### WR-05: Lane-equality comparison canonicalizes Python sets via `json.dumps(..., default=str)` — hash-order-fragile
-
-**File:** `pipeline/run_sweep_shard.py:775-776`
-**Issue:** The cross-worker lane check canonicalizes each root's value SET
-with `json.dumps(value, sort_keys=True, default=str)`. A `set` is not JSON
-serializable, so `default=str` fires and the canonical form becomes
-`str(set)` — whose element order is the set's internal iteration order, which
-for strings is PYTHONHASHSEED-dependent across processes and can differ even
-between two equal-content sets with different insertion histories (different
-cell orders across worker manifests). Two workers with IDENTICAL lane values
-can therefore, in rare layouts, produce different canonical strings and be
-falsely refused ("lane flag differs"), the opposite failure of the Pitfall-6
-silent pick-first but still a spurious operator-facing refusal. (False
-accepts are not possible: unequal contents always yield unequal strings.)
-**Fix:** Canonicalize deterministically:
-
-```python
-canonical = {
-    json.dumps(sorted(value), default=str)
-    if isinstance(value, (set, frozenset)) else
-    json.dumps(value, sort_keys=True, default=str)
-    for value in per_root.values()
-}
-if len(canonical) > 1:
-```
-
-### WR-06: `--models` is silently ignored in merge mode
-
-**File:** `pipeline/run_sweep_shard.py:689-702` (`run_merge` validation block; flag help at `:317-321`)
-**Issue:** The `--models` help text and the module docstring state "Merge
-mode takes no `--models` (the worker manifests are the merge's source of
-truth)", and `run_merge` already refuses a non-empty passthrough
-("a merge takes no sweep flags") and `--dry-run` combined with `--merge`.
-But because `--models` is an orchestrator-owned flag it never lands in the
-passthrough — a launch-mode command line reused with `--merge` added (an easy
-copy-paste) silently ignores `--models` instead of refusing collect-all,
-contradicting the module's own "never a silent pick-first / collect-all
-fail-fast" discipline.
-**Fix:** In `run_merge`'s validation block add:
-
-```python
-    if args.models is not None:
-        problems.append(
-            "--merge takes no --models (the worker manifests are the "
-            "merge's source of truth)")
-```
-
-### WR-07: A marked-then-disabled custom model is stuck in the run spec — rendered unmarked, counted, launched, and impossible to unmark from the picker
-
-**File:** `tui/screens/run_config.py:1242` (mark suppression), `:522-537` and `:1454-1477` (unmark impossible on disabled rows), `:1287-1314` (`_compose_spec` never sanitizes)
-**Issue:** `_render_picker` suppresses the visual mark for disabled customs
-(`marked.append(key in marked_set and not is_disabled)`), but the persisted
-spec is never sanitized: if an operator marks a custom model and the entry is
-later disabled in the management overlay, on the next mount `spec.models`
-still contains the key. The screen then shows the row UNMARKED while the
-status line, preview counts, and the launch-gate enumeration all include it —
-and because both mark paths (`PickerList.action_select`, screen
-`action_toggle_mark`) deliberately refuse disabled rows with a warning, the
-operator CANNOT unmark it from the UI (the only escape is re-enabling the
-entry). The UI under-reports what will actually be trained.
-**Fix:** Sanitize at load (in `on_run_config_screen_loaded`, after
-`self._entries = message.entries`):
-
-```python
-        disabled = {
-            key for key, status in self._entries.custom_status.items()
-            if status.get("custom") and not status.get("enabled", True)
-        }
-        if set(message.spec.models) & disabled:
-            message.spec = replace(
-                message.spec,
-                models=tuple(m for m in message.spec.models
-                             if m not in disabled),
-                # same for tasks if disabled customs can be datasets
-            )
-```
-
-(or surface it as a `disabled_custom` gate problem instead of silently
-dropping — either way the spec and the render must agree).
-
-### WR-08: Operator-facing copy composed in the screen module with CJK punctuation — bypasses the I18N-01 grep lock
-
-**File:** `tui/screens/run_config.py:1356` (constants at `tui/strings.py:691-692`; lock at `tests/tui/test_pilot_run_config.py:1414`)
-**Issue:** The subset-OFF copy is built inline as
-`text = f"{CFG_SUBSET_OFF}（{path}）"` — the fullwidth parentheses
-(U+FF08/U+FF09) are CJK punctuation literals living in the screen module,
-while the ON counterpart `开（{path}）` lives wholly in `tui/strings.py`. The
-module header's locked contract says "zero Chinese literals in this module —
-every operator-facing string renders through `tui/strings.py` constants
-(grep-enforced)", but the grep lock regex `[一-鿿]` (U+4E00–U+9FFF) cannot see
-CJK punctuation, so the lock passes while the contract is violated. The copy
-shape is also split across two homes, so OFF/ON can drift.
-**Fix:** Move the OFF-with-path shape into `tui/strings.py`:
-
-```python
-CFG_SUBSET_OFF_WITH_PATH = "关（{path}）"
-```
-
-and render `CFG_SUBSET_OFF_WITH_PATH.format(path=path)` from the screen;
-optionally extend the lock regex to CJK punctuation ranges (e.g. add
-`　-〿＀-￯`) so this class cannot recur.
+- Module suites: `tests/test_sweep_shard.py` +
+  `tests/tui/test_pilot_run_config.py` + `tests/tui/test_strings_phase11.py`
+  — 102 passed.
+- `ruff check` over all six delta files — all checks passed.
+- `ty check` over the two changed source modules — all checks passed.
+- Extended I18N grep lock executed against the current
+  `tui/screens/run_config.py` — 0 offenders.
 
 ## Info
 
-### IN-01: Dead constant `PROGRESS.LEGEND`
+### IN-04: WR-07 sanitizer is kind-blind — a cross-kind key collision would drop a valid mark of the other kind
 
-**File:** `dnallm-mark/js/progress.js:22`
-**Issue:** `LEGEND: '✓ Done · ⠋ Running · ✗ Failed · ⊘ Skipped · ◌ Queued'`
-is never referenced — `renderTable()` builds the legend from `CELL_STATES`
-directly (lines 312-314). Dead copy invites drift from the real legend.
-**Fix:** Delete the constant, or render the table legend from it so the
-UI-SPEC copy table stays the single source.
-
-### IN-02: Seed column header interpolated unescaped
-
-**File:** `dnallm-mark/js/progress.js:327`
-**Issue:** `PROGRESS.COL_SEED.replace('{seed}', seed)` injects the raw seed
-value into a `<th>` while every other data-driven string (model, task, root,
-stamp, fraction title) goes through `DataAPI.escapeHTML`. Seeds arrive as
-numbers from the maintainer-generated `sweep.json`, so exposure is minimal,
-but the inconsistency breaks the page's own escaping discipline.
-**Fix:** `PROGRESS.COL_SEED.replace('{seed}', DataAPI.escapeHTML(String(seed)))`.
-
-### IN-03: Zenodo bearer preview token in the public README (pre-existing, documented)
-
-**File:** `README.md:251`
-**Issue:** The datasets link carries `?preview=1&token=<JWT>` — a live
-(though record-scoped, read-only) bearer token committed to a public
-repository. The in-file comment (lines 244-250) documents this as maintainer
-decision D-08 with a narrow `.gitleaks.toml` allowlist and a Phase 6 removal
-item, so this is a flagged known accepted risk rather than an oversight —
-listed here for phase-close awareness only.
-**Fix:** No new action beyond the tracked one: when Zenodo record 19135551
-publishes, replace the link with the public DOI/URL and drop the allowlist
-rule in the same commit (already mandated by the README comment).
+**File:** `tui/screens/run_config.py:1138-1147`
+**Issue:** `_sanitize_disabled_custom_marks` builds ONE disabled-key set from
+`custom_status` — which spans BOTH kinds (the backend folds custom models and
+custom datasets into a single kind-less dict, `run_config.py:263-285`) — and
+applies it to BOTH spec axes. The custom-entries land path is per-kind
+(`read_entries(kind)`), so nothing structurally forbids a disabled custom
+MODEL whose key exactly equals a marked DATASET key (or vice versa); in that
+case the sanitizer drops the other kind's legitimate mark at load. Reaching it
+requires a deliberately perverse cross-kind name collision (model keys and
+dataset keys follow disjoint conventions — `plant-dnabert-6mer` vs
+`Source__task` — so accidental collision is essentially impossible), the
+failure direction is conservative (a mark is dropped, visibly reflected in the
+status-line counts, and re-markable since the colliding official row is not
+disabled), and it is an edge of the review's own prescribed fix shape. Recorded
+as a hardening note, dispositionable like the standing IN- items.
+**Fix:** If hardening is ever wanted: thread kind through `PickerEntries`
+(e.g. `custom_status` values gain `"kind": "models" | "datasets"`) and filter
+`spec.models` against disabled models only, `spec.tasks` against disabled
+datasets only.
 
 ---
 
-_Reviewed: 2026-10-13T14:19:48Z_
+_Reviewed: 2026-10-13T15:04:41Z_
 _Reviewer: Claude (gsd-code-reviewer)_
-_Depth: standard_
+_Depth: quick (delta convergence pass, iteration 2)_

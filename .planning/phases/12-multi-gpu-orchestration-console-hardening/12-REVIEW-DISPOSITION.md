@@ -47,9 +47,13 @@ findings:
     severity: info
     disposition: open
     title: "Zenodo bearer preview token in the public README (pre-existing, documented)"
-open: 3
+  - id: IN-04
+    severity: info
+    disposition: open
+    title: "WR-07 sanitizer is kind-blind — a cross-kind key collision would drop a valid mark of the other kind"
+open: 4
 fixed: 8
-total: 11
+total: 12
 recorded: 2026-10-13T14:22:22.916Z
 updated: 2026-10-13T14:57:13Z
 ---
@@ -69,5 +73,6 @@ updated: 2026-10-13T14:57:13Z
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |
+| IN-04 | info | open | iteration-2 delta re-review |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
