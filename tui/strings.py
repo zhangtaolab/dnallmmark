@@ -685,10 +685,15 @@ CFG_FIELD_DATASET_ROOT = "数据集根"
 CFG_FIELD_CACHE = "模型缓存"
 
 # Params value states: the absent dim dash, the cache default, and the
-# fairness-subset toggle pair (off / on-with-path).
+# fairness-subset toggle pair (off / on-with-path). The OFF-with-path
+# shape lives here too (WR-08, phase-12 review): the fullwidth
+# parentheses are CJK punctuation and must never compose inline in a
+# screen module — the I18N-01 single-home contract (the grep lock scans
+# the punctuation/fullwidth ranges).
 CFG_VALUE_ABSENT = "—"
 CFG_CACHE_DEFAULT = "—（HF 默认）"
 CFG_SUBSET_OFF = "关"
+CFG_SUBSET_OFF_WITH_PATH = "关（{path}）"
 CFG_SUBSET_ON = "开（{path}）"
 
 # Derived hint lines (dim, 1 row under their field — the wizard

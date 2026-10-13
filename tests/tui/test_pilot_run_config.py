@@ -701,9 +701,14 @@ async def test_params_defaults_render():
         assert _label_text(screen, "#cfg-value-peft") == "none ▾"
         assert _label_text(screen, "#cfg-value-variant") == "none ▾"
         assert screen.query_one("#cfg-input-curve", Input).value == ""
-        assert CFG_SUBSET_OFF in _label_text(screen, "#cfg-subset-value")
-        assert "pipeline/eval_subsets.json" in _label_text(
-            screen, "#cfg-subset-value")
+        from tui.strings import CFG_SUBSET_OFF_WITH_PATH
+
+        assert _label_text(screen, "#cfg-subset-value") == (
+            CFG_SUBSET_OFF_WITH_PATH.format(
+                path="pipeline/eval_subsets.json")), (
+            "the OFF copy renders wholly through the strings.py "
+            "constant (WR-08 — no inline CJK punctuation composition)"
+        )
         assert screen.query_one("#cfg-input-epochs", Input).value == ""
         assert screen.query_one("#cfg-input-ebs", Input).value == ""
         assert screen.query_one("#cfg-input-output-root", Input).value == (
@@ -1456,11 +1461,19 @@ async def test_subset_toggle_copy_pair():
 # =====================================================================
 
 def test_run_config_module_carries_zero_chinese_literals():
-    """I18N-01 single home: no operator-facing copy in the screen."""
+    """I18N-01 single home: no operator-facing copy in the screen.
+
+    WR-08 (phase-12 review): the scan now also covers the CJK
+    punctuation + fullwidth-form ranges (U+3000–U+303F, U+FF00–U+FFEF)
+    — the subset-OFF copy's fullwidth parentheses previously composed
+    inline in the screen and were INVISIBLE to the ideograph-only
+    regex, so the lock passed while the single-home contract was
+    violated."""
     source = _RUN_CONFIG_MODULE_FILE.read_text(encoding="utf-8")
-    offenders = re.findall(r"[一-鿿]", source)
+    offenders = re.findall(r"[一-鿿　-〿＀-￯]", source)
     assert not offenders, (
-        "Chinese literals must live in tui/strings.py only "
+        "Chinese literals (incl. CJK punctuation / fullwidth forms) "
+        "must live in tui/strings.py only "
         f"({len(offenders)} found in {_RUN_CONFIG_MODULE_FILE.name})"
     )
 

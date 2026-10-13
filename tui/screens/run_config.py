@@ -117,7 +117,7 @@ from tui.strings import (
     CFG_PREVIEW_PROBLEMS,
     CFG_SCREEN_TITLE,
     CFG_STATUS_LINE,
-    CFG_SUBSET_OFF,
+    CFG_SUBSET_OFF_WITH_PATH,
     CFG_SUBSET_ON,
     CFG_VALUE_ABSENT,
     CFG_VARIANT_ALIAS_PREVIEW,
@@ -1375,13 +1375,14 @@ class RunConfigScreen(Screen):
             probe.display = False
 
     def _render_subset_row(self) -> None:
-        """The off(default)/on(path) value copy pair."""
+        """The off(default)/on(path) value copy pair (both shapes live
+        in ``tui/strings.py`` — the I18N-01 single home, WR-08)."""
         path = (self._text_value("#cfg-input-subset")
                 if self._subset_on else DEFAULT_SUBSET_PATH)
         if self._subset_on:
             text = CFG_SUBSET_ON.format(path=path)
         else:
-            text = f"{CFG_SUBSET_OFF}（{path}）"
+            text = CFG_SUBSET_OFF_WITH_PATH.format(path=path)
         self.query_one("#cfg-subset-value", Static).update(
             Text(text, style=_STYLE_DIM if not self._subset_on else ""))
 
