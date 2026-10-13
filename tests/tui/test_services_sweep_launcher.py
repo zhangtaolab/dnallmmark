@@ -39,7 +39,7 @@ See also:
 import os
 import signal
 import subprocess
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from tui.services import settings, sweep_launcher
@@ -49,7 +49,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: The pinned launch moment: tee filename
 #: ``sweep_20261013_083005_{rootname}.log`` (deterministic under the
 #: injected clock).
-CLOCK_MOMENT = datetime(2026, 10, 13, 8, 30, 5)
+CLOCK_MOMENT = datetime(
+    2026, 10, 13, 8, 30, 5, tzinfo=UTC)
 
 
 def pin_state_dir(monkeypatch, tmp_path):
