@@ -137,6 +137,10 @@ PROBLEM_SEEDS_INVALID = "seeds_invalid"
 PROBLEM_CURVE_INVALID = "curve_invalid"
 PROBLEM_EPOCHS_INVALID = "epochs_invalid"
 PROBLEM_EBS_INVALID = "ebs_invalid"
+#: WR-07 (phase-11 review): an output root whose resolved form is the
+#: filesystem root (an empty basename — and an empty E2' expected
+#: phrase, which must never satisfy the typed gate).
+PROBLEM_OUTPUT_ROOT_INVALID = "output_root_invalid"
 
 #: The screen's field-dict keys (the run_sweep flag vocabulary; the
 #: params pane fields carry these names).
@@ -364,7 +368,12 @@ def validate_composition(spec, probe_ineligible):
       name one cell);
     - ``("probe_ineligible", model)`` — ONE per selected model — when
       variant is ``probe`` and the model is in the frozen
-      probe-ineligible list.
+      probe-ineligible list;
+    - ``("output_root_invalid", output_root)`` — WR-07 (phase-11
+      review) — when the resolved output root is the filesystem root
+      (empty basename): the E2' expected phrase would be the empty
+      string (the typed gate must never compare against it) and the
+      sweep would scatter cell dirs directly under ``/``.
 
     Args:
         spec (RunSpec): the composed spec (BASE model names).
@@ -388,6 +397,8 @@ def validate_composition(spec, probe_ineligible):
         for model in spec.models:
             if model in probe_ineligible:
                 problems.append((PROBLEM_PROBE_INELIGIBLE, model))
+    if Path(spec.output_root).resolve().name == "":
+        problems.append((PROBLEM_OUTPUT_ROOT_INVALID, spec.output_root))
     return tuple(problems)
 
 
@@ -935,6 +946,12 @@ def phrase_matches(typed, output_root):
     lives in this service tier so no widget path can normalize its
     way past it. 11-03's launcher re-proves it before spawn.
 
+    WR-07 (phase-11 review): FAILS CLOSED on an empty expected phrase
+    — an output root resolving to the filesystem root (``Path("/").
+    resolve().name == ""``) can never match, not even the empty string
+    itself. An authorization boundary never fails open on a degenerate
+    configuration.
+
     Args:
         typed (str): what the operator typed.
         output_root (str | Path): the configured output root.
@@ -942,7 +959,8 @@ def phrase_matches(typed, output_root):
     Returns:
         bool: True only on the exact expected phrase.
     """
-    return typed == expected_phrase(output_root)
+    expected = expected_phrase(output_root)
+    return bool(expected) and typed == expected
 
 
 # =====================================================================

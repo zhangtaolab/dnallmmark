@@ -711,6 +711,10 @@ CFG_COMPOSITION_PROBLEM = "变体与 PEFT 不可同时启用（别名轴互斥�
 CFG_SEEDS_INVALID_PROBLEM = "seeds 需为逗号分隔整数: {value}"
 CFG_CURVE_INVALID_PROBLEM = "曲线档位需为 (0, 1] 内的小数列表: {value}"
 CFG_EMPTY_SELECTION_PROBLEM = "未选择模型或数据集"
+# WR-07 (phase-11 review): an output root resolving to the filesystem
+# root — the E2' expected phrase would be empty (fail-closed boundary)
+# and cells would land directly under /.
+CFG_OUTPUT_ROOT_PROBLEM = "输出根不可为文件系统根目录（短语门与 cell 布局均失效）: {value}"
 
 # The live preview line (both shapes — the curve lane adds × 档) and
 # the problems header/line shape shared by the line and the [p] modal.

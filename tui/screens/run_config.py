@@ -425,6 +425,10 @@ def _problem_line(code: str, detail: object) -> str:
         from tui.strings import CFG_COMPOSITION_PROBLEM
 
         return CFG_COMPOSITION_PROBLEM
+    if code == "output_root_invalid":
+        from tui.strings import CFG_OUTPUT_ROOT_PROBLEM
+
+        return CFG_OUTPUT_ROOT_PROBLEM.format(value=detail)
     return f"{code}: {detail}"
 
 

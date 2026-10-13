@@ -335,6 +335,31 @@ def test_validate_composition_probe_eligible_models_pass():
     assert run_config.validate_composition(spec, FIXTURE_PROBE_INELIGIBLE) == ()
 
 
+def test_validate_composition_refuses_filesystem_root_output_root():
+    """WR-07 (phase-11 review): an output root whose RESOLVED form is
+    the filesystem root (basename "") is refused as a composition
+    problem — such a root makes the E2' expected phrase the empty
+    string (the fail-open hazard) and would scatter the sweep's cells
+    directly under /."""
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",), output_root="/",
+    )
+    assert run_config.validate_composition(spec, FIXTURE_PROBE_INELIGIBLE) == (
+        ("output_root_invalid", "/"),
+    )
+
+
+def test_phrase_matches_never_matches_an_empty_expected_phrase():
+    """WR-07: the typed gate FAILS CLOSED on a degenerate phrase — an
+    output root resolving to the filesystem root (expected_phrase "")
+    can never match, not even the empty string itself (typing one char
+    and deleting it must not flip the indicator to match and launch)."""
+    assert run_config.expected_phrase("/") == ""
+    assert run_config.phrase_matches("", "/") is False
+    assert run_config.phrase_matches("anything", "/") is False
+    assert run_config.phrase_matches("/", "/") is False
+
+
 # =====================================================================
 # Lane 1 — XDG persistence (Task 1)
 # =====================================================================
