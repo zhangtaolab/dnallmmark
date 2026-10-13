@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: TUI任务
 current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 12-04-PLAN.md
-last_updated: "2026-10-13T13:38:52.654Z"
+stopped_at: Completed 12-05-PLAN.md
+last_updated: "2026-10-13T14:06:58.919Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 12 execution started
-state_head: 22a490df93e4b0583be665b420e3c686903292ee
+state_head: c53b92dbb395f5e69634a6efdbb66e7bf2d8138e
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 37
-  completed_plans: 36
+  completed_plans: 37
   percent: 83
 ---
 
@@ -30,13 +30,13 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 
 ## Current Position
 
-Phase: 12 (Multi-GPU Orchestration & Console Hardening) — EXECUTING
-Current Plan: 3
+Phase: 12 (Multi-GPU Orchestration & Console Hardening) — COMPLETE (5/5 plans, 2026-10-13)
+Current Plan: 5 of 5 executed (12-05 phase close landed)
 Total Plans in Phase: 5
-Status: Ready to execute
-Last activity: 2026-10-13 — Phase 12 execution started
+Status: Phase complete — milestone v1.2 at its audit gate (verify-work → audit-milestone → complete-milestone → cleanup; maintainer N=2 other-machine smoke = WINDOWS #21)
+Last activity: 2026-10-13 — 12-05 phase close: delta A + D-08 + N=1 proofs, SC1-5 ledger, final gate 1572 pytest + 26 node green
 
-Progress (v1.2): [██████░░░░] 67% (4/6 phases; 30/32 planned plans)
+Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 plans executed — all 38 requirements Complete)
 
 ## Performance Metrics
 
@@ -96,6 +96,7 @@ Progress (v1.2): [██████░░░░] 67% (4/6 phases; 30/32 planned
 | Phase 12 P02 | 30m | 2 tasks | 10 files |
 | Phase 12 P03 | 65m | 2 tasks | 12 files |
 | Phase 12 P04 | 28m | 3 tasks | 5 files |
+| Phase 12 P05 | 18m | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -217,6 +218,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 12]: 12-04: D-09 merge landed as --merge in run_sweep_shard.py — copy + SHA256-verify per file (any mismatch refuses before the merged manifests land), MERGE_ALLOWLIST scope with the --include-checkpoints hatch, output_dir prefix-rewrite (boundary-guarded: w0 is a raw string prefix of w01), lane equality = every cell key outside the identity projection; consumer equivalence proven over the real export_runs walk
 - [Phase 12]: 12-04 known limitation: run_sweep manifests do not record peft/curve at sweep level, so a real lora-vs-base worker pair is invisible to the merge's lane comparison — the runbook's lane-match warning is the guard; the check fires whenever a lane key IS recorded (fixture-proven)
 - [Phase 12]: 12-04: docs/multi-gpu.md closes D-04 by DECIDING — sharding is the milestone's multi-GPU mode (matrix with the run_finetune :1357/:1542 scaffolding citations); DDP data-splitting orchestration deferred by decision; the 9-step N=2 smoke is the maintainer's other-machine runbook (WINDOWS #21 pending)
+- [Phase 12]: 12-05: WINDOWS #21 amended IN PLACE to the unrun-verify shape pointing at 12-05-SUMMARY (12-04 close-out had already recorded the obligation as deviation->docs/multi-gpu.md; one obligation one row, counters pinned at open 15 by the plan verify — an append would duplicate and bump to 16)
+- [Phase 12]: 12-05: proof-suite TDD shape — no RED evidence JSON exists because the production behavior predates the plan (12-01..12-04 landed it); the one initial module-lane failure was a test-fixture fault (the fake child wrote metrics to the root, not the cell dir — --output_dir carries the ROOT); non-vacuity by three throwaway production probes, reverted and never committed
+- [Phase 12]: 12-05 phase close: SC1-5 ledger landed with grep-verified test-name evidence; delta A (zero monitor code) + D-08 isolation (w1 byte+mtime untouched) + N=1 degenerate real-subprocess smoke all test-pinned with ZERO production changes; final gate 1572 pytest + 26 node green; milestone v1.2 at its audit gate (verify-work -> audit-milestone -> complete -> cleanup; the maintainer N=2 other-machine run = WINDOWS #21, blocks ship)
 
 ### Pending Todos
 
@@ -240,8 +244,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T13:38:52.592Z
-Stopped at: Completed 12-04-PLAN.md
+Last session: 2026-10-13T14:06:29.533Z
+Stopped at: Completed 12-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

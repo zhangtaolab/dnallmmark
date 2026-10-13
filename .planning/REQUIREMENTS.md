@@ -64,14 +64,14 @@
 ### Multi-GPU (多卡编排)
 
 - [x] **MGPU-01**: 按模型分片 × CUDA_VISIBLE_DEVICES 多 worker 静态编排（CLI 可调用的模式，非 TUI 专属）
-- [ ] **MGPU-02**: 每 worker 监控视图 + 产物合并 + 失败 worker 隔离重跑
-- [ ] **MGPU-03**: DDP（torch run 切数据）与模型分片两层的适用场景决策落地（单大模型加速 vs 多模型吞吐）；硬依赖单卡验证通过
+- [x] **MGPU-02**: 每 worker 监控视图 + 产物合并 + 失败 worker 隔离重跑
+- [x] **MGPU-03**: DDP（torch run 切数据）与模型分片两层的适用场景决策落地（单大模型加速 vs 多模型吞吐）；硬依赖单卡验证通过
 
 ### Localization & Extras (本地化与附加)
 
 - [x] **I18N-01**: 中文为主的界面文案（constants 模块约定，术语保留英文）
 - [x] **WEB-01**: 只读 Web 进度镜像（团队看进度；静态产物，不引入后端——符合静态托管约束）
-- [ ] **TEST-01**: Textual 官方快照测试（canonical screens 的 SVG 金标准，维护者验证后提交）
+- [x] **TEST-01**: Textual 官方快照测试（canonical screens 的 SVG 金标准，维护者验证后提交）
 
 ## v1.2 Out of Scope
 
@@ -123,11 +123,11 @@
 | PIPE-02 | Phase 7 | Complete |
 | PIPE-03 | Phase 7 | Complete |
 | MGPU-01 | Phase 12 | Complete |
-| MGPU-02 | Phase 12 | Pending |
-| MGPU-03 | Phase 12 | Pending |
+| MGPU-02 | Phase 12 | Complete |
+| MGPU-03 | Phase 12 | Complete |
 | I18N-01 | Phase 8 | Complete |
 | WEB-01 | Phase 12 | Complete |
-| TEST-01 | Phase 12 | Pending |
+| TEST-01 | Phase 12 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 38 total *(maintainer custom-entries revision 2026-10-11 added the CUST category (6 requirements) to the 32 originally mapped; the earliest "28 total" was a stale pre-supplement count)*
