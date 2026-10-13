@@ -78,7 +78,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from tui.services import settings
+from tui.services import env_gate, quick_check, run_config, settings
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -104,6 +104,16 @@ OUTCOME_SIGNALLED = "signalled"
 OUTCOME_ALREADY_DEAD = "already_dead"
 OUTCOME_DETACHED = "detached"
 OUTCOME_NOOP = "noop"
+
+#: The launcher's extension of run_config's machine problem vocabulary:
+#: the official-keys diagnostic surfaced as a problem tuple (the
+#: fail-closed reference blocks the gate instead of comparing against
+#: silently-empty sets — T-11-02-02).
+PROBLEM_OFFICIAL_KEYS = "official_keys"
+
+#: The GateRefusal stages (in refusal order: problems, then phrase).
+REFUSAL_STAGE_PROBLEMS = "problems"
+REFUSAL_STAGE_PHRASE = "phrase"
 
 
 # =====================================================================
@@ -148,6 +158,74 @@ class LaunchOutcome:
     error: str | None
 
 
+@dataclass(frozen=True)
+class EnvPreflight:
+    """The D-08 env preflight verdict — the frozen phase-8 face
+    composed, never re-judged.
+
+    Attributes:
+        can_launch: False when any CRITICAL kernel failed (the launch
+            pipeline refuses; the screen shows the env-block modal).
+        reasons: the failing CRITICAL kernels' detail lines, verbatim
+            from ``env_gate.gate_verdict`` (rendered as-is, never
+            translated).
+        failed_kernels: the CRITICAL kernel names with ``ok=False``,
+            in input (main() kernel) order — the same names env_gate
+            classifies.
+    """
+
+    can_launch: bool
+    reasons: tuple[str, ...]
+    failed_kernels: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class GateSummary:
+    """The confirm-gate's machine summary — every number recomputed
+    FRESH by ``gate_confirm_data``, never read from screen state
+    (T-11-03-02).
+
+    Attributes:
+        models: distinct model identities in the fresh preview's
+            cells.
+        tasks: distinct tasks in the cells.
+        seeds: distinct seeds in the cells.
+        cells: total enumerated cells.
+        output_root: the spec's output root, verbatim.
+        is_e2x: the fresh ``is_full_e2x`` verdict.
+        expected_phrase: the phrase the E2' gate demands.
+    """
+
+    models: int
+    tasks: int
+    seeds: int
+    cells: int
+    output_root: str
+    is_e2x: bool
+    expected_phrase: str
+
+
+@dataclass(frozen=True)
+class GateRefusal:
+    """A refused launch — the gate's answer BEFORE any spawn (the
+    spawner is never called for a refused launch; the tier-1 suite
+    proves it by call counts).
+
+    Attributes:
+        stage: ``"problems"`` (preview problems or the official-keys
+            diagnostic) / ``"phrase"`` (an E2' spec whose typed phrase
+            does not exactly match).
+        problems: the machine problem tuples for a ``problems`` stage
+            (empty otherwise).
+        expected: the expected phrase for a ``phrase`` stage (None
+            otherwise).
+    """
+
+    stage: str
+    problems: tuple[tuple[str, object], ...] = ()
+    expected: str | None = None
+
+
 # =====================================================================
 # The phase-10 subprocess seams (copied verbatim from download_queue)
 # =====================================================================
@@ -186,6 +264,87 @@ def _now_iso(moment):
     """One datetime as a local ISO-8601 string (the download_queue
     ``_now_iso`` idiom)."""
     return moment.astimezone().isoformat(timespec="seconds")
+
+
+def _run_config_service(run_config_service):
+    """Resolve the run_config seam: the injected double, or the REAL
+    module (tests inject doubles conforming to the consumed function
+    seam; the real verdict logic is 11-02's tested code)."""
+    if run_config_service is None:
+        return run_config
+    return run_config_service
+
+
+# =====================================================================
+# The env preflight (D-08 — the frozen phase-8 face, zero edits)
+# =====================================================================
+
+
+def env_preflight(kernels=None):
+    """The D-08 env preflight: compose the FROZEN phase-8 face verbatim.
+
+    ``quick_check.run_quick_check(kernels)`` -> ``env_gate.gate_verdict``
+    — neither is modified or re-judged here; this function owns only
+    the derived kernel-name list. The kernel list is injectable so CI
+    runs fakes; the real GPU-touching kernels execute only on the GB10
+    host. A ``can_launch`` False answer is the screen's env-block modal
+    and the launch pipeline's refusal (T-11-03-03: a doomed sweep
+    never spawns).
+
+    Args:
+        kernels: an injectable kernel sequence (None = the
+            ``quick_check`` default subset).
+
+    Returns:
+        EnvPreflight: the composed verdict (reasons verbatim from
+        ``gate_verdict`` — they render as-is).
+    """
+    results = quick_check.run_quick_check(kernels)
+    verdict = env_gate.gate_verdict(results)
+    failed_kernels = tuple(
+        result.name for result in results
+        if not result.ok and result.name in env_gate.CRITICAL
+    )
+    return EnvPreflight(
+        can_launch=verdict.can_launch,
+        reasons=verdict.reasons,
+        failed_kernels=failed_kernels,
+    )
+
+
+# =====================================================================
+# The confirm-gate summary (the FRESH recompute — T-11-03-02)
+# =====================================================================
+
+
+def gate_confirm_data(spec, run_config_service=None):
+    """The confirm-gate's summary over a FRESH preview recompute.
+
+    Calls ``run_config.preview`` + ``official_keys`` + ``is_full_e2x``
+    NOW — never a cached screen value (the tier-1 suite proves the
+    recompute with a counting spy). The modal renders this data; it can
+    never substitute its own counts.
+
+    Args:
+        spec (run_config.RunSpec): the composed spec.
+        run_config_service: an injectable seam double; None uses the
+            REAL run_config module.
+
+    Returns:
+        GateSummary: the fresh counts + verdict + expected phrase.
+    """
+    rc = _run_config_service(run_config_service)
+    preview_result = rc.preview(spec)
+    official = rc.official_keys()
+    return GateSummary(
+        models=preview_result.models_count,
+        tasks=preview_result.tasks_count,
+        seeds=preview_result.seeds_count,
+        cells=preview_result.cells_count,
+        output_root=spec.output_root,
+        is_e2x=rc.is_full_e2x(spec, official),
+        expected_phrase=rc.expected_phrase(spec.output_root),
+    )
 
 
 # =====================================================================
@@ -282,6 +441,90 @@ class SweepLauncher:
         self._live[root] = {"handle": proc, "meta": meta, "tee": tee_handle}
         return LaunchOutcome(
             spawned=True, root=root, tee_path=str(tee_path), error=None)
+
+    # ===== The gated launch paths (D-07 / D-11) =====
+
+    def launch_spec(self, spec, phrase=None, run_config_service=None,
+                    spawner=None, clock=None):
+        """Launch one composed spec through the STRUCTURAL gate (D-07 /
+        LNC-03).
+
+        Refusal order — each refusal returns BEFORE the spawner is ever
+        consulted (proven by call counts in the tier-1 suite):
+
+        1. a FRESH preview recompute (never the screen's cached value —
+           T-11-03-02); any problem refuses at stage ``"problems"``;
+        2. the official-keys reference; a diagnostic (fail-closed)
+           refuses at stage ``"problems"`` as an ``official_keys``
+           problem tuple — empty sets must not satisfy the E2'
+           predicate by vacuity;
+        3. an E2' verdict (recomputed FRESH via
+           ``is_full_e2x(spec, official_keys())``) whose typed phrase
+           does not EXACTLY match ``run_config.expected_phrase``
+           refuses at stage ``"phrase"`` — no widget path can reach
+           ``_spawn`` for a full-matrix spec without this check
+           passing (T-11-03-01).
+
+        A non-E2' spec ignores the phrase argument entirely.
+
+        Args:
+            spec (run_config.RunSpec): the composed spec.
+            phrase: the operator-typed E2' phrase (None/"" refuse an
+                E2' spec; ignored otherwise).
+            run_config_service: an injectable seam double; None uses
+                the REAL run_config module.
+            spawner: a per-call seam override; None uses the
+                instance seam.
+            clock: an injectable ``datetime.now``-shaped callable.
+
+        Returns:
+            LaunchOutcome | GateRefusal: the spawn outcome, or the
+            refusal (the spawner provably never called).
+        """
+        rc = _run_config_service(run_config_service)
+        preview_result = rc.preview(spec)
+        if preview_result.problems:
+            return GateRefusal(
+                stage=REFUSAL_STAGE_PROBLEMS,
+                problems=preview_result.problems)
+        official = rc.official_keys()
+        if official.diagnostic is not None:
+            return GateRefusal(
+                stage=REFUSAL_STAGE_PROBLEMS,
+                problems=((PROBLEM_OFFICIAL_KEYS, official.diagnostic),))
+        if (rc.is_full_e2x(spec, official)
+                and not rc.phrase_matches(phrase, spec.output_root)):
+            return GateRefusal(
+                stage=REFUSAL_STAGE_PHRASE,
+                expected=rc.expected_phrase(spec.output_root))
+        return self._spawn(
+            rc.compose_argv(spec), spec.output_root,
+            spawner=spawner, clock=clock)
+
+    def launch_argv(self, argv, output_root, spawner=None, clock=None):
+        """Launch a PRE-COMPOSED argv through the shared spawn seam.
+
+        WARNING — from-failures-only BY CONSTRUCTION (D-11): callers
+        pass argv composed by
+        ``run_config.compose_from_failures_argv``, whose enumeration is
+        EXACTLY the failed (model, task) pairs of a prior sweep — it
+        can never be the full matrix, so the E2' typed gate does not
+        apply here and is NEVER consulted. This seam takes no spec, so
+        no widget path can route a full-matrix spec through it
+        unnoticed — full-matrix launches MUST go through
+        ``launch_spec``, which re-proves the gate.
+
+        Args:
+            argv: the pre-composed launch argv (threaded verbatim).
+            output_root: the sweep output root.
+            spawner: a per-call seam override; None uses the
+                instance seam.
+            clock: an injectable ``datetime.now``-shaped callable.
+
+        Returns:
+            LaunchOutcome: the spawn outcome.
+        """
+        return self._spawn(argv, output_root, spawner=spawner, clock=clock)
 
     # ===== The exit triple (D-06) =====
 

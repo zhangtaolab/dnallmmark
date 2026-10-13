@@ -346,8 +346,10 @@ def test_tee_path_for_unknown_root_is_none(monkeypatch, tmp_path):
 
 
 def kernel(name, ok=True, lines=()):
-    """One fake ``env_smoke`` kernel result (the CheckResult shape)."""
-    return CheckResult(name=name, ok=ok, lines=tuple(lines))
+    """One fake ``env_smoke`` kernel: a zero-arg callable returning a
+    ``CheckResult`` (the ``run_quick_check`` injectable-kernel shape)."""
+    result = CheckResult(name=name, ok=ok, lines=tuple(lines))
+    return lambda: result
 
 
 class RunConfigDouble:
