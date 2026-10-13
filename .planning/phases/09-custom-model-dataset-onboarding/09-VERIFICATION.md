@@ -1,10 +1,10 @@
 ---
 phase: 09-custom-model-dataset-onboarding
-verified: 2026-10-12T23:38:33Z
+verified: 2026-10-13T00:18:15Z
 status: passed
 score: 5/5 must-haves verified
 covered_files: [".planning/phases/09-custom-model-dataset-onboarding/09-01-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-01-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-02-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-02-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-03-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-03-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-04-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-04-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-05-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-05-SUMMARY.md", ".planning/phases/09-custom-model-dataset-onboarding/09-06-PLAN.md", ".planning/phases/09-custom-model-dataset-onboarding/09-06-SUMMARY.md", "pipeline/registry_loader.py", "schemas/custom_registry.json", "tests/test_registry_loader.py", "tests/tui/test_pilot_env_check.py", "tests/tui/test_pilot_nav_shell.py", "tests/tui/test_pilot_selection.py", "tests/tui/test_pilot_selection_custom.py", "tests/tui/test_pilot_wizard.py", "tests/tui/test_services_about.py", "tests/tui/test_services_custom_entries.py", "tests/tui/test_services_custom_validation.py", "tests/tui/test_services_gauntlet.py", "tui/app.py", "tui/screens/about.py", "tui/screens/env_check.py", "tui/screens/selection.py", "tui/screens/wizard.py", "tui/services/about.py", "tui/services/custom_entries.py", "tui/services/custom_validation.py", "tui/services/gauntlet.py", "tui/strings.py", "tui/styles.tcss"]
-covered_digest: "v3:sha256:95a3dfb5395885982a87d2751f71c8ba9458d7cfd833f1e654d0407f341ce9cd"
+covered_digest: "v3:sha256:a3d9fe54c5faad43a602a04cc43a7615023776ebb6313fc656382f69ceb0b122"
 re_verification:
   previous_status: passed
   previous_score: 5/5
@@ -186,20 +186,28 @@ Phase-10 additions to `tests/tui/test_pilot_selection_custom.py` are additive te
 - Per-file: gauntlet 32/32 - custom_entries 17/17 - pilot_selection_custom 20/23 - pilot_wizard 42/42 - registry_loader 24/24 - custom_validation 43/43 = **178/181 green**
 - Scope note *(added 2026-10-13)*: `tests/tui/test_pilot_selection.py` (the Phase-8 SEL suite inside the phase-9 evidence set) was NOT in this spot set; at `26280d5` it carried 3 baseline-content pins red from the R-03 refresh — documented in the Phase-8 re-verification (767ce3e), never phase-9 evidence. Re-runs at `84b0fcf` (post-420411e): the overlay trio **3 passed** (1.14s) and `test_pilot_selection.py` **31 passed** (22.69s); full `pytest tests/tui -q` reported **627 passed, 0 failed** at `84b0fcf`.
 
+### Digest-refresh re-run (84b0fcf code state, 2026-10-13T00:18Z)
+
+Full covered surface re-run to refresh the attested digest (coordinator-directed): all 10 covered test files in one invocation —
+`.venv/bin/pytest tests/tui/test_services_custom_entries.py tests/tui/test_services_custom_validation.py tests/tui/test_services_gauntlet.py tests/test_registry_loader.py tests/tui/test_pilot_wizard.py tests/tui/test_pilot_selection_custom.py tests/tui/test_services_about.py tests/tui/test_pilot_nav_shell.py tests/tui/test_pilot_env_check.py tests/tui/test_pilot_selection.py -q`
+-> **271 passed, 0 failed** (150.03s; the original 260 + the 11 phase-10-added tests now inside covered files). Named must-have lane
+`-k "full_loop or disabled_entry_stays or tracer_land or decode_policy or metric_registry_parity"` -> **6 passed**. 420411e's fixture-staged
+pins are part of the covered state this digest attests.
+
 **Cross-phase warning (phase-10 scope, NOT a phase-9 gap):** the 3 red tests — `test_overlay_flips_missing_presence_to_present_and_back`, `test_mismatch_and_failed_entries_never_flip_presence`, `test_live_flip_through_the_app_event_forward` — were introduced by phase-10 commit f417862 and stale-dated by phase-10's own baseline refresh 2f7211d: their fixture helper `_committed_missing_dataset_keys()` asserts the committed n_audit carries missing keys, and the R-03 refresh made it 50 records / 0 missing (verified by direct parse). Deterministic root cause, no phase-9 surface involved; the fix (stage a missing-key fixture instead of reading the committed baseline) belongs to a phase-10 follow-up. Any "full suite green at HEAD" claim predating 2f7211d is stale — these three are red at `26280d5`.
 **Resolution (2026-10-13, `84b0fcf`):** closed by 420411e (fixture-staged n_audit / refresh-stable pins, 8 tests) and 84b0fcf (DATA.md provenance appendix restored after the R-03 refresh). Re-run at `84b0fcf`: the trio passes (3 passed, 1.14s); `test_pilot_selection.py` 31/31 (22.69s); full `pytest tests/tui -q` 627 passed / 0 failed. The advisory is discharged.
 
 ### Fingerprint refresh
 
-`covered_files` unchanged (the same 36-file phase-9 surface; recomputed via `gsd-tools verification fingerprint`):
+`covered_files` unchanged (the same 35-file phase-9 surface — the earlier "36" in this section was a count typo; recomputed via `gsd-tools verification fingerprint`):
 
-`covered_digest: "v3:sha256:95a3dfb5395885982a87d2751f71c8ba9458d7cfd833f1e654d0407f341ce9cd"`
+`covered_digest: "v3:sha256:a3d9fe54c5faad43a602a04cc43a7615023776ebb6313fc656382f69ceb0b122"` *(refreshed 2026-10-13T00:18Z over the 84b0fcf code state; supersedes the 26280d5-pinned `v3:sha256:95a3dfb5...` digest, which attested the pre-420411e surface and is preserved in git history at commit d97ccc7)*
 
-The digest stays pinned to the re-verification surface state (`26280d5` + this report; pre-420411e). 420411e later touched two covered files (`tests/tui/test_pilot_selection.py`, `tests/tui/test_pilot_selection_custom.py`) with fixture-staged pins — green at `84b0fcf`; the Phase-8 lane (767ce3e) governs that later state. This amendment is `.planning/`-only and changes no attested implementation file.
+420411e's fixture-staged pins in `tests/tui/test_pilot_selection.py` and `tests/tui/test_pilot_selection_custom.py` are now part of the covered state this digest attests — correct: they pin phase-9-adjacent behavior, and the digest-refresh re-run above proves the entire covered surface green at that state (271/271).
 
 **Verdict: passed.** All five SCs still hold at HEAD; the two UAT items remain discharged (09-UAT.md, 2/2, 2026-10-12); no regression on any phase-9 must-have; the one finding is a phase-10 test-baseline staleness recorded in `advisory:`.
 
 ---
 
-_Re-verified: 2026-10-12T23:38:33Z (local 2026-10-13)_
+_Re-verified: 2026-10-13T00:18:15Z (local 2026-10-13; digest refreshed over the 84b0fcf code state)_
 _Verifier: Claude (gsd-verifier, #4682 stale-refresh route)_
