@@ -94,6 +94,7 @@ from tui.strings import (
     CFG_CACHE_DEFAULT,
     CFG_DIRS_TITLE,
     CFG_DIRS_TITLE_SHORT,
+    CFG_FIELD_CACHE,
     CFG_FIELD_CURVE,
     CFG_FIELD_DATASET_ROOT,
     CFG_FIELD_EBS,
@@ -101,7 +102,6 @@ from tui.strings import (
     CFG_FIELD_EPOCHS,
     CFG_FIELD_OUTPUT_ROOT,
     CFG_FIELD_PEFT,
-    CFG_FIELD_CACHE,
     CFG_FIELD_SEEDS,
     CFG_FIELD_SUBSET,
     CFG_FIELD_VARIANT,
@@ -842,8 +842,8 @@ class RunConfigScreen(Screen):
         # stages only — every modal push or terminal state releases it)
         self._gate_active = False
         self._gate_parse_problems: tuple = ()
-        self._gate_summary: "GateSummary | None" = None
-        self._last_preview: "PreviewResult | None" = None
+        self._gate_summary: GateSummary | None = None
+        self._last_preview: PreviewResult | None = None
         self._last_parse_problems: tuple = ()
         self._last_probe_hits: tuple = ()
 
@@ -1212,7 +1212,11 @@ class RunConfigScreen(Screen):
             alias.display = True
         else:
             alias.display = False
-        head.display = variant == "head"
+        if variant == "head":
+            head.update(CFG_VARIANT_HEAD_NOTE)
+            head.display = True
+        else:
+            head.display = False
         if variant == "probe" and probe_hits:
             probe.update(CFG_VARIANT_PROBE_HINT.format(
                 models=", ".join(probe_hits)))
@@ -1462,7 +1466,6 @@ class RunConfigScreen(Screen):
             if not self.app.below_minimum_grid:
                 self.app.push_screen(ProblemsModal(problems))
             return
-        spec, _ = self._compose_spec()
         self._gate_stage_id += 1
         self._run_env_preflight(self._gate_stage_id)
 

@@ -48,6 +48,7 @@ from tui.services.sweep_launcher import (
     LaunchOutcome,
 )
 from tui.strings import (
+    CFG_ARGV_LABEL,
     CFG_CACHE_DEFAULT,
     CFG_EMPTY_SELECTION_PROBLEM,
     CFG_FIELD_PEFT,
@@ -55,6 +56,7 @@ from tui.strings import (
     CFG_PICKER_DATASETS,
     CFG_PICKER_MODELS,
     CFG_PREVIEW_LINE,
+    CFG_PREVIEW_NOTE,
     CFG_PREVIEW_PROBLEMS,
     CFG_STATUS_LINE,
     CFG_SUBSET_OFF,
@@ -531,8 +533,6 @@ async def test_space_on_disabled_custom_warns_never_marks():
     app = _app(run_service=run_service)
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_run_config(pilot, app)
-        screen = app.screen
-        picker = screen.query_one("#cfg-picker", SelectionList)
         # cust-off is the 4th row (registry order + appended customs)
         for _ in range(3):
             await pilot.press("down")
@@ -641,6 +641,386 @@ async def test_probe_hint_renders_under_variant_probe():
         screen = app.screen
         hint = screen.query_one("#cfg-hint-variant-probe", Static)
         assert not hint.display, "the probe hint stays hidden at none"
+
+
+# =====================================================================
+# Task 2 — the [p] modal + the launch-gate pipeline + launch toasts
+# =====================================================================
+
+async def test_preview_modal_renders_argv_and_problems():
+    """[p]: the dimension summary, the same-source note, the LIST argv
+    VERBATIM, and the numbered problems when any."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("p")
+        await pilot.pause()
+        from tui.screens.run_config import PreviewModal
+
+        assert isinstance(app.screen, PreviewModal)
+        log = app.screen.query_one("#cfg-preview-log")
+        joined = "\n".join(line.text for line in log.lines)
+        assert CFG_PREVIEW_LINE.format(
+            models=1, tasks=1, seeds=3, cells=3) in joined
+        assert CFG_PREVIEW_NOTE in joined
+        assert CFG_ARGV_LABEL + " ".join(
+            run_service.compose_argv(
+                RunSpec(models=("model-a",), tasks=("task-1",)))) in joined
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, RunConfigScreen)
+
+
+async def test_preview_modal_numbers_problems():
+    """A problems preview renders the numbered list in the [p] modal."""
+    run_service = FakeRunConfigService()
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("p")
+        await pilot.pause()
+        from tui.screens.run_config import PreviewModal
+        from tui.strings import CFG_EMPTY_SELECTION_PROBLEM as COPY
+
+        assert isinstance(app.screen, PreviewModal)
+        log = app.screen.query_one("#cfg-preview-log")
+        joined = "\n".join(line.text for line in log.lines)
+        assert CFG_PREVIEW_PROBLEMS.format(n=1) in joined
+        assert f"1. {COPY}" in joined
+        assert CFG_ARGV_LABEL not in joined, (
+            "a problems preview composes no argv")
+
+
+async def test_gate_happy_path_confirms_and_launches():
+    """The full non-E2' happy path: enter -> enumeration clean -> env ok
+    -> ConfirmModal with the summary -> enter -> launch_spec(spec) ->
+    the success toast (the D-13 auto-nav half lands in 11-07)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=1, tasks=1, seeds=3, cells=3, output_root="./finetuned",
+        is_e2x=False, expected_phrase="finetuned"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")   # the picker holds focus: the gate
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.selection import ConfirmModal
+
+        assert isinstance(app.screen, ConfirmModal), (
+            "the non-E2' gate lands on the summary confirm")
+        message = str(app.screen._message)
+        from tui.strings import LNC_GATE_SUMMARY
+
+        assert LNC_GATE_SUMMARY.format(
+            models=1, tasks=1, seeds=3, cells=3,
+            output_root="./finetuned") in message
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=3)
+        assert len(launcher.launch_calls) == 1, "confirm launches once"
+        spec, phrase = launcher.launch_calls[0]
+        assert spec.models == ("model-a",)
+        assert phrase is None, "a non-E2' launch carries no phrase"
+        toasts = _toast_messages(app)
+        from tui.strings import LNC_LAUNCH_TOAST
+
+        assert any(LNC_LAUNCH_TOAST.format(
+            cells=3, output_root="./finetuned") in toast
+            for toast in toasts), toasts
+
+
+async def test_gate_problems_blocked_launch_never_called():
+    """Enumeration problems: ONLY the problems modal opens, launch_spec
+    is never called (nothing else opens)."""
+    run_service = FakeRunConfigService()
+    launcher = FakeLauncherService()
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.run_config import ProblemsModal
+
+        assert isinstance(app.screen, ProblemsModal)
+        log = app.screen.query_one("#cfg-problems-log")
+        joined = "\n".join(line.text for line in log.lines)
+        assert CFG_PREVIEW_PROBLEMS.format(n=1) in joined
+        assert launcher.env_calls == 0, (
+            "problems block BEFORE the env preflight")
+        assert launcher.launch_calls == []
+
+
+async def test_gate_env_block_renders_reasons_verbatim():
+    """Env preflight FAIL: the failing kernel names, the reasons
+    VERBATIM, and the [1] route hint — launch never called."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(preflight=EnvPreflight(
+        can_launch=False,
+        reasons=("FAIL: python_kernel — torch missing",
+                 "FAIL: cuda_kernel — no device"),
+        failed_kernels=("python_kernel", "cuda_kernel")))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.run_config import EnvBlockModal
+        from tui.strings import ENV_QUICK_CHECK_FAIL, LNC_ENV_BLOCKED_HINT
+
+        assert isinstance(app.screen, EnvBlockModal)
+        header = _plain(app.screen.query_one(
+            "#cfg-envblock-header", Static).content)
+        assert header == ENV_QUICK_CHECK_FAIL.format(
+            kernel_names="python_kernel, cuda_kernel")
+        log = app.screen.query_one("#cfg-envblock-log")
+        joined = "\n".join(line.text for line in log.lines)
+        assert "FAIL: python_kernel — torch missing" in joined
+        assert "FAIL: cuda_kernel — no device" in joined
+        assert _plain(app.screen.query_one(
+            "#cfg-envblock-hint", Static).content) == LNC_ENV_BLOCKED_HINT
+        assert launcher.launch_calls == []
+
+
+async def test_gate_e2x_phrase_flow():
+    """The E2' typed-phrase escalation: a wrong dirname renders the
+    mismatch and enter is a no-op; the exact dirname flips the
+    indicator and enter fires the launch WITH the phrase."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=62, tasks=50, seeds=3, cells=9300,
+        output_root="./finetuned", is_e2x=True,
+        expected_phrase="finetuned"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from textual.widgets import Input as TextInput
+
+        from tui.screens.run_config import E2PhraseModal
+        from tui.strings import (
+            LNC_E2_MATCH_OK,
+            LNC_E2_MISMATCH,
+            LNC_E2_TYPE_PROMPT,
+        )
+
+        assert isinstance(app.screen, E2PhraseModal)
+        assert LNC_E2_TYPE_PROMPT.format(
+            dirname="finetuned") in [
+                _plain(static.content)
+                for static in app.screen.query(Static)]
+        indicator = app.screen.query_one("#cfg-e2-indicator", Static)
+        assert _plain(indicator.content) == LNC_E2_MISMATCH.format(
+            dirname="finetuned")
+
+        # wrong dirname: indicator stays mismatched, enter is a no-op
+        for char in "finetune_":
+            await pilot.press(char)
+        await pilot.pause()
+        assert _plain(indicator.content) == LNC_E2_MISMATCH.format(
+            dirname="finetuned")
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=3)
+        assert launcher.launch_calls == [], (
+            "a mismatch enter must never launch")
+        assert isinstance(app.screen, E2PhraseModal)
+
+        # complete the exact dirname: the indicator flips live
+        await pilot.press(*"x")   # still wrong
+        await pilot.pause()
+        assert _plain(indicator.content) == LNC_E2_MISMATCH.format(
+            dirname="finetuned")
+        e2_input = app.screen.query_one("#cfg-e2-input", TextInput)
+        e2_input.value = ""      # reset for the clean exact-match path
+        await pilot.pause()
+        for char in "finetuned":
+            await pilot.press(char)
+        await pilot.pause()
+        assert _plain(indicator.content) == LNC_E2_MATCH_OK
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=3)
+        assert len(launcher.launch_calls) == 1
+        spec, phrase = launcher.launch_calls[0]
+        assert phrase == "finetuned", (
+            "the E2' confirm carries the typed phrase")
+        assert spec.models == ("model-a",)
+
+
+async def test_gate_e2x_three_consecutive_mismatches_stay_mismatched():
+    """Three consecutive mismatch entries never unlock enter (the
+    brief's edge — no 'three strikes' bypass)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=62, tasks=50, seeds=3, cells=9300,
+        output_root="./finetuned", is_e2x=True,
+        expected_phrase="finetuned"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.run_config import E2PhraseModal
+
+        assert isinstance(app.screen, E2PhraseModal)
+        e2_input = app.screen.query_one("#cfg-e2-input", Input)
+        for attempt in ("wrong-one", "wrong-two", "wrong-three"):
+            e2_input.value = attempt
+            await pilot.pause()
+            await pilot.press("enter")
+            await _settle(pilot, app, rounds=2)
+            assert isinstance(app.screen, E2PhraseModal), (
+                f"mismatch {attempt!r} must not dismiss the gate")
+        assert launcher.launch_calls == []
+
+
+async def test_enter_key_pin_inputs_never_launch():
+    """THE PIN (UI-checker fix 2): a focused Input consumes its own
+    Enter — typing can never launch; enter on the picker opens the
+    gate."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService()
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        # focus the seeds Input and press enter: NO gate opens
+        seeds = screen.query_one("#cfg-input-seeds", Input)
+        seeds.focus()
+        await pilot.pause()
+        assert app.focused is seeds
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=2)
+        assert isinstance(app.screen, RunConfigScreen), (
+            "an Input's own Enter must never open the gate")
+        assert launcher.env_calls == 0
+        # the picker: enter OPENS the gate (the enumeration runs)
+        screen.query_one("#cfg-picker").focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        assert launcher.env_calls >= 1, (
+            "enter on the picker must open the launch gate")
+
+
+async def test_gate_spawn_failure_toast_nothing_launched():
+    """Spawn failure: the failed toast fires; nothing launched."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(outcomes=[LaunchOutcome(
+        spawned=False, root="", tee_path=None,
+        error="[Errno 13] Permission denied")])
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.selection import ConfirmModal
+
+        assert isinstance(app.screen, ConfirmModal)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=3)
+        from tui.strings import LNC_LAUNCH_FAILED_TOAST
+
+        assert any(LNC_LAUNCH_FAILED_TOAST.format(
+            error="[Errno 13] Permission denied") in toast
+            for toast in _toast_messages(app))
+
+
+async def test_e2x_modal_composes_at_80_with_long_root():
+    """The 80x24 backstop: the E2' modal composes at the minimum grid
+    with a long root name (no wrap collision)."""
+    long_name = "finetuned-e2e-full-matrix-rerun-20261013"
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)),
+        phrase_expected=long_name)
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=62, tasks=50, seeds=3, cells=9300,
+        output_root=f"./{long_name}", is_e2x=True,
+        expected_phrase=long_name))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.run_config import E2PhraseModal
+
+        assert isinstance(app.screen, E2PhraseModal)
+        box = app.screen.query_one("#cfg-e2-box")
+        assert box.region.height <= 22, (
+            "the modal composes inside the 22-row content budget")
+        assert box.region.width <= 80
+        for char in long_name:
+            await pilot.press(char)
+        await pilot.pause()
+        indicator = app.screen.query_one("#cfg-e2-indicator", Static)
+        from tui.strings import LNC_E2_MATCH_OK
+
+        assert _plain(indicator.content) == LNC_E2_MATCH_OK
+
+
+async def test_gate_console_stays_responsive_while_env_blocked():
+    """T-11-06-04: a blocking env preflight runs in a worker — the
+    console keeps responding while it blocks."""
+    import threading
+
+    release = threading.Event()
+
+    class _BlockingLauncher(FakeLauncherService):
+        def env_preflight(self, kernels=None):
+            release.wait(timeout=10)
+            return super().env_preflight(kernels)
+
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = _BlockingLauncher()
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await pilot.pause()
+        # while the env kernel blocks, m still flips the picker (the
+        # event loop never froze)
+        await pilot.press("m")
+        await pilot.pause()
+        assert _label_text(app.screen, "#cfg-picker-title") == (
+            CFG_PICKER_DATASETS.format(n=1, total=2)), (
+            "m must still flip the picker while the env worker blocks")
+        release.set()
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.selection import ConfirmModal
+
+        assert isinstance(app.screen, ConfirmModal)
+
+
+async def test_gate_modal_push_guarded_below_minimum_grid():
+    """T-11-06-06 (WR-06): a gate completing while the min-size guard is
+    up never pushes chrome over it; growing back restores the screen."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService()
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        from tui.app import MinSizeScreen
+
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        assert isinstance(app.screen, MinSizeScreen), (
+            "no gate chrome may open over the min-size guard")
+        assert not app.screen_stack[0].query(
+            "ConfirmModal"), "nothing opened beneath the guard either"
+        await pilot.resize_terminal(120, 40)
+        await pilot.pause()
+        assert isinstance(app.screen, RunConfigScreen)
 
 
 # =====================================================================
