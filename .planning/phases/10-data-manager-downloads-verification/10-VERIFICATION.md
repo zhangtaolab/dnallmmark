@@ -1,6 +1,6 @@
 ---
 phase: 10-data-manager-downloads-verification
-verified: 2026-10-13T05:52:00Z
+verified: 2026-10-13T09:33:12Z
 status: passed
 score: 5/5 must-haves verified
 covered_files:
@@ -35,9 +35,15 @@ covered_files:
   - tui/services/zenodo_bundle.py
   - tui/strings.py
   - tui/styles.tcss
-covered_digest: "v3:sha256:740c080dbe6aaa69784fa66927323782796e8f914a215607a1ecfc7ee8c7e9df"
+covered_digest: "v3:sha256:bd4a02436437fbaf7d3c6552c9a1b8958182c1f7bed03a5bd2156cc64a4407a5"
 behavior_unverified: 0
 overrides_applied: 0
+re_verification:
+  previous_status: passed
+  previous_score: 5/5
+  gaps_closed: []
+  gaps_remaining: []
+  regressions: []
 human_verification:
   - test: "GB10 live smoke (10-06-SUMMARY procedure steps 1-7): on the GB10 host, `make tui` -> 3 -> cursor GUE__emp_H3 -> d; observe the queue row run, land, reconcile; press 2 and confirm the selection presence cell flips to present; rerun env check (r) and confirm the dataset-dir item flips"
     expected: "Enqueued toast -> pending -> downloading with live percents -> done + QUEUE_FLIP_TOAST; the key leaves the data-manager missing list (在场 44/50); selection cell flips in-place; env dataset_dirs check no longer lists the key"
@@ -206,3 +212,56 @@ None blocking. All five success criteria are delivered and wired in the real cod
 
 _Verified: 2026-10-13T05:20:00Z_
 _Verifier: Claude (gsd-verifier)_
+
+---
+
+## Re-verification (stale refresh, HEAD 8b92766, 2026-10-13)
+
+**Route:** #4682 narrow-delta stale refresh. The prior PASS (frontmatter digest `v3:sha256:740c080d…`, finalized at d5feb38) went stale after phase 11 landed. Goal-backward re-verified at HEAD `8b927669a03314ea11032d9ce8179db567bd8214` (branch autorun; working tree clean over every phase-10 surface — only `.planning/` state files differ).
+
+**Baseline note:** the prior verification's covered state predates 420411e (its own R-03 test-pin follow-up) by ~30 minutes; 420411e is therefore inside this refresh's delta and was re-run green below. History order: bfe65e1 → 420411e → 84b0fcf → … → 8b92766.
+
+### Delta since the previous verification (bfe65e1 → 8b92766, 85 commits)
+
+| Surface | Delta | Phase-10 impact |
+| ------- | ----- | --------------- |
+| `tests/tui/test_services_download_queue.py` (+61/−…), `tests/tui/test_pilot_selection.py`, `tests/tui/test_pilot_selection_custom.py`, `tests/tui/test_services_registries.py` | 420411e: baseline-refresh-stable pins (8 tests) — stages a missing-key n_audit fixture instead of reading the committed baseline's missing set; closes the red overlay-flip trio stale-dated by 2f7211d (the trio is green at HEAD: inside the 114-green phase-9 spot run over `test_pilot_selection_custom.py` and the 209-green run below) | test-strengthening only — no production line touched; production files in this commit: none |
+| `tui/app.py` (+212/−1) | purely additive phase-11 seams (see the phase-9 re-verification table): ExitModal, monitor/run-config factories + ctor kwargs, D-13 hook, async `action_quit`. Hunk map confirms NO overlap with the phase-10 driver: `build_selection_screen` (:426), `kick_download_queue` (:549), `run_download_queue` (:573), `boot_resume_queue` (:666), `on_queue_event_message` (:680) + the WR-03 `screen_stack` forwards (:703/:714) byte-identical | none |
+| `tui/screens/nav.py` | slots 4/5 promoted (`run_config` 11-06, `monitor` 11-07); slot 3 `data_manager` unchanged | none |
+| `tui/strings.py` (+230/−2) | additive `CFG_`/`LNC_`/`MON_` blocks + the `ENV_VERDICT_CRITICAL_FAIL` present-tense amendment (11-05, an 08-era surface per 11-UI-SPEC) — no `DL_`/`QUEUE_` constant touched | none |
+| `tui/styles.tcss` (+259/−0) | additive monitor/run-config/exit-modal styles | none |
+| `tests/tui/test_pilot_nav_shell.py` | promotion-consistent rewrite (fakes for the new screens; placeholder assertions retired) | none — zero phase-10 tests deleted or weakened |
+| `tests/tui/test_pilot_selection.py` (net vs 84b0fcf) | empty net diff — 420411e's pins were already attested; phase-11 commits (0b5984b/e6da784/118d2f6/3fa3fea) touched only nav_shell/monitor/run_config files | none |
+| `tui/services/download_queue.py`, `tui/services/zenodo_bundle.py`, `tui/screens/data_manager.py`, `tui/__main__.py`, `tui/screens/selection.py`, `tui/services/gauntlet.py`, `tests/tui/test_pilot_data_manager.py`, `tests/tui/test_services_zenodo_bundle.py`, `tests/tui/test_services_gauntlet.py`, both modelscope fixtures | zero commits since bfe65e1; `git status` clean | untouched — queue engine, reconcile kernel, zenodo lane, driver spine, data-manager screen all byte-stable since phase-10 close |
+| Four committed audit artifacts (`dnallm-mark/data/n_audit.json`, `n_audit.csv`, `pipeline/eval_subsets.json`, `DATA.md`) | zero commits since 2f7211d/84b0fcf (the R-03 baseline refresh — phase-10-era maintainer ruling, already adjudicated above); direct parse at HEAD: 50 records, 0 missing (50/50 present) | unchanged — the phase-11 UAT smoke downloaded nothing (all data present) and re-audited nothing; no new baseline cycle |
+
+### Per-must-have still-holds verdicts
+
+| # | Truth (SC) | Verdict at HEAD | Evidence |
+| - | ---------- | --------------- | -------- |
+| 1 | SC1 one-click download; presence flips on landing (selection + env check) | STILL HOLDS | `download_queue.py`/`selection.py`/`data_manager.py` byte-stable; app driver seams byte-identical (hunk map); `test_missing_datasets_flips_over_done_reconciled_entries_cr01` + the presence-flip trio (`test_overlay_flips_missing_presence_to_present_and_back`, `test_mismatch_and_failed_entries_never_flip_presence`, `test_live_flip_through_the_app_event_forward`) all green at HEAD |
+| 2 | SC2 persistent resumable queue across exit/crash | STILL HOLDS | `download_queue.py`/`__main__.py` byte-stable; `test_restart_resume_end_to_end_service_tier` + the boot-resume trio green (inside the 209) |
+| 3 | SC3 row-count reconciliation vs n_audit; mismatches prominent | STILL HOLDS | reconcile kernel byte-stable; `test_reconcile_real_subprocess_pass_over_fixture_csvs`, `test_reconcile_real_subprocess_mismatch_names_numbers_no_deletion`, `test_reaudit_argv_exactly_interpreter_and_script_no_flags`, `test_committed_artifacts_byte_unchanged_across_real_reconcile_run` green; four committed artifacts byte-unchanged since 2f7211d |
+| 4 | SC4 Zenodo 19135551 alternate whole-package entry | STILL HOLDS | `zenodo_bundle.py` byte-stable; `test_run_task_zenodo_bundle_offline_end_to_end_done` green (inside the 209) |
+| 5 | SC5 subprocess/thread discipline; zero credentials; console never freezes | STILL HOLDS | spawn/persist surfaces byte-stable; `test_driver_exits_bounded_when_claim_cannot_persist_cr02` + the worker/freeze lanes green (inside the 209); zero modelscope imports in `tui/` re-confirmed at HEAD |
+
+### Spot runs at HEAD
+
+- `.venv/bin/pytest tests/tui/test_services_download_queue.py tests/tui/test_pilot_data_manager.py -q` → **209 passed** (12.14s), zero failures
+- Presence-flip trio (in `tests/tui/test_pilot_selection_custom.py`) → green inside the phase-9 concurrent spot run (**114 passed**, same HEAD)
+- 14 named phase-10 must-have tests enumerated present at HEAD (flip trio, CR-01/CR-02 regressions, restart e2e, real-subprocess reconcile pair, reaudit argv, byte-unchanged, boot-resume trio, zenodo offline e2e) — all inside the two green runs
+
+### Fingerprint refresh
+
+`covered_files` unchanged (the same 31-file set). Fresh digest over the 8b92766 code state:
+
+`covered_digest: "v3:sha256:bd4a02436437fbaf7d3c6552c9a1b8958182c1f7bed03a5bd2156cc64a4407a5"`
+
+(supersedes `v3:sha256:740c080d…`, which attested the pre-420411e covered state and is preserved in git history at d5feb38)
+
+**Verdict: passed.** All five SCs still hold at HEAD 8b92766; both live human-verification items remain discharged with recorded results (10-UAT.md; the GB10 smoke passed live 2026-10-13, the R-03 baseline committed as 2f7211d); no regression on any phase-10 must-have; no debt markers in any delta file; the committed n_audit baseline remains 50/50 present with the four audit artifacts byte-unchanged since the R-03 ruling.
+
+---
+
+_Re-verified: 2026-10-13T09:33:12Z (HEAD 8b92766)_
+_Verifier: Claude (gsd-verifier, #4682 stale-refresh route)_
