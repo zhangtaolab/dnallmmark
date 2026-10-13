@@ -1,5 +1,6 @@
 """
-Multi-worker sweep orchestration: launch mode (12-01, MGPU-01/SC1, D-07).
+Multi-worker sweep orchestration: launch mode (12-01, MGPU-01/SC1, D-07)
++ merge mode (12-04, MGPU-02 artifact half, D-09).
 
 ``run_sweep.py`` drives ONE sweep over a model x task x seed matrix on
 one GPU. This orchestrator scales throughput out to N GPUs by partitioning
@@ -19,6 +20,45 @@ Invocation (run from anywhere; each worker's cwd is pinned internally to
         --models plant-dnabert-6mer,GENERanno-eukaryote-0.5b-base \
         --tasks GUE__emp_H3 --seeds 42,43 --output-root ./finetuned
 
+MERGE MODE (12-04, D-09) — after the N workers finish, union their
+frozen roots into ONE verified consumer root::
+
+    python pipeline/run_sweep_shard.py --merge --workers 2 \
+        --output-root ./finetuned
+
+Semantics: the merge reads every frozen-named worker root (the SAME
+``worker_root()`` the launch path used — one naming authority, so launch
+and merge can never disagree about where worker artifacts live) and
+copies each cell's DATA-ARTIFACT allowlist (``MERGE_ALLOWLIST``:
+run_record / final_metrics / trainer_state / seed_result / flops_report,
+plus ``frac_*/`` recursion for curve cells) into the merged root with
+COPY + SHA256-VERIFY per file — hash, copy, re-hash, compare; any
+mismatch refuses the whole merge BEFORE the merged manifests land. Never
+a symlink (symlinks break when worker roots are cleaned and do not
+survive cross-host copies), never a move (a move would destroy the
+worker root's re-runnability). ``checkpoint-*/`` and ``runs/`` trees are
+EXCLUDED by default and copy only under the explicit
+``--include-checkpoints`` escape hatch (research A2: checkpoints are
+worker resume state; verified consumers read only the JSONs). The merged
+``sweep_manifest.json`` unions every worker's cells with each
+``output_dir`` REWRITTEN onto the merged root (leaving worker paths
+dangles them after runbook cleanup — Pitfall 5), unions
+matrix.models/tasks/seeds, and unions ``sweep_failures.json`` with the
+same rewrite. LANE FLAGS (every cell key outside the identity
+projection — peft/config_variant/num_train_epochs/subset_file/
+effective_batch_size/cache_dir as recorded via sweep_flags) must be
+EQUAL across worker manifests: a mismatch is a collect-all DIAGNOSTIC
+listing the differing value per root per flag, never a silent
+pick-first (Pitfall 6 — merging a lora worker with a base worker is a
+different experiment than either). Cleanup: the merge NEVER mutates a
+worker root and NEVER deletes anything — workers stay re-runnable in
+isolation (D-08) until the maintainer deletes them post-merge, an
+explicit runbook step taken only after the merged root is verified.
+gen_progress warning (the generator's own docstring repeats it): NEVER
+pass worker roots AND their merged root together — every cell would
+appear twice; worker roots for the live view, the merged root alone for
+the post-run view.
+
 Every token the orchestrator does not own (``--tasks``, ``--seeds``,
 ``--peft``, ``--num_train_epochs``, ``--registry-dir``, ...) is passed
 through VERBATIM to every worker after the orchestrator's own flags —
@@ -26,9 +66,11 @@ through VERBATIM to every worker after the orchestrator's own flags —
 help. Task/seed flag problems therefore surface INSIDE each worker at
 its own startup and are reported in this orchestrator's verdict table
 (a worker that dies at argv validation exits non-zero like any other
-dead worker).
+dead worker). In merge mode the passthrough remainder must be EMPTY (a
+merge takes no sweep flags) and ``--models`` is not required (the
+worker manifests are the merge's source of truth).
 
-Frozen naming (ONE authority — 12-04's ``--merge`` imports these exact
+Frozen naming (ONE authority — the merge mode imports these exact
 functions, so launch and merge can never disagree about where worker
 artifacts live)::
 
@@ -122,8 +164,10 @@ See also:
 """
 
 import argparse
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -393,17 +437,26 @@ def _failed_cell_count(worker_root_path):
 
 # ===== merge mode (12-04, MGPU-02 artifact half, D-09) =====
 #
-# Interface skeleton (RED stage): the flags parse and the seams exist so
-# the behavior rows can fail against a cleanly importing module; the
-# merge behavior itself lands with the GREEN commit.
+# After N workers finish, the data chain must read ONE root: export_runs,
+# the monitor, and gen_progress all consume the MERGED tree unchanged.
+# The merge lives in this same entry (ONE naming authority — it imports
+# worker_root, so launch and merge can never disagree about where worker
+# artifacts live) and is COPY + SHA256-VERIFY, never a symlink and never
+# a move (D-09: symlinks break when worker roots are cleaned and do not
+# survive cross-host copies; a move would destroy the worker root's
+# re-runnability). The merge NEVER mutates a worker root and NEVER
+# deletes anything — worker-root cleanup is the runbook's explicit
+# maintainer step, taken only after the merged root is verified.
 
 #: The data-artifact allowlist copied per cell dir: the five JSON
 #: artifacts every downstream consumer reads (export_runs walks
 #: run_record.json and adopts seed_result.json; trainer_state.json is the
 #: resume marker / global_step source; final_metrics.json is the
 #: training-failure signal; flops_report.json is the FLOPs evidence).
-#: checkpoint-*/ and runs/ are EXCLUDED by default and join only under
-#: the explicit --include-checkpoints escape hatch (research A2).
+#: checkpoint-*/ and runs/ are EXCLUDED by default (resume state for
+#: workers only — nobody re-runs the merged root, and full-checkpoint
+#: copy at E2' scale is disk-insane) and join only under the explicit
+#: --include-checkpoints escape hatch (research A2).
 MERGE_ALLOWLIST = (
     "run_record.json",
     "final_metrics.json",
@@ -412,25 +465,463 @@ MERGE_ALLOWLIST = (
     "flops_report.json",
 )
 
+#: Cell-dict keys that IDENTITY a cell (the ``_manifest_payload``
+#: projection); every OTHER cell key is a lane flag merged in via
+#: sweep_flags and must be EQUAL across worker manifests (Pitfall 6).
+_IDENTITY_CELL_KEYS = frozenset(
+    {"model", "task", "seed", "status", "output_dir"})
+
+
+def _write_json(path, payload):
+    """Deterministic JSON write (the run_sweep._write_json discipline,
+    mirrored locally so the merged manifests serialize byte-identically
+    to what the driver itself would write — sort_keys + indent 4 +
+    ensure_ascii False)."""
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=4, ensure_ascii=False,
+                  sort_keys=True)
+
+
+def _sha256_file(path):
+    """Stream-SHA256 a file's bytes; ``None`` when unreadable.
+
+    Args:
+        path (Path): the file to hash.
+
+    Returns:
+        str | None: the hex digest, or None on OSError (the caller's
+        verify then fails for this file — an unreadable source is a
+        refused copy, never a silent skip).
+    """
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+    except OSError:
+        return None
+    return digest.hexdigest()
+
 
 def _copy_verified(src, dst):
-    """Copy one file with D-09 verification: SHA256 the source, copy,
-    re-hash the destination, compare. Never a symlink, never a move."""
-    raise NotImplementedError("12-04 merge mode: pending GREEN")
+    """Copy one file with D-09 verification: hash, copy, re-hash, compare.
+
+    COPY + SHA256-VERIFY — never a symlink, never a move. The
+    destination's parents are created; the copy OVERWRITES (idempotent
+    re-merge: re-copying identical bytes re-verifies green). Any mismatch
+    — or an unreadable source — returns False; the caller collects the
+    failure and refuses the whole merge before any merged manifest lands
+    (a partial corrupt merge never becomes a sweep root).
+
+    Args:
+        src (Path): the worker-root source file.
+        dst (Path): the merged-root destination.
+
+    Returns:
+        bool: True iff the destination's SHA256 equals the source's
+        after the copy.
+    """
+    src_hash = _sha256_file(src)
+    if src_hash is None:
+        return False
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, dst)
+    return _sha256_file(dst) == src_hash
 
 
 def _rewrite_output_dir(cell_dir_str, worker_root, merged_root):
-    """Startswith-guarded prefix swap of a cell/failure ``output_dir``
-    from its worker root onto the merged root; a non-matching prefix
-    passes through unchanged (defensive)."""
-    raise NotImplementedError("12-04 merge mode: pending GREEN")
+    """Prefix-swap a cell/failure ``output_dir`` onto the merged root.
+
+    Startswith-GUARDED with the boundary check the raw prefix test lacks:
+    ``.../finetuned-mgpu-w0`` is a raw string PREFIX of
+    ``.../finetuned-mgpu-w01`` — an unguarded swap there would corrupt
+    the sibling worker's path — so only an exact match or a
+    ``/``-boundary match rewrites. A non-matching prefix passes through
+    UNCHANGED (defensive: a manifest recording paths outside its own
+    worker root is the validation pass's problem to refuse, never this
+    swap's to silently rewrite).
+
+    Args:
+        cell_dir_str (str): the recorded output_dir string.
+        worker_root (Path | str): the cell's own worker root.
+        merged_root (Path | str): the merged consumer root.
+
+    Returns:
+        str: the rewritten path (or the input, verbatim, on no match).
+    """
+    worker = str(worker_root)
+    if not cell_dir_str.startswith(worker):
+        return cell_dir_str
+    rest = cell_dir_str[len(worker):]
+    if rest != "" and not rest.startswith("/"):
+        return cell_dir_str  # sibling-prefix boundary (w0 vs w01)
+    return f"{merged_root}{rest}"
+
+
+def _lane_signature(manifest):
+    """Per lane-flag value sets over every non-identity cell key.
+
+    Lane flags are the sweep_flags keys run_sweep merges into every cell
+    (config_variant / num_train_epochs / subset_file /
+    effective_batch_size / cache_dir) plus any lane key a future driver
+    records the same way (e.g. peft): they describe the EXPERIMENT, not
+    the cell. Values canonicalize via sorted-key JSON so sets compare
+    stably across manifests.
+
+    Args:
+        manifest (dict): a parsed worker sweep_manifest.json.
+
+    Returns:
+        dict: flag name -> set of canonical value strings.
+    """
+    lanes = {}
+    cells = manifest.get("cells")
+    if not isinstance(cells, list):
+        return lanes
+    for cell in cells:
+        if not isinstance(cell, dict):
+            continue
+        for key, value in cell.items():
+            if key in _IDENTITY_CELL_KEYS:
+                continue
+            lanes.setdefault(key, set()).add(
+                json.dumps(value, sort_keys=True, default=str))
+    return lanes
+
+
+def _load_json_object(path, problems, what):
+    """Load a JSON file that must be an object, collecting problems.
+
+    Args:
+        path (Path): the file to read.
+        problems (list[str]): the collect-all problems list.
+        what (str): a human label for the diagnostic.
+
+    Returns:
+        dict | None: the parsed object, or None (a problem was appended).
+    """
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        problems.append(f"{what} unreadable/invalid at {path}: {exc}")
+        return None
+    if not isinstance(payload, dict):
+        problems.append(f"{what} at {path} is not a JSON object")
+        return None
+    return payload
+
+
+def _resolve_cell_rel(output_dir, wroot, index, problems):
+    """Resolve a cell's output_dir to (source dir, relative path) under
+    its worker root, collecting problems on any path that does not sit
+    under its own root.
+
+    Args:
+        output_dir (str): the cell's recorded output_dir.
+        wroot (Path): the cell's worker root.
+        index (int): the worker index (diagnostics).
+        problems (list[str]): the collect-all problems list.
+
+    Returns:
+        tuple[Path, Path] | None: ``(source cell dir, dir relative to
+        the worker root)``, or None (a problem was appended).
+    """
+    src_dir = Path(output_dir)
+    try:
+        return src_dir, src_dir.relative_to(wroot)
+    except ValueError:
+        pass
+    # resolve() retry: symlinked tmp roots (macOS /private) spell the
+    # same tree differently — compare resolved forms before refusing
+    try:
+        resolved = src_dir.resolve()
+        return resolved, resolved.relative_to(wroot.resolve())
+    except ValueError:
+        problems.append(
+            f"worker {index} cell output_dir {output_dir} is not under "
+            f"its worker root {wroot}"
+        )
+        return None
 
 
 def run_merge(args, passthrough):
-    """Merge N frozen-named worker roots into one verified consumer root
-    (validation collect-all, allowlist copy + SHA256 verify, manifest and
-    failures union with output_dir rewrite, lane-flag equality)."""
-    raise NotImplementedError("12-04 merge mode: pending GREEN")
+    """Merge N frozen-named worker roots into one verified consumer root.
+
+    Validation is collect-all fail-fast (the ``_validate_filters``
+    discipline): ``--workers < 1``, a non-empty passthrough (merge takes
+    no sweep flags), ``--dry-run`` combined with ``--merge``, a missing
+    worker root, a worker root without its sweep_manifest.json, an
+    unreadable/non-object manifest or failures file, a manifest whose
+    matrix/cells are the wrong shape, a cell whose output_dir does not
+    sit under its own worker root, and ANY lane-flag difference across
+    worker manifests (Pitfall 6 — the diagnostic lists the differing
+    value per root per flag) are ALL listed together, then the merge
+    exits non-zero before a single file is copied. ``--gpus`` is
+    meaningless in merge mode and ignored.
+
+    Copy scope per cell dir: the MERGE_ALLOWLIST files present (missing
+    ones are skipped and counted — a cell that never ran has nothing to
+    copy and stays invisible to the exporter, unchanged semantics),
+    recursing into ``frac_*/`` children (curve cells); under
+    ``--include-checkpoints`` also the whole ``checkpoint-*/`` and
+    ``runs/`` trees (research A2). Destination = the same relative path
+    under the merged root. Every copied file is SHA256-verified
+    source-vs-destination; ANY mismatch refuses the merge with the file
+    list and the merged manifests are NOT written (a partial corrupt
+    merge never lands). On success: the merged sweep_manifest.json
+    unions every worker's cells with output_dir rewritten onto the
+    merged root, matrix.models/tasks/seeds unioned and output_root set
+    to the merged root, and sweep_failures.json unions the worker
+    failure entries with the same rewrite. Worker roots are left INTACT
+    (re-runnable in isolation, D-08); deleting them is the runbook's
+    explicit post-merge maintainer step.
+
+    gen_progress warning (repeated from the generator's own docstring):
+    NEVER pass worker roots AND their merged root together — every cell
+    would appear twice. Worker roots for the live view, the merged root
+    alone for the post-run view.
+
+    Args:
+        args (argparse.Namespace): the parsed orchestrator flags.
+        passthrough (list[str]): the parse_known_args remainder (must be
+            empty in merge mode).
+    """
+    problems = []
+    workers = args.workers
+    if workers < 1:
+        problems.append(f"--workers must be >= 1, got {workers}")
+    if passthrough:
+        problems.append(
+            "--merge takes no sweep flags; unrecognized token(s): "
+            f"{passthrough}"
+        )
+    if args.dry_run:
+        problems.append(
+            "--dry-run is a launch-mode flag and cannot combine with "
+            "--merge"
+        )
+
+    base_root = Path(args.output_root).resolve()
+    worker_roots = [worker_root(base_root, i) for i in range(workers)]
+
+    manifests = {}
+    failures = {}
+    for index, wroot in enumerate(worker_roots):
+        if not wroot.is_dir():
+            problems.append(f"worker root {wroot} does not exist")
+            continue
+        manifest_path = wroot / run_sweep.MANIFEST_NAME
+        if not manifest_path.is_file():
+            problems.append(
+                f"worker root {wroot} has no {run_sweep.MANIFEST_NAME} "
+                "(an incomplete merge never lands)"
+            )
+            continue
+        manifest = _load_json_object(
+            manifest_path, problems, f"worker {index} manifest")
+        if manifest is None:
+            continue
+        cells = manifest.get("cells")
+        matrix = manifest.get("matrix")
+        if not isinstance(cells, list):
+            problems.append(
+                f"worker {index} manifest at {manifest_path}: 'cells' is "
+                "not a list"
+            )
+            continue
+        if not isinstance(matrix, dict):
+            problems.append(
+                f"worker {index} manifest at {manifest_path}: 'matrix' "
+                "is not an object"
+            )
+            continue
+        manifests[index] = manifest
+        # Failures: absent = a --dry-run worker (tolerated as empty); a
+        # PRESENT file must parse as a list
+        failures_path = wroot / run_sweep.FAILURES_NAME
+        if not failures_path.is_file():
+            failures[index] = []
+            continue
+        try:
+            entries = json.loads(failures_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            problems.append(
+                f"worker {index} failures file unreadable at "
+                f"{failures_path}: {exc}"
+            )
+            continue
+        if not isinstance(entries, list):
+            problems.append(
+                f"worker {index} failures file at {failures_path} is not "
+                "a JSON list"
+            )
+            continue
+        failures[index] = entries
+
+    # Lane equality (Pitfall 6): every cell key outside the identity
+    # projection is a lane flag and must be EQUAL across worker
+    # manifests — a merge of a lora worker with a base worker is a
+    # different experiment than either, never a silent pick-first
+    if len(manifests) > 1:
+        signatures = {
+            index: _lane_signature(manifest)
+            for index, manifest in manifests.items()}
+        all_flags = sorted(
+            set().union(*(set(sig) for sig in signatures.values())))
+        for flag in all_flags:
+            per_root = {
+                index: signatures[index].get(flag)
+                for index in sorted(signatures)}
+            if len({json.dumps(value, sort_keys=True, default=str)
+                    for value in per_root.values()}) > 1:
+                listed = "; ".join(
+                    f"worker {index} ({worker_roots[index]}) = "
+                    f"{sorted(per_root[index]) if per_root[index] is not None else '<absent>'}"
+                    for index in sorted(per_root))
+                problems.append(
+                    f"lane flag '{flag}' differs across worker manifests "
+                    f"— {listed} (unequal lanes are different "
+                    "experiments; re-launch the workers with one lane)"
+                )
+
+    # Cell resolution (validation, BEFORE any copy): every cell's
+    # output_dir must sit under its own worker root
+    cell_plans = []  # (worker index, source cell dir, rel to worker root)
+    for index in sorted(manifests):
+        wroot = worker_roots[index]
+        for cell in manifests[index]["cells"]:
+            if not isinstance(cell, dict):
+                problems.append(
+                    f"worker {index} manifest has a non-object cell: "
+                    f"{cell!r}"
+                )
+                continue
+            output_dir = cell.get("output_dir")
+            if not isinstance(output_dir, str) or not output_dir:
+                problems.append(
+                    f"worker {index} manifest cell is missing a string "
+                    f"output_dir: {cell!r}"
+                )
+                continue
+            resolved = _resolve_cell_rel(
+                output_dir, wroot, index, problems)
+            if resolved is not None:
+                cell_plans.append(
+                    (index, resolved[0], resolved[1]))
+
+    if problems:
+        sys.exit(f"[Error] {'; '.join(problems)}")
+
+    # ===== copy pass =====
+
+    def _scan_dir(dir_path):
+        """Allowlisted files under one cell dir, recursing into frac_*/
+        children (curve cells); checkpoint-*/ and runs/ join ONLY under
+        --include-checkpoints (research A2)."""
+        found = []
+        try:
+            entries = sorted(dir_path.iterdir())
+        except OSError:
+            return found  # a never-run cell dir vanished mid-merge
+        for entry in entries:
+            if entry.is_file() and entry.name in MERGE_ALLOWLIST:
+                found.append(entry)
+            elif entry.is_dir() and entry.name.startswith("frac_"):
+                found.extend(_scan_dir(entry))
+            elif (args.include_checkpoints and entry.is_dir()
+                    and (entry.name.startswith("checkpoint-")
+                         or entry.name == "runs")):
+                found.extend(
+                    child for child in sorted(entry.rglob("*"))
+                    if child.is_file())
+        return found
+
+    copy_pairs = []  # (worker index, source file, rel to worker root)
+    never_ran = {index: 0 for index in range(workers)}
+    for index, src_dir, cell_rel in cell_plans:
+        if not src_dir.is_dir():
+            never_ran[index] += 1  # planned-but-never-run cell
+            continue
+        for src_file in _scan_dir(src_dir):
+            copy_pairs.append(
+                (index, src_file, cell_rel / src_file.relative_to(src_dir)))
+
+    # ===== verify pass: every file hash-copy-rehash-compared; ANY
+    # mismatch refuses the merge BEFORE the merged manifests land (a
+    # partial corrupt merge never becomes a sweep root) =====
+    copied = {index: 0 for index in range(workers)}
+    mismatches = []
+    for index, src_file, rel in copy_pairs:
+        if _copy_verified(src_file, base_root / rel):
+            copied[index] += 1
+        else:
+            mismatches.append(f"worker {index}: {src_file} -> "
+                              f"{base_root / rel}")
+    if mismatches:
+        sys.exit(
+            "[Error] SHA256 mismatch after copy — merge refused, merged "
+            "manifests NOT written, worker roots untouched: "
+            f"{'; '.join(mismatches)}"
+        )
+
+    # ===== manifest + failures union (output_dir prefix-rewritten) =====
+    merged_cells = []
+    models_union = set()
+    tasks_union = set()
+    seeds_union = set()
+    for index in sorted(manifests):
+        wroot = worker_roots[index]
+        for cell in manifests[index]["cells"]:
+            merged = dict(cell)
+            if isinstance(merged.get("output_dir"), str):
+                merged["output_dir"] = _rewrite_output_dir(
+                    merged["output_dir"], wroot, base_root)
+            merged_cells.append(merged)
+        matrix = manifests[index].get("matrix") or {}
+        for value in matrix.get("models") or []:
+            models_union.add(value)
+        for value in matrix.get("tasks") or []:
+            tasks_union.add(value)
+        for value in matrix.get("seeds") or []:
+            seeds_union.add(value)
+    merged_failures = []
+    for index in sorted(manifests):
+        wroot = worker_roots[index]
+        for entry in failures[index]:
+            if isinstance(entry, dict) and isinstance(
+                    entry.get("output_dir"), str):
+                entry = {
+                    **entry,
+                    "output_dir": _rewrite_output_dir(
+                        entry["output_dir"], wroot, base_root),
+                }
+            merged_failures.append(entry)
+
+    merged_matrix = {
+        "models": sorted(models_union),
+        "tasks": sorted(tasks_union),
+        "seeds": sorted(seeds_union),
+        "output_root": str(base_root),
+    }
+    base_root.mkdir(parents=True, exist_ok=True)
+    _write_json(base_root / run_sweep.MANIFEST_NAME,
+                {"matrix": merged_matrix, "cells": merged_cells})
+    _write_json(base_root / run_sweep.FAILURES_NAME, merged_failures)
+
+    for index in range(workers):
+        never = (f", {never_ran[index]} cell(s) with no files on disk"
+                 if never_ran[index] else "")
+        print(f"[Merge] worker {index}: {copied[index]} file(s) copied "
+              f"+ SHA256-verified from {worker_roots[index]}{never}")
+    print(f"[Merge] union: {len(merged_cells)} cell(s) and "
+          f"{len(merged_failures)} failure entry(ies) over "
+          f"{len(manifests)} worker manifest(s) -> {base_root}")
+    print(f"[Merge] wrote {base_root / run_sweep.MANIFEST_NAME} and "
+          f"{base_root / run_sweep.FAILURES_NAME}")
+    print("[Merge] worker roots left INTACT (re-runnable in isolation, "
+          "D-08) — delete them manually only after verifying the merged "
+          "root; never pass worker roots AND the merged root to "
+          "gen_progress together (double-counted sweeps)")
 
 
 def main(spawner=None):
