@@ -265,6 +265,11 @@ class FakeLauncherService:
             spawned=True, root=str(output_root),
             tee_path="/state/logs/sweep_rerun.log", error=None)
 
+    def phrase_matches(self, typed, output_root):
+        from pathlib import Path
+
+        return typed == Path(str(output_root)).name
+
     def kill_sweep(self, root):
         self.kill_calls.append(root)
         return "signalled"
@@ -404,6 +409,9 @@ class _MonitorShellFake:
 
     def resume_count(self, root):
         return 0
+
+    def rerun_lane(self, root):
+        return ("none", "none")
 
     def failures_view(self, root):
         return ()

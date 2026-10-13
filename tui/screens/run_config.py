@@ -346,6 +346,11 @@ class LauncherServiceProtocol(Protocol):
         """The D-11 from-failures launch (the monitor's gated re-run;
         CR-01: an E2'-class effective matrix demands the phrase)."""
 
+    def phrase_matches(self, typed: str, output_root: str) -> bool:
+        """The exact-match E2' phrase verdict (the shared launcher
+        satisfies the monitor's re-prompt seam too — one object, two
+        protocol faces)."""
+
     def kill_sweep(self, root: str) -> str:
         """SIGTERM the process group (D-06 exit triple, k path)."""
 
@@ -384,6 +389,10 @@ class LauncherBackend:
         return self._launcher.launch_from_failures(
             failures_path, seeds, output_root,
             peft=peft, config_variant=config_variant, phrase=phrase)
+
+    def phrase_matches(self, typed, output_root) -> bool:
+        """Delegates to the service tier (the modal's live verdict)."""
+        return run_config_service.phrase_matches(typed, output_root)
 
     def kill_sweep(self, root: str) -> str:
         return self._launcher.kill_sweep(root)

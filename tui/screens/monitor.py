@@ -1256,13 +1256,19 @@ class MonitorScreen(Screen):
                 from tui.screens.run_config import E2PhraseModal
 
                 root = message.root
+
+                def on_phrase(typed_phrase: str) -> None:
+                    # a plain closure (not the @work call inline): the
+                    # modal's confirm callback returns None
+                    self._run_rerun_launch(
+                        root, self._rerun_stage_id, typed_phrase)
+
                 self.app.push_screen(E2PhraseModal(
                     dirname=(outcome.expected
                              or run_config_svc.expected_phrase(root)),
                     matches=lambda typed: (
                         self._launcher.phrase_matches(typed, root)),
-                    on_confirm=lambda phrase: self._run_rerun_launch(
-                        root, self._rerun_stage_id, phrase),
+                    on_confirm=on_phrase,
                 ))
                 return
             detail = "; ".join(

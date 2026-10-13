@@ -218,8 +218,12 @@ class _LauncherShellFake:
         raise AssertionError("the nav-shell tests never launch")
 
     def launch_from_failures(self, failures_path, seeds, output_root,
-                             peft="none", config_variant="none"):
+                             peft="none", config_variant="none",
+                             phrase=None):
         raise AssertionError("the nav-shell tests never re-run")
+
+    def phrase_matches(self, typed, output_root):
+        return False
 
     def kill_sweep(self, root):
         raise AssertionError("the nav-shell tests never kill")
@@ -266,6 +270,9 @@ class _MonitorShellFake:
     def resume_count(self, root):
         return 0
 
+    def rerun_lane(self, root):
+        return ("none", "none")
+
     def failures_view(self, root):
         return ()
 
@@ -289,8 +296,12 @@ class _MonitorLauncherShellFake:
         raise AssertionError("the nav-shell tests never gate a re-run")
 
     def launch_from_failures(self, failures_path, seeds, output_root,
-                             peft="none", config_variant="none"):
+                             peft="none", config_variant="none",
+                             phrase=None):
         raise AssertionError("the nav-shell tests never re-run")
+
+    def phrase_matches(self, typed, output_root):
+        return False
 
     def live_sweeps(self):
         return ()
