@@ -27,7 +27,7 @@ import re
 from pathlib import Path
 
 from rich.text import Text
-from textual.widgets import DataTable, Label, Static
+from textual.widgets import DataTable, Label
 
 import tui.screens.monitor as monitor_screen_module
 from tui.app import DnallmMarkTui
@@ -36,6 +36,10 @@ from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.selection import PresetMenu, SelectionData
 from tui.services import registries as registries_service
 from tui.services.download_queue import merge_presence
+from tui.services.sweep_launcher import (
+    EnvPreflight,
+    LaunchOutcome,
+)
 from tui.services.sweep_monitor import (
     CELL_COMPLETED,
     CELL_FAILED,
@@ -45,7 +49,6 @@ from tui.services.sweep_monitor import (
     ETA_NONE,
     ETA_PENDING,
     ETA_POINT,
-    ETA_RANGE,
     SWEEP_ARTIFACTS_ONLY,
     SWEEP_FINISHED,
     SWEEP_RUNNING,
@@ -53,15 +56,10 @@ from tui.services.sweep_monitor import (
     CellSeed,
     CurrentCell,
     EtaEstimate,
-    FailureRow,
     FrontierSnapshot,
     ScanResult,
     SweepStats,
     SweepSummary,
-)
-from tui.services.sweep_launcher import (
-    EnvPreflight,
-    LaunchOutcome,
 )
 from tui.strings import (
     MON_CELLS_EMPTY,
@@ -69,17 +67,13 @@ from tui.strings import (
     MON_DISCOVERED_EMPTY,
     MON_DISCOVERED_TITLE,
     MON_ETA_PENDING,
-    MON_ETA_UNKNOWN,
     MON_RESUME_NOTE,
     MON_SCAN_NOTE,
     MON_SCREEN_TITLE,
     MON_STATE_ARTIFACTS_SWEEP,
     MON_STATE_DONE,
-    MON_STATE_FAILED,
     MON_STATE_FINISHED_SWEEP,
-    MON_STATE_RUNNING,
     MON_STATE_RUNNING_SWEEP,
-    MON_STATE_SKIPPED,
     MON_STATS_LINE,
     MON_STATS_LINE_NO_CURRENT,
     MON_STATS_LINE_UNKNOWN_TOTAL,
@@ -91,7 +85,7 @@ from tui.strings import (
 # note — each new Pilot suite adds its screen module to its tuple).
 _MONITOR_MODULE_FILE = Path(monitor_screen_module.__file__)
 _GREP_LOCK_MODULES = (
-    _MON_MODULE_FILE,
+    _MONITOR_MODULE_FILE,
 )
 
 

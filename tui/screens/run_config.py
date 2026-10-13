@@ -1589,8 +1589,11 @@ class RunConfigScreen(Screen):
                     self.app.notify(LNC_LAUNCH_TOAST.format(
                         cells=summary.cells,
                         output_root=summary.output_root))
-                # D-13's auto-nav half (the jump to slot 5) lands in
-                # 11-07 with the monitor screen.
+                # D-13's auto-nav half (11-07): record + attach + the
+                # slot-5 jump over the app-owned monitor screen
+                self.app.sweep_launched(
+                    outcome.root,
+                    summary.cells if summary is not None else 0)
                 return
             self.app.notify(
                 LNC_LAUNCH_FAILED_TOAST.format(

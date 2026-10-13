@@ -361,6 +361,85 @@ WizardModal {
     background: $surface;
 }
 
+/* ===== Monitor screen (11-07, slot 5 — D-03/D-09/D-17) =====
+ * Two stacked regions (the data-manager precedent): the discovered
+ * list fixed-height (title row + header + ~2 visible rows, scrolls),
+ * the cell table the flex remainder (scrolls); the full-width rule
+ * separates them (borders stay reserved for modals). Theme tokens
+ * only. */
+
+#mon-title-bar {
+    height: 1;      /* row token: one status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#mon-screen-title {
+    text-style: bold;          /* Heading role */
+    width: auto;
+}
+
+#mon-scan-note {
+    width: 1fr;                /* right edge of the same status line */
+    text-align: right;
+    color: $text-muted;        /* the D-09 cadence note (standing chrome) */
+}
+
+#mon-discovered-region {
+    height: 5;     /* fixed: the title row + header + ~2 visible rows */
+}
+
+#mon-discovered-title-row {
+    height: 1;     /* row token */
+    padding: 0 1;  /* 1-cell status-line exception */
+}
+
+#mon-discovered-title {
+    width: auto;
+}
+
+#mon-discovered {
+    height: 1fr;   /* scrolls below the two visible rows */
+}
+
+#mon-cells-region {
+    height: 1fr;                /* the flex remainder */
+    border-top: solid $border;  /* 1-cell border exception — separator */
+}
+
+#mon-cells-title-row {
+    height: 1;     /* row token: the cells title + the resume note */
+    padding: 0 1;  /* 1-cell status-line exception */
+}
+
+#mon-cells-title {
+    width: auto;
+}
+
+#mon-resume-note {
+    width: 1fr;                /* the right-aligned MON-05 note */
+    text-align: right;
+    color: $text-muted;        /* the ⊘ skipped provenance renders dim */
+}
+
+#mon-stats-line {
+    height: 1;      /* row token: the MON-02/D-17 stats line */
+    padding: 0 2;   /* 2-cell status-line exception */
+    color: $text-muted;        /* Secondary role (the table owns focus) */
+}
+
+#mon-discovered > .datatable--header,
+#mon-cells > .datatable--header {
+    text-style: bold;
+    color: $text-muted;
+    background: $surface;
+}
+
+#mon-log-tee-line {
+    height: 1;      /* row token: the dim tee-file line */
+    padding: 0 1;   /* 1-cell status-line exception */
+    color: $text-muted;
+}
+
 /* ===== Min-size guard screen ===== */
 
 MinSizeScreen {

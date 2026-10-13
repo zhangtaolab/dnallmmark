@@ -59,8 +59,6 @@ from tui.strings import (
     NAV_LABEL_MONITOR,
     NAV_LABEL_RUN_CONFIG,
     NAV_LABEL_SELECTION,
-    NAV_PLACEHOLDER_SUFFIX,
-    NAV_PLACEHOLDER_TOAST,
 )
 
 # Module files for the i18n grep gates (Task 3 extension).
@@ -232,6 +230,68 @@ class _LauncherShellFake:
         return None
 
 
+class _MonitorShellFake:
+    """The minimal monitor-service fake (11-07): an empty scan — the
+    slot-5 screen mounts deterministically with no artifact read."""
+
+    def full_scan(self, prev_watermarks=None):
+        from tui.services.sweep_monitor import ScanResult
+
+        return ScanResult(sweeps=(), watermarks={})
+
+    def frontier_scan(self, root):
+        from tui.services.sweep_monitor import FrontierSnapshot
+
+        return FrontierSnapshot(
+            root=Path(str(root)), state="artifacts_only",
+            newest_mtime=None, newest_cell=None, cell_states={})
+
+    def cells_view(self, root):
+        return ()
+
+    def stats(self, root, expected_total=None, fallback_start=None):
+        from tui.services.sweep_monitor import EtaEstimate, SweepStats
+
+        return SweepStats(
+            done=0, total=None, current=None, elapsed_seconds=None,
+            eta=EtaEstimate("none", None, None, None))
+
+    def sweep_scale(self, root):
+        return None
+
+    def resume_count(self, root):
+        return 0
+
+    def failures_view(self, root):
+        return ()
+
+    def read_log_tail(self, path, max_lines=200, max_bytes=65536):
+        return None
+
+    def is_sweep_root(self, path):
+        return False
+
+    def add_manual_root(self, path):
+        raise AssertionError("the nav-shell tests never attach roots")
+
+
+class _MonitorLauncherShellFake:
+    """The minimal monitor launcher fake (11-07): no live sweeps."""
+
+    def env_preflight(self, kernels=None):
+        raise AssertionError("the nav-shell tests never gate a re-run")
+
+    def launch_from_failures(self, failures_path, seeds, output_root,
+                             peft="none", config_variant="none"):
+        raise AssertionError("the nav-shell tests never re-run")
+
+    def live_sweeps(self):
+        return ()
+
+    def tee_path_for(self, root):
+        return None
+
+
 def _pin_config_roots(monkeypatch, tmp_path):
     """Pin the config roots at tmp_path (the real home is never read)."""
     config = tmp_path / "config"
@@ -249,6 +309,8 @@ def _app():
         download_queue_service=_QueueDriverFake(),
         run_config_service=_RunConfigShellFake(),
         launcher_service=_LauncherShellFake(),
+        monitor_service=_MonitorShellFake(),
+        monitor_launcher=_MonitorLauncherShellFake(),
     )
 
 
@@ -296,7 +358,8 @@ async def test_top_bar_six_verbatim_slots_fit_80_triple_channel():
         widgets = _slot_widgets(app.screen)
 
         # six slots, the ratified verbatim resource-noun names, digit-first;
-        # slot 3 is REAL since 10-04 and slot 4 since 11-06 (no suffix)
+        # slot 3 is REAL since 10-04, slot 4 since 11-06, and slot 5
+        # since 11-07 (no suffix anywhere — every slot is real)
         assert len(texts) == 6, "the bar carries exactly six slots"
         assert texts[0] == f"◆ 1{NAV_LABEL_ENV}", (
             "the ACTIVE slot carries the ◆ prefix (glyph channel)"
@@ -306,7 +369,9 @@ async def test_top_bar_six_verbatim_slots_fit_80_triple_channel():
         assert texts[3] == f" 4{NAV_LABEL_RUN_CONFIG}", (
             "slot 4 is REAL since 11-06 — no placeholder suffix"
         )
-        assert texts[4] == f" 5{NAV_LABEL_MONITOR}{NAV_PLACEHOLDER_SUFFIX}"
+        assert texts[4] == f" 5{NAV_LABEL_MONITOR}", (
+            "slot 5 is REAL since 11-07 — no placeholder suffix"
+        )
         assert texts[5] == f" 6{NAV_LABEL_ABOUT}"
 
         # triple channel: the active slot carries the active class
@@ -314,14 +379,16 @@ async def test_top_bar_six_verbatim_slots_fit_80_triple_channel():
         assert widgets[0].has_class("nav-slot-active"), (
             "the active slot must render bold + accent (color/weight channel)"
         )
-        # placeholders render dim (the muted class) — never dead-looking;
-        # only slot 5 remains a placeholder (11-06 promoted slot 4)
-        for placeholder in widgets[4:5]:
-            assert placeholder.has_class("nav-slot-placeholder"), (
-                "placeholder slots render dim with the suffix"
+        # no placeholder classes remain anywhere (every slot is real)
+        for widget in widgets:
+            assert not widget.has_class("nav-slot-placeholder"), (
+                "no slot renders the placeholder class after 11-07"
             )
         assert not widgets[3].has_class("nav-slot-placeholder"), (
             "the promoted slot 4 must not render the placeholder class"
+        )
+        assert not widgets[4].has_class("nav-slot-placeholder"), (
+            "the promoted slot 5 must not render the placeholder class"
         )
 
         # the fixed vocabulary fits within 80 columns at 80x24
@@ -368,34 +435,33 @@ async def test_digits_switch_live_screens_and_track_active_slot(
 
 
 async def test_placeholder_digits_fire_phase_toast_never_switch():
-    """5 is never silent: the phase toast fires, the screen holds; slot
-    3 (10-04) and slot 4 (11-06) are REAL — digit 4 switches to the
-    run-config screen with zero placeholder artifacts."""
+    """No placeholder slots remain: digits 3/4/5 all switch to their
+    real screens with zero placeholder artifacts (slot 5 promoted by
+    11-07); the phase toast vocabulary retires with the last
+    placeholder."""
+    from tui.screens.monitor import MonitorScreen
+
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
-        for digit, phase in (("5", 12),):
-            await pilot.press(digit)
-            await pilot.pause()
-            assert NAV_PLACEHOLDER_TOAST.format(n=phase) in (
-                _toast_messages(app)), (
-                f"digit {digit} must toast the delivering phase {phase}"
-            )
-            assert isinstance(app.screen, EnvCheckScreen), (
-                f"digit {digit} must never switch screens"
-            )
 
-        # slot 4 (11-06): the real run-config screen, no phase toast
+        # slot 5 (11-07): the real monitor screen, no phase toast
+        await pilot.press("5")
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(app.screen, MonitorScreen), (
+            "digit 5 must switch to the real monitor screen"
+        )
+        assert not _toast_messages(app), (
+            "slot 5 must never fire the placeholder phase toast"
+        )
         await pilot.press("4")
         await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert isinstance(app.screen, RunConfigScreen), (
             "digit 4 must switch to the real run-config screen"
-        )
-        assert NAV_PLACEHOLDER_TOAST.format(n=11) not in (
-            _toast_messages(app)), (
-            "slot 4 must never fire the placeholder phase toast"
         )
 
         # slot 3 (10-04): the real data-manager screen, no phase toast
@@ -405,10 +471,6 @@ async def test_placeholder_digits_fire_phase_toast_never_switch():
         await pilot.pause()
         assert isinstance(app.screen, DataManagerScreen), (
             "digit 3 must switch to the real data-manager screen"
-        )
-        assert NAV_PLACEHOLDER_TOAST.format(n=10) not in (
-            _toast_messages(app)), (
-            "slot 3 must never fire the placeholder phase toast"
         )
 
 

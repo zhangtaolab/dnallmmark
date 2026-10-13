@@ -595,9 +595,10 @@ def test_the_menu_carries_no_wizard_item():
     targets it and no slot label carries the wizard wording."""
     assert all(
         # "data_manager" joined at 10-04 (the slot-3 promotion);
-        # "run_config" joined at 11-06 (the slot-4 promotion)
+        # "run_config" joined at 11-06 (the slot-4 promotion);
+        # "monitor" joined at 11-07 (the slot-5 promotion)
         slot.target in ("env_check", "selection", "data_manager",
-                        "run_config", "about", None)
+                        "run_config", "monitor", "about", None)
         for slot in NAV_SLOTS
     )
     assert all(SEL_WIZARD_LABEL not in slot.label for slot in NAV_SLOTS)

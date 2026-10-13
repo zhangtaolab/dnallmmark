@@ -67,6 +67,12 @@ from textual.worker import get_current_worker
 from tui.screens.about import AboutScreen
 from tui.screens.data_manager import DataManagerBackend, DataManagerScreen
 from tui.screens.env_check import EnvCheckScreen, EnvCheckServiceProtocol
+from tui.screens.monitor import (
+    MonitorBackend,
+    MonitorLauncherProtocol,
+    MonitorScreen,
+    MonitorServiceProtocol,
+)
 from tui.screens.nav import NAV_SLOT_BY_INDEX, binding_row
 from tui.screens.run_config import (
     LauncherBackend,
@@ -210,6 +216,16 @@ class ExitModal(ModalScreen):
         self.app.exit()
 
 
+class MonitorSwitchRequested(Message):
+    """D-13: switch to the monitor screen with the newly launched sweep
+    attached (posted by ``sweep_launched`` so the async screen switch
+    rides the message loop — the queue-forward precedent)."""
+
+    def __init__(self, root: str) -> None:
+        self.root = root
+        super().__init__()
+
+
 class QueueDriverProtocol(Protocol):
     """The driver-surface queue Protocol the app consumes (10-04).
 
@@ -328,7 +344,9 @@ class DnallmMarkTui(App):
                  selection_service: SelectionServiceProtocol | None = None,
                  download_queue_service: QueueDriverProtocol | None = None,
                  run_config_service: RunConfigServiceProtocol | None = None,
-                 launcher_service: LauncherServiceProtocol | None = None):
+                 launcher_service: LauncherServiceProtocol | None = None,
+                 monitor_service: MonitorServiceProtocol | None = None,
+                 monitor_launcher: MonitorLauncherProtocol | None = None):
         """Compose the console with injectable services.
 
         Args:
@@ -352,6 +370,13 @@ class DnallmMarkTui(App):
                 ``LauncherBackend`` over ONE app-owned ``SweepLauncher``
                 — the run-config gate, the ExitModal, and (11-07) the
                 monitor's live-root scans all read this instance.
+            monitor_service: optional override for the monitor screen's
+                scan service (the 11-07 seam — tests inject fakes so no
+                artifact-tree read executes). None builds the real
+                ``MonitorBackend`` over the shared launcher.
+            monitor_launcher: optional override for the monitor screen's
+                re-run launcher seam (the 11-07 Pilot seam; None passes
+                the shared launcher instance).
         """
         super().__init__()
         self._env_check_service = env_check_service
@@ -367,6 +392,13 @@ class DnallmMarkTui(App):
             launcher_service if launcher_service is not None
             else LauncherBackend()
         )
+        # The 11-07 monitor seams: the scan service + the re-run
+        # launcher face (both default to the shared registry).
+        self._monitor_service = monitor_service
+        self._monitor_launcher = monitor_launcher
+        # The app-owned monitor screen (ONE cached instance — attach
+        # state and the D-13 launch injections survive navigation).
+        self._monitor_screen: MonitorScreen | None = None
         # The driver state (T-10-04-02): the busy flag is set
         # SYNCHRONOUSLY in kick and cleared in the worker's drain exit,
         # so two rapid enqueues can never start (and exclusive-cancel) a
@@ -444,6 +476,29 @@ class DnallmMarkTui(App):
             launcher_service=self._launcher,
         )
 
+    def build_monitor_screen(self) -> MonitorScreen:
+        """Build the monitor screen over the shared launcher + the
+        injected-or-real scan service (the 11-07 factory).
+
+        ONE cached instance (unlike the other rebuild-per-nav
+        factories): the monitor's attach state and the D-13 launch
+        injections are session state — navigating away and back must
+        never drop the attached sweep. The screen re-composes on
+        re-mount; the state survives on the instance.
+        """
+        if self._monitor_screen is None:
+            self._monitor_screen = MonitorScreen(
+                monitor_service=(
+                    self._monitor_service
+                    if self._monitor_service is not None
+                    else MonitorBackend(launcher=self._launcher)),
+                launcher_service=(
+                    self._monitor_launcher
+                    if self._monitor_launcher is not None
+                    else self._launcher),
+            )
+        return self._monitor_screen
+
     # ===== Digit navigation (D-13, 09-03) =====
 
     async def action_nav(self, slot: int) -> None:
@@ -478,6 +533,10 @@ class DnallmMarkTui(App):
             if isinstance(current, RunConfigScreen):
                 return
             await self.switch_screen(self.build_run_config_screen())
+        elif target.target == "monitor":
+            if isinstance(current, MonitorScreen):
+                return
+            await self.switch_screen(self.build_monitor_screen())
         elif target.target == "about":
             if isinstance(current, AboutScreen):
                 return
@@ -668,6 +727,34 @@ class DnallmMarkTui(App):
             QUEUE_PERSIST_DRIVER_TOAST.format(key=message.key),
             severity="error")
 
+    # ===== The D-13 launch -> auto-nav integration (11-07) =====
+
+    def sweep_launched(self, root: str, cells: int) -> None:
+        """A slot-4 launch succeeded: record the plan, attach the new
+        sweep, and switch to the monitor screen (the toast has already
+        fired on the run-config side).
+
+        The record + attach land synchronously; the screen switch rides
+        a posted message (the queue-forward precedent — the async
+        ``switch_screen`` needs the message loop, never a bare fire).
+        """
+        screen = self.build_monitor_screen()
+        screen.note_launch(root, cells)
+        if not self.below_minimum_grid:
+            self.post_message(MonitorSwitchRequested(root))
+
+    async def on_monitor_switch_requested(
+            self, message: MonitorSwitchRequested) -> None:
+        """Complete the D-13 jump: switch to the (already attached)
+        monitor screen (async handler — the message loop owns the
+        coroutine, no bare task firing)."""
+        screen = self._monitor_screen
+        if screen is None or self.screen is screen:
+            return
+        if self.below_minimum_grid:
+            return  # no chrome over the guard (WR-06)
+        await self.switch_screen(screen)
+
     # ===== Min-size guard (08-UI-SPEC Terminal Contract) =====
 
     def on_mount(self) -> None:
@@ -728,21 +815,27 @@ class DnallmMarkTui(App):
     # ===== Actions (app-level) =====
 
     async def action_quit(self) -> None:
-        """The D-06 q intercept: a live sweep (``live_sweeps`` non-empty)
-        pushes the ExitModal (kill/detach/cancel, default detach) instead
-        of quitting; with none, q quits directly (the inherited path).
-        Never pushes over the min-size guard (WR-06). 11-07 extends the
-        predicate to attached running sweeps. Async — the App base
-        declares the coroutine signature (ty LSP).
+        """The D-06 q intercept: a live sweep (``live_sweeps`` non-empty
+        OR the monitor's attached sweep running — a CLI-launched sweep
+        the TUI did not spawn) pushes the ExitModal (kill/detach/cancel,
+        default detach) instead of quitting; with neither, q quits
+        directly (the inherited path). Never pushes over the min-size
+        guard (WR-06). 11-07 threads the monitor's live done/total into
+        the message (absent markers when unknown — never fabricated).
+        Async — the App base declares the coroutine signature (ty LSP).
         """
         roots = self._launcher.live_sweeps()
-        if roots and not self.below_minimum_grid:
-            root = roots[0]
+        attached_running = False
+        done = CFG_VALUE_ABSENT
+        total = CFG_VALUE_ABSENT
+        attached_root = ""
+        if self._monitor_screen is not None:
+            (attached_running, attached_root,
+             done, total) = self._monitor_screen.attached_running_counts()
+        if (roots or attached_running) and not self.below_minimum_grid:
+            root = roots[0] if roots else attached_root
             message = LNC_EXIT_MESSAGE.format(
-                # 11-06: the launcher carries no progress counts — the
-                # honest absent markers; 11-07 threads the live counts.
-                done=CFG_VALUE_ABSENT, total=CFG_VALUE_ABSENT,
-                root=Path(root).name)
+                done=done, total=total, root=Path(root).name)
             self.push_screen(
                 ExitModal(root=root, launcher=self._launcher,
                           message=message))
