@@ -6,16 +6,16 @@ current_phase: 11
 current_phase_name: Run Config, Launch Gates & Single-GPU Monitoring
 current_plan: Not started
 status: planning
-stopped_at: Completed 11-01-PLAN.md
-last_updated: "2026-10-13T01:41:07.786Z"
+stopped_at: Completed 11-05-PLAN.md
+last_updated: "2026-10-13T02:04:15.158Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 complete, transitioned to Phase 11
-state_head: 14d632b1fd69e34b4f0f8b4e1f4f07a2152e32d2
+state_head: 7e9fba7d0a907378570668aa34e7dd7689ffd7e1
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 32
-  completed_plans: 26
+  completed_plans: 27
   percent: 67
 ---
 
@@ -86,6 +86,7 @@ Progress (v1.2): [██████░░░░] 67% (4/6 phases; 25/25 planned
 | Phase 10 P05 | 31min | 2 tasks | 5 files |
 | Phase 10 P06 | 41min | 3 tasks | 4 files |
 | Phase 11 P01 | 945s | 2 tasks | 2 files |
+| Phase 11 P05 | 12min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -179,6 +180,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 10]: The real service's probe_zenodo routes the zenodo_fetch seam — the whole queue surface (probe included) is offline-injectable; no queue test lane can reach the wire (10-06)
 - [Phase 11]: 11-01: D-18 --config-variant landed as --peft-style ALIASING in run_sweep (alias enumeration + explicit --save_model_name twin) — driver is the single naming authority over the child's self-aliasing branch; head keeps base for frozen pair (evo2_1b_base, megaDNA_updated), pinned by read-source parity; variant x peft refused collect-all at sweep start
 - [Phase 11]: 11-01: run_matrix default-executor partial binds config_variant explicitly and filters the key out of the sweep_flags splat — a present variant records in the manifest via sweep_flags (D-13) without a duplicate-kwarg collision with the argv authority
+- [Phase 11]: 11-05: CFG_VARIANT_HEAD_NOTE keeps the head-alias frozen pair as static copy (contract wording verbatim); the PROBE_INELIGIBLE prohibition covers the 9-name probe list only — rendered dynamically via {models}, boundary documented in strings.py
+- [Phase 11]: 11-05: all 99 Phase-11 copy constants (CFG_ 38 / LNC_ 13 / MON_ 48) landed verbatim with the bidirectional tripwire before any screen — the 10-03 W1-mirror precedent, third application
+- [Phase 11]: 11-05: ENV_VERDICT_CRITICAL_FAIL amended to present tense (the blocking is real this phase); UI-SPEC PROBE_INELIGIBLE count corrected 7-to-9 (sanctioned one-liner)
 
 ### Pending Todos
 
@@ -202,8 +206,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T01:41:07.732Z
-Stopped at: Completed 11-01-PLAN.md
+Last session: 2026-10-13T02:04:15.103Z
+Stopped at: Completed 11-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

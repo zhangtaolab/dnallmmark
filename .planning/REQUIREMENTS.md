@@ -37,19 +37,19 @@
 
 ### Run Configuration (运行配置)
 
-- [ ] **CFG-01**: 全参数面：种子（默认 42,43,44）、PEFT 模式+别名预览、config-variant（head/probe/curve+PROBE_INELIGIBLE 提示）、学习曲线档位、公平性子集开关、epochs/batch 覆盖
+- [x] **CFG-01**: 全参数面：种子（默认 42,43,44）、PEFT 模式+别名预览、config-variant（head/probe/curve+PROBE_INELIGIBLE 提示）、学习曲线档位、公平性子集开关、epochs/batch 覆盖
 - [ ] **CFG-02**: 项目目录与存储目录分离设置（输出根/数据集/模型缓存），默认仓库相对路径，显式覆盖时 TUI 统一传绝对路径参数
 - [ ] **CFG-03**: 干跑预览：枚举 cell 数/预估（导入纯规划函数计算，与执行同源）
 
 ### Launch (启动)
 
-- [ ] **LNC-01**: 启动门：env_smoke 前置（FAIL 阻止+原因显示）+ terraform 式确认（预览 → 显式批准；全量 E2' 需输入确认短语）
+- [x] **LNC-01**: 启动门：env_smoke 前置（FAIL 阻止+原因显示）+ terraform 式确认（预览 → 显式批准；全量 E2' 需输入确认短语）
 - [ ] **LNC-02**: 执行恒为 `run_sweep.py` 子进程（LIST argv + PYTHONUNBUFFERED=1 + start_new_session 分离）；TUI 退出提示 kill/detach/cancel，detach 断点安全
 - [ ] **LNC-03**: E2' 全量三种子保持维护者显式授权边界（TUI 只呈现确认门，不绕过）
 
 ### Monitoring (监控)
 
-- [ ] **MON-01**: poll-and-attach 看板：cell 级状态（排队/运行/完成/失败/跳过，种子相邻），2s 前沿扫描 + 60s 全扫，容错 artifact-loader（部分写跳拍）
+- [x] **MON-01**: poll-and-attach 看板：cell 级状态（排队/运行/完成/失败/跳过，种子相邻），2s 前沿扫描 + 60s 全扫，容错 artifact-loader（部分写跳拍）
 - [ ] **MON-02**: 进度统计：完成/总数、当前 cell、耗时；对外部（CLI）启动的 sweep 同样可附加监控
 - [ ] **MON-03**: 失败清单实时显示 + 一键 `--from-failures` 重跑（确认门）
 - [ ] **MON-04**: 日志尾部跟随（RichLog 有界视图）+ **tee 落盘持久化**（~/.config/dnallmmark/logs/ 或任务输出目录）
@@ -108,13 +108,13 @@
 | DATA-02 | Phase 10 | Complete |
 | DATA-03 | Phase 10 | Complete |
 | DATA-04 | Phase 10 | Complete |
-| CFG-01 | Phase 11 | Pending |
+| CFG-01 | Phase 11 | Complete |
 | CFG-02 | Phase 11 | Pending |
 | CFG-03 | Phase 11 | Pending |
-| LNC-01 | Phase 11 | Pending |
+| LNC-01 | Phase 11 | Complete |
 | LNC-02 | Phase 11 | Pending |
 | LNC-03 | Phase 11 | Pending |
-| MON-01 | Phase 11 | Pending |
+| MON-01 | Phase 11 | Complete |
 | MON-02 | Phase 11 | Pending |
 | MON-03 | Phase 11 | Pending |
 | MON-04 | Phase 11 | Pending |
