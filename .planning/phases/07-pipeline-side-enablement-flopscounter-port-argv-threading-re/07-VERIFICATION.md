@@ -1,10 +1,10 @@
 ---
 phase: 07-pipeline-side-enablement-flopscounter-port-argv-threading-re
-verified: 2026-10-12T11:51:07Z
+verified: 2026-10-13T09:26:11Z
 status: passed
 score: 14/14 must-haves verified
 covered_files: [".claude/CLAUDE.md", ".planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-01-PLAN.md", ".planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-01-SUMMARY.md", ".planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-02-PLAN.md", ".planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-02-SUMMARY.md", ".planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-03-PLAN.md", ".planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-03-SUMMARY.md", ".planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-04-PLAN.md", ".planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-04-SUMMARY.md", ".planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-05-PLAN.md", ".planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-05-SUMMARY.md", ".planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-06-PLAN.md", ".planning/phases/07-pipeline-side-enablement-flopscounter-port-argv-threading-re/07-06-SUMMARY.md", "AUDIT.md", "Makefile", "README.md", "docs/TUI-REQUIREMENTS.md", "pipeline/artifact_loader.py", "pipeline/flops_counter.py", "pipeline/registry_loader.py", "pipeline/run_finetune.py", "pipeline/run_sweep.py", "schemas/flops_report.json", "script/audit_n_frequencies.py", "script/export_runs.py", "tests/test_artifact_loader.py", "tests/test_flops_counter.py", "tests/test_known_defects.py", "tests/test_registry_loader.py", "tests/test_run_finetune_contracts.py", "tests/test_sweep.py"]
-covered_digest: "v3:sha256:de2a334ff108268c663643227ad39fcc35af810406ab75cf594d758a36568d7d"
+covered_digest: "v3:sha256:45d5d45bc05d0a00d5416d50faf6255f30bb80862afba19b57988edcdef00747"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -16,6 +16,60 @@ re_verification:
 ---
 
 # Phase 7: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) Verification Report
+
+**Phase Goal:** The pipeline can be fully driven, measured, and extended by an external operator tool — FlopsCounter's 20+ architecture forward-hook FLOPs instrumentation ported from the deprecated `dnallmmark_pipeline.py` into `run_finetune.py`, the four sanctioned `run_sweep.py` argv flags threaded through with CLI parity, the official+custom registry overlay seam (user-maintained custom entries load on top of official registries; byte-identical when absent), and the tolerant JSON loader contract that FLOPs output and the future monitor share
+**Verified:** 2026-10-13T09:26:11Z
+**Status:** passed
+**Re-verification:** Yes — #4682 stale-fingerprint route (fourth pass over this phase). The 2026-10-12 pass (passed 14/14 at HEAD `b69d07b`) went stale because Phase 11's `--config-variant` aliasing landed in two covered files: `pipeline/run_sweep.py` (`4f4367a`) and `tests/test_sweep.py` (`14d632b`) — the only covered-file changes since. This pass verified the delta against Phase 7's argv-threading contracts, spot-ran the changed suites, and recomputed the covered-input fingerprint. Full verdict record in the `## Re-verification (stale refresh, HEAD 8b92766, 2026-10-13)` section below; the 2026-10-12 report body follows unchanged as the prior-pass record.
+
+## Re-verification (stale refresh, HEAD 8b92766, 2026-10-13)
+
+### Staleness diagnosis (commit-anchored, verified this pass)
+
+Anchor: `306987f` (the commit that wrote the 2026-10-12 passed verification). `git diff --stat 306987f..HEAD` over the full 19-file covered implementation set + the 4 covered docs (README.md, AUDIT.md, .claude/CLAUDE.md, docs/TUI-REQUIREMENTS.md):
+
+- **`pipeline/run_sweep.py`** — 1 commit (`4f4367a` feat(11-01) `--config-variant` aliasing machinery), +181/-34. The ONLY pipeline-code change since Phase 7 landed its four flags.
+- **`tests/test_sweep.py`** — 1 commit (`14d632b` test(11-01) variant argv-parity + frozen-pair parity suite), **+511/-0 — purely append-only**: zero deletions, zero modified pre-existing test functions; 15+ new test functions added (121 tests now collect vs 101 before).
+- **All 17 other covered implementation files + all 4 covered docs**: empty diff — byte-identical (`flops_counter.py`, `registry_loader.py`, `artifact_loader.py`, `run_finetune.py`, `schemas/flops_report.json`, `Makefile`, all five other test files, `script/*`). (`pipeline/eval_subsets.json` also changed in this window at `2f7211d` — Phase 10's R-03 refresh — but it is NOT in Phase 7's covered set and is Phase 10-verified scope.)
+
+### Delta contract analysis vs the Phase 7 argv-threading must-haves
+
+Hunk-audited read of the full `4f4367a` diff against Truths 1-5 (PIPE-02 / D-10..D-16):
+
+1. **The four sanctioned flags are UNTOUCHED.** The diff does not touch their argparse registrations (`--subset_file` :395, `--effective_batch_size` :406, `--num_train_epochs` :420, `--cache_dir` :430), their collect-all validation (D-12 `>=1` guards, empty-path refusals incl. the WR-05 `--cache_dir` twin), their D-15 abs-path resolution (`Path(...).resolve()` before threading), their only-when-present `sweep_flags` merges, or their only-when-present `build_argv` appends (`:1153+`, `if X is not None: argv += [...]` unchanged). Verified by reading the diff (none of these regions appear in it) plus grep re-confirmation at HEAD.
+2. **The new `--config-variant` flag is additive D-18 aliasing, not pass-through** — it follows the `--peft` aliasing shapes: `elif config_variant != "none"` appends the `--save_model_name <alias>` + `--config-variant <v>` twin only when present; `enumerate_matrix`/`base_model_name` gained defaulted `"none"` params (no-op defaults); variant×peft is refused collect-all at sweep start alongside the four-flag problems. **Absent = byte-identical argv/enumeration/manifest** (pinned by the new `test_variant_absent_is_byte_identical_to_today`, green).
+3. **D-13 only-when-present manifest discipline holds**: `config_variant` joins `sweep_flags` only `if args.config_variant is not None` — the same gate as the four flags; `_manifest_payload`'s `**flags` merge unchanged. `run_record.json` gains an always-present defaulted `config_variant: "none"` field (the `peft`-field precedent from 06-02 — an axis marker, not a flag field; the four Phase 7 flags still contribute no run_record fields).
+4. **D-14 subset pre-validation, D-10/D-16 child-side GA arithmetic: untouched** (`_validate_subset_file` call site and body unchanged — only its comment context moved).
+
+### Re-verified verdicts (all 14 truths)
+
+| Must-have | Verdict | Basis this pass |
+|---|---|---|
+| T1-T5 (four flags: threading, bare-EBS=16, abs-resolution, D-14 pre-validation, only-when-present manifest) | ✓ VERIFIED | Flag code byte-untouched by the delta (diff-audited + grep at HEAD); pre-existing argv-parity tests byte-unmodified (+511/-0) and green in this verifier's run |
+| T6-T9, T13 (FlopsCounter port, dispatch order, always-on calibration, GPU emission, v1 schema) | ✓ VERIFIED | `flops_counter.py`, `run_finetune.py`, `artifact_loader.py`, `schemas/flops_report.json` byte-identical since the passed pass (empty git diff); GB10 evidence + prior-pass validation stand |
+| T10 (tolerant loader) | ✓ VERIFIED | `artifact_loader.py` byte-identical; contract re-pinned green in the run |
+| T11 (registry overlay: byte-identical-when-absent, collision fail-fast, fail-loud, five load sites) | ✓ VERIFIED | `registry_loader.py` byte-identical (zero commits since `306987f`); 24-test suite green in this verifier's spot-run |
+| T12 (legacy deleted, zero references, parity literals) | ✓ VERIFIED | Re-checked: `pipeline/dnallmmark_pipeline.py` absent, `grep -rn dnallmmark_pipeline pipeline/ script/ tests/ Makefile schemas/` → 0 lines; re-pinned contracts green |
+| T14 (lint/typecheck/test gates, GPU-free/dnallm-free) | ✓ VERIFIED | Makefile byte-unchanged; gates green at Phase 11's own verification (HEAD `8b92766` lineage) and this pass's focused suites; no gate lane touched by the delta |
+
+### Spot-checks (executed by this verifier at HEAD 8b92766)
+
+| Command | Result |
+|---|---|
+| `uv run --group dev pytest tests/test_sweep.py tests/test_registry_loader.py -q` | **145 passed in 0.15s** (sweep 121 incl. the 20 new variant tests + registry 24) |
+| Four-flag presence greps (`--subset_file`/`--effective_batch_size`/`--num_train_epochs`/`--cache_dir` registrations, appends, `sweep_flags` merges) | all present at HEAD, semantics unchanged |
+| `git diff 306987f..HEAD` over the other 17 impl files + 4 docs | empty (byte-identical) |
+| Debt markers (`TBD|FIXME|XXX`) over `run_sweep.py` + `test_sweep.py` | 0 hits |
+
+**Advisory (new-scope, unevidenced):** none — the only covered-file delta was diff-audited, is the sanctioned Phase 11 D-18 scope, and its suites are green.
+
+**Fresh fingerprint (verbatim from `verification.fingerprint`):** `v3:sha256:45d5d45bc05d0a00d5416d50faf6255f30bb80862afba19b57988edcdef00747` over the same 19 implementation files + 4 docs + auto-added PLAN/SUMMARY set (frontmatter `covered_files` is the command's verbatim output).
+
+**Verdict: PASSED — 14/14 must-haves hold at HEAD 8b92766.** Zero regressions; the staleness was exactly the sanctioned Phase 11 additive `--config-variant` machinery, and the Phase 7 contracts (four flags unchanged, argv parity, byte-identical-when-absent, overlay, tolerant loader, FLOPs chain) all verified against the current tree.
+
+---
+
+## Prior-pass record (2026-10-12, HEAD b69d07b — kept as the verification history)
 
 **Phase Goal:** The pipeline can be fully driven, measured, and extended by an external operator tool — FlopsCounter's 20+ architecture forward-hook FLOPs instrumentation ported from the deprecated `dnallmmark_pipeline.py` into `run_finetune.py`, the four sanctioned `run_sweep.py` argv flags threaded through with CLI parity, the official+custom registry overlay seam (user-maintained custom entries load on top of official registries; byte-identical when absent), and the tolerant JSON loader contract that FLOPs output and the future monitor share
 **Verified:** 2026-10-12T11:51:07Z
@@ -67,7 +121,7 @@ Must-haves carried forward verbatim from the prior pass (re-verification reuses 
 | 11 | Registry overlay seam: custom entries merge over official registries, collision fails fast naming key + BOTH paths, malformed custom fails loud, byte-identical when absent, official files never written, all five load sites rewired (SC4 / CUST-05 / D-06/D-07/D-08) | ✓ VERIFIED | **Full re-verification of the CHANGED file** (`pipeline/registry_loader.py`, +38/-2 since prior pass — Phase 9's D-09 enabled-skip + CR-01): read-only `"r"` opens only (`:117/:123`); live checks this pass — absent overlay → `load_models_registry() == json.loads(official)` with identical key order and 0 official entries carrying `enabled` (`absent-overlay-byte-identical-ok`); collision loop BEFORE the skip (live: disabled shadow → SystemExit `collides`); enabled matrix (literal False skipped; absent/true/0/"false"/null load; non-dict merges as-is); GBK custom → fail-loud SystemExit naming the file; malformed JSON → SystemExit; key order official-file-order then custom-file-order. Five load sites re-confirmed (run_sweep import + 3 load contexts + pre-validation; run_finetune module-level `:48-51`-adjacent import and loads — additionally source-pinned by the new `test_run_finetune_module_level_loads_route_through_registry_loader`; audit via importlib). `pytest tests/test_registry_loader.py`: **24 passed** (15 pre-existing unmodified + 9 Phase 9 additive). See Warning W1 on SC4's "export" consumer listing |
 | 12 | Legacy file deleted with zero live-code references; five parity expectations re-pinned as sha-documented verbatim literals; archives untouched (D-04) | ✓ VERIFIED | Re-executed this pass: `test ! -e pipeline/dnallmmark_pipeline.py` → absent; `grep -rn dnallmmark_pipeline pipeline/ script/ tests/ Makefile schemas/` → 0 lines; archives untouched since prior pass (covered-set audit shows no `.planning/milestones/` churn); re-pinned contracts green in the 953 run |
 | 13 | flops_report.json v1 schema published, strictly additive over legacy writer keys, schema_version const 1, optional hardware (D-27/D-02/D-03/D-05) | ✓ VERIFIED | `schemas/flops_report.json` byte-unchanged since prior pass (which proved additivity by direct diff vs the legacy writer and validated the real GB10 report 0-errors); CR-01 zero-token guard confirmed in `save_to_json` (flops_counter.py — unchanged); round-trip test green in the 953 run |
-| 14 | `make lint` + `make typecheck` cover the changed files; full test lane green; zero GPU/dnallm in any gate (SC5) | ✓ VERIFIED | **Re-executed on the current tree (HEAD `b69d07b`):** `make lint` exit 0 — the ruff expansion observed listing `pipeline/flops_counter.py pipeline/registry_loader.py pipeline/artifact_loader.py` (PHASE7_MODULES intact) with Phase 8/9 `tui/` files appended; `make typecheck` exit 0 (`--group dev --group tui ty check`); `make test-fast` **953 passed / 1 deselected / 0 failed** in 163s (includes all six Phase 7 test files plus the 9 new registry tests). Makefile byte-unchanged since the prior pass verified it; pyproject's only change (jsonschema in `[tui]`) touches no gate lane used by Phase 7. Lanes remain GPU-free and dnallm-free |
+| 14 | `make lint` + `make typecheck` cover the changed files; full test lane green; zero GPU/dnllm in any gate (SC5) | ✓ VERIFIED | **Re-executed on the current tree (HEAD `b69d07b`):** `make lint` exit 0 — the ruff expansion observed listing `pipeline/flops_counter.py pipeline/registry_loader.py pipeline/artifact_loader.py` (PHASE7_MODULES intact) with Phase 8/9 `tui/` files appended; `make typecheck` exit 0 (`--group dev --group tui ty check`); `make test-fast` **953 passed / 1 deselected / 0 failed** in 163s (includes all six Phase 7 test files plus the 9 new registry tests). Makefile byte-unchanged since the prior pass verified it; pyproject's only change (jsonschema in `[tui]`) touches no gate lane used by Phase 7. Lanes remain GPU-free and dnallm-free |
 
 **Score:** 14/14 truths verified (0 present, behavior-unverified)
 
@@ -169,7 +223,7 @@ All five Phase 7 test files green within this verifier's 953-passed fast-lane ru
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
-|------|------|---------|----------|--------|
+|------|------|---------|----------|---------|
 | (none) | - | Zero TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER markers across both changed files (re-scanned this pass); prior pass's clean scan of the other 17 covered files stands (byte-unchanged) | - | - |
 
 **Warnings (non-blocking, carried forward from the prior pass — re-checked against the current tree):**
@@ -198,5 +252,5 @@ No gaps. The stale fingerprint was diagnosed (registry_loader.py + test_registry
 
 ---
 
-_Verified: 2026-10-12T11:51:07Z_
+_Verified: 2026-10-13T09:26:11Z (stale refresh at HEAD 8b92766; prior pass 2026-10-12T11:51:07Z)_
 _Verifier: Claude (gsd-verifier)_
