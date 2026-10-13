@@ -779,6 +779,7 @@ class MonitorScreen(Screen):
         self._root_stats: dict[str, Any] = {}
         self._scales: dict[str, tuple[int, int, int] | None] = {}
         self._cell_rows: dict[str, Any] = {}
+        self._ever_discovered: set[str] = set()
         self._resume_count = 0
         self._last_stats: Any = None
         # the attached sweep (None = the cells region's empty state)
@@ -867,17 +868,21 @@ class MonitorScreen(Screen):
     def _run_full_scan(self, run_id: int) -> None:
         """The full scan + the per-running-root stats + the attached
         rows — all off the event loop (T-11-07-01/04)."""
-        result = self._service.full_scan(self._watermarks or None)
-        root_stats: dict[str, Any] = {}
-        for summary in result.sweeps:
-            if summary.state == SWEEP_RUNNING:
-                root_stats[str(summary.root)] = self._stats_of(
-                    str(summary.root))
-        cells: Any = ()
-        resume = 0
-        if self._attached_root is not None:
-            cells = self._service.cells_view(self._attached_root)
-            resume = self._service.resume_count(self._attached_root)
+        try:
+            result = self._service.full_scan(self._watermarks or None)
+            root_stats: dict[str, Any] = {}
+            for summary in result.sweeps:
+                if summary.state == SWEEP_RUNNING:
+                    root_stats[str(summary.root)] = self._stats_of(
+                        str(summary.root))
+            cells: Any = ()
+            resume = 0
+            if self._attached_root is not None:
+                cells = self._service.cells_view(self._attached_root)
+                resume = self._service.resume_count(self._attached_root)
+        except Exception:  # noqa: BLE001 — the tolerant-reader promise:
+            # the previous render stands (last-known-good), never a crash
+            return
         self.post_message(self.FullScanned(
             result, root_stats, cells, resume, run_id))
 
@@ -902,8 +907,11 @@ class MonitorScreen(Screen):
     def _run_frontier(self, root: str, run_id: int) -> None:
         """The light 2s pass + the stats refresh (elapsed accrues
         continuously, D-17) — off the event loop."""
-        snapshot = self._service.frontier_scan(root)
-        stats = self._stats_of(root)
+        try:
+            snapshot = self._service.frontier_scan(root)
+            stats = self._stats_of(root)
+        except Exception:  # noqa: BLE001 — same tolerant promise
+            return
         self.post_message(self.FrontierScanned(snapshot, stats, run_id))
 
     # ===== message handlers (event-loop side: render only) =====
@@ -924,14 +932,19 @@ class MonitorScreen(Screen):
                         if self._attached_root is not None else None)
         discovered_roots = {
             str(summary.root) for summary in message.result.sweeps}
-        if attached_key is not None and attached_key not in (
-                discovered_roots | set(self._manual_roots_seen())):
+        self._ever_discovered |= discovered_roots
+        if (attached_key is not None
+                and attached_key in self._ever_discovered
+                and attached_key not in discovered_roots):
             # the attached root vanished from the scan (deleted mid-
-            # monitor): degrade honestly — no stale marker, no crash
+            # monitor): degrade honestly — no stale marker, no crash.
+            # A root the scan has NEVER listed survives (a just-attached
+            # manual root awaits its first discovery pass).
             self._attached_root = None
             self._last_stats = None
             self._cell_rows = {}
             self._resume_count = 0
+            self._ever_discovered.discard(attached_key)
         elif attached_key is not None:
             self._cell_rows = self._merge_cell_rows(
                 self._cell_rows, message.cells)
@@ -946,13 +959,6 @@ class MonitorScreen(Screen):
             self._pending_rescan = False
             self.app.notify(MON_RESCAN_TOAST.format(
                 n=len(message.result.sweeps)))
-
-    def _manual_roots_seen(self) -> "list[str]":
-        """Roots attached via [a] that the scan may legitimately not
-        list YET (the next full pass picks up a just-added manual root);
-        the attached root survives one scan without being discovered."""
-        return ([str(self._attached_root)]
-                if self._attached_root is not None else [])
 
     def on_monitor_screen_frontier_scanned(
             self, message: FrontierScanned) -> None:

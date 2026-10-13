@@ -166,8 +166,20 @@ class FakeMonitorService:
 
     # ----- the scan surface -----
 
+    #: optional degradation hooks (Task 3): a gate the scan waits on
+    #: (the responsiveness proof) and a one-shot throw (the corrupt
+    #: tree beyond the loader's tolerance).
+    full_scan_gate = None
+    full_scan_throws = False
+
     def full_scan(self, prev_watermarks=None):
         self.full_calls.append(dict(prev_watermarks or {}))
+        if self.full_scan_throws:
+            self.full_scan_throws = False
+            raise RuntimeError("damaged artifact tree")
+        gate = self.full_scan_gate
+        if gate is not None:
+            gate.wait(timeout=5.0)   # bounded: a bug never hangs the lane
         if self._scans:
             self._last_scan = self._scans.pop(0)
         return getattr(self, "_last_scan",
@@ -1210,3 +1222,179 @@ async def test_long_keys_backstop_both_tables():
         assert isinstance(app.screen, CellDetailModal)
         assert long_model in str(
             app.screen.query_one("#mon-celldetail-box").border_title)
+
+
+# =====================================================================
+# Task 3 — the degradation sweep (T-11-07-02) + responsiveness (04)
+# =====================================================================
+
+async def test_degradation_corrupt_record_renders_last_known_good():
+    """A service that THROWS mid-scan (the damaged-tree edge beyond the
+    loader's tolerance): the previous render stands, the console never
+    crashes (T-11-07-02)."""
+    monitor = FakeMonitorService(
+        scans=[_three_state_scan(), _three_state_scan()])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        table = app.screen.query_one("#mon-discovered", DataTable)
+        assert table.row_count == 3, "the healthy first render landed"
+        # a throwing full scan: the worker absorbs it; the rows stand
+        monitor.full_scan_throws = True
+        app.screen._tick_full()
+        await _settle(pilot, app)
+        assert isinstance(app.screen, MonitorScreen), (
+            "a throwing scan never crashes the console"
+        )
+        assert app.screen.query_one(
+            "#mon-discovered", DataTable).row_count == 3, (
+            "the last-known-good render stands")
+
+
+async def test_degradation_manifest_mid_write_stays_running():
+    """A manifest missing mid-write: the running rules hold (no
+    finished flip, unknown total) — the finished state requires the
+    COMPLETE manifest."""
+    monitor = FakeMonitorService(scans=[ScanResult(sweeps=(
+        _summary("finetuned", SWEEP_RUNNING, done=2),
+    ), watermarks={})] * 3)
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        table = app.screen.query_one("#mon-discovered", DataTable)
+        assert _table_text(table, "/scans/finetuned",
+                           "state") == MON_STATE_RUNNING_SWEEP
+        assert _table_text(table, "/scans/finetuned",
+                           "progress") == MON_TOTAL_UNKNOWN
+        app.screen._tick_full()
+        await _settle(pilot, app)
+        assert _table_text(table, "/scans/finetuned",
+                           "state") == MON_STATE_RUNNING_SWEEP, (
+            "no manifest means no finished flip — the running rules hold"
+        )
+
+
+async def test_degradation_artifacts_only_never_running_glyph():
+    """The prior-artifacts root renders the third state with the
+    unknown total — never a fabricated running glyph or fraction."""
+    monitor = FakeMonitorService(scans=[ScanResult(sweeps=(
+        _summary("seed-9527-artifacts", SWEEP_ARTIFACTS_ONLY, done=5),
+    ), watermarks={})] * 2)
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        table = app.screen.query_one("#mon-discovered", DataTable)
+        state = _table_text(table, "/scans/seed-9527-artifacts", "state")
+        assert state == MON_STATE_ARTIFACTS_SWEEP
+        assert "●" not in state, "artifacts-only never renders running"
+        assert _table_text(table, "/scans/seed-9527-artifacts",
+                           "progress") == MON_TOTAL_UNKNOWN
+
+
+async def test_degradation_attached_root_deleted_mid_monitor():
+    """The attached root deleted mid-monitor: the scan skips it, the
+    discovered row drops, the cell region returns to its empty state —
+    no crash, no stale marker."""
+    with_root = ScanResult(sweeps=(
+        _summary("finetuned", SWEEP_RUNNING, done=1, total=4),
+        _summary("other", SWEEP_FINISHED, done=2, total=2),
+    ), watermarks={})
+    monitor = FakeMonitorService(
+        scans=[with_root, with_root])   # mount scan + the attach re-scan
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        assert screen._attached_root is not None
+        discovered = screen.query_one("#mon-discovered", DataTable)
+        assert discovered.row_count == 2
+        assert _table_text(discovered, "/scans/finetuned",
+                           "state").startswith("◆")
+
+        monitor._scans.append(ScanResult(sweeps=(
+            _summary("other", SWEEP_FINISHED, done=2, total=2),
+        ), watermarks={}))
+        screen._tick_full()   # THIS scan drops the deleted root
+        await _settle(pilot, app)
+        assert isinstance(app.screen, MonitorScreen), "no crash"
+        assert discovered.row_count == 1, "the deleted root's row dropped"
+        assert screen._attached_root is None, "no stale attach"
+        cells = screen.query_one("#mon-cells", DataTable)
+        assert _table_text(cells, "__empty__", "model") == MON_CELLS_EMPTY
+        assert _label_text(screen, "#mon-stats-line") == ""
+        assert not _table_text(discovered, "/scans/other",
+                               "state").startswith("◆"), (
+            "no stale marker after the detach"
+        )
+
+
+async def test_degradation_min_size_guard_round_trip_with_open_modal():
+    """An open monitor modal survives the below-min round trip (the
+    app-level guard owns the behavior; the screen must not fight it)."""
+    from tui.app import MinSizeScreen
+    from tui.screens.monitor import FailuresModal
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_FAILED}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=2, elapsed=60.0, eta=_eta(ETA_NONE))},
+        failures={"/scans/finetuned": (
+            FailureRow(model="model-a", task="task-1", seed=42,
+                       error="boom", output_dir="/x"),)},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen), (
+            "below the minimum grid the guard is the whole surface"
+        )
+        await pilot.resize_terminal(120, 40)
+        await pilot.pause()
+        assert isinstance(app.screen, FailuresModal), (
+            "the open modal survives the round trip beneath the guard"
+        )
+
+
+async def test_console_stays_responsive_while_scan_blocks():
+    """T-11-07-04: while a fake full scan BLOCKS on a threading.Event,
+    pilot presses still reach the app (a modal opens) — the console
+    never freezes because every tick dispatches a worker."""
+    import threading
+
+    gate = threading.Event()
+    monitor = FakeMonitorService(scans=[_three_state_scan()])
+    monitor.full_scan_gate = gate
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        # arm the block, then dispatch a full scan that will hang
+        monitor.full_scan_gate = threading.Event()
+        app.screen._tick_full()
+        await pilot.pause()
+        await pilot.pause()
+        # the press still lands (a toast-capable action opens chrome)
+        await pilot.press("a")
+        await pilot.pause()
+        from tui.screens.selection import PathInputModal
+
+        assert isinstance(app.screen, PathInputModal), (
+            "the console stays responsive while the scan worker blocks"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+        monitor.full_scan_gate.set()   # release; the worker completes
+        await _settle(pilot, app)
+        assert isinstance(app.screen, MonitorScreen)

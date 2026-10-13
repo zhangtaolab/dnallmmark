@@ -350,7 +350,71 @@ class _QueueDriverFake:
         raise AssertionError("the run-config tests never run queue tasks")
 
 
-def _app(run_service=None, launcher=None):
+class _MonitorShellFake:
+    """The minimal monitor-service fake (11-07): the launched root
+    discovered running with a known plan + stats (the D-13 lane)."""
+
+    def __init__(self, root="/repo/finetuned", done=1, total=3):
+        self.root = root
+        self._done = done
+        self._total = total
+
+    def full_scan(self, prev_watermarks=None):
+        from pathlib import Path
+
+        from tui.services.sweep_monitor import (
+            SWEEP_RUNNING,
+            ScanResult,
+            SweepSummary,
+        )
+        return ScanResult(sweeps=(
+            SweepSummary(root=Path(self.root), state=SWEEP_RUNNING,
+                         done=self._done, total=self._total,
+                         newest_mtime=None),), watermarks={})
+
+    def frontier_scan(self, root):
+        from pathlib import Path
+
+        from tui.services.sweep_monitor import (
+            FrontierSnapshot,
+        )
+        return FrontierSnapshot(
+            root=Path(str(root)), state="running", newest_mtime=None,
+            newest_cell=None, cell_states={})
+
+    def cells_view(self, root):
+        return ()
+
+    def stats(self, root, expected_total=None, fallback_start=None):
+        from tui.services.sweep_monitor import EtaEstimate, SweepStats
+
+        return SweepStats(
+            done=self._done, total=self._total, current=None,
+            elapsed_seconds=None, eta=EtaEstimate("none", None, None, None))
+
+    def sweep_scale(self, root):
+        return None
+
+    def resume_count(self, root):
+        return 0
+
+    def failures_view(self, root):
+        return ()
+
+    def cell_record(self, root, model, task, seed):
+        return None
+
+    def read_log_tail(self, path, max_lines=200, max_bytes=65536):
+        return None
+
+    def is_sweep_root(self, path):
+        return False
+
+    def add_manual_root(self, path):
+        return False
+
+
+def _app(run_service=None, launcher=None, monitor=None):
     """The real app over the fake services (constructor injection)."""
     return DnallmMarkTui(
         env_check_service=_EnvCacheHitFake(),
@@ -359,6 +423,10 @@ def _app(run_service=None, launcher=None):
         run_config_service=(run_service if run_service is not None
                             else FakeRunConfigService()),
         launcher_service=(launcher if launcher is not None
+                          else FakeLauncherService()),
+        monitor_service=(monitor if monitor is not None
+                         else _MonitorShellFake()),
+        monitor_launcher=(launcher if launcher is not None
                           else FakeLauncherService()),
     )
 
@@ -1222,3 +1290,61 @@ def test_run_config_module_carries_zero_chinese_literals():
         "Chinese literals must live in tui/strings.py only "
         f"({len(offenders)} found in {_RUN_CONFIG_MODULE_FILE.name})"
     )
+
+
+# =====================================================================
+# Task 3 — the D-13 launch -> auto-nav integration (11-07)
+# =====================================================================
+
+async def test_launch_success_auto_navigates_to_monitor_attached():
+    """D-13: a confirmed launch fires the toast, then auto-navigates to
+    the monitor screen with the new sweep attached and the expected
+    total threaded; a q press then opens the ExitModal (live sweep)."""
+    from tui.app import ExitModal
+    from tui.screens.monitor import MonitorScreen
+    from tui.strings import LNC_EXIT_MESSAGE
+
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(
+        summary=GateSummary(
+            models=1, tasks=1, seeds=3, cells=3, output_root="./finetuned",
+            is_e2x=False, expected_phrase="finetuned"),
+        live=("/repo/finetuned",))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")   # the gate
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.selection import ConfirmModal
+
+        assert isinstance(app.screen, ConfirmModal)
+        await pilot.press("enter")   # confirm the launch
+        await _settle(pilot, app, rounds=4)
+
+        # the D-13 proof: the ACTIVE screen is the monitor, attached
+        assert isinstance(app.screen, MonitorScreen), (
+            "a successful launch auto-navigates to the monitor screen"
+        )
+        screen = app.screen
+        assert screen._attached_root is not None
+        assert screen._attached_root.name == "finetuned"
+        assert screen._expected_totals.get("/repo/finetuned") == 3, (
+            "the launch plan threads the expected total (the 11-04 seam)"
+        )
+        assert screen._fallback_starts.get("/repo/finetuned") is not None
+
+        # the q intercept: a live sweep present via the fake launcher
+        await pilot.press("q")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, ExitModal), (
+            "q with a live sweep opens the ExitModal, never quits"
+        )
+        message = str(app.screen._message)
+        assert LNC_EXIT_MESSAGE.format(
+            done="1", total="3", root="finetuned") in message, (
+            f"the live counts thread from the monitor (is {message!r})"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, MonitorScreen)
