@@ -6,16 +6,16 @@ current_phase: 11
 current_phase_name: Run Config, Launch Gates & Single-GPU Monitoring
 current_plan: 7
 status: executing
-stopped_at: Completed 11-06-PLAN.md
-last_updated: "2026-10-13T05:04:09.371Z"
+stopped_at: "Completed 11-07-PLAN.md (phase 11: 7/7 — ready_for_verification)"
+last_updated: "2026-10-13T06:05:13.880Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 complete, transitioned to Phase 11
-state_head: 67d12748e7d803bc8156ac5c6f5bee24f9f08942
+state_head: 3ddc10fca4cb7938d94586bf487319dcb3a1d2b3
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 32
-  completed_plans: 31
+  completed_plans: 32
   percent: 67
 ---
 
@@ -91,6 +91,7 @@ Progress (v1.2): [██████░░░░] 67% (4/6 phases; 30/32 planned
 | Phase 11 P02 | 36min | 3 tasks | 2 files |
 | Phase 11 P03 | 26min | 3 tasks | 2 files |
 | Phase 11 P06 | 49min | 3 tasks | 7 files |
+| Phase 11 P07 | 62min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -198,6 +199,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 11]: 11-03: LNC-02/LNC-03/MON-04 left Pending despite the service tier landing — each requirement text names screen-visible surface (exit prompt / typed-phrase modal / on-screen RichLog tail) landing in 11-06/11-07 (the 11-01 revert discipline)
 - [Phase 11]: Slot-4 enter opens the launch gate (the enter-key pin wins the plan's internal detail-on-enter conflict); full keys inspectable via the [p] verbatim argv
 - [Phase 11]: 8.2.8 widget seams probe-pinned: private _on_* handlers MRO-double-fire on override+super; unprefixed widget-binding actions fall through to the screen's same-key binding; native disabled= SelectionList rows are cursor-unreachable — all worked around at the action layer
+- [Phase 11]: NAV_PLACEHOLDER_* retained with zero-consumers annotation (11-07 executor's choice): deletion touches strings.py + 4 test files for zero behavior change
+- [Phase 11]: build_monitor_screen returns ONE cached instance — attach state + D-13 launch injections survive navigation (unlike the rebuild-per-nav factories)
+- [Phase 11]: Monitor cadence = set_interval ticks that only dispatch exclusive mon-frontier/mon-full workers with run-id-tagged messages; tolerant wrappers render last-known-good when a service throws beyond the loader's tolerance
 
 ### Pending Todos
 
@@ -221,8 +225,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T05:04:09.316Z
-Stopped at: Completed 11-06-PLAN.md
+Last session: 2026-10-13T06:05:04.695Z
+Stopped at: Completed 11-07-PLAN.md (phase 11: 7/7 — ready_for_verification)
 Resume file: None
 
 ## Operator Next Steps
