@@ -50,10 +50,10 @@
 ### Monitoring (监控)
 
 - [x] **MON-01**: poll-and-attach 看板：cell 级状态（排队/运行/完成/失败/跳过，种子相邻），2s 前沿扫描 + 60s 全扫，容错 artifact-loader（部分写跳拍）
-- [ ] **MON-02**: 进度统计：完成/总数、当前 cell、耗时；对外部（CLI）启动的 sweep 同样可附加监控
-- [ ] **MON-03**: 失败清单实时显示 + 一键 `--from-failures` 重跑（确认门）
+- [x] **MON-02**: 进度统计：完成/总数、当前 cell、耗时；对外部（CLI）启动的 sweep 同样可附加监控
+- [x] **MON-03**: 失败清单实时显示 + 一键 `--from-failures` 重跑（确认门）
 - [ ] **MON-04**: 日志尾部跟随（RichLog 有界视图）+ **tee 落盘持久化**（~/.config/dnallmmark/logs/ 或任务输出目录）
-- [ ] **MON-05**: 断点续跑状态识别（trainer_state.json 标记）
+- [x] **MON-05**: 断点续跑状态识别（trainer_state.json 标记）
 
 ### Pipeline-side (管线侧配套)
 
@@ -115,10 +115,10 @@
 | LNC-02 | Phase 11 | Pending |
 | LNC-03 | Phase 11 | Pending |
 | MON-01 | Phase 11 | Complete |
-| MON-02 | Phase 11 | Pending |
-| MON-03 | Phase 11 | Pending |
+| MON-02 | Phase 11 | Complete |
+| MON-03 | Phase 11 | Complete |
 | MON-04 | Phase 11 | Pending |
-| MON-05 | Phase 11 | Pending |
+| MON-05 | Phase 11 | Complete |
 | PIPE-01 | Phase 7 | Complete |
 | PIPE-02 | Phase 7 | Complete |
 | PIPE-03 | Phase 7 | Complete |
