@@ -84,6 +84,7 @@ Dependencies: stdlib + ``run_sweep`` (same-source) + the sibling
 """
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -645,3 +646,295 @@ def resolve_dirs(spec):
             if spec.cache_dir else None
         ),
     )
+
+
+# =====================================================================
+# PROBE_INELIGIBLE — read-source extraction (Pitfall 7)
+# =====================================================================
+
+#: The frozen list's assignment shape in pipeline/run_finetune.py
+#: (non-greedy to the closing bracket; the file's inline comments
+#: carry no ']' — the parity test alarms on any drift).
+_PROBE_INELIGIBLE_RE = re.compile(r"PROBE_INELIGIBLE\s*=\s*\[(.*?)\]", re.S)
+
+#: String literals inside the brackets (single-line; the frozen names
+#: carry no embedded quotes).
+_STRING_LITERAL_RE = re.compile(r'"([^"\n]+)"')
+
+
+def load_probe_ineligible(source_text):
+    """Extract the frozen ``PROBE_INELIGIBLE`` names from source text.
+
+    ``pipeline/run_finetune.py`` imports torch at module top, so the
+    list is UNIMPORTABLE CPU-side — it is read as SOURCE TEXT (the
+    tests/test_run_finetune_contracts.py read-source-never-import
+    pattern). The names are never duplicated anywhere else; the tier-1
+    parity test against the real file is the single drift alarm.
+
+    Args:
+        source_text (str): the pipeline module's text.
+
+    Returns:
+        frozenset[str]: the frozen names (9 today).
+
+    Raises:
+        ValueError: the literal is absent from the text.
+    """
+    match = _PROBE_INELIGIBLE_RE.search(source_text)
+    if match is None:
+        raise ValueError(
+            "PROBE_INELIGIBLE literal not found in source text")
+    return frozenset(_STRING_LITERAL_RE.findall(match.group(1)))
+
+
+def probe_ineligible():
+    """The frozen probe-ineligible names from the REAL pipeline
+    source (``pipeline/run_finetune.py`` read as text).
+
+    Returns:
+        frozenset[str]: the frozen names.
+    """
+    return load_probe_ineligible(
+        RUN_FINETUNE_SOURCE.read_text(encoding="utf-8"))
+
+
+# =====================================================================
+# Same-source preview (CFG-03 / D-05)
+# =====================================================================
+
+
+@dataclass(frozen=True)
+class PreviewResult:
+    """One dry-run preview — the imported enumeration VERBATIM plus
+    its counts and the composition problems (pure data; the screen
+    renders, never recomputes).
+
+    Attributes:
+        models_count: distinct model identities in the cells (ALIAS
+            names under peft/variant — what will run; an unknown
+            selection name intersects to zero here, honestly).
+        tasks_count: distinct tasks in the cells.
+        seeds_count: distinct seeds in the cells.
+        fractions_count: the curve-lane fraction count, or None when
+            the lane is off (an axis-mode property of the spec, not of
+            the possibly-empty intersection).
+        cells_count: total enumerated cells.
+        cells: the ``run_sweep.enumerate_matrix`` tuples VERBATIM —
+            (model, task, seed) triples, (model, task, seed, fraction)
+            quadruples under curve fractions.
+        problems: the Task-1 composition problems (empty selection /
+            variant x peft / probe-ineligible), machine tuples.
+    """
+
+    models_count: int
+    tasks_count: int
+    seeds_count: int
+    fractions_count: int | None
+    cells_count: int
+    cells: tuple
+    problems: tuple[tuple[str, object], ...]
+
+
+def preview(spec, registry_dir=None):
+    """The same-source dry-run preview (D-05: the imported
+    enumeration, never a re-implementation).
+
+    The enumeration goes through ``run_sweep.enumerate_matrix`` with
+    the spec's alias params (peft / config_variant / fractions) — the
+    exact code path execution uses; alias cells appear as the
+    enumeration emits them. The composition problems are validated
+    over the REAL frozen probe-ineligible names.
+
+    Args:
+        spec (RunSpec): the composed spec.
+        registry_dir: the registry dir for the enumeration; None
+            resolves the committed ``pipeline/`` default.
+
+    Returns:
+        PreviewResult: counts + verbatim cells + problems.
+    """
+    if registry_dir is None:
+        registry_dir = DEFAULT_REGISTRY_DIR
+    if not spec.models or not spec.tasks:
+        # run_sweep's filters are FALSY-semantics (None = no filter;
+        # ``enumerate_matrix`` treats an empty list the same way), so
+        # an empty selection fed straight in would silently enumerate
+        # the FULL registry matrix — the WR-07 hazard the driver
+        # refuses at its own start. The preview guards the same edge:
+        # an empty selection previews ZERO cells and the
+        # empty_selection problem says why.
+        cells: tuple = ()
+    else:
+        cells = tuple(run_sweep.enumerate_matrix(
+            list(spec.models), list(spec.tasks), list(spec.seeds),
+            registry_dir,
+            peft=spec.peft,
+            fractions=list(spec.curve_fractions) or None,
+            config_variant=spec.config_variant,
+        ))
+    return PreviewResult(
+        models_count=len({cell[0] for cell in cells}),
+        tasks_count=len({cell[1] for cell in cells}),
+        seeds_count=len({cell[2] for cell in cells}),
+        fractions_count=(
+            len(spec.curve_fractions) if spec.curve_fractions else None),
+        cells_count=len(cells),
+        cells=cells,
+        problems=validate_composition(spec, probe_ineligible()),
+    )
+
+
+# =====================================================================
+# Official-only key sets (D-02 — the E2' authorization reference)
+# =====================================================================
+
+#: The official registry file names (direct json.load targets —
+#: NEVER through ``registry_loader``, whose overlay view merges
+#: custom entries into the enumeration; comparing against the merged
+#: view would under-gate: Pitfall 5 / T-11-02-01).
+MODELS_INFO_NAME = "models_info.json"
+DATASETS_INFO_NAME = "datasets_info.json"
+
+
+@dataclass(frozen=True)
+class OfficialKeys:
+    """The official-only key sets — the E2' predicate's reference.
+
+    Attributes:
+        models: every ``models_info.json`` key (the full official
+            model registry).
+        tasks: every ``datasets_info.json`` key with truthy ``Train``
+            (the full official TRAINABLE task set — the only tasks the
+            matrix can ever run).
+        diagnostic: None when both files loaded; otherwise a message
+            naming the unreadable/shape-invalid path(s). A diagnostic
+            ALWAYS pairs with EMPTY sets — fail-closed: the gate
+            blocks on the diagnostic instead of comparing against
+            silently-empty sets (T-11-02-02).
+    """
+
+    models: frozenset[str]
+    tasks: frozenset[str]
+    diagnostic: str | None
+
+
+def _load_official_doc(path):
+    """Direct-load one official registry file; None when unreadable or
+    shape-invalid (not a dict). Overlay state is structurally
+    invisible here — plain ``json.load`` never consults the custom
+    overlay dir or its env var."""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            doc = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(doc, dict):
+        return None
+    return doc
+
+
+def official_keys(registry_dir=None):
+    """Load the official-only key sets (overlay-free, Pitfall 5).
+
+    Args:
+        registry_dir: the dir holding the two official registry
+            files; None resolves the committed ``pipeline/`` default.
+
+    Returns:
+        OfficialKeys: the key sets with a None diagnostic, or EMPTY
+        sets plus a diagnostic naming every unreadable/shape-invalid
+        path (fail-closed).
+    """
+    registry_dir = Path(
+        DEFAULT_REGISTRY_DIR if registry_dir is None else registry_dir)
+    models_doc = _load_official_doc(registry_dir / MODELS_INFO_NAME)
+    tasks_doc = _load_official_doc(registry_dir / DATASETS_INFO_NAME)
+    diagnostics = []
+    if models_doc is None:
+        diagnostics.append(
+            f"unreadable or shape-invalid: "
+            f"{registry_dir / MODELS_INFO_NAME}")
+    if tasks_doc is None:
+        diagnostics.append(
+            f"unreadable or shape-invalid: "
+            f"{registry_dir / DATASETS_INFO_NAME}")
+    if diagnostics:
+        return OfficialKeys(frozenset(), frozenset(), "; ".join(diagnostics))
+    tasks = frozenset(
+        key for key, entry in tasks_doc.items()
+        if isinstance(entry, dict) and entry.get("Train")
+    )
+    return OfficialKeys(frozenset(models_doc), tasks, None)
+
+
+# =====================================================================
+# The E2' verdict + the typed phrase (D-02 / D-07)
+# =====================================================================
+
+#: The three-seed authorization boundary (D-02: 62 x 50 x 3).
+E2X_MIN_SEEDS = 3
+
+
+def is_full_e2x(spec, official):
+    """The E2' verdict: does this spec contain the FULL official
+    re-run (D-02)?
+
+    Predicate: BASE model names superset the official models AND
+    tasks superset the official trainable tasks AND at least three
+    seeds. Aliases strip to base via ``run_sweep.base_model_name``
+    (the same-source strip). SUPerset, not equality (O4): a
+    custom+full mix still escalates to the typed gate — the run
+    contains the full re-run, and under-gating is the hazard.
+
+    Fail-closed: a diagnostic-bearing ``official`` NEVER returns True
+    — empty official sets must not satisfy the superset predicate by
+    vacuity; the caller surfaces the diagnostic as a problem and the
+    gate blocks (T-11-02-02).
+
+    Args:
+        spec (RunSpec): the composed spec.
+        official (OfficialKeys): the official-only key sets.
+
+    Returns:
+        bool: True only when the spec is a full official run with
+        >= 3 seeds over a cleanly-loaded official reference.
+    """
+    if official.diagnostic is not None:
+        return False
+    bases = {
+        run_sweep.base_model_name(model, spec.peft, spec.config_variant)
+        for model in spec.models
+    }
+    return (bases >= official.models
+            and set(spec.tasks) >= official.tasks
+            and len(spec.seeds) >= E2X_MIN_SEEDS)
+
+
+def expected_phrase(output_root):
+    """The phrase the operator must type: the resolved output root's
+    final path component (D-02).
+
+    Args:
+        output_root (str | Path): the output root as configured.
+
+    Returns:
+        str: the basename of its resolved absolute path.
+    """
+    return Path(output_root).resolve().name
+
+
+def phrase_matches(typed, output_root):
+    """The typed-phrase check — EXACT string equality (D-07).
+
+    No stripping, no case folding, no prefix acceptance: the check
+    lives in this service tier so no widget path can normalize its
+    way past it. 11-03's launcher re-proves it before spawn.
+
+    Args:
+        typed (str): what the operator typed.
+        output_root (str | Path): the configured output root.
+
+    Returns:
+        bool: True only on the exact expected phrase.
+    """
+    return typed == expected_phrase(output_root)
