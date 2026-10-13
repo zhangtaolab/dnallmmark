@@ -670,6 +670,24 @@ async def test_params_defaults_render():
         assert _label_text(screen, "#cfg-label-variant") == CFG_FIELD_VARIANT
 
 
+async def test_params_input_values_render_in_export():
+    """The params Input VALUES are visible in the rendered output (the
+    11-UAT empty-bar phenomenon): export_screenshot() must carry the
+    seeds value and the dirs defaults as text — a height-1 row clipping
+    a default (bordered, height-3) Input shows only its top border and
+    silently hides the value the operator typed/set."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await _settle(pilot, app)
+        svg = app.export_screenshot()
+        assert "42,43,44" in svg, (
+            "the seeds value must render on the params row (the 11-UAT "
+            "empty-bar bug: the Input's value row is clipped away)")
+        assert "./finetuned" in svg
+        assert "./datasets" in svg
+
+
 async def test_params_labels_shorten_at_80_columns():
     """The 80-col degradations: eff_batch_size + the short dirs title."""
     app = _app()
