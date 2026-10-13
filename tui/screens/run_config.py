@@ -577,7 +577,43 @@ class ChoiceRow(Static, can_focus=True):
 # =====================================================================
 
 
-class PreviewModal(ModalScreen):
+class _PickerReturnModal(ModalScreen):
+    """Slot-4 modal base: dismiss returns focus to ``#cfg-picker``.
+
+    Delta B (Phase 12, 12-03; 11-UAT advisory #1 — rules B1/B4):
+    Textual restores the PRE-MODAL focused widget on modal pop, and the
+    gate pipeline pushes its modals from async worker messages — so the
+    operator can legitimately be typing in a params Input when the
+    modal lands, and the restored focus is that Input: digits 1-6 then
+    get eaten by the Input and navigation deadlocks (recovery was
+    restart). ONE shared hook at dismiss time covers every path — the
+    escape bindings all route through ``Screen.action_dismiss`` ->
+    ``self.dismiss()`` and the explicit ``dismiss()`` call sites inherit
+    it (probe-verified mechanics, textual 8.2.8; the screen below is
+    captured BEFORE ``super().dismiss()`` because 8.2.8's ``pop_screen``
+    pops the stack synchronously). The filter Input's Enter path
+    (``run_config.py``:1389) is the precedent — this is that behavior
+    at the modal boundary.
+    """
+
+    def dismiss(self, result: "Any | None" = None):
+        # delta B: capture the screen below FIRST — super().dismiss()
+        # pops it from the stack synchronously (textual 8.2.8).
+        screen_stack = self.app.screen_stack
+        below = (screen_stack[-2]
+                 if len(screen_stack) > 1 and screen_stack[-1] is self
+                 else None)
+        awaitable = super().dismiss(result)
+        if below is not None:
+            try:
+                picker = below.query_one("#cfg-picker", PickerList)
+                picker.call_after_refresh(picker.focus)
+            except Exception:  # noqa: BLE001 — wrong screen below (never slot 4): plain pop
+                pass
+        return awaitable
+
+
+class PreviewModal(_PickerReturnModal):
     """The [p] dry-run preview modal: summary + same-source note + the LIST
     argv VERBATIM + the numbered problems (data, never restated)."""
 
@@ -602,7 +638,7 @@ class PreviewModal(ModalScreen):
             log.write(line)
 
 
-class ProblemsModal(ModalScreen):
+class ProblemsModal(_PickerReturnModal):
     """The gate's numbered-problems refusal — launch blocked, nothing
     else opens (LNC-01; the problems are the service's machine list
     rendered through the copy mapping)."""
@@ -628,7 +664,7 @@ class ProblemsModal(ModalScreen):
             log.write(line)
 
 
-class EnvBlockModal(ModalScreen):
+class EnvBlockModal(_PickerReturnModal):
     """The env-block refusal (D-08): the failing kernel names, the
     reasons VERBATIM in a bounded RichLog, and the [1] route hint."""
 
@@ -659,7 +695,7 @@ class EnvBlockModal(ModalScreen):
             log.write(line)
 
 
-class E2PhraseModal(ModalScreen):
+class E2PhraseModal(_PickerReturnModal):
     """The E2' typed-phrase escalation (D-02/D-07/LNC-03).
 
     The live mismatch/match indicator flips per keystroke through the
@@ -727,7 +763,7 @@ class E2PhraseModal(ModalScreen):
         self._on_confirm(input_widget.value)
 
 
-class ChoiceModal(ModalScreen):
+class ChoiceModal(_PickerReturnModal):
     """The RadioSet choice modal (PEFT / variant — the preset-modal family:
     the first toggle applies the choice and closes)."""
 
@@ -761,6 +797,13 @@ class ChoiceModal(ModalScreen):
         value = str(event.pressed.id or "")
         self.dismiss()
         self._on_pick(value)
+
+
+class _GateConfirmModal(_PickerReturnModal, ConfirmModal):
+    """The launch gate's confirm over the shared slot-4 base (delta B,
+    B4's one-shared-helper ruling): ``selection.py``'s ``ConfirmModal``
+    stays byte-identical for its other consumers — the local subclass
+    ONLY adds the picker-return dismiss for this screen's push site."""
 
 
 # =====================================================================
@@ -1618,7 +1661,7 @@ class RunConfigScreen(Screen):
                 on_confirm=lambda phrase: self._launch(phrase),
             ))
         else:
-            self.app.push_screen(ConfirmModal(
+            self.app.push_screen(_GateConfirmModal(
                 message=(LNC_GATE_SUMMARY.format(
                     models=summary.models, tasks=summary.tasks,
                     seeds=summary.seeds, cells=summary.cells,
