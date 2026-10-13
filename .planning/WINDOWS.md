@@ -4,7 +4,7 @@ open_count: 15
 waived_count: 0
 fixed_count: 6
 total_count: 21
-last_updated: 2026-10-13T13:38:34.565Z
+last_updated: 2026-10-13T13:54:32.529Z
 ---
 
 # Broken Windows Ledger
@@ -35,7 +35,7 @@ last_updated: 2026-10-13T13:38:34.565Z
 | 18 | 9 | stub | tui/screens/wizard.py | 470 | f binding routes to the on_import seam with no view behind it — the file-import view is 09-05's deliverable (planned functionality gap, D-11) | fixed | 09-05 Task 2: f routes to the import path prompt + per-entry sequential gauntlet with entry-level rollback (D-11 view behind the seam) | 2026-10-12T04:54:57.893Z | 2026-10-12T05:55:00.000Z |
 | 19 | 9 | stub | tui/screens/wizard.py | 475 | o binding routes to the on_export seam with no view behind it — the registry-export view is 09-05's deliverable (planned functionality gap, D-11) | fixed | 09-05 Task 2: o routes to the empty-state-checked export path prompt + the verbatim registry copy (D-11 view behind the seam) | 2026-10-12T04:54:57.963Z | 2026-10-12T05:55:00.000Z |
 | 20 | 11 | deviation | .planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-07-SUMMARY.md |  | GB10 smoke (SC5 execution half) pending maintainer run — procedure in 11-07-SUMMARY, not executor-executable (D-15) | open |  | 2026-10-13T06:06:35.033Z |  |
-| 21 | 12 | deviation | docs/multi-gpu.md |  | N=2 multi-GPU smoke (MGPU validation half) pending maintainer run on the OTHER machine — 9-step procedure in docs/multi-gpu.md + 12-04-SUMMARY, not executor-executable (D-05: this machine is dev/test only, single GPU) | open |  | 2026-10-13T13:38:34.565Z |  |
+| 21 | 12 | unrun-verify | .planning/phases/12-multi-gpu-orchestration-console-hardening/12-05-SUMMARY.md |  | N=2 multi-GPU smoke (MGPU validation half) pending maintainer run on the OTHER machine — 9-step procedure in docs/multi-gpu.md + 12-05-SUMMARY, not executor-executable (D-05: this machine is dev/test only, single GPU) | open |  | 2026-10-13T13:38:34.565Z |  |
 
 ````json
 [
@@ -301,11 +301,11 @@ last_updated: 2026-10-13T13:38:34.565Z
   },
   {
     "id": 21,
-    "kind": "deviation",
+    "kind": "unrun-verify",
     "phase": "12",
-    "file": "docs/multi-gpu.md",
+    "file": ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-05-SUMMARY.md",
     "line": null,
-    "description": "N=2 multi-GPU smoke (MGPU validation half) pending maintainer run on the OTHER machine — 9-step procedure in docs/multi-gpu.md + 12-04-SUMMARY, not executor-executable (D-05: this machine is dev/test only, single GPU)",
+    "description": "N=2 multi-GPU smoke (MGPU validation half) pending maintainer run on the OTHER machine — 9-step procedure in docs/multi-gpu.md + 12-05-SUMMARY, not executor-executable (D-05: this machine is dev/test only, single GPU)",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-13T13:38:34.565Z",
