@@ -1,39 +1,35 @@
 {
-  "timestamp": "2026-10-13T12:19:10.836Z",
-  "milestone": "v1.2 TUI任务",
-  "current_phase": "12-multi-gpu-orchestration-console-hardening",
-  "current_plan": "12-03 (IN FLIGHT, uncommitted)",
-  "phase_progress": "12: 2/5 plans committed (12-01 shard ✓, 12-02 web mirror ✓); 12-03 goldens+focus-fix dispatched 20:01, executor stalled/reset mid-task-1 (RED evidence captured, code edits reverted by itself); 12-04 (merge+docs/multi-gpu.md) and 12-05 (integration close) not started",
-  "phases_status": "7/8/9/10/11 ALL Complete + verification passed with fresh fingerprints (0 stale); milestone at 35/38 requirements",
-  "test_baseline": "1531 pytest + 26 node green at HEAD 156c497 (pushed to origin/autorun)",
-  "resume_action": "1) Inspect tree: untracked .planning/phases/12-*/evidence/ (12-03 RED evidence, harmless). 2) Re-dispatch 12-03 executor fresh. STALL BREADCRUMB: the killed executor's last note was 'The Input values aren't rendering' — it was debugging why param Input values do not render (same phenomenon observed live in phase-11 UAT: seeds input showed empty bars despite value 42,43,44). Likely a widget width/styling issue in the params column; the resume executor should diagnose that rendering seam FIRST (it may affect the goldens' fidelity AND is UAT advisory #2's root). 3) Then 12-04 → 12-05 sequential (dispatch briefs pattern: SPEED DIRECTIVE, sentinel force-none first, heartbeat). 4) After 12-05: review loop → regression → verifier → UAT (goldens need MAINTAINER EYE REVIEW - D-03 human gate) → phase complete (tick ROADMAP checkbox manually!) → milestone audit → complete → cleanup.",
+  "version": "1.0",
+  "timestamp": "2026-10-13T15:23:42.679Z",
+  "phase": "12",
+  "phase_name": "Multi-GPU Orchestration & Console Hardening",
+  "phase_dir": ".planning/phases/12-multi-gpu-orchestration-console-hardening",
+  "plan": "UAT",
+  "task": 1,
+  "total_tasks": 2,
+  "status": "paused_mid_uat",
+  "phase_progress": "12: 5/5 plans summarized (12-03 resumed+done, 12-04 done, 12-05 done this session); review-fix loop converged (8/8 WR fixed d8c54a8..b010e65, delta re-review verified, 4 IN open by design incl. new IN-04); regression gate green (make test exit 0, 1581+26 peak); verifier human_needed 4/5 VERIFIED + SC5 human-gated (12-VERIFICATION.md, covered_digest v3:sha256:9dfee6d8...); 12-UAT.md created with 2 human items",
+  "uat_state": "test 1 (D-03 SVG golden review): orchestrator SELF-TEST DONE — 8/8 goldens audited faithful at content level (text-layer + XML + corpus-table cross-check; seeds 42,43,44 visible in run_config.svg = compact=True fix pinned; zero mojibake/corruption; per-file table presented to maintainer 23:21) — awaiting maintainer one-word ratification (pass or issue). test 2 (WINDOWS #21 other-machine N=2 smoke): pending — needs multi-GPU machine (D-05) or maintainer skip-with-reason ruling (WINDOWS #21 keeps tracking either way)",
+  "phases_status": "7 STALE (12-01 touched covered pipeline/run_sweep.py — re-verify at phase-12 close per stale-cascade convention); 8/9/10 passed; 11 executed+passed-then-stale?; check verification.status of 8-11 at close (stale cascade)",
+  "test_baseline": "1581 pytest + 26 node green at fix-loop HEAD b010e65 (fixer full gate); regression gate re-ran full suite green at 18ca1aa window",
   "human_pending": [
-    "他机 N=2 multi-GPU smoke (WINDOWS.md entry #21, 9-step procedure lands in 12-04-SUMMARY) — maintainer-run on the multi-GPU machine per D-05",
-    "8 snapshot SVG goldens review+commit gate after 12-03 lands (D-03)",
-    "auto-push preference question unanswered (offered after each wave?)"
+    {"action": "D-03 verdict: ratify (or contest) the 8 SVG goldens — orchestrator self-test evidence already presented (8/8 faithful)", "context": "SC5 maintainer-verified clause; UAT test 1", "blocking": true},
+    {"action": "WINDOWS #21: run 9-step N=2 smoke on the multi-GPU machine (docs/multi-gpu.md) OR rule skip-with-reason so UAT can complete (ledger keeps tracking)", "context": "UAT test 2; D-05 machine roles — GB10 cannot do this", "blocking": true},
+    {"action": "Auto-push preference (offered twice): push 29 unpushed local commits to origin/autorun now or keep manual", "context": "standing question from prior HANDOFF", "blocking": false}
   ],
-  "blocking_constraints": [
-    {
-      "severity": "blocking",
-      "item": "Force dispatch-isolation to none before EVERY Agent dispatch: node ~/.claude/gsd-core/bin/gsd-tools.cjs query dispatch-isolation --raw --phase 12 --force-isolation none (executor runs re-flip the sentinel)"
-    },
-    {
-      "severity": "blocking",
-      "item": "phase.complete NEVER ticks the ROADMAP overview '- [ ]' checkbox and body STATE needs manual focus-fix; also phase.complete requires VERIFICATION.md frontmatter status: passed (flip human_needed→passed after UAT)"
-    },
-    {
-      "severity": "blocking",
-      "item": "Full-suite gates must run AFTER data-artifact commits (baseline refresh taught this: R-03 refresh reddened 8 test pins; fixed 420411e with fixture-staged n_audit; tests pin refresh-stable truths, never committed-baseline content)"
-    },
-    {
-      "severity": "advisory",
-      "item": "AskUserQuestion payloads hit the maintainer's terminal as mojibake twice — protocol: plain-markdown one-question-at-a-time with ASCII mockups; user answers single letters"
-    },
-    {
-      "severity": "advisory",
-      "item": "Executor speed directive active: module suites during TDD, full make test ONCE per wave (maintainer complained about pace)"
-    }
+  "blockers": [],
+  "async_jobs": [],
+  "decisions": [
+    {"decision": "compact=True on 8 height-1-row Inputs (Rule-1 deviation, own RED/GREEN)", "rationale": "root cause of param-Input invisibility = default Input (height 3, bordered) clipped to top border in height-1 rows; also phase-11 UAT advisory #2 root", "phase": "12"},
+    {"decision": "WR-03 fixed by refusal (re-merge with changed worker set that would strand stale cells)", "rationale": "minimal safe fix; identical-worker-set idempotency preserved with positive control", "phase": "12"},
+    {"decision": "I18N grep lock extended to U+3000-303F/U+FF00-FFEF (fullwidth+CJK punctuation)", "rationale": "WR-08 exposed fullwidth-paren literals invisible to the [一-鿿] range", "phase": "12"},
+    {"decision": "4 info findings stay open by design (IN-01..03 + new IN-04 from delta re-review)", "rationale": "phase-11 'IN 留账' precedent; none block", "phase": "12"},
+    {"decision": "Dependency audit: pyyaml+rich transitive-luck declarations filed as post-milestone todo (declare-pyyaml-rich-direct-deps.md); dnallm stays manual-install by design (not PyPI, read-only moving revision branch, GPU lane never CI)", "rationale": "platformdirs precedent vs zero-lock-change constraint during phase 12", "phase": "12"}
   ],
-  "machine_roles": "GB10 dev/test only (1-2 models × 3-4 datasets partial; single GPU). Full sweeps AND multi-GPU validation on OTHER machines (D-05).",
-  "pushed": "origin/autorun == 156c497 (everything through 12-02)"
+  "uncommitted_files": [" M .planning/config.json", " M .planning/state.json", "?? .planning/.gsd-allow-shrink", "?? .planning/milestone.lock", "?? .planning/todos/"],
+  "uncommitted_note": "config.json/state.json/milestone.lock/.gsd-allow-shrink are pause-work/session artifacts (pre-date this session's work, left untouched by executors); todos/ = the dependency-audit todo file (deliberately uncommitted planning artifact)",
+  "next_action": "1) Get maintainer D-03 verdict (test 1) — self-test evidence stands, likely a quick 'pass'. 2) Test 2 ruling: run N=2 on other machine later AND record blocked, or skip-with-reason to let UAT complete (WINDOWS #21 tracks it for /gsd-ship). 3) gsd_run query uat.complete-session 12-UAT.md. 4) If uat-passed --uat-only: frontmatter.set 12-VERIFICATION.md status passed. 5) Phase close: transition inline (phase.complete 12) THEN manually tick ROADMAP overview '- [ ] Phase 12' checkbox (phase.complete never ticks it — verified phases 8/10) + state.update pointer. 6) Stale re-verification: phase 7 (definitely stale — 12-01 touched run_sweep.py); check 8-11 verification.status, re-run gsd-verifier for each stale one (sentinel force-none first). 7) Milestone chain: /gsd-audit-milestone → /gsd-complete-milestone → /gsd-cleanup. 8) Reviewer-response report (gitignored). 9) Push 29 commits per user preference.",
+  "context_notes": "Sequential-dispatch discipline held all session (sentinel forced none before every dispatch — executors re-flip it). Working tree clean except session artifacts. Phase 12 chain this session: 12-03 resume (Task 2 + breadcrumb diagnosis) → 12-04 → 12-05 → review(8WR) → fixer → delta re-review → regression → verifier → UAT. All committed on autorun through 18ca1aa.",
+  "machine_roles": "GB10 dev/test only (single GPU). Full sweeps + multi-GPU validation on OTHER machines (D-05).",
+  "pushed": "origin/autorun at 156c497; local ahead by 29 commits (through 18ca1aa)"
 }
