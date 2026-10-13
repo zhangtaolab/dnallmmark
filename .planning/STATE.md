@@ -4,19 +4,19 @@ milestone: v1.2
 milestone_name: TUI任务
 current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
-current_plan: Not started
-status: planning
-stopped_at: Completed 12-01-PLAN.md
-last_updated: "2026-10-13T11:23:49.324Z"
+current_plan: 3
+status: executing
+stopped_at: Completed 12-02-PLAN.md
+last_updated: "2026-10-13T11:58:00.000Z"
 last_activity: 2026-10-13
-last_activity_desc: Phase 11 complete, transitioned to Phase 12
-state_head: c732fbbe2cdc863658e5f4844af171e2264fa7bf
+last_activity_desc: 12-02 web progress mirror complete (generator + static page)
+state_head: c9058b8353f24ae293ec11bd6db92b88c50ff490
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 37
-  completed_plans: 33
-  percent: 83
+  completed_plans: 34
+  percent: 92
 ---
 
 # Project State
@@ -93,6 +93,7 @@ Progress (v1.2): [██████░░░░] 67% (4/6 phases; 30/32 planned
 | Phase 11 P06 | 49min | 3 tasks | 7 files |
 | Phase 11 P07 | 62min | 3 tasks | 9 files |
 | Phase 12 P01 | 29m | 2 tasks | 3 files |
+| Phase 12 P02 | 30m | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -205,6 +206,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 11]: Monitor cadence = set_interval ticks that only dispatch exclusive mon-frontier/mon-full workers with run-id-tagged messages; tolerant wrappers render last-known-good when a service throws beyond the loader's tolerance
 - [Phase 12]: D-07 landed as new entry pipeline/run_sweep_shard.py: run_sweep.py/run_finetune.py byte-untouched; LPT shards x CUDA_VISIBLE_DEVICES workers under frozen {root}-mgpu-w{i} sibling roots (one naming authority for 12-04 --merge)
 - [Phase 12]: Orchestrator owns 5 flags only; all other tokens passthrough verbatim (run_sweep stays the flag owner); passthrough --registry-dir read for validation join; collision guard is defense-in-depth proven wired
+- [Phase 12]: 12-02: gen_progress serializes the scanner's dataclasses VERBATIM (full_scan classification + cells_view rows + stats done/total/current/elapsed/eta — one consistent source per field group; newest_mtime dropped, state_counts five-key from the same cells pass); skip predicate = scanner-yields-nothing (no summary OR non-finished root with empty cells_view) — zero new walks or derivations
+- [Phase 12]: 12-02: data/progress/ landed .gitkeep ONLY — no fabricated sample JSON on the public site (every-number-is-real); the live page honestly shows the fetch-error empty state until the maintainer first regenerates; running CLI sweeps (no manifest) mirror total:null -> Unknown total/empty bar/ETA —
+- [Phase 12]: 12-02: page contract frozen web-side — zero CDN scripts (structurally pinned), zero timers (deferred auto-refresh stays deferred), generated_at rendered VERBATIM (never a client clock), controls via .category-nav + change/click delegation on the persistent wrapper, progress.css spends only the five .cell-state--* classes + stat-card refinement (tokens only; truncation via layout-only inline styles)
 
 ### Pending Todos
 
@@ -228,8 +232,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T11:23:49.263Z
-Stopped at: Completed 12-01-PLAN.md
+Last session: 2026-10-13T11:58:00.000Z
+Stopped at: Completed 12-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
