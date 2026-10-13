@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: TUI任务
 current_phase: 11
 current_phase_name: Run Config, Launch Gates & Single-GPU Monitoring
-current_plan: 6
+current_plan: 7
 status: executing
-stopped_at: Completed 11-03-PLAN.md
-last_updated: "2026-10-13T03:56:41.000Z"
+stopped_at: Completed 11-06-PLAN.md
+last_updated: "2026-10-13T05:04:09.371Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 complete, transitioned to Phase 11
-state_head: 7a3430f
+state_head: 67d12748e7d803bc8156ac5c6f5bee24f9f08942
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 32
-  completed_plans: 30
+  completed_plans: 31
   percent: 67
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 ## Current Position
 
 Phase: 11 — Run Config, Launch Gates & Single-GPU Monitoring
-Current Plan: 6
+Current Plan: 7
 Total Plans in Phase: 7
 Status: Executing — plans 01-05 complete; 11-06 next
 Last activity: 2026-10-13 — Phase 10 complete, transitioned to Phase 11
@@ -90,6 +90,7 @@ Progress (v1.2): [██████░░░░] 67% (4/6 phases; 30/32 planned
 | Phase 11 P04 | 24m | 3 tasks | 2 files |
 | Phase 11 P02 | 36min | 3 tasks | 2 files |
 | Phase 11 P03 | 26min | 3 tasks | 2 files |
+| Phase 11 P06 | 49min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -195,6 +196,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 11]: 11-03: the launch refusal chain is ordered and each stage precedes the spawner (preview problems -> official-keys diagnostic -> E2' exact phrase); spawner-silence is proven by CALL COUNTS per stage — the LNC-03 evidence style; the official-keys diagnostic surfaces as an (official_keys, diagnostic) problem tuple, fail-closed
 - [Phase 11]: 11-03: the registry entry holds the tee file reference (parent-side fd pinned open for the child's lifetime; _drop_entry closes it on kill/detach — the child's inherited descriptor is unaffected); kill_grace/kill_interval constructor-injectable so escalation tests run at grace 0
 - [Phase 11]: 11-03: LNC-02/LNC-03/MON-04 left Pending despite the service tier landing — each requirement text names screen-visible surface (exit prompt / typed-phrase modal / on-screen RichLog tail) landing in 11-06/11-07 (the 11-01 revert discipline)
+- [Phase 11]: Slot-4 enter opens the launch gate (the enter-key pin wins the plan's internal detail-on-enter conflict); full keys inspectable via the [p] verbatim argv
+- [Phase 11]: 8.2.8 widget seams probe-pinned: private _on_* handlers MRO-double-fire on override+super; unprefixed widget-binding actions fall through to the screen's same-key binding; native disabled= SelectionList rows are cursor-unreachable — all worked around at the action layer
 
 ### Pending Todos
 
@@ -218,8 +221,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T03:56:41.000Z
-Stopped at: Completed 11-03-PLAN.md
+Last session: 2026-10-13T05:04:09.316Z
+Stopped at: Completed 11-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
