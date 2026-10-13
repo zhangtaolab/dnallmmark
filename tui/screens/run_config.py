@@ -1086,6 +1086,7 @@ class RunConfigScreen(Screen):
     def on_run_config_screen_loaded(self, message: Loaded) -> None:
         self._spec = message.spec
         self._entries = message.entries
+        self._sanitize_disabled_custom_marks()
         self._subset_on = message.spec.subset_file is not None
         subset_input = self.query_one("#cfg-input-subset", Input)
         subset_input.value = (message.spec.subset_file
@@ -1119,6 +1120,33 @@ class RunConfigScreen(Screen):
         self._render_picker()
         self.query_one("#cfg-picker", PickerList).focus()
         self._refresh_preview()
+
+    def _sanitize_disabled_custom_marks(self) -> None:
+        """WR-07 (phase-12 review): drop marked-then-disabled customs
+        from the loaded spec at mount.
+
+        The picker suppresses the visual mark on disabled rows, and both
+        mark paths refuse them — so a spec still carrying one (marked in
+        a previous session, disabled in the management overlay since)
+        rendered the row UNMARKED while the status line, the preview,
+        and the launch-gate enumeration all counted and launched it, and
+        the operator could not unmark it from the UI. Sanitizing here
+        makes the spec agree with the render; the first preview-worker
+        save then persists the sanitized spec (the XDG state
+        self-heals). Enabled customs are untouched; official keys never
+        appear in ``custom_status``."""
+        disabled = frozenset(
+            key for key, status in self._entries.custom_status.items()
+            if status.get("custom")
+            and not status.get("enabled", True))
+        if not disabled:
+            return
+        models = tuple(
+            model for model in self._spec.models if model not in disabled)
+        tasks = tuple(
+            task for task in self._spec.tasks if task not in disabled)
+        if (models, tasks) != (self._spec.models, self._spec.tasks):
+            self._spec = replace(self._spec, models=models, tasks=tasks)
 
     # ===== the preview worker (save + preview + advisories, WR-02) =====
 

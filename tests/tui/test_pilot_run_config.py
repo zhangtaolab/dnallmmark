@@ -642,6 +642,53 @@ async def test_space_on_disabled_custom_warns_never_marks():
             "a disabled custom must never join the spec")
 
 
+async def test_marked_then_disabled_custom_leaves_spec_at_load():
+    """WR-07: a custom marked in a previous session and disabled since
+    (management overlay) must LEAVE the loaded spec at mount. Before:
+    the row rendered UNMARKED (mark suppression) while the status-line
+    counts, the preview, and the launch enumeration all included it —
+    and both mark paths refuse disabled rows, so it could never be
+    unmarked from the UI (the only escape was re-enabling the entry).
+    After: the sanitized spec agrees with the rendered marks, and the
+    first preview-worker save persists the sanitized spec (XDG
+    self-heals). Both axes: models AND dataset customs."""
+    entries = PickerEntries(
+        model_entries=tuple(_FAKE_MODELS),
+        dataset_entries=tuple(_FAKE_DATASETS)
+        + (_dataset_entry("cust-ds-off"),),
+        custom_status={**_FAKE_CUSTOM_STATUS,
+                       "cust-ds-off": {"custom": True, "enabled": False}},
+    )
+    run_service = FakeRunConfigService(
+        entries=entries,
+        spec=RunSpec(models=("cust-off", "model-a"),
+                     tasks=("cust-ds-off", "task-1")))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        assert screen._spec.models == ("model-a",), (
+            "the marked-then-disabled custom model must leave the spec "
+            "at load — the render, the counts, and the launch must "
+            "agree"
+        )
+        assert screen._spec.tasks == ("task-1",), (
+            "the same holds for a marked-then-disabled custom dataset"
+        )
+        # the status line counts the SANITIZED selection (render ==
+        # spec): 1 model of 4 rows, 1 task of 3 rows
+        assert _label_text(screen, "#cfg-status-line") == (
+            CFG_STATUS_LINE.format(n=1, models_total=4, m=1, tasks_total=3))
+        # the first save through the preview worker persists the
+        # sanitized spec — the stale XDG state self-heals
+        assert all(
+            "cust-off" not in spec.models
+            and "cust-ds-off" not in spec.tasks
+            for spec in run_service.saved_specs), (
+            "the sanitized spec is what persists"
+        )
+
+
 async def test_params_defaults_render():
     """Every CFG-01 field renders its default: seeds 42,43,44; the
     choice rows 'none ▾'; absent values '—'; the subset default; the
