@@ -1,6 +1,6 @@
 ---
 phase: 08-tui-foundation-env-check-selection
-verified: 2026-10-13T08:40:00Z
+verified: 2026-10-13T09:26:11Z
 status: passed
 score: 5/5 must-haves verified
 covered_files:
@@ -26,23 +26,71 @@ covered_files:
   - tui/screens/selection.py
   - tui/strings.py
   - tui/styles.tcss
-covered_digest: "v3:sha256:83d76ddc56f08d13a3c7ac3f372d6fad45f011e359a5d34f4b0fb0b02201ed21"
+covered_digest: "v3:sha256:def2d45254cbbae8897ad3225e9a728468eae3b7970c8c5e758604f8b809095e"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
-  previous_status: gaps_found
-  previous_score: 4/5
-  gaps_closed:
-    - "SC5 Pilot-green invariant: 8 baseline-content pins reddened by the R-03 refresh (2f7211d) fixed by 420411e (fixture-staged missing lanes + refresh-stable committed-artifact lanes, zero production changes); tui lane re-run by this verifier at the fix HEAD: 627 passed, 0 failed — the exact pre-refresh bar"
+  previous_status: passed
+  previous_score: 5/5
+  gaps_closed: []
   gaps_remaining: []
   regressions: []
 deferred:
   - truth: "Critical FAILs block entry into the launch flow (ENV-03) and the quick-check re-validates before each task launch (ENV-04) — the launch-flow wiring itself"
     addressed_in: "Phase 11"
-    evidence: "Phase 11 Success Criterion 2: 'The launch gate is terraform-style: env_smoke preflight blocks on FAIL with the reason, preview precedes explicit confirmation...' — the D-09 recorded decision (08-CONTEXT) lands the pure judgment (env_gate.gate_verdict, unchanged since initial verification) and quick-check service NOW and defers the blocking hook to the Phase 11 launch screen. Carried forward unchanged."
+    evidence: "Phase 11 Success Criterion 2: 'The launch gate is terraform-style: env_smoke preflight blocks on FAIL with the reason, preview precedes explicit confirmation...' — the D-09 recorded decision (08-CONTEXT) lands the pure judgment (env_gate.gate_verdict, unchanged since initial verification) and quick-check service NOW and defers the blocking hook to the Phase 11 launch screen. Carried forward unchanged. [2026-10-13 stale-refresh note: Phase 11 has SINCE landed this wiring — the env preflight + E2' typed gate (d8e63ed) and the launch gate screen, verified passed at c50abe4/UAT 64ad9e3. The deferral is closed by its successor phase; Truth 3's full intent now holds end-to-end at HEAD.]"
 ---
 
 # Phase 8: TUI Foundation (Env Check & Selection) Verification Report
+
+**Phase Goal:** The console exists and is trustworthy at rest — `make tui` opens a Textual app whose startup shows a persisted full environment-check panel, and operators build model×dataset selections k9s-style with presets, templates, and presence columns — with every non-retrofittable decision (textual-free services layer, `[tui]` dependency group, Pilot test harness, tolerant artifact loader, constants-module i18n convention) landed so later phases add screens, not architecture
+**Verified:** 2026-10-13T09:26:11Z
+**Status:** passed
+**Re-verification:** Yes — #4682 stale-fingerprint route. The 2026-10-13T08:40Z gap-closure pass (passed 5/5, code `84b0fcf`) went stale because Phase 11's slot-4/5 promotions and copy blocks landed in three covered files: `tui/app.py`, `tui/strings.py`, `tui/styles.tcss` (six commits, `b113627`..`47dd63f`). This pass verified the delta against Phase 8's truths and architecture invariants at HEAD, spot-ran the Pilot suites, and recomputed the fingerprint. Full verdict record in the `## Re-verification (stale refresh, HEAD 8b92766, 2026-10-13)` section below; the gap-closure report body follows unchanged as the prior-pass record.
+
+## Re-verification (stale refresh, HEAD 8b92766, 2026-10-13)
+
+### Staleness diagnosis (commit-anchored, verified this pass)
+
+Anchor: `91cdd63` (the commit that wrote the 2026-10-13T08:40Z passed verification, over code `84b0fcf`). `git diff --stat 91cdd63..HEAD` over the 8 covered implementation files:
+
+- **`tui/app.py`** — +213/-3 across 3 commits: `0b5984b` (11-06 slot-4 run-config screen + promotion), `67d1274` (11-06 gate-clean typecheck), `e6da784` (11-07 slot-5 monitor screen + promotion).
+- **`tui/strings.py`** — +232/-2 across 3 commits: `b113627` (CFG_/LNC_/MON_ copy blocks), `7e9fba7` (ENV_VERDICT present-tense amendment — the Phase-11-blocked note replaced now that the gate landed), `47dd63f` (WR-07 E2' typed gate fail-closed copy).
+- **`tui/styles.tcss`** — +259/-0 (new-screen styles: run-config, monitor, modals; zero deletions).
+- **All 5 other covered files byte-identical**: `tui/screens/selection.py`, `tui/__main__.py`, `tests/tui/test_pilot_selection.py`, `tests/tui/test_services_registries.py`, `dnallm-mark/data/n_audit.json` — zero commits since the anchor.
+
+Truth-relevant files OUTSIDE the covered set, audited additionally this pass: `tui/screens/env_check.py` **byte-unchanged since the anchor** (zero commits — the entire SC1/SC2 surface: boot screen, 上次检查 cache line, refresh binding); `tui/services/env_gate.py`, `quick_check.py`, `templates.py`, `selection.py`, `registries.py` **byte-unchanged**; `tui/screens/nav.py` changed additively (slot-4 `0b5984b`, slot-5 `e6da784` promotions); `tui/services/` gained Phase 11 modules (run_config, sweep_launcher, sweep_monitor + WR/CR fixes) — invariants re-checked over the grown tree below.
+
+### Delta contract analysis vs the Phase 8 must-haves
+
+1. **SC1 boots on env-check — holds.** `get_default_screen() → EnvCheckScreen` (`tui/app.py:422` at HEAD); `tui/screens/env_check.py` byte-unchanged; `make tui` recipe and `tui/__main__.py` bootstrap byte-unchanged.
+2. **SC2 上次检查 cache — holds.** `ENV_LAST_CHECK_LINE = "上次检查: {checked_at}"` (`tui/strings.py:84`, untouched by the delta); `Binding("r", "refresh", ENV_REFRESH_LABEL)` (`env_check.py:279`) and `action_refresh` (`:509`) byte-unchanged; same-day cache service byte-unchanged.
+3. **SC3 gate — holds, and the deferral CLOSED.** `env_gate.py`/`quick_check.py` byte-identical; the ENV_VERDICT copy amendment (`7e9fba7`) only retires the "阻断接线于 Phase 11" future-tense note — the blocking wiring it announced has now LANDED in Phase 11 (env preflight + E2' typed gate `d8e63ed`; Phase 11 verification passed at `c50abe4`, UAT at `64ad9e3`). The prior `deferred:` item is closed by its successor phase (frontmatter annotation added).
+4. **SC4 selection — holds.** `tui/screens/selection.py` byte-unchanged (all Phase 8 bindings: space/m/p/x/s/slash/v + digits intact by byte-identity); nav digit-2 → `"selection"` unchanged (`nav.py:87`); the slot-4/5 promotions are ADDITIVE rows — `NAV_SLOTS` now six real targets (`env_check`, `selection`, `data_manager`, `run_config`, `monitor`, `about`), and `test_pilot_nav_shell.py`'s placeholder-behavior tests were REPLACED by real-screen assertions (`test_placeholder_digits_fire_phase_toast_never_switch` now asserts digits 3/4/5 switch to their real screens with zero placeholder toasts — a strengthening, not a weakening). `app.py`'s `action_quit` q-intercept (`:817`) pushes the ExitModal only when a live sweep exists; at rest q exits directly (Phase 8 behavior preserved).
+5. **SC5 presence/templates/i18n/invariants — hold at HEAD.** Presence chain byte-unchanged end-to-end (`n_audit.json`, `registries.py`, `selection.py`); the 62/50 assertions green (`len(model_entries) == 62`, `len(dataset_entries) == 50`, `tests/tui/test_pilot_selection.py:1348-1349`); template schema + service byte-unchanged. Invariants re-executed over the GROWN tree (including all new Phase 11 services):
+   - services zero-textual: `grep textual` over `tui/services/` → **0 imports** (18 service modules incl. run_config/sweep_launcher/sweep_monitor)
+   - i18n single home: CJK grep over `tui/screens/` + `tui/app.py` + `tui/services/` + `tui/__main__.py` → **0 hits** (all new copy in `strings.py` CFG_/LNC_/MON_ blocks)
+   - `[tui]` isolation: pyproject `tui = [textual>=8.2,<9, platformdirs, jsonschema]` — textual absent from data/dev/gpu groups
+   - XDG split: `settings.py` state (`~/.local/state/dnallmmark`) vs config (`~/.config/dnallmmark`) via platformdirs — unchanged; Phase 11's `run_config.save_state` routes through the SAME `settings.atomic_write` (tmp + `os.replace`) — the new code follows the Phase 8 atomic-write discipline
+   - Pilot green CPU-side: spot-run below
+
+### Spot-checks (executed by this verifier at HEAD 8b92766)
+
+| Command | Result |
+|---|---|
+| `uv run --group dev --group tui pytest tests/tui/test_pilot_env_check.py tests/tui/test_pilot_selection.py tests/tui/test_pilot_nav_shell.py -q` | **69 passed in 29.24s, 0 failed** |
+| `git diff 91cdd63..HEAD` over `selection.py`/`__main__.py`/`n_audit.json`/`test_pilot_selection.py`/`test_services_registries.py`/`env_check.py`/`env_gate.py`/`quick_check.py`/`templates.py` | empty (byte-identical) |
+| Debt markers (`TBD|FIXME|XXX`) over the delta (`app.py`, `strings.py`, `styles.tcss`, `nav.py`, `test_pilot_nav_shell.py`) | 0 hits |
+
+**Advisory (new-scope, unevidenced):** none — the covered-file delta is the sanctioned Phase 11 slot-4/5 promotion scope, diff-audited additive, with green Pilot suites and invariants re-proven over the grown tree.
+
+**Fresh fingerprint (verbatim from `verification.fingerprint`):** `v3:sha256:def2d45254cbbae8897ad3225e9a728468eae3b7970c8c5e758604f8b809095e` over the same 8 implementation files + auto-added PLAN/SUMMARY set (frontmatter `covered_files` is the command's verbatim output).
+
+**Verdict: PASSED — 5/5 must-haves hold at HEAD 8b92766.** Zero regressions; the architecture remains "later phases add screens, not architecture" — Phase 11 added its screens exactly through the seams Phase 8 landed (injectable services, factories, strings module, atomic-write settings).
+
+---
+
+## Prior-pass record (2026-10-13T08:40Z gap-closure, code 84b0fcf — kept as the verification history)
 
 **Phase Goal:** The console exists and is trustworthy at rest — `make tui` opens a Textual app whose startup shows a persisted full environment-check panel, and operators build model×dataset selections k9s-style with presets, templates, and presence columns — with every non-retrofittable decision (textual-free services layer, `[tui]` dependency group, Pilot test harness, tolerant artifact loader, constants-module i18n convention) landed so later phases add screens, not architecture
 **Verified:** 2026-10-13T08:40:00Z
@@ -157,5 +205,5 @@ No gaps. The single gap of the 2026-10-13T07:45Z report (SC5's Pilot-green invar
 
 ---
 
-_Verified: 2026-10-13T08:40:00Z_
+_Verified: 2026-10-13T09:26:11Z (stale refresh at HEAD 8b92766; prior pass 2026-10-13T08:40:00Z)_
 _Verifier: Claude (gsd-verifier)_
