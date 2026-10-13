@@ -339,6 +339,11 @@ class LauncherServiceProtocol(Protocol):
                     phrase: "str | None" = None) -> Any:
         """The structurally gated launch (refusal before any spawn)."""
 
+    def launch_from_failures(self, failures_path, seeds, output_root,
+                             peft: str = "none",
+                             config_variant: str = "none") -> Any:
+        """The D-11 from-failures launch (the monitor's gated re-run)."""
+
     def kill_sweep(self, root: str) -> str:
         """SIGTERM the process group (D-06 exit triple, k path)."""
 
@@ -370,6 +375,12 @@ class LauncherBackend:
     def launch_spec(self, spec: RunSpec,
                     phrase: "str | None" = None) -> Any:
         return self._launcher.launch_spec(spec, phrase)
+
+    def launch_from_failures(self, failures_path, seeds, output_root,
+                             peft="none", config_variant="none") -> Any:
+        return self._launcher.launch_from_failures(
+            failures_path, seeds, output_root,
+            peft=peft, config_variant=config_variant)
 
     def kill_sweep(self, root: str) -> str:
         return self._launcher.kill_sweep(root)

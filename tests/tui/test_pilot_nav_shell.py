@@ -217,6 +217,10 @@ class _LauncherShellFake:
     def launch_spec(self, spec, phrase=None):
         raise AssertionError("the nav-shell tests never launch")
 
+    def launch_from_failures(self, failures_path, seeds, output_root,
+                             peft="none", config_variant="none"):
+        raise AssertionError("the nav-shell tests never re-run")
+
     def kill_sweep(self, root):
         raise AssertionError("the nav-shell tests never kill")
 
@@ -264,6 +268,9 @@ class _MonitorShellFake:
 
     def failures_view(self, root):
         return ()
+
+    def cell_record(self, root, model, task, seed):
+        return None
 
     def read_log_tail(self, path, max_lines=200, max_bytes=65536):
         return None

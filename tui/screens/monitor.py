@@ -49,6 +49,7 @@ from textual.widgets import DataTable, Footer, Label, RichLog
 
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.selection import ConfirmModal, PathInputModal
+from tui.services import sweep_launcher as sweep_launcher_module
 from tui.services import sweep_monitor
 from tui.services.sweep_monitor import (
     CELL_COMPLETED,
@@ -304,6 +305,11 @@ class MonitorServiceProtocol(Protocol):
     def failures_view(self, root) -> Any:
         """The failure list (live records / the end-of-sweep file)."""
 
+    def cell_record(self, root, model: str, task: str,
+                    seed: int) -> "dict | None":
+        """One cell's run_record fields verbatim (None when absent) —
+        the detail modal's data source."""
+
     def read_log_tail(self, path,
                       max_lines: int = 200,
                       max_bytes: int = 65536) -> Any:
@@ -403,6 +409,14 @@ class MonitorBackend:
     def failures_view(self, root) -> Any:
         return sweep_monitor.failures_view(root)
 
+    def cell_record(self, root, model: str, task: str,
+                    seed: int) -> "dict | None":
+        """The seed dir's run_record via the tolerant reader (the
+        last-known-good contract; None when absent)."""
+        return sweep_monitor.load_record(
+            Path(root) / model / task / f"seed_{seed}"
+            / sweep_monitor.RECORD_NAME)
+
     def read_log_tail(self, path,
                       max_lines: int = 200,
                       max_bytes: int = 65536) -> Any:
@@ -414,6 +428,29 @@ class MonitorBackend:
 
     def add_manual_root(self, path) -> bool:
         return sweep_monitor.add_manual_root(path)
+
+    # ----- the launcher face (the [r] re-run seam; the real path
+    # receives the app-owned shared launcher, whose methods these
+    # delegate to — the adapter satisfies BOTH protocols) -----
+
+    def env_preflight(self, kernels=None) -> Any:
+        return sweep_launcher_module.env_preflight(kernels)
+
+    def launch_from_failures(self, failures_path, seeds, output_root,
+                             peft="none", config_variant="none") -> Any:
+        if self._launcher is None:
+            return None
+        return self._launcher.launch_from_failures(
+            failures_path, seeds, output_root,
+            peft=peft, config_variant=config_variant)
+
+    def live_sweeps(self) -> tuple:
+        return self._live_roots()
+
+    def tee_path_for(self, root) -> "str | None":
+        if self._launcher is None:
+            return None
+        return self._launcher.tee_path_for(root)
 
 
 # =====================================================================
@@ -457,10 +494,14 @@ class FailuresModal(ModalScreen):
         Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
     ]
 
-    def __init__(self, root: str, failures: tuple, **kwargs):
+    def __init__(self, root: str, failures: tuple,
+                 monitor: "MonitorScreen", **kwargs):
         super().__init__(**kwargs)
         self._root = root
         self._failures = tuple(failures)
+        # the owning monitor screen (a modal's ``self.screen`` is the
+        # modal itself — the parent must be passed, never looked up)
+        self._monitor = monitor
 
     def compose(self) -> ComposeResult:
         with Vertical(id="mon-failures-box", classes="modal-box"):
@@ -473,7 +514,7 @@ class FailuresModal(ModalScreen):
         table = self.query_one("#mon-failures-table", DataTable)
         table.cursor_type = "row"
         table.add_column(MON_FAILURE_ROW.format(
-            model="model", task="task", seed="seed"))
+            model="model", task="task", seed="seed"), key="model")
         if not self._failures:
             table.add_row(MON_FAILURES_EMPTY, key="__empty__")
         else:
@@ -482,6 +523,12 @@ class FailuresModal(ModalScreen):
                     model=failure.model, task=failure.task,
                     seed=failure.seed), key=f"failure-{index}")
         table.focus()
+
+    def on_data_table_row_selected(
+            self, event: DataTable.RowSelected) -> None:
+        """enter on the focused table (its native select event — the
+        table consumes the key, the modal binding never fires)."""
+        self.action_drill_cursor()
 
     def action_drill_cursor(self) -> None:
         """enter: the selected failure's verbatim error (never elided)."""
@@ -505,11 +552,8 @@ class FailuresModal(ModalScreen):
         this is a real GPU spend), routed through the monitor screen."""
         if not self._failures:
             return
-        parent = self.screen
-        if not isinstance(parent, MonitorScreen):
-            return
         self.dismiss()
-        parent.request_rerun(self._root, len(self._failures))
+        self._monitor.request_rerun(self._root, len(self._failures))
 
 
 class LogTailModal(ModalScreen):
@@ -592,11 +636,16 @@ class CellDetailModal(ModalScreen):
         Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
     ]
 
-    def __init__(self, model: str, task: str, row: Any, **kwargs):
+    def __init__(self, model: str, task: str, row: Any,
+                 records: "dict[int, dict] | None" = None, **kwargs):
         super().__init__(**kwargs)
         self._model = model
-        self._task = task
+        # NOTE: ``_task`` is MessagePump's own internal attribute (the
+        # pump's asyncio task — clobbered on mount); the field is named
+        # ``_task_key`` so the row identity survives.
+        self._task_key = task
         self._row = row
+        self._records = records or {}
 
     def compose(self) -> ComposeResult:
         with Vertical(id="mon-celldetail-box", classes="modal-box"):
@@ -605,7 +654,7 @@ class CellDetailModal(ModalScreen):
 
     def on_mount(self) -> None:
         box = self.query_one("#mon-celldetail-box", Vertical)
-        box.border_title = f"{self._model} × {self._task}"
+        box.border_title = f"{self._model} × {self._task_key}"
         log = self.query_one("#mon-celldetail-log", RichLog)
         for seed in self._row.seeds:
             copy, _style = _CELL_STATE_CELLS.get(
@@ -617,6 +666,11 @@ class CellDetailModal(ModalScreen):
                 fraction = (name.removeprefix("frac_"))
                 log.write("  " + MON_FRACTION_LINE.format(
                     fraction=fraction, state=frac_copy))
+            record = self._records.get(seed.seed)
+            if record:
+                # the run_record fields verbatim (data discipline)
+                for field_name, value in record.items():
+                    log.write(f"  {field_name}: {value}")
 
 
 # =====================================================================
@@ -1218,8 +1272,35 @@ class MonitorScreen(Screen):
             detail_row = self._cell_rows.get(str(row_key))
             if detail_row is None or self.app.below_minimum_grid:
                 return
-            self.app.push_screen(CellDetailModal(
-                detail_row.model, detail_row.task, detail_row))
+            self._open_cell_detail(detail_row)
+
+    @work(exclusive=True, thread=True, group="mon-detail")
+    def _open_cell_detail(self, row: Any) -> None:
+        """Read the row's run records off the event loop, then push the
+        detail modal (fields verbatim — data, never elided)."""
+        root = str(self._attached_root) if self._attached_root else ""
+        records: dict[int, dict] = {}
+        for seed in row.seeds:
+            record = self._service.cell_record(
+                root, row.model, row.task, seed.seed)
+            if record is not None:
+                records[seed.seed] = record
+        self.post_message(self.DetailReady(row, records))
+
+    class DetailReady(Message):
+        """The cell's records arrived (worker thread -> loop)."""
+
+        def __init__(self, row: Any, records: dict) -> None:
+            self.row = row
+            self.records = records
+            super().__init__()
+
+    def on_monitor_screen_detail_ready(self, message: DetailReady) -> None:
+        if self.app.below_minimum_grid:
+            return
+        self.app.push_screen(CellDetailModal(
+            message.row.model, message.row.task, message.row,
+            records=message.records))
 
     def action_show_failures(self) -> None:
         """[f]: the failures modal over the attached root."""
@@ -1238,7 +1319,7 @@ class MonitorScreen(Screen):
         if self.app.below_minimum_grid:
             return
         self.app.push_screen(FailuresModal(
-            message.root, message.failures))
+            message.root, message.failures, self))
 
     def action_show_log_tail(self) -> None:
         """[t]: the log-tail modal over the attached root's tee."""
@@ -1260,6 +1341,7 @@ class MonitorScreen(Screen):
 
         def on_submit(path: str):
             if self._service.add_manual_root(path):
+                self.attach(path)
                 self._pending_rescan = True
                 self._tick_full()
                 if not self.app.below_minimum_grid:
