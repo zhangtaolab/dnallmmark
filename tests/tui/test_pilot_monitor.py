@@ -20,7 +20,12 @@ the interval callbacks plus fake call counters, never by sleeping):
   [r] rescan toast; the 68-char-key backstop;
 - Task 3 (integration + degradation): the D-13 auto-nav, the extended
   q-intercept predicate, the degradation sweep, the responsiveness
-  proof while a scan blocks.
+  proof while a scan blocks;
+- Phase 12 (12-05, delta A / D-01): the N-root operator view — the two
+  frozen sibling worker roots plus a default root render verbatim with
+  independent state glyphs and progress fractions, and enter switches
+  the per-worker view, over the UNTOUCHED Phase-11 renderer (zero
+  monitor code — the multi-worker monitoring claim IS this proof).
 """
 
 import re
@@ -1691,3 +1696,133 @@ async def test_console_stays_responsive_while_scan_blocks():
         monitor.full_scan_gate.set()   # release; the worker completes
         await _settle(pilot, app)
         assert isinstance(app.screen, MonitorScreen)
+
+
+# =====================================================================
+# Phase 12 (12-05): delta A — the N-root operator view (D-01, zero code)
+# =====================================================================
+
+
+def _mgpu_scan():
+    """The multi-worker discovery fixture (12-05, delta A): the two
+    frozen sibling worker roots (the ``{root}-mgpu-w{i}`` naming
+    ``run_sweep_shard.worker_root`` freezes) plus one default root —
+    the exact tree a two-worker orchestrator launch leaves on disk."""
+    return ScanResult(sweeps=(
+        _summary("finetuned-mgpu-w0", SWEEP_RUNNING, done=4, total=10),
+        _summary("finetuned-mgpu-w1", SWEEP_RUNNING, done=2, total=20),
+        _summary("finetuned", SWEEP_FINISHED, done=6, total=6),
+    ), watermarks={})
+
+
+async def test_delta_a_discovered_pane_renders_worker_roots_independently():
+    """Delta A (D-01/SC2, 12-05): the discovery list renders the two
+    sibling worker roots plus the default root — names VERBATIM,
+    per-row state glyphs and progress fractions independent — and enter
+    switches the attached per-worker view, over the UNTOUCHED Phase-11
+    renderer: ``tui/screens/monitor.py`` ``_render_discovered`` renders
+    ``Text(summary.root.name)`` (:1331) with ``_progress_cell``
+    (:220-233) per summary; ZERO monitor edits (this plan's read-only
+    claim, pinned by the zero-diff verify)."""
+    monitor = FakeMonitorService(
+        scans=[_mgpu_scan()],
+        cells={
+            "/scans/finetuned-mgpu-w0": (
+                _row("model-a", "task-x",
+                     {42: CELL_RUNNING, 43: CELL_QUEUED}),),
+            "/scans/finetuned-mgpu-w1": (
+                _row("model-b", "task-y", {42: CELL_COMPLETED}),),
+        },
+        stats={
+            "/scans/finetuned-mgpu-w0": _stats(
+                done=4, total=10,
+                current=_current("model-a", "task-x", 42),
+                elapsed=4360.0, eta=_eta(ETA_POINT, point=7560.0)),
+            "/scans/finetuned-mgpu-w1": _stats(
+                done=2, total=20, elapsed=100.0, eta=_eta(ETA_NONE)),
+        },
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert _label_text(screen, "#mon-discovered-title") == (
+            MON_DISCOVERED_TITLE.format(n=3))
+        table = screen.query_one("#mon-discovered", DataTable)
+        assert table.row_count == 3, (
+            "one row per discovered root — the N+1 multi-worker view"
+        )
+        # the frozen worker-root names render VERBATIM
+        assert _table_text(table, "/scans/finetuned-mgpu-w0",
+                           "root") == "finetuned-mgpu-w0"
+        assert _table_text(table, "/scans/finetuned-mgpu-w1",
+                           "root") == "finetuned-mgpu-w1"
+        assert _table_text(table, "/scans/finetuned", "root") == (
+            "finetuned")
+        # independent state glyphs: both workers running, default finished
+        assert _table_text(table, "/scans/finetuned-mgpu-w0",
+                           "state") == MON_STATE_RUNNING_SWEEP
+        assert _table_text(table, "/scans/finetuned-mgpu-w1",
+                           "state") == MON_STATE_RUNNING_SWEEP
+        assert _table_text(table, "/scans/finetuned",
+                           "state") == MON_STATE_FINISHED_SWEEP
+        # independent progress fractions + bars (worker isolation at a
+        # glance): 4/10 -> 4 filled cells, 2/20 -> 1, finished no bar
+        w0 = _table_text(table, "/scans/finetuned-mgpu-w0", "progress")
+        w1 = _table_text(table, "/scans/finetuned-mgpu-w1", "progress")
+        default = _table_text(table, "/scans/finetuned", "progress")
+        assert "4/10" in w0 and w0.count("█") == 4
+        assert "2/20" in w1 and w1.count("█") == 1
+        assert w0 != w1, "the two worker rows must never alias"
+        assert "6/6" in default and "█" not in default
+
+        # enter attaches worker 0: the cells table + stats line rebind to
+        # THAT root's fixture (the existing attach idiom over the new
+        # fixture — D-01's per-worker view with zero new screens)
+        await pilot.press("enter")   # row 0: finetuned-mgpu-w0
+        await _settle(pilot, app)
+        assert _table_text(table, "/scans/finetuned-mgpu-w0",
+                           "state").startswith("◆")
+        assert _label_text(screen, "#mon-cells-title") == (
+            MON_CELLS_TITLE.format(root="finetuned-mgpu-w0"))
+        cells_table = screen.query_one("#mon-cells", DataTable)
+        assert cells_table.row_count == 1
+        assert _table_text(cells_table, "model-a__task-x",
+                           "seed_42").startswith("⠋")
+        assert _label_text(screen, "#mon-stats-line") == (
+            MON_STATS_LINE.format(
+                done=4, total=10, model="model-a", task="task-x",
+                seed=42, elapsed="1:12:40", eta="2.1h"))
+
+        # down + enter: the per-worker view SWITCHES to worker 1 — the
+        # marker moves, cells/stats rebind to w1's fixture
+        await pilot.press("down")
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert not _table_text(table, "/scans/finetuned-mgpu-w0",
+                               "state").startswith("◆")
+        assert _table_text(table, "/scans/finetuned-mgpu-w1",
+                           "state").startswith("◆")
+        assert _label_text(screen, "#mon-cells-title") == (
+            MON_CELLS_TITLE.format(root="finetuned-mgpu-w1"))
+        cells_table = screen.query_one("#mon-cells", DataTable)
+        assert cells_table.row_count == 1
+        assert _table_text(cells_table, "model-b__task-y",
+                           "seed_42").startswith("✓")
+        w1_line = _label_text(screen, "#mon-stats-line")
+        assert "2/20" in w1_line, (
+            "the stats line rebinds to worker 1's own fraction"
+        )
+
+    # the 80x24 grid composes with all three rows (the responsive drop
+    # is the scale column only — never a row)
+    monitor = FakeMonitorService(scans=[_mgpu_scan()])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_monitor(pilot, app)
+        table = app.screen.query_one("#mon-discovered", DataTable)
+        assert table.row_count == 3, (
+            "the 80-col grid still carries every discovered root"
+        )
+        column_keys = {str(key.value) for key in table.columns}
+        assert "scale" not in column_keys

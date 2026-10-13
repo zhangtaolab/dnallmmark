@@ -63,6 +63,22 @@ Every behavior bullet of the plan's Tasks 1-2 is pinned here:
   consumer equivalence over the REAL ``export_runs.load_run_records``
   walk and the scanner's manifest branch, idempotent re-merge, and
   worker-root immutability.
+- **The D-08 isolation re-run (12-05)** — an in-process
+  ``run_sweep.main() --from-failures`` over ONE worker's failures
+  manifest re-attempts exactly that worker's failed cell (the completed
+  sibling seed of the same pair skips via the seed-scoped
+  ``trainer_state.json`` marker, so the fake child runs exactly ONCE),
+  every write lands under that worker's root, and the healthy worker's
+  tree is byte- and mtime-identical after (the fake child writes
+  ``final_metrics.json`` + ``trainer_state.json`` — the
+  ``tests/test_sweep.py`` monkeypatched-subprocess.run idiom).
+- **The N=1 degenerate local smoke (12-05, D-05)** — the REAL spawner
+  with ``--workers 1 --gpus 0 --dry-run`` over a two-model fixture
+  registry: exactly one frozen ``-mgpu-w0`` root whose manifest covers
+  BOTH models, the sibling tee log non-empty, main exit 0 — the
+  degenerate-but-valid single-GPU CUDA_VISIBLE_DEVICES=0 chain proven
+  on this host; N=2 belongs to the other machine's documented procedure
+  (docs/multi-gpu.md), never to an executor or CI run.
 
 The orchestrator is stdlib-only and CPU-testable: no test assumes N>1
 GPUs, launches real training, or probes nvidia-smi (D-05). The real-
@@ -1238,3 +1254,191 @@ def test_merge_leaves_worker_roots_immutable(tmp_path, monkeypatch):
             f"worker root {root} must be byte- and mtime-identical after "
             "one default merge and one checkpoints-hatch merge"
         )
+
+
+# ===== the D-08 isolation re-run (12-05, MGPU-02/SC2 — zero new code) =====
+
+
+def make_isolation_pair(tmp_path, name="finetuned"):
+    """Two worker trees for the D-08 isolation re-run.
+
+    Worker 0 (model-a): ONE completed cell (seed_42 — full artifacts
+    incl. the ``trainer_state.json`` resume marker) and ONE failed cell
+    (seed_43, never run — its dir does not exist) listed in w0's
+    ``sweep_failures.json``; both seeds belong to the SAME (model, task)
+    pair, so the from-failures re-enumeration covers both and only the
+    marker can save the completed one. Worker 1 (model-b): fully
+    completed, clean failures manifest — the healthy sibling whose root
+    the re-run must never touch.
+    """
+    base = (tmp_path / name).resolve()
+    w0 = run_sweep_shard.worker_root(base, 0)
+    w1 = run_sweep_shard.worker_root(base, 1)
+
+    _write_cell_artifacts(
+        w0 / "model-a" / "task-x" / "seed_42", "model-a", "task-x", 42)
+    write_manifest(
+        w0,
+        cells=[
+            make_manifest_cell(w0, "model-a", "task-x", 42),
+            make_manifest_cell(w0, "model-a", "task-x", 43,
+                               status="failed"),
+        ],
+        models=["model-a"], tasks=["task-x"], seeds=[42, 43])
+    (w0 / run_sweep.FAILURES_NAME).write_text(
+        json.dumps([
+            {"model": "model-a", "task": "task-x", "seed": 43,
+             "output_dir": str(w0 / "model-a" / "task-x" / "seed_43"),
+             "error": "boom"},
+        ]), encoding="utf-8")
+
+    _write_cell_artifacts(
+        w1 / "model-b" / "task-x" / "seed_42", "model-b", "task-x", 42)
+    write_manifest(
+        w1,
+        cells=[make_manifest_cell(w1, "model-b", "task-x", 42)],
+        models=["model-b"], tasks=["task-x"], seeds=[42])
+    (w1 / run_sweep.FAILURES_NAME).write_text("[]", encoding="utf-8")
+    return base, w0, w1
+
+
+def test_d08_from_failures_rerun_is_isolated_to_w0(tmp_path, monkeypatch):
+    """D-08 (SC2): an in-process ``run_sweep.main() --from-failures``
+    over w0's failures manifest re-attempts EXACTLY w0's failed cell
+    (the completed seed-42 cell of the same pair is skipped via the
+    seed-scoped ``trainer_state.json`` marker — the fake child executes
+    exactly ONCE), every write lands under w0's root, and everything
+    else in the tree — w1's artifacts and manifests included — is
+    byte- and mtime-identical after (a failed worker's recovery never
+    touches a healthy worker; the runbook's one-line re-run, D-08)."""
+    registry_dir = make_registry(tmp_path)
+    _base, w0, _w1 = make_isolation_pair(tmp_path)
+
+    def snapshot_outside_w0():
+        """Every file in the tree EXCEPT the w0 subtree: (bytes, mtime)."""
+        return {
+            path: (path.read_bytes(), path.stat().st_mtime_ns)
+            for path in sorted(tmp_path.rglob("*"))
+            if path.is_file() and w0 not in path.parents
+        }
+
+    before = snapshot_outside_w0()
+    launched = []
+
+    def fake_child(argv, **kwargs):
+        # the tests/test_sweep.py monkeypatched-subprocess.run idiom:
+        # _git_commit() also rides subprocess.run — give it a stdout
+        if argv[:1] == ["git"]:
+            return subprocess.CompletedProcess(
+                argv, returncode=0, stdout="fakehash\n")
+        launched.append(list(argv))
+        # mimic run_finetune.py's success artifacts: the child receives
+        # the worker ROOT as --output_dir and derives the cell dir the
+        # same way the real child does (the fake-executor idiom)
+        cell_dir = (
+            Path(flag_value(argv, "--output_dir"))
+            / flag_value(argv, "--target_model")
+            / flag_value(argv, "--target_dataset")
+            / f"seed_{flag_value(argv, '--seed')}")
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text(
+            json.dumps({"eval_loss": 0.5, "eval_accuracy": 0.9}),
+            encoding="utf-8")
+        (cell_dir / "trainer_state.json").write_text(
+            '{"global_step": 1}', encoding="utf-8")
+        return subprocess.CompletedProcess(argv, returncode=0)
+
+    monkeypatch.setattr(run_sweep.subprocess, "run", fake_child)
+    run_sweep_cli(monkeypatch, [
+        "--from-failures", str(w0 / run_sweep.FAILURES_NAME),
+        "--output-root", str(w0),
+        "--registry-dir", str(registry_dir),
+        "--seeds", "42,43",
+        "--num_train_epochs", "1",
+    ])  # main() returns normally — the re-run exits 0
+
+    # exactly ONE child: the failed cell only — the completed cell was
+    # skipped by the seed-scoped marker, never re-attempted
+    assert len(launched) == 1, (
+        "the from-failures re-run must execute exactly the failed cell; "
+        "the marker-skipped sibling never invokes the executor"
+    )
+    assert flag_value(launched[0], "--target_model") == "model-a"
+    assert flag_value(launched[0], "--target_dataset") == "task-x"
+    assert flag_value(launched[0], "--seed") == "43"
+    assert flag_value(launched[0], "--output_dir") == str(w0), (
+        "the re-run child receives w0's own root as its output root"
+    )
+
+    # nothing outside w0 changed — w1's tree is snapshot-identical
+    assert snapshot_outside_w0() == before, (
+        "the isolation re-run must write NOTHING outside w0's root — "
+        "the healthy worker's files keep their bytes AND mtimes (D-08)"
+    )
+
+    # the re-run's own manifest records this run's view: the completed
+    # cell skipped (marker), the failed cell now completed
+    manifest = json.loads(
+        (w0 / run_sweep.MANIFEST_NAME).read_text(encoding="utf-8"))
+    statuses = {cell["seed"]: cell["status"] for cell in manifest["cells"]}
+    assert statuses == {42: "skipped", 43: "completed"}, (
+        "the manifest reflects THIS run's view while the per-cell record "
+        "keeps the original run's — the two artifacts answer different "
+        "questions (WR-12)"
+    )
+    rerun_failures = json.loads(
+        (w0 / run_sweep.FAILURES_NAME).read_text(encoding="utf-8"))
+    assert rerun_failures == [], "the recovered cell leaves no failure"
+
+
+# ===== the N=1 degenerate local smoke (12-05, D-05 — GB10-legal) =====
+
+
+def test_n1_degenerate_real_subprocess_smoke(tmp_path, monkeypatch):
+    """D-05 local semantics proof (12-05): the REAL spawner with
+    ``--workers 1 --gpus 0 --dry-run`` over a two-model fixture registry
+    spawns one real run_sweep child, writes the ONE frozen ``-mgpu-w0``
+    root manifest covering BOTH models, tees the sibling log, and main
+    exits 0. This host (GB10) has exactly ONE GPU — index 0 — so this
+    is the degenerate-but-valid CUDA_VISIBLE_DEVICES=0 chain, executed
+    here and only here; N=2 is the OTHER machine's documented procedure
+    (docs/multi-gpu.md §"The 9-step N=2 multi-GPU smoke procedure"),
+    never an executor or CI run (D-05)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    run_cli(monkeypatch, [
+        "--workers", "1",
+        "--gpus", "0",
+        "--models", "model-a,model-b",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ])  # real spawner: main(spawner=None) -> subprocess.Popen
+
+    w0 = run_sweep_shard.worker_root(base, 0)
+    assert (w0 / "sweep_manifest.json").is_file(), (
+        "the single degenerate worker must have written its frozen-root "
+        "manifest"
+    )
+    identities, _worker_dirs, matrix_models = _manifest_cells(w0)
+    assert matrix_models == ["model-a", "model-b"], (
+        "workers=1 carries the WHOLE requested model set (the LPT "
+        "degenerate shard)"
+    )
+    assert identities == {
+        ("model-a", "task-x", 42), ("model-b", "task-x", 42)}, (
+        "the degenerate worker planned exactly the 2-model matrix"
+    )
+    log = run_sweep_shard.worker_log_path(base, 0)
+    assert log.is_file() and log.read_text(encoding="utf-8").strip(), (
+        "the sibling tee log exists and captured the child's output"
+    )
+    assert not run_sweep_shard.worker_root(base, 1).exists(), (
+        "workers=1 never creates a w1 root"
+    )
+    assert not base.exists(), (
+        "the launch mode writes ONLY frozen sibling roots — never the "
+        "base root itself (shared roots are FORBIDDEN, Pitfall 1)"
+    )
