@@ -85,6 +85,7 @@ Dependencies: stdlib + ``run_sweep`` (same-source) + the sibling
 
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -655,7 +656,8 @@ def resolve_dirs(spec):
 #: The frozen list's assignment shape in pipeline/run_finetune.py
 #: (non-greedy to the closing bracket; the file's inline comments
 #: carry no ']' — the parity test alarms on any drift).
-_PROBE_INELIGIBLE_RE = re.compile(r"PROBE_INELIGIBLE\s*=\s*\[(.*?)\]", re.S)
+_PROBE_INELIGIBLE_RE = re.compile(
+    r"PROBE_INELIGIBLE\s*=\s*\[(.*?)\]", re.DOTALL)
 
 #: String literals inside the brackets (single-line; the frozen names
 #: carry no embedded quotes).
@@ -938,3 +940,113 @@ def phrase_matches(typed, output_root):
         bool: True only on the exact expected phrase.
     """
     return typed == expected_phrase(output_root)
+
+
+# =====================================================================
+# run_sweep argv composition (D-06 / D-12 / D-11)
+# =====================================================================
+
+
+def compose_argv(spec):
+    """Compose the run_sweep.py launch argv for a validated spec.
+
+    A LIST of str (never a shell string — the phase-10/D-06
+    discipline): the interpreter, the driver script, the three matrix
+    filters, and the ABSOLUTE output root, then PRESENT-ONLY flag
+    pairs appended in the pinned order ``--peft``, ``--config-
+    variant``, ``--curve``, ``--subset_file``, ``--num_train_epochs``,
+    ``--effective_batch_size``, ``--cache_dir``. An ABSENT flag
+    contributes ZERO elements (D-12 absent parity — a defaults spec
+    composes exactly the 10 base elements). Path-valued flags resolve
+    ABSOLUTE against REPO_ROOT before threading (D-14). The [p]
+    modal and the 11-03 launcher consume this argv verbatim; the
+    element order is pinned by the tier-1 suite, here only.
+
+    Composition validation (empty selection / variant x peft /
+    probe-ineligible) is the CALLER's gate step — this composer is
+    mechanical and re-refuses only the empty selection defensively.
+
+    Args:
+        spec (RunSpec): the composed spec.
+
+    Returns:
+        list[str]: the launch argv.
+
+    Raises:
+        ValueError: models or tasks is empty (the defensive backstop —
+            validation refuses it before composition ever runs).
+    """
+    if not spec.models or not spec.tasks:
+        raise ValueError(
+            "compose_argv refuses an empty selection — the preview/"
+            "launch gate owns refusing it; this is the defensive "
+            "backstop")
+    argv = [
+        sys.executable,
+        str(RUN_SWEEP_SCRIPT),
+        "--models", ",".join(spec.models),
+        "--tasks", ",".join(spec.tasks),
+        "--seeds", ",".join(str(seed) for seed in spec.seeds),
+        "--output-root", _abs_against_repo_root(spec.output_root),
+    ]
+    if spec.peft != "none":
+        argv += ["--peft", spec.peft]
+    if spec.config_variant != "none":
+        argv += ["--config-variant", spec.config_variant]
+    if spec.curve_fractions:
+        argv += ["--curve",
+                 ",".join(str(f) for f in spec.curve_fractions)]
+    if spec.subset_file:
+        argv += ["--subset_file",
+                 _abs_against_repo_root(spec.subset_file)]
+    if spec.num_train_epochs is not None:
+        argv += ["--num_train_epochs", str(spec.num_train_epochs)]
+    if spec.effective_batch_size is not None:
+        argv += ["--effective_batch_size",
+                 str(spec.effective_batch_size)]
+    if spec.cache_dir:
+        argv += ["--cache_dir", _abs_against_repo_root(spec.cache_dir)]
+    return argv
+
+
+def compose_from_failures_argv(failures_path, seeds, output_root,
+                               peft="none", config_variant="none",
+                               extra=None):
+    """Compose the ``--from-failures`` re-run argv (D-11, the [r]
+    path).
+
+    A from-failures enumeration is EXACTLY the failed (model, task)
+    pairs of a prior sweep — it can NEVER be the full matrix by
+    construction, so this path is never subject to the E2' typed gate
+    (it carries its own independent confirmation). Seeds and the
+    ABSOLUTE output root thread like the main path; peft/variant
+    pairs are present-only; ``extra`` (a list of str, e.g.
+    ``["--dry-run"]``) appends verbatim at the tail for the caller's
+    own flags.
+
+    Args:
+        failures_path: the ``sweep_failures.json`` path (resolved
+            absolute before threading).
+        seeds (iterable[int]): the re-run seed fan-out.
+        output_root (str | Path): the output root (absolute-resolved).
+        peft (str): adapter mode (none = absent).
+        config_variant (str): variant lane (none = absent).
+        extra (list[str] | None): caller-owned trailing elements.
+
+    Returns:
+        list[str]: the re-run argv.
+    """
+    argv = [
+        sys.executable,
+        str(RUN_SWEEP_SCRIPT),
+        "--from-failures", str(Path(failures_path).resolve()),
+        "--seeds", ",".join(str(seed) for seed in seeds),
+        "--output-root", _abs_against_repo_root(output_root),
+    ]
+    if peft != "none":
+        argv += ["--peft", peft]
+    if config_variant != "none":
+        argv += ["--config-variant", config_variant]
+    if extra:
+        argv += list(extra)
+    return argv

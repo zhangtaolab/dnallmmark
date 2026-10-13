@@ -41,7 +41,9 @@ See also:
 """
 
 import json
+import subprocess
 import sys
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
@@ -96,12 +98,30 @@ def flag_value(argv, flag):
 
 
 def test_importing_service_leaves_gpu_stack_absent():
-    """D-05 codified: importing the service (which module-level-imports
-    ``run_sweep`` for the pure planning functions) must leave the GPU
-    stack absent from ``sys.modules`` — the live-probe assertion."""
-    assert "torch" not in sys.modules
-    assert "dnallm" not in sys.modules
-    assert "transformers" not in sys.modules
+    """D-05 codified in a FRESH interpreter: importing the service
+    (which module-level-imports ``run_sweep`` for the pure planning
+    functions) must leave torch/dnallm/transformers absent from
+    ``sys.modules``. The live-probe discipline demands a subprocess —
+    the SUITE's own process may legitimately hold torch by this point
+    on the GB10 dev host (the env-check kernels import it when the
+    gpu stack is installed), so an in-process assert would prove
+    nothing about THIS module."""
+    probe = (
+        "import sys\n"
+        f"sys.path.insert(0, {str(REAL_REGISTRY_DIR)!r})\n"
+        f"sys.path.insert(0, {str(REPO_ROOT)!r})\n"
+        "import tui.services.run_config\n"
+        "assert 'run_sweep' in sys.modules, 'same-source import'\n"
+        "for banned in ('torch', 'dnallm', 'transformers'):\n"
+        "    assert banned not in sys.modules, banned\n"
+        "print('pure')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", probe],
+        capture_output=True, text=True, cwd=REPO_ROOT, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "pure"
 
 
 def test_runspec_defaults():
@@ -125,10 +145,13 @@ def test_runspec_defaults():
 
 def test_runspec_is_frozen():
     """The download_queue dataclass discipline: machine data, never
-    mutated in place."""
+    mutated in place. setattr (not attribute assignment): ty correctly
+    reads frozen dataclass properties as read-only — the 08-01
+    ty-vs-intent precedent; the noqa covers the inverse ruff conflict
+    (B010)."""
     spec = run_config.RunSpec(models=("m",), tasks=("t",))
-    with pytest.raises(Exception):
-        spec.peft = "lora"  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        setattr(spec, "peft", "lora")  # noqa: B010
 
 
 def test_runspec_normalizes_selection_sorted_dedup():
