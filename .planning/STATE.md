@@ -6,16 +6,16 @@ current_phase: 11
 current_phase_name: Run Config, Launch Gates & Single-GPU Monitoring
 current_plan: Not started
 status: planning
-stopped_at: Phase 10 complete, ready to plan Phase 11
-last_updated: "2026-10-12T23:29:39.275Z"
+stopped_at: Completed 11-01-PLAN.md
+last_updated: "2026-10-13T01:41:07.786Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 complete, transitioned to Phase 11
-state_head: d5feb38090033a9831575108a4517630fdb86738
+state_head: 14d632b1fd69e34b4f0f8b4e1f4f07a2152e32d2
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 25
-  completed_plans: 25
+  total_plans: 32
+  completed_plans: 26
   percent: 67
 ---
 
@@ -85,6 +85,7 @@ Progress (v1.2): [██████░░░░] 67% (4/6 phases; 25/25 planned
 | Phase 10 P04 | 58 min | 3 tasks | 8 files |
 | Phase 10 P05 | 31min | 2 tasks | 5 files |
 | Phase 10 P06 | 41min | 3 tasks | 4 files |
+| Phase 11 P01 | 945s | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -176,6 +177,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 10]: CLI availability gate lives at the consumers (enqueue/run_task), not the resolver: resolve_modelscope_cli keeps the pinned verbatim-explicit contract while a nowhere-pointing explicit path is the honest cli_unavailable state (10-06)
 - [Phase 10]: The corrupt-load diagnostic is session memory (last_load_diagnostic): load() returns it once, the screen's reloads surface the remembered value; the restart downgrade skips keys with a live process so a mid-flight reload can never re-queue the running entry (10-06)
 - [Phase 10]: The real service's probe_zenodo routes the zenodo_fetch seam — the whole queue surface (probe included) is offline-injectable; no queue test lane can reach the wire (10-06)
+- [Phase 11]: 11-01: D-18 --config-variant landed as --peft-style ALIASING in run_sweep (alias enumeration + explicit --save_model_name twin) — driver is the single naming authority over the child's self-aliasing branch; head keeps base for frozen pair (evo2_1b_base, megaDNA_updated), pinned by read-source parity; variant x peft refused collect-all at sweep start
+- [Phase 11]: 11-01: run_matrix default-executor partial binds config_variant explicitly and filters the key out of the sweep_flags splat — a present variant records in the manifest via sweep_flags (D-13) without a duplicate-kwarg collision with the argv authority
 
 ### Pending Todos
 
@@ -199,8 +202,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T18:03:44.441Z
-Stopped at: Phase 10 complete, ready to plan Phase 11
+Last session: 2026-10-13T01:41:07.732Z
+Stopped at: Completed 11-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
