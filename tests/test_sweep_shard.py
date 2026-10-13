@@ -80,10 +80,21 @@ import subprocess
 import sys
 from pathlib import Path
 
+import export_runs  # conftest puts script/ on sys.path
 import pytest
 import registry_loader  # conftest puts pipeline/ on sys.path
 import run_sweep  # conftest puts pipeline/ on sys.path
 import run_sweep_shard
+
+# Repo-root bootstrap (the tests/tui/conftest.py contract, inlined —
+# this module lives at tests/ level where the parent conftest provides
+# only script/, baseline/, and pipeline/): the consumer-equivalence rows
+# import the scanner package-qualified.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from tui.services import sweep_monitor
 
 # ===== machine-independence pin (WR-03 / the test_sweep.py idiom) =====
 #
@@ -876,3 +887,354 @@ def test_rewrite_output_dir_sibling_worker_prefix_guard():
     sibling = "/tmp/base-mgpu-w01/model-a/task-x/seed_42"
     assert run_sweep_shard._rewrite_output_dir(
         sibling, worker, merged) == sibling
+
+
+# ----- the two-worker fixture pair (Task 2's behavior rows) -----
+
+
+def _write_cell_artifacts(cell_dir, model, task, seed, flops=True):
+    """Materialize a cell dir's allowlisted artifacts with realistic
+    minimal payloads (run_record / seed_result valid for the exporter
+    walk; flops optional — a missing allowlisted file is skipped and
+    counted, never an error)."""
+    cell_dir.mkdir(parents=True, exist_ok=True)
+    contents = {
+        "run_record.json": {
+            "model": model, "task": task, "seed": seed,
+            "status": "completed", "peft": "none",
+            "config_variant": "none", "train_fraction": None,
+            "output_dir": str(cell_dir), "metrics": {"total_flos": 1.0},
+            "git_commit": "test", "started_at": None,
+            "finished_at": None, "error": None,
+        },
+        "final_metrics.json": {"eval_loss": 0.5, "eval_accuracy": 0.9},
+        "trainer_state.json": {"global_step": 10, "log_history": []},
+        "seed_result.json": {
+            "model_name": model, "task_name": task, "seed": seed,
+            "timestamp": "2026-10-13T00:00:00Z",
+            "metrics": {"seed_suite_metric": 0.5},
+        },
+    }
+    if flops:
+        contents["flops_report.json"] = {
+            "schema_version": 1, "total_flops_exact": 123456.0,
+            "layer_details": {},
+        }
+    for name, payload in contents.items():
+        (cell_dir / name).write_text(
+            json.dumps(payload), encoding="utf-8")
+
+
+def make_worker_pair(tmp_path, name="finetuned"):
+    """Build the two-worker fixture tree pair.
+
+    Worker 0 (model-a): a curve-shaped cell (seed_42 with a frac_0.5
+    child, both carrying the full allowlist), a plain cell (seed_43)
+    whose dir also carries the stray checkpoint-500/ + runs/ dirs, and a
+    planned-but-never-run cell (task-y, dir absent); one failure entry.
+    Worker 1 (model-b): two plain cells (four allowlisted files each —
+    no flops_report.json, pinning the missing-file skip); no failures.
+    """
+    base = (tmp_path / name).resolve()
+    w0 = run_sweep_shard.worker_root(base, 0)
+    w1 = run_sweep_shard.worker_root(base, 1)
+
+    _write_cell_artifacts(
+        w0 / "model-a" / "task-x" / "seed_42", "model-a", "task-x", 42)
+    _write_cell_artifacts(
+        w0 / "model-a" / "task-x" / "seed_42" / "frac_0.5",
+        "model-a", "task-x", 42)
+    seed_43 = w0 / "model-a" / "task-x" / "seed_43"
+    _write_cell_artifacts(seed_43, "model-a", "task-x", 43)
+    (seed_43 / "checkpoint-500").mkdir()
+    (seed_43 / "checkpoint-500" / "optimizer.pt").write_text(
+        "ckpt", encoding="utf-8")
+    (seed_43 / "runs").mkdir()
+    (seed_43 / "runs" / "events.out.tfevents").write_text(
+        "tb", encoding="utf-8")
+    write_manifest(
+        w0,
+        cells=[
+            make_manifest_cell(w0, "model-a", "task-x", 42),
+            make_manifest_cell(w0, "model-a", "task-x", 43),
+            make_manifest_cell(w0, "model-a", "task-y", 42,
+                               status="planned"),
+        ],
+        models=["model-a"], tasks=["task-x", "task-y"], seeds=[42, 43])
+    (w0 / run_sweep.FAILURES_NAME).write_text(
+        json.dumps([
+            {"model": "model-a", "task": "task-y", "seed": 42,
+             "output_dir": str(w0 / "model-a" / "task-y" / "seed_42"),
+             "error": "boom"},
+        ]), encoding="utf-8")
+
+    _write_cell_artifacts(
+        w1 / "model-b" / "task-x" / "seed_42", "model-b", "task-x", 42,
+        flops=False)
+    _write_cell_artifacts(
+        w1 / "model-b" / "task-x" / "seed_43", "model-b", "task-x", 43,
+        flops=False)
+    write_manifest(
+        w1,
+        cells=[
+            make_manifest_cell(w1, "model-b", "task-x", 42),
+            make_manifest_cell(w1, "model-b", "task-x", 43),
+        ],
+        models=["model-b"], tasks=["task-x"], seeds=[42, 43])
+    (w1 / run_sweep.FAILURES_NAME).write_text("[]", encoding="utf-8")
+    return base, [w0, w1]
+
+
+def _snapshot_tree(root):
+    """Snapshot every file under root: path -> (bytes, mtime_ns)."""
+    snapshot = {}
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            snapshot[path] = (
+                path.read_bytes(), path.stat().st_mtime_ns)
+    return snapshot
+
+
+def _worker_allowlisted_files(worker_root):
+    """Every allowlisted source file under a worker root (fixture truth
+    for the merged-copy assertions)."""
+    return sorted(
+        path for path in worker_root.rglob("*")
+        if path.is_file() and path.name in run_sweep_shard.MERGE_ALLOWLIST)
+
+
+def run_merge_cli(monkeypatch, base, workers=2, extra=None):
+    """Invoke the merge mode over a fixture base root."""
+    argv = ["--merge", "--workers", str(workers),
+            "--output-root", str(base)]
+    run_cli(monkeypatch, [*argv, *(extra or [])])
+
+
+def test_merge_happy_path_copies_allowlist_and_rewrites(
+        tmp_path, monkeypatch, capsys):
+    """The happy path: every allowlisted source file lands at its exact
+    relative path under the merged root byte-identical; checkpoint-*/
+    and runs/ are ABSENT by default; the never-run cell contributes its
+    rewritten manifest entry but no files (counted in the console);
+    every merged cell's output_dir sits under the merged root with the
+    {model}/{task}/seed_{n} suffix verbatim; matrix and failures union
+    correctly; the console reports per-worker counts + the union
+    count."""
+    base, roots = make_worker_pair(tmp_path)
+    run_merge_cli(monkeypatch, base)
+
+    # 1. every allowlisted source file copied byte-identical to the same
+    #    relative path under the merged root
+    for worker in roots:
+        for src in _worker_allowlisted_files(worker):
+            rel = src.relative_to(worker)
+            dst = base / rel
+            assert dst.is_file(), f"missing merged copy: {dst}"
+            assert dst.read_bytes() == src.read_bytes(), (
+                f"merged copy differs from source: {dst}"
+            )
+        # 2. checkpoint-*/ and runs/ ABSENT by default (A2 scope pin)
+        for stray in worker.rglob("checkpoint-*"):
+            assert not (base / stray.relative_to(worker)).exists()
+        for stray in worker.rglob("runs"):
+            assert not (base / stray.relative_to(worker)).exists()
+
+    # 3. the never-run cell contributed NO files
+    assert not (base / "model-a" / "task-y").exists()
+
+    # 4. the merged manifest: union of cells, every output_dir rewritten
+    manifest = json.loads(
+        (base / run_sweep.MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert len(manifest["cells"]) == 5, "3 (w0) + 2 (w1) union cells"
+    for cell in manifest["cells"]:
+        assert cell["output_dir"] == str(
+            base / cell["model"] / cell["task"] / f"seed_{cell['seed']}"
+        ), ("every merged output_dir must sit under the merged root with "
+            "the {model}/{task}/seed_{n} suffix verbatim (Pitfall 5)")
+    assert manifest["matrix"] == {
+        "models": ["model-a", "model-b"],
+        "tasks": ["task-x", "task-y"],
+        "seeds": [42, 43],
+        "output_root": str(base),
+    }
+
+    # 5. failures union with the same rewrite
+    failures = json.loads(
+        (base / run_sweep.FAILURES_NAME).read_text(encoding="utf-8"))
+    assert failures == [
+        {"model": "model-a", "task": "task-y", "seed": 42,
+         "output_dir": str(base / "model-a" / "task-y" / "seed_42"),
+         "error": "boom"},
+    ]
+
+    # 6. console honesty: per-worker copied counts + union count
+    out = capsys.readouterr().out
+    assert "[Merge] worker 0: 15 file(s)" in out, (
+        "w0 = seed_42(5) + frac_0.5(5) + seed_43(5); strays excluded"
+    )
+    assert "[Merge] worker 1: 8 file(s)" in out, (
+        "w1 = two plain cells x 4 files (flops_report absent = skipped)"
+    )
+    assert "1 cell(s) with no files on disk" in out, (
+        "the never-run cell is counted, not silently dropped"
+    )
+    assert "5 cell(s)" in out and "1 failure entry(ies)" in out
+
+
+def test_merge_include_checkpoints_hatch_copies_strays(
+        tmp_path, monkeypatch):
+    """--include-checkpoints: the checkpoint-*/ and runs/ trees copy
+    verbatim (verified like everything else)."""
+    base, _roots = make_worker_pair(tmp_path)
+    run_merge_cli(monkeypatch, base, extra=["--include-checkpoints"])
+    merged_seed_43 = base / "model-a" / "task-x" / "seed_43"
+    assert (merged_seed_43 / "checkpoint-500" / "optimizer.pt"
+            ).read_text(encoding="utf-8") == "ckpt"
+    assert (merged_seed_43 / "runs" / "events.out.tfevents"
+            ).read_text(encoding="utf-8") == "tb"
+
+
+def test_copy_verified_unit_happy(tmp_path):
+    """_copy_verified: a clean copy returns True and the destination
+    bytes equal the source's."""
+    src = tmp_path / "src.json"
+    src.write_text('{"a": 1}', encoding="utf-8")
+    dst = tmp_path / "nested" / "dst.json"
+    assert run_sweep_shard._copy_verified(src, dst) is True
+    assert dst.read_text(encoding="utf-8") == '{"a": 1}'
+
+
+def test_copy_verified_unit_detects_corruption(tmp_path, monkeypatch):
+    """_copy_verified returns False when the destination bytes differ
+    from the source's after the copy step — simulated by pre-writing a
+    tampered destination and neutering the copy (it never repairs
+    silently)."""
+    src = tmp_path / "src.json"
+    src.write_text('{"a": 1}', encoding="utf-8")
+    dst = tmp_path / "dst.json"
+    dst.write_text('{"tampered": true}', encoding="utf-8")
+
+    def no_op_copyfile(src_path, dst_path):
+        pass  # the copy "succeeds" but lands nothing — dst stays tampered
+
+    monkeypatch.setattr(
+        run_sweep_shard.shutil, "copyfile", no_op_copyfile)
+    assert run_sweep_shard._copy_verified(src, dst) is False, (
+        "a destination whose post-copy bytes differ from the source must "
+        "refuse (D-09 verification)"
+    )
+
+
+def test_merge_refuses_on_hash_mismatch_without_manifests(
+        tmp_path, monkeypatch):
+    """Merge level: a monkeypatched copy that corrupts every file makes
+    main refuse, and the merged manifests are NOT written (a partial
+    corrupt merge never lands)."""
+    base, _roots = make_worker_pair(tmp_path)
+
+    def corrupting_copyfile(src_path, dst_path):
+        Path(dst_path).write_text("corrupted-by-fake", encoding="utf-8")
+
+    monkeypatch.setattr(
+        run_sweep_shard.shutil, "copyfile", corrupting_copyfile)
+    with pytest.raises(SystemExit) as excinfo:
+        run_merge_cli(monkeypatch, base)
+    assert "SHA256 mismatch" in str(excinfo.value)
+    assert not (base / run_sweep.MANIFEST_NAME).exists(), (
+        "the merged manifest must never land on a corrupt copy"
+    )
+    assert not (base / run_sweep.FAILURES_NAME).exists()
+
+
+def test_merge_refuses_missing_worker_root(tmp_path, monkeypatch):
+    """A worker root that does not exist refuses collect-all naming it."""
+    base, roots = make_worker_pair(tmp_path)
+    import shutil as shutil_module
+    shutil_module.rmtree(roots[1])
+    with pytest.raises(SystemExit) as excinfo:
+        run_merge_cli(monkeypatch, base)
+    assert str(roots[1]) in str(excinfo.value)
+
+
+def test_merge_refuses_worker_root_without_manifest(
+        tmp_path, monkeypatch):
+    """A worker root present on disk but without its sweep_manifest.json
+    refuses collect-all naming it (an incomplete merge never lands)."""
+    base, roots = make_worker_pair(tmp_path)
+    (roots[1] / run_sweep.MANIFEST_NAME).unlink()
+    with pytest.raises(SystemExit) as excinfo:
+        run_merge_cli(monkeypatch, base)
+    assert str(roots[1]) in str(excinfo.value)
+
+
+def test_merge_refuses_stray_passthrough(tmp_path, monkeypatch):
+    """--merge with stray passthrough tokens refuses (merge takes no
+    sweep flags)."""
+    base, _roots = make_worker_pair(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_merge_cli(monkeypatch, base, extra=["--seeds", "42"])
+    assert "--seeds" in str(excinfo.value)
+
+
+def test_merged_root_is_consumer_equivalent(tmp_path, monkeypatch):
+    """The D-09 acceptance: export_runs.load_run_records over the merged
+    root returns EXACTLY the union of the per-worker record sets (the
+    walk keys on model names x seed_(\\d+) dirs, both preserved verbatim
+    by the copy), and sweep_monitor.full_scan classifies the merged root
+    through the manifest branch — state finished with full counts."""
+    base, roots = make_worker_pair(tmp_path)
+    run_merge_cli(monkeypatch, base)
+
+    def key_set(root):
+        tree = export_runs.load_run_records(root)
+        return {
+            (model, task, seed)
+            for model, tasks in tree.items()
+            for task, seeds in tasks.items()
+            for seed in seeds
+        }
+
+    union = key_set(roots[0]) | key_set(roots[1])
+    assert union, "the fixture must carry worker records"
+    assert key_set(base) == union, (
+        "the merged root must read as exactly the union of the worker "
+        "roots through the REAL exporter walk"
+    )
+
+    scan = sweep_monitor.full_scan(roots=[base])
+    assert len(scan.sweeps) == 1
+    summary = scan.sweeps[0]
+    assert summary.state == sweep_monitor.SWEEP_FINISHED, (
+        "the merged manifest puts the root in the scanner's "
+        "first-match manifest branch"
+    )
+    assert summary.total == 5
+    assert summary.done == 4, "4 completed + 1 planned (planned never counts)"
+
+
+def test_merge_is_idempotent_byte_stable(tmp_path, monkeypatch):
+    """Re-running --merge over unchanged workers rewrites byte-identical
+    merged manifests (the deterministic JSON discipline) with overwrite
+    semantics — no spurious copy failures."""
+    base, _roots = make_worker_pair(tmp_path)
+    run_merge_cli(monkeypatch, base)
+    first_manifest = (base / run_sweep.MANIFEST_NAME).read_bytes()
+    first_failures = (base / run_sweep.FAILURES_NAME).read_bytes()
+    run_merge_cli(monkeypatch, base)  # second merge over the same tree
+    assert (base / run_sweep.MANIFEST_NAME).read_bytes() == first_manifest
+    assert (base / run_sweep.FAILURES_NAME).read_bytes() == first_failures
+
+
+def test_merge_leaves_worker_roots_immutable(tmp_path, monkeypatch):
+    """After merge, every worker file's bytes AND mtime are unchanged
+    (copy-only semantics — workers stay re-runnable in isolation, D-08;
+    the merge never mutates a worker root)."""
+    base, roots = make_worker_pair(tmp_path)
+    before = {root: _snapshot_tree(root) for root in roots}
+    run_merge_cli(monkeypatch, base)
+    run_merge_cli(monkeypatch, base, extra=["--include-checkpoints"])
+    for root in roots:
+        assert _snapshot_tree(root) == before[root], (
+            f"worker root {root} must be byte- and mtime-identical after "
+            "one default merge and one checkpoints-hatch merge"
+        )
