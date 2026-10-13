@@ -41,8 +41,10 @@ seconds); with no injection the real clock is read once per call.
 """
 
 import json
+import statistics
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
@@ -818,6 +820,94 @@ def resume_count(root) -> int:
 # =====================================================================
 
 
+def _parse_iso(value) -> datetime | None:
+    """Tolerant ISO-8601 parse: a malformed stamp returns None (the
+    caller drops that record from the math, never crashes); a naive
+    stamp is assumed UTC (the driver stamps UTC)."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _model_plan(manifest: dict | None) -> dict[str, int] | None:
+    """The per-model cell totals from the manifest's cells — the
+    per-model ETA plan (None when there is no manifest)."""
+    if manifest is None:
+        return None
+    plan: dict[str, int] = {}
+    for cell in _manifest_cells(manifest):
+        if isinstance(cell, dict) and isinstance(cell.get("model"), str):
+            plan[cell["model"]] = plan.get(cell["model"], 0) + 1
+    return plan
+
+
+def _current_cell(
+        root: Path,
+        records: list[dict]) -> CurrentCell | None:
+    """The newest-started record's (model, task, seed) — record fields
+    verbatim — else the newest-activity seed dir (the mkdir-before-
+    executor cell the records do not know about yet)."""
+    newest_epoch: float | None = None
+    newest_record: dict | None = None
+    for record in records:
+        started = _parse_iso(record.get("started_at"))
+        if started is None:
+            continue
+        epoch = started.timestamp()
+        if newest_epoch is None or epoch >= newest_epoch:
+            newest_epoch = epoch
+            newest_record = record
+    if newest_record is not None:
+        model = newest_record.get("model")
+        task = newest_record.get("task")
+        seed = newest_record.get("seed")
+        if (isinstance(model, str) and isinstance(task, str)
+                and isinstance(seed, int)):
+            return CurrentCell(model=model, task=task, seed=seed)
+    newest_seed_dir: Path | None = None
+    newest_mtime: float | None = None
+    newest_identity: tuple[str, str, int] | None = None
+    for model, task, seed, seed_dir in _iter_seed_dirs(root):
+        mtime = _seed_dir_mtime(seed_dir)
+        if mtime is not None and (
+                newest_mtime is None or mtime >= newest_mtime):
+            newest_mtime = mtime
+            newest_seed_dir = seed_dir
+            newest_identity = (model, task, seed)
+    if newest_seed_dir is None or newest_identity is None:
+        return None
+    model, task, seed = newest_identity
+    return CurrentCell(model=model, task=task, seed=seed)
+
+
+def _elapsed_seconds(
+        records: list[dict],
+        fallback_start: float | None,
+        now_epoch: float) -> float | None:
+    """now minus the earliest record started_at; else now minus the
+    injected launcher start (a TUI-launched sweep before its first
+    record); else None (the dash rendering)."""
+    earliest: float | None = None
+    for record in records:
+        started = _parse_iso(record.get("started_at"))
+        if started is None:
+            continue
+        epoch = started.timestamp()
+        if earliest is None or epoch < earliest:
+            earliest = epoch
+    if earliest is not None:
+        return now_epoch - earliest
+    if fallback_start is not None:
+        return now_epoch - float(fallback_start)
+    return None
+
+
 def stats(root, expected_total=None, fallback_start=None, now=None):
     """The stats line (MON-02/D-17) over one root.
 
@@ -828,7 +918,27 @@ def stats(root, expected_total=None, fallback_start=None, now=None):
     earliest record started_at, else now minus fallback_start (a
     TUI-launched sweep before its first record), else None.
     """
-    raise NotImplementedError
+    root_path = Path(root)
+    now_epoch = _now_epoch(now)
+    records = _collect_records(root_path)
+    done = sum(
+        1
+        for record in records
+        if record.get("status") in TERMINAL_RECORD_STATUSES
+    )
+    manifest = load_manifest(root_path / MANIFEST_NAME)
+    total: int | None = expected_total
+    if total is None and manifest is not None:
+        total = len(_manifest_cells(manifest))
+    return SweepStats(
+        done=done,
+        total=total,
+        current=_current_cell(root_path, records),
+        elapsed_seconds=_elapsed_seconds(records, fallback_start, now_epoch),
+        eta=eta_estimate(
+            records, done, total, now=now_epoch,
+            model_totals=_model_plan(manifest)),
+    )
 
 
 def eta_estimate(records, done, total, now=None, model_totals=None):
@@ -836,24 +946,82 @@ def eta_estimate(records, done, total, now=None, model_totals=None):
 
     Durations = completed records' finished_at - started_at wall-clock
     (skipped EXCLUDED — their ~zero duration biases the median;
-    malformed stamps drop that record from the math, never crash).
-    < 1 completed duration -> pending; total None or remaining <= 0 ->
-    none. Point = sum(per-model remaining x that model's median) when
-    the per-model plan (``model_totals`` from the manifest) is
-    derivable — a model with no completion uses the GLOBAL median —
-    else global median x remaining. >= 2 durations with max/min >
-    ETA_VARIANCE_RATIO -> range (min x remaining, max x remaining).
+    malformed stamps and clock-skew negatives drop that record from
+    the math, never crash). < 1 completed duration -> pending; total
+    None or remaining <= 0 -> none. Point = sum(per-model remaining x
+    that model's median) when the per-model plan (``model_totals``
+    from the manifest) is derivable — a model with no completion uses
+    the GLOBAL median — else global median x remaining. >= 2 durations
+    with max/min > ETA_VARIANCE_RATIO -> range (min x remaining,
+    max x remaining) replacing the point.
 
     ``now`` is part of the pinned signature (the screen threads one
     injected clock through every call); the median-x-remaining math
     itself needs no wall clock.
     """
-    raise NotImplementedError
+    durations_by_model: dict[str, list[float]] = {}
+    all_durations: list[float] = []
+    for record in records:
+        if not isinstance(record, dict) or (
+                record.get("status") != CELL_COMPLETED):
+            continue
+        started = _parse_iso(record.get("started_at"))
+        finished = _parse_iso(record.get("finished_at"))
+        if started is None or finished is None:
+            continue
+        duration = (finished - started).total_seconds()
+        if duration < 0:
+            continue  # clock skew: drop the record, never crash
+        model = record.get("model")
+        model = model if isinstance(model, str) else ""
+        durations_by_model.setdefault(model, []).append(duration)
+        all_durations.append(duration)
+
+    if not all_durations:
+        return EtaEstimate(ETA_PENDING, None, None, None)
+    if total is None:
+        return EtaEstimate(ETA_NONE, None, None, None)
+    remaining = total - done
+    if remaining <= 0:
+        return EtaEstimate(ETA_NONE, None, None, None)
+
+    shortest = min(all_durations)
+    longest = max(all_durations)
+    if (len(all_durations) >= 2 and shortest > 0
+            and longest / shortest > ETA_VARIANCE_RATIO):
+        return EtaEstimate(
+            ETA_RANGE, None, shortest * remaining, longest * remaining)
+
+    global_median = statistics.median(all_durations)
+    if model_totals:
+        done_by_model: dict[str, int] = {}
+        for record in records:
+            if (isinstance(record, dict)
+                    and record.get("status") in TERMINAL_RECORD_STATUSES
+                    and isinstance(record.get("model"), str)):
+                model = record["model"]
+                done_by_model[model] = done_by_model.get(model, 0) + 1
+        point = 0.0
+        for model, model_total in model_totals.items():
+            model_remaining = model_total - done_by_model.get(model, 0)
+            if model_remaining <= 0:
+                continue
+            median = (
+                statistics.median(durations_by_model[model])
+                if model in durations_by_model
+                else global_median
+            )
+            point += model_remaining * median
+        return EtaEstimate(ETA_POINT, point, None, None)
+    return EtaEstimate(ETA_POINT, global_median * remaining, None, None)
 
 
 def format_hms(seconds) -> str:
     """Elapsed rendering (UI-SPEC auto-default 17): ``H:MM:SS``."""
-    raise NotImplementedError
+    total = max(0, int(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}"
 
 
 def format_eta(seconds) -> str:
@@ -861,7 +1029,35 @@ def format_eta(seconds) -> str:
     ``≈{h}h`` (one decimal, trailing zero dropped) under a day,
     ``≈{d}d{h}h`` beyond. Numeric/English only — services stay
     CJK-free; the SCREEN prefixes the copy."""
-    raise NotImplementedError
+    seconds = float(seconds)
+    if seconds < 3600:
+        return f"≈{max(1, round(seconds / 60))}m"
+    if seconds < 86400:
+        return f"≈{round(seconds / 3600, 1):g}h"
+    days = int(seconds // 86400)
+    hours = int((seconds % 86400) // 3600)
+    return f"≈{days}d{hours}h"
+
+
+def _failure_row(entry: dict) -> FailureRow | None:
+    """Coerce one failure-shaped dict (manifest entry or record) into a
+    FailureRow; shape-invalid entries are skipped (tolerant), the alias
+    model identity kept verbatim."""
+    model = entry.get("model")
+    task = entry.get("task")
+    seed = entry.get("seed")
+    if not (isinstance(model, str) and isinstance(task, str)
+            and isinstance(seed, int)):
+        return None
+    error = entry.get("error")
+    output_dir = entry.get("output_dir")
+    return FailureRow(
+        model=model,
+        task=task,
+        seed=seed,
+        error=error if isinstance(error, str) else "",
+        output_dir=output_dir if isinstance(output_dir, str) else "",
+    )
 
 
 def failures_view(root) -> tuple[FailureRow, ...]:
@@ -869,7 +1065,23 @@ def failures_view(root) -> tuple[FailureRow, ...]:
     is present (authoritative — the file lands at sweep end), else the
     records with status failed (the LIVE source while running: each
     lands as its cell fails — O3)."""
-    raise NotImplementedError
+    root_path = Path(root)
+    manifest = load_manifest(root_path / MANIFEST_NAME)
+    rows: list[FailureRow] = []
+    if manifest is not None:
+        for entry in load_failures(root_path / FAILURES_NAME) or []:
+            if isinstance(entry, dict):
+                row = _failure_row(entry)
+                if row is not None:
+                    rows.append(row)
+    else:
+        for record in _collect_records(root_path):
+            if record.get("status") != CELL_FAILED:
+                continue
+            row = _failure_row(record)
+            if row is not None:
+                rows.append(row)
+    return tuple(sorted(rows, key=lambda row: (row.model, row.task, row.seed)))
 
 
 def read_log_tail(path, max_lines=200, max_bytes=65536):
@@ -878,4 +1090,16 @@ def read_log_tail(path, max_lines=200, max_bytes=65536):
     window's leading partial line dropped; None when the file is
     absent/unreadable (the screen renders the designed unavailable
     state, never a fabricated empty log)."""
-    raise NotImplementedError
+    file_path = Path(path)
+    try:
+        size = file_path.stat().st_size
+        with file_path.open("rb") as handle:
+            start = max(0, size - max_bytes)
+            handle.seek(start)
+            raw = handle.read(size - start)
+    except OSError:
+        return None
+    lines = raw.decode("utf-8", errors="replace").splitlines()
+    if start > 0 and lines:
+        lines = lines[1:]  # the window's leading partial line
+    return tuple(lines[-max_lines:])
