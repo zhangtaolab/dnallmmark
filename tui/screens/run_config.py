@@ -847,6 +847,21 @@ class RunConfigScreen(Screen):
             self.run_id = run_id
             super().__init__()
 
+    class GateWorkerError(Message):
+        """A gate/mount worker RAISED (WR-03, phase-11 review): the
+        failure is surfaced (error toast) and the pre-modal gate flag
+        released — a worker exception must never wedge the gate or die
+        as a silent no-op (the confirm-then-crash class).
+
+        ``run_id`` is the dispatching worker's id (None for the mount
+        load, which has no id space — always surfaced)."""
+
+        def __init__(self, error: str,
+                     run_id: "int | None" = None) -> None:
+            self.error = error
+            self.run_id = run_id
+            super().__init__()
+
     # ===== construction =====
 
     def __init__(self,
@@ -996,8 +1011,13 @@ class RunConfigScreen(Screen):
 
     @work(exclusive=True, thread=True, group="cfg-load")
     def _load(self) -> None:
-        spec = self._run_service.load_state()
-        entries = self._run_service.picker_entries()
+        try:
+            spec = self._run_service.load_state()
+            entries = self._run_service.picker_entries()
+        except Exception as exc:  # noqa: BLE001 — WR-03: surfaced, never
+            # a silently blank screen (registry OSError / overlay faults)
+            self.post_message(self.GateWorkerError(_exc_text(exc)))
+            return
         self.post_message(self.Loaded(spec, entries))
 
     def on_run_config_screen_loaded(self, message: Loaded) -> None:
@@ -1050,21 +1070,29 @@ class RunConfigScreen(Screen):
     @work(exclusive=True, thread=True, group="cfg-preview")
     def _run_preview(self, spec: RunSpec, parse_problems: tuple,
                      run_id: int) -> None:
-        self._run_service.save_state(spec)
-        result = self._run_service.preview(spec)
-        dir_states = {
-            "output-root": self._run_service.path_state(spec.output_root),
-            "dataset-root": self._run_service.path_state(
-                spec.dataset_root or ""),
-            "cache": self._run_service.path_state(spec.cache_dir or ""),
-            "subset": self._run_service.path_state(
-                spec.subset_file if spec.subset_file else ""),
-        }
-        probe_hits: tuple = ()
-        if spec.config_variant == "probe":
-            frozen = self._run_service.probe_ineligible()
-            probe_hits = tuple(sorted(
-                key for key in self._picker_keys("models") if key in frozen))
+        try:
+            self._run_service.save_state(spec)
+            result = self._run_service.preview(spec)
+            dir_states = {
+                "output-root": self._run_service.path_state(spec.output_root),
+                "dataset-root": self._run_service.path_state(
+                    spec.dataset_root or ""),
+                "cache": self._run_service.path_state(spec.cache_dir or ""),
+                "subset": self._run_service.path_state(
+                    spec.subset_file if spec.subset_file else ""),
+            }
+            probe_hits: tuple = ()
+            if spec.config_variant == "probe":
+                frozen = self._run_service.probe_ineligible()
+                probe_hits = tuple(sorted(
+                    key for key in self._picker_keys("models")
+                    if key in frozen))
+        except Exception:  # noqa: BLE001 — WR-03, the tolerant live-
+            # refresh surface: the previous preview line stands (the
+            # monitor-worker precedent); the same fault resurfaces at
+            # the next gate attempt through the WR-03-wrapped gate
+            # workers, never a per-keystroke toast flood.
+            return
         self.post_message(self.PreviewLine(
             result, parse_problems, dir_states, probe_hits, run_id))
 
@@ -1480,8 +1508,14 @@ class RunConfigScreen(Screen):
     @work(exclusive=True, thread=True, group="cfg-gate-enum")
     def _run_gate_enumeration(self, spec: RunSpec, run_id: int) -> None:
         """Step 1 — the FRESH same-source enumeration (worker: the
-        console never freezes while the matrix enumerates, T-11-06-04)."""
-        result = self._run_service.preview(spec)
+        console never freezes while the matrix enumerates, T-11-06-04;
+        WR-03-wrapped: an exception surfaces, never a wedged gate)."""
+        try:
+            result = self._run_service.preview(spec)
+        except Exception as exc:  # noqa: BLE001 — WR-03
+            self.post_message(
+                self.GateWorkerError(_exc_text(exc), run_id))
+            return
         self.post_message(
             self.GateEnumerationDone(result, self._gate_parse_problems,
                                      run_id))
@@ -1516,8 +1550,14 @@ class RunConfigScreen(Screen):
 
     @work(exclusive=True, thread=True, group="cfg-gate-env")
     def _run_env_preflight(self, run_id: int) -> None:
-        """Step 2 — the env preflight over the frozen phase-8 face."""
-        verdict = self._launcher.env_preflight()
+        """Step 2 — the env preflight over the frozen phase-8 face
+        (WR-03-wrapped)."""
+        try:
+            verdict = self._launcher.env_preflight()
+        except Exception as exc:  # noqa: BLE001 — WR-03
+            self.post_message(
+                self.GateWorkerError(_exc_text(exc), run_id))
+            return
         self.post_message(self.EnvPreflightDone(verdict, run_id))
 
     def on_run_config_screen_env_preflight_done(
@@ -1538,8 +1578,13 @@ class RunConfigScreen(Screen):
     @work(exclusive=True, thread=True, group="cfg-gate-confirm")
     def _run_confirm_data(self, spec: RunSpec, run_id: int) -> None:
         """Step 3 — the FRESH confirm summary (never screen state,
-        T-11-06-02)."""
-        summary = self._launcher.gate_confirm_data(spec)
+        T-11-06-02; WR-03-wrapped)."""
+        try:
+            summary = self._launcher.gate_confirm_data(spec)
+        except Exception as exc:  # noqa: BLE001 — WR-03
+            self.post_message(
+                self.GateWorkerError(_exc_text(exc), run_id))
+            return
         self.post_message(self.GateSummaryReady(summary, run_id))
 
     def on_run_config_screen_gate_summary_ready(
@@ -1578,7 +1623,16 @@ class RunConfigScreen(Screen):
     @work(exclusive=True, thread=True, group="cfg-gate-launch")
     def _run_launch(self, spec: RunSpec, phrase: "str | None",
                     run_id: int) -> None:
-        outcome = self._launcher.launch_spec(spec, phrase)
+        """Step 4 — the gated launch (worker: the spawn is OS I/O;
+        WR-03-wrapped — dying here is AFTER the operator confirmed, the
+        worst instance: surfaced as the error toast, never a silent
+        no-op)."""
+        try:
+            outcome = self._launcher.launch_spec(spec, phrase)
+        except Exception as exc:  # noqa: BLE001 — WR-03
+            self.post_message(
+                self.GateWorkerError(_exc_text(exc), run_id))
+            return
         self.post_message(
             self.LaunchFinished(outcome, self._gate_summary, run_id))
 
@@ -1628,6 +1682,22 @@ class RunConfigScreen(Screen):
                 severity="error")
             return
 
+    def on_run_config_screen_gate_worker_error(
+            self, message: GateWorkerError) -> None:
+        """WR-03 (phase-11 review): a gate/mount worker raised — the
+        pre-modal flag releases (the gate is re-enterable, never
+        wedged) and the error toast surfaces it (a confirm-then-crash
+        is never a silent no-op)."""
+        run_id = message.run_id
+        if (run_id is not None
+                and run_id != self._gate_stage_id
+                and run_id != self._gate_launch_id):
+            return  # a superseded worker's late error (WR-02)
+        self._gate_active = False
+        self.app.notify(
+            LNC_LAUNCH_FAILED_TOAST.format(error=message.error),
+            severity="error")
+
     # ===== spec mutation (persist + preview through the worker) =====
 
     def _apply_spec_change(self, **changes: Any) -> None:
@@ -1643,3 +1713,9 @@ def _truncate_text(text: Text, width: int) -> Text:
     """Ellipsis-truncate one rich Text in place (Rich's measurement)."""
     text.truncate(max(width, 1), overflow="ellipsis", pad=False)
     return text
+
+
+def _exc_text(exc: BaseException) -> str:
+    """One caught exception's message (empty str() falls back to
+    repr — some OSErrers stringify empty, never toast an empty error)."""
+    return str(exc) or repr(exc)

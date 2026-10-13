@@ -627,11 +627,16 @@ class LogTailModal(ModalScreen):
 
     @work(exclusive=True, thread=True, group="mon-logtail")
     def _refresh_tick(self) -> None:
-        """One cadence refresh: the tail read stays off the event loop."""
+        """One cadence refresh: the tail read stays off the event loop
+        (WR-03-wrapped: a raised read skips this tick — the modal keeps
+        its last-good lines, the next tick retries)."""
         if self._tee_path is None:
             return
+        try:
+            lines = self._tail_reader(self._tee_path)
+        except Exception:  # noqa: BLE001 — tolerant refresh
+            return
         self._refresh_run_id += 1
-        lines = self._tail_reader(self._tee_path)
         self.post_message(self.TailRead(lines, self._refresh_run_id))
 
     class TailRead(Message):
@@ -776,6 +781,17 @@ class MonitorScreen(Screen):
 
         def __init__(self, outcome, root: str, run_id: int) -> None:
             self.outcome = outcome
+            self.root = root
+            self.run_id = run_id
+            super().__init__()
+
+    class RerunFailed(Message):
+        """A re-run worker RAISED (WR-03, phase-11 review): surfaced as
+        the error toast — a confirm-then-crash re-run is never a silent
+        no-op."""
+
+        def __init__(self, error: str, root: str, run_id: int) -> None:
+            self.error = error
             self.root = root
             self.run_id = run_id
             super().__init__()
@@ -1105,10 +1121,27 @@ class MonitorScreen(Screen):
 
     @work(exclusive=True, thread=True, group="mon-rerun")
     def _run_rerun_preflight(self, root: str, run_id: int) -> None:
-        """The D-08 preflight over the frozen face (worker)."""
-        verdict = self._launcher.env_preflight()
+        """The D-08 preflight over the frozen face (worker; WR-03-
+        wrapped: an exception surfaces, never a silent post-confirm
+        no-op)."""
+        try:
+            verdict = self._launcher.env_preflight()
+        except Exception as exc:  # noqa: BLE001 — WR-03
+            self.post_message(self.RerunFailed(
+                str(exc) or repr(exc), root, run_id))
+            return
         self.post_message(
             self.RerunPreflightDone(verdict, root, run_id))
+
+    def on_monitor_screen_rerun_failed(self, message: RerunFailed) -> None:
+        """WR-03: the re-run pipeline's worker raised — surface the
+        error toast (the operator confirmed a GPU spend; silence is the
+        worst failure mode)."""
+        if message.run_id != self._rerun_stage_id:
+            return
+        self.app.notify(
+            LNC_LAUNCH_FAILED_TOAST.format(error=message.error),
+            severity="error")
 
     def on_monitor_screen_rerun_preflight_done(
             self, message: RerunPreflightDone) -> None:
@@ -1141,10 +1174,16 @@ class MonitorScreen(Screen):
             for cell_seed in row.seeds
         }) or [42]
         failures_path = str(Path(root) / sweep_monitor.FAILURES_NAME)
-        peft, config_variant = self._service.rerun_lane(root)
-        outcome = self._launcher.launch_from_failures(
-            failures_path, seeds, root,
-            peft=peft, config_variant=config_variant, phrase=phrase)
+        try:
+            peft, config_variant = self._service.rerun_lane(root)
+            outcome = self._launcher.launch_from_failures(
+                failures_path, seeds, root,
+                peft=peft, config_variant=config_variant, phrase=phrase)
+        except Exception as exc:  # noqa: BLE001 — WR-03: post-confirm
+            # worker death surfaces, never a silent no-op launch
+            self.post_message(self.RerunFailed(
+                str(exc) or repr(exc), root, run_id))
+            return
         self.post_message(self.RerunFinished(outcome, root, run_id))
 
     def on_monitor_screen_rerun_finished(

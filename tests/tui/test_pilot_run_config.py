@@ -219,7 +219,7 @@ class FakeLauncherService:
     """The launcher service fake (recorded, scripted outcomes)."""
 
     def __init__(self, preflight=None, summary=None, outcomes=None,
-                 live=()):
+                 live=(), confirm_raises=None, launch_raises=None):
         self._preflight = (preflight if preflight is not None
                            else EnvPreflight(
                                can_launch=True, reasons=(),
@@ -227,6 +227,8 @@ class FakeLauncherService:
         self._summary = summary
         self._outcomes = list(outcomes) if outcomes else None
         self._live = tuple(live)
+        self._confirm_raises = confirm_raises
+        self._launch_raises = launch_raises
         self.env_calls = 0
         self.confirm_calls = []
         self.launch_calls = []
@@ -239,6 +241,8 @@ class FakeLauncherService:
 
     def gate_confirm_data(self, spec):
         self.confirm_calls.append(spec)
+        if self._confirm_raises is not None:
+            raise self._confirm_raises
         return self._summary or GateSummary(
             models=1, tasks=1, seeds=3, cells=3,
             output_root="./finetuned", is_e2x=False,
@@ -246,6 +250,8 @@ class FakeLauncherService:
 
     def launch_spec(self, spec, phrase=None):
         self.launch_calls.append((spec, phrase))
+        if self._launch_raises is not None:
+            raise self._launch_raises
         if self._outcomes:
             return self._outcomes.pop(0)
         return LaunchOutcome(
@@ -1008,6 +1014,66 @@ async def test_enter_key_pin_inputs_never_launch():
         await _settle(pilot, app, rounds=4)
         assert launcher.env_calls >= 1, (
             "enter on the picker must open the launch gate")
+
+
+async def test_gate_worker_exception_releases_flag_and_surfaces():
+    """WR-03: a gate worker raising (registry OSError, malformed
+    overlay, probe ValueError) must never wedge the gate — the error
+    toast surfaces it and a second [enter] re-enters the pipeline (the
+    re-entrancy guard was released)."""
+    from tui.strings import LNC_LAUNCH_FAILED_TOAST
+
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(
+        confirm_raises=OSError("models_info.json unreadable"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        assert any(LNC_LAUNCH_FAILED_TOAST.format(
+            error="models_info.json unreadable") in toast
+            for toast in _toast_messages(app)), _toast_messages(app)
+        assert screen_gate_active(app.screen) is False, (
+            "the exception path released the pre-modal gate flag"
+        )
+        # the gate is re-enterable: the pipeline re-runs (env again)
+        env_before = launcher.env_calls
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        assert launcher.env_calls > env_before, (
+            "a second [enter] re-enters the gate — no permanent wedge"
+        )
+
+
+def screen_gate_active(screen) -> bool:
+    """The screen's gate re-entrancy flag (WR-03's wedge probe)."""
+    return screen._gate_active
+
+
+async def test_gate_launch_exception_after_confirm_is_never_silent():
+    """WR-03's worst instance: the launch worker dying AFTER the
+    operator confirmed must surface an error — never a silent no-op
+    launch."""
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import LNC_LAUNCH_FAILED_TOAST
+
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(launch_raises=RuntimeError("spawn boom"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        assert isinstance(app.screen, ConfirmModal)
+        await pilot.press("enter")   # confirm -> the launch worker raises
+        await _settle(pilot, app, rounds=3)
+        assert any(LNC_LAUNCH_FAILED_TOAST.format(error="spawn boom")
+                   in toast for toast in _toast_messages(app)), (
+            "the confirm-then-crash path surfaces the error"
+        )
 
 
 async def test_gate_spawn_failure_toast_nothing_launched():

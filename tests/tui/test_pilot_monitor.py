@@ -246,7 +246,7 @@ class FakeMonitorLauncher:
     """The launcher-seam fake for the monitor screen (recorded)."""
 
     def __init__(self, preflight=None, live=(), tee=None,
-                 rerun_outcomes=None):
+                 rerun_outcomes=None, env_raises=None):
         self._preflight = (preflight if preflight is not None
                            else EnvPreflight(
                                can_launch=True, reasons=(),
@@ -255,11 +255,14 @@ class FakeMonitorLauncher:
         self._tee = dict(tee or {})
         self._rerun_outcomes = (
             list(rerun_outcomes) if rerun_outcomes else None)
+        self._env_raises = env_raises
         self.env_calls = 0
         self.rerun_calls = []
 
     def env_preflight(self, kernels=None):
         self.env_calls += 1
+        if self._env_raises is not None:
+            raise self._env_raises
         return self._preflight
 
     def launch_from_failures(self, failures_path, seeds, output_root,
@@ -1276,6 +1279,41 @@ async def test_rerun_problems_refusal_surfaces_error_toast():
             and "unreadable or shape-invalid" in message
             for message in toasts), toasts
         assert len(launcher.rerun_calls) == 1, "no second attempt"
+
+
+async def test_rerun_worker_exception_surfaces_error_toast():
+    """WR-03 (the monitor sibling): a re-run worker raising after the
+    operator confirmed is surfaced as the error toast — never a silent
+    no-op launch."""
+    from tui.strings import LNC_LAUNCH_FAILED_TOAST
+
+    failures = (FailureRow(model="model-a", task="task-1", seed=42,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_FAILED}),)},
+        stats={"/scans/finetuned": _stats(done=1, total=2)},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher(
+        env_raises=OSError("quick-check kernel spawn failed"))
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.press("enter")   # confirm the re-run
+        await _settle(pilot, app)
+        assert any(LNC_LAUNCH_FAILED_TOAST.format(
+            error="quick-check kernel spawn failed") in toast
+            for toast in _toast_messages(app)), _toast_messages(app)
+        assert launcher.rerun_calls == [], "nothing launched"
 
 
 async def test_log_tail_renders_lines_and_tee_line():
