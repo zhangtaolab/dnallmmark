@@ -638,3 +638,222 @@ QUEUE_REAUDIT_LABEL = "重新审计"
 # data-manager screen's d — interaction semantic 8).
 SEL_ENQUEUE_LABEL = "入队"
 SEL_ENQUEUE_PRESENT_TOAST = "该数据集已在场"
+
+# ===== 运行配置 (CFG_, Phase 11, D-12) =====
+# The slot-4 run-config screen chrome + the params pane + the preview
+# line/modal (11-UI-SPEC Copywriting Contract verbatim; 11-06 renders).
+# Format fields: {n}/{m} marked counts, {models_total}/{tasks_total}/
+# {total} registry totals, {path} a filesystem path, {model}/{mode}/
+# {variant} a key or a PEFT/variant value, {models} the dynamic
+# PROBE_INELIGIBLE name list (read-source data — the names themselves
+# NEVER appear in this module, the spec's own rule), {value} raw
+# operator input, {models}/{tasks}/{seeds}/{fractions}/{cells}
+# enumeration dimensions, {i}/{n}/{problem} numbered-problem segments.
+
+CFG_SCREEN_TITLE = "运行配置"
+CFG_STATUS_LINE = "已选: 模型 {n}/{models_total} · 数据集 {m}/{tasks_total}"
+CFG_PICKER_MODELS = "模型 ({n}/{total})"
+CFG_PICKER_DATASETS = "数据集 ({n}/{total})"
+CFG_PARAMS_TITLE = "参数"
+# Dirs section divider — the full 120-col label and the 80-col short
+# variant (params labels shorten at the minimum grid).
+CFG_DIRS_TITLE = "目录（默认仓库相对; 覆盖即绝对）"
+CFG_DIRS_TITLE_SHORT = "目录"
+
+# Params label rows (CFG-01; driver flag vocabulary stays English
+# verbatim — seeds / PEFT / epochs are the flags' own names).
+CFG_FIELD_SEEDS = "seeds"
+CFG_FIELD_PEFT = "PEFT"
+CFG_FIELD_VARIANT = "变体"
+CFG_FIELD_CURVE = "曲线档位"
+CFG_FIELD_SUBSET = "公平子集"
+CFG_FIELD_EPOCHS = "epochs 覆盖"
+# The effective-batch-size label pair: the full 120-col label and the
+# 80-col short variant. CFG_FIELD_EBS is a gap-filler (plan-owned, the
+# SEL_PRESENCE_UNKNOWN precedent) — the contract names only the SHORT
+# row, its parenthetical naming the full label; both live here so
+# neither grid paraphrases the field.
+CFG_FIELD_EBS = "effective_batch_size"
+CFG_FIELD_EBS_SHORT = "eff_batch_size"
+CFG_FIELD_OUTPUT_ROOT = "输出根"
+CFG_FIELD_DATASET_ROOT = "数据集根"
+CFG_FIELD_CACHE = "模型缓存"
+
+# Params value states: the absent dim dash, the cache default, and the
+# fairness-subset toggle pair (off / on-with-path).
+CFG_VALUE_ABSENT = "—"
+CFG_CACHE_DEFAULT = "—（HF 默认）"
+CFG_SUBSET_OFF = "关"
+CFG_SUBSET_ON = "开（{path}）"
+
+# Derived hint lines (dim, 1 row under their field — the wizard
+# advisory pattern). The head note's two names are the head-alias
+# frozen pair the contract words verbatim (static copy); the
+# PROBE_INELIGIBLE 9-name list is DATA rendered through {models} only.
+CFG_PEFT_ALIAS_PREVIEW = "别名预览: {model}+{mode}（独立输出目录与续跑标记）"
+CFG_VARIANT_ALIAS_PREVIEW = "保存名: {model}+{variant}"
+CFG_VARIANT_HEAD_NOTE = "head: evo2_1b_base / megaDNA_updated 保留基名"
+CFG_VARIANT_PROBE_HINT = "⚠ probe 不可用: {models}（专用 loader, 冻结不生效）"
+
+# Numbered-problem segments — the preview line, the [p] modal, and the
+# gate share the gauntlet collect-all shape.
+CFG_PROBE_INELIGIBLE_PROBLEM = "{model}: probe 不可用（专用 loader）"
+# Gap-filler (plan-owned, the SEL_PRESENCE_UNKNOWN precedent): the
+# variant×PEFT composition refusal the 11-01 driver enforces and 11-02
+# validates — mirrored as a preview problem (cheap composition-time
+# prevention; the child stays authoritative).
+CFG_COMPOSITION_PROBLEM = "变体与 PEFT 不可同时启用（别名轴互斥）"
+CFG_SEEDS_INVALID_PROBLEM = "seeds 需为逗号分隔整数: {value}"
+CFG_CURVE_INVALID_PROBLEM = "曲线档位需为 (0, 1] 内的小数列表: {value}"
+CFG_EMPTY_SELECTION_PROBLEM = "未选择模型或数据集"
+
+# The live preview line (both shapes — the curve lane adds × 档) and
+# the problems header/line shape shared by the line and the [p] modal.
+CFG_PREVIEW_LINE = "干跑: {models} 模型 × {tasks} 任务 × {seeds} 种子 = {cells} cell"
+CFG_PREVIEW_LINE_CURVE = (
+    "干跑: {models} 模型 × {tasks} 任务 × {seeds} 种子 × {fractions} 档 = {cells} cell"
+)
+CFG_PREVIEW_PROBLEMS = "⚠ 预览校验失败 — 共 {n} 处问题："
+CFG_PREVIEW_PROBLEM_LINE = "{i}. {problem}"
+CFG_PREVIEW_MODAL_TITLE = "干跑预览"
+CFG_PREVIEW_NOTE = "同源: pipeline.run_sweep.enumerate_matrix（零复制）"
+CFG_ARGV_LABEL = "argv（LIST）:"
+
+# ===== 启动门/执行 (LNC_, Phase 11) =====
+# The [enter] launch-gate pipeline, the E2' typed-phrase escalation
+# (LNC-03 — the maintainer-authorization boundary, never bypassable
+# from the UI), the launch toasts, and the app-level exit modal's
+# kill/detach/cancel row (11-UI-SPEC Copywriting Contract verbatim;
+# 11-06 renders). Format fields: {models}/{tasks}/{seeds}/{cells}
+# enumeration dimensions, {output_root}/{root} the resolved output
+# root, {dirname} the E2' typed phrase (this run's output directory
+# name), {error} a spawn diagnostic, {done}/{total} live-sweep counts.
+
+LNC_GATE_TITLE = "启动门"
+LNC_GATE_SUMMARY = (
+    "{models} 模型 × {tasks} 任务 × {seeds} 种子 = {cells} cell → {output_root}"
+)
+LNC_GATE_CONFIRM = "启动以上 sweep？— Enter 启动 / Esc 取消"
+# The E2' escalation block (terraform-style typed phrase): the frozen
+# full-matrix warning wording, the authorization note, the type prompt,
+# and the live mismatch/match indicator pair.
+LNC_E2_WARNING = "⚠ 全量 E2' sweep — 62 模型 × 50 数据集 × 3 种子 = 9300 cell"
+LNC_E2_AUTH_NOTE = "需维护者显式授权（LNC-03; 判定与短语校验不可绕过）"
+LNC_E2_TYPE_PROMPT = "输入本次输出目录名以确认: {dirname}"
+LNC_E2_MATCH_OK = "✓ 目录名匹配 — [enter] 确认启动"
+LNC_E2_MISMATCH = "✗ 目录名不一致 — 请完整输入 {dirname}"
+# The env-block modal's route hint (composes with ENV_QUICK_CHECK_FAIL —
+# reused verbatim; no new copy for the verdict itself).
+LNC_ENV_BLOCKED_HINT = "[1] 前往环境检查"
+# Launch feedback: success (toast + auto-nav to the monitor) and the
+# spawn-failure toast ({error} is data).
+LNC_LAUNCH_TOAST = (
+    "✓ sweep 已启动（分离）— {cells} cell → {output_root} · 跳转任务监控"
+)
+LNC_LAUNCH_FAILED_TOAST = "✗ 启动失败: {error}"
+# The app-level exit modal (D-06): one row, three keys, default detach.
+LNC_EXIT_TITLE = "退出"
+LNC_EXIT_MESSAGE = (
+    "运行中的 sweep: 完成 {done}/{total}（{root}）— "
+    "[enter] 分离退出（默认） / [k] 终止后退出 / [esc] 返回"
+)
+
+# ===== 任务监控 (MON_, Phase 11) =====
+# The slot-5 monitor screen chrome, the discovered-sweep pane, the cell
+# table + its five per-seed states, the stats/ETA variants, the failure
+# list + gated re-run, the log tail, the attach flow, and the rescan
+# toast (11-UI-SPEC Copywriting Contract verbatim; 11-07 renders).
+# Format fields: {n} counts, {root} the attached output root, {seed} a
+# configured seed, {done}/{total}/{model}/{task}/{elapsed}/{eta} the
+# stats segments, {lo}/{hi} the ETA range, {model}/{task} full keys,
+# {path} the tee file or attach path, {cells} a launch count,
+# {fraction}/{state} the per-fraction detail pair. Reused verbatim from
+# earlier phases (no new constants): the QUEUE_* progress-bar cell
+# grammar, ENV_DETAIL_LABEL 详情, APP_MODAL_BACK_LABEL 返回, the WIZ_*
+# path advisories, ENV_QUICK_CHECK_FAIL/PASS.
+
+MON_SCREEN_TITLE = "任务监控"
+MON_SCAN_NOTE = "扫描: 前沿 2s · 全扫 60s"
+MON_DISCOVERED_TITLE = "发现的 sweep ({n}) — 默认输出根 + 手动附加"
+MON_DISCOVERED_EMPTY = "未发现 sweep — 按 [a] 附加输出根路径"
+
+# The three discovered-sweep states (glyph+color dual channel; the
+# glyph is the NO_COLOR carrier). MON_STATE_ARTIFACTS_SWEEP is the O2
+# third state — gap-filler (plan-owned, the SEL_PRESENCE_UNKNOWN
+# precedent; the contract words the running/finished pair only): prior
+# artifacts with no sweep markers, ◌ muted, no running semantics; the
+# discovered row renders its unknown total via MON_TOTAL_UNKNOWN.
+MON_STATE_RUNNING_SWEEP = "● 运行中"
+MON_STATE_FINISHED_SWEEP = "○ 已结束"
+MON_STATE_ARTIFACTS_SWEEP = "◌ 历史产物"
+
+# Discovered-table column headers at 120 (the 规模 column drops at 80).
+MON_COL_ROOT = "输出根"
+MON_COL_SCALE = "规模"
+MON_COL_PROGRESS = "进度"
+MON_COL_ETA = "ETA"
+
+# The cell table: title + the resume note riding the same title row
+# (MON-05 standing chrome, never a scrolling toast), the empty state,
+# the column headers, the five per-seed cell states, and both
+# resume-note variants (the 80-col one drops the trainer_state reason).
+MON_CELLS_TITLE = "cell 状态 — {root}"
+MON_CELLS_EMPTY = "未附加 sweep — 在上方列表 Enter 附加, 或 [a] 手动附加"
+MON_COL_MODEL = "模型"
+MON_COL_TASK = "任务"
+MON_COL_SEED = "s{seed}"
+MON_STATE_QUEUED = "◌ 排队"
+MON_STATE_RUNNING = "⠋ 运行"
+MON_STATE_DONE = "✓ 完成"
+MON_STATE_FAILED = "✗ 失败"
+MON_STATE_SKIPPED = "⊘ 跳过"
+MON_RESUME_NOTE = "⊘ 续跑: {n} cell 因 trainer_state 标记跳过"
+# The 80-col resume-note variant (the contract's parenthetical wording;
+# derived constant name — the table words the copy, not a second name).
+MON_RESUME_NOTE_SHORT = "⊘ 续跑: {n} cell 跳过"
+
+# The stats line directly above the bottom bar: the full shape, the
+# 80-col no-当前 shape, the unknown-total degradation, and the ETA
+# value vocabulary (pending / variance range / unknown).
+MON_STATS_LINE = (
+    "完成 {done}/{total} · 当前 {model}/{task}/s{seed} · 已用时 {elapsed} · 预估 ≈{eta}"
+)
+MON_STATS_LINE_NO_CURRENT = "完成 {done}/{total} · 已用时 {elapsed} · 预估 ≈{eta}"
+MON_STATS_LINE_UNKNOWN_TOTAL = "完成 {done} · 总数未知 · 已用时 {elapsed} · 预估 —"
+MON_TOTAL_UNKNOWN = "总数未知"
+MON_ETA_PENDING = "估算中…"
+MON_ETA_RANGE = "{lo}–{hi}"
+MON_ETA_UNKNOWN = "—"
+
+# The [f] failure list (MON-03/D-11): title, the happy zero, the row
+# shape, the gated re-run keycap + confirm + toast.
+MON_FAILURES_TITLE = "失败清单 ({n}) — sweep_failures.json"
+MON_FAILURES_EMPTY = "✓ 无失败 cell"
+MON_FAILURE_ROW = "{model} × {task} × seed_{seed}"
+MON_RERUN_LABEL = "重跑失败"
+MON_RERUN_CONFIRM = "重跑 {n} 个失败 cell（--from-failures）？— Enter 重跑 / Esc 取消"
+MON_RERUN_TOAST = "✓ 失败重跑已启动 — {cells} cell → {root}"
+
+# The [t] log tail (MON-04/D-10): title, the dim tee line, the designed
+# CLI-launched unavailable state (never a fabricated empty log).
+MON_LOG_TITLE = "日志尾随 — {root}"
+MON_LOG_TEE_LINE = "tee 落盘: {path}"
+MON_LOG_UNAVAILABLE = "无日志可尾随 — 该 sweep 由 CLI 启动, 无 tee 落盘"
+
+# The attach flow ([a] + enter-on-row): keycap label, modal title, the
+# path-input placeholder, the invalid-path toast (never silent), and
+# the attached toast.
+MON_ATTACH_LABEL = "附加"
+MON_ATTACH_TITLE = "附加 sweep 输出根"
+MON_ATTACH_PLACEHOLDER = "输入输出根路径…"
+MON_ATTACH_INVALID_TOAST = "✗ {path} 不是 sweep 输出根（未发现 sweep 产物）"
+MON_ATTACHED_TOAST = "✓ 已附加: {root}"
+
+# The [r] rescan keycap + its toast.
+MON_RESCAN_LABEL = "重扫"
+MON_RESCAN_TOAST = "✓ 已完成全扫（{n} sweep）"
+
+# Cell detail (enter): the title shape and the per-fraction line under
+# --curve (record fields render verbatim — data, never translated).
+MON_CELL_DETAIL_TITLE = "{model} × {task} × seed_{seed}"
+MON_FRACTION_LINE = "frac_{fraction}: {state}"
