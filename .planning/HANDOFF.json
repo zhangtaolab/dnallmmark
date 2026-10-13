@@ -1,44 +1,24 @@
 {
-  "version": "1.0",
-  "timestamp": "2026-10-12T08:40:40.810Z",
-  "phase": "9",
-  "phase_name": "Custom Model & Dataset Onboarding (自定义接入向导)",
-  "phase_dir": ".planning/phases/09-custom-model-dataset-onboarding",
-  "plan": 6,
-  "task": 6,
-  "total_tasks": 6,
-  "status": "paused",
-  "completed_tasks": [
-    {"id": 1, "name": "09-01 services core + tracer (store/validator/schema)", "status": "done", "commit": "fcce0cd"},
-    {"id": 2, "name": "09-02 gauntlet service + D-09 enabled-skip", "status": "done", "commit": "bdcc012"},
-    {"id": 3, "name": "09-03 nav shell + about screen", "status": "done", "commit": "9421534"},
-    {"id": 4, "name": "09-04 wizard collection half", "status": "done", "commit": "9217a0d"},
-    {"id": 5, "name": "09-05 wizard writing half (gauntlet panel/land/undo/import)", "status": "done", "commit": "13ede1c"},
-    {"id": 6, "name": "09-06 selection integration + phase gates", "status": "done", "commit": "d9d8536"},
-    {"id": 7, "name": "Phase 9 close-out: code review (IN FLIGHT — gsd-code-reviewer dispatched 16:33, 26 files, may or may not have written 09-REVIEW.md by resume)", "status": "in_progress", "progress": "reviewer agent was running at pause time"}
+  "timestamp": "2026-10-13T12:19:10.836Z",
+  "milestone": "v1.2 TUI任务",
+  "current_phase": "12-multi-gpu-orchestration-console-hardening",
+  "current_plan": "12-03 (IN FLIGHT, uncommitted)",
+  "phase_progress": "12: 2/5 plans committed (12-01 shard ✓, 12-02 web mirror ✓); 12-03 goldens+focus-fix dispatched 20:01, executor stalled/reset mid-task-1 (RED evidence captured, code edits reverted by itself); 12-04 (merge+docs/multi-gpu.md) and 12-05 (integration close) not started",
+  "phases_status": "7/8/9/10/11 ALL Complete + verification passed with fresh fingerprints (0 stale); milestone at 35/38 requirements",
+  "test_baseline": "1531 pytest + 26 node green at HEAD 156c497 (pushed to origin/autorun)",
+  "resume_action": "1) Inspect tree: untracked .planning/phases/12-*/evidence/ (12-03 RED evidence, harmless). 2) Re-dispatch 12-03 executor fresh (plan file + same dispatch brief as 20:01; the RED evidence may inform but plan is self-contained). 3) Then 12-04 → 12-05 sequential (dispatch briefs pattern: SPEED DIRECTIVE, sentinel force-none first, heartbeat). 4) After 12-05: review loop → regression → verifier → UAT (goldens need MAINTAINER EYE REVIEW - D-03 human gate) → phase complete (tick ROADMAP checkbox manually!) → milestone audit → complete → cleanup.",
+  "human_pending": [
+    "他机 N=2 multi-GPU smoke (WINDOWS.md entry #21, 9-step procedure lands in 12-04-SUMMARY) — maintainer-run on the multi-GPU machine per D-05",
+    "8 snapshot SVG goldens review+commit gate after 12-03 lands (D-03)",
+    "auto-push preference question unanswered (offered after each wave?)"
   ],
-  "remaining_tasks": [
-    {"id": 8, "name": "code review disposition ledger (+ fix loop if findings)", "status": "not_started"},
-    {"id": 9, "name": "regression gate (make test)", "status": "not_started"},
-    {"id": 10, "name": "phase 9 verifier + VERIFICATION.md commit", "status": "not_started"},
-    {"id": 11, "name": "phase.complete 9 + TICK OVERVIEW CHECKBOX + STATE pointer check", "status": "not_started"},
-    {"id": 12, "name": "refresh Phase 7/8 stale verifications (#4682, one verifier run each) + re-tick checkboxes", "status": "not_started"},
-    {"id": 13, "name": "Phase 9 UAT (interactive wizard full loop + share-unit cross-machine)", "status": "not_started"},
-    {"id": 14, "name": "Phase 10 smart discuss (Data Manager)", "status": "not_started"}
+  "blocking_constraints": [
+    {"severity": "blocking", "item": "Force dispatch-isolation to none before EVERY Agent dispatch: node ~/.claude/gsd-core/bin/gsd-tools.cjs query dispatch-isolation --raw --phase 12 --force-isolation none (executor runs re-flip the sentinel)"},
+    {"severity": "blocking", "item": "phase.complete NEVER ticks the ROADMAP overview '- [ ]' checkbox and body STATE needs manual focus-fix; also phase.complete requires VERIFICATION.md frontmatter status: passed (flip human_needed→passed after UAT)"},
+    {"severity": "blocking", "item": "Full-suite gates must run AFTER data-artifact commits (baseline refresh taught this: R-03 refresh reddened 8 test pins; fixed 420411e with fixture-staged n_audit; tests pin refresh-stable truths, never committed-baseline content)"},
+    {"severity": "advisory", "item": "AskUserQuestion payloads hit the maintainer's terminal as mojibake twice — protocol: plain-markdown one-question-at-a-time with ASCII mockups; user answers single letters"},
+    {"severity": "advisory", "item": "Executor speed directive active: module suites during TDD, full make test ONCE per wave (maintainer complained about pace)"}
   ],
-  "blockers": [],
-  "async_jobs": [],
-  "human_actions_pending": [
-    {"action": "Phase 9 UAT: interactive wizard full-loop on GB10 (w → 录入 → gauntlet → 落盘 → ◇徽标 → e 停用) + CUST-06 share-unit cross-machine consumption check", "context": "real gauntlet subprocesses + cross-machine file sharing cannot be CI-verified; flagged planner assumption in 09-06-SUMMARY", "blocking": true}
-  ],
-  "decisions": [
-    {"decision": "Menu finalized: 1环境检查 2模型·数据集 3数据管理 4运行配置 5任务监控 6关于 (3/4/5 placeholders, 6 implemented)", "rationale": "maintainer iterated through grey-area discussion; resource-noun convention; 模型·数据集 variant chosen", "phase": "9"},
-    {"decision": "Gauntlet all-pass-then-persist + session undo; import per-entry sequential with earlier-lands-kept", "rationale": "zero-rollback-risk write ordering (D-08)", "phase": "9"},
-    {"decision": "D-09 enabled-skip is the ONLY pipeline change (literal-JSON-false-only, additive)", "rationale": "constraint 6 surgical surface; official entries byte-identical", "phase": "9"},
-    {"decision": "quirk→CLI mapping deferred to Phase 11; entry editing deferred (add-only)", "rationale": "pipeline quirk lists not extensible (constraint 6); form complexity reduction (D-12)", "phase": "9"}
-  ],
-  "uncommitted_files": ["?? .planning/.gsd-allow-shrink", "?? .planning/milestone.lock"],
-  "uncommitted_files_note": "working tree otherwise CLEAN at HEAD d9d8536; the two untracked .planning files predate this session and are workflow-internal",
-  "next_action": "ls .planning/phases/09-custom-model-dataset-onboarding/09-REVIEW.md — if present read findings + write disposition ledger; if absent force-isolation none then re-dispatch gsd-code-reviewer for Phase 9 (26-file scope, 9 invariants). Then proceed per .continue-here.md remaining_work 1-8.",
-  "context_notes": "All 6 plans executed cleanly (TDD throughout, 943 tests, official registries hash-pinned untouched, CI byte-identical). Close-out chain paused at code-review step. THREE BLOCKING constraints from this session's failures: (1) phase.complete does not tick ROADMAP overview checkboxes — projection breaks, must tick manually + fix STATE pointer; (2) every executor re-flips the dispatch-isolation sentinel to harness-worktree — force none before EVERY agent dispatch; (3) later phases stale earlier verifications — refresh 7/8 after 9 completes. Sequential executors only (worktree base degraded, origin/HEAD ≠ HEAD). Never message a running executor (#4218)."
+  "machine_roles": "GB10 dev/test only (1-2 models × 3-4 datasets partial; single GPU). Full sweeps AND multi-GPU validation on OTHER machines (D-05).",
+  "pushed": "origin/autorun == 156c497 (everything through 12-02)"
 }
