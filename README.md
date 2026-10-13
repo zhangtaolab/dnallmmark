@@ -117,7 +117,9 @@ a fresh clone. Each step shows its expected output, so a failed step is
 immediately visible. How the numbers are computed is documented in one
 place — [docs/METHODOLOGY.md](docs/METHODOLOGY.md); extending the
 benchmark (new model or dataset) is documented in
-[docs/ONBOARDING.md](docs/ONBOARDING.md).
+[docs/ONBOARDING.md](docs/ONBOARDING.md); running the sweep across
+multiple GPUs is documented in
+[docs/multi-gpu.md](docs/multi-gpu.md).
 
 ### 1. Install the data toolchain
 
