@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 13
+open_count: 14
 waived_count: 0
 fixed_count: 6
-total_count: 19
-last_updated: 2026-10-12T06:34:53.107Z
+total_count: 20
+last_updated: 2026-10-13T06:06:35.033Z
 ---
 
 # Broken Windows Ledger
@@ -34,6 +34,7 @@ last_updated: 2026-10-12T06:34:53.107Z
 | 17 | 9 | stub | tui/screens/wizard.py | 381 | gauntlet phase renders a minimal pending view (title + 待检 line) — the real subprocess panel is 09-05's deliverable over the on_valid seam | fixed | 09-05 Task 1: the real gauntlet panel landed over the phase slot (async run-id-tagged rows, land-only-on-all-pass, drill-down); the minimal pending view remains only for the no-service construction | 2026-10-12T04:54:51.935Z | 2026-10-12T05:55:00.000Z |
 | 18 | 9 | stub | tui/screens/wizard.py | 470 | f binding routes to the on_import seam with no view behind it — the file-import view is 09-05's deliverable (planned functionality gap, D-11) | fixed | 09-05 Task 2: f routes to the import path prompt + per-entry sequential gauntlet with entry-level rollback (D-11 view behind the seam) | 2026-10-12T04:54:57.893Z | 2026-10-12T05:55:00.000Z |
 | 19 | 9 | stub | tui/screens/wizard.py | 475 | o binding routes to the on_export seam with no view behind it — the registry-export view is 09-05's deliverable (planned functionality gap, D-11) | fixed | 09-05 Task 2: o routes to the empty-state-checked export path prompt + the verbatim registry copy (D-11 view behind the seam) | 2026-10-12T04:54:57.963Z | 2026-10-12T05:55:00.000Z |
+| 20 | 11 | deviation | .planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-07-SUMMARY.md |  | GB10 smoke (SC5 execution half) pending maintainer run — procedure in 11-07-SUMMARY, not executor-executable (D-15) | open |  | 2026-10-13T06:06:35.033Z |  |
 
 ````json
 [
@@ -282,6 +283,19 @@ last_updated: 2026-10-12T06:34:53.107Z
     "reason": "09-05 Task 2: o routes to the empty-state-checked export path prompt + the verbatim registry copy (D-11 view behind the seam)",
     "recorded_at": "2026-10-12T04:54:57.963Z",
     "resolved_at": "2026-10-12T05:55:00.000Z",
+    "milestone": "v1.2"
+  },
+  {
+    "id": 20,
+    "kind": "deviation",
+    "phase": "11",
+    "file": ".planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-07-SUMMARY.md",
+    "line": null,
+    "description": "GB10 smoke (SC5 execution half) pending maintainer run — procedure in 11-07-SUMMARY, not executor-executable (D-15)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-13T06:06:35.033Z",
+    "resolved_at": null,
     "milestone": "v1.2"
   }
 ]
