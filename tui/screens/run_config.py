@@ -453,6 +453,13 @@ class PickerList(SelectionList):
         self._row_keys: list[str] = []
         self._row_disabled: list[bool] = []
 
+    def action_open_gate(self) -> None:
+        """Delegate to the screen's gate action — unprefixed actions do
+        NOT resolve across the widget->screen boundary on 8.2.8 (a
+        missing widget action falls through to the SAME screen binding;
+        probe-pinned in this plan's development)."""
+        self.screen.action_open_gate()
+
     def set_rows(self, keys: Sequence[str], prompts: Sequence[Text],
                  marked: Sequence[bool], disabled: Sequence[bool]) -> None:
         """Rebuild the rows, preserving the cursor where it still fits."""
@@ -521,6 +528,11 @@ class ChoiceRow(Static, can_focus=True):
         super().__init__("", **kwargs)
         self.field = field
         self.set_value(value)
+
+    def action_pick_choice(self) -> None:
+        """Delegate to the screen's choice action (the 8.2.8 action
+        boundary — see PickerList.action_open_gate)."""
+        self.screen.action_pick_choice()
 
     def set_value(self, value: str) -> None:
         """Render one choice value with the dim ▾ affordance."""
@@ -1392,6 +1404,7 @@ class RunConfigScreen(Screen):
                 self._spec.config_variant, CFG_FIELD_VARIANT)
 
         def on_pick(value: str) -> None:
+            focused.set_value(value)
             if focused.field == "peft":
                 self._apply_spec_change(peft=value)
             else:

@@ -30,7 +30,7 @@ import re
 from pathlib import Path
 
 from rich.text import Text
-from textual.widgets import Input, SelectionList, Static
+from textual.widgets import Checkbox, Input, SelectionList, Static
 
 import tui.screens.run_config as run_config_screen_module
 from tui.app import DnallmMarkTui
@@ -1021,6 +1021,187 @@ async def test_gate_modal_push_guarded_below_minimum_grid():
         await pilot.resize_terminal(120, 40)
         await pilot.pause()
         assert isinstance(app.screen, RunConfigScreen)
+
+
+# =====================================================================
+# Task 3 — the exit triple (app-level q) + the choice modals
+# =====================================================================
+
+async def test_q_with_no_live_sweep_quits_directly():
+    """D-06: no live sweep — q quits directly (no ExitModal)."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        from tui.app import ExitModal
+
+        assert not any(isinstance(screen, ExitModal)
+                       for screen in app.screen_stack), (
+            "no live sweep: q must never push the ExitModal")
+        # App.exit() sets the private _exit flag (the deterministic
+        # signal on 8.2.8 — no public is_exiting exists)
+        assert app._exit, "q with no live sweep quits directly"
+
+
+async def test_q_with_live_sweep_pushes_exit_modal():
+    """A live sweep intercepts q: the ExitModal with the D-06 triple."""
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        from tui.app import ExitModal
+        from tui.strings import LNC_EXIT_MESSAGE, LNC_EXIT_TITLE
+
+        assert isinstance(app.screen, ExitModal)
+        box = app.screen.query_one("#exit-modal-box")
+        assert str(box.border_title) == LNC_EXIT_TITLE
+        message = _plain(app.screen.query(Static)[0].content)
+        assert LNC_EXIT_MESSAGE.format(
+            done="—", total="—", root="finetuned") in message, message
+
+
+async def test_exit_enter_detaches_then_exits():
+    """[enter] the default: detach recorded, exit initiated."""
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert launcher.detach_calls == ["/repo/finetuned"]
+        assert launcher.kill_calls == [], "detach never kills"
+        assert app._exit, "detach-then-quit initiates the exit"
+
+
+async def test_exit_k_kills_then_exits():
+    """[k] SIGTERMs the process group then exits."""
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        await pilot.press("k")
+        await pilot.pause()
+        assert launcher.kill_calls == ["/repo/finetuned"]
+        assert launcher.detach_calls == [], "kill never detaches"
+        assert app._exit, "kill-then-quit initiates the exit"
+
+
+async def test_exit_esc_returns_nothing_recorded():
+    """[esc] cancels the quit — still on screen, nothing recorded."""
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, RunConfigScreen)
+        assert launcher.detach_calls == []
+        assert launcher.kill_calls == []
+        assert not app._exit, "esc cancels the quit entirely"
+
+
+async def test_peft_choice_radioset_flow():
+    """The PEFT choice row: enter opens the RadioSet; picking lora
+    writes the param, persists, refreshes the preview + alias hint."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        from tui.screens.run_config import ChoiceRow
+
+        peft_row = screen.query_one("#cfg-value-peft", ChoiceRow)
+        peft_row.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        from textual.widgets import RadioSet as RadioSetWidget
+
+        from tui.screens.run_config import ChoiceModal
+
+        assert isinstance(app.screen, ChoiceModal)
+        assert app.screen.query_one(RadioSetWidget) is not None
+        # navigate to lora (the second radio) and press it
+        await pilot.press("down")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert _plain(peft_row.content).startswith("lora")
+        assert run_service.saved_specs[-1].peft == "lora"
+        hint = screen.query_one("#cfg-hint-peft", Static)
+        assert hint.display
+        from tui.strings import CFG_PEFT_ALIAS_PREVIEW
+
+        assert CFG_PEFT_ALIAS_PREVIEW.format(
+            model="model-a", mode="lora") in _plain(hint.content)
+
+
+async def test_variant_choice_probe_hint_flow():
+    """The variant RadioSet: probe selection surfaces the ⚠ hint naming
+    the frozen intersection (model-a is in the fake's frozen set)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        from tui.screens.run_config import ChoiceRow
+
+        variant_row = screen.query_one("#cfg-value-variant", ChoiceRow)
+        variant_row.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        # probe is the third option (none/head/probe): two downs
+        await pilot.press("down")
+        await pilot.press("down")
+        await pilot.pause()
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert run_service.saved_specs[-1].config_variant == "probe"
+        hint = screen.query_one("#cfg-hint-variant-probe", Static)
+        assert hint.display
+        from tui.strings import CFG_VARIANT_PROBE_HINT
+
+        assert CFG_VARIANT_PROBE_HINT.format(
+            models="model-a") in _plain(hint.content)
+
+
+async def test_subset_toggle_copy_pair():
+    """The fairness-subset toggle: off renders the dim default; on
+    renders the path value + reveals the path Input + persists the
+    subset file through the worker."""
+    run_service = FakeRunConfigService()
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        value = screen.query_one("#cfg-subset-value", Static)
+        assert CFG_SUBSET_OFF in _plain(value.content)
+        assert not screen.query_one("#cfg-input-subset", Input).display
+        checkbox = screen.query_one("#cfg-subset-toggle", Checkbox)
+        checkbox.focus()
+        await pilot.pause()
+        await pilot.press("space")
+        await _settle(pilot, app)
+        from tui.strings import CFG_SUBSET_ON
+
+        assert CFG_SUBSET_ON.format(
+            path="pipeline/eval_subsets.json") in _plain(value.content)
+        assert screen.query_one("#cfg-input-subset", Input).display
+        # the spec carries the subset file through the worker save
+        assert (run_service.saved_specs[-1].subset_file
+                == "pipeline/eval_subsets.json")
 
 
 # =====================================================================
