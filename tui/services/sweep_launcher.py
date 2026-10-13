@@ -404,6 +404,11 @@ class SweepLauncher:
         self._kill_grace = kill_grace
         self._kill_interval = kill_interval
         self._live: dict[str, dict] = {}
+        # IN-05 (phase-11 review): the last tee path spawned per root —
+        # the [t] fallback after detach/kill drops the live entry (the
+        # tee FILE still stands under state/logs; the child owns its
+        # own descriptor).
+        self._tee_history: dict[str, str] = {}
 
     # ===== The spawn core (D-06/D-10) =====
 
@@ -489,6 +494,7 @@ class SweepLauncher:
             argv=tuple(str(element) for element in argv),
         )
         self._live[root] = {"handle": proc, "meta": meta, "tee": tee_handle}
+        self._tee_history[root] = str(tee_path)
         return LaunchOutcome(
             spawned=True, root=root, tee_path=str(tee_path), error=None)
 
@@ -788,16 +794,26 @@ class SweepLauncher:
         return tuple(live)
 
     def tee_path_for(self, root):
-        """One live root's tee log path (the [t] modal's source).
+        """One root's tee log path (the [t] modal's source).
+
+        The LIVE registry entry first. IN-05 (phase-11 review): a root
+        whose entry was dropped by detach/kill falls back to the LAST
+        tee path this launcher spawned for it — the tee FILE still
+        stands under ``state/logs`` (the child owns its own inherited
+        descriptor), so a sweep THIS TUI launched never renders the
+        false "CLI-launched, no tee" copy after the exit modal's
+        default detach. A relaunch overwrites the history entry (the
+        newest launch's tee wins); a root this TUI never launched
+        returns None — the honest unavailable state.
 
         Args:
             root: the output root as registered (resolved here).
 
         Returns:
-            str | None: the tee path, or None for an unregistered root
-            (the CLI-launched unavailable state).
+            str | None: the tee path, or None for an unknown root.
         """
-        entry = self._live.get(str(Path(root).resolve()))
-        if entry is None:
-            return None
-        return entry["meta"].tee_path
+        root_key = str(Path(root).resolve())
+        entry = self._live.get(root_key)
+        if entry is not None:
+            return entry["meta"].tee_path
+        return self._tee_history.get(root_key)

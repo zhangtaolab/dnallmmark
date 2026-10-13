@@ -618,8 +618,10 @@ class DirPlan:
         dataset_root: the DISPLAY form (None when unset).
         dataset_root_abs: the ABSOLUTE form (None when unset). NEVER
             threaded as a flag this phase (D-19 — presence/docs only).
-        cache_dir_abs: the ABSOLUTE cache override (None when absent —
-            never threaded).
+        cache_dir_abs: the ABSOLUTE cache override (None when absent).
+            Unlike dataset_root this IS threaded — ``compose_argv``
+            threads ``--cache_dir`` whenever set (IN-01, phase-11
+            review); ``DirPlan`` exposes the resolved form.
     """
 
     output_root: str

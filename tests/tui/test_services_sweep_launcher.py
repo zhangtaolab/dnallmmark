@@ -364,19 +364,22 @@ def test_kill_sweep_unknown_root_is_noop(monkeypatch, tmp_path):
 def test_detach_drops_without_signal_or_wait(monkeypatch, tmp_path):
     """Detach drops the handle with NO wait and NO kill: zero signals,
     the registry forgets the root, and the fake handle stays
-    conceptually alive (poll None) — the orphaned session leader."""
+    conceptually alive (poll None) — the orphaned session leader. The
+    tee PATH stays answerable via the launch history (IN-05: the file
+    itself still stands under state/logs)."""
     pin_state_dir(monkeypatch, tmp_path)
     recorder = KillpgRecorder(monkeypatch)
     popen = FakeSweepPopen(poll_returns=[None])
     launcher = sweep_launcher.SweepLauncher()
-    launcher._spawn(["py"], tmp_path / "out", spawner=FakeSpawner(popen),
-                    clock=FixedClock(CLOCK_MOMENT))
+    outcome = launcher._spawn(["py"], tmp_path / "out",
+                             spawner=FakeSpawner(popen),
+                             clock=FixedClock(CLOCK_MOMENT))
     assert launcher.live_sweeps() != ()
 
     assert launcher.detach(tmp_path / "out") == "detached"
 
     assert launcher.live_sweeps() == ()
-    assert launcher.tee_path_for(tmp_path / "out") is None
+    assert launcher.tee_path_for(tmp_path / "out") == outcome.tee_path
     assert recorder.calls == []
     assert popen.poll() is None    # never waited, never killed
 
@@ -395,6 +398,46 @@ def test_tee_path_for_unknown_root_is_none(monkeypatch, tmp_path):
     launcher = sweep_launcher.SweepLauncher()
 
     assert launcher.tee_path_for(tmp_path / "nope") is None
+
+
+def test_tee_path_survives_detach_via_history(monkeypatch, tmp_path):
+    """IN-05 (phase-11 review): after the exit modal's DEFAULT detach
+    the tee FILE still exists under state/logs (the child owns its own
+    descriptor) — tee_path_for falls back to the launch history, so a
+    sweep THIS TUI launched never renders the false 'CLI-launched, no
+    tee' copy on [t]."""
+    pin_state_dir(monkeypatch, tmp_path)
+    launcher = sweep_launcher.SweepLauncher()
+    out_root = tmp_path / "out"
+
+    first = launcher._spawn(
+        ["py"], out_root,
+        spawner=FakeSpawner(FakeSweepPopen(poll_returns=[None])),
+        clock=FixedClock(CLOCK_MOMENT))
+    assert launcher.detach(out_root) == "detached"
+
+    assert launcher.tee_path_for(out_root) == first.tee_path, (
+        "the detached root's tee path survives via the launch history"
+    )
+    assert Path(first.tee_path).is_file(), "the tee file itself stands"
+
+
+def test_tee_path_history_newest_launch_wins(monkeypatch, tmp_path):
+    """A relaunch at a reclaimed root overwrites the history entry —
+    [t] always tails the CURRENT launch's tee, never a superseded
+    one."""
+    pin_state_dir(monkeypatch, tmp_path)
+    launcher = sweep_launcher.SweepLauncher()
+    out_root = tmp_path / "out"
+    launcher._spawn(
+        ["py"], out_root, spawner=FakeSpawner(FakeSweepPopen()),
+        clock=FixedClock(CLOCK_MOMENT))
+    second_moment = datetime(2026, 10, 13, 9, 0, 0, tzinfo=UTC)
+    second = launcher._spawn(
+        ["py"], out_root, spawner=FakeSpawner(FakeSweepPopen()),
+        clock=FixedClock(second_moment))
+
+    assert launcher.tee_path_for(out_root) == second.tee_path
 
 
 def test_live_sweeps_prunes_exited_process_and_closes_tee(
