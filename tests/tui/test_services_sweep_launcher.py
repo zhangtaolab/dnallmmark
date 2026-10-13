@@ -38,6 +38,7 @@ See also:
 import os
 import signal
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -708,3 +709,84 @@ def test_launch_argv_spawns_precomposed_argv(monkeypatch, tmp_path):
     assert argv == ["py", "run_sweep.py", "--from-failures", "f.json"]
     assert kwargs["start_new_session"] is True
     assert launcher.live_sweeps() == (str((tmp_path / "out").resolve()),)
+
+
+# =====================================================================
+# Lane 3 — the from-failures re-run path + the raw seam's no-gate
+# proof (Task 3, D-11)
+# =====================================================================
+
+
+def test_launch_from_failures_composes_and_spawns(monkeypatch, tmp_path):
+    """The [r] re-run composes via run_config.compose_from_failures_argv
+    and launches through the SAME seam: resolved failures path, seeds,
+    ABSOLUTE output root — and the tee names after the re-run root."""
+    pin_state_dir(monkeypatch, tmp_path)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+    failures = tmp_path / "sweep_failures.json"
+    failures.write_text("[]", encoding="utf-8")
+    out_root = tmp_path / "rerun"
+
+    outcome = launcher.launch_from_failures(
+        failures, (42, 43), out_root, spawner=spawner,
+        clock=FixedClock(CLOCK_MOMENT))
+
+    assert outcome.spawned is True
+    argv, kwargs = single_call(spawner)
+    assert argv[:3] == [
+        sys.executable, str(run_config.RUN_SWEEP_SCRIPT), "--from-failures"]
+    assert argv[argv.index("--from-failures") + 1] == str(failures.resolve())
+    assert argv[argv.index("--seeds") + 1] == "42,43"
+    assert argv[argv.index("--output-root") + 1] == str(out_root.resolve())
+    assert kwargs["start_new_session"] is True
+    assert kwargs["cwd"] == str(REPO_ROOT / "pipeline")
+    assert outcome.tee_path.endswith("sweep_20261013_083005_rerun.log")
+    assert launcher.live_sweeps() == (str(out_root.resolve()),)
+
+
+def test_launch_from_failures_threads_alias_flags(monkeypatch, tmp_path):
+    pin_state_dir(monkeypatch, tmp_path)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+    failures = tmp_path / "sweep_failures.json"
+    failures.write_text("[]", encoding="utf-8")
+
+    outcome = launcher.launch_from_failures(
+        failures, (42,), tmp_path / "rerun", peft="lora",
+        config_variant="head", spawner=spawner,
+        clock=FixedClock(CLOCK_MOMENT))
+
+    assert outcome.spawned is True
+    argv, _ = single_call(spawner)
+    assert argv[argv.index("--peft") + 1] == "lora"
+    assert argv[argv.index("--config-variant") + 1] == "head"
+
+
+def test_launch_argv_e2x_shaped_matrix_argv_is_not_phrase_gated(
+        monkeypatch, tmp_path):
+    """D-11's construction proof: the raw ``launch_argv`` seam takes NO
+    spec and NEVER consults the phrase seam — an E2'-shaped
+    --models/--tasks argv (every official model x every official
+    trainable task x 3 seeds) is NOT refused here. Documented as safe
+    because the only production caller composes from-failures argv
+    (failure-pairs-only, never a matrix); full-matrix launches must go
+    through ``launch_spec`` (lane 2's spawner-silent proof)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+    official = run_config.official_keys()
+    assert official.diagnostic is None      # the reference loads
+    argv = [
+        "py", "run_sweep.py",
+        "--models", ",".join(sorted(official.models)),
+        "--tasks", ",".join(sorted(official.tasks)),
+        "--seeds", "42,43,44",
+        "--output-root", str(tmp_path / "out"),
+    ]
+
+    outcome = launcher.launch_argv(
+        argv, tmp_path / "out", spawner=spawner, clock=FixedClock(CLOCK_MOMENT))
+
+    assert outcome.spawned is True          # no gate consulted
+    assert len(spawner.calls) == 1
