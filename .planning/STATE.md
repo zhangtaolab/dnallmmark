@@ -6,16 +6,16 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: Not started
 status: planning
-stopped_at: Phase 11 complete, ready to plan Phase 12
-last_updated: "2026-10-13T09:13:42.244Z"
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-10-13T11:23:49.324Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 11 complete, transitioned to Phase 12
-state_head: 50a3d1792f567d65f0bb71244541eb13bb5e8998
+state_head: c732fbbe2cdc863658e5f4844af171e2264fa7bf
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 32
-  completed_plans: 32
+  total_plans: 37
+  completed_plans: 33
   percent: 83
 ---
 
@@ -92,6 +92,7 @@ Progress (v1.2): [██████░░░░] 67% (4/6 phases; 30/32 planned
 | Phase 11 P03 | 26min | 3 tasks | 2 files |
 | Phase 11 P06 | 49min | 3 tasks | 7 files |
 | Phase 11 P07 | 62min | 3 tasks | 9 files |
+| Phase 12 P01 | 29m | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -202,6 +203,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 11]: NAV_PLACEHOLDER_* retained with zero-consumers annotation (11-07 executor's choice): deletion touches strings.py + 4 test files for zero behavior change
 - [Phase 11]: build_monitor_screen returns ONE cached instance — attach state + D-13 launch injections survive navigation (unlike the rebuild-per-nav factories)
 - [Phase 11]: Monitor cadence = set_interval ticks that only dispatch exclusive mon-frontier/mon-full workers with run-id-tagged messages; tolerant wrappers render last-known-good when a service throws beyond the loader's tolerance
+- [Phase 12]: D-07 landed as new entry pipeline/run_sweep_shard.py: run_sweep.py/run_finetune.py byte-untouched; LPT shards x CUDA_VISIBLE_DEVICES workers under frozen {root}-mgpu-w{i} sibling roots (one naming authority for 12-04 --merge)
+- [Phase 12]: Orchestrator owns 5 flags only; all other tokens passthrough verbatim (run_sweep stays the flag owner); passthrough --registry-dir read for validation join; collision guard is defense-in-depth proven wired
 
 ### Pending Todos
 
@@ -225,8 +228,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T06:05:04.695Z
-Stopped at: Phase 11 complete, ready to plan Phase 12
+Last session: 2026-10-13T11:23:49.263Z
+Stopped at: Completed 12-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

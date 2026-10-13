@@ -63,7 +63,7 @@
 
 ### Multi-GPU (多卡编排)
 
-- [ ] **MGPU-01**: 按模型分片 × CUDA_VISIBLE_DEVICES 多 worker 静态编排（CLI 可调用的模式，非 TUI 专属）
+- [x] **MGPU-01**: 按模型分片 × CUDA_VISIBLE_DEVICES 多 worker 静态编排（CLI 可调用的模式，非 TUI 专属）
 - [ ] **MGPU-02**: 每 worker 监控视图 + 产物合并 + 失败 worker 隔离重跑
 - [ ] **MGPU-03**: DDP（torch run 切数据）与模型分片两层的适用场景决策落地（单大模型加速 vs 多模型吞吐）；硬依赖单卡验证通过
 
@@ -122,7 +122,7 @@
 | PIPE-01 | Phase 7 | Complete |
 | PIPE-02 | Phase 7 | Complete |
 | PIPE-03 | Phase 7 | Complete |
-| MGPU-01 | Phase 12 | Pending |
+| MGPU-01 | Phase 12 | Complete |
 | MGPU-02 | Phase 12 | Pending |
 | MGPU-03 | Phase 12 | Pending |
 | I18N-01 | Phase 8 | Complete |

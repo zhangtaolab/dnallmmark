@@ -256,11 +256,11 @@ Plans:
   4. A read-only web progress mirror generated from sweep artifacts lets the team follow progress in a browser — static files only, no backend (static-hosting constraint holds)
   5. Canonical screens are pinned by Textual snapshot SVG goldens reviewed and committed by the maintainer, failing CI CPU-side on visual regression
 
-**Plans**: 5 plans
+**Plans**: 1/5 plans executed
 Plans:
 
 **Wave 1** *(parallel)*
-- [ ] 12-01-PLAN.md — run_sweep_shard.py launch mode (D-07 new entry): collect-all validation, LPT size-weighted sharding (pure fn + property tests), verbatim-launcher spawn + CUDA_VISIBLE_DEVICES per worker, frozen `{root}-mgpu-w{i}` sibling roots/logs, aggregated exit verdict; Makefile lint guard
+- [x] 12-01-PLAN.md — run_sweep_shard.py launch mode (D-07 new entry): collect-all validation, LPT size-weighted sharding (pure fn + property tests), verbatim-launcher spawn + CUDA_VISIBLE_DEVICES per worker, frozen `{root}-mgpu-w{i}` sibling roots/logs, aggregated exit verdict; Makefile lint guard
 - [ ] 12-02-PLAN.md — web mirror (D-02): script/gen_progress.py over the pure scanner (frozen data contract, newest_mtime dropped, byte-stable), progress.html/js/css + DataAPI.loadProgress + NAV_LINKS, JS-lane extension, golden-JSON generator tests
 
 **Wave 2** *(blocked on wave 1)*
@@ -285,7 +285,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 | 9. Custom Model & Dataset Onboarding | v1.2 | 6/6 | Complete    | 2026-10-12 |
 | 10. Data Manager (Downloads & Verification) | v1.2 | 6/6 | Complete    | 2026-10-13 |
 | 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 7/7 | Complete    | 2026-10-13 |
-| 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 0/TBD | Not started | - |
+| 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 1/5 | In Progress | - |
 
 ---
 *v0.7.1 (Phases 1-6) shipped 2026-10-11 — collapsed above; full record in `.planning/MILESTONES.md`.*
