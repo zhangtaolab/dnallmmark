@@ -798,6 +798,107 @@ def test_stats_manifest_derives_total_and_model_plan(tmp_path):
         mode="point", point_seconds=200.0, lo_seconds=None, hi_seconds=None)
 
 
+# ===== WR-02: the re-run at a populated root (fallback_start scoping) =====
+
+
+def test_stats_rerun_at_populated_root_scopes_to_current_run(tmp_path):
+    """WR-02: a from-failures re-run at a root holding a FINISHED prior
+    sweep — done/elapsed/current scope to THIS run's records
+    (started_at >= the injected fallback start), the stale pre-run
+    manifest supplies neither the total nor the per-model ETA plan, and
+    the prior sweep's days-old records never fabricate the elapsed."""
+    root = tmp_path / "finetuned"
+    # the prior sweep: three completed records + its (now stale) manifest
+    plant_record(root, "model-a", "task-1", 42,
+                 completed("model-a", "task-1", 42, 0, 3600))
+    plant_record(root, "model-a", "task-2", 42,
+                 completed("model-a", "task-2", 42, 3600, 7200))
+    plant_record(root, "model-b", "task-1", 42,
+                 completed("model-b", "task-1", 42, 7200, 10800))
+    stale_manifest = write_json(root / MANIFEST_NAME, manifest_payload([
+        manifest_cell("model-a", "task-1", 42, "completed"),
+        manifest_cell("model-a", "task-2", 42, "completed"),
+        manifest_cell("model-b", "task-1", 42, "completed"),
+    ]))
+    rerun_start = EPOCH0 + 10_000_000.0        # ~115 days later
+    set_mtime(stale_manifest, EPOCH0)          # landed before the re-run
+    # the re-run's one record so far
+    plant_record(root, "model-a", "task-1", 42,
+                 completed("model-a", "task-1", 42,
+                           10_000_000, 10_000_060))
+
+    result = sweep_monitor.stats(
+        root, fallback_start=rerun_start, now=EPOCH0 + 10_000_600.0)
+
+    assert result.done == 1, "the prior sweep's records do not count"
+    assert result.total is None, (
+        "the stale manifest supplies no total — the honest unknown "
+        "until the re-run's own manifest lands"
+    )
+    assert result.elapsed_seconds == 600.0, (
+        "elapsed accrues from THIS run's first record, not the prior "
+        "sweep's days-old earliest stamp"
+    )
+    assert result.current == sweep_monitor.CurrentCell(
+        model="model-a", task="task-1", seed=42)
+    assert result.eta.mode == "none", "no known total — no fabricated ETA"
+
+    # the un-scoped finished view (no fallback injection) is unchanged:
+    # every on-disk record counts (the re-run overwrote its cell's
+    # record, so 2 prior + 1 re-run) and the manifest supplies the total
+    finished_view = sweep_monitor.stats(root, now=EPOCH0 + 10_000_600.0)
+    assert finished_view.done == 3
+    assert finished_view.total == 3
+
+
+def test_stats_rerun_adopts_its_own_manifest_once_it_lands(tmp_path):
+    """Once the re-run's manifest lands (mtime >= the fallback start)
+    it supplies the total and the per-model plan — the fresh manifest
+    beats any stale injected expectation."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "model-a", "task-1", 42,
+                 completed("model-a", "task-1", 42,
+                           10_000_000, 10_000_060))
+    fresh_manifest = write_json(root / MANIFEST_NAME, manifest_payload([
+        manifest_cell("model-a", "task-1", 42, "completed"),
+        manifest_cell("model-a", "task-1", 43, "planned"),
+    ]))
+    rerun_start = EPOCH0 + 10_000_000.0
+    set_mtime(fresh_manifest, EPOCH0 + 10_000_700.0)   # after the launch
+
+    result = sweep_monitor.stats(
+        root, expected_total=9300, fallback_start=rerun_start,
+        now=EPOCH0 + 10_000_800.0)
+
+    assert result.total == 9300, (
+        "an explicit expected_total still wins (the injection contract)"
+    )
+
+    result_no_expected = sweep_monitor.stats(
+        root, fallback_start=rerun_start, now=EPOCH0 + 10_000_800.0)
+    assert result_no_expected.total == 2, (
+        "the FRESH manifest's count is the total once it lands"
+    )
+
+
+def test_stats_rerun_records_without_parseable_start_are_excluded(
+        tmp_path):
+    """A record whose started_at cannot be parsed cannot be proven
+    in-run — under a fallback-scoped view it drops (never crashes,
+    never inflates this run's done)."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "model-a", "task-1", 42,
+                 make_record("model-a", "task-1", 42, status="completed",
+                             started_at="not-a-stamp",
+                             finished_at=stamp(60)))
+
+    result = sweep_monitor.stats(
+        root, fallback_start=EPOCH0, now=EPOCH0 + 500.0)
+
+    assert result.done == 0
+    assert result.elapsed_seconds == 500.0   # the fallback carries elapsed
+
+
 def test_eta_pending_before_first_completion():
     """< 1 completed duration => pending (the estimating degradation),
     whatever else is known — skipped records never count as data."""

@@ -911,6 +911,45 @@ def _elapsed_seconds(
     return None
 
 
+def _records_for_run(records, fallback_start):
+    """WR-02 (phase-11 review): scope parsed records to ONE run.
+
+    With a ``fallback_start`` (the launch-injection seam: the TUI noted
+    a run at this root), only records whose ``started_at`` parses to >=
+    the start belong to THIS run — records accumulate at a root across
+    runs (WR-12 discipline keeps old records), so the unscoped view of
+    a re-run at a populated root would count the prior sweep's records
+    (done 3005/9300-style corruption). Records whose ``started_at``
+    cannot be parsed cannot be proven in-run and drop (never crash).
+    Without a fallback (a CLI-launched/finished view) every record
+    counts — the unscoped behavior, unchanged.
+    """
+    if fallback_start is None:
+        return records
+    start_epoch = float(fallback_start)
+    scoped = []
+    for record in records:
+        started = _parse_iso(record.get("started_at")
+                             if isinstance(record, dict) else None)
+        if started is not None and started.timestamp() >= start_epoch:
+            scoped.append(record)
+    return scoped
+
+
+def _manifest_is_fresh(manifest_path: Path, fallback_start) -> bool:
+    """WR-02: a manifest is FRESH for a fallback-scoped run when its
+    mtime is >= the run's start — the driver writes the manifest only
+    at sweep END, so anything older predates the run (the prior
+    sweep's stale counts). Without a fallback the question is moot
+    (True); an unstat-able manifest reads stale (tolerant)."""
+    if fallback_start is None:
+        return True
+    try:
+        return manifest_path.stat().st_mtime >= float(fallback_start)
+    except OSError:
+        return False
+
+
 def stats(root, expected_total=None, fallback_start=None, now=None):
     """The stats line (MON-02/D-17) over one root.
 
@@ -920,18 +959,32 @@ def stats(root, expected_total=None, fallback_start=None, now=None):
     the newest-activity seed dir. ``elapsed_seconds``: now minus the
     earliest record started_at, else now minus fallback_start (a
     TUI-launched sweep before its first record), else None.
+
+    WR-02 (phase-11 review): with a ``fallback_start`` (a run the TUI
+    noted at this root — the [f]->[r] re-run flow lands here), the
+    records scope to THIS run (``started_at`` >= the start) and a
+    manifest whose mtime predates the start is STALE — it supplies
+    neither the total nor the per-model ETA plan until the run's own
+    manifest lands at sweep end. Without the injection (a CLI-launched
+    or finished view) every record counts and any manifest governs —
+    the unscoped behavior, unchanged.
     """
     root_path = Path(root)
     now_epoch = _now_epoch(now)
-    records = _collect_records(root_path)
+    records = _records_for_run(
+        _collect_records(root_path), fallback_start)
     done = sum(
         1
         for record in records
         if record.get("status") in TERMINAL_RECORD_STATUSES
     )
-    manifest = load_manifest(root_path / MANIFEST_NAME)
+    manifest_path = root_path / MANIFEST_NAME
+    manifest = load_manifest(manifest_path)
+    manifest_usable = (
+        manifest is not None
+        and _manifest_is_fresh(manifest_path, fallback_start))
     total: int | None = expected_total
-    if total is None and manifest is not None:
+    if total is None and manifest_usable:
         total = len(_manifest_cells(manifest))
     return SweepStats(
         done=done,
@@ -940,7 +993,8 @@ def stats(root, expected_total=None, fallback_start=None, now=None):
         elapsed_seconds=_elapsed_seconds(records, fallback_start, now_epoch),
         eta=eta_estimate(
             records, done, total, now=now_epoch,
-            model_totals=_model_plan(manifest)),
+            model_totals=(
+                _model_plan(manifest) if manifest_usable else None)),
     )
 
 

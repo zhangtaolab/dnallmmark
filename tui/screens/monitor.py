@@ -1036,10 +1036,18 @@ class MonitorScreen(Screen):
     def note_launch(self, root: str, cells: int) -> None:
         """Record a TUI-launched sweep's plan (the 11-04 stats seams):
         the expected total and the fallback start (the launch moment —
-        superseded by the first record's started_at once it lands)."""
+        superseded by the first record's started_at once it lands).
+
+        WR-02 (phase-11 review): a note with ``cells == 0`` (the re-run
+        flow, whose plan is unknown) CLEARS any stale expected total a
+        prior launch at the same root left behind — the fresh run's own
+        manifest (once it lands) or the honest unknown-total governs,
+        never the prior sweep's number for the whole session."""
         root_key = str(Path(str(root)).resolve())
         if cells:
             self._expected_totals[root_key] = int(cells)
+        else:
+            self._expected_totals.pop(root_key, None)
         self._fallback_starts[root_key] = time.time()
         if self._attached_root is None:
             self.attach(root_key)

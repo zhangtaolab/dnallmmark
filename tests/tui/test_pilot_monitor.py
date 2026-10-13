@@ -1052,6 +1052,41 @@ async def test_rerun_confirm_routes_launch_from_failures_and_attaches():
         assert str(app.screen._attached_root) == "/scans/finetuned"
 
 
+async def test_note_launch_cells_zero_clears_stale_expected_total():
+    """WR-02: the re-run's note_launch(root, 0) clears a prior launch's
+    stale expected total at the same root — the next stats call threads
+    expected_total=None (the honest unknown), never the prior sweep's
+    number; a real plan (cells > 0) still injects."""
+    monitor = FakeMonitorService(scans=[ScanResult(sweeps=(
+        _summary("finetuned", SWEEP_RUNNING, done=1, total=2),),
+        watermarks={})])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen.note_launch("/scans/finetuned", 9300)
+        await _settle(pilot, app)
+        assert monitor.stats_calls[-1][1] == 9300, (
+            "the launch plan injects the expected total"
+        )
+
+        screen.note_launch("/scans/finetuned", 0)   # the re-run note
+        screen._tick_frontier()                     # the next stats read
+        await _settle(pilot, app)
+        assert monitor.stats_calls[-1][1] is None, (
+            "the re-run's unknown plan clears the stale expectation — "
+            "never 9300 for a 15-cell re-run"
+        )
+        assert monitor.stats_calls[-1][2] is not None, (
+            "the fallback start still threads (the run scoping seam)"
+        )
+
+        screen.note_launch("/scans/finetuned", 15)
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert monitor.stats_calls[-1][1] == 15
+
+
 async def test_rerun_carries_source_sweep_lane_never_base_default():
     """WR-01: a --peft lora sweep's [r] re-run threads the SOURCE lane
     into launch_from_failures (recovered via the service's rerun_lane)
