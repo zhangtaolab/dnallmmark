@@ -66,7 +66,8 @@ const CONFIG = {
     { name: 'Fine-tuning', url: './finetuning.html' },
     { name: 'Models', url: './models.html' },
     { name: 'Datasets', url: './datasets.html' },
-    { name: 'Submit', url: './submit.html' }
+    { name: 'Submit', url: './submit.html' },
+    { name: 'Progress', url: './progress.html' }
   ],
 
   // Social links

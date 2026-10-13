@@ -12,7 +12,8 @@ const DataAPI = {
       plant: null,
       microbe: null
     },
-    dataManifest: null
+    dataManifest: null,
+    progress: null
   },
 
   /**
@@ -97,6 +98,33 @@ const DataAPI = {
       return data;
     } catch (error) {
       console.error('Error loading data manifest:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Load the sweep-progress mirror (data/progress/sweep.json) — the
+   * read-only progress page's single fetch (WEB-01, D-02). Generated
+   * offline by script/gen_progress.py; cached like every other fetch;
+   * a failed fetch throws so the page renders its fetch-error empty
+   * state (never fabricated progress).
+   * @returns {Promise<Object>}
+   */
+  async loadProgress() {
+    if (this.cache.progress) {
+      return this.cache.progress;
+    }
+
+    try {
+      const response = await fetch('./data/progress/sweep.json');
+      if (!response.ok) {
+        throw new Error(`Failed to load sweep.json: ${response.status}`);
+      }
+      const data = await response.json();
+      this.cache.progress = data;
+      return data;
+    } catch (error) {
+      console.error('Error loading progress mirror:', error);
       throw error;
     }
   },

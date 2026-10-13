@@ -1,0 +1,71 @@
+/* ========================================
+   DNALLM Mark Sweep Progress Page Styles
+   Sweep 进度镜像页面样式（只读静态镜像, D-02 / 12-02）
+
+   Deliberately minimal (the frozen CSS budget): the five cell-state
+   color classes (the cross-surface glyph vocabulary) + the summary
+   stat-card refinement. Every value a variables.css token — no
+   hardcoded hex (the CLAUDE.md rule); every other style on the page
+   comes from the shared layout/components vocabulary.
+   ======================================== */
+
+/* ===== Summary stat-card refinement (the one layout allowance) ===== */
+.progress-summary {
+  padding: var(--spacing-lg);
+  display: grid;
+  gap: var(--spacing-md);
+}
+
+.progress-summary-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.progress-sweep-name {
+  font-size: var(--font-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-primary);
+}
+
+.progress-summary-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  font-size: var(--font-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ===== Cell state glyphs — the five cross-surface states ===== */
+/* Glyph + legend word + color on every state (never color-only). */
+.cell-state {
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ✓ completed */
+.cell-state--done {
+  color: var(--color-success);
+}
+
+/* ⠋ running — the state the team watches: info blue (UI-SPEC default 6) */
+.cell-state--running {
+  color: var(--color-info);
+}
+
+/* ✗ failed */
+.cell-state--failed {
+  color: var(--color-error);
+}
+
+/* ⊘ skipped (resume marker) */
+.cell-state--skipped {
+  color: var(--color-text-muted);
+}
+
+/* ◌ queued — muted at 60% to distinguish from skipped */
+.cell-state--queued {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
