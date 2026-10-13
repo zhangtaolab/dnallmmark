@@ -6,16 +6,16 @@ current_phase: 11
 current_phase_name: Run Config, Launch Gates & Single-GPU Monitoring
 current_plan: 5
 status: executing
-stopped_at: Completed 11-04-PLAN.md
-last_updated: "2026-10-13T02:46:17.572Z"
+stopped_at: Completed 11-02-PLAN.md
+last_updated: "2026-10-13T03:26:08.000Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 complete, transitioned to Phase 11
-state_head: 10c8def7741243cff84760a9fd889ea11469e19b
+state_head: 8fe61a2a125e00a5607b58d6dc836801dc434a3a
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 32
-  completed_plans: 28
+  completed_plans: 29
   percent: 67
 ---
 
@@ -88,6 +88,7 @@ Progress (v1.2): [██████░░░░] 67% (4/6 phases; 25/25 planned
 | Phase 11 P01 | 945s | 2 tasks | 2 files |
 | Phase 11 P05 | 12min | 2 tasks | 4 files |
 | Phase 11 P04 | 24m | 3 tasks | 2 files |
+| Phase 11 P02 | 36min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -187,6 +188,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 11]: 11-04: done = terminal record statuses (completed|failed|skipped) shared by progress and ETA remaining; planned never counts
 - [Phase 11]: 11-04: eta_estimate threads the manifest per-model plan via model_totals (per-model median else global median); STALE_GRACE_SECONDS=600 (O2) and ETA_VARIANCE_RATIO=3.0 (O4) pinned as documented-tunable constants
 - [Phase 11]: 11-04: record reads keep a per-path last-known-good (missing reads absent, damaged reads previous parse); corrupt manifests treated absent so classification falls back to churn/mtime rules
+- [Phase 11]: 11-02: preview guards the empty selection itself — run_sweep's falsy-filter semantics (None and [] both mean no-filter) would silently enumerate the FULL registry through the preview, so empty previews zero cells + the empty_selection problem (the driver's WR-07 start-refusal mirrored)
+- [Phase 11]: 11-02: E2' official reference is overlay-free by construction (direct json.load of the two official files, never registry_loader) and fail-closed (diagnostic ⇒ empty sets ⇒ is_full_e2x never True); superset semantics locked (O4): official ∪ customs still escalates to the typed gate — under-gating is the hazard
+- [Phase 11]: 11-02: PROBE_INELIGIBLE extracted from run_finetune.py as SOURCE TEXT (torch at its module top forbids import) and pinned to the real 9-name literal; import-purity probes must run in a fresh python -I subprocess (the GB10 dev venv holds torch, so an in-process assert proves nothing under the full suite)
 
 ### Pending Todos
 
@@ -210,8 +214,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T02:45:15.977Z
-Stopped at: Completed 11-04-PLAN.md
+Last session: 2026-10-13T03:26:08.000Z
+Stopped at: Completed 11-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
