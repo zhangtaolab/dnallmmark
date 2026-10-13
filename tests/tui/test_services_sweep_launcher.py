@@ -24,7 +24,6 @@ Three lanes, per the plan:
   ``run_config.compose_from_failures_argv`` and launches through the
   shared seam; the raw ``launch_argv`` never consults the phrase gate
   (never-full-matrix by construction, D-11).
-
 Every test injects a tmp state root via ``DNALLMMARK_TUI_STATE_DIR`` —
 the real ``~/.local/state/dnallmmark`` is never read or written. Every
 subprocess is a fake spawner; no GPU, no network, no real child.
@@ -42,7 +41,15 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
-from tui.services import settings, sweep_launcher
+from env_smoke import CheckResult  # top-level module (pipeline/ sys.path root)
+
+from tui.services import (
+    env_gate,
+    quick_check,
+    run_config,
+    settings,
+    sweep_launcher,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -330,3 +337,372 @@ def test_tee_path_for_unknown_root_is_none(monkeypatch, tmp_path):
     launcher = sweep_launcher.SweepLauncher()
 
     assert launcher.tee_path_for(tmp_path / "nope") is None
+
+
+# =====================================================================
+# Lane 2 — the gate: env preflight + fresh recompute + E2' phrase
+# (Task 2)
+# =====================================================================
+
+
+def kernel(name, ok=True, lines=()):
+    """One fake ``env_smoke`` kernel result (the CheckResult shape)."""
+    return CheckResult(name=name, ok=ok, lines=tuple(lines))
+
+
+class RunConfigDouble:
+    """A ``run_config`` seam double for controlled verdicts.
+
+    The REAL verdict logic is 11-02's tested code — this double only
+    conforms to the consumed function seam (``preview`` /
+    ``official_keys`` / ``is_full_e2x`` / ``expected_phrase`` /
+    ``phrase_matches`` / ``compose_argv``) with configurable outcomes
+    and call counters (the fresh-recompute spy). The phrase functions
+    delegate to the REAL run_config implementations so the launcher's
+    orchestration is proven against the exact-match semantics.
+    """
+
+    def __init__(self, preview_result=None, official=None, full_e2x=False,
+                 argv=None):
+        self.preview_result = (
+            preview_result if preview_result is not None
+            else run_config.PreviewResult(
+                models_count=1, tasks_count=1, seeds_count=1,
+                fractions_count=None, cells_count=1,
+                cells=(("m", "t", 42),), problems=()))
+        self.official = (
+            official if official is not None
+            else run_config.OfficialKeys(
+                frozenset({"m"}), frozenset({"t"}), None))
+        self.full_e2x = full_e2x
+        self.argv = argv if argv is not None else ["py", "run_sweep.py"]
+        self.preview_calls = 0
+        self.official_calls = 0
+        self.e2x_calls = 0
+        self.compose_calls = 0
+
+    def preview(self, spec, registry_dir=None):
+        self.preview_calls += 1
+        return self.preview_result
+
+    def official_keys(self, registry_dir=None):
+        self.official_calls += 1
+        return self.official
+
+    def is_full_e2x(self, spec, official):
+        self.e2x_calls += 1
+        return self.full_e2x
+
+    def expected_phrase(self, output_root):
+        return run_config.expected_phrase(output_root)
+
+    def phrase_matches(self, typed, output_root):
+        return run_config.phrase_matches(typed, output_root)
+
+    def compose_argv(self, spec):
+        self.compose_calls += 1
+        return list(self.argv)
+
+
+def gate_spec(tmp_path, **kwargs):
+    """A minimal well-formed spec over a tmp output root."""
+    return run_config.RunSpec(
+        models=("m",), tasks=("t",),
+        output_root=str(tmp_path / "out"), **kwargs)
+
+
+# ===== env preflight (D-08 — the frozen face, zero edits) =====
+
+
+def test_env_preflight_all_ok_kernels_can_launch():
+    pre = sweep_launcher.env_preflight([
+        kernel("version_pins"),
+        kernel("cuda"),
+        kernel("dataset_dirs"),
+    ])
+    assert pre.can_launch is True
+    assert pre.reasons == ()
+    assert pre.failed_kernels == ()
+
+
+def test_env_preflight_critical_failure_blocks_with_details():
+    pre = sweep_launcher.env_preflight([
+        kernel("version_pins"),
+        kernel("cuda", ok=False,
+               lines=("CUDA driver mismatch: need >=560",)),
+    ])
+    assert pre.can_launch is False
+    assert pre.reasons == ("CUDA driver mismatch: need >=560",)
+    assert pre.failed_kernels == ("cuda",)
+
+
+def test_env_preflight_routing_failure_alone_stays_launchable():
+    """``dataset_dirs`` is ROUTING (advisory): a missing-data machine
+    can still launch a dry-run-shaped sweep — only CRITICAL blocks."""
+    pre = sweep_launcher.env_preflight([
+        kernel("cuda"),
+        kernel("dataset_dirs", ok=False, lines=("missing GUE",)),
+    ])
+    assert pre.can_launch is True
+    assert pre.failed_kernels == ()
+
+
+def test_env_preflight_multiple_critical_failures_in_input_order():
+    pre = sweep_launcher.env_preflight([
+        kernel("dnallm", ok=False, lines=("dnallm absent",)),
+        kernel("peft"),
+        kernel("cuda", ok=False, lines=("no CUDA device", "driver old")),
+    ])
+    assert pre.can_launch is False
+    assert pre.failed_kernels == ("dnallm", "cuda")
+    assert pre.reasons == ("dnallm absent", "no CUDA device", "driver old")
+
+
+def test_env_preflight_unknown_kernel_failure_is_ignored():
+    """Forward tolerance: a future kernel id failing cannot crash the
+    preflight (env_gate ignores it; so does the derived list)."""
+    pre = sweep_launcher.env_preflight([
+        kernel("cuda"),
+        kernel("some_future_kernel", ok=False, lines=("??",)),
+    ])
+    assert pre.can_launch is True
+    assert pre.failed_kernels == ()
+
+
+def test_env_preflight_delegates_to_the_frozen_face_verbatim(
+        monkeypatch, tmp_path):
+    """The preflight COMPOSES quick_check.run_quick_check ->
+    env_gate.gate_verdict — both frozen (D-08); the spies prove the
+    delegation happens through those exact functions, never a local
+    re-implementation."""
+    pin_state_dir(monkeypatch, tmp_path)
+    qc_calls = []
+    real_qc = quick_check.run_quick_check
+
+    def qc_spy(kernels=None):
+        qc_calls.append(kernels)
+        return real_qc(kernels)
+
+    gate_calls = []
+    real_gate = env_gate.gate_verdict
+
+    def gate_spy(results):
+        gate_calls.append(results)
+        return real_gate(results)
+
+    monkeypatch.setattr(quick_check, "run_quick_check", qc_spy)
+    monkeypatch.setattr(env_gate, "gate_verdict", gate_spy)
+
+    kernels = [kernel("cuda", ok=False, lines=("no CUDA device",))]
+    pre = sweep_launcher.env_preflight(kernels)
+
+    assert qc_calls == [kernels]
+    assert gate_calls == [real_qc(kernels)]
+    assert pre.can_launch is False
+
+
+# ===== gate_confirm_data (the fresh-preview summary) =====
+
+
+def test_gate_confirm_data_recomputes_preview_and_summarizes(tmp_path):
+    spec = gate_spec(tmp_path)
+    double = RunConfigDouble(full_e2x=True)
+
+    summary = sweep_launcher.gate_confirm_data(spec, double)
+
+    assert double.preview_calls == 1      # FRESH — never a cached screen value
+    assert double.official_calls == 1
+    assert double.e2x_calls == 1
+    assert summary.models == 1
+    assert summary.tasks == 1
+    assert summary.seeds == 1
+    assert summary.cells == 1
+    assert summary.output_root == spec.output_root
+    assert summary.is_e2x is True
+    assert summary.expected_phrase == "out"
+
+
+def test_gate_confirm_data_non_e2x_over_real_module(tmp_path):
+    spec = run_config.RunSpec(
+        models=("plant-dnabert-6mer",), tasks=("GUE__emp_H3",),
+        seeds=(42,), output_root=str(tmp_path / "out"))
+
+    summary = sweep_launcher.gate_confirm_data(spec)
+
+    assert summary.is_e2x is False       # 1 model x 1 task x 1 seed
+    assert summary.models == 1
+    assert summary.cells == 1
+    assert summary.expected_phrase == "out"
+
+
+# ===== launch_spec (the structural gate — D-07 / LNC-03) =====
+
+
+def test_launch_spec_problems_refuse_before_spawn(monkeypatch, tmp_path):
+    pin_state_dir(monkeypatch, tmp_path)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+    spec = run_config.RunSpec(
+        models=(), tasks=(), output_root=str(tmp_path / "out"))
+
+    result = launcher.launch_spec(spec, spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.GateRefusal)
+    assert result.stage == "problems"
+    assert ("empty_selection", None) in result.problems
+    assert spawner.calls == []           # the spawner-silent proof
+
+
+def test_launch_spec_official_keys_diagnostic_refuses(monkeypatch,
+                                                      tmp_path):
+    """The fail-closed reference (T-11-02-02): unreadable official
+    registries must BLOCK — never compare against silently-empty sets
+    that a full-matrix spec would trivially satisfy."""
+    pin_state_dir(monkeypatch, tmp_path)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+    diagnostic = "unreadable or shape-invalid: pipeline/models_info.json"
+    double = RunConfigDouble(official=run_config.OfficialKeys(
+        frozenset(), frozenset(), diagnostic))
+
+    result = launcher.launch_spec(
+        gate_spec(tmp_path), run_config_service=double, spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.GateRefusal)
+    assert result.stage == "problems"
+    assert ("official_keys", diagnostic) in result.problems
+    assert spawner.calls == []
+
+
+def test_launch_spec_e2x_wrong_phrase_refuses_spawner_silent(
+        monkeypatch, tmp_path):
+    """THE LNC-03 structural proof: an E2' verdict with a wrong phrase
+    refuses with ZERO spawner calls (call-count evidence, not return
+    shape — T-11-03-01)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+    double = RunConfigDouble(full_e2x=True)
+
+    result = launcher.launch_spec(
+        gate_spec(tmp_path), phrase="wrong", run_config_service=double,
+        spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.GateRefusal)
+    assert result.stage == "phrase"
+    assert result.expected == "out"
+    assert spawner.calls == []
+    assert double.e2x_calls == 1          # the verdict was recomputed FRESH
+
+
+def test_launch_spec_e2x_absent_phrase_refuses(monkeypatch, tmp_path):
+    pin_state_dir(monkeypatch, tmp_path)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+    double = RunConfigDouble(full_e2x=True)
+
+    result = launcher.launch_spec(
+        gate_spec(tmp_path), run_config_service=double, spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.GateRefusal)
+    assert result.stage == "phrase"
+    assert result.expected == "out"
+    assert spawner.calls == []
+
+
+def test_launch_spec_e2x_phrase_match_is_exact(monkeypatch, tmp_path):
+    """No normalization sneaks past the gate: case-mismatched,
+    whitespace-padded, and prefix phrases all refuse (the exact-match
+    service check re-proven at the launch tier)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    launcher = sweep_launcher.SweepLauncher()
+    double = RunConfigDouble(full_e2x=True)
+    for typed in ("OUT", " out ", "ou"):
+        spawner = FakeSpawner()
+        result = launcher.launch_spec(
+            gate_spec(tmp_path), phrase=typed, run_config_service=double,
+            spawner=spawner)
+        assert isinstance(result, sweep_launcher.GateRefusal), typed
+        assert result.stage == "phrase"
+        assert spawner.calls == [], typed
+
+
+def test_launch_spec_e2x_matching_phrase_spawns(monkeypatch, tmp_path):
+    pin_state_dir(monkeypatch, tmp_path)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+    double = RunConfigDouble(full_e2x=True, argv=["py", "run_sweep.py",
+                                                  "--models", "m"])
+
+    outcome = launcher.launch_spec(
+        gate_spec(tmp_path), phrase="out", run_config_service=double,
+        spawner=spawner, clock=FixedClock(CLOCK_MOMENT))
+
+    assert outcome.spawned is True
+    assert double.compose_calls == 1
+    argv, kwargs = single_call(spawner)
+    assert argv == ["py", "run_sweep.py", "--models", "m"]
+    assert kwargs["start_new_session"] is True
+
+
+def test_launch_spec_non_e2x_without_phrase_spawns_over_real_module(
+        monkeypatch, tmp_path):
+    """A small non-E2' spec needs NO phrase and launches over the REAL
+    run_config verdict chain (preview -> official_keys -> is_full_e2x
+    -> compose_argv)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+    spec = run_config.RunSpec(
+        models=("plant-dnabert-6mer",), tasks=("GUE__emp_H3",),
+        seeds=(42,), output_root=str(tmp_path / "out"))
+
+    outcome = launcher.launch_spec(
+        spec, spawner=spawner, clock=FixedClock(CLOCK_MOMENT))
+
+    assert outcome.spawned is True
+    argv, kwargs = single_call(spawner)
+    assert argv == run_config.compose_argv(spec)   # consumed VERBATIM
+    assert kwargs["cwd"] == str(REPO_ROOT / "pipeline")
+    assert launcher.live_sweeps() == (str((tmp_path / "out").resolve()),)
+
+
+def test_launch_spec_recomputes_despite_screen_preview(monkeypatch,
+                                                       tmp_path):
+    """T-11-03-02: the gate NEVER trusts the screen's cached preview —
+    launch_spec re-runs preview/official_keys/is_full_e2x even though
+    gate_confirm_data already did (the spy counter delta)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    launcher = sweep_launcher.SweepLauncher()
+    spec = gate_spec(tmp_path)
+    double = RunConfigDouble(full_e2x=False)
+
+    sweep_launcher.gate_confirm_data(spec, double)   # the screen's preview
+    assert double.preview_calls == 1
+
+    outcome = launcher.launch_spec(
+        spec, run_config_service=double, spawner=FakeSpawner())
+
+    assert outcome.spawned is True
+    assert double.preview_calls == 2
+    assert double.official_calls == 2
+    assert double.e2x_calls == 2
+
+
+# ===== launch_argv (the raw pre-composed seam) =====
+
+
+def test_launch_argv_spawns_precomposed_argv(monkeypatch, tmp_path):
+    pin_state_dir(monkeypatch, tmp_path)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+
+    outcome = launcher.launch_argv(
+        ["py", "run_sweep.py", "--from-failures", "f.json"],
+        tmp_path / "out", spawner=spawner, clock=FixedClock(CLOCK_MOMENT))
+
+    assert outcome.spawned is True
+    argv, kwargs = single_call(spawner)
+    assert argv == ["py", "run_sweep.py", "--from-failures", "f.json"]
+    assert kwargs["start_new_session"] is True
+    assert launcher.live_sweeps() == (str((tmp_path / "out").resolve()),)
