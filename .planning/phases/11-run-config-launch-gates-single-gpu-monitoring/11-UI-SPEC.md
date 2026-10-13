@@ -1,7 +1,7 @@
 ---
 phase: "11"
 slug: "run-config-launch-gates-single-gpu-monitoring"
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: "2026-10-13"
