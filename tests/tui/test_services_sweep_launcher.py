@@ -200,7 +200,8 @@ def test_spawn_registers_live_sweep_roundtrip(monkeypatch, tmp_path):
     out_root = tmp_path / "out"
 
     outcome = launcher._spawn(
-        ["py"], out_root, spawner=FakeSpawner(FakeSweepPopen()),
+        ["py"], out_root,
+        spawner=FakeSpawner(FakeSweepPopen(poll_returns=[None])),
         clock=FixedClock(CLOCK_MOMENT))
 
     assert launcher.live_sweeps() == (str(out_root.resolve()),)
@@ -276,7 +277,8 @@ def test_spawn_reclaims_root_after_prior_sweep_exited(
     assert first.spawned is True
 
     second = launcher._spawn(
-        ["py"], out_root, spawner=FakeSpawner(FakeSweepPopen()),
+        ["py"], out_root,
+        spawner=FakeSpawner(FakeSweepPopen(poll_returns=[None])),
         clock=FixedClock(CLOCK_MOMENT))
 
     assert second.spawned is True
@@ -393,6 +395,52 @@ def test_tee_path_for_unknown_root_is_none(monkeypatch, tmp_path):
     launcher = sweep_launcher.SweepLauncher()
 
     assert launcher.tee_path_for(tmp_path / "nope") is None
+
+
+def test_live_sweeps_prunes_exited_process_and_closes_tee(
+        monkeypatch, tmp_path):
+    """WR-04: a registered sweep whose Popen exited (OOM-kill, external
+    SIGKILL, driver crash — no manifest ever lands) is pruned at read
+    time: live_sweeps stops listing it, its parent-side tee handle
+    closes, and the root is claimable again (the scanner's mtime/
+    artifacts classification takes over — never a false running state
+    for the rest of the session)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    popen = FakeSweepPopen(poll_returns=[None])
+    spawner = FakeSpawner(popen)
+    launcher = sweep_launcher.SweepLauncher()
+    out_root = tmp_path / "out"
+    launcher._spawn(["py"], out_root, spawner=spawner,
+                    clock=FixedClock(CLOCK_MOMENT))
+    root_key = str(out_root.resolve())
+    assert launcher.live_sweeps() == (root_key,)
+
+    popen.poll_returns = [0]   # the sweep died without detach/kill
+    assert launcher.live_sweeps() == ()
+    assert spawner.calls[0]["kwargs"]["stdout"].closed is True, (
+        "the pruned entry's parent-side tee handle is closed"
+    )
+
+    # the root is claimable again (the dead entry no longer blocks)
+    respawn = launcher._spawn(
+        ["py"], out_root, spawner=FakeSpawner(FakeSweepPopen()),
+        clock=FixedClock(CLOCK_MOMENT))
+    assert respawn.spawned is True
+
+
+def test_live_sweeps_keeps_live_entries_across_reads(
+        monkeypatch, tmp_path):
+    """The prune is read-time only: a still-running sweep stays listed
+    across repeated reads (no accidental eviction)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    popen = FakeSweepPopen(poll_returns=[None])
+    launcher = sweep_launcher.SweepLauncher()
+    launcher._spawn(["py"], tmp_path / "out", spawner=FakeSpawner(popen),
+                    clock=FixedClock(CLOCK_MOMENT))
+
+    for _ in range(3):
+        assert launcher.live_sweeps() == (
+            str((tmp_path / "out").resolve()),)
 
 
 # =====================================================================
@@ -709,11 +757,11 @@ def test_launch_spec_non_e2x_without_phrase_spawns_over_real_module(
     run_config verdict chain (preview -> official_keys -> is_full_e2x
     -> compose_argv)."""
     pin_state_dir(monkeypatch, tmp_path)
-    spawner = FakeSpawner()
     launcher = sweep_launcher.SweepLauncher()
     spec = run_config.RunSpec(
         models=("plant-dnabert-6mer",), tasks=("GUE__emp_H3",),
         seeds=(42,), output_root=str(tmp_path / "out"))
+    spawner = FakeSpawner(FakeSweepPopen(poll_returns=[None]))
 
     outcome = launcher.launch_spec(
         spec, spawner=spawner, clock=FixedClock(CLOCK_MOMENT))
@@ -752,8 +800,8 @@ def test_launch_spec_recomputes_despite_screen_preview(monkeypatch,
 
 def test_launch_argv_spawns_precomposed_argv(monkeypatch, tmp_path):
     pin_state_dir(monkeypatch, tmp_path)
-    spawner = FakeSpawner()
     launcher = sweep_launcher.SweepLauncher()
+    spawner = FakeSpawner(FakeSweepPopen(poll_returns=[None]))
 
     outcome = launcher.launch_argv(
         ["py", "run_sweep.py", "--from-failures", "f.json"],
@@ -777,11 +825,11 @@ def test_launch_from_failures_composes_and_spawns(monkeypatch, tmp_path):
     and launches through the SAME seam: resolved failures path, seeds,
     ABSOLUTE output root — and the tee names after the re-run root."""
     pin_state_dir(monkeypatch, tmp_path)
-    spawner = FakeSpawner()
     launcher = sweep_launcher.SweepLauncher()
     failures = tmp_path / "sweep_failures.json"
     failures.write_text("[]", encoding="utf-8")
     out_root = tmp_path / "rerun"
+    spawner = FakeSpawner(FakeSweepPopen(poll_returns=[None]))
 
     outcome = launcher.launch_from_failures(
         failures, (42, 43), out_root, spawner=spawner,

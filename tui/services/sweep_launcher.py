@@ -761,11 +761,31 @@ class SweepLauncher:
         """The live roots, sorted (the ExitModal predicate and the
         monitor's Popen-alive injection source).
 
+        WR-04 (phase-11 review): entries whose Popen has EXITED are
+        pruned at read time (dropped, parent-side tee handle closed) —
+        a TUI-launched run_sweep that died without writing a manifest
+        (kernel OOM-kill, external SIGKILL, a CUDA crash taking down
+        the driver) otherwise stays in live_roots for the whole session
+        and the scanner classifies the root ``running`` unconditionally
+        (live wins over every churn/mtime signal). Once pruned, the
+        root degrades to the scanner's honest mtime/artifacts
+        classification — dead-without-manifest reads artifacts-only,
+        never a false running glyph or a killable corpse in the exit
+        modal.
+
         Returns:
-            tuple[str, ...]: the RESOLVED output roots currently
-            registered.
+            tuple[str, ...]: the RESOLVED output roots whose registered
+            process is still alive.
         """
-        return tuple(sorted(self._live))
+        live: list[str] = []
+        for root in sorted(self._live):
+            entry = self._live[root]
+            if entry["handle"].poll() is None:
+                live.append(root)
+            else:
+                self._live.pop(root, None)
+                self._drop_entry(entry)
+        return tuple(live)
 
     def tee_path_for(self, root):
         """One live root's tee log path (the [t] modal's source).
