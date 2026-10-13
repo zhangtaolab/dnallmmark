@@ -52,6 +52,17 @@ Every behavior bullet of the plan's Tasks 1-2 is pinned here:
   its shard; proven in-process AND through a REAL two-worker subprocess
   chain (real Popen, real run_sweep.py children, CPU-only --dry-run —
   the D-05 local shape) whose sibling tee logs exist and are non-empty.
+- **Merge mode (12-04, MGPU-02 artifact half, D-09)** — the union of N
+  frozen-named worker roots into ONE verified consumer root: lane-flag
+  equality across worker manifests (Pitfall 6 — a lora worker merged
+  with a base worker is a different experiment than either), the
+  ``output_dir`` prefix-rewrite onto the merged root (Pitfall 5 — worker
+  paths dangle after runbook cleanup), the data-artifact allowlist scope
+  with the ``--include-checkpoints`` hatch (A2), copy + SHA256-verify
+  that refuses on ANY hash mismatch before the merged manifests land,
+  consumer equivalence over the REAL ``export_runs.load_run_records``
+  walk and the scanner's manifest branch, idempotent re-merge, and
+  worker-root immutability.
 
 The orchestrator is stdlib-only and CPU-testable: no test assumes N>1
 GPUs, launches real training, or probes nvidia-smi (D-05). The real-
@@ -67,6 +78,7 @@ See also:
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 import registry_loader  # conftest puts pipeline/ on sys.path
@@ -729,3 +741,138 @@ def test_real_two_worker_dry_run_subprocess_chain(tmp_path, monkeypatch):
     assert not (identities[0] & identities[1]), (
         "the two real workers planned disjoint cells"
     )
+
+
+# ===== merge mode (12-04, MGPU-02 artifact half, D-09) =====
+
+
+def write_manifest(root, cells, models, tasks, seeds):
+    """Write a ``sweep_manifest.json`` fixture in the exact
+    ``run_sweep._manifest_payload`` shape (matrix dict + cells list)."""
+    payload = {
+        "matrix": {
+            "models": sorted(models),
+            "tasks": sorted(tasks),
+            "seeds": sorted(seeds),
+            "output_root": str(root),
+        },
+        "cells": cells,
+    }
+    (root / run_sweep.MANIFEST_NAME).write_text(
+        json.dumps(payload), encoding="utf-8")
+
+
+def make_manifest_cell(worker, model, task, seed, status="completed",
+                       fraction=None, **lane):
+    """One manifest cell fixture: the five identity keys (the
+    ``_manifest_payload`` projection) plus optional lane keys."""
+    return {
+        "model": model,
+        "task": task,
+        "seed": seed,
+        "status": status,
+        "output_dir": str(
+            run_sweep.cell_dir_for(worker, model, task, seed, fraction)),
+        **lane,
+    }
+
+
+def make_lane_pair(tmp_path, name, lane_a, lane_b):
+    """Two frozen-named worker roots whose manifests differ ONLY in the
+    given lane keys (no cell trees — the lane-equality refusal fires at
+    validation, before any copy)."""
+    base = (tmp_path / name).resolve()
+    roots = []
+    for index, lane in enumerate((lane_a, lane_b)):
+        root = run_sweep_shard.worker_root(base, index)
+        root.mkdir(parents=True)
+        write_manifest(
+            root,
+            cells=[make_manifest_cell(root, f"model-{index}", "task-x",
+                                      42, **lane)],
+            models=[f"model-{index}"], tasks=["task-x"], seeds=[42])
+        roots.append(root)
+    return base, roots
+
+
+def test_merge_refuses_unequal_peft_lane(tmp_path, monkeypatch):
+    """A peft lane difference across worker manifests refuses collect-all
+    listing the flag and BOTH roots, before any merged manifest lands
+    (Pitfall 6: merging a lora worker with a base worker produces a
+    manifest lying about half its cells)."""
+    base, roots = make_lane_pair(
+        tmp_path, "finetuned", {"peft": "lora"}, {"peft": "none"})
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--merge", "--workers", "2", "--output-root", str(base),
+        ])
+    message = str(excinfo.value)
+    assert "peft" in message
+    for root in roots:
+        assert str(root) in message, (
+            "the diagnostic must list the differing value per root"
+        )
+    assert not (base / run_sweep.MANIFEST_NAME).exists(), (
+        "the refusal must land BEFORE any merged manifest is written"
+    )
+
+
+def test_merge_refuses_unequal_num_train_epochs_lane(
+        tmp_path, monkeypatch):
+    """A num_train_epochs lane difference refuses the same collect-all
+    way (the second pinned lane axis)."""
+    base, roots = make_lane_pair(
+        tmp_path, "finetuned",
+        {"num_train_epochs": 3}, {"num_train_epochs": 1})
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--merge", "--workers", "2", "--output-root", str(base),
+        ])
+    message = str(excinfo.value)
+    assert "num_train_epochs" in message
+    for root in roots:
+        assert str(root) in message
+
+
+def test_rewrite_output_dir_swaps_worker_prefix_to_merged():
+    """The prefix swap: a worker-rooted output_dir rewrites onto the
+    merged root, preserving the {model}/{task}/seed_{n} suffix verbatim
+    (Pitfall 5 — leaving worker paths dangles them after runbook
+    cleanup)."""
+    worker = Path("/tmp/base-mgpu-w0")
+    merged = Path("/tmp/base")
+    assert run_sweep_shard._rewrite_output_dir(
+        "/tmp/base-mgpu-w0/model-a/task-x/seed_42", worker,
+        merged) == "/tmp/base/model-a/task-x/seed_42"
+
+
+def test_rewrite_output_dir_preserves_frac_child_suffix():
+    """A curve cell's frac child keeps its full suffix verbatim (curve
+    manifest cells point INTO the frac dir)."""
+    worker = Path("/tmp/base-mgpu-w1")
+    merged = Path("/tmp/base")
+    assert run_sweep_shard._rewrite_output_dir(
+        "/tmp/base-mgpu-w1/model-b/task-x/seed_42/frac_0.5", worker,
+        merged) == "/tmp/base/model-b/task-x/seed_42/frac_0.5"
+
+
+def test_rewrite_output_dir_non_matching_prefix_passes_through():
+    """Defensive negative: a path NOT under the worker root passes
+    through UNCHANGED (validation owns refusing it — the swap never
+    invents a match)."""
+    worker = Path("/tmp/base-mgpu-w0")
+    merged = Path("/tmp/base")
+    outside = "/somewhere/else/model-a/task-x/seed_42"
+    assert run_sweep_shard._rewrite_output_dir(
+        outside, worker, merged) == outside
+
+
+def test_rewrite_output_dir_sibling_worker_prefix_guard():
+    """The boundary guard: w0's root is a raw string PREFIX of w1's
+    (``...-mgpu-w0`` vs ``...-mgpu-w01``) — the swap must NOT fire across
+    the sibling boundary."""
+    worker = Path("/tmp/base-mgpu-w0")
+    merged = Path("/tmp/base")
+    sibling = "/tmp/base-mgpu-w01/model-a/task-x/seed_42"
+    assert run_sweep_shard._rewrite_output_dir(
+        sibling, worker, merged) == sibling

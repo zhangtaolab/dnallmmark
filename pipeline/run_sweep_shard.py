@@ -222,14 +222,17 @@ def lpt_shard(models, workers, sizes):
 def parse_args(argv=None):
     """Parse the orchestrator-owned flags; everything else is passthrough.
 
-    The orchestrator owns exactly five flags (``--workers``, ``--gpus``,
-    ``--models``, ``--output-root``, ``--dry-run``); every UNRECOGNIZED
-    token from the command line lands in the returned remainder and is
-    appended VERBATIM to every worker argv (run_sweep stays the single
-    owner of sweep-flag validation and help — the D-07
-    argv-surface-minimization answer). ``--registry-dir`` stays a
-    passthrough token but is READ for this module's own validation join
-    so the orchestrator and the workers see the same registry view.
+    The orchestrator owns the five launch flags (``--workers``,
+    ``--gpus``, ``--models``, ``--output-root``, ``--dry-run``) plus the
+    two merge-mode flags (``--merge``, ``--include-checkpoints`` — 12-04);
+    every UNRECOGNIZED token from the command line lands in the returned
+    remainder. In LAUNCH mode the remainder is appended VERBATIM to every
+    worker argv (run_sweep stays the single owner of sweep-flag
+    validation and help — the D-07 argv-surface-minimization answer); in
+    MERGE mode it must be EMPTY (a merge takes no sweep flags).
+    ``--registry-dir`` stays a passthrough token but is READ for this
+    module's own validation join so the orchestrator and the workers see
+    the same registry view.
 
     Args:
         argv (list[str] | None): argv to parse (None reads sys.argv).
@@ -241,7 +244,8 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Orchestrate N run_sweep.py workers over disjoint "
                     "model shards, one GPU each (multi-GPU throughput, "
-                    "MGPU-01/SC1)")
+                    "MGPU-01/SC1), or --merge their frozen worker roots "
+                    "into one verified consumer root (12-04, D-09)")
     parser.add_argument(
         "--workers",
         type=int,
@@ -264,10 +268,12 @@ def parse_args(argv=None):
     parser.add_argument(
         "--models",
         type=str,
-        required=True,
+        default=None,
         help="Comma-separated model names to shard across the workers "
-             "(REQUIRED for launch; every name must exist in the models "
-             "registry — the same join run_sweep's --models filter uses)"
+             "(REQUIRED for launch mode; every name must exist in the "
+             "models registry — the same join run_sweep's --models filter "
+             "uses). Merge mode takes no --models (the worker manifests "
+             "are the merge's source of truth)"
     )
     parser.add_argument(
         "--output-root",
@@ -285,6 +291,30 @@ def parse_args(argv=None):
         help="Forward --dry-run to every worker: each enumerates its "
              "shard and writes ONLY its planned sweep_manifest.json — no "
              "subprocess, no cell dirs (the CPU-side disjointness proof)"
+    )
+    parser.add_argument(
+        "--merge",
+        action="store_true",
+        default=False,
+        help="MERGE MODE (12-04, D-09): instead of launching, read the "
+             "frozen worker roots {output-root}-mgpu-w{0..N-1} and merge "
+             "them into the single --output-root — copy each cell's "
+             "data-artifact allowlist with SHA256 verify (never a "
+             "symlink, never a move) and write the union "
+             "sweep_manifest.json / sweep_failures.json with every "
+             "output_dir rewritten onto the merged root. Takes no sweep "
+             "flags (the passthrough remainder must be empty) and no "
+             "--models"
+    )
+    parser.add_argument(
+        "--include-checkpoints",
+        action="store_true",
+        default=False,
+        help="Merge-mode escape hatch (research A2): ALSO copy "
+             "checkpoint-*/ trees and runs/ verbatim. Default OFF — "
+             "checkpoints are worker resume state and nobody re-runs the "
+             "merged root; only the MERGE_ALLOWLIST data artifacts merge "
+             "by default"
     )
     return parser.parse_known_args(argv)
 
@@ -361,6 +391,48 @@ def _failed_cell_count(worker_root_path):
     return len(payload)
 
 
+# ===== merge mode (12-04, MGPU-02 artifact half, D-09) =====
+#
+# Interface skeleton (RED stage): the flags parse and the seams exist so
+# the behavior rows can fail against a cleanly importing module; the
+# merge behavior itself lands with the GREEN commit.
+
+#: The data-artifact allowlist copied per cell dir: the five JSON
+#: artifacts every downstream consumer reads (export_runs walks
+#: run_record.json and adopts seed_result.json; trainer_state.json is the
+#: resume marker / global_step source; final_metrics.json is the
+#: training-failure signal; flops_report.json is the FLOPs evidence).
+#: checkpoint-*/ and runs/ are EXCLUDED by default and join only under
+#: the explicit --include-checkpoints escape hatch (research A2).
+MERGE_ALLOWLIST = (
+    "run_record.json",
+    "final_metrics.json",
+    "trainer_state.json",
+    "seed_result.json",
+    "flops_report.json",
+)
+
+
+def _copy_verified(src, dst):
+    """Copy one file with D-09 verification: SHA256 the source, copy,
+    re-hash the destination, compare. Never a symlink, never a move."""
+    raise NotImplementedError("12-04 merge mode: pending GREEN")
+
+
+def _rewrite_output_dir(cell_dir_str, worker_root, merged_root):
+    """Startswith-guarded prefix swap of a cell/failure ``output_dir``
+    from its worker root onto the merged root; a non-matching prefix
+    passes through unchanged (defensive)."""
+    raise NotImplementedError("12-04 merge mode: pending GREEN")
+
+
+def run_merge(args, passthrough):
+    """Merge N frozen-named worker roots into one verified consumer root
+    (validation collect-all, allowlist copy + SHA256 verify, manifest and
+    failures union with output_dir rewrite, lane-flag equality)."""
+    raise NotImplementedError("12-04 merge mode: pending GREEN")
+
+
 def main(spawner=None):
     """Validate, shard, spawn, wait, and report the aggregated verdict.
 
@@ -382,7 +454,18 @@ def main(spawner=None):
             prove the launch kwargs CPU-only.
     """
     args, passthrough = parse_args()
+    if args.merge:
+        return run_merge(args, passthrough)
     problems = []
+
+    # --models is launch-mode-required at the validation layer (argparse
+    # cannot express "required unless --merge"); 12-04's merge mode reads
+    # the worker manifests instead and takes no --models
+    if args.models is None:
+        problems.append(
+            "--models is required for launch mode (only --merge runs "
+            "without it)"
+        )
 
     # --workers sanity
     workers = args.workers
