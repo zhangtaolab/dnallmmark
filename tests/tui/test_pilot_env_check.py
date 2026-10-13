@@ -348,8 +348,15 @@ async def test_critical_fail_verdict_names_kernels_and_routes_missing_data():
         lines = _verdict_lines(app.screen)
         # the critical-fail line names BOTH failing CRITICAL kernels (main()
         # order) with the Phase-11 blocking note, from the strings constant
-        assert ENV_VERDICT_CRITICAL_FAIL.format(
-            kernel_names="cuda, matmul") in lines
+        expected_verdict = ENV_VERDICT_CRITICAL_FAIL.format(
+            kernel_names="cuda, matmul")
+        assert expected_verdict in lines
+        # 11-05 amendment (11-UI-SPEC Existing-Surface Amendments): the
+        # blocking is real this phase — present tense through the launch
+        # gate; the retired future-tense wiring note is gone for good
+        # (same constant name, same {kernel_names} field, ✗ glyph kept)
+        assert "启动已被运行配置启动门阻断" in expected_verdict
+        assert "启动流程将被阻断" not in expected_verdict
         # the routing line carries the missing-dataset count AND the CLI
         # audit command (I18N-01: the command stays English verbatim)
         assert ENV_ROUTE_MISSING_DATASETS.format(n=7) in lines
