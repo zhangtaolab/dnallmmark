@@ -612,10 +612,12 @@ def test_corrupt_manifest_treated_absent_state_falls_back(tmp_path):
 
     (root / MANIFEST_NAME).write_text('{"matrix": {"cells": [',
                                        encoding="utf-8")
+    age_tree(root)  # the fresh manifest write must not trip the grace
     corrupt = sweep_monitor.full_scan(roots=[root], now=NOW)
     assert sweep_row(corrupt, root).state == "artifacts_only"
 
     (root / MANIFEST_NAME).write_text("[]", encoding="utf-8")  # non-dict
+    age_tree(root)
     non_dict = sweep_monitor.full_scan(roots=[root], now=NOW)
     assert sweep_row(non_dict, root).state == "artifacts_only"
 

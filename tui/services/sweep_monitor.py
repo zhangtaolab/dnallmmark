@@ -727,30 +727,90 @@ def cells_view(root, expected_seeds=None) -> tuple[CellRow, ...]:
     """Derive the cell table (MON-01): one row per (model, task)
     discovered from seed dirs and/or manifest cells, per-seed states in
     seed order. ``expected_seeds`` threads the configured seed set —
-    configured-but-not-yet-started seeds render queued (the ◌ columns).
+    configured-but-not-yet-started seeds render queued (the queued
+    columns).
 
     Per-seed state derivation, first match wins: a readable record's
     status (completed/failed/skipped map directly; an unrecognized
     status renders VERBATIM); no record + RESUME_MARKER -> skipped
     (resumed from a previous run); activity (runs/ or checkpoint-*
-    present, or the seed dir mtime within the stale grace) -> running
-    (running detection NEVER depends on records — the record lands
-    post-cell); manifest-known -> queued.
+    present, or the seed dir mtime within the stale grace, or the
+    root's newest seed dir) -> running (running detection NEVER depends
+    on records — the record lands post-cell); manifest-known ->
+    queued.
 
     Curve nesting: seed cells with frac_* children carry
     ``fraction_states`` per fraction and fold to a seed state (any
     running -> running, any failed -> failed, all terminal ->
-    completed, else queued).
+    completed, else queued). The mtime-grace leg reads the real clock
+    (the screen's cadence owns time); tests pin mtimes relative to it.
     """
-    raise NotImplementedError
+    root_path = Path(root)
+    now = _utc_now_epoch()
+
+    manifest_cells: dict[tuple[str, str], set[int]] = {}
+    for cell in _manifest_cells(load_manifest(root_path / MANIFEST_NAME)):
+        if not isinstance(cell, dict):
+            continue
+        model, task, seed = (
+            cell.get("model"), cell.get("task"), cell.get("seed"))
+        if (isinstance(model, str) and isinstance(task, str)
+                and isinstance(seed, int)):
+            manifest_cells.setdefault((model, task), set()).add(seed)
+
+    discovered: dict[tuple[str, str], dict[int, Path]] = {}
+    newest_seed_dir: Path | None = None
+    newest_seed_mtime: float | None = None
+    for model, task, seed, seed_dir in _iter_seed_dirs(root_path):
+        discovered.setdefault((model, task), {})[seed] = seed_dir
+        mtime = _seed_dir_mtime(seed_dir)
+        if mtime is not None and (
+                newest_seed_mtime is None or mtime >= newest_seed_mtime):
+            newest_seed_mtime = mtime
+            newest_seed_dir = seed_dir
+
+    rows: list[CellRow] = []
+    for model, task in sorted(set(discovered) | set(manifest_cells)):
+        seeds: dict[int, CellSeed] = {}
+        for seed, seed_dir in discovered.get((model, task), {}).items():
+            state, fraction_states = _seed_state_from_dir(
+                seed_dir, now=now,
+                frontier_newest=(seed_dir == newest_seed_dir))
+            seeds[seed] = CellSeed(
+                seed=seed, state=state, fraction_states=fraction_states)
+        for seed in manifest_cells.get((model, task), set()):
+            seeds.setdefault(
+                seed, CellSeed(seed=seed, state=CELL_QUEUED,
+                               fraction_states=None))
+        for seed in expected_seeds or ():
+            if isinstance(seed, int):
+                seeds.setdefault(
+                    seed, CellSeed(seed=seed, state=CELL_QUEUED,
+                                   fraction_states=None))
+        rows.append(CellRow(
+            model=model, task=task,
+            seeds=tuple(seeds[seed] for seed in sorted(seeds))))
+    return tuple(rows)
 
 
 def resume_count(root) -> int:
-    """Cells skipped THIS run by the resume marker (the ⊘ note number,
-    MON-05): the manifest's skipped cells once finished (this run's
-    view — WR-12 keeps the on-disk record of the run that trained),
-    else the skipped records on disk."""
-    raise NotImplementedError
+    """Cells skipped THIS run by the resume marker (the resume note
+    number, MON-05): the manifest's skipped cells once finished (this
+    run's view — WR-12 keeps the on-disk record of the run that
+    trained), else the skipped records on disk."""
+    root_path = Path(root)
+    manifest = load_manifest(root_path / MANIFEST_NAME)
+    if manifest is not None:
+        return sum(
+            1
+            for cell in _manifest_cells(manifest)
+            if isinstance(cell, dict) and cell.get("status") == CELL_SKIPPED
+        )
+    return sum(
+        1
+        for record in _collect_records(root_path)
+        if record.get("status") == CELL_SKIPPED
+    )
 
 
 # =====================================================================
