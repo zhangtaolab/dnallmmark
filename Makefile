@@ -34,7 +34,7 @@
 #                   CI knows textual only as a library inside make test)
 # =====================================================================
 
-.PHONY: data test test-fast ci lint typecheck check-node snapshot tui
+.PHONY: data test test-fast ci lint typecheck check-node snapshot tui snapshot-update
 
 # WR-02: PATH lookup with an overridable default (`make UV=/path/to/uv`) —
 # setup-uv/brew/pipx installs live outside ~/.local/bin, and a hardcode
@@ -119,6 +119,18 @@ test-fast:
 # tests/tui; the marker filter runs after.)
 ci: check-node
 	$(UV) run --group dev --group tui pytest -m ci
+
+# 12-03 (TEST-01/SC5, D-03/D-11): regenerate the TUI SVG golden corpus
+# (tests/tui/__snapshots__/*.svg) from the frozen factories in
+# tests/tui/test_snapshots.py. MAINTAINER-ONLY — the D-03 review gate:
+# after any regeneration, REVIEW every changed SVG in a browser/editor
+# and commit the refreshed files together with the change that drifted
+# the render. NEVER a CI lane: `make test` COMPARES against the committed
+# goldens and goes red on drift — it must never rewrite them (Pitfall 4:
+# pytest --snapshot-update does NOTHING in this fallback lane; this
+# target is the ONLY regeneration path, the test lane's env).
+snapshot-update:
+	$(UV) run --group dev --group tui python tests/tui/test_snapshots.py --regenerate
 
 # Lint scope (Phase 3 decision, D-08): tests/ plus the explicit list of
 # Phase-authored/edited files whose findings are FIXED — script/make_dev_splits.py
