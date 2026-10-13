@@ -697,6 +697,13 @@ def run_merge(args, passthrough):
     exits non-zero before a single file is copied. ``--gpus`` is
     meaningless in merge mode and ignored.
 
+    Stale-cell refusal (WR-03): a re-merge over a previously-merged
+    root REFUSES if any allowlisted file already under the merged root
+    is not covered by this merge's copy plan (the worker set changed —
+    the exporter walks the file tree, not the manifest, so stale cells
+    would silently leak into exported data); identical worker sets stay
+    idempotent (every pre-existing file is in the plan).
+
     Copy scope per cell dir: the MERGE_ALLOWLIST files present (missing
     ones are skipped and counted — a cell that never ran has nothing to
     copy and stays invisible to the exporter, unchanged semantics),
@@ -883,6 +890,36 @@ def run_merge(args, passthrough):
         for src_file in _scan_dir(src_dir):
             copy_pairs.append(
                 (index, src_file, cell_rel / src_file.relative_to(src_dir)))
+
+    # Stale-cell guard (WR-03): a re-merge over a previously-merged root
+    # whose worker set CHANGED would leave the previous merge's cell
+    # files on disk — the merge never deletes, _copy_verified only
+    # overwrites what it copies, and export_runs walks the FILE TREE
+    # (not the manifest), so the stale cells would silently leak into
+    # the exported numbers while the new manifest claims they are
+    # absent. Refuse naming them (collect-all discipline); identical
+    # worker sets stay idempotent — every pre-existing allowlisted file
+    # IS in the plan and the guard passes silently.
+    if base_root.is_dir():
+        planned_dests = {base_root / rel for _i, _s, rel in copy_pairs}
+        stale = sorted(
+            path for path in base_root.rglob("*")
+            if path.is_file() and path.name in MERGE_ALLOWLIST
+            and path not in planned_dests)
+        if stale:
+            shown = "; ".join(str(path) for path in stale[:5])
+            more = "" if len(stale) <= 5 else f" (+{len(stale) - 5} more)"
+            sys.exit(
+                f"[Error] merged root {base_root} carries {len(stale)} "
+                "allowlisted file(s) this merge does NOT cover — the "
+                "worker set changed since the previous merge and the "
+                "stale cells would leak into exported data (the "
+                "exporter walks the file tree, not the manifest): "
+                f"{shown}{more}. Delete the merged root (or re-include "
+                "the workers that produced them) and merge again — "
+                "merge refused, merged manifests NOT written, worker "
+                "roots untouched"
+            )
 
     # ===== verify pass: every file hash-copy-rehash-compared; ANY
     # mismatch refuses the merge BEFORE the merged manifests land (a

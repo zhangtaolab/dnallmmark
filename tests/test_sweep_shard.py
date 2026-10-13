@@ -1318,6 +1318,54 @@ def test_merge_is_idempotent_byte_stable(tmp_path, monkeypatch):
     assert (base / run_sweep.FAILURES_NAME).read_bytes() == first_failures
 
 
+def test_remerge_with_changed_worker_set_refuses_on_stale_cells(
+        tmp_path, monkeypatch):
+    """WR-03: re-merging over a previously-merged root after the worker
+    set CHANGED must refuse naming the stale cell files. The merge never
+    deletes and _copy_verified only overwrites what it copies, so the
+    previous merge's cells stay on disk while the new manifest claims
+    they are absent — and export_runs walks the FILE TREE, so the stale
+    cells would silently leak into the exported leaderboard numbers."""
+    import shutil as shutil_module
+
+    base, roots = make_worker_pair(tmp_path)
+    run_merge_cli(monkeypatch, base)  # first merge: model-a + model-b
+    manifest_before = (base / run_sweep.MANIFEST_NAME).read_bytes()
+
+    # the changed worker set: worker 1 re-planned WITHOUT its seed_43
+    # cell (files + manifest cell gone — the reachable relaunch shape)
+    shutil_module.rmtree(roots[1] / "model-b" / "task-x" / "seed_43")
+    write_manifest(
+        roots[1],
+        cells=[make_manifest_cell(roots[1], "model-b", "task-x", 42)],
+        models=["model-b"], tasks=["task-x"], seeds=[42])
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_merge_cli(monkeypatch, base)
+    message = str(excinfo.value)
+    assert "model-b/task-x/seed_43" in message, (
+        "the refusal must name the stale cell files the new merge does "
+        "not cover"
+    )
+    assert "merge refused" in message
+    # the first merge's manifests stand unchanged (refusal landed first)
+    assert (base / run_sweep.MANIFEST_NAME).read_bytes() == manifest_before
+
+
+def test_remerge_unchanged_worker_set_stays_idempotent_under_stale_guard(
+        tmp_path, monkeypatch):
+    """WR-03 positive control: the stale-file guard does not fire for an
+    UNCHANGED worker set — every pre-existing allowlisted file under the
+    merged root IS in the copy plan, so the idempotent re-merge passes
+    (the byte-stable contract keeps holding)."""
+    base, _roots = make_worker_pair(tmp_path)
+    run_merge_cli(monkeypatch, base)
+    run_merge_cli(monkeypatch, base)  # identical worker set: no refusal
+    manifest = json.loads(
+        (base / run_sweep.MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert len(manifest["cells"]) == 5
+
+
 def test_merge_leaves_worker_roots_immutable(tmp_path, monkeypatch):
     """After merge, every worker file's bytes AND mtime are unchanged
     (copy-only semantics — workers stay re-runnable in isolation, D-08;
