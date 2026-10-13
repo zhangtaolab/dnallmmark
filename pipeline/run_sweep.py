@@ -25,6 +25,7 @@ run_record.json schema (per seed dir)::
     {
         "model": "...", "task": "...", "seed": 42,
         "peft": "none" | "lora" | "ia3",
+        "config_variant": "none" | "head" | "probe" | "curve",
         "train_fraction": 0.25 | null,
         "status": "completed" | "failed" | "skipped",
         "output_dir": ".../seed_42",
@@ -181,13 +182,36 @@ Failure boundary:
     from the ``finetune_config_curve.yaml`` variant (eval/save every 100,
     logging every 50); ``extract_curve_points()`` reads the (step,
     eval-metrics) points back out of a trainer_state.json log_history.
-    Composes with ``--peft`` (alias cells expand across fractions).
-    Config variants compose STANDALONE, deliberately not forwarded here:
-    ``run_finetune --config-variant probe --train_fraction f`` nests
-    ``{model}+probe/{task}/seed_{s}/frac_{f}/`` the same way, but the
-    probe lane's scope guard lives in run_finetune — half-wiring a
-    variant flag through this driver is worse than documenting the
-    standalone composition.
+    Composes with ``--peft`` (alias cells expand across fractions) and
+    with ``--config-variant`` (alias cells expand across fractions the
+    same way — ``{model}+probe/{task}/seed_{s}/frac_{f}/``).
+
+--config-variant (11-01, D-18 — landed as ALIASING, never pass-through):
+    ``--config-variant {head,probe,curve}`` threads the config-variant
+    lane through the whole matrix using the existing ``--peft``
+    aliasing machinery's exact shapes: cells enumerate under the ALIAS
+    model name ``{model}+{variant}`` — ``head`` keeps the BASE name for
+    exactly the frozen pair ``HEAD_KEEP_BASE_NAMES`` (verbatim from the
+    child's save-name chain: their with-head config IS their base
+    config) — while the registry and the ``--models`` filter join stays
+    on BASE names; each cell's argv targets ``--target_model <base>``
+    and appends ``--save_model_name <alias>`` + ``--config-variant <v>``
+    as separate LIST elements. The explicit ``--save_model_name`` makes
+    the DRIVER the single naming authority over the child's own
+    identical self-aliasing branch (run_finetune.py:1198-1213): a pure
+    pass-through would have every cell train successfully into the
+    ``{model}+{variant}/`` dir the child derives on its own while the
+    driver keys ``cell_dir_for`` on the base name — every cell recorded
+    failed ("executor exited 0 but final_metrics.json is missing") and
+    re-attempted forever (the retrain-forever trap, Phase 11 research
+    Area 3). Variant and PEFT never compose: any both-set combination
+    exits non-zero at sweep start naming both flags (two alias suffixes
+    cannot name one cell; the child additionally refuses probe×peft at
+    its argv boundary). ``run_record.json`` gains a ``config_variant``
+    field (default ``"none"``, the peft-field precedent); the manifest
+    merges ``config_variant`` into every cell via sweep_flags when the
+    flag is present. Absent = byte-identical to today's enumeration,
+    argv, and manifests.
 
 --subset_file / --effective_batch_size / --num_train_epochs /
 --cache_dir (07-03, PIPE-02 argv parity):
@@ -254,6 +278,18 @@ FAILURES_NAME = "sweep_failures.json"
 RECORD_NAME = "run_record.json"
 RESUME_MARKER = "trainer_state.json"
 METRICS_NAME = "final_metrics.json"
+
+# Head-variant keep-base exception, VERBATIM from the child's save-name
+# chain (run_finetune.py:1207-1209: ``elif config_variant == "head" and
+# model_name not in ("evo2_1b_base", "megaDNA_updated"):`` — the alias
+# branch these two names are exempted from): the special_models pair's
+# with-head config IS their base config (the unchanged auto-reload
+# branch), so a --config-variant head run is semantically the plain run
+# and keeps the BASE name — no +head alias is added for exactly these
+# names (11-01, D-18). Pinned against source drift by the read-source
+# parity test in tests/test_sweep.py (run_finetune.py imports torch at
+# its module top and is never imported CPU-side).
+HEAD_KEEP_BASE_NAMES = ("evo2_1b_base", "megaDNA_updated")
 
 
 def parse_args():
@@ -400,11 +436,30 @@ def parse_args():
              "resolution governs)"
     )
 
+    parser.add_argument(
+        "--config-variant",
+        type=str,
+        default=None,
+        choices=["head", "probe", "curve"],
+        help="Config-variant lane threaded to every run_finetune.py "
+             "subprocess via the --peft ALIASING machinery (11-01, D-18 "
+             "— never a pass-through): 'probe'/'curve'/'head' enumerate "
+             "cells under the alias model names {model}+probe / "
+             "{model}+curve / {model}+head (separate output dirs AND "
+             "resume markers; registry filtering stays on base names, "
+             "argv targets --target_model <base> --save_model_name "
+             "<alias> --config-variant <v>); 'head' keeps the BASE name "
+             "for the frozen pair (evo2_1b_base, megaDNA_updated — their "
+             "with-head config IS their base config); refuses --peft "
+             "(two alias suffixes cannot name one cell); absent "
+             "(default) is byte-identical to today"
+    )
+
     return parser.parse_args()
 
 
 def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir,
-                     peft="none", fractions=None):
+                     peft="none", fractions=None, config_variant="none"):
     """Build the sorted (model, task, seed[, fraction]) cell list.
 
     Under ``peft`` lora/ia3 (06-02) the emitted cells carry the ALIAS
@@ -413,6 +468,15 @@ def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir,
     join stay on BASE names (argv targeting re-derives the base via
     suffix strip in ``build_argv``). Sorting happens AFTER the alias
     mapping, so the enumeration stays deterministic.
+
+    Under ``config_variant`` head/probe/curve (11-01, D-18) the same
+    aliasing discipline applies: cells carry ``{model}+{variant}``
+    (``head`` keeps the BASE name for exactly the frozen pair
+    ``HEAD_KEEP_BASE_NAMES`` — verbatim from the child's save-name
+    chain, where their with-head config IS their base config). The
+    variant axis is DISJOINT from peft — ``main()`` refuses any
+    both-set combination — so the closure applies the variant rule only
+    on the peft=none path.
 
     Under ``fractions`` (06-05 curve lane) each (model, task, seed) cell
     expands to one (model, task, seed, fraction) 4-tuple per fraction —
@@ -432,6 +496,9 @@ def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir,
             cells byte-identical to the pre-peft enumeration.
         fractions (list[float] | None): curve fractions; each cell expands
             per fraction.
+        config_variant (str): config variant (none/head/probe/curve);
+            none emits base-name cells byte-identical to the pre-11-01
+            enumeration.
 
     Returns:
         list[tuple]: sorted cells — (model, task, seed) triples, or
@@ -452,7 +519,13 @@ def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir,
         tasks = [task for task in tasks if task in allowed_tasks]
 
     def cell_model(model):
-        return f"{model}+{peft}" if peft != "none" else model
+        if peft != "none":
+            return f"{model}+{peft}"
+        if config_variant in ("probe", "curve"):
+            return f"{model}+{config_variant}"
+        if config_variant == "head" and model not in HEAD_KEEP_BASE_NAMES:
+            return f"{model}+head"
+        return model
 
     if fractions:
         return sorted(
@@ -957,7 +1030,7 @@ def cell_dir_for(output_root, model, task, seed, fraction=None):
     return cell
 
 
-def base_model_name(model, peft="none"):
+def base_model_name(model, peft="none", config_variant="none"):
     """Resolve a cell/alias model name to its BASE registry name.
 
     Under ``peft`` lora/ia3 (06-02) the cell, record, and failure-entry
@@ -968,21 +1041,33 @@ def base_model_name(model, peft="none"):
     entries used to record only the alias, which ``--from-failures``
     then rejected as not-in-registry).
 
+    Under ``config_variant`` head/probe/curve (11-01, D-18) the same
+    strip removes the ``+{variant}`` suffix AFTER the peft strip — a
+    no-op for ``head`` on the frozen pair (no suffix was added) and for
+    any name that never carried it (``str.removesuffix`` never invents a
+    suffix). The two axes never compose (refused at ``main()``), so at
+    most one suffix is ever present.
+
     Args:
-        model (str): the cell's model identity — BASE under peft=none,
-            ALIAS under lora/ia3.
+        model (str): the cell's model identity — BASE under peft=none and
+            no variant, ALIAS under lora/ia3 or a config variant.
         peft (str): adapter mode none/lora/ia3.
+        config_variant (str): config variant none/head/probe/curve.
 
     Returns:
         str: the base registry name (the alias suffix removed).
     """
-    return model.removesuffix(f"+{peft}") if peft != "none" else model
+    if peft != "none":
+        model = model.removesuffix(f"+{peft}")
+    if config_variant != "none":
+        model = model.removesuffix(f"+{config_variant}")
+    return model
 
 
 def build_argv(model, task, seed, output_root, peft="none",
                train_fraction=None, subset_file=None,
                effective_batch_size=None, num_train_epochs=None,
-               cache_dir=None):
+               cache_dir=None, config_variant="none"):
     """Build the run_finetune.py argv for one cell — a LIST, never a string.
 
     Under ``peft`` lora/ia3 (06-02) the cell's model is the ALIAS
@@ -993,6 +1078,18 @@ def build_argv(model, task, seed, output_root, peft="none",
     explicitly and writes its outputs under the alias dir (name isolation
     end-to-end). Under ``none`` the argv is byte-identical to the pre-peft
     form — no extra elements.
+
+    Under ``config_variant`` head/probe/curve (11-01, D-18) the same
+    twin: ``--save_model_name <alias>`` + ``--config-variant <v>`` as
+    separate LIST elements, with ``--target_model`` still carrying the
+    BASE name. The explicit ``--save_model_name`` makes the DRIVER the
+    single naming authority over the child's own identical
+    self-aliasing branch (run_finetune.py:1198-1213, the
+    explicit-save-name-wins rule): the alias dir the child writes and
+    the alias dir ``cell_dir_for`` records can never diverge — the exact
+    agreement a pure pass-through would break (retrain-forever trap).
+    Under ``none`` (and no peft) no extra elements (byte-identical
+    default).
 
     Under ``train_fraction`` (06-05 curve lane) the argv appends
     ``--train_fraction <f>`` as separate LIST elements; run_finetune
@@ -1010,8 +1107,9 @@ def build_argv(model, task, seed, output_root, peft="none",
 
     Args:
         model (str): value for the cell's model identity — the BASE name
-            under peft=none, the ALIAS under lora/ia3 (value for
-            --save_model_name then; --target_model gets the strip).
+            under peft=none and no variant, the ALIAS under lora/ia3 or
+            a config variant (value for --save_model_name then;
+            --target_model gets the strip).
         task (str): value for --target_dataset.
         seed (int): value for --seed.
         output_root (str | Path): ABSOLUTE root for --output_dir (the
@@ -1029,6 +1127,9 @@ def build_argv(model, task, seed, output_root, peft="none",
             ``--num_train_epochs <N>`` when given.
         cache_dir (str | None): resolved ABSOLUTE cache directory
             appended as ``--cache_dir <path>`` when given (D-15).
+        config_variant (str): config variant none/head/probe/curve;
+            non-none appends the ``--save_model_name``/
+            ``--config-variant`` twin (11-01, D-18).
 
     Returns:
         list[str]: the argv, each flag and value a separate element.
@@ -1037,13 +1138,16 @@ def build_argv(model, task, seed, output_root, peft="none",
         sys.executable,
         str(RUN_FINETUNE),
         "--target_model",
-        str(base_model_name(model, peft)),
+        str(base_model_name(model, peft, config_variant)),
         "--target_dataset", str(task),
         "--seed", str(seed),
         "--output_dir", str(output_root),
     ]
     if peft != "none":
         argv += ["--save_model_name", str(model), "--peft", peft]
+    elif config_variant != "none":
+        argv += ["--save_model_name", str(model),
+                 "--config-variant", config_variant]
     if train_fraction is not None:
         argv += ["--train_fraction", str(train_fraction)]
     if subset_file is not None:
@@ -1060,14 +1164,15 @@ def build_argv(model, task, seed, output_root, peft="none",
 def launch_subprocess(model, task, seed, output_root, peft="none",
                       train_fraction=None, subset_file=None,
                       effective_batch_size=None, num_train_epochs=None,
-                      cache_dir=None):
+                      cache_dir=None, config_variant="none"):
     """Default executor: run run_finetune.py for one cell.
 
     cwd is pinned to PIPELINE_DIR because finetune_config.yaml and the
     ./finetuned default are CWD-relative in run_finetune.py (research
     Pitfall 3); shell is never used (T-03-10). The four pass-through
-    flags (07-03) forward verbatim — the child is the authoritative
-    validator and GA computation.
+    flags (07-03) forward verbatim, and ``config_variant`` (11-01, D-18)
+    threads as the peft-style aliasing twin — the child is the
+    authoritative validator in all cases.
 
     Raises:
         subprocess.CalledProcessError: the run exited nonzero (check=True).
@@ -1076,7 +1181,7 @@ def launch_subprocess(model, task, seed, output_root, peft="none",
     return subprocess.run(
         build_argv(model, task, seed, output_root, peft, train_fraction,
                    subset_file, effective_batch_size, num_train_epochs,
-                   cache_dir),
+                   cache_dir, config_variant),
         cwd=PIPELINE_DIR,
         check=True,
     )
@@ -1149,12 +1254,14 @@ def extract_curve_points(trainer_state):
 
 
 def _new_record(model, task, seed, cell_dir, git_commit, peft="none",
-                train_fraction=None):
+                train_fraction=None, config_variant="none"):
     """Build the run_record skeleton (statuses/timestamps filled by caller).
 
     The ``peft`` field (06-02, string, default ``"none"``) marks the
     adapter mode the sweep was launched with — the frontier row derivation
     reads it (alias-suffix first, this field as the record-level source).
+    The ``config_variant`` field (11-01, string, default ``"none"`` — the
+    peft-field precedent) marks the config-variant lane the same way.
     The ``train_fraction`` field (06-05, float for curve cells, null
     otherwise) marks the curve lane's fraction — the learning-curve
     reader groups by it.
@@ -1164,6 +1271,7 @@ def _new_record(model, task, seed, cell_dir, git_commit, peft="none",
         "task": task,
         "seed": seed,
         "peft": peft,
+        "config_variant": config_variant,
         "train_fraction": train_fraction,
         "status": None,
         "output_dir": str(cell_dir),
@@ -1223,7 +1331,7 @@ def _manifest_payload(matrix, records, sweep_flags=None):
 
 
 def run_matrix(cells, output_root, executor=None, peft="none",
-               sweep_flags=None):
+               sweep_flags=None, config_variant="none"):
     """Execute the sweep matrix, writing run records + manifests.
 
     Per cell (in the GIVEN order — ``main()`` passes the ``sorted()``
@@ -1250,8 +1358,9 @@ def run_matrix(cells, output_root, executor=None, peft="none",
     its blind-except scope, so a mid-write death can leave a truncated
     file with the child still exiting 0 — the cell fails and the sweep
     continues). Each failure entry records BOTH the cell's model identity
-    (the ALIAS under ``--peft``, matching the cell dir and record) and
-    its ``base_model`` (the registry name — MED-01, phase-06 review:
+    (the ALIAS under ``--peft`` or ``--config-variant``, matching the
+    cell dir and record) and its ``base_model`` (the registry name —
+    MED-01, phase-06 review:
     ``--from-failures`` validates and joins on base names, so a peft
     sweep's own manifest must be recoverable). sweep_failures.json is
     written on EVERY run — an empty list when no cell failed — so a
@@ -1280,15 +1389,28 @@ def run_matrix(cells, output_root, executor=None, peft="none",
             absolute by ``main()``, D-15). Bound into the default
             executor's argv AND merged into every manifest cell (D-13);
             an empty/None dict binds nothing and records nothing
-            (byte-identical default).
+            (byte-identical default). A ``config_variant`` key (11-01:
+            ``main()`` records a present variant for the manifest merge)
+            is recorded in the manifest but NEVER re-bound into the
+            executor argv here — the explicit ``config_variant`` param is
+            the single argv authority, so the splat filters it out.
+        config_variant (str): config variant none/head/probe/curve
+            (11-01, D-18) — carried into the run_record
+            ``config_variant`` field, the default executor's argv, and
+            the failure entries' ``base_model`` derivation.
 
     Returns:
         list[dict]: the run records, one per cell, in the given cell order.
     """
+    launch_kwargs = {
+        key: value for key, value in (sweep_flags or {}).items()
+        if key != "config_variant"
+    }
     executor = (
         executor if executor is not None
         else functools.partial(
-            launch_subprocess, peft=peft, **(sweep_flags or {}))
+            launch_subprocess, peft=peft, config_variant=config_variant,
+            **launch_kwargs)
     )
     output_root = Path(output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -1305,7 +1427,7 @@ def run_matrix(cells, output_root, executor=None, peft="none",
         cell_dir = cell_dir_for(output_root, model, task, seed, fraction)
         record = _new_record(
             model, task, seed, cell_dir, git_commit, peft,
-            train_fraction=fraction)
+            train_fraction=fraction, config_variant=config_variant)
         record["started_at"] = _utc_now_iso()
         if (cell_dir / RESUME_MARKER).exists():
             # Seed-scoped resume marker (G1): only THIS (model, task,
@@ -1335,7 +1457,7 @@ def run_matrix(cells, output_root, executor=None, peft="none",
                     )
                     failures.append({
                         "model": model,
-                        "base_model": base_model_name(model, peft),
+                        "base_model": base_model_name(model, peft, config_variant),
                         "task": task,
                         "seed": seed,
                         "output_dir": str(cell_dir),
@@ -1362,7 +1484,7 @@ def run_matrix(cells, output_root, executor=None, peft="none",
                         )
                         failures.append({
                             "model": model,
-                            "base_model": base_model_name(model, peft),
+                            "base_model": base_model_name(model, peft, config_variant),
                             "task": task,
                             "seed": seed,
                             "output_dir": str(cell_dir),
@@ -1373,7 +1495,7 @@ def run_matrix(cells, output_root, executor=None, peft="none",
                 record["error"] = f"{type(exc).__name__}: {exc}"
                 failures.append({
                     "model": model,
-                    "base_model": base_model_name(model, peft),
+                    "base_model": base_model_name(model, peft, config_variant),
                     "task": task,
                     "seed": seed,
                     "output_dir": str(cell_dir),
@@ -1509,6 +1631,20 @@ def main():
             f"--cache_dir {args.cache_dir!r} is empty — refusing to "
             "thread a pathless flag"
         )
+    # T-11-01-03: variant and PEFT never compose. Two alias suffixes
+    # cannot both name one cell (the child would take --save_model_name
+    # from one lane while the driver recorded the other's dir); the
+    # child already refuses probe x peft at its argv boundary
+    # (run_finetune.py:775-789) — this driver-side refusal extends the
+    # guard to head/curve and fails the WHOLE sweep before any cell
+    # enumerates, never per-cell after a model load burns.
+    if args.config_variant is not None and args.peft != "none":
+        flag_problems.append(
+            f"--config-variant {args.config_variant} refuses --peft "
+            f"{args.peft}: variant lanes and adapter lanes never compose "
+            "(alias names are disjoint; the child additionally refuses "
+            "probe×peft at its argv boundary)"
+        )
     if flag_problems:
         sys.exit(f"[Error] {'; '.join(flag_problems)}")
     subset_file_abs = (
@@ -1528,6 +1664,16 @@ def main():
         sweep_flags["num_train_epochs"] = args.num_train_epochs
     if cache_dir_abs is not None:
         sweep_flags["cache_dir"] = cache_dir_abs
+    # 11-01 (D-18): normalize the variant axis once — args stores None
+    # (absent) while every downstream consumer (enumerate_matrix,
+    # build_argv, run_matrix, the from-failures join) speaks "none". A
+    # PRESENT variant also joins sweep_flags, so the manifest merge is
+    # free via **flags in _manifest_payload (D-13); run_matrix's
+    # executor binding filters the key back out (its config_variant
+    # param is the single argv authority).
+    config_variant = args.config_variant or "none"
+    if args.config_variant is not None:
+        sweep_flags["config_variant"] = args.config_variant
     # D-14: pre-validate the subset map ONCE at sweep start against the
     # same overlay-merged registry view the matrix enumeration joins on
     # (registry_loader, post 07-02) — collect-all, before any cell's
@@ -1550,7 +1696,7 @@ def main():
         failure_pairs = load_failure_pairs(args.from_failures, registry_dir)
     cells = enumerate_matrix(
         models_filter, tasks_filter, seeds, registry_dir, peft=args.peft,
-        fractions=fractions)
+        fractions=fractions, config_variant=config_variant)
     if tiers is not None:
         # Tier rank as the PRIMARY sort key over the sorted() fallback —
         # no file, no reordering (byte-identical default enumeration).
@@ -1573,7 +1719,7 @@ def main():
             )
         cells = [
             cell for cell in cells
-            if (base_model_name(cell[0], args.peft), cell[1])
+            if (base_model_name(cell[0], args.peft, config_variant), cell[1])
             in failure_pairs
         ]
 
@@ -1617,7 +1763,8 @@ def main():
         return
 
     records = run_matrix(cells, output_root, executor=None, peft=args.peft,
-                         sweep_flags=sweep_flags)
+                         sweep_flags=sweep_flags,
+                         config_variant=config_variant)
     completed = sum(1 for r in records if r["status"] == "completed")
     skipped = sum(1 for r in records if r["status"] == "skipped")
     failed = sum(1 for r in records if r["status"] == "failed")
