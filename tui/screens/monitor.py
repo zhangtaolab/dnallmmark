@@ -49,6 +49,7 @@ from textual.widgets import DataTable, Footer, Label, RichLog
 
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.selection import ConfirmModal, PathInputModal
+from tui.services import run_config as run_config_svc
 from tui.services import sweep_launcher as sweep_launcher_module
 from tui.services import sweep_monitor
 from tui.services.sweep_monitor import (
@@ -330,8 +331,15 @@ class MonitorLauncherProtocol(Protocol):
 
     def launch_from_failures(self, failures_path, seeds, output_root,
                              peft: str = "none",
-                             config_variant: str = "none") -> Any:
-        """The D-11 from-failures launch through the shared pipeline."""
+                             config_variant: str = "none",
+                             phrase: "str | None" = None) -> Any:
+        """The D-11 from-failures launch through the shared pipeline
+        (CR-01-gated: an E2'-class effective matrix refuses at the
+        phrase stage until the typed phrase is threaded)."""
+
+    def phrase_matches(self, typed: str, output_root: str) -> bool:
+        """The exact-match E2' phrase verdict (the re-prompt's live
+        indicator — the widget holds no matching logic)."""
 
     def live_sweeps(self) -> tuple:
         """The live roots (the attach-alive signal)."""
@@ -437,12 +445,19 @@ class MonitorBackend:
         return sweep_launcher_module.env_preflight(kernels)
 
     def launch_from_failures(self, failures_path, seeds, output_root,
-                             peft="none", config_variant="none") -> Any:
+                             peft="none", config_variant="none",
+                             phrase=None) -> Any:
         if self._launcher is None:
             return None
         return self._launcher.launch_from_failures(
             failures_path, seeds, output_root,
-            peft=peft, config_variant=config_variant)
+            peft=peft, config_variant=config_variant, phrase=phrase)
+
+    def phrase_matches(self, typed, output_root) -> bool:
+        """The exact-match verdict over the REAL service tier (the
+        E2' re-prompt's live indicator — run_config owns the check,
+        never the widget)."""
+        return run_config_svc.phrase_matches(typed, output_root)
 
     def live_sweeps(self) -> tuple:
         return self._live_roots()
@@ -1093,9 +1108,13 @@ class MonitorScreen(Screen):
         self._run_rerun_launch(message.root, message.run_id)
 
     @work(exclusive=True, thread=True, group="mon-rerun")
-    def _run_rerun_launch(self, root: str, run_id: int) -> None:
+    def _run_rerun_launch(self, root: str, run_id: int,
+                          phrase: "str | None" = None) -> None:
         """The from-failures launch over the SAME seam (D-11): the
-        re-run re-enters the sweep's own seeds at its own root."""
+        re-run re-enters the sweep's own seeds at its own root. CR-01:
+        ``phrase`` threads the E2' re-prompt's answer (None on the
+        first attempt — the service's gate refuses an E2'-class
+        effective matrix and this screen re-prompts)."""
         seeds = sorted({
             cell_seed.seed
             for row in self._cell_rows.values()
@@ -1103,7 +1122,7 @@ class MonitorScreen(Screen):
         }) or [42]
         failures_path = str(Path(root) / sweep_monitor.FAILURES_NAME)
         outcome = self._launcher.launch_from_failures(
-            failures_path, seeds, root)
+            failures_path, seeds, root, phrase=phrase)
         self.post_message(self.RerunFinished(outcome, root, run_id))
 
     def on_monitor_screen_rerun_finished(
@@ -1111,6 +1130,33 @@ class MonitorScreen(Screen):
         if message.run_id != self._rerun_stage_id:
             return
         outcome = message.outcome
+        if isinstance(outcome, sweep_launcher_module.GateRefusal):
+            # CR-01: the composed re-run path's own gate spoke. A
+            # phrase-stage refusal re-prompts (the E2' typed phrase —
+            # the D-07 escalation, never a silent no-op); a problems
+            # refusal (official-keys / unevaluatable manifest) surfaces
+            # as the launch-failed toast naming the problems verbatim.
+            if outcome.stage == sweep_launcher_module.REFUSAL_STAGE_PHRASE:
+                if self.app.below_minimum_grid:
+                    return
+                from tui.screens.run_config import E2PhraseModal
+
+                root = message.root
+                self.app.push_screen(E2PhraseModal(
+                    dirname=(outcome.expected
+                             or run_config_svc.expected_phrase(root)),
+                    matches=lambda typed: (
+                        self._launcher.phrase_matches(typed, root)),
+                    on_confirm=lambda phrase: self._run_rerun_launch(
+                        root, self._rerun_stage_id, phrase),
+                ))
+                return
+            detail = "; ".join(
+                f"{code}: {value}" for code, value in outcome.problems)
+            self.app.notify(
+                LNC_LAUNCH_FAILED_TOAST.format(error=detail),
+                severity="error")
+            return
         if getattr(outcome, "spawned", False):
             cells = self._expected_totals.get(message.root)
             self.app.notify(MON_RERUN_TOAST.format(

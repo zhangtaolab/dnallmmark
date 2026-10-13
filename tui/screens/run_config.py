@@ -341,8 +341,10 @@ class LauncherServiceProtocol(Protocol):
 
     def launch_from_failures(self, failures_path, seeds, output_root,
                              peft: str = "none",
-                             config_variant: str = "none") -> Any:
-        """The D-11 from-failures launch (the monitor's gated re-run)."""
+                             config_variant: str = "none",
+                             phrase: "str | None" = None) -> Any:
+        """The D-11 from-failures launch (the monitor's gated re-run;
+        CR-01: an E2'-class effective matrix demands the phrase)."""
 
     def kill_sweep(self, root: str) -> str:
         """SIGTERM the process group (D-06 exit triple, k path)."""
@@ -377,10 +379,11 @@ class LauncherBackend:
         return self._launcher.launch_spec(spec, phrase)
 
     def launch_from_failures(self, failures_path, seeds, output_root,
-                             peft="none", config_variant="none") -> Any:
+                             peft="none", config_variant="none",
+                             phrase=None) -> Any:
         return self._launcher.launch_from_failures(
             failures_path, seeds, output_root,
-            peft=peft, config_variant=config_variant)
+            peft=peft, config_variant=config_variant, phrase=phrase)
 
     def kill_sweep(self, root: str) -> str:
         return self._launcher.kill_sweep(root)

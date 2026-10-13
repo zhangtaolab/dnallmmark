@@ -253,7 +253,8 @@ class FakeLauncherService:
             tee_path="/state/logs/sweep.log", error=None)
 
     def launch_from_failures(self, failures_path, seeds, output_root,
-                             peft="none", config_variant="none"):
+                             peft="none", config_variant="none",
+                             phrase=None):
         return LaunchOutcome(
             spawned=True, root=str(output_root),
             tee_path="/state/logs/sweep_rerun.log", error=None)

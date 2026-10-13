@@ -35,6 +35,7 @@ See also:
     ``tests/tui/test_services_download_queue.py`` — the tier-1 idioms.
 """
 
+import json
 import os
 import signal
 import subprocess
@@ -765,13 +766,14 @@ def test_launch_from_failures_threads_alias_flags(monkeypatch, tmp_path):
 
 def test_launch_argv_e2x_shaped_matrix_argv_is_not_phrase_gated(
         monkeypatch, tmp_path):
-    """D-11's construction proof: the raw ``launch_argv`` seam takes NO
-    spec and NEVER consults the phrase seam — an E2'-shaped
-    --models/--tasks argv (every official model x every official
-    trainable task x 3 seeds) is NOT refused here. Documented as safe
-    because the only production caller composes from-failures argv
-    (failure-pairs-only, never a matrix); full-matrix launches must go
-    through ``launch_spec`` (lane 2's spawner-silent proof)."""
+    """The RAW ``launch_argv`` seam contract (unchanged by CR-01): it
+    takes no spec and never consults the phrase seam — pinned here so
+    the composed path's new gate (below) is provably a
+    ``launch_from_failures`` concern, never a raw-seam behavior change.
+    The COMPOSED UI path ([f]→[r]) is gated in ``launch_from_failures``
+    (CR-01: a complete failures manifest over 3 seeds IS the full
+    matrix); full-matrix spec launches go through ``launch_spec``
+    (lane 2's spawner-silent proof)."""
     pin_state_dir(monkeypatch, tmp_path)
     spawner = FakeSpawner()
     launcher = sweep_launcher.SweepLauncher()
@@ -790,3 +792,154 @@ def test_launch_argv_e2x_shaped_matrix_argv_is_not_phrase_gated(
 
     assert outcome.spawned is True          # no gate consulted
     assert len(spawner.calls) == 1
+
+
+# ===== the CR-01 gate: a from-failures re-run CAN be the full matrix =====
+
+
+def complete_failures_manifest(tmp_path, official):
+    """A GENUINE driver-written complete failures manifest: every
+    official (model, task) pair failed once — exactly what run_sweep
+    writes when a full sweep fails every cell (repo/env fault that
+    passes preflight, disk-full hitting each cell, a bad --subset_file).
+    The CR-01 shape: un-hand-edited, yet the [f]→[r] re-run's effective
+    matrix over 3 seeds IS the full E2' matrix."""
+    entries = [
+        {
+            "model": model,
+            "base_model": model,
+            "task": task,
+            "seed": 42,
+            "output_dir": f"/root/{model}/{task}/seed_42",
+            "error": "boom",
+        }
+        for model in sorted(official.models)
+        for task in sorted(official.tasks)
+    ]
+    path = tmp_path / "sweep_failures.json"
+    path.write_text(json.dumps(entries), encoding="utf-8")
+    return path
+
+
+def test_launch_from_failures_complete_manifest_three_seeds_demands_phrase(
+        monkeypatch, tmp_path):
+    """CR-01: a complete failures manifest re-run over the sweep's 3
+    seeds is the full 9300-cell matrix — the E2' typed gate applies
+    exactly as ``launch_spec`` applies it (refusal BEFORE the spawner)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    official = run_config.official_keys()
+    assert official.diagnostic is None
+    failures = complete_failures_manifest(tmp_path, official)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+
+    result = launcher.launch_from_failures(
+        failures, (42, 43, 44), tmp_path / "rerun", spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.GateRefusal)
+    assert result.stage == sweep_launcher.REFUSAL_STAGE_PHRASE
+    assert result.expected == "rerun"
+    assert spawner.calls == []           # the spawner-silent proof
+
+
+def test_launch_from_failures_complete_manifest_matching_phrase_spawns(
+        monkeypatch, tmp_path):
+    """The matching phrase passes the same gate — the re-run is never
+    refused outright, only phrase-escalated."""
+    pin_state_dir(monkeypatch, tmp_path)
+    official = run_config.official_keys()
+    failures = complete_failures_manifest(tmp_path, official)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+
+    outcome = launcher.launch_from_failures(
+        failures, (42, 43, 44), tmp_path / "rerun", phrase="rerun",
+        spawner=spawner, clock=FixedClock(CLOCK_MOMENT))
+
+    assert outcome.spawned is True
+    argv, _ = single_call(spawner)
+    assert "--from-failures" in argv
+
+
+def test_launch_from_failures_partial_manifest_never_phrase_gated(
+        monkeypatch, tmp_path):
+    """The ordinary re-run shape (a partial failures manifest) stays
+    ungated — the gate escalates ONLY on the E2'-class effective
+    matrix."""
+    pin_state_dir(monkeypatch, tmp_path)
+    partial = tmp_path / "sweep_failures.json"
+    partial.write_text(json.dumps([
+        {"model": "plant-dnabert-6mer", "base_model": "plant-dnabert-6mer",
+         "task": "GUE__emp_H3", "seed": 42, "error": "boom"},
+    ]), encoding="utf-8")
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+
+    outcome = launcher.launch_from_failures(
+        partial, (42, 43, 44), tmp_path / "rerun",
+        spawner=spawner, clock=FixedClock(CLOCK_MOMENT))
+
+    assert outcome.spawned is True       # no phrase demanded
+
+
+def test_launch_from_failures_complete_manifest_two_seeds_below_boundary(
+        monkeypatch, tmp_path):
+    """Two seeds are below the three-seed authorization boundary (D-02):
+    even a complete manifest re-run stays on the generic confirm."""
+    pin_state_dir(monkeypatch, tmp_path)
+    official = run_config.official_keys()
+    failures = complete_failures_manifest(tmp_path, official)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+
+    outcome = launcher.launch_from_failures(
+        failures, (42, 43), tmp_path / "rerun",
+        spawner=spawner, clock=FixedClock(CLOCK_MOMENT))
+
+    assert outcome.spawned is True
+
+
+def test_launch_from_failures_official_keys_diagnostic_refuses(
+        monkeypatch, tmp_path):
+    """Fail-closed (the launch_spec twin): unreadable official registries
+    must BLOCK the re-run at the problems stage — never compare against
+    silently-empty sets."""
+    pin_state_dir(monkeypatch, tmp_path)
+    partial = tmp_path / "sweep_failures.json"
+    partial.write_text("[]", encoding="utf-8")
+    diagnostic = "unreadable or shape-invalid: pipeline/models_info.json"
+    double = RunConfigDouble(official=run_config.OfficialKeys(
+        frozenset(), frozenset(), diagnostic))
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+
+    result = launcher.launch_from_failures(
+        partial, (42,), tmp_path / "rerun",
+        run_config_service=double, spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.GateRefusal)
+    assert result.stage == sweep_launcher.REFUSAL_STAGE_PROBLEMS
+    assert ("official_keys", diagnostic) in result.problems
+    assert spawner.calls == []
+
+
+def test_launch_from_failures_unreadable_manifest_refuses_fail_closed(
+        monkeypatch, tmp_path):
+    """A manifest the gate cannot evaluate (missing/unparseable/invalid
+    entries — load_failure_pairs exits) refuses at the problems stage:
+    the child would fail-fast too, and an unevaluatable matrix is never
+    launched ungated."""
+    pin_state_dir(monkeypatch, tmp_path)
+    missing = tmp_path / "nope" / "sweep_failures.json"
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher()
+
+    result = launcher.launch_from_failures(
+        missing, (42,), tmp_path / "rerun", spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.GateRefusal)
+    assert result.stage == sweep_launcher.REFUSAL_STAGE_PROBLEMS
+    code, detail = result.problems[0]
+    assert code == "failures_manifest"
+    assert "nope" in str(detail)
+    assert spawner.calls == []

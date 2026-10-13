@@ -54,9 +54,12 @@ Contract (locked decisions):
   flag ONLY when present — absent flags contribute ZERO argv
   elements; the exact element order is pinned by the tier-1 suite.
 - D-11 ([r] re-run): ``compose_from_failures_argv`` targets
-  ``run_sweep --from-failures``; a from-failures enumeration can
-  never be the full matrix by construction, so that path is never
-  subject to the E2' typed gate.
+  ``run_sweep --from-failures``. CR-01 (phase-11 review) retired the
+  "never the full matrix by construction" premise — a COMPLETE failures
+  manifest re-run over 3 seeds IS the full matrix — so the composed
+  path's E2' gate lives in ``sweep_launcher.launch_from_failures``
+  (the effective matrix recomputed and gated before this composer
+  runs; this argv builder stays mechanical).
 - PROBE_INELIGIBLE (Pitfall 7): the frozen list lives in
   ``pipeline/run_finetune.py``, which imports torch at module top and
   is therefore NEVER imported here — the names are extracted from the
@@ -1015,14 +1018,15 @@ def compose_from_failures_argv(failures_path, seeds, output_root,
     """Compose the ``--from-failures`` re-run argv (D-11, the [r]
     path).
 
-    A from-failures enumeration is EXACTLY the failed (model, task)
-    pairs of a prior sweep — it can NEVER be the full matrix by
-    construction, so this path is never subject to the E2' typed gate
-    (it carries its own independent confirmation). Seeds and the
-    ABSOLUTE output root thread like the main path; peft/variant
-    pairs are present-only; ``extra`` (a list of str, e.g.
-    ``["--dry-run"]``) appends verbatim at the tail for the caller's
-    own flags.
+    A mechanical argv builder: the E2' gate for this path lives in the
+    CALLER (``sweep_launcher.launch_from_failures`` recomputes the
+    effective matrix — failure pairs × the requested seeds — and applies
+    the same ``is_full_e2x`` predicate + typed-phrase gate as
+    ``launch_spec``; CR-01, phase-11 review: a complete failures
+    manifest over 3 seeds IS the full matrix). Seeds and the ABSOLUTE
+    output root thread like the main path; peft/variant pairs are
+    present-only; ``extra`` (a list of str, e.g. ``["--dry-run"]``)
+    appends verbatim at the tail for the caller's own flags.
 
     Args:
         failures_path: the ``sweep_failures.json`` path (resolved

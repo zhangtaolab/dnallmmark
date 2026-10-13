@@ -55,11 +55,18 @@ Contract (locked decisions):
   T-11-03-01/02).
 - D-11 (the [r] re-run): ``launch_from_failures`` composes via
   ``run_config.compose_from_failures_argv`` and routes through the
-  SAME launch seam. A from-failures enumeration is EXACTLY the failed
-  (model, task) pairs of a prior sweep — never the full matrix by
-  construction — so the E2' typed gate does not apply; the raw
-  ``launch_argv`` seam is from-failures-only by construction (its
-  docstring carries the warning).
+  SAME launch seam. The re-run's effective matrix is RECOMPUTED here
+  (CR-01, phase-11 review): ``run_sweep.load_failure_pairs`` × the
+  requested seeds is NOT "never the full matrix by construction" — a
+  genuine complete failures manifest (a full sweep that failed every
+  cell) re-run over the sweep's 3 seeds IS the full 9300-cell matrix,
+  so the SAME ``is_full_e2x``-class predicate + typed-phrase gate apply
+  (``launch_spec``'s refusal order: official-keys diagnostic, then the
+  phrase). An unevaluatable manifest (unreadable/invalid — the child's
+  own ``load_failure_pairs`` fail-fast) refuses at the problems stage.
+  The raw ``launch_argv`` seam itself stays ungated by design (pinned
+  by the tier-1 suite); the gate is the composed path's, never the
+  seam's.
 
 ZERO textual imports (the services-tier invariant declared in
 ``tui/services/__init__.py``; locked by ``tests/tui/test_import_lock.py``
@@ -77,6 +84,8 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+import run_sweep  # top-level module (pipeline/ sys.path root, D-05 same-source)
 
 from tui.services import env_gate, quick_check, run_config, settings
 
@@ -110,6 +119,12 @@ OUTCOME_NOOP = "noop"
 #: fail-closed reference blocks the gate instead of comparing against
 #: silently-empty sets — T-11-02-02).
 PROBLEM_OFFICIAL_KEYS = "official_keys"
+
+#: CR-01 (phase-11 review): a from-failures manifest the gate cannot
+#: evaluate (unreadable/not-JSON/invalid entries — the driver's own
+#: ``load_failure_pairs`` fail-fast) surfaced as a problem tuple. An
+#: unevaluatable matrix is never launched ungated.
+PROBLEM_FAILURES_MANIFEST = "failures_manifest"
 
 #: The GateRefusal stages (in refusal order: problems, then phrase).
 REFUSAL_STAGE_PROBLEMS = "problems"
@@ -264,6 +279,16 @@ def _now_iso(moment):
     """One datetime as a local ISO-8601 string (the download_queue
     ``_now_iso`` idiom)."""
     return moment.astimezone().isoformat(timespec="seconds")
+
+
+def _exit_message(exc):
+    """One caught exception's human-readable message — a ``SystemExit``
+    carries its message in ``code`` (``str(SystemExit("m"))`` would
+    render repr-quoted), everything else renders via ``str()``."""
+    code = getattr(exc, "code", None)
+    if isinstance(code, str):
+        return code
+    return str(exc)
 
 
 def _run_config_service(run_config_service):
@@ -504,15 +529,17 @@ class SweepLauncher:
     def launch_argv(self, argv, output_root, spawner=None, clock=None):
         """Launch a PRE-COMPOSED argv through the shared spawn seam.
 
-        WARNING — from-failures-only BY CONSTRUCTION (D-11): callers
-        pass argv composed by
-        ``run_config.compose_from_failures_argv``, whose enumeration is
-        EXACTLY the failed (model, task) pairs of a prior sweep — it
-        can never be the full matrix, so the E2' typed gate does not
-        apply here and is NEVER consulted. This seam takes no spec, so
-        no widget path can route a full-matrix spec through it
-        unnoticed — full-matrix launches MUST go through
-        ``launch_spec``, which re-proves the gate.
+        NOTE — the raw seam is intentionally UNGATED (pinned by the
+        tier-1 suite): it takes no spec, so no predicate applies here.
+        Its safety no longer rests on the retired "from-failures is
+        never the full matrix" premise (CR-01, phase-11 review — a
+        complete failures manifest IS a genuine full-matrix artifact):
+        the COMPOSED UI path routes through ``launch_from_failures``,
+        which recomputes the effective matrix and applies the same E2'
+        predicate + typed-phrase gate as ``launch_spec``. Callers
+        hand-composing a full-matrix argv around this seam bypass the
+        gate by construction — that is the seam's contract, and the
+        only production callers are gated composers.
 
         Args:
             argv: the pre-composed launch argv (threaded verbatim).
@@ -526,20 +553,83 @@ class SweepLauncher:
         """
         return self._spawn(argv, output_root, spawner=spawner, clock=clock)
 
+    def _from_failures_refusal(self, rc, failures_path, seeds,
+                               output_root, peft, config_variant,
+                               phrase):
+        """The CR-01 gate over one re-run's EFFECTIVE matrix.
+
+        Recomputes what the child will enumerate — the failure pairs
+        (``run_sweep.load_failure_pairs``, the driver's own parser)
+        crossed with the requested seeds — and applies ``launch_spec``'s
+        refusal order over it: the official-keys diagnostic (fail-closed)
+        first, then the E2' predicate (pairs superset official AND >= 3
+        seeds) demanding the exact typed phrase. The predicate itself is
+        the REAL ``run_config.is_full_e2x`` over a synthetic RunSpec of
+        the pair sets — zero copied matrix logic (D-05).
+
+        Args:
+            rc: the resolved run_config seam.
+            failures_path: the prior sweep's ``sweep_failures.json``.
+            seeds: the re-run seed fan-out.
+            output_root: the re-run output root.
+            peft: the re-run adapter mode (base-strip parity).
+            config_variant: the re-run variant lane.
+            phrase: the operator-typed phrase (None refuses an E2'-class
+                re-run).
+
+        Returns:
+            GateRefusal | None: the refusal, or None when the re-run may
+            spawn.
+        """
+        official = rc.official_keys()
+        if official.diagnostic is not None:
+            return GateRefusal(
+                stage=REFUSAL_STAGE_PROBLEMS,
+                problems=((PROBLEM_OFFICIAL_KEYS, official.diagnostic),))
+        try:
+            pairs = run_sweep.load_failure_pairs(
+                str(Path(failures_path).resolve()),
+                run_config.DEFAULT_REGISTRY_DIR)
+        except (SystemExit, OSError, ValueError) as exc:
+            # The child's own manifest validation would fail the same
+            # way — refuse here, naming the file, never spawn ungated.
+            return GateRefusal(
+                stage=REFUSAL_STAGE_PROBLEMS,
+                problems=((PROBLEM_FAILURES_MANIFEST, _exit_message(exc)),))
+        effective = run_config.RunSpec(
+            models=tuple(model for model, _task in pairs),
+            tasks=tuple(task for _model, task in pairs),
+            seeds=tuple(int(seed) for seed in seeds),
+            peft=peft,
+            config_variant=config_variant,
+            output_root=str(output_root))
+        if (rc.is_full_e2x(effective, official)
+                and not rc.phrase_matches(phrase, output_root)):
+            return GateRefusal(
+                stage=REFUSAL_STAGE_PHRASE,
+                expected=rc.expected_phrase(output_root))
+        return None
+
     def launch_from_failures(self, failures_path, seeds, output_root,
                              peft="none", config_variant="none",
+                             phrase=None, run_config_service=None,
                              spawner=None, clock=None):
-        """The [r] failure re-run launch (D-11).
+        """The [r] failure re-run launch (D-11, CR-01-gated).
 
         Composes via ``run_config.compose_from_failures_argv`` and
         routes through ``launch_argv`` — the SAME launch pipeline every
-        launch source shares. D-11's design, recorded: the re-run
-        re-enters the pipeline the screen gates (the env preflight is
-        the screen's PRECEDING step — the operator confirms the re-run
-        independently), and a from-failures enumeration is
-        failure-pairs-only, so the E2' typed gate cannot apply by
-        construction. The child re-validates the failures manifest
-        itself (``run_sweep.load_failure_pairs`` fail-fast).
+        launch source shares. CR-01 (phase-11 review) retired the
+        "never the full matrix by construction" premise: the re-run's
+        effective matrix (failure pairs × the requested seeds) is
+        recomputed and gated BEFORE the composition — a complete
+        failures manifest over the sweep's 3 seeds IS the full E2'
+        matrix and demands the exact typed phrase (stage ``"phrase"``
+        refusal, the ``launch_spec`` twin); an unevaluatable manifest or
+        an official-keys diagnostic refuses at stage ``"problems"``.
+        The env preflight is the screen's PRECEDING step (the operator
+        confirms the re-run independently); the child re-validates the
+        failures manifest itself (``run_sweep.load_failure_pairs``
+        fail-fast).
 
         Args:
             failures_path: the prior sweep's
@@ -548,13 +638,24 @@ class SweepLauncher:
             output_root: the re-run output root.
             peft: adapter mode (none = absent from argv).
             config_variant: variant lane (none = absent).
+            phrase: the operator-typed E2' phrase; None/"" refuse an
+                E2'-class re-run (ignored for an ordinary partial one).
+            run_config_service: an injectable seam double; None uses
+                the REAL run_config module.
             spawner: a per-call seam override; None uses the
                 instance seam.
             clock: an injectable ``datetime.now``-shaped callable.
 
         Returns:
-            LaunchOutcome: the spawn outcome.
+            LaunchOutcome | GateRefusal: the spawn outcome, or the
+            refusal (the spawner provably never called).
         """
+        rc = _run_config_service(run_config_service)
+        refusal = self._from_failures_refusal(
+            rc, failures_path, seeds, output_root,
+            peft, config_variant, phrase)
+        if refusal is not None:
+            return refusal
         argv = run_config.compose_from_failures_argv(
             failures_path, seeds, output_root,
             peft=peft, config_variant=config_variant)

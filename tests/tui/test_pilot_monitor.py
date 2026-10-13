@@ -38,6 +38,7 @@ from tui.services import registries as registries_service
 from tui.services.download_queue import merge_presence
 from tui.services.sweep_launcher import (
     EnvPreflight,
+    GateRefusal,
     LaunchOutcome,
 )
 from tui.services.sweep_monitor import (
@@ -255,14 +256,19 @@ class FakeMonitorLauncher:
         return self._preflight
 
     def launch_from_failures(self, failures_path, seeds, output_root,
-                             peft="none", config_variant="none"):
+                             peft="none", config_variant="none",
+                             phrase=None):
         self.rerun_calls.append((str(failures_path), tuple(seeds),
-                                 str(output_root), peft, config_variant))
+                                 str(output_root), peft, config_variant,
+                                 phrase))
         if self._rerun_outcomes:
             return self._rerun_outcomes.pop(0)
         return LaunchOutcome(
             spawned=True, root=str(output_root),
             tee_path="/state/logs/sweep_rerun.log", error=None)
+
+    def phrase_matches(self, typed, output_root):
+        return typed == Path(str(output_root)).name
 
     def live_sweeps(self):
         return self._live
@@ -1028,11 +1034,12 @@ async def test_rerun_confirm_routes_launch_from_failures_and_attaches():
         await _settle(pilot, app)
         assert launcher.env_calls == 1, "the env preflight re-entered"
         assert len(launcher.rerun_calls) == 1
-        failures_path, seeds, root, _peft, _variant = (
+        failures_path, seeds, root, _peft, _variant, phrase = (
             launcher.rerun_calls[0])
         assert failures_path == "/scans/finetuned/sweep_failures.json"
         assert seeds == (42, 43), "the sweep's own seeds fan out"
         assert root == "/scans/finetuned"
+        assert phrase is None, "an ordinary partial re-run carries no phrase"
         assert MON_RERUN_TOAST.format(
             cells="—", root="finetuned") in _toast_messages(app)
         assert str(app.screen._attached_root) == "/scans/finetuned"
@@ -1085,6 +1092,107 @@ async def test_rerun_env_block_renders_the_same_modal():
         assert launcher.rerun_calls == [], (
             "the launch never happened after the env block"
         )
+
+
+async def test_rerun_e2x_phrase_refusal_reprompts_then_launches():
+    """CR-01: a complete failures manifest over 3 seeds IS the full
+    matrix — the service's phrase-stage refusal re-prompts the E2'
+    typed phrase on the monitor (the D-07 escalation, same modal as
+    slot 4), and only the typed match re-launches WITH the phrase."""
+    from tui.screens.monitor import FailuresModal
+    from tui.screens.run_config import E2PhraseModal
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import MON_RERUN_TOAST
+
+    failures = tuple(
+        FailureRow(model=f"model-{index}", task="task-1", seed=seed,
+                   error="boom", output_dir="/x")
+        for index in range(3) for seed in (42, 43, 44))
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=3, total=9),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row(f"model-{index}", "task-1",
+                 {42: CELL_FAILED, 43: CELL_FAILED, 44: CELL_FAILED})
+            for index in range(3))},
+        stats={"/scans/finetuned": _stats(done=3, total=9)},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher(rerun_outcomes=[
+        GateRefusal(stage="phrase", expected="finetuned"),
+    ])
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmModal)
+        await pilot.press("enter")   # confirm the re-run
+        await _settle(pilot, app)
+        assert isinstance(app.screen, E2PhraseModal), (
+            "the phrase-stage refusal escalates to the typed-phrase "
+            "modal — the E2' boundary holds on the [f]->[r] path"
+        )
+        assert launcher.rerun_calls[0][5] is None, (
+            "the first attempt carried no phrase (the gate refused)"
+        )
+        await pilot.press("f", "i", "n")   # a partial phrase stays mismatched
+        await pilot.pause()
+        assert isinstance(app.screen, E2PhraseModal)
+        for key in "etuned":
+            await pilot.press(key)
+        await pilot.pause()
+        await pilot.press("enter")   # the exact match confirms
+        await _settle(pilot, app)
+        assert len(launcher.rerun_calls) == 2
+        assert launcher.rerun_calls[1][5] == "finetuned", (
+            "the re-prompt's typed phrase threads the re-launch"
+        )
+        assert MON_RERUN_TOAST.format(
+            cells="—", root="finetuned") in _toast_messages(app)
+
+
+async def test_rerun_problems_refusal_surfaces_error_toast():
+    """CR-01: a problems-stage refusal (official-keys diagnostic /
+    unevaluatable manifest) is never a silent no-op — the launch-failed
+    toast names the problems and NOTHING launches."""
+    failures = (FailureRow(model="model-a", task="task-1", seed=42,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_FAILED}),)},
+        stats={"/scans/finetuned": _stats(done=1, total=2)},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher(rerun_outcomes=[GateRefusal(
+        stage="problems",
+        problems=(("official_keys",
+                   "unreadable or shape-invalid: pipeline/models_info.json"),),
+    )])
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.press("enter")   # confirm the re-run
+        await _settle(pilot, app)
+        toasts = _toast_messages(app)
+        assert any(
+            "official_keys" in message
+            and "unreadable or shape-invalid" in message
+            for message in toasts), toasts
+        assert len(launcher.rerun_calls) == 1, "no second attempt"
 
 
 async def test_log_tail_renders_lines_and_tee_line():
