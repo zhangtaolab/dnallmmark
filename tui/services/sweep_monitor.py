@@ -65,11 +65,19 @@ from tui.services import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-#: The default output roots scanned when ``full_scan`` gets none (D-03 —
-#: run_sweep's default ``./finetuned`` resolves to pipeline/finetuned
-#: from the repo root).
+#: The default output roots scanned when ``full_scan`` gets none (D-03).
+#: WR-06 (phase-11 review): BOTH resolution homes of run_sweep's
+#: default ``./finetuned`` are covered — the TUI launcher pins the
+#: subprocess cwd to ``pipeline/`` (so ``./finetuned`` resolves to
+#: ``{repo}/pipeline/finetuned``), while run_sweep's own docstring
+#: documents running from the REPO root (``python pipeline/run_sweep.py
+#: ... --output-root ./finetuned``), which resolves against the CLI
+#: process's CWD to ``{repo}/finetuned``. A nonexistent root is skipped
+#: silently by the scan, so carrying both costs nothing on machines
+#: that only ever use one.
 DEFAULT_OUTPUT_ROOTS: tuple[Path, ...] = (
     REPO_ROOT / "pipeline" / "finetuned",
+    REPO_ROOT / "finetuned",
 )
 
 #: O2 pin — quiet-phase tolerance for the fresh-mtime running signal: a

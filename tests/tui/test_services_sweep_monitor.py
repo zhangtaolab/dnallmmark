@@ -180,12 +180,17 @@ def sweep_row(result, root):
 
 
 def test_pinned_constants_and_default_output_root():
-    """The O2/O4 pins + the D-03 default root, exactly as the plan
-    states them (constants are the tunable surface, never inlined)."""
+    """The O2/O4 pins + the D-03 default roots, exactly as the plan
+    states them (constants are the tunable surface, never inlined).
+    WR-06: BOTH homes of run_sweep's default ./finetuned — the TUI
+    launch path (cwd pinned to pipeline/) and the documented repo-root
+    CLI invocation."""
     assert sweep_monitor.STALE_GRACE_SECONDS == 600.0
     assert sweep_monitor.ETA_VARIANCE_RATIO == 3.0
     assert sweep_monitor.DEFAULT_OUTPUT_ROOTS == (
-        REPO_ROOT / "pipeline" / "finetuned",)
+        REPO_ROOT / "pipeline" / "finetuned",
+        REPO_ROOT / "finetuned",
+    )
 
 
 def test_full_scan_finished_tree_reads_counts_from_manifest(tmp_path):
@@ -284,6 +289,27 @@ def test_full_scan_artifacts_only_stale_tree_unknown_total(tmp_path):
     assert row.state == "artifacts_only"
     assert row.total is None
     assert row.done == 1
+
+
+def test_full_scan_default_roots_cover_both_resolution_homes(
+        monkeypatch, tmp_path):
+    """WR-06 (phase-11 review): roots=None scans BOTH default homes of
+    run_sweep's ./finetuned — the TUI launch path (cwd pinned to
+    pipeline/) AND the documented repo-root CLI invocation. A
+    manifest-bearing tree under each is discovered."""
+    pin_state_dir(monkeypatch, tmp_path)
+    tui_home = tmp_path / "repo" / "pipeline" / "finetuned"
+    cli_home = tmp_path / "repo" / "finetuned"
+    for home in (tui_home, cli_home):
+        write_json(home / MANIFEST_NAME, manifest_payload(
+            [manifest_cell("model-a", "task-1", 42, "completed")]))
+    monkeypatch.setattr(
+        sweep_monitor, "DEFAULT_OUTPUT_ROOTS", (tui_home, cli_home))
+
+    result = sweep_monitor.full_scan(now=NOW)
+
+    assert {str(summary.root) for summary in result.sweeps} == {
+        str(tui_home), str(cli_home)}
 
 
 def test_full_scan_skips_nonexistent_root_silently(tmp_path):
