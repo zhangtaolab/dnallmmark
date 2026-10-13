@@ -87,6 +87,21 @@ Every behavior bullet of the plan's Task 2 is pinned here:
   byte-deterministically; extract_curve_points() harvests the (step,
   eval-metrics) learning-curve points from a trainer_state.json
   log_history (pure, CPU-side, synthetic-fixture tested).
+- **--config-variant aliasing (11-01, D-18 — ALIASING, never
+  pass-through)** — the variant lane threads through the matrix EXACTLY
+  like --peft: probe/curve/head enumerate cells under {model}+{variant}
+  (head keeps the BASE name for the frozen pair evo2_1b_base /
+  megaDNA_updated — pinned against the run_finetune.py SOURCE TEXT by a
+  read-source parity test, never by import: the child module imports
+  torch at its top), argv targets --target_model <base>
+  --save_model_name <alias> --config-variant <v> as separate LIST
+  elements (the explicit save name makes the driver the single naming
+  authority over the child's own identical self-aliasing branch), the
+  run_record gains a config_variant field (default 'none'), the manifest
+  merges config_variant into every cell via sweep_flags when the flag is
+  present, --from-failures joins on base names, and every variant x peft
+  combination exits non-zero at sweep start naming both flags
+  (collect-all); absent = byte-identical to today.
 
 The runner is stdlib-only and never imports torch/dnallm; no test executes
 the real subprocess (the argv test monkeypatches ``subprocess.run``).
@@ -98,6 +113,7 @@ See also:
 """
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -2586,3 +2602,498 @@ def test_dry_run_with_flags_is_byte_deterministic(tmp_path, monkeypatch):
     assert (out_root / "sweep_manifest.json").read_bytes() == first, (
         "two same-flag dry-runs must produce byte-identical manifests"
     )
+
+
+# =====================================================================
+# --config-variant aliasing (11-01, D-18 — ALIASING, never pass-through)
+# =====================================================================
+
+def test_config_variant_flag_defaults_to_none_in_parse_args(monkeypatch):
+    """--config-variant exists, defaults to None (no aliasing — the
+    byte-identical default), and accepts exactly the child's three
+    choices; anything else is argparse's own refusal."""
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    args = run_sweep.parse_args()
+    assert args.config_variant is None
+    monkeypatch.setattr(sys, "argv", [
+        "run_sweep.py", "--seeds", "42", "--config-variant", "bogus"])
+    with pytest.raises(SystemExit):
+        run_sweep.parse_args()
+
+
+def test_enumerate_matrix_emits_alias_cells_under_config_variant(tmp_path):
+    """--config-variant probe/curve/head: cells enumerate under the ALIAS
+    model name {model}+{variant} while the registry and the --models join
+    stay on BASE names — the peft aliasing shape, NOT a pass-through (the
+    child self-aliases its save name under a variant, so the driver must
+    own the alias identity or every cell trains into a dir the driver
+    does not record — the retrain-forever trap)."""
+    registry_dir = make_registry(tmp_path)
+    probe = run_sweep.enumerate_matrix(
+        ["model-a", "model-b"], ["task-x"], [42, 43], registry_dir,
+        config_variant="probe")
+    assert probe == [
+        ("model-a+probe", "task-x", 42), ("model-a+probe", "task-x", 43),
+        ("model-b+probe", "task-x", 42), ("model-b+probe", "task-x", 43),
+    ], "config_variant=probe must enumerate sorted alias cells"
+    curve = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir,
+        config_variant="curve")
+    assert curve == [("model-a+curve", "task-x", 42)]
+    head = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir, config_variant="head")
+    assert head == [("model-a+head", "task-x", 42)]
+    # The --models join stays on BASE names (the peft precedent): an
+    # alias-typed filter value finds nothing — the alias re-derives from
+    # the sweep's own variant, never from the filter.
+    aliased_filter = run_sweep.enumerate_matrix(
+        ["model-a+probe"], ["task-x"], [42], registry_dir,
+        config_variant="probe")
+    assert aliased_filter == [], (
+        "registry filtering must join on base names"
+    )
+    # Variant composes with --curve exactly like --peft: the alias cell
+    # expands one 4-tuple per fraction (the child nests frac_ under the
+    # alias dir's seed dir).
+    frac_cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir, fractions=[0.5, 0.25],
+        config_variant="probe")
+    assert frac_cells == [
+        ("model-a+probe", "task-x", 42, 0.25),
+        ("model-a+probe", "task-x", 42, 0.5),
+    ], "alias cells must expand across fractions in sorted order"
+
+
+def test_head_variant_keeps_base_name_for_the_frozen_pair(tmp_path):
+    """variant=head keeps the BASE name for exactly the frozen pair
+    (evo2_1b_base, megaDNA_updated) — verbatim from the child's save-name
+    chain (their with-head config IS their base config) — while ordinary
+    models alias to {model}+head; sorting happens AFTER the alias mapping
+    (deterministic enumeration)."""
+    registry_dir = tmp_path / "registry"
+    registry_dir.mkdir()
+    write_registry(
+        registry_dir,
+        models={
+            "model-a": {"Model_name": "model-a", "Model_path": "models/a"},
+            "evo2_1b_base": {"Model_name": "evo2_1b_base",
+                             "Model_path": "models/evo2"},
+            "megaDNA_updated": {"Model_name": "megaDNA_updated",
+                                "Model_path": "models/megadna"},
+        },
+        datasets={
+            "task-x": {"Dataset_name": "task-x", "Train": 100, "Dev": 10},
+        },
+    )
+    cells = run_sweep.enumerate_matrix(
+        None, ["task-x"], [42], registry_dir, config_variant="head")
+    assert [cell[0] for cell in cells] == [
+        "evo2_1b_base", "megaDNA_updated", "model-a+head",
+    ], (
+        "head aliases ordinary models to {model}+head but keeps the base "
+        "name for the frozen pair"
+    )
+
+
+def test_head_keep_base_names_pinned_against_run_finetune_source():
+    """HEAD_KEEP_BASE_NAMES is the VERBATIM frozen pair from the child's
+    save-name chain — extracted from the run_finetune.py SOURCE TEXT
+    (never imported: that module imports torch at its top, unavailable
+    CPU-side — the test_run_finetune_contracts.py pattern), so the two
+    files cannot drift apart silently."""
+    src = (REPO_ROOT / "pipeline" / "run_finetune.py").read_text(
+        encoding="utf-8")
+    match = re.search(
+        r'config_variant == "head" and model_name not in '
+        r'\(\s*"([^"]+)",\s*"([^"]+)"\s*\)',
+        src,
+    )
+    assert match is not None, (
+        "the head-branch frozen pair literal disappeared from "
+        "run_finetune.py's save-name chain — update "
+        "run_sweep.HEAD_KEEP_BASE_NAMES and this test together"
+    )
+    extracted = (match.group(1), match.group(2))
+    assert isinstance(run_sweep.HEAD_KEEP_BASE_NAMES, tuple)
+    assert len(run_sweep.HEAD_KEEP_BASE_NAMES) == 2
+    assert extracted == run_sweep.HEAD_KEEP_BASE_NAMES, (
+        f"run_sweep.HEAD_KEEP_BASE_NAMES diverged from the child's head "
+        f"exception pair {extracted!r} — a head sweep would enumerate an "
+        "alias the child never writes (or vice versa)"
+    )
+
+
+def test_build_argv_targets_base_and_saves_variant_alias_as_list_elements():
+    """Under a variant, build_argv emits --target_model <BASE> plus
+    --save_model_name <alias> and --config-variant <v> — every flag and
+    value a separate LIST element. The explicit --save_model_name makes
+    the DRIVER the single naming authority over the child's own identical
+    self-aliasing branch: the child's explicit-save-name-wins rule then
+    can never diverge from the alias cell dir the driver records."""
+    argv = run_sweep.build_argv(
+        "model-a+probe", "task-x", 42, "/tmp/root", config_variant="probe")
+    assert isinstance(argv, list), (
+        "the subprocess must be launched from an argv LIST, never a shell "
+        "string (T-03-10: registry values must not pass through a shell)"
+    )
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--target_model") == "model-a", (
+        "--target_model must carry the BASE registry name — the alias is "
+        "not a registry key and would break the child's model filtering"
+    )
+    assert flag_value(argv, "--target_dataset") == "task-x"
+    assert flag_value(argv, "--seed") == "42"
+    assert flag_value(argv, "--output_dir") == "/tmp/root"
+    assert flag_value(argv, "--save_model_name") == "model-a+probe", (
+        "--save_model_name must carry the ALIAS so the child writes the "
+        "alias dir the driver keys its cell record on (name isolation "
+        "end-to-end — the exact agreement a pass-through would break)"
+    )
+    assert flag_value(argv, "--config-variant") == "probe"
+    assert "--peft" not in argv, "variant lanes never compose with peft"
+    head = run_sweep.build_argv(
+        "model-b+head", "task-z", 7, "/tmp/root", config_variant="head")
+    assert flag_value(head, "--target_model") == "model-b"
+    assert flag_value(head, "--save_model_name") == "model-b+head"
+    assert flag_value(head, "--config-variant") == "head"
+    # head on the frozen pair: alias == base (no suffix was added), so
+    # --save_model_name carries the BASE name while --config-variant head
+    # still threads — the child's explicit-save-name-wins branch keeps
+    # the base dir, exactly the dir the driver enumerated.
+    frozen = run_sweep.build_argv(
+        "evo2_1b_base", "task-x", 42, "/tmp/root", config_variant="head")
+    assert flag_value(frozen, "--target_model") == "evo2_1b_base"
+    assert flag_value(frozen, "--save_model_name") == "evo2_1b_base", (
+        "the frozen pair's head alias IS the base name — driver and child "
+        "agree on the base dir with no +head suffix"
+    )
+    assert flag_value(frozen, "--config-variant") == "head"
+
+
+def test_launch_subprocess_threads_config_variant_with_pinned_cwd(monkeypatch):
+    """The real launch path (captured argv, never executed) carries the
+    variant composition as a LIST with cwd pinned to pipeline/ — the
+    test_launch_subprocess_builds_argv_list_with_pinned_cwd idiom."""
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(argv, returncode=0)
+
+    monkeypatch.setattr(run_sweep.subprocess, "run", fake_run)
+    run_sweep.launch_subprocess(
+        "model-a+probe", "task-x", 42, "/tmp/sweep-root",
+        config_variant="probe")
+    argv = captured["argv"]
+    assert isinstance(argv, list)
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--target_model") == "model-a"
+    assert flag_value(argv, "--save_model_name") == "model-a+probe"
+    assert flag_value(argv, "--config-variant") == "probe"
+    assert captured["kwargs"]["cwd"] == run_sweep.PIPELINE_DIR, (
+        "cwd must stay pinned to the pipeline directory (the invocation "
+        "contract — the variant YAMLs are CWD-relative in run_finetune)"
+    )
+    assert not captured["kwargs"].get("shell"), "shell=True is forbidden"
+
+
+def test_variant_absent_is_byte_identical_to_today(tmp_path, monkeypatch):
+    """Absent --config-variant (the default) changes nothing: enumerate
+    emits base-name cells, build_argv carries NO --config-variant /
+    --save_model_name elements, the record field reads 'none', and a
+    no-flag dry-run manifest's cells carry NO config_variant key (the
+    D-12 absent-parity discipline — zero added keys, zero added
+    elements)."""
+    registry_dir = make_registry(tmp_path)
+    default_cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir)
+    explicit_none = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir,
+        config_variant="none")
+    assert explicit_none == default_cells == [("model-a", "task-x", 42)]
+    argv_default = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
+    argv_none = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root", config_variant="none")
+    assert argv_none == argv_default, (
+        "config_variant='none' must build the exact pre-11-01 argv, "
+        "element for element"
+    )
+    assert "--config-variant" not in argv_none
+    assert "--save_model_name" not in argv_none
+    record = run_sweep._new_record(
+        "model-a", "task-x", 42, Path("/tmp/root"), "testshash")
+    assert record["config_variant"] == "none", (
+        "the run_record config_variant field must default to 'none' "
+        "(the peft-field precedent)"
+    )
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"]
+    for cell in manifest["cells"]:
+        assert "config_variant" not in cell, (
+            "an absent variant must leave no manifest key — the manifest "
+            "merge is sweep_flags-driven and records ONLY present flags"
+        )
+
+
+def test_dry_run_config_variant_manifest_lists_alias_cell_dirs(
+        tmp_path, monkeypatch):
+    """--dry-run with --config-variant probe writes a manifest whose
+    planned output_dirs live under {root}/{model}+probe/{task}/seed_{n}/
+    — cell_dir_for keyed on the ALIAS, the exact dir the child's own
+    self-aliasing writes into (the naming agreement a pass-through would
+    break)."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a,model-b",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--config-variant", "probe",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert {c["model"] for c in manifest["cells"]} == {
+        "model-a+probe", "model-b+probe"}, (
+        "the variant dry-run manifest must list ONLY alias cells"
+    )
+    assert manifest["matrix"]["models"] == [
+        "model-a+probe", "model-b+probe"]
+    for cell in manifest["cells"]:
+        assert cell["output_dir"].endswith(
+            f"{cell['model']}/task-x/seed_42"), (
+            "every planned outdir must live under the alias model dir "
+            "(cell_dir_for keyed on the alias)"
+        )
+    assert not list(out_root.rglob("seed_*")), (
+        "dry-run must not create cell directories"
+    )
+
+
+def test_run_matrix_writes_variant_record_inside_alias_cell_dir(tmp_path):
+    """run_matrix with a fake executor over variant cells writes
+    run_record.json carrying the config_variant field INSIDE the alias
+    cell dir — the exporter walk treats the alias as just another model
+    dir (the peft precedent)."""
+    out_root = tmp_path / "sweep-out"
+
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text(
+            json.dumps(SUITE_NATIVE_METRICS, indent=4), encoding="utf-8")
+
+    registry_dir = make_registry(tmp_path)
+    cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir,
+        config_variant="probe")
+    records = run_sweep.run_matrix(
+        cells, out_root, executor=fake_executor, config_variant="probe")
+    assert records[0]["model"] == "model-a+probe"
+    assert records[0]["config_variant"] == "probe"
+    record_path = (
+        out_root / "model-a+probe" / "task-x" / "seed_42" / "run_record.json")
+    disk = json.loads(record_path.read_text(encoding="utf-8"))
+    assert disk["config_variant"] == "probe", (
+        "the on-disk run_record must carry the config_variant field"
+    )
+    assert disk["model"] == "model-a+probe"
+    assert disk["status"] == "completed"
+    assert disk["metrics"] == SUITE_NATIVE_METRICS
+
+
+def test_variant_failure_entries_record_base_model_beside_alias(tmp_path):
+    """A variant sweep's sweep_failures.json entries carry BOTH the alias
+    cell identity (model — matches the cell dir and run_record) and the
+    BASE registry name (base_model), so --from-failures validates and
+    joins on base names (the MED-01 discipline on the variant axis)."""
+    out_root = tmp_path / "sweep-out"
+
+    def failing_executor(model, task, seed, output_root, train_fraction=None):
+        raise subprocess.CalledProcessError(
+            returncode=1, cmd="run_finetune.py", output="boom")
+
+    records = run_sweep.run_matrix(
+        [("model-a+probe", "task-x", 42), ("model-b+probe", "task-z", 42)],
+        out_root, executor=failing_executor, config_variant="probe")
+    assert all(r["status"] == "failed" for r in records)
+    failures = json.loads(
+        (out_root / "sweep_failures.json").read_text(encoding="utf-8"))
+    assert [(f["model"], f["base_model"]) for f in failures] == [
+        ("model-a+probe", "model-a"), ("model-b+probe", "model-b"),
+    ], (
+        "every failure entry must record the alias cell identity AND the "
+        "base registry name (the MED-01 precedent on the variant axis)"
+    )
+
+
+def test_default_executor_receives_config_variant(tmp_path, monkeypatch):
+    """run_matrix's DEFAULT executor path threads the variant through to
+    the real launcher: the captured (never-executed) subprocess argv
+    carries the variant composition — and the sweep_flags config_variant
+    entry (recorded for the manifest merge) cannot collide with the
+    explicit partial binding."""
+    captured = _capturing_launcher(monkeypatch)
+    records = run_sweep.run_matrix(
+        [("model-a+probe", "task-x", 42)], tmp_path / "out",
+        config_variant="probe", sweep_flags={"config_variant": "probe"})
+    argv = captured["argv"]
+    assert flag_value(argv, "--config-variant") == "probe"
+    assert flag_value(argv, "--save_model_name") == "model-a+probe"
+    assert flag_value(argv, "--target_model") == "model-a"
+    assert records[0]["config_variant"] == "probe"
+
+
+def test_manifest_records_config_variant_when_flag_present(
+        tmp_path, monkeypatch):
+    """The D-13 discipline on the variant axis: a PRESENT
+    --config-variant merges into every manifest cell (dry-run AND
+    executed runs); without the flag no cell carries the key (locked
+    above by test_variant_absent_is_byte_identical_to_today)."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--config-variant", "curve",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"]
+    for cell in manifest["cells"]:
+        assert cell["config_variant"] == "curve"
+        assert set(cell) == {
+            "model", "task", "seed", "status", "output_dir",
+            "config_variant",
+        }, "only the PRESENT variant flag joins the manifest cell"
+
+    # The executed-run manifest merges the same way via sweep_flags (a
+    # fake-executor run_matrix call — the
+    # test_run_record_untouched_by_sweep_flags idiom).
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text("{}", encoding="utf-8")
+
+    real_root = tmp_path / "real-out"
+    run_sweep.run_matrix(
+        [("model-a+curve", "task-x", 42)], real_root,
+        executor=fake_executor, config_variant="curve",
+        sweep_flags={"config_variant": "curve"})
+    real_manifest = json.loads(
+        (real_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert real_manifest["cells"][0]["config_variant"] == "curve"
+    assert real_manifest["cells"][0]["model"] == "model-a+curve"
+
+
+@pytest.mark.parametrize("variant,peft_mode", [
+    ("probe", "lora"), ("probe", "ia3"),
+    ("head", "lora"), ("head", "ia3"),
+    ("curve", "lora"), ("curve", "ia3"),
+])
+def test_cli_config_variant_refuses_peft_collect_all(
+        tmp_path, monkeypatch, variant, peft_mode):
+    """Every variant x peft combination exits non-zero at sweep start
+    naming BOTH flags (collect-all) — the driver-side front line; the
+    child's own probe x peft refusal is the backstop, not the first
+    defense. Two alias suffixes cannot both name one cell."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", "42",
+            "--dry-run",
+            "--config-variant", variant,
+            "--peft", peft_mode,
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert f"--config-variant {variant}" in message, (
+        "the refusal must name the variant flag and its value"
+    )
+    assert f"--peft {peft_mode}" in message, (
+        "the refusal must name the peft flag and its value"
+    )
+    assert not out_root.exists(), (
+        "the refusal must abort before any output is written"
+    )
+
+
+def test_from_failures_recovers_variant_sweep_alias_cells(
+        tmp_path, monkeypatch):
+    """--from-failures joins on BASE names under a variant sweep:
+    entries carrying the alias model + base_model re-enumerate the
+    failed pairs' cells under the re-run's own --config-variant alias
+    (the MED-01 recovery on the variant axis)."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a+probe", "base_model": "model-a",
+         "task": "task-x", "seed": 42, "output_dir": "x",
+         "error": "boom"},
+        {"model": "model-b+probe", "base_model": "model-b",
+         "task": "task-z", "seed": 43, "output_dir": "y",
+         "error": "boom"},
+    ])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--config-variant", "probe",
+        "--from-failures", str(failures),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert _manifest_cells(out_root) == [
+        ("model-a+probe", "task-x", 42), ("model-a+probe", "task-x", 43),
+        ("model-b+probe", "task-z", 42), ("model-b+probe", "task-z", 43),
+    ], (
+        "a probe manifest recovered with --config-variant probe must "
+        "re-enumerate exactly the failed alias cells across every "
+        "requested seed"
+    )
+
+
+def test_base_model_name_strips_variant_suffixes():
+    """base_model_name re-derives the BASE registry name from a variant
+    alias: probe/curve/head suffix strips; head on the frozen pair is a
+    no-op (no suffix was added); each axis strips independently and a
+    suffix that is not present is never invented."""
+    assert run_sweep.base_model_name(
+        "model-a+probe", config_variant="probe") == "model-a"
+    assert run_sweep.base_model_name(
+        "model-a+curve", config_variant="curve") == "model-a"
+    assert run_sweep.base_model_name(
+        "model-a+head", config_variant="head") == "model-a"
+    # The frozen pair never gains a +head suffix, so the strip is a no-op.
+    assert run_sweep.base_model_name(
+        "evo2_1b_base", config_variant="head") == "evo2_1b_base"
+    assert run_sweep.base_model_name(
+        "megaDNA_updated", config_variant="head") == "megaDNA_updated"
+    # Identity under no axes; each axis strips on its own (the axes are
+    # disjoint by the composition refusal); removesuffix never invents a
+    # suffix, so a base-name cell under a variant sweep (the frozen-pair
+    # case) survives the strip.
+    assert run_sweep.base_model_name("model-a") == "model-a"
+    assert run_sweep.base_model_name("model-a+lora", "lora") == "model-a"
+    assert run_sweep.base_model_name(
+        "model-a", "none", "probe") == "model-a"
