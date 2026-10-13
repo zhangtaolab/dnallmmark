@@ -29,6 +29,7 @@ and stdlib-only):
 import re
 import threading
 from pathlib import Path
+from typing import ClassVar
 
 from rich.text import Text
 from textual.widgets import Checkbox, Input, SelectionList, Static
@@ -1510,7 +1511,7 @@ class _GatedConfirmLauncher(FakeLauncherService):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.gate: "threading.Event | None" = None
+        self.gate: threading.Event | None = None
 
     def gate_confirm_data(self, spec):
         if self.gate is not None:
@@ -1527,7 +1528,7 @@ class _GatedPreviewService(FakeRunConfigService):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.gate: "threading.Event | None" = None
+        self.gate: threading.Event | None = None
 
     def preview(self, spec):
         self.preview_calls.append(spec)
@@ -1541,7 +1542,7 @@ class _GatedEnvLauncher(FakeLauncherService):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.gate: "threading.Event | None" = None
+        self.gate: threading.Event | None = None
 
     def env_preflight(self, kernels=None):
         if self.gate is not None:
@@ -1797,7 +1798,8 @@ async def test_b4_dismiss_without_picker_below_degrades_to_plain_pop():
 
     class _BareModal(_PickerReturnModal):
         """The base with only the escape binding (no picker below)."""
-        BINDINGS = [Binding("escape", "dismiss", APP_MODAL_BACK_LABEL)]
+        BINDINGS: ClassVar[list[Binding]] = [
+            Binding("escape", "dismiss", APP_MODAL_BACK_LABEL)]
 
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:

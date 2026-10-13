@@ -608,7 +608,9 @@ class _PickerReturnModal(ModalScreen):
             try:
                 picker = below.query_one("#cfg-picker", PickerList)
                 picker.call_after_refresh(picker.focus)
-            except Exception:  # noqa: BLE001 — wrong screen below (never slot 4): plain pop
+            except Exception:  # noqa: BLE001, S110 — wrong screen below (never slot 4): the
+                # designed blind-except isolation (the run_finetune.py
+                # per-line-noqa precedent) — plain pop, never crash
                 pass
         return awaitable
 
@@ -967,7 +969,7 @@ class RunConfigScreen(Screen):
                 with Horizontal(id="cfg-filter-bar"):
                     yield Label(SEL_FILTER_LABEL, id="cfg-filter-label")
                     yield Input(placeholder=SEL_FILTER_PLACEHOLDER,
-                                id="cfg-filter")
+                                id="cfg-filter", compact=True)
                     yield Label("", id="cfg-filter-count")
                 yield PickerList(id="cfg-picker")
             with VerticalScroll(id="cfg-params-col"):
@@ -976,8 +978,13 @@ class RunConfigScreen(Screen):
                     yield Label(CFG_FIELD_SEEDS,
                                 id="cfg-label-seeds",
                                 classes="cfg-param-label")
+                    # compact=True on every height-1-row Input (the
+                    # selection-filter precedent): a default bordered
+                    # Input is height 3, and the height-1 row clips it
+                    # to its top border — the value row renders
+                    # invisible (the 11-UAT empty-bar bug, 12-03 Rule 1).
                     yield Input(value="42,43,44", id="cfg-input-seeds",
-                                classes="cfg-param-input")
+                                classes="cfg-param-input", compact=True)
                 with Horizontal(classes="cfg-param-row"):
                     yield Label(CFG_FIELD_PEFT, id="cfg-label-peft",
                                 classes="cfg-param-label")
@@ -999,7 +1006,7 @@ class RunConfigScreen(Screen):
                     yield Label(CFG_FIELD_CURVE, id="cfg-label-curve",
                                 classes="cfg-param-label")
                     yield Input(value="", id="cfg-input-curve",
-                                classes="cfg-param-input")
+                                classes="cfg-param-input", compact=True)
                 with Horizontal(classes="cfg-param-row"):
                     yield Label(CFG_FIELD_SUBSET, id="cfg-label-subset",
                                 classes="cfg-param-label")
@@ -1017,12 +1024,12 @@ class RunConfigScreen(Screen):
                     yield Label(CFG_FIELD_EPOCHS, id="cfg-label-epochs",
                                 classes="cfg-param-label")
                     yield Input(value="", id="cfg-input-epochs",
-                                classes="cfg-param-input")
+                                classes="cfg-param-input", compact=True)
                 with Horizontal(classes="cfg-param-row"):
                     yield Label(CFG_FIELD_EBS, id="cfg-label-ebs",
                                 classes="cfg-param-label")
                     yield Input(value="", id="cfg-input-ebs",
-                                classes="cfg-param-input")
+                                classes="cfg-param-input", compact=True)
                 yield Label(CFG_DIRS_TITLE, id="cfg-dirs-title",
                             classes="cfg-section-title")
                 with Horizontal(classes="cfg-param-row"):
@@ -1031,7 +1038,7 @@ class RunConfigScreen(Screen):
                                 classes="cfg-param-label")
                     yield Input(value="./finetuned",
                                 id="cfg-input-output-root",
-                                classes="cfg-param-input")
+                                classes="cfg-param-input", compact=True)
                 yield Label("", id="cfg-adv-output-root", classes="cfg-adv")
                 with Horizontal(classes="cfg-param-row"):
                     yield Label(CFG_FIELD_DATASET_ROOT,
@@ -1039,14 +1046,14 @@ class RunConfigScreen(Screen):
                                 classes="cfg-param-label")
                     yield Input(value="./datasets",
                                 id="cfg-input-dataset-root",
-                                classes="cfg-param-input")
+                                classes="cfg-param-input", compact=True)
                 yield Label("", id="cfg-adv-dataset-root", classes="cfg-adv")
                 with Horizontal(classes="cfg-param-row"):
                     yield Label(CFG_FIELD_CACHE, id="cfg-label-cache",
                                 classes="cfg-param-label")
                     yield Input(value="", placeholder=CFG_CACHE_DEFAULT,
                                 id="cfg-input-cache",
-                                classes="cfg-param-input")
+                                classes="cfg-param-input", compact=True)
                 yield Label("", id="cfg-adv-cache", classes="cfg-adv")
         yield Label("", id="cfg-preview-line")
         yield BottomBar()
