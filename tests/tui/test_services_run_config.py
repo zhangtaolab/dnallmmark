@@ -844,3 +844,170 @@ def test_phrase_matches_every_non_exact_variant_fails(typed):
     prefix (D-07: the typed-phrase gate is spawner-refusal-proof
     because nothing normalizes the operator's input)."""
     assert run_config.phrase_matches(typed, "/data/sweeps/run-a") is False
+
+
+# =====================================================================
+# Lane 3 — run_sweep argv composition (Task 3)
+# =====================================================================
+
+
+def test_compose_argv_defaults_exactly_ten_base_elements():
+    """A defaults spec composes EXACTLY the 10 base elements — absent
+    flags contribute ZERO elements (D-12 absent parity)."""
+    spec = run_config.RunSpec(
+        models=PREVIEW_MODELS, tasks=("GUE__emp_H3",), seeds=(42, 43, 44),
+    )
+    argv = run_config.compose_argv(spec)
+    assert argv == [
+        sys.executable,
+        str(REAL_REGISTRY_DIR / "run_sweep.py"),
+        "--models", "plant-dnabert-6mer,plant-dnagpt-BPE",
+        "--tasks", "GUE__emp_H3",
+        "--seeds", "42,43,44",
+        "--output-root", str((REPO_ROOT / "finetuned").resolve()),
+    ]
+
+
+@pytest.mark.parametrize("flag", [
+    "--peft", "--config-variant", "--curve", "--subset_file",
+    "--num_train_epochs", "--effective_batch_size", "--cache_dir",
+])
+def test_compose_argv_absent_flags_contribute_zero_elements(flag):
+    spec = run_config.RunSpec(models=("m",), tasks=("t",))
+    argv = run_config.compose_argv(spec)
+    assert flag not in argv
+    assert len(argv) == 10
+
+
+def test_compose_argv_full_spec_element_for_element():
+    """Every optional flag present: the argv pinned ELEMENT-FOR-ELEMENT
+    — the [p] modal and the 11-03 launcher consume this argv verbatim,
+    so the order is pinned exactly once, here. (The spec carries both
+    alias axes only to exercise the order; composition validation —
+    not the mechanical composer — refuses the variant x peft combo,
+    and run_sweep re-refuses at start.)"""
+    spec = run_config.RunSpec(
+        models=("m1", "m2"), tasks=("t1",), seeds=(42,),
+        peft="lora", config_variant="probe",
+        curve_fractions=(0.25, 0.5),
+        subset_file="./subs/fairness.json",
+        num_train_epochs=1, effective_batch_size=16,
+        output_root="./sweeps/run-x",
+        cache_dir="./hf-cache",
+    )
+    argv = run_config.compose_argv(spec)
+    assert argv == [
+        sys.executable,
+        str(REAL_REGISTRY_DIR / "run_sweep.py"),
+        "--models", "m1,m2",
+        "--tasks", "t1",
+        "--seeds", "42",
+        "--output-root", str((REPO_ROOT / "sweeps" / "run-x").resolve()),
+        "--peft", "lora",
+        "--config-variant", "probe",
+        "--curve", "0.25,0.5",
+        "--subset_file", str((REPO_ROOT / "subs" / "fairness.json").resolve()),
+        "--num_train_epochs", "1",
+        "--effective_batch_size", "16",
+        "--cache_dir", str((REPO_ROOT / "hf-cache").resolve()),
+    ]
+
+
+def test_compose_argv_is_a_list_of_str():
+    """LIST argv, every element a str (the phase-10/D-06 discipline —
+    values never become flags through a shell)."""
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",), peft="ia3",
+        subset_file="/abs/subset.json", num_train_epochs=2,
+    )
+    argv = run_config.compose_argv(spec)
+    assert isinstance(argv, list)
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--peft") == "ia3"
+    assert flag_value(argv, "--subset_file") == "/abs/subset.json"
+    assert flag_value(argv, "--num_train_epochs") == "2"
+
+
+def test_compose_argv_absolute_resolution_against_repo_root():
+    """Relative values in, absolute out — output_root/subset/cache all
+    resolve against REPO_ROOT (D-14: the subprocess's own CWD
+    resolution can never diverge)."""
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",),
+        output_root="./finetuned",
+        subset_file="./fairness.json",
+        cache_dir="./cache",
+    )
+    argv = run_config.compose_argv(spec)
+    assert flag_value(argv, "--output-root") == str(
+        (REPO_ROOT / "finetuned").resolve())
+    assert flag_value(argv, "--subset_file") == str(
+        (REPO_ROOT / "fairness.json").resolve())
+    assert flag_value(argv, "--cache_dir") == str(
+        (REPO_ROOT / "cache").resolve())
+
+
+def test_compose_argv_absolute_overrides_pass_through():
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",),
+        output_root="/data/sweeps/run-y",
+        subset_file="/data/fairness.json",
+        cache_dir="/data/hf-cache",
+    )
+    argv = run_config.compose_argv(spec)
+    assert flag_value(argv, "--output-root") == "/data/sweeps/run-y"
+    assert flag_value(argv, "--subset_file") == "/data/fairness.json"
+    assert flag_value(argv, "--cache_dir") == "/data/hf-cache"
+
+
+def test_compose_argv_empty_models_raises_defensively():
+    spec = run_config.RunSpec(models=(), tasks=("t",))
+    with pytest.raises(ValueError):
+        run_config.compose_argv(spec)
+
+
+def test_compose_argv_empty_tasks_raises_defensively():
+    spec = run_config.RunSpec(models=("m",), tasks=())
+    with pytest.raises(ValueError):
+        run_config.compose_argv(spec)
+
+
+def test_compose_from_failures_argv_shape():
+    """The [r] re-run path (D-11): --from-failures with the RESOLVED
+    failures path, seeds, absolute output root, present-only
+    peft/variant pairs, and any extra elements appended last. A
+    from-failures enumeration can never be the full matrix by
+    construction — never subject to the E2' typed gate."""
+    argv = run_config.compose_from_failures_argv(
+        "/data/sweeps/run-z/sweep_failures.json",
+        seeds=(42, 43, 44),
+        output_root="./sweeps/run-z",
+        peft="lora",
+        config_variant="probe",
+        extra=["--dry-run"],
+    )
+    assert argv == [
+        sys.executable,
+        str(REAL_REGISTRY_DIR / "run_sweep.py"),
+        "--from-failures", "/data/sweeps/run-z/sweep_failures.json",
+        "--seeds", "42,43,44",
+        "--output-root", str((REPO_ROOT / "sweeps" / "run-z").resolve()),
+        "--peft", "lora",
+        "--config-variant", "probe",
+        "--dry-run",
+    ]
+
+
+def test_compose_from_failures_argv_defaults_eight_elements():
+    argv = run_config.compose_from_failures_argv(
+        "./sweep_failures.json", seeds=(42,), output_root="/data/r",
+    )
+    assert argv == [
+        sys.executable,
+        str(REAL_REGISTRY_DIR / "run_sweep.py"),
+        "--from-failures", str((REPO_ROOT / "sweep_failures.json").resolve()),
+        "--seeds", "42",
+        "--output-root", "/data/r",
+    ]
+    assert "--peft" not in argv
+    assert "--config-variant" not in argv
