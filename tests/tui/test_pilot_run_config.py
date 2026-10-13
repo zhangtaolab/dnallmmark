@@ -27,6 +27,7 @@ and stdlib-only):
 """
 
 import re
+import threading
 from pathlib import Path
 
 from rich.text import Text
@@ -35,7 +36,11 @@ from textual.widgets import Checkbox, Input, SelectionList, Static
 import tui.screens.run_config as run_config_screen_module
 from tui.app import DnallmMarkTui
 from tui.screens.nav import BottomBar, TopMenuBar
-from tui.screens.run_config import PickerEntries, RunConfigScreen
+from tui.screens.run_config import (
+    PickerEntries,
+    PickerList,
+    RunConfigScreen,
+)
 from tui.screens.selection import PresetMenu, SelectionData
 from tui.services import registries as registries_service
 from tui.services import run_config as run_config_service
@@ -1450,3 +1455,341 @@ async def test_launch_success_auto_navigates_to_monitor_attached():
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, MonitorScreen)
+
+
+# =====================================================================
+# Delta B (Phase 12, 12-03) — modal dismiss returns focus to the picker
+#
+# The 11-UAT advisory #1 trap: Textual restores the PRE-MODAL focused
+# widget on modal pop, and the gate pipeline pushes its modals from
+# async worker messages — so the operator can be typing in a params
+# Input when the modal lands. B1: after ANY slot-4 modal dismisses
+# (esc / cancel / confirm / submit paths), app.focused is the
+# #cfg-picker PickerList. B2: digits navigate immediately after. B3:
+# the filter-Enter precedent is unchanged. B4: defensive degrade when
+# the screen below carries no picker.
+# =====================================================================
+
+def _assert_focused_picker(app, screen):
+    """B1's single assertion: focus IS the picker (never an Input)."""
+    picker = screen.query_one("#cfg-picker", PickerList)
+    assert app.focused is picker, (
+        f"B1: focus must return to #cfg-picker (is {app.focused!r})"
+    )
+    return picker
+
+
+async def _settle_dismiss(pilot):
+    """Await the pop + the call_after_refresh focus callback."""
+    await pilot.pause()
+    await pilot.pause()
+
+
+class _GatedConfirmLauncher(FakeLauncherService):
+    """The confirm-data worker gated by a test Event (the deterministic
+    trap: the modal pushes from the worker while a params Input holds
+    focus — the UAT deadlock shape, never a timed sleep)."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.gate: "threading.Event | None" = None
+
+    def gate_confirm_data(self, spec):
+        if self.gate is not None:
+            self.gate.wait(timeout=10)
+        return super().gate_confirm_data(spec)
+
+
+class _GatedPreviewService(FakeRunConfigService):
+    """The enumeration worker's preview leg gated (same trap shape).
+
+    The gate arms explicitly BEFORE the [enter] press so the mount-time
+    preview worker runs ungated.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.gate: "threading.Event | None" = None
+
+    def preview(self, spec):
+        self.preview_calls.append(spec)
+        if self.gate is not None:
+            self.gate.wait(timeout=10)
+        return FakeRunConfigService.preview(self, spec)
+
+
+class _GatedEnvLauncher(FakeLauncherService):
+    """The env-preflight worker gated (same trap shape)."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.gate: "threading.Event | None" = None
+
+    def env_preflight(self, kernels=None):
+        if self.gate is not None:
+            self.gate.wait(timeout=10)
+        return super().env_preflight(kernels)
+
+
+def _trap_run_service():
+    """The gate-viable spec fixture (1 model x 1 task x 3 seeds)."""
+    return FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+
+
+async def _park_focus_in_params_input(pilot, app):
+    """Park screen focus in the seeds Input (the trap surface)."""
+    seeds = app.screen.query_one("#cfg-input-seeds", Input)
+    seeds.focus()
+    await pilot.pause()
+    assert app.focused is seeds
+    return seeds
+
+
+async def test_b1_preview_modal_esc_refocuses_picker():
+    """[p] from a params-pane focus surface; esc -> the picker (B1)."""
+    app = _app(run_service=_trap_run_service())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        from tui.screens.run_config import PreviewModal
+
+        # park focus on a params-pane row (pre-modal focus != picker)
+        peft_row = screen.query_one("#cfg-value-peft")
+        peft_row.focus()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        assert isinstance(app.screen, PreviewModal)
+        await pilot.press("escape")
+        await _settle_dismiss(pilot)
+        _assert_focused_picker(app, screen)
+
+
+async def test_b1_choice_modal_esc_and_pick_refocuses_picker():
+    """The RadioSet choice modal: BOTH dismiss paths (esc + the
+    radio-pick) land on the picker (B1)."""
+    app = _app(run_service=_trap_run_service())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        from tui.screens.run_config import ChoiceModal
+
+        peft_row = screen.query_one("#cfg-value-peft")
+        # esc path
+        peft_row.focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, ChoiceModal)
+        await pilot.press("escape")
+        await _settle_dismiss(pilot)
+        _assert_focused_picker(app, screen)
+        # the radio-pick path (dismiss via on_radio_set_changed)
+        peft_row.focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, ChoiceModal)
+        await pilot.press("down")
+        await pilot.press("enter")
+        await pilot.pause()
+        _assert_focused_picker(app, screen)
+
+
+async def test_b1_gate_confirm_esc_refocuses_picker_digits_navigate():
+    """THE UAT deadlock reproduction: the confirm modal pushed from the
+    gated worker while the seeds Input held focus; esc lands on the
+    picker (B1) and the very next digit navigates (B2)."""
+    release = threading.Event()
+    launcher = _GatedConfirmLauncher(summary=GateSummary(
+        models=1, tasks=1, seeds=3, cells=3, output_root="./finetuned",
+        is_e2x=False, expected_phrase="finetuned"))
+    app = _app(run_service=_trap_run_service(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        from tui.screens.data_manager import DataManagerScreen
+        from tui.screens.selection import ConfirmModal
+
+        launcher.gate = release          # arm the trap (modal not yet up)
+        await pilot.press("enter")       # the gate pipeline starts
+        await _park_focus_in_params_input(pilot, app)
+        release.set()                    # the confirm modal lands NOW
+        await _settle(pilot, app, rounds=4)
+        assert isinstance(app.screen, ConfirmModal)
+        await pilot.press("escape")
+        await _settle_dismiss(pilot)
+        _assert_focused_picker(app, screen)
+        # B2: the nav digit is consumed by the shell, not the Input
+        await pilot.press("3")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, DataManagerScreen), (
+            "B2: after a modal dismiss the digit keys must navigate"
+        )
+
+
+async def test_b1_gate_problems_esc_refocuses_picker():
+    """The problems modal from the gated enumeration worker; esc ->
+    the picker (B1)."""
+    release = threading.Event()
+    run_service = _GatedPreviewService()   # empty spec -> problems
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        from tui.screens.run_config import ProblemsModal
+
+        run_service.gate = release
+        await pilot.press("enter")
+        await _park_focus_in_params_input(pilot, app)
+        release.set()
+        await _settle(pilot, app, rounds=4)
+        assert isinstance(app.screen, ProblemsModal)
+        await pilot.press("escape")
+        await _settle_dismiss(pilot)
+        _assert_focused_picker(app, screen)
+
+
+async def test_b1_env_block_esc_refocuses_picker():
+    """The env-block refusal from the gated env worker; esc -> the
+    picker (B1)."""
+    release = threading.Event()
+    launcher = _GatedEnvLauncher(preflight=EnvPreflight(
+        can_launch=False,
+        reasons=("FAIL: python_kernel — torch missing",),
+        failed_kernels=("python_kernel",)))
+    app = _app(run_service=_trap_run_service(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        from tui.screens.run_config import EnvBlockModal
+
+        launcher.gate = release
+        await pilot.press("enter")
+        await _park_focus_in_params_input(pilot, app)
+        release.set()
+        await _settle(pilot, app, rounds=4)
+        assert isinstance(app.screen, EnvBlockModal)
+        await pilot.press("escape")
+        await _settle_dismiss(pilot)
+        _assert_focused_picker(app, screen)
+
+
+async def test_b1_e2x_phrase_modal_esc_refocuses_picker():
+    """The E2' typed-phrase modal (its Input takes focus on mount);
+    esc -> the picker (B1)."""
+    release = threading.Event()
+    launcher = _GatedConfirmLauncher(summary=GateSummary(
+        models=62, tasks=50, seeds=3, cells=9300,
+        output_root="./finetuned", is_e2x=True,
+        expected_phrase="finetuned"))
+    app = _app(run_service=_trap_run_service(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        from tui.screens.run_config import E2PhraseModal
+
+        launcher.gate = release
+        await pilot.press("enter")
+        await _park_focus_in_params_input(pilot, app)
+        release.set()
+        await _settle(pilot, app, rounds=4)
+        assert isinstance(app.screen, E2PhraseModal)
+        assert app.focused is app.screen.query_one("#cfg-e2-input", Input)
+        await pilot.press("escape")
+        await _settle_dismiss(pilot)
+        _assert_focused_picker(app, screen)
+
+
+async def test_b1_e2x_submit_path_refocuses_picker():
+    """The E2' matched-enter submit path (dismiss via
+    on_input_submitted): a FAILED spawn keeps the app on slot 4 (no
+    D-13 auto-nav) so the focus landing is assertable (B1)."""
+    release = threading.Event()
+    launcher = _GatedConfirmLauncher(
+        summary=GateSummary(
+            models=62, tasks=50, seeds=3, cells=9300,
+            output_root="./finetuned", is_e2x=True,
+            expected_phrase="finetuned"),
+        outcomes=[LaunchOutcome(
+            spawned=False, root="", tee_path=None, error="boom")])
+    app = _app(run_service=_trap_run_service(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        from tui.screens.run_config import E2PhraseModal
+
+        launcher.gate = release
+        await pilot.press("enter")
+        await _park_focus_in_params_input(pilot, app)
+        release.set()
+        await _settle(pilot, app, rounds=4)
+        assert isinstance(app.screen, E2PhraseModal)
+        for char in "finetuned":
+            await pilot.press(char)
+        await pilot.pause()
+        await pilot.press("enter")   # the matched submit: dismiss + launch
+        await _settle(pilot, app, rounds=3)
+        assert isinstance(app.screen, RunConfigScreen), (
+            "the failed spawn keeps the console on slot 4"
+        )
+        _assert_focused_picker(app, screen)
+
+
+async def test_b2_digit_navigates_immediately_after_preview_dismiss():
+    """B2 standalone: right after the [p] esc, digit 3 switches the
+    screen (the nav shell owns the key)."""
+    app = _app(run_service=_trap_run_service())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        from tui.screens.data_manager import DataManagerScreen
+
+        await pilot.press("p")
+        await pilot.pause()
+        await pilot.press("escape")
+        await _settle_dismiss(pilot)
+        await pilot.press("3")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, DataManagerScreen)
+
+
+async def test_b3_filter_enter_returns_to_picker_unchanged():
+    """B3: the filter Input's Enter-returns-to-picker precedent is
+    unchanged (run_config.py:1388-1389 — the pattern the fix rides)."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        await pilot.press("slash")
+        await pilot.pause()
+        assert app.focused is screen.query_one("#cfg-filter", Input)
+        await pilot.press("enter")
+        await pilot.pause()
+        _assert_focused_picker(app, screen)
+
+
+async def test_b4_dismiss_without_picker_below_degrades_to_plain_pop():
+    """B4 defensive edge: the base over a screen with no #cfg-picker
+    (never slot 4 — a pushed-from-elsewhere modal) degrades to a plain
+    pop, never crashes."""
+    from textual.binding import Binding
+
+    from tui.screens.env_check import EnvCheckScreen
+    from tui.screens.run_config import _PickerReturnModal
+    from tui.strings import APP_MODAL_BACK_LABEL
+
+    class _BareModal(_PickerReturnModal):
+        """The base with only the escape binding (no picker below)."""
+        BINDINGS = [Binding("escape", "dismiss", APP_MODAL_BACK_LABEL)]
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()   # booted on the env-check screen
+        assert isinstance(app.screen, EnvCheckScreen)
+        app.push_screen(_BareModal())
+        await pilot.pause()
+        assert isinstance(app.screen, _BareModal)
+        await pilot.press("escape")
+        await _settle_dismiss(pilot)
+        assert isinstance(app.screen, EnvCheckScreen), (
+            "the override degrades to a plain pop when no picker below"
+        )
