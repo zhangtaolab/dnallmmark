@@ -88,9 +88,14 @@ ENV_LAST_CHECK_LINE = "上次检查: {checked_at}"
 ENV_VERDICT_PASS = "✓ 环境就绪（可启动）"
 
 # Gate verdict — critical fail (ENV-03): names the failing CRITICAL kernel
-# ids (English verbatim, main() order) with the Phase-11 blocking note.
+# ids (English verbatim, main() order) with the blocking note. Amended
+# 11-05 per the 11-UI-SPEC Existing-Surface Amendments: the blocking is
+# real this phase (the run-config launch gate consumes the verdict), so
+# the value retires the 08 contract's future tense — same constant name,
+# same {kernel_names} field (the 08 contract's own note said the wiring
+# lands in Phase 11).
 ENV_VERDICT_CRITICAL_FAIL = (
-    "✗ 关键项未通过: {kernel_names} — 启动流程将被阻断（阻断接线于 Phase 11）"
+    "✗ 关键项未通过: {kernel_names} — 启动已被运行配置启动门阻断"
 )
 
 # Missing-data routing (ENV-03/SEL-04; amended 10-03 per the 10-UI-SPEC

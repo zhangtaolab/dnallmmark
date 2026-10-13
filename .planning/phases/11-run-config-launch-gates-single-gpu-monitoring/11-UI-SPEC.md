@@ -209,7 +209,7 @@ dirs persist to XDG (atomic writes, `settings.py` service, loaded on mount).
   alias `保存名: {model}+{variant}`; the head exception note; the probe hint
   `⚠ probe 不可用: {models}（专用 loader, 冻结不生效）` — rendered when
   变体=probe and ANY picker row (not only marked rows) is in the frozen
-  `PROBE_INELIGIBLE` list imported from `pipeline/run_finetune.py` (data, 7
+  `PROBE_INELIGIBLE` list imported from `pipeline/run_finetune.py` (data, 9
   names, never duplicated in strings.py).
 - **Dirs section** (CFG-02/D-14): a 1-row section divider `── 目录 ──` (the
   full-width `─` rule + label), then 输出根 / 数据集根 / 模型缓存 Input rows.
