@@ -3289,7 +3289,9 @@ from tui import strings as tui_strings
 
 #: The complete expected DL_ inventory (the screen chrome, the Zenodo
 #: four states + toasts/labels, the keycaps, the derived gap-fillers,
-#: the full presence view pair DCL-03/261014-dcl added).
+#: the full presence view pair DCL-03/261014-dcl added, and the
+#: datasets-primary rework additions MLC-03/261014-mlc: the full-list
+#: download column + its three status words, and the w wizard keycap).
 EXPECTED_DL_CONSTANTS = (
     "DL_SCREEN_TITLE", "DL_MISSING_TITLE", "DL_MISSING_COL_KEY",
     "DL_MISSING_COL_ROWS", "DL_MISSING_EMPTY", "DL_PRESENCE_SUMMARY",
@@ -3300,6 +3302,8 @@ EXPECTED_DL_CONSTANTS = (
     "DL_UNKNOWN_TOAST",
     "DL_ENQUEUE_LABEL", "DL_RETRY_LABEL", "DL_CANCEL_LABEL",
     "DL_ENQUEUE_ALL_LABEL",
+    "DL_COL_DOWNLOAD", "DL_FULL_PRESENT", "DL_FULL_MISSING",
+    "DL_FULL_UNKNOWN", "DL_WIZARD_LABEL",
 )
 
 #: The complete expected QUEUE_ inventory (title/columns/empty, the
@@ -3318,15 +3322,17 @@ EXPECTED_QUEUE_CONSTANTS = (
     "QUEUE_CLI_UNAVAILABLE", "QUEUE_PERSIST_FAILED_TOAST",
     "QUEUE_PERSIST_DRIVER_TOAST", "QUEUE_PROGRESS_INDETERMINATE",
     "QUEUE_CONFIRM_CANCEL_PENDING", "QUEUE_CONFIRM_CANCEL_DOWNLOADING",
-    "QUEUE_REAUDIT_LABEL",
+    "QUEUE_REAUDIT_LABEL", "QUEUE_FLIP_TOAST_MODEL",
 )
 
-#: The selection-screen d-enqueue amendments (D-14) + the models-column
-#: presence pair (DCL-02, 261014-dcl) — this file is the established
-#: SEL_ registration site (the one-directional defined-check covers
-#: them).
+#: The selection-screen d amendments (D-14) + the models-column presence
+#: pair (DCL-02, 261014-dcl) — this file is the established SEL_
+#: registration site (the one-directional defined-check covers them).
+#: SEL_ENQUEUE_LABEL was RETIRED at 261014-mlc (slot 2's d is the model
+#: download — its own label); SEL_ENQUEUE_PRESENT_TOAST stays (the
+#: slot-3 full-list present-row toast).
 EXPECTED_SEL_CONSTANTS = (
-    "SEL_ENQUEUE_LABEL", "SEL_ENQUEUE_PRESENT_TOAST",
+    "SEL_ENQUEUE_PRESENT_TOAST",
     "SEL_MODEL_PRESENCE_PRESENT", "SEL_MODEL_PRESENCE_MISSING",
 )
 

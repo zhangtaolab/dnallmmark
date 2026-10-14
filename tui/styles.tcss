@@ -315,17 +315,13 @@ WizardModal {
     height: 5;      /* fixed: the title row + header + ~3 visible rows */
 }
 
-#dl-missing-title-row {
-    height: 1;      /* row token: the missing title + the Zenodo line */
+#dl-missing-title {
+    height: 1;      /* row token: the primary full-list title */
     padding: 0 1;   /* 1-cell status-line exception */
 }
 
-#dl-missing-title {
-    width: auto;
-}
-
 #dl-zenodo-line {
-    width: 1fr;                /* the right-aligned D-12 entry line */
+    width: 1fr;                /* the right-aligned D-12 alternate line */
     text-align: right;
     color: $text-muted;        /* probing/not-public render dim */
 }
@@ -339,9 +335,13 @@ WizardModal {
     border-top: solid $border;  /* 1-cell border exception — separator */
 }
 
-#dl-queue-title {
-    height: 1;      /* row token */
+#dl-queue-title-row {
+    height: 1;      /* row token: the queue title + the Zenodo line */
     padding: 0 1;   /* 1-cell status-line exception */
+}
+
+#dl-queue-title {
+    width: auto;
 }
 
 #dl-queue-banners {

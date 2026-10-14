@@ -29,10 +29,11 @@ import asyncio
 import re
 import threading
 from pathlib import Path
+from typing import ClassVar
 
 from env_smoke import CheckResult  # top-level module (pipeline/ sys.path root)
 from rich.text import Text
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 
 from tui.app import DnallmMarkTui
 from tui.screens.data_manager import DataManagerScreen
@@ -427,6 +428,9 @@ from tui.services.download_queue import (
 from tui.strings import (
     DL_BUNDLE_TASK_NAME,
     DL_DISABLED_TOAST,
+    DL_FULL_MISSING,
+    DL_FULL_PRESENT,
+    DL_FULL_UNKNOWN,
     DL_MISSING_EMPTY,
     DL_MISSING_TITLE,
     DL_PRESENCE_SUMMARY,
@@ -462,6 +466,7 @@ from tui.strings import (
     QUEUE_TOAST_ALREADY_QUEUED,
     QUEUE_TOAST_ENQUEUED,
     QUEUE_TOAST_ENQUEUED_ALL,
+    SEL_ENQUEUE_PRESENT_TOAST,
 )
 
 #: The 68-char-key backstop fixture (the UAT lesson: the longest
@@ -650,7 +655,10 @@ def _missing_table(screen):
 # ---------------------------------------------------------------------
 
 async def test_both_panes_render_from_fake_data():
-    """The standard fixture: 3 missing rows + 2 queue rows + titles."""
+    """The standard fixture, FULL LIST PRIMARY (MLC-03): one row per
+    PresenceRow with the 下载 cell + declared totals; a LIVE queue entry
+    overlays its state word in the download cell; the queue pane renders
+    its two rows under the queue title."""
     service = FakeDataManagerService(
         missing=_std_missing(),
         entries=(_queue_entry("GUE__emperven_H3"),
@@ -662,11 +670,30 @@ async def test_both_panes_render_from_fake_data():
         screen = app.screen
         assert isinstance(screen, DataManagerScreen)
 
+        # the PRIMARY full list: five official keys, download cell first
         missing = _missing_table(screen)
-        assert missing.row_count == 3
-        first = _row(missing, 0)
-        assert first[0] == "✗ GUE__emp_H3"
-        assert first[1] == "7,349", "thousands separators, English digits"
+        rows = _std_presence_rows()
+        assert missing.row_count == len(rows)
+        assert [_row(missing, index)[0] for index in range(len(rows))] == [
+            "✓ GUE__emp_H3",
+            "✗ mouse__DMS",
+            "✗ plant__vista-100m",
+            "✓ GUE__EPI_GM12878",
+            "◌ ghost__drift",
+        ]
+        # the download cells: presence words, with the LIVE downloading
+        # entry overlaying its queue state word (the screen-side join)
+        assert _row(missing, 0)[1] == DL_FULL_PRESENT
+        assert _row(missing, 1)[1] == QUEUE_STATE_DOWNLOADING, (
+            "a live queue entry overlays its state word in the download "
+            "cell"
+        )
+        assert _row(missing, 2)[1] == DL_FULL_MISSING
+        assert _row(missing, 3)[1] == DL_FULL_PRESENT
+        assert _row(missing, 4)[1] == DL_FULL_UNKNOWN
+        assert _row(missing, 0)[2] == "7,349", (
+            "thousands separators, English digits"
+        )
 
         queue = _queue_table(screen)
         assert queue.row_count == 2
@@ -675,7 +702,7 @@ async def test_both_panes_render_from_fake_data():
             "GUE__emperven_H3", "mouse__DMS"]
 
         assert _label_text(screen, "#dl-missing-title") == (
-            DL_MISSING_TITLE.format(n=3))
+            DL_PRESENCE_TITLE.format(n=len(rows)))
         assert _label_text(screen, "#dl-queue-title") == (
             QUEUE_TITLE.format(n=2))
         assert _label_text(screen, "#dl-screen-title") == DL_SCREEN_TITLE
@@ -684,46 +711,45 @@ async def test_both_panes_render_from_fake_data():
 
 
 # ---------------------------------------------------------------------
-# The v toggle (DCL-03, 261014-dcl): missing table <-> full presence view
+# The v toggle (MLC-03, 261014-mlc — the DCL-03 direction flipped):
+# the full list is PRIMARY; the missing-only table is the v alternate
 # ---------------------------------------------------------------------
 
-async def test_v_toggles_to_the_full_presence_view():
-    """v: the missing pane flips to the full view — one row per
-    PresenceRow with the status glyph prefix on the key cell and the
-    declared total right-aligned; the title swaps to DL_PRESENCE_TITLE."""
+async def test_v_toggles_to_the_missing_only_view():
+    """v: the PRIMARY full list flips to the missing-only alternate —
+    one row per missing key with the ✗-prefixed key and the declared
+    total; the title swaps to DL_MISSING_TITLE."""
     service = FakeDataManagerService(missing=_std_missing())
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_screen(pilot, app, service)
         screen = app.screen
         table = _missing_table(screen)
-        # the missing view first: 3 rows, the ✗-prefixed keys
-        assert table.row_count == 3
+        # the full list first: 5 rows (the primary pane)
+        rows = _std_presence_rows()
+        assert table.row_count == len(rows)
         assert _label_text(screen, "#dl-missing-title") == (
-            DL_MISSING_TITLE.format(n=3))
+            DL_PRESENCE_TITLE.format(n=len(rows)))
 
         await pilot.press("v")
         await pilot.pause()
 
-        rows = _std_presence_rows()
-        assert table.row_count == len(rows)
-        assert [_row(table, index)[0] for index in range(len(rows))] == [
-            "✓ GUE__emp_H3",
+        assert table.row_count == 3
+        assert [_row(table, index)[0] for index in range(3)] == [
+            "✗ GUE__emp_H3",
             "✗ mouse__DMS",
             "✗ plant__vista-100m",
-            "✓ GUE__EPI_GM12878",
-            "◌ ghost__drift",
         ]
         assert _row(table, 0)[1] == "7,349", (
             "declared_total renders right-aligned with separators"
         )
         assert _label_text(screen, "#dl-missing-title") == (
-            DL_PRESENCE_TITLE.format(n=len(rows)))
+            DL_MISSING_TITLE.format(n=3))
 
 
-async def test_v_twice_restores_the_missing_view():
-    """Toggling back restores the missing table byte-for-byte (title,
-    row count, and the ✗-prefixed keys)."""
+async def test_v_twice_restores_the_full_list():
+    """Toggling back restores the PRIMARY full list byte-for-byte (title,
+    row count, glyphs, download cells)."""
     service = FakeDataManagerService(missing=_std_missing())
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
@@ -736,11 +762,61 @@ async def test_v_twice_restores_the_missing_view():
         await pilot.press("v")
         await pilot.pause()
 
-        assert table.row_count == 3
-        assert _row(table, 0)[0] == "✗ GUE__emp_H3"
-        assert _row(table, 0)[1] == "7,349"
+        rows = _std_presence_rows()
+        assert table.row_count == len(rows)
+        assert _row(table, 0)[0] == "✓ GUE__emp_H3"
+        assert _row(table, 0)[1] == DL_FULL_PRESENT
         assert _label_text(screen, "#dl-missing-title") == (
-            DL_MISSING_TITLE.format(n=3))
+            DL_PRESENCE_TITLE.format(n=len(rows)))
+
+
+async def test_full_list_queue_state_overlays_every_live_word():
+    """The screen-side join (MLC-03): every live (non-done) queue state
+    overlays its state word in the full-list download cell — pending /
+    downloading / failed / mismatch — while done entries read through
+    the merged presence (the flip's own moment)."""
+    overlay_rows = (
+        PresenceRow(key="k-pending",
+                    status=registries_service.PRESENCE_MISSING,
+                    declared_total=1),
+        PresenceRow(key="k-downloading",
+                    status=registries_service.PRESENCE_MISSING,
+                    declared_total=2),
+        PresenceRow(key="k-failed",
+                    status=registries_service.PRESENCE_MISSING,
+                    declared_total=3),
+        PresenceRow(key="k-mismatch",
+                    status=registries_service.PRESENCE_MISSING,
+                    declared_total=4),
+        PresenceRow(key="k-done",
+                    status=registries_service.PRESENCE_PRESENT,
+                    declared_total=5),
+    )
+    service = FakeDataManagerService(
+        presence_rows=overlay_rows,
+        entries=(
+            _queue_entry("k-pending"),
+            _queue_entry("k-downloading", "downloading"),
+            _queue_entry("k-failed", "failed"),
+            _queue_entry("k-mismatch", "mismatch"),
+            _queue_entry("k-done", "done", reconcile=_reconcile(
+                measured={"train": 5})),
+        ))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        table = _missing_table(app.screen)
+        cells = {key: _row(table, index)[1]
+                 for index, key in enumerate(
+                     ("k-pending", "k-downloading", "k-failed",
+                      "k-mismatch", "k-done"))}
+        assert cells["k-pending"] == QUEUE_STATE_PENDING
+        assert cells["k-downloading"] == QUEUE_STATE_DOWNLOADING
+        assert cells["k-failed"] == QUEUE_STATE_FAILED
+        assert cells["k-mismatch"] == QUEUE_STATE_MISMATCH
+        assert cells["k-done"] == DL_FULL_PRESENT, (
+            "a done entry never overlays — the merged presence rules"
+        )
 
 
 async def test_toggle_rerenders_from_the_cached_snapshot_no_worker():
@@ -870,13 +946,20 @@ async def test_reconcile_cells_four_vocabularies():
 
 
 async def test_both_empty_states_render():
-    """The happy zero + the empty queue rows (SEL-01 empty edges)."""
+    """The happy zero (the missing-only view's empty edge) + the empty
+    queue rows (SEL-01 empty edges). The PRIMARY full list renders the
+    five official rows; v reveals the happy zero."""
     service = FakeDataManagerService(missing=(), total=50, present=50,
                                      entries=())
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_screen(pilot, app, service)
         screen = app.screen
+        # the primary full list: the five fixture rows render
+        assert _missing_table(screen).row_count == len(
+            _std_presence_rows())
+        await pilot.press("v")
+        await pilot.pause()
         assert _row(_missing_table(screen), 0) == [
             DL_MISSING_EMPTY.format(total=50), ""]
         assert _row(_queue_table(screen), 0) == [QUEUE_EMPTY, "", "", ""]
@@ -1023,8 +1106,6 @@ async def test_d_enqueues_missing_cursor_with_all_outcome_toasts():
     """d happy path (toast + kick + reload), already-queued, disabled,
     and cli-unavailable toasts — never silent."""
     outcomes = {
-        "mouse__DMS": EnqueueOutcome(action="already_queued",
-                                     key="mouse__DMS"),
         "plant__vista-100m": EnqueueOutcome(
             action="disabled", key="plant__vista-100m",
             reason_code="shape_d_layout", source_url=_GUE_URL),
@@ -1035,34 +1116,51 @@ async def test_d_enqueues_missing_cursor_with_all_outcome_toasts():
     app = _app(queue=queue_fake)
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_screen(pilot, app, service)
+        table = _missing_table(app.screen)
 
-        # happy: cursor row 0 (GUE__emp_H3, focused by default)
+        # the PRIMARY full list: row 0 (GUE__emp_H3) is PRESENT -> the
+        # honest already-present toast, never an enqueue call
         await pilot.press("d")
         await pilot.pause()
-        assert service.enqueue_calls == ["GUE__emp_H3"]
+        assert service.enqueue_calls == []
+        assert SEL_ENQUEUE_PRESENT_TOAST in _toast_messages(app)
+
+        # happy: row 1 (mouse__DMS, missing) enqueues through the SAME
+        # per-dataset ModelScope channel as before
+        table.move_cursor(row=1)
+        await pilot.pause()
+        await pilot.press("d")
+        await pilot.pause()
+        assert service.enqueue_calls == ["mouse__DMS"]
         assert QUEUE_TOAST_ENQUEUED.format(
-            key="GUE__emp_H3") in _toast_messages(app)
+            key="mouse__DMS") in _toast_messages(app)
         assert queue_fake.claim_next_calls >= 1, "enqueued -> kicked"
 
-        # already queued: move to row 1
-        _missing_table(app.screen).move_cursor(row=1)
+        # already queued: the same row again under the scripted outcome
+        # (the enqueue's snapshot reload reset the cursor — re-aim it)
+        service._enqueue_outcomes["mouse__DMS"] = EnqueueOutcome(
+            action="already_queued", key="mouse__DMS")
+        table.move_cursor(row=1)
         await pilot.pause()
         await pilot.press("d")
         await pilot.pause()
         assert QUEUE_TOAST_ALREADY_QUEUED.format(
             key="mouse__DMS") in _toast_messages(app)
 
-        # disabled channel: row 2
-        _missing_table(app.screen).move_cursor(row=2)
+        # disabled channel: row 2 (plant__vista-100m)
+        table.move_cursor(row=2)
         await pilot.pause()
         await pilot.press("d")
         await pilot.pause()
         assert DL_DISABLED_TOAST.format(
             key="plant__vista-100m") in _toast_messages(app)
 
-    # cli-unavailable (its own fixture — a fresh notification list)
+    # cli-unavailable (its own fixture — a fresh notification list); the
+    # key rides the full list as a MISSING presence row
     service = FakeDataManagerService(
-        missing=(_missing_row("k-cli"),),
+        presence_rows=(PresenceRow(
+            key="k-cli", status=registries_service.PRESENCE_MISSING,
+            declared_total=1),),
         enqueue_outcomes={"k-cli": EnqueueOutcome(
             action="cli_unavailable", key="k-cli")})
     app = _app()
@@ -1074,7 +1172,9 @@ async def test_d_enqueues_missing_cursor_with_all_outcome_toasts():
 
     # persist_failed (WR-04): the honest never-wrote toast, no row
     service = FakeDataManagerService(
-        missing=(_missing_row("k-ro"),),
+        presence_rows=(PresenceRow(
+            key="k-ro", status=registries_service.PRESENCE_MISSING,
+            declared_total=1),),
         enqueue_outcomes={"k-ro": EnqueueOutcome(
             action="persist_failed", key="k-ro")})
     app = _app()
@@ -1092,7 +1192,9 @@ async def test_d_enqueues_missing_cursor_with_all_outcome_toasts():
     # unknown (WR-06): the neutral channel-unavailable toast names the
     # machine reason — never the shape-D mirror-layout copy
     service = FakeDataManagerService(
-        missing=(_missing_row("k-nfs"),),
+        presence_rows=(PresenceRow(
+            key="k-nfs", status=registries_service.PRESENCE_MISSING,
+            declared_total=1),),
         enqueue_outcomes={"k-nfs": EnqueueOutcome(
             action="unknown", key="k-nfs",
             reason_code="registry_unreadable")})
@@ -1299,7 +1401,9 @@ async def test_68_char_key_renders_in_both_tables_reads_full_in_detail():
     """The UAT backstop: a 68-char key truncates in-cell in BOTH tables
     without column collision and reads full in the detail."""
     service = FakeDataManagerService(
-        missing=(_missing_row(LONG_KEY, 123456),),
+        presence_rows=(PresenceRow(
+            key=LONG_KEY, status=registries_service.PRESENCE_MISSING,
+            declared_total=123456),),
         entries=(_queue_entry(LONG_KEY, "downloading", last_percent=5),),
         channel_details={LONG_KEY: ChannelDetail(
             key=LONG_KEY, source_url=_GUE_URL, argv=None,
@@ -1614,9 +1718,10 @@ async def test_driver_e2e_rows_toast_and_missing_refresh():
         assert not any(QUEUE_FLIP_TOAST.format(key="k-two")
                        in message for message in _toast_messages(app))
 
-        # the reconciled key left the missing list (the failed one stays)
-        assert _missing_table(screen).row_count == 1
-        assert _row(_missing_table(screen), 0)[0].endswith("k-two")
+        # the reconciled key's download cell flipped to present in the
+        # PRIMARY full list (the failed one keeps its overlay word)
+        assert _row(_missing_table(screen), 0)[1] == DL_FULL_PRESENT
+        assert _row(_missing_table(screen), 1)[1] == QUEUE_STATE_FAILED
 
         # row updates without a full reload: exactly ONE extra missing
         # read ran (the done-triggered reload) — the failed row reached
@@ -2169,6 +2274,9 @@ async def test_cli_unavailable_enqueue_never_adds_a_row_screen_usable():
         screen = app.screen
         rows_before = _queue_table(screen).row_count
 
+        # the missing-only alternate: cursor row 0 is GUE__emp_H3
+        await pilot.press("v")
+        await pilot.pause()
         await pilot.press("d")
         await pilot.pause()
 
@@ -2178,7 +2286,7 @@ async def test_cli_unavailable_enqueue_never_adds_a_row_screen_usable():
         )
         assert not any(entry.key == "GUE__emp_H3"
                        for entry in service.entries_list)
-        # the screen stays fully usable
+        # the screen stays fully usable (both panes, the Zenodo line)
         assert _missing_table(screen).row_count == 3
         assert _row(_queue_table(screen), 0)[1] == QUEUE_STATE_FAILED
         assert _zenodo_line(screen) != ""
@@ -2210,8 +2318,10 @@ async def test_load_diagnostic_surfaces_as_status_line():
         assert diagnostic in rendered, (
             "the diagnostic renders verbatim (data, never translated)"
         )
-        # both panes still render their rows
-        assert _missing_table(screen).row_count == 3
+        # both panes still render their rows (the PRIMARY full list
+        # carries the fixture's five presence rows)
+        assert _missing_table(screen).row_count == len(
+            _std_presence_rows())
         assert _queue_table(screen).row_count == 1
 
     # the healthy path: no diagnostic line occupies the layout
@@ -2407,3 +2517,68 @@ async def test_data_manager_rehydrates_real_backend_seeded_downloading(
             "the real adapter's probe must route through the fetch seam"
         )
         assert _zenodo_line(screen) != DL_ZENODO_PROBING
+
+
+# ---------------------------------------------------------------------
+# The w binding (MLC-03, 261014-mlc): the dataset custom-entry wizard
+# ---------------------------------------------------------------------
+
+
+class _StubWizard(ModalScreen):
+    """The fake build_wizard product: a dismissible marker modal."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "dismiss", "back"),
+    ]
+
+    def compose(self):
+        yield Static("stub-dataset-wizard")
+
+
+class _WizardServiceFake:
+    """The w seam fake: records every build_wizard composition."""
+
+    def __init__(self):
+        self.built = []
+
+    def build_wizard(self, kind, prefill, on_changed):
+        self.built.append((kind, prefill, on_changed))
+        return _StubWizard()
+
+
+async def test_w_opens_the_dataset_wizard_and_reload_wires_through():
+    """w composes the DATASET wizard (the constant kind since the slot
+    split) through the injected seam, with the snapshot reload wired as
+    the land-completion callback; the real lazy composition stays
+    unimported in this lane (no real registry write ever runs)."""
+    wizard = _WizardServiceFake()
+    service = FakeDataManagerService(missing=_std_missing())
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.push_screen(DataManagerScreen(
+            data_service=service, wizard_service=wizard))
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        await pilot.press("w")
+        await pilot.pause()
+
+        assert isinstance(app.screen, _StubWizard)
+        (kind, prefill, on_changed), = wizard.built
+        assert kind == "datasets", (
+            "slot 3's wizard kind is constant datasets"
+        )
+        assert prefill is None, (
+            "the pane's rows are official keys only — never a prefill"
+        )
+        assert callable(on_changed)
+        # the callback IS the snapshot reload: firing it re-reads
+        snapshot_calls_before = service.snapshot_calls
+        on_changed()
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert service.snapshot_calls > snapshot_calls_before, (
+            "a landed custom dataset must refresh the pane"
+        )

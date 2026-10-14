@@ -557,9 +557,13 @@ GAUNTLET_EXPORT_PROBLEMS = "✗ 导出失败 — 共 {n} 处："
 # Top-menu slot names — the RATIFIED verbatim resource nouns (D-13,
 # 09-UI-SPEC Navigation Shell): never renamed, never re-translated. The
 # digit prefix and 未开放 suffix are composed by the bar from NAV_SLOTS.
+# 2026-10-14 slot split (261014-mlc): slot 2 is MODELS only and slot 3
+# DATASETS only — value-only renames (names, bindings, routing
+# untouched; the ENV_ROUTE_MISSING_DATASETS hint stays byte-identical
+# per the maintainer ruling).
 NAV_LABEL_ENV = "环境检查"
-NAV_LABEL_SELECTION = "模型·数据集"
-NAV_LABEL_DATA = "数据管理"
+NAV_LABEL_SELECTION = "模型"
+NAV_LABEL_DATA = "数据集"
 NAV_LABEL_RUN_CONFIG = "运行配置"
 NAV_LABEL_MONITOR = "任务监控"
 NAV_LABEL_ABOUT = "关于"
@@ -599,24 +603,39 @@ ABOUT_MILESTONE_STAGE = "v1.2 TUI任务 — 已交付: Phase 7-8 · 本相位: 9
 # diagnostic, {key} a dataset key. Record ids (19135551), dataset
 # keys, n_audit, and XDG state stay English verbatim.
 
-DL_SCREEN_TITLE = "数据管理"
+DL_SCREEN_TITLE = "数据集"
 DL_MISSING_TITLE = "缺失数据集 ({n}) — 来自 n_audit"
 DL_MISSING_COL_KEY = "数据集"
 DL_MISSING_COL_ROWS = "n_audit 基线行数"
 DL_MISSING_EMPTY = "✓ 无缺失数据集 — 全部 {total} 个数据集在场"
 
+# The full-list 下载 column header (MLC-03, 261014-mlc): the merged
+# presence status cell (✓ 在场 / ✗ 缺失 / ◌ 未知) — a live queue entry
+# overlays its queue state word in the same cell.
+DL_COL_DOWNLOAD = "下载"
+DL_FULL_PRESENT = "✓ 在场"
+DL_FULL_MISSING = "✗ 缺失"
+DL_FULL_UNKNOWN = "◌ 未知"
+# The dataset custom-entry wizard keycap (the w binding — slot 3 since
+# the slot split; the same 接入 wording slot 2's w carries).
+DL_WIZARD_LABEL = "接入"
+
 # The Zenodo 整包 four probe states (D-12; glyph+color dual channel on
 # every one — probing/not-public dim, public ✓ success, failed ⚠
-# warning; `z` on a disabled state is never silent).
-DL_ZENODO_PROBING = "⠋ Zenodo 公开探测中 …"
-DL_ZENODO_NOT_PUBLIC = "[z] Zenodo 整包 · 未公开（探测于 {HH:MM}）"
-DL_ZENODO_PUBLIC = "✓ Zenodo 整包已公开 — [z] 整包下载"
-DL_ZENODO_FAILED = "⚠ Zenodo 探测失败: {error}（稍后重试）"
+# warning; `z` on a disabled state is never silent). Since the
+# 2026-10-14 ruling every line carries the 备选 prefix — Zenodo is the
+# NON-DEFAULT alternate channel (ModelScope is the default; the line
+# moved from the missing-list title row to the QUEUE title row).
+DL_ZENODO_PROBING = "⠋ 备选 Zenodo 公开探测中 …"
+DL_ZENODO_NOT_PUBLIC = "[z] 备选 Zenodo 整包 · 未公开（探测于 {HH:MM}）"
+DL_ZENODO_PUBLIC = "✓ 备选 Zenodo 整包已公开 — [z] 整包下载"
+DL_ZENODO_FAILED = "⚠ 备选 Zenodo 探测失败: {error}（稍后重试）"
 DL_ZENODO_DISABLED_TOAST = (
     "Zenodo 记录 19135551 尚未公开 — 公开后此入口自动激活")
-# The bundle queue row's 任务 cell label + the z keycap's action noun.
+# The bundle queue row's 任务 cell label + the z keycap's action noun
+# (the 备选 framing per the 2026-10-14 ruling).
 DL_BUNDLE_TASK_NAME = "zenodo-19135551（整包）"
-DL_ZENODO_KEY_LABEL = "Zenodo 整包"
+DL_ZENODO_KEY_LABEL = "备选 Zenodo 整包"
 
 # Bottom-bar keycap labels (D-15, each ≤ 4 CJK chars; 详情 reuses the
 # existing ENV_DETAIL_LABEL — the shared-label precedent, one

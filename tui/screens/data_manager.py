@@ -1,13 +1,18 @@
 """
-data_manager — the slot-3 data-manager screen (Phase 10, 10-04;
-D-13/D-14/D-15 + the D-12 Zenodo entry surface).
+data_manager — the slot-3 DATASETS screen (Phase 10, 10-04; D-13/D-14/
+D-15 + the D-12 Zenodo entry surface; datasets-primary since the
+maintainer's 2026-10-14 slot split, 261014-mlc / MLC-03).
 
-The operator's window onto everything 10-01..10-03 built: the
-missing-datasets list (the n_audit missing set, the d/a target) with its
-v-toggled full official-registry presence view (DCL-03, 261014-dcl), the
-persistent download queue (five-state rows with live progress cells and
-the reconcile column), the mismatch banners (D-07/D-09), the Zenodo
-whole-package line (D-12), and the verbatim drill-down (D-03).
+The operator's window onto everything 10-01..10-03 built: the FULL
+official dataset list (every registry key — the download-state and
+status columns,
+the primary pane) with the missing-only view demoted to the ``v``
+toggle, the persistent download queue (five-state rows with live
+progress cells and the reconcile column), the mismatch banners
+(D-07/D-09), the Zenodo whole-package line (D-12 — the demoted alternate
+framing riding the QUEUE title row since the 2026-10-14 ModelScope-
+default ruling), the dataset custom-entry wizard (``w``), and the
+verbatim drill-down (D-03).
 
 Contract (locked decisions):
 
@@ -18,7 +23,11 @@ Contract (locked decisions):
   ``tui/services/download_queue`` + ``zenodo_bundle``; this screen
   renders service results and posts user intent. The one adapter here
   (``DataManagerBackend``) is delegation glue over those services — the
-  same shape as ``EnvCheckBackend``/``SelectionBackend``.
+  same shape as ``EnvCheckBackend``/``SelectionBackend``. The one
+  screen-side join (MLC-03): a row with a live queue entry renders its
+  queue state word in the full-list download cell — a pure render-time
+  composition of ``presence_rows`` with the ``entries()`` snapshot
+  delivered in the same SnapshotLoaded message (no service change).
 - D-02/SC5: every service I/O leg (snapshot reads, the Zenodo probe, the
   ``g`` re-audit) runs inside an exclusive ``@work(exclusive=True,
   thread=True)`` worker; results cross the worker-thread -> event-loop
@@ -30,13 +39,26 @@ Contract (locked decisions):
   are applied by RE-READING the entry from the service and re-rendering
   its row — a late or duplicated event can therefore never overwrite a
   newer state; the row always shows the queue's own current truth.
+- MLC-03 (the pane promotion): the FULL official dataset list is the
+  PRIMARY top pane; the missing-only table is the ``v``-toggled
+  alternate (the toggle direction flipped from DCL-03). ``d`` acts on
+  the ACTIVE pane's cursor: a missing row enqueues the SAME per-dataset
+  ModelScope channel as before (the DEFAULT channel per the 2026-10-14
+  ruling — unchanged enqueue path, unchanged outcome toasts); a present
+  row is the honest already-present toast; ``a``/``r``/``x``/``g``/
+  ``enter`` all keep working over the new primary pane.
+- MLC-03 (the Zenodo demotion): the probe line renders in the QUEUE
+  title row with alternate-prefixed wording — the alternate-channel framing
+  (available, never the default); ``z`` stays the hidden alternate
+  entry with its alternate label.
 - D-15: the bottom bar is d enqueue / r retry / x cancel / a
-  enqueue-all / v toggle-missing/full / enter detail (declaration
+  enqueue-all / v toggle-full/missing / enter detail (declaration
   order) + the constant ``?`` ``q`` right segment; ``g`` (re-audit,
   mismatch rows) and ``z`` (Zenodo) are show=False bindings
-  (auto-defaults 7 and the D-12 entry). The v toggle (DCL-03,
-  261014-dcl) is pure render state over the CACHED snapshot — it never
-  kicks a worker.
+  (auto-defaults 7 and the D-12 entry); ``w`` opens the dataset
+  custom-entry wizard (the kind constant since the slot split). The v
+  toggle is pure render state over the CACHED snapshot — it never kicks
+  a worker.
 - D-07/D-09: mismatch entries render one prominent banner row each
   directly under the queue title AND sort to the top of the queue table
   (with failed rows); presence never flips on mismatch (the service's
@@ -89,9 +111,13 @@ from tui.strings import (
     APP_MODAL_BACK_LABEL,
     DL_BUNDLE_TASK_NAME,
     DL_CANCEL_LABEL,
+    DL_COL_DOWNLOAD,
     DL_DISABLED_TOAST,
     DL_ENQUEUE_ALL_LABEL,
     DL_ENQUEUE_LABEL,
+    DL_FULL_MISSING,
+    DL_FULL_PRESENT,
+    DL_FULL_UNKNOWN,
     DL_MISSING_COL_KEY,
     DL_MISSING_COL_ROWS,
     DL_MISSING_EMPTY,
@@ -102,6 +128,7 @@ from tui.strings import (
     DL_RETRY_LABEL,
     DL_SCREEN_TITLE,
     DL_UNKNOWN_TOAST,
+    DL_WIZARD_LABEL,
     DL_ZENODO_DISABLED_TOAST,
     DL_ZENODO_FAILED,
     DL_ZENODO_KEY_LABEL,
@@ -142,6 +169,7 @@ from tui.strings import (
     QUEUE_TOAST_ALREADY_QUEUED,
     QUEUE_TOAST_ENQUEUED,
     QUEUE_TOAST_ENQUEUED_ALL,
+    SEL_ENQUEUE_PRESENT_TOAST,
 )
 
 if TYPE_CHECKING:
@@ -167,6 +195,10 @@ _PROGRESS_W = 17
 #: The DataTable's default per-side cell padding (content = width - 2).
 _CONTENT_PAD = 2
 
+#: The full-list download column width — the widest overlay word (the
+#: mismatch state cell) needs 12 display cells.
+_DOWNLOAD_W = 14
+
 #: (column key, header constant, width) — the column keys are the
 #: update_cell addressing scheme (English technical ids, I18N-01).
 _QUEUE_COLUMNS: tuple[tuple[str, str, int], ...] = (
@@ -178,6 +210,15 @@ _QUEUE_COLUMNS: tuple[tuple[str, str, int], ...] = (
 
 _MISSING_COLUMNS: tuple[tuple[str, str, int], ...] = (
     ("key", DL_MISSING_COL_KEY, _TASK_W),
+    ("rows", DL_MISSING_COL_ROWS, 0),
+)
+
+#: The PRIMARY full-list columns (MLC-03): key / download (the merged
+#: presence status, overlaid by a live queue entry's state word) /
+#: the declared-rows column (the n_audit baseline totals).
+_FULL_COLUMNS: tuple[tuple[str, str, int], ...] = (
+    ("key", DL_MISSING_COL_KEY, _TASK_W),
+    ("download", DL_COL_DOWNLOAD, _DOWNLOAD_W),
     ("rows", DL_MISSING_COL_ROWS, 0),
 )
 
@@ -541,16 +582,19 @@ class DataManagerScreen(Screen):
     # The D-15 bottom-bar vocabulary in declaration order (d/r/x/a/v/
     # enter visible; the clip policy drops least-primary first), then
     # the show=False pair: g (re-audit, mismatch rows — auto-default 7)
-    # and z (the D-12 Zenodo entry). v (DCL-03, 261014-dcl) toggles the
-    # missing pane between the missing table and the full presence view.
-    # The nav digits are plain per-screen bindings routed to the app's
-    # nav action (never priority, Pattern 2).
+    # and z (the D-12 Zenodo alternate entry). v (MLC-03, 261014-mlc)
+    # toggles the top pane between the PRIMARY full list and the
+    # missing-only alternate (the DCL-03 direction flipped). w opens the
+    # dataset custom-entry wizard (the kind constant since the slot
+    # split). The nav digits are plain per-screen bindings routed to the
+    # app's nav action (never priority, Pattern 2).
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("d", "enqueue_cursor", DL_ENQUEUE_LABEL),
         Binding("r", "retry_cursor", DL_RETRY_LABEL),
         Binding("x", "cancel_cursor", DL_CANCEL_LABEL),
         Binding("a", "enqueue_all", DL_ENQUEUE_ALL_LABEL),
         Binding("v", "toggle_presence_view", DL_PRESENCE_TOGGLE_LABEL),
+        Binding("w", "open_wizard", DL_WIZARD_LABEL),
         Binding("enter", "show_detail", ENV_DETAIL_LABEL),
         Binding("g", "reaudit_cursor", QUEUE_REAUDIT_LABEL, show=False),
         Binding("z", "zenodo_bundle", DL_ZENODO_KEY_LABEL, show=False),
@@ -595,12 +639,19 @@ class DataManagerScreen(Screen):
 
     def __init__(self,
                  data_service: "DataManagerServiceProtocol | None" = None,
+                 wizard_service: Any = None,
                  **kwargs):
         super().__init__(**kwargs)
         self._service: DataManagerServiceProtocol = (
             data_service if data_service is not None
             else DataManagerBackend()
         )
+        # The w wizard seam (MLC-03): None defers to the real
+        # CustomOnboardingBackend, composed LAZILY inside the action (the
+        # 09-06 cycle-break pattern — the wizard composition imports at
+        # press time, never at module load). Typed Any — the
+        # build_wizard(kind, prefill, on_changed) surface.
+        self._wizard_service: Any = wizard_service
         self._snapshot: MissingSnapshot | None = None
         self._queue_entries: tuple[QueueEntry, ...] = ()
         # Live percents streamed from the driver (None = indeterminate).
@@ -610,11 +661,12 @@ class DataManagerScreen(Screen):
         self._snapshot_run_id = 0
         self._probe_run_id = 0
         self._reaudit_run_id = 0
-        # The missing-pane view mode (DCL-03, 261014-dcl): False = the
-        # missing table, True = the full official-registry presence
-        # view. Pure render state — both tables re-render from the
+        # The top-pane view mode (MLC-03, 261014-mlc — the DCL-03
+        # direction flipped): True = the FULL official-registry list
+        # (the PRIMARY pane), False = the missing-only alternate (the
+        # v toggle). Pure render state — both tables re-render from the
         # cached snapshot, never a worker kick.
-        self._presence_view = False
+        self._presence_view = True
         # The Zenodo line state (None = probing, the compose default).
         self._zenodo_state: str | None = None
         self._zenodo_probed_at = ""
@@ -622,11 +674,13 @@ class DataManagerScreen(Screen):
     def compose(self) -> ComposeResult:
         """The screen frame: nav bars, title bar, the two stacked regions.
 
-        The missing region is fixed-height (title + header + ~3 rows,
+        The top region is fixed-height (title + header + ~3 rows,
         auto-default 1); the queue region takes the flex remainder; the
         full-width rule separates them (the existing treatment — borders
-        stay reserved for modals). The Zenodo line lives right-aligned
-        in the missing-section title row (D-12).
+        stay reserved for modals). Since MLC-03 the Zenodo alternate line
+        lives right-aligned in the QUEUE title row (the demoted
+        alternate channel — D-12's placement moved out of the
+        missing-list title row).
         """
         yield TopMenuBar()
         with Horizontal(id="dl-title-bar"):
@@ -640,29 +694,35 @@ class DataManagerScreen(Screen):
         diagnostic_line.display = False
         yield diagnostic_line
         with Vertical(id="dl-missing-region"):
-            with Horizontal(id="dl-missing-title-row"):
-                yield Label(
-                    DL_MISSING_TITLE.format(n=0), id="dl-missing-title")
-                yield Label(DL_ZENODO_PROBING, id="dl-zenodo-line")
+            yield Label(
+                DL_PRESENCE_TITLE.format(n=0), id="dl-missing-title")
             yield DataTable(id="dl-missing")
         with Vertical(id="dl-queue-region"):
-            yield Label(QUEUE_TITLE.format(n=0), id="dl-queue-title")
+            with Horizontal(id="dl-queue-title-row"):
+                yield Label(QUEUE_TITLE.format(n=0), id="dl-queue-title")
+                yield Label(DL_ZENODO_PROBING, id="dl-zenodo-line")
             yield Vertical(id="dl-queue-banners")
             yield DataTable(id="dl-queue")
         yield BottomBar()
 
     def on_mount(self) -> None:
-        """Build the two tables, focus the missing list, start the reads."""
-        for table_id, columns in (("#dl-missing", _MISSING_COLUMNS),
-                                  ("#dl-queue", _QUEUE_COLUMNS)):
-            table = self.query_one(table_id, DataTable)
-            table.cursor_type = "row"
-            table.zebra_stripes = True
-            for column_key, header, width in columns:
-                if width:
-                    table.add_column(header, key=column_key, width=width)
-                else:
-                    table.add_column(header, key=column_key)
+        """Build the queue table, focus the top pane, start the reads.
+
+        The top pane's columns compose per-view inside the render (the
+        full list and the missing-only alternate carry different column
+        sets — MLC-03); only the queue table's columns are fixed.
+        """
+        table = self.query_one("#dl-queue", DataTable)
+        table.cursor_type = "row"
+        table.zebra_stripes = True
+        for column_key, header, width in _QUEUE_COLUMNS:
+            if width:
+                table.add_column(header, key=column_key, width=width)
+            else:
+                table.add_column(header, key=column_key)
+        top = self.query_one("#dl-missing", DataTable)
+        top.cursor_type = "row"
+        top.zebra_stripes = True
         self.query_one("#dl-missing", DataTable).focus()
         self._load_snapshot()
         self._probe_zenodo()
@@ -808,16 +868,22 @@ class DataManagerScreen(Screen):
         line.display = True
 
     def _render_missing(self) -> None:
-        """The missing pane: the missing table OR the full presence view
-        (the v toggle, DCL-03) — both re-render from the cached snapshot."""
+        """The top pane: the PRIMARY full official list OR the
+        missing-only alternate (the v toggle, MLC-03) — both re-render
+        from the cached snapshot."""
         table = self.query_one("#dl-missing", DataTable)
-        table.clear()
         snapshot = self._snapshot
+        table.clear(columns=True)
         if snapshot is None:
             return  # pre-snapshot emptiness (one worker hop)
         if self._presence_view:
             self._render_presence_view(table, snapshot)
             return
+        for column_key, header, width in _MISSING_COLUMNS:
+            if width:
+                table.add_column(header, key=column_key, width=width)
+            else:
+                table.add_column(header, key=column_key)
         self.query_one("#dl-missing-title", Label).update(
             DL_MISSING_TITLE.format(n=snapshot.missing))
         if not snapshot.rows:
@@ -839,25 +905,52 @@ class DataManagerScreen(Screen):
 
     def _render_presence_view(self, table: DataTable,
                               snapshot: MissingSnapshot) -> None:
-        """The full view: one row per official key, status glyph-prefixed
-        on the key cell (the same table-symbol idiom the missing view's
-        ``✗ `` uses), declared_total right-aligned in the rows column —
-        the service already decided (PresenceRow); this renders only."""
+        """The PRIMARY full view (MLC-03): one row per official key with
+        the download cell (the merged presence status — present /
+        missing / unknown — overlaid by a LIVE queue entry's state
+        word, the
+        screen-side join over the entries snapshot delivered in the same
+        message; no service change) and the declared total right-aligned
+        in the rows column — the service already decided (PresenceRow);
+        this renders only."""
+        for column_key, header, width in _FULL_COLUMNS:
+            if width:
+                table.add_column(header, key=column_key, width=width)
+            else:
+                table.add_column(header, key=column_key)
         rows = snapshot.presence_rows
         self.query_one("#dl-missing-title", Label).update(
             DL_PRESENCE_TITLE.format(n=len(rows)))
+        live_states = {
+            entry.key: entry.state
+            for entry in self._queue_entries
+            if entry.state != "done"
+        }
         for row in rows:
             if row.status == registries.PRESENCE_PRESENT:
-                glyph, style = "✓ ", _STYLE_DONE
+                glyph, style, word = ("✓ ", _STYLE_DONE, DL_FULL_PRESENT)
             elif row.status == registries.PRESENCE_MISSING:
-                glyph, style = "✗ ", _STYLE_FAIL
+                glyph, style, word = ("✗ ", _STYLE_FAIL, DL_FULL_MISSING)
             else:  # unknown / unavailable — the honest degraded states
-                glyph, style = "◌ ", _STYLE_MUTED
+                glyph, style, word = ("◌ ", _STYLE_MUTED, DL_FULL_UNKNOWN)
             key_cell = _truncate(Text.assemble(
                 Text(glyph, style=style), Text(row.key),
             ), _TASK_W - _CONTENT_PAD)
+            if row.key in live_states:
+                # the live overlay: the queue's own state word replaces
+                # the presence word in the download cell
+                # (pending/downloading/failed/mismatch — the queue
+                # table's own vocabulary; a done entry reads through the
+                # merged presence instead)
+                copy, overlay_style = _STATE_CELLS.get(
+                    live_states[row.key],
+                    (live_states[row.key], _STYLE_MUTED))
+                download_cell = Text(copy, style=overlay_style)
+            else:
+                download_cell = Text(word, style=style)
             table.add_row(
                 key_cell,
+                download_cell,
                 Text(f"{row.declared_total:,}", justify="right"),
                 key=row.key)
 
@@ -1010,10 +1103,15 @@ class DataManagerScreen(Screen):
             table.cursor_coordinate)[0].value)
 
     def _missing_cursor_key(self) -> "str | None":
-        """The missing-table cursor key (state rows never act)."""
+        """The top-pane cursor key over the ACTIVE view's key set (state
+        rows never act): the full list validates against presence_rows,
+        the missing-only alternate against the missing rows (MLC-03)."""
         key = self._cursor_row_key("#dl-missing")
         if key is None or self._snapshot is None:
             return None
+        if self._presence_view:
+            return key if any(row.key == key for row
+                              in self._snapshot.presence_rows) else None
         return key if any(row.key == key
                           for row in self._snapshot.rows) else None
 
@@ -1053,16 +1151,28 @@ class DataManagerScreen(Screen):
         return False
 
     def action_enqueue_cursor(self) -> None:
-        """d: enqueue the missing-table cursor row's dataset key.
+        """d: enqueue the ACTIVE top pane's cursor row (MLC-03 — the
+        full list is the primary pane; the missing-only alternate keeps
+        the same action). A PRESENT row is the honest already-present
+        toast (never silent, never duplicate work); every other row
+        enqueues the SAME per-dataset ModelScope channel as before (the
+        DEFAULT channel per the 2026-10-14 ruling — unchanged path,
+        unchanged toasts; the service re-derives the channel).
 
         IN-04 (the documented fixed-target contract): ``d``/``r``/``x``
         each act on their OWN table's cursor regardless of which table
-        holds focus (``d`` the missing list, ``r``/``x`` the queue) —
-        the D-15 verb-table pairing is deliberate; only ``enter`` routes
+        holds focus (``d`` the top pane, ``r``/``x`` the queue) — the
+        D-15 verb-table pairing is deliberate; only ``enter`` routes
         by focus (``_open_detail_for_focused``)."""
         key = self._missing_cursor_key()
         if key is None:
             return  # state rows / no rows: silent (the selection rule)
+        snapshot = self._snapshot
+        if self._presence_view and snapshot is not None and any(
+                row.key == key and row.status == registries.PRESENCE_PRESENT
+                for row in snapshot.presence_rows):
+            self.app.notify(SEL_ENQUEUE_PRESENT_TOAST)
+            return
         outcome = self._service.enqueue(key)
         if self._toast_enqueue_outcome(outcome):
             self.app.kick_download_queue()
@@ -1128,8 +1238,9 @@ class DataManagerScreen(Screen):
         self._run_reaudit()
 
     def action_toggle_presence_view(self) -> None:
-        """v (DCL-03, 261014-dcl): flip the missing pane between the
-        missing table and the full presence view.
+        """v (MLC-03, 261014-mlc — the DCL-03 direction flipped): toggle
+        the top pane between the PRIMARY full official list and the
+        missing-only alternate.
 
         Pure render state over the CACHED snapshot — the rows ride the
         snapshot, so the toggle never kicks the dl-snapshot worker (the
@@ -1138,6 +1249,29 @@ class DataManagerScreen(Screen):
         """
         self._presence_view = not self._presence_view
         self._render_missing()
+
+    def action_open_wizard(self) -> None:
+        """w: open the DATASET custom-entry wizard (MLC-03 — the kind is
+        constant since the 2026-10-14 slot split; slot 2's wizard is the
+        model one). The composition imports LAZILY inside the action
+        (the 09-06 cycle-break pattern — the wizard's own module
+        imports from the selection screen's), the land-completion
+        callback reloads the snapshot so a landed dataset's presence
+        re-derives, and a custom registry write refreshes the pane."""
+        if self.app.below_minimum_grid:
+            return  # WR-06: no chrome over the guard
+        service = self._wizard_service
+        if service is None:
+            # lazy import: selection (and transitively the wizard)
+            # composes at press time, never at module load
+            from tui.screens.selection import CustomOnboardingBackend
+
+            service = CustomOnboardingBackend()
+        self.app.push_screen(service.build_wizard(
+            kind="datasets",
+            prefill=None,  # the pane's rows are official keys only
+            on_changed=self._reload_snapshot,
+        ))
 
     def action_zenodo_bundle(self) -> None:
         """z: enqueue the whole-package bundle when public; otherwise

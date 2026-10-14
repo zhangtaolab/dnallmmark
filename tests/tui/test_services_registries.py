@@ -33,7 +33,6 @@ See also:
     ``tests/test_registry_loader.py`` — the overlay merge contract.
 """
 
-import json
 import re
 from pathlib import Path
 

@@ -700,8 +700,8 @@ class DnallmMarkTui(App):
             # facing bundle label (the ONE name the z-enqueue toast
             # uses), never the raw queue key; a model done carries the
             # model-lane wording (MLC-01 — no reconcile leg exists on
-            # that lane, so the dataset lane's 对账一致 claim must never
-            # render for it)
+            # that lane, so the dataset lane's reconciled-claim wording
+            # must never render for it)
             if event.kind == KIND_ZENODO_BUNDLE:
                 self.notify(QUEUE_FLIP_TOAST.format(key=DL_BUNDLE_TASK_NAME))
             elif event.kind == KIND_MODEL:

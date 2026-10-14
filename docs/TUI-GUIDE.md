@@ -14,8 +14,8 @@ make tui
 Typical first session:
 
 1. `make tui` — the console opens on the **environment check** screen (slot 1). A same-day cached check renders instantly; otherwise the seven kernels run in a background worker.
-2. Press `2` — pick models and datasets (space marks, `m` flips the table, `/` filters).
-3. Press `3` — if any dataset is missing locally, enqueue downloads (`d` / `a`); the queue persists across restarts and resumes at boot.
+2. Press `2` — the models screen: browse and mark models (space marks, `/` filters), download a missing adapted model with `d`, reveal unadapted entries with `t`.
+3. Press `3` — the datasets screen: the full dataset list with download state; `d` enqueues the cursor's missing dataset, `a` enqueues all; the queue persists across restarts and resumes at boot.
 4. Press `4` — compose the run (seeds, PEFT, variant, dirs), press `p` for a dry-run preview, press `enter` to go through the launch gate.
 5. Press `5` (or let the launch jump you there) — watch the sweep: cell states, ETA, failures, log tail.
 
@@ -30,8 +30,8 @@ The shell is two one-row bars around every screen (`tui/screens/nav.py`):
 | Digit | Slot | Screen file |
 |-------|------|-------------|
 | `1` | 环境检查 (environment check) | `tui/screens/env_check.py` |
-| `2` | 模型·数据集 (models · datasets) | `tui/screens/selection.py` |
-| `3` | 数据管理 (data manager) | `tui/screens/data_manager.py` |
+| `2` | 模型 (models) | `tui/screens/selection.py` |
+| `3` | 数据集 (datasets) | `tui/screens/data_manager.py` |
 | `4` | 运行配置 (run config) | `tui/screens/run_config.py` |
 | `5` | 任务监控 (monitor) | `tui/screens/monitor.py` |
 | `6` | 关于 (about) | `tui/screens/about.py` |
@@ -72,44 +72,50 @@ Verdict block (rendered from `tui/services/env_gate.py`):
 - A failure in any **critical** kernel — `version_pins`, `dnallm`, `peft`, `cuda`, `matmul`, `numpy` — renders "✗ 关键项未通过" naming the kernels, and the slot-4 launch gate blocks the launch (env preflight re-runs the same critical set at gate time).
 - A `dataset_dirs` failure does not block launch by itself; it renders the routing hint "⚠ {n} 个数据集目录缺失 — [3] 前往数据管理" with the CLI re-audit command (`python script/audit_n_frequencies.py`).
 
-## Screen 2 — Models · datasets selection (模型·数据集)
+## Screen 2 — Models (模型)
 
-The operator's daily surface: two tables (models, datasets) browsed one at a time, type-to-filter, spacebar marks, presets/templates, and the local-presence column (per-dataset train/dev/test counts from `n_audit`, flipping live when a queued download reconciles).
+The operator's daily model surface: ONE table of models with the mark column, the 适配 column (the committed dnallm-adaptation verdict), and the 下载 column (the live per-model disk presence). Dataset marks still arrive through presets/templates and display in the matrix and the status line — the interactive dataset table lives on slot 3.
 
-Marks live in shared app-state sets (not inside the table), so filter rebuilds and table switches never lose them.
+Marks live in shared app-state sets (not inside the table), so filter rebuilds and the pool toggle never lose them.
 
 | Key | Action |
 |-----|--------|
 | `space` | Toggle the mark on the cursor row. Marking a **disabled custom** entry is refused with a warning (a mark the sweep can never see). State rows (loading / no-match / error) never mark. |
-| `m` | Switch between the models table and the datasets table (title flips; both mark sets stay alive). |
-| `/` | Focus the filter input — k9s-style type-to-filter over the registry grammar; live `(N/total)` readout; unknown-axis terms render a dim warning while valid terms still apply. |
+| `t` | Toggle the model pool: the default lists **dnallm-adapted official models plus customs** (customs are always visible — operator-added, outside the official registry the adaptation verdict constrains); `t` reveals ALL official entries with unadapted rows clearly marked 未适配 — never hidden data. The filter-count readout carries the active pool (已适配 / 全部); the text filter composes AND over the active pool. |
+| `/` | Focus the filter input — k9s-style type-to-filter over the registry grammar; live `(pool N/total)` readout; unknown-axis terms render a dim warning while valid terms still apply. |
 | `esc` | Clear the filter and refocus the table (when the filter is not active, `esc` is a no-op here). |
 | `enter` | Open the cursor row's card drill-down (every registry field, wrapping, never elided). |
 | `p` | Open the preset picker: derived tier-1 / tier-2 / all presets plus your saved customs (sorted). Highlight a preset and press `enter` (or toggle it) — the first selection **applies and closes**. Applying **replaces** the mark set(s); keys not in the current registry are skipped with a loud warning, never silently. |
 | `s` | Save the current marks as a named custom preset (path/name modal; an existing name asks a confirm before overwrite). Presets persist to `presets.json` under the XDG config root. |
 | `x` | Template menu (import / export / tier-convert). Import validates collect-all and fail-closed — a bad file renders the numbered problem list and applies nothing; export writes the selection as a run template JSON; tier-convert exports it as a `sweep_priorities.json`-style tier list. |
-| `w` | Open the onboarding wizard for the **active table's kind** (models table → model wizard, datasets table → dataset wizard). With the cursor on a custom row, the form prefills from that entry (edit = re-record). Wizard keys: `enter` advance, `b` back, `f` import (step 1), `o` export registry (step 1), `u` undo a just-landed entry, `esc` cancel. |
-| `e` | Toggle the cursor **custom** entry's enabled state (disable removes it from runs at loader level; the row stays visible with the disabled suffix). On an official row it is a no-op with an honest toast. |
-| `d` | (Datasets table only) Enqueue the cursor's **missing** dataset into the shared download queue — the same queue and toasts as the data manager's `d`. A present row gets a no-op toast; the models view ignores the key. |
+| `w` | Open the MODEL onboarding wizard (the kind is constant on this screen). With the cursor on a custom row, the form prefills from that entry (edit = re-record). Wizard keys: `enter` advance, `b` back, `f` import (step 1), `o` export registry (step 1), `u` undo a just-landed entry, `esc` cancel. |
+| `e` | Toggle the cursor **custom model** entry's enabled state (disable removes it from runs at loader level; the row stays visible with the disabled suffix). On an official row it is a no-op with an honest toast. |
+| `d` | Download the cursor's model through the shared queue's **dnallm channel** (`dnallm.models.model.download_model` + a ModelScope snapshot downloader; the landing dir is the effective model root joined with the registry `Model_path`, normalized so `config.json` sits directly in the model dir). Guard chain: an already-downloaded row gets the honest already-downloaded toast; a missing **adapted** row enqueues (outcome toasts for already-queued / channel-unavailable / CLI-unavailable / persist-failed); a missing **unadapted or custom** row toasts the manual-placement state **naming the landing directory** — manual weight placement, never huggingface guidance; a ◌ 未知 row (no `Model_path`) stays silent. A finished download flips the row's 下载 cell to ✓ 已下载 live. |
 | `v` | Push the read-only 59×50 presence matrix (marks shown as `◆` prefixes). `enter` shows a cell's full keys; `esc` returns. |
 
-## Screen 3 — Data manager (数据管理)
+The 下载 column vocabulary: ✓ 已下载 (present) · ✗ 未下载 (missing + adapted — the `d`-able state) · 手动放置 (missing unadapted-or-custom — the honest private/no-source state) · ◌ 未知 (no `Model_path` or drift). The 适配 column: 已适配 · 未适配 (dim) · 自定义.
 
-Two stacked panes over one shared, persistent download queue: the **missing-datasets list** (top, from the committed `n_audit` plus live reconcile results) and the **queue table** (bottom; rows in five states — pending / downloading / done / failed / mismatch — with live percent + progress bar and a reconcile column). Mismatch and failed rows sort to the top and each number-carrying mismatch gets a banner. The title bar shows the presence summary (present/total/missing), and a right-aligned line probes the Zenodo whole-package record (19135551) for publication.
+## Screen 3 — Datasets (数据集)
+
+Two stacked panes over one shared, persistent download queue: the **full official dataset list** (top, the primary pane — every registry key with a 下载 cell and the n_audit baseline row count) and the **queue table** (bottom; rows in five states — pending / downloading / done / failed / mismatch — with live percent + progress bar and a reconcile column). The missing-only list is the `v`-toggled alternate. Mismatch and failed rows sort to the top and each number-carrying mismatch gets a banner. The title bar shows the presence summary (present/total/missing); a right-aligned line in the **queue** title row probes the Zenodo whole-package record (19135551) — the 备选 alternate channel, never the default (per-dataset ModelScope downloads are the default channel).
+
+A row with a **live queue entry** renders the queue's own state word (待下载 / 下载中 / 失败 / 对账不一致) in its 下载 cell; a done entry reads ✓ 在场 through the merged presence instead.
 
 Key-target contract (`d`/`r`/`x` act on their own table's cursor regardless of focus; only `enter` routes by focus):
 
 | Key | Target | Action |
 |-----|--------|--------|
-| `d` | missing table | Enqueue the cursor row's dataset. Idempotent; outcome toasts for already-queued / disabled-channel / unknown-key / CLI-unavailable / persist-failed. |
+| `d` | full list (or the v-toggled missing list) | Enqueue the cursor's dataset through the per-dataset **ModelScope channel** (the default since the 2026-10-14 ruling). A present row gets the honest already-present toast. Idempotent; outcome toasts for already-queued / disabled-channel / unknown-key / CLI-unavailable / persist-failed. |
 | `a` | — | Enqueue **every** missing downloadable dataset (count toast). |
 | `r` | queue table | Re-queue the cursor's failed/mismatch entry. Other states get a no-op toast. |
 | `x` | queue table | Cancel the cursor's pending/downloading entry — always behind a confirm modal (`enter` confirms, `esc` cancels). |
+| `v` | top pane | Toggle between the full list and the missing-only list. |
+| `w` | — | Open the DATASET custom-entry wizard (the kind is constant here). The land-completion callback reloads the pane. |
 | `enter` | focused table | Drill-down modal: full key, registry `download_url` (the only download authority), the composed download argv, state/attempts/percent, reconcile numbers, and the verbatim CLI/audit log lines — data, never elided. |
 | `g` | queue table | (Hidden) Re-run the n_audit audit for the cursor's **mismatch** row — live only on mismatch rows; refreshes both panes when done. |
-| `z` | — | (Hidden) Enqueue the Zenodo whole-package bundle — offered only when the publication probe answered "public"; otherwise an explanatory toast. |
+| `z` | — | (Hidden) Enqueue the Zenodo whole-package bundle (the 备选 alternate) — offered only when the publication probe answered "public"; otherwise an explanatory toast. |
 
-The queue is serial, persisted to XDG state, and resumed automatically on the next `make tui` if pending work exists. A done download that reconciles (declared vs measured row counts) is the moment presence flips to ✓ everywhere (slot 2's column, the missing list, the counts). A landed-but-mismatched dataset never flips; use `g` after fixing.
+The queue is serial, persisted to XDG state, and resumed automatically on the next `make tui` if pending work exists (model downloads queue here too — `kind=model` entries persist and resume the same way, with no reconcile leg: a model download is done when its normalized landing dir holds `config.json` directly). A done dataset download that reconciles (declared vs measured row counts) is the moment presence flips to ✓ everywhere (the full list, the counts). A landed-but-mismatched dataset never flips; use `g` after fixing.
 
 ## Screen 4 — Run config (运行配置)
 
@@ -197,7 +203,7 @@ All TUI state resolves through `tui/services/settings.py` via platformdirs, with
 | File | Contents |
 |------|----------|
 | `env_check.json` | Env-check results + checked-at (the same-day cache) |
-| `download_queue.json` | The persistent download queue (entries, states, reconcile payloads) — resumed at boot |
+| `download_queue.json` | The persistent download queue (dataset, zenodo-bundle, and model entries, states, reconcile payloads) — resumed at boot |
 | `run_config.json` | The slot-4 run spec (marks, seeds, PEFT, variant, dirs) |
 | `monitor_roots.json` | Manually attached monitor roots |
 | `zenodo-19135551/…` | Staging for the Zenodo whole-package download |
