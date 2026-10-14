@@ -204,7 +204,7 @@ Plans:
   4. The Zenodo bulk bundle (record 19135551, once public) is reachable as an alternate whole-package entry
   5. Downloads run under subprocess/thread-worker discipline (the console never freezes) and no credentials are stored or echoed in logs or queue state
 
-**Plans**: 6/6 planned
+**Plans**: 7/7 planned
 Plans:
 **Wave 1**
 - [x] 10-01-PLAN.md — queue service core (DATA-01/02 substrate): XDG-persisted five-state queue, R-01 channel resolution + R-02 shape table (46/4 census), CLI probe, Popen engine with progress parse, landing check, shape-C rename, killpg cancel
@@ -221,8 +221,11 @@ Plans:
 **Wave 5** *(blocked on 10-04)*
 - [x] 10-05-PLAN.md — cross-screen integration (D-14/D-11): selection `d` enqueue on presence-✗ rows, presence overlay in the selection snapshot + live flip, env route hint proof
 
-**Wave 6** *(blocked on 10-05)*
+**Wave 6**
 - [x] 10-06-PLAN.md — hardening + phase-goal verification: CLI-absent/corrupt/unknown-key/restart edge sweep, exhaustive transition table, full gates, SC1-5 goal-backward checklist + GB10 live-smoke procedure
+
+**Wave 7** *(gap closure — blocked on 10-06)*
+- [ ] 10-07-PLAN.md — CR-01 gap closure (SC1 env-check conjunct, DATA-01): reroute `_datasets_base` through the run-config chain (`resolve_dirs(load_state()).dataset_root_abs`, the `_models_base` twin) + the three-configuration landing/consumption agreement regression matrix
 
 **UI hint**: yes
 
