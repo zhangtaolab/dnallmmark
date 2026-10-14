@@ -91,28 +91,30 @@ from tui.strings import (
     APP_HELP_ROW,
     APP_QUIT_LABEL,
     ENV_KERNEL_LABELS,
-    SEL_COL_CATEGORY,
+    SEL_COL_COMPAT,
+    SEL_COL_DOWNLOAD,
     SEL_COL_MARK,
-    SEL_COL_METRIC,
     SEL_COL_MODEL,
-    SEL_COL_PRESENCE,
     SEL_COL_SIZE,
     SEL_COL_SPECIES,
-    SEL_COL_TASK,
     SEL_COL_TYPE,
-    SEL_ENQUEUE_LABEL,
-    SEL_FILTER_COUNT,
+    SEL_COMPAT_ADAPTED,
+    SEL_COMPAT_CUSTOM,
+    SEL_COMPAT_UNADAPTED,
+    SEL_FILTER_COUNT_POOLED,
     SEL_FILTER_KEY_LABEL,
     SEL_FILTER_NO_MATCH,
     SEL_FILTER_UNKNOWN_AXIS,
     SEL_LOADING_ROW,
     SEL_MARK_LABEL,
     SEL_MATRIX_LABEL,
+    SEL_MODEL_DL_MANUAL,
+    SEL_MODEL_DOWNLOAD_LABEL,
     SEL_MODEL_PRESENCE_MISSING,
     SEL_MODEL_PRESENCE_PRESENT,
-    SEL_N_AUDIT_MISSING,
-    SEL_PRESENCE_MISSING,
-    SEL_PRESENCE_PRESENT,
+    SEL_POOL_ADAPTED,
+    SEL_POOL_ALL,
+    SEL_POOL_TOGGLE_LABEL,
     SEL_PRESENCE_UNKNOWN,
     SEL_PRESET_ALL,
     SEL_PRESET_APPLIED,
@@ -127,7 +129,6 @@ from tui.strings import (
     SEL_REGISTRY_LOAD_FAILED,
     SEL_SAVE_PRESET_LABEL,
     SEL_STATUS_LINE,
-    SEL_SWITCH_LABEL,
     SEL_TEMPLATE_EXPORTED,
     SEL_TEMPLATE_IMPORTED,
     SEL_TEMPLATE_LABEL,
@@ -156,20 +157,26 @@ _GREP_LOCK_MODULES = (
 _KEY_MODEL_A = "plant-dnamamba-6mer"
 _KEY_MODEL_B = "plant-dnabert-6mer"
 _KEY_MODEL_C = "PlantHelixSeek"
+_KEY_MODEL_D = "GENA-LM-yeast"
 _TASK_A = "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation"
 _TASK_B = "GUE__emp_H3"
 
 # A card value far than any column — the row-detail never-elide case.
 _LONG_CARD_VALUE = "x" * 120
 
-_MODEL_COLUMNS_KEYS = ("mark", "key", "type", "species", "size", "presence")
-_DATASET_COLUMNS_KEYS = (
-    "mark", "key", "category", "type", "metric", "presence",
+_MODEL_COLUMNS_KEYS = (
+    "mark", "key", "type", "species", "size", "compat", "download",
 )
 
 
 def _default_data():
-    """The standard snapshot: 3 models, 2 datasets, mixed presence."""
+    """The standard snapshot: 4 models, 2 datasets, mixed presence.
+
+    MLC-02 (261014-mlc): the compat fixture covers the pool semantics —
+    A/B adapted (A downloaded, B the d-able missing row), C UNADAPTED
+    (hidden by the default pool, revealed by t), D adapted with the
+    no-Model_path unknown presence.
+    """
     return SelectionData(
         model_entries=(
             {
@@ -177,6 +184,7 @@ def _default_data():
                 "size_m": 396.0,
                 "card": {
                     "type": "MLM", "species": "plants", "size (M)": 396,
+                    "Model_path": "models/plant-dnamamba-6mer",
                     "Tokenizer": "6mer", "Mean_token_length": 6,
                     "description": _LONG_CARD_VALUE,
                 },
@@ -185,13 +193,21 @@ def _default_data():
                 "key": _KEY_MODEL_B, "type": "MLM", "species": "plants",
                 "size_m": 86.0,
                 "card": {"type": "MLM", "species": "plants",
-                         "size (M)": 86, "Tokenizer": "6mer"},
+                         "size (M)": 86, "Tokenizer": "6mer",
+                         "Model_path": "models/plant-dnabert-6mer"},
             },
             {
                 "key": _KEY_MODEL_C, "type": "DL", "species": "plants",
                 "size_m": 151.0,
                 "card": {"type": "DL", "species": "plants",
-                         "size (M)": 151},
+                         "size (M)": 151,
+                         "Model_path": "models/PlantHelixSeek"},
+            },
+            {
+                "key": _KEY_MODEL_D, "type": "DL", "species": "yeast",
+                "size_m": 86.0,
+                "card": {"type": "DL", "species": "yeast",
+                         "size (M)": 86},
             },
         ),
         dataset_entries=(
@@ -214,13 +230,30 @@ def _default_data():
             ),
             _TASK_B: Presence(status=PRESENCE_MISSING, rows=None),
         },
-        # DCL-02 (261014-dcl): the models-column live presence — one of
-        # each status (A downloaded, B not, C unknown — its card carries
-        # no Model_path).
+        # DCL-02 (261014-dcl): the models-column live presence — A
+        # downloaded, B the d-able missing row, C missing (manual
+        # placement — unadapted), D unknown (its card carries no
+        # Model_path).
         model_presence={
             _KEY_MODEL_A: selection_service.MODEL_PRESENCE_PRESENT,
             _KEY_MODEL_B: selection_service.MODEL_PRESENCE_MISSING,
-            _KEY_MODEL_C: selection_service.MODEL_PRESENCE_UNKNOWN,
+            _KEY_MODEL_C: selection_service.MODEL_PRESENCE_MISSING,
+            _KEY_MODEL_D: selection_service.MODEL_PRESENCE_UNKNOWN,
+        },
+        # MLC-02 (261014-mlc): the committed dnallm compat verdict shape —
+        # A/B/D adapted (the default pool), C unadapted (t reveals it).
+        compat={
+            _KEY_MODEL_A: {"dnllm_adapted": True,
+                           "modelscope": "zhangtaolab/plant-dnamamba-6mer",
+                           "channel": "modelscope-slot"},
+            _KEY_MODEL_B: {"dnllm_adapted": True,
+                           "modelscope": "zhangtaolab/plant-dnabert-6mer",
+                           "channel": "modelscope-slot"},
+            _KEY_MODEL_C: {"dnllm_adapted": False, "modelscope": None,
+                           "channel": None},
+            _KEY_MODEL_D: {"dnllm_adapted": True,
+                           "modelscope": "lgq12697/gena-lm-bert-base-yeast",
+                           "channel": "modelscope-mirror"},
         },
     )
 
@@ -239,7 +272,7 @@ def _default_presets():
         ),
         PresetOption(
             id="all", kind="derived", name=None,
-            models=(_KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_C),
+            models=(_KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_C, _KEY_MODEL_D),
             tasks=(_TASK_A, _TASK_B),
         ),
     )
@@ -423,8 +456,10 @@ async def _type(pilot, text):
 # Pilot tests — boot, mark-set, table toggle (SEL-01)
 # =====================================================================
 
-async def test_boot_columns_toggle_and_marks_persist_independently():
-    """Boot renders the model columns; m toggles; both mark sets persist."""
+async def test_boot_models_only_columns_pool_and_marks_persist():
+    """Boot renders the models-only 适配/下载 columns; the DEFAULT pool
+    hides the unadapted official; t reveals it honestly marked; marks
+    survive the pool round trip (MLC-02, the 2026-10-14 slot split)."""
     app = _app(FakeSelectionService())
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_selection(pilot, app)
@@ -435,22 +470,30 @@ async def test_boot_columns_toggle_and_marks_persist_independently():
         assert screen.marked_tasks is app._marked_tasks
 
         table = screen.query_one(DataTable)
+        # the DEFAULT pool: adapted officials (C — unadapted — hidden)
         assert table.row_count == 3
         assert _headers(table, _MODEL_COLUMNS_KEYS) == [
             SEL_COL_MARK, SEL_COL_MODEL, SEL_COL_TYPE, SEL_COL_SPECIES,
-            SEL_COL_SIZE, SEL_COL_PRESENCE,
+            SEL_COL_SIZE, SEL_COL_COMPAT, SEL_COL_DOWNLOAD,
         ]
-        # rows keyed on the registry keys, registry order (stable keys)
-        assert _row_keys(table) == [_KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_C]
-        # card-field columns render; the model presence cell renders the
-        # LIVE per-model download state (DCL-02 — decided in the service
-        # over the effective model root; the fixture marks A present)
+        assert _row_keys(table) == [_KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_D]
+        # rows keyed on the registry keys, registry order (stable keys);
+        # card-field columns render; the 适配 cells render the verdict,
+        # the 下载 cells the honest four-state vocabulary (A downloaded,
+        # B the d-able missing row, D unknown — no Model_path)
         assert _row(table, 0)[:5] == [
             "", _KEY_MODEL_A, "MLM", "plants", "396",
         ]
-        assert _row(table, 0)[5] == SEL_MODEL_PRESENCE_PRESENT
-        assert _row(table, 1)[5] == SEL_MODEL_PRESENCE_MISSING
-        assert _row(table, 2)[5] == SEL_PRESENCE_UNKNOWN
+        assert _row(table, 0)[5] == SEL_COMPAT_ADAPTED
+        assert _row(table, 0)[6] == SEL_MODEL_PRESENCE_PRESENT
+        assert _row(table, 1)[5] == SEL_COMPAT_ADAPTED
+        assert _row(table, 1)[6] == SEL_MODEL_PRESENCE_MISSING
+        assert _row(table, 2)[5] == SEL_COMPAT_ADAPTED
+        assert _row(table, 2)[6] == SEL_PRESENCE_UNKNOWN
+        # the pool-mode filter-count segment is always legible
+        assert _label_text(screen, "#selection-filter-count") == (
+            SEL_FILTER_COUNT_POOLED.format(
+                pool=SEL_POOL_ADAPTED, n=3, total=3))
 
         # space marks the cursor row (the mark column updates in place)
         await pilot.press("space")
@@ -458,35 +501,28 @@ async def test_boot_columns_toggle_and_marks_persist_independently():
         assert screen.marked_models == {_KEY_MODEL_A}
         assert _row(table, 0)[0] == "✓"
 
-        # m toggles to the dataset table: its column set + its rows
-        await pilot.press("m")
-        await pilot.pause()
-        assert _headers(table, _DATASET_COLUMNS_KEYS) == [
-            SEL_COL_MARK, SEL_COL_TASK, SEL_COL_CATEGORY, SEL_COL_TYPE,
-            SEL_COL_METRIC, SEL_COL_PRESENCE,
-        ]
-        assert _row_keys(table) == [_TASK_A, _TASK_B]
-        # the dataset presence cell carries the fake's exact counts
-        # (formatting happens only in the screen)
-        assert _row(table, 0)[5] == SEL_PRESENCE_PRESENT.format(
-            train="743,095", dev="109,717", test="106,227",
-        )
-        assert _row(table, 1)[5] == SEL_PRESENCE_MISSING
-
-        # the dataset mark set is INDEPENDENT (models still marked)
-        await pilot.press("space")
-        await pilot.pause()
-        assert screen.marked_tasks == {_TASK_A}
-        assert screen.marked_models == {_KEY_MODEL_A}
-
-        # m back: the model marks survived the round trip
-        await pilot.press("m")
+        # t reveals the ALL pool: the unadapted row is present, clearly
+        # marked 未适配 with the honest manual-placement download cell —
+        # never hidden data
+        await pilot.press("t")
         await pilot.pause()
         assert _row_keys(table) == [
-            _KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_C,
+            _KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_C, _KEY_MODEL_D,
         ]
+        assert _row(table, 2)[5] == SEL_COMPAT_UNADAPTED
+        assert _row(table, 2)[6] == SEL_MODEL_DL_MANUAL
+        assert _label_text(screen, "#selection-filter-count") == (
+            SEL_FILTER_COUNT_POOLED.format(
+                pool=SEL_POOL_ALL, n=4, total=4))
+        # the mark survived the pool rebuild
         assert screen.marked_models == {_KEY_MODEL_A}
-        assert screen.marked_tasks == {_TASK_A}
+        assert _row(table, 0)[0] == "✓"
+
+        # t back: the default pool, the mark still alive
+        await pilot.press("t")
+        await pilot.pause()
+        assert _row_keys(table) == [_KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_D]
+        assert screen.marked_models == {_KEY_MODEL_A}
         assert _row(table, 0)[0] == "✓"
 
 
@@ -501,7 +537,7 @@ async def test_spacebar_mark_toggle_and_status_line_zero_one_many():
         # zero
         assert _label_text(screen, "#selection-status") == (
             SEL_STATUS_LINE.format(
-                n=0, models_total=3, m=0, tasks_total=2,
+                n=0, models_total=4, m=0, tasks_total=2,
             )
         )
         # one
@@ -510,7 +546,7 @@ async def test_spacebar_mark_toggle_and_status_line_zero_one_many():
         assert screen.marked_models == {_KEY_MODEL_A}
         assert _label_text(screen, "#selection-status") == (
             SEL_STATUS_LINE.format(
-                n=1, models_total=3, m=0, tasks_total=2,
+                n=1, models_total=4, m=0, tasks_total=2,
             )
         )
         # many
@@ -520,7 +556,7 @@ async def test_spacebar_mark_toggle_and_status_line_zero_one_many():
         assert screen.marked_models == {_KEY_MODEL_A, _KEY_MODEL_B}
         assert _label_text(screen, "#selection-status") == (
             SEL_STATUS_LINE.format(
-                n=2, models_total=3, m=0, tasks_total=2,
+                n=2, models_total=4, m=0, tasks_total=2,
             )
         )
         # space again unmarks (the toggle is symmetric)
@@ -552,7 +588,7 @@ async def test_filter_rebuilds_rows_and_marks_survive_the_round_trip():
         await _type(pilot, "mlm")
         assert _row_keys(table) == [_KEY_MODEL_A, _KEY_MODEL_B]
         assert _label_text(screen, "#selection-filter-count") == (
-            SEL_FILTER_COUNT.format(n=2, total=3)
+            SEL_FILTER_COUNT_POOLED.format(pool=SEL_POOL_ADAPTED, n=2, total=3)
         )
         # the marked row carries its mark through the rebuild
         assert _row(table, 0)[0] == "✓"
@@ -567,7 +603,7 @@ async def test_filter_rebuilds_rows_and_marks_survive_the_round_trip():
         await pilot.pause()
         assert screen.query_one("#selection-filter").value == ""
         assert _row_keys(table) == [
-            _KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_C,
+            _KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_D,
         ]
         assert screen.marked_models == {_KEY_MODEL_A}
         assert _row(table, 0)[0] == "✓"
@@ -592,7 +628,7 @@ async def test_filter_no_match_renders_the_documented_row():
         assert table.row_count == 1
         assert _row(table, 0)[1] == SEL_FILTER_NO_MATCH.format(total=3)
         assert _label_text(screen, "#selection-filter-count") == (
-            SEL_FILTER_COUNT.format(n=0, total=3)
+            SEL_FILTER_COUNT_POOLED.format(pool=SEL_POOL_ADAPTED, n=0, total=3)
         )
         # the no-match row is never a mark target
         await pilot.press("escape")
@@ -666,10 +702,12 @@ async def test_preset_modal_replaces_both_mark_sets_with_toast():
         assert not isinstance(app.screen, PresetModal)
         assert screen.marked_models == {_KEY_MODEL_A, _KEY_MODEL_C}
         assert screen.marked_tasks == {_TASK_A}
-        # the mark column re-rendered for the new sets
+        # the mark column re-rendered for the new sets (C is marked but
+        # lives OUTSIDE the default pool — its mark persists in the set,
+        # the pool never filters the mark sets)
         assert _row(table, 0)[0] == "✓"
         assert _row(table, 1)[0] == ""
-        assert _row(table, 2)[0] == "✓"
+        assert _row(table, 2)[0] == ""
         # the success toast fired with the preset label and both counts
         assert SEL_PRESET_APPLIED.format(
             preset=SEL_PRESET_TIER_1, n=2, m=1,
@@ -677,7 +715,7 @@ async def test_preset_modal_replaces_both_mark_sets_with_toast():
         # the status line reflects the applied preset
         assert _label_text(screen, "#selection-status") == (
             SEL_STATUS_LINE.format(
-                n=2, models_total=3, m=1, tasks_total=2,
+                n=2, models_total=4, m=1, tasks_total=2,
             )
         )
 
@@ -767,14 +805,16 @@ async def test_preset_menu_load_runs_off_the_event_loop():
         await pilot.press("p")
         await pilot.pause()
         # the menu read is in flight in the worker: no modal yet, and
-        # the event loop keeps processing keys (the m toggle renders —
-        # the T-08-07 responsiveness proof)
+        # the event loop keeps processing keys (the t pool toggle
+        # renders — the T-08-07 responsiveness proof)
         assert not isinstance(app.screen, PresetModal), (
             "the modal must wait for the worker's menu"
         )
-        await pilot.press("m")
+        await pilot.press("t")
         await pilot.pause()
-        assert _row_keys(table) == [_TASK_A, _TASK_B], (
+        assert _row_keys(table) == [
+            _KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_C, _KEY_MODEL_D,
+        ], (
             "the UI must stay responsive while the menu loads"
         )
 
@@ -922,12 +962,13 @@ async def test_template_export_and_tiers_write_through_the_service():
         screen = app.screen
         fake: FakeSelectionService = app._selection_service
 
-        # mark one model and one task (both sets flow into the export)
+        # mark one model via spacebar; the TASK mark is seeded directly —
+        # since the 2026-10-14 slot split slot 2 has no interactive
+        # dataset table (task marks arrive via presets/templates; the
+        # export flow itself is what this test pins)
         await pilot.press("space")
-        await pilot.press("m")
         await pilot.pause()
-        await pilot.press("space")
-        await pilot.press("m")
+        app._marked_tasks.add(_TASK_A)
         await pilot.pause()
         assert screen.marked_models == {_KEY_MODEL_A}
         assert screen.marked_tasks == {_TASK_A}
@@ -1012,9 +1053,11 @@ async def test_export_to_an_unwritable_path_fails_closed_in_the_modal():
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, SelectionScreen)
-        await pilot.press("m")
+        await pilot.press("t")
         await pilot.pause()
-        assert _row_keys(screen.query_one(DataTable)) == [_TASK_A, _TASK_B]
+        assert _row_keys(screen.query_one(DataTable)) == [
+            _KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_C, _KEY_MODEL_D,
+        ]
 
         # the tier conversion degrades the same way (menu entry 3)
         await pilot.press("x")
@@ -1061,9 +1104,11 @@ async def test_save_preset_to_an_unwritable_root_warns_and_stays_alive():
                   "'/root/.config'",
         ) in _toast_messages(app)
         # the app stays alive: the table still responds
-        await pilot.press("m")
+        await pilot.press("t")
         await pilot.pause()
-        assert _row_keys(screen.query_one(DataTable)) == [_TASK_A, _TASK_B]
+        assert _row_keys(screen.query_one(DataTable)) == [
+            _KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_C, _KEY_MODEL_D,
+        ]
 
 
 async def test_save_preset_overwrite_confirm_works_both_ways():
@@ -1152,19 +1197,21 @@ async def test_help_modal_opens_on_the_selection_screen():
         # (after the mark/preset bindings, before the auxiliary actions —
         # the migration table's declaration order; the modal auto-reflects
         # the declared surface, the 09-03 chrome-pin-update class). The
-        # d row joined at 10-05 (between e and v — D-14's enqueue key).
+        # t pool toggle replaced the retired m table toggle at 261014-mlc
+        # (the slot split — slot 2 is models only); the d row is the
+        # MODEL download since the same split.
         assert rows == [
             APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
             APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
             APP_HELP_ROW.format(key="space", label=SEL_MARK_LABEL),
-            APP_HELP_ROW.format(key="m", label=SEL_SWITCH_LABEL),
+            APP_HELP_ROW.format(key="t", label=SEL_POOL_TOGGLE_LABEL),
             APP_HELP_ROW.format(key="p", label=SEL_PRESET_LABEL),
             APP_HELP_ROW.format(key="x", label=SEL_TEMPLATE_LABEL),
             APP_HELP_ROW.format(key="s", label=SEL_SAVE_PRESET_LABEL),
             APP_HELP_ROW.format(key="/", label=SEL_FILTER_KEY_LABEL),
             APP_HELP_ROW.format(key="w", label=SEL_WIZARD_LABEL),
             APP_HELP_ROW.format(key="e", label=SEL_TOGGLE_LABEL),
-            APP_HELP_ROW.format(key="d", label=SEL_ENQUEUE_LABEL),
+            APP_HELP_ROW.format(key="d", label=SEL_MODEL_DOWNLOAD_LABEL),
             APP_HELP_ROW.format(key="v", label=SEL_MATRIX_LABEL),
         ]
         # esc closes back to the selection screen
@@ -1174,34 +1221,42 @@ async def test_help_modal_opens_on_the_selection_screen():
 
 
 # =====================================================================
-# Pilot tests — presence cells (SEL-04)
+# Pilot tests — the 适配/下载 cells (MLC-02)
 # =====================================================================
 
-async def test_presence_cell_formats_pin_the_contract():
-    """Present counts / missing word / exact 0 / unknown / n_audit-absent."""
+async def test_download_and_compat_cell_states_pin_the_contract():
+    """The four honest 下载 states and the three 适配 states render from
+    presence + compat + custom_status exactly (MLC-02): 已下载 / 未下载
+    (d-able, missing+adapted) / 手动放置 (missing unadapted-or-custom) /
+    ◌ 未知 (no Model_path or drift); 已适配 / 未适配 / 自定义."""
     data = SelectionData(
-        model_entries=_default_data().model_entries,
-        dataset_entries=(
-            {"key": "task-present-big", "category": "Plants",
-             "type": "binary", "metric": "f1", "card": {}},
-            {"key": "task-present-zero", "category": "Plants",
-             "type": "binary", "metric": "f1", "card": {}},
-            {"key": "task-missing", "category": "Plants",
-             "type": "binary", "metric": "f1", "card": {}},
-            {"key": "task-unknown", "category": "Plants",
-             "type": "binary", "metric": "f1", "card": {}},
+        model_entries=(
+            {"key": "m-present", "type": "MLM", "species": "plants",
+             "size_m": 1.0, "card": {}},
+            {"key": "m-dable", "type": "MLM", "species": "plants",
+             "size_m": 2.0, "card": {"Model_path": "models/m-dable"}},
+            {"key": "m-manual-official", "type": "DL", "species": "",
+             "size_m": 3.0, "card": {"Model_path": "models/m-manual"}},
+            {"key": "m-manual-custom", "type": "MLM", "species": "",
+             "size_m": 4.0, "card": {"Model_path": "models/m-custom"}},
+            {"key": "m-unknown", "type": "MLM", "species": "",
+             "size_m": 5.0, "card": {}},
         ),
-        presence={
-            "task-present-big": Presence(
-                status=PRESENCE_PRESENT, rows=(743095, 109717, 106227),
-            ),
-            # a present task with a zero-row split shows the exact 0
-            "task-present-zero": Presence(
-                status=PRESENCE_PRESENT, rows=(0, 5, 3),
-            ),
-            # the missing flag alone decides missing (service-side; the
-            # screen renders what it is fed — no coercion)
-            "task-missing": Presence(status=PRESENCE_MISSING, rows=None),
+        model_presence={
+            "m-present": selection_service.MODEL_PRESENCE_PRESENT,
+            "m-dable": selection_service.MODEL_PRESENCE_MISSING,
+            "m-manual-official": selection_service.MODEL_PRESENCE_MISSING,
+            "m-manual-custom": selection_service.MODEL_PRESENCE_MISSING,
+            "m-unknown": selection_service.MODEL_PRESENCE_UNKNOWN,
+        },
+        custom_status={"m-manual-custom": {"custom": True,
+                                           "enabled": True}},
+        compat={
+            "m-present": {"dnllm_adapted": True},
+            "m-dable": {"dnllm_adapted": True},
+            "m-manual-official": {"dnllm_adapted": False},
+            # the custom key is absent from the official compat map
+            "m-unknown": {"dnllm_adapted": True},
         },
     )
     app = _app(FakeSelectionService(data=data))
@@ -1210,43 +1265,29 @@ async def test_presence_cell_formats_pin_the_contract():
         screen = app.screen
         table = screen.query_one(DataTable)
 
-        await pilot.press("m")
+        # t reveals every row (the unadapted official is default-hidden)
+        await pilot.press("t")
         await pilot.pause()
-        assert _row(table, 0)[5] == SEL_PRESENCE_PRESENT.format(
-            train="743,095", dev="109,717", test="106,227",
-        )
-        assert _row(table, 1)[5] == SEL_PRESENCE_PRESENT.format(
-            train="0", dev="5", test="3",
-        )
-        assert _row(table, 2)[5] == SEL_PRESENCE_MISSING
-        # a key absent from the audit renders the unknown copy
-        assert _row(table, 3)[5] == SEL_PRESENCE_UNKNOWN
+        cells = {key: (_row(table, index)[5], _row(table, index)[6])
+                 for index, key in enumerate(_row_keys(table))}
+        assert cells["m-present"] == (
+            SEL_COMPAT_ADAPTED, SEL_MODEL_PRESENCE_PRESENT)
+        assert cells["m-dable"] == (
+            SEL_COMPAT_ADAPTED, SEL_MODEL_PRESENCE_MISSING)
+        assert cells["m-manual-official"] == (
+            SEL_COMPAT_UNADAPTED, SEL_MODEL_DL_MANUAL)
+        assert cells["m-manual-custom"] == (
+            SEL_COMPAT_CUSTOM, SEL_MODEL_DL_MANUAL)
+        assert cells["m-unknown"] == (
+            SEL_COMPAT_ADAPTED, SEL_PRESENCE_UNKNOWN)
 
 
-async def test_presence_column_renders_n_audit_missing_copy():
-    """n_audit absent: every presence cell renders the documented copy."""
-    data = SelectionData(
-        model_entries=_default_data().model_entries,
-        dataset_entries=_default_data().dataset_entries,
-        presence={},
-        audit_available=False,
-    )
-    app = _app(FakeSelectionService(data=data))
-    async with app.run_test(size=(120, 40)) as pilot:
-        await _open_selection(pilot, app)
-        screen = app.screen
-        table = screen.query_one(DataTable)
-
-        await pilot.press("m")
-        await pilot.pause()
-        for index in range(table.row_count):
-            assert _row(table, index)[5] == SEL_N_AUDIT_MISSING
-        # the model view is filesystem-driven, NOT n_audit-driven
-        # (DCL-02): with no model_presence filled the cells render the
-        # shared unknown copy — never the dataset column's n_audit state
-        await pilot.press("m")
-        await pilot.pause()
-        assert _row(table, 0)[5] == SEL_PRESENCE_UNKNOWN
+# test_presence_cell_formats_pin_the_contract and
+# test_presence_column_renders_n_audit_missing_copy (the DATASET presence
+# cells) were REMOVED by the 2026-10-14 slot split: slot 2 is models only
+# — the dataset presence surface lives on slot 3 (the full-list 下载
+# cells) and the matrix (the ◌/✓ glyph grid), both pinned in their own
+# suites.
 
 
 # =====================================================================
@@ -1283,7 +1324,7 @@ async def test_enter_opens_row_detail_with_full_card_fields():
 
 async def test_registry_failure_renders_error_state_and_app_stays_alive():
     """A registry-load failure renders the documented row naming the
-    path; the other table and the app stay alive."""
+    path; the app stays alive (the pool toggle still re-renders)."""
     data = SelectionData(
         model_entries=(),
         dataset_entries=_default_data().dataset_entries,
@@ -1306,11 +1347,14 @@ async def test_registry_failure_renders_error_state_and_app_stays_alive():
                 n=0, models_total=0, m=0, tasks_total=2,
             )
         )
-        # the app stays alive: m toggles to the healthy dataset table
-        await pilot.press("m")
+        # the app stays alive: the pool toggle still re-renders the
+        # error state (both pools read the same failed registry)
+        await pilot.press("t")
         await pilot.pause()
-        assert _row_keys(table) == [_TASK_A, _TASK_B]
-        await pilot.press("m")
+        assert _row(table, 0)[1] == SEL_REGISTRY_LOAD_FAILED.format(
+            registry_path="/repo/pipeline/models_info.json",
+        )
+        await pilot.press("t")
         await pilot.pause()
         assert _row(table, 0)[1] == SEL_REGISTRY_LOAD_FAILED.format(
             registry_path="/repo/pipeline/models_info.json",
@@ -1338,7 +1382,7 @@ async def test_loading_row_covers_the_read_seam():
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert _row_keys(table) == [
-            _KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_C,
+            _KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_D,
         ]
 
 
@@ -1397,6 +1441,18 @@ def test_backend_loads_the_committed_registries_and_presence(
         selection_service.MODEL_PRESENCE_UNKNOWN,
     }
     assert data.model_presence, "at least one model presence resolved"
+    # MLC-02 (261014-mlc): the compat verdict map rides the snapshot —
+    # the committed 59-key artifact through the ONE loader (an empty map
+    # is the degraded read; 36 adapted)
+    assert data.compat, "the committed compat map loads through the seam"
+    assert set(data.compat) == {
+        entry["key"] for entry in data.model_entries
+    }
+    assert sum(
+        1 for verdict in data.compat.values()
+        if isinstance(verdict, dict)
+        and verdict.get("dnllm_adapted") is True
+    ) == 36
 
 
 def test_backend_model_presence_all_missing_under_empty_configured_root(
@@ -1548,36 +1604,36 @@ def test_backend_parse_and_apply_delegate_to_the_service_grammar():
 # Task 3 — the 80-column UI backstops (08-UI-SPEC UI Considerations)
 # =====================================================================
 
-#: The real longest registry task key (pipeline/datasets_info.json,
-#: verified 2026-10-11): 68 chars — the backstop fixture's long key.
-_LONGEST_TASK_KEY = (
-    "PlantCAD2_fine_tuning_tasks__cross_species_leaf_absolute_translation"
-)
+#: The real longest registry MODEL key (pipeline/models_info.json,
+#: verified 2026-10-14): 46 chars — the backstop fixture's long key.
+_LONGEST_MODEL_KEY = "caduceus-ph_seqlen-131k_d_model-256_n_layer-16"
 
 
-async def test_backstop_longest_task_key_at_80x24():
-    """Backstop (08-UI-SPEC UI Considerations, long-text; UAT geometry):
-    at 80x24 the longest real registry task key causes no wrap-induced
-    row-height change — every data row stays height 1 — and the key cell
-    carries the FULL key; the over-budget table h-scrolls (the matrix
-    precedent) and the presence column stays reachable by scrolling
-    right."""
-    task_keys = tuple(
-        _LONGEST_TASK_KEY if index == 0 else f"GUE__task_{index}"
+async def test_backstop_longest_model_key_at_80x24():
+    """Backstop (08-UI-SPEC UI Considerations, long-text; UAT geometry —
+    reworked to the models-only surface at 261014-mlc): at 80x24 the
+    longest real registry model key causes no wrap-induced row-height
+    change — every data row stays height 1 — and the key cell carries
+    the FULL key; the over-budget table h-scrolls (the matrix precedent)
+    and the 下载 column stays reachable by scrolling right."""
+    model_entries = tuple(
+        {
+            "key": (_LONGEST_MODEL_KEY if index == 0
+                    else f"model-{index}"),
+            "type": "MLM", "species": "plants", "size_m": 1.0,
+            "card": {"Model_path": "models/x"},
+        }
         for index in range(12)  # enough rows to force the v-scrollbar
     )
     data = SelectionData(
-        model_entries=_default_data().model_entries,
-        dataset_entries=tuple(
-            {"key": key, "category": "Plants", "type": "binary",
-             "metric": "f1", "card": {}}
-            for key in task_keys
-        ),
-        presence={
-            key: Presence(
-                status=PRESENCE_PRESENT, rows=(743095, 109717, 106227),
-            )
-            for key in task_keys
+        model_entries=model_entries,
+        compat={
+            str(entry["key"]): {"dnllm_adapted": True}
+            for entry in model_entries
+        },
+        model_presence={
+            str(entry["key"]): selection_service.MODEL_PRESENCE_MISSING
+            for entry in model_entries
         },
     )
     app = _app(FakeSelectionService(data=data))
@@ -1586,9 +1642,6 @@ async def test_backstop_longest_task_key_at_80x24():
         screen = app.screen
         table = screen.query_one(DataTable)
 
-        # the dataset table is the long-key surface
-        await pilot.press("m")
-        await pilot.pause()
         assert table.row_count == 12
 
         # no wrap-induced row-height change: every data row stays height 1
@@ -1597,23 +1650,23 @@ async def test_backstop_longest_task_key_at_80x24():
         assert heights == {1}, "long keys must never wrap a row taller"
 
         # the UAT geometry: the key column fits the longest real key
-        # exactly (68) and the total budget (widths + per-column padding
-        # + the scrollbar) is 128 — past 80, so the table h-scrolls
+        # exactly (46) and the total budget (widths + per-column padding
+        # + the scrollbar) is 101 — past 80, so the table h-scrolls
         widths = [
-            table.columns[key].width for key in _DATASET_COLUMNS_KEYS
+            table.columns[key].width for key in _MODEL_COLUMNS_KEYS
         ]
-        assert table.columns["key"].width == 68
-        assert sum(widths) + 2 * len(widths) + 2 == 128
+        assert table.columns["key"].width == 46
+        assert sum(widths) + 2 * len(widths) + 2 == 101
         assert table.max_scroll_x > 0, (
-            "the 128-wide table must h-scroll at the 80-column grid"
+            "the 101-wide table must h-scroll at the 80-column grid"
         )
 
         # the key cell carries the FULL key — no ellipsis (the DataTable
         # clips the display on narrow terminals; the full value stays in
         # the enter row detail)
         key_cell = _row(table, 0)[1]
-        assert key_cell == _LONGEST_TASK_KEY
-        assert Text(key_cell).cell_len == 68  # the dataset key-column budget
+        assert key_cell == _LONGEST_MODEL_KEY
+        assert Text(key_cell).cell_len == 46  # the model key-column budget
 
         # the viewport origin renders the key column header...
         from textual.geometry import Region
@@ -1621,43 +1674,46 @@ async def test_backstop_longest_task_key_at_80x24():
             Region(0, 0, table.size.width, min(table.size.height, 3)),
         )
         header = "".join(segment.text for segment in strips[0])
-        assert SEL_COL_TASK in header
+        assert SEL_COL_MODEL in header
 
-        # ...and the presence column stays reachable: scrolled to the
-        # right end its header and glyphs render in the viewport
+        # ...and the 下载 column stays reachable: scrolled to the right
+        # end its header and glyphs render in the viewport
         table.scroll_to(x=table.max_scroll_x, animate=False)
         await pilot.pause()
         strips = table.render_lines(
             Region(0, 0, table.size.width, min(table.size.height, 3)),
         )
         header_right = "".join(segment.text for segment in strips[0])
-        assert SEL_COL_PRESENCE in header_right
+        assert SEL_COL_DOWNLOAD in header_right
         first_data_row = "".join(segment.text for segment in strips[1])
-        assert "✓" in first_data_row
+        assert "✗" in first_data_row
 
 
-async def test_backstop_longest_task_key_fits_in_full_at_160():
-    """Regression (UAT feedback, 「部分数据集名称过长看不到全部」): on a
-    normal wide terminal (160x40) the longest real registry task key
-    renders IN FULL in its key cell — no ellipsis, the whole table fits
-    without h-scroll — and the h-scroll geometry never disturbs the
-    min-size guard (below 80x24 the guard still takes over)."""
-    task_keys = tuple(
-        _LONGEST_TASK_KEY if index == 0 else f"GUE__task_{index}"
+async def test_backstop_longest_model_key_fits_in_full_at_160():
+    """Regression (UAT feedback, 「部分数据集名称过长看不到全部」 — reworked
+    to the models-only surface at 261014-mlc): on a normal wide terminal
+    (160x40) the longest real registry model key renders IN FULL in its
+    key cell — no ellipsis, the whole table fits without h-scroll — and
+    the h-scroll geometry never disturbs the min-size guard (below 80x24
+    the guard still takes over)."""
+    model_entries = tuple(
+        {
+            "key": (_LONGEST_MODEL_KEY if index == 0
+                    else f"model-{index}"),
+            "type": "MLM", "species": "plants", "size_m": 1.0,
+            "card": {"Model_path": "models/x"},
+        }
         for index in range(12)  # enough rows to force the v-scrollbar
     )
     data = SelectionData(
-        model_entries=_default_data().model_entries,
-        dataset_entries=tuple(
-            {"key": key, "category": "Plants", "type": "binary",
-             "metric": "f1", "card": {}}
-            for key in task_keys
-        ),
-        presence={
-            key: Presence(
-                status=PRESENCE_PRESENT, rows=(743095, 109717, 106227),
-            )
-            for key in task_keys
+        model_entries=model_entries,
+        compat={
+            str(entry["key"]): {"dnllm_adapted": True}
+            for entry in model_entries
+        },
+        model_presence={
+            str(entry["key"]): selection_service.MODEL_PRESENCE_MISSING
+            for entry in model_entries
         },
     )
     app = _app(FakeSelectionService(data=data))
@@ -1665,29 +1721,26 @@ async def test_backstop_longest_task_key_fits_in_full_at_160():
         await _open_selection(pilot, app)
         table = app.screen.query_one(DataTable)
 
-        # the dataset table is the long-key surface
-        await pilot.press("m")
-        await pilot.pause()
         assert table.row_count == 12
 
-        # the 128-wide table fits a 160-column terminal whole — no
+        # the 101-wide table fits a 160-column terminal whole — no
         # h-scroll, and both edge columns render on-screen
         assert table.max_scroll_x == 0, (
-            "the 128-wide table must fit a 160-column terminal"
+            "the 101-wide table must fit a 160-column terminal"
         )
         from textual.geometry import Region
         strips = table.render_lines(
             Region(0, 0, table.size.width, min(table.size.height, 3)),
         )
         header = "".join(segment.text for segment in strips[0])
-        assert SEL_COL_TASK in header
-        assert SEL_COL_PRESENCE in header
+        assert SEL_COL_MODEL in header
+        assert SEL_COL_DOWNLOAD in header
 
         # the longest real key renders in full — no ellipsis
         key_cell = _row(table, 0)[1]
-        assert key_cell == _LONGEST_TASK_KEY
+        assert key_cell == _LONGEST_MODEL_KEY
         assert "…" not in key_cell
-        assert Text(key_cell).cell_len == 68
+        assert Text(key_cell).cell_len == 46
 
         # the h-scroll geometry never disturbs the min-size guard:
         # shrink below the grid and the guard takes over; grow back and

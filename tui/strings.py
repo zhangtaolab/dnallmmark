@@ -156,10 +156,10 @@ ENV_STORAGE_LABELS = {
 ENV_STORAGE_NOTE = "修改目录请到 4 运行配置"
 
 # ===== 选择 (SEL-01..04, 08-07) =====
-# Screen titles (08-UI-SPEC Screen 2 title bar: "选择: 模型" — the m
-# toggle flips the visible table and the title with it).
+# Screen titles (08-UI-SPEC Screen 2 title bar). Since the 2026-10-14
+# slot split (261014-mlc) slot 2 is MODELS ONLY — the m table toggle is
+# gone and the title is constant.
 SEL_SCREEN_TITLE_MODELS = "选择: 模型"
-SEL_SCREEN_TITLE_DATASETS = "选择: 数据集"
 
 # Status line (top-right, zero-one-many): the marked-counts readout in the
 # same structure for 0, 1, and many marks; totals are the live registry
@@ -168,10 +168,14 @@ SEL_STATUS_LINE = "已标记: 模型 {n}/{models_total} · 数据集 {m}/{tasks_
 
 # Filter bar (08-UI-SPEC Screen 2): the label, the k9s type-to-filter
 # placeholder (Keyboard & Interaction Contract), and the live (N/total)
-# readout rendered right-aligned in the same bar.
+# readout (the slot-4 picker's own readout — untouched by the slot
+# split). The slot-2 POOLED variant below carries the active pool mode
+# (已适配 default / 全部 under t) so the default-filter state is always
+# legible (MLC-02).
 SEL_FILTER_LABEL = "过滤: "
 SEL_FILTER_PLACEHOLDER = "输入过滤词…"
 SEL_FILTER_COUNT = "({n}/{total})"
+SEL_FILTER_COUNT_POOLED = "({pool} {n}/{total})"
 
 # Unknown-axis warning line (dim, under the Input): rendered while valid
 # terms still apply; {axes} is the sorted known-axis vocabulary (data).
@@ -230,11 +234,48 @@ SEL_PRESENCE_UNKNOWN = "◌ 未知"
 # Models-column presence cells (DCL-02, 261014-dcl): the live per-model
 # download state decided in tui/services/selection over the effective
 # model root (the run-config root when configured, the committed
-# pipeline dir otherwise). Glyph-first per the redundancy rule.
+# pipeline dir otherwise). Glyph-first per the redundancy rule. Since
+# MLC-02 these are the 下载 column's present/missing states.
 SEL_MODEL_PRESENCE_PRESENT = "✓ 已下载"
 SEL_MODEL_PRESENCE_MISSING = "✗ 未下载"
 
+# ===== Slot-2 models-only rework (MLC-02, 261014-mlc; the maintainer's
+# 2026-10-14 slot split: slot 2 = models ONLY) =====
+# The 适配 column cells (the committed dnallm_compat verdict, rendered):
+# adapted officials, unadapted officials (revealed only under the t ALL
+# pool, dim), and customs (always visible per the private-models-visible
+# ruling — customs are operator-added, outside the official registry the
+# ruling constrains).
+SEL_COL_COMPAT = "适配"
+SEL_COMPAT_ADAPTED = "已适配"
+SEL_COMPAT_UNADAPTED = "未适配"
+SEL_COMPAT_CUSTOM = "自定义"
+# The 下载 column header + the honest manual-placement cell (missing
+# unadapted-or-custom: the private/no-source state per the ruling —
+# manual weight placement, NEVER huggingface guidance; the ◌ 未知 cell
+# reuses SEL_PRESENCE_UNKNOWN).
+SEL_COL_DOWNLOAD = "下载"
+SEL_MODEL_DL_MANUAL = "手动放置"
+# The pool-mode segments (the filter-count {pool} values) + the t
+# binding label that toggles the pool.
+SEL_POOL_ADAPTED = "已适配"
+SEL_POOL_ALL = "全部"
+SEL_POOL_TOGGLE_LABEL = "显示全部"
+# The d binding label (model download — one d vocabulary with the
+# dataset lane's 入队, its own noun) + the two honest toasts: the
+# already-downloaded no-op, and the manual-placement toast naming the
+# landing dir (the effective model root joined with the row's
+# Model_path) instructing manual weight placement there.
+SEL_MODEL_DOWNLOAD_LABEL = "下载"
+SEL_MODEL_PRESENT_TOAST = "该模型已下载"
+SEL_MODEL_MANUAL_TOAST = (
+    "⚠ {key} 需手动放置 — 请将模型权重放入 {path}"
+)
+
 # Selection-screen binding labels (08-UI-SPEC Screen 2 footer mockup).
+# The m table toggle label below is SLOT-4-OWNED since the 2026-10-14
+# slot split (the run-config picker's own m flip — run_config.py; slot
+# 2 retired its m binding; the t pool toggle has its own label above).
 SEL_MARK_LABEL = "标记"
 SEL_SWITCH_LABEL = "数据集"
 SEL_PRESET_LABEL = "预设"
@@ -647,6 +688,10 @@ QUEUE_TOAST_ENQUEUED = "✓ 已入队: {key}"
 QUEUE_TOAST_ENQUEUED_ALL = "✓ 已入队 {n} 个缺失数据集"
 QUEUE_TOAST_ALREADY_QUEUED = "{key} 已在队列中"
 QUEUE_FLIP_TOAST = "✓ {key} 下载完成且对账一致 — 在场已更新"
+# The model-lane flip twin (261014-mlc): a done KIND_MODEL entry has NO
+# reconcile leg — the honest wording names the 下载 column flip, never
+# the dataset lane's 对账一致 claim.
+QUEUE_FLIP_TOAST_MODEL = "✓ {key} 模型下载完成 — 下载列已更新"
 QUEUE_RETRY_NOOP = "仅 失败/对账不一致 项可重试"
 QUEUE_CLI_UNAVAILABLE = (
     "✗ modelscope CLI 不可用 — 请先安装 (pip install modelscope)")
@@ -680,10 +725,10 @@ QUEUE_CANCEL_NOOP = "仅 待下载/下载中 项可取消"
 QUEUE_REAUDIT_LABEL = "重新审计"
 
 # ===== 选择屏 d-入队 amendments (SEL_, Phase 10, 10-03; D-14) =====
-# The selection-screen enqueue keycap + the present-row no-op toast
-# (10-UI-SPEC 选择屏 amendments; 入队 is ONE vocabulary with the
-# data-manager screen's d — interaction semantic 8).
-SEL_ENQUEUE_LABEL = "入队"
+# The selection-screen d key is the MODEL download since the 2026-10-14
+# slot split (its label + toasts live in the MLC-02 block above); the
+# dataset present-row no-op toast below keeps its consumer on the slot-3
+# data manager (the full-list d on a present row).
 SEL_ENQUEUE_PRESENT_TOAST = "该数据集已在场"
 
 # ===== 运行配置 (CFG_, Phase 11, D-12) =====

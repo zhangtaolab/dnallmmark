@@ -88,7 +88,9 @@ _PRESENCE = {
 
 def _matrix_data(model_keys=_MODELS, task_keys=_TASKS,
                  presence=None, audit_available=True):
-    """A selection snapshot for the matrix (models x datasets)."""
+    """A selection snapshot for the matrix (models x datasets). The
+    compat fixture marks every model adapted so the models render in the
+    slot-2 DEFAULT pool (MLC-02 — the matrix is pushed from slot 2)."""
     return SelectionData(
         model_entries=tuple(
             {"key": key, "type": "MLM", "species": "plants",
@@ -102,6 +104,7 @@ def _matrix_data(model_keys=_MODELS, task_keys=_TASKS,
         ),
         presence=dict(presence if presence is not None else _PRESENCE),
         audit_available=audit_available,
+        compat={key: {"dnllm_adapted": True} for key in model_keys},
     )
 
 
@@ -230,12 +233,12 @@ async def test_v_pushes_matrix_esc_pops_back_with_marks_intact():
         selection = app.screen
         assert isinstance(selection, SelectionScreen)
 
-        # mark one model + one dataset before pushing (the shared sets)
+        # mark one model via spacebar + seed the TASK mark directly (the
+        # interactive dataset table moved to slot 3 at the 2026-10-14
+        # slot split — the shared-set semantics under test are intact)
         await pilot.press("space")
-        await pilot.press("m")
         await pilot.pause()
-        await pilot.press("space")
-        await pilot.press("m")
+        selection.marked_tasks.add("GUE__emp_H3")
         await pilot.pause()
         assert selection.marked_models == {"plant-dnamamba-6mer"}
         assert selection.marked_tasks == {"GUE__emp_H3"}

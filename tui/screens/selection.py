@@ -1,31 +1,55 @@
 """
-selection — the selection screen (Phase 8, 08-07; SEL-01..04 presentation).
+selection — the slot-2 MODELS screen (Phase 8, 08-07; SEL-01..04
+presentation; models-only since the maintainer's 2026-10-14 slot split,
+261014-mlc / MLC-02).
 
-The operator's daily surface: model/dataset tables browsed one at a time
-(the ``m`` toggle), k9s-style type-to-filter over the 08-05 grammar,
-spacebar marks into stable app-state sets (one set per list, both alive
-while either table is visible), the preset/template modals over the 08-05
-services, and the SEL-04 presence column from the 08-04 n_audit data.
+The operator's daily model surface: the model table with the mark column, the compat column (the committed dnallm_compat verdict — adapted
+officials by default, unadapted honestly revealed under the ``t`` ALL
+pool, customs always visible), and the download column (the honest
+four-state vocabulary over the live per-model disk presence), k9s-style
+type-to-filter, spacebar marks into stable app-state sets, the
+preset/template modals over the 08-05 services, and the ``d`` model
+download through the shared queue's KIND_MODEL lane (the dnallm
+authority — manual-placement toast for the private/no-source class,
+never huggingface guidance). Dataset marks remain settable through
+presets (``p``) and template import (``x``) and still display in the
+matrix (``v``) and the status line — the interactive dataset table
+moved to slot 3.
 
 Contract (locked decisions):
 
 - Presentation only (the ``tui/screens/`` tier contract): filtering,
-  preset derivation, template validation, and presence all live in
-  ``tui/services/`` — this screen wires injected service calls to widgets
-  and formats their results (binding constraint 5: TUI orchestrates,
-  never computes).
+  preset derivation, template validation, presence, and the compat
+  verdict all live in ``tui/services/`` — this screen wires injected
+  service calls to widgets and formats their results (binding
+  constraint 5: TUI orchestrates, never computes).
 - SEL-01 (mark-set mechanism): marks live in SHARED app-state sets keyed
   on registry keys, never inside the DataTable (08-RESEARCH Pitfall 1 —
   DataTable has no multi-select). Spacebar toggles the cursor row's
   membership and updates the dedicated mark column in place via
   ``update_cell``; filter rebuilds (``clear`` + re-``add_row`` with the
-  same keys) and the ``m`` table switch can never lose them. Both sets
+  same keys) and the ``t`` pool toggle can never lose them. Both sets
   are constructor-injected by the composition root so the matrix screen
   (08-07 Task 2) reads the same live sets.
 - SEL-01 (filter): the Input drives the injected parse/apply pair; the
   unknown-axis diagnostics render as the dim warning line while valid
-  terms still apply; the (N/total) readout is live; esc clears and
-  refocuses the table.
+  terms still apply; the (pool N/total) readout is live; esc clears and
+  refocuses the table. The text filter composes AND over the ACTIVE
+  pool.
+- MLC-02 (the default pool): with no text filter the table lists
+  dnllm-adapted official models PLUS custom entries (customs are
+  operator-added, outside the official registry the ruling constrains —
+  always visible, per the private-models-visible ruling); official
+  unadapted rows are hidden; the ``t`` toggle reveals ALL official
+  entries with unadapted rows clearly marked unadapted (dim) — never
+  hidden data, honest marking.
+- MLC-02 (the download column): the downloaded cell for present;
+  the not-downloaded d-able cell for missing+adapted; the
+  manual-placement cell for missing
+  unadapted-or-custom (the honest private/no-source state per the ruling — NEVER huggingface guidance); the unknown cell for the
+  no-Model_path/drift state. The service decided presence
+  (``model_presence`` over the effective model root); the compat map
+  decided adaptation — this screen renders only.
 - SEL-02 (presets, replacing semantics): applying a preset REPLACES the
   relevant mark set(s) — tier-1 marks pair models AND tasks, tier-2
   models only, all marks every registry key in both lists, customs
@@ -35,32 +59,22 @@ Contract (locked decisions):
 - SEL-03 (templates, fail-closed): import validates collect-all through
   the injected service — a failed import renders the numbered problem
   list and applies NOTHING; a successful import replaces the marks.
-- SEL-04 (presence): cells render the 08-04 ``Presence`` values — present
-  = pass glyph + thousands-separated exact counts (formatting happens
-  only here), missing = the missing word, unknown = the gap-filler copy,
-  and the n_audit-absent column state renders the documented copy. The
-  ``missing`` flag decision is the service's (tier-1 tested); the screen
-  never re-derives it.
 - D-11 (10-05): the presence snapshot is the MERGED audit — the
   committed n_audit overlaid with the queue's reconcile-pass rows
   (``download_queue.merge_presence`` over ``reconciled_rows``, a pure
   read of the queue state file inside the exclusive worker; the
   UNCHANGED ``registries.presence_for`` maps the merged view — the
-  10-02 contract). Presence flips ✗->✓ exactly on reconcile-pass; a
-  landed-but-mismatched dataset never flips. ``apply_queue_event``
-  re-runs the snapshot worker on a done event (the app-level forward
-  landed in 10-04), so the flip is live on the mounted screen.
-- D-14 (10-05): presence-✗ dataset rows enqueue into the SHARED
-  download queue through the same service call and the same outcome
-  toasts as the data-manager screen's ``d`` (one vocabulary) — the
-  kick lives on the app; the models view never enqueues.
+  10-02 contract). The dataset side of that snapshot feeds the matrix
+  screen; a done KIND_MODEL event re-runs the snapshot worker so the
+  row's download cell flips in place (model_presence re-decides
+  from disk).
 - D-03 (the read seam): every file-reading service call — the
-  registry/n_audit load AND the preset-menu read (both registries, the
-  priorities file, and presets.json) — runs in an exclusive
-  ``@work(exclusive=True, thread=True)`` worker (the default worker
-  group makes them mutually exclusive, so reads never overlap and none
-  ever blocks the event loop, T-08-07); the single loading row covers
-  the load seam; results cross the thread boundary only via
+  registry/n_audit/compat load AND the preset-menu read (both
+  registries, the priorities file, and presets.json) — runs in an
+  exclusive ``@work(exclusive=True, thread=True)`` worker (the default
+  worker group makes them mutually exclusive, so reads never overlap and
+  none ever blocks the event loop, T-08-07); the single loading row
+  covers the load seam; results cross the thread boundary only via
   ``post_message``. A result arriving while the min-size guard is up is
   dropped — no chrome may open over the guard (WR-06: the push is async,
   so it can fire while the guard is the active screen).
@@ -117,14 +131,9 @@ from tui.services.custom_validation import (
 )
 from tui.services.download_queue import EnqueueOutcome, QueueEvent
 from tui.services.gauntlet import GauntletService
-from tui.services.registries import (
-    PRESENCE_MISSING,
-    PRESENCE_PRESENT,
-    Presence,
-)
+from tui.services.registries import Presence
 from tui.strings import (
     APP_MODAL_BACK_LABEL,
-    DL_DISABLED_TOAST,
     DL_UNKNOWN_TOAST,
     ENV_DETAIL_LABEL,
     NAV_LABEL_ABOUT,
@@ -137,22 +146,21 @@ from tui.strings import (
     QUEUE_PERSIST_FAILED_TOAST,
     QUEUE_TOAST_ALREADY_QUEUED,
     QUEUE_TOAST_ENQUEUED,
-    SEL_COL_CATEGORY,
+    SEL_COL_COMPAT,
+    SEL_COL_DOWNLOAD,
     SEL_COL_MARK,
-    SEL_COL_METRIC,
     SEL_COL_MODEL,
-    SEL_COL_PRESENCE,
     SEL_COL_SIZE,
     SEL_COL_SPECIES,
-    SEL_COL_TASK,
     SEL_COL_TYPE,
+    SEL_COMPAT_ADAPTED,
+    SEL_COMPAT_CUSTOM,
+    SEL_COMPAT_UNADAPTED,
     SEL_COUNT_CUSTOM_SEGMENT,
     SEL_CUSTOM_BADGE,
     SEL_DISABLED_MARK_WARNING,
     SEL_DISABLED_SUFFIX,
-    SEL_ENQUEUE_LABEL,
-    SEL_ENQUEUE_PRESENT_TOAST,
-    SEL_FILTER_COUNT,
+    SEL_FILTER_COUNT_POOLED,
     SEL_FILTER_KEY_LABEL,
     SEL_FILTER_LABEL,
     SEL_FILTER_NO_MATCH,
@@ -161,11 +169,15 @@ from tui.strings import (
     SEL_LOADING_ROW,
     SEL_MARK_LABEL,
     SEL_MATRIX_LABEL,
+    SEL_MODEL_DL_MANUAL,
+    SEL_MODEL_DOWNLOAD_LABEL,
+    SEL_MODEL_MANUAL_TOAST,
     SEL_MODEL_PRESENCE_MISSING,
     SEL_MODEL_PRESENCE_PRESENT,
-    SEL_N_AUDIT_MISSING,
-    SEL_PRESENCE_MISSING,
-    SEL_PRESENCE_PRESENT,
+    SEL_MODEL_PRESENT_TOAST,
+    SEL_POOL_ADAPTED,
+    SEL_POOL_ALL,
+    SEL_POOL_TOGGLE_LABEL,
     SEL_PRESENCE_UNKNOWN,
     SEL_PRESET_ALL,
     SEL_PRESET_APPLIED,
@@ -181,10 +193,8 @@ from tui.strings import (
     SEL_PRESET_UNKNOWN_KEYS,
     SEL_REGISTRY_LOAD_FAILED,
     SEL_SAVE_PRESET_LABEL,
-    SEL_SCREEN_TITLE_DATASETS,
     SEL_SCREEN_TITLE_MODELS,
     SEL_STATUS_LINE,
-    SEL_SWITCH_LABEL,
     SEL_TEMPLATE_EXPORTED,
     SEL_TEMPLATE_IMPORTED,
     SEL_TEMPLATE_LABEL,
@@ -247,6 +257,14 @@ class SelectionData:
     #: states, from the management second read); official keys are absent
     #: from the map entirely (D-10: the badge, not position, marks them).
     custom_status: dict[str, dict] = field(default_factory=dict)
+    #: The dnallm compat verdict map (MLC-02, 261014-mlc — additive, the
+    #: default {} keeps every Phase 8/9/10 fake conforming unchanged):
+    #: model key -> the committed ``pipeline/dnallm_compat.json`` verdict
+    #: entry verbatim (``{dnllm_adapted, modelscope, channel, ...}``),
+    #: loaded through ``registries.load_dnallm_compat`` — the ONE
+    #: loader. The default pool filter and the compat column render from
+    #: it; the queue's model channel resolution reads the same map.
+    compat: dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -459,6 +477,12 @@ class SelectionBackend:
             models_load_error=models_error,
             datasets_load_error=datasets_error,
             custom_status=custom_status,
+            # MLC-02 (261014-mlc): the committed dnllm-adaptation verdict
+            # map — the default pool filter + the compat column render from
+            # it (the queue's model channel reads the SAME map through
+            # the ONE loader; an empty map is the degraded read — every
+            # official key then renders the unadapted cell honestly)
+            compat=registries_service.load_dnallm_compat(),
         )
 
     # ----- presets (SEL-02, D-06: derived, never hardcoded) -----
@@ -569,15 +593,20 @@ class SelectionBackend:
 class SelectionQueueServiceProtocol(Protocol):
     """The enqueue surface the selection screen's ``d`` action consumes.
 
-    The minimal shared seam (D-14's one-vocabulary rule): enqueue is
-    the SAME service call the data-manager screen's ``d`` makes — the
-    app-level kick stays on the app (``app.kick_download_queue``), never
-    on this seam. The real adapter and the tier-2 Pilot fakes conform
-    structurally (the EnvCheckServiceProtocol pattern).
+    The minimal shared seam (D-14's one-vocabulary rule): both calls are
+    the SAME service calls the queue driver drives — the app-level kick
+    stays on the app (``app.kick_download_queue``), never on this seam.
+    The real adapter and the tier-2 Pilot fakes conform structurally
+    (the EnvCheckServiceProtocol pattern). Since MLC-02 the selection
+    screen's ``d`` is the MODEL lane (``enqueue_model``); the dataset
+    lane's ``enqueue`` stays declared for the slot-3 seam.
     """
 
     def enqueue(self, key: str) -> EnqueueOutcome:
         """Idempotently enqueue one dataset key into the shared queue."""
+
+    def enqueue_model(self, key: str) -> EnqueueOutcome:
+        """Idempotently enqueue one model key (the KIND_MODEL lane)."""
 
 
 class SelectionQueueBackend:
@@ -586,11 +615,11 @@ class SelectionQueueBackend:
 
     The two-Protocol seam (the 10-04 ``DataManagerBackend`` shape): the
     app's driver-surface ``QueueDriverProtocol`` does not declare
-    ``enqueue``, so this adapter bridges the app-level shared instance
-    into the screen's minimal Protocol — an enqueue from the selection
-    screen, the data-manager screen, and the driver all mutate ONE
-    queue. A default-constructed backend builds its own real service
-    for the never-injected path (inert until ``enqueue`` is called).
+    ``enqueue``/``enqueue_model``, so this adapter bridges the app-level
+    shared instance into the screen's minimal Protocol — an enqueue from
+    the selection screen, the data-manager screen, and the driver all
+    mutate ONE queue. A default-constructed backend builds its own real
+    service for the never-injected path (inert until called).
     """
 
     def __init__(self, queue: Any = None):
@@ -608,8 +637,12 @@ class SelectionQueueBackend:
                             .DownloadQueueService())
 
     def enqueue(self, key: str) -> EnqueueOutcome:
-        """Delegate the idempotent enqueue (D-08 semantics)."""
+        """Delegate the idempotent dataset enqueue (D-08 semantics)."""
         return self._queue.enqueue(key)
+
+    def enqueue_model(self, key: str) -> EnqueueOutcome:
+        """Delegate the idempotent model enqueue (MLC-01 semantics)."""
+        return self._queue.enqueue_model(key)
 
 
 # ===== The custom-onboarding service (09-06: the w/e actions' seam) =====
@@ -827,28 +860,24 @@ def _write_json(path: Path, doc: object) -> None:
     )
 
 
-# ===== Column geometry (key columns fit the real registry keys) =====
+# ===== Column geometry (key column fits the real registry keys) =====
 #
 # DataTable columns render with 1 cell of padding on each side (the
 # textual default ``cell_padding``) and the vertical scrollbar consumes 2
-# more cells once rows exceed the height. The two key columns are pinned
-# to the longest committed registry keys (UAT feedback: the old 80-col
-# pin truncated real keys to a stub — 46 = the longest model key, 68 =
-# the longest dataset key in ``pipeline/models_info.json`` /
-# ``pipeline/datasets_info.json``), so the total budget (widths + 12
-# padding + 2 scrollbar) grew past 80: 101 for the model view, 128 for
-# the dataset view. On terminals narrower than the budget the DataTable
-# scrolls horizontally — the matrix screen's h-scroll precedent; 80x24
-# stays the minimum grid (the min-size guard), where the DataTable's own
-# clipping/ellipsis applies — and full keys always render in the enter
-# row-detail modal.
-
-_MODELS_VIEW = "models"
-_DATASETS_VIEW = "datasets"
+# more cells once rows exceed the height. The key column is pinned to
+# the longest committed registry key (UAT feedback: the old 80-col pin
+# truncated real keys to a stub — 46 = the longest model key in
+# ``pipeline/models_info.json``), so the total budget (widths + 14
+# padding + 2 scrollbar) grew past 80. On terminals narrower than the
+# budget the DataTable scrolls horizontally — the matrix screen's
+# h-scroll precedent; 80x24 stays the minimum grid (the min-size guard),
+# where the DataTable's own clipping/ellipsis applies — and full keys
+# always render in the enter row-detail modal.
 
 _COL_MARK = "mark"
 _COL_KEY = "key"
-_COL_PRESENCE_KEY = "presence"
+_COL_COMPAT = "compat"
+_COL_DOWNLOAD = "download"
 
 #: (column key, header constant, width) — the column keys are the
 #: update_cell addressing scheme (English technical ids, I18N-01).
@@ -857,31 +886,23 @@ _MODEL_KEY_W = 46
 _MODEL_TYPE_W = 4
 _MODEL_SPECIES_W = 8
 _MODEL_SIZE_W = 7
-_MODEL_PRESENCE_W = 20
+#: 8 — the widest compat cell (adapted/unadapted/custom) is 6 display
+#: cells.
+_MODEL_COMPAT_W = 8
+#: 10 — the widest download cell (the present/missing pair) is 8
+#: display cells.
+_MODEL_DOWNLOAD_W = 10
 
-#: 68 — the longest committed dataset key fits exactly (UAT geometry).
-_DATASET_KEY_W = 68
-_DATASET_CATEGORY_W = 8
-_DATASET_TYPE_W = 10
-_DATASET_METRIC_W = 8
-_DATASET_PRESENCE_W = 18
-
+#: The models-only column set (MLC-02): mark / model key / type /
+#: species / size / compat / download.
 _MODEL_COLUMNS: tuple[tuple[str, str, int], ...] = (
     (_COL_MARK, SEL_COL_MARK, 2),
     (_COL_KEY, SEL_COL_MODEL, _MODEL_KEY_W),
     ("type", SEL_COL_TYPE, _MODEL_TYPE_W),
     ("species", SEL_COL_SPECIES, _MODEL_SPECIES_W),
     ("size", SEL_COL_SIZE, _MODEL_SIZE_W),
-    (_COL_PRESENCE_KEY, SEL_COL_PRESENCE, _MODEL_PRESENCE_W),
-)
-
-_DATASET_COLUMNS: tuple[tuple[str, str, int], ...] = (
-    (_COL_MARK, SEL_COL_MARK, 2),
-    (_COL_KEY, SEL_COL_TASK, _DATASET_KEY_W),
-    ("category", SEL_COL_CATEGORY, _DATASET_CATEGORY_W),
-    ("type", SEL_COL_TYPE, _DATASET_TYPE_W),
-    ("metric", SEL_COL_METRIC, _DATASET_METRIC_W),
-    (_COL_PRESENCE_KEY, SEL_COL_PRESENCE, _DATASET_PRESENCE_W),
+    (_COL_COMPAT, SEL_COL_COMPAT, _MODEL_COMPAT_W),
+    (_COL_DOWNLOAD, SEL_COL_DOWNLOAD, _MODEL_DOWNLOAD_W),
 )
 
 # Row keys for the non-registry state rows (never mark/filter targets).
@@ -924,48 +945,56 @@ def _size_text(value: object) -> str:
     return format(value, "g")
 
 
-def _presence_cell(data: SelectionData, key: str) -> Text:
-    """One presence cell from the 08-04 data — render only.
+def _model_download_cell(data: SelectionData, key: str) -> Text:
+    """One download-column cell — render only (MLC-02).
 
-    The four statuses map to the contract formats: present carries the
-    thousands-separated exact counts, missing the missing word, unknown
-    the gap-filler copy, and the n_audit-absent column state renders the
-    documented copy in every cell (SEL-04 boundary: the service already
-    decided missing-vs-present; the screen formats only).
-    """
-    if not data.audit_available:
-        return Text(SEL_N_AUDIT_MISSING, style=_STYLE_PRESENCE_FAIL)
-    presence = data.presence.get(key)
-    if presence is None or presence.status not in (
-        PRESENCE_PRESENT, PRESENCE_MISSING,
-    ):
-        return Text(SEL_PRESENCE_UNKNOWN, style=_STYLE_PRESENCE_UNKNOWN)
-    if presence.status == PRESENCE_MISSING:
-        return Text(SEL_PRESENCE_MISSING, style=_STYLE_PRESENCE_FAIL)
-    train, dev, test = presence.rows or (0, 0, 0)
-    return Text(
-        SEL_PRESENCE_PRESENT.format(
-            train=f"{train:,}", dev=f"{dev:,}", test=f"{test:,}",
-        ),
-        style=_STYLE_PRESENCE_PASS,
-    )
-
-
-def _model_presence_cell(data: SelectionData, key: str) -> Text:
-    """One models-column presence cell — render only (DCL-02).
-
-    The service already decided (``model_presence`` over the effective
-    model root); the screen maps the three-value machine vocabulary to
-    words: present the downloaded copy, missing the not-downloaded copy,
-    absent/other the shared unknown cell (the no-Model_path/drift
-    state).
+    The service already decided presence (``model_presence`` over the
+    effective model root) and the compat map decided adaptation; the
+    screen maps the composed truth to the honest four-state vocabulary:
+    present the downloaded copy; missing+adapted the d-able not-downloaded state
+    (error style); missing unadapted-or-custom the manual-placement cell
+    (muted — the private/no-source state per the ruling); absent/other
+    the shared unknown cell (the no-Model_path/drift state).
     """
     status = data.model_presence.get(key)
     if status == selection_service.MODEL_PRESENCE_PRESENT:
         return Text(SEL_MODEL_PRESENCE_PRESENT, style=_STYLE_PRESENCE_PASS)
     if status == selection_service.MODEL_PRESENCE_MISSING:
-        return Text(SEL_MODEL_PRESENCE_MISSING, style=_STYLE_PRESENCE_FAIL)
+        if _entry_is_adapted(data, key):
+            return Text(SEL_MODEL_PRESENCE_MISSING,
+                        style=_STYLE_PRESENCE_FAIL)
+        return Text(SEL_MODEL_DL_MANUAL, style=_STYLE_PRESENCE_UNKNOWN)
     return Text(SEL_PRESENCE_UNKNOWN, style=_STYLE_PRESENCE_UNKNOWN)
+
+
+def _compat_cell(data: SelectionData, key: str) -> Text:
+    """One compat-column cell — render only (MLC-02).
+
+    Customs render their own cell (they are outside the official registry the
+    compat verdict constrains); officials render the committed verdict:
+    adapted, or unadapted (dim — the honest marking for the rows the default
+    pool hides and the ``t`` ALL pool reveals).
+    """
+    if _entry_is_custom(data, key):
+        return Text(SEL_COMPAT_CUSTOM)
+    if _entry_is_adapted(data, key):
+        return Text(SEL_COMPAT_ADAPTED)
+    return Text(SEL_COMPAT_UNADAPTED, style=_STYLE_DIM)
+
+
+def _entry_is_custom(data: SelectionData, key: str) -> bool:
+    """True when the key carries a LANDED custom status (both states)."""
+    status = data.custom_status.get(key)
+    return bool(status and status.get("custom"))
+
+
+def _entry_is_adapted(data: SelectionData, key: str) -> bool:
+    """True when the committed compat map marks the key dnllm-adapted."""
+    verdict = data.compat.get(key)
+    return bool(
+        isinstance(verdict, dict)
+        and verdict.get("dnllm_adapted") is True
+    )
 
 
 def _key_cell(key: str, status: "dict | None", width: int,
@@ -1225,7 +1254,7 @@ class SelectionScreen(Screen):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("space", "toggle_mark", SEL_MARK_LABEL),
-        Binding("m", "switch_list", SEL_SWITCH_LABEL),
+        Binding("t", "toggle_pool", SEL_POOL_TOGGLE_LABEL),
         Binding("p", "apply_preset", SEL_PRESET_LABEL),
         Binding("x", "open_templates", SEL_TEMPLATE_LABEL),
         Binding("s", "save_preset", SEL_SAVE_PRESET_LABEL),
@@ -1235,13 +1264,16 @@ class SelectionScreen(Screen):
         # mark/preset bindings and BEFORE the auxiliary actions — the
         # 09-UI-SPEC migration table's declaration order (the bottom
         # bar renders it; the clip policy drops least-primary first).
+        # Since the 2026-10-14 slot split both act on the constant
+        # MODELS kind (slot 2 is models only).
         Binding("w", "open_wizard", SEL_WIZARD_LABEL),
         Binding("e", "toggle_enabled", SEL_TOGGLE_LABEL),
-        # The 10-05 enqueue action (D-14): between the e pair and the
+        # The MLC-02 model-download action: between the e pair and the
         # auxiliary actions — the [d] keycap renders after the toggle
-        # keycap and before the matrix keycap (one vocabulary with the
-        # data-manager screen's d; labels live in tui/strings.py).
-        Binding("d", "enqueue_dataset", SEL_ENQUEUE_LABEL),
+        # keycap and before the matrix keycap (one d vocabulary with
+        # the data-manager screen's d; the label + toasts live in
+        # tui/strings.py).
+        Binding("d", "download_model", SEL_MODEL_DOWNLOAD_LABEL),
         Binding("v", "open_matrix", SEL_MATRIX_LABEL),
         Binding("enter", "show_detail", ENV_DETAIL_LABEL, show=False),
         Binding("escape", "clear_filter", show=False),
@@ -1310,7 +1342,11 @@ class SelectionScreen(Screen):
             marked_tasks if marked_tasks is not None else set()
         )
         self._data: SelectionData | None = None
-        self._view = _MODELS_VIEW
+        # MLC-02: the pool mode — False = the DEFAULT pool (dnllm-adapted
+        # officials + customs), True = ALL officials (unadapted rows
+        # present, honestly marked). Pure render state over the loaded
+        # snapshot; the t binding flips it.
+        self._pool_all = False
         self._query = ""
         # The parsed current query (empty terms = every entry). The
         # service owns the grammar; the screen only stores its output.
@@ -1342,8 +1378,10 @@ class SelectionScreen(Screen):
             yield Label(SEL_FILTER_LABEL, id="selection-filter-label")
             yield Input(placeholder=SEL_FILTER_PLACEHOLDER,
                         id="selection-filter", compact=True)
-            yield Label(SEL_FILTER_COUNT.format(n=0, total=0),
-                        id="selection-filter-count")
+            yield Label(
+                SEL_FILTER_COUNT_POOLED.format(pool=SEL_POOL_ADAPTED, n=0,
+                                        total=0),
+                id="selection-filter-count")
         yield Label("", id="selection-filter-warning")
         yield DataTable(id="selection-table")
         yield BottomBar()
@@ -1384,14 +1422,14 @@ class SelectionScreen(Screen):
     # ----- the app-forwarded queue events (10-05, D-11 live flip) -----
 
     def apply_queue_event(self, event: QueueEvent) -> None:
-        """One app-forwarded queue event (the 10-04 generic forward):
-        a done event IS a reconcile pass (the service's done gate,
-        D-09), so it re-runs the existing exclusive snapshot worker —
-        the overlay-wired presence view refreshes on the next render
-        and the cursor row's cell flips in place. The table stays
-        mounted; nothing navigates. A landed-but-mismatched dataset
-        never flips (``reconciled_rows`` overlays done entries only —
-        semantic 6)."""
+        """One app-forwarded queue event (the 10-04 generic forward): a
+        done event re-runs the existing exclusive snapshot worker — for
+        a done KIND_MODEL entry the reload re-derives ``model_presence``
+        from disk so the row's download cell flips in place; for a
+        done dataset entry the overlay-wired presence view refreshes on
+        the next matrix render. The table stays mounted; nothing
+        navigates. A landed-but-mismatched dataset never flips
+        (``reconciled_rows`` overlays done entries only — semantic 6)."""
         if event.state == "done":
             self._load_data()
 
@@ -1404,18 +1442,14 @@ class SelectionScreen(Screen):
         (Pitfall 1); rows re-add with the SAME registry keys.
         """
         table = self.query_one("#selection-table", DataTable)
-        columns = (
-            _MODEL_COLUMNS if self._view == _MODELS_VIEW
-            else _DATASET_COLUMNS
-        )
         table.clear(columns=True)
-        for column_key, header, width in columns:
+        for column_key, header, width in _MODEL_COLUMNS:
             table.add_column(header, key=column_key, width=width)
 
         data = self._data
         if data is None:
-            # the single loading row covers the registry/n_audit read
-            # seam before rows compose (SEL-01 loading)
+            # the single loading row covers the registry/n_audit/compat
+            # read seam before rows compose (SEL-01 loading)
             self._view_keys = frozenset()
             self._add_state_row(
                 table, SEL_LOADING_ROW, _LOADING_ROW_KEY, _STYLE_DIM,
@@ -1423,11 +1457,8 @@ class SelectionScreen(Screen):
             self._update_count_readout(0, 0)
             return
 
-        load_error = (
-            data.models_load_error if self._view == _MODELS_VIEW
-            else data.datasets_load_error
-        )
-        entries = self._view_entries()
+        load_error = data.models_load_error
+        entries = self._pool_entries()
         self._view_keys = frozenset(entry["key"] for entry in entries)
         if load_error is not None:
             # the registry-failure empty state names the path (SEL-01)
@@ -1459,67 +1490,58 @@ class SelectionScreen(Screen):
         column budget, the copy itself is never elided)."""
         table.add_row("", Text(text, style=style), key=row_key)
 
-    def _view_entries(self) -> list[dict]:
-        """The active view's entries (registry order)."""
+    def _pool_entries(self) -> list[dict]:
+        """The active pool's model entries (registry order).
+
+        MLC-02: the DEFAULT pool lists dnllm-adapted officials PLUS
+        customs (customs are operator-added, outside the official
+        registry the ruling constrains — always visible, per the
+        private-models-visible ruling); official unadapted rows are
+        hidden. The ``t`` ALL pool lists every registry entry — never
+        hidden data, honest marking.
+        """
         data = self._data
         if data is None:
             return []
-        return list(
-            data.model_entries if self._view == _MODELS_VIEW
-            else data.dataset_entries
-        )
+        entries = list(data.model_entries)
+        if self._pool_all:
+            return entries
+        return [
+            entry for entry in entries
+            if _entry_is_custom(data, entry["key"])
+            or _entry_is_adapted(data, entry["key"])
+        ]
 
     def _row_cells(self, entry: dict) -> list:
-        """The six cells of one data row, view-specific.
+        """The seven cells of one model row.
 
-        The mark cell renders from the shared sets at add time; the
+        The mark cell renders from the shared set at add time; the
         spacebar updates it in place via ``update_cell`` afterwards.
         """
         key = entry["key"]
-        marks = (
-            self._marked_models if self._view == _MODELS_VIEW
-            else self._marked_tasks
-        )
         mark_cell = (
-            Text("✓", style=_STYLE_MARK) if key in marks else ""
+            Text("✓", style=_STYLE_MARK) if key in self._marked_models
+            else ""
         )
-        # Presence cells carry the FULL contract format — the DataTable
-        # clips display at the column budget (no wrap, row height 1);
-        # pre-truncation is only for the long registry keys below.
-        # (_row_cells only composes with data loaded; the None branch is
-        # the type narrowing, unreachable in practice.)
+        # Cells carry the FULL contract format — the DataTable clips
+        # display at the column budget (no wrap, row height 1);
+        # pre-truncation is only for the long registry key below.
+        # (_row_cells only composes with data loaded — the assert is the
+        # type narrowing, unreachable in practice.)
         data = self._data
-        # DCL-02 (261014-dcl): the MODELS column renders the live
-        # per-model download state from the service decision; the
-        # DATASETS column keeps the SEL-04 four-status cell byte-for-byte.
-        presence = (
-            (_model_presence_cell(data, key)
-             if self._view == _MODELS_VIEW else _presence_cell(data, key))
-            if data is not None
-            else Text(SEL_PRESENCE_UNKNOWN, style=_STYLE_PRESENCE_UNKNOWN)
-        )
-        badge_status = (
-            data.custom_status.get(key) if data is not None else None
-        )
+        assert data is not None
         # The live theme's accent, resolved for the badge span (rich
         # spans cannot carry $token styles — probe-pinned, see _key_cell).
         accent_style = f"bold {self.app.current_theme.accent}"
-        if self._view == _MODELS_VIEW:
-            return [
-                mark_cell,
-                _key_cell(key, badge_status, _MODEL_KEY_W, accent_style),
-                _cell(entry.get("type") or "", _MODEL_TYPE_W),
-                _cell(entry.get("species") or "", _MODEL_SPECIES_W),
-                _cell(_size_text(entry.get("size_m")), _MODEL_SIZE_W),
-                presence,
-            ]
+        badge_status = data.custom_status.get(key)
         return [
             mark_cell,
-            _key_cell(key, badge_status, _DATASET_KEY_W, accent_style),
-            _cell(entry.get("category") or "", _DATASET_CATEGORY_W),
-            _cell(entry.get("type") or "", _DATASET_TYPE_W),
-            _cell(entry.get("metric") or "", _DATASET_METRIC_W),
-            presence,
+            _key_cell(key, badge_status, _MODEL_KEY_W, accent_style),
+            _cell(entry.get("type") or "", _MODEL_TYPE_W),
+            _cell(entry.get("species") or "", _MODEL_SPECIES_W),
+            _cell(_size_text(entry.get("size_m")), _MODEL_SIZE_W),
+            _compat_cell(data, key),
+            _model_download_cell(data, key),
         ]
 
     # ----- readouts -----
@@ -1564,9 +1586,14 @@ class SelectionScreen(Screen):
         ))
 
     def _update_count_readout(self, visible: int, total: int) -> None:
-        """The live (N/total) filter readout (right-aligned in the bar)."""
+        """The live (pool N/total) filter readout (right-aligned in the
+        bar) — the {pool} segment carries the active pool mode so the
+        default-filter state is always legible (MLC-02)."""
         self.query_one("#selection-filter-count", Label).update(
-            SEL_FILTER_COUNT.format(n=visible, total=total)
+            SEL_FILTER_COUNT_POOLED.format(
+                pool=(SEL_POOL_ALL if self._pool_all else SEL_POOL_ADAPTED),
+                n=visible, total=total,
+            )
         )
 
     def _render_filter_warning(self) -> None:
@@ -1626,10 +1653,7 @@ class SelectionScreen(Screen):
                 severity="warning",
             )
             return
-        marks = (
-            self._marked_models if self._view == _MODELS_VIEW
-            else self._marked_tasks
-        )
+        marks = self._marked_models
         if key in marks:
             marks.discard(key)
         else:
@@ -1668,37 +1692,37 @@ class SelectionScreen(Screen):
         self._load_data()
 
     def action_open_wizard(self) -> None:
-        """w: open the new-entry wizard for the ACTIVE table's kind
-        (D-14 — models table -> model wizard, datasets table -> dataset
-        wizard; the menu carries no wizard item, the wizard is an
-        action). A cursor custom row prefills from its landed entry (the
-        D-12 re-record aid — the key rides along and the collect-all
-        collision check forces the change); every other cursor state
-        opens a blank form. The land-completion callback refreshes the
-        table so the badge and the count segment appear."""
+        """w: open the MODEL onboarding wizard (the kind is constant
+        since the 2026-10-14 slot split — slot 2 is models only; the
+        dataset wizard lives on slot 3's ``w``). A cursor custom row
+        prefills from its landed entry (the D-12 re-record aid — the key
+        rides along and the collect-all collision check forces the
+        change); every other cursor state opens a blank form. The
+        land-completion callback refreshes the table so the badge and
+        the count segment appear."""
         if self._data is None:
             return
         key = self._cursor_key()
         prefill = None
         status = self._custom_status_for(key)
         if status is not None:
-            entries, _error = self._custom.read_entries(self._view)
+            entries, _error = self._custom.read_entries("models")
             entry = entries.get(key or "")
             if isinstance(entry, dict):
                 prefill = {key: entry}
         self.app.push_screen(self._custom.build_wizard(
-            kind=self._view,
+            kind="models",
             prefill=prefill,
             on_changed=self._on_custom_registry_changed,
         ))
 
     def action_toggle_enabled(self) -> None:
-        """e: flip the cursor custom entry's enabled through the store's
-        atomic seam (D-09 — the disable is loader-level run removal),
-        toast the state pair, and refresh so the row's disabled state
-        updates. An official row is a no-op with the honest toast —
-        never silent; a state row (no registry key) stays silent like
-        every other action."""
+        """e: flip the cursor MODEL custom entry's enabled through the
+        store's atomic seam (D-09 — the disable is loader-level run
+        removal), toast the state pair, and refresh so the row's
+        disabled state updates. An official row is a no-op with the
+        honest toast — never silent; a state row (no registry key) stays
+        silent like every other action."""
         key = self._cursor_key()
         if key is None:
             return
@@ -1707,7 +1731,7 @@ class SelectionScreen(Screen):
             self.app.notify(SEL_TOGGLE_OFFICIAL_NOOP)
             return
         enable = not status.get("enabled", True)
-        if not self._custom.set_enabled(self._view, key, enable):
+        if not self._custom.set_enabled("models", key, enable):
             # vanished between load and press, or an unreadable file —
             # refresh to the honest state rather than toasting a lie
             self._load_data()
@@ -1718,40 +1742,67 @@ class SelectionScreen(Screen):
         )
         self._load_data()
 
-    def action_enqueue_dataset(self) -> None:
-        """d: enqueue the cursor's MISSING dataset row into the shared
-        download queue (10-05, D-14 — the SAME service call and the SAME
-        outcome toasts as the data-manager screen's ``d``; one
-        vocabulary). The outcome mapping mirrors the data-manager
-        screen's pair exactly: enqueued -> the toast + the app-level
-        kick; already_queued -> its toast; disabled (shape-D) ->
-        ``DL_DISABLED_TOAST`` carrying the key (always diagnosable,
-        R-02); cli_unavailable -> the probed-absent toast; unknown_key
-        -> silent. The models view returns before any service call
-        (models are not n_audit subjects — Phase 8 truth); a PRESENT
-        row is a no-op with the honest toast, never silent and never a
-        duplicate enqueue; state rows stay silent (the ``_cursor_key``
-        None path). Enqueuing never navigates away."""
-        if self._view == _MODELS_VIEW:
-            return
+    # ----- the model-download action (MLC-02: d through the shared queue) -----
+
+    def _manual_landing_path(self, key: "str | None") -> "str | None":
+        """The manual-placement landing dir for one key — the effective
+        model root joined with the registry ``Model_path`` (the exact
+        ``model_presence`` join semantics: the base keeps its
+        trailing-separator discipline, Model_path keeps its own
+        ``models/`` prefix); None when no usable Model_path exists."""
+        entry = self._find_entry(key) if key is not None else None
+        if entry is None:
+            return None
+        model_path = (entry.get("card") or {}).get("Model_path")
+        if not isinstance(model_path, str) or not model_path:
+            return None
+        dirs = run_config_service.resolve_dirs(
+            run_config_service.load_state())
+        base = dirs.model_root_abs or str(
+            run_config_service.DEFAULT_REGISTRY_DIR)
+        return str(base).rstrip(os.sep) + os.sep + model_path
+
+    def action_download_model(self) -> None:
+        """d: download the cursor's MODEL row through the shared queue's
+        KIND_MODEL lane (MLC-02 — the SAME service call the queue drives;
+        the app-level kick stays on the app). Guard chain, in order: a
+        state row stays silent; a PRESENT row is the honest
+        already-downloaded toast (never a duplicate enqueue); a
+        missing+adapted row enqueues through the injected seam —
+        enqueued -> the toast + ``app.kick_download_queue``,
+        already_queued -> its toast, cli_unavailable -> the error toast,
+        persist_failed -> the error toast, unknown -> the reason-carrying
+        toast (not_dnllm_adapted / compat_unavailable / no_model_path /
+        already_present); a missing manual-placement row (unadapted or
+        custom) toasts the manual state NAMING the landing dir and
+        NEVER offers huggingface guidance (the maintainer's ruling); a
+        an unknown row (no Model_path / drift) has no download semantics and
+        stays silent. Enqueuing never navigates away."""
         key = self._cursor_key()
         if key is None:
             return  # state rows (loading/no-match/error) never act
-        presence = (
-            self._data.presence.get(key) if self._data is not None else None
-        )
-        if presence is not None and presence.status == PRESENCE_PRESENT:
-            self.app.notify(SEL_ENQUEUE_PRESENT_TOAST)
+        data = self._data
+        if data is None:
             return
-        outcome = self._queue.enqueue(key)
+        status = data.model_presence.get(key)
+        if status == selection_service.MODEL_PRESENCE_PRESENT:
+            self.app.notify(SEL_MODEL_PRESENT_TOAST)
+            return
+        if status != selection_service.MODEL_PRESENCE_MISSING:
+            return  # unknown presence (no Model_path / drift): silent
+        if not _entry_is_adapted(data, key):
+            path = self._manual_landing_path(key)
+            if path is None:
+                return
+            self.app.notify(
+                SEL_MODEL_MANUAL_TOAST.format(key=key, path=path))
+            return
+        outcome = self._queue.enqueue_model(key)
         if outcome.action == "enqueued":
             self.app.notify(QUEUE_TOAST_ENQUEUED.format(key=key))
             self.app.kick_download_queue()
         elif outcome.action == "already_queued":
             self.app.notify(QUEUE_TOAST_ALREADY_QUEUED.format(key=key))
-        elif outcome.action == "disabled":
-            self.app.notify(
-                DL_DISABLED_TOAST.format(key=key), severity="warning")
         elif outcome.action == "unknown":
             self.app.notify(
                 DL_UNKNOWN_TOAST.format(
@@ -1765,15 +1816,16 @@ class SelectionScreen(Screen):
                 severity="error")
         # unknown_key: silent return (the service already said it all)
 
-    def action_switch_list(self) -> None:
-        """m: toggle the model/dataset table (both mark sets persist)."""
-        self._view = (
-            _DATASETS_VIEW if self._view == _MODELS_VIEW else _MODELS_VIEW
-        )
-        self.query_one("#selection-screen-title", Label).update(
-            SEL_SCREEN_TITLE_DATASETS
-            if self._view == _DATASETS_VIEW else SEL_SCREEN_TITLE_MODELS
-        )
+    def action_toggle_pool(self) -> None:
+        """t: toggle the model pool between the DEFAULT (dnllm-adapted
+        officials + customs) and ALL officials (unadapted rows present,
+        clearly marked unadapted — never hidden data, honest marking; MLC-02).
+
+        Pure render state over the loaded snapshot; marks live in the
+        shared sets so the toggle can never lose them; the count
+        readout's {pool} segment flips with it.
+        """
+        self._pool_all = not self._pool_all
         self._rebuild_rows()
         self._update_status_line()
         self.query_one("#selection-table", DataTable).focus()

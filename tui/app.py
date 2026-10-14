@@ -87,6 +87,7 @@ from tui.screens.selection import (
     SelectionServiceProtocol,
 )
 from tui.services.download_queue import (
+    KIND_MODEL,
     KIND_ZENODO_BUNDLE,
     DownloadQueueService,
     QueueEntry,
@@ -106,6 +107,7 @@ from tui.strings import (
     LNC_EXIT_TITLE,
     NAV_PLACEHOLDER_TOAST,
     QUEUE_FLIP_TOAST,
+    QUEUE_FLIP_TOAST_MODEL,
     QUEUE_PERSIST_DRIVER_TOAST,
 )
 
@@ -696,10 +698,16 @@ class DnallmMarkTui(App):
         if event.state == "done":
             # IN-03: the bundle row's flip toast formats the operator-
             # facing bundle label (the ONE name the z-enqueue toast
-            # uses), never the raw queue key
-            label = (DL_BUNDLE_TASK_NAME
-                     if event.kind == KIND_ZENODO_BUNDLE else event.key)
-            self.notify(QUEUE_FLIP_TOAST.format(key=label))
+            # uses), never the raw queue key; a model done carries the
+            # model-lane wording (MLC-01 — no reconcile leg exists on
+            # that lane, so the dataset lane's 对账一致 claim must never
+            # render for it)
+            if event.kind == KIND_ZENODO_BUNDLE:
+                self.notify(QUEUE_FLIP_TOAST.format(key=DL_BUNDLE_TASK_NAME))
+            elif event.kind == KIND_MODEL:
+                self.notify(QUEUE_FLIP_TOAST_MODEL.format(key=event.key))
+            else:
+                self.notify(QUEUE_FLIP_TOAST.format(key=event.key))
         for screen in self.screen_stack:
             apply_event = getattr(screen, "apply_queue_event", None)
             if apply_event is not None:

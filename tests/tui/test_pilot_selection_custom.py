@@ -36,6 +36,7 @@ never written).
 """
 
 import json
+import os
 from pathlib import Path
 from typing import ClassVar
 
@@ -59,6 +60,7 @@ from tui.screens.selection import (
 from tui.screens.wizard import WizardModal
 from tui.services import custom_entries
 from tui.services import registries as registries_service
+from tui.services import run_config as run_config_service
 from tui.services import selection as selection_service
 from tui.services.download_queue import EnqueueOutcome, QueueEvent
 from tui.services.gauntlet import (
@@ -72,10 +74,10 @@ from tui.services.registries import (
     Presence,
 )
 from tui.strings import (
-    DL_DISABLED_TOAST,
     DL_UNKNOWN_TOAST,
     ENV_KERNEL_LABELS,
-    QUEUE_FLIP_TOAST,
+    QUEUE_CLI_UNAVAILABLE,
+    QUEUE_FLIP_TOAST_MODEL,
     QUEUE_PERSIST_FAILED_TOAST,
     QUEUE_TOAST_ALREADY_QUEUED,
     QUEUE_TOAST_ENQUEUED,
@@ -83,11 +85,12 @@ from tui.strings import (
     SEL_CUSTOM_BADGE,
     SEL_DISABLED_MARK_WARNING,
     SEL_DISABLED_SUFFIX,
-    SEL_ENQUEUE_LABEL,
-    SEL_ENQUEUE_PRESENT_TOAST,
     SEL_MATRIX_LABEL,
-    SEL_PRESENCE_MISSING,
-    SEL_PRESENCE_PRESENT,
+    SEL_MODEL_DOWNLOAD_LABEL,
+    SEL_MODEL_MANUAL_TOAST,
+    SEL_MODEL_PRESENCE_MISSING,
+    SEL_MODEL_PRESENCE_PRESENT,
+    SEL_MODEL_PRESENT_TOAST,
     SEL_PRESET_UNKNOWN_KEYS,
     SEL_STATUS_LINE,
     SEL_TOGGLE_DISABLED_TOAST,
@@ -123,7 +126,12 @@ _CUSTOM_DATASET_ENTRY = {
 
 
 def _custom_data(model_enabled=True, task_enabled=True):
-    """The standard custom snapshot: 1 official + 1 custom per table."""
+    """The standard custom snapshot: 1 official + 1 custom per table.
+
+    MLC-02 (261014-mlc): the official model carries an adapted compat
+    verdict so the DEFAULT pool keeps it visible beside the custom
+    (customs are always visible per the private-models-visible ruling).
+    """
     return SelectionData(
         model_entries=(
             {
@@ -160,6 +168,7 @@ def _custom_data(model_enabled=True, task_enabled=True):
             _KEY_CUSTOM_MODEL: {"custom": True, "enabled": model_enabled},
             _KEY_CUSTOM_TASK: {"custom": True, "enabled": task_enabled},
         },
+        compat={_KEY_OFFICIAL_MODEL: {"dnllm_adapted": True}},
     )
 
 
@@ -210,6 +219,7 @@ def _landed_fixture_data():
             _KEY_DISABLED_MODEL: {"custom": True, "enabled": False},
             _KEY_CUSTOM_TASK: {"custom": True, "enabled": True},
         },
+        compat={_KEY_OFFICIAL_MODEL: {"dnllm_adapted": True}},
     )
 
 
@@ -236,6 +246,10 @@ def _official_only_data():
             },
         ),
         presence={},
+        compat={
+            _KEY_OFFICIAL_MODEL: {"dnllm_adapted": True},
+            "plant-dnamamba-6mer": {"dnllm_adapted": True},
+        },
     )
 
 
@@ -416,10 +430,11 @@ def _pin_state_root(monkeypatch, tmp_path):
 # Task 1 — the w binding (D-14: kind routing + the D-12 prefill)
 # =====================================================================
 
-async def test_w_routes_by_active_table_and_prefills_from_the_custom_row():
-    """w opens the wizard for the active table's kind: the models table
-    routes models (blank from an official cursor, prefilled from a custom
-    cursor); the datasets table routes datasets with the same rule."""
+async def test_w_routes_the_constant_models_kind_and_prefills():
+    """w opens the MODEL wizard (the kind is constant since the 2026-10-14
+    slot split — slot 2 is models only; the dataset wizard lives on slot
+    3's w): blank from an official cursor, prefilled from a custom
+    cursor (the D-12 re-record aid)."""
     custom = _CustomServiceFake()
     app = _app(_SelectionFake())
     async with app.run_test(size=(120, 40)) as pilot:
@@ -445,17 +460,9 @@ async def test_w_routes_by_active_table_and_prefills_from_the_custom_row():
         assert prefill == {_KEY_CUSTOM_MODEL: _CUSTOM_MODEL_ENTRY}
         await pilot.press("escape")
         await pilot.pause()
-
-        # the datasets table routes the dataset kind (custom row prefill)
-        await pilot.press("m")
-        await pilot.pause()
-        table.move_cursor(row=1)
-        await pilot.pause()
-        await pilot.press("w")
-        await pilot.pause()
-        kind, prefill, _on_changed = custom.built[-1]
-        assert kind == "datasets"
-        assert prefill == {_KEY_CUSTOM_TASK: _CUSTOM_DATASET_ENTRY}
+        # the kind is CONSTANT — every w press composes models, never
+        # the dataset kind (that surface moved to slot 3)
+        assert {call[0] for call in custom.built} == {"models"}
 
 
 async def test_w_passes_a_refresh_callback_into_the_wizard_composition():
@@ -696,11 +703,11 @@ async def test_landed_and_disabled_fixture_renders_the_full_custom_contract():
         assert SEL_PRESET_UNKNOWN_KEYS.format(
             n=1, keys=_KEY_DISABLED_MODEL) in _toasts(app)
 
-        # BOTH tables: m -> the dataset table carries the same badge
-        await pilot.press("m")
-        await pilot.pause()
-        assert _row(table, 0)[1] == _KEY_OFFICIAL_TASK
-        assert _row(table, 1)[1] == f"{SEL_CUSTOM_BADGE} {_KEY_CUSTOM_TASK}"
+    # the DATASET badge leg of this test was REMOVED by the 2026-10-14
+    # slot split (slot 2 is models only — the dataset badge/count
+    # surface moved to slot 3; the landed-custom dataset rendering stays
+    # pinned by test_full_loop_datasets_wizard's successor on the
+    # data-manager suite and the wizard suite)
 
 
 async def test_zero_customs_status_line_is_byte_identical_phase8():
@@ -882,9 +889,11 @@ async def test_full_loop_models_wizard_lands_badges_counts_and_disables(
         await pilot.pause()
 
         # the refreshed table: the badge on the new row + the count line
+        # (MLC-02: the DEFAULT pool renders the 36 adapted officials, so
+        # the landed custom — always visible — appends at index 36)
         keys = _row_keys(table)
-        assert keys.index("loop-model-lm") == 59  # appended after official
-        assert _row(table, 59)[1] == f"{SEL_CUSTOM_BADGE} loop-model-lm"
+        assert keys.index("loop-model-lm") == 36  # appended after the pool
+        assert _row(table, 36)[1] == f"{SEL_CUSTOM_BADGE} loop-model-lm"
         assert _status_line(screen) == (
             SEL_STATUS_LINE.format(
                 n=0, models_total=60, m=0, tasks_total=50,
@@ -896,7 +905,7 @@ async def test_full_loop_models_wizard_lands_badges_counts_and_disables(
 
         # e: the disable keeps the row visible with the suffix while the
         # REAL loader drops it, and the count still counts it
-        table.move_cursor(row=59)
+        table.move_cursor(row=36)
         await pilot.pause()
         await pilot.press("e")
         await pilot.pause()
@@ -904,7 +913,7 @@ async def test_full_loop_models_wizard_lands_badges_counts_and_disables(
         await pilot.pause()
         assert SEL_TOGGLE_DISABLED_TOAST.format(
             key="loop-model-lm") in _toasts(app)
-        assert _row(table, 59)[1] == (
+        assert _row(table, 36)[1] == (
             f"{SEL_CUSTOM_BADGE} loop-model-lm{SEL_DISABLED_SUFFIX}")
         assert "loop-model-lm" not in (
             registry_loader.load_models_registry())
@@ -916,112 +925,77 @@ async def test_full_loop_models_wizard_lands_badges_counts_and_disables(
         assert official.read_bytes() == before  # zero official writes
 
 
-async def test_full_loop_datasets_wizard_runs_both_legs_and_disables(
-        monkeypatch, tmp_path):
-    """The dataset-kind loop once: both gauntlet legs run (dry-run +
-    audit), the landed entry badges the dataset table with the 自定义
-    count, and e disables with the loader exclusion."""
-    _pin_roots(monkeypatch, tmp_path)
-    official = Path(registry_loader.__file__).parent / (
-        "datasets_info.json")
-    before = official.read_bytes()
-    gauntlet = _AllPassGauntlet()
-    custom = _LoopCustomService(gauntlet)
-    app = _app(SelectionBackend())
-    async with app.run_test(size=(120, 40)) as pilot:
-        await _open_selection(pilot, app, custom)
-        screen = app.screen
-        table = screen.query_one(DataTable)
-        await pilot.press("m")  # the datasets table routes the kind
-        await pilot.pause()
-
-        await pilot.press("w")
-        await pilot.pause()
-        wizard = app.screen
-        assert isinstance(wizard, WizardModal)
-        await _type_wizard_field(pilot, wizard, "key", "loop-ds")
-        await _type_wizard_field(pilot, wizard, "dataset-path",
-                                 "datasets/loop-ds")
-        await _submit_wizard(pilot, app, wizard)
-        # BOTH legs ran for the dataset kind, dry-run first
-        assert [call[0] for call in gauntlet.calls] == [
-            LEG_DRY_RUN, LEG_AUDIT]
-        landed, _error = custom_entries.read_entries("datasets")
-        assert "loop-ds" in landed
-        await pilot.press("escape")
-        await pilot.pause()
-        await pilot.press("escape")
-        await pilot.pause()
-        assert isinstance(app.screen, SelectionScreen)
-        await app.workers.wait_for_complete()
-        await pilot.pause()
-
-        keys = _row_keys(table)
-        assert keys.index("loop-ds") == 50  # appended after official
-        assert _row(table, 50)[1] == f"{SEL_CUSTOM_BADGE} loop-ds"
-        assert _status_line(screen) == (
-            SEL_STATUS_LINE.format(
-                n=0, models_total=59, m=0, tasks_total=51,
-            ) + " · " + SEL_COUNT_CUSTOM_SEGMENT.format(
-                official_models=59, official_datasets=50,
-                custom_models=0, custom_datasets=1,
-            )
-        )
-
-        table.move_cursor(row=50)
-        await pilot.pause()
-        await pilot.press("e")
-        await pilot.pause()
-        await app.workers.wait_for_complete()
-        await pilot.pause()
-        assert SEL_TOGGLE_DISABLED_TOAST.format(key="loop-ds") in _toasts(
-            app)
-        assert _row(table, 50)[1] == (
-            f"{SEL_CUSTOM_BADGE} loop-ds{SEL_DISABLED_SUFFIX}")
-        assert "loop-ds" not in registry_loader.load_datasets_registry()
-
-        assert official.read_bytes() == before  # zero official writes
+# test_full_loop_datasets_wizard_runs_both_legs_and_disables was REMOVED
+# by the 2026-10-14 slot split: slot 2 is models only, so the DATASET
+# wizard full loop is no longer reachable from this screen — its dataset
+# leg expectation moved to slot 3 (the data-manager w wizard, pinned in
+# tests/tui/test_pilot_data_manager.py) and the wizard's own dataset-kind
+# gauntlet/badge behavior stays pinned by tests/tui/test_pilot_wizard.py.
 
 
 # =====================================================================
-# Task 1 — the d binding (10-05, D-14: presence-✗ rows enqueue into the
-# shared queue; one vocabulary with the data-manager screen's d)
+# The d binding (MLC-02, 261014-mlc: the MODEL download through the
+# shared queue's KIND_MODEL lane; the dataset enqueue surface lives on
+# slot 3 — the data-manager suite pins its outcome toasts)
 # =====================================================================
 
-_KEY_MISSING_DATASET = "GUE__fake_missing"
-_KEY_PRESENT_DATASET = "GUE__fake_present"
+_KEY_PRESENT_MODEL = "plant-dnamamba-6mer"   # present (the noop toast)
+_KEY_ADAPTED_MODEL = "plant-dnabert-6mer"    # missing+adapted (d-able)
+_KEY_UNADAPTED_MODEL = "PlantHelixSeek"      # missing+unadapted (manual)
+_KEY_NO_PATH_MODEL = "GENA-LM-yeast"         # adapted, no Model_path
 
 
 def _d_fixture_data():
-    """The d-binding fixture: datasets = one missing + one present; one
-    model row (the models-view no-op proof)."""
+    """The d-binding fixture: five model rows covering the guard chain —
+    present / missing+adapted (the d-able row) / missing+unadapted
+    (manual placement) / missing+custom (manual placement) / adapted
+    with the no-Model_path unknown presence (silent)."""
     return SelectionData(
         model_entries=(
             {
-                "key": _KEY_OFFICIAL_MODEL, "type": "MLM",
+                "key": _KEY_PRESENT_MODEL, "type": "MLM",
+                "species": "plants", "size_m": 396.0,
+                "card": {"Model_path":
+                         f"models/{_KEY_PRESENT_MODEL}"},
+            },
+            {
+                "key": _KEY_ADAPTED_MODEL, "type": "MLM",
                 "species": "plants", "size_m": 86.0,
-                "card": {"type": "MLM"},
-            },
-        ),
-        dataset_entries=(
-            {
-                "key": _KEY_MISSING_DATASET, "category": "Animals",
-                "type": "binary", "metric": "f1",
-                "card": {"Category": "Animals", "type": "binary",
-                         "metric": "f1"},
+                "card": {"Model_path":
+                         f"models/{_KEY_ADAPTED_MODEL}"},
             },
             {
-                "key": _KEY_PRESENT_DATASET, "category": "Animals",
-                "type": "binary", "metric": "f1",
-                "card": {"Category": "Animals", "type": "binary",
-                         "metric": "f1"},
+                "key": _KEY_UNADAPTED_MODEL, "type": "DL",
+                "species": "plants", "size_m": 151.0,
+                "card": {"Model_path":
+                         f"models/{_KEY_UNADAPTED_MODEL}"},
+            },
+            {
+                "key": _KEY_CUSTOM_MODEL, "type": "MLM",
+                "species": "plants", "size_m": 88.0,
+                "card": dict(_CUSTOM_MODEL_ENTRY),
+            },
+            {
+                "key": _KEY_NO_PATH_MODEL, "type": "DL",
+                "species": "yeast", "size_m": 86.0,
+                "card": {},
             },
         ),
-        presence={
-            _KEY_MISSING_DATASET: Presence(
-                status=PRESENCE_MISSING, rows=None),
-            _KEY_PRESENT_DATASET: Presence(
-                status=PRESENCE_PRESENT, rows=(100, 20, 20)),
+        model_presence={
+            _KEY_PRESENT_MODEL: selection_service.MODEL_PRESENCE_PRESENT,
+            _KEY_ADAPTED_MODEL: selection_service.MODEL_PRESENCE_MISSING,
+            _KEY_UNADAPTED_MODEL: selection_service.MODEL_PRESENCE_MISSING,
+            _KEY_CUSTOM_MODEL: selection_service.MODEL_PRESENCE_MISSING,
+            _KEY_NO_PATH_MODEL: selection_service.MODEL_PRESENCE_UNKNOWN,
+        },
+        custom_status={
+            _KEY_CUSTOM_MODEL: {"custom": True, "enabled": True},
+        },
+        compat={
+            _KEY_PRESENT_MODEL: {"dnllm_adapted": True},
+            _KEY_ADAPTED_MODEL: {"dnllm_adapted": True},
+            _KEY_UNADAPTED_MODEL: {"dnllm_adapted": False},
+            _KEY_NO_PATH_MODEL: {"dnllm_adapted": True},
         },
     )
 
@@ -1034,6 +1008,7 @@ class _QueueFake:
     def __init__(self, outcomes=None):
         self.outcomes = dict(outcomes or {})
         self.enqueue_calls = []
+        self.enqueue_model_calls = []
 
     def enqueue(self, key):
         self.enqueue_calls.append(key)
@@ -1042,13 +1017,20 @@ class _QueueFake:
             return outcome
         return EnqueueOutcome(action="enqueued", key=key)
 
+    def enqueue_model(self, key):
+        self.enqueue_model_calls.append(key)
+        outcome = self.outcomes.get(key)
+        if outcome is not None:
+            return outcome
+        return EnqueueOutcome(action="enqueued", key=key)
 
-async def test_d_enqueues_a_missing_row_through_the_shared_seam_and_kicks(
+
+async def test_d_enqueues_a_missing_adapted_row_through_the_seam_and_kicks(
         monkeypatch, tmp_path):
-    """d on a presence-✗ datasets row enqueues the cursor's key through
-    the SAME shared-queue seam the data-manager screen uses (recorded
-    key), fires the app-level kick, and toasts the enqueued copy — the
-    table stays mounted (enqueuing never navigates away)."""
+    """d on a missing ADAPTED row enqueues the model key through the SAME
+    shared-queue seam the driver drives (recorded key), fires the
+    app-level kick, and toasts the enqueued copy — the table stays
+    mounted (downloading never navigates away)."""
     _pin_state_root(monkeypatch, tmp_path)
     queue = _QueueFake()
     kicks = []
@@ -1061,37 +1043,39 @@ async def test_d_enqueues_a_missing_row_through_the_shared_seam_and_kicks(
         await _open_selection(pilot, app, queue_fake=queue)
         screen = app.screen
         table = screen.query_one(DataTable)
-        await pilot.press("m")  # the datasets table
-        await pilot.pause()
-        table.move_cursor(row=0)  # the missing row
+        table.move_cursor(row=1)  # the missing+adapted row
         await pilot.pause()
 
         await pilot.press("d")
         await pilot.pause()
-        assert queue.enqueue_calls == [_KEY_MISSING_DATASET], (
-            "d must enqueue the cursor's dataset key through the seam"
+        assert queue.enqueue_model_calls == [_KEY_ADAPTED_MODEL], (
+            "d must enqueue the cursor's model key through the seam"
+        )
+        assert queue.enqueue_calls == [], (
+            "the model lane never routes through the dataset enqueue"
         )
         assert QUEUE_TOAST_ENQUEUED.format(
-            key=_KEY_MISSING_DATASET) in _toasts(app)
+            key=_KEY_ADAPTED_MODEL) in _toasts(app)
         assert kicks == [True], "the enqueued outcome must kick the driver"
-        assert app.screen is screen, "enqueuing never navigates away"
+        assert app.screen is screen, "downloading never navigates away"
 
         # a second d on the same row -> the already-queued toast, no
         # second kick (the D-08 idempotence surfaced, never silent)
-        queue.outcomes[_KEY_MISSING_DATASET] = EnqueueOutcome(
-            action="already_queued", key=_KEY_MISSING_DATASET)
+        queue.outcomes[_KEY_ADAPTED_MODEL] = EnqueueOutcome(
+            action="already_queued", key=_KEY_ADAPTED_MODEL)
         await pilot.press("d")
         await pilot.pause()
-        assert queue.enqueue_calls == [_KEY_MISSING_DATASET] * 2
+        assert queue.enqueue_model_calls == [_KEY_ADAPTED_MODEL] * 2
         assert QUEUE_TOAST_ALREADY_QUEUED.format(
-            key=_KEY_MISSING_DATASET) in _toasts(app)
+            key=_KEY_ADAPTED_MODEL) in _toasts(app)
         assert kicks == [True], "already_queued never kicks"
 
 
 async def test_d_on_a_present_row_is_a_noop_with_the_honest_toast(
         monkeypatch, tmp_path):
-    """d on a present row never reaches the service — the present toast
-    fires and nothing enqueues (never silent, never duplicate work)."""
+    """d on a present row never reaches the service — the honest
+    already-downloaded toast fires and nothing enqueues (never silent,
+    never duplicate work)."""
     _pin_state_root(monkeypatch, tmp_path)
     queue = _QueueFake()
     kicks = []
@@ -1103,29 +1087,89 @@ async def test_d_on_a_present_row_is_a_noop_with_the_honest_toast(
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_selection(pilot, app, queue_fake=queue)
         table = app.screen.query_one(DataTable)
-        await pilot.press("m")
-        await pilot.pause()
-        table.move_cursor(row=1)  # the present row
+        table.move_cursor(row=0)  # the present row
         await pilot.pause()
 
         await pilot.press("d")
         await pilot.pause()
-        assert SEL_ENQUEUE_PRESENT_TOAST in _toasts(app)
-        assert queue.enqueue_calls == []
+        assert SEL_MODEL_PRESENT_TOAST in _toasts(app)
+        assert queue.enqueue_model_calls == []
         assert kicks == []
 
 
-async def test_d_on_a_shape_d_row_renders_the_disabled_reason_toast(
+async def test_d_on_manual_placement_rows_toasts_the_landing_dir(
         monkeypatch, tmp_path):
-    """A disabled (shape-D) channel outcome renders the SAME disabled
-    toast the data-manager screen renders, carrying the key — always
-    diagnosable (R-02); never a kick."""
+    """d on missing unadapted-or-custom rows toasts the manual-placement
+    state NAMING the landing dir (the effective model root joined with
+    the row's Model_path) instructing manual weight placement — NEVER
+    huggingface guidance, never an enqueue (the maintainer's ruling)."""
+    _pin_state_root(monkeypatch, tmp_path)
+    queue = _QueueFake()
+    app = _app(_SelectionFake(data=_d_fixture_data()))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, queue_fake=queue)
+        table = app.screen.query_one(DataTable)
+        # the pinned state root carries no model root -> the default
+        # pipeline dir (the exact presence-chain fallback)
+        base = str(run_config_service.DEFAULT_REGISTRY_DIR).rstrip(
+            os.sep) + os.sep
+
+        # t reveals the unadapted official (default-hidden)
+        await pilot.press("t")
+        await pilot.pause()
+        table.move_cursor(row=2)  # missing + unadapted official
+        await pilot.pause()
+        await pilot.press("d")
+        await pilot.pause()
+        assert SEL_MODEL_MANUAL_TOAST.format(
+            key=_KEY_UNADAPTED_MODEL,
+            path=base + f"models/{_KEY_UNADAPTED_MODEL}",
+        ) in _toasts(app)
+
+        table.move_cursor(row=3)  # missing + custom
+        await pilot.pause()
+        await pilot.press("d")
+        await pilot.pause()
+        assert SEL_MODEL_MANUAL_TOAST.format(
+            key=_KEY_CUSTOM_MODEL,
+            path=base + str(_CUSTOM_MODEL_ENTRY["Model_path"]),
+        ) in _toasts(app)
+
+        # the manual toast NEVER offers download guidance of any kind —
+        # only the manual placement instruction naming the dir
+        for toast in _toasts(app):
+            assert "huggingface" not in toast.lower()
+            assert "hf " not in toast.lower()
+        assert queue.enqueue_model_calls == []
+
+
+async def test_d_on_an_unknown_presence_row_is_silent(
+        monkeypatch, tmp_path):
+    """The no-Model_path/drift row has no download semantics: d stays
+    silent (the state-row rule — no path to name, no channel to call)."""
+    _pin_state_root(monkeypatch, tmp_path)
+    queue = _QueueFake()
+    app = _app(_SelectionFake(data=_d_fixture_data()))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, queue_fake=queue)
+        table = app.screen.query_one(DataTable)
+        table.move_cursor(row=4)  # adapted, no Model_path -> unknown
+        await pilot.pause()
+
+        await pilot.press("d")
+        await pilot.pause()
+        assert queue.enqueue_model_calls == []
+        assert _toasts(app) == [], "the unknown row stays silent"
+
+
+async def test_d_cli_unavailable_outcome_toasts_never_silent(
+        monkeypatch, tmp_path):
+    """The modelscope-package proxy outcome renders the same error toast
+    the dataset lane renders (one vocabulary)."""
     _pin_state_root(monkeypatch, tmp_path)
     queue = _QueueFake(outcomes={
-        _KEY_MISSING_DATASET: EnqueueOutcome(
-            action="disabled", key=_KEY_MISSING_DATASET,
-            reason_code="shape_d_layout",
-            source_url="https://www.modelscope.cn/datasets/x/y"),
+        _KEY_ADAPTED_MODEL: EnqueueOutcome(
+            action="cli_unavailable", key=_KEY_ADAPTED_MODEL),
     })
     kicks = []
     monkeypatch.setattr(
@@ -1136,48 +1180,25 @@ async def test_d_on_a_shape_d_row_renders_the_disabled_reason_toast(
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_selection(pilot, app, queue_fake=queue)
         table = app.screen.query_one(DataTable)
-        await pilot.press("m")
-        await pilot.pause()
-        table.move_cursor(row=0)
+        table.move_cursor(row=1)
         await pilot.pause()
 
         await pilot.press("d")
         await pilot.pause()
-        assert DL_DISABLED_TOAST.format(
-            key=_KEY_MISSING_DATASET) in _toasts(app)
-        assert queue.enqueue_calls == [_KEY_MISSING_DATASET]
+        assert QUEUE_CLI_UNAVAILABLE in _toasts(app)
+        assert queue.enqueue_model_calls == [_KEY_ADAPTED_MODEL]
         assert kicks == []
-
-
-async def test_d_on_the_models_view_is_a_silent_noop(
-        monkeypatch, tmp_path):
-    """The models table never enqueues (models are not n_audit subjects
-    — Phase 8 truth): d returns before any service call, silently."""
-    _pin_state_root(monkeypatch, tmp_path)
-    queue = _QueueFake()
-    app = _app(_SelectionFake(data=_d_fixture_data()))
-    async with app.run_test(size=(120, 40)) as pilot:
-        await _open_selection(pilot, app, queue_fake=queue)
-        table = app.screen.query_one(DataTable)
-        # the models view is the mount default; cursor row 0 is a model
-        table.move_cursor(row=0)
-        await pilot.pause()
-
-        await pilot.press("d")
-        await pilot.pause()
-        assert queue.enqueue_calls == []
-        assert _toasts(app) == [], "the models view stays silent"
 
 
 async def test_d_persist_failed_outcome_toasts_never_silent(
         monkeypatch, tmp_path):
-    """WR-04 on the selection screen: the persist_failed outcome renders
-    the same honest never-wrote toast the data-manager screen renders —
-    one vocabulary, never silent, never a kick."""
+    """WR-04 on the model lane: the persist_failed outcome renders the
+    same honest never-wrote toast — one vocabulary, never silent, never
+    a kick."""
     _pin_state_root(monkeypatch, tmp_path)
     queue = _QueueFake(outcomes={
-        _KEY_MISSING_DATASET: EnqueueOutcome(
-            action="persist_failed", key=_KEY_MISSING_DATASET),
+        _KEY_ADAPTED_MODEL: EnqueueOutcome(
+            action="persist_failed", key=_KEY_ADAPTED_MODEL),
     })
     kicks = []
     monkeypatch.setattr(
@@ -1188,108 +1209,91 @@ async def test_d_persist_failed_outcome_toasts_never_silent(
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_selection(pilot, app, queue_fake=queue)
         table = app.screen.query_one(DataTable)
-        await pilot.press("m")
-        await pilot.pause()
-        table.move_cursor(row=0)
+        table.move_cursor(row=1)
         await pilot.pause()
 
         await pilot.press("d")
         await pilot.pause()
         assert QUEUE_PERSIST_FAILED_TOAST.format(
-            key=_KEY_MISSING_DATASET) in _toasts(app)
-        assert queue.enqueue_calls == [_KEY_MISSING_DATASET]
+            key=_KEY_ADAPTED_MODEL) in _toasts(app)
+        assert queue.enqueue_model_calls == [_KEY_ADAPTED_MODEL]
         assert kicks == [], "a refused enqueue never kicks"
 
 
-async def test_d_unknown_outcome_toasts_the_reason_not_mirror_layout(
+async def test_d_unknown_outcome_toasts_the_reason(
         monkeypatch, tmp_path):
-    """WR-06 on the selection screen: an unknown-channel outcome (e.g.
-    a transient registry-read failure) renders the neutral
-    channel-unavailable toast naming the machine reason — never the
-    shape-D mirror-layout copy that would send the diagnosis the wrong
-    way."""
+    """An unknown-channel outcome (e.g. the verdict flipped between load
+    and press) renders the neutral channel-unavailable toast naming the
+    machine reason — never mirror-layout or HF guidance."""
     _pin_state_root(monkeypatch, tmp_path)
     queue = _QueueFake(outcomes={
-        _KEY_MISSING_DATASET: EnqueueOutcome(
-            action="unknown", key=_KEY_MISSING_DATASET,
-            reason_code="registry_unreadable"),
+        _KEY_ADAPTED_MODEL: EnqueueOutcome(
+            action="unknown", key=_KEY_ADAPTED_MODEL,
+            reason_code="not_dnllm_adapted"),
     })
-    kicks = []
-    monkeypatch.setattr(
-        DnallmMarkTui, "kick_download_queue",
-        lambda self: kicks.append(True),
-    )
     app = _app(_SelectionFake(data=_d_fixture_data()))
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_selection(pilot, app, queue_fake=queue)
         table = app.screen.query_one(DataTable)
-        await pilot.press("m")
-        await pilot.pause()
-        table.move_cursor(row=0)
+        table.move_cursor(row=1)
         await pilot.pause()
 
         await pilot.press("d")
         await pilot.pause()
         assert DL_UNKNOWN_TOAST.format(
-            key=_KEY_MISSING_DATASET,
-            reason="registry_unreadable") in _toasts(app)
-        assert DL_DISABLED_TOAST.format(
-            key=_KEY_MISSING_DATASET) not in _toasts(app)
-        assert kicks == []
+            key=_KEY_ADAPTED_MODEL,
+            reason="not_dnllm_adapted") in _toasts(app)
 
 
 async def test_bottom_bar_declares_d_between_e_and_v():
-    """The bottom bar renders [d]入队 in binding-declaration order
-    between [e]停用 and [v]矩阵 (the migration-table disposition)."""
+    """The bottom bar renders [d]下载 in binding-declaration order
+    between [e]停用 and [v]矩阵 (the model-download keycap)."""
     app = _app(_SelectionFake())
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_selection(pilot, app)
         bar = app.screen.query_one("#nav-left-keycaps", Static)
         content = bar.content
         text = content.plain if isinstance(content, Text) else str(content)
-        assert f"[d]{SEL_ENQUEUE_LABEL}" in text
+        assert f"[d]{SEL_MODEL_DOWNLOAD_LABEL}" in text
         assert text.index(f"[e]{SEL_TOGGLE_LABEL}") < text.index(
-            f"[d]{SEL_ENQUEUE_LABEL}") < text.index(f"[v]{SEL_MATRIX_LABEL}")
+            f"[d]{SEL_MODEL_DOWNLOAD_LABEL}") < text.index(
+            f"[v]{SEL_MATRIX_LABEL}")
 
 
 # =====================================================================
-# Task 2 — the D-11 presence overlay + the live flip (10-05; tier-1
-# grade: the REAL backend over the committed baseline + tmp roots)
+# Task 2 — the D-11 presence overlay + the MLC-02 live flip (tier-1
+# grade: the REAL backend over the committed baseline + tmp roots). The
+# dataset overlay assertions read the BACKEND snapshot directly — since
+# the 2026-10-14 slot split slot 2 renders no dataset table (the surface
+# moved to slot 3); the live-flip proof is the MODEL lane (a done
+# KIND_MODEL event flips the row's download cell in place).
 # =====================================================================
 
 def _seed_queue_state(state_root, entries):
-    """Write one queue state file (schema_version 1) under the tmp root."""
-    (state_root / "download_queue.json").write_text(json.dumps({
-        "schema_version": 1,
-        "entries": entries,
-    }, ensure_ascii=False), encoding="utf-8")
+    """Seed a queue state file (the persisted-form entry dicts)."""
+    state_root.joinpath("download_queue.json").write_text(json.dumps({
+        "schema_version": 1, "entries": entries}), encoding="utf-8")
 
 
 def _queue_state_entry(key, state, measured=None):
-    """One canonical persisted entry (the service's _ENTRY_FIELDS shape)."""
+    """One persisted-form queue entry (reconcile measured rows when
+    given — the overlay source reconciled_rows reads)."""
     return {
-        "key": key, "kind": "dataset", "state": state,
-        "attempts": 1, "enqueued_at": "2026-10-12T10:00:00",
-        "started_at": "2026-10-12T10:00:01", "finished_at": None,
-        "last_percent": 100, "interrupted": False, "log_path": None,
-        "problems": [],
+        "key": key, "kind": "dataset", "state": state, "attempts": 1,
+        "enqueued_at": "2026-10-14T00:00:00", "started_at": None,
+        "finished_at": None, "last_percent": None, "interrupted": False,
+        "log_path": None, "problems": [],
         "reconcile": ({"verdict": "pass", "declared": None,
-                       "measured": measured, "unified_eval_n": 1}
+                       "measured": (measured or {}), "unified_eval_n": 1}
                       if measured is not None else None),
     }
 
 
 def _stage_missing_dataset_keys(monkeypatch, tmp_path, count=1):
-    """Stage a fixture n_audit marking the first ``count`` REAL registry
-    dataset keys missing (the flip targets).
-
-    The R-03 follow-up rule: the committed baseline is
-    maintainer-refreshable (43/50 -> 50/50 landed as a data commit), so
-    flip/overlay lanes NEVER derive missing-ness from it — they pin
-    their own missing set through the same ``N_AUDIT_PATH`` seam the
-    corrupt-file tests use, over real registry keys so the datasets
-    table renders the rows. Every other key stages present. Returns the
-    staged missing keys.
+    """Stage a fixture n_audit marking the first ``count`` committed
+    dataset keys missing (the R-03 follow-up rule — the corrupt-file
+    tests use, over real registry keys). Every other key stages present.
+    Returns the staged missing keys.
     """
     dataset_keys = sorted(
         entry["key"]
@@ -1310,71 +1314,42 @@ def _stage_missing_dataset_keys(monkeypatch, tmp_path, count=1):
     return staged
 
 
-def _dataset_presence_cell(table, key):
-    """One dataset row's rendered presence cell (column 6 of 6)."""
-    keys = _row_keys(table)
-    assert key in keys, f"row {key} must render in the datasets table"
-    cell = table.get_row_at(keys.index(key))[5]
-    return cell.plain if isinstance(cell, Text) else str(cell)
-
-
-async def _open_datasets_view(pilot, app, backend):
-    """Mount selection over the REAL backend, switch to the datasets
-    table, and settle the snapshot worker."""
-    app.push_screen(SelectionScreen(
-        selection_service=backend,
-        marked_models=app._marked_models,
-        marked_tasks=app._marked_tasks,
-    ))
-    await pilot.pause()
-    await app.workers.wait_for_complete()
-    await pilot.pause()
-    await pilot.press("m")
-    await pilot.pause()
-    return app.screen
-
-
 async def test_overlay_flips_missing_presence_to_present_and_back(
         monkeypatch, tmp_path):
-    """Tier-1-grade snapshot proof: a done entry with measured rows in
-    the pinned state file flips the staged-missing key's cell to
-    present WITH the measured counts (the D-11 flip); removing the
-    state file returns the row to missing — the fixture n_audit view
-    rules when no overlay exists. (The missing target is STAGED — the
-    R-03 follow-up rule: the committed baseline is maintainer-
-    refreshable and carries no missing keys today.)"""
+    """Tier-1-grade snapshot proof (reworked to the backend surface at
+    261014-mlc — slot 2 renders no dataset table): a done entry with
+    measured rows in the pinned state file flips the staged-missing
+    key's SNAPSHOT presence to present WITH the measured counts (the
+    D-11 flip); removing the state file returns it to missing — the
+    fixture n_audit view rules when no overlay exists. (The missing
+    target is STAGED — the R-03 follow-up rule: the committed baseline
+    is maintainer-refreshable and carries no missing keys today.)"""
     _pin_roots(monkeypatch, tmp_path)
     state_root = _pin_state_root(monkeypatch, tmp_path)
     (key,) = _stage_missing_dataset_keys(monkeypatch, tmp_path, count=1)
     _seed_queue_state(state_root, [
         _queue_state_entry(key, "done",
                            {"train": 12345, "dev": 678, "test": 90})])
-    app = _app(SelectionBackend())
-    async with app.run_test(size=(120, 40)) as pilot:
-        screen = await _open_datasets_view(pilot, app, SelectionBackend())
-        table = screen.query_one(DataTable)
-        assert _dataset_presence_cell(table, key) == (
-            SEL_PRESENCE_PRESENT.format(
-                train="12,345", dev="678", test="90")), (
-            "the reconciled key must render present with the "
-            "thousands-separated measured counts"
-        )
 
-        # remove the state file -> the fixture n_audit view rules again
-        (state_root / "download_queue.json").unlink()
-        screen._load_data()
-        await app.workers.wait_for_complete()
-        await pilot.pause()
-        assert _dataset_presence_cell(table, key) == SEL_PRESENCE_MISSING, (
-            "with no overlay the staged n_audit view rules"
-        )
+    data = SelectionBackend().load_selection_data()
+
+    assert data.presence[key].status == PRESENCE_PRESENT
+    assert data.presence[key].rows == (12345, 678, 90)
+
+    # remove the state file -> the fixture n_audit view rules again
+    (state_root / "download_queue.json").unlink()
+    data_after = SelectionBackend().load_selection_data()
+    assert data_after.presence[key].status == PRESENCE_MISSING, (
+        "with no overlay the staged n_audit view rules"
+    )
 
 
 async def test_mismatch_and_failed_entries_never_flip_presence(
         monkeypatch, tmp_path):
     """UI-SPEC semantic 6: only reconcile-PASS (done) entries belong in
     the overlay — mismatch and failed entries in the state file leave
-    the staged-missing cells missing (the number would be wrong)."""
+    the staged-missing keys missing in the SNAPSHOT (the number would
+    be wrong)."""
     _pin_roots(monkeypatch, tmp_path)
     state_root = _pin_state_root(monkeypatch, tmp_path)
     mismatch_key, failed_key = _stage_missing_dataset_keys(
@@ -1385,49 +1360,64 @@ async def test_mismatch_and_failed_entries_never_flip_presence(
         _queue_state_entry(failed_key, "failed",
                            {"train": 4, "dev": 5, "test": 6}),
     ])
-    app = _app(SelectionBackend())
-    async with app.run_test(size=(120, 40)) as pilot:
-        screen = await _open_datasets_view(pilot, app, SelectionBackend())
-        table = screen.query_one(DataTable)
-        assert _dataset_presence_cell(
-            table, mismatch_key) == SEL_PRESENCE_MISSING
-        assert _dataset_presence_cell(
-            table, failed_key) == SEL_PRESENCE_MISSING
+
+    data = SelectionBackend().load_selection_data()
+
+    assert data.presence[mismatch_key].status == PRESENCE_MISSING
+    assert data.presence[failed_key].status == PRESENCE_MISSING
 
 
-async def test_live_flip_through_the_app_event_forward(
+async def test_live_model_download_flip_through_the_app_event_forward(
         monkeypatch, tmp_path):
-    """The D-11 live flip: a done QueueEvent forwarded by the app (the
-    10-04 generic forward) reaches the MOUNTED selection screen's
-    apply_queue_event, re-runs the snapshot worker, and the presence
-    cell flips in place — the screen never remounts and the app-level
-    flip toast fires. (Missing target staged per the R-03 follow-up
-    rule — never derived from the refreshable committed baseline.)"""
+    """The MLC-02 live flip (the 10-04 generic forward, reworked to the
+    model lane at 261014-mlc): a done KIND_MODEL QueueEvent forwarded by
+    the app reaches the MOUNTED selection screen's apply_queue_event,
+    re-runs the snapshot worker, and the row's download cell flips to
+    the downloaded copy IN PLACE (model_presence re-decides from disk)
+    — the screen never remounts and the model-lane flip toast fires
+    (never the dataset lane's reconcile claim)."""
+    from tui.services.download_queue import KIND_MODEL
+
     _pin_roots(monkeypatch, tmp_path)
-    state_root = _pin_state_root(monkeypatch, tmp_path)
-    (key,) = _stage_missing_dataset_keys(monkeypatch, tmp_path, count=1)
+    _pin_state_root(monkeypatch, tmp_path)
+    # a committed adapted key whose landing dir the flip stages on disk
+    key = "DNABERT-2-117M"
+    model_root = tmp_path / "model-root"
+    model_root.mkdir()
+    run_config_service.save_state(run_config_service.RunSpec(
+        models=(), tasks=(), model_root=str(model_root)))
     app = _app(SelectionBackend())
     async with app.run_test(size=(120, 40)) as pilot:
-        screen = await _open_datasets_view(pilot, app, SelectionBackend())
+        app.push_screen(SelectionScreen(
+            selection_service=app._selection_service,
+            marked_models=app._marked_models,
+            marked_tasks=app._marked_tasks,
+        ))
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        screen = app.screen
         table = screen.query_one(DataTable)
-        assert _dataset_presence_cell(table, key) == SEL_PRESENCE_MISSING
+        keys = _row_keys(table)
+        assert key in keys, "the adapted key renders in the default pool"
+        row = keys.index(key)
+        assert _row(table, row)[6] == SEL_MODEL_PRESENCE_MISSING
 
-        # the reconcile lands in the state file; the driver posts done
-        _seed_queue_state(state_root, [
-            _queue_state_entry(key, "done",
-                               {"train": 500, "dev": 50, "test": 5})])
+        # the model lands on disk; the driver posts done
+        (model_root / "models" / key).mkdir(parents=True)
+        (model_root / "models" / key / "config.json").write_text(
+            "{}", encoding="utf-8")
         event = QueueEvent(
-            run_id="driver-1", key=key, kind="dataset", state="done",
-            last_percent=100, problems=(), details=(), log_path=None)
+            run_id="driver-1", key=key, kind=KIND_MODEL, state="done",
+            last_percent=None, problems=(), details=(), log_path=None)
         app.on_queue_event_message(
             QueueEventMessage(event, app._queue_generation))
         await app.workers.wait_for_complete()
         await pilot.pause()
         await pilot.pause()
 
-        assert _dataset_presence_cell(table, key) == (
-            SEL_PRESENCE_PRESENT.format(train="500", dev="50", test="5")), (
-                "the done event must flip the presence cell live"
-            )
+        assert _row(table, row)[6] == SEL_MODEL_PRESENCE_PRESENT, (
+            "the done model event must flip the download cell live"
+        )
         assert app.screen is screen, "the flip never remounts the screen"
-        assert QUEUE_FLIP_TOAST.format(key=key) in _toasts(app)
+        assert QUEUE_FLIP_TOAST_MODEL.format(key=key) in _toasts(app)
