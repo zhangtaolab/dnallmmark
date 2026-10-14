@@ -7,10 +7,11 @@ Boots the REAL ``DnallmMarkTui`` headlessly — the same class the
 runs — and asserts the boot contract end-to-end:
 
 - the app opens on the env-check screen (the registered opening screen);
-- the table carries exactly the seven fixed rows in ``main()`` kernel
-  order, each rendering its FINAL state (the fake's cache hit renders
-  instantly — the 08-06 cache path), its kernel label from
-  ``tui/strings.py`` constants (I18N-01), keyed on the stable kernel id;
+- the table carries exactly the eight fixed rows in ``main()`` kernel
+  order (261014-dcl added the model_dirs row before dataset_dirs), each
+  rendering its FINAL state (the fake's cache hit renders instantly —
+  the 08-06 cache path), its kernel label from ``tui/strings.py``
+  constants (I18N-01), keyed on the stable kernel id;
 - the last-check line renders from the cached ``checked_at`` (ENV-02);
 - pressing ``q`` quits cleanly (return code 0).
 
@@ -77,8 +78,8 @@ async def test_boots_on_env_check_screen_quits_on_q():
         )
 
         table = app.screen.query_one(DataTable)
-        assert table.row_count == 7, (
-            "the screen must carry exactly the seven fixed kernel rows"
+        assert table.row_count == 8, (
+            "the screen must carry exactly the eight fixed kernel rows"
         )
 
         # main() kernel order + final cached states + strings labels

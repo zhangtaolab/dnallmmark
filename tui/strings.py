@@ -44,10 +44,11 @@ APP_HELP_ROW = "[{key}] {label}"
 APP_MIN_SIZE_MESSAGE = "终端过小（需 ≥ 80x24，当前 {w}x{h}）— 请放大窗口"
 
 # ===== 环境检查 (ENV-01..04) =====
-# Kernel-id → operator label for the seven env-check rows and drill-down
-# titles, in main() kernel order (08-RESEARCH verified). Keys are the stable
-# CheckResult.name vocabulary from pipeline/env_smoke (08-01) — data, never
-# translated; the values are the copy.
+# Kernel-id → operator label for the eight env-check rows and drill-down
+# titles, in main() kernel order (08-RESEARCH verified; 261014-dcl added
+# model_dirs before dataset_dirs). Keys are the stable CheckResult.name
+# vocabulary from pipeline/env_smoke (08-01) — data, never translated;
+# the values are the copy.
 ENV_KERNEL_LABELS = {
     "version_pins": "版本 pin",
     "dnallm": "dnallm 导入",
@@ -55,6 +56,7 @@ ENV_KERNEL_LABELS = {
     "cuda": "CUDA",
     "matmul": "matmul 冒烟",
     "numpy": "numpy≥2",
+    "model_dirs": "模型目录",
     "dataset_dirs": "数据集目录",
 }
 
@@ -108,6 +110,15 @@ ENV_VERDICT_CRITICAL_FAIL = (
 ENV_ROUTE_MISSING_DATASETS = (
     "⚠ {n} 个数据集目录缺失 — [3] 前往数据管理；"
     "CLI 重跑审计: python script/audit_n_frequencies.py"
+)
+
+# Missing-model routing (261014-dcl): models have NO CLI download
+# command, so the wording must never promise one — it names the count
+# and points at the run-config screen where the storage root is visible
+# (manual placement is the remedy; the [4] keycap names the nav digit,
+# the one navigation path). Glyph-first ⚠ per the redundancy rule.
+ENV_ROUTE_MISSING_MODELS = (
+    "⚠ {n} 个模型目录缺失 — 模型需手动放置（[4] 运行配置可查看存储根）"
 )
 
 # Env screen binding labels (08-UI-SPEC Keyboard map: r 重检, enter 详情).

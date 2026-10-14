@@ -6,7 +6,7 @@ Pins the ENV-01..04 presentation contract end-to-end against the REAL
 Pattern 7; D-03 — no real kernel, GPU or otherwise, ever executes in this
 suite; the service protocol is the injection seam):
 
-- cache hit (same-day persisted state): all seven rows render in their
+- cache hit (same-day persisted state): all eight rows render in their
   FINAL pass/fail states plus the last-check line, and the worker never
   spawns (D-05);
 - cache miss: rows start pending, then fill row-by-row via posted worker
@@ -74,6 +74,7 @@ from tui.strings import (
     ENV_LAST_CHECK_LINE,
     ENV_REFRESH_LABEL,
     ENV_ROUTE_MISSING_DATASETS,
+    ENV_ROUTE_MISSING_MODELS,
     ENV_STATE_CHECKING,
     ENV_STATE_FAIL,
     ENV_STATE_PASS,
@@ -120,12 +121,13 @@ def _fail(name, lines=None):
 
 
 def _mixed_results():
-    """Six passes + the dataset_dirs FAIL — the standard scenario.
+    """Seven passes + the dataset_dirs FAIL — the standard scenario.
 
     The dataset_dirs failure carries the real kernel's byte-stable line
     shapes (the missing-count FAIL line, the ``  - name`` listing lines,
     and a double-nested note line) so the routing count and the
-    drill-down long-text path are exercised against contract-shaped data.
+    drill-down long-text path are exercised against contract-shaped
+    data; the model_dirs pass carries the 261014-dcl annotated headline.
     """
     return [
         _pass("version_pins", ["PASS: torch 2.11.0 == pyproject [gpu] pin"]),
@@ -136,9 +138,13 @@ def _mixed_results():
                        "PASS: device 0: NVIDIA GB10, 186.5 GiB total memory"]),
         _pass("matmul", ["PASS: small-tensor matmul executed (sum == 512.0)"]),
         _pass("numpy", ["PASS: numpy 2.5.3 >= pyproject floor"]),
+        _pass("model_dirs", [
+            ("PASS: all 62 registry model dir(s) present on disk "
+             "(root: pipeline/)"),
+        ]),
         _fail("dataset_dirs", [
             ("FAIL: 2 of 50 registry dataset dir(s) missing on disk "
-             "(the E2' launch gate):"),
+             "(the E2' launch gate) (root: pipeline/):"),
             "  - GUE__emp_H3",
             ("  - GUE__prom_core  [double-nested: the fresh-unzip "
              "suite/suite/task layout needs flattening]"),
@@ -238,7 +244,7 @@ async def test_cache_hit_renders_final_states_and_last_check_without_worker():
         assert isinstance(screen, EnvCheckScreen)
 
         table = screen.query_one(DataTable)
-        assert table.row_count == 7
+        assert table.row_count == 8
         for index, result in enumerate(_mixed_results()):
             row = _row(table, index)
             expected_glyph = ENV_STATE_PASS if result.ok else ENV_STATE_FAIL
@@ -316,7 +322,7 @@ async def test_gated_kernel_shows_checking_progression_ui_stays_responsive():
         assert _row(table, 0)[0] == ENV_STATE_CHECKING, (
             "the in-flight row must render the checking state"
         )
-        for index in range(1, 7):
+        for index in range(1, 8):
             assert _row(table, index)[0] == ENV_STATE_PENDING, (
                 f"row {index} must still be pending while kernel 0 blocks"
             )
@@ -334,9 +340,13 @@ async def test_critical_fail_verdict_names_kernels_and_routes_missing_data():
         _fail("cuda", ["FAIL: torch.cuda.is_available() is False — no visible GPU"]),
         _fail("matmul", ["FAIL: small-tensor matmul diverged"]),
         _pass("numpy"),
+        _pass("model_dirs", [
+            ("PASS: all 62 registry model dir(s) present on disk "
+             "(root: pipeline/)"),
+        ]),
         _fail("dataset_dirs", [
             ("FAIL: 7 of 50 registry dataset dir(s) missing on disk "
-             "(the E2' launch gate):"),
+             "(the E2' launch gate) (root: pipeline/):"),
             *[f"  - GUE__task_{number}" for number in range(7)],
         ]),
     ]
@@ -382,7 +392,7 @@ async def test_refresh_resets_rows_to_pending_and_reruns():
         gate.set()  # the first run completes immediately
         await pilot.pause()
         await _wait_for_check(pilot, app)
-        assert len(fake.kernel_calls) == 7
+        assert len(fake.kernel_calls) == 8
         assert len(fake.persist_calls) == 1
 
         gate.clear()  # the second run blocks in kernel 0 (observable reset)
@@ -393,14 +403,14 @@ async def test_refresh_resets_rows_to_pending_and_reruns():
             if _row(table, 0)[0] == ENV_STATE_CHECKING:
                 break
         # every row was reset (row 0 is in-flight again — it was a final
-        # pass glyph a moment ago; rows 1-6 are back to pending)
+        # pass glyph a moment ago; rows 1-7 are back to pending)
         assert _row(table, 0)[0] == ENV_STATE_CHECKING
-        for index in range(1, 7):
+        for index in range(1, 8):
             assert _row(table, index)[0] == ENV_STATE_PENDING
 
         gate.set()
         await _wait_for_check(pilot, app)
-        assert len(fake.kernel_calls) == 14  # every kernel re-ran
+        assert len(fake.kernel_calls) == 16  # every kernel re-ran
         assert len(fake.persist_calls) == 2  # and persisted again
 
 
@@ -496,7 +506,7 @@ async def test_enter_opens_verbatim_drilldown_modal_blocks_app_bindings():
 
         # move the cursor to the dataset_dirs row (last row — the FAIL with
         # the long double-nested line, i.e. the long-text drill-down case)
-        for _ in range(6):
+        for _ in range(7):
             await pilot.press("down")
         await pilot.pause()
         await pilot.press("enter")
@@ -531,7 +541,7 @@ async def test_enter_opens_verbatim_drilldown_modal_blocks_app_bindings():
         # app-level bindings do NOT fire while the modal is open (Pitfall 11)
         await pilot.press("r")
         await pilot.pause()
-        assert len(fake.kernel_calls) == 7, "r must not refresh through the modal"
+        assert len(fake.kernel_calls) == 8, "r must not refresh through the modal"
         await pilot.press("q")
         await pilot.pause()
         assert app.return_code is None, "q must not quit through the modal"
@@ -576,10 +586,50 @@ def test_state_and_verdict_strings_are_glyph_first_and_distinct():
         ENV_VERDICT_PASS,
         ENV_VERDICT_CRITICAL_FAIL,
         ENV_ROUTE_MISSING_DATASETS,
+        ENV_ROUTE_MISSING_MODELS,
     ):
         assert verdict_line[0] in {"✓", "✗", "⚠"}, (
             "every color-coded verdict carries its glyph first (NO_COLOR)"
         )
+
+
+async def test_model_dirs_fail_renders_model_route_without_dataset_line():
+    """The 261014-dcl per-kernel routing: a model_dirs FAIL with
+    dataset_dirs PASS renders ONLY ENV_ROUTE_MISSING_MODELS — the count
+    from the kernel's own listing lines, never a fabricated zero-count
+    datasets line (and no download promise: models are placed
+    manually)."""
+    results = [
+        _pass("version_pins"),
+        _pass("dnallm"),
+        _pass("peft"),
+        _pass("cuda"),
+        _pass("matmul"),
+        _pass("numpy"),
+        _fail("model_dirs", [
+            ("FAIL: 3 of 62 registry model dir(s) missing on disk "
+             "(root: pipeline/):"),
+            "  - evo2_1b_base",
+            "  - megaDNA_updated",
+            "  - PlantHelixSeek",
+        ]),
+        _pass("dataset_dirs"),
+    ]
+    fake = FakeEnvCheckService(cached=None, results=results)
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await _wait_for_check(pilot, app)
+        lines = _verdict_lines(app.screen)
+        # the ready verdict: the routing failure never blocks
+        assert ENV_VERDICT_PASS in lines
+        # the model route line carries the listing-line count (3)
+        assert ENV_ROUTE_MISSING_MODELS.format(n=3) in lines
+        # NO datasets routing line — that kernel itself passed
+        assert not any(
+            line.startswith("⚠") and "数据集目录缺失" in line
+            for line in lines
+        ), "a passing dataset_dirs must never render a datasets route"
 
 
 # =====================================================================
@@ -612,6 +662,23 @@ def test_backend_yesterday_state_is_a_cache_miss(tmp_path):
     assert EnvCheckBackend(state_path=path).cached_results() is None
 
 
+def test_backend_same_day_seven_item_state_is_a_cache_miss(tmp_path):
+    """The 261014-dcl coverage guard: a same-day state file persisted by
+    the PRE-change build (seven items — no model_dirs) reads as a cache
+    MISS — the screen re-runs once and persists eight, instead of
+    stranding the new model_dirs row pending forever."""
+    path = tmp_path / "env_check.json"
+    now = datetime.now().astimezone()
+    pre_change_results = [
+        result for result in _mixed_results()
+        if result.name != "model_dirs"
+    ]
+    assert len(pre_change_results) == 7  # the pre-change shape, exactly
+    env_check_service.persist(path, pre_change_results, now=now)
+
+    assert EnvCheckBackend(state_path=path).cached_results() is None
+
+
 def test_backend_corrupt_state_is_a_cache_miss(tmp_path):
     """A corrupt state file is a None-sentinel miss, never a crash."""
     path = tmp_path / "env_check.json"
@@ -627,7 +694,7 @@ def test_backend_persist_returns_display_string_and_writes_state(tmp_path):
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", checked_at)
     state = env_check_service.load_cached(path)
     assert state["checked_at"] == checked_at  # display == persisted value
-    assert len(state["items"]) == 7
+    assert len(state["items"]) == 8
 
 
 def test_backend_kernels_delegate_to_the_service_main_order_sequence():
@@ -749,7 +816,7 @@ async def test_min_size_guard_swaps_updates_and_restores():
         await pilot.resize_terminal(120, 40)
         await pilot.pause()
         assert isinstance(app.screen, EnvCheckScreen)
-        assert app.screen.query_one(DataTable).row_count == 7
+        assert app.screen.query_one(DataTable).row_count == 8
 
 
 async def test_min_size_guard_help_suppressed_grow_never_strands():
@@ -803,7 +870,7 @@ async def test_no_color_scenario_keeps_distinct_glyphs(monkeypatch):
         assert app.no_color is True, "textual must register the NO_COLOR mode"
 
         table = app.screen.query_one(DataTable)
-        states = [_row(table, index)[0] for index in range(7)]
+        states = [_row(table, index)[0] for index in range(8)]
         # glyph-first redundancy: with color gone, the DISTINCT glyphs are
         # the entire state signal — both present in the cached mix
         assert {state[0] for state in states} == {

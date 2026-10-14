@@ -19,13 +19,17 @@ Contract (locked decisions):
   calibration-class smoke must pass before a real run) even though
   ENV-04 keeps it out of the QUICK-CHECK subset; numpy is critical
   because the data chain's ``numpy>=2`` floor is a hard requirement.
-- ROUTING — ``dataset_dirs``: a failure means local data is missing,
-  which routes the operator to data management (the Phase 10 panel);
-  it does NOT block ``can_launch`` by itself (a dry run / non-data
-  flow stays launchable — and the routing signal is advisory until
-  Phase 11 wires its hook).
+- ROUTING — ``model_dirs`` / ``dataset_dirs`` (the two directory
+  kernels, 261014-dcl): a ``dataset_dirs`` failure means local data is
+  missing, which routes the operator to data management (the Phase 10
+  panel); a ``model_dirs`` failure means local model weights are
+  missing — models have no CLI download command, so it routes the
+  operator to the run-config screen where the storage root is visible
+  (manual placement is the remedy). NEITHER blocks ``can_launch`` by
+  itself (a dry run / non-data flow stays launchable — and the routing
+  signal is advisory until Phase 11 wires its hook).
 - Disjointness: CRITICAL and ROUTING share no kernel id and their
-  union is exactly the seven main()-order kernel ids — every current
+  union is exactly the eight main()-order kernel ids — every current
   kernel has exactly one disposition.
 - Forward tolerance: results whose kernel id is in NEITHER set are
   ignored deterministically — a future kernel cannot crash the
@@ -53,7 +57,7 @@ CRITICAL = frozenset(
         "numpy",
     }
 )
-ROUTING = frozenset({"dataset_dirs"})
+ROUTING = frozenset({"model_dirs", "dataset_dirs"})
 
 
 @dataclass(frozen=True)
@@ -69,7 +73,9 @@ class GateVerdict:
             needs to read when launch is blocked.
         route_to_data (bool): True when a ROUTING kernel failed (local
             data missing -> data management guidance; Phase 10 owns the
-            panel).
+            panel — or model dirs missing, which routes to the
+            run-config screen where the storage root is visible,
+            261014-dcl).
     """
 
     can_launch: bool

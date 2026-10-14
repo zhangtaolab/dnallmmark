@@ -10,7 +10,7 @@ subset re-validation).
 
 Contract (locked decisions):
 
-- ENV-04/D-09: the subset is ALL seven kernel ids EXCEPT ``matmul`` —
+- ENV-04/D-09: the subset is ALL eight kernel ids EXCEPT ``matmul`` —
   ``QUICK_CHECK_KERNEL_IDS`` — in main() kernel order. The subset
   definition lives HERE, once; Phase 11's launch screen and every
   consumer reuse it.
@@ -36,15 +36,18 @@ from env_smoke import CheckResult  # top-level module (pipeline/ sys.path root)
 from tui.services import env_check
 
 # The launch-required subset: every kernel id except matmul, in main()
-# kernel order. matmul stays out because it is the heavyweight
-# calibration-class GPU smoke — the full check's job, not a launch
-# pre-flight's (D-09 / ENV-04).
+# kernel order (261014-dcl: model_dirs joined before dataset_dirs — the
+# launch pre-flight validates model dirs under the same configured root
+# the launch itself threads). matmul stays out because it is the
+# heavyweight calibration-class GPU smoke — the full check's job, not a
+# launch pre-flight's (D-09 / ENV-04).
 QUICK_CHECK_KERNEL_IDS = (
     "version_pins",
     "dnallm",
     "peft",
     "cuda",
     "numpy",
+    "model_dirs",
     "dataset_dirs",
 )
 

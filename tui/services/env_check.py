@@ -46,7 +46,9 @@ State-file shape (schema_version 1)::
 
 ZERO textual imports (the services-tier invariant,
 ``tests/tui/test_import_lock.py``). Dependencies: stdlib + the pipeline
-seams (env_smoke, artifact_loader) + the sibling settings service.
+seams (env_smoke, artifact_loader) + the sibling ``settings`` and
+``run_config`` services (the 261014-dcl storage-root threading —
+``run_config`` imports only run_sweep + settings, so no cycle).
 """
 
 import json
@@ -57,7 +59,7 @@ import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
 import env_smoke  # top-level module (pipeline/ sys.path root, D-02)
 from env_smoke import CheckResult
 
-from tui.services import settings
+from tui.services import run_config, settings
 
 STATE_SCHEMA_VERSION = 1
 STATE_FILE_NAME = "env_check.json"
@@ -130,9 +132,9 @@ def run_full_check(kernels=None, state_path=None, now=None):
             given order (CI tests inject fakes, D-03). None means the
             REAL env_smoke kernel sequence in main() order:
             version_pins, dnallm, peft, cuda, matmul, numpy,
-            dataset_dirs — cuda/matmul behind the torch-import gate
-            with the two ok=False empty-lines fallback when torch is
-            unavailable.
+            model_dirs, dataset_dirs — cuda/matmul behind the
+            torch-import gate with the two ok=False empty-lines
+            fallback when torch is unavailable.
         state_path: where to persist; None means
             ``default_state_path()`` (the D-04 state root).
         now: the check moment as a datetime (naive values are read as
@@ -160,12 +162,24 @@ def default_kernels():
     ok=False empty-lines placeholders — the same two values main()
     appends on its torch-unavailable branch.
 
+    The two directory kernels resolve against the PERSISTED run-config
+    storage roots (261014-dcl): ``run_config.resolve_dirs(load_state())``
+    binds the resolved ABSOLUTE ``model_root_abs`` / ``dataset_root_abs``
+    when the slot-4 state file carries roots, and leaves both ``None``
+    (the kernel pipeline-dir defaults) when it does not — the same roots
+    a launch would thread, so the env screen and the launch can never
+    disagree about which directories were checked. ``load_state`` is
+    tolerant-by-contract (defaults on missing/corrupt -> both roots
+    ``None``); no cycle — ``run_config`` imports only run_sweep +
+    settings.
+
     Returns:
         dict[str, callable]: kernel id -> zero-arg callable returning
         one ``CheckResult``; insertion order == main() order.
     """
     pins = env_smoke.read_gpu_pins(env_smoke.PYPROJECT_PATH)
     floor = env_smoke.read_numpy_floor_major(env_smoke.PYPROJECT_PATH)
+    dirs = run_config.resolve_dirs(run_config.load_state())
 
     def _version_pins():
         return env_smoke.check_version_pins(pins)
@@ -191,8 +205,11 @@ def default_kernels():
     def _numpy():
         return env_smoke.check_numpy(floor)
 
+    def _model_dirs():
+        return env_smoke.check_model_dirs(root=dirs.model_root_abs)
+
     def _dataset_dirs():
-        return env_smoke.check_dataset_dirs()
+        return env_smoke.check_dataset_dirs(root=dirs.dataset_root_abs)
 
     return {
         "version_pins": _version_pins,
@@ -201,6 +218,7 @@ def default_kernels():
         "cuda": _cuda,
         "matmul": _matmul,
         "numpy": _numpy,
+        "model_dirs": _model_dirs,
         "dataset_dirs": _dataset_dirs,
     }
 

@@ -24,15 +24,22 @@ Pinned scenarios (full-stdout byte equality, never line presence):
   (torch carries its ``+cu130`` local suffix on purpose so the
   release-segment comparison path is the one exercised); a fake
   CUDA-visible torch (1 device, controlled name/memory) and a successful
-  matmul; a synthetic all-present dataset registry -> exit 0, PASS
-  trailer.
+  matmul; synthetic all-present model + dataset registries -> exit 0,
+  PASS trailer.
 - **S2 torch-missing**: the torch import seam raises ImportError -> the
   torch-unavailable FAIL line renders in its exact slot (after peft,
   before numpy), cuda and matmul yield failed results with no output of
-  their own, exit 1, FAIL trailer with the 3-group count.
+  their own, exit 1, FAIL trailer with the 3-group count (the directory
+  kernels are not torch-gated and pass).
 - **S3 dataset-missing**: synthetic registry with 2 of 3 dirs missing,
   one carrying the double-nested note continuation line -> verbatim
-  indented missing-list block, exit 1.
+  indented missing-list block, exit 1 (the model-dirs kernel passes —
+  the 261014-dcl eighth line precedes the dataset block).
+- **S4 override-root (KERNEL level, never main())**: both directory
+  kernels called with an explicit ``root`` over tmp dirs — the headline
+  annotation names the root as given, the join is VERBATIM (a root
+  without a trailing separator still yields exactly one separator), and
+  missing model dirs list by name in sorted-key order (261014-dcl).
 
 Determinism seams (machine-independent, CPU-only — CI-safe):
 
@@ -46,8 +53,13 @@ Determinism seams (machine-independent, CPU-only — CI-safe):
   ``sys.modules["torch"] = None`` is the import system's documented
   halt sentinel — both import sites raise the same deterministic
   ImportError on any host, GPU stack present or not.
-- ``DATASETS_INFO_PATH`` / ``DATASETS_ROOT`` are pointed at a synthetic
-  tmp registry (double-nested sibling dirs materialized on demand).
+- ``PIPELINE_DIR`` is pinned at a synthetic tmp pipeline dir with BOTH
+  info-file module attrs (``MODELS_INFO_PATH`` / ``DATASETS_INFO_PATH``)
+  pointing into that layout — the registry-relative joins resolve
+  against the pinned dir, and the default-branch root annotation is the
+  FIXED `` (root: pipeline/)`` token, so the goldens stay
+  checkout-independent (double-nested sibling dirs materialized on
+  demand).
 
 See also:
     ``pipeline/env_smoke.py`` — the module under characterization.
@@ -58,6 +70,7 @@ See also:
 import contextlib
 import io
 import json
+import os
 import sys
 import types
 from pathlib import Path
@@ -166,6 +179,14 @@ SYNTHETIC_REGISTRY = {
     "fake_task_c": {"Dataset_path": "datasets/suite_c/task_c"},
 }
 
+# Synthetic model registry (3 models, all present in every scenario —
+# the 261014-dcl model_dirs kernel passes ahead of the dataset block).
+SYNTHETIC_MODELS_REGISTRY = {
+    "fake_model_a": {"Model_path": "models/fake/model_a"},
+    "fake_model_b": {"Model_path": "models/fake/model_b"},
+    "fake_model_c": {"Model_path": "models/fake/model_c"},
+}
+
 
 def _run_scenario(mode, monkeypatch, tmp_path, capsys=None):
     """Run ``env_smoke.main()`` under one fully pinned scenario.
@@ -175,7 +196,8 @@ def _run_scenario(mode, monkeypatch, tmp_path, capsys=None):
             ``"dataset_missing"``.
         monkeypatch: The pytest monkeypatch fixture (or a MonkeyPatch
             instance on the recording path).
-        tmp_path (Path): Directory for the synthetic dataset registry.
+        tmp_path (Path): Directory for the synthetic pipeline layout
+            (both info files + materialized models/ and datasets/ dirs).
         capsys: The pytest capsys fixture when running under pytest;
             ``None`` captures via ``contextlib.redirect_stdout``
             instead (identical bytes — the recording path used to
@@ -184,9 +206,16 @@ def _run_scenario(mode, monkeypatch, tmp_path, capsys=None):
     Returns:
         tuple[str, int]: (full captured stdout, main()'s return value).
     """
-    datasets_root = tmp_path / "datasets"
-    info_path = tmp_path / "datasets_info.json"
+    pipeline_dir = tmp_path / "pipeline"
+    datasets_root = pipeline_dir / "datasets"
+    models_root = pipeline_dir / "models"
+    pipeline_dir.mkdir(parents=True)
+    (pipeline_dir / "models_info.json").write_text(
+        json.dumps(SYNTHETIC_MODELS_REGISTRY), encoding="utf-8")
+    info_path = pipeline_dir / "datasets_info.json"
     info_path.write_text(json.dumps(SYNTHETIC_REGISTRY), encoding="utf-8")
+    for model in ("model_a", "model_b", "model_c"):
+        (models_root / "fake" / model).mkdir(parents=True)
     if mode in ("all_pass", "torch_missing"):
         for suite, task in (
             ("suite_a", "task_a"),
@@ -203,8 +232,10 @@ def _run_scenario(mode, monkeypatch, tmp_path, capsys=None):
         raise ValueError(f"unknown scenario mode: {mode!r}")
 
     monkeypatch.setattr(env_smoke, "REPO_ROOT", PINNED_REPO_ROOT)
+    monkeypatch.setattr(env_smoke, "PIPELINE_DIR", pipeline_dir)
+    monkeypatch.setattr(env_smoke, "MODELS_INFO_PATH",
+                        pipeline_dir / "models_info.json")
     monkeypatch.setattr(env_smoke, "DATASETS_INFO_PATH", info_path)
-    monkeypatch.setattr(env_smoke, "DATASETS_ROOT", datasets_root)
     for name, module in (
         ("transformers", _fake_module(
             "transformers", version=FAKE_TRANSFORMERS_VERSION)),
@@ -258,7 +289,8 @@ PASS: small-tensor matmul executed (sum == 512.0)
 PASS: import numpy resolves (/fake/site-packages/numpy/__init__.py)
 PASS: numpy 2.5.3 >= pyproject floor (major >= 2; dnallm 1.2.1 requires numpy>=2)
 INFO (not gated): datasets 4.58.2, pyarrow 22.0.0 (dnallm 1.2.1 caps datasets<=5.1.0, no pyarrow pin — dnallm's own constraints govern resolution)
-PASS: all 3 registry dataset dir(s) present on disk
+PASS: all 3 registry model dir(s) present on disk (root: pipeline/)
+PASS: all 3 registry dataset dir(s) present on disk (root: pipeline/)
 === SMOKE RESULT: PASS (all checks green) ===
 """
 
@@ -274,7 +306,8 @@ FAIL: torch unavailable — CUDA + matmul checks not run
 PASS: import numpy resolves (/fake/site-packages/numpy/__init__.py)
 PASS: numpy 2.5.3 >= pyproject floor (major >= 2; dnallm 1.2.1 requires numpy>=2)
 INFO (not gated): datasets 4.58.2, pyarrow 22.0.0 (dnallm 1.2.1 caps datasets<=5.1.0, no pyarrow pin — dnallm's own constraints govern resolution)
-PASS: all 3 registry dataset dir(s) present on disk
+PASS: all 3 registry model dir(s) present on disk (root: pipeline/)
+PASS: all 3 registry dataset dir(s) present on disk (root: pipeline/)
 === SMOKE RESULT: FAIL (3 check group(s) failed) ===
 """
 
@@ -292,7 +325,8 @@ PASS: small-tensor matmul executed (sum == 512.0)
 PASS: import numpy resolves (/fake/site-packages/numpy/__init__.py)
 PASS: numpy 2.5.3 >= pyproject floor (major >= 2; dnallm 1.2.1 requires numpy>=2)
 INFO (not gated): datasets 4.58.2, pyarrow 22.0.0 (dnallm 1.2.1 caps datasets<=5.1.0, no pyarrow pin — dnallm's own constraints govern resolution)
-FAIL: 2 of 3 registry dataset dir(s) missing on disk (the E2' launch gate):
+PASS: all 3 registry model dir(s) present on disk (root: pipeline/)
+FAIL: 2 of 3 registry dataset dir(s) missing on disk (the E2' launch gate) (root: pipeline/):
   - fake_task_b
   - fake_task_c  [double-nested: the fresh-unzip suite/suite/task layout needs flattening]
 === SMOKE RESULT: FAIL (1 check group(s) failed) ===
@@ -320,3 +354,57 @@ def test_s3_dataset_missing_stdout_is_byte_exact(capsys, monkeypatch, tmp_path):
     out, rc = _run_scenario("dataset_missing", monkeypatch, tmp_path, capsys)
     assert out == EXPECTED_S3_DATASET_MISSING
     assert isinstance(rc, int) and rc == 1
+
+
+def test_s4_override_root_annotation_verbatim_join_and_missing_listing(
+        monkeypatch, tmp_path):
+    """S4 (KERNEL level, 261014-dcl — never main()): an explicit override
+    root redirects BOTH directory kernels — the headline annotation names
+    the root exactly as given, the join is VERBATIM (a root without a
+    trailing separator still yields exactly one separator before the
+    registry value's own prefix), and missing model dirs list by name in
+    sorted-key order."""
+    pipeline_dir = tmp_path / "pipeline"
+    pipeline_dir.mkdir()
+    (pipeline_dir / "models_info.json").write_text(json.dumps({
+        "fake_model_b": {"Model_path": "models/store/model_b"},
+        "fake_model_a": {"Model_path": "models/store/model_a"},
+    }), encoding="utf-8")
+    (pipeline_dir / "datasets_info.json").write_text(json.dumps({
+        "fake_task_a": {"Dataset_path": "datasets/store/task_a"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(env_smoke, "MODELS_INFO_PATH",
+                        pipeline_dir / "models_info.json")
+    monkeypatch.setattr(env_smoke, "DATASETS_INFO_PATH",
+                        pipeline_dir / "datasets_info.json")
+    # the store root is given WITHOUT a trailing separator on purpose —
+    # the verbatim-join pin (exactly one separator ever joins root and
+    # registry value, the 261014-c2l run_finetune semantics).
+    store = tmp_path / "store"
+    (store / "models" / "store" / "model_a").mkdir(parents=True)
+    (store / "datasets" / "store" / "task_a").mkdir(parents=True)
+    # fake_model_b's dir stays absent — the missing-listing leg.
+
+    models_result = env_smoke.check_model_dirs(root=str(store))
+    assert models_result.name == "model_dirs"
+    assert models_result.ok is False
+    assert models_result.lines == (
+        (f"FAIL: 1 of 2 registry model dir(s) missing on disk "
+         f"(root: {store}):"),
+        "  - fake_model_b",  # sorted-key order, exactly one listing line
+    )
+
+    datasets_result = env_smoke.check_dataset_dirs(root=str(store))
+    assert datasets_result.name == "dataset_dirs"
+    assert datasets_result.ok is True
+    assert datasets_result.lines == (
+        (f"PASS: all 1 registry dataset dir(s) present on disk "
+         f"(root: {store})"),
+    )
+
+    # the helper-level verbatim-join pin: the override branch rstrips
+    # then appends exactly one separator; the default branch resolves
+    # against the module's own pipeline dir.
+    assert env_smoke._effective_base(str(store)) == f"{store}{os.sep}"
+    assert env_smoke._effective_base(None) == (
+        f"{env_smoke.PIPELINE_DIR}{os.sep}")

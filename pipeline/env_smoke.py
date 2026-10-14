@@ -31,15 +31,18 @@ ANY failure forces a final non-zero exit):
    (the 7 GUE re-extraction gate is VISIBLE here: missing dirs are listed
    BY NAME; when a missing expected dir has a double-nested sibling —
    the fresh-unzip ``suite/suite/task`` layout — a note says so);
-5. a single small-tensor matmul, proving executability end to end;
-6. ``numpy`` major version >= the floor PARSED from the repo's own
+5. every ``models_info.json`` ``Model_path`` directory exists on disk
+   (261014-dcl: models have no CLI download command — the missing list
+   is visibility only, never a download promise);
+6. a single small-tensor matmul, proving executability end to end;
+7. ``numpy`` major version >= the floor PARSED from the repo's own
    ``pyproject.toml`` dependency string (``numpy>=2.0,<3`` in the
    ``[data]`` group — the floor is read, never duplicated). Maintainer
    heads-up 2026-10-11: dnallm 1.2.1 pins ``numpy>=2.0.0`` directly
    (upstream retired numpy 1.x on 2026-10-10; 1.x users stay on the
    0.8.x series); this repo is already aligned (``numpy>=2.0,<3``,
    uv.lock 2.5.3), and this check makes the alignment visible on GB10;
-7. ``peft`` imports and its version prints (06-01, the SC-6 lanes): the
+8. ``peft`` imports and its version prints (06-01, the SC-6 lanes): the
    suite hard-imports peft at module top (dnallm/finetune/trainer.py:58
    @ v1.2.1), so the LoRA/IA3 lanes need it importable in this
    environment (suite floor ``peft>=0.14.0``).
@@ -65,6 +68,7 @@ See also:
 """
 
 import json
+import os
 import re
 import sys
 import tomllib
@@ -75,8 +79,8 @@ from pathlib import Path
 PIPELINE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PIPELINE_DIR.parent
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
+MODELS_INFO_PATH = PIPELINE_DIR / "models_info.json"
 DATASETS_INFO_PATH = PIPELINE_DIR / "datasets_info.json"
-DATASETS_ROOT = PIPELINE_DIR / "datasets"
 
 
 @dataclass(frozen=True)
@@ -90,9 +94,10 @@ class CheckResult:
     re-implemented checks).
 
     Attributes:
-        name (str): The stable kernel id — exactly the seven ids in
+        name (str): The stable kernel id — exactly the eight ids in
             main()'s call order: ``version_pins``, ``dnallm``, ``peft``,
-            ``cuda``, ``matmul``, ``numpy``, ``dataset_dirs``.
+            ``cuda``, ``matmul``, ``numpy``, ``model_dirs``,
+            ``dataset_dirs``.
         ok (bool): True when the check passed (gates the exit code).
         lines (tuple[str, ...]): The EXACT PASS/FAIL lines this kernel
             renders today — byte-stable and order-stable; empty only for
@@ -199,7 +204,7 @@ def read_numpy_floor_major(pyproject_path):
 
 
 def check_numpy(floor_major) -> CheckResult:
-    """Check 6: numpy major version >= the pyproject-parsed floor.
+    """Check 7: numpy major version >= the pyproject-parsed floor.
 
     Args:
         floor_major (int): The parsed numpy ``>=`` floor major version.
@@ -323,7 +328,7 @@ def check_dnallm() -> CheckResult:
 
 
 def check_peft():
-    """Check 7 (06-01): ``import peft`` resolves, version reported.
+    """Check 8 (06-01): ``import peft`` resolves, version reported.
 
     The SC-6 LoRA/IA3 lanes build on peft: the suite hard-imports it
     (dnallm/finetune/trainer.py:58 @ v1.2.1 (30dfd6d)); suite floor
@@ -387,7 +392,93 @@ def check_cuda(torch) -> CheckResult:
     return CheckResult(name="cuda", ok=True, lines=tuple(lines))
 
 
-def check_dataset_dirs() -> CheckResult:
+def _effective_base(root=None):
+    """The override-aware base every registry path joins against.
+
+    The 261014-c2l ``run_finetune`` expression verbatim
+    (pipeline/run_finetune.py model_base/dataset_base): ``None`` keeps
+    this script's own pipeline dir (the registry values are
+    pipeline-relative, ``models/...`` / ``datasets/...``), an explicit
+    root REPLACES it — the registry value keeps its own prefix and joins
+    VERBATIM (``root`` + ``models/x`` -> exactly one separator).
+
+    Args:
+        root (str | None): the storage-root override (None = default).
+
+    Returns:
+        str: the join base, always carrying exactly one trailing
+        separator.
+    """
+    if root is None:
+        return str(PIPELINE_DIR) + os.sep
+    return str(root).rstrip(os.sep) + os.sep
+
+
+def _root_annotation(root=None):
+    """The headline's effective-root annotation (261014-dcl).
+
+    The default branch renders the FIXED ``pipeline/`` token — never the
+    host-absolute path — so the byte goldens stay checkout-independent;
+    the override branch names the root exactly as given.
+
+    Args:
+        root (str | None): the storage-root override (None = default).
+
+    Returns:
+        str: the `` (root: ...)`` annotation appended to every headline.
+    """
+    if root is None:
+        return " (root: pipeline/)"
+    return f" (root: {root})"
+
+
+def check_model_dirs(root=None) -> CheckResult:
+    """Check 5: every registry Model_path dir exists under the root.
+
+    Mirrors ``check_dataset_dirs`` exactly (261014-dcl): the expected
+    path is the override-aware base joined with the registry
+    ``Model_path`` VERBATIM (the value keeps its own ``models/`` prefix
+    — the 261014-c2l ``run_finetune`` semantics), missing dirs are
+    listed BY NAME in sorted-key order, and the headline ALWAYS
+    annotates the effective root actually checked.
+
+    Args:
+        root (str | None): the model storage root override (None = this
+            script's own pipeline dir).
+
+    Returns:
+        CheckResult: ok=True with the all-present PASS line; ok=False
+        with the missing-count FAIL line plus one indented ``  - name``
+        line per missing key.
+    """
+    base = _effective_base(root)
+    annotation = _root_annotation(root)
+    with open(MODELS_INFO_PATH, "r", encoding="utf-8") as fh:
+        models_info = json.load(fh)
+    missing = []
+    for name in sorted(models_info):
+        value = models_info[name].get("Model_path")
+        if not isinstance(value, str) or not Path(base + value).is_dir():
+            missing.append(name)
+    total = len(models_info)
+    if missing:
+        lines = [
+            (f"FAIL: {len(missing)} of {total} registry model dir(s) "
+             f"missing on disk{annotation}:")
+        ]
+        lines.extend(f"  - {name}" for name in missing)
+        return CheckResult(name="model_dirs", ok=False, lines=tuple(lines))
+    return CheckResult(
+        name="model_dirs",
+        ok=True,
+        lines=(
+            (f"PASS: all {total} registry model dir(s) present on disk"
+             f"{annotation}"),
+        ),
+    )
+
+
+def check_dataset_dirs(root=None) -> CheckResult:
     """Check 4: every registry Dataset_path dir exists (GUE gate visible).
 
     Missing dirs are listed BY NAME (the documented 7-GUE re-extraction
@@ -396,30 +487,46 @@ def check_dataset_dirs() -> CheckResult:
     fresh suite-archive unzip layout ``{suite}/{suite}/{task}`` instead of
     ``{suite}/{task}`` — a note says the archive needs flattening.
 
+    The expected path is the override-aware base joined with the
+    registry ``Dataset_path`` VERBATIM (the value keeps its own
+    ``datasets/`` prefix — the 261014-c2l ``run_finetune`` semantics,
+    261014-dcl): on the default branch this resolves the SAME
+    directories as the retired ``removeprefix("datasets/") +
+    DATASETS_ROOT`` form (the prefix rejoins through the base), and the
+    headline ALWAYS annotates the effective root actually checked (the
+    fixed ``pipeline/`` token on the default branch, so the byte goldens
+    stay checkout-independent).
+
+    Args:
+        root (str | None): the dataset storage root override (None =
+            this script's own pipeline dir).
+
     Returns:
         CheckResult: ok=True with the all-present PASS line; ok=False
         with the missing-count FAIL line plus one indented ``  - name``
         line per missing dir (the double-nested note appended verbatim).
     """
+    base = _effective_base(root)
+    annotation = _root_annotation(root)
     with open(DATASETS_INFO_PATH, "r", encoding="utf-8") as fh:
         datasets_info = json.load(fh)
     missing = []
     double_nested = []
     for name in sorted(datasets_info):
-        rel = datasets_info[name]["Dataset_path"].removeprefix("datasets/")
-        expected = DATASETS_ROOT / rel
-        if expected.is_dir():
+        value = datasets_info[name]["Dataset_path"]
+        expected = base + value
+        if Path(expected).is_dir():
             continue
         missing.append(name)
-        parts = rel.split("/")
-        if len(parts) >= 2 and (DATASETS_ROOT / parts[0] / parts[0]
-                                / "/".join(parts[1:])).is_dir():
+        parts = value.split("/")
+        if len(parts) >= 3 and Path(base + "/".join(
+                [parts[0], parts[1], parts[1], *parts[2:]])).is_dir():
             double_nested.append(name)
     total = len(datasets_info)
     if missing:
         lines = [
             (f"FAIL: {len(missing)} of {total} registry dataset dir(s) "
-             "missing on disk (the E2' launch gate):")
+             f"missing on disk (the E2' launch gate){annotation}:")
         ]
         for name in missing:
             note = (
@@ -433,12 +540,15 @@ def check_dataset_dirs() -> CheckResult:
     return CheckResult(
         name="dataset_dirs",
         ok=True,
-        lines=(f"PASS: all {total} registry dataset dir(s) present on disk",),
+        lines=(
+            (f"PASS: all {total} registry dataset dir(s) present on disk"
+             f"{annotation}"),
+        ),
     )
 
 
 def check_matmul(torch) -> CheckResult:
-    """Check 5: one small-tensor matmul — executability, nothing more.
+    """Check 6: one small-tensor matmul — executability, nothing more.
 
     The expected value is derived, not magic: an 8x8 all-ones matmul
     has every entry equal to 8 (each is a dot product of two 8-long
@@ -489,12 +599,14 @@ def _emit(result):
 def main():
     """Run every check; exit non-zero when any check failed.
 
-    D-02 (Phase 8): main() is the ONLY renderer — the seven kernels
+    D-02 (Phase 8): main() is the ONLY renderer — the eight kernels
     return ``CheckResult`` values (structured name/ok/lines) for the
     TUI services layer to import directly, and the byte order below is
     the E2' greppable contract the golden suite pins: header,
     version_pins, dnallm, peft, the torch gate, cuda, matmul, numpy,
-    the non-gating INFO diagnostics line, dataset_dirs, trailer.
+    the non-gating INFO diagnostics line, model_dirs, dataset_dirs,
+    trailer (models before datasets — the pinned 261014-c2l argv-tail
+    order; neither directory kernel is torch-gated).
     """
     print(f"=== PIPE-02 env smoke ({REPO_ROOT.name} @ {REPO_ROOT}) ===")
     pins = read_gpu_pins(PYPROJECT_PATH)
@@ -524,6 +636,8 @@ def main():
     for result in results[3:]:  # render the cuda/matmul/numpy segment
         _emit(result)
     print_ecosystem_diagnostics()
+    results.append(check_model_dirs())
+    _emit(results[-1])
     results.append(check_dataset_dirs())
     _emit(results[-1])
 

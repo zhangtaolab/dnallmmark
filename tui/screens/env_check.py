@@ -1,7 +1,7 @@
 """
 env_check — the env-check screen (Phase 8, 08-06; ENV-01..04 presentation).
 
-The visible half of the startup environment check: a seven-row DataTable
+The visible half of the startup environment check: an eight-row DataTable
 keyed on the stable kernel ids in ``main()`` kernel order, filled
 row-by-row as kernel results arrive, plus the last-check line (ENV-02),
 the advisory gate verdict + missing-data routing block (ENV-03, D-09),
@@ -68,6 +68,7 @@ from tui.strings import (
     ENV_LAST_CHECK_LINE,
     ENV_REFRESH_LABEL,
     ENV_ROUTE_MISSING_DATASETS,
+    ENV_ROUTE_MISSING_MODELS,
     ENV_SCREEN_TITLE,
     ENV_STATE_CHECKING,
     ENV_STATE_FAIL,
@@ -175,6 +176,12 @@ class EnvCheckBackend:
             if not all(isinstance(line, str) for line in lines):
                 return None
             results.append(CheckResult(name=name, ok=ok, lines=tuple(lines)))
+        # Coverage guard (261014-dcl): a same-day state file whose items
+        # cover anything short of the FULL kernel-id set is a cache MISS
+        # — a pre-change seven-item file re-runs once and persists eight,
+        # instead of stranding the new model_dirs row pending forever.
+        if {result.name for result in results} != set(ENV_KERNEL_LABELS):
+            return None
         return checked_at, tuple(results)
 
     def kernels(self) -> "dict[str, Callable[[], CheckResult]]":
@@ -244,13 +251,13 @@ def _summary_of(result: CheckResult) -> str:
     return first
 
 
-def _missing_dataset_count(result: CheckResult | None) -> int:
-    """Count the missing dataset dirs from the dataset_dirs kernel's lines.
+def _missing_count(result: CheckResult | None) -> int:
+    """Count the missing entries from one directory kernel's lines.
 
-    Reads the byte-stable contract shape: every missing dir is one
-    ``  - name`` listing line (the double-nested note is appended to the
-    same line, never a line of its own) — counting the prefix is counting
-    the kernel's own list.
+    Reads the byte-stable contract shape BOTH directory kernels share
+    (261014-dcl): every missing dir is one ``  - name`` listing line
+    (the double-nested note is appended to the same line, never a line
+    of its own) — counting the prefix is counting the kernel's own list.
     """
     if result is None:
         return 0
@@ -258,7 +265,7 @@ def _missing_dataset_count(result: CheckResult | None) -> int:
 
 
 class EnvCheckScreen(Screen):
-    """The env-check screen: seven rows, async fill, verdict, drill-down."""
+    """The env-check screen: eight rows, async fill, verdict, drill-down."""
 
     # D-13 slot 1 (the top-menu active-slot marker the nav bar reads).
     NAV_SLOT: ClassVar[int] = 1
@@ -355,7 +362,7 @@ class EnvCheckScreen(Screen):
         yield BottomBar()
 
     def on_mount(self) -> None:
-        """Build the seven fixed rows, then cache-hit-or-worker (D-05).
+        """Build the eight fixed rows, then cache-hit-or-worker (D-05).
 
         ``ENV_KERNEL_LABELS`` is defined in main() kernel order (the
         08-02 strings contract), so iteration order IS the row-order
@@ -491,16 +498,29 @@ class EnvCheckScreen(Screen):
                     kernel_names=", ".join(failing)),
                 classes="verdict-fail",
             ))
-        # the single ROUTING kernel id (env_gate.ROUTING) — its copy is
-        # dataset-specific per the Copywriting Contract
+        # Per-KERNEL routing lines (261014-dcl) — never the
+        # route_to_data bool alone: a model_dirs failure must not
+        # fabricate a zero-count datasets line (and vice versa). Each
+        # directory kernel renders its own copy only when THAT kernel
+        # itself failed.
+        model_dirs = next(
+            (result for result in results if result.name == "model_dirs"),
+            None,
+        )
+        if model_dirs is not None and not model_dirs.ok:
+            box.mount(Static(
+                ENV_ROUTE_MISSING_MODELS.format(
+                    n=_missing_count(model_dirs)),
+                classes="verdict-route",
+            ))
         dataset_dirs = next(
             (result for result in results if result.name == "dataset_dirs"),
             None,
         )
-        if verdict.route_to_data and dataset_dirs is not None:
+        if dataset_dirs is not None and not dataset_dirs.ok:
             box.mount(Static(
                 ENV_ROUTE_MISSING_DATASETS.format(
-                    n=_missing_dataset_count(dataset_dirs)),
+                    n=_missing_count(dataset_dirs)),
                 classes="verdict-route",
             ))
 

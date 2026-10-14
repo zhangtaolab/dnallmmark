@@ -43,7 +43,8 @@ from tui.services.env_check import (
     run_full_check,
 )
 
-# main()'s result-list order — the row/serialization vocabulary (08-01).
+# main()'s result-list order — the row/serialization vocabulary (08-01;
+# 261014-dcl inserted model_dirs before dataset_dirs — eight ids).
 MAIN_KERNEL_ORDER = (
     "version_pins",
     "dnallm",
@@ -51,6 +52,7 @@ MAIN_KERNEL_ORDER = (
     "cuda",
     "matmul",
     "numpy",
+    "model_dirs",
     "dataset_dirs",
 )
 
@@ -219,13 +221,15 @@ def test_run_full_check_injected_kernels_return_in_order_and_persist_once(
     ]
 
 
-def _patch_env_smoke_kernels(monkeypatch, order, cuda_fn=None, matmul_fn=None):
+def _patch_env_smoke_kernels(monkeypatch, order, cuda_fn=None, matmul_fn=None,
+                             model_dirs_fn=None, dataset_dirs_fn=None):
     """Replace every env_smoke kernel with a recording fake (D-03: no real
     kernel ever executes; the service's import seam is what's under test).
 
     ``order`` is the shared recording list every fake appends its kernel
     id to; custom cuda/matmul fakes must do their own appends (they own
-    the recording).
+    the recording). The two directory-kernel fakes accept the ``root``
+    kwarg (the 261014-dcl run-config threading seam).
     """
 
     def fake_version_pins(pins):
@@ -252,7 +256,11 @@ def _patch_env_smoke_kernels(monkeypatch, order, cuda_fn=None, matmul_fn=None):
         order.append("numpy")
         return _pass("numpy")
 
-    def fake_dataset_dirs():
+    def fake_model_dirs(root=None):
+        order.append("model_dirs")
+        return _pass("model_dirs")
+
+    def fake_dataset_dirs(root=None):
         order.append("dataset_dirs")
         return _pass("dataset_dirs")
 
@@ -262,7 +270,10 @@ def _patch_env_smoke_kernels(monkeypatch, order, cuda_fn=None, matmul_fn=None):
     monkeypatch.setattr(env_smoke, "check_cuda", cuda_fn or default_cuda)
     monkeypatch.setattr(env_smoke, "check_matmul", matmul_fn or default_matmul)
     monkeypatch.setattr(env_smoke, "check_numpy", fake_numpy)
-    monkeypatch.setattr(env_smoke, "check_dataset_dirs", fake_dataset_dirs)
+    monkeypatch.setattr(env_smoke, "check_model_dirs",
+                        model_dirs_fn or fake_model_dirs)
+    monkeypatch.setattr(env_smoke, "check_dataset_dirs",
+                        dataset_dirs_fn or fake_dataset_dirs)
     return order
 
 
@@ -273,7 +284,8 @@ def test_run_full_check_default_sequence_mirrors_main_order(
     The kernel bodies are monkeypatched to recording fakes (D-03 — no GPU
     kernel executes in CI), but the SEQUENCE the service builds is the
     real one: version_pins, dnallm, peft, cuda, matmul, numpy,
-    dataset_dirs, with the torch module passed through to cuda/matmul.
+    model_dirs, dataset_dirs, with the torch module passed through to
+    cuda/matmul.
     """
     path = tmp_path / "env_check.json"
     fake_torch = types.ModuleType("torch")
@@ -327,10 +339,93 @@ def test_default_sequence_torch_gate_appends_two_false_results(
     results = run_full_check(
         state_path=path, now=_local(2026, 10, 11, 10, 0)
     )
-    assert order == ["version_pins", "dnallm", "peft", "numpy", "dataset_dirs"]
+    assert order == [
+        "version_pins", "dnallm", "peft", "numpy",
+        "model_dirs", "dataset_dirs",
+    ]
     assert [result.name for result in results] == list(MAIN_KERNEL_ORDER)
     assert results[3] == CheckResult(name="cuda", ok=False, lines=())
     assert results[4] == CheckResult(name="matmul", ok=False, lines=())
+
+
+# ===== Run-config root threading (261014-dcl) =====
+
+
+def test_default_kernels_bind_persisted_run_config_roots(tmp_path,
+                                                         monkeypatch):
+    """A persisted run_config.json carrying storage roots binds the
+    RESOLVED ABSOLUTE roots into BOTH directory kernels — the same roots
+    a launch would thread, so the env screen checks the directories the
+    launch will actually consume."""
+    from tui.services import run_config
+
+    monkeypatch.setenv("DNALLMMARK_TUI_STATE_DIR", str(tmp_path))
+    run_config.save_state(run_config.RunSpec(
+        models=(), tasks=(),
+        model_root=str(tmp_path / "model-store"),
+        dataset_root=str(tmp_path / "dataset-store"),
+    ))
+    captured = {}
+
+    def recording_model_dirs(root=None):
+        captured["model"] = root
+        return _pass("model_dirs")
+
+    def recording_dataset_dirs(root=None):
+        captured["dataset"] = root
+        return _pass("dataset_dirs")
+
+    order: list = []
+    _patch_env_smoke_kernels(
+        monkeypatch, order=order,
+        model_dirs_fn=recording_model_dirs,
+        dataset_dirs_fn=recording_dataset_dirs,
+    )
+    kernels = env_check.default_kernels()
+    # ONLY the two directory kernels execute here (the recording fakes);
+    # the derived expectation comes from the same service seam the launch
+    # composes through.
+    kernels["model_dirs"]()
+    kernels["dataset_dirs"]()
+
+    expected = run_config.resolve_dirs(run_config.load_state())
+    assert captured == {
+        "model": expected.model_root_abs,
+        "dataset": expected.dataset_root_abs,
+    }
+    # the bound values are the ABSOLUTE resolutions, not the raw inputs
+    assert captured["model"] == str((tmp_path / "model-store").resolve())
+    assert captured["dataset"] == str(
+        (tmp_path / "dataset-store").resolve())
+
+
+def test_default_kernels_without_state_file_bind_none_roots(tmp_path,
+                                                            monkeypatch):
+    """No run-config state file -> both directory kernels receive
+    root=None (the kernel pipeline-dir defaults, byte-identical to the
+    pre-261014-dcl resolution)."""
+    monkeypatch.setenv("DNALLMMARK_TUI_STATE_DIR", str(tmp_path))
+    captured = {}
+
+    def recording_model_dirs(root=None):
+        captured["model"] = root
+        return _pass("model_dirs")
+
+    def recording_dataset_dirs(root=None):
+        captured["dataset"] = root
+        return _pass("dataset_dirs")
+
+    order: list = []
+    _patch_env_smoke_kernels(
+        monkeypatch, order=order,
+        model_dirs_fn=recording_model_dirs,
+        dataset_dirs_fn=recording_dataset_dirs,
+    )
+    kernels = env_check.default_kernels()
+    kernels["model_dirs"]()
+    kernels["dataset_dirs"]()
+
+    assert captured == {"model": None, "dataset": None}
 
 
 # ===== Default state location (D-04) =====
