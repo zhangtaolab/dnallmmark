@@ -575,6 +575,11 @@ DL_ENQUEUE_ALL_LABEL = "全部入队"
 # disabled-with-explanation toast (the drill-down carries the
 # download_url — always diagnosable).
 DL_PRESENCE_SUMMARY = "在场 {present}/{total} · 缺失 {missing}"
+# The full presence view (DCL-03, 261014-dcl): the v-toggle's two
+# surfaces — the full-view title (one row per official registry key)
+# and the bottom-bar toggle label (the clip policy governs at 80 cols).
+DL_PRESENCE_TITLE = "全部数据集 ({n})"
+DL_PRESENCE_TOGGLE_LABEL = "切换缺失/全部"
 DL_DISABLED_TOAST = (
     "⚠ {key} 上游为镜像布局，不支持一键下载 — download_url 见详情")
 # WR-06: the channel-unavailable reasons that are NOT the shape-D

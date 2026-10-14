@@ -23,15 +23,16 @@ committed SVG files. The comparison is honestly an SVG-text diff —
 "pixel compare" at SVG fidelity; rasterizing (cairosvg) is NOT
 sanctioned and no syrupy/jinja2 is ever imported.
 
-The corpus (the frozen 8 — 12-UI-SPEC table)
----------------------------------------------
+The corpus (the frozen 9 — 12-UI-SPEC table + DCL-03)
+-----------------------------------------------------
 =========================  =====================================
 Golden id                  Screen state
 =========================  =====================================
-env_check                  populated cache-hit boot (7 kernels)
+env_check                  populated cache-hit boot (8 kernels)
 selection_models           models view, 2 marks, filter 1/3
 selection_datasets         datasets view (the m flip), 1 mark
 data_manager               mixed missing rows + queue states
+data_manager_presence      the v-toggled full presence view
 run_config                 marks + params + live preview line
 monitor_running            worker root + all five glyphs + ETA
 monitor_empty              no sweeps discovered (empty copy)
@@ -103,6 +104,7 @@ from tui.services import selection as selection_service
 from tui.services.download_queue import (
     EnqueueOutcome,
     MissingInfo,
+    PresenceRow,
     QueueEntry,
     ReauditOutcome,
     merge_presence,
@@ -569,7 +571,23 @@ class _DataManagerGoldenService:
                 _dm_missing_row("mouse__DMS", 12411),
                 _dm_missing_row("plant__vista-100m", 64350),
             ),
-            total=50, present=47)
+            total=50, present=47,
+            # DCL-03: the full-view fixture (fixed mixed statuses — the
+            # v-toggled golden renders deterministic values)
+            presence_rows=(
+                PresenceRow(
+                    key="GUE__emp_H3",
+                    status=registries_service.PRESENCE_PRESENT,
+                    declared_total=7349),
+                PresenceRow(
+                    key="mouse__DMS",
+                    status=registries_service.PRESENCE_MISSING,
+                    declared_total=12411),
+                PresenceRow(
+                    key="ghost__drift",
+                    status=registries_service.PRESENCE_UNKNOWN,
+                    declared_total=0),
+            ))
 
     def entries(self):
         return tuple(self.entries_list)
@@ -707,6 +725,18 @@ async def _drive_data_manager(pilot, app):
         await _settle(pilot, app)
 
 
+async def _drive_data_manager_presence(pilot, app):
+    """DCL-03 (261014-dcl): the same fixture with v pressed — the full
+    official-registry presence view replaces the missing table (title,
+    glyph-prefixed keys, declared totals; the same frozen clock)."""
+    with _frozen_dm_clock():
+        app.push_screen(DataManagerScreen(
+            data_service=_DataManagerGoldenService()))
+        await _settle(pilot, app)
+        await pilot.press("v")
+        await pilot.pause()
+
+
 async def _drive_run_config(pilot, app):
     """The post-delta-B slot-4 screen: 2 model marks + params + the
     live preview line (2 x 1 x 3 = 6)."""
@@ -774,6 +804,8 @@ GOLDENS = {
         _drive_selection_datasets),
     "data_manager": (
         lambda: _golden_app(), _drive_data_manager),
+    "data_manager_presence": (
+        lambda: _golden_app(), _drive_data_manager_presence),
     "run_config": (
         lambda: _golden_app(run_config=_RunConfigGoldenService(
             spec=RunSpec(models=("model-a", "model-b"),
@@ -827,7 +859,7 @@ def _golden(golden_id: str) -> str:
 # =====================================================================
 
 def test_env_check_golden():
-    """The cache-hit env boot: seven PASS rows + the last-check line."""
+    """The cache-hit env boot: eight PASS rows + the last-check line."""
     assert asyncio.run(_export_golden("env_check")) == _golden(
         "env_check")
 
@@ -848,6 +880,13 @@ def test_data_manager_golden():
     """The two panes: mixed missing rows + 4-state queue + summary."""
     assert asyncio.run(_export_golden("data_manager")) == _golden(
         "data_manager")
+
+
+def test_data_manager_presence_golden():
+    """DCL-03: the v-toggled full view — glyph-prefixed official keys
+    with declared totals beside the untouched queue pane."""
+    assert asyncio.run(_export_golden("data_manager_presence")) == _golden(
+        "data_manager_presence")
 
 
 def test_run_config_golden():

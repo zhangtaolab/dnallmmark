@@ -734,6 +734,110 @@ def test_merged_audit_tasks_overlays_this_services_state_path_cr01(
 
 
 # =====================================================================
+# The full presence view (DCL-03, 261014-dcl — presence_rows, the same
+# merged n_audit/reconcile substrate as the missing view; CR-01)
+# =====================================================================
+
+
+def test_presence_rows_covers_every_official_key_with_declared_totals(
+        monkeypatch, tmp_path):
+    """Every committed official registry key (50) carries exactly one
+    row, in registry file order, with statuses inside the registries
+    presence vocabulary and ``declared_total`` from the registry entry
+    (computed in the test from the same registry — never hardcoded)."""
+    service, _ = make_service(tmp_path, monkeypatch)
+    registry = committed_registry()
+
+    rows = service.presence_rows()
+
+    assert [row.key for row in rows] == list(registry)
+    assert len(rows) == 50
+    for row in rows:
+        assert isinstance(row, download_queue.PresenceRow)
+        entry = registry[row.key]
+        assert row.declared_total == sum(
+            entry.get(field) or 0 for field in ("Train", "Dev", "Test"))
+        assert row.status in (
+            registries.PRESENCE_PRESENT, registries.PRESENCE_MISSING,
+            registries.PRESENCE_UNKNOWN, registries.PRESENCE_UNAVAILABLE,
+        )
+
+
+def test_presence_rows_missing_set_equals_missing_datasets_keys_cr01(
+        monkeypatch, tmp_path):
+    """CR-01: the full view's MISSING-status key set equals the missing
+    pane's key set EXACTLY (both derive from the same merged view); a
+    done-reconciled key flips in BOTH together while a mismatched key
+    never flips in either."""
+    repo = tmp_repo_with_registry(tmp_path / "repo", {
+        "Demo__task": SHAPE_A_ENTRY,
+        "DemoM__mm": {
+            "Dataset_path": "datasets/DemoM/mm_task",
+            "download_url":
+                "https://www.modelscope.cn/datasets/lgq12697/GUE",
+            "Train": 5, "Dev": 1, "Test": 1},
+    })
+    tmp_n_audit_missing(monkeypatch, tmp_path, tasks={
+        "Demo__task": {"missing": True},
+        "DemoM__mm": {"missing": True},
+    })
+    state = tmp_path / "state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    state.mkdir(parents=True, exist_ok=True)
+    mismatch_entry = done_reconciled_entry("DemoM__mm", verdict="mismatch")
+    mismatch_entry["state"] = "mismatch"
+    (state / download_queue.QUEUE_FILE_NAME).write_text(json.dumps({
+        "schema_version": download_queue.SCHEMA_VERSION,
+        "entries": [
+            done_reconciled_entry("Demo__task"),
+            mismatch_entry,
+        ],
+    }, indent=4, ensure_ascii=False), encoding="utf-8")
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        cli_path=str(fake_cli(tmp_path)))
+
+    rows = service.presence_rows()
+
+    statuses = {row.key: row.status for row in rows}
+    assert statuses["Demo__task"] == registries.PRESENCE_PRESENT, (
+        "the done+reconciled key flipped present in the full view"
+    )
+    assert statuses["DemoM__mm"] == registries.PRESENCE_MISSING
+    missing_keys = {row.key for row in rows
+                    if row.status == registries.PRESENCE_MISSING}
+    assert missing_keys == {row.key for row in service.missing_datasets()}, (
+        "the full view's missing set and the missing pane move together"
+    )
+
+
+def test_presence_rows_absent_n_audit_still_lists_keys_degraded(
+        monkeypatch, tmp_path):
+    """With the committed n_audit absent, keys still list with degraded
+    statuses (overlay-present or unknown), never an exception."""
+    service, _ = make_service(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        download_queue.registries, "load_n_audit", lambda: None)
+
+    rows = service.presence_rows()
+
+    assert len(rows) == 50
+    assert {row.status for row in rows} <= {
+        registries.PRESENCE_UNKNOWN, registries.PRESENCE_PRESENT}
+
+
+def test_presence_rows_unreadable_registry_yields_empty(tmp_path):
+    """The missing_datasets tolerance twin: an unreadable official
+    registry yields [], never an exception."""
+    bare = tmp_path / "bare"
+    (bare / "pipeline").mkdir(parents=True)   # NO datasets_info.json
+    service = download_queue.DownloadQueueService(
+        repo_root=bare, cli_path=str(fake_cli(tmp_path)))
+
+    assert service.presence_rows() == []
+
+
+# =====================================================================
 # Lane 1: module hygiene (services-tier invariants)
 # =====================================================================
 
@@ -3161,10 +3265,12 @@ def test_run_task_zenodo_cancel_mid_download_fails_cancelled(
 from tui import strings as tui_strings
 
 #: The complete expected DL_ inventory (the screen chrome, the Zenodo
-#: four states + toasts/labels, the keycaps, the derived gap-fillers).
+#: four states + toasts/labels, the keycaps, the derived gap-fillers,
+#: the full presence view pair DCL-03/261014-dcl added).
 EXPECTED_DL_CONSTANTS = (
     "DL_SCREEN_TITLE", "DL_MISSING_TITLE", "DL_MISSING_COL_KEY",
     "DL_MISSING_COL_ROWS", "DL_MISSING_EMPTY", "DL_PRESENCE_SUMMARY",
+    "DL_PRESENCE_TITLE", "DL_PRESENCE_TOGGLE_LABEL",
     "DL_ZENODO_PROBING", "DL_ZENODO_NOT_PUBLIC", "DL_ZENODO_PUBLIC",
     "DL_ZENODO_FAILED", "DL_ZENODO_DISABLED_TOAST",
     "DL_ZENODO_KEY_LABEL", "DL_BUNDLE_TASK_NAME", "DL_DISABLED_TOAST",

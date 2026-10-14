@@ -198,6 +198,25 @@ class FakeQueueService:
                    if entry.state == "done"}
         return merge_presence(committed, overlay)
 
+    def presence_rows(self):
+        # DCL-03: the full-view read through the same merged rule (the
+        # Backend lane calls this alongside missing_datasets); rows only
+        # for the fake's own keys keeps the fixture small.
+        merged = self.merged_audit_tasks()
+        return tuple(
+            PresenceRow(
+                key=entry.key,
+                status=(
+                    registries_service.PRESENCE_PRESENT
+                    if registries_service.presence_for(
+                        entry.key, merged).status
+                    == registries_service.PRESENCE_PRESENT
+                    else registries_service.PRESENCE_MISSING),
+                declared_total=1000,
+            )
+            for entry in self._entries
+        )
+
     def probe_zenodo(self):
         return self.probe_state
 
@@ -388,13 +407,18 @@ from tui.screens.data_manager import (
     MissingSnapshot,
 )
 from tui.services import download_queue as download_queue_module
-from tui.services.download_queue import MissingInfo, ReauditOutcome
+from tui.services.download_queue import (
+    MissingInfo,
+    PresenceRow,
+    ReauditOutcome,
+)
 from tui.strings import (
     DL_BUNDLE_TASK_NAME,
     DL_DISABLED_TOAST,
     DL_MISSING_EMPTY,
     DL_MISSING_TITLE,
     DL_PRESENCE_SUMMARY,
+    DL_PRESENCE_TITLE,
     DL_SCREEN_TITLE,
     DL_UNKNOWN_TOAST,
     DL_ZENODO_DISABLED_TOAST,
@@ -450,6 +474,28 @@ def _std_missing():
     )
 
 
+def _std_presence_rows():
+    """The full-view fixture (DCL-03): five official keys, mixed — two
+    present, two missing, one unknown (registry/audit drift)."""
+    return (
+        PresenceRow(key="GUE__emp_H3",
+                    status=registries_service.PRESENCE_PRESENT,
+                    declared_total=7349),
+        PresenceRow(key="mouse__DMS",
+                    status=registries_service.PRESENCE_MISSING,
+                    declared_total=12411),
+        PresenceRow(key="plant__vista-100m",
+                    status=registries_service.PRESENCE_MISSING,
+                    declared_total=64350),
+        PresenceRow(key="GUE__EPI_GM12878",
+                    status=registries_service.PRESENCE_PRESENT,
+                    declared_total=417),
+        PresenceRow(key="ghost__drift",
+                    status=registries_service.PRESENCE_UNKNOWN,
+                    declared_total=0),
+    )
+
+
 def _reconcile(declared=None, measured=None, verdict="pass"):
     return {"verdict": verdict, "declared": declared,
             "measured": measured, "unified_eval_n": None}
@@ -467,10 +513,14 @@ class FakeDataManagerService:
     def __init__(self, missing=(), total=50, present=47, entries=(),
                  probe_state="not_public", enqueue_outcomes=None,
                  enqueue_all_count=0, channel_details=None, logs=None,
-                 reaudit_gate=None, probe_gate=None, load_diagnostic=None):
+                 reaudit_gate=None, probe_gate=None, load_diagnostic=None,
+                 presence_rows=None):
         self._missing = tuple(missing)
         self._total = total
         self._present = present
+        self._presence_rows = (
+            _std_presence_rows() if presence_rows is None
+            else tuple(presence_rows))
         self.entries_list = [_queue_entry(*item) if isinstance(item, tuple)
                              else item for item in entries]
         self.probe_state = probe_state
@@ -496,7 +546,9 @@ class FakeDataManagerService:
         extra = ({"load_diagnostic": self._load_diagnostic}
                  if self._load_diagnostic is not None else {})
         return MissingSnapshot(rows=self._missing, total=self._total,
-                               present=self._present, **extra)
+                               present=self._present,
+                               presence_rows=self._presence_rows,
+                               **extra)
 
     def entries(self):
         return tuple(self.entries_list)
@@ -617,6 +669,87 @@ async def test_both_panes_render_from_fake_data():
         assert _label_text(screen, "#dl-screen-title") == DL_SCREEN_TITLE
         assert _label_text(screen, "#dl-presence-summary") == (
             DL_PRESENCE_SUMMARY.format(present=47, total=50, missing=3))
+
+
+# ---------------------------------------------------------------------
+# The v toggle (DCL-03, 261014-dcl): missing table <-> full presence view
+# ---------------------------------------------------------------------
+
+async def test_v_toggles_to_the_full_presence_view():
+    """v: the missing pane flips to the full view — one row per
+    PresenceRow with the status glyph prefix on the key cell and the
+    declared total right-aligned; the title swaps to DL_PRESENCE_TITLE."""
+    service = FakeDataManagerService(missing=_std_missing())
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        table = _missing_table(screen)
+        # the missing view first: 3 rows, the ✗-prefixed keys
+        assert table.row_count == 3
+        assert _label_text(screen, "#dl-missing-title") == (
+            DL_MISSING_TITLE.format(n=3))
+
+        await pilot.press("v")
+        await pilot.pause()
+
+        rows = _std_presence_rows()
+        assert table.row_count == len(rows)
+        assert [_row(table, index)[0] for index in range(len(rows))] == [
+            "✓ GUE__emp_H3",
+            "✗ mouse__DMS",
+            "✗ plant__vista-100m",
+            "✓ GUE__EPI_GM12878",
+            "◌ ghost__drift",
+        ]
+        assert _row(table, 0)[1] == "7,349", (
+            "declared_total renders right-aligned with separators"
+        )
+        assert _label_text(screen, "#dl-missing-title") == (
+            DL_PRESENCE_TITLE.format(n=len(rows)))
+
+
+async def test_v_twice_restores_the_missing_view():
+    """Toggling back restores the missing table byte-for-byte (title,
+    row count, and the ✗-prefixed keys)."""
+    service = FakeDataManagerService(missing=_std_missing())
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        table = _missing_table(screen)
+
+        await pilot.press("v")
+        await pilot.pause()
+        await pilot.press("v")
+        await pilot.pause()
+
+        assert table.row_count == 3
+        assert _row(table, 0)[0] == "✗ GUE__emp_H3"
+        assert _row(table, 0)[1] == "7,349"
+        assert _label_text(screen, "#dl-missing-title") == (
+            DL_MISSING_TITLE.format(n=3))
+
+
+async def test_toggle_rerenders_from_the_cached_snapshot_no_worker():
+    """The toggle re-renders from the CACHED snapshot — the dl-snapshot
+    worker never re-runs (service call count unchanged across both
+    toggles)."""
+    service = FakeDataManagerService(missing=_std_missing())
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        before = service.snapshot_calls
+        assert before >= 1  # the mount read happened
+
+        await pilot.press("v")
+        await pilot.pause()
+        await pilot.press("v")
+        await pilot.pause()
+
+        assert service.snapshot_calls == before, (
+            "the v toggle must never kick the snapshot worker"
+        )
 
 
 async def test_five_queue_states_render_glyph_copy_and_style():
@@ -1401,6 +1534,20 @@ def test_backend_missing_snapshot_flips_over_real_seeded_state_cr01(
         "the summary moves with the rows (the CR-01 flip)"
     )
     assert snapshot.missing == 0
+    # DCL-03 (261014-dcl): the full presence view rides the SAME flip —
+    # every official key lists (50 over the committed registry), the
+    # reconciled key reads present, keys absent from the staged audit
+    # degrade to unknown, and the view's missing set equals the missing
+    # pane's (empty) key set exactly.
+    by_key = {row.key: row for row in snapshot.presence_rows}
+    assert len(snapshot.presence_rows) == 50
+    assert by_key["GUE__emp_H3"].status == (
+        registries_service.PRESENCE_PRESENT)
+    assert by_key["GUE__EPI_GM12878"].status == (
+        registries_service.PRESENCE_UNKNOWN)
+    assert {row.key for row in snapshot.presence_rows
+            if row.status == registries_service.PRESENCE_MISSING} == {
+        row.key for row in snapshot.rows}
 
 
 def test_data_manager_module_carries_zero_chinese_literals():

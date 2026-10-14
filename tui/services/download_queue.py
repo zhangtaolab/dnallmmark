@@ -607,6 +607,28 @@ class MissingInfo:
 
 
 @dataclass(frozen=True)
+class PresenceRow:
+    """One full-view presence row (DCL-03, 261014-dcl; pure data, the
+    screen renders).
+
+    Attributes:
+        key: the OFFICIAL dataset registry key (custom overlay keys are
+            not download targets and stay out of this view).
+        status: one of the ``registries.PRESENCE_*`` vocabulary —
+            decided by ``registries.presence_for`` over the merged
+            n_audit/reconcile view (the four-status mapping already
+            degrades honestly: unavailable when n_audit is absent
+            outright, unknown on registry/audit drift).
+        declared_total: the registry entry's declared Train/Dev/Test
+            sum (the same derivation the missing view renders).
+    """
+
+    key: str
+    status: str
+    declared_total: int
+
+
+@dataclass(frozen=True)
 class QueueEvent:
     """One task-run outcome (the WR-02 run-id-tagged event the future
     screen consumes; DATA, never copy).
@@ -2353,6 +2375,39 @@ class DownloadQueueService:
         """
         return merge_presence(
             registries.load_n_audit(), reconciled_rows(self._state_path))
+
+    def presence_rows(self):
+        """One full-view presence row per OFFICIAL registry key (DCL-03,
+        261014-dcl).
+
+        The full presence view rides the SAME merged n_audit/reconcile
+        substrate as the missing view and the selection screen (CR-01 —
+        rows AND the missing set move together: a done-reconciled key
+        flips present here and leaves ``missing_datasets`` in the same
+        read). Custom overlay keys are not download targets and stay out
+        of this view, matching the all-50-official acceptance. With the
+        committed n_audit absent the keys still list, degraded
+        (overlay-present or unknown); an unreadable registry yields []
+        (the ``missing_datasets`` tolerance twin).
+
+        Returns:
+            list[PresenceRow]: one frozen row per official key, in
+            registry file order.
+        """
+        try:
+            registry = self._official_registry()
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            return []
+        merged = self.merged_audit_tasks()
+        return [
+            PresenceRow(
+                key=key,
+                status=registries.presence_for(key, merged).status,
+                declared_total=_declared_total(entry),
+            )
+            for key, entry in registry.items()
+            if isinstance(entry, dict)
+        ]
 
     # ===== Channel resolution (R-01/R-02) =====
 
