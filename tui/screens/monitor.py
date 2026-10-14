@@ -1451,7 +1451,7 @@ class MonitorScreen(Screen):
                 return
             self._open_cell_detail(detail_row)
 
-    @work(exclusive=True, thread=True, group="mon-detail")
+    @work(exclusive=True, thread=True, group="mon-detail", exit_on_error=False)
     def _open_cell_detail(self, row: Any) -> None:
         """Read the row's run records off the event loop, then push the
         detail modal (fields verbatim — data, never elided)."""
@@ -1485,7 +1485,7 @@ class MonitorScreen(Screen):
             return
         self._open_failures(str(self._attached_root))
 
-    @work(exclusive=True, thread=True, group="mon-failures")
+    @work(exclusive=True, thread=True, group="mon-failures", exit_on_error=False)
     def _open_failures(self, root: str) -> None:
         """Read the failure list off the event loop, then push."""
         failures = self._service.failures_view(root)

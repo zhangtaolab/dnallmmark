@@ -736,7 +736,7 @@ class DataManagerScreen(Screen):
     # the env/selection screens never hit this only because their
     # workers never overlap).
 
-    @work(exclusive=True, thread=True, group="dl-snapshot")
+    @work(exclusive=True, thread=True, group="dl-snapshot", exit_on_error=False)
     def _load_snapshot(self) -> None:
         """Read the missing snapshot + queue entries off the event loop."""
         run_id = self._snapshot_run_id  # the run this worker serves (WR-02)
@@ -745,7 +745,7 @@ class DataManagerScreen(Screen):
         self.post_message(
             self.SnapshotLoaded(snapshot, entries, run_id))
 
-    @work(exclusive=True, thread=True, group="dl-probe")
+    @work(exclusive=True, thread=True, group="dl-probe", exit_on_error=False)
     def _probe_zenodo(self) -> None:
         """The D-12 publication probe (session-memory; auto-default 6)."""
         run_id = self._probe_run_id
@@ -754,7 +754,7 @@ class DataManagerScreen(Screen):
         probed_at = datetime.now().astimezone().strftime("%H:%M")
         self.post_message(self.ZenodoProbed(state, probed_at, run_id))
 
-    @work(exclusive=True, thread=True, group="dl-reaudit")
+    @work(exclusive=True, thread=True, group="dl-reaudit", exit_on_error=False)
     def _run_reaudit(self) -> None:
         """The explicit g re-audit — the audit subprocess stays inside
         the worker (R-03: default outputs, the maintainer's review)."""

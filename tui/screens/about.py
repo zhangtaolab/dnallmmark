@@ -154,7 +154,7 @@ class AboutScreen(Screen):
         """Start the one exclusive derivation worker (D-03)."""
         self._load_data()
 
-    @work(exclusive=True, thread=True)
+    @work(exclusive=True, thread=True, exit_on_error=False)
     def _load_data(self) -> None:
         """Derive the snapshot off the event loop; post it back."""
         data = self._service.derive_about_data()

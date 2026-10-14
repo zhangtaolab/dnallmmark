@@ -500,7 +500,7 @@ class _PathPromptModal(ModalScreen):
         self._generation += 1
         self._validate_in_worker(value, self._generation)
 
-    @work(exclusive=True, thread=True)
+    @work(exclusive=True, thread=True, exit_on_error=False)
     def _validate_in_worker(self, path: str, generation: int) -> None:
         """Run the injected validate seam OFF the event loop (WR-04, the
         D-03 discipline): a network-mounted import path or a slow disk
@@ -1166,7 +1166,7 @@ class WizardModal(ModalScreen):
         if row is not None:  # a drill view may hold the DOM
             row.update(Text(text, style=style))
 
-    @work(exclusive=True, thread=True)
+    @work(exclusive=True, thread=True, exit_on_error=False)
     def _gauntlet_worker(self) -> None:
         """Run every queued entry's legs in the worker thread (D-03).
 
@@ -1562,7 +1562,7 @@ class WizardModal(ModalScreen):
         elif self._on_export is not None:
             self._on_export()
 
-    @work(exclusive=True, thread=True)
+    @work(exclusive=True, thread=True, exit_on_error=False)
     def _check_export_state(self) -> None:
         """Read the store's empty-state probe OFF the event loop (WR-04).
         The worker performs no DOM access and no writes — the verdict

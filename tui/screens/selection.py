@@ -1400,13 +1400,13 @@ class SelectionScreen(Screen):
 
     # ----- the exclusive read worker (D-03: the only registry-read site) -----
 
-    @work(exclusive=True, thread=True)
+    @work(exclusive=True, thread=True, exit_on_error=False)
     def _load_data(self) -> None:
         """Read the registries + presence off the event loop."""
         data = self._service.load_selection_data()
         self.post_message(self.DataLoaded(data))
 
-    @work(exclusive=True, thread=True)
+    @work(exclusive=True, thread=True, exit_on_error=False)
     def _load_preset_menu(self) -> None:
         """Read the preset menu off the event loop (WR-04, the D-03
         worker contract): the menu build re-reads both registries, the

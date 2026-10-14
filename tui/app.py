@@ -571,7 +571,7 @@ class DnallmMarkTui(App):
             self._queue_generation += 1
         self.run_download_queue()
 
-    @work(exclusive=True, thread=True)
+    @work(exclusive=True, thread=True, exit_on_error=False)
     def run_download_queue(self) -> None:
         """Drive the serial queue until it drains (never on the loop).
 
