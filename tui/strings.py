@@ -682,6 +682,7 @@ CFG_FIELD_EBS = "effective_batch_size"
 CFG_FIELD_EBS_SHORT = "eff_batch_size"
 CFG_FIELD_OUTPUT_ROOT = "输出根"
 CFG_FIELD_DATASET_ROOT = "数据集根"
+CFG_FIELD_MODEL_ROOT = "模型根"
 CFG_FIELD_CACHE = "模型缓存"
 
 # Params value states: the absent dim dash, the cache default, and the
@@ -692,6 +693,13 @@ CFG_FIELD_CACHE = "模型缓存"
 # the punctuation/fullwidth ranges).
 CFG_VALUE_ABSENT = "—"
 CFG_CACHE_DEFAULT = "—（HF 默认）"
+# 261014-c2l: the storage-root prompt hints (the CFG_CACHE_DEFAULT
+# "—（…）" shape) — each documents the flag's default resolution root:
+# the pipeline directory, under which models/ and datasets/ live. The
+# hint renders as the Input's placeholder while the value is empty
+# (the D-19 "./datasets" display default retired with the live flag).
+CFG_MODEL_ROOT_DEFAULT = "—（默认 pipeline/）"
+CFG_DATASET_ROOT_DEFAULT = "—（默认 pipeline/）"
 CFG_SUBSET_OFF = "关"
 CFG_SUBSET_OFF_WITH_PATH = "关（{path}）"
 CFG_SUBSET_ON = "开（{path}）"

@@ -56,9 +56,12 @@ from tui.services.sweep_launcher import (
 from tui.strings import (
     CFG_ARGV_LABEL,
     CFG_CACHE_DEFAULT,
+    CFG_DATASET_ROOT_DEFAULT,
     CFG_EMPTY_SELECTION_PROBLEM,
+    CFG_FIELD_MODEL_ROOT,
     CFG_FIELD_PEFT,
     CFG_FIELD_VARIANT,
+    CFG_MODEL_ROOT_DEFAULT,
     CFG_PICKER_DATASETS,
     CFG_PICKER_MODELS,
     CFG_PREVIEW_LINE,
@@ -692,7 +695,9 @@ async def test_marked_then_disabled_custom_leaves_spec_at_load():
 async def test_params_defaults_render():
     """Every CFG-01 field renders its default: seeds 42,43,44; the
     choice rows 'none ▾'; absent values '—'; the subset default; the
-    dirs defaults; the cache placeholder."""
+    dirs defaults; the cache placeholder. The storage-root inputs
+    default EMPTY with their prompt hints (the D-19 './datasets'
+    display default retired with the live flags, 261014-c2l)."""
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_run_config(pilot, app)
@@ -713,8 +718,14 @@ async def test_params_defaults_render():
         assert screen.query_one("#cfg-input-ebs", Input).value == ""
         assert screen.query_one("#cfg-input-output-root", Input).value == (
             "./finetuned")
-        assert screen.query_one("#cfg-input-dataset-root", Input).value == (
-            "./datasets")
+        dataset_root = screen.query_one("#cfg-input-dataset-root", Input)
+        assert dataset_root.value == ""
+        assert _plain(dataset_root.placeholder) == CFG_DATASET_ROOT_DEFAULT
+        model_root = screen.query_one("#cfg-input-model-root", Input)
+        assert model_root.value == ""
+        assert _plain(model_root.placeholder) == CFG_MODEL_ROOT_DEFAULT
+        assert _label_text(screen, "#cfg-label-model-root") == (
+            CFG_FIELD_MODEL_ROOT)
         cache = screen.query_one("#cfg-input-cache", Input)
         assert cache.value == ""
         assert _plain(cache.placeholder) == CFG_CACHE_DEFAULT
@@ -728,7 +739,9 @@ async def test_params_input_values_render_in_export():
     11-UAT empty-bar phenomenon): export_screenshot() must carry the
     seeds value and the dirs defaults as text — a height-1 row clipping
     a default (bordered, height-3) Input shows only its top border and
-    silently hides the value the operator typed/set."""
+    silently hides the value the operator typed/set. The storage-root
+    rows default empty (261014-c2l) and their PROMPT HINTS render in
+    the placeholder's place."""
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_run_config(pilot, app)
@@ -738,7 +751,51 @@ async def test_params_input_values_render_in_export():
             "the seeds value must render on the params row (the 11-UAT "
             "empty-bar bug: the Input's value row is clipped away)")
         assert "./finetuned" in svg
-        assert "./datasets" in svg
+        assert "模型根" in svg, (
+            "the model-root row's label renders (261014-c2l)"
+        )
+        assert svg.count("—（默认") == 2, (
+            "BOTH storage-root prompt hints render in the placeholder's "
+            "place (the SVG encodes their inner space as &#160;, so the "
+            "contiguous constant is pinned by its stable prefix — two "
+            "hits = the model-root and dataset-root rows)"
+        )
+        assert "./datasets" not in svg, (
+            "the retired D-19 './datasets' display default no longer "
+            "renders — the empty value row is the honest unset state"
+        )
+
+
+async def test_model_root_input_threads_absolute_flag_into_argv():
+    """261014-c2l: typing a model root into #cfg-input-model-root
+    composes a spec whose service-side argv carries --model_root as the
+    RESOLVED ABSOLUTE string (an absolute input passes through
+    verbatim), while the untouched dataset-root field contributes no
+    --dataset_root element — the persisted-spec path over the REAL
+    compose_argv (the fake's compose_argv is display-only, so the
+    service module is the argv authority here)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        model_root = screen.query_one("#cfg-input-model-root", Input)
+        model_root.value = "/mnt/storage"
+        await _settle(pilot, app)
+        saved = run_service.saved_specs[-1]
+        assert saved.model_root == "/mnt/storage", (
+            "the typed model root persists into the composed spec"
+        )
+        assert saved.dataset_root is None, (
+            "the untouched dataset-root field contributes nothing"
+        )
+        argv = run_config_service.compose_argv(saved)
+        assert argv[argv.index("--model_root") + 1] == "/mnt/storage", (
+            "the service-side argv threads --model_root as the "
+            "resolved absolute string"
+        )
+        assert "--dataset_root" not in argv
 
 
 async def test_params_labels_shorten_at_80_columns():

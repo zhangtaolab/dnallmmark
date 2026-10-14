@@ -92,6 +92,7 @@ from tui.strings import (
     APP_MODAL_BACK_LABEL,
     CFG_ARGV_LABEL,
     CFG_CACHE_DEFAULT,
+    CFG_DATASET_ROOT_DEFAULT,
     CFG_DIRS_TITLE,
     CFG_DIRS_TITLE_SHORT,
     CFG_FIELD_CACHE,
@@ -100,11 +101,13 @@ from tui.strings import (
     CFG_FIELD_EBS,
     CFG_FIELD_EBS_SHORT,
     CFG_FIELD_EPOCHS,
+    CFG_FIELD_MODEL_ROOT,
     CFG_FIELD_OUTPUT_ROOT,
     CFG_FIELD_PEFT,
     CFG_FIELD_SEEDS,
     CFG_FIELD_SUBSET,
     CFG_FIELD_VARIANT,
+    CFG_MODEL_ROOT_DEFAULT,
     CFG_PARAMS_TITLE,
     CFG_PEFT_ALIAS_PREVIEW,
     CFG_PICKER_DATASETS,
@@ -1044,10 +1047,26 @@ class RunConfigScreen(Screen):
                     yield Label(CFG_FIELD_DATASET_ROOT,
                                 id="cfg-label-dataset-root",
                                 classes="cfg-param-label")
-                    yield Input(value="./datasets",
-                                id="cfg-input-dataset-root",
-                                classes="cfg-param-input", compact=True)
+                    # The legacy "./datasets" display default retired
+                    # with D-19 (261014-c2l): the dataset root is a LIVE
+                    # --dataset_root flag now, so the field defaults
+                    # empty with its prompt hint.
+                    yield Input(
+                        value="", placeholder=CFG_DATASET_ROOT_DEFAULT,
+                        id="cfg-input-dataset-root",
+                        classes="cfg-param-input", compact=True)
                 yield Label("", id="cfg-adv-dataset-root", classes="cfg-adv")
+                with Horizontal(classes="cfg-param-row"):
+                    yield Label(CFG_FIELD_MODEL_ROOT,
+                                id="cfg-label-model-root",
+                                classes="cfg-param-label")
+                    # compact=True on the height-1-row Input (the 12-03
+                    # Rule-1 discipline — see the seeds-row note above).
+                    yield Input(
+                        value="", placeholder=CFG_MODEL_ROOT_DEFAULT,
+                        id="cfg-input-model-root",
+                        classes="cfg-param-input", compact=True)
+                yield Label("", id="cfg-adv-model-root", classes="cfg-adv")
                 with Horizontal(classes="cfg-param-row"):
                     yield Label(CFG_FIELD_CACHE, id="cfg-label-cache",
                                 classes="cfg-param-label")
@@ -1107,6 +1126,8 @@ class RunConfigScreen(Screen):
             ("#cfg-input-output-root", message.spec.output_root),
             ("#cfg-input-dataset-root",
              message.spec.dataset_root or ""),
+            ("#cfg-input-model-root",
+             message.spec.model_root or ""),
             ("#cfg-input-cache", message.spec.cache_dir or ""),
         ):
             self.query_one(input_id, Input).value = value
@@ -1168,6 +1189,8 @@ class RunConfigScreen(Screen):
                 "output-root": self._run_service.path_state(spec.output_root),
                 "dataset-root": self._run_service.path_state(
                     spec.dataset_root or ""),
+                "model-root": self._run_service.path_state(
+                    spec.model_root or ""),
                 "cache": self._run_service.path_state(spec.cache_dir or ""),
                 "subset": self._run_service.path_state(
                     spec.subset_file if spec.subset_file else ""),
@@ -1333,6 +1356,7 @@ class RunConfigScreen(Screen):
             "output_root": (self._text_value("#cfg-input-output-root")
                             or run_config_service.DEFAULT_OUTPUT_ROOT),
             "dataset_root": self._text_value("#cfg-input-dataset-root") or None,
+            "model_root": self._text_value("#cfg-input-model-root") or None,
             "cache_dir": self._text_value("#cfg-input-cache") or None,
         }
         kwargs.update(partials)
@@ -1392,6 +1416,7 @@ class RunConfigScreen(Screen):
         for state_key, adv_id in (
             ("output-root", "#cfg-adv-output-root"),
             ("dataset-root", "#cfg-adv-dataset-root"),
+            ("model-root", "#cfg-adv-model-root"),
             ("cache", "#cfg-adv-cache"),
             ("subset", "#cfg-adv-subset"),
         ):
