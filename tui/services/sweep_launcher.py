@@ -32,7 +32,13 @@ Contract (locked decisions):
   output dir) is prohibited. The tee handle stays open for the child's
   lifetime: the launcher does NOT pump or close it early; the monitor
   tails the file by path. A spawn that fails (OSError) unlinks the
-  empty tee file — nothing launched leaves no log.
+  empty tee file — nothing launched leaves no log. WR-04 (stale-
+  refresh review): the tee opens with mode ``"x"`` (O_EXCL) with a
+  numeric-suffix fallback (``_1``..``_99``) — two same-basename output
+  roots spawned within the same second never share, truncate, or
+  interleave a tee file (a pid suffix would not disambiguate two
+  spawns from THIS process); an exhausted suffix cap refuses like
+  OSError.
 - D-06 exit triple: ``kill_sweep`` SIGTERMs the process group via
   ``os.killpg(os.getpgid(pid))`` with SIGKILL escalation (the
   ``download_queue._signal_group`` discipline, copied verbatim);
@@ -99,8 +105,18 @@ PIPELINE_DIR = REPO_ROOT / "pipeline"
 TEE_DIR_NAME = "logs"
 
 #: One file per launch: ``{prefix}{timestamp}_{rootname}{suffix}``.
+#: WR-04 (phase-11 stale-refresh review): the tee opens with mode
+#: ``"x"`` (O_EXCL) — unique per spawn AT THE FILESYSTEM level; a
+#: same-second same-basename collision retries with a numeric suffix
+#: (``_1``, ``_2``, ... capped at ``_99`` via TEE_COLLISION_SUFFIX_CAP).
+#: Non-colliding names keep today's exact shape.
 TEE_TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
 TEE_FILENAME_FORMAT = "sweep_{ts}_{rootname}.log"
+
+#: The numeric-suffix retry cap for a colliding tee filename (WR-04):
+#: attempts ``_1``..``_99``; an exhausted cap rides the OSError refusal
+#: branch (nothing launched leaves no log).
+TEE_COLLISION_SUFFIX_CAP = 99
 
 #: The kill path's poll-with-short-grace budget (seconds) before the
 #: SIGKILL escalation, and the poll cadence inside it.
@@ -464,14 +480,44 @@ class SweepLauncher:
         logs_dir.mkdir(parents=True, exist_ok=True)
         now = datetime.now if clock is None else clock
         timestamp = now().strftime(TEE_TIMESTAMP_FORMAT)
-        tee_path = logs_dir / TEE_FILENAME_FORMAT.format(
+        base_name = TEE_FILENAME_FORMAT.format(
             ts=timestamp, rootname=Path(root).name)
-        # Deliberately NOT a context manager (SIM115): the tee handle
-        # stays open for the child's lifetime — closing it here would
-        # detach the log's owner before the child ever writes (the
-        # registry entry holds the reference; _drop_entry closes it).
-        tee_handle = open(  # noqa: SIM115
-            tee_path, "w", encoding="utf-8")
+        # WR-04 (phase-11 stale-refresh review): the tee opens EXCLUSIVE
+        # (mode "x" = O_EXCL) — unique per spawn AT THE FILESYSTEM
+        # level, robust across processes, sessions, AND the
+        # same-process race (a pid suffix would NOT disambiguate the
+        # stated slot-4-confirm-races-monitor-[r] shape: both spawns
+        # come from THIS TUI process). A collision retries the same
+        # base name with a numeric suffix; a same-second RECLAIM at the
+        # same root (kill then immediate relaunch) thereby APPENDS a
+        # suffix instead of truncating the killed sweep's audit log —
+        # strictly better. An exhausted cap refuses like OSError:
+        # nothing launched leaves no log.
+        stem, _dot, extension = base_name.rpartition(".")
+        tee_handle = None
+        tee_path = logs_dir / base_name
+        for attempt in range(TEE_COLLISION_SUFFIX_CAP + 1):
+            candidate = tee_path if attempt == 0 else logs_dir / (
+                f"{stem}_{attempt}.{extension}")
+            try:
+                # Deliberately NOT a context manager (SIM115): the tee
+                # handle stays open for the child's lifetime — closing
+                # it here would detach the log's owner before the child
+                # ever writes (the registry entry holds the reference;
+                # _drop_entry closes it).
+                tee_handle = open(  # noqa: SIM115
+                    candidate, "x", encoding="utf-8")
+                tee_path = candidate
+                break
+            except FileExistsError:
+                continue
+        if tee_handle is None:
+            return LaunchOutcome(
+                spawned=False, root=root, tee_path=None,
+                error=(
+                    f"tee log name collision exhausted ({base_name} "
+                    f"through _{TEE_COLLISION_SUFFIX_CAP}) — refusing "
+                    "to open a shared log for a second spawn"))
         seam = self._spawner if spawner is None else spawner
         try:
             proc = seam(

@@ -104,6 +104,7 @@ from tui.strings import (
     CFG_VALUE_ABSENT,
     DL_BUNDLE_TASK_NAME,
     LNC_EXIT_MESSAGE,
+    LNC_EXIT_MESSAGE_MULTI,
     LNC_EXIT_TITLE,
     NAV_PLACEHOLDER_TOAST,
     QUEUE_FLIP_TOAST,
@@ -178,11 +179,19 @@ class ExitModal(ModalScreen):
     """The D-06 exit triple: [enter] detach (default) / [k] kill / [esc]
     return — pushed by ``action_quit`` when a live sweep exists.
 
+    WR-05 (phase-11 stale-refresh review): the modal carries EVERY live
+    root as a sequence (a bare str normalizes to a one-root tuple — the
+    single-root call shape keeps working); [k] kills and [enter]
+    detaches ALL of them before the app exits — no sweep survives a
+    终止后退出 the operator believed terminal, and no GPU stays
+    occupied by a sweep believed killed.
+
     The kill path blocks up to the launcher's kill grace (SIGTERM ->
     poll -> SIGKILL escalation) — the brief wait the plan names; the
     app is exiting either way. 11-06 formats the done/total fields
     with the absent marker (the launcher carries no progress; the
-    monitor's live counts land in 11-07).
+    monitor's live counts land in 11-07; the multi-root form drops
+    them — per-root counts from one attached root would mix sources).
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -191,9 +200,11 @@ class ExitModal(ModalScreen):
         Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
     ]
 
-    def __init__(self, root: str, launcher, message: str, **kwargs):
+    def __init__(self, roots, launcher, message: str, **kwargs):
         super().__init__(**kwargs)
-        self._root = root
+        if isinstance(roots, str):
+            roots = (roots,)   # the single-root call shape
+        self._roots = tuple(roots)
         self._launcher = launcher
         self._message = message
 
@@ -207,14 +218,17 @@ class ExitModal(ModalScreen):
             LNC_EXIT_TITLE)
 
     def action_detach_quit(self) -> None:
-        """[enter] the default: drop the handle, the sweep survives
-        (resume-safe by the trainer_state marker contract), then exit."""
-        self._launcher.detach(self._root)
+        """[enter] the default: drop every live handle (each sweep
+        survives, resume-safe by the trainer_state marker contract),
+        then exit."""
+        for root in self._roots:
+            self._launcher.detach(root)
         self.app.exit()
 
     def action_kill_quit(self) -> None:
-        """[k] SIGTERM the process group (killpg), then exit."""
-        self._launcher.kill_sweep(self._root)
+        """[k] SIGTERM every live process group (killpg), then exit."""
+        for root in self._roots:
+            self._launcher.kill_sweep(root)
         self.app.exit()
 
 
@@ -830,7 +844,17 @@ class DnallmMarkTui(App):
         directly (the inherited path). Never pushes over the min-size
         guard (WR-06). 11-07 threads the monitor's live done/total into
         the message (absent markers when unknown — never fabricated).
-        Async — the App base declares the coroutine signature (ty LSP).
+
+        WR-05 (phase-11 stale-refresh review): with MULTIPLE live
+        sweeps the modal names EVERY live root (full resolved paths —
+        basenames collide) with the count via LNC_EXIT_MESSAGE_MULTI
+        (done/total dropped: per-root counts from one attached root
+        would mix sources) and [k]/[enter] act on ALL of them; one live
+        root keeps the single-root form byte-identical, and the
+        attached-running-only path (a CLI-launched sweep the launcher
+        never spawned) keeps today's single-root form unchanged (its
+        kill stays the documented launcher-noop). Async — the App base
+        declares the coroutine signature (ty LSP).
         """
         roots = self._launcher.live_sweeps()
         attached_running = False
@@ -841,12 +865,18 @@ class DnallmMarkTui(App):
             (attached_running, attached_root,
              done, total) = self._monitor_screen.attached_running_counts()
         if (roots or attached_running) and not self.below_minimum_grid:
+            if len(roots) > 1:
+                self.push_screen(ExitModal(
+                    roots=tuple(roots), launcher=self._launcher,
+                    message=LNC_EXIT_MESSAGE_MULTI.format(
+                        n=len(roots), roots=", ".join(roots))))
+                return
             root = roots[0] if roots else attached_root
-            message = LNC_EXIT_MESSAGE.format(
-                done=done, total=total, root=Path(root).name)
             self.push_screen(
-                ExitModal(root=root, launcher=self._launcher,
-                          message=message))
+                ExitModal(roots=(root,), launcher=self._launcher,
+                          message=LNC_EXIT_MESSAGE.format(
+                              done=done, total=total,
+                              root=Path(root).name)))
             return
         self.exit()
 
