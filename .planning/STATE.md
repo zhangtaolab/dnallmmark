@@ -6,11 +6,11 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: 4
 status: executing
-stopped_at: Completed quick 261014-dcl (TUI presence/directory visibility, 3/3 tasks, gates green modulo pre-existing base failures)
-last_updated: "2026-10-14T03:41:37.299Z"
+stopped_at: Completed quick 261014-f4w (startup config file + run-artifact dirs, 3/3 tasks, gates green modulo pre-existing base failures)
+last_updated: "2026-10-14T05:27:48.974Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 12 execution started
-state_head: d2f77c076e238409fded00fe9a7c401224fbacd0
+state_head: 4ade716f91054033ccf122df452116d115cb3620
 progress:
   total_phases: 6
   completed_phases: 5
@@ -34,7 +34,7 @@ Phase: 12 (Multi-GPU Orchestration & Console Hardening) — COMPLETE (5/5 plans,
 Current Plan: 5 of 5 executed (12-05 phase close landed)
 Total Plans in Phase: 5
 Status: Phase complete — milestone v1.2 at its audit gate (verify-work → audit-milestone → complete-milestone → cleanup; maintainer N=2 other-machine smoke = WINDOWS #21)
-Last activity: 2026-10-14 - Completed quick task 261014-dcl: TUI presence/directory visibility (model_dirs kernel + run-config-aware roots, models presence column, data-manager full presence view)
+Last activity: 2026-10-14 - Completed quick task 261014-f4w: startup config file + run-artifact directories (directories.json loader + --log_dir + TUI seeding/save/picker + slot-1 storage overview)
 
 Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 plans executed — all 38 requirements Complete)
 
@@ -99,6 +99,7 @@ Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 
 | Phase 12 P05 | 18m | 2 tasks | 3 files |
 | Phase quick P261014-c2l | 28 min | 3 tasks | 11 files |
 | Phase quick P261014-dcl | 104 min | 3 tasks | 29 files |
+| Phase quick-261014-f4w P01 | 92 min | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -224,6 +225,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 12]: 12-05: proof-suite TDD shape — no RED evidence JSON exists because the production behavior predates the plan (12-01..12-04 landed it); the one initial module-lane failure was a test-fixture fault (the fake child wrote metrics to the root, not the cell dir — --output_dir carries the ROOT); non-vacuity by three throwaway production probes, reverted and never committed
 - [Phase 12]: 12-05 phase close: SC1-5 ledger landed with grep-verified test-name evidence; delta A (zero monitor code) + D-08 isolation (w1 byte+mtime untouched) + N=1 degenerate real-subprocess smoke all test-pinned with ZERO production changes; final gate 1572 pytest + 26 node green; milestone v1.2 at its audit gate (verify-work -> audit-milestone -> complete -> cleanup; the maintainer N=2 other-machine run = WINDOWS #21, blocks ship)
 - [Phase quick-261014-c2l]: 261014-c2l: --model_root/--dataset_root land as ADD-ALONGSIDE pass-through overrides (underscore family) — run_finetune keeps base_dir byte-identical on the None branch (rstrip+sep only on the flag form); run_sweep threads them resolved-absolute in the pinned --cache_dir/--model_root/--dataset_root tail, records present roots in every manifest cell (T-c2l-02), refuses empty values (WR-05 twins); TUI RunSpec.dataset_root default flips to None with LEGACY_DATASET_ROOT_DEFAULT ('./datasets') mapped to unset at load (D-19 retired, no schema bump — pre-change state files launch byte-identically)
+- [Phase quick-261014-f4w]: 261014-f4w: directories.json lands as the ONE shared startup config — directories_config.effective implements flag > file key > default at ONE merge point with default literals left at consumers (ADD-ALONGSIDE); absent everywhere byte-identical, malformed present file aborts naming the path (strict, pipeline) while the TUI seeding degrades tolerantly
+- [Phase quick-261014-f4w]: 261014-f4w: the DEFAULT output_root literal doubles as the unset signal on the save side (an all-defaults save writes five empty strings, loads back as {}); the seeding fills output_root only at the DEFAULT literal (the str-typed conflation, documented)
+- [Phase quick-261014-f4w]: 261014-f4w probe-pinned textual 8.2.8 picker seams: filter_paths METHOD is the directories-only mechanism; enter dispatches the name-based handler per MRO class (prevent_default() required or the modal closes on first enter); ctrl+o falls through a focused Input (a bare letter would type); rich Text spans cannot carry $tokens on the Static path (theme-resolved at render, the nav.py precedent)
 
 ### Pending Todos
 
@@ -243,6 +247,7 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 261014-c2l | Add custom model/dataset storage directory support (pipeline --model_root/--dataset_root flags + TUI run-config threading) | 2026-10-14 | 451782d | [261014-c2l-add-custom-model-dataset-storage-directo](./quick/261014-c2l-add-custom-model-dataset-storage-directo/) |
 | 261014-dcl | TUI presence/directory visibility (model_dirs env kernel + run-config-aware roots, selection models presence column, data-manager v-toggled full presence view) | 2026-10-14 | 25eb849 | [261014-dcl-tui-presence-directory-visibility-improv](./quick/261014-dcl-tui-presence-directory-visibility-improv/) |
+| 261014-f4w | Startup config file + run-artifact directory overrides (directories.json shared loader, --log_dir end-to-end, TUI file-default seeding + atomic save + ctrl+o dir picker, slot-1 storage overview) | 2026-10-14 | 4ade716 | [261014-f4w-startup-config-file-run-artifact-directo](./quick/261014-f4w-startup-config-file-run-artifact-directo/) |
 
 ## Deferred Items
 
@@ -254,8 +259,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T03:41:36.855Z
-Stopped at: Completed quick 261014-dcl (TUI presence/directory visibility, 3/3 tasks, gates green modulo pre-existing base failures)
+Last session: 2026-10-14T05:27:38.167Z
+Stopped at: Completed quick 261014-f4w (startup config file + run-artifact dirs, 3/3 tasks, gates green modulo pre-existing base failures)
 Resume file: None
 
 ## Operator Next Steps

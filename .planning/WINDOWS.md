@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 17
+open_count: 18
 waived_count: 0
 fixed_count: 6
-total_count: 23
-last_updated: 2026-10-14T03:38:33.288Z
+total_count: 24
+last_updated: 2026-10-14T05:14:07.356Z
 ---
 
 # Broken Windows Ledger
@@ -38,6 +38,7 @@ last_updated: 2026-10-14T03:38:33.288Z
 | 21 | 12 | unrun-verify | .planning/phases/12-multi-gpu-orchestration-console-hardening/12-05-SUMMARY.md |  | N=2 multi-GPU smoke (MGPU validation half) pending maintainer run on the OTHER machine — 9-step procedure in docs/multi-gpu.md + 12-05-SUMMARY, not executor-executable (D-05: this machine is dev/test only, single GPU) | open |  | 2026-10-13T13:38:34.565Z |  |
 | 22 | quick-261014-c2l | unmet-truth | tests/test_schemas.py |  | Full make-test gate blocked by 10 PRE-EXISTING base failures (5 schema/determinism pins stale after data commit 9bc68e1, 5 root-user chmod persist-failure sims) — verified failing identically at base 9f9404a; this task's own lanes + lint + typecheck + node(26) green (see deferred-items.md) | open |  | 2026-10-14T01:21:59.202Z |  |
 | 23 | quick-261014-dcl | deviation | tests/tui/__snapshots__/wizard.svg |  | wizard.svg golden collateral drift: the wizard golden pins env-screen pixels at its left edge, so the 261014-dcl eighth env row drifted it (committed with the change per D-03; the plan pinned exactly four SVG diffs) | open |  | 2026-10-14T03:38:33.288Z |  |
+| 24 | quick-261014-f4w | deviation | tests/tui/__snapshots__/wizard.svg |  | wizard.svg golden collateral drift again during make snapshot-update (render-state flake documented in dcl deferred-items, ~2/17 loads, pre-existing at base): committed with the change per D-03 alongside the plan-pinned run_config.svg + env_check.svg | open |  | 2026-10-14T05:14:07.356Z |  |
 
 ````json
 [
@@ -337,6 +338,19 @@ last_updated: 2026-10-14T03:38:33.288Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-14T03:38:33.288Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
+  },
+  {
+    "id": 24,
+    "kind": "deviation",
+    "phase": "quick-261014-f4w",
+    "file": "tests/tui/__snapshots__/wizard.svg",
+    "line": null,
+    "description": "wizard.svg golden collateral drift again during make snapshot-update (render-state flake documented in dcl deferred-items, ~2/17 loads, pre-existing at base): committed with the change per D-03 alongside the plan-pinned run_config.svg + env_check.svg",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T05:14:07.356Z",
     "resolved_at": null,
     "milestone": "v1.2"
   }
