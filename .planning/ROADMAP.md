@@ -290,3 +290,14 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 ---
 *v0.7.1 (Phases 1-6) shipped 2026-10-11 — collapsed above; full record in `.planning/MILESTONES.md`.*
 *v1.2 TUI任务 roadmap created 2026-10-11 — 5 phases, 32/32 requirements mapped; revised 2026-10-11 per maintainer custom-entries adjustment — 6 phases (7-12), 38/38 requirements mapped.*
+
+## Backlog
+
+### Phase 999.1: 自定义模型/数据集防呆（fool-proofing）增强 (BACKLOG)
+
+**Goal:** Custom-model/dataset entries gain layered fool-proofing — today the file-based path has only JSON-validity + official-key-collision checks (registry_loader fail-loud SystemExit) while the wizard validates path existence; the gap is the file lane and launch-time enforcement.
+**Requirements:** TBD — candidate scope from the 2026-10-14 manual-verification session: (1) load-time path-existence preflight for custom entries, errors naming entry + path instead of a bare SystemExit; (2) field completeness/type validation with per-field actionable messages (against the models_info.json card schema: Model_path/Model_name/size/tokenizer etc.); (3) consistency checks (same path under multiple names, size (M) vs Model_size mismatch); (4) TUI side — broken/pathless custom entries marked red with a problems list on the selection screen, launch gate refuses runs containing broken entries; (5) optional custom-registry lint/doctor subcommand.
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
