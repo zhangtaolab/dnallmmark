@@ -3933,3 +3933,110 @@ def test_probe_zenodo_routes_through_the_service_fetch_seam():
     assert probe_calls and "zenodo.org" in probe_calls[0], (
         "the probe must route through the injected seam, never the wire"
     )
+
+
+# =====================================================================
+# L6H-03: the dataset-root reroute through the directories_config chain
+# (261014-l6h) — constructor dataset_root param > directories.json
+# dataset_root key (TOLERANT read) > the repo pipeline/ default. Every
+# dataset LANDING site resolves through the one helper: the ChannelSpec
+# local_dir, the landing gate's relative naming, the shape-C rename,
+# the zenodo extract target, the landed-keys scan, and the reconcile
+# staged absolute Dataset_path. The official REGISTRY read stays
+# repo-anchored — registry is repo state, never redirected by user
+# storage config (the deliberate not-rerouted list).
+# =====================================================================
+
+@pytest.fixture(autouse=True)
+def _pin_directories_config(tmp_path_factory, monkeypatch):
+    """Every queue test runs against an EMPTY config root — the
+    absent-directories.json case — making this whole module the
+    byte-identity proof (and hermetic against a developer-machine
+    file). tmp_path_FACTORY, never the per-test tmp_path: the
+    no-residue/never-persists lanes above assert their tmp_path's
+    exact contents (the root-conftest pin's own rule)."""
+    pinned = tmp_path_factory.mktemp("dq-no-directories-config")
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(pinned))
+
+
+def write_directories_json(config_dir, doc):
+    """Place a directories.json under a config root (the file tier)."""
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "directories.json").write_text(
+        json.dumps(doc), encoding="utf-8")
+    return config_dir
+
+
+def test_file_dataset_root_redirects_spec_local_dir_and_gate_naming(
+        monkeypatch, tmp_path):
+    """The file tier: a directories.json carrying dataset_root under an
+    injected config dir redirects ChannelSpec.local_dir under
+    X/datasets, AND the landing gate names missing paths relative to
+    X/datasets (never the repo pipeline form)."""
+    repo = tmp_repo_with_registry(tmp_path / "repo", synth_entries())
+    service = service_over(repo, tmp_path)
+    root_x = tmp_path / "storage-x"
+    config = write_directories_json(
+        tmp_path / "cfg-file", {"dataset_root": str(root_x)})
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(config))
+
+    spec = service.resolve_channel("Demo__task")
+
+    assert spec.local_dir == root_x / "datasets" / "Demo"
+    problem, details = service._landing_details(spec)
+    assert problem == download_queue.PROBLEM_LANDING_INCOMPLETE
+    assert details == [
+        "missing=Demo/task/train.csv",
+        "missing=Demo/task/dev.csv",
+        "missing=Demo/task/test.csv",
+    ]
+
+
+def test_constructor_dataset_root_beats_file_key(monkeypatch, tmp_path):
+    """The precedence pin: an explicit constructor dataset_root (the
+    flag tier) wins over a present-and-set file key."""
+    repo = tmp_repo_with_registry(tmp_path / "repo", synth_entries())
+    root_x = tmp_path / "storage-x"
+    root_y = tmp_path / "storage-y"
+    config = write_directories_json(
+        tmp_path / "cfg-both", {"dataset_root": str(root_x)})
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(config))
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, cli_path=str(fake_cli(tmp_path)),
+        dataset_root=str(root_y))
+
+    spec = service.resolve_channel("Demo__task")
+
+    assert spec.local_dir == root_y / "datasets" / "Demo"
+
+
+def test_absent_param_and_file_keep_repo_pipeline_datasets_form(tmp_path):
+    """The byte-identity pin: with neither the param nor a file (the
+    module autouse fixture pins the config root empty), local_dir is
+    EXACTLY the repo pipeline/datasets form — the 144 pre-existing
+    tests prove the same for every other landing site."""
+    repo = tmp_repo_with_registry(tmp_path / "repo", synth_entries())
+    service = service_over(repo, tmp_path)
+
+    spec = service.resolve_channel("Demo__task")
+
+    assert spec.local_dir == repo / "pipeline" / "datasets" / "Demo"
+
+
+def test_corrupt_directories_json_degrades_to_repo_default(
+        monkeypatch, tmp_path):
+    """The tolerant service-tier seam: a corrupt directories.json
+    (invalid JSON) degrades to the repo default — no SystemExit ever
+    escapes the service (the strict fail-loud lane belongs to the
+    pipeline scripts alone)."""
+    repo = tmp_repo_with_registry(tmp_path / "repo", synth_entries())
+    service = service_over(repo, tmp_path)
+    config = tmp_path / "cfg-corrupt"
+    config.mkdir()
+    (config / "directories.json").write_text(
+        "{not valid json", encoding="utf-8")
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(config))
+
+    spec = service.resolve_channel("Demo__task")
+
+    assert spec.local_dir == repo / "pipeline" / "datasets" / "Demo"
