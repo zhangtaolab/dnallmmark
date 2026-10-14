@@ -21,12 +21,12 @@ subset ID lists consumed by the pipeline live in
 ## Method
 
 - **Filter semantics** mirror the pipeline exactly
-  (`run_finetune.py` `validate_sequences` at :837-839; suite
+  (`run_finetune.py` `validate_sequences` at :1423-1425; suite
   `check_sequence` @483a35c): a row survives a charset class
   iff `set(seq.upper())` is contained in the class charset and
   `0 <= len(sequence) <= 10010`.
 - **Two model classes** exist (the pipeline's per-model
-  conditional at :832-836): strict `ACGTacgt|`
+  conditional at :1418-1422): strict `ACGTacgt|`
   (`models_no_char_n` members — one N discards the whole row)
   and N-tolerant `ACGTNacgtn|` (every other model).
 - **Unified eval N** per task = min over the per-class test

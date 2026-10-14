@@ -133,7 +133,7 @@ uv run --group data python script/convert_registry.py --kind datasets --to-json 
 Expected output:
 
 ```
-✅ /tmp/datasets_info.csv -> pipeline/datasets_info.json: 0 entries added, 51 merged, 0 renamed, 0 derived, 51 total
+✅ /tmp/datasets_info.csv -> pipeline/datasets_info.json: 0 entries added, 50 merged, 0 renamed, 0 derived, 50 total
 ```
 
 The ingest aborts loudly if the CSV header is missing any expected

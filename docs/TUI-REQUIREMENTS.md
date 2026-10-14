@@ -20,7 +20,7 @@
 
 | 资产           | 位置/入口                                                              | 说明                                                                                                                              |
 | -------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 模型注册表     | `pipeline/models_info.json`                                          | 62 模型，11 键卡片（架构/规模/tokenizer/物种/HF+ModelScope 地址）                                                                 |
+| 模型注册表     | `pipeline/models_info.json`                                          | 62 模型，16 键卡片（架构/规模/tokenizer/物种/HF+ModelScope 地址）                                                                 |
 | 数据集注册表   | `pipeline/datasets_info.json`                                        | 50 数据集，含溯源列（source/citation/license/download_url/alternates）                                                            |
 | 数据存在性审计 | `script/audit_n_frequencies.py` → `dnallm-mark/data/n_audit.json` | 每任务 train/dev/test 行数、非 ACGT 统计、缺失标记                                                                                |
 | 统一评测子集   | `pipeline/eval_subsets.json`                                         | 公平性评测（`--subset_file`）                                                                                                   |
@@ -65,7 +65,7 @@
 - 补充：＿＿＿除了lora还要加上冻结backbone加上probe的微调办法，默认训练epoch和之前保持一致为3
   > 【核查 2026-10-11】probe+冻结骨干**机制已在仓库**（`run_finetune --config-variant probe`，frozen backbone + 不合格模型守卫，GB10 实测可训练参数 0.44%）——TUI 仅需露出该选项；epochs=3 与现行 `finetune_config.yaml` 默认一致。
 - 如果自动化运行，需要解决batch_size和gradient_accumulation_steps的选择，以适配不同模型和数据集
-  > 【核查】机制半在：动态 batch_size 缩放与 per-dataset grad_accum 重置已有；**新增工作 = `--effective-batch <N>` 自动 GA 旗标**（GA = max(1, N // batch_size)，对应开放问题 Q7 的 16/1 规则）。
+  > 【核查】机制半在：动态 batch_size 缩放与 per-dataset grad_accum 重置已有；**`--effective_batch_size <N>` 自动 GA 旗标已实现**（`pipeline/run_finetune.py` 实现、`run_sweep.py` 透传；GA = max(1, N // batch_size)，对应开放问题 Q7 的 16/1 规则）。
 
 ### 3.4 执行模式（单卡 → 多卡）
 

@@ -526,6 +526,24 @@ If you use DNALLM-Mark in your research, please cite:
 }
 ```
 
+## 📚 Documentation
+
+The documents below expand on specific areas of the project. **[GETTING-STARTED.md](docs/GETTING-STARTED.md)** and **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** are the best entry points; the rest are task-specific:
+
+- **[GETTING-STARTED.md](docs/GETTING-STARTED.md)**: Prerequisites and the shortest path from a fresh clone to a running local leaderboard
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)**: How the three subsystems (static web UI, offline data scripts, fine-tuning pipeline) fit together
+- **[DEVELOPMENT.md](docs/DEVELOPMENT.md)**: Local development setup, `make` targets, code style, and branch/PR conventions
+- **[TESTING.md](docs/TESTING.md)**: The Python (`pytest`) and Node (`node --test`) test lanes, test conventions, and CI integration
+- **[CONFIGURATION.md](docs/CONFIGURATION.md)**: Dependency groups, configuration files, and pipeline knobs
+- **[CONTRIBUTING.md](CONTRIBUTING.md)**: How to report issues and submit changes
+- **[METHODOLOGY.md](docs/METHODOLOGY.md)**: How leaderboard numbers are computed, from per-model results to Rank Score
+- **[ONBOARDING.md](docs/ONBOARDING.md)**: Checklists for adding a new model or dataset to the benchmark
+- **[multi-gpu.md](docs/multi-gpu.md)**: Multi-GPU sweep orchestration — sharding vs DDP decisions and the runbook
+- **[TUI-GUIDE.md](docs/TUI-GUIDE.md)**: Guide to the `tui/` terminal console for driving benchmark runs
+- **[TUI-REQUIREMENTS.md](docs/TUI-REQUIREMENTS.md)**: Open requirements collection for the TUI milestone
+- **[DATA.md](DATA.md)**: Generated dataset audit (N-frequency and non-ACGT census)
+- **[AUDIT.md](AUDIT.md)**: Published audit report (findings, migration records, secret-scan evidence)
+
 ---
 
 **Note**: This repository is under active development. Features and APIs may evolve as we incorporate community feedback.

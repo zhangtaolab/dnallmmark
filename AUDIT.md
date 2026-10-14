@@ -100,7 +100,7 @@ Grading rule: a finding is severity-graded only after independent reproduction (
 
 **Scope equivalence:** the working tree equals the `data-v1` tag for all three audited subsystems (`git diff data-v1 -- pipeline/ script/ scripts/ dnallm-mark/` is empty); plan 01-01 added only root-level substrate files.
 
-**Secrets:** the intentional Zenodo dataset-sharing link at README.md:116 is a recorded maintainer decision (kept as-is; record-scoped, read-only) and is excluded from findings by design. It is referenced here by location only. The full-history secret scan that provides the no-other-secrets evidence runs in plan 01-03.
+**Secrets:** the intentional Zenodo dataset-sharing link at README.md:116 [2026-10-14: link now at README.md:251 in the current tree] is a recorded maintainer decision (kept as-is; record-scoped, read-only) and is excluded from findings by design. It is referenced here by location only. The full-history secret scan that provides the no-other-secrets evidence runs in plan 01-03.
 
 ### Expected post-fix migration inventory (pre-documented for plan 01-03)
 
@@ -147,7 +147,7 @@ Recorded without severity grades per the correctness-first audit scope:
 
 - **Dead template configuration** — `dnallm-mark/js/config.js:19-47,59-80`: arena-template leftovers (SORT_OPTIONS with score/win-rate/battles, RANKING_DISPLAY with ELO flags, TABLE_CONFIG with DEFAULT_SORT 'elo', a reserved API base URL, DEV_MODE, unreferenced SOCIAL_LINKS). Misleads contributors into wiring features that have no data source.
 - **Duplicated navbar rendering** — `renderNavbar()` copy-pasted across finetuning.js, models.js, datasets.js, submit.js plus a smarter dead variant in main.js:72-90 that is never called. The duplication is the breeding ground of the AUD-09 crash class.
-- **Dead fabricated aggregation** — `DataAPI.recalculateComparison()` at `dnallm-mark/js/data.js:187-273` reimplements leaderboard aggregation with placeholder values (rank hardcoded 1, threshold-based top-N counts, always-zero sums) and is never called; wiring it up would silently show fabricated numbers. Ranking math must live only in the Python script.
+- **Dead fabricated aggregation** — `DataAPI.recalculateComparison()` at `dnallm-mark/js/data.js:187-273` reimplements leaderboard aggregation with placeholder values (rank hardcoded 1, threshold-based top-N counts, always-zero sums) and is never called; wiring it up would silently show fabricated numbers. Ranking math must live only in the Python script. [2026-10-14: method removed from current tree — since resolved (DATA-07)]
 - **Unused CDN payload and committed dev artifacts** — SheetJS (~900 KB) loaded on three production pages with zero references; `test.html`, `verify-chart.html`, `task-mockup.html` committed as dev mockups.
 - **Console noise** — 39 console.log calls across page modules, including a styled debug-API banner in task-loader.js.
 - **Serial fetch waterfall** — `DataAPI.loadAllModelPerformance()` awaits 42 JSON fetches sequentially (models, datasets, finetuning pages); a scatter chart creates one Chart.js dataset per point instead of one dataset with per-point colors.
