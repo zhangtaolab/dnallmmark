@@ -153,10 +153,10 @@ Plans:
 - [x] 08-07-PLAN.md — selection + matrix screens (SEL-01..04, I18N-01): k9s filter + mark-set on stable row keys, preset/template modals, presence columns, read-only matrix overview, 80-col backstop Pilot tests
 
 **Wave 6** *(gap closure — blocked on 08-07)*
-- [ ] 08-08-PLAN.md — tolerant-loading gap closure (Truth 6 / CR-01 + WR-01): isinstance guards in both registries projections + widened _load_entries tuple, fail-closed env_smoke directory kernels + guarded env-screen worker, exit_on_error never-exit net with per-site ledger + AST pin, both seam regression tests
+- [x] 08-08-PLAN.md — tolerant-loading gap closure (Truth 6 / CR-01 + WR-01): isinstance guards in both registries projections + widened _load_entries tuple, fail-closed env_smoke directory kernels + guarded env-screen worker, exit_on_error never-exit net with per-site ledger + AST pin, both seam regression tests
 
 **Wave 7** *(round-2 gap closure — blocked on 08-08)*
-- [ ] 08-09-PLAN.md — screen-side card-read family closure (Truth 6 residual, second gaps_found): isinstance guards at the w vocabularies + enter drill-down + _manual_landing_path hardening, w/enter/d real-app Pilot regression tests, card-extraction AST family pin
+- [x] 08-09-PLAN.md — screen-side card-read family closure (Truth 6 residual, second gaps_found): isinstance guards at the w vocabularies + enter drill-down + _manual_landing_path hardening, w/enter/d real-app Pilot regression tests, card-extraction AST family pin
 
 **UI hint**: yes
 
@@ -287,7 +287,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 7. Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) | v1.2 | 6/6 | Complete    | 2026-10-11 |
-| 8. TUI Foundation (Env Check & Selection) | v1.2 | 7/7 | Complete    | 2026-10-12 |
+| 8. TUI Foundation (Env Check & Selection) | v1.2 | 9/9 | Complete    | 2026-10-12 |
 | 9. Custom Model & Dataset Onboarding | v1.2 | 6/6 | Complete    | 2026-10-12 |
 | 10. Data Manager (Downloads & Verification) | v1.2 | 6/6 | Complete    | 2026-10-13 |
 | 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 7/7 | Complete    | 2026-10-13 |
