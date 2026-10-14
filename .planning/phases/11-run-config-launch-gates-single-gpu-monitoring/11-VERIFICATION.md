@@ -1,9 +1,7 @@
 ---
 phase: 11-run-config-launch-gates-single-gpu-monitoring
-verified: 2026-10-13T17:35:00Z
-smoke_executed: 2026-10-13 live (11-UAT.md, maintainer "跑")
-orig_verified: 2026-10-13T16:20:00Z
-status: passed
+verified: 2026-10-14T16:21:56Z
+status: gaps_found
 score: 4/5 must-haves verified
 covered_files:
   - .planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-01-PLAN.md
@@ -40,28 +38,91 @@ covered_files:
   - tui/services/sweep_monitor.py
   - tui/strings.py
   - tui/styles.tcss
-covered_digest: "v3:sha256:7fb9e7d2841f3588fbc87feb041f4d78dfc4b9dc46947bdc306193e4de4cff2a"
-behavior_unverified: 1
-behavior_unverified_items:
-  - truth: "SC5 — a maintainer-authorized bounded smoke (1 model × 1 task × 1 seed, 1 epoch) runs launch → monitor → failure-re-run end-to-end on GB10"
-    test: "Execute the 9-step GB10 smoke procedure (steps 2-8): mark plant-dnabert-6mer × iDNA_ABF_datasets__5mC, seeds 42, epochs 1, output root ./finetuned-smoke; preview → gate → launch → auto-nav to slot 5 → detach → relaunch TUI → rediscover + [t] tail + ⊘ resume → optional failure-re-run leg"
-    expected: "The sweep launches from slot 4, auto-navigates to the attached monitor, cells flip ⠋→✓; after detach+relaunch the root is rediscovered, the tee tail reads, a re-launch of the same cell skips with ⊘ + the resume note; the failure-re-run leg completes"
-    why_human: "GPU + the dnallm env are the maintainer's authorization boundary (D-15: this host is dev/test only; the smoke is by design NOT executor- or verifier-executable). Recorded as open broken-windows ledger entry #20"
-human_verification:
-  - test: "Run the GB10 bounded smoke (SC5 execution half) per the 9-step procedure"
-    expected: "All procedure outcomes hold: preview 1 cell + verbatim argv; env preflight passes; launch → toast → slot-5 auto-nav attached; elapsed accrues, ETA degrades honestly; detach → TUI relaunch → rediscovery + tee tail + ⊘ resume; optional failure-re-run leg (GUE__virus_species_40 or a poisoned cell) completes through [f]→r"
-    why_human: "Requires GPU + dnallm runtime under maintainer authorization (D-15 / binding constraint 1). Procedure location: .planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-07-SUMMARY.md, section 'The GB10 Bounded Smoke Procedure' (steps 1-9). Pending entry recorded in .planning/WINDOWS.md #20"
-  - test: "Procedure step 8 — E2'-blocks-demonstrably on the live console: compose 62 × 50 × 3 (mark all + seeds 42,43,44) and press [enter]"
-    expected: "The E2' typed-phrase modal appears; a WRONG dirname leaves 确认 dead; do NOT type the matching phrase and do NOT launch (full sweeps run on other machines, D-15)"
-    why_human: "The live-modal presentation is the maintainer's visual confirmation; the gate's blocking behavior itself is already CI-fake-proven (see Behavioral Spot-Checks rows 1-3). Human confirmation closes the loop on the real console at full selection scale"
+covered_digest: "v3:sha256:361f633d71f3ddbfd5522654a92ec8cd8bbcc42403f399552dc0961df0bfc684"
+behavior_unverified: 0
+overrides_applied: 0
+re_verification:
+  previous_status: passed
+  previous_score: 4/5
+  previous_verified: 2026-10-13T17:35:00Z
+  stale_refresh: true
+  gaps_closed:
+    - "SC5 smoke execution half (the prior pass's single human item) — executed live 2026-10-13 under maintainer authorization (11-UAT.md passed; WINDOWS.md #20 closed)"
+  gaps_remaining: []
+  regressions: []
+gaps:
+  - truth: "SC4 — attach mode for externally (CLI) launched sweeps monitors the attached root (goal: 'monitor/recover the sweep from the same console'; MON-02)"
+    status: failed
+    reason: "CR-01 (review): MonitorScreen.attach() stores the RAW operator path (tui/screens/monitor.py:1131 `self._attached_root = Path(str(root))`) while the [a] validation layer resolves internally — a ~-spelled root VALIDATES (add_manual_root expands+resolves, persists, returns True), toasts success, then every non-frontier reader reads the literal nonexistent path: cells_view/stats/failures_view/cell_record all do plain Path(root) (sweep_monitor.py:761/980/815/1133) → empty table + misleading 未附加 copy while a sweep IS attached; frontier_scan (:555) resolves and disagrees; str(_attached_root) never matches the resolved discovered-table keys (◆ never renders); attached_running_counts() feeds ExitModal the phantom string. REPRODUCED this pass (real services, temp HOME): add_manual_root('~/sweeps/run1')=True, cells_view(raw)=0 rows, cells_view(resolved)=1 row, frontier_scan resolves. All Pilot attach tests use absolute paths over a fake service (test_pilot_monitor.py:879) — the gap is untested. Not delta-introduced (sites date to e6da784/af0e559 2026-10-13, present-but-unflagged at the prior pass) but every flagged file was git-modified since the prior verified timestamp and the reproduction is deterministic → blocking-class under #3304, in-contract."
+    artifacts:
+      - path: "tui/screens/monitor.py"
+        issue: "attach() stores Path(str(root)) without expanduser().resolve() (:1124-1138); action_attach_path on_submit (:1519-1527) feeds the unexpanded PathInputModal value (selection.py strips whitespace only)"
+    missing:
+      - "attach(): store Path(str(root)).expanduser().resolve() (note_launch's pre-resolution becomes a no-op)"
+      - "A Pilot case feeding a ~ -spelled path through the [a] modal over the REAL scanner pinning the fix"
+  - truth: "WR-01 — launcher registry key / tee rootname / gate pre-check resolve spec.output_root against TUI-process CWD, contradicting compose_argv's REPO_ROOT-absolute threading (D-14 any-CWD discipline)"
+    status: partial
+    reason: "launch_spec passes RAW spec.output_root to _spawn (sweep_launcher.py:556-558); the registry key is str(Path(output_root).resolve()) — CWD-based (:448) — while compose_argv threads _abs_against_repo_root (run_config.py:1137). TUI started outside the repo with a relative root → the sweep writes {repo}/finetuned but registry/attach/kill/detach key on {cwd}/finetuned (phantom; auto-attaches an empty monitor via CR-01's mechanism). REPRODUCED this pass from a temp CWD: argv --output-root {repo}/finetuned vs outcome.root {tmp}/finetuned. Site dates to ea51363/8fe61a2 (2026-10-13); sweep_launcher.py modified since pass. Normal mode (make tui from repo root) unaffected."
+    artifacts:
+      - path: "tui/services/sweep_launcher.py"
+        issue: "launch_spec :556-558 threads raw spec.output_root; registry key :448 CWD-based"
+      - path: "tui/screens/run_config.py"
+        issue: "the CR-02 live-root pre-check shares the CWD basis (:1905-1907)"
+    missing:
+      - "resolve the registry key through rc.resolve_dirs(spec).output_root_abs (the same seam the argv uses) in launch_spec + the screen pre-check"
+  - truth: "WR-02 — [r] re-run seed fan-out falls back to a silent [42] when the cell table is empty"
+    status: partial
+    reason: "monitor.py:1226-1228: seeds derived from self._cell_rows `or [42]` — attach → [f] → [r] → confirm before the first full/frontier scan lands re-runs failed pairs at seed 42 ONLY, silently a different experiment than confirmed. The authoritative seeds are in hand: every FailureRow carries .seed. Site dates to e6da784 (2026-10-13)."
+    artifacts:
+      - path: "tui/screens/monitor.py"
+        issue: "_run_rerun_launch seed derivation `or [42]` default (:1226-1228)"
+    missing:
+      - "derive seeds from failures_view rows (row.seed); refuse loudly (RerunFailed) when nothing derivable — never a default"
+  - truth: "WR-03 — MON_RERUN_CONFIRM names entry-count n but the launch enumerates pairs × the sweep's full seed set (confirmed GPU spend understated ~3x)"
+    status: partial
+    reason: "FailuresModal.action_rerun_failures passes len(self._failures) (ENTRIES) into MON_RERUN_CONFIRM.format(n=count) (monitor.py:574-580, strings.py:995); launch_from_failures enumerates distinct (model,task) pairs × seeds (D-11). A 3-seed sweep with all failures at seed 42 confirms '重跑 10 个失败 cell' then launches up to 30 trainings. A destructive-action confirmation that materially understates the authorization."
+    artifacts:
+      - path: "tui/screens/monitor.py"
+        issue: "confirm count = failure entries, not pairs × seeds (:574-580)"
+    missing:
+      - "compute the planned-cell estimate len({(model_base, task)}) × len(seeds) for the confirm copy (or name the seed fan-out in the copy)"
+  - truth: "WR-04 — tee log filename is second-resolution timestamp + basename only; two same-basename roots launched in the same second truncate each other's logs"
+    status: partial
+    reason: "TEE_FILENAME_FORMAT sweep_{ts}_{rootname}.log (sweep_launcher.py:102-103, 465-474); the CR-02 guard blocks only same-root relaunch. Two different roots sharing the basename 'finetuned' (the common default) spawned within one second (slot-4 confirm racing a monitor [r]) interleave from different offsets — corrupts the tail monitor + the audit log for a multi-day run. Site dates to ea51363 (2026-10-13)."
+    artifacts:
+      - path: "tui/services/sweep_launcher.py"
+        issue: "non-unique tee filename (ts second-resolution + basename)"
+    missing:
+      - "make the name unique per spawn (registry counter/pid, or open mode 'x' with a suffixed fallback, or fold parent+name into {rootname})"
+  - truth: "WR-05 — ExitModal handles only roots[0]; [k] 终止后退出 exits with other live sweeps still running"
+    status: partial
+    reason: "action_quit picks roots[0] (sorted) and builds ExitModal around that single root (app.py:843-849); [k] kills exactly that process group (:217-218 kill_quit), [enter] detaches exactly that one, then the app exits. Multiple live sweeps at different roots are a supported state (CR-02 blocks only same-root). The operator's kill belief is factually wrong; message done/total come from the possibly-unrelated attached root. Site dates to e6da784 (2026-10-13)."
+    artifacts:
+      - path: "tui/app.py"
+        issue: "single-root ExitModal (:843-849); kill_quit/detach_quit act on one root"
+    missing:
+      - "when len(roots) > 1: name every live root in the message and make [k] kill all of them (or refuse the plain triple naming each root)"
+advisory:
+  - finding: "IN-01 LNC_E2_WARNING hardcodes 59 × 50 × 8850 — the drift mechanism REALIZED in this delta (1f16b3d hand-edited 62→59/9300→8850 for the confidential-model removal); the gate predicate itself computes fresh (is_full_e2x, superset — stays correct)"
+    category: architectural
+    reason: "authorization copy can lie about what is being authorized when registries evolve; fix = format counts from GateSummary or add a drift tripwire test pinning the constant against official_keys()"
+    evidence_status: "git-dated (1f16b3d 2026-10-14); no functional failure — gate verdict unaffected"
+  - finding: "IN-02 stale NAV placeholder comment (strings.py:578-579 says slots 3/4/5 undelivered; all six slots live) · IN-03 expected_seeds parameter dead in production · IN-04 cell-detail modal never reads curve-cell records (frac_* run_records) · IN-05 cell-row key {model}__{task} collision-prone for keys containing __"
+    category: other
+    reason: "info-tier polish findings from 11-REVIEW.md, all confirmed present at current HEAD; none goal-breaking"
+    evidence_status: "code-read confirmation only"
+  - finding: "test_storage_overview_defaults_mirror_real_consumers fails ON THIS BOX ONLY while the live smoke runs: pipeline/logs exists (gitignored; created by the running sweep) violating the test's fresh-checkout assertion. Production behavior (exists=True) is correct — an environment-sensitive test assumption, not a code regression. Plausibly one of the 7 known full-suite baseline failures."
+    category: other
+    reason: "test should monkeypatch or tolerate a gitignored logs dir; no phase-11 truth affected"
+    evidence_status: "reproduced (pytest run) + git check-ignore evidence"
 ---
 
-# Phase 11: Run Config, Launch Gates & Single-GPU Monitoring — Verification Report
+# Phase 11: Run Config, Launch Gates & Single-GPU Monitoring — Stale-Refresh Re-Verification
 
 **Phase Goal:** The operator's core loop is closed and safe — compose a complete run spec, preview it from the same pure planning functions execution uses, pass the env + confirmation gates, launch `run_sweep.py` as a detached subprocess, and monitor/recover the sweep from the same console — proven end-to-end by a maintainer-authorized bounded smoke on GB10, with E2' provably still maintainer-gated
-**Verified:** 2026-10-13T16:20:00Z (HEAD `bc8e52c`, branch `autorun`; phase base `986c2a8`)
-**Status:** human_needed
-**Re-verification:** No — initial verification
+**Verified:** 2026-10-14T16:21:56Z (HEAD `5989cd7`, branch `autorun`; working tree code-clean)
+**Status:** gaps_found
+**Re-verification:** Yes — STALE-REFRESH (prior pass 2026-10-13T17:35Z at `bc8e52c`; covered source changed since: phase 12, quick tasks f4w/c2l/mlc/ir9/dcl + gap rounds; this delta touches every phase-11 covered code file except nav/screens-misc — full re-verification against current HEAD)
 
 ## Goal Achievement
 
@@ -69,130 +130,131 @@ human_verification:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | **SC1** run-config screen exposes the full parameter set + separated directories + same-source dry-run preview with enumerated cell counts | ✓ VERIFIED | Live TUI drive (tmux 140x45, `make tui`): slot 4 renders the 62-model picker, the full params pane (seeds default `42,43,44`, PEFT `none ▾`, 变体 `none ▾`, 曲线档位, 公平子集 `关（pipeline/eval_subsets.json）`, epochs 覆盖, effective_batch_size), the 目录 section (输出根 `./finetuned` + ✓ 路径存在 advisory, 数据集根, 模型缓存). Marking 1 model × 1 task flipped the live preview line to `干跑: 1 模型 × 1 任务 × 3 种子 = 3 cell`; `[p]` modal showed `同源: pipeline.run_sweep.enumerate_matrix（零复制…）` + the verbatim LIST argv (`python run_sweep.py --models … --tasks … --output-root <abs>`). D-05 same-source confirmed in code (`tui/services/run_config.py:95` module-level `import run_sweep`; `:786` `run_sweep.enumerate_matrix(...)`) and behaviorally (direct call over the real committed registries: 1×1×seed-42 → `cells_count: 1`, cell tuple verbatim; import purity: torch/dnallm/transformers absent after import). Tests run green at HEAD: `test_params_defaults_render`, `test_preview_line_renders_and_updates_on_mark`, `test_preview_modal_renders_argv_and_problems`, `test_importing_service_leaves_gpu_stack_absent` (fresh `python -I` subprocess probe) |
-| 2 | **SC2** terraform-style launch gate: env preflight blocks with reason, preview precedes explicit confirm, E2' requires a typed phrase the TUI cannot bypass | ✓ VERIFIED | Code: `launch_spec` refusal chain each stage BEFORE the spawner (`sweep_launcher.py:503-558`: preview problems → official-keys fail-closed → E2' exact phrase); CR-01 fix `_from_failures_refusal` (`:587-642`) recomputes the effective matrix via the REAL `run_sweep.load_failure_pairs` + `is_full_e2x` (zero copied matrix logic); WR-07 fail-closed `phrase_matches` (`run_config.py:944-963`, `bool(expected) and typed == expected`) + `output_root_invalid` problem. Frozen face consumed with ZERO edits: `git diff 986c2a8..HEAD --stat -- tui/services/env_gate.py tui/services/quick_check.py` = **empty**. Tests run green at HEAD: `test_launch_from_failures_complete_manifest_three_seeds_demands_phrase` (real 62×50 official registries, complete failures manifest × 3 seeds → `GateRefusal stage=phrase`, `spawner.calls == []`), `test_launch_spec_e2x_wrong_phrase_refuses_spawner_silent`, `test_phrase_matches_never_matches_an_empty_expected_phrase`, `test_validate_composition_refuses_filesystem_root_output_root`, Pilot `test_gate_e2x_phrase_flow` / `test_gate_env_block_renders_reasons_verbatim` / `test_gate_problems_blocked_launch_never_called` / `test_rerun_env_block_renders_the_same_modal` |
-| 3 | **SC3** execution always a `run_sweep.py` subprocess (LIST argv + PYTHONUNBUFFERED=1 + start_new_session); exit kill/detach/cancel; detached sweeps resume-safe to re-attach | ✓ VERIFIED | Code: `_spawn` (`sweep_launcher.py:415-499`) — `list(argv)`, `start_new_session=True`, `cwd=pipeline/`, `env={**os.environ, "PYTHONUNBUFFERED": "1"}`, stdout→tee/stderr→STDOUT; CR-02 duplicate-root guard (`:448-462`); `kill_sweep` SIGTERM→killpg→SIGKILL escalation (`:711-742`); `detach` drops handle no-signal (`:744-762`); WR-04 `live_sweeps()` prunes exited Popens (`:766-794`); IN-05 `_tee_history` fallback (`:796-819`). app.py `action_quit` ExitModal (default detach) + q-intercept. Tests run green at HEAD: `test_spawn_pins_list_argv_session_cwd_env_tee`, 10 kill/detach/prune/duplicate service tests (`-k "kill or detach or duplicate or live_sweeps or prune"`), Pilot `test_exit_enter_detaches_then_exits`, `test_exit_k_kills_then_exits`, monitor re-attach suite. Resume-safety substrate: `RESUME_MARKER` skip is run_sweep's own pinned contract (98 sweep tests); the live detach→relaunch→⊘ round trip is smoke step 6 (folded into the human item) |
-| 4 | **SC4** monitor dashboard: cell states via 2s/60s tolerant scans, stats/ETA, attach for CLI sweeps, gated `--from-failures` re-run, bounded log tail + tee, ⊘ resume recognition | ✓ VERIFIED | Code: `monitor.py` `FRONTIER_INTERVAL_SECONDS=2.0` / `FULL_INTERVAL_SECONDS=60.0` (`:141-142`), `set_interval` at `:932-934`, exclusive `mon-frontier`/`mon-full` thread workers (`:960/:999`), `_set_table_rows` diff-preserving updates (`:705`, WR-05 fix); scanner `sweep_monitor.py` imports the driver's own artifact constants (`:51-57`, D-05). Full monitor Pilot suite run green at HEAD: **33 passed** (`test_cadence_dispatches_workers_and_stops_on_unmount` — mount kick + tick callbacks + fake counter proofs + no zombie workers; `test_stats_line_variants`, `test_attach_via_enter_moves_marker_and_rebinds`, `test_attach_path_invalid_keeps_modal_never_attaches`, `test_rerun_confirm_routes_launch_from_failures_and_attaches`, `test_rerun_e2x_phrase_refusal_reprompts_then_launches`, `test_log_tail_renders_lines_and_tee_line`, `test_log_tail_no_tee_is_designed_unavailable`, `test_degradation_corrupt_record_renders_last_known_good`, `test_console_stays_responsive_while_scan_blocks`, `test_table_updates_preserve_cursor_across_ticks`, …) |
-| 5 | **SC5** bounded smoke runs launch→monitor→failure-re-run end-to-end on GB10 while E2' demonstrably blocks; every capability headless via CLI | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | **Fake-provable halves VERIFIED at HEAD:** the E2'-blocks proof is CI-pinned by three tests — `test_launch_from_failures_complete_manifest_three_seeds_demands_phrase` (a full-matrix attempt refused spawner-silent at stage `phrase`), `test_gate_e2x_phrase_flow` (Pilot: mismatch enter no-op, live-match flip, launch only with phrase), `test_launch_spec_e2x_wrong_phrase_refuses_spawner_silent`; the launch→monitor chain by `test_launch_success_auto_navigates_to_monitor_attached`. **Headless parity VERIFIED:** all 13 CLI flags present in `run_sweep.py --help` (--models/--tasks/--seeds/--peft/--config-variant/--curve/--subset_file/--num_train_epochs/--effective_batch_size/--cache_dir/--from-failures/--dry-run/--output-root). **9-step GB10 procedure DOCUMENTED** (11-07-SUMMARY "The GB10 Bounded Smoke Procedure": plant-dnabert-6mer × iDNA_ABF_datasets__5mC × seed 42 × 1 epoch, `./finetuned-smoke`) + pending entry in `.planning/WINDOWS.md` #20. **The execution half is by design maintainer-run** (D-15: GPU + dnallm env are the authorization boundary; NOT executor- or verifier-executable) — routed to human verification, not a gap |
+| 1 | **SC1** run-config screen: full parameter set + separated dirs + same-source dry-run preview with enumerated cell counts | ✓ VERIFIED | D-05 wiring intact at HEAD: `tui/services/run_config.py:115` module-level `import run_sweep`, `:907` `run_sweep.enumerate_matrix(...)` (zero re-implemented enumeration); `compose_argv` threads REPO_ROOT-absolute dirs (`:1137` `_abs_against_repo_root(spec.output_root)`, subset/cache/model_root/dataset_root/log_dir same); nav slot 4 promoted (`tui/screens/nav.py:89`). Tests green at HEAD: `test_params_defaults_render`, `test_preview_line_renders_and_updates_on_mark`, `test_preview_modal_renders_argv_and_problems`, `test_importing_service_leaves_gpu_stack_absent` (all re-run this pass) |
+| 2 | **SC2** terraform-style launch gate: env preflight blocks with reason, preview precedes explicit confirm, E2' typed phrase unbypassable | ✓ VERIFIED | Refusal chain intact and order-correct at HEAD (`sweep_launcher.py:503-558`: preview problems → official-keys fail-closed → E2' exact phrase, each BEFORE the spawner; re-run path gated identically via `_from_failures_refusal` recomputing the effective matrix through the real `run_sweep.load_failure_pairs` + `is_full_e2x`). Tests green this pass: `test_launch_from_failures_complete_manifest_three_seeds_demands_phrase`, `test_launch_spec_e2x_wrong_phrase_refuses_spawner_silent`, `test_phrase_matches_never_matches_an_empty_expected_phrase`, `test_validate_composition_refuses_filesystem_root_output_root`, Pilot `test_gate_e2x_phrase_flow` / `test_gate_env_block_renders_reasons_verbatim` / `test_gate_problems_blocked_launch_never_called`. The frozen phase-8 face was edited AFTER the prior pass by quick task 261014-dcl (env_gate +22/quick_check +11) — owner-tracked in phase 8's own ledger; the phase-11 consumption chain (`run_quick_check` → `gate_verdict`, `sweep_launcher.py:327`) is intact and launcher suite green |
+| 3 | **SC3** execution always a `run_sweep.py` subprocess (LIST argv + PYTHONUNBUFFERED=1 + start_new_session); exit kill/detach/cancel; detached sweeps resume-safe to re-attach | ✓ VERIFIED | `_spawn` pins at HEAD: `list(argv)`, `start_new_session=True`, cwd=pipeline/, env PYTHONUNBUFFERED=1, stdout→tee/stderr→STDOUT; SIGTERM→killpg→SIGKILL escalation; `live_sweeps()` prunes exited Popens; CR-02 duplicate-root guard. Tests green this pass: `test_spawn_pins_list_argv_session_cwd_env_tee` + the 10 kill/detach/duplicate/prune service lanes. LIVE (read-only, tonight's smoke): parent `run_sweep.py --models 2 --tasks 2 --seeds 42 --num_train_epochs 1 --output-root pipeline/finetuned/smoke-2x2-261014 --log_dir pipeline/logs` (PID 2586649, detached, 1h46m+) spawned child `run_finetune.py` with `--output_dir /abs/.../smoke-2x2-261014 --log_dir /abs/.../pipeline/logs` as separate absolute argv elements — the compose→spawn chain proven on the real host. Resume-safety substrate: RESUME_MARKER skip contract (sweep tests) + live ⊘ round trip (2026-10-13 UAT). WR-05 (multi-sweep exit modal) and WR-01 (CWD-basis key) are logged gaps that do not break this truth in the supported launch mode |
+| 4 | **SC4** monitor dashboard: cell states via 2s/60s tolerant scans, stats/ETA, attach for CLI sweeps, gated re-run, bounded tail + tee, ⊘ resume | ✗ FAILED | Cadence/states/stats/ETA/failures/tail/resume all VERIFIED at HEAD: `FRONTIER_INTERVAL_SECONDS=2.0`/`FULL_INTERVAL_SECONDS=60.0` exclusive workers; artifact constants imported from run_sweep; full monitor Pilot suite **34 passed** this pass (+1 vs prior — delta added coverage), rerun lanes 6 passed, scanner+launcher+run_config service lanes green. **The attach seam is broken for a validated input class — CR-01:** `attach()` stores the RAW operator path while `[a]` validation resolves internally; a `~/sweeps/x` root VALIDATES, persists, toasts success — then cells_view/failures_view read the literal nonexistent path → empty monitor + misleading 未附加 copy, `frontier_scan` (which resolves) disagrees, the ◆ marker never matches, ExitModal sees the phantom string. **Deterministically reproduced this pass** over the real services: `add_manual_root('~/sweeps/run1')=True`, `cells_view(raw)=0 rows`, `cells_view(resolved)=1 row`. Goal wording "monitor/recover the sweep from the same console" is breached exactly at MON-02's CLI-attach surface; untested because every Pilot attach test uses an absolute path over a fake service (`test_pilot_monitor.py:879`). WR-01 compounds it (phantom auto-attach when the TUI runs outside the repo). See gaps #1-2 |
+| 5 | **SC5** bounded smoke runs launch→monitor→failure-re-run E2E on GB10 while E2' demonstrably blocks; every capability headless via CLI | ✓ VERIFIED | The prior pass's single open item CLOSED: 1×1×1 smoke executed live 2026-10-13 under maintainer authorization ("跑") — 11-UAT.md status **passed** with full evidence (launch → D-13 auto-nav → ⠋→✓ @1:21 → detach/reattach → ⊘ trainer_state skip → poisoned-cell failure leg → [f]→r confirm-gated re-run → true completion; E2' step-8: wrong dirname dead-locked, zero processes); WINDOWS.md #20 closed. ADDITIONAL live grounding (tonight, read-only): a maintainer-authorized 2×2 GPU smoke RUNNING through this exact chain — argv resolution (relative→absolute), cell layout `{root}/{model}/{task}/seed_42/`, log dir tee all confirmed on disk/ps. E2'-blocks re-proven CI-side this pass (3 named gate tests green). CLI parity: all 16 driver flags present in `run_sweep.py --help` (13 named + log_dir/model_root/dataset_root) |
 
-**Score:** 4/5 truths verified (1 present, behavior-unverified — the GB10 smoke execution half, a designed maintainer authorization boundary)
+**Score:** 4/5 truths verified (SC4 failed on the attach seam; the smoke's execution half that was open at the prior pass is closed by live evidence)
+
+### Code-Review Findings Adjudication (#3304 evidence gate)
+
+Sites dated with `git log -S`; "modified since pass" = the flagged file changed after the prior verified timestamp (2026-10-13T17:35Z / `bc8e52c`); every flagged phase-11 file was modified in the delta.
+
+| Finding | Site dated | Modified since pass | Deterministic evidence | In-contract | Verdict |
+|---------|-----------|--------------------|----------------------|-------------|---------|
+| CR-01 attach stores raw path → empty monitor | e6da784 + af0e559 (2026-10-13 — present, unflagged at prior pass) | monitor.py: yes (exit_on_error/docstring) | YES — reproduced this pass (real services, temp HOME) | YES — SC4 attach / MON-02 / goal wording | 🛑 BLOCKER (gap #1) |
+| WR-01 registry key CWD-basis vs argv REPO_ROOT | ea51363 + 8fe61a2 (2026-10-13) | sweep_launcher.py: yes | YES — reproduced this pass (temp CWD: argv {repo}/finetuned vs key {tmp}/finetuned) | Adjacent — D-14 any-CWD discipline; breaks monitor of TUI-launched sweep in the outside-repo mode only | ⚠️ WARNING (gap #2) |
+| WR-02 `[r]` silent `or [42]` seed fallback | e6da784 (2026-10-13) | monitor.py: yes | Code-path read (`_cell_rows` empty → [42]); no red test exists | YES — MON-03 re-run correctness | ⚠️ WARNING (gap #3) |
+| WR-03 confirm understates GPU spend ~3x | e6da784 (2026-10-13) | monitor.py: yes | Code-path read (entries n vs pairs × seeds) | YES — "safe" / confirmation-gate honesty (goal wording) | ⚠️ WARNING (gap #4) |
+| WR-04 tee same-second collision | ea51363 (2026-10-13) | sweep_launcher.py: yes | Format-string read; race requires two same-basename roots in one second | Adjacent — MON-04 tee integrity | ⚠️ WARNING (gap #5) |
+| WR-05 ExitModal single-sweep | e6da784 (2026-10-13) | app.py: yes | Code-path read (roots[0]; kill_quit one root) | YES — LNC-02 exit triple correctness under supported multi-sweep state | ⚠️ WARNING (gap #6) |
+| IN-01 E2' copy hardcodes 59×50×8850 | 1f16b3d (2026-10-14 — DELTA-realized: the quick task hand-edited the counts, proving the drift) | strings.py: yes | Git-dated edit; gate predicate computes fresh (unaffected) | No — copy drift risk only | 📋 Advisory |
+| IN-02..05 (stale comment / dead param / curve records / `__` join key) | phase-11-era sites | files modified | Code-read confirmation | No — polish | 📋 Advisory |
+
+None of these is covered by a later milestone phase (Phase 12's SCs are sharding/web-mirror/goldens/merge — no monitor-attach/exit/tee hardening) → no deferral (Step 9b). All 11 remain `open` in 11-REVIEW-DISPOSITION.md (untriaged); this adjudication is the verification-side input to that record.
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `tui/services/run_config.py` | RunSpec/preview/dirs/phrase/argv service | ✓ VERIFIED | 1076 lines; imports run_sweep (D-05); 73 tests green |
-| `tui/services/sweep_launcher.py` | Spawn/tee/kill/detach/gate service | ✓ VERIFIED | 819 lines; CR-01/CR-02/WR-04/IN-05 fixes in place; 44 tests green |
-| `tui/services/sweep_monitor.py` | Scanner: discovery/cells/stats/ETA/tail | ✓ VERIFIED | 1228 lines; driver artifact constants imported; 49 tests green |
-| `tui/screens/run_config.py` | Slot-4 screen | ✓ VERIFIED | 1734 lines; live-rendered in tmux; 36 Pilot tests green |
-| `tui/screens/monitor.py` | Slot-5 screen | ✓ VERIFIED | 1537 lines; 33 Pilot tests green |
-| `tui/app.py` | Factories/seams/ExitModal/D-13 hook | ✓ VERIFIED | `build_run_config_screen`/`build_monitor_screen`/`sweep_launched`+`MonitorSwitchRequested`/`action_quit` present (`:460-:539`, `:732-:747`, `:817-:840`) |
-| `tui/screens/nav.py` | Slots 4+5 promoted | ✓ VERIFIED | `NavSlot(4, …, "run_config", None)`, `NavSlot(5, …, "monitor", None)` (`:89-90`); live: `◆ 4运行配置` rendered, digit-4 switch worked |
-| `tui/strings.py` | 99 CFG_/LNC_/MON_ constants, single home | ✓ VERIFIED | bidirectional tripwire green (5 tests); no raw CJK in screens (CJK locks in Pilot suites green) |
-| `pipeline/run_sweep.py` | `--config-variant` aliasing (D-18 errata) | ✓ VERIFIED | 20-test aliasing suite in the 98 sweep tests; HEAD_KEEP_BASE_NAMES read-source parity pinned |
+| `tui/services/run_config.py` | RunSpec/preview/dirs/phrase/argv service | ✓ VERIFIED | Present, substantive (import run_sweep :115; enumerate_matrix :907; compose_argv REPO_ROOT threading); 73+ service tests green (delta added ~20 more) |
+| `tui/services/sweep_launcher.py` | Spawn/tee/kill/detach/gate service | ✓ VERIFIED (with WR-01/WR-04 gaps) | Spawn pins test green; refusal chain intact; registry-key basis gap logged |
+| `tui/services/sweep_monitor.py` | Scanner: discovery/cells/stats/ETA/tail | ✓ VERIFIED (with CR-01 reader-path gap) | Artifact constants imported from run_sweep; tolerant readers; full suite green |
+| `tui/screens/run_config.py` | Slot-4 screen | ✓ VERIFIED | Gate/preview/params Pilot lanes green this pass (12+ named tests) |
+| `tui/screens/monitor.py` | Slot-5 screen | ✗ STUB-free but attach seam broken | 34 Pilot tests green; `[a]` attach path semantics gap (CR-01) |
+| `tui/app.py` | Factories/seams/ExitModal/D-13 hook | ✓ VERIFIED (with WR-05 gap) | build_* factories + sweep_launched + action_quit present; single-root modal gap logged |
+| `tui/screens/nav.py` | Slots 4+5 promoted | ✓ VERIFIED | `NavSlot(4, …run_config)`, `NavSlot(5, …monitor)` (`:89-90`); nav Pilot suite green |
+| `tui/strings.py` | CFG_/LNC_/MON_ single home | ✓ VERIFIED | Tripwire suite green (in the 379-passed batch); IN-01 copy-drift advisory |
+| `pipeline/run_sweep.py` | `--config-variant` aliasing (D-18) + parity flags | ✓ VERIFIED | 98+ sweep tests green in the batch run; 16 CLI flags present |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|----|--------|---------|
-| run_config screen | run_config + launcher services | constructor-injected Protocols | ✓ WIRED | app.py factories pass backends; Pilot suites exercise the real screen over fakes; live screen rendered |
-| run_config service | `pipeline/run_sweep` | module-level import (`:95`) | ✓ WIRED | `enumerate_matrix` called at `:786`; direct call produced real cells |
-| sweep_launcher | env_gate + quick_check (frozen face) | direct import (`:90`) | ✓ WIRED | zero edits since 986c2a8 (git diff empty) |
-| sweep_monitor | run_sweep artifact names + artifact_loader | direct imports (`:50-57`) | ✓ WIRED | MANIFEST/FAILURES/RECORD/RESUME_MARKER single-sourced |
-| monitor screen | launcher (tee/live_sweeps/from-failures) | MonitorBackend injection | ✓ WIRED | `[t]`/`[f]→[r]`/ExitModal Pilot-tested |
-| app.py | nav slots 4/5 | digit bindings + factories | ✓ WIRED | live digit-4 switch verified in tmux |
+| run_config service | `pipeline/run_sweep` | module-level import | ✓ WIRED | `:115` import; `:907` enumerate_matrix live call (re-confirmed at HEAD) |
+| sweep_launcher | env_gate + quick_check | direct import (`:327`) | ✓ WIRED | chain intact after 261014-dcl edits; launcher suite green |
+| sweep_monitor | run_sweep artifact names | direct imports | ✓ WIRED | MANIFEST/FAILURES/RECORD/RESUME_MARKER single-sourced |
+| monitor screen `[a]` modal | monitor service add_manual_root → attach | on_submit | ✗ NOT_WIRED (semantically) | The two layers disagree on path semantics — validation resolves, attach stores raw (CR-01) |
+| monitor screen | launcher (tee/from-failures) | MonitorBackend injection | ✓ WIRED | rerun/tee lanes green (6 Pilot rerun tests) |
+| app.py sweep_launched | monitor attach (D-13) | note_launch → resolved root_key | ✓ WIRED | …but the key is CWD-based upstream (WR-01) when TUI runs outside repo |
+| app.py action_quit | ExitModal → launcher kill/detach | roots[0] | ⚠️ PARTIAL | single-root handling under multi-sweep state (WR-05) |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|--------------|--------|--------------------|--------|
-| run_config preview | `cells` / `cells_count` | `run_sweep.enumerate_matrix` over committed registries | Yes — live call returned `(('plant-dnabert-6mer','iDNA_ABF_datasets__5mC',42),)` | ✓ FLOWING |
-| [p] modal argv | `compose_argv(spec)` | real interpreter path + run_sweep.py | Yes — live modal showed the real absolute argv | ✓ FLOWING |
-| monitor cell table | `cells_view` records | `run_record.json` / manifest / trainer_state markers on disk | Yes — synthetic-tree tests + tolerant readers (LKG) | ✓ FLOWING |
-| slot-4 pickers | registry keys | `pipeline/{models,datasets}_info.json` via overlay-free official_keys | Yes — live: 62 models / 50 tasks rendered | ✓ FLOWING |
+| run_config preview | `cells` | `run_sweep.enumerate_matrix` over committed registries | Yes (purity test green) | ✓ FLOWING |
+| monitor cell table | `cells_view` records | run_record.json/manifest/markers on disk | Yes for resolved roots; NO through a raw `~` attach path | ⚠️ STATIC (CR-01 path only) |
+| live smoke chain | child argv | parent run_sweep argv | Yes — live ps: relative→absolute resolution, per-cell output dirs | ✓ FLOWING |
 
-### Behavioral Spot-Checks (all run at HEAD `bc8e52c`)
+### Behavioral Spot-Checks (all run this pass at HEAD `5989cd7`)
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| E2' gate blocks a full-matrix re-run attempt (spawner-silent) | `pytest …::test_launch_from_failures_complete_manifest_three_seeds_demands_phrase` | PASSED (also verbose-run with partial-manifest + two-seeds controls) | ✓ PASS |
-| E2' phrase wrong/absent → spawner never called | `pytest …::test_launch_spec_e2x_wrong_phrase_refuses_spawner_silent` | PASSED | ✓ PASS |
-| "/" output root fails closed (WR-07) | `pytest …::test_phrase_matches_never_matches_an_empty_expected_phrase` + `::test_validate_composition_refuses_filesystem_root_output_root` | 4 passed (both lanes batched) | ✓ PASS |
-| Import purity (D-05) | `pytest …::test_importing_service_leaves_gpu_stack_absent` + direct `python -I` service call | PASSED; live probe printed `IMPORT PURE: torch/dnallm/transformers absent`, `cells_count: 1` | ✓ PASS |
-| SC1/SC3/SC5 Pilot lanes (10 named tests) | `pytest test_pilot_run_config.py::<9 named> + launcher spawn-pins` | 10 passed | ✓ PASS |
-| SC4 monitor Pilot suite (full file) | `pytest tests/tui/test_pilot_monitor.py -q` | 33 passed | ✓ PASS |
-| SC3 kill/detach/prune/duplicate service lanes | `pytest … -k "kill or detach or duplicate or live_sweeps or prune"` | 10 passed | ✓ PASS |
-| Strings tripwire + services import lock | `pytest tests/tui/test_strings_phase11.py tests/tui/test_import_lock.py` | 6 passed | ✓ PASS |
-| Slot-4 live render + preview line + [p] modal | `make tui` in tmux 140x45; mark 1×1; press p | Screen renders all panes; preview line `1 模型 × 1 任务 × 3 种子 = 3 cell`; modal shows same-source note + verbatim argv; XDG spec persisted (D-01) | ✓ PASS |
-| CLI parity flags | `python3 pipeline/run_sweep.py --help` | all 13 parity flags present | ✓ PASS |
+| CR-01 reproduction (real services, `~` attach) | standalone script, temp HOME/XDG | validation True; cells_view(raw)=0; cells_view(resolved)=1; frontier_scan resolves | ✗ FAIL (gap confirmed) |
+| WR-01 reproduction (non-repo CWD launch) | standalone script, fake spawner | argv root {repo}/finetuned; registry key {tmp}/finetuned | ✗ FAIL (gap confirmed) |
+| E2' gate blocks full-matrix re-run, spawner-silent | `pytest …::test_launch_from_failures_complete_manifest_three_seeds_demands_phrase` | passed | ✓ PASS |
+| E2' wrong/absent phrase → spawner never called | `pytest …::test_launch_spec_e2x_wrong_phrase_refuses_spawner_silent` | passed | ✓ PASS |
+| "/" root + empty-phrase fail-closed (WR-07 fix) | `pytest …::test_phrase_matches_never_matches_an_empty_expected_phrase …::test_validate_composition_refuses_filesystem_root_output_root` | 3 passed | ✓ PASS |
+| Import purity (D-05) | `pytest …::test_importing_service_leaves_gpu_stack_absent` | passed | ✓ PASS |
+| SC1 Pilot lanes (params/preview/modal) | 3 named tests | passed | ✓ PASS |
+| SC2 gate Pilot lanes | `test_gate_e2x_phrase_flow` + 3 named | passed | ✓ PASS |
+| SC4 monitor Pilot suite (full file) | `pytest tests/tui/test_pilot_monitor.py -q` | **34 passed** | ✓ PASS |
+| SC3 kill/detach/duplicate/prune lanes | `-k "kill or detach or duplicate or live_sweeps or prune"` | 10 passed | ✓ PASS |
+| Covered service/sweep lanes | `pytest tests/test_sweep.py tests/tui/test_services_{run_config,sweep_launcher,sweep_monitor}.py tests/tui/test_strings_phase11.py tests/tui/test_import_lock.py` | 379 passed, **1 failed** | ⚠️ env-only failure (see Advisory #3 — `pipeline/logs` exists because the live smoke runs; test asserts fresh-checkout; gitignored dir, production behavior correct) |
+| nav + env-check Pilot suites | full files | 45 passed | ✓ PASS |
+| CLI parity flags | `run_sweep.py --help` | all 16 present | ✓ PASS |
 
-**Full-suite baseline:** 1501 pytest + 18/18 node:test at `40cb0bd` (11-REVIEW-FIX.md final gates; ruff + ty clean). HEAD `bc8e52c` differs from `40cb0bd` by docs-only commits (`git diff 40cb0bd..HEAD --stat -- tui/ tests/ pipeline/ scripts/` = empty), so the gate result stands for HEAD's code state. Fresh confirmation this pass: 67 tests re-run green across the six load-bearing files.
+**Full-suite baseline context (this box, per orchestrator): 7 failed / 1734 passed / 9 xfailed.** The one failure I hit in phase-covered files (`test_storage_overview_defaults_mirror_real_consumers`) is environmental (live-smoke artifacts violate a fresh-checkout test assumption), not a code regression. No phase-11 named lane fails.
 
 ### Probe Execution
 
-N/A — no phase-declared or conventional probe scripts (`scripts/*/tests/probe-*.sh`); this phase's evidence vehicle is the pytest Pilot/tier-1 harness.
+N/A — no phase-declared or conventional probe scripts; this phase's evidence vehicles are the pytest Pilot/tier-1 harness + the maintainer-run smokes.
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |-------------|------------|-------------|--------|----------|
-| CFG-01 | 11-01/02/05/06 | Full parameter surface | ✓ SATISFIED | Live render + params-defaults Pilot + 73 service tests |
-| CFG-02 | 11-02/06 | Dirs separation (D-14) | ✓ SATISFIED | DirPlan + live 目录 pane + advisory tests |
-| CFG-03 | 11-02/06 | Same-source preview | ✓ SATISFIED | D-05 code+live+tests (above) |
-| LNC-01 | 11-05/06 | Launch gate copy + presentation | ✓ SATISFIED | LNC_ constants tripwire + gate modal Pilot lanes |
-| LNC-02 | 11-01/03/06 | Subprocess discipline + exit triple | ✓ SATISFIED | SC3 evidence |
-| LNC-03 | 11-02/03/06/07 | E2' unbypassable | ✓ SATISFIED | SC2 evidence incl. CR-01 re-run gate + WR-07 fail-closed |
-| MON-01..05 | 11-04/05/07 | Monitor dashboard + re-run + tee + resume | ✓ SATISFIED | SC4 evidence (33 Pilot + 49 scanner tests) |
+| CFG-01 | 11-01/02/05/06 | Full parameter surface | ✓ SATISFIED | SC1 evidence; tests green at HEAD |
+| CFG-02 | 11-02/06 | Dirs separation (D-14) | ✓ SATISFIED | compose_argv REPO_ROOT threading verified; WR-01 registry-key basis logged as gap (argv side correct) |
+| CFG-03 | 11-02/06 | Same-source preview | ✓ SATISFIED | D-05 wiring + purity test at HEAD |
+| LNC-01 | 11-05/06 | Gate copy + presentation | ✓ SATISFIED | strings tripwire + gate Pilot lanes green |
+| LNC-02 | 11-01/03/06 | Subprocess discipline + exit triple | ✓ SATISFIED (WR-05 logged) | SC3 evidence incl. live smoke argv chain |
+| LNC-03 | 11-02/03/06/07 | E2' unbypassable | ✓ SATISFIED | SC2 evidence re-run green at HEAD |
+| MON-01 | 11-04/05/07 | Cell states, 2s/60s tolerant scans | ✓ SATISFIED | 34 Pilot + scanner suite green |
+| MON-02 | 11-04/05/07 | Stats + CLI-sweep attach | ✗ NOT SATISFIED (attach seam) | CR-01 — reproduced; gap #1 |
+| MON-03 | 11-04/05/07 | Live failures + confirm-gated re-run | ✓ SATISFIED (WR-02/WR-03 logged) | rerun lanes green; seed-fallback + confirm-count gaps recorded |
+| MON-04 | 11-04/05/07 | Log tail + tee persistence | ✓ SATISFIED (WR-04 logged) | tail/tee tests green; collision gap recorded |
+| MON-05 | 11-04/05/07 | ⊘ resume recognition | ✓ SATISFIED | tests + live UAT round trip |
 
-REQUIREMENTS.md: all 11 phase requirements marked [x]. No orphaned requirements (grep Phase 11 → CFG/LNC/MON set exactly).
-
-### Decision Coverage
-
-`check.decision-coverage-verify`: 20/20 honored, 0 not honored — all trackable CONTEXT.md decisions (D-01..D-19 incl. D-18 errata) appear in shipped artifacts.
+REQUIREMENTS.md: all 11 phase requirements marked [x]; no orphaned requirements (Phase 11 grep → the CFG/LNC/MON set exactly).
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| tui/screens/monitor.py, run_config.py | 77/1531; 150/926 | `*_PLACEHOLDER` identifiers | ℹ️ Info | UI Input placeholder text constants from strings.py (wired copy, not stubs) — verified rendered and consumed |
+| tui/screens/monitor.py | 1131, 1519-1527 | Raw-path attach (validated-but-unmonitored root) | 🛑 Blocker | CR-01 — gap #1 |
+| tui/services/sweep_launcher.py | 448, 556-558 | CWD-basis registry key vs argv | ⚠️ Warning | WR-01 — gap #2 |
+| tui/screens/monitor.py | 1226-1228, 574-580 | Silent seed default; understated confirm | ⚠️ Warning | WR-02/03 — gaps #3-4 |
+| tui/services/sweep_launcher.py | 102-103, 465-474 | Non-unique tee filename | ⚠️ Warning | WR-04 — gap #5 |
+| tui/app.py | 843-849, 217-218 | Single-root exit modal | ⚠️ Warning | WR-05 — gap #6 |
+| tui/strings.py | 901, 578-579 | Hardcoded E2' counts; stale comment | ℹ️ Info | IN-01/02 — advisory |
+| tui/services/sweep_monitor.py | 739-747 | Dead expected_seeds param | ℹ️ Info | IN-03 — advisory |
+| tui/screens/monitor.py | 429-435, 1071 | Curve records unread; `__` join key | ℹ️ Info | IN-04/05 — advisory |
 
-Zero `TBD`/`FIXME`/`XXX` markers across all 8 phase code files. Zero `NotImplementedError`. Working tree clean (only pre-existing `.planning/.gsd-allow-shrink` untracked).
-
-### Constraint Checklist (binding milestone constraints)
-
-| Constraint | Evidence | Status |
-|-----------|----------|--------|
-| Pipeline surface: only run_sweep.py + tests/test_sweep.py | `git diff 986c2a8..HEAD --stat -- pipeline/` → 1 file (run_sweep.py, +181/−34); full diff tree = 37 files, pipeline-side exactly those two | ✓ |
-| Official registries untouched | `git diff 986c2a8..HEAD --stat -- pipeline/{models,datasets}_info.json` = empty | ✓ |
-| Frozen phase-8 face consumed zero-edit (D-08) | `git diff 986c2a8..HEAD --stat -- tui/services/env_gate.py tui/services/quick_check.py` = empty | ✓ |
-| Services zero-textual | `tests/tui/test_import_lock.py` green (glob auto-extends); services import only stdlib + seams | ✓ |
-| Strings single-home, tripwire over CFG_/LNC_/MON_ | `tests/tui/test_strings_phase11.py` 5 tests green (bidirectional inventory) | ✓ |
-| Import purity — no torch/dnallm/transformers in the TUI service chain | purity test green + live `python -I` probe (absent after import) | ✓ |
-| CI GPU/network-free, zero new jobs | `git diff 986c2a8..HEAD --stat -- .github/` = empty | ✓ |
-| TUI orchestrates, never computes (D-05) | preview/argv/E2' verdict all through imported run_sweep functions or file reads; zero re-implemented enumeration | ✓ |
-| E2' maintainer dual-gate (D-07/D-15) | SC2 evidence; the smoke itself deferred to the maintainer per design | ✓ |
-| 1501-test baseline + lint/typecheck | 11-REVIEW-FIX.md final gates at 40cb0bd (= HEAD code state); 67 fresh green re-runs this pass | ✓ |
+Zero TBD/FIXME/XXX markers across all phase code files. Zero NotImplementedError.
 
 ### Human Verification Required
 
-1. **Run the GB10 bounded smoke (SC5 execution half).** Procedure: `.planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-07-SUMMARY.md` → "The GB10 Bounded Smoke Procedure" (9 steps; plant-dnabert-6mer × iDNA_ABF_datasets__5mC × seed 42 × 1 epoch, output root `./finetuned-smoke`). Expected: launch → auto-nav → monitor → detach/reattach with ⊘ resume → optional failure-re-run leg. Tracked as `.planning/WINDOWS.md` entry #20. Why human: GPU + dnallm runtime under maintainer authorization (D-15).
-2. **E2'-blocks live confirmation (procedure step 8).** Compose 62×50×3 on slot 4, press [enter], confirm the typed-phrase modal appears and a wrong dirname leaves 确认 dead; do NOT type the matching phrase. Why human: live-console confirmation at full-selection scale (the blocking behavior is already CI-fake-proven — three named tests above).
+None — the prior pass's single human item (GB10 smoke execution) was closed by the live 2026-10-13 UAT; tonight's running 2×2 smoke provides additional live grounding (read-only). No new behavior-unverified truths.
 
 ### Gaps Summary
 
-No failed truths, no missing/stub artifacts, no unwired links, no debt markers. The single open item is the GB10 smoke's execution half — by design a maintainer-authorization boundary (D-15), not an implementation gap; it is documented (9-step procedure), tracked (WINDOWS.md #20), and routed to human verification above.
-
-### Risks (known-accepted, from the phase review record)
-
-- **IN-02** (kept open, policy): custom registry keys shaped `+lora/+ia3/+head/+probe/+curve` can collide with derived alias dirs — requires a hand-named custom entry (no official key contains `+`); routed to Phase 12 hardening / maintainer ruling.
-- **IN-03** (kept open, watch-at-smoke): the 2s stats leg re-reads all records per tick — correctness unaffected; watch at the GB10 smoke, fix shape pre-named.
-- **IN-04** (kept open, polish): `sweep_scale` inline on the event loop — bounded (one manifest read per finished root per 60s).
-- **IN-06** (introduced, cosmetic): diff-preserving tables append new rows at the bottom — display order drifts from sorted contract over a session; row keys/data/cursor pin all correct.
-- **WR-02 residuals** (documented by the fixer): mid-run `resume_count` reads the prior manifest's skip count at a populated root; the pre-clear re-run toast may quote the prior sweep's cell count. Fresh-root launches (the common path) unaffected.
-
-**VERDICT: PHASE_GOAL_ACHIEVED** — contingent on the recorded human items: every code-level, test-level, and live-console check passes at HEAD; the sole outstanding obligation is the maintainer-run GB10 smoke that the phase's own authorization boundary (D-15) reserves for the human, with its fake-provable halves (launch→monitor chain, E2'-blocks) already CI-proven.
+The phase's compose→preview→gate→launch chain is intact and re-proven at HEAD, including on a live GPU sweep running through this exact chain right now. What the stale-refresh surfaced — via tonight's incremental review, adjudicated and reproduced here — is concentrated in the monitor/attach/exit seam the phase's own goal names: **one blocker** (CR-01: the `[a]` attach stores the raw operator path, so a `~`-spelled CLI sweep root validates, toasts success, and then monitors nothing — reproduced over the real services; untested because every Pilot attach test uses an absolute path) and **five warnings** (WR-01 CWD-basis registry key reproduced; WR-02 silent `[42]` re-run default; WR-03 confirm understating GPU spend ~3x; WR-04 same-second tee truncation; WR-05 multi-sweep exit modal). None is delta-introduced (all sites date to 2026-10-13, present-but-unflagged at the prior pass) — but every flagged file was git-modified since that pass and CR-01/WR-01 carry deterministic reproductions, so they are blocking/warning-class under #3304, not advisory. IN-01's copy-drift mechanism was realized in this very delta (the counts were hand-edited 62→59 for the confidential-model removal) — recorded as advisory since the gate predicate computes fresh. Structured in frontmatter `gaps` for `/gsd-plan-phase --gaps`; the fix surface is small (a one-line resolve in `attach()` + the WR hardening set + pinning Pilot cases).
 
 ---
 
-_Verified: 2026-10-13T16:20:00Z_
+_Verified: 2026-10-14T16:21:56Z_
 _Verifier: Claude (gsd-verifier)_
