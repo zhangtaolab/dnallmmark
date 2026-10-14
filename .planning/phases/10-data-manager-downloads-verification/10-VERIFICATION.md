@@ -1,8 +1,8 @@
 ---
 phase: 10-data-manager-downloads-verification
-verified: 2026-10-13T09:33:12Z
-status: passed
-score: 5/5 must-haves verified
+verified: 2026-10-14T15:28:17Z
+status: gaps_found
+score: 4/5 must-haves verified
 covered_files:
   - .planning/phases/10-data-manager-downloads-verification/10-01-PLAN.md
   - .planning/phases/10-data-manager-downloads-verification/10-01-SUMMARY.md
@@ -16,6 +16,7 @@ covered_files:
   - .planning/phases/10-data-manager-downloads-verification/10-05-SUMMARY.md
   - .planning/phases/10-data-manager-downloads-verification/10-06-PLAN.md
   - .planning/phases/10-data-manager-downloads-verification/10-06-SUMMARY.md
+  - pipeline/directories_config.py
   - tests/tui/fixtures/modelscope_stderr_interrupted.txt
   - tests/tui/fixtures/modelscope_stderr_success.txt
   - tests/tui/test_pilot_data_manager.py
@@ -31,237 +32,164 @@ covered_files:
   - tui/screens/nav.py
   - tui/screens/selection.py
   - tui/services/download_queue.py
+  - tui/services/env_check.py
   - tui/services/gauntlet.py
+  - tui/services/registries.py
+  - tui/services/run_config.py
+  - tui/services/selection.py
   - tui/services/zenodo_bundle.py
   - tui/strings.py
   - tui/styles.tcss
-covered_digest: "v3:sha256:bd4a02436437fbaf7d3c6552c9a1b8958182c1f7bed03a5bd2156cc64a4407a5"
+covered_digest: "v3:sha256:5aa541baedc0197b9768524ff745787b5cfe0282988515f704bd8d9874d37fcb"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
   previous_status: passed
   previous_score: 5/5
   gaps_closed: []
-  gaps_remaining: []
-  regressions: []
+  gaps_remaining:
+    - "SC1 env-check conjunct: presence flips to present in the environment check — broken under a configured dataset root (CR-01, delta-introduced by quick-261014-l6h after the 2026-10-13 pass)"
+  regressions:
+    - "SC1: the queue's dataset landing base (_datasets_base, download_queue.py:1207-1213) resolves through directories.json CWD-anchored and ignores the run-config spec, while every consumption side (env kernel env_check.py:182/212, sweep launcher compose_argv --dataset_root) resolves REPO_ROOT-anchored through run_config.load_state() — deterministically reproduced, both divergence modes"
+gaps:
+  - truth: "SC1 — on landing, presence flips to present in the selection table AND the environment check (the env-check conjunct fails under a configured dataset root)"
+    status: failed
+    reason: "The l6h delta gave the queue's dataset landing base a chain (constructor param > directories.json dataset_root CWD-resolved > repo pipeline/) that diverges from the chain every consumption side uses (run_config.resolve_dirs(load_state()).dataset_root_abs, REPO_ROOT-anchored — the env-check dataset_dirs kernel and compose_argv's --dataset_root). With a slot-4 dataset root configured but directories.json absent (the primary UI flow: set 数据集根, never press [s] 保存默认), downloads land under repo pipeline/datasets while the env kernel and the launched sweep read <configured-root>/datasets. The queue's reconcile reads its own landing base, so the TUI flips presence to present for data the configured run cannot read — the env fail → [3] download → env recheck loop never closes, breaching the phase goal's core promise (an env-check presence FAIL always fixable from the console). A relative directories.json dataset_root diverges the same way whenever TUI CWD != repo root (Path(v).resolve() vs _abs_against_repo_root). The same delta routed the model lane correctly (_models_base walks the run-config chain 'so download landing and presence checking can never disagree about the root'); the dataset lane did not get the twin treatment."
+    artifacts:
+      - path: "tui/services/download_queue.py"
+        issue: "_datasets_base (:1207-1213) file tier reads directories.json via Path(file_root).resolve() (CWD-anchored) and never consults run_config.load_state(); production constructs DownloadQueueService() bare (tui/app.py:388) so the param tier is never threaded"
+      - path: "tui/services/env_check.py"
+        issue: "consumption side (:182, :212) — check_dataset_dirs(root=resolve_dirs(load_state()).dataset_root_abs), REPO_ROOT-anchored"
+    missing:
+      - "Route the _datasets_base file tier through run_config.resolve_dirs(run_config.load_state()).dataset_root_abs exactly as _models_base (:1237-1242) already does for model_root_abs — load_state() already seeds the spec from directories.json (seed_directory_defaults fills UNSET fields only), so the file-tier redirect, param-beats-file, corrupt-file degrade, and byte-identity-when-absent semantics survive; only the CWD anchoring and the spec-blindness disappear"
+      - "A regression test pinning landing-base/consumption-base agreement across the three configurations (spec set + no file; relative file value + CWD != repo; default)"
+advisory:
+  - finding: "WR-01 — a failed KIND_MODEL download flips the selection 下载 column to 已下载: model_presence gates on is_dir only (tui/services/selection.py:543-546) while the model-lane done gate requires config.json (MODEL_DONE_MARKER, download_queue.py:217/:1999); every exit-0 failure path (nonzero exit, model_nesting_ambiguous, model_hoist_error, landing_incomplete) leaves the landing dir the -I child created early"
+    category: other
+    reason: "Real operator-facing correctness defect in the model presence column, deterministically reproduced (dir without config.json -> 'present'); NOT a phase-10 SC breach — the model lane and its presence column are dcl/mlc scope layered after phase 10, and phase-10 SCs are dataset-scoped except SC5 (discipline/credentials, which hold). Flagged for the mlc-surface follow-up; open in 10-REVIEW-DISPOSITION.md"
+    evidence_status: "reproduced: python -I over tui.services.selection.model_presence with a dir-but-no-config.json landing -> PRESENT"
+  - finding: "WR-02 — the slot-3 drill-down renders channel: unknown (unknown_key) for healthy KIND_MODEL queue rows: DataManagerBackend.channel_detail (tui/screens/data_manager.py:465-485) consults only the DATASET registry (resolve_channel), so model keys fall to the unknown branch despite a healthy dnallm -I channel"
+    category: other
+    reason: "Degrades the phase-10 D-03 verbatim drill-down surface, but only for KIND_MODEL rows that did not exist at phase 10; no phase-10 SC covers model-row drill-down content. Open in 10-REVIEW-DISPOSITION.md"
+    evidence_status: "code-traced: channel_detail has no model-registry fallback"
+  - finding: "IN-01 — z pressed during the mount probe-in-flight window fires DL_ZENODO_DISABLED_TOAST ('尚未公开') as fact while _zenodo_state is still None (tui/screens/data_manager.py:1279)"
+    category: other
+    reason: "Transient copy issue only; the entry stays reachable (SC4 unaffected — the run-time leg re-probes regardless); the press is never silent. Open in 10-REVIEW-DISPOSITION.md"
+    evidence_status: "code-read"
+  - finding: "IN-02 — ABOUT_MILESTONE_STAGE stale ('本相位: 9 自定义接入', tui/strings.py:605) while the shell records slots 4/5 real since phases 11-06/11-07"
+    category: other
+    reason: "Cosmetic milestone metadata, documented 'updated per milestone'; no SC relevance. Open in 10-REVIEW-DISPOSITION.md"
+    evidence_status: "code-read"
 human_verification:
-  - test: "GB10 live smoke (10-06-SUMMARY procedure steps 1-7): on the GB10 host, `make tui` -> 3 -> cursor GUE__emp_H3 -> d; observe the queue row run, land, reconcile; press 2 and confirm the selection presence cell flips to present; rerun env check (r) and confirm the dataset-dir item flips"
-    expected: "Enqueued toast -> pending -> downloading with live percents -> done + QUEUE_FLIP_TOAST; the key leaves the data-manager missing list (在场 44/50); selection cell flips in-place; env dataset_dirs check no longer lists the key"
-    result: "pass (2026-10-13 live, orchestrator per maintainer delegation; key GUE__virus_species_40 — emp_H3 already present on disk; evidence 10-UAT.md item 1: toast/pending/downloading-percents/done + 在场 43→44, selection cell ✓ 4,000/500/500, env re-run green)"
-    why_human: "Requires the real modelscope CLI + SDK token + a real multi-GB network download on the GB10 host — CI is network-free by binding constraint; every seam below the CLI is machine-proven (fake spawner lanes, real audit subprocess, real landing checks, Pilot e2e through the real app forward) and the CLI's own behavior (progress format, .msc skip, SIGTERM/143, Range resume) was live-probed at research time against modelscope 1.34.0"
-  - test: "The `g` re-audit four-artifact live check (10-06 procedure step 5): press g on a mismatch row (or run `python script/audit_n_frequencies.py` from repo root), then `git status`"
-    expected: "EXACTLY four modified artifacts: dnallm-mark/data/n_audit.json, dnallm-mark/data/n_audit.csv, pipeline/eval_subsets.json, DATA.md — nothing else; maintainer reviews the diff and commits it as the new baseline (R-03)"
-    result: "pass (2026-10-13 live, service-tier real run — same argv the g binding drives, 23.9s; git status EXACTLY the four artifacts; maintainer committed the refresh as the new baseline 2f7211d per R-03 ruling; evidence 10-UAT.md item 2)"
-    why_human: "No CI test may execute a default-outputs audit (it would rewrite the four committed artifacts by design); the argv/no-flags/env contract is machine-pinned (test_reaudit_argv_exactly_interpreter_and_script_no_flags), the real invocation is deliberately maintainer-only"
+  - test: "GB10 live smoke (10-06-SUMMARY procedure): enqueue a missing dataset via d on slot 3; observe download → landing → reconcile → the presence flip + env-check flip"
+    expected: "Toast chain → done; the key leaves the missing list; env recheck flips"
+    result: "discharged 2026-10-13 (10-UAT.md item 1, live pass recorded at the prior verification); NOTE the env-check flip half of this live check is only meaningful in the DEFAULT (unconfigured-root) configuration until the SC1 gap is closed — under a configured dataset root the live smoke would now exhibit the divergence"
+    why_human: "Requires the real modelscope CLI + token + a multi-GB download on the GB10 host"
+  - test: "The g re-audit four-artifact live check"
+    expected: "git status shows exactly the four committed artifacts"
+    result: "discharged 2026-10-13 (10-UAT.md item 2; baseline committed as 2f7211d)"
+    why_human: "No CI test may execute a default-outputs audit by design"
 ---
 
-# Phase 10: Data Manager (Downloads & Verification) Verification Report
+# Phase 10: Data Manager (Downloads & Verification) Verification Report — Stale-Refresh Re-Verification
 
 **Phase Goal:** Dataset gaps are closable in-session before launch — one-click ModelScope download driven by the registry's authoritative `download_url`, a persistent resumable queue, and row-count reconciliation against n_audit — so an env-check presence FAIL is always diagnosable and fixable from the console
-**Verified:** 2026-10-13T05:20:00Z at HEAD bfe65e1 (code identical to review HEAD ed34b87; the diff is this .planning doc only — `git diff ed34b87..HEAD --name-only` → `10-REVIEW.md`)
-**Status:** human_needed — all 5 SCs VERIFIED in the codebase; the GB10 live smoke (the phase's own documented maintainer confirmation, never CI by design) is the outstanding human step
-**Re-verification:** No — initial verification (no prior VERIFICATION.md)
+**Verified:** 2026-10-14T15:28:17Z at HEAD 92166f2 (branch autorun)
+**Status:** gaps_found — 4/5 SCs hold; SC1's env-check conjunct is broken under a configured dataset root (CR-01, delta-introduced, deterministically reproduced)
+**Re-verification:** Yes — stale refresh. Prior PASS at HEAD 8b92766 (2026-10-13T09:33:12Z, digest `v3:sha256:bd4a0243…`); 117 commits since, including quick tasks 261014-c2l/dcl/f4w/l6h/mlc and phases 07-09 verification docs. Covered files heavily modified: download_queue.py (+614), screens/selection.py (+639), screens/data_manager.py (+298), run_config.py (+360), plus services/env_check.py, services/selection.py, registries.py, strings.py, app.py.
 
-**Method:** goal-backward. Every SC traced through the real code (service → app driver → screens → registry/audit kernels), 21 named SC-evidence tests confirmed to exist with bodies read and asserting what 10-06's checklist claims, full tui lane re-run, live TUI boot in tmux, and all review-fix regression lanes (CR-01/CR-02/WR-01..06) re-confirmed against the fix commits.
-
-**Gate evidence:** `uv run --group dev --group tui pytest tests/tui -q` → **627 passed in 167.26s** (run by this verifier at HEAD; matches review iteration-3's 627 at ed34b87). The orchestrator's full `make test` gate runs in parallel.
+**Method:** goal-backward against the CURRENT code. Every SC chain re-traced through the live source (not the prior report's line numbers), the CR-01 divergence modes executed as an isolated reproduction (`.venv/bin/python -I`, injected XDG state/config roots, production-style bare construction), and 16 named SC-evidence tests + 3 slot-3 Pilot tests run green individually. The five 10-REVIEW.md findings (1 Critical / 2 Warning / 2 Info, all delta-introduced, all disposition `open` in 10-REVIEW-DISPOSITION.md) adjudicated under #3304 and the phase's own SCs.
 
 ---
 
-## Goal Achievement — Per-Success-Criterion Verdicts
+## Goal Achievement
 
-### SC1 — One-click download via the registry `download_url`; presence flips on landing (selection + env check): **VERIFIED**
+### Observable Truths
 
-The real chain, traced end-to-end in code:
+| # | Truth (ROADMAP SC) | Status | Evidence |
+|---|--------------------|--------|----------|
+| 1 | SC1 one-click download via registry `download_url`; on landing presence flips in the selection table AND the environment check | ✗ FAILED | The positive chain holds and is test-pinned (registry-only authority `resolve_channel` :2872; slot-3 `d` enqueue_cursor → service.enqueue → kick, Pilot-pinned `test_d_enqueues_missing_cursor_with_all_outcome_toasts`; landing gate `_landing_details` :2108-2139; reconcile gate; overlay flip `test_overlay_flips_missing_presence_to_present_and_back`, `test_missing_datasets_flips_over_done_reconciled_entries_cr01`, `test_backend_missing_snapshot_flips_over_real_seeded_state_cr01`, `test_mismatch_and_failed_entries_never_flip_presence` — all green). But the ENV-CHECK conjunct fails under a configured dataset root: `_datasets_base()` (download_queue.py:1207-1213) resolves directories.json CWD-anchored and ignores the run-config spec, while the env kernel (env_check.py:182/212) and the sweep launcher (`compose_argv` --dataset_root) resolve REPO_ROOT-anchored through `run_config.load_state()` — downloads land where the configured run cannot read while the queue's own reconcile flips TUI presence present. Deterministic repro below. This is CR-01 from 10-REVIEW.md, confirmed as a truth-level breach, not merely a review opinion. |
+| 2 | SC2 queue persists across exit/crash and resumes | ✓ VERIFIED | Persist/downgrade machinery intact: `_persist_locked` exact `_ENTRY_FIELDS` set (now 12 fields incl. the mlc `kind` — still credential-free, `test_persisted_entries_carry_no_credential_fields` green); `_load_locked` downgrade is state-based and kind-agnostic (covers KIND_MODEL), active-key guard and IN-11 ordering preserved; boot kick only via `tui/__main__.py`. Named tests green: `test_restart_resume_end_to_end_service_tier`, `test_boot_resume_rehydrates_and_kicks_once`, `test_state_machine_transition_table_exhaustive`. |
+| 3 | SC3 every landed download reconciles rows vs n_audit; mismatches prominent, never silently accepted | ✓ VERIFIED | `reconcile_dataset` (:2449-2519 read at HEAD): candidate-only temp registry, `Dataset_path` ABSOLUTIZED against the queue's base, all four output flags at temp paths, env = os.environ + one CUSTOM_DIR_ENV override, verdict from the parsed temp n_audit. Reworked slot-3 keeps prominence: `_sorted_entries` mismatch/failed first (:530-536), `queue-banner-mismatch` (:997). Named tests green: real-subprocess pass pair + mismatch-no-deletion, `test_mismatch_banner_block_and_sort_to_top`, `test_reconcile_cells_four_vocabularies`, `test_reaudit_argv_exactly_interpreter_and_script_no_flags`, `test_committed_artifacts_byte_unchanged_across_real_reconcile_run`. |
+| 4 | SC4 Zenodo 19135551 alternate whole-package entry reachable | ✓ VERIFIED | mlc demoted the line to the queue title row (`备选`), still reachable: `z` binding (:600), `action_zenodo_bundle` (:1276) enqueues only on PROBE_PUBLIC, never-silent otherwise; four-state line (:1004-1016: probing/public/not_public/failed); `probe_zenodo` delegates through the queue's seam (:455-463). `test_run_task_zenodo_bundle_offline_end_to_end_done` and `test_z_enqueues_only_when_public_never_silent_otherwise` green. |
+| 5 | SC5 subprocess/thread-worker discipline; console never freezes; zero credentials | ✓ VERIFIED | Both lanes: LIST argv, `start_new_session=True`, PIPEs, env exactly `dict(os.environ)`; dataset lane `compose_download_argv`, model lane `[sys.executable, "-I", "-c", MODEL_DOWNLOAD_PROGRAM, landing, repo_id]` (:1944-1945, fixed program — no operator code); driver `@work(exclusive=True, thread=True)`; zero modelscope imports in `tui/` (re-grepped at HEAD); persisted set pinned credential-free. Note: under the SC1 divergence the model lane's `_models_base` (:1237-1242) is the CORRECT pattern — it walks the run-config chain so landing and presence agree. |
 
-1. **Registry URL is the only authority.** `resolve_channel`/`_spec_from_entry` (`tui/services/download_queue.py:2359-2412`): `download_url` first, modelscope mirror from `download_url_alternates` only when the primary host is not modelscope.cn (R-01); repo id validated against `^[\w.-]+/[\w.-]+$` before anything reaches argv; the R-02 46/4 shape table is code-owned at module top (`SHAPE_A_REPOS` etc., :181+). Pinned computed over the committed registry by `test_r02_census_46_downloadable_4_disabled_over_committed_registry` (verified present, asserts the census).
-2. **The operator action.** Selection `d` binding at `tui/screens/selection.py:1203` (`Binding("d", "enqueue_dataset", SEL_ENQUEUE_LABEL)`), `action_enqueue_dataset` (:1675) → present-row toast gate (:1698) → shared-queue enqueue → `app.kick_download_queue()` (:1703), never navigates; the data-manager `d` at `tui/screens/data_manager.py:529/1001`. Both screens use the SAME service instance (`app.build_selection_screen` passes `SelectionQueueBackend(self._download_queue)` — selection.py:1260).
-3. **The driver.** `kick_download_queue` (`tui/app.py:394`, busy check-and-set under `_queue_busy_lock`) → `run_download_queue` worker (:417, `@work(exclusive=True, thread=True)`) → `claim_next` → claim tick → `run_task` → `QueueEventMessage` post (:502).
-4. **The engine.** `run_task` (`tui/services/download_queue.py:1470-1606`): CLI re-probe → channel resolve → `compose_download_argv` (LIST argv, absolute `--local_dir`) → spawn via the injectable seam with `start_new_session=True`, PIPEs, `env=dict(os.environ)` (:1522-1524) → daemon stderr pump with integer-percent progress (:1538-1559) → cancel-aware reap (:1608-1626) → **landing gate** (shape-C rename with never-overwrite, then all three split CSVs under `pipeline/datasets/<Group>/<task>`, :1628-1659) → **reconcile gate** (:1589: done = landed AND reconcile pass; mismatch → mismatch state with declared/measured; nothing deleted).
-5. **The flip — both surfaces, REAL path (CR-01 fixed and regression-pinned).**
-   - Data-manager missing pane: `missing_datasets()` (:2288-2335) computes over `merge_presence(registries.load_n_audit(), reconciled_rows(self._state_path))` — the merged view on the REAL service; `merged_audit_tasks()` (:2337) serves the same view; `DataManagerBackend.missing_snapshot` computes present/total over it. Regression `test_missing_datasets_flips_over_done_reconciled_entries_cr01` (tests/tui/test_services_download_queue.py:618, body read: seeded REAL service + tmp committed n_audit — done+reconciled key leaves the list, mismatched sibling stays) + `test_backend_missing_snapshot_flips_over_real_seeded_state_cr01` (REAL Backend over REAL service).
-   - Selection table: `SelectionBackend.load_selection_data` (selection.py:413-433) builds presence over `merge_presence(load_n_audit(), reconciled_rows())`; the live flip via `apply_queue_event` (:1345) re-running the snapshot worker through the WR-03-fixed app forward (`app.py:548` iterates `screen_stack` — reaches the screen under open modals). Pinned: `test_overlay_flips_missing_presence_to_present_and_back`, `test_mismatch_and_failed_entries_never_flip_presence`, `test_live_flip_through_the_app_event_forward` (all present; the live-flip test drives a done `QueueEvent` through the real `app.on_queue_event_message`).
-   - Env check: the `dataset_dirs` kernel is a real disk scan (`pipeline/env_smoke.py:390-420`, `expected.is_dir()` over every registry `Dataset_path`) — a landed download physically creates those dirs, so the env check flips on the next recheck (`r`); the FAIL route line carries the `[3] 前往数据管理` keycap (`tui/strings.py:103-106`) and digit 3 mounts the screen (Pilot-proven: `test_env_route_hint_renders_and_digit3_is_the_one_path`).
-6. **Live confirmation (this verifier, tmux):** `make tui` booted; slot 3 mounts the data-manager screen rendering the 7 real missing GUE keys with baseline row counts, `在场 43/50 · 缺失 7`, and the empty-queue state — matching the committed n_audit truth.
+**Score:** 4/5 truths verified (0 present-but-behavior-unverified).
 
-### SC2 — Persistent resumable queue across TUI exit/crash: **VERIFIED**
+### The SC1 failure — CR-01 traced and reproduced (deterministic evidence)
 
-- **Persistence:** `download_queue.json` under the XDG state root through `settings.atomic_write` (`_persist_locked`, :1174); the exact 12-field entry set (`_ENTRY_FIELDS`, :162-166); every transition persists.
-- **Restart downgrade:** `_load_locked` (:1056-1117) — every persisted `downloading` entry → `pending` + `interrupted=True`, the downgrade itself persisted; the active-key guard (:1091-1097) prevents a mid-flight reload from re-queueing the live entry; IN-11 fixed — the downgrade runs BEFORE the dropped-rows early return (:1083-1100, regression RED-verified on 4079860 per review iteration 3). Corrupt file → quarantined `.corrupt` sidecar + diagnostic, remembered via `last_load_diagnostic` (:1132).
-- **Boot:** `boot_resume_queue` scheduled ONLY by `tui/__main__.py` `main()` via `call_later` (file read — the only auto-start path; `App.on_mount` never kicks). Pinned: `test_boot_is_inert_driver_never_autostarts_never_hangs`, `test_boot_resume_rehydrates_and_kicks_once`, `test_boot_resume_without_pending_never_kicks`, `test_second_boot_resume_while_busy_starts_no_second_worker`.
-- **The full chain:** `test_restart_resume_end_to_end_service_tier` (tests/tui/test_services_download_queue.py:3714, body read: persist mid-download → `load()` downgrade (pending + interrupted, asserted) → `claim_next` → re-invoke (exit 0 + success marker over the already-complete tree — the `.msc` skip) → landing check on the existing tree → reconcile pass → done). The channel's own resume (.msc skip + Range partials + SIGTERM/143 behavior) was live-probed against modelscope 1.34.0 at research time (10-RESEARCH §live-probe, verbatim captures).
-- **No illegal transition silently coerces:** `test_state_machine_transition_table_exhaustive` (20 parametrized rows, 5 states × 4 mutators) + `test_run_task_terminal_transitions_from_downloading`.
+Reproduction (this verifier, `.venv/bin/python -I /tmp/cr01-repro/repro.py`, injected `DNALLMMARK_TUI_STATE_DIR`/`DNALLMMARK_TUI_CONFIG_DIR`, `DownloadQueueService` constructed exactly as production app.py:388 does):
 
-### SC3 — Row-count reconciliation against n_audit; mismatches prominent, never silently accepted: **VERIFIED**
+```text
+[mode1: run_config.json carries dataset_root=/tmp/cr01-repro/sweep-data, directories.json absent]
+landing(_datasets_base)   = /home/forrest/Github/dnallmmark/pipeline
+consumption(load_state)   = /tmp/cr01-repro/sweep-data      AGREE=False
+[mode2: directories.json carries relative "rel-ds", CWD=/tmp/cr01-repro, no state file]
+landing(_datasets_base)   = /tmp/cr01-repro/rel-ds
+consumption(load_state)   = /home/forrest/Github/dnallmmark/rel-ds   AGREE=False
+[aligned control: nothing set]                              AGREE=True (both repo pipeline/)
+```
 
-- **The kernel is the real audit subprocess.** `reconcile_dataset` (:1939-2040): candidate-only temp registry (exactly `{key: entry}`), `Dataset_path` ABSOLUTIZED so the inert temp datasets-root can never redirect, **all four output flags at temp paths** (the committed artifacts unreachable), env = `os.environ` + exactly one `CUSTOM_DIR_ENV`→empty-temp override; verdict from the PARSED temp `n_audit.json` record with the gauntlet `_audit_verdict` semantics (:2042-2102: missing false, rows>0 per split, unified_eval_n>0, every declared Train/Dev/Test == measured). Real-subprocess evidence: `test_reconcile_real_subprocess_pass_over_fixture_csvs` and `test_reconcile_real_subprocess_mismatch_names_numbers_no_deletion` (body read: declared 999 vs measured 4 → mismatch naming `Train_mismatch_declared=999_measured=4`, measured map complete, and **all three CSVs still on disk** — D-07 no-deletion asserted).
-- **done gated on pass; mismatch a first-class state.** `run_task` :1588-1606; `test_run_task_done_populates_entry_reconcile`, `test_run_task_reconcile_mismatch_lands_mismatch_state`.
-- **Committed baseline read-only to every automatic path.** `test_committed_artifacts_byte_unchanged_across_real_reconcile_run` (sha256 before/after a full run_task with the REAL reconcile) + `test_no_automatic_path_ever_constructs_a_no_flag_audit_argv`; independently confirmed by the byte-identical diff below (the four artifacts unchanged across the whole phase).
-- **`g` re-audit = R-03 default outputs.** `reaudit_baseline` (:2162-2207): argv EXACTLY `[sys.executable, <absolute script path>]`, NO output flags — the script's defaults write the four worktree artifacts for maintainer review/commit. Pinned by `test_reaudit_argv_exactly_interpreter_and_script_no_flags` (body read). The real invocation is the documented maintainer check (human-verification item below) — no CI test may run it.
-- **Prominence.** Mismatch banner under the queue title (`queue-banner-mismatch`, data_manager.py:850; copy `⚠ 对账不一致 — {key}: n_audit 基线 {n} 行, 实测 {m} 行（不自动删除）`, strings.py:594), mismatch+failed sort-to-top, the `⚠ {n}≠{m}` reconcile cell (strings.py:586): pinned by `test_mismatch_banner_block_and_sort_to_top`, `test_reconcile_cells_four_vocabularies`. Mismatch never flips presence (semantic 6): `test_mismatch_and_failed_entries_never_flip_presence`.
+Mode 1 is the primary UI flow: the operator sets 数据集根 on slot 4 (the spec persists/threads — `compose_argv` emits `--dataset_root`, the env kernel checks it) without pressing `[s]` 保存默认 (which is what writes directories.json). The download then lands under repo `pipeline/datasets`, the queue's reconcile passes over its own base, the TUI flips presence present — and the env recheck still FAILs. The `ENV_ROUTE_MISSING_DATASETS` loop (strings.py:118-119: "⚠ … [3] 前往数据管理") never closes, breaching the goal sentence "an env-check presence FAIL is always diagnosable and fixable from the console". Mode 2 breaks whenever the TUI runs from a CWD other than the repo root (`Path(v).resolve()` vs `_abs_against_repo_root`).
 
-### SC4 — Zenodo 19135551 alternate whole-package entry: **VERIFIED** (not-public is the live truth; activation = the probe answer flipping, zero code change)
+#3304 adjudication: this is a Step-3 TRUTH failure (SC1's env-check conjunct), not a Step-7 anti-pattern opinion — the evidence gate does not apply to truth failures. Even under the gate's own terms it is in-contract blocking: delta-introduced (l6h, `acb50a4`), on a file modified since the prior pass (download_queue.py, 3 commits since 2026-10-13T09:33:12Z), AND backed by deterministic evidence (the reproduction above). No override exists or is suggested — the fix is a real code change with a precedent twin in the same file.
 
-- **Four-state probe.** `probe_zenodo_public` (`tui/services/zenodo_bundle.py:74-104`): ONE stdlib GET against the frozen `ZENODO_API_URL` (:53), 200→public, 404→not_public, everything else→failed; HEAD never used (CDN hangs); no URL/shape parameter exists. Pinned: `test_probe_404_maps_not_public_the_live_today_state`, `test_probe_200_maps_public_and_passes_the_seam_kwargs`, `test_probe_accepts_no_url_or_shape_parameter`.
-- **Disabled + explanation while 404 — live-confirmed by this verifier:** the live tmux session rendered `[z] Zenodo 整包 · 未公开（探测于 04:28）` (the real frozen-URL GET answered 404→not_public from this machine), and pressing `z` fired the never-silent toast `Zenodo 记录 19135551 尚未公开 — 公开后此入口自动激活`. Screen states pinned: `test_zenodo_line_four_states`, `test_z_enqueues_only_when_public_never_silent_otherwise`.
-- **The offline bundle lane proven end-to-end.** `test_run_task_zenodo_bundle_offline_end_to_end_done` (body read: enqueue_zenodo → claim → run through the REAL zip extraction and the REAL reconcile subprocess over a tmp repo → done with `{"per_key": {"Demo__task": "pass"}}`, CSVs on disk, staging under the state root, `[reconcile]` in the log). Zip-slip, mismatch-no-deletion, not-public refusal, and empty-missing-set (nothing_to_do, IN-08 fix) all have dedicated lanes.
-- **Cancel honors the lane (WR-01 fixed):** stage-boundary polls + `should_cancel` seam in `download_bundle_files` + `_finish_cancelled`; regressions `test_run_task_zenodo_cancel_before_stages_fails_never_probes`, `test_run_task_zenodo_cancel_mid_download_fails_cancelled` (confirmed present, added in 1d87cc8).
+### Advisory (New Scope / Out-of-SC, per #3304 and the phase's own SCs)
 
-### SC5 — Subprocess/thread-worker discipline; zero credentials; console never freezes: **VERIFIED**
+All five 10-REVIEW.md findings remain `open` in 10-REVIEW-DISPOSITION.md. CR-01 is promoted to the gap above; the remaining four are advisories — none breaches a phase-10 SC (the model lane, the model presence column, and the model drill-down rows are dcl/mlc scope that did not exist at phase 10; SC5's discipline/credential claims hold for the model lane).
 
-- **Never in-process.** Zero modelscope imports anywhere in `tui/` (`grep -rn "import modelscope\|from modelscope" tui/` → no matches); the CLI is an external probed subprocess (D-01). Zenodo lane is stdlib urllib only.
-- **Subprocess discipline.** LIST argv everywhere, `start_new_session=True` + owned `Popen` + killpg SIGTERM→SIGKILL cancel: `test_spawn_pins_list_argv_env_passthrough_pipes_session`, `test_cancel_mid_run_terminates_process_group_real_subprocess` (real subprocess, group death proven). Env is exactly `dict(os.environ)` — the TUI never touches `~/.modelscope` (credentials remain the CLI's business).
-- **Zero credential surface.** `_ENTRY_FIELDS` (:162) is the exact persisted set — nothing else survives `_normalized_entry`; `test_persisted_entries_carry_no_credential_fields` asserts set-equality against the canonical fields AND a forbidden-token intersection.
-- **The console never freezes.** All I/O in workers: the driver (`@work(exclusive=True, thread=True)`), per-worker groups (`dl-snapshot`/`dl-probe`/`dl-reaudit`), the snapshot in an exclusive worker. Pinned: `test_blocked_task_never_freezes_the_console` (r-press toasts while a fake run_task blocks), `test_boot_is_inert_driver_never_autostarts_never_hangs`, `test_kick_on_empty_queue_exits_and_wait_for_complete_returns`, `test_worker_exits_on_drain_and_restarts_on_next_kick`.
-- **Degradation is honest.** CLI absent → `cli_unavailable` refused enqueue (no file rewrite), corrupt state → quarantined + status line, unknown registry keys tolerated end-to-end (10-06 lanes confirmed present).
+| # | Finding | Category | Why Advisory |
+|---|---------|----------|--------------|
+| 1 | WR-01 failed KIND_MODEL download → 下载 column 已下载 (is_dir presence vs config.json done gate) | other | Reproduced (`dir-exists-no-config.json -> 'present'`); model-presence column is dcl/mlc scope, no phase-10 SC covers it |
+| 2 | WR-02 channel_detail renders unknown (unknown_key) for healthy KIND_MODEL rows | other | Degrades the D-03 drill-down only for post-phase-10 row kinds; no SC covers model-row drill-down content |
+| 3 | IN-01 z probe-in-flight window asserts 未公开 as fact | other | Transient copy issue; SC4 reachability and never-silent behavior unaffected |
+| 4 | IN-02 ABOUT_MILESTONE_STAGE names phase 9 | other | Cosmetic milestone metadata; no SC relevance |
 
-**Score: 5/5 truths verified (0 present-but-behavior-unverified).**
+### Behavioral Spot-Checks
 
----
+| Behavior | Command | Result | Status |
+|----------|---------|--------|--------|
+| 13 SC-evidence tests (flip set, restart e2e, real-subprocess reconcile pair, reaudit argv, byte-unchanged, zenodo e2e, credential fields, transition table) | `.venv/bin/python -m pytest <13 named tests> -q` | 32 passed in 0.54s | ✓ PASS |
+| Slot-3 one-click enqueue + z never-silent + boot resume | `pytest test_d_enqueues_missing_cursor_with_all_outcome_toasts test_z_enqueues_only_when_public_never_silent_otherwise test_boot_resume_rehydrates_and_kicks_once -q` | 3 passed in 1.97s | ✓ PASS |
+| CR-01 divergence modes 1+2 (+ aligned control) | `.venv/bin/python -I /tmp/cr01-repro/repro.py` | AGREE=False / AGREE=False / control AGREE=True, exit 1 | ✗ FAIL (the gap) |
+| WR-01 presence gate | `.venv/bin/python -I` over `selection.model_presence`, dir without config.json | `{'fake': 'present'}` | ✗ FAIL (advisory) |
 
-## Review-Fix Verification (10-REVIEW.md iterations 1-3, final verdict CLEAN)
+Full-suite note (caller-provided baseline, not re-run here): 7 failed / 1731 passed / 9 xfailed on this box, with a 2×2 GPU smoke writing only under `pipeline/finetuned/smoke-2x2-261014` + `pipeline/logs` — treated as background noise; no phase-10 named test is among the failures run here.
 
-Spot-verified at HEAD, not taken from the docs:
+### Requirements Coverage
 
-| Finding | Evidence verified |
-|---|---|
-| CR-01 (missing-pane flip was fake drift) | Fix real at `download_queue.py:2288-2335` (merged view on the REAL service); regression lanes from commit 356b324 present and real-service (bodies read) |
-| CR-02 (driver livelock) | Fix real at `app.py:447-489` (refusal read via `last_claim_refusal` seam → bounded exit + `QueueStalledMessage`); `test_driver_exits_bounded_when_claim_cannot_persist_cr02` (pilot_data_manager.py:1593, REAL service + read-only root) |
-| WR-02/WR-03/WR-04/WR-05/WR-06 | Fix code read: busy lock + drain release-and-recheck (app.py:410-485), `screen_stack` forward (:548,559), `_persist_locked` returns diagnostic (:1174+) with `persist_error=` problem on `_finish` (:2249-2252), `errors="replace"` in `_invoke` (:2148-2150) + the gauntlet twin (`tui/services/gauntlet.py` — confirmed in phase manifest, commit 46ddd37), `ACTION_UNKNOWN` + `DL_UNKNOWN_TOAST` (strings.py:558, selection.py toast mapping) |
-| Kept open | IN-02 (dead pure function, maintainer choice), IN-03 progress half (indeterminate glyph renders regardless), IN-06 + IN-10 (**pre-activation gate** — see Risks) |
+| Requirement | Source Plan | Description | Status | Evidence |
+|-------------|------------|-------------|--------|----------|
+| DATA-01 | 10-01..10-06 | One-click ModelScope download, registry `download_url` sole authority | ✗ PARTIAL — BLOCKED by SC1 gap | Chain present and test-pinned in default config; env-check fix-from-console promise broken under configured roots (CR-01) |
+| DATA-02 | 10-01, 10-04, 10-06 | Persistent queue + resume across crash/restart | ✓ SATISFIED | SC2 evidence above |
+| DATA-03 | 10-02 | Row-count reconciliation vs n_audit, mismatches prominent | ✓ SATISFIED | SC3 evidence above |
+| DATA-04 | 10-03 | Zenodo whole-package alternate entry | ✓ SATISFIED | SC4 evidence above |
 
----
+No orphaned requirements (REQUIREMENTS.md maps exactly DATA-01..04 to Phase 10; all marked Complete — DATA-01's Complete status predates the l6h regression and should be revisited after gap closure).
 
-## UI-SPEC Contract Check (shipped screen vs binding items)
+### Decision Coverage
 
-Live tmux capture at 100×30 + code/constants, all matching the approved contract:
+`check.decision-coverage-verify` → 16/16 honored, none not honored (non-blocking gate).
 
-- **Glyph set/colors:** five states verbatim — `◌ 待下载` / `⠋ 下载中` / `✓ 完成` / `✗ 失败` / `⚠ 对账不一致` (strings.py:576-580); reconcile cells `✓ {n} 行一致` / `⠋ 对账中 …` / `⚠ {n}≠{m}` (:584-586); `█` filled progress cells in accent (data_manager.py:908, UI-SPEC item 11); glyph+color dual channel preserved.
-- **Bottom bar:** `[d]入队 [r]重试 [x]取消 [a]全部入队 [enter]详情 … [?]帮助 [q]退出` — live-rendered; `g`/`z` show=False (data_manager.py:534-535).
-- **Progress cells:** right-aligned percent + 10-cell bar; indeterminate `⠋ …` (Pilot: live 40% bar + `[None,10,25,40,100]` throttle stream).
-- **Banners:** mismatch banner under the queue title, per-mismatch rows, sort-to-top.
-- **Drill-down:** `enter` → QueueDetailModal RichLog — full key, registry download_url, LIST argv, reconcile numbers, verbatim log incl. `[reconcile]` section; esc returns.
-- **z/g:** z public-only enqueue / never-silent toast (live-confirmed); g mismatch-rows-only re-audit in a worker.
-- **Nav:** slot 3 `3数据管理` active vocabulary, slots 4/5 still 未开放 (live-confirmed); ENV_ROUTE `[3] 前往数据管理` amendment (strings.py:103-106).
-- **Documented deviations (both accepted in-plan):** progress column 17 cells vs spec's 14 (textual width-includes-padding, probe-pinned); bundle-row reconcile cell renders the dash with per_key in the drill-down (no number pair exists for the whole-package lane).
+### Anti-Patterns Found
 
----
+Debt markers: none in any covered file (`TBD|FIXME|XXX` and `TODO|HACK` greps clean over the delta surface). The five review findings are adjudicated above (1 gap, 4 advisories); no stubs, no placeholder surfaces.
 
-## Constraint Checklist (phase-level)
+### Constraint Checklist (delta spot re-check)
 
-| Constraint | Check | Result |
-|---|---|---|
-| `pipeline/`, `uv.lock`, `pyproject.toml` byte-identical vs 71b05c4 | `git diff 71b05c4..HEAD --name-only -- pipeline/ uv.lock pyproject.toml` | **EMPTY** |
-| Official registries untouched | `git diff 71b05c4..HEAD --name-only -- pipeline/models_info.json pipeline/datasets_info.json` | **EMPTY** |
-| Four committed audit artifacts untouched | `--name-only -- dnallm-mark/data/n_audit.json n_audit.csv pipeline/eval_subsets.json DATA.md` | **EMPTY** |
-| dnallm-mark/, script/, scripts/ untouched | `--name-only -- dnallm-mark/ script/ scripts/` | **EMPTY** |
-| Whole-phase manifest | only `tui/**` (9 files), `tests/tui/**` (8 incl. 2 fixtures), `.planning/**` — nothing else | **PASS** |
-| Services zero-textual (AST lock covers new services) | `tests/tui/test_import_lock.py` AST-walks every `tui/services/*.py` via glob — download_queue.py + zenodo_bundle.py auto-covered; 627 green | **PASS** |
-| Strings single-home | 48 `DL_`/`QUEUE_` constants in `tui/strings.py`; zero CJK literals in the new/edited tui modules (`grep -rn [一-鿿]` → none outside strings.py; per-module CJK lock tests present); bidirectional inventory tripwire (test at test_services_download_queue.py:3193) | **PASS** |
-| CI lanes network-free | All zenodo/modelscope touches in tests are injected openers/spawners or fixture strings; no test reaches zenodo.org or modelscope.cn (`tests/tui` 627 pass offline) | **PASS** |
-| Zero new dependencies | uv.lock/pyproject untouched (above); modelscope never imported (above) | **PASS** |
+- Official registries `pipeline/models_info.json` / `datasets_info.json`: `git diff 8b92766..HEAD --name-only` over them — unchanged by the covered delta except the ir9/l6h registry-maintenance commits outside phase-10 surfaces ( Chaoba removal, dnallm_compat.json addition) — registry authority for channel resolution intact (`SHAPE_A_REPOS` census still code-owned).
+- Zero modelscope imports in `tui/` — re-grepped at HEAD: no matches.
+- Strings single-home: new `DL_`/zenodo variants live in `tui/strings.py` (:637-646).
+
+### Gaps Summary
+
+One gap, truth-level, delta-introduced: SC1's environment-check conjunct. The dataset landing base must resolve through the same chain the env kernel and sweep launcher consume (`run_config.resolve_dirs(run_config.load_state()).dataset_root_abs`, REPO_ROOT-anchored) — the exact treatment the same delta already gave `_models_base()`. Until then, the phase's headline promise ("an env-check presence FAIL is always diagnosable and fixable from the console") is false for any operator who configures a dataset root on slot 4 without saving it as a default, and the console actively misleads (flips presence present for data the configured run cannot read). Four further review findings are advisories outside the phase-10 SCs, all recorded open in 10-REVIEW-DISPOSITION.md.
+
+### Fingerprint Refresh
+
+`covered_files`/`covered_digest` in the frontmatter are the verbatim `verification.fingerprint` output over HEAD 92166f2 (supersedes `v3:sha256:bd4a0243…` of 2026-10-13; the covered set now additionally names the delta surfaces this verification traced: `tui/services/run_config.py`, `tui/services/env_check.py`, `tui/services/selection.py`, `tui/services/registries.py`, `pipeline/directories_config.py`).
 
 ---
 
-## Anti-Patterns Found
-
-None. No TODO/FIXME/XXX/TBD markers in any phase file (the PLACEHOLDER grep hits are legitimate identifiers: `NAV_PLACEHOLDER_TOAST` for slots 4/5, `SEL_FILTER_PLACEHOLDER` input hint). No stubs: the not-public Zenodo state is the live external truth, not a placeholder; fakes exist only in test lanes.
-
----
-
-## Requirements Coverage
-
-| Requirement | Description | Status | Evidence |
-|---|---|---|---|
-| DATA-01 | One-click ModelScope download, registry `download_url` sole authority | ✓ SATISFIED | SC1 chain above; census/R-01/argv/landing lanes |
-| DATA-02 | Persistent queue + resume across crash/restart | ✓ SATISFIED | SC2 chain above; restart e2e + boot-resume trio |
-| DATA-03 | Post-landing row-count reconciliation vs n_audit, mismatches prominent | ✓ SATISFIED | SC3 chain above; real-subprocess pass/mismatch lanes |
-| DATA-04 | Zenodo 19135551 whole-package alternate entry | ✓ SATISFIED | SC4 chain above; probe states + offline e2e |
-
-REQUIREMENTS.md marks all four Complete for Phase 10 — no orphaned requirements (no other IDs map to this phase).
-
----
-
-## Gaps & Risks (known-accepted, none blocking)
-
-1. **Pre-activation gate (IN-06 + IN-10, accepted by disposition + review iteration 3):** before Zenodo record 19135551 publishes, the maintainer must rule bundle-extract overwrite policy / member-size cap / staging prune, and land the per-chunk cancel check inside the single-file transfer loop. Inert today — the lane refuses at the probe (live-confirmed 404→not_public). Tracked in 10-REVIEW-DISPOSITION.md; not a phase gap.
-2. **IN-02 (`first_real_error_line` dead code) + IN-03 progress half:** maintainer polish choices, no runtime risk; reopen at next engine touch.
-3. **Bundle zip layout assumption (A4):** the fixture pins zip-root == datasets-root; a differently-prefixed real layout fails explicitly (`landed=0` diagnostics), never silently — verify at activation.
-4. **`g` re-audit writes four worktree artifacts by design (R-03):** an accidental keypress commits nothing but leaves a dirty worktree until reviewed — the copy and the confirm-free design follow the approved rulings; the live four-artifact check is the human item below.
-
----
-
-## Human Verification Required
-
-The GB10 live smoke (10-06-SUMMARY §procedure) — the phase's own architecture makes the real-CLI end-to-end a maintainer confirmation, never CI. Two items, detailed in the frontmatter:
-
-1. **The live download chain** — enqueue GUE__emp_H3 via `d`, observe download → landing → reconcile → the missing-pane drop AND the selection presence flip AND the env-check dataset-dir flip. Every seam below the CLI is machine-proven; the CLI's own behavior was live-probed at research time; this run confirms them composed.
-2. **The `g` four-artifact check** — press `g` (or run the audit script), confirm `git status` shows exactly the four artifacts, review, commit as the new baseline.
-
----
-
-## Gaps Summary
-
-None blocking. All five success criteria are delivered and wired in the real codebase with behavioral test evidence at every machine-checkable seam; the phase constraints hold byte-for-byte; the review cycle closed CLEAN with the kept-open set explicitly dispositioned. The outstanding items are the documented maintainer live smoke (human confirmation by design) and the Zenodo pre-activation gate (external event).
-
-**VERDICT: PHASE_GOAL_ACHIEVED**
-
-(Outstanding human step: the GB10 live smoke per the 10-06 procedure — confirmation, not gap closure. No PARTIAL and no NOT-DELIVERED criteria.)
-
----
-
-_Verified: 2026-10-13T05:20:00Z_
-_Verifier: Claude (gsd-verifier)_
-
----
-
-## Re-verification (stale refresh, HEAD 8b92766, 2026-10-13)
-
-**Route:** #4682 narrow-delta stale refresh. The prior PASS (frontmatter digest `v3:sha256:740c080d…`, finalized at d5feb38) went stale after phase 11 landed. Goal-backward re-verified at HEAD `8b927669a03314ea11032d9ce8179db567bd8214` (branch autorun; working tree clean over every phase-10 surface — only `.planning/` state files differ).
-
-**Baseline note:** the prior verification's covered state predates 420411e (its own R-03 test-pin follow-up) by ~30 minutes; 420411e is therefore inside this refresh's delta and was re-run green below. History order: bfe65e1 → 420411e → 84b0fcf → … → 8b92766.
-
-### Delta since the previous verification (bfe65e1 → 8b92766, 85 commits)
-
-| Surface | Delta | Phase-10 impact |
-| ------- | ----- | --------------- |
-| `tests/tui/test_services_download_queue.py` (+61/−…), `tests/tui/test_pilot_selection.py`, `tests/tui/test_pilot_selection_custom.py`, `tests/tui/test_services_registries.py` | 420411e: baseline-refresh-stable pins (8 tests) — stages a missing-key n_audit fixture instead of reading the committed baseline's missing set; closes the red overlay-flip trio stale-dated by 2f7211d (the trio is green at HEAD: inside the 114-green phase-9 spot run over `test_pilot_selection_custom.py` and the 209-green run below) | test-strengthening only — no production line touched; production files in this commit: none |
-| `tui/app.py` (+212/−1) | purely additive phase-11 seams (see the phase-9 re-verification table): ExitModal, monitor/run-config factories + ctor kwargs, D-13 hook, async `action_quit`. Hunk map confirms NO overlap with the phase-10 driver: `build_selection_screen` (:426), `kick_download_queue` (:549), `run_download_queue` (:573), `boot_resume_queue` (:666), `on_queue_event_message` (:680) + the WR-03 `screen_stack` forwards (:703/:714) byte-identical | none |
-| `tui/screens/nav.py` | slots 4/5 promoted (`run_config` 11-06, `monitor` 11-07); slot 3 `data_manager` unchanged | none |
-| `tui/strings.py` (+230/−2) | additive `CFG_`/`LNC_`/`MON_` blocks + the `ENV_VERDICT_CRITICAL_FAIL` present-tense amendment (11-05, an 08-era surface per 11-UI-SPEC) — no `DL_`/`QUEUE_` constant touched | none |
-| `tui/styles.tcss` (+259/−0) | additive monitor/run-config/exit-modal styles | none |
-| `tests/tui/test_pilot_nav_shell.py` | promotion-consistent rewrite (fakes for the new screens; placeholder assertions retired) | none — zero phase-10 tests deleted or weakened |
-| `tests/tui/test_pilot_selection.py` (net vs 84b0fcf) | empty net diff — 420411e's pins were already attested; phase-11 commits (0b5984b/e6da784/118d2f6/3fa3fea) touched only nav_shell/monitor/run_config files | none |
-| `tui/services/download_queue.py`, `tui/services/zenodo_bundle.py`, `tui/screens/data_manager.py`, `tui/__main__.py`, `tui/screens/selection.py`, `tui/services/gauntlet.py`, `tests/tui/test_pilot_data_manager.py`, `tests/tui/test_services_zenodo_bundle.py`, `tests/tui/test_services_gauntlet.py`, both modelscope fixtures | zero commits since bfe65e1; `git status` clean | untouched — queue engine, reconcile kernel, zenodo lane, driver spine, data-manager screen all byte-stable since phase-10 close |
-| Four committed audit artifacts (`dnallm-mark/data/n_audit.json`, `n_audit.csv`, `pipeline/eval_subsets.json`, `DATA.md`) | zero commits since 2f7211d/84b0fcf (the R-03 baseline refresh — phase-10-era maintainer ruling, already adjudicated above); direct parse at HEAD: 50 records, 0 missing (50/50 present) | unchanged — the phase-11 UAT smoke downloaded nothing (all data present) and re-audited nothing; no new baseline cycle |
-
-### Per-must-have still-holds verdicts
-
-| # | Truth (SC) | Verdict at HEAD | Evidence |
-| - | ---------- | --------------- | -------- |
-| 1 | SC1 one-click download; presence flips on landing (selection + env check) | STILL HOLDS | `download_queue.py`/`selection.py`/`data_manager.py` byte-stable; app driver seams byte-identical (hunk map); `test_missing_datasets_flips_over_done_reconciled_entries_cr01` + the presence-flip trio (`test_overlay_flips_missing_presence_to_present_and_back`, `test_mismatch_and_failed_entries_never_flip_presence`, `test_live_flip_through_the_app_event_forward`) all green at HEAD |
-| 2 | SC2 persistent resumable queue across exit/crash | STILL HOLDS | `download_queue.py`/`__main__.py` byte-stable; `test_restart_resume_end_to_end_service_tier` + the boot-resume trio green (inside the 209) |
-| 3 | SC3 row-count reconciliation vs n_audit; mismatches prominent | STILL HOLDS | reconcile kernel byte-stable; `test_reconcile_real_subprocess_pass_over_fixture_csvs`, `test_reconcile_real_subprocess_mismatch_names_numbers_no_deletion`, `test_reaudit_argv_exactly_interpreter_and_script_no_flags`, `test_committed_artifacts_byte_unchanged_across_real_reconcile_run` green; four committed artifacts byte-unchanged since 2f7211d |
-| 4 | SC4 Zenodo 19135551 alternate whole-package entry | STILL HOLDS | `zenodo_bundle.py` byte-stable; `test_run_task_zenodo_bundle_offline_end_to_end_done` green (inside the 209) |
-| 5 | SC5 subprocess/thread discipline; zero credentials; console never freezes | STILL HOLDS | spawn/persist surfaces byte-stable; `test_driver_exits_bounded_when_claim_cannot_persist_cr02` + the worker/freeze lanes green (inside the 209); zero modelscope imports in `tui/` re-confirmed at HEAD |
-
-### Spot runs at HEAD
-
-- `.venv/bin/pytest tests/tui/test_services_download_queue.py tests/tui/test_pilot_data_manager.py -q` → **209 passed** (12.14s), zero failures
-- Presence-flip trio (in `tests/tui/test_pilot_selection_custom.py`) → green inside the phase-9 concurrent spot run (**114 passed**, same HEAD)
-- 14 named phase-10 must-have tests enumerated present at HEAD (flip trio, CR-01/CR-02 regressions, restart e2e, real-subprocess reconcile pair, reaudit argv, byte-unchanged, boot-resume trio, zenodo offline e2e) — all inside the two green runs
-
-### Fingerprint refresh
-
-`covered_files` unchanged (the same 31-file set). Fresh digest over the 8b92766 code state:
-
-`covered_digest: "v3:sha256:bd4a02436437fbaf7d3c6552c9a1b8958182c1f7bed03a5bd2156cc64a4407a5"`
-
-(supersedes `v3:sha256:740c080d…`, which attested the pre-420411e covered state and is preserved in git history at d5feb38)
-
-**Verdict: passed.** All five SCs still hold at HEAD 8b92766; both live human-verification items remain discharged with recorded results (10-UAT.md; the GB10 smoke passed live 2026-10-13, the R-03 baseline committed as 2f7211d); no regression on any phase-10 must-have; no debt markers in any delta file; the committed n_audit baseline remains 50/50 present with the four audit artifacts byte-unchanged since the R-03 ruling.
-
----
-
-_Re-verified: 2026-10-13T09:33:12Z (HEAD 8b92766)_
-_Verifier: Claude (gsd-verifier, #4682 stale-refresh route)_
+_Verified: 2026-10-14T15:28:17Z (HEAD 92166f2)_
+_Verifier: Claude (gsd-verifier, stale-refresh re-verification)_
