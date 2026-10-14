@@ -6,11 +6,11 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: 4
 status: executing
-stopped_at: Completed quick 261014-c2l (storage-root overrides, 3/3 tasks, gates green modulo pre-existing base failures)
-last_updated: "2026-10-14T01:25:18.802Z"
-last_activity: 2026-10-13
+stopped_at: Completed quick 261014-dcl (TUI presence/directory visibility, 3/3 tasks, gates green modulo pre-existing base failures)
+last_updated: "2026-10-14T03:41:37.299Z"
+last_activity: 2026-10-14
 last_activity_desc: Phase 12 execution started
-state_head: 451782d2821588a3cc5c7b640c5ef958e1b4b9b0
+state_head: d2f77c076e238409fded00fe9a7c401224fbacd0
 progress:
   total_phases: 6
   completed_phases: 5
@@ -34,7 +34,7 @@ Phase: 12 (Multi-GPU Orchestration & Console Hardening) — COMPLETE (5/5 plans,
 Current Plan: 5 of 5 executed (12-05 phase close landed)
 Total Plans in Phase: 5
 Status: Phase complete — milestone v1.2 at its audit gate (verify-work → audit-milestone → complete-milestone → cleanup; maintainer N=2 other-machine smoke = WINDOWS #21)
-Last activity: 2026-10-14 - Completed quick task 261014-c2l: custom model/dataset storage directory support (pipeline --model_root/--dataset_root + TUI run-config threading)
+Last activity: 2026-10-14 - Completed quick task 261014-dcl: TUI presence/directory visibility (model_dirs kernel + run-config-aware roots, models presence column, data-manager full presence view)
 
 Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 plans executed — all 38 requirements Complete)
 
@@ -98,6 +98,7 @@ Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 
 | Phase 12 P04 | 28m | 3 tasks | 5 files |
 | Phase 12 P05 | 18m | 2 tasks | 3 files |
 | Phase quick P261014-c2l | 28 min | 3 tasks | 11 files |
+| Phase quick P261014-dcl | 104 min | 3 tasks | 29 files |
 
 ## Accumulated Context
 
@@ -241,6 +242,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 261014-c2l | Add custom model/dataset storage directory support (pipeline --model_root/--dataset_root flags + TUI run-config threading) | 2026-10-14 | 451782d | [261014-c2l-add-custom-model-dataset-storage-directo](./quick/261014-c2l-add-custom-model-dataset-storage-directo/) |
+| 261014-dcl | TUI presence/directory visibility (model_dirs env kernel + run-config-aware roots, selection models presence column, data-manager v-toggled full presence view) | 2026-10-14 | 25eb849 | [261014-dcl-tui-presence-directory-visibility-improv](./quick/261014-dcl-tui-presence-directory-visibility-improv/) |
 
 ## Deferred Items
 
@@ -252,8 +254,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T01:22:22.903Z
-Stopped at: Completed quick 261014-c2l (storage-root overrides, 3/3 tasks, gates green modulo pre-existing base failures)
+Last session: 2026-10-14T03:41:36.855Z
+Stopped at: Completed quick 261014-dcl (TUI presence/directory visibility, 3/3 tasks, gates green modulo pre-existing base failures)
 Resume file: None
 
 ## Operator Next Steps
