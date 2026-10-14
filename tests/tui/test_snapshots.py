@@ -28,12 +28,15 @@ The corpus (the frozen 9 — 12-UI-SPEC table + DCL-03)
 =========================  =====================================
 Golden id                  Screen state
 =========================  =====================================
-env_check                  populated cache-hit boot (8 kernels)
+env_check                  populated cache-hit boot (8 kernels) + the
+                           five-row storage overview (261014-f4w)
 selection_models           models view, 2 marks, filter 1/3
 selection_datasets         datasets view (the m flip), 1 mark
 data_manager               mixed missing rows + queue states
 data_manager_presence      the v-toggled full presence view
-run_config                 marks + params + live preview line
+run_config                 marks + params + live preview line + the
+                           log-dir row, save hint, and the two new
+                           bottom-bar labels (261014-f4w)
 monitor_running            worker root + all five glyphs + ETA
 monitor_empty              no sweeps discovered (empty copy)
 wizard                     populated step-1 with advisories
@@ -178,6 +181,18 @@ class _EnvCacheHitFake:
             for kernel_id in ENV_KERNEL_LABELS
         ))
 
+    def storage_rows(self):
+        # F4W-04 (261014-f4w): frozen display rows — no filesystem scan.
+        from tui.services.run_config import StorageRow
+
+        return (
+            StorageRow("model_root", "/golden/models", True),
+            StorageRow("dataset_root", "/golden/datasets", False),
+            StorageRow("output_root", "/golden/finetuned", True),
+            StorageRow("log_dir", "/golden/logs", False),
+            StorageRow("cache_dir", "/golden/cache", True),
+        )
+
     def kernels(self):
         raise AssertionError("a cache-hit golden must never spawn kernels")
 
@@ -312,6 +327,12 @@ class _RunConfigGoldenService:
 
     def save_state(self, spec):
         self._spec = spec
+
+    def save_directory_defaults(self, spec):
+        # F4W-03: display-only stub — the golden drive presses
+        # neither [s] nor ctrl+o (D-11 stability rules).
+        raise AssertionError(
+            "the goldens never save directory defaults")
 
     def path_state(self, value):
         if not value:

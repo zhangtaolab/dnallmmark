@@ -139,6 +139,22 @@ APP_MODAL_BACK_LABEL = "返回"
 ENV_QUICK_CHECK_PASS = "快检通过（launch-required 子集）"
 ENV_QUICK_CHECK_FAIL = "✗ 快检失败: {kernel_names}"
 
+# Storage overview (261014-f4w, F4W-04): the slot-1 read-only section
+# listing all five effective run-artifact directories with existence
+# glyphs. ENV_STORAGE_LABELS is keyed on the DIRECTORY_KEYS vocabulary
+# (pipeline/directories_config.py) and ordered by it — the dict IS the
+# row-order contract (the ENV_KERNEL_LABELS dict-of-labels shape); the
+# footer note routes edits to slot 4 (the digit is the one nav path).
+ENV_STORAGE_TITLE = "存储目录"
+ENV_STORAGE_LABELS = {
+    "model_root": "模型根",
+    "dataset_root": "数据集根",
+    "output_root": "输出根",
+    "log_dir": "日志目录",
+    "cache_dir": "模型缓存",
+}
+ENV_STORAGE_NOTE = "修改目录请到 4 运行配置"
+
 # ===== 选择 (SEL-01..04, 08-07) =====
 # Screen titles (08-UI-SPEC Screen 2 title bar: "选择: 模型" — the m
 # toggle flips the visible table and the title with it).
@@ -710,6 +726,8 @@ CFG_FIELD_OUTPUT_ROOT = "输出根"
 CFG_FIELD_DATASET_ROOT = "数据集根"
 CFG_FIELD_MODEL_ROOT = "模型根"
 CFG_FIELD_CACHE = "模型缓存"
+# 261014-f4w: the error-log directory row label (the F4W-02 lane).
+CFG_FIELD_LOG_DIR = "日志目录"
 
 # Params value states: the absent dim dash, the cache default, and the
 # fairness-subset toggle pair (off / on-with-path). The OFF-with-path
@@ -726,6 +744,10 @@ CFG_CACHE_DEFAULT = "—（HF 默认）"
 # (the D-19 "./datasets" display default retired with the live flag).
 CFG_MODEL_ROOT_DEFAULT = "—（默认 pipeline/）"
 CFG_DATASET_ROOT_DEFAULT = "—（默认 pipeline/）"
+# 261014-f4w: the log-dir prompt hint — the flag's default resolution
+# is the ./logs dir under the pipeline working directory, documented as
+# pipeline/logs/ (the CFG_MODEL_ROOT_DEFAULT "—（…）" shape).
+CFG_LOG_DIR_DEFAULT = "—（默认 pipeline/logs/）"
 CFG_SUBSET_OFF = "关"
 CFG_SUBSET_OFF_WITH_PATH = "关（{path}）"
 CFG_SUBSET_ON = "开（{path}）"
@@ -766,6 +788,25 @@ CFG_PREVIEW_PROBLEM_LINE = "{i}. {problem}"
 CFG_PREVIEW_MODAL_TITLE = "干跑预览"
 CFG_PREVIEW_NOTE = "同源: pipeline.run_sweep.enumerate_matrix（零复制）"
 CFG_ARGV_LABEL = "argv（LIST）:"
+
+# 261014-f4w (F4W-03): the [s] save-as-defaults action — atomically
+# writes the five dir values to directories.json and toasts the written
+# path; the dim hint line states the restore-defaults copy (static —
+# the toast already carries the concrete path).
+CFG_SAVE_DEFAULTS_LABEL = "保存默认"
+CFG_SAVE_DEFAULTS_TOAST = "已保存默认目录: {path}"
+# Rule-2 gap-filler (the plan's WR-03 requirement — "failure surfaces as
+# the error toast" — names no constant for it; the SEL_PRESENCE_UNKNOWN
+# precedent): the save-failure twin of the success toast, {error} data.
+CFG_SAVE_DEFAULTS_FAILED_TOAST = "✗ 保存默认目录失败: {error}"
+CFG_SAVE_DEFAULTS_HINT = "恢复默认：删除配置文件或清空各目录后保存"
+# 261014-f4w (F4W-05): the ctrl+o directory picker over textual core's
+# DirectoryTree — the modal's border title names the field being picked
+# ({field} the row's CFG_FIELD label) and the f footer label selects
+# the cursor's directory.
+CFG_DIR_PICKER_LABEL = "选目录"
+CFG_DIR_PICKER_TITLE = "选择目录 — {field}"
+CFG_DIR_PICKER_SELECT_LABEL = "选此目录"
 
 # ===== 启动门/执行 (LNC_, Phase 11) =====
 # The [enter] launch-gate pipeline, the E2' typed-phrase escalation

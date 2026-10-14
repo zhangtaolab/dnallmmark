@@ -82,6 +82,18 @@ class _EnvCacheHitFake:
             for k in ENV_KERNEL_LABELS
         ))
 
+    def storage_rows(self):
+        # F4W-04 (261014-f4w): frozen display rows — no filesystem scan.
+        from tui.services.run_config import StorageRow
+
+        return (
+            StorageRow("model_root", "/golden/models", True),
+            StorageRow("dataset_root", "/golden/datasets", False),
+            StorageRow("output_root", "/golden/finetuned", True),
+            StorageRow("log_dir", "/golden/logs", False),
+            StorageRow("cache_dir", "/golden/cache", True),
+        )
+
     def kernels(self):
         raise AssertionError("a cache-hit boot must never spawn the worker")
 
@@ -167,6 +179,12 @@ class _RunConfigShellFake:
 
     def save_state(self, spec):
         del spec
+
+    def save_directory_defaults(self, spec):
+        # F4W-03: delegates to the real service — the write lands
+        # under the conftest's tmp config pin, never the home.
+        from tui.services import run_config as run_config_service
+        return run_config_service.save_directory_defaults(spec)
 
     def preview(self, spec):
         return PreviewResult(

@@ -1337,3 +1337,38 @@ def storage_overview(spec=None):
         rows.append(StorageRow(
             key=key, path=path, exists=Path(path).exists()))
     return tuple(rows)
+
+
+def directory_picker_root(value):
+    """The DirectoryTree root for one dir input's current value.
+
+    The four-step fallback chain (F4W-05, pure Path logic):
+
+    1. the STRIPPED value when it exists on disk;
+    2. its nearest EXISTING ancestor (walk parents until one exists);
+    3. REPO_ROOT;
+    4. Path.home().
+
+    The maintainer motivation: no hand-typed paths — the picker opens
+    already rooted where the operator's value points, and a partially
+    typed path still lands somewhere sensible. Determinism-under-test
+    note: the Path.home() last resort is UNREACHABLE while REPO_ROOT
+    exists (a checkout always has one) — kept for completeness over an
+    ever-empty tree, documented as such.
+
+    Args:
+        value (str | None): the focused dir input's current value
+            (empty/None skips straight to REPO_ROOT).
+
+    Returns:
+        Path: the picker's root directory.
+    """
+    stripped = (value or "").strip()
+    if stripped:
+        candidate = Path(stripped)
+        if candidate.exists():
+            return candidate
+        for ancestor in candidate.parents:
+            if ancestor.exists():
+                return ancestor
+    return REPO_ROOT

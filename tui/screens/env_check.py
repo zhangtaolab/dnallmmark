@@ -57,6 +57,7 @@ from textual.worker import get_current_worker
 
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.services import env_check, env_gate
+from tui.services import run_config as run_config_service
 from tui.strings import (
     APP_MODAL_BACK_LABEL,
     ENV_COL_ITEM,
@@ -74,6 +75,9 @@ from tui.strings import (
     ENV_STATE_FAIL,
     ENV_STATE_PASS,
     ENV_STATE_PENDING,
+    ENV_STORAGE_LABELS,
+    ENV_STORAGE_NOTE,
+    ENV_STORAGE_TITLE,
     ENV_VERDICT_CRITICAL_FAIL,
     ENV_VERDICT_PASS,
     NAV_LABEL_ABOUT,
@@ -117,6 +121,12 @@ class EnvCheckServiceProtocol(Protocol):
 
     def persist(self, results: "list[CheckResult]") -> str:
         """Persist the whole result list; return the persisted checked_at display string."""
+
+    def storage_rows(self) -> tuple:
+        """The five effective storage dirs + existence flags (F4W-04,
+        261014-f4w) — read-only display data derived from the same
+        seeded load_state seam the directory kernels read roots
+        through."""
 
 
 class EnvCheckBackend:
@@ -187,6 +197,13 @@ class EnvCheckBackend:
     def kernels(self) -> "dict[str, Callable[[], CheckResult]]":
         """The shared 08-04 kernel sequence (main() order, import-only)."""
         return env_check.default_kernels()
+
+    def storage_rows(self) -> tuple:
+        """The storage overview over the run-config service (F4W-04):
+        thin delegation — the seeding/defaulting semantics live in the
+        tested tier (``storage_overview`` over the seed-applied
+        ``load_state``)."""
+        return run_config_service.storage_overview()
 
     def persist(self, results: "list[CheckResult]") -> str:
         """Persist through the service; return the persisted display string."""
@@ -359,6 +376,7 @@ class EnvCheckScreen(Screen):
             yield Label("", id="env-last-check")
         yield DataTable(id="env-kernels")
         yield Vertical(id="env-verdict")
+        yield Vertical(id="env-storage")
         yield BottomBar()
 
     def on_mount(self) -> None:
@@ -396,6 +414,7 @@ class EnvCheckScreen(Screen):
             self._render_check_outcome(checked_at, results)
         else:
             self.run_full_check()
+        self._render_storage()
 
     # ===== The exclusive thread worker (D-03: the ONLY kernel execution site) =====
 
@@ -531,7 +550,10 @@ class EnvCheckScreen(Screen):
 
         The ONLY path that re-runs kernels after a cache hit; rows reset
         synchronously, the outcome slots clear, and the exclusive worker
-        restarts (cancelling any still-running previous run).
+        restarts (cancelling any still-running previous run). The
+        storage section re-renders too (F4W-04): a slot-4 dir change
+        reflects here after [r] or a console restart — the documented
+        staleness boundary.
         """
         table = self.query_one("#env-kernels", DataTable)
         for kernel_id in ENV_KERNEL_LABELS:
@@ -543,8 +565,46 @@ class EnvCheckScreen(Screen):
         self._results.clear()
         self.query_one("#env-verdict", Vertical).remove_children()
         self.query_one("#env-last-check", Label).update("")
+        self._render_storage()
         self._run_id += 1  # a new run: the old one's messages now drop (WR-02)
         self.run_full_check()
+
+    def _render_storage(self) -> None:
+        """The slot-1 storage overview (F4W-04, 261014-f4w): five
+        read-only rows — the ENV_STORAGE_LABELS label, the absolute
+        path verbatim (data), and the ✓/✗ existence glyph over the
+        $success/$error styles (the glyph-is-the-meaning-carrier rule)
+        — plus the footer note routing edits to slot 4. Derived
+        entirely from the injected service's ``storage_rows()`` (the
+        same seeded load_state seam the directory kernels read roots
+        through); a wrong-key row renders its key verbatim, never
+        crashes (forward tolerance, the _apply_result_to_table
+        precedent). Rendered at mount and re-rendered by [r]: a
+        slot-4 dir change reflects after a refresh or a console
+        restart — the staleness boundary.
+        """
+        box = self.query_one("#env-storage", Vertical)
+        box.remove_children()
+        box.mount(Static(ENV_STORAGE_TITLE, classes="env-storage-title"))
+        # rich Text SPANS cannot carry Textual $token styles on the
+        # Static render path (probe-pinned on 8.2.8, the nav.py
+        # precedent): resolve the live theme's success/error at render —
+        # the theme's own values, never a hardcoded hex — and render the
+        # footer note rich-native dim (the migrated-label treatment).
+        ok_color = self.app.current_theme.success
+        bad_color = self.app.current_theme.error
+        for row in self._service.storage_rows():
+            label = ENV_STORAGE_LABELS.get(row.key, row.key)
+            exists = bool(row.exists)
+            glyph = ENV_STATE_PASS if exists else ENV_STATE_FAIL
+            color = ok_color if exists else bad_color
+            box.mount(Static(Text.assemble(
+                Text(f"{glyph} ", style=f"bold {color}"),
+                Text(f"{label}  "),
+                Text(str(row.path)),
+            ), classes="env-storage-row"))
+        box.mount(Static(Text(ENV_STORAGE_NOTE, style="dim"),
+                         classes="env-storage-note"))
 
     def action_show_detail(self) -> None:
         """The enter key (table unfocused): drill into the cursor row."""

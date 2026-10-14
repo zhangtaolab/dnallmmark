@@ -1525,3 +1525,37 @@ def test_storage_overview_seeded_over_load_state(monkeypatch, tmp_path):
     by_key = {row.key: row for row in rows}
     assert by_key["model_root"].path == str(file_root)
     assert by_key["model_root"].exists is True
+
+
+# =====================================================================
+# 261014-f4w — the directory-picker root chain (Task 3's service tier)
+# =====================================================================
+
+
+def test_directory_picker_root_existing_value_wins(tmp_path):
+    """An on-disk value roots the tree at itself (the no-hand-typing
+    motivation: the picker opens where the operator's value points)."""
+    existing = tmp_path / "model-store"
+    existing.mkdir()
+    assert run_config.directory_picker_root(str(existing)) == existing
+
+
+def test_directory_picker_root_nonexistent_finds_nearest_ancestor(
+        tmp_path):
+    """A nonexistent deep path roots the tree at its NEAREST EXISTING
+    ancestor (a partially typed path still lands somewhere sensible —
+    the nested-tmp fixture exercises the chain up to the
+    existing-ancestor step, never the home fallback)."""
+    nested = tmp_path / "a" / "b" / "c"
+    nested.parent.mkdir(parents=True)  # a/b exists, a/b/c does not
+    assert run_config.directory_picker_root(str(nested)) == nested.parent
+    deeper = tmp_path / "a" / "b" / "c" / "d" / "e"
+    assert run_config.directory_picker_root(str(deeper)) == nested.parent
+
+
+def test_directory_picker_root_empty_value_is_repo_root():
+    """An empty/whitespace value skips straight to REPO_ROOT (the
+    default-viewing root for an unset field)."""
+    assert run_config.directory_picker_root("") == run_config.REPO_ROOT
+    assert run_config.directory_picker_root("   ") == run_config.REPO_ROOT
+    assert run_config.directory_picker_root(None) == run_config.REPO_ROOT

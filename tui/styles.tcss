@@ -694,3 +694,34 @@ ExitModal {
     width: 1fr;                  /* the wrapping value column */
     height: auto;
 }
+
+/* ===== 261014-f4w: slot-1 storage overview + the slot-4 dir picker ===== */
+
+#env-storage {
+    height: auto;
+    border-top: solid $border;   /* 1-cell border exception — separator */
+    padding: 1 4;                /* md token: panel padding */
+}
+
+.env-storage-title {
+    text-style: bold;            /* Heading role */
+    height: 1;                   /* row token */
+}
+
+.env-storage-row {
+    height: 1;                   /* row token: one line per directory */
+}
+
+.env-storage-note {
+    color: $text-muted;          /* Secondary role: the routing hint */
+    height: 1;                   /* row token */
+}
+
+DirPickerModal {
+    align: center middle;        /* the bordered box centers on screen */
+}
+
+#cfg-dirpick-tree {
+    height: 16;   /* scroll bound (not a spacing token) — the tree scrolls its own viewport */
+    border: round $border;       /* the tree's viewport edge */
+}

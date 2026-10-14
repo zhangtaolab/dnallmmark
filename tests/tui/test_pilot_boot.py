@@ -54,6 +54,18 @@ class _CacheHitFake:
     def cached_results(self):
         return (_CACHED_CHECKED_AT, _CACHED_RESULTS)
 
+    def storage_rows(self):
+        # F4W-04 (261014-f4w): frozen display rows — no filesystem scan.
+        from tui.services.run_config import StorageRow
+
+        return (
+            StorageRow("model_root", "/golden/models", True),
+            StorageRow("dataset_root", "/golden/datasets", False),
+            StorageRow("output_root", "/golden/finetuned", True),
+            StorageRow("log_dir", "/golden/logs", False),
+            StorageRow("cache_dir", "/golden/cache", True),
+        )
+
     def kernels(self):
         raise AssertionError("a same-day cache hit must never spawn the worker")
 

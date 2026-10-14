@@ -79,6 +79,9 @@ from tui.strings import (
     ENV_STATE_FAIL,
     ENV_STATE_PASS,
     ENV_STATE_PENDING,
+    ENV_STORAGE_LABELS,
+    ENV_STORAGE_NOTE,
+    ENV_STORAGE_TITLE,
     ENV_VERDICT_CRITICAL_FAIL,
     ENV_VERDICT_PASS,
 )
@@ -175,6 +178,18 @@ class FakeEnvCheckService:
     def cached_results(self):
         """The fixed cache answer."""
         return self.cached
+
+    def storage_rows(self):
+        # F4W-04 (261014-f4w): frozen display rows — no filesystem scan.
+        from tui.services.run_config import StorageRow
+
+        return (
+            StorageRow("model_root", "/golden/models", True),
+            StorageRow("dataset_root", "/golden/datasets", False),
+            StorageRow("output_root", "/golden/finetuned", True),
+            StorageRow("log_dir", "/golden/logs", False),
+            StorageRow("cache_dir", "/golden/cache", True),
+        )
 
     def kernels(self):
         """One zero-arg callable per result, keyed on the kernel id."""
@@ -898,3 +913,101 @@ def test_styles_tcss_zero_hex_and_declared_spacing_tokens_only():
             assert int(number) in {0, 1, 2, 4, 8, 12}, (
                 f"undeclared spacing value {number} in {declaration.strip()!r}"
             )
+
+
+# =====================================================================
+# 261014-f4w — the slot-1 storage overview (F4W-04)
+# =====================================================================
+
+
+def _storage_row_texts(screen):
+    """The rendered storage rows' plain texts (glyph + label + path)."""
+    return [
+        _cell(row.content)
+        for row in screen.query("#env-storage .env-storage-row")
+    ]
+
+
+async def test_storage_section_renders_all_five_rows():
+    """F4W-04: the section renders the title, all five rows (label +
+    absolute path verbatim + the ✓/✗ existence glyph over the frozen
+    fixture's exists flags), and the footer note routing edits to
+    slot 4 — read-only, no new bindings."""
+    fake = FakeEnvCheckService(cached=None, results=_mixed_results())
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _wait_for_check(pilot, app)
+        screen = app.screen
+        assert _label_text(screen, ".env-storage-title") == (
+            ENV_STORAGE_TITLE)
+        rows = _storage_row_texts(screen)
+        assert len(rows) == 5
+        expected = (
+            (ENV_STORAGE_LABELS["model_root"], "/golden/models", True),
+            (ENV_STORAGE_LABELS["dataset_root"], "/golden/datasets", False),
+            (ENV_STORAGE_LABELS["output_root"], "/golden/finetuned", True),
+            (ENV_STORAGE_LABELS["log_dir"], "/golden/logs", False),
+            (ENV_STORAGE_LABELS["cache_dir"], "/golden/cache", True),
+        )
+        for text, (label, path, exists) in zip(rows, expected, strict=True):
+            glyph = ENV_STATE_PASS if exists else ENV_STATE_FAIL
+            assert text.startswith(glyph), (
+                f"the glyph leads its row (NO_COLOR carrier): {text!r}"
+            )
+            assert label in text and path in text, (
+                f"the label and the path render verbatim: {text!r}"
+            )
+        assert _label_text(screen, ".env-storage-note") == ENV_STORAGE_NOTE
+
+
+async def test_storage_section_rerenders_on_refresh():
+    """The r refresh action re-renders the storage section (a slot-4 dir
+    change reflects after [r] — the documented staleness boundary)."""
+
+    class _MovedStorageFake(FakeEnvCheckService):
+        """The frozen fixture with the model root moved — fresh rows."""
+
+        def storage_rows(self):
+            from tui.services.run_config import StorageRow
+
+            return (
+                StorageRow("model_root", "/moved/models", True),
+                StorageRow("dataset_root", "/golden/datasets", False),
+                StorageRow("output_root", "/golden/finetuned", True),
+                StorageRow("log_dir", "/golden/logs", False),
+                StorageRow("cache_dir", "/golden/cache", True),
+            )
+
+    fake = _MovedStorageFake(cached=None, results=_mixed_results())
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _wait_for_check(pilot, app)
+        screen = app.screen
+        await pilot.press("r")
+        await _wait_for_check(pilot, app)
+        rows = _storage_row_texts(screen)
+        assert any("/moved/models" in text for text in rows), (
+            "the refresh re-rendered the section from the fresh rows"
+        )
+
+
+async def test_storage_wrong_key_rows_never_crash_the_render():
+    """Forward tolerance (the _apply_result_to_table precedent): a
+    service row whose key is outside ENV_STORAGE_LABELS renders its key
+    verbatim, never crashes."""
+    from tui.services.run_config import StorageRow
+
+    class _FutureKeyFake(FakeEnvCheckService):
+        """One row keyed outside the label vocabulary."""
+
+        def storage_rows(self):
+            return (StorageRow("future_key", "/future/path", True),)
+
+    fake = _FutureKeyFake(cached=None, results=_mixed_results())
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _wait_for_check(pilot, app)
+        screen = app.screen
+        rows = _storage_row_texts(screen)
+        assert len(rows) == 1
+        assert "future_key" in rows[0] and "/future/path" in rows[0]

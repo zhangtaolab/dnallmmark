@@ -26,18 +26,20 @@ and stdlib-only):
   the 公平子集 toggle copy pair.
 """
 
+import json
 import re
 import threading
 from pathlib import Path
 from typing import ClassVar
 
 from rich.text import Text
-from textual.widgets import Checkbox, Input, SelectionList, Static
+from textual.widgets import Checkbox, DirectoryTree, Input, SelectionList, Static
 
 import tui.screens.run_config as run_config_screen_module
 from tui.app import DnallmMarkTui
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.run_config import (
+    DirPickerModal,
     PickerEntries,
     PickerList,
     RunConfigScreen,
@@ -46,6 +48,7 @@ from tui.screens.selection import PresetMenu, SelectionData
 from tui.services import registries as registries_service
 from tui.services import run_config as run_config_service
 from tui.services import selection as selection_service
+from tui.services import settings as tui_settings
 from tui.services.download_queue import merge_presence
 from tui.services.run_config import PreviewResult, RunSpec
 from tui.services.sweep_launcher import (
@@ -58,15 +61,18 @@ from tui.strings import (
     CFG_CACHE_DEFAULT,
     CFG_DATASET_ROOT_DEFAULT,
     CFG_EMPTY_SELECTION_PROBLEM,
+    CFG_FIELD_LOG_DIR,
     CFG_FIELD_MODEL_ROOT,
     CFG_FIELD_PEFT,
     CFG_FIELD_VARIANT,
+    CFG_LOG_DIR_DEFAULT,
     CFG_MODEL_ROOT_DEFAULT,
     CFG_PICKER_DATASETS,
     CFG_PICKER_MODELS,
     CFG_PREVIEW_LINE,
     CFG_PREVIEW_NOTE,
     CFG_PREVIEW_PROBLEMS,
+    CFG_SAVE_DEFAULTS_TOAST,
     CFG_STATUS_LINE,
     CFG_SUBSET_OFF,
     SEL_DISABLED_MARK_WARNING,
@@ -164,6 +170,13 @@ class FakeRunConfigService:
     def save_state(self, spec):
         self.saved_specs.append(spec)
         self._spec = spec
+
+    def save_directory_defaults(self, spec):
+        """261014-f4w (the c2l mixing precedent): the single write leg
+        delegates to the REAL service — the save tests assert the file
+        the real seam writes (under the conftest's tmp config pin, never
+        the real home)."""
+        return run_config_service.save_directory_defaults(spec)
 
     def path_state(self, value):
         """'exists' | 'missing' | 'unset' — scripted per value."""
@@ -307,6 +320,18 @@ class _EnvCacheHitFake:
             CheckResult(name=k, ok=True, lines=(f"PASS: {k}",))
             for k in ENV_KERNEL_LABELS
         ))
+
+    def storage_rows(self):
+        # F4W-04 (261014-f4w): frozen display rows — no filesystem scan.
+        from tui.services.run_config import StorageRow
+
+        return (
+            StorageRow("model_root", "/golden/models", True),
+            StorageRow("dataset_root", "/golden/datasets", False),
+            StorageRow("output_root", "/golden/finetuned", True),
+            StorageRow("log_dir", "/golden/logs", False),
+            StorageRow("cache_dir", "/golden/cache", True),
+        )
 
     def kernels(self):
         raise AssertionError("a cache-hit boot must never spawn the worker")
@@ -759,11 +784,12 @@ async def test_params_input_values_render_in_export():
         assert "模型根" in svg, (
             "the model-root row's label renders (261014-c2l)"
         )
-        assert svg.count("—（默认") == 2, (
-            "BOTH storage-root prompt hints render in the placeholder's "
-            "place (the SVG encodes their inner space as &#160;, so the "
-            "contiguous constant is pinned by its stable prefix — two "
-            "hits = the model-root and dataset-root rows)"
+        assert svg.count("—（默认") == 3, (
+            "ALL THREE storage-dir prompt hints render in the "
+            "placeholder's place (the SVG encodes their inner space as "
+            "&#160;, so the contiguous constant is pinned by its stable "
+            "prefix — three hits = the model-root, dataset-root, and "
+            "log-dir rows, 261014-f4w)"
         )
         assert "./datasets" not in svg, (
             "the retired D-19 './datasets' display default no longer "
@@ -1934,4 +1960,248 @@ async def test_b4_dismiss_without_picker_below_degrades_to_plain_pop():
         await _settle_dismiss(pilot)
         assert isinstance(app.screen, EnvCheckScreen), (
             "the override degrades to a plain pop when no picker below"
+        )
+
+
+# =====================================================================
+# 261014-f4w — the log-dir row, the [s] save action, and the ctrl+o
+# directory picker (Task 3)
+# =====================================================================
+
+
+class _PersistingRunService(FakeRunConfigService):
+    """The fake with save_state ALSO writing the REAL state file — the
+    no-bypass proof for the picker path (the picked value must flow
+    through the normal Input.Changed -> preview-worker persist path,
+    observed on disk, not around it)."""
+
+    def save_state(self, spec):
+        super().save_state(spec)
+        run_config_service.save_state(spec)
+
+
+class _RealLoadRunService(FakeRunConfigService):
+    """The fake with load_state delegating to the REAL service — the
+    seeded-prefill proof (the seeding lives inside the real load_state;
+    the fake side stays for the picker entries and preview)."""
+
+    def load_state(self):
+        return run_config_service.load_state()
+
+
+async def test_log_dir_row_renders_with_placeholder_hint():
+    """The log-dir row (the model-root row twin): label renders, value
+    empty, the placeholder == CFG_LOG_DIR_DEFAULT, the advisory slot
+    exists (261014-f4w, F4W-03)."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        log_dir = screen.query_one("#cfg-input-log-dir", Input)
+        assert log_dir.value == ""
+        assert _plain(log_dir.placeholder) == CFG_LOG_DIR_DEFAULT
+        assert _label_text(screen, "#cfg-label-log-dir") == (
+            CFG_FIELD_LOG_DIR)
+        assert screen.query_one("#cfg-adv-log-dir", Static) is not None
+
+
+async def test_log_dir_input_threads_absolute_flag_into_argv():
+    """Typing /mnt/logs into #cfg-input-log-dir composes a spec whose
+    service-side argv carries --log_dir as the RESOLVED ABSOLUTE string
+    (the test_model_root_input_threads_absolute_flag_into_argv shape),
+    joined after --dataset_root in the pinned tail."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        log_dir = screen.query_one("#cfg-input-log-dir", Input)
+        log_dir.value = "/mnt/logs"
+        await _settle(pilot, app)
+        saved = run_service.saved_specs[-1]
+        assert saved.log_dir == "/mnt/logs"
+        argv = run_config_service.compose_argv(saved)
+        assert argv[argv.index("--log_dir") + 1] == "/mnt/logs"
+        assert "--dataset_root" not in argv, (
+            "the untouched dataset-root field contributes nothing"
+        )
+
+
+async def test_save_defaults_writes_file_and_toasts_path(
+        tmp_path, monkeypatch):
+    """[s] (focus outside an Input — Inputs consume printable keys)
+    composes the spec from the inputs and writes the five-key
+    schema-1 document under the injected config root; the toast names
+    the written path; unset dirs persist as \"\" (F4W-03)."""
+    import directories_config
+
+    config_root = tmp_path / "f4w-save-config"
+    config_root.mkdir()
+    monkeypatch.setenv(tui_settings.CONFIG_DIR_ENV, str(config_root))
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        screen.query_one("#cfg-input-model-root", Input).value = "/mnt/models"
+        await _settle(pilot, app)
+        # focus sits on the picker (never inside an Input) — [s] fires
+        screen.query_one("#cfg-picker", PickerList).focus()
+        await pilot.press("s")
+        await pilot.pause()
+        written = config_root / directories_config.DIRECTORIES_FILE_NAME
+        assert written.is_file(), "the [s] action wrote directories.json"
+        doc = json.loads(written.read_text(encoding="utf-8"))
+        assert doc["schema_version"] == 1
+        assert doc["model_root"] == "/mnt/models"
+        assert doc["dataset_root"] == ""
+        assert doc["log_dir"] == ""
+        assert CFG_SAVE_DEFAULTS_TOAST.format(path=str(written)) in (
+            _toast_messages(app)), "the toast names the written path"
+
+
+async def test_mount_prefills_dir_inputs_from_directories_json(
+        tmp_path, monkeypatch):
+    """The seeded prefill: with a directories.json present and no
+    run_config.json, a fresh mount shows the file's value in the
+    corresponding dir input (the file seeds DEFAULTS through the one
+    load_state seam — F4W-01's TUI half)."""
+    import directories_config
+
+    monkeypatch.setenv(tui_settings.STATE_DIR_ENV, str(tmp_path / "state"))
+    config_root = tmp_path / "f4w-prefill-config"
+    config_root.mkdir()
+    monkeypatch.setenv(tui_settings.CONFIG_DIR_ENV, str(config_root))
+    (config_root / directories_config.DIRECTORIES_FILE_NAME).write_text(
+        json.dumps({
+            "model_root": str(tmp_path / "file-models"),
+            "log_dir": str(tmp_path / "file-logs"),
+        }),
+        encoding="utf-8",
+    )
+    app = _app(run_service=_RealLoadRunService())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        assert screen.query_one("#cfg-input-model-root", Input).value == (
+            str(tmp_path / "file-models"))
+        assert screen.query_one("#cfg-input-log-dir", Input).value == (
+            str(tmp_path / "file-logs"))
+        assert screen.query_one("#cfg-input-dataset-root", Input).value == ""
+
+
+async def test_dir_picker_selects_through_the_normal_persist_path(
+        tmp_path, monkeypatch):
+    """F4W-05's full loop: focus a dir input, ctrl+o mounts the picker
+    rooted at its value; the tree lists directories only; enter
+    descends a collapsed node; [f] fills the input with the picked
+    directory's ABSOLUTE path, closes with focus restored, and the
+    picked value reaches the PERSISTED state file through the normal
+    preview path (the no-bypass proof)."""
+    state = tmp_path / "state"
+    monkeypatch.setenv(tui_settings.STATE_DIR_ENV, str(state))
+    root = tmp_path / "a"
+    (root / "b" / "sub").mkdir(parents=True)
+    (root / "c").mkdir()
+    (root / "not-a-dir.txt").write_text("file", encoding="utf-8")
+    run_service = _PersistingRunService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        model_root = screen.query_one("#cfg-input-model-root", Input)
+        model_root.value = str(root)
+        await _settle(pilot, app)
+        model_root.focus()
+        await pilot.press("ctrl+o")
+        await pilot.pause(0.3)  # the async first-children load
+        assert isinstance(app.screen, DirPickerModal)
+        tree = app.screen.query_one("#cfg-dirpick-tree", DirectoryTree)
+        child_names = {
+            Path(str(node.data.path)).name
+            for node in tree.root.children
+        }
+        assert child_names == {"b", "c"}, (
+            "directories only — the file node never appears"
+        )
+        # descend: cursor onto b (line 0 is the root), enter expands it
+        await pilot.press("down")
+        await pilot.press("enter")
+        await pilot.pause(0.3)  # b's children load asynchronously
+        assert isinstance(app.screen, DirPickerModal), (
+            "enter on a COLLAPSED node descends, never fills+closes"
+        )
+        # the dedicated select key fills through the normal path
+        await pilot.press("f")
+        await pilot.pause()
+        assert not isinstance(app.screen, DirPickerModal), "the modal closed"
+        picked = str((root / "b").resolve())
+        assert model_root.value == picked
+        assert app.focused is model_root, (
+            "focus returns to the ORIGIN INPUT, never the picker"
+        )
+        await _settle(pilot, app)
+        doc = json.loads(
+            (state / "run_config.json").read_text(encoding="utf-8"))
+        assert doc["dirs"]["model_root"] == picked, (
+            "the picked value flowed through the normal Input.Changed -> "
+            "preview-worker persist path (no bypass)"
+        )
+
+
+async def test_dir_picker_esc_cancels_unchanged(tmp_path, monkeypatch):
+    """esc cancels: the input value and the persisted state file are
+    untouched, focus still returns to the origin input."""
+    state = tmp_path / "state"
+    monkeypatch.setenv(tui_settings.STATE_DIR_ENV, str(state))
+    root = tmp_path / "a"
+    (root / "b").mkdir(parents=True)
+    run_service = _PersistingRunService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        model_root = screen.query_one("#cfg-input-model-root", Input)
+        model_root.value = str(root)
+        await _settle(pilot, app)
+        before = (state / "run_config.json").read_text(encoding="utf-8")
+        model_root.focus()
+        await pilot.press("ctrl+o")
+        await pilot.pause(0.3)
+        assert isinstance(app.screen, DirPickerModal)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, DirPickerModal)
+        assert model_root.value == str(root), "the value is untouched"
+        assert app.focused is model_root
+        assert (state / "run_config.json").read_text(
+            encoding="utf-8") == before
+
+
+async def test_dir_picker_roots_at_nearest_existing_ancestor(
+        tmp_path, monkeypatch):
+    """The fallback chain in the UI: a value pointing at a nonexistent
+        deep path roots the tree at its nearest EXISTING ancestor (the
+        tmp root)."""
+    root = tmp_path / "a"
+    root.mkdir()
+    deep = root / "x" / "y" / "z"
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        model_root = screen.query_one("#cfg-input-model-root", Input)
+        model_root.value = str(deep)
+        await pilot.pause()
+        model_root.focus()
+        await pilot.press("ctrl+o")
+        await pilot.pause(0.3)
+        assert isinstance(app.screen, DirPickerModal)
+        tree = app.screen.query_one("#cfg-dirpick-tree", DirectoryTree)
+        assert Path(str(tree.path)) == root.resolve(), (
+            "the tree roots at the deep path's nearest existing ancestor"
         )

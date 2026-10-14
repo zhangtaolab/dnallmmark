@@ -56,6 +56,7 @@ from textual.message import Message
 from textual.screen import ModalScreen, Screen
 from textual.widgets import (
     Checkbox,
+    DirectoryTree,
     Footer,
     Input,
     Label,
@@ -64,6 +65,7 @@ from textual.widgets import (
     RichLog,
     SelectionList,
     Static,
+    Tree,
 )
 from textual.widgets.selection_list import Selection
 
@@ -93,6 +95,9 @@ from tui.strings import (
     CFG_ARGV_LABEL,
     CFG_CACHE_DEFAULT,
     CFG_DATASET_ROOT_DEFAULT,
+    CFG_DIR_PICKER_LABEL,
+    CFG_DIR_PICKER_SELECT_LABEL,
+    CFG_DIR_PICKER_TITLE,
     CFG_DIRS_TITLE,
     CFG_DIRS_TITLE_SHORT,
     CFG_FIELD_CACHE,
@@ -101,12 +106,14 @@ from tui.strings import (
     CFG_FIELD_EBS,
     CFG_FIELD_EBS_SHORT,
     CFG_FIELD_EPOCHS,
+    CFG_FIELD_LOG_DIR,
     CFG_FIELD_MODEL_ROOT,
     CFG_FIELD_OUTPUT_ROOT,
     CFG_FIELD_PEFT,
     CFG_FIELD_SEEDS,
     CFG_FIELD_SUBSET,
     CFG_FIELD_VARIANT,
+    CFG_LOG_DIR_DEFAULT,
     CFG_MODEL_ROOT_DEFAULT,
     CFG_PARAMS_TITLE,
     CFG_PEFT_ALIAS_PREVIEW,
@@ -118,6 +125,10 @@ from tui.strings import (
     CFG_PREVIEW_NOTE,
     CFG_PREVIEW_PROBLEM_LINE,
     CFG_PREVIEW_PROBLEMS,
+    CFG_SAVE_DEFAULTS_FAILED_TOAST,
+    CFG_SAVE_DEFAULTS_HINT,
+    CFG_SAVE_DEFAULTS_LABEL,
+    CFG_SAVE_DEFAULTS_TOAST,
     CFG_SCREEN_TITLE,
     CFG_STATUS_LINE,
     CFG_SUBSET_OFF_WITH_PATH,
@@ -214,6 +225,10 @@ class RunConfigServiceProtocol(Protocol):
     def save_state(self, spec: RunSpec) -> None:
         """Persist the spec atomically (D-01)."""
 
+    def save_directory_defaults(self, spec: RunSpec) -> Path:
+        """Write the five dir values to directories.json; return the
+        path (F4W-03, 261014-f4w)."""
+
     def preview(self, spec: RunSpec) -> PreviewResult:
         """The same-source dry-run preview (D-05 — never re-derived)."""
 
@@ -292,6 +307,11 @@ class RunConfigBackend:
 
     def save_state(self, spec: RunSpec) -> None:
         run_config_service.save_state(spec)
+
+    def save_directory_defaults(self, spec: RunSpec) -> Path:
+        """Thin delegation to the tested service (F4W-03) — the write
+        stays in the tier the save seam's tests pin."""
+        return run_config_service.save_directory_defaults(spec)
 
     def preview(self, spec: RunSpec) -> PreviewResult:
         return run_config_service.preview(spec)
@@ -811,6 +831,141 @@ class _GateConfirmModal(_PickerReturnModal, ConfirmModal):
     ONLY adds the picker-return dismiss for this screen's push site."""
 
 
+class _DirsOnlyTree(DirectoryTree):
+    """A DirectoryTree restricted to DIRECTORIES (F4W-05).
+
+    Probe-pinned on textual 8.2.8: the directories-only mechanism is
+    the overridable ``filter_paths`` METHOD — a seam called over every
+    loaded directory's entries BEFORE nodes are added (there is no
+    ``filter_directories`` on this version) — so files never appear as
+    nodes and file-node selection is structurally unreachable. Enter
+    dispatches ``Tree.action_select_cursor`` -> ``NodeSelected``, which
+    BOTH the name-based ``_on_tree_node_selected`` handler and Tree's
+    ``@on(NodeSelected)`` auto-expand toggle receive; ``auto_expand =
+    False`` neutralizes the toggle (my expand + its toggle would
+    collapse what enter opened), and the override below REPLACES the
+    base handler — deliberately NO ``super()`` call (the probe-pinned
+    MRO double-fire trap: override + super fires the base handler
+    twice, posting DirectorySelected twice).
+    """
+
+    def __init__(self, path: "str | Path", **kwargs) -> None:
+        super().__init__(path, **kwargs)
+        # Kill Tree's @on(NodeSelected) toggle — this class owns the
+        # enter semantics (collapsed descends, expanded selects).
+        self.auto_expand = False
+
+    def filter_paths(self, paths):
+        """Directories only: files are filtered out before any node is
+        added (zero new dependencies — core DirectoryTree)."""
+        return (path for path in paths if path.is_dir())
+
+    async def _on_tree_node_selected(
+            self, event: "Tree.NodeSelected") -> None:
+        """The enter semantics: a COLLAPSED node expands (descend — the
+        children load through DirectoryTree's own NodeExpanded loader);
+        an ALREADY-EXPANDED node selects (the native DirectorySelected
+        event the modal's fill handler consumes).
+
+        ``prevent_default()`` is load-bearing (probe-pinned on 8.2.8):
+        textual dispatches the name-based private handler for EVERY
+        class in the MRO that defines one — without it,
+        DirectoryTree's own ``_on_tree_node_selected`` ALSO fires and
+        posts DirectorySelected on the descend path (the modal closes
+        on the very first enter). It also neutralizes Tree's
+        ``@on(NodeSelected)`` auto-expand toggle, so ``auto_expand =
+        False`` stays a redundant belt-and-braces guard.
+        """
+        event.stop()
+        event.prevent_default()
+        node = event.node
+        if node.data is None:
+            return
+        if not node.is_expanded and node.allow_expand:
+            node.expand()
+        else:
+            self.post_message(
+                DirectoryTree.DirectorySelected(node, node.data.path))
+
+
+class DirPickerModal(ModalScreen):
+    """The ctrl+o directory picker (F4W-05): a directories-only
+    DirectoryTree rooted per the fallback chain, over the FOCUSED dir
+    input.
+
+    NOT the ``_PickerReturnModal`` base — that base refocuses
+    ``#cfg-picker``; this modal must return focus to the ORIGIN INPUT
+    (a local dismiss override in the delta-B spirit, input-targeted).
+    BOTH selection paths — the tree's native ``DirectorySelected``
+    (enter on an already-expanded node; the probe-pinned event class on
+    8.2.8) and the dedicated [f] select key — funnel into ONE
+    fill-and-close handler: the programmatic value set fires
+    ``Input.Changed``, so the screen's existing
+    ``on_input_changed -> _refresh_preview`` validation/persistence
+    path runs UNCHANGED (no bespoke pick validation, no bypass); esc
+    cancels with the value untouched. DirectoryTree loads children
+    asynchronously — Pilot tests pause for the first children to mount.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("f", "select_dir", CFG_DIR_PICKER_SELECT_LABEL),
+    ]
+
+    def __init__(self, origin_input: Input, field_label: str,
+                 root: Path, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._origin_input = origin_input
+        self._field_label = field_label
+        self._root = root
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="cfg-dirpick-box", classes="modal-box"):
+            yield _DirsOnlyTree(str(self._root), id="cfg-dirpick-tree")
+            yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one("#cfg-dirpick-box", Vertical).border_title = (
+            CFG_DIR_PICKER_TITLE.format(field=self._field_label))
+        self.query_one("#cfg-dirpick-tree", _DirsOnlyTree).focus()
+
+    def dismiss(self, result: "Any | None" = None):
+        """The input-targeted delta-B hook: capture the ORIGIN INPUT
+        before ``super().dismiss()`` (8.2.8 pops the stack
+        synchronously), then refocus it after — the esc path and both
+        fill paths share this hook."""
+        origin = self._origin_input
+        awaitable = super().dismiss(result)
+        origin.call_after_refresh(origin.focus)
+        return awaitable
+
+    def on_directory_tree_directory_selected(
+            self, event: DirectoryTree.DirectorySelected) -> None:
+        """The native selection path: enter on an already-expanded node
+        (and the root)."""
+        event.stop()
+        self._fill_and_close(event.path)
+
+    def action_select_dir(self) -> None:
+        """[f] — select the cursor's directory (the dedicated key that
+        works on a collapsed node's row too, where enter descends)."""
+        tree = self.query_one("#cfg-dirpick-tree", _DirsOnlyTree)
+        node = tree.cursor_node
+        if node is None or node.data is None:
+            return
+        self._fill_and_close(node.data.path)
+
+    def _fill_and_close(self, path: Path) -> None:
+        """The ONE fill-and-close handler: dismiss, then set the origin
+        input's value to the picked directory's ABSOLUTE path — the
+        programmatic set fires ``Input.Changed``, so the unchanged
+        preview/persist validation path runs (the no-bypass proof is
+        the persisted state file carrying the picked root)."""
+        origin = self._origin_input
+        self.dismiss()
+        origin.value = str(Path(path).resolve())
+
+
 # =====================================================================
 # The screen
 # =====================================================================
@@ -832,12 +987,25 @@ class RunConfigScreen(Screen):
     # order), then the hidden pair: escape (clear filter) + the nav
     # digits (plain per-screen bindings routed to the app's nav action —
     # never priority, Pattern 2; the top bar carries the digit labels).
+    # 261014-f4w inserts [s] save-defaults and ctrl+o dir-picker after
+    # [p]: the declaration order is the bottom-bar/help order.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("space", "toggle_mark", SEL_MARK_LABEL),
         Binding("m", "switch_kind", SEL_SWITCH_LABEL),
         Binding("slash", "focus_filter", SEL_FILTER_KEY_LABEL,
                 key_display="/"),
         Binding("p", "preview_modal", CFG_PREVIEW_MODAL_TITLE),
+        Binding("s", "save_directory_defaults", CFG_SAVE_DEFAULTS_LABEL),
+        # BINDING-CHOICE RATIONALE (probe-pinned on textual 8.2.8): a
+        # BARE letter cannot open the picker — the open condition is a
+        # focused dir Input, and a focused Input consumes printable keys
+        # (a bare "o" would type the letter; same for "s" inside an
+        # Input, the p/m precedent), while ctrl+o is NOT an Input
+        # binding on 8.2.8 and therefore falls through to the screen
+        # exactly when the operator is inside a dir field (probed: an
+        # app-level ctrl+o binding fires with an Input focused, the
+        # Input's value untouched).
+        Binding("ctrl+o", "open_dir_picker", CFG_DIR_PICKER_LABEL),
         Binding("enter", "open_gate", LNC_GATE_TITLE),
         Binding("escape", "clear_filter", show=False),
         Binding("1", "app.nav(1)", NAV_LABEL_ENV, show=False),
@@ -1074,6 +1242,22 @@ class RunConfigScreen(Screen):
                                 id="cfg-input-cache",
                                 classes="cfg-param-input", compact=True)
                 yield Label("", id="cfg-adv-cache", classes="cfg-adv")
+                with Horizontal(classes="cfg-param-row"):
+                    yield Label(CFG_FIELD_LOG_DIR,
+                                id="cfg-label-log-dir",
+                                classes="cfg-param-label")
+                    # compact=True on the height-1-row Input (the 12-03
+                    # Rule-1 discipline — see the seeds-row note above).
+                    yield Input(
+                        value="", placeholder=CFG_LOG_DIR_DEFAULT,
+                        id="cfg-input-log-dir",
+                        classes="cfg-param-input", compact=True)
+                yield Label("", id="cfg-adv-log-dir", classes="cfg-adv")
+                # The dirs section's closing dim hint (F4W-03): the
+                # restore-defaults copy for the [s] save action.
+                yield Label(CFG_SAVE_DEFAULTS_HINT,
+                            id="cfg-hint-save-defaults",
+                            classes="cfg-hint")
         yield Label("", id="cfg-preview-line")
         yield BottomBar()
 
@@ -1128,6 +1312,7 @@ class RunConfigScreen(Screen):
              message.spec.dataset_root or ""),
             ("#cfg-input-model-root",
              message.spec.model_root or ""),
+            ("#cfg-input-log-dir", message.spec.log_dir or ""),
             ("#cfg-input-cache", message.spec.cache_dir or ""),
         ):
             self.query_one(input_id, Input).value = value
@@ -1191,6 +1376,8 @@ class RunConfigScreen(Screen):
                     spec.dataset_root or ""),
                 "model-root": self._run_service.path_state(
                     spec.model_root or ""),
+                "log-dir": self._run_service.path_state(
+                    spec.log_dir or ""),
                 "cache": self._run_service.path_state(spec.cache_dir or ""),
                 "subset": self._run_service.path_state(
                     spec.subset_file if spec.subset_file else ""),
@@ -1357,6 +1544,7 @@ class RunConfigScreen(Screen):
                             or run_config_service.DEFAULT_OUTPUT_ROOT),
             "dataset_root": self._text_value("#cfg-input-dataset-root") or None,
             "model_root": self._text_value("#cfg-input-model-root") or None,
+            "log_dir": self._text_value("#cfg-input-log-dir") or None,
             "cache_dir": self._text_value("#cfg-input-cache") or None,
         }
         kwargs.update(partials)
@@ -1417,6 +1605,7 @@ class RunConfigScreen(Screen):
             ("output-root", "#cfg-adv-output-root"),
             ("dataset-root", "#cfg-adv-dataset-root"),
             ("model-root", "#cfg-adv-model-root"),
+            ("log-dir", "#cfg-adv-log-dir"),
             ("cache", "#cfg-adv-cache"),
             ("subset", "#cfg-adv-subset"),
         ):
@@ -1605,6 +1794,65 @@ class RunConfigScreen(Screen):
             lines.append(CFG_ARGV_LABEL + " ".join(str(a) for a in argv))
         lines.extend(_numbered_problems(problems) if problems else [])
         self.app.push_screen(PreviewModal(tuple(lines)))
+
+    # ===== the F4W actions (261014-f4w: [s] save-defaults, ctrl+o picker) =====
+
+    #: The five dir-input ids -> their CFG_FIELD labels (the picker's
+    #: modal title + the open-condition allowlist).
+    _DIR_INPUT_FIELDS: ClassVar[dict[str, str]] = {
+        "#cfg-input-output-root": CFG_FIELD_OUTPUT_ROOT,
+        "#cfg-input-dataset-root": CFG_FIELD_DATASET_ROOT,
+        "#cfg-input-model-root": CFG_FIELD_MODEL_ROOT,
+        "#cfg-input-log-dir": CFG_FIELD_LOG_DIR,
+        "#cfg-input-cache": CFG_FIELD_CACHE,
+    }
+
+    def action_save_directory_defaults(self) -> None:
+        """[s] — atomically write the five dir values to
+        directories.json and toast the written path (F4W-03).
+
+        Synchronous is deliberate: a single deliberate keypress, one
+        atomic two-syscall write (``settings.atomic_write`` — tmp
+        sibling + ``os.replace``). The per-keystroke preview rides its
+        worker because it fires on EVERY Input.Changed; a lone
+        keypress's single small write does not need that machinery, and
+        keeping it inline means the toast names the path the operator
+        just saw written, never a stale worker's. Persisting the
+        current inputs into run_config.json stays the preview worker's
+        job — this action only writes the defaults file.
+        """
+        spec, _ = self._compose_spec()
+        try:
+            written = self._run_service.save_directory_defaults(spec)
+        except Exception as exc:  # noqa: BLE001 — WR-03: surfaced as the
+            # error toast, never a silently dropped keypress
+            self.app.notify(
+                CFG_SAVE_DEFAULTS_FAILED_TOAST.format(error=_exc_text(exc)),
+                severity="error")
+            return
+        self.app.notify(CFG_SAVE_DEFAULTS_TOAST.format(path=str(written)))
+
+    def action_open_dir_picker(self) -> None:
+        """ctrl+o — open the DirPickerModal over the FOCUSED dir input
+        (F4W-05).
+
+        The open condition is an Input whose id is one of the five
+        dir-input ids: any other focus is a silent no-op (never opens
+        over the wrong field, never crashes — the filter Input and the
+        subset path Input are deliberately excluded; they are not
+        directories). The root comes from the tested tier's
+        ``directory_picker_root`` fallback chain.
+        """
+        if self.app.below_minimum_grid:
+            return  # no chrome over the guard (WR-06)
+        focused = self.focused
+        if not isinstance(focused, Input) or focused.id is None:
+            return
+        label = self._DIR_INPUT_FIELDS.get(f"#{focused.id}")
+        if label is None:
+            return
+        root = run_config_service.directory_picker_root(focused.value)
+        self.app.push_screen(DirPickerModal(focused, label, root))
 
     # ===== the launch-gate pipeline (LNC-01..03 — [enter]) =====
 

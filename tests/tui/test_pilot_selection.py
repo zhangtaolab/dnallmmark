@@ -266,6 +266,18 @@ class _EnvCacheHitFake:
             for kernel_id in ENV_KERNEL_LABELS
         ))
 
+    def storage_rows(self):
+        # F4W-04 (261014-f4w): frozen display rows — no filesystem scan.
+        from tui.services.run_config import StorageRow
+
+        return (
+            StorageRow("model_root", "/golden/models", True),
+            StorageRow("dataset_root", "/golden/datasets", False),
+            StorageRow("output_root", "/golden/finetuned", True),
+            StorageRow("log_dir", "/golden/logs", False),
+            StorageRow("cache_dir", "/golden/cache", True),
+        )
+
     def kernels(self):
         raise AssertionError("a cache-hit boot must never spawn the worker")
 
