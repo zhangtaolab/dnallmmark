@@ -202,11 +202,21 @@ SEL_COL_PRESENCE = "数据"
 # wording (✓ 在场 / ✗ 缺失).
 SEL_PRESENCE_PRESENT = "✓ {train}/{dev}/{test}"
 SEL_PRESENCE_MISSING = "✗ 缺失"
-# Presence unknown (registry/audit drift — a key absent from n_audit; every
-# real model key lands here, models are not n_audit subjects). The
-# Copywriting Contract does not define this cell; gap-filler per the
-# glyph-first redundancy rule (◌ pending-glyph family, dim render).
+# Presence unknown (datasets: registry/audit drift — a key absent from
+# n_audit). The Copywriting Contract does not define this cell;
+# gap-filler per the glyph-first redundancy rule (◌ pending-glyph
+# family, dim render). Since 261014-dcl the MODELS column no longer
+# lands here wholesale: for models, unknown is the no-Model_path/drift
+# state of the new live presence decision (SEL_MODEL_PRESENCE_* below);
+# datasets keep the n_audit drift meaning.
 SEL_PRESENCE_UNKNOWN = "◌ 未知"
+
+# Models-column presence cells (DCL-02, 261014-dcl): the live per-model
+# download state decided in tui/services/selection over the effective
+# model root (the run-config root when configured, the committed
+# pipeline dir otherwise). Glyph-first per the redundancy rule.
+SEL_MODEL_PRESENCE_PRESENT = "✓ 已下载"
+SEL_MODEL_PRESENCE_MISSING = "✗ 未下载"
 
 # Selection-screen binding labels (08-UI-SPEC Screen 2 footer mockup).
 SEL_MARK_LABEL = "标记"

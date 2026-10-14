@@ -79,6 +79,7 @@ from tui.screens.selection import (
     TemplateMenuModal,
 )
 from tui.services import registries as registries_service
+from tui.services import run_config as run_config_service
 from tui.services import selection as selection_service
 from tui.services.registries import (
     PRESENCE_MISSING,
@@ -107,6 +108,8 @@ from tui.strings import (
     SEL_LOADING_ROW,
     SEL_MARK_LABEL,
     SEL_MATRIX_LABEL,
+    SEL_MODEL_PRESENCE_MISSING,
+    SEL_MODEL_PRESENCE_PRESENT,
     SEL_N_AUDIT_MISSING,
     SEL_PRESENCE_MISSING,
     SEL_PRESENCE_PRESENT,
@@ -210,6 +213,14 @@ def _default_data():
                 status=PRESENCE_PRESENT, rows=(743095, 109717, 106227),
             ),
             _TASK_B: Presence(status=PRESENCE_MISSING, rows=None),
+        },
+        # DCL-02 (261014-dcl): the models-column live presence — one of
+        # each status (A downloaded, B not, C unknown — its card carries
+        # no Model_path).
+        model_presence={
+            _KEY_MODEL_A: selection_service.MODEL_PRESENCE_PRESENT,
+            _KEY_MODEL_B: selection_service.MODEL_PRESENCE_MISSING,
+            _KEY_MODEL_C: selection_service.MODEL_PRESENCE_UNKNOWN,
         },
     )
 
@@ -420,12 +431,14 @@ async def test_boot_columns_toggle_and_marks_persist_independently():
         # rows keyed on the registry keys, registry order (stable keys)
         assert _row_keys(table) == [_KEY_MODEL_A, _KEY_MODEL_B, _KEY_MODEL_C]
         # card-field columns render; the model presence cell renders the
-        # unknown copy (models are not n_audit subjects — the real
-        # backend fills presence per DATASET key only)
+        # LIVE per-model download state (DCL-02 — decided in the service
+        # over the effective model root; the fixture marks A present)
         assert _row(table, 0)[:5] == [
             "", _KEY_MODEL_A, "MLM", "plants", "396",
         ]
-        assert _row(table, 0)[5] == SEL_PRESENCE_UNKNOWN
+        assert _row(table, 0)[5] == SEL_MODEL_PRESENCE_PRESENT
+        assert _row(table, 1)[5] == SEL_MODEL_PRESENCE_MISSING
+        assert _row(table, 2)[5] == SEL_PRESENCE_UNKNOWN
 
         # space marks the cursor row (the mark column updates in place)
         await pilot.press("space")
@@ -1216,10 +1229,12 @@ async def test_presence_column_renders_n_audit_missing_copy():
         await pilot.pause()
         for index in range(table.row_count):
             assert _row(table, index)[5] == SEL_N_AUDIT_MISSING
-        # the model view renders the same column-level copy
+        # the model view is filesystem-driven, NOT n_audit-driven
+        # (DCL-02): with no model_presence filled the cells render the
+        # shared unknown copy — never the dataset column's n_audit state
         await pilot.press("m")
         await pilot.pause()
-        assert _row(table, 0)[5] == SEL_N_AUDIT_MISSING
+        assert _row(table, 0)[5] == SEL_PRESENCE_UNKNOWN
 
 
 # =====================================================================
@@ -1358,6 +1373,44 @@ def test_backend_loads_the_committed_registries_and_presence(
     statuses = {presence.status for presence in data.presence.values()}
     assert statuses <= {PRESENCE_PRESENT, PRESENCE_MISSING}
     assert statuses, "at least one dataset presence resolved"
+    # DCL-02: model presence covers EVERY model key in the merged+
+    # management view, statuses within the three-value vocabulary
+    # (structure-only — CI machines differ in which models are on disk)
+    assert set(data.model_presence) == {
+        entry["key"] for entry in data.model_entries
+    }
+    assert set(data.model_presence.values()) <= {
+        selection_service.MODEL_PRESENCE_PRESENT,
+        selection_service.MODEL_PRESENCE_MISSING,
+        selection_service.MODEL_PRESENCE_UNKNOWN,
+    }
+    assert data.model_presence, "at least one model presence resolved"
+
+
+def test_backend_model_presence_all_missing_under_empty_configured_root(
+        monkeypatch, tmp_path):
+    """DCL-02 determinism: with DNALLMMARK_TUI_STATE_DIR pointed at a tmp
+    state root holding a run_config.json whose model_root is an EMPTY
+    tmp dir, every model reads MISSING — on any machine (the run-config
+    threading; the committed pipeline models/ dir is never consulted)."""
+    empty_root = tmp_path / "empty-model-root"
+    empty_root.mkdir()
+    state = tmp_path / "state"
+    state.mkdir()
+    monkeypatch.setenv("DNALLMMARK_TUI_STATE_DIR", str(state))
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR",
+                       str(tmp_path / "custom-overlay"))
+    (tmp_path / "custom-overlay").mkdir()
+    run_config_service.save_state(run_config_service.RunSpec(
+        models=(), tasks=(), model_root=str(empty_root)))
+
+    data = SelectionBackend().load_selection_data()
+
+    assert len(data.model_entries) == 62
+    assert set(data.model_presence.values()) == {
+        selection_service.MODEL_PRESENCE_MISSING}, (
+        "an empty configured root reads every model as missing"
+    )
 
 
 def test_backend_registry_failure_degrades_to_the_error_state(

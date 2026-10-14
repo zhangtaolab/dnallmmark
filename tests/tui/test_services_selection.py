@@ -471,6 +471,90 @@ def test_apply_filter_no_terms_returns_every_entry_in_order():
     assert result == entries
 
 
+# ===== DCL-02 (261014-dcl): the pure model-presence decision =====
+
+
+def _presence_entries():
+    """Synthetic canonical MODEL entries carrying Model_path cards."""
+    return [
+        {"key": "model-present", "type": "MLM", "species": "plants",
+         "size_m": 1.0, "card": {"Model_path": "models/store/model-present"}},
+        {"key": "model-missing", "type": "MLM", "species": "plants",
+         "size_m": 2.0, "card": {"Model_path": "models/store/model-missing"}},
+        {"key": "model-nopath", "type": "DL", "species": "",
+         "size_m": 0.0, "card": {}},
+    ]
+
+
+def test_model_presence_present_missing_unknown_over_real_dirs(tmp_path):
+    """The three-value vocabulary over real tmp dirs: a dir that exists
+    under the join is PRESENT, an absent one MISSING, and an entry whose
+    card carries no usable Model_path string UNKNOWN (never an
+    exception)."""
+    base = tmp_path / "store"
+    (base / "models" / "store" / "model-present").mkdir(parents=True)
+
+    presence = selection.model_presence(_presence_entries(), str(base))
+
+    assert presence == {
+        "model-present": selection.MODEL_PRESENCE_PRESENT,
+        "model-missing": selection.MODEL_PRESENCE_MISSING,
+        "model-nopath": selection.MODEL_PRESENCE_UNKNOWN,
+    }
+
+
+def test_model_presence_join_is_verbatim_root_honored(tmp_path):
+    """The 261014-c2l verbatim join: a base given WITHOUT a trailing
+    separator joins the registry value with exactly one separator (the
+    value keeps its own models/ prefix), and a trailing separator on the
+    base normalizes away — a SECOND custom base re-decides every key."""
+    bare = tmp_path / "store-a"
+    other = tmp_path / "store-b"
+    (bare / "models" / "store" / "model-present").mkdir(parents=True)
+    (other / "models" / "store" / "model-missing").mkdir(parents=True)
+
+    no_trailing = selection.model_presence(
+        _presence_entries(), str(bare))
+    with_trailing = selection.model_presence(
+        _presence_entries(), str(bare) + "/")
+
+    assert no_trailing["model-present"] == selection.MODEL_PRESENCE_PRESENT
+    assert with_trailing["model-present"] == selection.MODEL_PRESENCE_PRESENT, (
+        "a trailing separator must normalize away (exactly one separator "
+        "ever joins root and registry value)"
+    )
+    # the SECOND base is honored: model-missing exists only under store-b
+    over_other = selection.model_presence(_presence_entries(), str(other))
+    assert over_other["model-missing"] == selection.MODEL_PRESENCE_PRESENT
+    assert over_other["model-present"] == selection.MODEL_PRESENCE_MISSING
+
+
+def test_model_presence_is_dir_seam_is_replaceable(tmp_path):
+    """The ``is_dir`` parameter is the test/injection seam: the default
+    real filesystem check can be replaced wholesale, and the injected
+    callable receives the FULL joined path per entry."""
+    calls = []
+
+    def recording_is_dir(full):
+        calls.append(full)
+        return True  # everything "exists" under the injected seam
+
+    presence = selection.model_presence(
+        _presence_entries(), str(tmp_path / "store"), is_dir=recording_is_dir)
+
+    assert presence == {
+        "model-present": selection.MODEL_PRESENCE_PRESENT,
+        "model-missing": selection.MODEL_PRESENCE_PRESENT,
+        # no Model_path string -> UNKNOWN even under a always-true seam
+        "model-nopath": selection.MODEL_PRESENCE_UNKNOWN,
+    }
+    # the seam saw exactly the two path-bearing entries, full joined
+    # paths under the given base
+    assert len(calls) == 2
+    assert all(call.startswith(str(tmp_path / "store") + "/")
+               for call in calls)
+
+
 # ===== Decoupling + lane discipline: source scans =====
 
 

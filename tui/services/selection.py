@@ -57,6 +57,7 @@ Contract (locked decisions):
 """
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
@@ -70,6 +71,16 @@ from tui.services.settings import atomic_write
 PRESET_TIER_1 = "tier-1"
 PRESET_TIER_2 = "tier-2"
 PRESET_ALL = "all"
+
+# ===== Model presence vocabulary (DCL-02, 261014-dcl) =====
+
+#: The models-column presence machine vocabulary — deliberately distinct
+#: from the n_audit four-status vocabulary in ``registries.py`` (models
+#: are not n_audit subjects; importing registries here would violate the
+#: module's decoupling contract).
+MODEL_PRESENCE_PRESENT = "present"
+MODEL_PRESENCE_MISSING = "missing"
+MODEL_PRESENCE_UNKNOWN = "unknown"
 
 #: The custom-presets file name under the XDG config root (D-04).
 PRESETS_FILE_NAME = "presets.json"
@@ -485,3 +496,46 @@ def _append_unique(target, value):
     """Append ``value`` to ``target`` unless already present (first wins)."""
     if value not in target:
         target.append(value)
+
+
+def model_presence(entries, base_dir, is_dir=None):
+    """Decide per-model local download presence under ``base_dir``.
+
+    The models-table presence decision (DCL-02, 261014-dcl): for each
+    canonical entry, the registry ``Model_path`` joins the base
+    VERBATIM — ``str(base_dir).rstrip(os.sep) + os.sep + value``, the
+    value keeping its own ``models/`` prefix — exactly the
+    ``pipeline/run_finetune`` model_base + Model_path semantics, so
+    ``base_dir`` is a pipeline/-equivalent storage root. An entry whose
+    card carries no usable ``Model_path`` string maps to UNKNOWN (never
+    an exception). PRESENTATION ONLY split: this service DECIDES (pure
+    machine vocabulary); the screen maps statuses to words.
+
+    Args:
+        entries (list[dict]): canonical model entries (injected — this
+            module never loads registries).
+        base_dir (str | Path): the effective model storage root (the
+            run-config root when configured, the committed pipeline
+            dir otherwise — the caller resolves and injects).
+        is_dir (callable | None): the directory-existence seam; None
+            means the real filesystem check (``os.path.isdir``). The
+            parameter is the test/injection seam.
+
+    Returns:
+        dict[str, str]: entry key -> one of ``MODEL_PRESENCE_PRESENT`` /
+        ``MODEL_PRESENCE_MISSING`` / ``MODEL_PRESENCE_UNKNOWN``.
+    """
+    if is_dir is None:
+        is_dir = os.path.isdir
+    base = str(base_dir).rstrip(os.sep) + os.sep
+    statuses: dict[str, str] = {}
+    for entry in entries:
+        value = entry.get("card", {}).get("Model_path")
+        if not isinstance(value, str) or not value:
+            statuses[entry["key"]] = MODEL_PRESENCE_UNKNOWN
+            continue
+        statuses[entry["key"]] = (
+            MODEL_PRESENCE_PRESENT if is_dir(base + value)
+            else MODEL_PRESENCE_MISSING
+        )
+    return statuses

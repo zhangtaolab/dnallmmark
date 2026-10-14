@@ -3192,8 +3192,14 @@ EXPECTED_QUEUE_CONSTANTS = (
     "QUEUE_REAUDIT_LABEL",
 )
 
-#: The selection-screen d-enqueue amendments (D-14).
-EXPECTED_SEL_CONSTANTS = ("SEL_ENQUEUE_LABEL", "SEL_ENQUEUE_PRESENT_TOAST")
+#: The selection-screen d-enqueue amendments (D-14) + the models-column
+#: presence pair (DCL-02, 261014-dcl) — this file is the established
+#: SEL_ registration site (the one-directional defined-check covers
+#: them).
+EXPECTED_SEL_CONSTANTS = (
+    "SEL_ENQUEUE_LABEL", "SEL_ENQUEUE_PRESENT_TOAST",
+    "SEL_MODEL_PRESENCE_PRESENT", "SEL_MODEL_PRESENCE_MISSING",
+)
 
 
 def test_dl_and_queue_string_inventory_defined():

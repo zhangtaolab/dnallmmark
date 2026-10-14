@@ -212,6 +212,17 @@ class _SelectionGoldenService:
                     rows=(743095, 109717, 106227)),
                 "mouse__DMS": Presence(status=PRESENCE_MISSING, rows=None),
             },
+            # DCL-02 (261014-dcl): FIXED mixed model presence — the
+            # golden renders the live cells deterministically regardless
+            # of which models exist on the exporting machine.
+            model_presence={
+                "plant-dnamamba-6mer":
+                    selection_service.MODEL_PRESENCE_PRESENT,
+                "plant-dnabert-6mer":
+                    selection_service.MODEL_PRESENCE_MISSING,
+                "PlantHelixSeek":
+                    selection_service.MODEL_PRESENCE_UNKNOWN,
+            },
         )
 
     def load_selection_data(self):

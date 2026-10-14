@@ -104,6 +104,7 @@ from tui.screens.nav import BottomBar, TopMenuBar
 from tui.services import custom_entries as custom_entries_service
 from tui.services import download_queue as download_queue_service
 from tui.services import registries as registries_service
+from tui.services import run_config as run_config_service
 from tui.services import selection as selection_service
 from tui.services import settings as settings_service
 from tui.services import templates as templates_service
@@ -160,6 +161,8 @@ from tui.strings import (
     SEL_LOADING_ROW,
     SEL_MARK_LABEL,
     SEL_MATRIX_LABEL,
+    SEL_MODEL_PRESENCE_MISSING,
+    SEL_MODEL_PRESENCE_PRESENT,
     SEL_N_AUDIT_MISSING,
     SEL_PRESENCE_MISSING,
     SEL_PRESENCE_PRESENT,
@@ -228,6 +231,13 @@ class SelectionData:
     model_entries: tuple[dict, ...] = ()
     dataset_entries: tuple[dict, ...] = ()
     presence: dict[str, Presence] = field(default_factory=dict)
+    #: The models-column presence map (DCL-02, 261014-dcl — additive, the
+    #: default keeps every Phase 8/9/10 fake conforming unchanged):
+    #: model key -> one of ``selection_service.MODEL_PRESENCE_*``,
+    #: decided in the service over each registry ``Model_path`` resolved
+    #: against the effective model root (the run-config root when set,
+    #: the committed pipeline dir otherwise).
+    model_presence: dict[str, str] = field(default_factory=dict)
     audit_available: bool = True
     models_load_error: "str | None" = None
     datasets_load_error: "str | None" = None
@@ -422,10 +432,24 @@ class SelectionBackend:
                 )
                 for entry in dataset_entries
             }
+        # DCL-02 (261014-dcl): the models-column presence decision — the
+        # AFTER-customs-union placement gives custom models statuses too;
+        # the effective base is the run-config model root when the slot-4
+        # state file carries one, else the committed pipeline dir (the
+        # same path a launch resolves against when no root is
+        # configured).
+        dirs = run_config_service.resolve_dirs(
+            run_config_service.load_state())
+        model_presence = selection_service.model_presence(
+            model_entries,
+            dirs.model_root_abs or str(
+                run_config_service.DEFAULT_REGISTRY_DIR),
+        )
         return SelectionData(
             model_entries=tuple(model_entries),
             dataset_entries=tuple(dataset_entries),
             presence=presence,
+            model_presence=model_presence,
             # the column renders whenever ANY truth source exists — the
             # committed baseline OR live reconcile rows (an audit-less
             # machine with a done queue entry still shows its flip;
@@ -925,6 +949,23 @@ def _presence_cell(data: SelectionData, key: str) -> Text:
         ),
         style=_STYLE_PRESENCE_PASS,
     )
+
+
+def _model_presence_cell(data: SelectionData, key: str) -> Text:
+    """One models-column presence cell — render only (DCL-02).
+
+    The service already decided (``model_presence`` over the effective
+    model root); the screen maps the three-value machine vocabulary to
+    words: present the downloaded copy, missing the not-downloaded copy,
+    absent/other the shared unknown cell (the no-Model_path/drift
+    state).
+    """
+    status = data.model_presence.get(key)
+    if status == selection_service.MODEL_PRESENCE_PRESENT:
+        return Text(SEL_MODEL_PRESENCE_PRESENT, style=_STYLE_PRESENCE_PASS)
+    if status == selection_service.MODEL_PRESENCE_MISSING:
+        return Text(SEL_MODEL_PRESENCE_MISSING, style=_STYLE_PRESENCE_FAIL)
+    return Text(SEL_PRESENCE_UNKNOWN, style=_STYLE_PRESENCE_UNKNOWN)
 
 
 def _key_cell(key: str, status: "dict | None", width: int,
@@ -1448,8 +1489,13 @@ class SelectionScreen(Screen):
         # (_row_cells only composes with data loaded; the None branch is
         # the type narrowing, unreachable in practice.)
         data = self._data
+        # DCL-02 (261014-dcl): the MODELS column renders the live
+        # per-model download state from the service decision; the
+        # DATASETS column keeps the SEL-04 four-status cell byte-for-byte.
         presence = (
-            _presence_cell(data, key) if data is not None
+            (_model_presence_cell(data, key)
+             if self._view == _MODELS_VIEW else _presence_cell(data, key))
+            if data is not None
             else Text(SEL_PRESENCE_UNKNOWN, style=_STYLE_PRESENCE_UNKNOWN)
         )
         badge_status = (
