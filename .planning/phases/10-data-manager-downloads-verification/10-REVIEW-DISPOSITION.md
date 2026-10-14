@@ -5,25 +5,25 @@ titles: json
 findings:
   - id: CR-01
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "Dataset landing base resolves through a different chain than the sweep/env-check root — downloads can land where the configured run does not read"
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "A failed KIND_MODEL download flips the selection 下载 column to 已下载 — presence is dir-existence while the done gate requires config.json"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "The slot-3 drill-down renders \"channel: unknown (unknown_key)\" for healthy KIND_MODEL queue rows — channel_detail only resolves the dataset registry"
   - id: IN-01
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`z` during the probe-in-flight window renders the \"not yet public\" toast as fact"
   - id: IN-02
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`ABOUT_MILESTONE_STAGE` is stale — names phase 9 as the current phase on the About screen"
-open: 5
+open: 4
 total: 5
 recorded: 2026-10-14T15:20:38.683Z
 ---
