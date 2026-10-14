@@ -1,0 +1,21 @@
+{
+  "task": "Task 2 — WR-01: fail-closed env_smoke directory kernels + the guarded env-screen worker",
+  "commands": [
+    {
+      "command": "uv run --group dev pytest tests/test_env_smoke_bytes.py -q -k \"degrade_fail_closed or broken_entries\"",
+      "exitCode": 1,
+      "output": "2 failed, 4 deselected in 0.04s\n\nFAILED tests/test_env_smoke_bytes.py::test_directory_kernels_degrade_fail_closed_on_corrupt_registry\n  [json.JSONDecodeError escaping the bare open/json.load in check_model_dirs]\n\nFAILED tests/test_env_smoke_bytes.py::test_directory_kernels_count_shape_broken_entries_as_missing\nE   AttributeError: 'list' object has no attribute 'get'\npipeline/env_smoke.py:460: AttributeError   [models_info[name].get(\"Model_path\") over the non-dict entry]"
+    },
+    {
+      "command": "uv run --group dev pytest tests/tui/test_pilot_env_check.py -q -k \"raising_kernel or broken_checkout\"",
+      "exitCode": 1,
+      "output": "2 failed, 28 deselected in 0.56s\n\nFAILED tests/tui/test_pilot_env_check.py::test_raising_kernel_renders_degraded_row_and_app_stays_alive\nE   RuntimeError: kernel exploded on a broken checkout   [raised through the unguarded result = kernel() loop in run_full_check]\n\nFAILED tests/tui/test_pilot_env_check.py::test_broken_checkout_kernels_enumeration_survives\nE   RuntimeError: kernels() unavailable on a broken checkout   [raised through the unguarded self._service.kernels() enumeration inside the worker]"
+    }
+  ],
+  "targetTest": "tests/test_env_smoke_bytes.py::test_directory_kernels_degrade_fail_closed_on_corrupt_registry, ::test_directory_kernels_count_shape_broken_entries_as_missing; tests/tui/test_pilot_env_check.py::test_raising_kernel_renders_degraded_row_and_app_stays_alive, ::test_broken_checkout_kernels_enumeration_survives",
+  "targetFile": "tests/test_env_smoke_bytes.py, tests/tui/test_pilot_env_check.py",
+  "expected": "corrupt/missing registry yields a named ok=False CheckResult (one torch-gate-shaped FAIL line); broken entry shapes count as fail-closed missing; a raising kernel renders one degraded fail row with the run persisting whole and the app alive; a failing kernels() degrades every ENV_KERNEL_LABELS row",
+  "actual": "JSONDecodeError escapes the bare open/json.load; AttributeError at env_smoke.py:460 on the non-dict entry; both RuntimeErrors escape the worker body unguarded (the WR-01 family — the opening screen dies on the broken checkout it exists to diagnose)",
+  "classifier": "gsd_run check tdd-red-evidence UNAVAILABLE in this executor environment (gsd_run not installed, exit 127) — semantic assessment recorded instead",
+  "semanticAssessment": "VALID_RED — all four target tests executed and failed on the planned missing behavior (the crash escapes themselves). Test vocabulary (ENV_KERNEL_DEGRADED) landed with the RED commit as a zero-consumer strings constant so the failures are behavioral, not import faults. No unrelated failures."
+}
