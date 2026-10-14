@@ -56,12 +56,12 @@ recorded: 2026-10-14T16:12:41.467Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | open | - |
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
-| WR-05 | warning | open | - |
+| CR-01 | critical | fixed | - |
+| WR-01 | warning | fixed | - |
+| WR-02 | warning | fixed | - |
+| WR-03 | warning | fixed | - |
+| WR-04 | warning | fixed | - |
+| WR-05 | warning | fixed | - |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |

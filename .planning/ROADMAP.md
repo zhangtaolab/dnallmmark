@@ -241,7 +241,7 @@ Plans:
   4. The monitor dashboard shows cell-level state (queued/running/done/failed/skipped, seed-adjacent) via 2s frontier + 60s full tolerant scans, progress stats (done/total, current cell, elapsed), attach mode for externally (CLI) launched sweeps, a live failure list with confirmation-gated `--from-failures` re-run, bounded log tailing with tee-to-disk persistence, and resume recognition from `trainer_state.json` markers
   5. A maintainer-authorized bounded smoke (1 model × 1 task × 1 seed, 1 epoch) runs launch → monitor → failure-re-run end-to-end on GB10 while the E2' full-sweep gate demonstrably blocks; every capability remains reachable headless via CLI
 
-**Plans**: 8 plans (7 complete + gap closure 11-08)
+**Plans**: 8/8 plans complete (7 complete + gap closure 11-08)
 Plans:
 - [x] 11-01-PLAN.md — run_sweep `--config-variant` via the peft ALIASING machinery (D-18; not pass-through), argv-parity + frozen-pair read-source tests
 - [x] 11-02-PLAN.md — run_config service: XDG-persisted own pickers state, full params model, dirs, same-source preview (imported enumerate_matrix), E2' verdict + typed phrase, PROBE_INELIGIBLE extraction
@@ -250,7 +250,7 @@ Plans:
 - [x] 11-05-PLAN.md — CFG_/LNC_/MON_ strings verbatim + bidirectional tripwire + ENV_VERDICT amendment + the 7→9 spec-prose correction
 - [x] 11-06-PLAN.md — slot-4 运行配置 screen: pickers/params/dirs/preview line, [p] modal, the 启动门 modals (env-block, confirm, E2' typed phrase), ExitModal + q intercept, nav promotion
 - [x] 11-07-PLAN.md — slot-5 任务监控 screen: discovery/attach, cell table, stats/ETA line, [f]/[t]/[a]/[r], D-13 auto-nav, degradation sweep, SC1-5 checklist + the GB10 bounded smoke procedure
-- [ ] 11-08-PLAN.md — gap closure (11-VERIFICATION): CR-01 attach-path resolution + WR-01 REPO_ROOT registry basis + WR-02/03 re-run seed derivation + honest confirm + WR-04 O_EXCL tee + WR-05 multi-root exit modal
+- [x] 11-08-PLAN.md — gap closure (11-VERIFICATION): CR-01 attach-path resolution + WR-01 REPO_ROOT registry basis + WR-02/03 re-run seed derivation + honest confirm + WR-04 O_EXCL tee + WR-05 multi-root exit modal
 
 **UI hint**: yes
 
@@ -294,7 +294,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 | 8. TUI Foundation (Env Check & Selection) | v1.2 | 9/9 | Complete    | 2026-10-12 |
 | 9. Custom Model & Dataset Onboarding | v1.2 | 6/6 | Complete    | 2026-10-12 |
 | 10. Data Manager (Downloads & Verification) | v1.2 | 7/7 | Complete    | 2026-10-13 |
-| 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 7/7 | Complete    | 2026-10-13 |
+| 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 8/8 | Complete    | 2026-10-13 |
 | 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 5/5 | In Progress | - |
 
 ---
