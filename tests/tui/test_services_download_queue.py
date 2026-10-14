@@ -4040,3 +4040,544 @@ def test_corrupt_directories_json_degrades_to_repo_default(
     spec = service.resolve_channel("Demo__task")
 
     assert spec.local_dir == repo / "pipeline" / "datasets" / "Demo"
+
+
+# =====================================================================
+# Lane 11: the KIND_MODEL channel (MLC-01, 261014-mlc) — dnallm-authority
+# model downloads through the shared queue. Every test stays CI-safe: the
+# fake-spawner engine lane writes fixture trees under tmp_path; NO test
+# imports dnallm or modelscope or touches the network (the -I subprocess
+# is the only place dnallm code ever runs).
+# =====================================================================
+
+MODEL_KEY = "DNABERT-2-117M"           # the smallest adapted slot model
+MODEL_REPO_ID = "ZhejiangLab-LifeScience/DNABERT-2-117M"
+UNADAPTED_MODEL_KEY = "CrossDNA_519M"  # committed, verdict dnllm_adapted false
+
+
+def tmp_repo_with_models_registry(tmp_path, entries):
+    """A tmp repo root carrying a synthetic official MODELS registry (the
+    model channel's registry authority — same shape as the dataset
+    helper, over models_info.json)."""
+    pipeline = tmp_path / "pipeline"
+    pipeline.mkdir(parents=True, exist_ok=True)
+    (pipeline / "models_info.json").write_text(
+        json.dumps(entries), encoding="utf-8")
+    return tmp_path
+
+
+MODEL_ENTRY = {"Model_path": "models/DNABERT-2-117M", "size (M)": 117}
+
+
+class ModelFakeSpawner:
+    """The model lane's injectable spawner: records every spawn and
+    optionally stages a modelscope-1.40.2-shaped landing tree under the
+    argv landing dir before answering (the normalization fixture)."""
+
+    def __init__(self, returncode=0, writer=None):
+        self.returncode_value = returncode
+        self.writer = writer
+        self.calls = []
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append({"argv": list(argv), "kwargs": dict(kwargs)})
+        if self.writer is not None:
+            self.writer(argv)
+        return FakePopen(returncode=self.returncode_value,
+                         stdout=b"", stderr=b"downloading model ...\n")
+
+
+def write_modelscope_nesting(landing, org_repo=MODEL_REPO_ID, files=None):
+    """Stage the live-probed modelscope 1.40.2 cache layout under the
+    landing dir: models/<org>--<name>/snapshots/<rev>/<files> plus the
+    .lock/ scaffolding dir."""
+    slug = org_repo.replace("/", "--")
+    snapshot = Path(landing) / "models" / slug / "snapshots" / "master"
+    snapshot.mkdir(parents=True, exist_ok=True)
+    for name in (files if files is not None
+                 else ("config.json", "tokenizer_config.json",
+                       "model.safetensors")):
+        (snapshot / name).write_text("{}" if name.endswith(".json")
+                                     else "weights", encoding="utf-8")
+    (Path(landing) / ".lock").mkdir(exist_ok=True)
+    return snapshot
+
+
+def model_engine_service(tmp_path, monkeypatch, spawner,
+                         entries=None, model_root=None):
+    """A model-lane service over a tmp repo + tmp state root + injected
+    spawner, with the entry already enqueued (kind=KIND_MODEL) and
+    claimed for run_task."""
+    repo = tmp_repo_with_models_registry(
+        tmp_path / "repo", entries or {MODEL_KEY: dict(MODEL_ENTRY)})
+    state = tmp_path / "state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    root = model_root if model_root is not None else tmp_path / "mstore"
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        spawner=spawner, cli_path=str(fake_cli(tmp_path)),
+        model_root=str(root))
+    assert service.enqueue_model(MODEL_KEY).action == "enqueued"
+    service.claim_next()
+    return service, repo, state, Path(root)
+
+
+# ===== vocabulary + the fixed program constant (T-qt-01) =====
+
+
+def test_kind_model_vocabulary_and_program_constant_pinned():
+    """The model-kind contract: KIND_MODEL beside the dataset kinds, and
+    the FIXED module-level program the -I subprocess runs — the L6H-04
+    proven invocation (functools.partial-bound modelscope
+    snapshot_download with cache_dir riding the partial, because the
+    dnallm download_model wrapper does not thread it)."""
+    assert download_queue.KIND_MODEL == "model"
+    program = download_queue.MODEL_DOWNLOAD_PROGRAM
+    for fragment in ("from functools import partial",
+                     "from modelscope.hub.snapshot_download "
+                     "import snapshot_download",
+                     "from dnallm.models.model import download_model",
+                     "download_model(repo_id, downloader=partial(",
+                     "cache_dir="):
+        assert fragment in program, fragment
+
+
+def test_model_reason_codes_are_machine_vocabulary():
+    """The model lane's reason/problem codes (the screens render, never
+    parse)."""
+    assert download_queue.REASON_NOT_DNALLM_ADAPTED == "not_dnallm_adapted"
+    assert download_queue.REASON_COMPAT_UNAVAILABLE == "compat_unavailable"
+    assert download_queue.REASON_NO_MODEL_PATH == "no_model_path"
+    assert download_queue.REASON_ALREADY_PRESENT == "already_present"
+    assert download_queue.PROBLEM_MODEL_NESTING == "model_nesting_ambiguous"
+    assert download_queue.PROBLEM_MODEL_HOIST_ERROR == "model_hoist_error"
+
+
+# ===== resolve_model_channel + _models_base =====
+
+
+def test_model_channel_census_36_clean_23_not_adapted_over_committed(
+        monkeypatch, tmp_path):
+    """THE compat gate: over the committed 59-key models registry,
+    exactly 36 keys resolve a clean spec (repo id == the compat map's
+    modelscope id; landing == the model_presence join over the effective
+    base; source_url carries the repo id) and 23 degrade with
+    not_dnallm_adapted — computed key-by-key, drift surfaces loudly."""
+    pin_state_dir(monkeypatch, tmp_path)
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+    registry = json.loads(
+        (REPO_ROOT / "pipeline" / "models_info.json").read_text(
+            encoding="utf-8"))
+    compat = download_queue.registries.load_dnallm_compat()
+
+    clean, degraded = {}, {}
+    for key in registry:
+        spec = service.resolve_model_channel(key)
+        assert spec is not None, key
+        if spec.reason_code is None:
+            clean[key] = spec
+        else:
+            degraded[key] = spec.reason_code
+
+    assert len(clean) == 36
+    assert len(degraded) == 23
+    assert set(degraded.values()) == {"not_dnallm_adapted"}
+    base = str(service._models_base()).rstrip(os.sep) + os.sep
+    for key, spec in clean.items():
+        assert spec.repo_id == compat[key]["modelscope"], key
+        expected_landing = base + registry[key]["Model_path"]
+        assert str(spec.landing) == expected_landing, key
+        assert "modelscope.cn" in spec.source_url
+        assert spec.repo_id in spec.source_url
+
+
+def test_models_base_is_byte_identical_to_the_selection_presence_chain(
+        monkeypatch, tmp_path):
+    """The MLC-01 landing/presence agreement pin: with no constructor
+    param and no configured root, ``_models_base()`` is byte-identical
+    to the chain SelectionBackend feeds ``model_presence`` (a landed
+    model ALWAYS flips its presence cell)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+    from types import SimpleNamespace
+
+    from tui.services import run_config as run_config_service
+    dirs = run_config_service.resolve_dirs(
+        run_config_service.load_state())
+    expected = dirs.model_root_abs or str(
+        run_config_service.DEFAULT_REGISTRY_DIR)
+    assert str(service._models_base()) == expected
+
+    # the file tier: a configured run-config root redirects the base
+    root_x = tmp_path / "stor-x"
+    monkeypatch.setattr(download_queue.run_config_service,
+                        "load_state", lambda: object())
+    monkeypatch.setattr(
+        download_queue.run_config_service, "resolve_dirs",
+        lambda spec: SimpleNamespace(model_root_abs=str(root_x)))
+    assert str(service._models_base()) == str(root_x)
+
+    # the param tier beats the file tier
+    root_y = tmp_path / "stor-y"
+    param = download_queue.DownloadQueueService(
+        model_root=str(root_y), cli_path=str(fake_cli(tmp_path)))
+    assert str(param._models_base()) == str(root_y)
+
+
+def test_resolve_model_channel_unknown_key_yields_none(
+        monkeypatch, tmp_path):
+    """A key absent from the official MODELS registry resolves None (the
+    caller answers unknown_key) — customs are not download targets."""
+    service, _ = make_service(tmp_path, monkeypatch)
+    assert service.resolve_model_channel("not-a-model-key") is None
+
+
+# ===== enqueue_model outcome order =====
+
+
+def test_enqueue_model_happy_path_appends_kind_model_entry(
+        monkeypatch, tmp_path):
+    service, state = make_service(tmp_path, monkeypatch)
+
+    outcome = service.enqueue_model(MODEL_KEY)
+
+    assert outcome.action == "enqueued"
+    assert outcome.key == MODEL_KEY
+    (entry,) = service.entries()
+    assert entry.kind == download_queue.KIND_MODEL
+    assert entry.state == "pending"
+    doc = json.loads(state_file(state).read_text(encoding="utf-8"))
+    assert doc["entries"][0]["kind"] == download_queue.KIND_MODEL
+    assert set(doc["entries"][0]) == CANONICAL_ENTRY_FIELDS
+
+
+def test_enqueue_model_is_idempotent_per_key_any_state(
+        monkeypatch, tmp_path):
+    """An existing entry of ANY state yields already_queued first (the
+    D-08 twin — even when the CLI has since gone absent)."""
+    service, _ = make_service(tmp_path, monkeypatch)
+    assert service.enqueue_model(MODEL_KEY).action == "enqueued"
+
+    again = service.enqueue_model(MODEL_KEY)
+
+    assert again.action == "already_queued"
+    assert len(service.entries()) == 1
+
+
+def test_enqueue_model_unknown_key_never_appends(monkeypatch, tmp_path):
+    service, _ = make_service(tmp_path, monkeypatch)
+
+    outcome = service.enqueue_model("NotInRegistry__nope")
+
+    assert outcome.action == "unknown_key"
+    assert service.entries() == []
+
+
+def test_enqueue_model_unadapted_verdict_yields_not_dnallm_adapted(
+        monkeypatch, tmp_path):
+    """A committed official key whose compat verdict is false enqueues
+    to unknown/not_dnallm_adapted — the honest manual-placement class,
+    never HF guidance, never a queue row."""
+    service, _ = make_service(tmp_path, monkeypatch)
+
+    outcome = service.enqueue_model(UNADAPTED_MODEL_KEY)
+
+    assert outcome.action == "unknown"
+    assert outcome.reason_code == "not_dnllm_adapted"
+    assert service.entries() == []
+
+
+def test_enqueue_model_absent_compat_entry_while_loadable_is_not_adapted(
+        monkeypatch, tmp_path):
+    """A key the (loadable, non-empty) compat map simply lacks reads as
+    not_dnallm_adapted — registry evolution, not an outage."""
+    service, _ = make_service(tmp_path, monkeypatch)
+    committed = download_queue.registries.load_dnallm_compat()
+    assert committed  # the map is loadable and non-empty
+    monkeypatch.setattr(
+        download_queue.registries, "load_dnallm_compat",
+        lambda: {k: v for k, v in committed.items() if k != MODEL_KEY})
+
+    outcome = service.enqueue_model(MODEL_KEY)
+
+    assert outcome.action == "unknown"
+    assert outcome.reason_code == "not_dnllm_adapted"
+
+
+def test_enqueue_model_unreadable_compat_map_yields_compat_unavailable(
+        monkeypatch, tmp_path):
+    """An EMPTY compat mapping is the degraded read (the committed map
+    carries all 59 keys — emptiness is the unreadable signal): the
+    honest compat_unavailable reason, never a crash."""
+    service, _ = make_service(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        download_queue.registries, "load_dnallm_compat", lambda: {})
+
+    outcome = service.enqueue_model(MODEL_KEY)
+
+    assert outcome.action == "unknown"
+    assert outcome.reason_code == "compat_unavailable"
+    assert service.entries() == []
+
+
+def test_enqueue_model_no_model_path_yields_no_model_path(
+        monkeypatch, tmp_path):
+    """An adapted key whose REGISTRY entry carries no usable Model_path
+    string enqueues to unknown/no_model_path (no landing can be
+    composed)."""
+    repo = tmp_repo_with_models_registry(
+        tmp_path / "repo", {MODEL_KEY: {"size (M)": 117}})
+    pin_state_dir(monkeypatch, tmp_path)
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, model_root=str(tmp_path / "mstore"),
+        cli_path=str(fake_cli(tmp_path)))
+
+    outcome = service.enqueue_model(MODEL_KEY)
+
+    assert outcome.action == "unknown"
+    assert outcome.reason_code == "no_model_path"
+    assert service.entries() == []
+
+
+def test_enqueue_model_existing_landing_yields_already_present(
+        monkeypatch, tmp_path):
+    """The defensive disk gate: a landing dir that already exists on
+    disk refuses with already_present (presence will read it — enqueueing
+    a download over a landed card is never the honest action)."""
+    repo = tmp_repo_with_models_registry(
+        tmp_path / "repo", {MODEL_KEY: dict(MODEL_ENTRY)})
+    root = tmp_path / "mstore"
+    (root / "models" / MODEL_KEY).mkdir(parents=True)
+    pin_state_dir(monkeypatch, tmp_path)
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, model_root=str(root),
+        cli_path=str(fake_cli(tmp_path)))
+
+    outcome = service.enqueue_model(MODEL_KEY)
+
+    assert outcome.action == "unknown"
+    assert outcome.reason_code == "already_present"
+    assert service.entries() == []
+
+
+def test_enqueue_model_cli_unavailable_outcome(monkeypatch, tmp_path):
+    """The CLI probe doubles as the modelscope-package presence proxy
+    (the -I program imports modelscope from the same env)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    force_cli_absent(monkeypatch, tmp_path)
+    service = download_queue.DownloadQueueService()
+
+    outcome = service.enqueue_model(MODEL_KEY)
+
+    assert outcome.action == "cli_unavailable"
+    assert service.entries() == []
+
+
+def test_enqueue_model_persist_failure_refused_no_ghost_row(
+        tmp_path, monkeypatch):
+    """The WR-04 twin: an unwritable state rail refuses with
+    persist_failed and rolls the append back — never a ghost row."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    state.mkdir(parents=True, exist_ok=True)
+    service = download_queue.DownloadQueueService(
+        cli_path=str(fake_cli(tmp_path)))
+    read_only_state(state)
+    try:
+        outcome = service.enqueue_model(MODEL_KEY)
+
+        assert outcome.action == "persist_failed"
+        assert service.entries() == []
+    finally:
+        writable_state(state)
+
+
+# ===== run_task: the KIND_MODEL branch (spawn/normalize/gate) =====
+
+
+def test_model_run_task_pins_isolated_python_argv_env_and_session(
+        monkeypatch, tmp_path):
+    """The spawn discipline: LIST argv [sys.executable, -I, -c, the
+    FIXED program, landing, repo_id] (T-qt-01: no operator-controlled
+    code — only landing dir + repo id cross as argv DATA), env exactly
+    dict(os.environ), start_new_session, PIPEs."""
+    spawner = ModelFakeSpawner(returncode=0)
+    service, _repo, _state, root = model_engine_service(
+        tmp_path, monkeypatch, spawner,
+        writer=lambda argv: write_modelscope_nesting(argv[4]))
+
+    event = service.run_task(MODEL_KEY, run_id="m1")
+
+    assert event.state == "done"
+    (call,) = spawner.calls
+    argv = call["argv"]
+    assert argv[0] == sys.executable
+    assert argv[1:4] == ["-I", "-c", download_queue.MODEL_DOWNLOAD_PROGRAM]
+    assert argv[4:] == [str(root / "models" / MODEL_KEY), MODEL_REPO_ID]
+    assert call["kwargs"]["env"] == dict(os.environ)
+    assert call["kwargs"]["start_new_session"] is True
+    assert call["kwargs"]["stdout"] == subprocess.PIPE
+    assert call["kwargs"]["stderr"] == subprocess.PIPE
+
+
+def test_model_run_task_normalizes_nesting_and_gates_on_config_json(
+        monkeypatch, tmp_path):
+    """Exit 0 + the modelscope 1.40.2 nesting: the single snapshot dir's
+    children hoist to the landing root, the scaffolding (models/ subtree
+    + .lock/) is removed, and done REQUIRES config.json to exist
+    DIRECTLY in the landing dir — no reconcile leg (models are not
+    n_audit subjects)."""
+    spawner = ModelFakeSpawner(returncode=0)
+    service, _repo, _state, root = model_engine_service(
+        tmp_path, monkeypatch, spawner,
+        writer=lambda argv: write_modelscope_nesting(argv[4]))
+
+    event = service.run_task(MODEL_KEY, run_id="m2")
+
+    landing = root / "models" / MODEL_KEY
+    assert event.state == "done"
+    assert event.problems == ()
+    assert event.last_percent is None, (
+        "dnallm logs carry no parseable percents — the row renders "
+        "indeterminate"
+    )
+    assert (landing / "config.json").is_file()
+    assert (landing / "tokenizer_config.json").is_file()
+    assert not (landing / "models").exists(), "scaffolding removed"
+    assert not (landing / ".lock").exists(), "lock dir removed"
+    (entry,) = service.entries()
+    assert entry.state == "done"
+    assert entry.reconcile is None, "the model lane has NO reconcile leg"
+
+
+def test_model_run_task_zero_snapshot_dirs_fails_ambiguous(
+        monkeypatch, tmp_path):
+    """A models/ scaffolding with ZERO snapshot dirs fails honestly
+    (model_nesting_ambiguous) — the nesting is unreadable, never a
+    fabricated done."""
+
+    def writer(argv):
+        (Path(argv[4]) / "models").mkdir(parents=True, exist_ok=True)
+
+    spawner = ModelFakeSpawner(returncode=0)
+    service, _repo, _state, _root = model_engine_service(
+        tmp_path, monkeypatch, spawner, writer=writer)
+
+    event = service.run_task(MODEL_KEY, run_id="m3")
+
+    assert event.state == "failed"
+    assert download_queue.PROBLEM_MODEL_NESTING in event.problems
+
+
+def test_model_run_task_multiple_snapshot_dirs_fails_ambiguous(
+        monkeypatch, tmp_path):
+    """Two snapshot dirs (an ambiguous hoist) fail honestly — collapsing
+    either one silently would be a data decision, never the queue's."""
+
+    def writer(argv):
+        for rev in ("master", "v2"):
+            write_modelscope_nesting(argv[4], files=("config.json",))
+            # second revision under the same slug
+            slug = MODEL_REPO_ID.replace("/", "--")
+            extra = Path(argv[4]) / "models" / slug / "snapshots" / rev
+            extra.mkdir(parents=True, exist_ok=True)
+            (extra / "config.json").write_text("{}", encoding="utf-8")
+
+    spawner = ModelFakeSpawner(returncode=0)
+    service, _repo, _state, _root = model_engine_service(
+        tmp_path, monkeypatch, spawner, writer=writer)
+
+    event = service.run_task(MODEL_KEY, run_id="m4")
+
+    assert event.state == "failed"
+    assert download_queue.PROBLEM_MODEL_NESTING in event.problems
+
+
+def test_model_run_task_empty_landing_fails_honestly(
+        monkeypatch, tmp_path):
+    """Exit 0 with an EMPTY landing (nothing staged) fails with the
+    landing-incomplete gate — exit 0 alone can never mean done."""
+
+    def writer(argv):
+        Path(argv[4]).mkdir(parents=True, exist_ok=True)
+
+    spawner = ModelFakeSpawner(returncode=0)
+    service, _repo, _state, _root = model_engine_service(
+        tmp_path, monkeypatch, spawner, writer=writer)
+
+    event = service.run_task(MODEL_KEY, run_id="m5")
+
+    assert event.state == "failed"
+    assert download_queue.PROBLEM_LANDING_INCOMPLETE in event.problems
+
+
+def test_model_run_task_nonzero_exit_fails_exit_code(
+        monkeypatch, tmp_path):
+    spawner = ModelFakeSpawner(returncode=3)
+    service, _repo, _state, _root = model_engine_service(
+        tmp_path, monkeypatch, spawner)
+
+    event = service.run_task(MODEL_KEY, run_id="m6")
+
+    assert event.state == "failed"
+    assert "exit_3" in event.problems
+
+
+def test_model_run_task_degraded_channel_fails_with_reason(
+        monkeypatch, tmp_path):
+    """A claimed entry whose channel degraded after the claim (the map
+    went unreadable) fails carrying the reason — never a spawn."""
+    repo = tmp_repo_with_models_registry(
+        tmp_path / "repo", {MODEL_KEY: dict(MODEL_ENTRY)})
+    state = tmp_path / "state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    spawner = ModelFakeSpawner()
+    service = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        spawner=spawner, cli_path=str(fake_cli(tmp_path)),
+        model_root=str(tmp_path / "mstore"))
+    assert service.enqueue_model(MODEL_KEY).action == "enqueued"
+    service.claim_next()
+    monkeypatch.setattr(
+        download_queue.registries, "load_dnallm_compat", lambda: {})
+
+    event = service.run_task(MODEL_KEY, run_id="m7")
+
+    assert event.state == "failed"
+    assert "compat_unavailable" in event.problems
+    assert spawner.calls == []
+
+
+# ===== boot resume: KIND_MODEL entries ride the existing machinery =====
+
+
+def test_persisted_pending_model_entry_survives_load_and_reclaims(
+        monkeypatch, tmp_path):
+    """A persisted pending KIND_MODEL entry rehydrates on load() and
+    claim_next hands it to the driver with its kind intact (the D-06
+    restart downgrade rides the existing machinery unchanged)."""
+    repo = tmp_repo_with_models_registry(
+        tmp_path / "repo", {MODEL_KEY: dict(MODEL_ENTRY)})
+    state = tmp_path / "state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    first = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        cli_path=str(fake_cli(tmp_path)),
+        model_root=str(tmp_path / "mstore"))
+    assert first.enqueue_model(MODEL_KEY).action == "enqueued"
+    first.claim_next()   # persist as downloading
+
+    fresh = download_queue.DownloadQueueService(
+        repo_root=repo, state_path=state / "download_queue.json",
+        cli_path=str(fake_cli(tmp_path)),
+        model_root=str(tmp_path / "mstore"))
+    assert fresh.load() is None
+
+    (entry,) = fresh.entries()
+    assert entry.state == "pending", "the D-06 downgrade"
+    assert entry.interrupted is True
+    claimed = fresh.claim_next()
+    assert claimed is not None
+    assert claimed.kind == download_queue.KIND_MODEL
+    assert claimed.key == MODEL_KEY

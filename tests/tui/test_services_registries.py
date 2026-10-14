@@ -33,6 +33,7 @@ See also:
     ``tests/test_registry_loader.py`` — the overlay merge contract.
 """
 
+import json
 import re
 from pathlib import Path
 
@@ -48,6 +49,7 @@ from tui.services.registries import (
     PRESENCE_UNAVAILABLE,
     PRESENCE_UNKNOWN,
     load_dataset_entries,
+    load_dnallm_compat,
     load_model_entries,
     load_n_audit,
     load_registry_counts,
@@ -313,6 +315,85 @@ def test_load_n_audit_missing_file_yields_none(tmp_path, monkeypatch):
         registries_module, "N_AUDIT_PATH", tmp_path / "absent.json"
     )
     assert load_n_audit() is None
+
+
+# ===== The dnallm compat map loader (MLC-01, 261014-mlc) =====
+#
+# pipeline/dnallm_compat.json is the 261014-l6h artifact: the ONE
+# dnllm_adapted verdict map over exactly the 59 official registry keys.
+# This loader is the SINGLE tolerant read both the slot-2 default filter
+# (SelectionBackend) and the queue's model channel resolution consume —
+# the ONE-loader rule (never a duplicated read).
+
+
+def test_load_dnallm_compat_reads_the_committed_verdict_map():
+    """The committed map: schema keys intact, exactly 59 model keys, 36
+    with dnllm_adapted true (11 modelscope-slot + 25 modelscope-mirror
+    channels — the 261014-l6h census), every adapted entry carrying a
+    usable modelscope repo id (the download channel data)."""
+    compat = load_dnallm_compat()
+
+    assert len(compat) == 59
+    adapted = sorted(
+        key for key, verdict in compat.items()
+        if isinstance(verdict, dict)
+        and verdict.get("dnllm_adapted") is True
+    )
+    assert len(adapted) == 36
+    slot = [key for key in adapted
+            if compat[key].get("channel") == "modelscope-slot"]
+    mirror = [key for key in adapted
+              if compat[key].get("channel") == "modelscope-mirror"]
+    assert len(slot) == 11
+    assert len(mirror) == 25
+    for key in adapted:
+        repo_id = compat[key].get("modelscope")
+        assert isinstance(repo_id, str) and re.fullmatch(
+            r"[\w.-]+/[\w.-]+", repo_id), key
+
+
+def test_load_dnallm_compat_keys_are_exactly_the_official_models(
+        monkeypatch, tmp_path):
+    """The map's key set == the official models registry key set (the
+    l6h alignment audit's construction; drift surfaces loudly here)."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
+    assert set(load_dnallm_compat()) == {
+        entry["key"] for entry in load_model_entries()
+    }
+
+
+def test_load_dnallm_compat_missing_file_yields_empty_mapping(
+        tmp_path, monkeypatch):
+    """A missing map degrades to the empty mapping — never an exception
+    (the consumers treat empty as the degraded compat_unavailable
+    state)."""
+    monkeypatch.setattr(
+        registries_module, "DNALLM_COMPAT_PATH",
+        tmp_path / "absent-compat.json")
+    assert load_dnallm_compat() == {}
+
+
+def test_load_dnallm_compat_corrupt_file_yields_empty_mapping(
+        tmp_path, monkeypatch):
+    """A corrupt (unparseable) map degrades to the empty mapping."""
+    corrupt = tmp_path / "dnallm_compat.json"
+    corrupt.write_text('{"models": {"trunca', encoding="utf-8")
+    monkeypatch.setattr(registries_module, "DNALLM_COMPAT_PATH", corrupt)
+    assert load_dnallm_compat() == {}
+
+
+def test_load_dnallm_compat_wrong_shape_yields_empty_mapping(
+        tmp_path, monkeypatch):
+    """A top-level non-object, a missing models mapping, or a non-dict
+    models mapping degrades to the empty mapping (wrong shape)."""
+    for bad in ('["a", "list"]', '{"no_models": {}}', '{"models": [1]}',
+                '"a bare string"'):
+        path = tmp_path / "dnallm_compat.json"
+        path.write_text(bad, encoding="utf-8")
+        monkeypatch.setattr(registries_module, "DNALLM_COMPAT_PATH", path)
+        assert load_dnallm_compat() == {}, bad
 
 
 def test_service_source_carries_zero_chinese_and_no_rendered_copy():
