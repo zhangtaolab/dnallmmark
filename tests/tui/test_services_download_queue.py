@@ -849,10 +849,33 @@ def test_service_module_carries_zero_inline_chinese_copy():
 
 def test_service_module_never_imports_modelscope():
     """D-01: modelscope is in NO uv group — the service must stay
-    importable (and import-clean) on machines without it."""
-    source = Path(download_queue.__file__).read_text(encoding="utf-8")
-    for pattern in ("import modelscope", "from modelscope"):
-        assert pattern not in source
+    importable (and import-clean) on machines without it. The scan is
+    AST-based (261014-mlc): the KIND_MODEL lane's FIXED program constant
+    carries the subprocess's own ``from modelscope...`` line as STRING
+    data (the -I child is the only place dnallm/modelscope code runs) —
+    a raw-text scan would false-positive on it; the AST scan keeps the
+    invariant stronger, not weaker (aliased/try-guarded imports surface
+    too)."""
+    import ast
+
+    tree = ast.parse(
+        Path(download_queue.__file__).read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or ""]
+        else:
+            continue
+        for name in names:
+            assert not (name == "modelscope"
+                        or name.startswith("modelscope.")), (
+                f"the service module must never import modelscope: {name}"
+            )
+            assert not (name == "dnallm"
+                        or name.startswith("dnallm.")), (
+                f"the service module must never import dnallm: {name}"
+            )
 
 
 # =====================================================================
@@ -4104,10 +4127,13 @@ def write_modelscope_nesting(landing, org_repo=MODEL_REPO_ID, files=None):
 
 
 def model_engine_service(tmp_path, monkeypatch, spawner,
-                         entries=None, model_root=None):
+                         entries=None, model_root=None, writer=None):
     """A model-lane service over a tmp repo + tmp state root + injected
     spawner, with the entry already enqueued (kind=KIND_MODEL) and
-    claimed for run_task."""
+    claimed for run_task. ``writer`` optionally arms the spawner's
+    landing-tree staging hook (the normalization fixtures)."""
+    if writer is not None:
+        spawner.writer = writer
     repo = tmp_repo_with_models_registry(
         tmp_path / "repo", entries or {MODEL_KEY: dict(MODEL_ENTRY)})
     state = tmp_path / "state"
@@ -4133,19 +4159,20 @@ def test_kind_model_vocabulary_and_program_constant_pinned():
     dnallm download_model wrapper does not thread it)."""
     assert download_queue.KIND_MODEL == "model"
     program = download_queue.MODEL_DOWNLOAD_PROGRAM
-    for fragment in ("from functools import partial",
-                     "from modelscope.hub.snapshot_download "
-                     "import snapshot_download",
-                     "from dnallm.models.model import download_model",
-                     "download_model(repo_id, downloader=partial(",
-                     "cache_dir="):
+    for fragment in (
+            "from functools import partial",
+            ("from modelscope.hub.snapshot_download "
+             "import snapshot_download"),
+            "from dnallm.models.model import download_model",
+            "download_model(repo_id, downloader=partial(",
+            "cache_dir="):
         assert fragment in program, fragment
 
 
 def test_model_reason_codes_are_machine_vocabulary():
     """The model lane's reason/problem codes (the screens render, never
     parse)."""
-    assert download_queue.REASON_NOT_DNALLM_ADAPTED == "not_dnallm_adapted"
+    assert download_queue.REASON_NOT_DNLLM_ADAPTED == "not_dnllm_adapted"
     assert download_queue.REASON_COMPAT_UNAVAILABLE == "compat_unavailable"
     assert download_queue.REASON_NO_MODEL_PATH == "no_model_path"
     assert download_queue.REASON_ALREADY_PRESENT == "already_present"
@@ -4162,7 +4189,7 @@ def test_model_channel_census_36_clean_23_not_adapted_over_committed(
     exactly 36 keys resolve a clean spec (repo id == the compat map's
     modelscope id; landing == the model_presence join over the effective
     base; source_url carries the repo id) and 23 degrade with
-    not_dnallm_adapted — computed key-by-key, drift surfaces loudly."""
+    not_dnllm_adapted — computed key-by-key, drift surfaces loudly."""
     pin_state_dir(monkeypatch, tmp_path)
     service = download_queue.DownloadQueueService(
         cli_path=str(fake_cli(tmp_path)))
@@ -4182,7 +4209,7 @@ def test_model_channel_census_36_clean_23_not_adapted_over_committed(
 
     assert len(clean) == 36
     assert len(degraded) == 23
-    assert set(degraded.values()) == {"not_dnallm_adapted"}
+    assert set(degraded.values()) == {"not_dnllm_adapted"}
     base = str(service._models_base()).rstrip(os.sep) + os.sep
     for key, spec in clean.items():
         assert spec.repo_id == compat[key]["modelscope"], key
@@ -4210,12 +4237,13 @@ def test_models_base_is_byte_identical_to_the_selection_presence_chain(
         run_config_service.DEFAULT_REGISTRY_DIR)
     assert str(service._models_base()) == expected
 
-    # the file tier: a configured run-config root redirects the base
+    # the run-config tier: a configured root redirects the base (the
+    # seam patched on the module the queue imports)
     root_x = tmp_path / "stor-x"
-    monkeypatch.setattr(download_queue.run_config_service,
+    monkeypatch.setattr(download_queue.run_config,
                         "load_state", lambda: object())
     monkeypatch.setattr(
-        download_queue.run_config_service, "resolve_dirs",
+        download_queue.run_config, "resolve_dirs",
         lambda spec: SimpleNamespace(model_root_abs=str(root_x)))
     assert str(service._models_base()) == str(root_x)
 
@@ -4275,10 +4303,10 @@ def test_enqueue_model_unknown_key_never_appends(monkeypatch, tmp_path):
     assert service.entries() == []
 
 
-def test_enqueue_model_unadapted_verdict_yields_not_dnallm_adapted(
+def test_enqueue_model_unadapted_verdict_yields_not_dnllm_adapted(
         monkeypatch, tmp_path):
     """A committed official key whose compat verdict is false enqueues
-    to unknown/not_dnallm_adapted — the honest manual-placement class,
+    to unknown/not_dnllm_adapted — the honest manual-placement class,
     never HF guidance, never a queue row."""
     service, _ = make_service(tmp_path, monkeypatch)
 
@@ -4292,7 +4320,7 @@ def test_enqueue_model_unadapted_verdict_yields_not_dnallm_adapted(
 def test_enqueue_model_absent_compat_entry_while_loadable_is_not_adapted(
         monkeypatch, tmp_path):
     """A key the (loadable, non-empty) compat map simply lacks reads as
-    not_dnallm_adapted — registry evolution, not an outage."""
+    not_dnllm_adapted — registry evolution, not an outage."""
     service, _ = make_service(tmp_path, monkeypatch)
     committed = download_queue.registries.load_dnallm_compat()
     assert committed  # the map is loadable and non-empty
@@ -4313,7 +4341,7 @@ def test_enqueue_model_unreadable_compat_map_yields_compat_unavailable(
     honest compat_unavailable reason, never a crash."""
     service, _ = make_service(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        download_queue.registries, "load_dnallm_compat", lambda: {})
+        download_queue.registries, "load_dnallm_compat", dict)
 
     outcome = service.enqueue_model(MODEL_KEY)
 
@@ -4540,7 +4568,7 @@ def test_model_run_task_degraded_channel_fails_with_reason(
     assert service.enqueue_model(MODEL_KEY).action == "enqueued"
     service.claim_next()
     monkeypatch.setattr(
-        download_queue.registries, "load_dnallm_compat", lambda: {})
+        download_queue.registries, "load_dnallm_compat", dict)
 
     event = service.run_task(MODEL_KEY, run_id="m7")
 

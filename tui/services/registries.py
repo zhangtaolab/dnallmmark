@@ -75,6 +75,10 @@ PRESENCE_UNAVAILABLE = "unavailable"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 N_AUDIT_PATH = REPO_ROOT / "dnallm-mark" / "data" / "n_audit.json"
+#: The committed dnallm adaptation verdict map (the 261014-l6h artifact):
+#: ``{schema_version, dnallm_commit, models: {key: verdict}}`` — a module
+#: constant (never CWD) so tests monkeypatch exactly one path seam.
+DNALLM_COMPAT_PATH = REPO_ROOT / "pipeline" / "dnallm_compat.json"
 
 
 class RegistryCounts(NamedTuple):
@@ -203,6 +207,38 @@ def load_n_audit():
     if not isinstance(tasks, dict):
         return None
     return tasks
+
+
+def load_dnallm_compat():
+    """Read the committed dnallm adaptation verdict map (MLC-01).
+
+    The ONE tolerant loader over ``pipeline/dnallm_compat.json`` (the
+    261014-l6h artifact; regenerated offline by
+    ``script/audit_dnallm_compat.py``): BOTH consumers — the slot-2
+    default pool filter (``SelectionBackend.load_selection_data``) and
+    the download queue's model channel resolution — read through this
+    function, never a duplicated file read (one authority, two
+    consumers).
+
+    The committed map carries exactly the 59 official model keys — 36
+    with ``dnllm_adapted`` true — so an EMPTY mapping is always the
+    degraded read (missing/corrupt/wrong-shape file), the signal the
+    queue maps to its ``compat_unavailable`` reason; a healthy map is
+    never empty.
+
+    Returns:
+        dict: the ``models`` mapping verbatim (registry key -> the
+        compat verdict entry ``{architecture, channel, dnllm_adapted,
+        family, modelscope}``) — ``{}`` on an absent, corrupt, or
+        wrong-shape file (never an exception; the consumers degrade).
+    """
+    doc = artifact_loader.load_json_artifact(DNALLM_COMPAT_PATH)
+    if not isinstance(doc, dict):
+        return {}
+    models = doc.get("models")
+    if not isinstance(models, dict):
+        return {}
+    return models
 
 
 def presence_for(task_key, audit_tasks):

@@ -91,6 +91,29 @@ Contract (locked decisions):
   explicit ``reaudit_baseline`` method runs the audit script with its
   DEFAULT outputs (the four worktree artifacts, maintainer review and
   commit) — no automatic path ever calls it.
+- MLC-01 (261014-mlc; the maintainer's 2026-10-14 dnallm-authority
+  ruling): MODEL downloads are a ``kind=KIND_MODEL`` queue lane whose
+  child runs the L6H-04 proven invocation —
+  ``[sys.executable, "-I", "-c", MODEL_DOWNLOAD_PROGRAM, landing,
+  repo_id]`` — calling ``dnallm.models.model.download_model`` with a
+  functools.partial-bound modelscope ``snapshot_download`` whose
+  ``cache_dir`` is the effective model root joined with the registry
+  ``Model_path`` (the wrapper does not thread cache_dir — it rides the
+  partial). The landing base resolves through the SAME chain the
+  selection presence uses (``_models_base()``: constructor param >
+  ``resolve_dirs(load_state()).model_root_abs`` > the repo pipeline
+  dir), so a landed model always flips its presence cell. Post-exit,
+  ``_normalize_model_landing`` hoists the modelscope 1.40.2 nesting
+  (the single ``models/<org>--<name>/snapshots/<rev>/`` snapshot's
+  children to the landing root; the ``models/`` scaffolding and
+  ``.lock/`` removed; symlinks never followed out of the root) and the
+  done gate requires ``config.json`` DIRECTLY in the landing dir. The
+  verdict authority is the committed compat map read through
+  ``registries.load_dnallm_compat`` (the ONE loader); KIND_MODEL
+  entries carry NO reconcile leg (models are not n_audit subjects —
+  the done gate is the normalized config.json check only). This module
+  still never imports dnallm or modelscope — the ``-I`` subprocess is
+  the only place dnallm code runs.
 
 Subprocess discipline (the Phase 7 T-03-10 rule, Pitfall 1): argv is a
 LIST, the Popen handle is owned directly (never a wrapper PID — the
@@ -126,7 +149,12 @@ import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
 import directories_config  # top-level module (pipeline/ sys.path root, the L6H-03 dataset-base seam)
 import registry_loader  # top-level module (pipeline/ sys.path root)
 
-from tui.services import registries, settings, zenodo_bundle
+from tui.services import (
+    registries,
+    run_config,
+    settings,
+    zenodo_bundle,
+)
 
 # ===== Locations (resolved from this module's own file, never CWD) =====
 
@@ -157,6 +185,53 @@ KIND_ZENODO_BUNDLE = "zenodo_bundle"
 #: The bundle entry's queue identity — the only Zenodo string constant
 #: in this module (the record id/URL live in ``zenodo_bundle``).
 ZENODO_BUNDLE_KEY = "zenodo-19135551"
+
+#: The MODEL download kind (MLC-01, 261014-mlc; the maintainer's
+#: 2026-10-14 dnallm-authority ruling): ``run_task`` dispatches these
+#: entries to the dnallm-invocation branch — a ``python -I`` child
+#: calling ``dnallm.models.model.download_model`` with a
+#: functools.partial-bound modelscope ``snapshot_download`` (the L6H-04
+#: proven invocation shape), never the modelscope CLI and never raw
+#: huggingface guidance.
+KIND_MODEL = "model"
+
+#: The model lane's machine reason codes (MLC-01; the screens render,
+#: never parse). ``compat_unavailable`` is the degraded-read signal: the
+#: committed compat map carries all 59 registry keys, so an EMPTY
+#: mapping IS the unreadable state (never a verdict).
+REASON_NOT_DNLLM_ADAPTED = "not_dnllm_adapted"
+REASON_COMPAT_UNAVAILABLE = "compat_unavailable"
+REASON_NO_MODEL_PATH = "no_model_path"
+REASON_ALREADY_PRESENT = "already_present"
+
+#: The model lane's engine problem codes: an ambiguous nesting (zero or
+#: multiple snapshot dirs, hoist collisions) and an OS failure during
+#: the hoist/scaffolding removal. The missing-config.json gate reuses
+#: ``PROBLEM_LANDING_INCOMPLETE``.
+PROBLEM_MODEL_NESTING = "model_nesting_ambiguous"
+PROBLEM_MODEL_HOIST_ERROR = "model_hoist_error"
+
+#: The done gate's required file — config.json must exist DIRECTLY in
+#: the normalized landing dir (the run_finetune model_base + Model_path
+#: resolution target).
+MODEL_DONE_MARKER = "config.json"
+
+#: The FIXED ``-c`` program the model-download child runs (T-qt-01: no
+#: operator-controlled code — only the landing dir and repo id cross as
+#: argv DATA). The L6H-04 proven invocation: ``cache_dir`` rides the
+#: functools.partial because the dnallm ``download_model`` wrapper does
+#: not thread it; ``modelscope.hub.snapshot_download`` is the exact hub
+#: path dnallm's own modelscope branch uses (DNALLM model.py:462).
+MODEL_DOWNLOAD_PROGRAM = """\
+import sys
+from functools import partial
+from modelscope.hub.snapshot_download import snapshot_download
+from dnallm.models.model import download_model
+
+landing = sys.argv[1]
+repo_id = sys.argv[2]
+download_model(repo_id, downloader=partial(snapshot_download, cache_dir=landing))
+"""
 
 #: The canonical persisted entry field order — the exact set, nothing
 #: may ever appear outside it (SC5: zero credential surface).
@@ -596,6 +671,38 @@ class ChannelSpec:
 
 
 @dataclass(frozen=True)
+class ModelChannelSpec:
+    """One model key's resolved dnallm download channel (MLC-01) — pure
+    data derived from the official models registry entry plus the
+    committed compat verdict map; mirrors ``ChannelSpec``'s role for the
+    dataset lane.
+
+    Attributes:
+        key: the model registry key.
+        repo_id: the compat map's modelscope ``namespace/repo`` (the
+            dnallm-authoritative channel id — validated against the
+            allowlist regex); None on every degraded disposition.
+        landing: the ABSOLUTE landing dir — ``_models_base()`` joined
+            with the registry entry's VERBATIM ``Model_path`` (the
+            ``model_presence`` join semantics: the base keeps its
+            trailing-separator discipline, Model_path keeps its own
+            ``models/`` prefix), so a landed model always flips its
+            presence cell; None on degraded specs.
+        source_url: the modelscope URL form (drill-down data); None on
+            degraded specs.
+        reason_code: None for a clean channel; the machine reason
+            otherwise (``not_dnllm_adapted`` / ``compat_unavailable`` /
+            ``no_model_path`` / ``registry_unreadable``).
+    """
+
+    key: str
+    repo_id: str | None
+    landing: Path | None
+    source_url: str | None
+    reason_code: str | None
+
+
+@dataclass(frozen=True)
 class MissingInfo:
     """One missing dataset row for the data-manager missing list
     (D-13's input; pure data, the screen renders)."""
@@ -991,8 +1098,8 @@ class DownloadQueueService:
     """The persistent download queue (injectable spawner/CLI seams,
     thread-safe mutators, all state under the XDG state root)."""
 
-    def __init__(self, repo_root=None, dataset_root=None, state_path=None,
-                 spawner=None, runner=None, cli_path=None,
+    def __init__(self, repo_root=None, dataset_root=None, model_root=None,
+                 state_path=None, spawner=None, runner=None, cli_path=None,
                  timeout_reconcile=DEFAULT_TIMEOUT_RECONCILE,
                  timeout_reaudit=DEFAULT_TIMEOUT_REAUDIT,
                  zenodo_fetch=None):
@@ -1010,6 +1117,13 @@ class DownloadQueueService:
                 the repo ``pipeline/datasets``; None = the
                 ``_datasets_base()`` chain (file tier > repo default).
                 The REGISTRY read stays repo-anchored either way.
+            model_root: the model STORAGE base override (MLC-01, the
+                flag tier) — the pipeline-dir-equivalent root model
+                landing dirs resolve under (``<root>/<Model_path>``,
+                the ``model_presence`` join); None = the
+                ``_models_base()`` chain (run-config tier > repo
+                default), byte-identical to the selection presence
+                chain when neither tier is set.
             state_path: the queue state file; None resolves
                 ``settings.state_dir() / QUEUE_FILE_NAME``.
             spawner: the Popen-shaped subprocess seam (``argv,
@@ -1037,6 +1151,10 @@ class DownloadQueueService:
         # at construction (None = the _datasets_base() chain governs).
         self._dataset_root: Path | None = (None if dataset_root is None
                                            else Path(dataset_root).resolve())
+        # MLC-01 flag tier: an explicit model storage base, resolved at
+        # construction (None = the _models_base() chain governs).
+        self._model_root: Path | None = (None if model_root is None
+                                         else Path(model_root).resolve())
         if state_path is None:
             state_path = settings.state_dir() / QUEUE_FILE_NAME
         self._state_path = Path(state_path)
@@ -1092,6 +1210,35 @@ class DownloadQueueService:
             "dataset_root")
         if file_root:
             return Path(file_root).resolve()
+        return self._pipeline_dir
+
+    # ===== MLC-01: the model storage base (param > run-config > default) =====
+
+    def _models_base(self):
+        """The model STORAGE base every model landing dir joins against.
+
+        Precedence (261014-mlc, MLC-01): constructor ``model_root`` param
+        (the flag tier) > the run-config chain
+        ``resolve_dirs(load_state()).model_root_abs`` (the slot-4 tier —
+        exactly the chain ``SelectionBackend`` feeds
+        ``selection.model_presence``, so download landing and presence
+        checking can never disagree about the root) > the repo
+        ``pipeline/`` dir (byte-identical to the presence chain's
+        ``DEFAULT_REGISTRY_DIR`` fallback under default construction).
+        The official REGISTRY read deliberately stays repo-anchored —
+        registry is repo state.
+
+        Returns:
+            Path: the base such that a model landing dir is
+            ``str(base).rstrip(os.sep) + os.sep + Model_path`` (the
+            ``model_presence`` join semantics verbatim — Model_path
+            keeps its own ``models/`` prefix).
+        """
+        if self._model_root is not None:
+            return self._model_root
+        dirs = run_config.resolve_dirs(run_config.load_state())
+        if dirs.model_root_abs:
+            return Path(dirs.model_root_abs)
         return self._pipeline_dir
 
     # ===== Load / snapshot (D-06 tolerant recovery) =====
@@ -1406,6 +1553,79 @@ class DownloadQueueService:
             return EnqueueOutcome(
                 action="enqueued", key=ZENODO_BUNDLE_KEY)
 
+    def enqueue_model(self, key):
+        """Idempotently append one pending MODEL entry (MLC-01).
+
+        The maintainer's 2026-10-14 dnallm-authority ruling: model
+        downloads go through dnallm (``download_model`` + the
+        partial-bound modelscope snapshot downloader), so the enqueue
+        gates on the compat verdict — Outcome order: an existing entry
+        of ANY state yields ``already_queued`` (no state change); a key
+        absent from the official MODELS registry yields ``unknown_key``
+        (customs are not download targets); a degraded channel yields
+        ``unknown`` carrying its reason — ``not_dnllm_adapted`` (the
+        honest manual-placement class; a missing compat entry while the
+        map is loadable reads the same), ``compat_unavailable`` (the
+        empty-map degraded read), ``no_model_path``, ``already_present``
+        (the defensive disk check — the landing dir exists, presence
+        will read it), or ``registry_unreadable``; a CLI-absent machine
+        yields ``cli_unavailable`` (the CLI probe doubles as the
+        modelscope-package presence proxy — the -I child imports
+        modelscope from the same env); a state file that cannot be
+        written yields ``persist_failed`` (the append is rolled back);
+        otherwise a pending ``kind=KIND_MODEL`` entry appends and
+        persists (``enqueued``).
+
+        Args:
+            key (str): the model registry key.
+
+        Returns:
+            EnqueueOutcome: the structured result (never an exception).
+        """
+        cli = self._resolve_cli()
+        with self._lock:
+            if any(entry["key"] == key for entry in self._entries):
+                return EnqueueOutcome(
+                    action="already_queued", key=key)
+            spec = self.resolve_model_channel(key)
+            if spec is None:
+                return EnqueueOutcome(action="unknown_key", key=key)
+            if spec.reason_code is not None:
+                return EnqueueOutcome(
+                    action=ACTION_UNKNOWN, key=key,
+                    reason_code=spec.reason_code,
+                    source_url=spec.source_url)
+            if spec.landing is not None and spec.landing.exists():
+                # the defensive disk gate: a landed card reads PRESENT
+                # through the same chain — enqueueing a download over it
+                # is never the honest action
+                return EnqueueOutcome(
+                    action=ACTION_UNKNOWN, key=key,
+                    reason_code=REASON_ALREADY_PRESENT,
+                    source_url=spec.source_url)
+            if cli is None:
+                return EnqueueOutcome(
+                    action="cli_unavailable", key=key)
+            self._entries.append({
+                "key": key,
+                "kind": KIND_MODEL,
+                "state": "pending",
+                "attempts": 0,
+                "enqueued_at": _now_iso(),
+                "started_at": None,
+                "finished_at": None,
+                "last_percent": None,
+                "interrupted": False,
+                "log_path": None,
+                "problems": [],
+                "reconcile": None,
+            })
+            if self._persist_locked() is not None:
+                self._entries.pop()   # the refusal leaves no ghost row
+                return EnqueueOutcome(
+                    action=ACTION_PERSIST_FAILED, key=key)
+            return EnqueueOutcome(action="enqueued", key=key)
+
     def retry(self, key):
         """Re-queue one failed or mismatch entry as pending (D-06).
 
@@ -1564,6 +1784,8 @@ class DownloadQueueService:
         """
         if self._entry_kind(key) == KIND_ZENODO_BUNDLE:
             return self._run_zenodo_bundle(key, run_id)
+        if self._entry_kind(key) == KIND_MODEL:
+            return self._run_model_download(key, run_id)
         cli = self._resolve_cli()
         if cli is None:
             return self._finish(
@@ -1669,6 +1891,199 @@ class DownloadQueueService:
             reconcile=(self._reconcile_payload(outcome)
                        if outcome.verdict == VERDICT_MISMATCH else None),
             reconcile_raw=outcome.raw_output)
+
+    # ===== The KIND_MODEL branch (MLC-01: the dnallm invocation) =====
+
+    def _run_model_download(self, key, run_id):
+        """Execute one claimed model download (never raises).
+
+        The maintainer's 2026-10-14 dnallm-authority ruling (the L6H-04
+        proven invocation): spawn ``[sys.executable, "-I", "-c",
+        MODEL_DOWNLOAD_PROGRAM, landing, repo_id]`` — a LIST argv (no
+        shell), ``-I`` isolation (no cwd/user-site imports; T-qt-01),
+        the FIXED module-level program (no operator-controlled code —
+        only the landing dir and repo id cross as argv data),
+        ``start_new_session=True`` with the existing killpg cancel
+        discipline, PIPEs, and an env that is exactly
+        ``dict(os.environ)``. The child imports dnallm + modelscope —
+        this module never does (the no-modelscope-import invariant).
+
+        Lifecycle: re-probe the CLI (the modelscope-package presence
+        proxy — absent -> failed ``cli_unavailable``); resolve the
+        channel (degraded -> failed carrying the reason); spawn through
+        the injectable seam; pump stdout/stderr into the log (percent
+        stays None — dnallm logs carry no parseable percents, the row
+        renders indeterminate); reap in cancel-aware chunks; nonzero
+        exit -> failed ``exit_<code>`` (``cancelled_by_operator`` when
+        the flag is set); exit 0 -> ``_normalize_model_landing`` hoists
+        the modelscope 1.40.2 nesting, then the done gate requires
+        ``config.json`` DIRECTLY in the landing dir. NO reconcile leg —
+        models are not n_audit subjects (the done gate is the
+        normalized config.json check only).
+
+        Args:
+            key (str): the claimed model registry key.
+            run_id (str): the caller's run tag (echoed on the event).
+
+        Returns:
+            QueueEvent: the structured outcome (state persisted).
+        """
+        cli = self._resolve_cli()
+        if cli is None:
+            return self._finish(
+                key, run_id, "failed", None,
+                (PROBLEM_CLI_UNAVAILABLE,), ("cli=missing",),
+                argv=None, returncode=None)
+        spec = self.resolve_model_channel(key)
+        reason = spec.reason_code if spec is not None else "unknown_key"
+        if spec is None or reason is not None or spec.landing is None:
+            return self._finish(
+                key, run_id, "failed", None, (reason,),
+                ("channel_reason=" + reason,), argv=None,
+                returncode=None)
+        argv = [sys.executable, "-I", "-c", MODEL_DOWNLOAD_PROGRAM,
+                str(spec.landing), spec.repo_id]
+        try:
+            proc = self._spawner(
+                argv, env=dict(os.environ), start_new_session=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except Exception as exc:  # noqa: BLE001 — the service boundary
+            return self._finish(
+                key, run_id, "failed", None,
+                (PROBLEM_SUBPROCESS_ERROR,), (repr(exc),),
+                argv=argv, returncode=None)
+        with self._lock:
+            self._active[key] = proc
+        stdout_parts: list[str] = []
+        stderr_parts: list[str] = []
+
+        def on_stdout(text):
+            stdout_parts.append(text)
+
+        def on_stderr(text):
+            stderr_parts.append(text)
+
+        out_thread = threading.Thread(
+            target=_pump, args=(proc.stdout, on_stdout), daemon=True)
+        err_thread = threading.Thread(
+            target=_pump, args=(proc.stderr, on_stderr), daemon=True)
+        out_thread.start()
+        err_thread.start()
+        returncode = self._reap(proc, key)
+        out_thread.join(timeout=5)
+        err_thread.join(timeout=5)
+        with self._lock:
+            self._active.pop(key, None)
+        stdout_text = "".join(stdout_parts)
+        stderr_text = "".join(stderr_parts)
+        details = ["exit_code=" + str(returncode)]
+        if returncode != 0:
+            problem = (PROBLEM_CANCELLED
+                       if key in self._cancel_requested
+                       else "exit_" + str(returncode))
+            return self._finish(
+                key, run_id, "failed", None, (problem,), tuple(details),
+                stdout_text, stderr_text, argv=argv,
+                returncode=returncode)
+        # exit 0: normalize the modelscope nesting, then gate on the
+        # config.json marker (exit 0 alone can never mean done — the
+        # CLI-lane Pitfall-3 rule mirrored).
+        problem, landing_details = self._normalize_model_landing(
+            spec.landing)
+        details.extend(landing_details)
+        if problem is not None:
+            return self._finish(
+                key, run_id, "failed", None, (problem,), tuple(details),
+                stdout_text, stderr_text, argv=argv,
+                returncode=returncode)
+        if not (spec.landing / MODEL_DONE_MARKER).is_file():
+            details.append("missing=" + MODEL_DONE_MARKER)
+            return self._finish(
+                key, run_id, "failed", None,
+                (PROBLEM_LANDING_INCOMPLETE,), tuple(details),
+                stdout_text, stderr_text, argv=argv,
+                returncode=returncode)
+        details.append("landing=ok")
+        return self._finish(
+            key, run_id, "done", None, (), tuple(details),
+            stdout_text, stderr_text, argv=argv, returncode=returncode)
+
+    def _normalize_model_landing(self, landing):
+        """Collapse the modelscope 1.40.2 cache nesting to the landing
+        root (T-qt-02: move/collapse ONLY under the landing dir this
+        run's download created; never follow symlinks out of the root —
+        symlink entries are skipped, real entries hoisted; never execute
+        anything inside the card).
+
+        The live-probed layout (261014-l6h): the snapshot files land
+        under ``models/<org>--<name>/snapshots/<rev>/`` beside a
+        ``.lock/`` dir. The SINGLE snapshot dir's children hoist to the
+        landing root (the run_finetune ``pipeline/`` + ``Model_path``
+        resolution target), then the scaffolding (the ``models/``
+        subtree and ``.lock/``) is removed. A missing scaffolding is the
+        already-flat case (the gate decides); zero or multiple snapshot
+        dirs, an empty snapshot, or a hoist collision fail honestly
+        (``model_nesting_ambiguous``) — never a silent data decision.
+
+        Args:
+            landing (Path): the resolved landing dir.
+
+        Returns:
+            tuple: ``(problem, details)`` — the problem code on failure
+            (None on success/flat), plus machine data tokens.
+        """
+        details: list[str] = []
+        models_dir = landing / "models"
+        if not models_dir.is_dir():
+            details.append("nesting=absent")
+            return None, details    # flat/empty landing: the gate decides
+        try:
+            snapshot_dirs = sorted(
+                path for path in models_dir.glob("*/snapshots/*")
+                if path.is_dir() and not path.is_symlink())
+        except OSError as exc:
+            details.append("nesting_read_error=" + repr(exc))
+            return PROBLEM_MODEL_HOIST_ERROR, details
+        if len(snapshot_dirs) != 1:
+            details.append("snapshot_dirs=" + str(len(snapshot_dirs)))
+            return PROBLEM_MODEL_NESTING, details
+        snapshot = snapshot_dirs[0]
+        try:
+            children = sorted(snapshot.iterdir())
+        except OSError as exc:
+            details.append("snapshot_read_error=" + repr(exc))
+            return PROBLEM_MODEL_HOIST_ERROR, details
+        if not children:
+            details.append("snapshot_empty=true")
+            return PROBLEM_MODEL_NESTING, details
+        for child in children:
+            if child.is_symlink():
+                # never follow a link out of the landing root — skip it
+                # (the scaffolding removal then drops the link itself)
+                details.append("skip_symlink=" + child.name)
+                continue
+            target = landing / child.name
+            if target.exists():
+                details.append("hoist_collision=" + child.name)
+                return PROBLEM_MODEL_NESTING, details
+            try:
+                os.rename(child, target)  # same-filesystem move
+            except OSError as exc:
+                details.append(
+                    "hoist_error=" + child.name + ":" + repr(exc))
+                return PROBLEM_MODEL_HOIST_ERROR, details
+            details.append("hoisted=" + child.name)
+        for scaffold in (models_dir, landing / ".lock"):
+            if not scaffold.exists():
+                continue
+            try:
+                shutil.rmtree(scaffold)
+                details.append("removed=" + scaffold.name)
+            except OSError as exc:
+                details.append(
+                    "scaffold_remove_error=" + repr(exc))
+                return PROBLEM_MODEL_HOIST_ERROR, details
+        return None, details
 
     def _reap(self, proc, key):
         """Reap one owned process in cancel-aware chunks (Pitfall 1).
@@ -2564,5 +2979,88 @@ class DownloadQueueService:
             dict: the parsed official registry (file order preserved).
         """
         with open(self._pipeline_dir / registry_loader.DATASETS_INFO_NAME,
+                  "r", encoding="utf-8") as fh:
+            return json.load(fh)
+
+    # ===== Model channel resolution (MLC-01: the compat verdict map) =====
+
+    def resolve_model_channel(self, key):
+        """Resolve one model key's dnallm download channel.
+
+        Authority chain (the maintainer's 2026-10-14 ruling): the
+        official MODELS registry entry supplies the landing (its
+        VERBATIM ``Model_path`` joined onto ``_models_base()`` with the
+        ``model_presence`` semantics — base trailing separator, the
+        value keeping its ``models/`` prefix); the committed compat map
+        (``registries.load_dnallm_compat``, the ONE loader) supplies
+        the verdict and the modelscope repo id. An adapted verdict
+        without a usable repo id reads as ``not_dnllm_adapted`` — the
+        verdict alone can never authorize a download.
+
+        Args:
+            key (str): the model registry key.
+
+        Returns:
+            ModelChannelSpec | None: the resolved spec, or None when
+            the key is not an official registry key (customs are not
+            download targets — the manual-placement class).
+        """
+        try:
+            registry = self._official_models_registry()
+        except (OSError, json.JSONDecodeError,
+                UnicodeDecodeError):
+            return self._degraded_model_spec(
+                key, reason=REASON_REGISTRY_UNREADABLE)
+        entry = registry.get(key)
+        if not isinstance(entry, dict):
+            return None
+        compat = registries.load_dnallm_compat()
+        if not compat:
+            # the committed map carries all 59 registry keys — an empty
+            # mapping IS the degraded read (never a verdict)
+            return self._degraded_model_spec(
+                key, reason=REASON_COMPAT_UNAVAILABLE)
+        verdict = compat.get(key)
+        repo_id = (verdict.get("modelscope")
+                   if isinstance(verdict, dict) else None)
+        adapted = (isinstance(verdict, dict)
+                   and verdict.get("dnllm_adapted") is True)
+        if not adapted or not isinstance(repo_id, str) \
+                or not re.fullmatch(REPO_ID_RE_PART, repo_id):
+            return self._degraded_model_spec(
+                key, reason=REASON_NOT_DNLLM_ADAPTED)
+        model_path = entry.get("Model_path")
+        if not isinstance(model_path, str) or not model_path:
+            return self._degraded_model_spec(
+                key, reason=REASON_NO_MODEL_PATH, repo_id=repo_id)
+        # the model_presence join semantics verbatim: the base keeps
+        # its trailing-separator discipline, Model_path keeps its own
+        # models/ prefix — a landed model always flips its presence cell
+        base = str(self._models_base()).rstrip(os.sep) + os.sep
+        return ModelChannelSpec(
+            key=key,
+            repo_id=repo_id,
+            landing=Path(base + model_path),
+            source_url="https://www.modelscope.cn/models/" + repo_id,
+            reason_code=None)
+
+    @staticmethod
+    def _degraded_model_spec(key, reason, repo_id=None):
+        """Build the never-crash degraded model resolution (data, no
+        landing — nothing is ever composed for a degraded channel)."""
+        return ModelChannelSpec(
+            key=key, repo_id=repo_id, landing=None, source_url=None,
+            reason_code=reason)
+
+    def _official_models_registry(self):
+        """Read the OFFICIAL models registry directly (not the overlay
+        loader — the dataset lane's authority rule, mirrored: download
+        targets are the official registry's keys and Model_path values
+        regardless of any custom overlay state).
+
+        Returns:
+            dict: the parsed official registry (file order preserved).
+        """
+        with open(self._pipeline_dir / registry_loader.MODELS_INFO_NAME,
                   "r", encoding="utf-8") as fh:
             return json.load(fh)
