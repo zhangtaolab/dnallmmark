@@ -7,10 +7,10 @@ current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: 4
 status: executing
 stopped_at: Completed quick 261014-ir9 (confidential Chaoba series removed from HEAD, 62 -> 59 official registry, all count pins re-based, gates green modulo pre-existing set)
-last_updated: "2026-10-14T06:26:39Z"
+last_updated: "2026-10-14T08:14:46.441Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 12 execution started
-state_head: 1f16b3d48149e21135bfaa2eeed0e22e0e35c578
+state_head: acb50a4eb0a7e13069de2c3f5398f2ed74289ee4
 progress:
   total_phases: 6
   completed_phases: 5
@@ -34,7 +34,7 @@ Phase: 12 (Multi-GPU Orchestration & Console Hardening) — COMPLETE (5/5 plans,
 Current Plan: 5 of 5 executed (12-05 phase close landed)
 Total Plans in Phase: 5
 Status: Phase complete — milestone v1.2 at its audit gate (verify-work → audit-milestone → complete-milestone → cleanup; maintainer N=2 other-machine smoke = WINDOWS #21)
-Last activity: 2026-10-14 - Completed quick task 261014-f4w: startup config file + run-artifact directories (directories.json loader + --log_dir + TUI seeding/save/picker + slot-1 storage overview)
+Last activity: 2026-10-14 - Completed quick task 261014-l6h: DNALLM adaptation (MODEL_INFO alignment + compat map + queue reroute + plant-dnamamba-6mer download + 2x2 dry-run)
 
 Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 plans executed — all 38 requirements Complete)
 
@@ -250,6 +250,7 @@ None yet.
 | 261014-dcl | TUI presence/directory visibility (model_dirs env kernel + run-config-aware roots, selection models presence column, data-manager v-toggled full presence view) | 2026-10-14 | 25eb849 | [261014-dcl-tui-presence-directory-visibility-improv](./quick/261014-dcl-tui-presence-directory-visibility-improv/) |
 | 261014-f4w | Startup config file + run-artifact directory overrides (directories.json shared loader, --log_dir end-to-end, TUI file-default seeding + atomic save + ctrl+o dir picker, slot-1 storage overview) | 2026-10-14 | 4ade716 | [261014-f4w-startup-config-file-run-artifact-directo](./quick/261014-f4w-startup-config-file-run-artifact-directo/) |
 | 261014-ir9 | Remove confidential Chaoba model series from HEAD (registry 62 -> 59; all real-data count pins + stale current-count statements re-based; zero chaoba hits in tracked files) | 2026-10-14 | 1f16b3d | [261014-ir9-remove-confidential-chaoba-model-series-](./quick/261014-ir9-remove-confidential-chaoba-model-series-/) |
+| 261014-l6h | 认真适配 DNALLM：MODEL_INFO 对齐审计（5 处 ID 修正）+ dnallm_compat.json 判定图 + download_queue 落点重路由 + plant-dnamamba-6mer 下载 + 2×2 dry-run 验证 | 2026-10-14 | acb50a4 | [261014-l6h-dnallm-dnallmmark-dnallm-dev-cd4be43-rep](./quick/261014-l6h-dnallm-dnallmmark-dnallm-dev-cd4be43-rep/) |
 
 ## Deferred Items
 
