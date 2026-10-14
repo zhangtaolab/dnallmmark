@@ -1483,6 +1483,60 @@ async def test_exit_esc_returns_nothing_recorded():
         assert not app._exit, "esc cancels the quit entirely"
 
 
+async def test_exit_modal_multi_root_kills_every_live_sweep():
+    """WR-05 (gap #6): with MULTIPLE live sweeps, the exit modal names
+    EVERY live root (full resolved paths — basenames collide: two
+    ``finetuned`` roots are the triggering scenario) with the count,
+    and [k] kills ALL of them before the app exits — no sweep survives
+    a 终止后退出 the operator believed terminal."""
+    root_a = "/repo/a/finetuned"
+    root_b = "/repo/b/finetuned"
+    launcher = FakeLauncherService(live=(root_a, root_b))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        from tui.app import ExitModal
+        from tui.strings import LNC_EXIT_MESSAGE_MULTI
+
+        assert isinstance(app.screen, ExitModal)
+        message = _plain(app.screen.query(Static)[0].content)
+        assert LNC_EXIT_MESSAGE_MULTI.format(
+            n=2, roots=", ".join((root_a, root_b))) in message, message
+        await pilot.press("k")
+        await pilot.pause()
+        assert launcher.kill_calls == [root_a, root_b], (
+            "[k] kills EVERY live root — never roots[0] alone"
+        )
+        assert launcher.detach_calls == [], "kill never detaches"
+        assert app._exit, "kill-then-quit initiates the exit"
+
+
+async def test_exit_modal_multi_root_enter_detaches_every_live_sweep():
+    """WR-05 (the detach twin): [enter] detaches ALL live roots (each
+    survives as its own orphaned session leader — resume-safe by the
+    trainer_state marker contract) and then the app exits."""
+    root_a = "/repo/a/finetuned"
+    root_b = "/repo/b/finetuned"
+    launcher = FakeLauncherService(live=(root_a, root_b))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        from tui.app import ExitModal
+
+        assert isinstance(app.screen, ExitModal)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert launcher.detach_calls == [root_a, root_b], (
+            "[enter] detaches EVERY live root"
+        )
+        assert launcher.kill_calls == [], "detach never kills"
+        assert app._exit, "detach-then-quit initiates the exit"
+
+
 async def test_peft_choice_radioset_flow():
     """The PEFT choice row: enter opens the RadioSet; picking lora
     writes the param, persists, refreshes the preview + alias hint."""

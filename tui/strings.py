@@ -918,6 +918,15 @@ LNC_EXIT_MESSAGE = (
     "运行中的 sweep: 完成 {done}/{total}（{root}）— "
     "[enter] 分离退出（默认） / [k] 终止后退出 / [esc] 返回"
 )
+# WR-05 (11-08 gap closure): the MULTI-live-sweep form — names EVERY
+# live root (full resolved paths joined; basenames collide — two
+# "finetuned" roots are the triggering scenario) with the count, and
+# deliberately DROPS the done/total fields (per-root counts from one
+# attached root would mix sources). [k]/[enter] act on ALL live roots.
+LNC_EXIT_MESSAGE_MULTI = (
+    "运行中的 sweep: {n} 个（{roots}）— "
+    "[enter] 分离退出（默认） / [k] 终止后退出 / [esc] 返回"
+)
 
 # ===== 任务监控 (MON_, Phase 11) =====
 # The slot-5 monitor screen chrome, the discovered-sweep pane, the cell

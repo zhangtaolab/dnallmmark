@@ -486,6 +486,57 @@ def test_live_sweeps_keeps_live_entries_across_reads(
             str((tmp_path / "out").resolve()),)
 
 
+def test_spawn_same_second_same_basename_never_shares_tee_file(
+        monkeypatch, tmp_path):
+    """WR-04 (gap #5): two DIFFERENT roots sharing the basename
+    ``finetuned`` (the common default) spawned within the SAME second —
+    a slot-4 gate confirm racing a monitor [r], both from this TUI
+    process — never share a tee file: the tee opens EXCLUSIVE (O_EXCL)
+    with a numeric-suffix fallback. The FIRST keeps today's exact name
+    shape; the SECOND gets a ``_1`` suffix; the first log's content is
+    never reopened for write (the sentinel survives); both registry
+    entries stay live."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    launcher = sweep_launcher.SweepLauncher()
+    root_a = tmp_path / "a" / "finetuned"
+    root_b = tmp_path / "b" / "finetuned"
+    clock = FixedClock(CLOCK_MOMENT)   # the SAME second for both spawns
+
+    first = launcher.launch_argv(
+        ["py", "run_sweep.py", "--models", "a"], root_a,
+        spawner=FakeSpawner(FakeSweepPopen(poll_returns=[None])),
+        clock=clock)
+    assert first.spawned is True
+    first_tee = Path(first.tee_path)
+    # a sentinel rides the FIRST sweep's audit log: the second spawn
+    # must never reopen this file for write
+    with first_tee.open("a", encoding="utf-8") as handle:
+        handle.write("SENTINEL-first-sweep-audit-log\n")
+
+    second = launcher.launch_argv(
+        ["py", "run_sweep.py", "--models", "b"], root_b,
+        spawner=FakeSpawner(FakeSweepPopen(poll_returns=[None])),
+        clock=clock)
+
+    assert second.spawned is True
+    assert second.tee_path != first.tee_path, (
+        "the same-second same-basename spawn gets its OWN tee file"
+    )
+    assert first_tee.name == "sweep_20261013_083005_finetuned.log", (
+        "the non-colliding first name keeps today's exact shape"
+    )
+    assert Path(second.tee_path).name == (
+        "sweep_20261013_083005_finetuned_1.log")
+    assert "SENTINEL-first-sweep-audit-log" in first_tee.read_text(
+        encoding="utf-8"), (
+        "the first sweep's audit log is never truncated or interleaved"
+    )
+    assert launcher.live_sweeps() == (
+        str(root_a.resolve()), str(root_b.resolve())), (
+        "both registry entries stay live and killable"
+    )
+
+
 # =====================================================================
 # Lane 2 — the gate: env preflight + fresh recompute + E2' phrase
 # (Task 2)
