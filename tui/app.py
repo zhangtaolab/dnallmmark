@@ -183,7 +183,7 @@ class ExitModal(ModalScreen):
     root as a sequence (a bare str normalizes to a one-root tuple — the
     single-root call shape keeps working); [k] kills and [enter]
     detaches ALL of them before the app exits — no sweep survives a
-    终止后退出 the operator believed terminal, and no GPU stays
+    kill-and-quit the operator believed terminal, and no GPU stays
     occupied by a sweep believed killed.
 
     The kill path blocks up to the launcher's kill grace (SIGTERM ->
