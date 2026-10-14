@@ -1503,7 +1503,7 @@ async def test_exit_modal_multi_root_kills_every_live_sweep():
         assert isinstance(app.screen, ExitModal)
         message = _plain(app.screen.query(Static)[0].content)
         assert LNC_EXIT_MESSAGE_MULTI.format(
-            n=2, roots=", ".join((root_a, root_b))) in message, message
+            n=2, roots=f"{root_a}, {root_b}") in message, message
         await pilot.press("k")
         await pilot.pause()
         assert launcher.kill_calls == [root_a, root_b], (

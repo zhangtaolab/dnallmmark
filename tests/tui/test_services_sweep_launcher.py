@@ -496,7 +496,7 @@ def test_spawn_same_second_same_basename_never_shares_tee_file(
     shape; the SECOND gets a ``_1`` suffix; the first log's content is
     never reopened for write (the sentinel survives); both registry
     entries stay live."""
-    state = pin_state_dir(monkeypatch, tmp_path)
+    pin_state_dir(monkeypatch, tmp_path)
     launcher = sweep_launcher.SweepLauncher()
     root_a = tmp_path / "a" / "finetuned"
     root_b = tmp_path / "b" / "finetuned"
