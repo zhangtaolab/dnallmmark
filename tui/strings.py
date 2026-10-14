@@ -994,6 +994,10 @@ MON_FAILURE_ROW = "{model} × {task} × seed_{seed}"
 MON_RERUN_LABEL = "重跑失败"
 MON_RERUN_CONFIRM = "重跑 {n} 个失败 cell（--from-failures）？— Enter 重跑 / Esc 取消"
 MON_RERUN_TOAST = "✓ 失败重跑已启动 — {cells} cell → {root}"
+# WR-02 (11-08 gap closure): the refuse-loudly reason for an
+# underivable re-run seed set (no leading glyph — it composes under
+# LNC_LAUNCH_FAILED_TOAST's ✗ prefix).
+MON_RERUN_NO_SEEDS = "无法推导重跑种子（失败记录与 cell 表均无种子）— 已拒绝重跑"
 
 # The [t] log tail (MON-04/D-10): title, the dim tee line, the designed
 # CLI-launched unavailable state (never a fabricated empty log).

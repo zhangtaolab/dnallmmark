@@ -154,7 +154,14 @@ class FakeMonitorService:
         self._cells = dict(cells or {})
         self._stats = dict(stats or {})
         self._frontiers = dict(frontiers or {})
-        self._failures = dict(failures or {})
+        # WR-02 staging: a LIST value is a per-call SEQUENCE of reads
+        # (each failures_view call pops the next while more than one
+        # remains, the last is sticky) so a test can stage a DIFFERENT
+        # worker-side re-read than the confirm-side one; a TUPLE value
+        # is ONE sticky read (the pre-existing fixture shape)
+        self._failures = {
+            str(key): (list(value) if isinstance(value, list) else [value])
+            for key, value in (failures or {}).items()}
         self._tails = dict(tails or {})
         self._resume = dict(resume_counts or {})
         self._scales = dict(scales or {})
@@ -220,7 +227,12 @@ class FakeMonitorService:
 
     def failures_view(self, root):
         self.failures_calls.append(str(root))
-        return self._failures.get(str(root), ())
+        scripted = self._failures.get(str(root))
+        if scripted is None:
+            return ()
+        if len(scripted) > 1:
+            return scripted.pop(0)   # WR-02: the staged next read
+        return scripted[0]
 
     def rerun_lane(self, root):
         self.rerun_lane_calls.append(str(root))
@@ -1097,8 +1109,15 @@ async def test_failures_modal_rows_drill_and_empty_state():
 
 async def test_rerun_confirm_routes_launch_from_failures_and_attaches():
     """[f] -> r -> confirm: launch_from_failures called with the root's
-    failures file + the sweep's seeds; the toast fires and the re-run
-    sweep auto-attaches (T-11-07-03: the same pipeline)."""
+    failures file + the FAILURE-referenced seed set; the toast fires and
+    the re-run sweep auto-attaches (T-11-07-03: the same pipeline).
+
+    WR-02 (sanctioned pin change, 11-08): the seeds now derive from the
+    failure rows themselves — with cells {42: FAILED, 43: QUEUED} but
+    the single failure row at seed 42, the launch receives (42,) — the
+    failure-referenced seed set. The alias seed 43 (queued, never
+    failed) is no longer silently re-attempted, and the confirm names
+    exactly what will run (WR-03's pairs × seeds estimate)."""
     from tui.screens.monitor import FailuresModal
     from tui.screens.selection import ConfirmModal
     from tui.strings import MON_RERUN_CONFIRM, MON_RERUN_TOAST
@@ -1128,7 +1147,8 @@ async def test_rerun_confirm_routes_launch_from_failures_and_attaches():
         assert isinstance(app.screen, ConfirmModal), (
             "the re-run always sits behind its own confirm"
         )
-        assert MON_RERUN_CONFIRM.format(n=1) in str(
+        assert MON_RERUN_CONFIRM.format(
+            pairs=1, seeds="42", n=1) in str(
             app.screen.query_one(Static).content)
         await pilot.press("enter")   # confirm
         await _settle(pilot, app)
@@ -1137,12 +1157,154 @@ async def test_rerun_confirm_routes_launch_from_failures_and_attaches():
         failures_path, seeds, root, _peft, _variant, phrase = (
             launcher.rerun_calls[0])
         assert failures_path == "/scans/finetuned/sweep_failures.json"
-        assert seeds == (42, 43), "the sweep's own seeds fan out"
+        assert seeds == (42,), (
+            "the failure-referenced seed set fans out — the queued alias "
+            "seed is never silently re-attempted"
+        )
         assert root == "/scans/finetuned"
         assert phrase is None, "an ordinary partial re-run carries no phrase"
         assert MON_RERUN_TOAST.format(
             cells="—", root="finetuned") in _toast_messages(app)
         assert str(app.screen._attached_root) == "/scans/finetuned"
+
+
+async def test_rerun_seeds_derive_from_failure_rows_not_a_default():
+    """WR-02 (gap #3): with the cell table EMPTY (no scan landed — the
+    attach -> [f] -> [r] window before the first pass), the re-run's
+    seed fan-out derives from the FAILURE rows themselves (seed 43
+    here) — never the silent ``[42]`` default that would re-run a
+    different experiment than the one confirmed."""
+    from tui.screens.monitor import FailuresModal
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import MON_RERUN_CONFIRM
+
+    failures = (FailureRow(model="model-x", task="task-x", seed=43,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=0, total=1),), watermarks={})],
+        # NO cells staged: _cell_rows stays empty after the attach
+        stats={"/scans/finetuned": _stats(done=0, total=1)},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher()
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        assert app.screen._cell_rows == {}, "the empty-cells staging holds"
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmModal)
+        assert MON_RERUN_CONFIRM.format(
+            pairs=1, seeds="43", n=1) in str(
+            app.screen.query_one(Static).content)
+        await pilot.press("enter")   # confirm
+        await _settle(pilot, app)
+        assert len(launcher.rerun_calls) == 1
+        _path, seeds, _root, _peft, _variant, _phrase = (
+            launcher.rerun_calls[0])
+        assert seeds == (43,), (
+            "the failure rows are the derivation source — the silent "
+            "[42] default is gone"
+        )
+
+
+async def test_rerun_underivable_seeds_refuses_loudly_never_launches():
+    """WR-02 (refuse loudly): when NOTHING is derivable — the worker's
+    own failures_view re-read yields no seeds AND the cell table is
+    empty — the pipeline posts RerunFailed (the error toast carries
+    MON_RERUN_NO_SEEDS under the ✗ prefix) and launch_from_failures is
+    NEVER called: a confirmed GPU spend never becomes a different,
+    unconfirmed experiment."""
+    from tui.screens.monitor import FailuresModal
+    from tui.strings import LNC_LAUNCH_FAILED_TOAST, MON_RERUN_NO_SEEDS
+
+    failures = (FailureRow(model="model-x", task="task-x", seed=42,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=0, total=1),), watermarks={})],
+        stats={"/scans/finetuned": _stats(done=0, total=1)},
+        # the confirm-side read sees the seed-42 row; the WORKER-side
+        # re-read (the second call) yields NOTHING (the staged empty
+        # re-read — the derivation finds no seeds)
+        failures={"/scans/finetuned": [failures, ()]},
+    )
+    launcher = FakeMonitorLauncher()
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await pilot.press("enter")   # confirm the re-run
+        await _settle(pilot, app)
+        assert LNC_LAUNCH_FAILED_TOAST.format(
+            error=MON_RERUN_NO_SEEDS) in _toast_messages(app), (
+            "the underivable seed set refuses LOUDLY — never a default"
+        )
+        assert launcher.rerun_calls == [], (
+            "the launcher is never consulted when nothing is derivable"
+        )
+
+
+async def test_rerun_confirm_names_pairs_times_seeds_estimate():
+    """WR-03 (gap #4): the confirm names the PLANNED-CELL estimate —
+    len(distinct (model, task) pairs) x len(seeds), the exact
+    enumeration launch_from_failures performs — so the confirmed GPU
+    spend is never understated. Two failures at two pairs and two
+    seeds confirm 4 planned cells and launch the full fan-out."""
+    from tui.screens.monitor import FailuresModal
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import MON_RERUN_CONFIRM
+
+    failures = (
+        FailureRow(model="model-a", task="task-1", seed=42,
+                   error="boom", output_dir="/x"),
+        FailureRow(model="model-b", task="task-2", seed=43,
+                   error="boom", output_dir="/y"),
+    )
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=0, total=4),), watermarks={})],
+        stats={"/scans/finetuned": _stats(done=0, total=4)},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher()
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmModal)
+        copy = str(app.screen.query_one(Static).content)
+        assert MON_RERUN_CONFIRM.format(
+            pairs=2, seeds="42, 43", n=4) in copy, (
+            "the confirm names the pair count AND the seed fan-out with "
+            "their product — the exact enumeration the launch performs"
+        )
+        await pilot.press("enter")   # confirm
+        await _settle(pilot, app)
+        assert len(launcher.rerun_calls) == 1
+        _path, seeds, _root, _peft, _variant, _phrase = (
+            launcher.rerun_calls[0])
+        assert seeds == (42, 43), (
+            "confirm and launch share ONE derivation — the confirmed "
+            "fan-out is the executed fan-out"
+        )
 
 
 async def test_note_launch_cells_zero_clears_stale_expected_total():
