@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 15
+open_count: 16
 waived_count: 0
 fixed_count: 6
-total_count: 21
-last_updated: 2026-10-13T13:54:32.529Z
+total_count: 22
+last_updated: 2026-10-14T01:21:59.202Z
 ---
 
 # Broken Windows Ledger
@@ -36,6 +36,7 @@ last_updated: 2026-10-13T13:54:32.529Z
 | 19 | 9 | stub | tui/screens/wizard.py | 475 | o binding routes to the on_export seam with no view behind it — the registry-export view is 09-05's deliverable (planned functionality gap, D-11) | fixed | 09-05 Task 2: o routes to the empty-state-checked export path prompt + the verbatim registry copy (D-11 view behind the seam) | 2026-10-12T04:54:57.963Z | 2026-10-12T05:55:00.000Z |
 | 20 | 11 | deviation | .planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-07-SUMMARY.md |  | GB10 smoke (SC5 execution half) pending maintainer run — procedure in 11-07-SUMMARY, not executor-executable (D-15) | open |  | 2026-10-13T06:06:35.033Z |  |
 | 21 | 12 | unrun-verify | .planning/phases/12-multi-gpu-orchestration-console-hardening/12-05-SUMMARY.md |  | N=2 multi-GPU smoke (MGPU validation half) pending maintainer run on the OTHER machine — 9-step procedure in docs/multi-gpu.md + 12-05-SUMMARY, not executor-executable (D-05: this machine is dev/test only, single GPU) | open |  | 2026-10-13T13:38:34.565Z |  |
+| 22 | quick-261014-c2l | unmet-truth | tests/test_schemas.py |  | Full make-test gate blocked by 10 PRE-EXISTING base failures (5 schema/determinism pins stale after data commit 9bc68e1, 5 root-user chmod persist-failure sims) — verified failing identically at base 9f9404a; this task's own lanes + lint + typecheck + node(26) green (see deferred-items.md) | open |  | 2026-10-14T01:21:59.202Z |  |
 
 ````json
 [
@@ -309,6 +310,19 @@ last_updated: 2026-10-13T13:54:32.529Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-13T13:38:34.565Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
+  },
+  {
+    "id": 22,
+    "kind": "unmet-truth",
+    "phase": "quick-261014-c2l",
+    "file": "tests/test_schemas.py",
+    "line": null,
+    "description": "Full make-test gate blocked by 10 PRE-EXISTING base failures (5 schema/determinism pins stale after data commit 9bc68e1, 5 root-user chmod persist-failure sims) — verified failing identically at base 9f9404a; this task's own lanes + lint + typecheck + node(26) green (see deferred-items.md)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T01:21:59.202Z",
     "resolved_at": null,
     "milestone": "v1.2"
   }

@@ -6,11 +6,11 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: 4
 status: executing
-stopped_at: Completed 12-05-PLAN.md
-last_updated: "2026-10-13T14:06:58.919Z"
+stopped_at: Completed quick 261014-c2l (storage-root overrides, 3/3 tasks, gates green modulo pre-existing base failures)
+last_updated: "2026-10-14T01:25:18.802Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 12 execution started
-state_head: c53b92dbb395f5e69634a6efdbb66e7bf2d8138e
+state_head: 451782d2821588a3cc5c7b640c5ef958e1b4b9b0
 progress:
   total_phases: 6
   completed_phases: 5
@@ -34,7 +34,7 @@ Phase: 12 (Multi-GPU Orchestration & Console Hardening) — COMPLETE (5/5 plans,
 Current Plan: 5 of 5 executed (12-05 phase close landed)
 Total Plans in Phase: 5
 Status: Phase complete — milestone v1.2 at its audit gate (verify-work → audit-milestone → complete-milestone → cleanup; maintainer N=2 other-machine smoke = WINDOWS #21)
-Last activity: 2026-10-13 — 12-05 phase close: delta A + D-08 + N=1 proofs, SC1-5 ledger, final gate 1572 pytest + 26 node green
+Last activity: 2026-10-14 - Completed quick task 261014-c2l: custom model/dataset storage directory support (pipeline --model_root/--dataset_root + TUI run-config threading)
 
 Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 plans executed — all 38 requirements Complete)
 
@@ -97,6 +97,7 @@ Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 
 | Phase 12 P03 | 65m | 2 tasks | 12 files |
 | Phase 12 P04 | 28m | 3 tasks | 5 files |
 | Phase 12 P05 | 18m | 2 tasks | 3 files |
+| Phase quick P261014-c2l | 28 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -221,6 +222,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 12]: 12-05: WINDOWS #21 amended IN PLACE to the unrun-verify shape pointing at 12-05-SUMMARY (12-04 close-out had already recorded the obligation as deviation->docs/multi-gpu.md; one obligation one row, counters pinned at open 15 by the plan verify — an append would duplicate and bump to 16)
 - [Phase 12]: 12-05: proof-suite TDD shape — no RED evidence JSON exists because the production behavior predates the plan (12-01..12-04 landed it); the one initial module-lane failure was a test-fixture fault (the fake child wrote metrics to the root, not the cell dir — --output_dir carries the ROOT); non-vacuity by three throwaway production probes, reverted and never committed
 - [Phase 12]: 12-05 phase close: SC1-5 ledger landed with grep-verified test-name evidence; delta A (zero monitor code) + D-08 isolation (w1 byte+mtime untouched) + N=1 degenerate real-subprocess smoke all test-pinned with ZERO production changes; final gate 1572 pytest + 26 node green; milestone v1.2 at its audit gate (verify-work -> audit-milestone -> complete -> cleanup; the maintainer N=2 other-machine run = WINDOWS #21, blocks ship)
+- [Phase quick-261014-c2l]: 261014-c2l: --model_root/--dataset_root land as ADD-ALONGSIDE pass-through overrides (underscore family) — run_finetune keeps base_dir byte-identical on the None branch (rstrip+sep only on the flag form); run_sweep threads them resolved-absolute in the pinned --cache_dir/--model_root/--dataset_root tail, records present roots in every manifest cell (T-c2l-02), refuses empty values (WR-05 twins); TUI RunSpec.dataset_root default flips to None with LEGACY_DATASET_ROOT_DEFAULT ('./datasets') mapped to unset at load (D-19 retired, no schema bump — pre-change state files launch byte-identically)
 
 ### Pending Todos
 
@@ -234,6 +236,12 @@ None yet.
 - Custom-registry storage location (`~/.config/dnallmmark/` vs repo-local ignored dir) and the exact overlay read seam are Phase 7/9 discuss items — the user-owned-file principle itself is fixed
 - v0.7.1 carryover registry questions (space/SPACE merge decision; 7 models without locatable public cards) remain maintainer-owned — outside v1.2 scope unless registries are touched
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 261014-c2l | Add custom model/dataset storage directory support (pipeline --model_root/--dataset_root flags + TUI run-config threading) | 2026-10-14 | 451782d | [261014-c2l-add-custom-model-dataset-storage-directo](./quick/261014-c2l-add-custom-model-dataset-storage-directo/) |
+
 ## Deferred Items
 
 Items acknowledged and deferred at milestone close, most recent first:
@@ -244,8 +252,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T14:06:29.533Z
-Stopped at: Completed 12-05-PLAN.md
+Last session: 2026-10-14T01:22:22.903Z
+Stopped at: Completed quick 261014-c2l (storage-root overrides, 3/3 tasks, gates green modulo pre-existing base failures)
 Resume file: None
 
 ## Operator Next Steps
