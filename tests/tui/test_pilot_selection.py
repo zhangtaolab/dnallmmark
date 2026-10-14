@@ -1604,6 +1604,179 @@ def test_backend_corrupt_official_registry_degrades_to_error_state(
     assert len(data.dataset_entries) == 50
 
 
+# =====================================================================
+# The round-2 screen-side card guards (08-09, the Truth-6 residual)
+# =====================================================================
+
+#: The degraded row's registry key (the 08-08 chain-1 overlay shape).
+_DEGRADED_KEY = "hand-edited-nondict"
+
+
+def _degraded_row_env(monkeypatch, tmp_path):
+    """The 08-09 Pilot environment: a tmp overlay holding ONE loader-
+    accepted non-dict card (the chain-1 fixture shape) plus a tmp TUI
+    state root, so the REAL selection backend loads machine-independent
+    registries through the env — the same injection the verifier's own
+    reproductions used."""
+    overlay = tmp_path / "custom"
+    overlay.mkdir()
+    (overlay / "custom_models.json").write_text(
+        json.dumps({_DEGRADED_KEY: [1, 2]}),
+        encoding="utf-8")
+    state = tmp_path / "state"
+    state.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(overlay))
+    monkeypatch.setenv("DNALLMMARK_TUI_STATE_DIR", str(state))
+
+
+async def test_w_press_survives_non_dict_card_and_opens_wizard(
+        monkeypatch, tmp_path):
+    """08-09 crash site 1 (the verifier's reproduction): ANY ``w`` press
+    on the models screen — no row interaction, the DEFAULT cursor —
+    raises ``AttributeError('list' object has no attribute 'get')`` out
+    of ``build_wizard``'s observed-vocabularies comprehensions while a
+    non-dict custom card is merged (selection.py:712), which textual
+    8.2.8's ``App._handle_exception`` turns into a console EXIT. After
+    the guard the wizard opens over the officials' vocabularies — the
+    degraded card contributes no species/tokenizer entry, everything
+    else intact."""
+    _degraded_row_env(monkeypatch, tmp_path)
+    # env fake only — the selection side stays REAL (the real backend
+    # loads through the overlay env)
+    app = DnallmMarkTui(env_check_service=_EnvCacheHitFake())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+
+        await pilot.press("w")
+        await pilot.pause()
+
+        assert app._exception is None, (
+            "a w press must never exit the console on a loader-accepted "
+            f"non-dict card: {app._exception!r}"
+        )
+        # lazy import — the module's own wizard import is lazy (the
+        # ConfirmModal cycle), so the test mirrors it
+        from tui.screens.wizard import WizardModal
+
+        assert isinstance(app.screen, WizardModal), (
+            "the degraded-but-meaningful state: the wizard opens"
+        )
+        vocabularies = app.screen._vocabularies
+        # the degraded card contributes no vocabulary entry; the
+        # officials' vocabularies still populate
+        assert vocabularies["species"], "official species populate"
+        assert vocabularies["Tokenizer"], "official tokenizers populate"
+
+
+async def _cursor_to_degraded_row(pilot, app):
+    """The deterministic path onto the degraded row: ``t`` (the ALL
+    pool — the row never carries a custom badge, because the management
+    read skips non-dict entries, so the DEFAULT pool hides it), then the
+    k9s filter narrowed to the row, then ``tab`` from the filter Input to
+    the table (compose order: Input, warning Label, DataTable) so the
+    cursor — row 0 of the one-row table — sits on it."""
+    await pilot.press("t")
+    await pilot.pause()
+    await pilot.press("slash")
+    await pilot.pause()
+    await _type(pilot, "nondict")
+    table = app.screen.query_one(DataTable)
+    assert _row_keys(table) == [_DEGRADED_KEY]
+    await pilot.press("tab")
+    await pilot.pause()
+
+
+async def test_enter_on_degraded_row_opens_cardless_detail_modal(
+        monkeypatch, tmp_path):
+    """08-09 crash site 2 (the verifier's reproduction): ``enter`` on the
+    degraded row — visible in the ALL pool — defeats ``_open_detail``'s
+    ``entry.get("card") or {}`` with the truthy non-dict card
+    (selection.py:2144) and ``RowDetailModal.on_mount`` dies on
+    ``self._card.items()`` (:1236, ``AttributeError('list' object has no
+    attribute 'items')``) — a console EXIT on a plain drill-down the
+    08-08 empty-card projection itself rendered reachable. After the
+    guard the modal opens CARD-LESS: the border title carries the key,
+    the detail log renders nothing — the drill-down twin of the row's
+    blank type/species/size_m axes."""
+    _degraded_row_env(monkeypatch, tmp_path)
+    app = DnallmMarkTui(env_check_service=_EnvCacheHitFake())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+
+        await _cursor_to_degraded_row(pilot, app)
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert app._exception is None, (
+            "enter on the degraded row must never exit the console: "
+            f"{app._exception!r}"
+        )
+        assert isinstance(app.screen, RowDetailModal), (
+            "the card-less drill-down opens over the degraded row"
+        )
+        modal = app.screen
+        assert modal.entry_key == _DEGRADED_KEY
+        assert modal._card == {}, (
+            "only dicts reach the modal after the guard — the "
+            "card-less state is {}, never the verbatim list"
+        )
+        assert modal.query_one("#row-detail-box").border_title == (
+            _DEGRADED_KEY
+        )
+        log = modal.query_one("#row-detail-log", RichLog)
+        assert not log.lines, "the card-less detail log renders nothing"
+
+
+async def test_d_press_on_degraded_row_stays_silent_and_alive(
+        monkeypatch, tmp_path):
+    """08-09, the shield pin (passes pre-fix by design — the regression
+    guard for the THIRD site's incidental survival): ``d`` on the
+    degraded row stays silent-and-alive through the UNKNOWN-presence
+    early return (the non-dict card carries no Model_path, so
+    ``model_presence`` maps it UNKNOWN and the action returns before the
+    card read). The UNKNOWN shield is incidental — one refactor from
+    breaking — which is why ``_manual_landing_path`` is hardened
+    independently (its direct unit pin below) and this test holds the
+    Pilot-level behavior."""
+    _degraded_row_env(monkeypatch, tmp_path)
+    app = DnallmMarkTui(env_check_service=_EnvCacheHitFake())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+        screen = app.screen
+
+        await _cursor_to_degraded_row(pilot, app)
+        await pilot.press("d")
+        await pilot.pause()
+
+        assert app._exception is None, (
+            f"d on the degraded row must stay alive: {app._exception!r}"
+        )
+        # no modal pushed (the UNKNOWN-presence silent branch) and the
+        # selection screen still holds the focus
+        assert app.screen is screen, "no modal over the silent branch"
+        assert not _toast_messages(app), "the UNKNOWN branch is silent"
+        assert app.focused is screen.query_one(DataTable), (
+            "the table keeps the focus — the press is a no-op"
+        )
+
+
+def test_manual_landing_path_returns_none_for_non_dict_card():
+    """08-09 hardening, the direct unit pin: ``_manual_landing_path``
+    extracts the card through the ``model_presence`` idiom (bind, then
+    ``.get(...) if isinstance(card, dict) else None``) — a non-dict card
+    entry returns None and completes without raising. The former
+    ``(entry.get("card") or {}).get("Model_path")`` idiom raised
+    ``AttributeError`` on the truthy list (the ``or`` defeats), so this
+    test is RED pre-fix alongside the two Pilot crash tests."""
+    screen = SelectionScreen()
+    screen._data = SelectionData(model_entries=(
+        {"key": _DEGRADED_KEY, "type": "", "species": "",
+         "size_m": 0.0, "card": [1, 2]},
+    ))
+
+    assert screen._manual_landing_path(_DEGRADED_KEY) is None
+
+
 def test_backend_preset_menu_over_the_committed_priorities(tmp_path):
     """The menu derives tier-1/tier-2/all; customs round-trip sorted."""
     backend = SelectionBackend(config_dir=str(tmp_path))
