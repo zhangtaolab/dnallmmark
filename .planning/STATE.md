@@ -2,15 +2,15 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: TUI任务
-current_phase: 09
-current_phase_name: custom-model-dataset-onboarding
+current_phase: 11
+current_phase_name: run-config-launch-gates-single-gpu-monitoring
 current_plan: 1
 status: executing
-stopped_at: Completed 10-07-PLAN.md (CR-01 gap closure)
-last_updated: "2026-10-14T15:52:15.511Z"
-last_activity: 2026-10-14
-last_activity_desc: Phase 09 execution started
-state_head: 00f3e196a25e1393dd62699c65b201f6d6541af1
+stopped_at: Completed 11-08-PLAN.md (gap closure: CR-01 + WR-01..05)
+last_updated: "2026-10-14T17:12:00.000Z"
+last_activity: 2026-10-15
+last_activity_desc: Phase 11 gap-closure plan 11-08 executed
+state_head: 6ea3a8884cffff5846fd0c533173f61ba86e3998
 progress:
   total_phases: 6
   completed_phases: 5
@@ -26,15 +26,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-11)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 09 — custom-model-dataset-onboarding
+**Current focus:** Phase 11 — run-config-launch-gates-single-gpu-monitoring
 
 ## Current Position
 
-Phase: 09 (custom-model-dataset-onboarding) — EXECUTING
+Phase: 11 (run-config-launch-gates-single-gpu-monitoring) — EXECUTING
 Current Plan: 1
-Total Plans in Phase: 6
-Status: Executing Phase 09
-Last activity: 2026-10-14 — Phase 09 execution started
+Total Plans in Phase: 7
+Status: Executing Phase 11 (11-08 gap closure complete; awaiting re-verification)
+Last activity: 2026-10-15 — Phase 11 gap-closure plan 11-08 executed
 
 Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 plans executed — all 38 requirements Complete)
 
@@ -103,6 +103,7 @@ Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 
 | Phase quick P261014-dcl | 104 min | 3 tasks | 29 files |
 | Phase quick-261014-f4w P01 | 92 min | 3 tasks | 22 files |
 | Phase 10 P10-07 | 9 min | 1 tasks | 2 files |
+| Phase 11 P11-08 | 32 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -236,6 +237,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase quick-261014-ir9]: 261014-ir9: confidential Chaoba series removed HEAD-only (official registry 62 -> 59) — git history retains the entries by explicit maintainer decision, private loading stays via the local custom_models.json overlay; every real-registry count pin re-based to 59/60/8850/2950 incl. 14 sweep-caught sites the planning enumeration missed; count-embedding test names renamed to their 59 forms (zero external references)
 - [Phase 10]: [Phase 10]: 10-07 CR-01 reroute: _datasets_base resolves constructor param > run_config.resolve_dirs(load_state()).dataset_root_abs (read per call, never memoized) > repo pipeline/ — the _models_base twin; the directories.json file tier survives INSIDE the chain via load_state's seeding, so all four L6H-03 pins held byte-unmodified
 - [Phase 10]: [Phase 10]: 10-07 hermeticity: the queue test module's autouse fixture pins BOTH roots (DNALLMMARK_TUI_CONFIG_DIR + DNALLMMARK_TUI_STATE_DIR via tmp_path_factory) — post-reroute every _datasets_base() call reads the state root, and the maintainer box carries a live run_config.json
+- [Phase 11]: 11-08 gap closure: attach() owns the expanduser().resolve() contract (one path basis with validation); rerun seeds derive through ONE shared derive_rerun_seeds used by confirm AND worker (empty = RerunFailed, never a default); tee opens O_EXCL with _1.._99 suffix (filesystem-level uniqueness — a pid suffix cannot disambiguate two spawns from one TUI process); ExitModal carries every live root with LNC_EXIT_MESSAGE_MULTI dropping done/total (mixed sources); the registry key rides rc.resolve_dirs(spec).output_root_abs everywhere (the argv's REPO_ROOT basis)
 
 ### Pending Todos
 
@@ -271,8 +273,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T15:52:15.433Z
-Stopped at: Completed 10-07-PLAN.md (CR-01 gap closure)
+Last session: 2026-10-14T17:12:00.000Z
+Stopped at: Completed 11-08-PLAN.md (gap closure: CR-01 + WR-01..05)
 Resume file: None
 
 ## Operator Next Steps
