@@ -65,6 +65,7 @@ from tui.strings import (
     ENV_COL_SUMMARY,
     ENV_DETAIL_LABEL,
     ENV_DETAIL_TITLE,
+    ENV_KERNEL_DEGRADED,
     ENV_KERNEL_LABELS,
     ENV_LAST_CHECK_LINE,
     ENV_REFRESH_LABEL,
@@ -281,6 +282,26 @@ def _missing_count(result: CheckResult | None) -> int:
     return sum(1 for line in result.lines if line.startswith("  - "))
 
 
+def _degraded_result(kernel_id: str, exc: BaseException) -> CheckResult:
+    """One degraded kernel result for an exception inside the check run.
+
+    WR-01 (08-08): a raising kernel (or a failing ``kernels()``
+    enumeration — exactly the broken-checkout state this screen exists
+    to diagnose) becomes ONE named ok=False result carrying the
+    ``ENV_KERNEL_DEGRADED`` line (exception type + message). The FAIL:
+    prefix lets ``_summary_of``'s strip derive the summary cell exactly
+    the way every real kernel line already does, and the row renders the
+    fail glyph — the console stays alive and the run persists whole
+    (D-05).
+    """
+    return CheckResult(
+        name=kernel_id,
+        ok=False,
+        lines=(ENV_KERNEL_DEGRADED.format(
+            error=f"{type(exc).__name__}: {exc}"),),
+    )
+
+
 class EnvCheckScreen(Screen):
     """The env-check screen: eight rows, async fill, verdict, drill-down."""
 
@@ -418,7 +439,7 @@ class EnvCheckScreen(Screen):
 
     # ===== The exclusive thread worker (D-03: the ONLY kernel execution site) =====
 
-    @work(exclusive=True, thread=True)
+    @work(exclusive=True, thread=True, exit_on_error=False)
     def run_full_check(self) -> None:
         """Run every kernel in the worker thread, posting one message per step.
 
@@ -433,17 +454,37 @@ class EnvCheckScreen(Screen):
         ``self._run_id`` — the cancelled run's OS thread can finish its
         in-flight kernel and post AFTER the new run's messages, and a
         stale landing last would overwrite the fresh result (WR-02).
+
+        WR-01 (08-08) never-exit guards, both inside the existing worker
+        shape: (a) a raising kernel becomes the degraded ok=False result
+        for its own row and the loop continues to the next kernel; (b) a
+        failing ``kernels()`` enumeration degrades EVERY
+        ``ENV_KERNEL_LABELS`` row — either way the run routes through
+        the same persist + completion tail (D-05 partial-failure
+        persists whole), and the decorator's ``exit_on_error=False`` is
+        the residual net (textual 8.2.8's default exits the console).
         """
         worker = get_current_worker()
         run_id = self._run_id  # the run this worker serves (WR-02)
         results: list[CheckResult] = []
-        for kernel_id, kernel in self._service.kernels().items():
-            if worker.is_cancelled:
-                return
-            self.post_message(self.CheckItemChecking(kernel_id, run_id))
-            result = kernel()
-            results.append(result)
-            self.post_message(self.CheckItemDone(result, run_id))
+        try:
+            kernels = self._service.kernels().items()
+        except Exception as exc:  # noqa: BLE001 — the WR-01 enumeration guard
+            for kernel_id in ENV_KERNEL_LABELS:
+                degraded = _degraded_result(kernel_id, exc)
+                results.append(degraded)
+                self.post_message(self.CheckItemDone(degraded, run_id))
+        else:
+            for kernel_id, kernel in kernels:
+                if worker.is_cancelled:
+                    return
+                self.post_message(self.CheckItemChecking(kernel_id, run_id))
+                try:
+                    result = kernel()
+                except Exception as exc:  # noqa: BLE001 — WR-01 per-kernel
+                    result = _degraded_result(kernel_id, exc)
+                results.append(result)
+                self.post_message(self.CheckItemDone(result, run_id))
         if worker.is_cancelled:
             # a newer run superseded this one mid-flight — never persist
             # stale results over the fresh run's state (the same WR-02

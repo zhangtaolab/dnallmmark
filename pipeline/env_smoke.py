@@ -432,6 +432,43 @@ def _root_annotation(root=None):
     return f" (root: {root})"
 
 
+def _read_registry(path, kernel_name):
+    """Read one registry JSON file fail-closed (WR-01, 08-08).
+
+    The directory kernels' shared registry read: an unreadable, corrupt
+    (``json.JSONDecodeError``), or non-UTF-8 (``UnicodeDecodeError``)
+    official registry converts into ONE named ok=False ``CheckResult``
+    in the main() torch-gate wording shape — the registry file, then the
+    exception type + message — so the E2' gate exits 1 deterministically
+    on exactly the broken-checkout state it exists to diagnose, never a
+    traceback (kernels return structured results; main() stays the only
+    renderer, D-02).
+
+    Args:
+        path (Path): the registry file (``MODELS_INFO_PATH`` /
+            ``DATASETS_INFO_PATH``).
+        kernel_name (str): the calling kernel's stable id (the
+            ``CheckResult.name``).
+
+    Returns:
+        tuple[dict | None, CheckResult | None]: ``(parsed, None)`` on a
+        successful read, or ``(None, failure)`` with the named FAIL
+        result the caller returns directly.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh), None
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        return None, CheckResult(
+            name=kernel_name,
+            ok=False,
+            lines=(
+                (f"FAIL: read registry {path} — "
+                 f"{type(exc).__name__}: {exc}"),
+            ),
+        )
+
+
 def check_model_dirs(root=None) -> CheckResult:
     """Check 5: every registry Model_path dir exists under the root.
 
@@ -440,7 +477,11 @@ def check_model_dirs(root=None) -> CheckResult:
     ``Model_path`` VERBATIM (the value keeps its own ``models/`` prefix
     — the 261014-c2l ``run_finetune`` semantics), missing dirs are
     listed BY NAME in sorted-key order, and the headline ALWAYS
-    annotates the effective root actually checked.
+    annotates the effective root actually checked. An unreadable or
+    corrupt registry degrades fail-closed to ONE named FAIL line
+    (``_read_registry``, WR-01 08-08); a broken entry shape (non-dict
+    value, absent ``Model_path``) counts as MISSING — cannot-verify
+    reads as missing, never a crash.
 
     Args:
         root (str | None): the model storage root override (None = this
@@ -453,11 +494,14 @@ def check_model_dirs(root=None) -> CheckResult:
     """
     base = _effective_base(root)
     annotation = _root_annotation(root)
-    with open(MODELS_INFO_PATH, "r", encoding="utf-8") as fh:
-        models_info = json.load(fh)
+    models_info, read_failure = _read_registry(
+        MODELS_INFO_PATH, "model_dirs")
+    if read_failure is not None:
+        return read_failure
     missing = []
     for name in sorted(models_info):
-        value = models_info[name].get("Model_path")
+        entry = models_info[name]
+        value = entry.get("Model_path") if isinstance(entry, dict) else None
         if not isinstance(value, str) or not Path(base + value).is_dir():
             missing.append(name)
     total = len(models_info)
@@ -495,7 +539,11 @@ def check_dataset_dirs(root=None) -> CheckResult:
     DATASETS_ROOT`` form (the prefix rejoins through the base), and the
     headline ALWAYS annotates the effective root actually checked (the
     fixed ``pipeline/`` token on the default branch, so the byte goldens
-    stay checkout-independent).
+    stay checkout-independent). An unreadable or corrupt registry
+    degrades fail-closed to ONE named FAIL line (``_read_registry``,
+    WR-01 08-08); a broken entry shape (non-dict value, absent or
+    non-str ``Dataset_path``) counts as MISSING — cannot-verify reads as
+    missing, never a crash.
 
     Args:
         root (str | None): the dataset storage root override (None =
@@ -508,12 +556,18 @@ def check_dataset_dirs(root=None) -> CheckResult:
     """
     base = _effective_base(root)
     annotation = _root_annotation(root)
-    with open(DATASETS_INFO_PATH, "r", encoding="utf-8") as fh:
-        datasets_info = json.load(fh)
+    datasets_info, read_failure = _read_registry(
+        DATASETS_INFO_PATH, "dataset_dirs")
+    if read_failure is not None:
+        return read_failure
     missing = []
     double_nested = []
     for name in sorted(datasets_info):
-        value = datasets_info[name]["Dataset_path"]
+        entry = datasets_info[name]
+        value = entry.get("Dataset_path") if isinstance(entry, dict) else None
+        if not isinstance(value, str) or not value:
+            missing.append(name)
+            continue
         expected = base + value
         if Path(expected).is_dir():
             continue

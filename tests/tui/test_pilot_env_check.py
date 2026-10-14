@@ -1054,7 +1054,8 @@ async def test_raising_kernel_renders_degraded_row_and_app_stays_alive():
         degraded_line = ENV_KERNEL_DEGRADED.format(
             error="RuntimeError: kernel exploded on a broken checkout")
         table = app.screen.query_one(DataTable)
-        for index, kernel_id in enumerate(MAIN_KERNEL_ORDER):
+        for index, (kernel_id, outcome) in enumerate(
+                zip(MAIN_KERNEL_ORDER, _mixed_results(), strict=True)):
             row = _row(table, index)
             if kernel_id == fake.raising_id:
                 assert row[0] == ENV_STATE_FAIL, (
@@ -1064,7 +1065,12 @@ async def test_raising_kernel_renders_degraded_row_and_app_stays_alive():
                 # detail line (the _summary_of prefix strip)
                 assert row[2] == degraded_line.removeprefix("FAIL: ")
             else:
-                assert row[0] == ENV_STATE_PASS, (
+                # every other kernel completed with its OWN outcome (the
+                # standard scenario's deliberate dataset_dirs FAIL
+                # included — the raise never disturbed its neighbors)
+                expected = (
+                    ENV_STATE_PASS if outcome.ok else ENV_STATE_FAIL)
+                assert row[0] == expected, (
                     f"kernel {kernel_id} must complete normally"
                 )
 

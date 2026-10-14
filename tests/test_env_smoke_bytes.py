@@ -435,7 +435,9 @@ def test_directory_kernels_degrade_fail_closed_on_corrupt_registry(
     assert line.startswith("FAIL: ")
     assert str(corrupt) in line
     assert "JSONDecodeError" in line
-    assert "Expecting value" in line  # the exception message rides along
+    # the exception message rides along (this corrupt content's own
+    # parser wording — "{ not json" fails at the first property name)
+    assert "Expecting property name" in line
 
     datasets_result = env_smoke.check_dataset_dirs()
     assert datasets_result.name == "dataset_dirs"
