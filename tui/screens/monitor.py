@@ -100,6 +100,7 @@ from tui.strings import (
     MON_LOG_UNAVAILABLE,
     MON_RERUN_CONFIRM,
     MON_RERUN_LABEL,
+    MON_RERUN_NO_SEEDS,
     MON_RERUN_TOAST,
     MON_RESCAN_LABEL,
     MON_RESCAN_TOAST,
@@ -573,11 +574,15 @@ class FailuresModal(ModalScreen):
 
     def action_rerun_failures(self) -> None:
         """[r]: the independent re-run confirm (never unconfirmed —
-        this is a real GPU spend), routed through the monitor screen."""
+        this is a real GPU spend), routed through the monitor screen.
+        WR-02/WR-03: the failure ROWS thread into the confirm — they
+        are the seed-derivation source and the pairs-count basis, so
+        the confirmed estimate names exactly what the launch will
+        enumerate."""
         if not self._failures:
             return
         self.dismiss()
-        self._monitor.request_rerun(self._root, len(self._failures))
+        self._monitor.request_rerun(self._root, tuple(self._failures))
 
 
 class LogTailModal(ModalScreen):
@@ -758,6 +763,39 @@ def _set_table_rows(table: DataTable, columns, rows) -> None:
 # =====================================================================
 # The screen
 # =====================================================================
+
+
+def derive_rerun_seeds(failures, cell_rows) -> "tuple[int, ...]":
+    """WR-02 (phase-11 stale-refresh review): the [r] re-run's seed
+    fan-out derives from the FAILURE ROWS themselves — the sorted
+    distinct ``FailureRow.seed`` values first, falling back to the
+    sorted distinct cell-row seed values, else ``()`` (empty = refuse
+    loudly, never a fixed default).
+
+    ONE pure derivation shared by BOTH consumers — the confirm-side
+    estimate (``request_rerun``) and the launch worker
+    (``_run_rerun_launch``) — so the confirmed GPU spend and the
+    executed GPU spend can never drift apart (WR-03).
+
+    Args:
+        failures: the failure rows (``FailureRow`` sequence; the
+            ``.seed`` field is authoritative — it names the experiment
+            that actually failed).
+        cell_rows: the screen's merged cell rows (``{key: CellRow}``;
+            the fallback when no failure rows carry seeds).
+
+    Returns:
+        tuple[int, ...]: the sorted distinct seeds; empty when nothing
+        is derivable.
+    """
+    seeds = {row.seed for row in failures or ()}
+    if not seeds:
+        seeds = {
+            cell_seed.seed
+            for row in (cell_rows or {}).values()
+            for cell_seed in row.seeds
+        }
+    return tuple(sorted(seeds))
 
 
 class MonitorScreen(Screen):
@@ -1171,14 +1209,23 @@ class MonitorScreen(Screen):
                  else CFG_VALUE_ABSENT)
         return (summary_state == SWEEP_RUNNING, str(root), done, total)
 
-    def request_rerun(self, root: str, count: int) -> None:
-        """The [f] modal's r path: the independent ConfirmModal, then
-        the re-run through the same pipeline as slot 4 (env preflight
-        included — T-11-07-03)."""
+    def request_rerun(self, root: str, failures: tuple) -> None:
+        """The [f] modal's r path: the independent ConfirmModal naming
+        the PLANNED-CELL estimate — ``len(distinct (model, task) pairs)
+        x len(seeds)`` over the ONE shared ``derive_rerun_seeds``
+        derivation (WR-03: the confirmed GPU spend is the executed GPU
+        spend, never an understated entry count) — then the re-run
+        through the same pipeline as slot 4 (env preflight included —
+        T-11-07-03)."""
         if self.app.below_minimum_grid:
             return
+        seeds = derive_rerun_seeds(failures, self._cell_rows)
+        pairs = len({(row.model, row.task) for row in failures or ()})
         self.app.push_screen(ConfirmModal(
-            message=MON_RERUN_CONFIRM.format(n=count),
+            message=MON_RERUN_CONFIRM.format(
+                pairs=pairs,
+                seeds=", ".join(str(seed) for seed in seeds),
+                n=pairs * len(seeds)),
             on_confirm=lambda: self._rerun_pipeline(root)))
 
     def _rerun_pipeline(self, root: str) -> None:
@@ -1235,14 +1282,25 @@ class MonitorScreen(Screen):
         --peft/--config-variant sweep's failures re-run as that lane,
         not as base cells). CR-01: ``phrase`` threads the E2' re-prompt's
         answer (None on the first attempt — the service's gate refuses
-        an E2'-class effective matrix and this screen re-prompts)."""
-        seeds = sorted({
-            cell_seed.seed
-            for row in self._cell_rows.values()
-            for cell_seed in row.seeds
-        }) or [42]
-        failures_path = str(Path(root) / sweep_monitor.FAILURES_NAME)
+        an E2'-class effective matrix and this screen re-prompts).
+
+        WR-02: the seed fan-out re-derives through the ONE shared
+        ``derive_rerun_seeds`` over this worker's OWN
+        ``failures_view(root)`` re-read (the authoritative rows, read
+        off the event loop) with the cell rows as fallback — when
+        NOTHING is derivable the pipeline REFUSES LOUDLY
+        (``RerunFailed`` -> the error toast; the launcher is never
+        consulted) and the silent ``[42]`` default is gone. The E2'
+        re-prompt path re-invokes this worker and re-derives
+        identically."""
         try:
+            failures = self._service.failures_view(root)
+            seeds = derive_rerun_seeds(failures, self._cell_rows)
+            if not seeds:
+                self.post_message(self.RerunFailed(
+                    MON_RERUN_NO_SEEDS, root, run_id))
+                return
+            failures_path = str(Path(root) / sweep_monitor.FAILURES_NAME)
             peft, config_variant = self._service.rerun_lane(root)
             outcome = self._launcher.launch_from_failures(
                 failures_path, seeds, root,

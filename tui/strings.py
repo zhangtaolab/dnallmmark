@@ -992,7 +992,17 @@ MON_FAILURES_TITLE = "失败清单 ({n}) — sweep_failures.json"
 MON_FAILURES_EMPTY = "✓ 无失败 cell"
 MON_FAILURE_ROW = "{model} × {task} × seed_{seed}"
 MON_RERUN_LABEL = "重跑失败"
-MON_RERUN_CONFIRM = "重跑 {n} 个失败 cell（--from-failures）？— Enter 重跑 / Esc 取消"
+# AMENDED in place (11-08 gap closure, WR-03 — the 11-05 ENV_VERDICT
+# amendment precedent): the confirm now names the PLANNED-CELL estimate
+# — {pairs} distinct (model, task) failure pairs × the {seeds} fan-out
+# = {n} cells, the exact enumeration launch_from_failures performs —
+# replacing the entry-count {n} form that understated a multi-seed
+# re-run's GPU spend ~3x. The constant NAME is unchanged (its
+# registered inventory entry stands).
+MON_RERUN_CONFIRM = (
+    "重跑 {pairs} 个失败组合 × 种子 {seeds} = {n} 个 cell（--from-failures）"
+    "？— Enter 重跑 / Esc 取消"
+)
 MON_RERUN_TOAST = "✓ 失败重跑已启动 — {cells} cell → {root}"
 # WR-02 (11-08 gap closure): the refuse-loudly reason for an
 # underivable re-run seed set (no leading glyph — it composes under
