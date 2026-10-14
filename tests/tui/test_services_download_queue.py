@@ -36,12 +36,12 @@ See also:
 import json
 import re
 import sys
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
 import pytest
 
-from tui.services import download_queue, registries, settings
+from tui.services import download_queue, registries, run_config, settings
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CJK_RE = re.compile("[一-鿿]")
@@ -3965,27 +3965,38 @@ def test_probe_zenodo_routes_through_the_service_fetch_seam():
 
 
 # =====================================================================
-# L6H-03: the dataset-root reroute through the directories_config chain
-# (261014-l6h) — constructor dataset_root param > directories.json
-# dataset_root key (TOLERANT read) > the repo pipeline/ default. Every
-# dataset LANDING site resolves through the one helper: the ChannelSpec
-# local_dir, the landing gate's relative naming, the shape-C rename,
-# the zenodo extract target, the landed-keys scan, and the reconcile
-# staged absolute Dataset_path. The official REGISTRY read stays
-# repo-anchored — registry is repo state, never redirected by user
-# storage config (the deliberate not-rerouted list).
+# L6H-03: the dataset-root landing base (261014-l6h; rerouted 10-07 /
+# CR-01) — constructor dataset_root param > the run-config chain
+# (resolve_dirs(load_state()).dataset_root_abs — the slot-4 spec,
+# seeded from directories.json INSIDE load_state()) > the repo
+# pipeline/ default. Every dataset LANDING site resolves through the
+# one helper: the ChannelSpec local_dir, the landing gate's relative
+# naming, the shape-C rename, the zenodo extract target, the
+# landed-keys scan, and the reconcile staged absolute Dataset_path.
+# The official REGISTRY read stays repo-anchored — registry is repo
+# state, never redirected by user storage config (the deliberate
+# not-rerouted list).
 # =====================================================================
 
 @pytest.fixture(autouse=True)
 def _pin_directories_config(tmp_path_factory, monkeypatch):
-    """Every queue test runs against an EMPTY config root — the
-    absent-directories.json case — making this whole module the
-    byte-identity proof (and hermetic against a developer-machine
-    file). tmp_path_FACTORY, never the per-test tmp_path: the
+    """Every queue test runs against an EMPTY config root AND an EMPTY
+    state root — the absent-directories.json + absent-run_config.json
+    case — making this whole module the byte-identity proof (and
+    hermetic against developer-machine files). The STATE pin is the
+    10-07/CR-01 hermeticity requirement: after the reroute every
+    ``_datasets_base()`` call reads ``settings.state_dir() /
+    run_config.json``, and a live one exists on the maintainer box —
+    without the pin it could steer any queue test's landing base.
+    tmp_path_FACTORY, never the per-test tmp_path: the
     no-residue/never-persists lanes above assert their tmp_path's
-    exact contents (the root-conftest pin's own rule)."""
+    exact contents (the root-conftest pin's own rule); explicit
+    in-test ``pin_state_dir`` calls override the autouse pin and keep
+    working."""
     pinned = tmp_path_factory.mktemp("dq-no-directories-config")
     monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(pinned))
+    pinned_state = tmp_path_factory.mktemp("dq-no-run-config-state")
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(pinned_state))
 
 
 def write_directories_json(config_dir, doc):
@@ -4069,6 +4080,77 @@ def test_corrupt_directories_json_degrades_to_repo_default(
     spec = service.resolve_channel("Demo__task")
 
     assert spec.local_dir == repo / "pipeline" / "datasets" / "Demo"
+
+
+# =====================================================================
+# CR-01 (10-07): landing-base/consumption-base AGREEMENT — the queue's
+# dataset landing base resolves through the SAME run-config chain every
+# consumption side reads (the env-check dataset_dirs kernel,
+# env_check.py's resolve_dirs(load_state()) + check_dataset_dirs, and
+# compose_argv's --dataset_root), pinned across the verifier's exact
+# three-configuration repro matrix (10-VERIFICATION.md). Modes 1 and 2
+# were the reproduced divergence; the control pins byte-identity.
+# =====================================================================
+
+def test_datasets_base_agrees_with_consumption_spec_without_file_cr01(
+        monkeypatch, tmp_path):
+    """Mode 1 (spec-without-file, the PRIMARY UI flow): the operator
+    set 数据集根 on slot 4 — persisted as session state — and never
+    pressed [s] 保存默认, so directories.json is absent. The BARE
+    production construction (no param threading, the tui/app.py shape)
+    must land at the configured root, and the landing base must EQUAL
+    the consumption base (the chain the env kernel and the launched
+    sweep read)."""
+    state = tmp_path / "state-cr01"
+    state.mkdir()
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    root_x = tmp_path / "sweep-data"
+    run_config.save_state(
+        replace(run_config.DEFAULT_RUN_SPEC, dataset_root=str(root_x)))
+
+    service = download_queue.DownloadQueueService()
+    consumption = run_config.resolve_dirs(
+        run_config.load_state()).dataset_root_abs
+
+    assert service._datasets_base() == root_x
+    assert str(service._datasets_base()) == consumption
+
+
+def test_datasets_base_agrees_with_consumption_relative_file_value_cr01(
+        monkeypatch, tmp_path):
+    """Mode 2 (relative file value, TUI CWD != repo root): a
+    directories.json carrying a RELATIVE dataset_root and no state
+    file. The landing base must anchor against REPO_ROOT exactly like
+    the consumption chain (_abs_against_repo_root), never the process
+    CWD — the download lands where the configured run reads it."""
+    config = write_directories_json(
+        tmp_path / "cfg-rel", {"dataset_root": "rel-ds"})
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(config))
+    monkeypatch.chdir(tmp_path)
+
+    service = download_queue.DownloadQueueService()
+    consumption = run_config.resolve_dirs(
+        run_config.load_state()).dataset_root_abs
+
+    assert consumption == str(run_config._abs_against_repo_root("rel-ds"))
+    assert service._datasets_base() == Path(consumption)
+    assert service._datasets_base() == download_queue.REPO_ROOT / "rel-ds"
+    assert service._datasets_base() != tmp_path / "rel-ds"
+
+
+def test_datasets_base_agrees_with_consumption_default_control_cr01():
+    """Control (aligned default): neither spec nor file set (the
+    autouse fixture pins both roots empty) — the consumption chain
+    answers dataset_root_abs None and the landing base is EXACTLY the
+    repo pipeline/ dir. The byte-identity control: passes before AND
+    after the reroute, pinning that the reroute changes nothing when
+    nothing is configured."""
+    service = download_queue.DownloadQueueService()
+
+    dirs = run_config.resolve_dirs(run_config.load_state())
+
+    assert dirs.dataset_root_abs is None
+    assert service._datasets_base() == download_queue.REPO_ROOT / "pipeline"
 
 
 # =====================================================================
