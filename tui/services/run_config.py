@@ -83,6 +83,15 @@ PEFT none, variant none, subset off, output ``./finetuned``, both
 storage roots unset) whole, never a partially-misread one. A
 pre-change file whose ``dirs.dataset_root`` is exactly the retired
 display-only default loads as UNSET (the legacy mapping above).
+Since 261014-f4w the loaded (or default) spec is post-processed by
+``seed_directory_defaults`` over ``directories_config``
+(the user-owned ``directories.json`` startup file, read tolerantly):
+the file seeds DEFAULTS, session state overrides — and every
+``load_state`` consumer (the env kernels' root kwargs, the slot-4
+input prefill, the slot-1 storage overview) is file-aware through
+that ONE seam. The materialization consequence is honest and
+designed: the next preview save persists seeded values into
+``run_config.json`` as session state.
 Validation mirrors run_sweep's own
 bounds but returns collect-all problems as machine tuples
   ``(field_code, value)`` — data, never screen copy; the sys.exit-ing
@@ -99,9 +108,10 @@ Dependencies: stdlib + ``run_sweep`` (same-source) + the sibling
 import json
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
+import directories_config  # top-level module (pipeline/ sys.path root, the F4W startup config — stdlib-only, import-purity holds)
 import run_sweep  # top-level module (pipeline/ sys.path root, D-05 same-source)
 
 from tui.services import settings
@@ -204,6 +214,9 @@ class RunSpec:
         model_root: model storage root — threads ``--model_root``
             (absolute against REPO_ROOT) when set (261014-c2l; None =
             the child's script-dir resolution governs).
+        log_dir: error-log directory — threads ``--log_dir`` (absolute
+            against REPO_ROOT) when set (261014-f4w; None = the child's
+            own ``./logs`` default governs).
         cache_dir: HF cache override (None = the child's env/default
             resolution governs).
     """
@@ -220,6 +233,7 @@ class RunSpec:
     output_root: str = DEFAULT_OUTPUT_ROOT
     dataset_root: str | None = None
     model_root: str | None = None
+    log_dir: str | None = None
     cache_dir: str | None = None
 
     def __post_init__(self):
@@ -437,7 +451,8 @@ def _state_path(state_path=None):
 
 def _persist_payload(spec):
     """The persisted document: schema envelope + selection + params +
-    dirs (the exact field set — nothing outside it may appear)."""
+    dirs (the exact field set — nothing outside it may appear; six dirs
+    keys counting output_root, log_dir joined 261014-f4w)."""
     return {
         "schema_version": SCHEMA_VERSION,
         "models": list(spec.models),
@@ -455,6 +470,7 @@ def _persist_payload(spec):
             "output_root": spec.output_root,
             "dataset_root": spec.dataset_root,
             "model_root": spec.model_root,
+            "log_dir": spec.log_dir,
             "cache_dir": spec.cache_dir,
         },
     }
@@ -576,8 +592,9 @@ def _spec_from_doc(doc):
         return None
     ok_dataset, dataset_root = _optional_str(dirs.get("dataset_root"))
     ok_model_root, model_root = _optional_str(dirs.get("model_root"))
+    ok_log_dir, log_dir = _optional_str(dirs.get("log_dir"))
     ok_cache, cache_dir = _optional_str(dirs.get("cache_dir"))
-    if not (ok_dataset and ok_model_root and ok_cache):
+    if not (ok_dataset and ok_model_root and ok_log_dir and ok_cache):
         return None
     # 261014-c2l legacy migration: the D-19 display-only default was
     # never threaded; mapping the exact literal to unset preserves
@@ -601,36 +618,82 @@ def _spec_from_doc(doc):
         output_root=output_root,
         dataset_root=dataset_root,
         model_root=model_root,
+        log_dir=log_dir,
         cache_dir=cache_dir,
     )
 
 
+def seed_directory_defaults(spec, file_dirs):
+    """Fill a spec's UNSET dir fields from the startup file's values.
+
+    The F4W-01 mount-time seeding contract: the file seeds DEFAULTS,
+    session state overrides — every SET field survives untouched, and
+    ``output_root`` (str-typed with a default, so the default literal
+    is the only seedable signal — the documented conflation) fills only
+    when the loaded value is exactly ``DEFAULT_OUTPUT_ROOT``. The seed
+    is a PREFILL the operator sees in the slot-4 inputs and can edit,
+    with one honest materialization consequence: the next preview save
+    persists seeded values into ``run_config.json`` as session state
+    (the designed override semantics).
+
+    Args:
+        spec (RunSpec): the loaded (or default) spec.
+        file_dirs (dict[str, str]): ``load_directories_tolerant()``'s
+            view (already stripped-non-empty by the loader).
+
+    Returns:
+        RunSpec: the seed-applied spec (the input spec unchanged on an
+        empty dict — the byte-identical-when-absent case).
+    """
+    if not file_dirs:
+        return spec
+    changes: dict[str, object] = {}
+    for key in ("model_root", "dataset_root", "log_dir", "cache_dir"):
+        if getattr(spec, key) is None and file_dirs.get(key):
+            changes[key] = file_dirs[key]
+    if (spec.output_root == DEFAULT_OUTPUT_ROOT
+            and file_dirs.get("output_root")):
+        changes["output_root"] = file_dirs["output_root"]
+    if not changes:
+        return spec
+    return replace(spec, **changes)
+
+
 def load_state(state_path=None):
-    """Load the persisted spec — tolerant, NEVER raises.
+    """Load the persisted spec — tolerant, NEVER raises — then apply
+    the directories.json seeding (261014-f4w).
 
     A missing file, corrupt JSON, a forward-dated schema_version, or
     ANY shape drift (wrong field types, out-of-vocabulary enums,
     out-of-bounds numerics) returns ``DEFAULT_RUN_SPEC`` WHOLE — never
     a partially-misread spec and never an exception (the settings
-    contract; T-11-02-05).
+    contract; T-11-02-05). The loaded (or default) spec is then
+    post-processed through ``seed_directory_defaults`` over
+    ``directories_config.load_directories_tolerant()`` — the ONE seam
+    every load_state consumer (the env kernels' root kwargs, the
+    selection presence base, the slot-4 input prefill, the slot-1
+    storage overview) is file-aware through; a missing/corrupt file
+    seeds nothing (byte-identical load).
 
     Args:
         state_path: an explicit file path; None resolves the XDG state
             root default.
 
     Returns:
-        RunSpec: the persisted spec, or the defaults.
+        RunSpec: the seed-applied persisted spec, or the seed-applied
+        defaults.
     """
     try:
         doc = json.loads(_state_path(state_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return DEFAULT_RUN_SPEC
-    if not isinstance(doc, dict) or doc.get("schema_version") != SCHEMA_VERSION:
-        return DEFAULT_RUN_SPEC
-    spec = _spec_from_doc(doc)
-    if spec is None:
-        return DEFAULT_RUN_SPEC
-    return spec
+        doc = None
+    loaded = DEFAULT_RUN_SPEC
+    if isinstance(doc, dict) and doc.get("schema_version") == SCHEMA_VERSION:
+        parsed = _spec_from_doc(doc)
+        if parsed is not None:
+            loaded = parsed
+    return seed_directory_defaults(
+        loaded, directories_config.load_directories_tolerant())
 
 
 # =====================================================================
@@ -657,6 +720,11 @@ class DirPlan:
         model_root_abs: the ABSOLUTE form (None when unset). Threaded
             as ``--model_root`` whenever set (261014-c2l) — the
             dataset-root twin.
+        log_dir: the DISPLAY form (None when unset). The error-log
+            directory (261014-f4w).
+        log_dir_abs: the ABSOLUTE form (None when unset), resolved
+            against REPO_ROOT the same way as every other path. Threaded
+            as ``--log_dir`` whenever set.
         cache_dir_abs: the ABSOLUTE cache override (None when absent).
             Threaded — ``compose_argv`` threads ``--cache_dir``
             whenever set (IN-01, phase-11 review); ``DirPlan`` exposes
@@ -669,6 +737,8 @@ class DirPlan:
     dataset_root_abs: str | None
     model_root: str | None
     model_root_abs: str | None
+    log_dir: str | None
+    log_dir_abs: str | None
     cache_dir_abs: str | None
 
 
@@ -703,6 +773,11 @@ def resolve_dirs(spec):
         model_root_abs=(
             _abs_against_repo_root(spec.model_root)
             if spec.model_root else None
+        ),
+        log_dir=spec.log_dir,
+        log_dir_abs=(
+            _abs_against_repo_root(spec.log_dir)
+            if spec.log_dir else None
         ),
         cache_dir_abs=(
             _abs_against_repo_root(spec.cache_dir)
@@ -1025,9 +1100,9 @@ def compose_argv(spec):
     pairs appended in the pinned order ``--peft``, ``--config-
     variant``, ``--curve``, ``--subset_file``, ``--num_train_epochs``,
     ``--effective_batch_size``, ``--cache_dir``, ``--model_root``,
-    ``--dataset_root`` (the two storage roots join the pinned tail,
-    261014-c2l — the same model-before-dataset order run_sweep's
-    ``build_argv`` pins). An ABSENT flag
+    ``--dataset_root``, ``--log_dir`` (the pinned storage tail,
+    261014-c2l + 261014-f4w — the same order run_sweep's
+    ``build_argv`` pins element-for-element). An ABSENT flag
     contributes ZERO elements (D-12 absent parity — a defaults spec
     composes exactly the 10 base elements). Path-valued flags resolve
     ABSOLUTE against REPO_ROOT before threading (D-14). The [p]
@@ -1083,6 +1158,8 @@ def compose_argv(spec):
     if spec.dataset_root:
         argv += ["--dataset_root",
                  _abs_against_repo_root(spec.dataset_root)]
+    if spec.log_dir:
+        argv += ["--log_dir", _abs_against_repo_root(spec.log_dir)]
     return argv
 
 
@@ -1128,3 +1205,135 @@ def compose_from_failures_argv(failures_path, seeds, output_root,
     if extra:
         argv += list(extra)
     return argv
+
+
+# =====================================================================
+# The directories.json save seam + the storage overview (261014-f4w)
+# =====================================================================
+
+
+def save_directory_defaults(spec, config_path=None):
+    """Persist the spec's directory values as the startup defaults file.
+
+    Writes the COMPLETE five-key document — a ``schema_version`` 1
+    envelope with every ``DIRECTORY_KEYS`` key present, each value the
+    RESOLVED ABSOLUTE form from ``resolve_dirs`` (``""`` for unset) —
+    through ``settings.atomic_write`` to
+    ``settings.config_dir() / directories.json`` (or the explicit
+    path), returning the written path.
+
+    Absolute-only storage is the divergence guard: bare-CLI resolution
+    (CWD basis) and TUI resolution (REPO_ROOT basis) agree on every
+    stored value, and the loader's empty-means-absent policy makes the
+    all-empty save equivalent to defaults (the restore path is "clear
+    the inputs and save").
+
+    D-10 coexistence, write side: the TUI writes through
+    ``settings.atomic_write`` over platformdirs while the pipeline
+    reads through the hand-rolled strict resolver — the same-file
+    agreement is test-pinned (``directories_config.config_path()``).
+
+    Args:
+        spec (RunSpec): the spec whose dir values become the defaults
+            (the slot-4 ``s`` action composes it from the inputs).
+        config_path: an explicit file path; None resolves the config
+            root default.
+
+    Returns:
+        Path: the written file's path (for the success toast).
+    """
+    plan = resolve_dirs(spec)
+    # The "" = unset convention covers output_root's default literal too
+    # (the str-typed field always carries a value, so the DEFAULT literal
+    # is the unset signal — the same conflation the seeding documents):
+    # an all-defaults save writes five empty strings and loads back as
+    # {} — exactly the defaults.
+    values = {
+        "model_root": plan.model_root_abs or "",
+        "dataset_root": plan.dataset_root_abs or "",
+        "output_root": (
+            plan.output_root_abs
+            if spec.output_root != DEFAULT_OUTPUT_ROOT else ""),
+        "log_dir": plan.log_dir_abs or "",
+        "cache_dir": plan.cache_dir_abs or "",
+    }
+    target = (Path(config_path) if config_path is not None
+              else settings.config_dir()
+              / directories_config.DIRECTORIES_FILE_NAME)
+    settings.atomic_write(
+        target,
+        json.dumps(
+            {"schema_version": SCHEMA_VERSION, **values},
+            indent=4,
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+    )
+    return target
+
+
+@dataclass(frozen=True)
+class StorageRow:
+    """One storage-overview row — pure data (labels and glyphs live in
+    strings/screens).
+
+    Attributes:
+        key: one of ``DIRECTORY_KEYS``.
+        path: the EFFECTIVE absolute path for the key (spec projection
+            or the documented display default).
+        exists: a plain ``Path.exists()`` stat over the path.
+    """
+
+    key: str
+    path: str
+    exists: bool
+
+
+#: The unset display defaults, mirroring the REAL consumers (a launch
+#: composed from a defaults spec resolves exactly these): both storage
+#: roots resolve against the committed pipeline dir, the log dir
+#: against pipeline/logs, the cache against the run_finetune module-top
+#: ../../cache default (REPO_ROOT/cache).
+_STORAGE_DEFAULTS = {
+    "model_root": str(DEFAULT_REGISTRY_DIR),
+    "dataset_root": str(DEFAULT_REGISTRY_DIR),
+    "log_dir": str(DEFAULT_REGISTRY_DIR / "logs"),
+    "cache_dir": str(REPO_ROOT / "cache"),
+}
+
+
+def storage_overview(spec=None):
+    """The five effective storage directories for the overview display.
+
+    Rows come back in ``DIRECTORY_KEYS`` order over the seed-applied
+    ``load_state()`` (or an explicit spec): per key the spec's
+    ``*_abs`` projection (``log_dir`` resolved against REPO_ROOT the
+    same way), with the ``_STORAGE_DEFAULTS`` display defaults filling
+    the unset keys and ``output_root`` always resolving (the str-typed
+    field). ``exists`` is a plain ``Path.exists()`` stat. The display
+    mirrors WHERE artifacts land for a launch composed from the current
+    session state — the same seam the env kernels check roots through;
+    presentation lives in the screen.
+
+    Args:
+        spec (RunSpec | None): an explicit spec; None derives from the
+            seed-applied ``load_state()``.
+
+    Returns:
+        tuple[StorageRow, ...]: five rows in ``DIRECTORY_KEYS`` order.
+    """
+    loaded = spec if spec is not None else load_state()
+    plan = resolve_dirs(loaded)
+    projections = {
+        "model_root": plan.model_root_abs,
+        "dataset_root": plan.dataset_root_abs,
+        "output_root": plan.output_root_abs,
+        "log_dir": plan.log_dir_abs,
+        "cache_dir": plan.cache_dir_abs,
+    }
+    rows = []
+    for key in directories_config.DIRECTORY_KEYS:
+        path = projections[key] or _STORAGE_DEFAULTS[key]
+        rows.append(StorageRow(
+            key=key, path=path, exists=Path(path).exists()))
+    return tuple(rows)

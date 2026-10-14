@@ -26,6 +26,7 @@ See also:
     ``tests/test_env_smoke_bytes.py`` — the CLI byte contract.
 """
 
+import json
 import sys
 import types
 from datetime import datetime, timedelta
@@ -426,6 +427,94 @@ def test_default_kernels_without_state_file_bind_none_roots(tmp_path,
     kernels["dataset_dirs"]()
 
     assert captured == {"model": None, "dataset": None}
+
+
+# ===== Run-config root threading over directories.json (261014-f4w) =====
+
+
+def _record_dir_kernels(monkeypatch, captured):
+    """Patch the two directory kernels with recorders (the 261014-dcl
+    idiom, factored for the f4w lanes)."""
+    order: list = []
+
+    def recording_model_dirs(root=None):
+        captured["model"] = root
+        return _pass("model_dirs")
+
+    def recording_dataset_dirs(root=None):
+        captured["dataset"] = root
+        return _pass("dataset_dirs")
+
+    _patch_env_smoke_kernels(
+        monkeypatch, order=order,
+        model_dirs_fn=recording_model_dirs,
+        dataset_dirs_fn=recording_dataset_dirs,
+    )
+    return env_check.default_kernels()
+
+
+def test_default_kernels_bind_directories_json_roots_without_state(
+        tmp_path, monkeypatch):
+    """261014-f4w (F4W-01's env half): a directories.json carrying
+    model_root/dataset_root under the injected config root + NO
+    run_config.json -> the seeding inside load_state binds the RESOLVED
+    ABSOLUTE file roots into BOTH directory kernels — the file seeds
+    DEFAULTS through the one load_state seam every consumer shares."""
+    monkeypatch.setenv("DNALLMMARK_TUI_STATE_DIR", str(tmp_path / "state"))
+    import directories_config
+
+    config_root = tmp_path / "f4w-config"
+    config_root.mkdir()
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(config_root))
+    (config_root / directories_config.DIRECTORIES_FILE_NAME).write_text(
+        json.dumps({
+            "model_root": str(tmp_path / "file-models"),
+            "dataset_root": str(tmp_path / "file-datasets"),
+        }),
+        encoding="utf-8",
+    )
+    captured = {}
+    kernels = _record_dir_kernels(monkeypatch, captured)
+    kernels["model_dirs"]()
+    kernels["dataset_dirs"]()
+    assert captured == {
+        "model": str((tmp_path / "file-models").resolve()),
+        "dataset": str((tmp_path / "file-datasets").resolve()),
+    }
+
+
+def test_persisted_run_config_root_wins_over_directories_json(
+        tmp_path, monkeypatch):
+    """Session state overrides the file: a persisted run_config.json
+    root beats the file's same key while the file's OTHER key still
+    seeds (the mount-time prefill precedence)."""
+    from tui.services import run_config
+
+    monkeypatch.setenv("DNALLMMARK_TUI_STATE_DIR", str(tmp_path / "state"))
+    run_config.save_state(run_config.RunSpec(
+        models=(), tasks=(),
+        model_root=str(tmp_path / "session-models"),
+    ))
+    import directories_config
+
+    config_root = tmp_path / "f4w-config"
+    config_root.mkdir()
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(config_root))
+    (config_root / directories_config.DIRECTORIES_FILE_NAME).write_text(
+        json.dumps({
+            "model_root": str(tmp_path / "file-models"),
+            "dataset_root": str(tmp_path / "file-datasets"),
+        }),
+        encoding="utf-8",
+    )
+    captured = {}
+    kernels = _record_dir_kernels(monkeypatch, captured)
+    kernels["model_dirs"]()
+    kernels["dataset_dirs"]()
+    assert captured == {
+        "model": str((tmp_path / "session-models").resolve()),
+        "dataset": str((tmp_path / "file-datasets").resolve()),
+    }
 
 
 # ===== Default state location (D-04) =====

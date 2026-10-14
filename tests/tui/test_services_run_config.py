@@ -143,6 +143,10 @@ def test_runspec_defaults():
     assert spec.dataset_root is None
     assert spec.model_root is None
     assert spec.cache_dir is None
+    assert spec.log_dir is None, (
+        "the log dir defaults UNSET (261014-f4w) — the child's own "
+        "./logs default governs"
+    )
 
 
 def test_runspec_is_frozen():
@@ -392,6 +396,7 @@ def test_persistence_round_trip_full_spec(monkeypatch, tmp_path):
         dataset_root="/data/datasets",
         model_root="/data/models",
         cache_dir="/data/cache",
+        log_dir="/data/logs",
     )
     run_config.save_state(spec)
     assert run_config.load_state() == spec
@@ -407,6 +412,9 @@ def test_persistence_round_trip_full_spec(monkeypatch, tmp_path):
     assert doc["dirs"]["model_root"] == "/data/models", (
         "the persisted dirs payload carries the new model_root key "
         "(261014-c2l)"
+    )
+    assert doc["dirs"]["log_dir"] == "/data/logs", (
+        "the persisted dirs payload carries the log_dir key (261014-f4w)"
     )
 
 
@@ -556,18 +564,24 @@ def test_resolve_dirs_defaults_repo_relative_display_absolute_argv():
     assert plan.model_root is None
     assert plan.model_root_abs is None
     assert plan.cache_dir_abs is None
+    assert plan.log_dir is None, (
+        "the log dir defaults UNSET for display (261014-f4w)"
+    )
+    assert plan.log_dir_abs is None
 
 
 def test_resolve_dirs_explicit_overrides_resolve_absolute():
     """An explicit override always threads ABSOLUTE (D-14) — a relative
     override resolves against REPO_ROOT, an absolute one passes
-    through unchanged (both storage roots included, 261014-c2l)."""
+    through unchanged (both storage roots + the log dir included,
+    261014-c2l + 261014-f4w)."""
     spec = run_config.RunSpec(
         models=("m",), tasks=("t",),
         output_root="./sweeps/run-b",
         dataset_root="/data/datasets",
         model_root="./m-root",
         cache_dir="./hf-cache",
+        log_dir="./run-logs",
     )
     plan = run_config.resolve_dirs(spec)
     assert plan.output_root == "./sweeps/run-b"
@@ -577,6 +591,25 @@ def test_resolve_dirs_explicit_overrides_resolve_absolute():
     assert plan.model_root == "./m-root"
     assert plan.model_root_abs == str((REPO_ROOT / "m-root").resolve())
     assert plan.cache_dir_abs == str((REPO_ROOT / "hf-cache").resolve())
+    assert plan.log_dir == "./run-logs"
+    assert plan.log_dir_abs == str((REPO_ROOT / "run-logs").resolve())
+
+
+def test_resolve_dirs_log_dir_absolute_passes_through():
+    """The log-dir display/argv twins mirror dataset_root: an absolute
+    value passes through unchanged for argv (261014-f4w)."""
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",), log_dir="/mnt/logs")
+    plan = run_config.resolve_dirs(spec)
+    assert plan.log_dir == "/mnt/logs"
+    assert plan.log_dir_abs == "/mnt/logs"
+
+
+def test_resolve_dirs_absent_log_dir_is_none():
+    spec = run_config.RunSpec(models=("m",), tasks=("t",), log_dir=None)
+    plan = run_config.resolve_dirs(spec)
+    assert plan.log_dir is None
+    assert plan.log_dir_abs is None
 
 
 def test_resolve_dirs_absent_dataset_root_is_none():
@@ -1007,7 +1040,7 @@ def test_compose_argv_defaults_exactly_ten_base_elements():
 @pytest.mark.parametrize("flag", [
     "--peft", "--config-variant", "--curve", "--subset_file",
     "--num_train_epochs", "--effective_batch_size", "--cache_dir",
-    "--model_root", "--dataset_root",
+    "--model_root", "--dataset_root", "--log_dir",
 ])
 def test_compose_argv_absent_flags_contribute_zero_elements(flag):
     spec = run_config.RunSpec(models=("m",), tasks=("t",))
@@ -1022,9 +1055,10 @@ def test_compose_argv_full_spec_element_for_element():
     so the order is pinned exactly once, here. (The spec carries both
     alias axes only to exercise the order; composition validation —
     not the mechanical composer — refuses the variant x peft combo,
-    and run_sweep re-refuses at start.) The storage-root tail
-    (261014-c2l) pins --cache_dir, --model_root, --dataset_root — the
-    same order run_sweep's build_argv pins."""
+    and run_sweep re-refuses at start.) The storage tail
+    (261014-c2l + 261014-f4w) pins --cache_dir, --model_root,
+    --dataset_root, --log_dir — the same order run_sweep's build_argv
+    pins element-for-element."""
     spec = run_config.RunSpec(
         models=("m1", "m2"), tasks=("t1",), seeds=(42,),
         peft="lora", config_variant="probe",
@@ -1035,6 +1069,7 @@ def test_compose_argv_full_spec_element_for_element():
         cache_dir="./hf-cache",
         model_root="./m-root",
         dataset_root="./d-root",
+        log_dir="./run-logs",
     )
     argv = run_config.compose_argv(spec)
     assert argv == [
@@ -1053,6 +1088,7 @@ def test_compose_argv_full_spec_element_for_element():
         "--cache_dir", str((REPO_ROOT / "hf-cache").resolve()),
         "--model_root", str((REPO_ROOT / "m-root").resolve()),
         "--dataset_root", str((REPO_ROOT / "d-root").resolve()),
+        "--log_dir", str((REPO_ROOT / "run-logs").resolve()),
     ]
 
 
@@ -1181,3 +1217,311 @@ def test_compose_from_failures_argv_defaults_eight_elements():
     ]
     assert "--peft" not in argv
     assert "--config-variant" not in argv
+
+
+# =====================================================================
+# 261014-f4w — file-default seeding + the atomic save seam + the
+# storage overview (Task 2)
+# =====================================================================
+
+
+def pin_config_dir(monkeypatch, tmp_path, payload=None):
+    """Point DNALLMMARK_TUI_CONFIG_DIR at a tmp root and optionally
+    write a directories.json there (overrides the root conftest's
+    autouse empty-dir pin — the test-body setenv wins)."""
+    import directories_config  # top-level module (pipeline/ sys.path root)
+
+    config_root = tmp_path / "f4w-config"
+    config_root.mkdir()
+    monkeypatch.setenv(settings.CONFIG_DIR_ENV, str(config_root))
+    if payload is not None:
+        (config_root / directories_config.DIRECTORIES_FILE_NAME).write_text(
+            json.dumps(payload), encoding="utf-8")
+    return config_root
+
+
+def test_seed_directory_defaults_fills_none_fields():
+    """The pure seeding function: each None dir field fills from the
+    file dict; output_root fills ONLY at the DEFAULT literal (the
+    str-typed field's one seedable signal — the conflation is the
+    documented mount-time PREFILL semantics); an empty dict returns
+    the spec unchanged."""
+    spec = run_config.RunSpec(models=("m",), tasks=("t",))
+    seeded = run_config.seed_directory_defaults(spec, {
+        "model_root": "/mnt/models",
+        "dataset_root": "/mnt/datasets",
+        "log_dir": "/mnt/logs",
+        "cache_dir": "/mnt/cache",
+    })
+    assert seeded.model_root == "/mnt/models"
+    assert seeded.dataset_root == "/mnt/datasets"
+    assert seeded.log_dir == "/mnt/logs"
+    assert seeded.cache_dir == "/mnt/cache"
+    assert seeded.output_root == "./finetuned", (
+        "no output_root key in the dict — the spec value stands"
+    )
+
+
+def test_seed_directory_defaults_output_root_only_at_default_literal():
+    """A CUSTOM persisted output_root survives seeding (session state
+    overrides); the DEFAULT literal is the only seedable value."""
+    custom = run_config.RunSpec(
+        models=("m",), tasks=("t",), output_root="./sweeps/custom")
+    seeded = run_config.seed_directory_defaults(
+        custom, {"output_root": "/mnt/out"})
+    assert seeded.output_root == "./sweeps/custom"
+    default = run_config.RunSpec(models=("m",), tasks=("t",))
+    seeded_default = run_config.seed_directory_defaults(
+        default, {"output_root": "/mnt/out"})
+    assert seeded_default.output_root == "/mnt/out"
+
+
+def test_seed_directory_defaults_set_fields_never_overwritten():
+    """Session state wins: a SET field is never overwritten by the
+    file's value (the file seeds DEFAULTS only)."""
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",),
+        model_root="/session/models", log_dir="/session/logs")
+    seeded = run_config.seed_directory_defaults(spec, {
+        "model_root": "/file/models", "log_dir": "/file/logs",
+    })
+    assert seeded.model_root == "/session/models"
+    assert seeded.log_dir == "/session/logs"
+
+
+def test_seed_directory_defaults_empty_dict_returns_spec_unchanged():
+    spec = run_config.RunSpec(models=("m",), tasks=("t",))
+    assert run_config.seed_directory_defaults(spec, {}) == spec
+
+
+def test_load_state_seeds_from_directories_json(monkeypatch, tmp_path):
+    """load_state post-processes the loaded spec over the tolerant file
+    read: unset dir fields prefill from directories.json under the
+    injected config root — the mount-time PREFILL the slot-4 inputs and
+    the env kernels consume through the one seam."""
+    pin_state_dir(monkeypatch, tmp_path)
+    pin_config_dir(monkeypatch, tmp_path, {
+        "model_root": "/mnt/models",
+        "dataset_root": "/mnt/datasets",
+        "log_dir": "/mnt/logs",
+    })
+    loaded = run_config.load_state()
+    assert loaded.model_root == "/mnt/models"
+    assert loaded.dataset_root == "/mnt/datasets"
+    assert loaded.log_dir == "/mnt/logs"
+    assert loaded.cache_dir is None, "no cache_dir key — stays unset"
+
+
+def test_load_state_set_fields_survive_seeding(monkeypatch, tmp_path):
+    """A persisted session value wins over the file's key — the file
+    seeds DEFAULTS, session state overrides."""
+    pin_state_dir(monkeypatch, tmp_path)
+    run_config.save_state(run_config.RunSpec(
+        models=("m",), tasks=("t",), model_root="/session/models"))
+    pin_config_dir(monkeypatch, tmp_path, {"model_root": "/file/models"})
+    loaded = run_config.load_state()
+    assert loaded.model_root == "/session/models"
+
+
+def test_load_state_corrupt_directories_json_leaves_spec_untouched(
+        monkeypatch, tmp_path):
+    """The tolerant twin: a corrupt directories.json degrades to no
+    seeding — the load itself stays byte-identical (display surfaces
+    never crash on a bad file; the pipeline consumers stay fail-loud)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    pin_config_dir(monkeypatch, tmp_path, "{not json")
+    loaded = run_config.load_state()
+    assert loaded.model_root is None
+    assert loaded.dataset_root is None
+    assert loaded.log_dir is None
+
+
+def test_load_state_no_file_returns_todays_values(monkeypatch, tmp_path):
+    """The no-file representative: with no run_config.json and no
+    directories.json, load_state returns exactly today's defaults."""
+    pin_state_dir(monkeypatch, tmp_path)
+    pin_config_dir(monkeypatch, tmp_path)
+    assert run_config.load_state() == run_config.RunSpec(
+        models=(), tasks=())
+
+
+def test_save_directory_defaults_writes_five_key_document(
+        monkeypatch, tmp_path):
+    """The atomic save seam: the complete five-key document (schema
+    envelope 1, every DIRECTORY_KEY present, RESOLVED ABSOLUTE values,
+    empty string for unset) lands under the injected config root; the
+    written file reads back through the STRICT loader with exactly the
+    set values."""
+    import directories_config
+
+    config_root = pin_config_dir(monkeypatch, tmp_path)
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",),
+        model_root="./m-root", log_dir="/abs/logs")
+    written = run_config.save_directory_defaults(spec)
+    assert written == config_root / directories_config.DIRECTORIES_FILE_NAME
+    doc = json.loads(written.read_text(encoding="utf-8"))
+    assert doc["schema_version"] == 1
+    assert set(doc) == {
+        "schema_version", *directories_config.DIRECTORY_KEYS}
+    assert doc["model_root"] == str((REPO_ROOT / "m-root").resolve())
+    assert doc["log_dir"] == "/abs/logs", (
+        "an absolute value threads through as its resolved self"
+    )
+    assert doc["dataset_root"] == "", (
+        "an unset dir persists as the empty string (the loader's "
+        "empty-means-absent policy)"
+    )
+    assert doc["output_root"] == "", (
+        "the DEFAULT output_root literal is the unset signal (the "
+        "str-typed field's documented conflation) — an all-default "
+        "output root saves as empty"
+    )
+    assert directories_config.load_directories() == {
+        "model_root": str((REPO_ROOT / "m-root").resolve()),
+        "log_dir": "/abs/logs",
+    }, "the written file reads back through the strict loader"
+
+
+def test_save_directory_defaults_all_empty_loads_back_as_defaults(
+        monkeypatch, tmp_path):
+    """The divergence guard made visible: an all-empty save (every dir
+    unset, output_root at its default literal) loads back as {} —
+    equivalent to defaults, so the restore path is 'clear the inputs
+    and save'."""
+    import directories_config
+
+    pin_config_dir(monkeypatch, tmp_path)
+    written = run_config.save_directory_defaults(
+        run_config.RunSpec(models=(), tasks=()))
+    assert directories_config.load_directories() == {}
+    doc = json.loads(written.read_text(encoding="utf-8"))
+    for key in directories_config.DIRECTORY_KEYS:
+        assert doc[key] == "", (
+            f"{key} must persist empty — five empty strings load back "
+            "as the absent-everywhere defaults"
+        )
+
+
+def test_save_directory_defaults_custom_output_root_persists(
+        monkeypatch, tmp_path):
+    """A CUSTOM output_root (anything other than the default literal)
+    persists as its resolved absolute form — the slot-4 save captures
+    a real override."""
+    import directories_config
+
+    pin_config_dir(monkeypatch, tmp_path)
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",), output_root="./sweeps/custom")
+    written = run_config.save_directory_defaults(spec)
+    doc = json.loads(written.read_text(encoding="utf-8"))
+    assert doc["output_root"] == str(
+        (REPO_ROOT / "sweeps" / "custom").resolve())
+    assert directories_config.load_directories()["output_root"] == str(
+        (REPO_ROOT / "sweeps" / "custom").resolve())
+
+
+def test_save_directory_defaults_explicit_path_round_trip(
+        monkeypatch, tmp_path):
+    """The explicit-path seam: the save honors a caller-provided path
+    (tests, future exporters) and still writes the same document."""
+    import directories_config
+
+    pin_config_dir(monkeypatch, tmp_path)
+    target = tmp_path / "elsewhere" / "directories.json"
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",), dataset_root="/mnt/datasets")
+    written = run_config.save_directory_defaults(spec, config_path=target)
+    assert written == target
+    assert directories_config.load_directories(target) == {
+        "dataset_root": "/mnt/datasets",
+    }, "the default output_root literal persists empty — only real "
+    "overrides survive the read-back"
+
+
+def test_save_directory_defaults_agrees_with_directories_config_path(
+        monkeypatch, tmp_path):
+    """The D-10 same-root pin from the write side: the returned path
+    equals directories_config.config_path() under the injected env —
+    the TUI write seam and the pipeline read seam resolve ONE file."""
+    import directories_config
+
+    pin_config_dir(monkeypatch, tmp_path)
+    written = run_config.save_directory_defaults(
+        run_config.RunSpec(models=(), tasks=()))
+    assert written == directories_config.config_path()
+
+
+def test_storage_overview_full_spec_rows(monkeypatch, tmp_path):
+    """storage_overview: five frozen rows in DIRECTORY_KEYS order over
+    the seed-applied load_state — a fully-set spec carries the spec's
+    absolute paths with real exists flags over tmp dirs."""
+    pin_state_dir(monkeypatch, tmp_path)
+    pin_config_dir(monkeypatch, tmp_path)
+    existing = tmp_path / "model-store"
+    existing.mkdir()
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",),
+        model_root=str(existing),
+        dataset_root=str(tmp_path / "dataset-store"),
+        log_dir=str(tmp_path / "run-logs"),
+        cache_dir=str(tmp_path / "hf-cache"),
+        output_root="./sweeps/f4w",
+    )
+    rows = run_config.storage_overview(spec)
+    import directories_config
+
+    assert [row.key for row in rows] == list(
+        directories_config.DIRECTORY_KEYS)
+    by_key = {row.key: row for row in rows}
+    assert by_key["model_root"].path == str(existing)
+    assert by_key["model_root"].exists is True
+    assert by_key["dataset_root"].path == str(tmp_path / "dataset-store")
+    assert by_key["dataset_root"].exists is False
+    assert by_key["log_dir"].path == str(tmp_path / "run-logs")
+    assert by_key["log_dir"].exists is False
+    assert by_key["cache_dir"].path == str(tmp_path / "hf-cache")
+    assert by_key["cache_dir"].exists is False
+    assert by_key["output_root"].path == str(
+        (REPO_ROOT / "sweeps" / "f4w").resolve())
+
+
+def test_storage_overview_defaults_mirror_real_consumers(
+        monkeypatch, tmp_path):
+    """With the defaults spec (and no file), the unset display defaults
+    mirror the REAL consumers: model/dataset roots -> the committed
+    pipeline dir, output_root -> the resolved ./finetuned, log_dir ->
+    pipeline/logs, cache -> REPO_ROOT/cache (the run_finetune module-top
+    ../../cache default)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    pin_config_dir(monkeypatch, tmp_path)
+    rows = run_config.storage_overview()
+    by_key = {row.key: row for row in rows}
+    assert by_key["model_root"].path == str(
+        run_config.DEFAULT_REGISTRY_DIR)
+    assert by_key["dataset_root"].path == str(
+        run_config.DEFAULT_REGISTRY_DIR)
+    assert by_key["output_root"].path == str(
+        (REPO_ROOT / "finetuned").resolve())
+    assert by_key["log_dir"].path == str(
+        run_config.DEFAULT_REGISTRY_DIR / "logs")
+    assert by_key["cache_dir"].path == str(REPO_ROOT / "cache")
+    assert by_key["log_dir"].exists is False, (
+        "pipeline/logs does not exist on a fresh checkout — the honest "
+        "glyph for the default log dir"
+    )
+
+
+def test_storage_overview_seeded_over_load_state(monkeypatch, tmp_path):
+    """storage_overview() with no explicit spec derives from the
+    seed-applied load_state() — a directories.json value appears in the
+    rows even with no persisted run_config.json (one seam)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    file_root = tmp_path / "file-models"
+    file_root.mkdir()
+    pin_config_dir(monkeypatch, tmp_path, {
+        "model_root": str(file_root)})
+    rows = run_config.storage_overview()
+    by_key = {row.key: row for row in rows}
+    assert by_key["model_root"].path == str(file_root)
+    assert by_key["model_root"].exists is True
