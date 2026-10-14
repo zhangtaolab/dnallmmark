@@ -239,6 +239,22 @@ Failure boundary:
     flags — they exist CLI-first with argv-shape proofs in
     ``tests/test_sweep.py``.
 
+--model_root / --dataset_root (261014-c2l, storage-root overrides):
+    Two pure pass-through flags threaded to every run_finetune.py child
+    as separate LIST argv elements ONLY when present — the ROOT under
+    which the child joins registry Model_path / Dataset_path values
+    VERBATIM (the ``models/...``/``datasets/...`` prefixes are part of
+    the registry value; no prefix stripping). Models and datasets can
+    therefore live outside the tiny system disk (e.g. under
+    /root/autodl-tmp) while the registry-relative resolution stays
+    byte-identical when no override is given: absent flags contribute
+    ZERO argv elements and ZERO manifest keys, and the child keeps
+    resolving against its own script directory. Present values resolve
+    ABSOLUTE at this layer before threading (D-15), refuse
+    provided-but-empty at sweep start (the WR-05 discipline), and record
+    in every manifest cell via sweep_flags (D-13 — the storage location
+    of a benchmark cell's inputs is provenance worth keeping).
+
 FUTURE E2E note (documented here, deliberately NOT executed — D-05):
     On-disk dataset directories are DOUBLE-NESTED after a fresh unzip of
     a suite archive (the zip extracts as ``suite-name/suite-name/task-dir``
@@ -434,6 +450,27 @@ def parse_args():
              "<resolved absolute path> (sets HF_HOME/MS_CACHE_HOME in the "
              "child via its argv pre-scan; absent = the child's env/default "
              "resolution governs)"
+    )
+
+    parser.add_argument(
+        "--model_root",
+        type=str,
+        default=None,
+        help="Model storage root threaded to every child as --model_root "
+             "<resolved absolute path> — the root under which the child "
+             "resolves registry Model_path values verbatim (absent = the "
+             "child's script-dir resolution governs)"
+    )
+
+    parser.add_argument(
+        "--dataset_root",
+        type=str,
+        default=None,
+        help="Dataset storage root threaded to every child as "
+             "--dataset_root <resolved absolute path> — the root under "
+             "which the child resolves registry Dataset_path values "
+             "verbatim (absent = the child's script-dir resolution "
+             "governs)"
     )
 
     parser.add_argument(
@@ -1067,7 +1104,8 @@ def base_model_name(model, peft="none", config_variant="none"):
 def build_argv(model, task, seed, output_root, peft="none",
                train_fraction=None, subset_file=None,
                effective_batch_size=None, num_train_epochs=None,
-               cache_dir=None, config_variant="none"):
+               cache_dir=None, config_variant="none",
+               model_root=None, dataset_root=None):
     """Build the run_finetune.py argv for one cell — a LIST, never a string.
 
     Under ``peft`` lora/ia3 (06-02) the cell's model is the ALIAS
@@ -1099,11 +1137,14 @@ def build_argv(model, task, seed, output_root, peft="none",
     Under the four pass-through flags (07-03, PIPE-02) each PRESENT flag
     appends exactly two LIST elements (flag then ``str(value)``) —
     ``--subset_file``, ``--effective_batch_size``,
-    ``--num_train_epochs``, ``--cache_dir``. An ABSENT flag contributes
-    ZERO elements, so a no-flag sweep builds the exact pre-07-03 argv
-    (D-12/D-13 absent parity). No gradient-accumulation arithmetic lives
-    here: GA = max(1, N // bs_new) is the child's existing logic (D-10/
-    D-16 — this builder is pure pass-through).
+    ``--num_train_epochs``, ``--cache_dir`` — followed by the two
+    storage-root twins (261014-c2l) ``--model_root`` then
+    ``--dataset_root`` in the pinned tail order (model-before-dataset,
+    the --target_model-before---target_dataset axis order). An ABSENT
+    flag contributes ZERO elements, so a no-flag sweep builds the exact
+    pre-07-03 argv (D-12/D-13 absent parity). No gradient-accumulation
+    arithmetic lives here: GA = max(1, N // bs_new) is the child's
+    existing logic (D-10/ D-16 — this builder is pure pass-through).
 
     Args:
         model (str): value for the cell's model identity — the BASE name
@@ -1130,6 +1171,13 @@ def build_argv(model, task, seed, output_root, peft="none",
         config_variant (str): config variant none/head/probe/curve;
             non-none appends the ``--save_model_name``/
             ``--config-variant`` twin (11-01, D-18).
+        model_root (str | None): resolved ABSOLUTE model storage root
+            appended as ``--model_root <path>`` when given — the root
+            under which the child joins registry Model_path values
+            verbatim.
+        dataset_root (str | None): resolved ABSOLUTE dataset storage
+            root appended as ``--dataset_root <path>`` when given — the
+            Dataset_path twin.
 
     Returns:
         list[str]: the argv, each flag and value a separate element.
@@ -1158,21 +1206,27 @@ def build_argv(model, task, seed, output_root, peft="none",
         argv += ["--num_train_epochs", str(num_train_epochs)]
     if cache_dir is not None:
         argv += ["--cache_dir", str(cache_dir)]
+    if model_root is not None:
+        argv += ["--model_root", str(model_root)]
+    if dataset_root is not None:
+        argv += ["--dataset_root", str(dataset_root)]
     return argv
 
 
 def launch_subprocess(model, task, seed, output_root, peft="none",
                       train_fraction=None, subset_file=None,
                       effective_batch_size=None, num_train_epochs=None,
-                      cache_dir=None, config_variant="none"):
+                      cache_dir=None, config_variant="none",
+                      model_root=None, dataset_root=None):
     """Default executor: run run_finetune.py for one cell.
 
     cwd is pinned to PIPELINE_DIR because finetune_config.yaml and the
     ./finetuned default are CWD-relative in run_finetune.py (research
     Pitfall 3); shell is never used (T-03-10). The four pass-through
-    flags (07-03) forward verbatim, and ``config_variant`` (11-01, D-18)
-    threads as the peft-style aliasing twin — the child is the
-    authoritative validator in all cases.
+    flags (07-03) forward verbatim, ``config_variant`` (11-01, D-18)
+    threads as the peft-style aliasing twin, and the two storage-root
+    flags (261014-c2l) forward as resolved ABSOLUTE paths — the child is
+    the authoritative validator in all cases.
 
     Raises:
         subprocess.CalledProcessError: the run exited nonzero (check=True).
@@ -1181,7 +1235,7 @@ def launch_subprocess(model, task, seed, output_root, peft="none",
     return subprocess.run(
         build_argv(model, task, seed, output_root, peft, train_fraction,
                    subset_file, effective_batch_size, num_train_epochs,
-                   cache_dir, config_variant),
+                   cache_dir, config_variant, model_root, dataset_root),
         cwd=PIPELINE_DIR,
         check=True,
     )
@@ -1385,8 +1439,9 @@ def run_matrix(cells, output_root, executor=None, peft="none",
         sweep_flags (dict | None): the PRESENT pass-through flags
             (07-03, PIPE-02) — keys ``subset_file`` /
             ``effective_batch_size`` / ``num_train_epochs`` /
-            ``cache_dir``, values as threaded (paths already resolved
-            absolute by ``main()``, D-15). Bound into the default
+            ``cache_dir`` (plus the storage-root twins ``model_root`` /
+            ``dataset_root``, 261014-c2l), values as threaded (paths
+            already resolved absolute by ``main()``, D-15). Bound into the default
             executor's argv AND merged into every manifest cell (D-13);
             an empty/None dict binds nothing and records nothing
             (byte-identical default). A ``config_variant`` key (11-01:
@@ -1631,6 +1686,22 @@ def main():
             f"--cache_dir {args.cache_dir!r} is empty — refusing to "
             "thread a pathless flag"
         )
+    if args.model_root is not None and not args.model_root.strip():
+        # WR-05 twin (261014-c2l): an empty --model_root would thread the
+        # CWD as the model storage root — every child resolving
+        # "models/..." under the sweep's launch directory instead of its
+        # own script dir, a silent wrong-root hazard.
+        flag_problems.append(
+            f"--model_root {args.model_root!r} is empty — refusing to "
+            "thread a pathless flag"
+        )
+    if args.dataset_root is not None and not args.dataset_root.strip():
+        # WR-05 twin (261014-c2l): the --model_root twin over the dataset
+        # resolution root.
+        flag_problems.append(
+            f"--dataset_root {args.dataset_root!r} is empty — refusing "
+            "to thread a pathless flag"
+        )
     # T-11-01-03: variant and PEFT never compose. Two alias suffixes
     # cannot both name one cell (the child would take --save_model_name
     # from one lane while the driver recorded the other's dir); the
@@ -1655,6 +1726,14 @@ def main():
         str(Path(args.cache_dir).resolve())
         if args.cache_dir is not None else None
     )
+    model_root_abs = (
+        str(Path(args.model_root).resolve())
+        if args.model_root is not None else None
+    )
+    dataset_root_abs = (
+        str(Path(args.dataset_root).resolve())
+        if args.dataset_root is not None else None
+    )
     sweep_flags = {}
     if subset_file_abs is not None:
         sweep_flags["subset_file"] = subset_file_abs
@@ -1664,6 +1743,18 @@ def main():
         sweep_flags["num_train_epochs"] = args.num_train_epochs
     if cache_dir_abs is not None:
         sweep_flags["cache_dir"] = cache_dir_abs
+    # Storage-root overrides (261014-c2l) join sweep_flags exactly like
+    # the pass-through family: present keys both thread into every child
+    # argv (run_matrix's launch_kwargs partial) and record in every
+    # manifest cell (the **flags merge in _manifest_payload, D-13) — a
+    # storage-root override silently changes WHICH model weights /
+    # dataset files a benchmark cell consumed, so the manifest is the
+    # provenance record (T-c2l-02). Absent flags contribute zero argv
+    # elements and zero manifest keys.
+    if model_root_abs is not None:
+        sweep_flags["model_root"] = model_root_abs
+    if dataset_root_abs is not None:
+        sweep_flags["dataset_root"] = dataset_root_abs
     # 11-01 (D-18): normalize the variant axis once — args stores None
     # (absent) while every downstream consumer (enumerate_matrix,
     # build_argv, run_matrix, the from-failures join) speaks "none". A

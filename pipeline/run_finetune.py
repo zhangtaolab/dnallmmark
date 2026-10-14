@@ -153,6 +153,28 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--model_root",
+        type=str,
+        default=None,
+        help="Root directory under which registry Model_path values "
+             "resolve, joined verbatim (the 'models/...' prefix is part "
+             "of the registry value — no prefix stripping). Absent: "
+             "resolution against this script's own directory, "
+             "byte-identical to the default."
+    )
+
+    parser.add_argument(
+        "--dataset_root",
+        type=str,
+        default=None,
+        help="Root directory under which registry Dataset_path values "
+             "resolve, joined verbatim (the 'datasets/...' prefix is part "
+             "of the registry value — no prefix stripping). Absent: "
+             "resolution against this script's own directory, "
+             "byte-identical to the default."
+    )
+
+    parser.add_argument(
         "--seed",
         type=int,
         default=9527,
@@ -732,6 +754,8 @@ if __name__ == "__main__":
     num_train_epochs = args.num_train_epochs
     config_variant = args.config_variant
     train_fraction = args.train_fraction
+    model_root = args.model_root
+    dataset_root = args.dataset_root
 
     # Unified eval subsets (F7 Q3 / REV-07): validate the --subset_file
     # map fail-fast BEFORE any model load — the run_sweep._validate_filters
@@ -928,6 +952,26 @@ if __name__ == "__main__":
         "CrossDNA_519M",
     ]
 
+    # Storage-root overrides (261014-c2l): registry Model_path /
+    # Dataset_path values are pipeline-relative ("models/...",
+    # "datasets/...") and resolve against this script's own directory
+    # (base_dir) by default; the flags replace that root VERBATIM — the
+    # prefix stays part of the registry value, so --model_root
+    # /root/autodl-tmp + Model_path "models/Chaoba" resolves to
+    # /root/autodl-tmp/models/Chaoba. The absent-flag branch keeps
+    # base_dir, so the resolution expressions below stay byte-identical
+    # string concatenations; the flag form normalizes the separator
+    # (rstrip + os.sep) so exactly one separator ever joins the root and
+    # the registry value.
+    model_base = (
+        base_dir if model_root is None
+        else model_root.rstrip(os.sep) + os.sep
+    )
+    dataset_base = (
+        base_dir if dataset_root is None
+        else dataset_root.rstrip(os.sep) + os.sep
+    )
+
     # Iteratively finetune across different models and datasets
     max_mem = 0.0
     init_max_mem = -1
@@ -945,7 +989,7 @@ if __name__ == "__main__":
         # evo2_1b_base / megaDNA_updated in the same run.
         configs = load_config("./finetune_config.yaml")
 
-        model_path = base_dir + model_row["Model_path"]
+        model_path = model_base + model_row["Model_path"]
         tokenizer_type = model_row["Tokenizer"]
         mean_token_len = model_row["Mean_token_length"]
 
@@ -996,7 +1040,7 @@ if __name__ == "__main__":
             count = 0
             for idx, row in datasets_info.items():
                 dataset_name = row["Dataset_name"]
-                dataset_path = base_dir + row["Dataset_path"]
+                dataset_path = dataset_base + row["Dataset_path"]
 
                 # Reset grad_accum to this model's YAML default (D-07) so a
                 # per-task adjustment from the previous dataset cannot leak

@@ -2645,3 +2645,118 @@ def test_flops_report_write_rank_guarded():
         "the success block, and reading the peak-memory counter before "
         "evaluate() is what scopes max_mem_gb to the training peak"
     )
+
+
+# =====================================================================
+# --model_root / --dataset_root storage-root overrides (261014-c2l)
+# =====================================================================
+
+
+def test_storage_root_flags_declared_in_parse_args():
+    """--model_root / --dataset_root exist with type=str, default None,
+    and help naming the resolution-root semantics: the registry-relative
+    path (Model_path resp. Dataset_path) joins VERBATIM under the given
+    root — the 'models/...'/'datasets/...' prefix is part of the
+    registry value — and an absent flag means resolution against the
+    script's own directory, the byte-identical default."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    for flag, registry_key in (("--model_root", "Model_path"),
+                               ("--dataset_root", "Dataset_path")):
+        idx = src.find(f'"{flag}"')
+        assert idx != -1, (
+            f"no {flag} argument in parse_args() — the storage-root "
+            "override has no entry point (261014-c2l)"
+        )
+        block = src[idx:idx + 900]
+        assert "type=str" in block, f"{flag} must be type=str"
+        assert "default=None" in block, (
+            f"{flag} must default to None — an absent flag keeps the "
+            "script-dir resolution byte-identical"
+        )
+        assert registry_key in block, (
+            f"{flag}'s help must name the registry field it overrides "
+            f"({registry_key})"
+        )
+        assert "verbatim" in block, (
+            f"{flag}'s help must state the verbatim join semantics"
+        )
+        assert "script" in block and "directory" in block, (
+            f"{flag}'s help must state the absent-flag default "
+            "(resolution against the script's own directory)"
+        )
+
+
+def test_storage_root_unpack_precedes_model_loop():
+    """The __main__ block unpacks both flags before the model loop —
+    the override-aware bases computed downstream need the values in
+    scope before any resolution site runs."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    model_unpack = statement_index(src, "model_root = args.model_root")
+    dataset_unpack = statement_index(
+        src, "dataset_root = args.dataset_root")
+    assert model_unpack != -1, "no model_root = args.model_root unpack"
+    assert dataset_unpack != -1, (
+        "no dataset_root = args.dataset_root unpack"
+    )
+    model_loop_idx = src.find("models_info.items():")
+    assert model_loop_idx != -1, "no model loop found"
+    assert model_unpack < model_loop_idx and dataset_unpack < model_loop_idx, (
+        "both unpacks must precede the model loop (261014-c2l)"
+    )
+
+
+def test_override_aware_bases_rewire_both_resolution_sites():
+    """261014-c2l: the two resolution sites consume the override-aware
+    bases — the literal direct concatenations are GONE, the None branch
+    of each base keeps base_dir verbatim (the byte-identical-when-absent
+    contract), and the flag branch normalizes the separator so exactly
+    one separator ever joins the root and the registry value."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    assert "base_dir + model_row" not in src, (
+        "the model resolution site must consume the override-aware "
+        "model_base, not the direct base_dir concatenation"
+    )
+    assert 'base_dir + row["Dataset_path"]' not in src, (
+        "the dataset resolution site must consume the override-aware "
+        "dataset_base, not the direct base_dir concatenation"
+    )
+    model_base_idx = statement_index(src, "base_dir if model_root is None")
+    dataset_base_idx = statement_index(
+        src, "base_dir if dataset_root is None")
+    assert model_base_idx != -1, (
+        "no override-aware model_base computation with base_dir as the "
+        "None branch (261014-c2l)"
+    )
+    assert dataset_base_idx != -1, (
+        "no override-aware dataset_base computation with base_dir as "
+        "the None branch (261014-c2l)"
+    )
+    model_loop_idx = src.find("models_info.items():")
+    assert model_loop_idx != -1, "no model loop found"
+    assert model_base_idx < model_loop_idx, (
+        "the base computations must precede the model loop that "
+        "consumes them"
+    )
+    assert dataset_base_idx < model_loop_idx
+    model_site = statement_index(
+        src, 'model_path = model_base + model_row["Model_path"]')
+    dataset_site = statement_index(
+        src, 'dataset_path = dataset_base + row["Dataset_path"]')
+    assert model_site != -1, (
+        'no "model_path = model_base + model_row[\'Model_path\']" '
+        "resolution wired to the override-aware base"
+    )
+    assert dataset_site != -1, (
+        'no "dataset_path = dataset_base + row[\'Dataset_path\']" '
+        "resolution wired to the override-aware base"
+    )
+    assert model_base_idx < model_site, (
+        "the model_base computation must precede the resolution site"
+    )
+    assert dataset_base_idx < dataset_site, (
+        "the dataset_base computation must precede the resolution site"
+    )
+    # the flag branch's separator normalization: exactly one separator
+    # ever joins the root and the registry value
+    assert "model_root.rstrip(os.sep) + os.sep" in src
+    assert "dataset_root.rstrip(os.sep) + os.sep" in src

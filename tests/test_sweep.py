@@ -1998,15 +1998,18 @@ def _capturing_launcher(monkeypatch):
 
 
 def test_sweep_flags_default_to_none_in_parse_args(monkeypatch):
-    """The four pass-through flags exist and default to None — an absent
-    flag threads NOTHING and records NOTHING (the byte-identical-when-
-    absent contract, D-12/D-13)."""
+    """The pass-through flags exist and default to None — an absent flag
+    threads NOTHING and records NOTHING (the byte-identical-when-absent
+    contract, D-12/D-13; the storage-root twins join the family,
+    261014-c2l)."""
     monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
     args = run_sweep.parse_args()
     assert args.subset_file is None
     assert args.effective_batch_size is None
     assert args.num_train_epochs is None
     assert args.cache_dir is None
+    assert args.model_root is None
+    assert args.dataset_root is None
 
 
 def test_effective_batch_size_bare_valued_absent_parse(monkeypatch):
@@ -2043,13 +2046,32 @@ def test_build_argv_threads_four_flags_as_list_elements():
 
 def test_build_argv_absent_flags_add_zero_elements():
     """Absent flags contribute ZERO argv elements — the absent-parity
-    contract: a no-flag sweep builds the exact pre-07-03 child argv."""
+    contract: a no-flag sweep builds the exact pre-07-03 child argv
+    (the storage-root twins included, 261014-c2l)."""
     plain = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
     for flag in ("--subset_file", "--effective_batch_size",
-                 "--num_train_epochs", "--cache_dir"):
+                 "--num_train_epochs", "--cache_dir",
+                 "--model_root", "--dataset_root"):
         assert flag not in plain, (
             f"{flag} must contribute zero argv elements when absent"
         )
+
+
+def test_build_argv_threads_storage_roots_as_list_elements():
+    """261014-c2l: each PRESENT storage-root flag appends exactly two
+    LIST elements — flag then str(value) — and --model_root precedes
+    --dataset_root in the pinned tail order (model-before-dataset, the
+    --target_model-before---target_dataset axis order)."""
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root",
+        model_root="/mnt/storage", dataset_root="/mnt/storage")
+    assert isinstance(argv, list)
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--model_root") == "/mnt/storage"
+    assert flag_value(argv, "--dataset_root") == "/mnt/storage"
+    assert argv.index("--model_root") < argv.index("--dataset_root"), (
+        "--model_root must precede --dataset_root (the pinned tail order)"
+    )
 
 
 def test_cli_bare_effective_batch_size_threads_16_into_child_argv(
@@ -2101,6 +2123,38 @@ def test_cli_resolves_subset_and_cache_dir_to_absolute_paths(
     assert flag_value(captured["argv"], "--cache_dir") == str(
         tmp_path / "hf-cache"), (
         "a relative --cache_dir must reach the child as the resolved "
+        "absolute path"
+    )
+
+
+def test_cli_resolves_storage_roots_to_absolute_paths(
+        tmp_path, monkeypatch):
+    """261014-c2l (D-15 twin): relative --model_root / --dataset_root
+    values are resolved to ABSOLUTE paths at the sweep layer BEFORE
+    threading — the child joins registry Model_path/Dataset_path values
+    under the given root verbatim, so a relative root would resolve
+    against the child's pinned pipeline/ cwd instead of the operator's
+    launch directory."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--model_root", "m-root",
+        "--dataset_root", "d-root",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--model_root") == str(
+        tmp_path / "m-root"), (
+        "a relative --model_root must reach the child as the resolved "
+        "absolute path"
+    )
+    assert flag_value(captured["argv"], "--dataset_root") == str(
+        tmp_path / "d-root"), (
+        "a relative --dataset_root must reach the child as the resolved "
         "absolute path"
     )
 
@@ -2192,6 +2246,41 @@ def test_cli_empty_cache_dir_value_aborts(tmp_path, monkeypatch):
             "--registry-dir", str(registry_dir),
         ])
     assert "--cache_dir" in str(excinfo.value)
+
+
+def test_cli_empty_model_root_value_aborts(tmp_path, monkeypatch):
+    """261014-c2l (WR-05 twin): a provided-but-empty --model_root aborts
+    non-zero naming the flag — Path('').resolve() is the CWD, so
+    threading it would resolve every child's "models/..." registry value
+    under the sweep's launch directory instead of the child's own script
+    dir (a silent wrong-root hazard, never an error)."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--model_root", "",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "--model_root" in str(excinfo.value)
+
+
+def test_cli_whitespace_dataset_root_value_aborts(tmp_path, monkeypatch):
+    """261014-c2l (WR-05 twin): a whitespace-only --dataset_root aborts
+    non-zero naming the flag — the --model_root twin over the dataset
+    resolution root (a whitespace value would resolve to a
+    ' '-suffixed path)."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--dataset_root", "   ",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "--dataset_root" in str(excinfo.value)
 
 
 # =====================================================================
@@ -2490,10 +2579,11 @@ def test_dry_run_manifest_records_present_flags(tmp_path, monkeypatch):
 
 
 def test_dry_run_manifest_absent_flags_add_no_keys(tmp_path, monkeypatch):
-    """D-13 absent parity: with all four flags omitted, every manifest
-    cell keeps EXACTLY the five base keys — no flag keys leak in (the
-    byte level is locked by test_dry_run_manifest_is_byte_deterministic;
-    this locks the key set)."""
+    """D-13 absent parity: with every pass-through flag omitted (the four
+    07-03 flags and the storage-root twins), every manifest cell keeps
+    EXACTLY the five base keys — no flag keys leak in (the byte level is
+    locked by test_dry_run_manifest_is_byte_deterministic; this locks the
+    key set)."""
     registry_dir = make_registry(tmp_path)
     out_root = tmp_path / "sweep-out"
     run_cli(monkeypatch, [
@@ -2538,6 +2628,32 @@ def test_manifest_records_resolved_absolute_paths(tmp_path, monkeypatch):
     for cell in manifest["cells"]:
         assert cell["subset_file"] == str(tmp_path / "subsets.json")
         assert cell["cache_dir"] == str(tmp_path / "hf-cache")
+
+
+def test_manifest_records_resolved_storage_roots(tmp_path, monkeypatch):
+    """261014-c2l (T-c2l-02): a storage-root override silently changes
+    WHICH model weights / dataset files a benchmark cell consumed — the
+    resolved ABSOLUTE values record in EVERY manifest cell via
+    sweep_flags (D-13), keeping leaderboard numbers traceable to their
+    storage location."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--model_root", "m-root",
+        "--dataset_root", "d-root",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    for cell in manifest["cells"]:
+        assert cell["model_root"] == str(tmp_path / "m-root")
+        assert cell["dataset_root"] == str(tmp_path / "d-root")
 
 
 def test_run_record_untouched_by_sweep_flags(tmp_path):
