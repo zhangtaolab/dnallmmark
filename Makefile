@@ -172,8 +172,13 @@ PHASE8_TUI := $(wildcard tui/*.py tui/screens/*.py tui/services/*.py)
 # automatically the moment it lands, with NO later Makefile edit (12-02
 # must not touch this file).
 PHASE12_MODULES := $(foreach s,pipeline/run_sweep_shard.py script/gen_progress.py,$(if $(wildcard $(s)),$(s)))
+# Quick-task extension (261014-l6h): the dnallm compat audit joins the
+# explicit script/ list (the per-file convention above; the file reads
+# the READ-ONLY sibling clone ../DNALLM, so it is linted but never
+# CI-executed).
+QUICK_L6H_SCRIPTS := $(foreach s,script/audit_dnallm_compat.py,$(if $(wildcard $(s)),$(s)))
 lint:
-	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py $(PHASE6_SCRIPTS) $(PHASE7_MODULES) $(PHASE8_TUI) $(PHASE12_MODULES)
+	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py $(PHASE6_SCRIPTS) $(PHASE7_MODULES) $(PHASE8_TUI) $(PHASE12_MODULES) $(QUICK_L6H_SCRIPTS)
 
 # Type check (ty, maintainer directive 2026-10-09): zero-diagnostics baseline
 # verified empirically at research time. [tool.ty] in pyproject.toml carries

@@ -123,6 +123,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
+import directories_config  # top-level module (pipeline/ sys.path root, the L6H-03 dataset-base seam)
 import registry_loader  # top-level module (pipeline/ sys.path root)
 
 from tui.services import registries, settings, zenodo_bundle
@@ -990,8 +991,8 @@ class DownloadQueueService:
     """The persistent download queue (injectable spawner/CLI seams,
     thread-safe mutators, all state under the XDG state root)."""
 
-    def __init__(self, repo_root=None, state_path=None, spawner=None,
-                 runner=None, cli_path=None,
+    def __init__(self, repo_root=None, dataset_root=None, state_path=None,
+                 spawner=None, runner=None, cli_path=None,
                  timeout_reconcile=DEFAULT_TIMEOUT_RECONCILE,
                  timeout_reaudit=DEFAULT_TIMEOUT_REAUDIT,
                  zenodo_fetch=None):
@@ -1001,6 +1002,14 @@ class DownloadQueueService:
             repo_root: the repo root the official registry and
                 ``pipeline/datasets`` resolve against; None = this
                 module's own repo root (never CWD).
+            dataset_root: the dataset STORAGE base override (L6H-03,
+                the flag tier) — when set, every dataset landing site
+                (spec local_dir, landing gate, shape-C rename, zenodo
+                extract target, landed-keys scan, reconcile staged
+                path) resolves under ``<root>/datasets`` instead of
+                the repo ``pipeline/datasets``; None = the
+                ``_datasets_base()`` chain (file tier > repo default).
+                The REGISTRY read stays repo-anchored either way.
             state_path: the queue state file; None resolves
                 ``settings.state_dir() / QUEUE_FILE_NAME``.
             spawner: the Popen-shaped subprocess seam (``argv,
@@ -1024,6 +1033,10 @@ class DownloadQueueService:
         self._repo_root = (REPO_ROOT if repo_root is None
                            else Path(repo_root).resolve())
         self._pipeline_dir = self._repo_root / "pipeline"
+        # L6H-03 flag tier: an explicit dataset storage base, resolved
+        # at construction (None = the _datasets_base() chain governs).
+        self._dataset_root: Path | None = (None if dataset_root is None
+                                           else Path(dataset_root).resolve())
         if state_path is None:
             state_path = settings.state_dir() / QUEUE_FILE_NAME
         self._state_path = Path(state_path)
@@ -1050,6 +1063,36 @@ class DownloadQueueService:
         # is quarantined on first read), but the screen's later
         # snapshot reloads must still surface it — never silent loss.
         self._last_diagnostic: str | None = None
+
+    # ===== L6H-03: the dataset storage base (param > file > default) =====
+
+    def _datasets_base(self):
+        """The dataset STORAGE base every landing site resolves under.
+
+        Precedence (261014-l6h, L6H-03): constructor ``dataset_root``
+        param (the flag tier) > ``directories.json`` ``dataset_root``
+        key read through ``directories_config.load_directories_tolerant``
+        (the file tier — TOLERANT by design: a corrupt file degrades
+        to the default and never kills the console; the strict
+        fail-loud lane belongs to the pipeline scripts, the
+        run_config.py service-tier seam precedent) > the repo
+        ``pipeline/`` dir (the default literal stays at this consumer,
+        ADD-ALONGSIDE). The official REGISTRY read deliberately stays
+        repo-anchored — registry is repo state, never redirected by
+        user storage config.
+
+        Returns:
+            Path: the base such that dataset landing paths are
+            ``<base>/datasets/<Group>/<task>`` (byte-identical to the
+            pre-L6H-03 form when neither tier is set).
+        """
+        if self._dataset_root is not None:
+            return self._dataset_root
+        file_root = directories_config.load_directories_tolerant().get(
+            "dataset_root")
+        if file_root:
+            return Path(file_root).resolve()
+        return self._pipeline_dir
 
     # ===== Load / snapshot (D-06 tolerant recovery) =====
 
@@ -1661,7 +1704,7 @@ class DownloadQueueService:
             applied = self._apply_rename(spec, details)
             if applied is not None:
                 return applied, details
-        datasets_root = self._pipeline_dir / "datasets"
+        datasets_root = self._datasets_base() / "datasets"
         if spec.shape == "B":
             landing_dir = spec.local_dir
         else:
@@ -1690,7 +1733,7 @@ class DownloadQueueService:
             through (source absent — the landing check names the
             missing files).
         """
-        datasets_root = self._pipeline_dir / "datasets"
+        datasets_root = self._datasets_base() / "datasets"
         source = datasets_root / spec.rename[0]
         target = datasets_root / spec.rename[1]
         if target.exists():
@@ -1866,7 +1909,7 @@ class DownloadQueueService:
                 (PROBLEM_BUNDLE_DOWNLOAD_FAILED,), tuple(details),
                 stderr_text="\n".join(failures))
         extracted, extract_problems = zenodo_bundle.extract_bundle_archives(
-            downloaded, self._pipeline_dir / "datasets")
+            downloaded, self._datasets_base() / "datasets")
         details.append("extracted=" + str(extracted))
         details.extend(extract_problems)
         if cancelled():
@@ -1937,7 +1980,7 @@ class DownloadQueueService:
             diagnostic token per still-missing key naming its missing
             splits.
         """
-        datasets_root = self._pipeline_dir / "datasets"
+        datasets_root = self._datasets_base() / "datasets"
         landed: list[str] = []
         not_landed: list[str] = []
         for missing_key in missing_keys:
@@ -2005,7 +2048,7 @@ class DownloadQueueService:
             # absolute path REPLACES the root, so the inert temp
             # datasets-root can never redirect the read.
             staged_entry["Dataset_path"] = str(
-                (self._pipeline_dir / raw_path).resolve())
+                (self._datasets_base() / raw_path).resolve())
         declared = {}
         for _split, field in _DECLARED_SPLIT_FIELDS:
             value = entry.get(field)
@@ -2455,7 +2498,7 @@ class DownloadQueueService:
                 key, reason=REASON_MALFORMED_PATH, source_url=url,
                 repo_id=repo_id)
         group, task = derived
-        datasets_root = self._pipeline_dir / "datasets"
+        datasets_root = self._datasets_base() / "datasets"
         if repo_id in SHAPE_D_REPOS:
             return self._degraded_spec(
                 key, reason=REASON_SHAPE_D, source_url=url,
