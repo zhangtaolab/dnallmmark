@@ -7,7 +7,7 @@ current_phase_name: TUI Foundation (env check + selection)
 current_plan: 1
 status: executing
 stopped_at: Phase 07 complete, ready to plan Phase 12
-last_updated: "2026-10-14T11:34:27.905Z"
+last_updated: "2026-10-14T14:12:30.000Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
 state_head: 4ff41c9ceffd036cb0499bac9b7b4774be2ca6ed
@@ -74,6 +74,7 @@ Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 
 | Phase 08 P08-06 | 43 min | 2 tasks | 6 files |
 | Phase 08 P08-07 | 79 min | 3 tasks | 13 files |
 | Phase 08 P08-08 | 47 min | 3 tasks | 16 files |
+| Phase 08 P08-09 | 17 min | 2 tasks | 5 files |
 | Phase 09 P09-01 | 47 min | 3 tasks | 7 files |
 | Phase 09 P09-02 | 19 min | 3 tasks | 4 files |
 | Phase 09 P09-03 | 44 min | 3 tasks | 13 files |
@@ -155,6 +156,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 08]: 08-07 Phase 8 console complete: selection + matrix + env surfaces composed over the shared mark sets, both 80-column backstops and the cross-screen integration green — roadmap criteria 4 and 5 TRUE (SEL-01..04 + I18N-01 closed with 167 green tests/tui, make test 728, lint/typecheck clean, CI byte-untouched)
 - [Phase 08]: UAT width feedback (2026-10-12): selection key columns widened to fit the longest committed registry keys (_MODEL_KEY_W 25→46, _DATASET_KEY_W 20→68; budget 80→128/101) — narrower terminals h-scroll (matrix precedent), 80x24 min grid intact, full keys always in row detail. Supersedes the 80-column pin recorded at 08-07. — UAT width feedback (2026-10-12): selection key columns widened to fit the longest committed registry keys (_MODEL_KEY_W 25→46, _DATASET_KEY_W 20→68; budget 80→128/101) — narrower terminals h-scroll (matrix precedent), 80x24 min grid intact, full keys always in row detail. Supersedes the 80-column pin recorded at 08-07.
 - [Phase 08]: 08-08 gap closure (CR-01 chains 1+2 + WR-01): non-dict card values project as the EMPTY CARD (key visible, value verbatim — the honest degraded row; the loader's merge contract untouched); corrupt official registries degrade at the ONE seam both call sites route through (_load_entries' tuple widened with JSONDecodeError/UnicodeDecodeError, load_selection_data + preset_menu inherit); env_smoke directory kernels fail closed via _read_registry (torch-gate-shaped named FAIL lines; broken entry shapes count as missing) with healthy-path bytes golden-pinned unchanged; the env worker's two WR-01 guards (per-kernel + kernels() enumeration) ride the same persist/complete tail; never-exit floor is STRUCTURAL — the AST pin (tests/tui/test_work_site_hardening.py) enforces exit_on_error=False OR an internal broad except at every @work site (13 kwargs + 11 internal-guard rows over 24 sites); one new strings constant ENV_KERNEL_DEGRADED; model_presence gained the required companion card guard (Rule 1 — load_selection_data's own path)
+- [Phase 08]: 08-09 round-2 gap closure (Truth 6 residual): the three screen-side card consumers guard at the EXTRACTION sites in the 08-08 idiom — build_wizard's vocabularies narrow inside both comprehensions (a non-dict card contributes no species/tokenizer; the wizard opens over the officials'), _open_detail passes {} for a non-dict card (the CARD-LESS modal — the degraded-row drill-down twin; RowDetailModal untouched, its card: dict annotation stays truthful), _manual_landing_path uses the model_presence idiom verbatim (independent of the UNKNOWN shield); the family closure is STRUCTURAL — tests/tui/test_card_site_hardening.py confines every X["card"]/X.get("card") in tui/ to the four-function guard-carrying ALLOWLIST (positive control + >=4-node floor + file:line offenders; the 8-row sweep ledger lives in its docstring); pinned by 3 real-app Pilot runs (w/enter/d over the REAL backend + non-dict overlay) + the direct unit pin; zero new strings/services/deps; full suite at the exact box baseline (7F/1731P/9XF = baseline + 6 new)
 - [Phase 09]: 09-01: custom-registry store = single write seam (land/undo/set_enabled through settings.atomic_write); land relativizes absolute paths (Pitfall 4), stamps Model_name/Dataset_name = key (Pitfall 6/11), drops the wizard key field, coerces Train/Dev/Test ints with bool excluded
 - [Phase 09]: 09-01: METRIC_REGISTRY = frozen 28-name SUITE_CANONICAL twin in tui/services/custom_validation, parity-locked by a tier-1 test importing export_runs via the tests/conftest.py sys.path; the service module never imports it (AST import lock) — IN-03 single authority preserved
 - [Phase 09]: 09-01: one-defect-one-problem collect-all semantics — numeric checks skip absent/empty values (the required check owns them), enum checks skip empty injected vocabularies; declared Train/Dev/Test are DERIVED from split counting (the wizard never collects them) and must equal well-formed row counts when present
@@ -266,8 +268,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T12:28:23Z
-Stopped at: Completed 08-08-PLAN.md (gap closure — Truth 6 ready for re-verification)
+Last session: 2026-10-14T14:12:30Z
+Stopped at: Completed 08-09-PLAN.md (round-2 gap closure — Truth 6 ready for re-verification)
 Resume file: None
 
 ## Operator Next Steps
