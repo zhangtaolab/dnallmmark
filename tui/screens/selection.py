@@ -795,15 +795,17 @@ def _load_entries(loader: Callable[[], list[dict]], registry_path: Path):
     """One tolerant registry read: (entries, None) or ([], the path).
 
     The advisory-UI survivability seam (SEL-01 empty edge): a missing
-    official file (OSError) or a malformed custom overlay (SystemExit,
-    the loader's fail-loud contract) degrades to the documented
-    load-error state naming the path — never an exception through the
-    screen, and the loader's own contract stays untouched for pipeline
-    consumers.
+    official file (OSError), a malformed custom overlay (SystemExit, the
+    loader's fail-loud contract), or a corrupt OFFICIAL registry
+    (json.JSONDecodeError / UnicodeDecodeError — the loader's own
+    malformed-input vocabulary, registry_loader's except tuple; CR-01
+    chain 2, 08-08) degrades to the documented load-error state naming
+    the path — never an exception through the screen, and the loader's
+    own contract stays untouched for pipeline consumers.
     """
     try:
         return list(loader()), None
-    except (OSError, SystemExit):
+    except (OSError, SystemExit, json.JSONDecodeError, UnicodeDecodeError):
         return [], str(registry_path)
 
 

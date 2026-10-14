@@ -109,6 +109,64 @@ class Presence:
     rows: tuple[int, int, int] | None
 
 
+def _project_model_entry(key, card):
+    """Project one registry card to the canonical model-entry view.
+
+    The projection is TYPE-TOLERANT (CR-01 chain 1, 08-08): the Phase 7
+    loader deliberately merges non-dict entry values (a hand-edited
+    ``custom_models.json`` line — pinned accepted input), so a non-dict
+    card projects as the EMPTY card — the key stays visible in the table
+    with blank filter axes and ``size_m`` 0.0, the original card value
+    preserved verbatim (never mutated, never dropped) — mirroring the
+    management-read loop's guard at ``selection.py``. The honest degraded
+    row, never an AttributeError through the screen.
+
+    Args:
+        key (str): the registry key (the stable row_key vocabulary, D-06).
+        card (dict | object): the registry card; any non-dict value
+            projects as the empty card.
+
+    Returns:
+        dict: exactly ``{key, type, species, size_m, card}``.
+    """
+    if not isinstance(card, dict):
+        return {"key": key, "type": "", "species": "",
+                "size_m": 0.0, "card": card}
+    return {
+        "key": key,
+        "type": card.get("type") or "",
+        "species": card.get("species") or "",
+        "size_m": _to_float(card.get(MODEL_CARD_SIZE_FIELD)),
+        "card": card,
+    }
+
+
+def _project_dataset_entry(key, card):
+    """Project one registry card to the canonical dataset-entry view.
+
+    Type-tolerant exactly like ``_project_model_entry`` (CR-01 chain 1,
+    08-08): a non-dict card value — loader-accepted input — projects as
+    the empty card with the original value verbatim, never an exception.
+
+    Args:
+        key (str): the registry key.
+        card (dict | object): the registry card.
+
+    Returns:
+        dict: exactly ``{key, category, type, metric, card}``.
+    """
+    if not isinstance(card, dict):
+        return {"key": key, "category": "", "type": "",
+                "metric": "", "card": card}
+    return {
+        "key": key,
+        "category": card.get("Category") or "",
+        "type": card.get("type") or "",
+        "metric": card.get("metric") or "",
+        "card": card,
+    }
+
+
 def load_model_entries():
     """The overlay-merged model registry as canonical entries.
 
@@ -130,17 +188,12 @@ def load_model_entries():
           ``Model_size`` "400M" string twin;
         - ``card`` (dict): the original registry card, verbatim (both
           casing twins preserved; read via the ``MODEL_CARD_*``
-          constants).
+          constants). A non-dict card value stays verbatim too — the
+          empty-card projection keeps it in the list (CR-01 chain 1).
     """
     models = registry_loader.load_models_registry()
     return [
-        {
-            "key": key,
-            "type": card.get("type") or "",
-            "species": card.get("species") or "",
-            "size_m": _to_float(card.get(MODEL_CARD_SIZE_FIELD)),
-            "card": card,
-        }
+        _project_model_entry(key, card)
         for key, card in models.items()
     ]
 
@@ -152,17 +205,13 @@ def load_dataset_entries():
         list[dict]: one entry per registry key, in registry file order,
         each exactly ``{key, category, type, metric, card}`` — the
         category/type/metric filter axes carry the raw registry values
-        (``""`` when absent); ``card`` is the original dict verbatim.
+        (``""`` when absent); ``card`` is the original dict verbatim (a
+        non-dict value stays verbatim under the empty-card projection,
+        CR-01 chain 1).
     """
     datasets = registry_loader.load_datasets_registry()
     return [
-        {
-            "key": key,
-            "category": card.get("Category") or "",
-            "type": card.get("type") or "",
-            "metric": card.get("metric") or "",
-            "card": card,
-        }
+        _project_dataset_entry(key, card)
         for key, card in datasets.items()
     ]
 

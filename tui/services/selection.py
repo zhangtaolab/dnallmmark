@@ -530,7 +530,13 @@ def model_presence(entries, base_dir, is_dir=None):
     base = str(base_dir).rstrip(os.sep) + os.sep
     statuses: dict[str, str] = {}
     for entry in entries:
-        value = entry.get("card", {}).get("Model_path")
+        # The card read is type-tolerant (CR-01 chain 1, 08-08): a
+        # non-dict card value — loader-accepted input projecting as the
+        # empty card upstream — carries no Model_path to read, so the
+        # entry maps to UNKNOWN (the same no-usable-path branch), never
+        # an AttributeError through the snapshot read.
+        card = entry.get("card")
+        value = card.get("Model_path") if isinstance(card, dict) else None
         if not isinstance(value, str) or not value:
             statuses[entry["key"]] = MODEL_PRESENCE_UNKNOWN
             continue
