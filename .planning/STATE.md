@@ -4,13 +4,13 @@ milestone: v1.2
 milestone_name: TUI任务
 current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
-current_plan: 4
-status: executing
-stopped_at: "Completed quick 261014-mlc (TUI slot 2/3 split: KIND_MODEL dnallm download lane + models-only slot 2 + datasets-primary slot 3 + nav 2模型/3数据集; gates green modulo documented l6h baseline + 9 strict-xfail goldens)"
-last_updated: "2026-10-14T10:27:59.660Z"
+current_plan: Not started
+status: planning
+stopped_at: Phase 07 complete, ready to plan Phase 12
+last_updated: "2026-10-14T11:31:58.978Z"
 last_activity: 2026-10-14
-last_activity_desc: Phase 12 execution started
-state_head: a0fab7a9b463ae31bce98ba19e5cbcc32e672aa2
+last_activity_desc: Phase 07 complete, transitioned to Phase 12
+state_head: ec4056cfd499740af745e27bdf29e6ab5f33f9ee
 progress:
   total_phases: 6
   completed_phases: 5
@@ -26,15 +26,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-11)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 12 — Multi-GPU Orchestration & Console Hardening
+**Current focus:** Phase 07 — Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
 
 ## Current Position
 
-Phase: 12 (Multi-GPU Orchestration & Console Hardening) — COMPLETE (5/5 plans, 2026-10-13)
-Current Plan: 5 of 5 executed (12-05 phase close landed)
-Total Plans in Phase: 5
-Status: Phase complete — milestone v1.2 at its audit gate (verify-work → audit-milestone → complete-milestone → cleanup; maintainer N=2 other-machine smoke = WINDOWS #21)
-Last activity: 2026-10-14 - Completed quick task 261014-mlc: TUI slot 2/3 UI split (models-only slot 2 with dnallm/ModelScope queue download + datasets-primary slot 3, live DNABERT-2-117M proof)
+Phase: 12 — Multi-GPU Orchestration & Console Hardening
+Current Plan: Not started
+Total Plans in Phase: 6
+Status: Ready to plan
+Last activity: 2026-10-14 — Phase 07 complete, transitioned to Phase 12
 
 Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 plans executed — all 38 requirements Complete)
 
@@ -265,7 +265,7 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-14T10:26:54.704Z
-Stopped at: Completed quick 261014-mlc (TUI slot 2/3 split: KIND_MODEL dnallm download lane + models-only slot 2 + datasets-primary slot 3 + nav 2模型/3数据集; gates green modulo documented l6h baseline + 9 strict-xfail goldens)
+Stopped at: Phase 07 complete, ready to plan Phase 12
 Resume file: None
 
 ## Operator Next Steps
