@@ -133,7 +133,7 @@ Plans:
   4. The model list and dataset list are first-class selectable surfaces — browsed independently with key card fields as columns (62 models / 50 datasets); operators filter them k9s-style (arena/type/species/scale), spacebar-mark rows into a stable row_key selection set, apply presets (tier-1 E2E pair, tier-2 arena representatives, all, saved customs), and consult a read-only matrix overview as an auxiliary view — never an editable grid
   5. Every row shows local data presence (✓ present / ✗ missing + n_audit row count) and run-config templates round-trip as validated JSON with `sweep_priorities.json` tier interop; all operator-facing copy is Chinese-primary through the constants module with technical terms in English — and the foundation invariants hold (services layer imports zero textual symbols by test, `[tui]` group keeps textual out of data/gpu lanes, Pilot tests green CPU-side in CI)
 
-**Plans**: 7/7 complete + 1 gap-closure plan (08-08, verification Truth 6)
+**Plans**: 7/7 complete + 2 gap-closure plans (08-08 + 08-09, verification Truth 6)
 Plans:
 **Wave 1**
 - [x] 08-01-PLAN.md — env_smoke D-02 structured-return refactor (ENV-01 substrate): golden byte-characterization suite + kernels-return-CheckResult + renderer main(), E2' contract byte-stable
@@ -154,6 +154,9 @@ Plans:
 
 **Wave 6** *(gap closure — blocked on 08-07)*
 - [ ] 08-08-PLAN.md — tolerant-loading gap closure (Truth 6 / CR-01 + WR-01): isinstance guards in both registries projections + widened _load_entries tuple, fail-closed env_smoke directory kernels + guarded env-screen worker, exit_on_error never-exit net with per-site ledger + AST pin, both seam regression tests
+
+**Wave 7** *(round-2 gap closure — blocked on 08-08)*
+- [ ] 08-09-PLAN.md — screen-side card-read family closure (Truth 6 residual, second gaps_found): isinstance guards at the w vocabularies + enter drill-down + _manual_landing_path hardening, w/enter/d real-app Pilot regression tests, card-extraction AST family pin
 
 **UI hint**: yes
 
