@@ -838,6 +838,40 @@ def test_launch_spec_recomputes_despite_screen_preview(monkeypatch,
     assert double.e2x_calls == 2
 
 
+def test_launch_spec_registry_key_rides_repo_root_basis_from_any_cwd(
+        monkeypatch, tmp_path):
+    """WR-01 (gap #2): with the TUI process CWD OUTSIDE the repo and a
+    relative ``spec.output_root``, launch_spec registers the
+    REPO_ROOT-resolved root — the SAME basis ``compose_argv`` threads
+    (``rc.resolve_dirs(spec).output_root_abs``, D-14) — so the registry
+    key, the argv ``--output-root`` element, and ``live_sweeps()`` all
+    agree; no phantom ``{cwd}``-rooted control-plane key. Pre-fix
+    reproduction (from the verification pass): ``outcome.root`` was
+    ``{tmp}/finetuned`` while the argv said ``{repo}/finetuned``."""
+    pin_state_dir(monkeypatch, tmp_path)
+    monkeypatch.chdir(tmp_path)   # CWD != REPO_ROOT at launch time
+    launcher = sweep_launcher.SweepLauncher()
+    spec = run_config.RunSpec(
+        models=("plant-dnabert-6mer",), tasks=("GUE__emp_H3",),
+        seeds=(42,), output_root="finetuned")
+    spawner = FakeSpawner(FakeSweepPopen(poll_returns=[None]))
+
+    outcome = launcher.launch_spec(
+        spec, spawner=spawner, clock=FixedClock(CLOCK_MOMENT))
+
+    assert outcome.spawned is True
+    repo_key = str((REPO_ROOT / "finetuned").resolve())
+    assert outcome.root == repo_key, (
+        "the registry key rides the argv's REPO_ROOT basis — never the "
+        "TUI process CWD"
+    )
+    argv, _kwargs = single_call(spawner)
+    assert argv[argv.index("--output-root") + 1] == repo_key, (
+        "the registry key and the argv --output-root are ONE basis"
+    )
+    assert launcher.live_sweeps() == (repo_key,)
+
+
 # ===== launch_argv (the raw pre-composed seam) =====
 
 

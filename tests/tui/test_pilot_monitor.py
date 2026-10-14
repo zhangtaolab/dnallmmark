@@ -908,6 +908,74 @@ async def test_attach_path_valid_adds_attaches_and_persists():
         assert str(app.screen._attached_root) == "/scans/manual-root"
 
 
+async def test_attach_tilde_spelled_monitors_resolved_root_real_scanner(
+        monkeypatch, tmp_path):
+    """CR-01 (gap #1): a ``~`` -spelled root submitted through the [a]
+    modal validates, attaches, and MONITORS the RESOLVED root — over the
+    REAL MonitorBackend/scanner (temp HOME + temp state dir; the coverage
+    hole: every earlier Pilot attach test used absolute fake paths).
+
+    attach() must store ``Path(str(root)).expanduser().resolve()`` so the
+    validation layer and the attach state agree on ONE path semantics:
+    every reader (cells_view/stats/failures_view via the service, the ◆
+    marker's discovered-table key comparison, attached_running_counts,
+    the frontier target) sees a REAL path. Pre-fix reproduction:
+    ``_attached_root == "~/sweeps/run1"`` with an empty cells region
+    while the validated sweep sat on disk."""
+    import json
+
+    from tui.screens.monitor import MonitorBackend
+    from tui.screens.selection import PathInputModal
+    from tui.services import settings, sweep_monitor
+
+    tmp_home = tmp_path / "home"
+    tmp_home.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_home))
+    monkeypatch.setenv(
+        settings.STATE_DIR_ENV, str(tmp_path / "state"))
+    # hermetic discovery: the scan reads EXACTLY the tmp HOME's manual
+    # root — the repo defaults (pipeline/finetuned, the live smoke's
+    # read-only territory) are never walked by this lane
+    monkeypatch.setattr(sweep_monitor, "DEFAULT_OUTPUT_ROOTS", ())
+
+    model, task = "model-a", "task-1"
+    seed_dir = tmp_home / "sweeps" / "run1" / model / task / "seed_42"
+    seed_dir.mkdir(parents=True)
+    (seed_dir / "run_record.json").write_text(json.dumps({
+        "status": "completed", "model": model, "task": task, "seed": 42,
+    }), encoding="utf-8")
+
+    app = _app(monitor=MonitorBackend())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        await pilot.press("a")
+        await pilot.pause()
+        assert isinstance(app.screen, PathInputModal)
+        await pilot.press(*"~/sweeps/run1")
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert not isinstance(app.screen, PathInputModal), (
+            "the ~ -spelled root VALIDATED (add_manual_root expands + "
+            "resolves internally) — the modal dismisses"
+        )
+        resolved = (tmp_home / "sweeps" / "run1").resolve()
+        assert str(screen._attached_root) == str(resolved), (
+            "the literal '~' spelling is never stored — attach owns the "
+            "same resolution the validation layer applied"
+        )
+        table = screen.query_one("#mon-discovered", DataTable)
+        assert _table_text(
+            table, str(resolved), "state").startswith("◆"), (
+            "the ◆ marker matches the scanner's resolved discovered key"
+        )
+        cells = screen.query_one("#mon-cells", DataTable)
+        assert "model-a" in _table_text(cells, f"{model}__{task}", "model"), (
+            "the cells table reads a REAL path — the run_record's row "
+            "renders (never the empty 未附加 state)"
+        )
+
+
 async def test_cell_detail_renders_states_fractions_record_verbatim():
     """The cell-detail modal: full keys, per-seed states, fraction
     lines, and the run_record fields VERBATIM (data, never elided)."""

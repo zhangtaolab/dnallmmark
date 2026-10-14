@@ -1032,6 +1032,40 @@ async def test_gate_live_root_refusal_names_the_root():
         assert launcher.launch_calls == [], "nothing ever spawns"
 
 
+async def test_gate_live_root_precheck_reads_repo_root_basis_any_cwd(
+        monkeypatch, tmp_path):
+    """WR-01 (screen side, gap #2): the CR-02 live-root pre-check reads
+    the ``resolve_dirs`` basis — a RELATIVE output_root composed while
+    the TUI process CWD is outside the repo still names and blocks the
+    REPO_ROOT key the argv will thread (``output_root_abs``, D-14); no
+    phantom ``{cwd}``-rooted key slips past the gate to a second sweep
+    into the live root."""
+    repo_root = Path(__file__).resolve().parents[2]
+    repo_key = str((repo_root / "finetuned").resolve())
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",), output_root="finetuned"))
+    launcher = FakeLauncherService(live=(repo_key,))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        monkeypatch.chdir(tmp_path)   # CWD != REPO_ROOT at gate time
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.run_config import ProblemsModal
+
+        assert isinstance(app.screen, ProblemsModal), (
+            "the pre-check FIRES on the REPO_ROOT basis key — a "
+            "{cwd}-rooted key would slip past to the confirm"
+        )
+        log = app.screen.query_one("#cfg-problems-log")
+        joined = "\n".join(line.text for line in log.lines)
+        assert repo_key in joined.replace("\n", ""), (
+            "the refusal names the REPO_ROOT-basis live key"
+        )
+        assert launcher.env_calls == 0, "blocked before the env preflight"
+        assert launcher.launch_calls == [], "nothing ever spawns"
+
+
 async def test_gate_env_block_renders_reasons_verbatim():
     """Env preflight FAIL: the failing kernel names, the reasons
     VERBATIM, and the [1] route hint — launch never called."""
