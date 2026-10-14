@@ -6,11 +6,11 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: 4
 status: executing
-stopped_at: Completed quick 261014-f4w (startup config file + run-artifact dirs, 3/3 tasks, gates green modulo pre-existing base failures)
-last_updated: "2026-10-14T05:27:48.974Z"
+stopped_at: Completed quick 261014-ir9 (confidential Chaoba series removed from HEAD, 62 -> 59 official registry, all count pins re-based, gates green modulo pre-existing set)
+last_updated: "2026-10-14T06:26:39Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 12 execution started
-state_head: 4ade716f91054033ccf122df452116d115cb3620
+state_head: 1f16b3d48149e21135bfaa2eeed0e22e0e35c578
 progress:
   total_phases: 6
   completed_phases: 5
@@ -228,6 +228,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase quick-261014-f4w]: 261014-f4w: directories.json lands as the ONE shared startup config — directories_config.effective implements flag > file key > default at ONE merge point with default literals left at consumers (ADD-ALONGSIDE); absent everywhere byte-identical, malformed present file aborts naming the path (strict, pipeline) while the TUI seeding degrades tolerantly
 - [Phase quick-261014-f4w]: 261014-f4w: the DEFAULT output_root literal doubles as the unset signal on the save side (an all-defaults save writes five empty strings, loads back as {}); the seeding fills output_root only at the DEFAULT literal (the str-typed conflation, documented)
 - [Phase quick-261014-f4w]: 261014-f4w probe-pinned textual 8.2.8 picker seams: filter_paths METHOD is the directories-only mechanism; enter dispatches the name-based handler per MRO class (prevent_default() required or the modal closes on first enter); ctrl+o falls through a focused Input (a bare letter would type); rich Text spans cannot carry $tokens on the Static path (theme-resolved at render, the nav.py precedent)
+- [Phase quick-261014-ir9]: 261014-ir9: confidential Chaoba series removed HEAD-only (official registry 62 -> 59) — git history retains the entries by explicit maintainer decision, private loading stays via the local custom_models.json overlay; every real-registry count pin re-based to 59/60/8850/2950 incl. 14 sweep-caught sites the planning enumeration missed; count-embedding test names renamed to their 59 forms (zero external references)
 
 ### Pending Todos
 
@@ -248,6 +249,7 @@ None yet.
 | 261014-c2l | Add custom model/dataset storage directory support (pipeline --model_root/--dataset_root flags + TUI run-config threading) | 2026-10-14 | 451782d | [261014-c2l-add-custom-model-dataset-storage-directo](./quick/261014-c2l-add-custom-model-dataset-storage-directo/) |
 | 261014-dcl | TUI presence/directory visibility (model_dirs env kernel + run-config-aware roots, selection models presence column, data-manager v-toggled full presence view) | 2026-10-14 | 25eb849 | [261014-dcl-tui-presence-directory-visibility-improv](./quick/261014-dcl-tui-presence-directory-visibility-improv/) |
 | 261014-f4w | Startup config file + run-artifact directory overrides (directories.json shared loader, --log_dir end-to-end, TUI file-default seeding + atomic save + ctrl+o dir picker, slot-1 storage overview) | 2026-10-14 | 4ade716 | [261014-f4w-startup-config-file-run-artifact-directo](./quick/261014-f4w-startup-config-file-run-artifact-directo/) |
+| 261014-ir9 | Remove confidential Chaoba model series from HEAD (registry 62 -> 59; all real-data count pins + stale current-count statements re-based; zero chaoba hits in tracked files) | 2026-10-14 | 1f16b3d | [261014-ir9-remove-confidential-chaoba-model-series-](./quick/261014-ir9-remove-confidential-chaoba-model-series-/) |
 
 ## Deferred Items
 
@@ -259,8 +261,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T05:27:38.167Z
-Stopped at: Completed quick 261014-f4w (startup config file + run-artifact dirs, 3/3 tasks, gates green modulo pre-existing base failures)
+Last session: 2026-10-14T06:26:39Z
+Stopped at: Completed quick 261014-ir9 (confidential Chaoba series removed from HEAD; grep gate zero-hit, 332/332 registry lanes, test-fast/lint/typecheck green modulo documented set)
 Resume file: None
 
 ## Operator Next Steps
