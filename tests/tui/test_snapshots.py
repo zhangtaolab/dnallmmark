@@ -518,6 +518,9 @@ class _QueueInertFake:
     def merged_audit_tasks(self):
         return merge_presence(registries_service.load_n_audit(), {})
 
+    def presence_rows(self):
+        return ()
+
     def probe_zenodo(self):
         return "not_public"
 

@@ -142,6 +142,11 @@ class _QueueDriverFake:
         # the same pure rule (empty queue -> the committed view alone)
         return merge_presence(registries_service.load_n_audit(), {})
 
+    def presence_rows(self):
+        # DCL-03 (261014-dcl): the full-view read the slot-3 mount also
+        # delegates through the queue — inert like the missing set
+        return ()
+
     def probe_zenodo(self):
         return "not_public"
 
