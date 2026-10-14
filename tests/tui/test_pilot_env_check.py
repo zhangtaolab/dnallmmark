@@ -70,6 +70,7 @@ from tui.strings import (
     APP_QUIT_LABEL,
     ENV_DETAIL_LABEL,
     ENV_DETAIL_TITLE,
+    ENV_KERNEL_DEGRADED,
     ENV_KERNEL_LABELS,
     ENV_LAST_CHECK_LINE,
     ENV_REFRESH_LABEL,
@@ -1011,3 +1012,117 @@ async def test_storage_wrong_key_rows_never_crash_the_render():
         rows = _storage_row_texts(screen)
         assert len(rows) == 1
         assert "future_key" in rows[0] and "/future/path" in rows[0]
+
+
+# =====================================================================
+# 08-08 WR-01 — the env screen survives a broken checkout
+# =====================================================================
+
+
+class _RaisingKernelFake(FakeEnvCheckService):
+    """WR-01 (08-08): the MIDDLE kernel raises RuntimeError — the row
+    must degrade to the fail glyph with the degraded summary while the
+    remaining kernels complete and the run persists whole."""
+
+    def kernels(self):
+        kernels = super().kernels()
+        middle = list(kernels)[len(kernels) // 2]
+        self.raising_id = middle
+
+        def _raising():
+            self.kernel_calls.append(middle)
+            raise RuntimeError("kernel exploded on a broken checkout")
+
+        kernels[middle] = _raising
+        return kernels
+
+
+async def test_raising_kernel_renders_degraded_row_and_app_stays_alive():
+    """WR-01 (08-08): a raising kernel degrades to ONE fail row (the
+    degraded summary = the exception type + message through the strings
+    constant), the remaining kernels complete around it, the run
+    persists WHOLE (D-05 partial-failure-persists-whole), and the app is
+    alive at assert time — never a console exit."""
+    fake = _RaisingKernelFake(cached=None)
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await _wait_for_check(pilot, app)
+
+        assert app.return_code is None, "the console must stay alive"
+
+        degraded_line = ENV_KERNEL_DEGRADED.format(
+            error="RuntimeError: kernel exploded on a broken checkout")
+        table = app.screen.query_one(DataTable)
+        for index, kernel_id in enumerate(MAIN_KERNEL_ORDER):
+            row = _row(table, index)
+            if kernel_id == fake.raising_id:
+                assert row[0] == ENV_STATE_FAIL, (
+                    "the raising kernel's row must degrade to the fail glyph"
+                )
+                # the summary derives from the degraded line's own first
+                # detail line (the _summary_of prefix strip)
+                assert row[2] == degraded_line.removeprefix("FAIL: ")
+            else:
+                assert row[0] == ENV_STATE_PASS, (
+                    f"kernel {kernel_id} must complete normally"
+                )
+
+        # every kernel still executed (the loop continued past the raise)
+        assert fake.kernel_calls == list(MAIN_KERNEL_ORDER)
+        # the run persisted WHOLE — eight items, the degraded one included
+        assert len(fake.persist_calls) == 1
+        persisted = fake.persist_calls[0]
+        assert [result.name for result in persisted] == list(
+            MAIN_KERNEL_ORDER)
+        degraded = next(
+            result for result in persisted
+            if result.name == fake.raising_id)
+        assert degraded.ok is False
+        assert degraded.lines == (degraded_line,)
+
+
+class _BrokenEnumerationFake(FakeEnvCheckService):
+    """WR-01 (08-08): ``kernels()`` itself raises — the enumeration of
+    the kernel sequence fails on exactly the broken-checkout state the
+    opening screen exists to diagnose."""
+
+    def kernels(self):
+        raise RuntimeError("kernels() unavailable on a broken checkout")
+
+
+async def test_broken_checkout_kernels_enumeration_survives():
+    """WR-01 (08-08): a failing ``kernels()`` enumeration degrades EVERY
+    ENV_KERNEL_LABELS row to the fail glyph with the degraded summary,
+    the run routes through the same persist + completion tail, and the
+    app survives — the console diagnoses the broken checkout instead of
+    dying on it."""
+    fake = _BrokenEnumerationFake(cached=None)
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await _wait_for_check(pilot, app)
+
+        assert app.return_code is None, "the console must stay alive"
+
+        degraded_summary = ENV_KERNEL_DEGRADED.format(
+            error="RuntimeError: kernels() unavailable on a broken checkout",
+        ).removeprefix("FAIL: ")
+        table = app.screen.query_one(DataTable)
+        for index, kernel_id in enumerate(MAIN_KERNEL_ORDER):
+            row = _row(table, index)
+            assert row[0] == ENV_STATE_FAIL, (
+                f"row {kernel_id} must degrade to the fail glyph"
+            )
+            assert row[2] == degraded_summary
+
+        # the run still routed through the persist + completion tail
+        assert len(fake.persist_calls) == 1
+        persisted = fake.persist_calls[0]
+        assert [result.name for result in persisted] == list(
+            MAIN_KERNEL_ORDER)
+        assert all(result.ok is False for result in persisted)
+        # the last-check line rendered — the run completed, not stranded
+        assert _label_text(app.screen, "#env-last-check") == (
+            ENV_LAST_CHECK_LINE.format(checked_at=fake.checked_at)
+        )

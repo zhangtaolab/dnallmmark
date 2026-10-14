@@ -408,3 +408,96 @@ def test_s4_override_root_annotation_verbatim_join_and_missing_listing(
     assert env_smoke._effective_base(str(store)) == f"{store}{os.sep}"
     assert env_smoke._effective_base(None) == (
         f"{env_smoke.PIPELINE_DIR}{os.sep}")
+
+
+# ===== 08-08 WR-01: the directory kernels degrade fail-closed =====
+
+def test_directory_kernels_degrade_fail_closed_on_corrupt_registry(
+        monkeypatch, tmp_path):
+    """A missing or corrupt official registry yields a named ok=False
+    CheckResult from BOTH directory kernels — ONE FAIL line in the
+    main() torch-gate wording shape (the registry file, then the
+    exception type + message) — so the E2' gate stays fail-closed and
+    deterministic, never a traceback on exactly the broken-checkout
+    state it exists to diagnose."""
+    corrupt = tmp_path / "corrupt_info.json"
+    corrupt.write_text("{ not json", encoding="utf-8")
+    absent = tmp_path / "absent_info.json"
+
+    # corrupt JSON: the JSONDecodeError branch on both kernels
+    monkeypatch.setattr(env_smoke, "MODELS_INFO_PATH", corrupt)
+    monkeypatch.setattr(env_smoke, "DATASETS_INFO_PATH", corrupt)
+    models_result = env_smoke.check_model_dirs()
+    assert models_result.name == "model_dirs"
+    assert models_result.ok is False
+    assert len(models_result.lines) == 1  # ONE FAIL line
+    line = models_result.lines[0]
+    assert line.startswith("FAIL: ")
+    assert str(corrupt) in line
+    assert "JSONDecodeError" in line
+    assert "Expecting value" in line  # the exception message rides along
+
+    datasets_result = env_smoke.check_dataset_dirs()
+    assert datasets_result.name == "dataset_dirs"
+    assert datasets_result.ok is False
+    assert len(datasets_result.lines) == 1
+    line = datasets_result.lines[0]
+    assert line.startswith("FAIL: ")
+    assert str(corrupt) in line
+    assert "JSONDecodeError" in line
+
+    # the OSError branch of the same guard: a nonexistent registry path
+    monkeypatch.setattr(env_smoke, "MODELS_INFO_PATH", absent)
+    monkeypatch.setattr(env_smoke, "DATASETS_INFO_PATH", absent)
+    models_missing = env_smoke.check_model_dirs()
+    assert models_missing.ok is False
+    assert str(absent) in models_missing.lines[0]
+    assert "FileNotFoundError" in models_missing.lines[0]
+    datasets_missing = env_smoke.check_dataset_dirs()
+    assert datasets_missing.ok is False
+    assert str(absent) in datasets_missing.lines[0]
+    assert "FileNotFoundError" in datasets_missing.lines[0]
+
+
+def test_directory_kernels_count_shape_broken_entries_as_missing(
+        monkeypatch, tmp_path):
+    """Broken registry ENTRY shapes read as fail-closed missing
+    (cannot-verify = missing): a non-dict entry and an entry lacking
+    its path field both join the FAIL missing listing BY NAME, while a
+    healthy entry renders exactly as before (present, never listed)."""
+    (tmp_path / "models_info.json").write_text(json.dumps({
+        "m-healthy": {"Model_path": "models/m/healthy"},
+        "m-nondict": [1, 2],
+        "m-nopath": {},
+    }), encoding="utf-8")
+    (tmp_path / "datasets_info.json").write_text(json.dumps({
+        "d-healthy": {"Dataset_path": "datasets/d/healthy"},
+        "d-nondict": [1, 2],
+        "d-nopath": {},
+    }), encoding="utf-8")
+    (tmp_path / "models" / "m" / "healthy").mkdir(parents=True)
+    (tmp_path / "datasets" / "d" / "healthy").mkdir(parents=True)
+    monkeypatch.setattr(env_smoke, "MODELS_INFO_PATH",
+                        tmp_path / "models_info.json")
+    monkeypatch.setattr(env_smoke, "DATASETS_INFO_PATH",
+                        tmp_path / "datasets_info.json")
+
+    # the S4 kernel-level precedent: an explicit root so the healthy
+    # dirs resolve against the tmp layout, annotation names the root
+    models_result = env_smoke.check_model_dirs(root=str(tmp_path))
+    assert models_result.ok is False
+    assert models_result.lines == (
+        (f"FAIL: 2 of 3 registry model dir(s) missing on disk "
+         f"(root: {tmp_path}):"),
+        "  - m-nondict",
+        "  - m-nopath",
+    )
+
+    datasets_result = env_smoke.check_dataset_dirs(root=str(tmp_path))
+    assert datasets_result.ok is False
+    assert datasets_result.lines == (
+        (f"FAIL: 2 of 3 registry dataset dir(s) missing on disk "
+         f"(the E2' launch gate) (root: {tmp_path}):"),
+        "  - d-nondict",
+        "  - d-nopath",
+    )

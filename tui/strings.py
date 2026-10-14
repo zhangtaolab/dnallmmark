@@ -69,6 +69,14 @@ ENV_STATE_FAIL = "✗"
 ENV_STATE_PENDING = "◌ 待检"
 ENV_STATE_CHECKING = "⠋ 检查中…"
 
+# Degraded kernel line (WR-01, 08-08): the env-screen worker's per-kernel
+# and enumeration guards format this ONE line for a kernel that raised —
+# {error} carries the exception type + message (English technical
+# wording: the env_smoke detail-line vocabulary is data, D-02, never
+# translated). The FAIL: prefix lets _summary_of's strip derive the
+# summary cell exactly the way every kernel line already does.
+ENV_KERNEL_DEGRADED = "FAIL: kernel raised {error}"
+
 # Env panel column headers (08-UI-SPEC Screen 1 header row: 状态 检查项
 # 摘要). The 摘要 (summary) column carries each kernel's own first detail
 # line (prefix-stripped) once its result arrives (08-06).
