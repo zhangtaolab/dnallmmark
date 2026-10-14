@@ -1503,6 +1503,107 @@ def test_backend_registry_failure_degrades_to_the_error_state(
     assert len(data.dataset_entries) == 50
 
 
+def test_backend_non_dict_custom_entry_degrades_to_empty_card_never_raises(
+        monkeypatch, tmp_path):
+    """CR-01 chain 1 (08-08): a non-dict entry in the user-owned
+    custom_models.json — input the Phase 7 loader deliberately merges
+    (pinned by tests/test_registry_loader.py::
+    test_non_dict_custom_entry_still_merges_after_skip_filter) — loads
+    through the REAL SelectionBackend.load_selection_data() seam as the
+    empty-card entry: the key stays visible with blank filter axes and
+    size_m 0.0, the card value verbatim, alongside the healthy custom
+    and the committed officials; the call completes without raising
+    (never an AttributeError exit of the console)."""
+    overlay = tmp_path / "custom"
+    overlay.mkdir()
+    (overlay / "custom_models.json").write_text(
+        json.dumps({
+            "hand-edited-nondict": [1, 2],
+            "healthy-custom": {
+                "Model_name": "healthy-custom",
+                "Model_path": "models/healthy/custom",
+                "type": "MLM",
+                "species": "plant",
+                "size (M)": 86,
+            },
+        }),
+        encoding="utf-8")
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(overlay))
+
+    data = SelectionBackend().load_selection_data()
+
+    assert data.models_load_error is None
+    assert data.datasets_load_error is None
+    by_key = {entry["key"]: entry for entry in data.model_entries}
+    # the non-dict entry degrades to the empty card — never a drop, never
+    # a mutation of the original value (the honest degraded row)
+    degraded = by_key["hand-edited-nondict"]
+    assert degraded["type"] == ""
+    assert degraded["species"] == ""
+    assert degraded["size_m"] == 0.0
+    assert degraded["card"] == [1, 2]
+    # the healthy custom entry projects its card fields normally
+    healthy = by_key["healthy-custom"]
+    assert healthy["type"] == "MLM"
+    assert healthy["species"] == "plant"
+    assert healthy["size_m"] == 86.0
+    # the committed officials ride alongside (59 at HEAD post-ir9)
+    assert len(data.model_entries) == 59 + 2
+    assert len(data.dataset_entries) == 50
+
+
+def test_load_entries_degrades_on_corrupt_official_json(tmp_path):
+    """CR-01 chain 2 (08-08), proven at the seam function itself: a
+    loader raising the corrupt-registry vocabulary — json.JSONDecodeError
+    or UnicodeDecodeError, the loader's own malformed-input classes (a
+    ValueError family that escaped the former (OSError, SystemExit)
+    tuple) — degrades to the documented ([], path) load-error state,
+    never raises."""
+    registry_path = tmp_path / "models_info.json"
+
+    def _corrupt_json():
+        raise json.JSONDecodeError("Expecting value", "doc", 0)
+
+    def _corrupt_encoding():
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    entries, error = selection_screen_module._load_entries(
+        _corrupt_json, registry_path)
+    assert entries == []
+    assert error == str(registry_path)
+
+    entries, error = selection_screen_module._load_entries(
+        _corrupt_encoding, registry_path)
+    assert entries == []
+    assert error == str(registry_path)
+
+
+def test_backend_corrupt_official_registry_degrades_to_error_state(
+        monkeypatch, tmp_path):
+    """CR-01 chain 2 (08-08) through the real seam: a corrupt OFFICIAL
+    models_info.json (json.JSONDecodeError from the loader) degrades to
+    the SEL_REGISTRY_LOAD_FAILED load-error state naming the path while
+    the OTHER registry stays healthy — the OSError twin's shape (the
+    corrupt file is a broken checkout, not an app exit)."""
+    def _corrupt():
+        raise json.JSONDecodeError("Expecting value", "doc", 0)
+
+    monkeypatch.setattr(
+        registries_service, "load_model_entries", _corrupt,
+    )
+    # pin the overlay empty: the healthy-side 50 below pins the COMMITTED
+    # registry regardless of any local custom overlay (the WR-05 pin)
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
+    data = SelectionBackend().load_selection_data()
+    assert data.model_entries == ()
+    assert data.models_load_error is not None
+    assert data.models_load_error.endswith("models_info.json")
+    # the OTHER registry still loaded — the app stays alive
+    assert len(data.dataset_entries) == 50
+
+
 def test_backend_preset_menu_over_the_committed_priorities(tmp_path):
     """The menu derives tier-1/tier-2/all; customs round-trip sorted."""
     backend = SelectionBackend(config_dir=str(tmp_path))
