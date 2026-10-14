@@ -811,12 +811,12 @@ def test_preview_unknown_names_intersect_to_zero_cells():
 
 
 def test_official_keys_real_registries():
-    """The committed official registries: 62 models, 50 trainable
+    """The committed official registries: 59 models, 50 trainable
     tasks, no diagnostic (the 08-03 RegistryCounts(62, 50) precedent —
     committed data, pinned as counts)."""
     official = run_config.official_keys()
     assert official.diagnostic is None
-    assert len(official.models) == 62
+    assert len(official.models) == 59
     assert len(official.tasks) == 50
 
 

@@ -39,7 +39,7 @@ same-day cache-hit fake so no kernel executes either, D-03):
   alive; the loading row covers the read seam (a gated fake, never a
   sleep);
 - the real ``SelectionBackend`` (sync tests): the committed registries
-  load 62/50 with presence from the committed n_audit, registry failures
+  load 59/50 with presence from the committed n_audit, registry failures
   degrade to the error state, the preset menu derives over the committed
   priorities with customs under a tmp config root, and template
   import/export round-trips through the strict D-07 schema.
@@ -1363,7 +1363,7 @@ def test_screen_module_carries_zero_chinese_literals():
 
 def test_backend_loads_the_committed_registries_and_presence(
         monkeypatch, tmp_path):
-    """The real seam: 62/50 entries, presence from the committed n_audit.
+    """The real seam: 59/50 entries, presence from the committed n_audit.
     Refresh-stable presence pins (the R-03 follow-up rule: the baseline
     is maintainer-refreshable — 43/50 -> 50/50 landed as a data commit —
     so the asserts cover structure and DEFINITE presence, never a
@@ -1372,7 +1372,7 @@ def test_backend_loads_the_committed_registries_and_presence(
     empty_overlay.mkdir()
     monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
     data = SelectionBackend().load_selection_data()
-    assert len(data.model_entries) == 62
+    assert len(data.model_entries) == 59
     assert len(data.dataset_entries) == 50
     assert data.models_load_error is None
     assert data.datasets_load_error is None
@@ -1418,7 +1418,7 @@ def test_backend_model_presence_all_missing_under_empty_configured_root(
 
     data = SelectionBackend().load_selection_data()
 
-    assert len(data.model_entries) == 62
+    assert len(data.model_entries) == 59
     assert set(data.model_presence.values()) == {
         selection_service.MODEL_PRESENCE_MISSING}, (
         "an empty configured root reads every model as missing"

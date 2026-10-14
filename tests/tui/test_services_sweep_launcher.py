@@ -969,7 +969,7 @@ def complete_failures_manifest(tmp_path, official):
 def test_launch_from_failures_complete_manifest_three_seeds_demands_phrase(
         monkeypatch, tmp_path):
     """CR-01: a complete failures manifest re-run over the sweep's 3
-    seeds is the full 9300-cell matrix — the E2' typed gate applies
+    seeds is the full 8850-cell matrix — the E2' typed gate applies
     exactly as ``launch_spec`` applies it (refusal BEFORE the spawner)."""
     pin_state_dir(monkeypatch, tmp_path)
     official = run_config.official_keys()

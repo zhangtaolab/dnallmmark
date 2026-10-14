@@ -5,7 +5,7 @@ Read-only, tolerant derivations for the five fixed about rows (software
 version / data version / milestone stage / dependency versions /
 repository URL): software version from
 pyproject.toml plus the git short sha, OFFICIAL-only registry counts
-(62/50 — never the overlay-merged view, which would count customs twice
+(59/50 — never the overlay-merged view, which would count customs twice
 next to the separate custom segment), custom counts via the 09-01 store's
 direct management read, the n_audit presence signal, and per-package
 dependency probes via importlib.metadata (absent → None, rendered as
@@ -31,7 +31,7 @@ Contract (locked decisions):
 - The official counts read the committed registry files DIRECTLY through
   ``artifact_loader`` (tolerant, official-only): the Phase 7 loader's
   merged view is the pipeline's authority, but the official counts row must stay
-  62/50 when customs are landed, and a display probe must degrade to 0
+  59/50 when customs are landed, and a display probe must degrade to 0
   where the loader would propagate an OSError (the fail-loud loader
   contract stays untouched — this module never routes through it).
 
@@ -87,7 +87,7 @@ class AboutData:
         software_version: the pyproject ``[project] version`` (``""`` when
             unreadable — the repo's missing-value convention).
         git_sha: the short HEAD sha, or None when git is absent/not a repo.
-        official_counts: the OFFICIAL registry entry counts (62/50 against
+        official_counts: the OFFICIAL registry entry counts (59/50 against
             the committed files; ``(0, 0)`` when even they are unreadable).
         custom_counts: ``(models, datasets)`` landed custom-entry counts
             from the 09-01 direct read (disabled included).
@@ -184,7 +184,7 @@ def package_version(package: str) -> "str | None":
 
 
 def official_counts() -> RegistryCounts:
-    """The OFFICIAL-only registry entry counts (62/50 committed).
+    """The OFFICIAL-only registry entry counts (59/50 committed).
 
     Reads the official registry files directly through
     ``artifact_loader`` (the tolerant None sentinel): the official-counts row must

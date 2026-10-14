@@ -984,8 +984,8 @@ if __name__ == "__main__":
     # "datasets/...") and resolve against this script's own directory
     # (base_dir) by default; the flags replace that root VERBATIM — the
     # prefix stays part of the registry value, so --model_root
-    # /root/autodl-tmp + Model_path "models/Chaoba" resolves to
-    # /root/autodl-tmp/models/Chaoba. The absent-flag branch keeps
+    # /root/autodl-tmp + Model_path "models/DNABERT-2-117M" resolves to
+    # /root/autodl-tmp/models/DNABERT-2-117M. The absent-flag branch keeps
     # base_dir, so the resolution expressions below stay byte-identical
     # string concatenations; the flag form normalizes the separator
     # (rstrip + os.sep) so exactly one separator ever joins the root and

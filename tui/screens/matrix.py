@@ -150,7 +150,7 @@ class MatrixKeyModal(ModalScreen):
 
 
 class MatrixScreen(Screen):
-    """The read-only 62x50 presence matrix (SEL-01 auxiliary view)."""
+    """The read-only 59x50 presence matrix (SEL-01 auxiliary view)."""
 
     # READ-ONLY BY ABSENT BINDINGS: exactly the navigation pair — esc
     # pops back to selection, enter opens the full-key modal. No mark,

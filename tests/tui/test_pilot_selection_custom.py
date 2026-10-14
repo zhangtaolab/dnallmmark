@@ -570,11 +570,11 @@ def test_disabled_entry_stays_in_the_table_while_the_real_loader_skips_it(
     data_after = SelectionBackend().load_selection_data()
     keys_after = [entry["key"] for entry in data_after.model_entries]
     assert _KEY_CUSTOM_MODEL in keys_after  # the table still renders it
-    assert len(keys_after) == 63  # 62 official + the disabled custom
+    assert len(keys_after) == 60  # 59 official + the disabled custom
     assert data_after.custom_status[_KEY_CUSTOM_MODEL]["enabled"] is False
     merged = registry_loader.load_models_registry()
     assert _KEY_CUSTOM_MODEL not in merged  # the loader-skip (D-09)
-    assert len(merged) == 62
+    assert len(merged) == 59
 
     assert official_models.read_bytes() == before  # zero official writes
 
@@ -856,7 +856,7 @@ async def test_full_loop_models_wizard_lands_badges_counts_and_disables(
         table = screen.query_one(DataTable)
         # the zero-customs Phase 8 look over the committed registries
         assert _status_line(screen) == SEL_STATUS_LINE.format(
-            n=0, models_total=62, m=0, tasks_total=50,
+            n=0, models_total=59, m=0, tasks_total=50,
         )
 
         await pilot.press("w")
@@ -883,20 +883,20 @@ async def test_full_loop_models_wizard_lands_badges_counts_and_disables(
 
         # the refreshed table: the badge on the new row + the count line
         keys = _row_keys(table)
-        assert keys.index("loop-model-lm") == 62  # appended after official
-        assert _row(table, 62)[1] == f"{SEL_CUSTOM_BADGE} loop-model-lm"
+        assert keys.index("loop-model-lm") == 59  # appended after official
+        assert _row(table, 59)[1] == f"{SEL_CUSTOM_BADGE} loop-model-lm"
         assert _status_line(screen) == (
             SEL_STATUS_LINE.format(
-                n=0, models_total=63, m=0, tasks_total=50,
+                n=0, models_total=60, m=0, tasks_total=50,
             ) + " · " + SEL_COUNT_CUSTOM_SEGMENT.format(
-                official_models=62, official_datasets=50,
+                official_models=59, official_datasets=50,
                 custom_models=1, custom_datasets=0,
             )
         )
 
         # e: the disable keeps the row visible with the suffix while the
         # REAL loader drops it, and the count still counts it
-        table.move_cursor(row=62)
+        table.move_cursor(row=59)
         await pilot.pause()
         await pilot.press("e")
         await pilot.pause()
@@ -904,12 +904,12 @@ async def test_full_loop_models_wizard_lands_badges_counts_and_disables(
         await pilot.pause()
         assert SEL_TOGGLE_DISABLED_TOAST.format(
             key="loop-model-lm") in _toasts(app)
-        assert _row(table, 62)[1] == (
+        assert _row(table, 59)[1] == (
             f"{SEL_CUSTOM_BADGE} loop-model-lm{SEL_DISABLED_SUFFIX}")
         assert "loop-model-lm" not in (
             registry_loader.load_models_registry())
         assert SEL_COUNT_CUSTOM_SEGMENT.format(
-            official_models=62, official_datasets=50,
+            official_models=59, official_datasets=50,
             custom_models=1, custom_datasets=0,
         ) in _status_line(screen)
 
@@ -961,9 +961,9 @@ async def test_full_loop_datasets_wizard_runs_both_legs_and_disables(
         assert _row(table, 50)[1] == f"{SEL_CUSTOM_BADGE} loop-ds"
         assert _status_line(screen) == (
             SEL_STATUS_LINE.format(
-                n=0, models_total=62, m=0, tasks_total=51,
+                n=0, models_total=59, m=0, tasks_total=51,
             ) + " · " + SEL_COUNT_CUSTOM_SEGMENT.format(
-                official_models=62, official_datasets=50,
+                official_models=59, official_datasets=50,
                 custom_models=0, custom_datasets=1,
             )
         )

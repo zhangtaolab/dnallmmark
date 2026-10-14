@@ -1010,7 +1010,7 @@ def official_keys(registry_dir=None):
 # The E2' verdict + the typed phrase (D-02 / D-07)
 # =====================================================================
 
-#: The three-seed authorization boundary (D-02: 62 x 50 x 3).
+#: The three-seed authorization boundary (D-02: 59 x 50 x 3).
 E2X_MIN_SEEDS = 3
 
 

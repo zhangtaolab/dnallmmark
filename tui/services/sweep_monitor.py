@@ -927,7 +927,7 @@ def _records_for_run(records, fallback_start):
     the start belong to THIS run — records accumulate at a root across
     runs (WR-12 discipline keeps old records), so the unscoped view of
     a re-run at a populated root would count the prior sweep's records
-    (done 3005/9300-style corruption). Records whose ``started_at``
+    (done 3005/8850-style corruption). Records whose ``started_at``
     cannot be parsed cannot be proven in-run and drop (never crash).
     Without a fallback (a CLI-launched/finished view) every record
     counts — the unscoped behavior, unchanged.

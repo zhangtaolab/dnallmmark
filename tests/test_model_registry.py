@@ -10,7 +10,7 @@ while the 62-entry total and every operational field stayed unchanged.
 What is pinned here (shape/completeness/count, complementing
 ``tests/test_registry_unification.py``'s unification-arithmetic pins):
 
-- the registry parses, holds exactly 62 entries, and ``key == Model_name``
+- the registry parses, holds exactly 59 entries, and ``key == Model_name``
   on every entry (the dict read site in ``run_finetune.py`` depends on it);
 - exactly one entry is keyed ``PlantHelixSeek`` and its key set is EXACTLY
   the operational four + ``Model_name`` + the 11-key card (16 keys — no
@@ -19,8 +19,9 @@ What is pinned here (shape/completeness/count, complementing
   strings, no nulls — AUD-05 groundwork requires complete metadata);
 - the numeric trio (size (M), mean_token_len, context_len (bp)) is
   int/float, matching the CrossDNA card convention;
-- ALL 62 entries carry the complete 11-key card (45 through 03-03; the
-  final 17 filled by 04-04 carryover Q2 — 62/62 complete, the state the
+- ALL 59 entries carry the complete 11-key card (45 through 03-03; the
+  final 17 filled by 04-04 carryover Q2; the 3-entry confidential series
+  removed 261014-ir9 — 59/59 complete, the state the
   REV-03 exporter's modelCard join depends on).
 
 Card-value provenance (each field traces to the D-09 card or the entry's
@@ -36,7 +37,7 @@ page itself -> modelscope.
 
 See also:
     - ``tests/test_registry_unification.py`` — the single-source contract
-      (62/50 counts, operational completeness, 62/62 card completeness).
+      (59/50 counts, operational completeness, 59/59 card completeness).
     - ``script/convert_registry.py`` — the only sanctioned registry
       conversion path.
 """
@@ -63,20 +64,20 @@ NUMERIC_TRIO = ("size (M)", "mean_token_len", "context_len (bp)")
 # keys" omitted Model_name, which the key == Model_name contract requires
 # on every entry.)
 PLANTHELIXSEEK_EXPECTED_KEYS = OPERATIONAL_FOUR | CARD_KEYS | {NAME_FIELD}
-CARD_BEARING_COUNT = 62  # 44 at unification + PlantHelixSeek (03-03/D-09) + 17 (04-04 Q2)
+CARD_BEARING_COUNT = 59  # 44 at unification + PlantHelixSeek (03-03/D-09) + 17 (04-04 Q2) - 3 removed (261014-ir9)
 
 
 def _load_registry():
     return json.loads(MODELS_INFO.read_text(encoding="utf-8"))
 
 
-def test_registry_parses_with_62_entries_and_name_key_contract():
-    """The registry parses, holds exactly 62 entries, and every entry's
+def test_registry_parses_with_59_entries_and_name_key_contract():
+    """The registry parses, holds exactly 59 entries, and every entry's
     key equals its Model_name field (the run_finetune.py dict read site
     iterates .items() and addresses row["Model_name"])."""
     registry = _load_registry()
-    assert len(registry) == 62, (
-        f"expected exactly 62 model entries, got {len(registry)}"
+    assert len(registry) == 59, (
+        f"expected exactly 59 model entries, got {len(registry)}"
     )
     for key, entry in registry.items():
         assert key == entry.get(NAME_FIELD), (
@@ -130,9 +131,10 @@ def test_planthelixseek_card_agrees_with_operational_priors():
 
 
 def test_every_entry_carries_the_complete_card():
-    """ALL 62 entries carry the complete 11-key card (44 at the 03-02
+    """ALL 59 entries carry the complete 11-key card (44 at the 03-02
     unification + PlantHelixSeek by 03-03/D-09 + the final 17 by 04-04
-    carryover Q2) — the exporter's modelCard join is total over the
+    carryover Q2 - the 3-entry confidential series removed 261014-ir9) —
+    the exporter's modelCard join is total over the
     registry."""
     registry = _load_registry()
     complete = [k for k, e in registry.items() if CARD_KEYS <= set(e)]

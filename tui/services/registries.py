@@ -168,12 +168,12 @@ def load_registry_counts() -> RegistryCounts:
 
     Implemented over the canonical entry loaders (08-04): the counts and
     the entry lists can never disagree. The committed official
-    registries carry 62 models / 50 datasets; a machine-local custom
+    registries carry 59 models / 50 datasets; a machine-local custom
     overlay adds to those counts.
 
     Returns:
         RegistryCounts: ``(models, datasets)`` entry counts —
-        ``(62, 50)`` against the committed registries with no custom
+        ``(59, 50)`` against the committed registries with no custom
         overlay present.
     """
     return RegistryCounts(

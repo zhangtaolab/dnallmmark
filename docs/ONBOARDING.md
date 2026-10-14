@@ -36,7 +36,7 @@ uv run --group data python script/convert_registry.py --kind models --to-csv \
 Expected output:
 
 ```
-✅ pipeline/models_info.json -> /tmp/models_info.csv: 62 rows, columns=['Model_name', 'Model_path', 'Model_size', 'Tokenizer', 'Mean_token_length']
+✅ pipeline/models_info.json -> /tmp/models_info.csv: 59 rows, columns=['Model_name', 'Model_path', 'Model_size', 'Tokenizer', 'Mean_token_length']
 ```
 
 Your new model must appear as its own row; the row count must equal the

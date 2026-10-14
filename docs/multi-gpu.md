@@ -18,7 +18,7 @@ output roots.
 
 | | **Model sharding** (this repo, today) | **DDP / torch-run** (future) |
 |---|---|---|
-| What accelerates | Multi-model sweeps: the 62-model benchmark matrix is embarrassingly parallel — every (model × task × seed) cell is an independent fine-tune | A single large model: one cell's batch split across GPUs |
+| What accelerates | Multi-model sweeps: the 59-model benchmark matrix is embarrassingly parallel — every (model × task × seed) cell is an independent fine-tune | A single large model: one cell's batch split across GPUs |
 | Code coupling | Zero. Each worker is an ordinary `run_sweep.py --models <shard> --output-root <worker root>` invocation; nothing inside the pipeline knows sharding exists | Real. `run_finetune.py` already carries the scaffolding — `num_gpus = int(os.environ.get("WORLD_SIZE", "1"))` (`pipeline/run_finetune.py:1357`) and `local_rank = int(os.environ.get("LOCAL_RANK", "0"))` (`:1542`) — but data-splitting launch orchestration (a torch-run wrapper that shards the dataset and sets the rank env) is **deferred out of this milestone by decision** (12-CONTEXT deferred list: DDP 实装 → 决策文档落地即交付，实装非本里程碑) |
 | Coverage | Every model in the registry, custom entries included (customs shard with weight 0.0 when their `size (M)` is unusable) | Would apply per-cell to any single model, including the frontier models |
 | Cost / honest limits | Per-model load imbalance: shards are weighted by the registry's `size (M)` only (assumption A1 — every worker runs the same task set, so model size dominates the differential; per-task dataset variance is ignored) | Splitting one cell's data changes the effective batch/step math and adds a distributed-launch failure surface; none of it is exercised by the current pipeline |
@@ -26,7 +26,7 @@ output roots.
 
 **适用场景 (when to use which):**
 
-- 62-model sweep throughput, benchmark production, any multi-model run →
+- 59-model sweep throughput, benchmark production, any multi-model run →
   **model sharding** (this phase's deliverable).
 - Single-model frontier scaling (one very large model, one task) →
   **DDP, future work**. The child's `WORLD_SIZE`/`LOCAL_RANK` scaffolding

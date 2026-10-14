@@ -91,7 +91,7 @@ Marks live in shared app-state sets (not inside the table), so filter rebuilds a
 | `w` | Open the onboarding wizard for the **active table's kind** (models table → model wizard, datasets table → dataset wizard). With the cursor on a custom row, the form prefills from that entry (edit = re-record). Wizard keys: `enter` advance, `b` back, `f` import (step 1), `o` export registry (step 1), `u` undo a just-landed entry, `esc` cancel. |
 | `e` | Toggle the cursor **custom** entry's enabled state (disable removes it from runs at loader level; the row stays visible with the disabled suffix). On an official row it is a no-op with an honest toast. |
 | `d` | (Datasets table only) Enqueue the cursor's **missing** dataset into the shared download queue — the same queue and toasts as the data manager's `d`. A present row gets a no-op toast; the models view ignores the key. |
-| `v` | Push the read-only 62×50 presence matrix (marks shown as `◆` prefixes). `enter` shows a cell's full keys; `esc` returns. |
+| `v` | Push the read-only 59×50 presence matrix (marks shown as `◆` prefixes). `enter` shows a cell's full keys; `esc` returns. |
 
 ## Screen 3 — Data manager (数据管理)
 
@@ -146,7 +146,7 @@ After a successful launch the console toasts the cell count and auto-switches to
 3. **Confirm** — a summary modal (models × tasks × seeds → cells, output root). `enter` launches, `esc` cancels.
 4. **E2' escalation (when applicable)** — if the spec is the **full official re-run** (models superset of the official registry, tasks superset of the official trainable tasks, and **≥ 3 seeds** — `E2X_MIN_SEEDS = 3`, `tui/services/run_config.py`), the plain confirm is replaced by the typed-phrase modal.
 
-The typed-phrase modal ("⚠ 全量 E2' sweep — 62 模型 × 50 数据集 × 3 种子 = 9300 cell") demands the operator type the **final directory name of the resolved absolute output root** (e.g. an output root `./finetuned` demands the phrase `finetuned` — the modal itself shows the exact expected name). The verdict is exact string equality — no stripping, no case folding — evaluated by the service tier on every keystroke (the widget holds no matching logic), and `enter` confirms **only** on the exact-match indicator. The check fails closed on a degenerate empty phrase, and the launcher service re-proves the phrase structurally before spawning — no widget path can normalize its way past it. This is the maintainer authorization boundary for full E2' runs.
+The typed-phrase modal ("⚠ 全量 E2' sweep — 59 模型 × 50 数据集 × 3 种子 = 8850 cell") demands the operator type the **final directory name of the resolved absolute output root** (e.g. an output root `./finetuned` demands the phrase `finetuned` — the modal itself shows the exact expected name). The verdict is exact string equality — no stripping, no case folding — evaluated by the service tier on every keystroke (the widget holds no matching logic), and `enter` confirms **only** on the exact-match indicator. The check fails closed on a degenerate empty phrase, and the launcher service re-proves the phrase structurally before spawning — no widget path can normalize its way past it. This is the maintainer authorization boundary for full E2' runs.
 
 The same gate, including the E2' phrase, applies to the monitor's from-failures re-run (below): an E2'-class effective matrix refuses at the phrase stage and re-prompts.
 

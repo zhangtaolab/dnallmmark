@@ -712,7 +712,7 @@ def _set_table_rows(table: DataTable, columns, rows) -> None:
     handlers used on every 2s tick made keyboard navigation snap back
     to row 0 continuously — and an ``[enter]`` pressed after a tick
     landed mid-reset, acting on ROW 0 (attaching the wrong sweep root,
-    opening the wrong cell detail out of a 3100-row table). Here
+    opening the wrong cell detail out of a 2950-row table). Here
     columns rebuild ONLY when their key set changes (the narrow
     toggle, a new seed column); known rows update in place via
     ``update_cell``, new rows append, vanished rows drop; the cursor

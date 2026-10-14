@@ -5,9 +5,9 @@ Purpose
 Enumerate every entry of ``pipeline/models_info.json`` exactly once and
 score the ClinVar-shaped cohort through the DNALLM suite's tested VEP
 kernels, emitting the dual ``vep_zero_shot.json`` + ``vep_zero_shot.csv``
-artifacts (the n_audit convention). One row per registry model — 62 rows
+artifacts (the n_audit convention). One row per registry model — 59 rows
 ALWAYS: the 32 MLM and 18 CLM models are scored under their registry
-paradigm, the 5 DL-architecture models and 7 empty-type rows are emitted
+paradigm, the 5 DL-architecture models and 4 empty-type rows are emitted
 as excluded-with-reason rows, never dropped (skip-as-data discipline).
 
 Each evaluated row carries the suite's own accounting verbatim

@@ -163,7 +163,7 @@ SEL_SCREEN_TITLE_DATASETS = "选择: 数据集"
 
 # Status line (top-right, zero-one-many): the marked-counts readout in the
 # same structure for 0, 1, and many marks; totals are the live registry
-# counts (62/50 against the committed registries).
+# counts (59/50 against the committed registries).
 SEL_STATUS_LINE = "已标记: 模型 {n}/{models_total} · 数据集 {m}/{tasks_total}"
 
 # Filter bar (08-UI-SPEC Screen 2): the label, the k9s type-to-filter
@@ -826,7 +826,7 @@ LNC_GATE_CONFIRM = "启动以上 sweep？— Enter 启动 / Esc 取消"
 # The E2' escalation block (terraform-style typed phrase): the frozen
 # full-matrix warning wording, the authorization note, the type prompt,
 # and the live mismatch/match indicator pair.
-LNC_E2_WARNING = "⚠ 全量 E2' sweep — 62 模型 × 50 数据集 × 3 种子 = 9300 cell"
+LNC_E2_WARNING = "⚠ 全量 E2' sweep — 59 模型 × 50 数据集 × 3 种子 = 8850 cell"
 LNC_E2_AUTH_NOTE = "需维护者显式授权（LNC-03; 判定与短语校验不可绕过）"
 LNC_E2_TYPE_PROMPT = "输入本次输出目录名以确认: {dirname}"
 LNC_E2_MATCH_OK = "✓ 目录名匹配 — [enter] 确认启动"

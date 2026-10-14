@@ -788,7 +788,7 @@ def test_dry_run_disjointness_in_process(tmp_path, monkeypatch):
 def test_lpt_partitions_the_official_registry():
     """lpt over the committed official registry's model names partitions
     ALL of them across 2 and 4 workers — disjoint and covering over the
-    live 62-model view (env-pinned: official registry only)."""
+    live 59-model view (env-pinned: official registry only)."""
     models_info = registry_loader.load_models_registry()
     names = sorted(models_info)
     sizes = {

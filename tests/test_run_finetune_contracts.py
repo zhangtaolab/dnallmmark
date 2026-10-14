@@ -146,7 +146,7 @@ See also:
     rationale's origin.
     ``tests/test_sweep.py`` — the sweep runner whose subprocesses rely
     on this seed-isolated layout contract.
-    ``tests/test_registry_unification.py`` — the 62-entry unified
+    ``tests/test_registry_unification.py`` — the 59-entry unified
     registry every quirk-list member must resolve against.
 """
 

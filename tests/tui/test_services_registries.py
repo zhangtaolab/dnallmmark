@@ -14,11 +14,12 @@ decisions:
 - machine independence (the ``tests/test_registry_loader.py``
   ``pin_custom_dir`` discipline, its Pitfall 3): the custom overlay dir
   is pinned to a fresh empty tmp dir, so the assertions pin the
-  COMMITTED official registries — 62 models / 50 datasets — regardless
+  COMMITTED official registries — 59 models / 50 datasets — regardless
   of any local ``~/.config/dnallmmark/custom_{models,datasets}.json``
   a machine may carry. The overlay MERGE semantics are pinned by
   ``tests/test_registry_loader.py``; these tests pin the seam plus the
-  real data.
+  real data. (62 -> 59 official models, 261014-ir9: the confidential
+  3-entry series was removed from the committed registry.)
 - 08-04 entry view (SEL-04/D-08): canonical entry keys {key, type,
   species, size_m, card} / {key, category, type, metric, card}; the
   model-card casing twins resolved once via the service's canonical
@@ -56,7 +57,7 @@ from tui.services.registries import (
 
 def test_load_registry_counts_returns_committed_registry_counts(
         monkeypatch, tmp_path):
-    """The seam returns the real committed counts: (62, 50).
+    """The seam returns the real committed counts: (59, 50).
 
     ``load_registry_counts()`` loads through
     ``pipeline/registry_loader`` (the overlay-merged view); with the
@@ -67,7 +68,7 @@ def test_load_registry_counts_returns_committed_registry_counts(
     empty_overlay.mkdir()
     monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
 
-    assert load_registry_counts() == (62, 50)
+    assert load_registry_counts() == (59, 50)
 
 
 # ===== Entry view (08-04, SEL-04) =====
@@ -75,12 +76,12 @@ def test_load_registry_counts_returns_committed_registry_counts(
 
 def test_load_model_entries_projects_the_canonical_keys(monkeypatch,
                                                         tmp_path):
-    """62 entries, each EXACTLY {key, type, species, size_m, card}."""
+    """59 entries, each EXACTLY {key, type, species, size_m, card}."""
     empty_overlay = tmp_path / "custom"
     empty_overlay.mkdir()
     monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
     entries = load_model_entries()
-    assert len(entries) == 62
+    assert len(entries) == 59
     for entry in entries:
         assert set(entry) == {"key", "type", "species", "size_m", "card"}
         assert isinstance(entry["key"], str)
@@ -135,13 +136,13 @@ def test_model_entries_carry_raw_values_with_empty_string_absents(
     empty_overlay.mkdir()
     monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
     entries = {e["key"]: e for e in load_model_entries()}
-    # Chaoba's committed card carries empty type/species — the repo
+    # mamba2_370M's committed card carries empty type/species — the repo
     # data convention: missing values are "", never None/0.
-    assert entries["Chaoba"]["type"] == ""
-    assert entries["Chaoba"]["species"] == ""
+    assert entries["mamba2_370M"]["type"] == ""
+    assert entries["mamba2_370M"]["species"] == ""
     assert "" in {e["type"] for e in entries.values()}
     # a populated card passes through verbatim
-    assert entries["Chaoba"]["card"]["Model_size"] == "400M"
+    assert entries["mamba2_370M"]["card"]["Model_size"] == "370M"
 
 
 def test_dataset_entries_carry_raw_values(monkeypatch, tmp_path):

@@ -59,7 +59,7 @@ Contract (locked decisions):
   (CR-01, phase-11 review): ``run_sweep.load_failure_pairs`` × the
   requested seeds is NOT "never the full matrix by construction" — a
   genuine complete failures manifest (a full sweep that failed every
-  cell) re-run over the sweep's 3 seeds IS the full 9300-cell matrix,
+  cell) re-run over the sweep's 3 seeds IS the full 8850-cell matrix,
   so the SAME ``is_full_e2x``-class predicate + typed-phrase gate apply
   (``launch_spec``'s refusal order: official-keys diagnostic, then the
   phrase). An unevaluatable manifest (unreadable/invalid — the child's

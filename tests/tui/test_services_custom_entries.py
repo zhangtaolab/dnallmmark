@@ -14,7 +14,7 @@ Pinned decisions:
   (``DNALLMMARK_CUSTOM_REGISTRY_DIR``) is visible in
   ``registry_loader.load_models_registry()`` output — the write →
   overlay-load seam works end-to-end before any UI exists; undo returns
-  the merged registry to official-only (62/50).
+  the merged registry to official-only (59/50).
 - **Pitfall 4 (pipeline-relative paths):** land converts absolute
   ``Model_path``/``Dataset_path`` via ``os.path.relpath`` against the
   pipeline dir — a landed path starting with a filesystem root is a bug.
@@ -138,8 +138,8 @@ def full_dataset_candidate(tmp_path):
 
 def test_tracer_land_then_overlay_load_then_undo(tmp_path, monkeypatch):
     """THE phase tracer: land → registry_loader overlay sees the
-    candidate (63 models / 51 datasets over the official 62/50); undo →
-    the merged registries return to official-only (62/50)."""
+    candidate (60 models / 51 datasets over the official 59/50); undo →
+    the merged registries return to official-only (59/50)."""
     root = pin_same_tmp_root(tmp_path, monkeypatch)
 
     model = full_model_candidate(root)
@@ -147,7 +147,7 @@ def test_tracer_land_then_overlay_load_then_undo(tmp_path, monkeypatch):
 
     models = registry_loader.load_models_registry()
     datasets = registry_loader.load_datasets_registry()
-    assert len(models) == 62 and len(datasets) == 50  # official-only base
+    assert len(models) == 59 and len(datasets) == 50  # official-only base
 
     model_key = model.pop("key")
     dataset_key = dataset.pop("key")
@@ -157,7 +157,7 @@ def test_tracer_land_then_overlay_load_then_undo(tmp_path, monkeypatch):
     models = registry_loader.load_models_registry()
     datasets = registry_loader.load_datasets_registry()
     assert model_key in models and dataset_key in datasets
-    assert len(models) == 63
+    assert len(models) == 60
     assert len(datasets) == 51
     # The landed rows carry the name stamps the pipeline reads directly
     # (run_finetune reads Dataset_name by direct key access — Pitfall 11)
@@ -172,7 +172,7 @@ def test_tracer_land_then_overlay_load_then_undo(tmp_path, monkeypatch):
     models = registry_loader.load_models_registry()
     datasets = registry_loader.load_datasets_registry()
     assert model_key not in models and dataset_key not in datasets
-    assert len(models) == 62
+    assert len(models) == 59
     assert len(datasets) == 50
 
 

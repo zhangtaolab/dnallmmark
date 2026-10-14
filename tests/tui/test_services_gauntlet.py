@@ -568,7 +568,7 @@ def test_service_module_has_no_shell_invocation_patterns():
 def test_real_subprocess_dry_run_passes_for_synthetic_model_candidate(
         monkeypatch, tmp_path):
     """The REAL leg: run_sweep.py --dry-run as an actual subprocess over
-    the committed official 62/50 registries with the candidate staged
+    the committed official 59/50 registries with the candidate staged
     through the temp overlay — exit 0 AND the parsed manifest's cells
     carry the candidate with status planned (Pitfall 5). The subprocess
     is fully isolated from the operator's real custom dir (the env

@@ -329,8 +329,9 @@ EXPORT_METRIC_KEYS = frozenset(CANONICAL_TO_EXPORT.values()) | frozenset(PIPELIN
 MAJORITY_ARENA = {"Multiple": "Animals"}
 
 # The 11 model-card keys every unified registry entry carries
-# (== tests/test_registry_unification.py CARD_KEYS; 62/62 complete since
-# the 04-04 fills). A missing key aborts — never a partial card.
+# (== tests/test_registry_unification.py CARD_KEYS; 59/59 complete since
+# the 04-04 fills, 3 entries removed 261014-ir9). A missing key aborts —
+# never a partial card.
 CARD_KEYS = frozenset({
     "architecture", "context_len (bp)", "huggingface", "mean_token_len",
     "modelscope", "name", "series", "size (M)", "species", "tokenizer",

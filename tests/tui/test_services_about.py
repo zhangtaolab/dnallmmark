@@ -7,7 +7,7 @@ Pins the tolerant derivations behind the 关于 screen:
   git-less machine, an unreadable n_audit each yield their neutral value
   and the aggregate still returns — the screen composes on any machine;
   the T-09-08 mitigation);
-- official counts are OFFICIAL-only (62/50 against the committed
+- official counts are OFFICIAL-only (59/50 against the committed
   registries — never the overlay-merged view, which would count customs
   twice next to the separate 自定义 segment);
 - custom counts come from the 09-01 store's direct management read
@@ -173,12 +173,12 @@ def test_probed_packages_vocabulary_is_the_five_locked_names():
 
 
 # =====================================================================
-# counts — official-only 62/50 + custom via the 09-01 store
+# counts — official-only 59/50 + custom via the 09-01 store
 # =====================================================================
 
-def test_official_counts_committed_registries_are_62_50():
+def test_official_counts_committed_registries_are_59_50():
     """Official counts are the committed registries' own entry counts."""
-    assert about.official_counts() == RegistryCounts(models=62, datasets=50)
+    assert about.official_counts() == RegistryCounts(models=59, datasets=50)
 
 
 def test_official_counts_stay_official_with_custom_overlay_landed(
@@ -192,7 +192,7 @@ def test_official_counts_stay_official_with_custom_overlay_landed(
         datasets={"my-ds": {"Dataset_name": "my-ds", "Train": 3},
                   "my-ds-2": {"Dataset_name": "my-ds-2", "Train": 4}},
     )
-    assert about.official_counts() == RegistryCounts(models=62, datasets=50)
+    assert about.official_counts() == RegistryCounts(models=59, datasets=50)
 
 
 def test_custom_counts_read_the_user_owned_store(monkeypatch, tmp_path):
@@ -263,7 +263,7 @@ def test_derive_about_data_aggregates_every_probe(
     assert isinstance(data, AboutData)
     assert data.software_version == "3.2.1"
     assert data.git_sha == "beef42"
-    assert data.official_counts == RegistryCounts(62, 50)
+    assert data.official_counts == RegistryCounts(59, 50)
     assert data.custom_counts == (0, 0)
     assert data.n_audit_present is True
     assert data.repo_url == about.REPO_URL

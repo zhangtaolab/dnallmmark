@@ -133,7 +133,7 @@ Failure boundary:
     seeds. Completed cells were already skipped by the seed-scoped resume
     marker, so simply re-running the same sweep command re-attempts
     exactly the failed cells — the filter exists to avoid re-enumerating
-    ~9,300 cells (62x50x3) and to guard against typo'd manual
+    ~8,850 cells (59x50x3) and to guard against typo'd manual
     ``--models/--tasks`` re-run filters (research Pattern 6). Pairs join
     on BASE registry names: each failure entry records the cell identity
     (the ALIAS under ``--peft``) as ``model`` plus the registry name as

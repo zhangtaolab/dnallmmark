@@ -628,8 +628,8 @@ def test_cli_exits_nonzero_on_provided_but_empty_filter_values(
     naming the flag and its raw value. The stripped list is falsy, which
     _validate_filters' early return and enumerate_matrix's
     ``if models_filter:`` both treat as "no filter", so pre-fix the
-    driver silently enumerated the FULL registry matrix (62 models x 50
-    tasks = 3100 cells on the real registries) while the operator
+    driver silently enumerated the FULL registry matrix (59 models x 50
+    tasks = 2950 cells on the real registries) while the operator
     believed the run was scoped."""
     registry_dir = make_registry(tmp_path)
     out_root = tmp_path / "sweep-out"
@@ -1061,7 +1061,7 @@ def test_from_failures_enumerates_exactly_failed_pairs_all_seeds(
     """--from-failures with a manifest naming two failed (model, task)
     pairs enumerates exactly those pairs' cells across ALL requested seeds
     (the seed-scoped resume marker already skips completed cells; the
-    filter exists to avoid re-enumerating ~9,300 cells and to guard against
+    filter exists to avoid re-enumerating ~8,850 cells and to guard against
     typo'd manual re-run filters)."""
     registry_dir = make_registry(tmp_path)
     failures = _failures_manifest(tmp_path, [

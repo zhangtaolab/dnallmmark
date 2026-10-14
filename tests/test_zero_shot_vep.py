@@ -408,8 +408,8 @@ def test_fixture_label_class_coherence():
 
 
 def test_full_registry_enumeration_counts():
-    """The REAL registry: exactly 62 rows, one per entry — 50 evaluated
-    (32 mlm / 18 clm), 12 excluded-with-reason (5 DL + 7 EMPTY)."""
+    """The REAL registry: exactly 59 rows, one per entry — 50 evaluated
+    (32 mlm / 18 clm), 9 excluded-with-reason (5 DL + 4 EMPTY)."""
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -420,8 +420,8 @@ def test_full_registry_enumeration_counts():
             Path(tmp),
             scorer=StubScorer(),
         )
-    assert len(rows) == 62
-    assert len({row["model"] for row in rows}) == 62
+    assert len(rows) == 59
+    assert len({row["model"] for row in rows}) == 59
     evaluated = [row for row in rows if row["excluded_reason"] is None]
     assert len(evaluated) == 50
     assert sum(1 for row in evaluated if row["paradigm"] == "mlm") == 32
@@ -434,7 +434,7 @@ def test_full_registry_enumeration_counts():
         1
         for row in excluded
         if row["excluded_reason"] == zsv.EMPTY_EXCLUDED_REASON
-    ) == 7
+    ) == 4
 
 
 def test_synthetic_slice_rows_and_exclusion_reasons(tmp_path):
@@ -465,7 +465,7 @@ def test_missing_type_column_yields_empty_exclusion(tmp_path):
 
 
 def test_models_filter_discloses_not_selected(tmp_path):
-    """--models keeps all 62 registry rows: selected models evaluate;
+    """--models keeps all 59 registry rows: selected models evaluate;
     non-selected MLM/CLM rows carry the not-selected reason; DL/EMPTY
     rows keep their own (stronger) reasons."""
     import tempfile
@@ -479,7 +479,7 @@ def test_models_filter_discloses_not_selected(tmp_path):
             models_filter={"plant-dnabert-6mer", "plant-dnagpt-BPE"},
             scorer=StubScorer(),
         )
-    assert len(rows) == 62
+    assert len(rows) == 59
     by = {row["model"]: row for row in rows}
     assert by["plant-dnabert-6mer"]["excluded_reason"] is None
     assert by["plant-dnagpt-BPE"]["excluded_reason"] is None
@@ -623,7 +623,7 @@ def test_two_runs_emit_byte_identical_artifacts(tmp_path):
 
 
 def test_emission_validates_schema(tmp_path):
-    """The slice emission AND the full 62-row registry emission both
+    """The slice emission AND the full 59-row registry emission both
     validate against the strict schema."""
     validator = Draft202012Validator(
         json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
