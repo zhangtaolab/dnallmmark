@@ -146,7 +146,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
-import directories_config  # top-level module (pipeline/ sys.path root, the L6H-03 dataset-base seam)
 import registry_loader  # top-level module (pipeline/ sys.path root)
 
 from tui.services import (
@@ -1115,8 +1114,9 @@ class DownloadQueueService:
                 extract target, landed-keys scan, reconcile staged
                 path) resolves under ``<root>/datasets`` instead of
                 the repo ``pipeline/datasets``; None = the
-                ``_datasets_base()`` chain (file tier > repo default).
-                The REGISTRY read stays repo-anchored either way.
+                ``_datasets_base()`` chain (run-config tier > repo
+                default). The REGISTRY read stays repo-anchored either
+                way.
             model_root: the model STORAGE base override (MLC-01, the
                 flag tier) — the pipeline-dir-equivalent root model
                 landing dirs resolve under (``<root>/<Model_path>``,
@@ -1182,22 +1182,26 @@ class DownloadQueueService:
         # snapshot reloads must still surface it — never silent loss.
         self._last_diagnostic: str | None = None
 
-    # ===== L6H-03: the dataset storage base (param > file > default) =====
+    # ===== L6H-03: the dataset storage base (param > run-config > default) =====
 
     def _datasets_base(self):
         """The dataset STORAGE base every landing site resolves under.
 
-        Precedence (261014-l6h, L6H-03): constructor ``dataset_root``
-        param (the flag tier) > ``directories.json`` ``dataset_root``
-        key read through ``directories_config.load_directories_tolerant``
-        (the file tier — TOLERANT by design: a corrupt file degrades
-        to the default and never kills the console; the strict
-        fail-loud lane belongs to the pipeline scripts, the
-        run_config.py service-tier seam precedent) > the repo
-        ``pipeline/`` dir (the default literal stays at this consumer,
-        ADD-ALONGSIDE). The official REGISTRY read deliberately stays
-        repo-anchored — registry is repo state, never redirected by
-        user storage config.
+        Precedence (261014-l6h, rerouted 10-07/CR-01): constructor
+        ``dataset_root`` param (the flag tier) > the run-config chain
+        ``resolve_dirs(load_state()).dataset_root_abs`` (the slot-4
+        tier — exactly the chain the env-check ``dataset_dirs`` kernel
+        and ``compose_argv``'s ``--dataset_root`` consume, so download
+        landing and the configured run can never disagree about the
+        root; the spec is seeded from directories.json inside
+        ``load_state()`` — session state overrides file defaults, so
+        the file tier survives within the chain) > the repo
+        ``pipeline/`` dir (byte-identical to the pre-reroute form when
+        nothing is configured). The chain is read per call, never
+        memoized — a live slot-4 edit steers the next landing (the
+        point of the fix). The official REGISTRY read deliberately
+        stays repo-anchored — registry is repo state, never redirected
+        by user storage config.
 
         Returns:
             Path: the base such that dataset landing paths are
@@ -1206,10 +1210,9 @@ class DownloadQueueService:
         """
         if self._dataset_root is not None:
             return self._dataset_root
-        file_root = directories_config.load_directories_tolerant().get(
-            "dataset_root")
-        if file_root:
-            return Path(file_root).resolve()
+        dirs = run_config.resolve_dirs(run_config.load_state())
+        if dirs.dataset_root_abs:
+            return Path(dirs.dataset_root_abs)
         return self._pipeline_dir
 
     # ===== MLC-01: the model storage base (param > run-config > default) =====
