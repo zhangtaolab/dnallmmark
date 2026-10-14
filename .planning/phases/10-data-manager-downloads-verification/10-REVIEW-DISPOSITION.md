@@ -32,7 +32,7 @@ recorded: 2026-10-14T15:20:38.683Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | open | - |
+| CR-01 | critical | fixed | - |
 | WR-01 | warning | open | - |
 | WR-02 | warning | open | - |
 | IN-01 | info | open | - |

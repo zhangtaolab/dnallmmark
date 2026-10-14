@@ -225,7 +225,7 @@ Plans:
 - [x] 10-06-PLAN.md — hardening + phase-goal verification: CLI-absent/corrupt/unknown-key/restart edge sweep, exhaustive transition table, full gates, SC1-5 goal-backward checklist + GB10 live-smoke procedure
 
 **Wave 7** *(gap closure — blocked on 10-06)*
-- [ ] 10-07-PLAN.md — CR-01 gap closure (SC1 env-check conjunct, DATA-01): reroute `_datasets_base` through the run-config chain (`resolve_dirs(load_state()).dataset_root_abs`, the `_models_base` twin) + the three-configuration landing/consumption agreement regression matrix
+- [x] 10-07-PLAN.md — CR-01 gap closure (SC1 env-check conjunct, DATA-01): reroute `_datasets_base` through the run-config chain (`resolve_dirs(load_state()).dataset_root_abs`, the `_models_base` twin) + the three-configuration landing/consumption agreement regression matrix
 
 **UI hint**: yes
 
@@ -292,7 +292,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 | 7. Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay) | v1.2 | 6/6 | Complete    | 2026-10-11 |
 | 8. TUI Foundation (Env Check & Selection) | v1.2 | 9/9 | Complete    | 2026-10-12 |
 | 9. Custom Model & Dataset Onboarding | v1.2 | 6/6 | Complete    | 2026-10-12 |
-| 10. Data Manager (Downloads & Verification) | v1.2 | 6/6 | Complete    | 2026-10-13 |
+| 10. Data Manager (Downloads & Verification) | v1.2 | 7/7 | Complete    | 2026-10-13 |
 | 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 7/7 | Complete    | 2026-10-13 |
 | 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 5/5 | In Progress | - |
 
