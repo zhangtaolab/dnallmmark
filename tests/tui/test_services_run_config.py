@@ -126,8 +126,9 @@ def test_importing_service_leaves_gpu_stack_absent():
 
 def test_runspec_defaults():
     """The defaults spec: seeds 42/43/44, PEFT none, variant none,
-    curve off, subset off, no epochs/EBS override, repo-relative dirs
-    (D-14), cache absent."""
+    curve off, subset off, no epochs/EBS override, repo-relative output
+    root (D-14), both storage roots UNSET (the D-19 display-only
+    dataset-root default retired, 261014-c2l), cache absent."""
     spec = run_config.RunSpec(models=("m",), tasks=("t",))
     assert spec.models == ("m",)
     assert spec.tasks == ("t",)
@@ -139,7 +140,8 @@ def test_runspec_defaults():
     assert spec.num_train_epochs is None
     assert spec.effective_batch_size is None
     assert spec.output_root == "./finetuned"
-    assert spec.dataset_root == "./datasets"
+    assert spec.dataset_root is None
+    assert spec.model_root is None
     assert spec.cache_dir is None
 
 
@@ -388,6 +390,7 @@ def test_persistence_round_trip_full_spec(monkeypatch, tmp_path):
         effective_batch_size=16,
         output_root="/data/sweeps/run-a",
         dataset_root="/data/datasets",
+        model_root="/data/models",
         cache_dir="/data/cache",
     )
     run_config.save_state(spec)
@@ -400,6 +403,11 @@ def test_persistence_round_trip_full_spec(monkeypatch, tmp_path):
     assert doc["params"]["config_variant"] == "probe"
     assert doc["params"]["curve_fractions"] == [0.25, 0.5]
     assert doc["dirs"]["output_root"] == "/data/sweeps/run-a"
+    assert doc["dirs"]["dataset_root"] == "/data/datasets"
+    assert doc["dirs"]["model_root"] == "/data/models", (
+        "the persisted dirs payload carries the new model_root key "
+        "(261014-c2l)"
+    )
 
 
 def test_load_state_missing_file_returns_default(monkeypatch, tmp_path):
@@ -456,31 +464,109 @@ def test_load_state_shape_drift_returns_default(monkeypatch, tmp_path, doc):
 
 
 # =====================================================================
+# Legacy migration (261014-c2l — the D-19 retirement)
+# =====================================================================
+
+
+def _write_state_doc(monkeypatch, tmp_path, doc):
+    """Write a hand-composed persisted document, pin the state root."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "run_config.json").write_text(
+        json.dumps(doc, indent=4, sort_keys=True), encoding="utf-8")
+    return state
+
+
+_PRE_CHANGE_DOC = {
+    "schema_version": 1,
+    "models": ["model-a"],
+    "tasks": ["task-1"],
+    "params": {
+        "seeds": [42, 43, 44],
+        "peft": "none",
+        "config_variant": "none",
+        "curve_fractions": [],
+        "subset_file": None,
+        "num_train_epochs": None,
+        "effective_batch_size": None,
+    },
+    "dirs": {
+        "output_root": "./finetuned",
+        "dataset_root": "./datasets",
+        "cache_dir": None,
+    },
+}
+
+
+def test_legacy_dataset_root_default_loads_as_unset(monkeypatch, tmp_path):
+    """A pre-change persisted state file whose dirs.dataset_root is
+    exactly the retired D-19 display-only default './datasets' loads as
+    a spec with dataset_root None and composes NO --dataset_root
+    element — byte-identical launches from pre-change state files (the
+    value was never threaded; threading it would double the
+    'datasets/' path segment)."""
+    _write_state_doc(monkeypatch, tmp_path, _PRE_CHANGE_DOC)
+    spec = run_config.load_state()
+    assert spec.dataset_root is None
+    assert spec.model_root is None, (
+        "a pre-change file carries no model_root key — the tolerant "
+        "read maps the absence to unset (backward compatible, no "
+        "schema_version bump)"
+    )
+    argv = run_config.compose_argv(spec)
+    assert "--dataset_root" not in argv
+    assert "--model_root" not in argv
+
+
+def test_legacy_custom_dataset_root_loads_through_live(monkeypatch, tmp_path):
+    """A persisted CUSTOM dataset_root value (anything other than the
+    retired literal) loads through and composes the ABSOLUTE flag — the
+    feature going live (261014-c2l)."""
+    doc = {
+        **_PRE_CHANGE_DOC,
+        "dirs": {
+            "output_root": "./finetuned",
+            "dataset_root": "/mnt/storage",
+            "cache_dir": None,
+        },
+    }
+    _write_state_doc(monkeypatch, tmp_path, doc)
+    spec = run_config.load_state()
+    assert spec.dataset_root == "/mnt/storage"
+    argv = run_config.compose_argv(spec)
+    assert flag_value(argv, "--dataset_root") == "/mnt/storage"
+
+
+# =====================================================================
 # Lane 1 — resolve_dirs (Task 1)
 # =====================================================================
 
 
 def test_resolve_dirs_defaults_repo_relative_display_absolute_argv():
     """D-14: the default output root stays './finetuned' for DISPLAY
-    but resolves ABSOLUTE against REPO_ROOT for argv; the dataset root
-    likewise; cache absent -> None (never threaded)."""
+    but resolves ABSOLUTE against REPO_ROOT for argv; both storage
+    roots default UNSET -> None (the D-19 display-only dataset-root
+    default retired, 261014-c2l); cache absent -> None."""
     spec = run_config.RunSpec(models=("m",), tasks=("t",))
     plan = run_config.resolve_dirs(spec)
     assert plan.output_root == "./finetuned"
     assert plan.output_root_abs == str((REPO_ROOT / "finetuned").resolve())
-    assert plan.dataset_root == "./datasets"
-    assert plan.dataset_root_abs == str((REPO_ROOT / "datasets").resolve())
+    assert plan.dataset_root is None
+    assert plan.dataset_root_abs is None
+    assert plan.model_root is None
+    assert plan.model_root_abs is None
     assert plan.cache_dir_abs is None
 
 
 def test_resolve_dirs_explicit_overrides_resolve_absolute():
     """An explicit override always threads ABSOLUTE (D-14) — a relative
     override resolves against REPO_ROOT, an absolute one passes
-    through unchanged."""
+    through unchanged (both storage roots included, 261014-c2l)."""
     spec = run_config.RunSpec(
         models=("m",), tasks=("t",),
         output_root="./sweeps/run-b",
         dataset_root="/data/datasets",
+        model_root="./m-root",
         cache_dir="./hf-cache",
     )
     plan = run_config.resolve_dirs(spec)
@@ -488,6 +574,8 @@ def test_resolve_dirs_explicit_overrides_resolve_absolute():
     assert plan.output_root_abs == str((REPO_ROOT / "sweeps" / "run-b").resolve())
     assert plan.dataset_root == "/data/datasets"
     assert plan.dataset_root_abs == "/data/datasets"
+    assert plan.model_root == "./m-root"
+    assert plan.model_root_abs == str((REPO_ROOT / "m-root").resolve())
     assert plan.cache_dir_abs == str((REPO_ROOT / "hf-cache").resolve())
 
 
@@ -919,6 +1007,7 @@ def test_compose_argv_defaults_exactly_ten_base_elements():
 @pytest.mark.parametrize("flag", [
     "--peft", "--config-variant", "--curve", "--subset_file",
     "--num_train_epochs", "--effective_batch_size", "--cache_dir",
+    "--model_root", "--dataset_root",
 ])
 def test_compose_argv_absent_flags_contribute_zero_elements(flag):
     spec = run_config.RunSpec(models=("m",), tasks=("t",))
@@ -933,7 +1022,9 @@ def test_compose_argv_full_spec_element_for_element():
     so the order is pinned exactly once, here. (The spec carries both
     alias axes only to exercise the order; composition validation —
     not the mechanical composer — refuses the variant x peft combo,
-    and run_sweep re-refuses at start.)"""
+    and run_sweep re-refuses at start.) The storage-root tail
+    (261014-c2l) pins --cache_dir, --model_root, --dataset_root — the
+    same order run_sweep's build_argv pins."""
     spec = run_config.RunSpec(
         models=("m1", "m2"), tasks=("t1",), seeds=(42,),
         peft="lora", config_variant="probe",
@@ -942,6 +1033,8 @@ def test_compose_argv_full_spec_element_for_element():
         num_train_epochs=1, effective_batch_size=16,
         output_root="./sweeps/run-x",
         cache_dir="./hf-cache",
+        model_root="./m-root",
+        dataset_root="./d-root",
     )
     argv = run_config.compose_argv(spec)
     assert argv == [
@@ -958,7 +1051,26 @@ def test_compose_argv_full_spec_element_for_element():
         "--num_train_epochs", "1",
         "--effective_batch_size", "16",
         "--cache_dir", str((REPO_ROOT / "hf-cache").resolve()),
+        "--model_root", str((REPO_ROOT / "m-root").resolve()),
+        "--dataset_root", str((REPO_ROOT / "d-root").resolve()),
     ]
+
+
+def test_compose_argv_threads_both_storage_roots_when_set():
+    """261014-c2l (the D-19 retirement guard): a spec with BOTH storage
+    roots set composes BOTH flags — the dataset root is live, joined by
+    the model root, model-before-dataset in the pinned tail order."""
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",),
+        model_root="/mnt/storage", dataset_root="/mnt/storage",
+    )
+    argv = run_config.compose_argv(spec)
+    assert flag_value(argv, "--model_root") == "/mnt/storage"
+    assert flag_value(argv, "--dataset_root") == "/mnt/storage"
+    assert argv.index("--model_root") < argv.index("--dataset_root"), (
+        "--model_root must precede --dataset_root (the pinned tail "
+        "order, matching run_sweep.build_argv)"
+    )
 
 
 def test_compose_argv_is_a_list_of_str():
@@ -977,14 +1089,16 @@ def test_compose_argv_is_a_list_of_str():
 
 
 def test_compose_argv_absolute_resolution_against_repo_root():
-    """Relative values in, absolute out — output_root/subset/cache all
-    resolve against REPO_ROOT (D-14: the subprocess's own CWD
-    resolution can never diverge)."""
+    """Relative values in, absolute out — output_root/subset/cache and
+    both storage roots resolve against REPO_ROOT (D-14: the
+    subprocess's own CWD resolution can never diverge)."""
     spec = run_config.RunSpec(
         models=("m",), tasks=("t",),
         output_root="./finetuned",
         subset_file="./fairness.json",
         cache_dir="./cache",
+        model_root="./m-root",
+        dataset_root="./d-root",
     )
     argv = run_config.compose_argv(spec)
     assert flag_value(argv, "--output-root") == str(
@@ -993,6 +1107,10 @@ def test_compose_argv_absolute_resolution_against_repo_root():
         (REPO_ROOT / "fairness.json").resolve())
     assert flag_value(argv, "--cache_dir") == str(
         (REPO_ROOT / "cache").resolve())
+    assert flag_value(argv, "--model_root") == str(
+        (REPO_ROOT / "m-root").resolve())
+    assert flag_value(argv, "--dataset_root") == str(
+        (REPO_ROOT / "d-root").resolve())
 
 
 def test_compose_argv_absolute_overrides_pass_through():
@@ -1001,11 +1119,15 @@ def test_compose_argv_absolute_overrides_pass_through():
         output_root="/data/sweeps/run-y",
         subset_file="/data/fairness.json",
         cache_dir="/data/hf-cache",
+        model_root="/mnt/models",
+        dataset_root="/mnt/datasets",
     )
     argv = run_config.compose_argv(spec)
     assert flag_value(argv, "--output-root") == "/data/sweeps/run-y"
     assert flag_value(argv, "--subset_file") == "/data/fairness.json"
     assert flag_value(argv, "--cache_dir") == "/data/hf-cache"
+    assert flag_value(argv, "--model_root") == "/mnt/models"
+    assert flag_value(argv, "--dataset_root") == "/mnt/datasets"
 
 
 def test_compose_argv_empty_models_raises_defensively():

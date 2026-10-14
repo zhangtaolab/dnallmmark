@@ -43,11 +43,18 @@ Contract (locked decisions):
   check is exact string equality on the resolved output-root basename
   and lives in THIS tier — the modal can render its output, never
   bypass it (D-07).
-- D-14/D-19 (dirs): defaults are repo-relative (``./finetuned``,
-  ``./datasets``, cache absent) and stay repo-relative for DISPLAY;
-  any explicit override resolves to an ABSOLUTE path (against
-  REPO_ROOT) before argv threading. The dataset root is a presence/
-  docs setting only — NO flag is threaded for it this phase (D-19).
+- D-14/D-19 (dirs): defaults are repo-relative (``./finetuned``, cache
+  absent — and, since 261014-c2l, BOTH roots absent) and stay
+  repo-relative for DISPLAY; any explicit override resolves to an
+  ABSOLUTE path (against REPO_ROOT) before argv threading. D-19 is
+  RETIRED (261014-c2l): the dataset root now threads ``--dataset_root``
+  LIVE, joined by the new ``--model_root`` — present-only, absolute,
+  in the pinned compose_argv tail order, consuming the pipeline flags
+  of the same names. The pre-change display-only default
+  ``./datasets`` maps to UNSET at load (``LEGACY_DATASET_ROOT_DEFAULT``)
+  so every pre-change persisted state file keeps launching
+  byte-identically (the value was never threaded; threading it would
+  double the ``datasets/`` path segment).
   A nonexistent output root is advisory-only (the sweep driver
   mkdirs it); resolution never fails on it.
 - D-12 (absent parity in composition): ``compose_argv`` threads a
@@ -72,8 +79,11 @@ Contract (locked decisions):
 
 Tolerance policy: ``load_state`` NEVER raises — a missing, corrupt,
 or shape-drifted state file returns the DEFAULT spec (seeds 42/43/44,
-PEFT none, variant none, subset off, output ``./finetuned``) whole,
-never a partially-misread one. Validation mirrors run_sweep's own
+PEFT none, variant none, subset off, output ``./finetuned``, both
+storage roots unset) whole, never a partially-misread one. A
+pre-change file whose ``dirs.dataset_root`` is exactly the retired
+display-only default loads as UNSET (the legacy mapping above).
+Validation mirrors run_sweep's own
 bounds but returns collect-all problems as machine tuples
   ``(field_code, value)`` — data, never screen copy; the sys.exit-ing
   run_sweep validators are never called from parse paths.
@@ -125,7 +135,13 @@ CONFIG_VARIANTS = ("none", "head", "probe", "curve")
 #: D-14 defaults: repo-relative for display; argv always threads the
 #: absolute resolution.
 DEFAULT_OUTPUT_ROOT = "./finetuned"
-DEFAULT_DATASET_ROOT = "./datasets"
+#: The RETIRED D-19 display-only default (261014-c2l): no longer the
+#: live RunSpec default — consumed ONLY by the tolerant-load legacy
+#: migration, which maps a persisted dataset_root of exactly this
+#: value to None (the value was never threaded, and threading it would
+#: resolve "datasets/..." under <repo>/datasets producing a doubled
+#: path — byte-identical launches from pre-change state files instead).
+LEGACY_DATASET_ROOT_DEFAULT = "./datasets"
 DEFAULT_SEEDS = (42, 43, 44)
 
 #: Machine problem codes — collect-all validation vocabulary (the
@@ -181,8 +197,13 @@ class RunSpec:
             child's YAML gradient-accumulation governs).
         output_root: sweep output root, repo-relative by default
             (D-14; ``DEFAULT_OUTPUT_ROOT``).
-        dataset_root: dataset root, presence/docs only — never
-            threaded as a flag this phase (D-19).
+        dataset_root: dataset storage root — threads ``--dataset_root``
+            (absolute against REPO_ROOT) when set (D-19 retired,
+            261014-c2l; None = the child's script-dir resolution
+            governs).
+        model_root: model storage root — threads ``--model_root``
+            (absolute against REPO_ROOT) when set (261014-c2l; None =
+            the child's script-dir resolution governs).
         cache_dir: HF cache override (None = the child's env/default
             resolution governs).
     """
@@ -197,7 +218,8 @@ class RunSpec:
     num_train_epochs: int | None = None
     effective_batch_size: int | None = None
     output_root: str = DEFAULT_OUTPUT_ROOT
-    dataset_root: str | None = DEFAULT_DATASET_ROOT
+    dataset_root: str | None = None
+    model_root: str | None = None
     cache_dir: str | None = None
 
     def __post_init__(self):
@@ -432,6 +454,7 @@ def _persist_payload(spec):
         "dirs": {
             "output_root": spec.output_root,
             "dataset_root": spec.dataset_root,
+            "model_root": spec.model_root,
             "cache_dir": spec.cache_dir,
         },
     }
@@ -552,9 +575,18 @@ def _spec_from_doc(doc):
     if not isinstance(output_root, str) or not output_root:
         return None
     ok_dataset, dataset_root = _optional_str(dirs.get("dataset_root"))
+    ok_model_root, model_root = _optional_str(dirs.get("model_root"))
     ok_cache, cache_dir = _optional_str(dirs.get("cache_dir"))
-    if not (ok_dataset and ok_cache):
+    if not (ok_dataset and ok_model_root and ok_cache):
         return None
+    # 261014-c2l legacy migration: the D-19 display-only default was
+    # never threaded; mapping the exact literal to unset preserves
+    # byte-identical launches from pre-change state files (threading it
+    # would resolve "datasets/..." under <repo>/datasets, doubling the
+    # path segment). Any OTHER persisted custom value loads through
+    # live — the feature's purpose.
+    if dataset_root == LEGACY_DATASET_ROOT_DEFAULT:
+        dataset_root = None
 
     return RunSpec(
         models=models,
@@ -568,6 +600,7 @@ def _spec_from_doc(doc):
         effective_batch_size=ebs,
         output_root=output_root,
         dataset_root=dataset_root,
+        model_root=model_root,
         cache_dir=cache_dir,
     )
 
@@ -616,18 +649,26 @@ class DirPlan:
             against REPO_ROOT (a nonexistent root is advisory-only;
             the sweep driver mkdirs it).
         dataset_root: the DISPLAY form (None when unset).
-        dataset_root_abs: the ABSOLUTE form (None when unset). NEVER
-            threaded as a flag this phase (D-19 — presence/docs only).
+        dataset_root_abs: the ABSOLUTE form (None when unset).
+            Threaded as ``--dataset_root`` whenever set (D-19 retired,
+            261014-c2l — the display-verbatim/argv-absolute split of
+            D-14 applies to it like every other path).
+        model_root: the DISPLAY form (None when unset).
+        model_root_abs: the ABSOLUTE form (None when unset). Threaded
+            as ``--model_root`` whenever set (261014-c2l) — the
+            dataset-root twin.
         cache_dir_abs: the ABSOLUTE cache override (None when absent).
-            Unlike dataset_root this IS threaded — ``compose_argv``
-            threads ``--cache_dir`` whenever set (IN-01, phase-11
-            review); ``DirPlan`` exposes the resolved form.
+            Threaded — ``compose_argv`` threads ``--cache_dir``
+            whenever set (IN-01, phase-11 review); ``DirPlan`` exposes
+            the resolved form.
     """
 
     output_root: str
     output_root_abs: str
     dataset_root: str | None
     dataset_root_abs: str | None
+    model_root: str | None
+    model_root_abs: str | None
     cache_dir_abs: str | None
 
 
@@ -657,6 +698,11 @@ def resolve_dirs(spec):
         dataset_root_abs=(
             _abs_against_repo_root(spec.dataset_root)
             if spec.dataset_root else None
+        ),
+        model_root=spec.model_root,
+        model_root_abs=(
+            _abs_against_repo_root(spec.model_root)
+            if spec.model_root else None
         ),
         cache_dir_abs=(
             _abs_against_repo_root(spec.cache_dir)
@@ -978,7 +1024,10 @@ def compose_argv(spec):
     filters, and the ABSOLUTE output root, then PRESENT-ONLY flag
     pairs appended in the pinned order ``--peft``, ``--config-
     variant``, ``--curve``, ``--subset_file``, ``--num_train_epochs``,
-    ``--effective_batch_size``, ``--cache_dir``. An ABSENT flag
+    ``--effective_batch_size``, ``--cache_dir``, ``--model_root``,
+    ``--dataset_root`` (the two storage roots join the pinned tail,
+    261014-c2l — the same model-before-dataset order run_sweep's
+    ``build_argv`` pins). An ABSENT flag
     contributes ZERO elements (D-12 absent parity — a defaults spec
     composes exactly the 10 base elements). Path-valued flags resolve
     ABSOLUTE against REPO_ROOT before threading (D-14). The [p]
@@ -1029,6 +1078,11 @@ def compose_argv(spec):
                  str(spec.effective_batch_size)]
     if spec.cache_dir:
         argv += ["--cache_dir", _abs_against_repo_root(spec.cache_dir)]
+    if spec.model_root:
+        argv += ["--model_root", _abs_against_repo_root(spec.model_root)]
+    if spec.dataset_root:
+        argv += ["--dataset_root",
+                 _abs_against_repo_root(spec.dataset_root)]
     return argv
 
 
