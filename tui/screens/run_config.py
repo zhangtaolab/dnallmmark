@@ -1901,9 +1901,13 @@ class RunConfigScreen(Screen):
         # output root at the problems stage, naming the root — the
         # service's own _spawn guard is the structural backstop, but
         # the operator must see WHY before any confirm (kill/detach or
-        # pick a different root first).
+        # pick a different root first). WR-01 (stale-refresh review):
+        # the key rides the resolve_dirs basis (output_root_abs — the
+        # SAME REPO_ROOT basis the argv threads, D-14), never a
+        # CWD-resolved reading that would miss the live key when the
+        # TUI process runs outside the repo.
         spec, _ = self._compose_spec()
-        root_key = str(Path(spec.output_root).resolve())
+        root_key = str(self._run_service.resolve_dirs(spec).output_root_abs)
         if root_key in set(self._launcher.live_sweeps()):
             self._gate_active = False
             if not self.app.below_minimum_grid:

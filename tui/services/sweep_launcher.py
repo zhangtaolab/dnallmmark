@@ -523,6 +523,15 @@ class SweepLauncher:
 
         A non-E2' spec ignores the phrase argument entirely.
 
+        WR-01 (phase-11 stale-refresh review) — the root-basis rule: the
+        spawn is keyed on ``rc.resolve_dirs(spec).output_root_abs`` (the
+        SAME REPO_ROOT basis ``compose_argv`` threads into
+        ``--output-root``, D-14), never the raw ``spec.output_root`` —
+        a TUI process running outside the repo with a relative root
+        would otherwise register a phantom ``{cwd}``-rooted key while
+        the sweep writes under ``{repo}`` (kill/detach/tee/auto-attach
+        all keyed on a root that never exists).
+
         Args:
             spec (run_config.RunSpec): the composed spec.
             phrase: the operator-typed E2' phrase (None/"" refuse an
@@ -554,7 +563,7 @@ class SweepLauncher:
                 stage=REFUSAL_STAGE_PHRASE,
                 expected=rc.expected_phrase(spec.output_root))
         return self._spawn(
-            rc.compose_argv(spec), spec.output_root,
+            rc.compose_argv(spec), rc.resolve_dirs(spec).output_root_abs,
             spawner=spawner, clock=clock)
 
     def launch_argv(self, argv, output_root, spawner=None, clock=None):

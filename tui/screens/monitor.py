@@ -1112,6 +1112,9 @@ class MonitorScreen(Screen):
         prior launch at the same root left behind — the fresh run's own
         manifest (once it lands) or the honest unknown-total governs,
         never the prior sweep's number for the whole session."""
+        # CR-01 note: this pre-resolution is now a documented NO-OP for
+        # correctness (attach() owns the expanduser().resolve() contract)
+        # — kept so the key computation stays locally explicit.
         root_key = str(Path(str(root)).resolve())
         if cells:
             self._expected_totals[root_key] = int(cells)
@@ -1125,10 +1128,22 @@ class MonitorScreen(Screen):
         """Attach one sweep root: the ◆ moves, the cell table / stats /
         failures / log bindings rebind, and the frontier target updates.
 
+        CR-01 (phase-11 stale-refresh review): the root is stored
+        EXPANDED and RESOLVED — ``Path(str(root)).expanduser().resolve()``
+        — the exact semantics the ``[a]`` validation layer
+        (``add_manual_root``) already applied internally, so validation
+        and attach agree on ONE path basis: a ``~`` -spelled operator
+        path that VALIDATES also MONITORS. Every reader — cells_view /
+        stats / failures_view / cell_record via the service, the ◆
+        marker's discovered-table key comparison, attached_running_counts,
+        the frontier target — sees the resolved root, never the literal
+        spelling. An already-absolute resolved key (the discovered
+        table's enter, note_launch) passes through as identity.
+
         Safe before mount (the D-13 hook may attach while another
         screen is active): the state lands now, the refresh worker runs
         on the next mount kick or tick."""
-        self._attached_root = Path(str(root))
+        self._attached_root = Path(str(root)).expanduser().resolve()
         self._cell_rows = {}
         self._last_stats = None
         self._resume_count = 0

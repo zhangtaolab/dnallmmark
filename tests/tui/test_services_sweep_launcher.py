@@ -548,6 +548,12 @@ class RunConfigDouble:
     def phrase_matches(self, typed, output_root):
         return run_config.phrase_matches(typed, output_root)
 
+    def resolve_dirs(self, spec):
+        # WR-01: launch_spec threads the argv's root basis through this
+        # seam — the double delegates to the REAL resolver like the
+        # other grammar legs.
+        return run_config.resolve_dirs(spec)
+
     def compose_argv(self, spec):
         self.compose_calls += 1
         return list(self.argv)
