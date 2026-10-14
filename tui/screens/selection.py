@@ -708,15 +708,23 @@ class CustomOnboardingBackend:
             custom_entries_service.read_entries("models"))
         custom_datasets, _datasets_read_error = (
             custom_entries_service.read_entries("datasets"))
+        # The observed-vocabulary reads are TYPE-TOLERANT (08-09, Truth 6
+        # round 2): a loader-accepted non-dict card value — merged by the
+        # Phase 7 loader and projected as the empty card upstream —
+        # contributes NO vocabulary entry (the officials' vocabularies
+        # still populate), never an AttributeError exit through any ``w``
+        # press (the model_presence extraction idiom, 08-08).
         observed_species = tuple(sorted({
-            entry["card"].get("species")
+            card.get("species")
             for entry in model_entries
-            if entry["card"].get("species")
+            if isinstance((card := entry["card"]), dict)
+            and card.get("species")
         }))
         observed_tokenizers = tuple(sorted({
-            entry["card"].get(registries_service.MODEL_CARD_TOKENIZER_FIELD)
+            card.get(registries_service.MODEL_CARD_TOKENIZER_FIELD)
             for entry in model_entries
-            if entry["card"].get(registries_service.MODEL_CARD_TOKENIZER_FIELD)
+            if isinstance((card := entry["card"]), dict)
+            and card.get(registries_service.MODEL_CARD_TOKENIZER_FIELD)
         }))
         # Official keys = merged minus landed customs — exact under the
         # loader's collision fail-fast (a landed custom never shadows an
@@ -1755,7 +1763,15 @@ class SelectionScreen(Screen):
         entry = self._find_entry(key) if key is not None else None
         if entry is None:
             return None
-        model_path = (entry.get("card") or {}).get("Model_path")
+        # The card read is TYPE-TOLERANT (08-09, Truth 6 round 2): the
+        # model_presence extraction idiom verbatim (08-08) — a non-dict
+        # card value carries no Model_path, so the site maps to None
+        # independent of the UNKNOWN-presence shield that currently
+        # guards the ``d`` action path (that shield is incidental, one
+        # refactor from breaking).
+        card = entry.get("card")
+        model_path = (
+            card.get("Model_path") if isinstance(card, dict) else None)
         if not isinstance(model_path, str) or not model_path:
             return None
         dirs = run_config_service.resolve_dirs(
@@ -2140,8 +2156,17 @@ class SelectionScreen(Screen):
         entry = self._find_entry(key)
         if entry is None:
             return  # state rows have no detail — no-op
+        # The card read is TYPE-TOLERANT (08-09, Truth 6 round 2): a
+        # loader-accepted non-dict card value — a truthy list defeats the
+        # former ``or {}`` — opens the modal CARD-LESS: the border title
+        # carries the key and the detail log renders nothing, the
+        # drill-down twin of the row's blank type/species/size_m axes
+        # (the 08-08 degraded-row presentation). RowDetailModal itself is
+        # untouched — only dicts reach it, so its ``card: dict``
+        # annotation stays truthful.
+        card = entry.get("card")
         self.app.push_screen(RowDetailModal(
-            entry_key=key, card=entry.get("card") or {},
+            entry_key=key, card=card if isinstance(card, dict) else {},
         ))
 
     def _find_entry(self, key: str) -> "dict | None":
