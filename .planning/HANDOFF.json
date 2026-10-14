@@ -1,35 +1,41 @@
 {
   "version": "1.0",
-  "timestamp": "2026-10-13T15:23:42.679Z",
-  "phase": "12",
-  "phase_name": "Multi-GPU Orchestration & Console Hardening",
-  "phase_dir": ".planning/phases/12-multi-gpu-orchestration-console-hardening",
-  "plan": "UAT",
-  "task": 1,
-  "total_tasks": 2,
-  "status": "paused_mid_uat",
-  "phase_progress": "12: 5/5 plans summarized (12-03 resumed+done, 12-04 done, 12-05 done this session); review-fix loop converged (8/8 WR fixed d8c54a8..b010e65, delta re-review verified, 4 IN open by design incl. new IN-04); regression gate green (make test exit 0, 1581+26 peak); verifier human_needed 4/5 VERIFIED + SC5 human-gated (12-VERIFICATION.md, covered_digest v3:sha256:9dfee6d8...); 12-UAT.md created with 2 human items",
-  "uat_state": "test 1 (D-03 SVG golden review): orchestrator SELF-TEST DONE — 8/8 goldens audited faithful at content level (text-layer + XML + corpus-table cross-check; seeds 42,43,44 visible in run_config.svg = compact=True fix pinned; zero mojibake/corruption; per-file table presented to maintainer 23:21) — awaiting maintainer one-word ratification (pass or issue). test 2 (WINDOWS #21 other-machine N=2 smoke): pending — needs multi-GPU machine (D-05) or maintainer skip-with-reason ruling (WINDOWS #21 keeps tracking either way)",
-  "phases_status": "7 STALE (12-01 touched covered pipeline/run_sweep.py — re-verify at phase-12 close per stale-cascade convention); 8/9/10 passed; 11 executed+passed-then-stale?; check verification.status of 8-11 at close (stale cascade)",
-  "test_baseline": "1581 pytest + 26 node green at fix-loop HEAD b010e65 (fixer full gate); regression gate re-ran full suite green at 18ca1aa window",
-  "human_pending": [
-    {"action": "D-03 verdict: ratify (or contest) the 8 SVG goldens — orchestrator self-test evidence already presented (8/8 faithful)", "context": "SC5 maintainer-verified clause; UAT test 1", "blocking": true},
-    {"action": "WINDOWS #21: run 9-step N=2 smoke on the multi-GPU machine (docs/multi-gpu.md) OR rule skip-with-reason so UAT can complete (ledger keeps tracking)", "context": "UAT test 2; D-05 machine roles — GB10 cannot do this", "blocking": true},
-    {"action": "Auto-push preference (offered twice): push 29 unpushed local commits to origin/autorun now or keep manual", "context": "standing question from prior HANDOFF", "blocking": false}
+  "timestamp": "2026-10-14T06:46:55.897Z",
+  "phase": "quick",
+  "phase_name": "manual-verification session (4 quick tasks + backlog)",
+  "phase_dir": ".planning/quick",
+  "plan": 0,
+  "task": 0,
+  "total_tasks": 4,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "261014-c2l custom model/dataset storage roots (--model_root/--dataset_root pipeline flags + TUI threading)", "status": "done", "commit": "451782d"},
+    {"id": 2, "name": "261014-dcl TUI presence/directory visibility (model_dirs env kernel + run-config-aware roots, models presence column, data-manager v-toggle full view)", "status": "done", "commit": "25eb849"},
+    {"id": 3, "name": "261014-f4w startup config file + run-artifact dirs (directories.json loader, --log_dir, slot-4 save/prefill, slot-1 storage overview, ctrl+o dir picker)", "status": "done", "commit": "4ade716"},
+    {"id": 4, "name": "261014-ir9 remove confidential Chaoba series from HEAD (registry 62->59, count re-pins across 8 test files, truthfulness edits)", "status": "done", "commit": "1f16b3d"}
   ],
-  "blockers": [],
+  "remaining_tasks": [
+    {"id": 5, "name": "Download 2 models + 2 datasets for the maintainer's 2x2 smoke run (AWAITING GO — maintainer was asked, not yet answered)", "status": "not_started"},
+    {"id": 6, "name": "TUI in-app model download feature (dnallm-adapted ModelScope path + default-list filter to dnallm-adapted models only) — routing decision pending: next quick task vs backlog", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "User decision pending: whether to start the 2x2 smoke downloads now (plant-dnabert-6mer, plant-dnamamba-6mer x 2 plant datasets) and whether the TUI model-download feature is a quick task or backlog item", "type": "human_action", "workaround": "ask again on resume; the question was fully specified before the pause"}
+  ],
   "async_jobs": [],
-  "decisions": [
-    {"decision": "compact=True on 8 height-1-row Inputs (Rule-1 deviation, own RED/GREEN)", "rationale": "root cause of param-Input invisibility = default Input (height 3, bordered) clipped to top border in height-1 rows; also phase-11 UAT advisory #2 root", "phase": "12"},
-    {"decision": "WR-03 fixed by refusal (re-merge with changed worker set that would strand stale cells)", "rationale": "minimal safe fix; identical-worker-set idempotency preserved with positive control", "phase": "12"},
-    {"decision": "I18N grep lock extended to U+3000-303F/U+FF00-FFEF (fullwidth+CJK punctuation)", "rationale": "WR-08 exposed fullwidth-paren literals invisible to the [一-鿿] range", "phase": "12"},
-    {"decision": "4 info findings stay open by design (IN-01..03 + new IN-04 from delta re-review)", "rationale": "phase-11 'IN 留账' precedent; none block", "phase": "12"},
-    {"decision": "Dependency audit: pyyaml+rich transitive-luck declarations filed as post-milestone todo (declare-pyyaml-rich-direct-deps.md); dnallm stays manual-install by design (not PyPI, read-only moving revision branch, GPU lane never CI)", "rationale": "platformdirs precedent vs zero-lock-change constraint during phase 12", "phase": "12"}
+  "human_actions_pending": [
+    {"action": "Answer the two pending questions (start downloads now? TUI model download: quick task or backlog?)", "context": "Both were asked in the final messages before pause", "blocking": true},
+    {"action": "git push origin autorun (20 unpushed commits: 8 feature + 12 docs; all plain messages, no attribution trailers)", "context": "Push is maintainer-owned; credentials verified working via gh", "blocking": false},
+    {"action": "Place Chaoba weights under /root/autodl-tmp/dnallmmark-data/models/Chaoba* for the private overlay to resolve", "context": "custom_models.json overlay already installed and verified (62 = 59 official + 3 custom)", "blocking": false}
   ],
-  "uncommitted_files": [" M .planning/config.json", " M .planning/state.json", "?? .planning/.gsd-allow-shrink", "?? .planning/milestone.lock", "?? .planning/todos/"],
-  "uncommitted_note": "config.json/state.json/milestone.lock/.gsd-allow-shrink are pause-work/session artifacts (pre-date this session's work, left untouched by executors); todos/ = the dependency-audit todo file (deliberately uncommitted planning artifact)",
-  "next_action": "1) Get maintainer D-03 verdict (test 1) — self-test evidence stands, likely a quick 'pass'. 2) Test 2 ruling: run N=2 on other machine later AND record blocked, or skip-with-reason to let UAT complete (WINDOWS #21 tracks it for /gsd-ship). 3) gsd_run query uat.complete-session 12-UAT.md. 4) If uat-passed --uat-only: frontmatter.set 12-VERIFICATION.md status passed. 5) Phase close: transition inline (phase.complete 12) THEN manually tick ROADMAP overview '- [ ] Phase 12' checkbox (phase.complete never ticks it — verified phases 8/10) + state.update pointer. 6) Stale re-verification: phase 7 (definitely stale — 12-01 touched run_sweep.py); check 8-11 verification.status, re-run gsd-verifier for each stale one (sentinel force-none first). 7) Milestone chain: /gsd-audit-milestone → /gsd-complete-milestone → /gsd-cleanup. 8) Reviewer-response report (gitignored). 9) Push 29 commits per user preference.",
-  "context_notes": "Sequential-dispatch discipline held all session (sentinel forced none before every dispatch — executors re-flip it). Working tree clean except session artifacts. Phase 12 chain this session: 12-03 resume (Task 2 + breadcrumb diagnosis) → 12-04 → 12-05 → review(8WR) → fixer → delta re-review → regression → verifier → UAT. All committed on autorun through 18ca1aa.",
-  "machine_roles": "GB10 dev/test only (single GPU). Full sweeps + multi-GPU validation on OTHER machines (D-05).",
-  "pushed": "origin/autorun at 156c497; local ahead by 29 commits (through 18ca1aa)"
+  "decisions": [
+    {"decision": "All model downloads go through dnallm's adaptation (ModelScope primary; all models live at zhangtaolab/* on ModelScope)", "rationale": "maintainer rule stated 2026-10-14: dnallm.models.model.download_model + source='modelscope' is the authority", "phase": "quick"},
+    {"decision": "Default registry list may contain ONLY dnallm-adapted models", "rationale": "maintainer rule; unadapted models must not appear in the default list (custom loading unrestricted)", "phase": "quick"},
+    {"decision": "Chaoba series removal is HEAD-only; git history retains the entries", "rationale": "maintainer accepted residual risk; weights were never committed (models/ gitignored)", "phase": "quick"},
+    {"decision": "Directory settings UX: slot 4 is the single editable entry (log-dir added, s saves to directories.json); slot 1 is read-only detection/storage overview", "rationale": "maintainer chose '4 设置 + 1 检测' via AskUserQuestion", "phase": "quick"},
+    {"decision": "directories.json at ~/.config/dnallmmark (XDG config root, same as custom registries); precedence CLI flag > file > default", "rationale": "consistency with existing registry_loader conventions", "phase": "quick"},
+    {"decision": "Everything heavy lives under /root/autodl-tmp (models/datasets/finetuned/logs at dnallmmark-data/, caches at .cache/)", "rationale": "system disk is 30G; maintainer directive repeated twice", "phase": "quick"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Ask the maintainer the two pending questions (downloads now? model-download feature routing). If downloads are a go: uv pip install modelscope into the venv, then use dnallm.models.model.download_model with the ModelScope snapshot_download to fetch zhangtaolab/plant-dnabert-6mer and zhangtaolab/plant-dnamamba-6mer into /root/autodl-tmp/dnallmmark-data/models/<Model_path>; datasets via TUI slot 3 queue or direct fetch; then the 2x2 smoke runs from TUI slot 4 (p preview, enter gate) or CLI run_sweep.",
+  "context_notes": "Machine: autodl 4xRTX5090, 2.1T data disk. Env fully provisioned this session: uv 0.13.0, .venv with data/dev/tui/gpu groups + dnallm 1.2.1 (editable from ../DNALLM main) + 7 light deps; node v26. ~/.bashrc pins UV/PIP/HF/MODELSCOPE/TORCH caches to /root/autodl-tmp/.cache. ~/.claude/settings.json has attribution disabled (commit/pr/sessionUrl) per maintainer. Git identity Tao Zhang <forrest_zhang@163.com>, gh auth forrestzhang verified. Local XDG layer: directories.json (five roots at dnallmmark-data/, verified honored by bare run_sweep dry-run) + custom_models.json (private Chaoba, verified 62-entry merge). Test baseline: full suite has exactly 10 documented pre-existing failures (5 stale schema/determinism pins after data commit 9bc68e1 + 5 root-user chmod sims) plus one known snapshot flake — see .planning/quick/261014-c2l-*/deferred-items.md and 261014-dcl-*/deferred-items.md; anything beyond that set is a NEW failure. GSD pattern used throughout: quick tasks with planner(opus)->executor(sonnet), sequential executor dispatch (worktree base-check always degrades because autorun has unpushed commits), orchestrator does STATE.md/docs commits."
 }
