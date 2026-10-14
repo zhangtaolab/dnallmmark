@@ -1,34 +1,48 @@
 ---
 phase: 07
 review: 07-REVIEW.md
-fix_dispatch: 2026-10-11 16:18 CST
-critical: 1
-warning: 6
-info: 5
-fixed: 7
-open: 5
-wont_fix: 0
+titles: json
+findings:
+  - id: CR-01
+    severity: critical
+    disposition: open
+    title: "Schema-valid custom entries crash `run_finetune.py` with uncaught `KeyError` — required-field sets are inconsistent across the overlay chain"
+  - id: WR-01
+    severity: warning
+    disposition: open
+    title: "The 5 repo-ID fixes in `models_info.json` were not propagated — the committed display data (and the public Models page) still carries the stale IDs"
+  - id: WR-02
+    severity: warning
+    disposition: open
+    title: "Empty-string CLI values for the new directory flags crash or silently degenerate — inconsistent with both `output_dir`'s handling and `directories_config`'s own drop-empty policy"
+  - id: IN-01
+    severity: info
+    disposition: open
+    title: "Stale \"62/50\" official-entry count in the schema `$comment` (registry is 59 since 261014-ir9)"
+  - id: IN-02
+    severity: info
+    disposition: open
+    title: "Duplicated `gpu_memory_override = args.gpu_memory` assignment (pre-existing at diff_base)"
+  - id: IN-03
+    severity: info
+    disposition: open
+    title: "Pre-existing registry data inconsistencies in fields adjacent to this change (flagged for the maintainer since the registry was just edited)"
+open: 6
+total: 6
+recorded: 2026-10-14T11:18:42.472Z
 ---
 
-# Phase 7 Review Disposition
+# Phase 07: Code Review Disposition
 
-Source: `07-REVIEW.md` (commit 2987dca) + fix dispatch (commits 3145a74..406e1be, dispositions inline in REVIEW.md at 67027b2).
+| Finding | Severity | Disposition | Source |
+|---------|----------|-------------|--------|
+| CR-01 | critical | open | - |
+| WR-01 | warning | open | - |
+| WR-02 | warning | open | - |
+| IN-01 | info | open | - |
+| IN-02 | info | open | - |
+| IN-03 | info | open | - |
 
-| Finding | Severity | Summary | Disposition |
-|---------|----------|---------|-------------|
-| CR-01 | Critical | save_to_json num_tokens=0 ZeroDivisionError → silent retrain loop, lost flops_report | **fixed** (3145a74) — both guards `is not None and > 0`; regression test pins null-extrapolation output |
-| WR-01 | Warning | subset JSON `null` collides with unreadable sentinel, bypasses startup validation | **fixed** (7d731d7) — distinct `object()` sentinel; `None` payload joins the non-object abort tests |
-| WR-02 | Warning | empty eval-subset ID list = full test-split evaluation, breaks comparability | **fixed** (c21a34e) — child validator refuses empty lists by name; audit omits unified==0 tasks with WARNING; `apply_eval_subset` unchanged (unreachable post-validation) |
-| WR-03 | Warning | test_sweep.py unpinned ambient overlay env → machine-dependent frozen-order tests | **fixed** (d6f0df8) — module-scope autouse fixture pins both env vars; verified vs hostile ambient overlay |
-| WR-04 | Warning | chmod-0o000 test fails spuriously under root CI | **fixed** (6e1f7b8) — root skip guard + finally restore + import os |
-| WR-05 | Warning | `--cache_dir ""` resolves to CWD and threads HF_HOME=repo root | **fixed** (d50510a) — twin empty-value guard, collect-all, names flag + raw value |
-| WR-06 | Warning | registry-key vs Dataset_name divergence silently fails cells outside subset-file runs | **fixed** (406e1be) — `_validate_dataset_name_alignment` refuses at sweep start over the overlay-merged view; join-on-Dataset_name rejected as non-surgical |
-| IN-01 | Info | unused `samples` variable (run_finetune.py:1454) | open |
-| IN-02 | Info | duplicate gpu_memory_override assignment (run_finetune.py:708-709) | open |
-| IN-03 | Info | README CLI docs missing the four new sweep flags (+peft/variant/fraction) | open |
-| IN-04 | Info | CLAUDE.md claims 3.11+ vs README badge 3.13+ | open |
-| IN-05 | Info | CPU-run max_mem_gb records 0.0 vs "records nulls" docstring | open |
-
-**Post-fix gates:** `make lint` ✓ · `make typecheck` ✓ · `make test-fast` 557 passed / 1 deselected ✓
-
-Info findings (5) remain open by scope decision (maintainer chose CR+WR fix scope, 2026-10-11 16:10 CST).
+Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
+Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
+Re-running the gate keeps every row it can. A row the current review no longer reports is kept and its Source cell flagged, so a finding does not leave this record silently. ONE exception: when a finding id is REUSED by a different finding, the earlier decision cannot keep a row — the id is taken — and it is dropped. A RECORDED decision (anything but `open`) is named on the console when that happens; a row still at `open` is replaced silently, because `open` records no decision to lose.
