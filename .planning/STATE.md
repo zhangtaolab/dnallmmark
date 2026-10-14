@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: TUI任务
-current_phase: 12
-current_phase_name: Multi-GPU Orchestration & Console Hardening
-current_plan: Not started
-status: planning
-stopped_at: Phase 08 complete, ready to plan Phase 12
-last_updated: "2026-10-14T14:23:09.154Z"
+current_phase: 09
+current_phase_name: custom-model-dataset-onboarding
+current_plan: 1
+status: executing
+stopped_at: Completed 10-07-PLAN.md (CR-01 gap closure)
+last_updated: "2026-10-14T15:52:15.511Z"
 last_activity: 2026-10-14
-last_activity_desc: Phase 08 complete, transitioned to Phase 12
-state_head: 783f43ad0ce3d0e2fefa0a1f9bb1776b417ef7dd
+last_activity_desc: Phase 09 execution started
+state_head: 00f3e196a25e1393dd62699c65b201f6d6541af1
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 39
-  completed_plans: 39
+  total_plans: 40
+  completed_plans: 40
   percent: 83
 ---
 
@@ -26,15 +26,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-11)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 08 — TUI Foundation (env check + selection)
+**Current focus:** Phase 09 — custom-model-dataset-onboarding
 
 ## Current Position
 
-Phase: 12 — Multi-GPU Orchestration & Console Hardening
-Current Plan: Not started
-Total Plans in Phase: 7
-Status: Ready to plan
-Last activity: 2026-10-14 — Phase 08 complete, transitioned to Phase 12
+Phase: 09 (custom-model-dataset-onboarding) — EXECUTING
+Current Plan: 1
+Total Plans in Phase: 6
+Status: Executing Phase 09
+Last activity: 2026-10-14 — Phase 09 execution started
 
 Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 plans executed — all 38 requirements Complete)
 
@@ -102,6 +102,7 @@ Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 
 | Phase quick P261014-c2l | 28 min | 3 tasks | 11 files |
 | Phase quick P261014-dcl | 104 min | 3 tasks | 29 files |
 | Phase quick-261014-f4w P01 | 92 min | 3 tasks | 22 files |
+| Phase 10 P10-07 | 9 min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -233,6 +234,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase quick-261014-f4w]: 261014-f4w: the DEFAULT output_root literal doubles as the unset signal on the save side (an all-defaults save writes five empty strings, loads back as {}); the seeding fills output_root only at the DEFAULT literal (the str-typed conflation, documented)
 - [Phase quick-261014-f4w]: 261014-f4w probe-pinned textual 8.2.8 picker seams: filter_paths METHOD is the directories-only mechanism; enter dispatches the name-based handler per MRO class (prevent_default() required or the modal closes on first enter); ctrl+o falls through a focused Input (a bare letter would type); rich Text spans cannot carry $tokens on the Static path (theme-resolved at render, the nav.py precedent)
 - [Phase quick-261014-ir9]: 261014-ir9: confidential Chaoba series removed HEAD-only (official registry 62 -> 59) — git history retains the entries by explicit maintainer decision, private loading stays via the local custom_models.json overlay; every real-registry count pin re-based to 59/60/8850/2950 incl. 14 sweep-caught sites the planning enumeration missed; count-embedding test names renamed to their 59 forms (zero external references)
+- [Phase 10]: [Phase 10]: 10-07 CR-01 reroute: _datasets_base resolves constructor param > run_config.resolve_dirs(load_state()).dataset_root_abs (read per call, never memoized) > repo pipeline/ — the _models_base twin; the directories.json file tier survives INSIDE the chain via load_state's seeding, so all four L6H-03 pins held byte-unmodified
+- [Phase 10]: [Phase 10]: 10-07 hermeticity: the queue test module's autouse fixture pins BOTH roots (DNALLMMARK_TUI_CONFIG_DIR + DNALLMMARK_TUI_STATE_DIR via tmp_path_factory) — post-reroute every _datasets_base() call reads the state root, and the maintainer box carries a live run_config.json
 
 ### Pending Todos
 
@@ -268,8 +271,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T14:12:30Z
-Stopped at: Phase 08 complete, ready to plan Phase 12
+Last session: 2026-10-14T15:52:15.433Z
+Stopped at: Completed 10-07-PLAN.md (CR-01 gap closure)
 Resume file: None
 
 ## Operator Next Steps
