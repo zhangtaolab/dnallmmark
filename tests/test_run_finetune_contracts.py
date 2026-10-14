@@ -2689,14 +2689,22 @@ def test_storage_root_flags_declared_in_parse_args():
 def test_storage_root_unpack_precedes_model_loop():
     """The __main__ block unpacks both flags before the model loop —
     the override-aware bases computed downstream need the values in
-    scope before any resolution site runs."""
+    scope before any resolution site runs. Amended 261014-f4w (F4W-01):
+    the unpacks now merge the directories.json startup file through
+    ``directories_config.effective`` (explicit CLI flag > file key >
+    built-in default) — the literal ``= args.X`` form this test pinned
+    at 261014-c2l is exactly what this plan replaced."""
     src = RUN_FINETUNE.read_text(encoding="utf-8")
-    model_unpack = statement_index(src, "model_root = args.model_root")
+    model_unpack = statement_index(
+        src, 'model_root = directories_config.effective('
+             'args.model_root, "model_root")')
     dataset_unpack = statement_index(
-        src, "dataset_root = args.dataset_root")
-    assert model_unpack != -1, "no model_root = args.model_root unpack"
+        src, 'dataset_root = directories_config.effective(')
+    assert model_unpack != -1, (
+        "no directories_config.effective model_root unpack (261014-f4w)"
+    )
     assert dataset_unpack != -1, (
-        "no dataset_root = args.dataset_root unpack"
+        "no directories_config.effective dataset_root unpack"
     )
     model_loop_idx = src.find("models_info.items():")
     assert model_loop_idx != -1, "no model loop found"
@@ -2760,3 +2768,144 @@ def test_override_aware_bases_rewire_both_resolution_sites():
     # ever joins the root and the registry value
     assert "model_root.rstrip(os.sep) + os.sep" in src
     assert "dataset_root.rstrip(os.sep) + os.sep" in src
+
+
+# =====================================================================
+# --log_dir + the directories.json startup read (261014-f4w, F4W-01/02)
+# =====================================================================
+
+
+def test_log_dir_flag_declared_in_parse_args():
+    """--log_dir exists with type=str, default None, and help naming the
+    error-log semantics: {model_name}_error_log.txt lands under the
+    given dir; an absent flag means ./logs under the script's working
+    directory, byte-identical to the pre-change hardcoded site."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    idx = src.find('"--log_dir"')
+    assert idx != -1, (
+        "no --log_dir argument in parse_args() — the error-log override "
+        "has no entry point (261014-f4w)"
+    )
+    block = src[idx:idx + 900]
+    assert "type=str" in block, "--log_dir must be type=str"
+    assert "default=None" in block, (
+        "--log_dir must default to None — an absent flag keeps the ./logs "
+        "site byte-identical"
+    )
+    assert "_error_log.txt" in block, (
+        "--log_dir's help must name the error-log file it relocates"
+    )
+    assert "./logs" in block, (
+        "--log_dir's help must state the absent-flag default"
+    )
+
+
+def test_error_log_site_uses_the_effective_log_dir():
+    """F4W-02: the hardcoded './logs/' makedirs/open pair is replaced
+    by the effective-variable form — log_base derives from log_dir when
+    set and './logs' otherwise (ADD-ALONGSIDE: absent everywhere
+    produces the identical './logs' directory and
+    './logs/{model_name}_error_log.txt' path string as today)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    assert 'os.makedirs("./logs/", exist_ok=True)' not in src, (
+        "the hardcoded ./logs makedirs pair is gone from the error-log "
+        "site (261014-f4w)"
+    )
+    assert 'f"./logs/{model_name}_error_log.txt"' not in src, (
+        "the hardcoded ./logs open target is gone from the error-log site"
+    )
+    base_idx = statement_index(
+        src, 'log_base = log_dir if log_dir is not None else "./logs"')
+    assert base_idx != -1, (
+        'no "log_base = log_dir if log_dir is not None else "./logs"" '
+        "effective derivation at the error-log site"
+    )
+    assert "os.makedirs(log_base, exist_ok=True)" in src, (
+        "the makedirs call consumes the effective log dir"
+    )
+    join_idx = statement_index(
+        src,
+        "os.path.join(log_base, f\"{model_name}_error_log.txt\")")
+    assert join_idx != -1, (
+        'the open target joins the effective log base with '
+        '"{model_name}_error_log.txt" (the byte-identical string when '
+        'absent everywhere)'
+    )
+    assert base_idx < join_idx, (
+        "the effective derivation must precede the open that consumes it"
+    )
+
+
+def test_directories_config_import_precedes_the_cache_env_block():
+    """The sibling ``import directories_config`` sits at the module top
+    BEFORE the cache-env block — the block's file branch needs the
+    loader in scope (the registry_loader sibling-import mechanics:
+    sys.path[0] is the script dir from interpreter startup)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    import_idx = statement_index(src, "import directories_config")
+    assert import_idx != -1, (
+        "no import directories_config at the module top (261014-f4w)"
+    )
+    cache_block_idx = src.find("_cache_dir = _peek_cache_dir()")
+    assert cache_block_idx != -1, "no cache-env block found"
+    assert import_idx < cache_block_idx, (
+        "the directories_config import must precede the cache-env block "
+        "that consumes it"
+    )
+
+
+def test_cache_env_block_carries_the_file_branch_in_precedence_order():
+    """F4W-01: the module-top cache block reads the file BETWEEN the
+    argv pre-scan and the HF_HOME default branch — precedence --cache_dir
+    flag > directories.json cache_dir key > HF_HOME env > ../../cache.
+    The STRICT load is contract: a malformed file must abort the child
+    at startup, never silently redirect its caches."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    prescan_idx = src.find("_cache_dir = _peek_cache_dir()")
+    file_branch_idx = statement_index(
+        src,
+        "_cache_dir = directories_config.load_directories().get("
+        '"cache_dir")')
+    hf_home_idx = src.find('elif "HF_HOME" not in os.environ:')
+    assert file_branch_idx != -1, (
+        "no directories.json cache_dir file branch in the cache-env block"
+    )
+    assert prescan_idx != -1 and hf_home_idx != -1, (
+        "the pre-scan and the HF_HOME default branch must both exist"
+    )
+    assert prescan_idx < file_branch_idx < hf_home_idx, (
+        "the file branch sits between the argv pre-scan and the HF_HOME "
+        "default branch (the precedence order)"
+    )
+    assert "load_directories_tolerant(" not in src[:hf_home_idx], (
+        "the cache-env block must use the STRICT load — a malformed "
+        "startup config aborts the child, never silently degrades (the "
+        "call form is asserted; the deliberate why-comment may name the "
+        "tolerant twin)"
+    )
+
+
+def test_unpack_block_merges_effective_for_all_four_dir_settings():
+    """F4W-01: the __main__ unpack block merges effective() for
+    model_root / dataset_root / output_dir / log_dir — the four
+    file-configurable directory settings, one merge vocabulary."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    for statement in (
+        'output_dir = directories_config.effective(',
+        'model_root = directories_config.effective(',
+        'dataset_root = directories_config.effective(',
+        'log_dir = directories_config.effective(',
+    ):
+        idx = statement_index(src, statement)
+        assert idx != -1, (
+            f"no {statement!r} unpack — the dir settings merge the "
+            "startup file through the ONE effective seam"
+        )
+    # the unpack block stays BEFORE the model loop consuming the values
+    model_loop_idx = src.find("models_info.items():")
+    log_unpack_idx = statement_index(
+        src, "log_dir = directories_config.effective(")
+    assert log_unpack_idx < model_loop_idx, (
+        "the log_dir effective unpack must precede the model loop whose "
+        "error-log site consumes it"
+    )

@@ -255,6 +255,25 @@ Failure boundary:
     in every manifest cell via sweep_flags (D-13 — the storage location
     of a benchmark cell's inputs is provenance worth keeping).
 
+--log_dir + the directories.json startup read (261014-f4w, F4W-01/F4W-02):
+    ``--log_dir`` joins the underscore pass-through family verbatim —
+    the directory under which the child writes
+    ``{model_name}_error_log.txt`` (absent = the child's own ``./logs``
+    default governs, byte-identical). At startup ``main()`` reads the
+    user-owned ``directories.json`` (``pipeline/directories_config``,
+    the ONE shared loader) and merges its five keys — model_root /
+    dataset_root / output_root / log_dir / cache_dir — with the flags:
+    precedence explicit CLI flag > file key > built-in default at every
+    consumer, ONE merge point. A bare ``run_sweep.py`` with a populated
+    file threads the file's values exactly as if passed as flags
+    (resolved-absolute argv elements + manifest recording); with NO file
+    and NO flags every path resolves byte-identically to today. A
+    malformed present file aborts naming the path (fail-loud); the
+    ``--output-root`` argparse default is now None with ``./finetuned``
+    as the documented fallback so the file's ``output_root`` key can
+    fill it (the effective value feeds the SAME
+    ``Path(...).resolve()`` line).
+
 FUTURE E2E note (documented here, deliberately NOT executed — D-05):
     On-disk dataset directories are DOUBLE-NESTED after a fresh unzip of
     a suite archive (the zip extracts as ``suite-name/suite-name/task-dir``
@@ -284,6 +303,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import directories_config  # sibling module (the F4W-01 startup config, same stdlib-only purity)
 import registry_loader  # sibling module (pipeline/ on sys.path, the same import mechanics tests use for run_sweep itself)
 
 PIPELINE_DIR = Path(__file__).resolve().parent
@@ -338,9 +358,11 @@ def parse_args():
     parser.add_argument(
         "--output-root",
         type=str,
-        default="./finetuned",
+        default=None,
         help="Sweep output root (default: ./finetuned, resolved absolute; "
-             "cells land under {root}/{model}/{task}/seed_{seed}/)"
+             "cells land under {root}/{model}/{task}/seed_{seed}/). An "
+             "absent flag falls back to directories.json's output_root "
+             "key, then ./finetuned (261014-f4w)"
     )
 
     parser.add_argument(
@@ -448,8 +470,9 @@ def parse_args():
         default=None,
         help="Cache directory threaded to every child as --cache_dir "
              "<resolved absolute path> (sets HF_HOME/MS_CACHE_HOME in the "
-             "child via its argv pre-scan; absent = the child's env/default "
-             "resolution governs)"
+             "child via its argv pre-scan; absent = the directories.json "
+             "cache_dir key, then the child's env/default resolution "
+             "governs)"
     )
 
     parser.add_argument(
@@ -459,7 +482,8 @@ def parse_args():
         help="Model storage root threaded to every child as --model_root "
              "<resolved absolute path> — the root under which the child "
              "resolves registry Model_path values verbatim (absent = the "
-             "child's script-dir resolution governs)"
+             "directories.json model_root key, then the child's "
+             "script-dir resolution governs)"
     )
 
     parser.add_argument(
@@ -469,8 +493,19 @@ def parse_args():
         help="Dataset storage root threaded to every child as "
              "--dataset_root <resolved absolute path> — the root under "
              "which the child resolves registry Dataset_path values "
-             "verbatim (absent = the child's script-dir resolution "
-             "governs)"
+             "verbatim (absent = the directories.json dataset_root key, "
+             "then the child's script-dir resolution governs)"
+    )
+
+    parser.add_argument(
+        "--log_dir",
+        type=str,
+        default=None,
+        help="Error-log directory threaded to every child as --log_dir "
+             "<resolved absolute path> — the directory under which the "
+             "child writes {model_name}_error_log.txt (261014-f4w; "
+             "absent = the directories.json log_dir key, then the "
+             "child's own ./logs default governs, byte-identical)"
     )
 
     parser.add_argument(
@@ -1105,7 +1140,7 @@ def build_argv(model, task, seed, output_root, peft="none",
                train_fraction=None, subset_file=None,
                effective_batch_size=None, num_train_epochs=None,
                cache_dir=None, config_variant="none",
-               model_root=None, dataset_root=None):
+               model_root=None, dataset_root=None, log_dir=None):
     """Build the run_finetune.py argv for one cell — a LIST, never a string.
 
     Under ``peft`` lora/ia3 (06-02) the cell's model is the ALIAS
@@ -1137,10 +1172,11 @@ def build_argv(model, task, seed, output_root, peft="none",
     Under the four pass-through flags (07-03, PIPE-02) each PRESENT flag
     appends exactly two LIST elements (flag then ``str(value)``) —
     ``--subset_file``, ``--effective_batch_size``,
-    ``--num_train_epochs``, ``--cache_dir`` — followed by the two
-    storage-root twins (261014-c2l) ``--model_root`` then
-    ``--dataset_root`` in the pinned tail order (model-before-dataset,
-    the --target_model-before---target_dataset axis order). An ABSENT
+    ``--num_train_epochs``, ``--cache_dir`` — followed by the pinned
+    storage tail (261014-c2l + 261014-f4w) ``--model_root`` then
+    ``--dataset_root`` then ``--log_dir`` (model-before-dataset, the
+    --target_model-before---target_dataset axis order; the log dir
+    joins last as the newest family member). An ABSENT
     flag contributes ZERO elements, so a no-flag sweep builds the exact
     pre-07-03 argv (D-12/D-13 absent parity). No gradient-accumulation
     arithmetic lives here: GA = max(1, N // bs_new) is the child's
@@ -1178,6 +1214,10 @@ def build_argv(model, task, seed, output_root, peft="none",
         dataset_root (str | None): resolved ABSOLUTE dataset storage
             root appended as ``--dataset_root <path>`` when given — the
             Dataset_path twin.
+        log_dir (str | None): resolved ABSOLUTE error-log directory
+            appended as ``--log_dir <path>`` when given (261014-f4w) —
+            the directory under which the child writes
+            ``{model_name}_error_log.txt``.
 
     Returns:
         list[str]: the argv, each flag and value a separate element.
@@ -1210,6 +1250,8 @@ def build_argv(model, task, seed, output_root, peft="none",
         argv += ["--model_root", str(model_root)]
     if dataset_root is not None:
         argv += ["--dataset_root", str(dataset_root)]
+    if log_dir is not None:
+        argv += ["--log_dir", str(log_dir)]
     return argv
 
 
@@ -1217,16 +1259,17 @@ def launch_subprocess(model, task, seed, output_root, peft="none",
                       train_fraction=None, subset_file=None,
                       effective_batch_size=None, num_train_epochs=None,
                       cache_dir=None, config_variant="none",
-                      model_root=None, dataset_root=None):
+                      model_root=None, dataset_root=None, log_dir=None):
     """Default executor: run run_finetune.py for one cell.
 
     cwd is pinned to PIPELINE_DIR because finetune_config.yaml and the
     ./finetuned default are CWD-relative in run_finetune.py (research
     Pitfall 3); shell is never used (T-03-10). The four pass-through
     flags (07-03) forward verbatim, ``config_variant`` (11-01, D-18)
-    threads as the peft-style aliasing twin, and the two storage-root
-    flags (261014-c2l) forward as resolved ABSOLUTE paths — the child is
-    the authoritative validator in all cases.
+    threads as the peft-style aliasing twin, the two storage-root
+    flags (261014-c2l) and the error-log dir (261014-f4w) forward as
+    resolved ABSOLUTE paths — the child is the authoritative validator
+    in all cases.
 
     Raises:
         subprocess.CalledProcessError: the run exited nonzero (check=True).
@@ -1235,7 +1278,8 @@ def launch_subprocess(model, task, seed, output_root, peft="none",
     return subprocess.run(
         build_argv(model, task, seed, output_root, peft, train_fraction,
                    subset_file, effective_batch_size, num_train_epochs,
-                   cache_dir, config_variant, model_root, dataset_root),
+                   cache_dir, config_variant, model_root, dataset_root,
+                   log_dir),
         cwd=PIPELINE_DIR,
         check=True,
     )
@@ -1594,7 +1638,37 @@ def main():
     registry_dir = (
         Path(args.registry_dir).resolve() if args.registry_dir else PIPELINE_DIR
     )
-    output_root = Path(args.output_root).resolve()
+    # F4W-01 startup read (261014-f4w): the user-owned directories.json
+    # seeds the five directory settings for BARE invocations — ONE merge
+    # point, precedence explicit CLI flag > file key > built-in default
+    # (ADD-ALONGSIDE: absent everywhere keeps every consumer's default
+    # branch byte-identical, so Path("./finetuned").resolve() below is
+    # the identical expression applied to the effective value). A
+    # malformed file aborts here naming the path (the fail-loud policy —
+    # a silently-ignored corrupt file would redirect a multi-day run to
+    # the wrong roots).
+    file_dirs = directories_config.load_directories()
+    output_root_arg = (
+        args.output_root if args.output_root is not None
+        else (file_dirs.get("output_root") or "./finetuned")
+    )
+    cache_dir_arg = (
+        args.cache_dir if args.cache_dir is not None
+        else file_dirs.get("cache_dir")
+    )
+    model_root_arg = (
+        args.model_root if args.model_root is not None
+        else file_dirs.get("model_root")
+    )
+    dataset_root_arg = (
+        args.dataset_root if args.dataset_root is not None
+        else file_dirs.get("dataset_root")
+    )
+    log_dir_arg = (
+        args.log_dir if args.log_dir is not None
+        else file_dirs.get("log_dir")
+    )
+    output_root = Path(output_root_arg).resolve()
     # WR-14: a PROVIDED --models/--tasks/--seeds whose value strips to
     # nothing (e.g. --models , --models "" --seeds ,) must abort, not
     # degrade. An empty filter list is falsy, which _validate_filters'
@@ -1702,6 +1776,16 @@ def main():
             f"--dataset_root {args.dataset_root!r} is empty — refusing "
             "to thread a pathless flag"
         )
+    if args.log_dir is not None and not args.log_dir.strip():
+        # WR-05 twin (261014-f4w): the --model_root twin over the
+        # error-log directory — an empty --log_dir would thread the CWD,
+        # scattering {model_name}_error_log.txt files across the launch
+        # directory. (File values are stripped-nonempty by the loader,
+        # so this and its siblings remain FLAG-form guards.)
+        flag_problems.append(
+            f"--log_dir {args.log_dir!r} is empty — refusing to thread "
+            "a pathless flag"
+        )
     # T-11-01-03: variant and PEFT never compose. Two alias suffixes
     # cannot both name one cell (the child would take --save_model_name
     # from one lane while the driver recorded the other's dir); the
@@ -1723,16 +1807,20 @@ def main():
         if args.subset_file is not None else None
     )
     cache_dir_abs = (
-        str(Path(args.cache_dir).resolve())
-        if args.cache_dir is not None else None
+        str(Path(cache_dir_arg).resolve())
+        if cache_dir_arg is not None else None
     )
     model_root_abs = (
-        str(Path(args.model_root).resolve())
-        if args.model_root is not None else None
+        str(Path(model_root_arg).resolve())
+        if model_root_arg is not None else None
     )
     dataset_root_abs = (
-        str(Path(args.dataset_root).resolve())
-        if args.dataset_root is not None else None
+        str(Path(dataset_root_arg).resolve())
+        if dataset_root_arg is not None else None
+    )
+    log_dir_abs = (
+        str(Path(log_dir_arg).resolve())
+        if log_dir_arg is not None else None
     )
     sweep_flags = {}
     if subset_file_abs is not None:
@@ -1743,18 +1831,22 @@ def main():
         sweep_flags["num_train_epochs"] = args.num_train_epochs
     if cache_dir_abs is not None:
         sweep_flags["cache_dir"] = cache_dir_abs
-    # Storage-root overrides (261014-c2l) join sweep_flags exactly like
-    # the pass-through family: present keys both thread into every child
-    # argv (run_matrix's launch_kwargs partial) and record in every
-    # manifest cell (the **flags merge in _manifest_payload, D-13) — a
-    # storage-root override silently changes WHICH model weights /
-    # dataset files a benchmark cell consumed, so the manifest is the
-    # provenance record (T-c2l-02). Absent flags contribute zero argv
-    # elements and zero manifest keys.
+    # Storage-root overrides (261014-c2l) and the log-dir override
+    # (261014-f4w) join sweep_flags exactly like the pass-through family:
+    # present keys both thread into every child argv (run_matrix's
+    # launch_kwargs partial) and record in every manifest cell (the
+    # **flags merge in _manifest_payload, D-13) — a storage-root override
+    # silently changes WHICH model weights / dataset files a benchmark
+    # cell consumed, and a log-dir override changes where its per-model
+    # error logs land, so the manifest is the provenance record (T-c2l-02
+    # extended). Absent-everywhere (no flag AND no file key) contributes
+    # zero argv elements and zero manifest keys.
     if model_root_abs is not None:
         sweep_flags["model_root"] = model_root_abs
     if dataset_root_abs is not None:
         sweep_flags["dataset_root"] = dataset_root_abs
+    if log_dir_abs is not None:
+        sweep_flags["log_dir"] = log_dir_abs
     # 11-01 (D-18): normalize the variant axis once — args stores None
     # (absent) while every downstream consumer (enumerate_matrix,
     # build_argv, run_matrix, the from-failures join) speaks "none". A

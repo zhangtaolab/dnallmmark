@@ -65,6 +65,7 @@ render.
 
 import asyncio
 import contextlib
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -81,6 +82,17 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 for _root in (str(_REPO_ROOT / "pipeline"), str(_REPO_ROOT)):
     if _root not in sys.path:
         sys.path.insert(0, _root)
+
+# ===== F4W startup-config pin (the tests/conftest.py autouse twin) =====
+# Script mode also lacks the root conftest's autouse
+# DNALLMMARK_TUI_CONFIG_DIR pin, and the golden drive must stay
+# machine-independent: a maintainer's real ~/.config/dnallmmark/
+# directories.json must never leak into a golden (the fakes hold the
+# rendered values, but the module import surface stays honest too).
+# Under pytest this assignment is harmless — the autouse fixture
+# re-pins per test.
+os.environ["DNALLMMARK_TUI_CONFIG_DIR"] = str(
+    Path(__file__).parent / "__snapshots__" / ".config-pin")
 
 from env_smoke import CheckResult
 from textual.widgets import Input

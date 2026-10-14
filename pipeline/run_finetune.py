@@ -1,6 +1,8 @@
 import os
 import sys
 
+import directories_config  # sibling module (sys.path[0] = pipeline/ when run as a script, the registry_loader import mechanics at line 42)
+
 
 def _peek_cache_dir():
     """Extract --cache_dir from argv before argparse runs.
@@ -18,8 +20,16 @@ def _peek_cache_dir():
     return None
 
 
-# Resolve cache dir: --cache_dir flag > existing HF_HOME env > default ../../cache
+# Resolve cache dir (261014-f4w precedence): --cache_dir flag >
+# directories.json cache_dir key > existing HF_HOME env > default
+# ../../cache. The STRICT load is deliberate (load_directories_tolerant
+# would be wrong here): a malformed startup config must abort this
+# child at startup naming the path, never silently redirect its caches.
+# The absent-file-plus-absent-flag branch keeps the env/default
+# behavior below expression-for-expression (byte-identical).
 _cache_dir = _peek_cache_dir()
+if _cache_dir is None:
+    _cache_dir = directories_config.load_directories().get("cache_dir")
 if _cache_dir:
     os.environ["HF_HOME"] = _cache_dir
     os.environ["MS_CACHE_HOME"] = _cache_dir
@@ -172,6 +182,16 @@ def parse_args():
              "of the registry value — no prefix stripping). Absent: "
              "resolution against this script's own directory, "
              "byte-identical to the default."
+    )
+
+    parser.add_argument(
+        "--log_dir",
+        type=str,
+        default=None,
+        help="Directory under which per-model error logs "
+             "({model_name}_error_log.txt) are written. Absent: ./logs "
+             "under this script's working directory, byte-identical to "
+             "the default (261014-f4w)."
     )
 
     parser.add_argument(
@@ -744,7 +764,12 @@ if __name__ == "__main__":
     gpu_memory_override = args.gpu_memory
     mem_ratio = args.mem_ratio
     effective_batch_size = args.effective_batch_size
-    output_dir = args.output_dir
+    # 261014-f4w (F4W-01): the four directory settings merge the
+    # directories.json startup file — explicit CLI flag > file key >
+    # built-in default (directories_config.effective implements the
+    # first two; a None return keeps every default branch below
+    # byte-identical).
+    output_dir = directories_config.effective(args.output_dir, "output_root")
     save_model_name = args.save_model_name
     gradient_checkpointing = args.gradient_checkpointing
     ddp_find_unused_parameters = args.ddp_find_unused_parameters
@@ -754,8 +779,10 @@ if __name__ == "__main__":
     num_train_epochs = args.num_train_epochs
     config_variant = args.config_variant
     train_fraction = args.train_fraction
-    model_root = args.model_root
-    dataset_root = args.dataset_root
+    model_root = directories_config.effective(args.model_root, "model_root")
+    dataset_root = directories_config.effective(
+        args.dataset_root, "dataset_root")
+    log_dir = directories_config.effective(args.log_dir, "log_dir")
 
     # Unified eval subsets (F7 Q3 / REV-07): validate the --subset_file
     # map fail-fast BEFORE any model load — the run_sweep._validate_filters
@@ -993,9 +1020,17 @@ if __name__ == "__main__":
         tokenizer_type = model_row["Tokenizer"]
         mean_token_len = model_row["Mean_token_length"]
 
-        # Open error log file
-        os.makedirs("./logs/", exist_ok=True)
-        with open(f"./logs/{model_name}_error_log.txt", "w") as error_log:
+        # Open error log file — the effective log dir (261014-f4w,
+        # F4W-02): --log_dir flag > directories.json log_dir key > the
+        # ./logs default (ADD-ALONGSIDE, the 261014-c2l discipline: when
+        # absent everywhere this produces the identical "./logs"
+        # directory and "./logs/{model_name}_error_log.txt" path string
+        # as the former hardcoded pair).
+        log_base = log_dir if log_dir is not None else "./logs"
+        os.makedirs(log_base, exist_ok=True)
+        with open(
+            os.path.join(log_base, f"{model_name}_error_log.txt"), "w"
+        ) as error_log:
 
             # Config-variant reload (SC-6 lanes, 06-05): --config-variant
             # <name> loads the variant's YAML for ANY model at this exact

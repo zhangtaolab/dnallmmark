@@ -2051,7 +2051,7 @@ def test_build_argv_absent_flags_add_zero_elements():
     plain = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
     for flag in ("--subset_file", "--effective_batch_size",
                  "--num_train_epochs", "--cache_dir",
-                 "--model_root", "--dataset_root"):
+                 "--model_root", "--dataset_root", "--log_dir"):
         assert flag not in plain, (
             f"{flag} must contribute zero argv elements when absent"
         )
@@ -2061,16 +2061,22 @@ def test_build_argv_threads_storage_roots_as_list_elements():
     """261014-c2l: each PRESENT storage-root flag appends exactly two
     LIST elements — flag then str(value) — and --model_root precedes
     --dataset_root in the pinned tail order (model-before-dataset, the
-    --target_model-before---target_dataset axis order)."""
+    --target_model-before---target_dataset axis order). Extended
+    261014-f4w: --log_dir joins the same tail AFTER --dataset_root."""
     argv = run_sweep.build_argv(
         "model-a", "task-x", 42, "/tmp/root",
-        model_root="/mnt/storage", dataset_root="/mnt/storage")
+        model_root="/mnt/storage", dataset_root="/mnt/storage",
+        log_dir="/mnt/logs")
     assert isinstance(argv, list)
     assert all(isinstance(element, str) for element in argv)
     assert flag_value(argv, "--model_root") == "/mnt/storage"
     assert flag_value(argv, "--dataset_root") == "/mnt/storage"
+    assert flag_value(argv, "--log_dir") == "/mnt/logs"
     assert argv.index("--model_root") < argv.index("--dataset_root"), (
         "--model_root must precede --dataset_root (the pinned tail order)"
+    )
+    assert argv.index("--dataset_root") < argv.index("--log_dir"), (
+        "--log_dir must close the pinned storage tail (261014-f4w)"
     )
 
 
@@ -3213,3 +3219,273 @@ def test_base_model_name_strips_variant_suffixes():
     assert run_sweep.base_model_name("model-a+lora", "lora") == "model-a"
     assert run_sweep.base_model_name(
         "model-a", "none", "probe") == "model-a"
+
+
+# =====================================================================
+# --log_dir + the directories.json startup read (261014-f4w, F4W-01/02)
+# =====================================================================
+
+def _pin_directories_config(tmp_path, monkeypatch, payload=None):
+    """Point DNALLMMARK_TUI_CONFIG_DIR at a tmp root (overriding the
+    root conftest's autouse empty-dir pin — the test-body setenv wins)
+    and optionally write a directories.json there."""
+    import directories_config  # conftest puts pipeline/ on sys.path
+
+    config_root = tmp_path / "f4w-config"
+    config_root.mkdir()
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(config_root))
+    if payload is not None:
+        (config_root / directories_config.DIRECTORIES_FILE_NAME).write_text(
+            json.dumps(payload), encoding="utf-8")
+    return config_root
+
+
+def test_log_dir_flag_defaults_to_none_in_parse_args(monkeypatch):
+    """--log_dir exists with type=str default None — an absent flag
+    threads NOTHING and records NOTHING (the absent-parity contract,
+    the storage-root twins' family)."""
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    args = run_sweep.parse_args()
+    assert args.log_dir is None
+    assert args.output_root is None, (
+        "the --output-root argparse default flips to None (261014-f4w) — "
+        "the './finetuned' fallback is computed at the effective-merge "
+        "point so the file's output_root key can fill it"
+    )
+
+
+def test_build_argv_threads_log_dir_in_pinned_tail_order():
+    """--log_dir appends exactly two LIST elements and closes the pinned
+    storage tail: --cache_dir, --model_root, --dataset_root, --log_dir
+    (the storage-root twins' order test extended — F4W-02's pinned
+    child-argv tail)."""
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root",
+        cache_dir="/tmp/cache", model_root="/mnt/storage",
+        dataset_root="/mnt/storage", log_dir="/mnt/logs")
+    assert flag_value(argv, "--log_dir") == "/mnt/logs"
+    assert argv.index("--cache_dir") < argv.index("--model_root"), (
+        "--cache_dir precedes --model_root (the pinned tail order)"
+    )
+    assert argv.index("--model_root") < argv.index("--dataset_root"), (
+        "--model_root precedes --dataset_root (the pinned tail order)"
+    )
+    assert argv.index("--dataset_root") < argv.index("--log_dir"), (
+        "--log_dir joins last as the newest family member"
+    )
+
+
+def test_cli_resolves_log_dir_to_absolute_path(tmp_path, monkeypatch):
+    """D-15 twin: a relative --log_dir resolves to the ABSOLUTE path at
+    the sweep layer BEFORE threading — the child writes its error logs
+    under the operator's launch directory, not its pinned pipeline/
+    cwd."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--log_dir", "run-logs",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--log_dir") == str(
+        tmp_path / "run-logs")
+
+
+def test_cli_empty_log_dir_value_aborts(tmp_path, monkeypatch):
+    """WR-05 twin (261014-f4w): a provided-but-empty --log_dir aborts
+    non-zero naming the flag — Path('').resolve() is the CWD, so
+    threading it would scatter {model_name}_error_log.txt files across
+    the launch directory."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--log_dir", "",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "--log_dir" in str(excinfo.value)
+
+
+def test_manifest_records_resolved_log_dir(tmp_path, monkeypatch):
+    """F4W-02 (the T-c2l-02 extension): a log-dir override changes where
+    per-model error logs land — the resolved ABSOLUTE value records in
+    EVERY manifest cell via sweep_flags (D-13)."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--log_dir", "run-logs",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    for cell in manifest["cells"]:
+        assert cell["log_dir"] == str(tmp_path / "run-logs")
+
+
+def test_log_dir_absent_everywhere_contributes_zero(tmp_path, monkeypatch):
+    """Absent-everywhere parity (flag AND file, the conftest pin keeping
+    the config root empty): zero --log_dir argv elements and zero
+    log_dir manifest keys — the explicit representative of the
+    byte-identical-when-absent contract."""
+    registry_dir = make_registry(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert "--log_dir" not in captured["argv"]
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    for cell in manifest["cells"]:
+        assert "log_dir" not in cell
+
+
+def test_startup_config_file_threads_values_like_flags(
+        tmp_path, monkeypatch):
+    """F4W-01: a directories.json under the injected config root + NO
+    flags — a bare run threads the file's values to children as
+    resolved-absolute argv elements and records them in every manifest
+    cell EXACTLY as the flag-passed form does."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _pin_directories_config(tmp_path, monkeypatch, {
+        "model_root": "file-m",
+        "dataset_root": "file-d",
+        "log_dir": "file-logs",
+        "cache_dir": "file-cache",
+    })
+    captured = _capturing_launcher(monkeypatch)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--model_root") == str(
+        tmp_path / "file-m")
+    assert flag_value(captured["argv"], "--dataset_root") == str(
+        tmp_path / "file-d")
+    assert flag_value(captured["argv"], "--log_dir") == str(
+        tmp_path / "file-logs")
+    assert flag_value(captured["argv"], "--cache_dir") == str(
+        tmp_path / "file-cache")
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    for cell in manifest["cells"]:
+        assert cell["model_root"] == str(tmp_path / "file-m")
+        assert cell["dataset_root"] == str(tmp_path / "file-d")
+        assert cell["log_dir"] == str(tmp_path / "file-logs")
+        assert cell["cache_dir"] == str(tmp_path / "file-cache")
+
+
+def test_explicit_flag_beats_startup_config_key(tmp_path, monkeypatch):
+    """F4W-01 precedence: an explicit --model_root beats the file's
+    model_root while the file's OTHER keys still apply — one merge
+    point, flag > file > default at every consumer."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _pin_directories_config(tmp_path, monkeypatch, {
+        "model_root": "file-m",
+        "dataset_root": "file-d",
+    })
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--model_root", "flag-m",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--model_root") == str(
+        tmp_path / "flag-m"), "the explicit flag wins over the file key"
+    assert flag_value(captured["argv"], "--dataset_root") == str(
+        tmp_path / "file-d"), "the untouched file key still applies"
+
+
+def test_startup_config_output_root_honored_when_flag_absent(
+        tmp_path, monkeypatch):
+    """F4W-01: the file's output_root fills an ABSENT --output-root (the
+    argparse default flip) — the manifest's matrix records the resolved
+    file root, the same Path(...).resolve() line over the effective
+    value."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    file_out = tmp_path / "file-out-root"
+    _pin_directories_config(tmp_path, monkeypatch, {
+        "output_root": str(file_out),
+    })
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (file_out / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["matrix"]["output_root"] == str(file_out.resolve())
+    assert manifest["cells"], "the dry-run enumerated cells"
+
+
+def test_absent_config_and_flags_output_root_stays_default(
+        tmp_path, monkeypatch):
+    """The absent-everywhere output root: with no --output-root flag and
+    no file (the conftest pin's empty root re-pinned at a fresh tmp),
+    the sweep resolves the documented ./finetuned fallback — the
+    byte-identical default (Path('./finetuned').resolve() against the
+    CWD)."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _pin_directories_config(tmp_path, monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--registry-dir", str(registry_dir),
+    ])
+    expected = (tmp_path / "finetuned").resolve()
+    manifest = json.loads(
+        (expected / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["matrix"]["output_root"] == str(expected)
+
+
+def test_malformed_startup_config_aborts_naming_path(
+        tmp_path, monkeypatch):
+    """The fail-loud policy: a malformed present directories.json aborts
+    the sweep at startup with SystemExit naming the file's path — never
+    a silently-ignored corrupt file redirecting a multi-day run to the
+    wrong roots."""
+    registry_dir = make_registry(tmp_path)
+    import directories_config
+
+    config_root = _pin_directories_config(tmp_path, monkeypatch)
+    bad = config_root / directories_config.DIRECTORIES_FILE_NAME
+    bad.write_text("{not json", encoding="utf-8")
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert str(bad) in str(excinfo.value)

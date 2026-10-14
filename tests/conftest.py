@@ -42,3 +42,33 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "script"))   # summarize_comparison, export_runs, freeze_snapshot
 sys.path.insert(0, str(REPO_ROOT / "baseline")) # compare (walk) for reuse
 sys.path.insert(0, str(REPO_ROOT / "pipeline")) # run_sweep (stdlib-only sweep driver)
+
+
+# ===== Startup-config machine-independence pin (261014-f4w, F4W-01) =====
+#
+# run_sweep.main and run_finetune's module top now read the REAL XDG
+# config root for directories.json at startup (the F4W startup config),
+# so without a pin every existing sweep/env-check/run-config test would
+# thread whatever directories.json happens to exist on the maintainer's
+# machine into the run under test — the exact hazard the custom-overlay
+# pin above guards for DNALLMMARK_CUSTOM_REGISTRY_DIR. Pin the whole
+# config dir to a per-test tmp path (empty value = unset; empty dir =
+# the byte-identity-when-absent case). A test-body monkeypatch.setenv
+# later in the chain overrides the pin (tests of the file behavior
+# itself re-pin at their own tmp); resolution-order tests delenv it.
+# Autouse at the ROOT conftest: the fixture applies to the whole tests/
+# tree, tests/tui/ included (conftest chains).
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _pin_directories_config_root(tmp_path_factory, monkeypatch):
+    """Empty-dir pin over the F4W startup-config root for every test.
+
+    tmp_path_FACTORY (never the per-test tmp_path): several existing
+    tests assert the EXACT contents of their tmp_path (the
+    atomic-write no-residue and never-persists lanes), so the pin
+    directory must not live inside it."""
+    pinned = tmp_path_factory.mktemp("no-directories-config")
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(pinned))
