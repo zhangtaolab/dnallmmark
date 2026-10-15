@@ -40,6 +40,7 @@ import os
 import signal
 import subprocess
 import sys
+import types
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -1179,3 +1180,178 @@ def test_launch_from_failures_unreadable_manifest_refuses_fail_closed(
     assert code == "failures_manifest"
     assert "nope" in str(detail)
     assert spawner.calls == []
+
+
+# =====================================================================
+# EHC-3 (261015-ehc ruling 3) — the single-GPU serialization guard
+# =====================================================================
+
+
+def test_effective_gpu_count_world_size_wins_never_imports_torch():
+    """EHC-3: WORLD_SIZE parses as the effective count (>= 1 wins) and
+    torch is NEVER imported on that path — proven in a fresh ``-I``
+    subprocess (the dev venv holds torch, so an in-process
+    sys.modules assert proves nothing — the 11-02 discipline)."""
+    import subprocess as sp
+
+    repo = Path(__file__).resolve().parents[2]
+    probe = (
+        "import os, sys; os.environ['WORLD_SIZE'] = '4'; "
+        f"sys.path.insert(0, {str(repo / 'pipeline')!r}); "
+        f"sys.path.insert(0, {str(repo)!r}); "
+        "from tui.services import sweep_launcher; "
+        "assert sweep_launcher.effective_gpu_count() == 4; "
+        "assert 'torch' not in sys.modules; print('OK')"
+    )
+    result = sp.run(
+        [sys.executable, "-I", "-c", probe],
+        capture_output=True, text=True, timeout=60, check=False)
+    assert result.returncode == 0 and "OK" in result.stdout, (
+        f"probe failed: {result.stderr}")
+
+
+def test_effective_gpu_count_torch_absent_is_zero(monkeypatch):
+    """A torch-free machine reads 0 (unrestricted per the ruling's
+    letter) — never an import error."""
+    monkeypatch.delenv("WORLD_SIZE", raising=False)
+    monkeypatch.setitem(sys.modules, "torch", None)  # import -> ImportError
+    assert sweep_launcher.effective_gpu_count() == 0
+
+
+def test_effective_gpu_count_tolerant_of_every_exception(monkeypatch):
+    """T-ehc-04: a raising torch probe (broken CUDA, exotic import
+    faults) degrades to 0 — the function never raises."""
+
+    class _Boom:
+        @staticmethod
+        def is_available():
+            raise RuntimeError("cuda init exploded")
+
+    fake_torch = types.ModuleType("torch")
+    fake_torch.cuda = _Boom()  # ty: ignore[unresolved-attribute]
+    monkeypatch.delenv("WORLD_SIZE", raising=False)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    assert sweep_launcher.effective_gpu_count() == 0
+
+
+def test_effective_gpu_count_lazy_torch_reads_device_count(monkeypatch):
+    """The lazy torch path: cuda available -> torch.cuda.device_count()
+    (which honors CUDA_VISIBLE_DEVICES — the device-count reading IS the
+    serialization signal on a masked box)."""
+
+    class _Cuda:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def device_count():
+            return 1
+
+    fake_torch = types.ModuleType("torch")
+    fake_torch.cuda = _Cuda()  # ty: ignore[unresolved-attribute]
+    monkeypatch.delenv("WORLD_SIZE", raising=False)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    assert sweep_launcher.effective_gpu_count() == 1
+
+
+def _live_single_gpu_launcher(monkeypatch, tmp_path, gpu_count=1):
+    """A launcher pinned at ``gpu_count`` with ONE live registry entry
+    (a never-dying fake Popen over a tmp output root)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    launcher = sweep_launcher.SweepLauncher(gpu_count=gpu_count)
+    seeded = FakeSpawner(FakeSweepPopen(poll_returns=(None,)))
+    root = tmp_path / "live-out"
+    outcome = launcher._spawn(["py", "run_sweep.py"], root, spawner=seeded)
+    assert outcome.spawned is True
+    return launcher, str(root.resolve())
+
+
+def test_single_gpu_busy_refuses_launch_spec_before_every_stage(
+        monkeypatch, tmp_path):
+    """EHC-3 call-count proof (the LNC-03 evidence style): on
+    gpu_count == 1 with a live sweep, launch_spec refuses at the
+    single_gpu stage BEFORE any preview/official-keys/phrase stage —
+    the run_config double's counters stay ZERO and the spawner is
+    provably never called."""
+    launcher, root = _live_single_gpu_launcher(monkeypatch, tmp_path)
+    double = RunConfigDouble()
+    spawner = FakeSpawner()
+
+    result = launcher.launch_spec(
+        gate_spec(tmp_path), phrase=None,
+        run_config_service=double, spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.GateRefusal)
+    assert result.stage == sweep_launcher.REFUSAL_STAGE_SINGLE_GPU
+    code, detail = result.problems[0]
+    assert code == sweep_launcher.PROBLEM_SINGLE_GPU
+    assert root in str(detail), "the refusal names the running root"
+    assert double.preview_calls == 0, "refused BEFORE the preview stage"
+    assert double.official_calls == 0, "refused BEFORE the keys stage"
+    assert double.e2x_calls == 0, "refused BEFORE the E2' predicate"
+    assert double.compose_calls == 0
+    assert spawner.calls == [], "the spawner is provably never called"
+
+
+def test_single_gpu_busy_refuses_launch_from_failures_first(
+        monkeypatch, tmp_path):
+    """The EHC-3 twin on the re-run path: a busy single-GPU machine
+    refuses launch_from_failures BEFORE any manifest evaluation —
+    the spawner is never called."""
+    launcher, root = _live_single_gpu_launcher(monkeypatch, tmp_path)
+    spawner = FakeSpawner()
+    failures = tmp_path / "sweep_failures.json"
+    failures.write_text("[]", encoding="utf-8")
+
+    result = launcher.launch_from_failures(
+        failures, (42,), tmp_path / "rerun", spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.GateRefusal)
+    assert result.stage == sweep_launcher.REFUSAL_STAGE_SINGLE_GPU
+    assert root in str(result.problems[0][1])
+    assert spawner.calls == []
+
+
+def test_multi_gpu_machine_launches_normally(monkeypatch, tmp_path):
+    """gpu_count >= 2 is unrestricted: a live sweep does NOT block the
+    launch (the spawner runs)."""
+    launcher, _root = _live_single_gpu_launcher(
+        monkeypatch, tmp_path, gpu_count=2)
+    spawner = FakeSpawner()
+    double = RunConfigDouble()
+
+    result = launcher.launch_spec(
+        gate_spec(tmp_path), run_config_service=double, spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.LaunchOutcome)
+    assert result.spawned is True
+    assert len(spawner.calls) == 1
+
+
+def test_count_zero_machine_unrestricted(monkeypatch, tmp_path):
+    """gpu_count == 0 (torch/CUDA unavailable) is unrestricted per the
+    ruling's letter — a live registry entry does not block."""
+    launcher, _root = _live_single_gpu_launcher(
+        monkeypatch, tmp_path, gpu_count=0)
+    spawner = FakeSpawner()
+
+    result = launcher.launch_spec(
+        gate_spec(tmp_path), spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.LaunchOutcome)
+    assert result.spawned is True
+
+
+def test_single_gpu_idle_machine_launches_normally(monkeypatch, tmp_path):
+    """gpu_count == 1 with NO live entry is unrestricted — the guard
+    serializes contention, not the machine."""
+    pin_state_dir(monkeypatch, tmp_path)
+    launcher = sweep_launcher.SweepLauncher(gpu_count=1)
+    spawner = FakeSpawner()
+
+    assert launcher.single_gpu_launch_blocked() is None
+    result = launcher.launch_spec(gate_spec(tmp_path), spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.LaunchOutcome)
+    assert result.spawned is True

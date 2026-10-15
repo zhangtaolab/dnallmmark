@@ -241,7 +241,8 @@ class FakeLauncherService:
     """The launcher service fake (recorded, scripted outcomes)."""
 
     def __init__(self, preflight=None, summary=None, outcomes=None,
-                 live=(), confirm_raises=None, launch_raises=None):
+                 live=(), confirm_raises=None, launch_raises=None,
+                 single_gpu_blocked=None):
         self._preflight = (preflight if preflight is not None
                            else EnvPreflight(
                                can_launch=True, reasons=(),
@@ -251,6 +252,9 @@ class FakeLauncherService:
         self._live = tuple(live)
         self._confirm_raises = confirm_raises
         self._launch_raises = launch_raises
+        # EHC-3 (261015-ehc): the single-GPU guard seam (None = the
+        # method absent-equivalent — never blocks)
+        self._single_gpu_blocked = single_gpu_blocked
         self.env_calls = 0
         self.confirm_calls = []
         self.launch_calls = []
@@ -305,6 +309,9 @@ class FakeLauncherService:
 
     def tee_path_for(self, root):
         return None
+
+    def single_gpu_launch_blocked(self):
+        return self._single_gpu_blocked
 
 
 # ----- the app-shell fakes (the nav-shell suite's minimal set) -----
@@ -994,6 +1001,65 @@ async def test_gate_happy_path_confirms_and_launches():
         assert any(LNC_LAUNCH_TOAST.format(
             cells=3, output_root="./finetuned") in toast
             for toast in toasts), toasts
+
+
+async def test_gate_single_gpu_busy_refuses_naming_the_running_root():
+    """EHC-3 (261015-ehc ruling 3): with the single-GPU guard seam
+    reporting live roots, the gate refuses at the problems stage naming
+    the running root (the bilingual copy) — BEFORE the env preflight,
+    any confirm, or the launch; the y key is never even reachable."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(
+        single_gpu_blocked=("/repo/finetuned-live",))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.run_config import ProblemsModal
+
+        assert isinstance(app.screen, ProblemsModal), (
+            "the single-GPU pre-check blocks before any confirm"
+        )
+        log = app.screen.query_one("#cfg-problems-log")
+        joined = "\n".join(line.text for line in log.lines)
+        from tui.strings import LNC_SINGLE_GPU_BLOCKED
+
+        assert LNC_SINGLE_GPU_BLOCKED.format(
+            roots="/repo/finetuned-live") in joined.replace("\n", ""), (
+            "the refusal renders the bilingual copy naming the root"
+        )
+        assert launcher.env_calls == 0, "blocked before the env preflight"
+        assert launcher.confirm_calls == [], "blocked before the confirm"
+        assert launcher.launch_calls == [], "nothing ever spawns"
+
+
+async def test_gate_fakes_without_the_single_gpu_seam_never_block():
+    """EHC-3 fake tolerance (the 11-03 precedent): a launcher WITHOUT
+    the single_gpu_launch_blocked method runs the full gate normally —
+    the tolerant getattr seam reads as never blocked."""
+    # a fake class with the seam method ABSENT entirely (the attribute
+    # deleted off the class — getattr then reads None)
+    seamless = type(
+        "Seamless", (FakeLauncherService,),
+        dict(FakeLauncherService.__dict__))
+    del seamless.single_gpu_launch_blocked
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = seamless(summary=GateSummary(
+        models=1, tasks=1, seeds=3, cells=3, output_root="./finetuned",
+        is_e2x=False, expected_phrase="finetuned"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.selection import ConfirmModal
+
+        assert isinstance(app.screen, ConfirmModal), (
+            "a seam-less fake reaches the confirm normally"
+        )
 
 
 async def test_gate_problems_blocked_launch_never_called():

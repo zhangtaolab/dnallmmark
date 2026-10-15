@@ -276,7 +276,8 @@ class FakeMonitorLauncher:
     """The launcher-seam fake for the monitor screen (recorded)."""
 
     def __init__(self, preflight=None, live=(), tee=None,
-                 rerun_outcomes=None, env_raises=None):
+                 rerun_outcomes=None, env_raises=None,
+                 single_gpu_blocked=None):
         self._preflight = (preflight if preflight is not None
                            else EnvPreflight(
                                can_launch=True, reasons=(),
@@ -286,6 +287,9 @@ class FakeMonitorLauncher:
         self._rerun_outcomes = (
             list(rerun_outcomes) if rerun_outcomes else None)
         self._env_raises = env_raises
+        # EHC-3 (261015-ehc): the single-GPU guard seam (None = the
+        # method absent-equivalent — never blocks)
+        self._single_gpu_blocked = single_gpu_blocked
         self.env_calls = 0
         self.rerun_calls = []
 
@@ -315,6 +319,9 @@ class FakeMonitorLauncher:
 
     def tee_path_for(self, root):
         return self._tee.get(str(root))
+
+    def single_gpu_launch_blocked(self):
+        return self._single_gpu_blocked
 
 
 # ----- the app-shell fakes (the nav-shell suite's minimal set) -----
@@ -1237,6 +1244,47 @@ async def test_rerun_confirm_routes_launch_from_failures_and_attaches():
         assert MON_RERUN_TOAST.format(
             cells="—", root="finetuned") in _toast_messages(app)
         assert str(app.screen._attached_root) == "/scans/finetuned"
+
+
+async def test_rerun_single_gpu_busy_refuses_before_the_confirm():
+    """EHC-3 (261015-ehc ruling 3): with the single-GPU guard seam
+    reporting live roots, the [f]->[r] request REFUSES before the
+    re-run confirm modal is ever pushed — the bilingual toast names
+    the running root, y is never reachable, nothing launches."""
+    from tui.screens.monitor import FailuresModal
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import LNC_SINGLE_GPU_BLOCKED
+
+    failures = (FailureRow(model="model-a", task="task-1", seed=42,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=3, total=5),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_FAILED}),)},
+        stats={"/scans/finetuned": _stats(done=3, total=5)},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher(
+        single_gpu_blocked=("/scans/finetuned-live",))
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await _settle(pilot, app)
+        assert not isinstance(app.screen, ConfirmModal), (
+            "the single-GPU pre-check refuses BEFORE the confirm modal"
+        )
+        assert any(LNC_SINGLE_GPU_BLOCKED.format(
+            roots="/scans/finetuned-live") in message
+            for message in _toast_messages(app)), _toast_messages(app)
+        assert launcher.env_calls == 0, "the preflight never runs"
+        assert launcher.rerun_calls == [], "nothing ever launches"
 
 
 async def test_rerun_seeds_derive_from_failure_rows_not_a_default():

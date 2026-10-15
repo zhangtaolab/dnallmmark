@@ -142,9 +142,54 @@ PROBLEM_OFFICIAL_KEYS = "official_keys"
 #: unevaluatable matrix is never launched ungated.
 PROBLEM_FAILURES_MANIFEST = "failures_manifest"
 
-#: The GateRefusal stages (in refusal order: problems, then phrase).
+#: EHC-3 (261015-ehc ruling 3): a single-GPU machine with a live sweep
+#: registered refuses further gated launches — surfaced as a problem
+#: tuple whose detail is the running root(s) joined.
+PROBLEM_SINGLE_GPU = "single_gpu_busy"
+
+#: The GateRefusal stages (in refusal order: the single-GPU
+#: serialization guard first, then problems, then phrase).
 REFUSAL_STAGE_PROBLEMS = "problems"
 REFUSAL_STAGE_PHRASE = "phrase"
+REFUSAL_STAGE_SINGLE_GPU = "single_gpu"
+
+
+def effective_gpu_count() -> int:
+    """The machine's EFFECTIVE GPU count (EHC-3, 261015-ehc ruling 3).
+
+    Resolution order:
+
+    1. ``WORLD_SIZE`` parsed as an int — a value >= 1 wins outright
+       (never imports torch: the multi-worker launcher sets it, and a
+       torch-free CI lane stays torch-free).
+    2. Otherwise a LAZY ``import torch`` inside a try/except (ImportError
+       and EVERY exception -> 0, T-ehc-04 — never raises): guarded by
+       ``torch.cuda.is_available()`` then ``torch.cuda.device_count()``
+       — which honors ``CUDA_VISIBLE_DEVICES`` (a masked 4-GPU box
+       reading 1 is correctly serialized). The lazy-import seam is the
+       ``pipeline/flops_counter.py`` precedent — NO torch import at
+       module top (CI lanes stay torch-free).
+
+    Returns:
+        int: the effective GPU count (0 when torch/CUDA is unavailable —
+        count-0 machines are unrestricted per the ruling's letter).
+    """
+    world_size = os.environ.get("WORLD_SIZE", "")
+    try:
+        parsed = int(world_size)
+    except ValueError:
+        parsed = 0
+    if parsed >= 1:
+        return parsed
+    try:
+        # lazy seam (the flops_counter precedent — CI stays torch-free)
+        import torch
+
+        if not torch.cuda.is_available():
+            return 0
+        return int(torch.cuda.device_count())
+    except Exception:  # noqa: BLE001 — never raises (T-ehc-04)
+        return 0
 
 
 # =====================================================================
@@ -411,14 +456,19 @@ class SweepLauncher:
         kill_grace: seconds to poll after SIGTERM before the SIGKILL
             escalation (injectable so tests never wait the default).
         kill_interval: the poll cadence inside the grace window.
+        gpu_count: an injectable EFFECTIVE GPU count pin (EHC-3 —
+            None probes live via ``effective_gpu_count()`` at each
+            guarded call; an int pins it for tests).
     """
 
     def __init__(self, spawner=None,
                  kill_grace=DEFAULT_KILL_GRACE_SECONDS,
-                 kill_interval=KILL_POLL_INTERVAL_SECONDS):
+                 kill_interval=KILL_POLL_INTERVAL_SECONDS,
+                 gpu_count=None):
         self._spawner = _default_spawner if spawner is None else spawner
         self._kill_grace = kill_grace
         self._kill_interval = kill_interval
+        self._gpu_count = gpu_count
         self._live: dict[str, dict] = {}
         # IN-05 (phase-11 review): the last tee path spawned per root —
         # the [t] fallback after detach/kill drops the live entry (the
@@ -544,16 +594,41 @@ class SweepLauncher:
         return LaunchOutcome(
             spawned=True, root=root, tee_path=str(tee_path), error=None)
 
-    # ===== The gated launch paths (D-07 / D-11) =====
+    # ===== The gated launch paths (D-07 / D-11 / EHC-3) =====
+
+    def single_gpu_launch_blocked(self):
+        """The EHC-3 single-GPU serialization predicate.
+
+        True-blocking (returns the live roots) exactly when the
+        EFFECTIVE GPU count is 1 AND at least one sweep is live in the
+        registry: on a single-GPU machine a second concurrent sweep
+        would contend for the one GPU. Count >= 2 (multi-GPU) and
+        count 0 (torch/CUDA unavailable — the ruling's letter)
+        are unrestricted; an idle registry is unrestricted.
+
+        Returns:
+            tuple[str, ...] | None: the live output roots when the
+            launch must refuse, else None.
+        """
+        count = (self._gpu_count if self._gpu_count is not None
+                 else effective_gpu_count())
+        if count != 1:
+            return None
+        live = self.live_sweeps()
+        return live if live else None
 
     def launch_spec(self, spec, phrase=None, run_config_service=None,
                     spawner=None, clock=None):
         """Launch one composed spec through the STRUCTURAL gate (D-07 /
-        LNC-03).
+        LNC-03; EHC-3 adds stage 0).
 
         Refusal order — each refusal returns BEFORE the spawner is ever
         consulted (proven by call counts in the tier-1 suite):
 
+        0. the EHC-3 single-GPU serialization guard (a live sweep on an
+           effective-GPU-count == 1 machine refuses FIRST — before the
+           operator is asked for any preview or E2' phrase) at stage
+           ``"single_gpu"``;
         1. a FRESH preview recompute (never the screen's cached value —
            T-11-03-02); any problem refuses at stage ``"problems"``;
         2. the official-keys reference; a diagnostic (fail-closed)
@@ -592,6 +667,11 @@ class SweepLauncher:
             LaunchOutcome | GateRefusal: the spawn outcome, or the
             refusal (the spawner provably never called).
         """
+        blocked = self.single_gpu_launch_blocked()
+        if blocked is not None:
+            return GateRefusal(
+                stage=REFUSAL_STAGE_SINGLE_GPU,
+                problems=((PROBLEM_SINGLE_GPU, ", ".join(blocked)),))
         rc = _run_config_service(run_config_service)
         preview_result = rc.preview(spec)
         if preview_result.problems:
@@ -700,7 +780,8 @@ class SweepLauncher:
                              peft="none", config_variant="none",
                              phrase=None, run_config_service=None,
                              spawner=None, clock=None):
-        """The [r] failure re-run launch (D-11, CR-01-gated).
+        """The [r] failure re-run launch (D-11, CR-01-gated; EHC-3 adds
+        the stage-0 guard).
 
         Composes via ``run_config.compose_from_failures_argv`` and
         routes through ``launch_argv`` — the SAME launch pipeline every
@@ -712,10 +793,12 @@ class SweepLauncher:
         matrix and demands the exact typed phrase (stage ``"phrase"``
         refusal, the ``launch_spec`` twin); an unevaluatable manifest or
         an official-keys diagnostic refuses at stage ``"problems"``.
-        The env preflight is the screen's PRECEDING step (the operator
-        confirms the re-run independently); the child re-validates the
-        failures manifest itself (``run_sweep.load_failure_pairs``
-        fail-fast).
+        EHC-3 (261015-ehc): the single-GPU serialization guard runs
+        FIRST — a busy single-GPU machine refuses before any
+        manifest evaluation or phrase. The env preflight is the
+        screen's PRECEDING step (the operator confirms the re-run
+        independently); the child re-validates the failures manifest
+        itself (``run_sweep.load_failure_pairs`` fail-fast).
 
         Args:
             failures_path: the prior sweep's
@@ -736,6 +819,11 @@ class SweepLauncher:
             LaunchOutcome | GateRefusal: the spawn outcome, or the
             refusal (the spawner provably never called).
         """
+        blocked = self.single_gpu_launch_blocked()
+        if blocked is not None:
+            return GateRefusal(
+                stage=REFUSAL_STAGE_SINGLE_GPU,
+                problems=((PROBLEM_SINGLE_GPU, ", ".join(blocked)),))
         rc = _run_config_service(run_config_service)
         refusal = self._from_failures_refusal(
             rc, failures_path, seeds, output_root,

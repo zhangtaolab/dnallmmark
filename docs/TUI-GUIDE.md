@@ -161,6 +161,8 @@ The typed-phrase modal ("⚠ 全量 E2' 训练任务 — 59 模型 × 50 数据�
 
 The same gate, including the E2' phrase, applies to the monitor's from-failures re-run (below): an E2'-class effective matrix refuses at the phrase stage and re-prompts.
 
+**Single-GPU serialization (EHC-3, 2026-10-15).** On a machine whose *effective* GPU count is exactly 1 (`WORLD_SIZE` when set, else `torch.cuda.device_count()` honoring `CUDA_VISIBLE_DEVICES`), both gated launch paths — the slot-4 gate and the monitor's re-run — refuse while a live sweep is registered, naming the running output root: wait for it, kill it via the exit modal, or pick a different output root. The refusal fires at stage 0 (before any preview, env preflight, or confirm) and is enforced in the launcher service itself — the spawn never happens. Multi-GPU machines (count ≥ 2) and count-0 machines (no torch/CUDA) are unrestricted.
+
 The CLI has no such gate, by design — `run_sweep.py` / `run_sweep_shard.py` are the maintainer trust surface (see "The E2' trust boundary" in `docs/multi-gpu.md`).
 
 ## Screen 5 — Monitor (任务监控)
