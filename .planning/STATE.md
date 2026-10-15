@@ -263,6 +263,7 @@ None yet.
 | 261014-mlc | TUI slot 2/3 拆分（maintainer 2026-10-14 ruling）：KIND_MODEL dnallm 下载通道（-I 子进程 + modelscope 嵌套归一化，DNABERT-2-117M 实机验证）+ slot 2 纯模型屏（适配/下载列，t 池切换，d 模型下载，手动放置诚实态）+ slot 3 数据集主列表（队列态叠加，Zenodo 降为备选，w 数据集向导）+ 导航 2模型/3数据集 | 2026-10-14 | a0fab7a | [261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download](./quick/261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download/) |
 | 261014-mlc | TUI slot 2/3 重构：slot 2 纯模型屏（适配/下载列，t 揭示未适配，d 走 dnallm+ModelScope 队列下载）；slot 3 数据集主面板（ModelScope 默认，Zenodo 降 z 备选，w 向导保留）；nav 2 模型/3 数据集；真下载取证 DNABERT-2-117M 通过 | 2026-10-14 | a0fab7a | [261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download](./quick/261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download/) |
 | 261015-c4j | TUI 三屏 UX 修订：slot 2 模型下载活进度面（percent+状态词）；slot 3 队列 kind 拆分（仅数据集条目）+ 密度（≥9 行 @80x24）；slot 5 模型×数据集条目化（进度条+状态） | 2026-10-15 | bbeda85 | [261015-c4j-tui-ux-1-slot-2-kind-model-slot-3-downlo](./quick/261015-c4j-tui-ux-1-slot-2-kind-model-slot-3-downlo/) |
+| 261015-ehc | TUI 三项硬化：双语 strings 注册表（默认英文，L 实时切换+持久化，已批中文术语表）+ 启动 y 确认门（enter 不可穿门）+ 单卡串行闸（两条发射路径 stage-0 拒绝）+ 下载速度显示（仅 slot 2/3） | 2026-10-15 | 87a7db4 | [261015-ehc-tui-1-i18n-strings-py-english-2-y-y-esc-](./quick/261015-ehc-tui-1-i18n-strings-py-english-2-y-y-esc-/) |
 
 ## Deferred Items
 
