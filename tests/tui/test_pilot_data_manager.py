@@ -906,13 +906,13 @@ async def test_seeded_state_file_renders_only_the_dataset_entry(
         "schema_version": 1,
         "entries": [
             {"key": "DNABERT-2-117M", "kind": "model",
-             "state": "downloading", "attempts": 1,
+             "state": "pending", "attempts": 1,
              "enqueued_at": "2026-10-15T00:00:00", "started_at": None,
              "finished_at": None, "last_percent": 40,
              "interrupted": False, "log_path": None, "problems": [],
              "reconcile": None},
             {"key": "GUE__emp_H3", "kind": "dataset",
-             "state": "downloading", "attempts": 1,
+             "state": "pending", "attempts": 1,
              "enqueued_at": "2026-10-15T00:00:00", "started_at": None,
              "finished_at": None, "last_percent": None,
              "interrupted": False, "log_path": None, "problems": [],
@@ -1577,6 +1577,58 @@ async def test_both_regions_visible_at_80x24_standard_fixture():
         )
         assert _missing_table(screen).visible
         assert _queue_table(screen).visible
+
+
+async def test_dataset_list_is_the_dominant_pane_at_the_minimum_grid():
+    """C4J-2 (261015-c4j, the maintainer's 2026-10-15 ruling): at the
+    80x24 minimum grid the dataset-list region is the DOMINANT pane —
+    >= 11 region rows (>= 9 simultaneously visible dataset rows after
+    the title row + the table header) while the queue region keeps its
+    >= 4 floor (the queue pane never collapses); both tables scroll
+    inside their regions."""
+    service = FakeDataManagerService(
+        missing=_std_missing(),
+        entries=(_queue_entry("GUE__emperven_H3"),
+                 _queue_entry("mouse__DMS", "downloading",
+                              last_percent=42)))
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        missing_region = screen.query_one("#dl-missing-region", Vertical)
+        queue_region = screen.query_one("#dl-queue-region", Vertical)
+        assert missing_region.region.height >= 11, (
+            "the dataset list is the dominant pane at the minimum grid"
+        )
+        table = _missing_table(screen)
+        # the title row (1) + the table region: the header (1) leaves
+        # >= 9 visible dataset rows
+        assert table.region.height >= 10, (
+            "the full-list table exposes >= 9 dataset rows at 80x24"
+        )
+        assert queue_region.region.height >= 4, (
+            "the queue region keeps its floor at the minimum grid"
+        )
+        assert table.visible and _queue_table(screen).visible
+
+
+async def test_dataset_list_exposes_12plus_rows_at_the_golden_grid():
+    """C4J-2 at the 120x40 golden-fixture grid: the full-list pane
+    exposes >= 12 dataset rows (the layout density only — columns, row
+    composition, the v toggle, and every action are unchanged)."""
+    service = FakeDataManagerService(
+        missing=_std_missing(),
+        entries=(_queue_entry("GUE__emperven_H3"),))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        table = _missing_table(screen)
+        assert table.region.height >= 13, (
+            "the full-list table exposes >= 12 dataset rows at 120x40"
+        )
+        assert screen.query_one(
+            "#dl-missing-region", Vertical).region.height >= 14
 
 
 # ---------------------------------------------------------------------
