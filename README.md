@@ -380,7 +380,7 @@ The shell is a top bar of six digit-prefixed screens (UI copy is Chinese; the sl
 | `5` | 任务监控 (monitor) | Attach to running sweeps (CLI-launched included), live rescans, and a failures modal with re-run |
 | `6` | 关于 (about) | Version and project information |
 
-The complete runbook — every key, modal, gate, and troubleshooting entry — is [docs/TUI-GUIDE.md](docs/TUI-GUIDE.md).
+The complete runbook — every key, modal, gate, and troubleshooting entry — is [docs/TUI-GUIDE.md](docs/TUI-GUIDE.md). For a recorded, full-feature walkthrough of the operator journey on real tasks (real downloads, a real bounded training through the y-confirm gate, live monitoring, the kill, and a from-failures re-run — in both English and 中文), see [docs/TUI-DEMO.md](docs/TUI-DEMO.md).
 
 ## 🔧 Data Processing
 
@@ -572,6 +572,7 @@ The documents below expand on specific areas of the project. **[GETTING-STARTED.
 - **[ONBOARDING.md](docs/ONBOARDING.md)**: Checklists for adding a new model or dataset to the benchmark
 - **[multi-gpu.md](docs/multi-gpu.md)**: Multi-GPU sweep orchestration — sharding vs DDP decisions and the runbook
 - **[TUI-GUIDE.md](docs/TUI-GUIDE.md)**: Guide to the `tui/` terminal console for driving benchmark runs
+- **[TUI-DEMO.md](docs/TUI-DEMO.md)**: Recorded GIF walkthrough of every console feature on real tasks (bilingual)
 - **[TUI-REQUIREMENTS.md](docs/TUI-REQUIREMENTS.md)**: Open requirements collection for the TUI milestone
 - **[DATA.md](DATA.md)**: Generated dataset audit (N-frequency and non-ACGT census)
 - **[AUDIT.md](AUDIT.md)**: Published audit report (findings, migration records, secret-scan evidence)

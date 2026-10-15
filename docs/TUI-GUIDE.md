@@ -1,7 +1,7 @@
 <!-- generated-by: gsd-doc-writer -->
 # TUI Guide — Operator Console
 
-This is the operations guide for the DNALLM-Mark TUI console: what an operator does on each of the six screens and which keys do what. Every key table below is derived from the `BINDINGS` declarations in `tui/screens/*.py` — those declarations are the single key-map authority; the top/bottom bars and the `?` help modal render from the same source. For requirements and design intent, see `docs/TUI-REQUIREMENTS.md`; for the multi-GPU workflow, see `docs/multi-gpu.md`.
+This is the operations guide for the DNALLM-Mark TUI console: what an operator does on each of the six screens and which keys do what. Every key table below is derived from the `BINDINGS` declarations in `tui/screens/*.py` — those declarations are the single key-map authority; the top/bottom bars and the `?` help modal render from the same source. For requirements and design intent, see `docs/TUI-REQUIREMENTS.md`; for the multi-GPU workflow, see `docs/multi-gpu.md`; for a recorded GIF walkthrough of every feature on real tasks, see `docs/TUI-DEMO.md`.
 
 ## Quick start
 
