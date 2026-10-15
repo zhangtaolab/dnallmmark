@@ -96,7 +96,7 @@ Model and dataset acquisition is ModelScope-first through the console:
 - **Slot `2` (models)** — the model table's `d` key downloads the cursor's model through the dnllm channel (`dnallm.models.model.download_model` in an isolated child process). Only the 36 dnllm-adapted registry models are downloadable; the other 23 rows toast the manual-placement landing directory instead.
 - **Slot `3` (datasets)** — per-dataset downloads default to the ModelScope channel (`d` enqueues the cursor's dataset, `a` enqueues all missing); the Zenodo whole-package bundle is the demoted alternate (`z`), riding the queue title row.
 - Downloads land under the **effective storage roots** — CLI flag > `directories.json` > the repo `pipeline/` defaults — the same chain the configured sweep consumes, so a landed download immediately flips the presence cell the operator was looking at. See [CONFIGURATION.md](CONFIGURATION.md) for the `directories.json` format and the full resolution chain.
-- Download prerequisites: dataset downloads shell out to the `modelscope` console script (resolved from the venv sibling, then `PATH`); model downloads additionally need the external `dnallm` package installed.
+- Download prerequisites: the `modelscope` console script ships in the `data` dependency group — `uv sync` installs it (the queue resolves the venv sibling first, then falls back to `PATH`); model downloads still additionally need the external `dnallm` package (a manual install from the local sibling clone).
 
 Caveats:
 
@@ -142,7 +142,7 @@ All leaderboard data lives under `dnallm-mark/data/`, committed to the repositor
 - **`make: uv: Command not found` (Error 127)** — your uv install lives outside the locations on `PATH`. Run `make UV=/path/to/uv <target>`.
 - **`make data` shows a diff on a fresh clone** — do not commit it; report it. On an untouched checkout regeneration must be byte-identical, so a diff means the environment resolved different package versions than `uv.lock` pins (e.g. Python < 3.13) or the checkout is not clean.
 - **`make tui` installs torch but the env screen reports failures** — expected on machines without CUDA; the console's environment checks are honest. Full TUI function targets a GPU workstation.
-- **Slot 3 dataset download toasts `cli_unavailable`** — the per-dataset ModelScope channel shells out to the `modelscope` console script (`python -m modelscope` does not work — it has no `__main__`). Install it into the project venv (`uv pip install modelscope`) or anywhere on `PATH`; the queue resolves the venv sibling next to the interpreter first, then `PATH`.
+- **Slot 3 dataset download toasts `cli_unavailable`** — the per-dataset ModelScope channel shells out to the `modelscope` console script (`python -m modelscope` does not work — it has no `__main__`). Re-run `uv sync` — modelscope ships in the pyproject data group and the queue resolves the venv sibling next to the interpreter first; a CLI elsewhere on `PATH` also works.
 
 ## Next steps
 

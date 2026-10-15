@@ -130,3 +130,20 @@ floor pins (`pandas>=2.2,<3.0`, `numpy>=2.0,<3`) plus the committed `uv.lock`
 
 Re-validation trigger: any change to the pins, or any future regeneration producing a diff
 outside this inventory, re-opens D-06 investigation.
+
+## Addendum (2026-10-15): modelscope joins the data group
+
+Maintainer directive 2026-10-15 ("modelscope 需要整合到核心里面"): `modelscope>=1.40,<2`
+was added to the pyproject `data` group, resolving to **modelscope 1.40.2** with
+**modelscope-hub 0.4.6** transitively (plus cffi 2.1.1 / cryptography 50.0.2 /
+pycparser 3.11 as its transitive chain). `uv lock --check` exits 0 after the
+re-lock, and the resolutions recorded above are unchanged by it — verified by
+grepping the new lock: pandas stays 2.3.3 and numpy stays 2.5.3. `uv sync` now
+installs the `modelscope` console script the TUI download queue consumes
+(the queue resolves the venv sibling next to the interpreter first, then `PATH`).
+
+The lock now holds **98 `[[package]]` blocks** (counted 2026-10-15), superseding the
+60 counted on 2026-10-08 above — the intervening growth to 93 came from the Phase 2-12
+`dev`/`tui`/`gpu` group additions (test harness, textual stack, torch/transformers),
+not from any data-chain change; this addendum's re-lock adds the final 5. No pandas
+or numpy pin or bound changed, so the D-06 re-validation trigger is not tripped.
