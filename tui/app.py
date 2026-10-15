@@ -49,6 +49,9 @@ onto this root.
   (T-10-04-03).
 """
 
+import inspect
+import json
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from threading import Lock
@@ -64,6 +67,7 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import Footer, Static
 from textual.worker import get_current_worker
 
+from tui import strings as S
 from tui.screens.about import AboutScreen
 from tui.screens.data_manager import DataManagerBackend, DataManagerScreen
 from tui.screens.env_check import EnvCheckScreen, EnvCheckServiceProtocol
@@ -86,30 +90,13 @@ from tui.screens.selection import (
     SelectionScreen,
     SelectionServiceProtocol,
 )
+from tui.services import settings
 from tui.services.download_queue import (
     KIND_MODEL,
     KIND_ZENODO_BUNDLE,
     DownloadQueueService,
     QueueEntry,
     QueueEvent,
-)
-from tui.strings import (
-    APP_HELP_LABEL,
-    APP_HELP_ROW,
-    APP_HELP_TITLE,
-    APP_MIN_SIZE_MESSAGE,
-    APP_MODAL_BACK_LABEL,
-    APP_QUIT_LABEL,
-    APP_TITLE,
-    CFG_VALUE_ABSENT,
-    DL_BUNDLE_TASK_NAME,
-    LNC_EXIT_MESSAGE,
-    LNC_EXIT_MESSAGE_MULTI,
-    LNC_EXIT_TITLE,
-    NAV_PLACEHOLDER_TOAST,
-    QUEUE_FLIP_TOAST,
-    QUEUE_FLIP_TOAST_MODEL,
-    QUEUE_PERSIST_DRIVER_TOAST,
 )
 
 # 08-UI-SPEC Terminal Contract: the minimum grid. Below this, only the
@@ -127,7 +114,7 @@ class HelpModal(ModalScreen):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, rows: "list[tuple[str, str]]", **kwargs):
@@ -142,11 +129,11 @@ class HelpModal(ModalScreen):
                 # markup-reserved characters (the selection screen's "/"
                 # filter keycap parsed as a broken auto-closing tag and
                 # crashed the console — the row must stay literal).
-                yield Static(Text(APP_HELP_ROW.format(key=key, label=label)))
+                yield Static(Text(S.APP_HELP_ROW.format(key=key, label=label)))
             yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#help-box", Vertical).border_title = APP_HELP_TITLE
+        self.query_one("#help-box", Vertical).border_title = S.APP_HELP_TITLE
 
 
 class MinSizeScreen(Screen):
@@ -166,7 +153,7 @@ class MinSizeScreen(Screen):
         yield Static(self._message(), id="min-size-message")
 
     def _message(self) -> str:
-        return APP_MIN_SIZE_MESSAGE.format(w=self._width, h=self._height)
+        return S.APP_MIN_SIZE_MESSAGE.format(w=self._width, h=self._height)
 
     def update_dimensions(self, width: int, height: int) -> None:
         """Keep the displayed dimensions current on further below-min resizes."""
@@ -197,7 +184,7 @@ class ExitModal(ModalScreen):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "detach_quit", show=False),
         Binding("k", "kill_quit", show=False),
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, roots, launcher, message: str, **kwargs):
@@ -215,7 +202,7 @@ class ExitModal(ModalScreen):
 
     def on_mount(self) -> None:
         self.query_one("#exit-modal-box", Vertical).border_title = (
-            LNC_EXIT_TITLE)
+            S.LNC_EXIT_TITLE)
 
     def action_detach_quit(self) -> None:
         """[enter] the default: drop every live handle (each sweep
@@ -317,12 +304,85 @@ class QueueStalledMessage(Message):
         super().__init__()
 
 
+# =====================================================================
+# The L language toggle's binding-description remap (261015-ehc, EHC-1)
+# =====================================================================
+
+#: The app-local Binding-carrying screen classes (the sys.modules sweep
+#: below covers tui/screens/*; these three live HERE).
+_APP_LOCAL_BINDING_SCREENS: "tuple[type, ...]" = (
+    HelpModal, MinSizeScreen, ExitModal)
+
+
+def _binding_owning_screen_classes() -> "list[type]":
+    """Every class carrying a BINDINGS list the console renders.
+
+    The tui/screens/* modules are swept through sys.modules (automatic:
+    any future screen module joins coverage with zero registry edits) —
+    translation of a description never re-declared happens through
+    ``translate_value``'s byte-equality lookup, so extra classes are
+    harmless no-ops.
+    """
+    classes: dict[str, type] = {
+        f"{cls.__module__}.{cls.__qualname__}": cls
+        for cls in _APP_LOCAL_BINDING_SCREENS
+    }
+    for module_name, module in list(sys.modules.items()):
+        if module is None or not module_name.startswith("tui.screens"):
+            continue
+        for attr in vars(module).values():
+            if (isinstance(attr, type) and issubclass(attr, Screen)
+                    and "BINDINGS" in vars(attr)):
+                classes[f"{attr.__module__}.{attr.__qualname__}"] = attr
+    return list(classes.values())
+
+
+def remap_binding_descriptions(from_lang: str, to_lang: str) -> None:
+    """Translate every rendered binding description between languages.
+
+    textual 8.2.8 probe-pinned: ``Binding.description`` is FROZEN
+    (FrozenInstanceError), so each described entry is REBUILT IN PLACE —
+    a new Binding carrying the original key/action/show/key_display/
+    priority and the translated description (tuple shorthands rebuild
+    their third element). Walks the app's own BINDINGS plus every
+    Binding-owning screen class (app-local + the tui/screens sweep), so
+    a screen constructed AFTER a toggle renders the active language too.
+
+    Also called by ``tui/__main__``'s boot load (class declarations
+    freeze at import in the import-time language; the persisted language
+    needs the same remap before the first render).
+    """
+    owners: list[Any] = [DnallmMarkTui]
+    owners.extend(_binding_owning_screen_classes())
+    for owner in owners:
+        bindings = owner.__dict__.get("BINDINGS")
+        if not isinstance(bindings, list):
+            continue
+        for index, binding in enumerate(bindings):
+            if isinstance(binding, Binding) and binding.description:
+                bindings[index] = Binding(
+                    binding.key,
+                    binding.action,
+                    S.translate_value(
+                        binding.description, from_lang, to_lang),
+                    show=binding.show,
+                    key_display=binding.key_display,
+                    priority=binding.priority,
+                )
+            elif (isinstance(binding, tuple) and len(binding) >= 3
+                    and binding[2]):
+                bindings[index] = (
+                    (*binding[:2],
+                     S.translate_value(binding[2], from_lang, to_lang),
+                     *binding[3:]))
+
+
 class DnallmMarkTui(App):
     """DNALLM-Mark operator console — composition root."""
 
     # I18N-01: operator-facing copy lives ONLY in tui/strings.py; screens
     # reference constants, never inline copy.
-    TITLE = APP_TITLE
+    TITLE = S.APP_TITLE
 
     # tui/styles.tcss — semantic Textual theme tokens only (08-UI-SPEC
     # Color contract; no hardcoded hex — the optional brand theme is
@@ -331,12 +391,15 @@ class DnallmMarkTui(App):
 
     # App-level bindings: q quits from any screen (unhandled keys bubble
     # widget -> screen -> app, so a focused DataTable does not swallow q);
-    # ? opens the help modal. The ClassVar annotations mirror the App base
-    # declarations verbatim (the 08-03 RUF012 resolution) — framework-read
-    # class constants.
+    # ? opens the help modal; L toggles the language (EHC-1, 261015-ehc —
+    # uppercase L, no screen binds L/l; a focused Input consumes the
+    # keystroke as text, which is the correct k9s behavior). The ClassVar
+    # annotations mirror the App base declarations verbatim (the 08-03
+    # RUF012 resolution) — framework-read class constants.
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("q", "quit", APP_QUIT_LABEL),
-        Binding("question_mark", "help", APP_HELP_LABEL, key_display="?"),
+        Binding("q", "quit", S.APP_QUIT_LABEL),
+        Binding("question_mark", "help", S.APP_HELP_LABEL, key_display="?"),
+        Binding("L", "toggle_language", S.APP_LANGUAGE_TOGGLE_LABEL),
     ]
 
     # Screen registry (key-switched full screens, 08-UI-SPEC Auto-Selected
@@ -530,7 +593,7 @@ class DnallmMarkTui(App):
         if target is None:
             return
         if target.phase is not None:
-            self.notify(NAV_PLACEHOLDER_TOAST.format(n=target.phase))
+            self.notify(S.NAV_PLACEHOLDER_TOAST.format(n=target.phase))
             return
         current = self.screen
         if target.target == "env_check":
@@ -717,11 +780,11 @@ class DnallmMarkTui(App):
             # that lane, so the dataset lane's reconciled-claim wording
             # must never render for it)
             if event.kind == KIND_ZENODO_BUNDLE:
-                self.notify(QUEUE_FLIP_TOAST.format(key=DL_BUNDLE_TASK_NAME))
+                self.notify(S.QUEUE_FLIP_TOAST.format(key=S.DL_BUNDLE_TASK_NAME))
             elif event.kind == KIND_MODEL:
-                self.notify(QUEUE_FLIP_TOAST_MODEL.format(key=event.key))
+                self.notify(S.QUEUE_FLIP_TOAST_MODEL.format(key=event.key))
             else:
-                self.notify(QUEUE_FLIP_TOAST.format(key=event.key))
+                self.notify(S.QUEUE_FLIP_TOAST.format(key=event.key))
         for screen in self.screen_stack:
             apply_event = getattr(screen, "apply_queue_event", None)
             if apply_event is not None:
@@ -746,7 +809,7 @@ class DnallmMarkTui(App):
         if message.generation != self._queue_generation:
             return  # a superseded driver's late post (WR-02)
         self.notify(
-            QUEUE_PERSIST_DRIVER_TOAST.format(key=message.key),
+            S.QUEUE_PERSIST_DRIVER_TOAST.format(key=message.key),
             severity="error")
 
     # ===== The D-13 launch -> auto-nav integration (11-07) =====
@@ -858,8 +921,8 @@ class DnallmMarkTui(App):
         """
         roots = self._launcher.live_sweeps()
         attached_running = False
-        done = CFG_VALUE_ABSENT
-        total = CFG_VALUE_ABSENT
+        done = S.CFG_VALUE_ABSENT
+        total = S.CFG_VALUE_ABSENT
         attached_root = ""
         if self._monitor_screen is not None:
             (attached_running, attached_root,
@@ -868,13 +931,13 @@ class DnallmMarkTui(App):
             if len(roots) > 1:
                 self.push_screen(ExitModal(
                     roots=tuple(roots), launcher=self._launcher,
-                    message=LNC_EXIT_MESSAGE_MULTI.format(
+                    message=S.LNC_EXIT_MESSAGE_MULTI.format(
                         n=len(roots), roots=", ".join(roots))))
                 return
             root = roots[0] if roots else attached_root
             self.push_screen(
                 ExitModal(roots=(root,), launcher=self._launcher,
-                          message=LNC_EXIT_MESSAGE.format(
+                          message=S.LNC_EXIT_MESSAGE.format(
                               done=done, total=total,
                               root=Path(root).name)))
             return
@@ -893,7 +956,7 @@ class DnallmMarkTui(App):
         self.push_screen(HelpModal(self._binding_rows()))
 
     def _binding_rows(self) -> "list[tuple[str, str]]":
-        """Every active binding as (display key, Chinese label) rows.
+        """Every active binding as (display key, active-language label) rows.
 
         App bindings first, then the active screen's — the help surface
         always reflects the live key map (k9s-style contextual help).
@@ -909,3 +972,61 @@ class DnallmMarkTui(App):
                     in map(binding_row, getattr(self.screen, "BINDINGS", []))
                     if row is not None)
         return rows
+
+    # ===== The L language toggle (261015-ehc, EHC-1) =====
+
+    async def _rerender_screen(self, screen: Screen) -> None:
+        """Re-render ONE mounted screen in the ACTIVE language.
+
+        textual 8.2.8 probe-pinned: ``recompose()`` rebuilds the compose
+        tree but does NOT re-run the screen's own ``on_mount`` — and every
+        base screen populates its tables/labels there, so recompose alone
+        leaves EMPTY rows (proven live: the env-check table drops 8 -> 0).
+        The uniform mechanism therefore recomposes the chrome AND
+        re-invokes the screen's ``on_mount`` population: every base
+        screen's on_mount is population-only over instance state behind
+        exclusive workers (re-running is idempotent — the monitor's
+        interval arming carries its own stop-before-re-arm guard), and
+        modal content is ctor-frozen copy that recompose re-renders as
+        declared. ``call_after_refresh`` schedules the coroutine; an
+        awaitable on_mount result is awaited.
+        """
+        await screen.recompose()
+        mount_hook = getattr(screen, "on_mount", None)
+        if callable(mount_hook):
+            result = mount_hook()
+            if inspect.isawaitable(result):
+                await result
+
+    def action_toggle_language(self) -> None:
+        """L — toggle zh <-> en LIVE, persist, and re-render everything.
+
+        (a) the other language becomes active in ``tui/strings`` (every
+        module-attribute read re-resolves); (b) the choice persists as
+        ``language.json`` under the XDG state root (atomic, tolerant — a
+        read-only state root degrades to no persistence, never a crash);
+        (c) every rendered binding description is remapped (class BINDINGS
+        rebuilt in place — Binding.description is frozen on 8.2.8); (d)
+        every stacked screen re-renders (the ``_rerender_screen``
+        mechanism) and the footers/bars follow; (e) the confirmation
+        toast names the new language. Below the minimum grid the choice
+        still lands and persists, but no chrome fires (the WR-06
+        posture).
+        """
+        old = S.language()
+        new = "zh" if old == "en" else "en"
+        S.set_language(new)
+        try:
+            settings.atomic_write(
+                settings.state_dir() / "language.json",
+                json.dumps({"language": new}, ensure_ascii=False),
+            )
+        except OSError:
+            pass  # tolerant: the toggle is live even when it can't persist
+        remap_binding_descriptions(old, new)
+        self.title = S.APP_TITLE
+        if self.below_minimum_grid:
+            return  # set + persist only — no chrome over the guard (WR-06)
+        for screen in self.screen_stack:
+            screen.call_after_refresh(self._rerender_screen, screen)
+        self.notify(S.APP_LANGUAGE_TOAST)

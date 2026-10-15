@@ -89,6 +89,7 @@ from tui.services.registries import (
 from tui.strings import (
     APP_HELP_LABEL,
     APP_HELP_ROW,
+    APP_LANGUAGE_TOGGLE_LABEL,
     APP_QUIT_LABEL,
     ENV_KERNEL_LABELS,
     SEL_COL_COMPAT,
@@ -1203,6 +1204,7 @@ async def test_help_modal_opens_on_the_selection_screen():
         assert rows == [
             APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
             APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
+            APP_HELP_ROW.format(key="L", label=APP_LANGUAGE_TOGGLE_LABEL),
             APP_HELP_ROW.format(key="space", label=SEL_MARK_LABEL),
             APP_HELP_ROW.format(key="t", label=SEL_POOL_TOGGLE_LABEL),
             APP_HELP_ROW.format(key="p", label=SEL_PRESET_LABEL),

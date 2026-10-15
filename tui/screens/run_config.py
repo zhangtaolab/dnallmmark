@@ -69,8 +69,9 @@ from textual.widgets import (
 )
 from textual.widgets.selection_list import Selection
 
+from tui import strings as S
 from tui.screens.nav import BottomBar, TopMenuBar
-from tui.screens.selection import ConfirmModal
+from tui.screens.selection import LaunchConfirmModal
 from tui.services import custom_entries as custom_entries_service
 from tui.services import registries as registries_service
 from tui.services import run_config as run_config_service
@@ -89,83 +90,6 @@ from tui.services.sweep_launcher import (
     GateRefusal,
     GateSummary,
     LaunchOutcome,
-)
-from tui.strings import (
-    APP_MODAL_BACK_LABEL,
-    CFG_ARGV_LABEL,
-    CFG_CACHE_DEFAULT,
-    CFG_DATASET_ROOT_DEFAULT,
-    CFG_DIR_PICKER_LABEL,
-    CFG_DIR_PICKER_SELECT_LABEL,
-    CFG_DIR_PICKER_TITLE,
-    CFG_DIRS_TITLE,
-    CFG_DIRS_TITLE_SHORT,
-    CFG_FIELD_CACHE,
-    CFG_FIELD_CURVE,
-    CFG_FIELD_DATASET_ROOT,
-    CFG_FIELD_EBS,
-    CFG_FIELD_EBS_SHORT,
-    CFG_FIELD_EPOCHS,
-    CFG_FIELD_LOG_DIR,
-    CFG_FIELD_MODEL_ROOT,
-    CFG_FIELD_OUTPUT_ROOT,
-    CFG_FIELD_PEFT,
-    CFG_FIELD_SEEDS,
-    CFG_FIELD_SUBSET,
-    CFG_FIELD_VARIANT,
-    CFG_LOG_DIR_DEFAULT,
-    CFG_MODEL_ROOT_DEFAULT,
-    CFG_PARAMS_TITLE,
-    CFG_PEFT_ALIAS_PREVIEW,
-    CFG_PICKER_DATASETS,
-    CFG_PICKER_MODELS,
-    CFG_PREVIEW_LINE,
-    CFG_PREVIEW_LINE_CURVE,
-    CFG_PREVIEW_MODAL_TITLE,
-    CFG_PREVIEW_NOTE,
-    CFG_PREVIEW_PROBLEM_LINE,
-    CFG_PREVIEW_PROBLEMS,
-    CFG_SAVE_DEFAULTS_FAILED_TOAST,
-    CFG_SAVE_DEFAULTS_HINT,
-    CFG_SAVE_DEFAULTS_LABEL,
-    CFG_SAVE_DEFAULTS_TOAST,
-    CFG_SCREEN_TITLE,
-    CFG_STATUS_LINE,
-    CFG_SUBSET_OFF_WITH_PATH,
-    CFG_SUBSET_ON,
-    CFG_VALUE_ABSENT,
-    CFG_VARIANT_ALIAS_PREVIEW,
-    CFG_VARIANT_HEAD_NOTE,
-    CFG_VARIANT_PROBE_HINT,
-    ENV_QUICK_CHECK_FAIL,
-    LNC_E2_AUTH_NOTE,
-    LNC_E2_MATCH_OK,
-    LNC_E2_MISMATCH,
-    LNC_E2_TYPE_PROMPT,
-    LNC_E2_WARNING,
-    LNC_ENV_BLOCKED_HINT,
-    LNC_GATE_CONFIRM,
-    LNC_GATE_SUMMARY,
-    LNC_GATE_TITLE,
-    LNC_LAUNCH_FAILED_TOAST,
-    LNC_LAUNCH_TOAST,
-    NAV_LABEL_ABOUT,
-    NAV_LABEL_DATA,
-    NAV_LABEL_ENV,
-    NAV_LABEL_MONITOR,
-    NAV_LABEL_RUN_CONFIG,
-    NAV_LABEL_SELECTION,
-    SEL_CUSTOM_BADGE,
-    SEL_DISABLED_MARK_WARNING,
-    SEL_DISABLED_SUFFIX,
-    SEL_FILTER_COUNT,
-    SEL_FILTER_KEY_LABEL,
-    SEL_FILTER_LABEL,
-    SEL_FILTER_PLACEHOLDER,
-    SEL_MARK_LABEL,
-    SEL_SWITCH_LABEL,
-    WIZ_PATH_EXISTS,
-    WIZ_PATH_MISSING_ADVISORY,
 )
 
 if TYPE_CHECKING:
@@ -438,37 +362,31 @@ def _problem_line(code: str, detail: object) -> str:
     code + detail verbatim — data discipline.
     """
     if code == "empty_selection":
-        from tui.strings import CFG_EMPTY_SELECTION_PROBLEM
-
-        return CFG_EMPTY_SELECTION_PROBLEM
+        
+        return S.CFG_EMPTY_SELECTION_PROBLEM
     if code == "seeds_invalid":
-        from tui.strings import CFG_SEEDS_INVALID_PROBLEM
-
-        return CFG_SEEDS_INVALID_PROBLEM.format(value=detail)
+        
+        return S.CFG_SEEDS_INVALID_PROBLEM.format(value=detail)
     if code == "curve_invalid":
-        from tui.strings import CFG_CURVE_INVALID_PROBLEM
-
-        return CFG_CURVE_INVALID_PROBLEM.format(value=detail)
+        
+        return S.CFG_CURVE_INVALID_PROBLEM.format(value=detail)
     if code == "probe_ineligible":
-        from tui.strings import CFG_PROBE_INELIGIBLE_PROBLEM
-
-        return CFG_PROBE_INELIGIBLE_PROBLEM.format(model=detail)
+        
+        return S.CFG_PROBE_INELIGIBLE_PROBLEM.format(model=detail)
     if code == "variant_peft":
-        from tui.strings import CFG_COMPOSITION_PROBLEM
-
-        return CFG_COMPOSITION_PROBLEM
+        
+        return S.CFG_COMPOSITION_PROBLEM
     if code == "output_root_invalid":
-        from tui.strings import CFG_OUTPUT_ROOT_PROBLEM
-
-        return CFG_OUTPUT_ROOT_PROBLEM.format(value=detail)
+        
+        return S.CFG_OUTPUT_ROOT_PROBLEM.format(value=detail)
     return f"{code}: {detail}"
 
 
 def _numbered_problems(problems: Sequence[tuple]) -> list[str]:
     """The collect-all numbered problem list (the gauntlet shape)."""
-    lines = [CFG_PREVIEW_PROBLEMS.format(n=len(problems))]
+    lines = [S.CFG_PREVIEW_PROBLEMS.format(n=len(problems))]
     lines.extend(
-        CFG_PREVIEW_PROBLEM_LINE.format(i=index + 1,
+        S.CFG_PREVIEW_PROBLEM_LINE.format(i=index + 1,
                                         problem=_problem_line(code, detail))
         for index, (code, detail) in enumerate(problems)
     )
@@ -643,7 +561,7 @@ class PreviewModal(_PickerReturnModal):
     argv VERBATIM + the numbered problems (data, never restated)."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, lines: "tuple[str, ...]", **kwargs):
@@ -657,7 +575,7 @@ class PreviewModal(_PickerReturnModal):
 
     def on_mount(self) -> None:
         self.query_one("#cfg-preview-box", Vertical).border_title = (
-            CFG_PREVIEW_MODAL_TITLE)
+            S.CFG_PREVIEW_MODAL_TITLE)
         log = self.query_one("#cfg-preview-log", RichLog)
         for line in self._lines:
             log.write(line)
@@ -669,7 +587,7 @@ class ProblemsModal(_PickerReturnModal):
     rendered through the copy mapping)."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, problems: "tuple[tuple, ...]", **kwargs):
@@ -683,7 +601,7 @@ class ProblemsModal(_PickerReturnModal):
 
     def on_mount(self) -> None:
         self.query_one("#cfg-problems-box", Vertical).border_title = (
-            LNC_GATE_TITLE)
+            S.LNC_GATE_TITLE)
         log = self.query_one("#cfg-problems-log", RichLog)
         for line in _numbered_problems(self._problems):
             log.write(line)
@@ -694,7 +612,7 @@ class EnvBlockModal(_PickerReturnModal):
     reasons VERBATIM in a bounded RichLog, and the [1] route hint."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, failed_kernels: "tuple[str, ...]",
@@ -705,34 +623,41 @@ class EnvBlockModal(_PickerReturnModal):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="cfg-envblock-box", classes="modal-box"):
-            yield Static(ENV_QUICK_CHECK_FAIL.format(
+            yield Static(S.ENV_QUICK_CHECK_FAIL.format(
                 kernel_names=", ".join(self._failed_kernels)),
                 id="cfg-envblock-header")
             yield RichLog(wrap=True, id="cfg-envblock-log")
-            yield Static(LNC_ENV_BLOCKED_HINT, id="cfg-envblock-hint")
+            yield Static(S.LNC_ENV_BLOCKED_HINT, id="cfg-envblock-hint")
             yield Footer()
 
     def on_mount(self) -> None:
         self.query_one("#cfg-envblock-box", Vertical).border_title = (
-            LNC_GATE_TITLE)
+            S.LNC_GATE_TITLE)
         log = self.query_one("#cfg-envblock-log", RichLog)
         for line in self._reasons:
             log.write(line)
 
 
 class E2PhraseModal(_PickerReturnModal):
-    """The E2' typed-phrase escalation (D-02/D-07/LNC-03).
+    """The E2' typed-phrase escalation (D-02/D-07/LNC-03; reworked for
+    EHC-2, 261015-ehc ruling 2 — the phrase stays double insurance ON
+    TOP of the y-confirm).
 
     The live mismatch/match indicator flips per keystroke through the
     INJECTED service verdict (``matches`` — the widget holds no
-    matching logic, T-11-06-01); ``enter``-confirm goes live ONLY on the
-    exact-match verdict — a mismatch enter is a no-op (typing can never
-    launch).
+    matching logic, T-11-06-01). ``enter`` NEVER launches: on the
+    exact-match verdict it ADVANCES to the y-ready state (blur the
+    input — while the input holds focus, ``y`` types into it, which is
+    correct; the blur is what arms the modal's ``y`` binding — the
+    indicator stays on the [y] wording); a mismatch enter stays the
+    no-op pin. ``y`` then launches, carrying the typed phrase; ``esc``
+    cancels unchanged.
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "confirm_phrase", show=False),
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("y", "confirm_phrase_y", show=False),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, dirname: str,
@@ -746,16 +671,16 @@ class E2PhraseModal(_PickerReturnModal):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="cfg-e2-box", classes="modal-box"):
-            yield Static(LNC_E2_WARNING, classes="cfg-e2-warning")
-            yield Static(LNC_E2_AUTH_NOTE, classes="cfg-e2-warning")
-            yield Static(LNC_E2_TYPE_PROMPT.format(dirname=self._dirname))
+            yield Static(S.LNC_E2_WARNING, classes="cfg-e2-warning")
+            yield Static(S.LNC_E2_AUTH_NOTE, classes="cfg-e2-warning")
+            yield Static(S.LNC_E2_TYPE_PROMPT.format(dirname=self._dirname))
             yield Input(id="cfg-e2-input")
-            yield Static(LNC_E2_MISMATCH.format(dirname=self._dirname),
+            yield Static(S.LNC_E2_MISMATCH.format(dirname=self._dirname),
                          id="cfg-e2-indicator")
             yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#cfg-e2-box", Vertical).border_title = LNC_GATE_TITLE
+        self.query_one("#cfg-e2-box", Vertical).border_title = S.LNC_GATE_TITLE
         self.query_one("#cfg-e2-input", Input).focus()
 
     def on_input_changed(self, event: Input.Changed) -> None:
@@ -765,25 +690,40 @@ class E2PhraseModal(_PickerReturnModal):
         self._matched = bool(self._matches(event.value))
         indicator = self.query_one("#cfg-e2-indicator", Static)
         if self._matched:
-            indicator.update(LNC_E2_MATCH_OK)
+            indicator.update(S.LNC_E2_MATCH_OK)
             indicator.set_classes(["cfg-e2-match"])
         else:
-            indicator.update(LNC_E2_MISMATCH.format(dirname=self._dirname))
+            indicator.update(S.LNC_E2_MISMATCH.format(dirname=self._dirname))
             indicator.set_classes(["cfg-e2-mismatch"])
 
+    def _advance_to_y_ready(self) -> None:
+        """The matched-enter ADVANCE: blur the input (arming the modal's
+        ``y`` binding — textual 8.2.8's ``set_focus(None)`` clears
+        focused-widget key consumption) and keep the indicator on the
+        [y] wording. Never dismisses, never confirms."""
+        self.set_focus(None)
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """[enter]-confirm — live ONLY on the exact-match verdict."""
+        """The Input's own enter — advance on the matched verdict, no-op
+        on a mismatch (typing can never launch; neither can enter)."""
         if event.input.id != "cfg-e2-input" or not self._matched:
             return  # a mismatch enter is a no-op (the pin)
-        self.dismiss()
-        self._on_confirm(event.value)
+        self._advance_to_y_ready()
 
     def action_confirm_phrase(self) -> None:
-        """The modal-level enter binding mirrors the Input's own submit
-        path (both consume the key; only the live verdict launches)."""
-        input_widget = self.query_one("#cfg-e2-input", Input)
+        """The modal-level enter binding — the same advance/no-op pair
+        (enter can NEVER launch from this modal, EHC-2)."""
         if not self._matched:
             return
+        self._advance_to_y_ready()
+
+    def action_confirm_phrase_y(self) -> None:
+        """``y`` — the one key that launches, live only once the input is
+        blurred (armed by the matched-enter advance); a mismatch leaves
+        it inert."""
+        if not self._matched:
+            return
+        input_widget = self.query_one("#cfg-e2-input", Input)
         self.dismiss()
         self._on_confirm(input_widget.value)
 
@@ -793,7 +733,7 @@ class ChoiceModal(_PickerReturnModal):
     the first toggle applies the choice and closes)."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, title: str, options: "tuple[str, ...]",
@@ -824,11 +764,12 @@ class ChoiceModal(_PickerReturnModal):
         self._on_pick(value)
 
 
-class _GateConfirmModal(_PickerReturnModal, ConfirmModal):
+class _GateConfirmModal(_PickerReturnModal, LaunchConfirmModal):
     """The launch gate's confirm over the shared slot-4 base (delta B,
-    B4's one-shared-helper ruling): ``selection.py``'s ``ConfirmModal``
-    stays byte-identical for its other consumers — the local subclass
-    ONLY adds the picker-return dismiss for this screen's push site."""
+    B4's one-shared-helper ruling): the local subclass ONLY adds the
+    picker-return dismiss for this screen's push site. Since 261015-ehc
+    (EHC-2) the base is ``LaunchConfirmModal`` — ``y`` starts the sweep,
+    ``esc`` cancels, ``enter`` lands on the documented no-op."""
 
 
 class _DirsOnlyTree(DirectoryTree):
@@ -908,8 +849,8 @@ class DirPickerModal(ModalScreen):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
-        Binding("f", "select_dir", CFG_DIR_PICKER_SELECT_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
+        Binding("f", "select_dir", S.CFG_DIR_PICKER_SELECT_LABEL),
     ]
 
     def __init__(self, origin_input: Input, field_label: str,
@@ -926,7 +867,7 @@ class DirPickerModal(ModalScreen):
 
     def on_mount(self) -> None:
         self.query_one("#cfg-dirpick-box", Vertical).border_title = (
-            CFG_DIR_PICKER_TITLE.format(field=self._field_label))
+            S.CFG_DIR_PICKER_TITLE.format(field=self._field_label))
         self.query_one("#cfg-dirpick-tree", _DirsOnlyTree).focus()
 
     def dismiss(self, result: "Any | None" = None):
@@ -990,12 +931,12 @@ class RunConfigScreen(Screen):
     # 261014-f4w inserts [s] save-defaults and ctrl+o dir-picker after
     # [p]: the declaration order is the bottom-bar/help order.
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("space", "toggle_mark", SEL_MARK_LABEL),
-        Binding("m", "switch_kind", SEL_SWITCH_LABEL),
-        Binding("slash", "focus_filter", SEL_FILTER_KEY_LABEL,
+        Binding("space", "toggle_mark", S.SEL_MARK_LABEL),
+        Binding("m", "switch_kind", S.SEL_SWITCH_LABEL),
+        Binding("slash", "focus_filter", S.SEL_FILTER_KEY_LABEL,
                 key_display="/"),
-        Binding("p", "preview_modal", CFG_PREVIEW_MODAL_TITLE),
-        Binding("s", "save_directory_defaults", CFG_SAVE_DEFAULTS_LABEL),
+        Binding("p", "preview_modal", S.CFG_PREVIEW_MODAL_TITLE),
+        Binding("s", "save_directory_defaults", S.CFG_SAVE_DEFAULTS_LABEL),
         # BINDING-CHOICE RATIONALE (probe-pinned on textual 8.2.8): a
         # BARE letter cannot open the picker — the open condition is a
         # focused dir Input, and a focused Input consumes printable keys
@@ -1005,15 +946,15 @@ class RunConfigScreen(Screen):
         # exactly when the operator is inside a dir field (probed: an
         # app-level ctrl+o binding fires with an Input focused, the
         # Input's value untouched).
-        Binding("ctrl+o", "open_dir_picker", CFG_DIR_PICKER_LABEL),
-        Binding("enter", "open_gate", LNC_GATE_TITLE),
+        Binding("ctrl+o", "open_dir_picker", S.CFG_DIR_PICKER_LABEL),
+        Binding("enter", "open_gate", S.LNC_GATE_TITLE),
         Binding("escape", "clear_filter", show=False),
-        Binding("1", "app.nav(1)", NAV_LABEL_ENV, show=False),
-        Binding("2", "app.nav(2)", NAV_LABEL_SELECTION, show=False),
-        Binding("3", "app.nav(3)", NAV_LABEL_DATA, show=False),
-        Binding("4", "app.nav(4)", NAV_LABEL_RUN_CONFIG, show=False),
-        Binding("5", "app.nav(5)", NAV_LABEL_MONITOR, show=False),
-        Binding("6", "app.nav(6)", NAV_LABEL_ABOUT, show=False),
+        Binding("1", "app.nav(1)", S.NAV_LABEL_ENV, show=False),
+        Binding("2", "app.nav(2)", S.NAV_LABEL_SELECTION, show=False),
+        Binding("3", "app.nav(3)", S.NAV_LABEL_DATA, show=False),
+        Binding("4", "app.nav(4)", S.NAV_LABEL_RUN_CONFIG, show=False),
+        Binding("5", "app.nav(5)", S.NAV_LABEL_MONITOR, show=False),
+        Binding("6", "app.nav(6)", S.NAV_LABEL_ABOUT, show=False),
     ]
 
     # ===== Message classes (worker thread -> event loop, WR-02) =====
@@ -1130,23 +1071,23 @@ class RunConfigScreen(Screen):
         reserved for modals), the 1-row preview line, the bottom bar."""
         yield TopMenuBar()
         with Horizontal(id="cfg-title-bar"):
-            yield Label(CFG_SCREEN_TITLE, id="cfg-screen-title")
+            yield Label(S.CFG_SCREEN_TITLE, id="cfg-screen-title")
             yield Label("", id="cfg-status-line")
         with Horizontal(id="cfg-columns"):
             with Vertical(id="cfg-picker-col"):
                 yield Label(
-                    CFG_PICKER_MODELS.format(n=0, total=0),
+                    S.CFG_PICKER_MODELS.format(n=0, total=0),
                     id="cfg-picker-title")
                 with Horizontal(id="cfg-filter-bar"):
-                    yield Label(SEL_FILTER_LABEL, id="cfg-filter-label")
-                    yield Input(placeholder=SEL_FILTER_PLACEHOLDER,
+                    yield Label(S.SEL_FILTER_LABEL, id="cfg-filter-label")
+                    yield Input(placeholder=S.SEL_FILTER_PLACEHOLDER,
                                 id="cfg-filter", compact=True)
                     yield Label("", id="cfg-filter-count")
                 yield PickerList(id="cfg-picker")
             with VerticalScroll(id="cfg-params-col"):
-                yield Label(CFG_PARAMS_TITLE, id="cfg-params-title")
+                yield Label(S.CFG_PARAMS_TITLE, id="cfg-params-title")
                 with Horizontal(classes="cfg-param-row"):
-                    yield Label(CFG_FIELD_SEEDS,
+                    yield Label(S.CFG_FIELD_SEEDS,
                                 id="cfg-label-seeds",
                                 classes="cfg-param-label")
                     # compact=True on every height-1-row Input (the
@@ -1157,13 +1098,13 @@ class RunConfigScreen(Screen):
                     yield Input(value="42,43,44", id="cfg-input-seeds",
                                 classes="cfg-param-input", compact=True)
                 with Horizontal(classes="cfg-param-row"):
-                    yield Label(CFG_FIELD_PEFT, id="cfg-label-peft",
+                    yield Label(S.CFG_FIELD_PEFT, id="cfg-label-peft",
                                 classes="cfg-param-label")
                     yield ChoiceRow("peft", "none", id="cfg-value-peft",
                                     classes="cfg-choice-value")
                 yield Label("", id="cfg-hint-peft", classes="cfg-hint")
                 with Horizontal(classes="cfg-param-row"):
-                    yield Label(CFG_FIELD_VARIANT, id="cfg-label-variant",
+                    yield Label(S.CFG_FIELD_VARIANT, id="cfg-label-variant",
                                 classes="cfg-param-label")
                     yield ChoiceRow("variant", "none", id="cfg-value-variant",
                                     classes="cfg-choice-value")
@@ -1174,12 +1115,12 @@ class RunConfigScreen(Screen):
                 yield Label("", id="cfg-hint-variant-probe",
                             classes="cfg-hint")
                 with Horizontal(classes="cfg-param-row"):
-                    yield Label(CFG_FIELD_CURVE, id="cfg-label-curve",
+                    yield Label(S.CFG_FIELD_CURVE, id="cfg-label-curve",
                                 classes="cfg-param-label")
                     yield Input(value="", id="cfg-input-curve",
                                 classes="cfg-param-input", compact=True)
                 with Horizontal(classes="cfg-param-row"):
-                    yield Label(CFG_FIELD_SUBSET, id="cfg-label-subset",
+                    yield Label(S.CFG_FIELD_SUBSET, id="cfg-label-subset",
                                 classes="cfg-param-label")
                     yield Checkbox(value=False, id="cfg-subset-toggle",
                                    classes="cfg-subset-toggle")
@@ -1192,19 +1133,19 @@ class RunConfigScreen(Screen):
                 yield subset_path
                 yield Label("", id="cfg-adv-subset", classes="cfg-adv")
                 with Horizontal(classes="cfg-param-row"):
-                    yield Label(CFG_FIELD_EPOCHS, id="cfg-label-epochs",
+                    yield Label(S.CFG_FIELD_EPOCHS, id="cfg-label-epochs",
                                 classes="cfg-param-label")
                     yield Input(value="", id="cfg-input-epochs",
                                 classes="cfg-param-input", compact=True)
                 with Horizontal(classes="cfg-param-row"):
-                    yield Label(CFG_FIELD_EBS, id="cfg-label-ebs",
+                    yield Label(S.CFG_FIELD_EBS, id="cfg-label-ebs",
                                 classes="cfg-param-label")
                     yield Input(value="", id="cfg-input-ebs",
                                 classes="cfg-param-input", compact=True)
-                yield Label(CFG_DIRS_TITLE, id="cfg-dirs-title",
+                yield Label(S.CFG_DIRS_TITLE, id="cfg-dirs-title",
                             classes="cfg-section-title")
                 with Horizontal(classes="cfg-param-row"):
-                    yield Label(CFG_FIELD_OUTPUT_ROOT,
+                    yield Label(S.CFG_FIELD_OUTPUT_ROOT,
                                 id="cfg-label-output-root",
                                 classes="cfg-param-label")
                     yield Input(value="./finetuned",
@@ -1212,7 +1153,7 @@ class RunConfigScreen(Screen):
                                 classes="cfg-param-input", compact=True)
                 yield Label("", id="cfg-adv-output-root", classes="cfg-adv")
                 with Horizontal(classes="cfg-param-row"):
-                    yield Label(CFG_FIELD_DATASET_ROOT,
+                    yield Label(S.CFG_FIELD_DATASET_ROOT,
                                 id="cfg-label-dataset-root",
                                 classes="cfg-param-label")
                     # The legacy "./datasets" display default retired
@@ -1220,42 +1161,42 @@ class RunConfigScreen(Screen):
                     # --dataset_root flag now, so the field defaults
                     # empty with its prompt hint.
                     yield Input(
-                        value="", placeholder=CFG_DATASET_ROOT_DEFAULT,
+                        value="", placeholder=S.CFG_DATASET_ROOT_DEFAULT,
                         id="cfg-input-dataset-root",
                         classes="cfg-param-input", compact=True)
                 yield Label("", id="cfg-adv-dataset-root", classes="cfg-adv")
                 with Horizontal(classes="cfg-param-row"):
-                    yield Label(CFG_FIELD_MODEL_ROOT,
+                    yield Label(S.CFG_FIELD_MODEL_ROOT,
                                 id="cfg-label-model-root",
                                 classes="cfg-param-label")
                     # compact=True on the height-1-row Input (the 12-03
                     # Rule-1 discipline — see the seeds-row note above).
                     yield Input(
-                        value="", placeholder=CFG_MODEL_ROOT_DEFAULT,
+                        value="", placeholder=S.CFG_MODEL_ROOT_DEFAULT,
                         id="cfg-input-model-root",
                         classes="cfg-param-input", compact=True)
                 yield Label("", id="cfg-adv-model-root", classes="cfg-adv")
                 with Horizontal(classes="cfg-param-row"):
-                    yield Label(CFG_FIELD_CACHE, id="cfg-label-cache",
+                    yield Label(S.CFG_FIELD_CACHE, id="cfg-label-cache",
                                 classes="cfg-param-label")
-                    yield Input(value="", placeholder=CFG_CACHE_DEFAULT,
+                    yield Input(value="", placeholder=S.CFG_CACHE_DEFAULT,
                                 id="cfg-input-cache",
                                 classes="cfg-param-input", compact=True)
                 yield Label("", id="cfg-adv-cache", classes="cfg-adv")
                 with Horizontal(classes="cfg-param-row"):
-                    yield Label(CFG_FIELD_LOG_DIR,
+                    yield Label(S.CFG_FIELD_LOG_DIR,
                                 id="cfg-label-log-dir",
                                 classes="cfg-param-label")
                     # compact=True on the height-1-row Input (the 12-03
                     # Rule-1 discipline — see the seeds-row note above).
                     yield Input(
-                        value="", placeholder=CFG_LOG_DIR_DEFAULT,
+                        value="", placeholder=S.CFG_LOG_DIR_DEFAULT,
                         id="cfg-input-log-dir",
                         classes="cfg-param-input", compact=True)
                 yield Label("", id="cfg-adv-log-dir", classes="cfg-adv")
                 # The dirs section's closing dim hint (F4W-03): the
                 # restore-defaults copy for the [s] save action.
-                yield Label(CFG_SAVE_DEFAULTS_HINT,
+                yield Label(S.CFG_SAVE_DEFAULTS_HINT,
                             id="cfg-hint-save-defaults",
                             classes="cfg-hint")
         yield Label("", id="cfg-preview-line")
@@ -1419,16 +1360,16 @@ class RunConfigScreen(Screen):
             return
         problems = tuple(self._last_parse_problems) + tuple(result.problems)
         if problems:
-            line.update(CFG_PREVIEW_PROBLEMS.format(n=len(problems)))
+            line.update(S.CFG_PREVIEW_PROBLEMS.format(n=len(problems)))
             line.set_classes(["cfg-preview-problem"])
             return
         if result.fractions_count:
-            text = CFG_PREVIEW_LINE_CURVE.format(
+            text = S.CFG_PREVIEW_LINE_CURVE.format(
                 models=result.models_count, tasks=result.tasks_count,
                 seeds=result.seeds_count, fractions=result.fractions_count,
                 cells=result.cells_count)
         else:
-            text = CFG_PREVIEW_LINE.format(
+            text = S.CFG_PREVIEW_LINE.format(
                 models=result.models_count, tasks=result.tasks_count,
                 seeds=result.seeds_count, cells=result.cells_count)
         line.update(text)
@@ -1470,10 +1411,10 @@ class RunConfigScreen(Screen):
             segments: list[Text] = []
             if kind == "models" and is_custom:
                 segments.append(Text(
-                    f"{SEL_CUSTOM_BADGE} ", style="dim"))
+                    f"{S.SEL_CUSTOM_BADGE} ", style="dim"))
             segments.append(Text(key))
             if is_disabled:
-                segments.append(Text(SEL_DISABLED_SUFFIX, style="dim"))
+                segments.append(Text(S.SEL_DISABLED_SUFFIX, style="dim"))
             prompts.append(_truncate_text(
                 Text.assemble(*segments), budget))
             keys.append(key)
@@ -1496,24 +1437,24 @@ class RunConfigScreen(Screen):
 
     def _render_filter_count(self, shown: int, total: int) -> None:
         self.query_one("#cfg-filter-count", Label).update(
-            SEL_FILTER_COUNT.format(n=shown, total=total))
+            S.SEL_FILTER_COUNT.format(n=shown, total=total))
 
     def _render_counts(self) -> None:
         """The status line + the picker title (zero-one-many counts)."""
         self.query_one("#cfg-status-line", Label).update(
-            CFG_STATUS_LINE.format(
+            S.CFG_STATUS_LINE.format(
                 n=len(self._spec.models),
                 models_total=len(self._entries.model_entries),
                 m=len(self._spec.tasks),
                 tasks_total=len(self._entries.dataset_entries)))
         if self._picker_kind == "models":
             self.query_one("#cfg-picker-title", Label).update(
-                CFG_PICKER_MODELS.format(
+                S.CFG_PICKER_MODELS.format(
                     n=len(self._spec.models),
                     total=len(self._entries.model_entries)))
         else:
             self.query_one("#cfg-picker-title", Label).update(
-                CFG_PICKER_DATASETS.format(
+                S.CFG_PICKER_DATASETS.format(
                     n=len(self._spec.tasks),
                     total=len(self._entries.dataset_entries)))
 
@@ -1556,10 +1497,10 @@ class RunConfigScreen(Screen):
     def _render_hints(self, probe_hits: "tuple[str, ...]") -> None:
         """The derived dim hint lines under their fields."""
         first_model = (self._spec.models[0] if self._spec.models
-                       else CFG_VALUE_ABSENT)
+                       else S.CFG_VALUE_ABSENT)
         peft_hint = self.query_one("#cfg-hint-peft", Label)
         if self._spec.peft != "none":
-            peft_hint.update(CFG_PEFT_ALIAS_PREVIEW.format(
+            peft_hint.update(S.CFG_PEFT_ALIAS_PREVIEW.format(
                 model=first_model, mode=self._spec.peft))
             peft_hint.display = True
         else:
@@ -1569,18 +1510,18 @@ class RunConfigScreen(Screen):
         probe = self.query_one("#cfg-hint-variant-probe", Label)
         variant = self._spec.config_variant
         if variant != "none":
-            alias.update(CFG_VARIANT_ALIAS_PREVIEW.format(
+            alias.update(S.CFG_VARIANT_ALIAS_PREVIEW.format(
                 model=first_model, variant=variant))
             alias.display = True
         else:
             alias.display = False
         if variant == "head":
-            head.update(CFG_VARIANT_HEAD_NOTE)
+            head.update(S.CFG_VARIANT_HEAD_NOTE)
             head.display = True
         else:
             head.display = False
         if variant == "probe" and probe_hits:
-            probe.update(CFG_VARIANT_PROBE_HINT.format(
+            probe.update(S.CFG_VARIANT_PROBE_HINT.format(
                 models=", ".join(probe_hits)))
             probe.display = True
         else:
@@ -1592,9 +1533,9 @@ class RunConfigScreen(Screen):
         path = (self._text_value("#cfg-input-subset")
                 if self._subset_on else DEFAULT_SUBSET_PATH)
         if self._subset_on:
-            text = CFG_SUBSET_ON.format(path=path)
+            text = S.CFG_SUBSET_ON.format(path=path)
         else:
-            text = CFG_SUBSET_OFF_WITH_PATH.format(path=path)
+            text = S.CFG_SUBSET_OFF_WITH_PATH.format(path=path)
         self.query_one("#cfg-subset-value", Static).update(
             Text(text, style=_STYLE_DIM if not self._subset_on else ""))
 
@@ -1612,10 +1553,10 @@ class RunConfigScreen(Screen):
             label = self.query_one(adv_id, Label)
             state = dir_states.get(state_key, "unset")
             if state == "exists":
-                label.update(Text(WIZ_PATH_EXISTS, style="$success"))
+                label.update(Text(S.WIZ_PATH_EXISTS, style="$success"))
                 label.display = True
             elif state == "missing":
-                label.update(Text(WIZ_PATH_MISSING_ADVISORY,
+                label.update(Text(S.WIZ_PATH_MISSING_ADVISORY,
                                   style="$error"))
                 label.display = True
             else:
@@ -1629,9 +1570,9 @@ class RunConfigScreen(Screen):
         params = self.query_one("#cfg-params-col", VerticalScroll)
         params.set_classes(["cfg-narrow"] if narrow else ["cfg-wide"])
         self.query_one("#cfg-label-ebs", Label).update(
-            CFG_FIELD_EBS_SHORT if narrow else CFG_FIELD_EBS)
+            S.CFG_FIELD_EBS_SHORT if narrow else S.CFG_FIELD_EBS)
         self.query_one("#cfg-dirs-title", Label).update(
-            CFG_DIRS_TITLE_SHORT if narrow else CFG_DIRS_TITLE)
+            S.CFG_DIRS_TITLE_SHORT if narrow else S.CFG_DIRS_TITLE)
 
     # ===== event handlers (event-loop side: render + intent) =====
 
@@ -1659,7 +1600,7 @@ class RunConfigScreen(Screen):
             self, message: DisabledMarkRequested) -> None:
         """A disabled custom can never mark — the inherited warning."""
         self.app.notify(
-            SEL_DISABLED_MARK_WARNING.format(key=message.key),
+            S.SEL_DISABLED_MARK_WARNING.format(key=message.key),
             severity="warning")
 
     def on_input_changed(self, event: Input.Changed) -> None:
@@ -1704,7 +1645,7 @@ class RunConfigScreen(Screen):
             return
         if picker.disabled_at(index):
             self.app.notify(
-                SEL_DISABLED_MARK_WARNING.format(key=key),
+                S.SEL_DISABLED_MARK_WARNING.format(key=key),
                 severity="warning")
             return
         entries, kind = self._current_entries()
@@ -1750,11 +1691,11 @@ class RunConfigScreen(Screen):
         if focused.field == "peft":
             options, current, title = (
                 run_config_service.PEFT_MODES, self._spec.peft,
-                CFG_FIELD_PEFT)
+                S.CFG_FIELD_PEFT)
         else:
             options, current, title = (
                 run_config_service.CONFIG_VARIANTS,
-                self._spec.config_variant, CFG_FIELD_VARIANT)
+                self._spec.config_variant, S.CFG_FIELD_VARIANT)
 
         def on_pick(value: str) -> None:
             focused.set_value(value)
@@ -1780,18 +1721,18 @@ class RunConfigScreen(Screen):
             return
         lines: list[str] = []
         if result.fractions_count:
-            lines.append(CFG_PREVIEW_LINE_CURVE.format(
+            lines.append(S.CFG_PREVIEW_LINE_CURVE.format(
                 models=result.models_count, tasks=result.tasks_count,
                 seeds=result.seeds_count, fractions=result.fractions_count,
                 cells=result.cells_count))
         else:
-            lines.append(CFG_PREVIEW_LINE.format(
+            lines.append(S.CFG_PREVIEW_LINE.format(
                 models=result.models_count, tasks=result.tasks_count,
                 seeds=result.seeds_count, cells=result.cells_count))
-        lines.append(CFG_PREVIEW_NOTE)
+        lines.append(S.CFG_PREVIEW_NOTE)
         if not problems and result.cells_count > 0:
             argv = self._run_service.compose_argv(self._spec)
-            lines.append(CFG_ARGV_LABEL + " ".join(str(a) for a in argv))
+            lines.append(S.CFG_ARGV_LABEL + " ".join(str(a) for a in argv))
         lines.extend(_numbered_problems(problems) if problems else [])
         self.app.push_screen(PreviewModal(tuple(lines)))
 
@@ -1800,11 +1741,11 @@ class RunConfigScreen(Screen):
     #: The five dir-input ids -> their CFG_FIELD labels (the picker's
     #: modal title + the open-condition allowlist).
     _DIR_INPUT_FIELDS: ClassVar[dict[str, str]] = {
-        "#cfg-input-output-root": CFG_FIELD_OUTPUT_ROOT,
-        "#cfg-input-dataset-root": CFG_FIELD_DATASET_ROOT,
-        "#cfg-input-model-root": CFG_FIELD_MODEL_ROOT,
-        "#cfg-input-log-dir": CFG_FIELD_LOG_DIR,
-        "#cfg-input-cache": CFG_FIELD_CACHE,
+        "#cfg-input-output-root": S.CFG_FIELD_OUTPUT_ROOT,
+        "#cfg-input-dataset-root": S.CFG_FIELD_DATASET_ROOT,
+        "#cfg-input-model-root": S.CFG_FIELD_MODEL_ROOT,
+        "#cfg-input-log-dir": S.CFG_FIELD_LOG_DIR,
+        "#cfg-input-cache": S.CFG_FIELD_CACHE,
     }
 
     def action_save_directory_defaults(self) -> None:
@@ -1827,10 +1768,10 @@ class RunConfigScreen(Screen):
         except Exception as exc:  # noqa: BLE001 — WR-03: surfaced as the
             # error toast, never a silently dropped keypress
             self.app.notify(
-                CFG_SAVE_DEFAULTS_FAILED_TOAST.format(error=_exc_text(exc)),
+                S.CFG_SAVE_DEFAULTS_FAILED_TOAST.format(error=_exc_text(exc)),
                 severity="error")
             return
-        self.app.notify(CFG_SAVE_DEFAULTS_TOAST.format(path=str(written)))
+        self.app.notify(S.CFG_SAVE_DEFAULTS_TOAST.format(path=str(written)))
 
     def action_open_dir_picker(self) -> None:
         """ctrl+o — open the DirPickerModal over the FOCUSED dir input
@@ -1975,11 +1916,11 @@ class RunConfigScreen(Screen):
             ))
         else:
             self.app.push_screen(_GateConfirmModal(
-                message=(LNC_GATE_SUMMARY.format(
+                message=(S.LNC_GATE_SUMMARY.format(
                     models=summary.models, tasks=summary.tasks,
                     seeds=summary.seeds, cells=summary.cells,
                     output_root=summary.output_root)
-                    + "\n" + LNC_GATE_CONFIRM),
+                    + "\n" + S.LNC_GATE_CONFIRM),
                 on_confirm=lambda: self._launch(None),
             ))
 
@@ -2036,7 +1977,7 @@ class RunConfigScreen(Screen):
             summary = message.summary
             if outcome.spawned:
                 if summary is not None:
-                    self.app.notify(LNC_LAUNCH_TOAST.format(
+                    self.app.notify(S.LNC_LAUNCH_TOAST.format(
                         cells=summary.cells,
                         output_root=summary.output_root))
                 # D-13's auto-nav half (11-07): record + attach + the
@@ -2046,7 +1987,7 @@ class RunConfigScreen(Screen):
                     summary.cells if summary is not None else 0)
                 return
             self.app.notify(
-                LNC_LAUNCH_FAILED_TOAST.format(
+                S.LNC_LAUNCH_FAILED_TOAST.format(
                     error=outcome.error or ""),
                 severity="error")
             return
@@ -2064,7 +2005,7 @@ class RunConfigScreen(Screen):
             return  # a superseded worker's late error (WR-02)
         self._gate_active = False
         self.app.notify(
-            LNC_LAUNCH_FAILED_TOAST.format(error=message.error),
+            S.LNC_LAUNCH_FAILED_TOAST.format(error=message.error),
             severity="error")
 
     # ===== spec mutation (persist + preview through the worker) =====

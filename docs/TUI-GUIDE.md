@@ -44,6 +44,7 @@ Global keys (declared app-level in `tui/app.py`, active on every screen):
 |-----|--------|
 | `q` | Quit. With a live sweep (one the TUI spawned, or a CLI-launched sweep attached in the monitor that is running), `q` opens the exit modal instead — see below. |
 | `?` | Help modal: every active binding with its label (app bindings first, then the active screen's). `esc` closes. |
+| `L` | Toggle the UI language zh ↔ en, live (no restart): every mounted screen re-renders, the bars/footer/help labels follow, and the choice persists to `language.json` under the XDG state root (`DNALLMMARK_TUI_STATE_DIR` redirectable) so the next `make tui` boots in it. The **default is English**; a missing or corrupt file falls back to English. A focused input consumes the keystroke as text — unfocus first. |
 | `1`–`6` | Switch to the slot's screen (declared per screen as hidden bindings routed to the app's `nav` action). Pressing the active slot's digit is a no-op. |
 
 **Exit modal** (pushed by `q` when a live sweep exists, `tui/app.py` `ExitModal`):

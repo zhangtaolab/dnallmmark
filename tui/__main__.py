@@ -19,8 +19,16 @@ Contract:
   those imports happen.
 - The repo root itself is inserted first so package-qualified imports
   (``tui.app``) resolve regardless of how ``__main__`` was reached.
+- 261015-ehc (EHC-1): this module owns the ONLY persisted-language boot
+  load — ``load_persisted_language`` reads ``language.json`` under the XDG
+  state root tolerantly (missing/corrupt/wrong-value → DEFAULT_LANGUAGE,
+  never raises, never blocks boot) and ``main`` applies it (plus the
+  binding-description remap — class BINDINGS freeze at import in the
+  import-time language) BEFORE ``app.run``. Test-constructed apps never
+  read the file (the boot_resume_queue inertness precedent).
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -34,21 +42,56 @@ sys.path.insert(0, str(REPO_ROOT / "pipeline"))
 # Imported after the bootstrap on purpose (ruff's default rule set does not
 # flag placement here): tui.app — and, through the services it will wire, the
 # pipeline seams — requires the sys.path inserts above to have run first.
-from tui.app import DnallmMarkTui
+from tui import strings as S
+from tui.app import DnallmMarkTui, remap_binding_descriptions
+from tui.services import settings
+
+#: The persisted language file under the XDG state root (EHC-1).
+LANGUAGE_FILE_NAME = "language.json"
+
+
+def load_persisted_language() -> str:
+    """Tolerantly load the persisted UI language (the ONLY boot read).
+
+    Resolution: a readable ``language.json`` carrying a ``language`` value
+    in ``LANGUAGES`` wins; anything else (missing file, unreadable,
+    non-JSON, wrong shape, unknown value) resolves to ``DEFAULT_LANGUAGE``
+    — never raises, never blocks boot (T-ehc-02).
+
+    Returns:
+        str: the boot language.
+    """
+    try:
+        doc = json.loads(
+            (settings.state_dir() / LANGUAGE_FILE_NAME).read_text(
+                encoding="utf-8"))
+        language = doc.get("language") if isinstance(doc, dict) else None
+    except (OSError, ValueError):
+        return S.DEFAULT_LANGUAGE
+    if language in S.LANGUAGES:
+        return language
+    return S.DEFAULT_LANGUAGE
 
 
 def main() -> int:
     """Run the DNALLM-Mark console (display runtime; blocks until quit).
 
-    Schedules ``boot_resume_queue`` BEFORE ``run`` (the D-06 boot path):
-    a restart with persisted pending work resumes the download queue
-    automatically. This ``call_later`` is the ONLY auto-start path in
-    the codebase — ``App.on_mount`` never kicks, so test-constructed
-    apps stay inert (10-04, T-10-04-03).
+    Applies the persisted language BEFORE ``run`` (the EHC-1 boot load —
+    the only place the language file is read; the remap follows because
+    class BINDINGS descriptions froze at import), then schedules
+    ``boot_resume_queue`` BEFORE ``run`` (the D-06 boot path): a restart
+    with persisted pending work resumes the download queue automatically.
+    These ``call_later`` hooks are the ONLY auto-start paths in the
+    codebase — ``App.on_mount`` never kicks, so test-constructed apps
+    stay inert (10-04, T-10-04-03).
 
     Returns:
         Process exit code — 0 on a clean quit.
     """
+    language = load_persisted_language()
+    if language != S.language():
+        S.set_language(language)
+        remap_binding_descriptions(S.DEFAULT_LANGUAGE, language)
     app = DnallmMarkTui()
     app.call_later(app.boot_resume_queue)
     app.run()

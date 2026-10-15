@@ -55,39 +55,10 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Footer, Label, RichLog, Static
 from textual.worker import get_current_worker
 
+from tui import strings as S
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.services import env_check, env_gate
 from tui.services import run_config as run_config_service
-from tui.strings import (
-    APP_MODAL_BACK_LABEL,
-    ENV_COL_ITEM,
-    ENV_COL_STATE,
-    ENV_COL_SUMMARY,
-    ENV_DETAIL_LABEL,
-    ENV_DETAIL_TITLE,
-    ENV_KERNEL_DEGRADED,
-    ENV_KERNEL_LABELS,
-    ENV_LAST_CHECK_LINE,
-    ENV_REFRESH_LABEL,
-    ENV_ROUTE_MISSING_DATASETS,
-    ENV_ROUTE_MISSING_MODELS,
-    ENV_SCREEN_TITLE,
-    ENV_STATE_CHECKING,
-    ENV_STATE_FAIL,
-    ENV_STATE_PASS,
-    ENV_STATE_PENDING,
-    ENV_STORAGE_LABELS,
-    ENV_STORAGE_NOTE,
-    ENV_STORAGE_TITLE,
-    ENV_VERDICT_CRITICAL_FAIL,
-    ENV_VERDICT_PASS,
-    NAV_LABEL_ABOUT,
-    NAV_LABEL_DATA,
-    NAV_LABEL_ENV,
-    NAV_LABEL_MONITOR,
-    NAV_LABEL_RUN_CONFIG,
-    NAV_LABEL_SELECTION,
-)
 
 # State-cell styles: semantic theme tokens only (08-UI-SPEC Color —
 # hardcoded hex is forbidden outside the optional theme site). DataTable
@@ -191,7 +162,7 @@ class EnvCheckBackend:
         # cover anything short of the FULL kernel-id set is a cache MISS
         # — a pre-change seven-item file re-runs once and persists eight,
         # instead of stranding the new model_dirs row pending forever.
-        if {result.name for result in results} != set(ENV_KERNEL_LABELS):
+        if {result.name for result in results} != set(S.ENV_KERNEL_LABELS):
             return None
         return checked_at, tuple(results)
 
@@ -224,7 +195,7 @@ class EnvDetailModal(ModalScreen):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, kernel_id: str, label: str,
@@ -243,7 +214,7 @@ class EnvDetailModal(ModalScreen):
 
     def on_mount(self) -> None:
         box = self.query_one("#env-detail-box", Vertical)
-        box.border_title = ENV_DETAIL_TITLE.format(
+        box.border_title = S.ENV_DETAIL_TITLE.format(
             kernel_id=self.kernel_id, label=self._label
         )
         log = self.query_one("#env-detail-log", RichLog)
@@ -297,7 +268,7 @@ def _degraded_result(kernel_id: str, exc: BaseException) -> CheckResult:
     return CheckResult(
         name=kernel_id,
         ok=False,
-        lines=(ENV_KERNEL_DEGRADED.format(
+        lines=(S.ENV_KERNEL_DEGRADED.format(
             error=f"{type(exc).__name__}: {exc}"),),
     )
 
@@ -321,14 +292,14 @@ class EnvCheckScreen(Screen):
     # out of the bottom-bar/help surfaces (the top bar carries the
     # digit labels).
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("r", "refresh", ENV_REFRESH_LABEL),
-        Binding("enter", "show_detail", ENV_DETAIL_LABEL),
-        Binding("1", "app.nav(1)", NAV_LABEL_ENV, show=False),
-        Binding("2", "app.nav(2)", NAV_LABEL_SELECTION, show=False),
-        Binding("3", "app.nav(3)", NAV_LABEL_DATA, show=False),
-        Binding("4", "app.nav(4)", NAV_LABEL_RUN_CONFIG, show=False),
-        Binding("5", "app.nav(5)", NAV_LABEL_MONITOR, show=False),
-        Binding("6", "app.nav(6)", NAV_LABEL_ABOUT, show=False),
+        Binding("r", "refresh", S.ENV_REFRESH_LABEL),
+        Binding("enter", "show_detail", S.ENV_DETAIL_LABEL),
+        Binding("1", "app.nav(1)", S.NAV_LABEL_ENV, show=False),
+        Binding("2", "app.nav(2)", S.NAV_LABEL_SELECTION, show=False),
+        Binding("3", "app.nav(3)", S.NAV_LABEL_DATA, show=False),
+        Binding("4", "app.nav(4)", S.NAV_LABEL_RUN_CONFIG, show=False),
+        Binding("5", "app.nav(5)", S.NAV_LABEL_MONITOR, show=False),
+        Binding("6", "app.nav(6)", S.NAV_LABEL_ABOUT, show=False),
     ]
 
     class CheckItemChecking(Message):
@@ -393,7 +364,7 @@ class EnvCheckScreen(Screen):
         """
         yield TopMenuBar()
         with Horizontal(id="env-title-bar"):
-            yield Label(ENV_SCREEN_TITLE, id="env-screen-title")
+            yield Label(S.ENV_SCREEN_TITLE, id="env-screen-title")
             yield Label("", id="env-last-check")
         yield DataTable(id="env-kernels")
         yield Vertical(id="env-verdict")
@@ -413,13 +384,13 @@ class EnvCheckScreen(Screen):
         table.cursor_type = "row"   # 08-UI-SPEC DataTable usage contract
         table.zebra_stripes = True  # same
         table.add_columns(
-            (ENV_COL_STATE, _COL_STATE),
-            (ENV_COL_ITEM, "item"),
-            (ENV_COL_SUMMARY, _COL_SUMMARY),
+            (S.ENV_COL_STATE, _COL_STATE),
+            (S.ENV_COL_ITEM, "item"),
+            (S.ENV_COL_SUMMARY, _COL_SUMMARY),
         )
-        for kernel_id, label in ENV_KERNEL_LABELS.items():
+        for kernel_id, label in S.ENV_KERNEL_LABELS.items():
             table.add_row(
-                Text(ENV_STATE_PENDING, style=_STYLE_DIM),
+                Text(S.ENV_STATE_PENDING, style=_STYLE_DIM),
                 label,
                 "",
                 key=kernel_id,
@@ -470,7 +441,7 @@ class EnvCheckScreen(Screen):
         try:
             kernels = self._service.kernels().items()
         except Exception as exc:  # noqa: BLE001 — the WR-01 enumeration guard
-            for kernel_id in ENV_KERNEL_LABELS:
+            for kernel_id in S.ENV_KERNEL_LABELS:
                 degraded = _degraded_result(kernel_id, exc)
                 results.append(degraded)
                 self.post_message(self.CheckItemDone(degraded, run_id))
@@ -502,12 +473,12 @@ class EnvCheckScreen(Screen):
         """Flip the in-flight row to the checking state (inline fill)."""
         if message.run_id != self._run_id:
             return  # a newer exclusive run superseded this one (WR-02)
-        if message.kernel_id not in ENV_KERNEL_LABELS:
+        if message.kernel_id not in S.ENV_KERNEL_LABELS:
             return
         table = self.query_one("#env-kernels", DataTable)
         table.update_cell(
             message.kernel_id, _COL_STATE,
-            Text(ENV_STATE_CHECKING, style=_STYLE_DIM),
+            Text(S.ENV_STATE_CHECKING, style=_STYLE_DIM),
         )
 
     def on_env_check_screen_check_item_done(
@@ -529,10 +500,10 @@ class EnvCheckScreen(Screen):
 
     def _apply_result_to_table(self, result: CheckResult) -> None:
         """One result -> its row's state glyph and summary cells."""
-        if result.name not in ENV_KERNEL_LABELS:
+        if result.name not in S.ENV_KERNEL_LABELS:
             return  # forward tolerance: unknown kernel ids never crash rows
         table = self.query_one("#env-kernels", DataTable)
-        glyph = ENV_STATE_PASS if result.ok else ENV_STATE_FAIL
+        glyph = S.ENV_STATE_PASS if result.ok else S.ENV_STATE_FAIL
         style = _STYLE_PASS if result.ok else _STYLE_FAIL
         table.update_cell(result.name, _COL_STATE, Text(glyph, style=style))
         table.update_cell(result.name, _COL_SUMMARY, _summary_of(result))
@@ -541,20 +512,20 @@ class EnvCheckScreen(Screen):
                               results: "tuple[CheckResult, ...]") -> None:
         """The last-check line + the advisory verdict/routing block (D-09)."""
         self.query_one("#env-last-check", Label).update(
-            ENV_LAST_CHECK_LINE.format(checked_at=checked_at)
+            S.ENV_LAST_CHECK_LINE.format(checked_at=checked_at)
         )
         verdict = env_gate.gate_verdict(results)
         box = self.query_one("#env-verdict", Vertical)
         box.remove_children()
         if verdict.can_launch:
-            box.mount(Static(ENV_VERDICT_PASS, classes="verdict-pass"))
+            box.mount(Static(S.ENV_VERDICT_PASS, classes="verdict-pass"))
         else:
             failing = [
                 result.name for result in results
                 if not result.ok and result.name in env_gate.CRITICAL
             ]
             box.mount(Static(
-                ENV_VERDICT_CRITICAL_FAIL.format(
+                S.ENV_VERDICT_CRITICAL_FAIL.format(
                     kernel_names=", ".join(failing)),
                 classes="verdict-fail",
             ))
@@ -569,7 +540,7 @@ class EnvCheckScreen(Screen):
         )
         if model_dirs is not None and not model_dirs.ok:
             box.mount(Static(
-                ENV_ROUTE_MISSING_MODELS.format(
+                S.ENV_ROUTE_MISSING_MODELS.format(
                     n=_missing_count(model_dirs)),
                 classes="verdict-route",
             ))
@@ -579,7 +550,7 @@ class EnvCheckScreen(Screen):
         )
         if dataset_dirs is not None and not dataset_dirs.ok:
             box.mount(Static(
-                ENV_ROUTE_MISSING_DATASETS.format(
+                S.ENV_ROUTE_MISSING_DATASETS.format(
                     n=_missing_count(dataset_dirs)),
                 classes="verdict-route",
             ))
@@ -597,10 +568,10 @@ class EnvCheckScreen(Screen):
         staleness boundary.
         """
         table = self.query_one("#env-kernels", DataTable)
-        for kernel_id in ENV_KERNEL_LABELS:
+        for kernel_id in S.ENV_KERNEL_LABELS:
             table.update_cell(
                 kernel_id, _COL_STATE,
-                Text(ENV_STATE_PENDING, style=_STYLE_DIM),
+                Text(S.ENV_STATE_PENDING, style=_STYLE_DIM),
             )
             table.update_cell(kernel_id, _COL_SUMMARY, "")
         self._results.clear()
@@ -626,7 +597,7 @@ class EnvCheckScreen(Screen):
         """
         box = self.query_one("#env-storage", Vertical)
         box.remove_children()
-        box.mount(Static(ENV_STORAGE_TITLE, classes="env-storage-title"))
+        box.mount(Static(S.ENV_STORAGE_TITLE, classes="env-storage-title"))
         # rich Text SPANS cannot carry Textual $token styles on the
         # Static render path (probe-pinned on 8.2.8, the nav.py
         # precedent): resolve the live theme's success/error at render —
@@ -635,16 +606,16 @@ class EnvCheckScreen(Screen):
         ok_color = self.app.current_theme.success
         bad_color = self.app.current_theme.error
         for row in self._service.storage_rows():
-            label = ENV_STORAGE_LABELS.get(row.key, row.key)
+            label = S.ENV_STORAGE_LABELS.get(row.key, row.key)
             exists = bool(row.exists)
-            glyph = ENV_STATE_PASS if exists else ENV_STATE_FAIL
+            glyph = S.ENV_STATE_PASS if exists else S.ENV_STATE_FAIL
             color = ok_color if exists else bad_color
             box.mount(Static(Text.assemble(
                 Text(f"{glyph} ", style=f"bold {color}"),
                 Text(f"{label}  "),
                 Text(str(row.path)),
             ), classes="env-storage-row"))
-        box.mount(Static(Text(ENV_STORAGE_NOTE, style="dim"),
+        box.mount(Static(Text(S.ENV_STORAGE_NOTE, style="dim"),
                          classes="env-storage-note"))
 
     def action_show_detail(self) -> None:
@@ -662,7 +633,7 @@ class EnvCheckScreen(Screen):
         result = self._results.get(kernel_id)
         if result is None:
             return  # pending/unchecked rows have no detail yet — no-op
-        label = ENV_KERNEL_LABELS.get(kernel_id, kernel_id)
+        label = S.ENV_KERNEL_LABELS.get(kernel_id, kernel_id)
         self.app.push_screen(
             EnvDetailModal(kernel_id, label, result.lines)
         )

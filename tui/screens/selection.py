@@ -127,6 +127,7 @@ from textual.widgets import (
 )
 from textual.widgets.selection_list import Selection
 
+from tui import strings as S
 from tui.screens.matrix import MatrixScreen
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.services import custom_entries as custom_entries_service
@@ -151,89 +152,6 @@ from tui.services.download_queue import (
 )
 from tui.services.gauntlet import GauntletService
 from tui.services.registries import Presence
-from tui.strings import (
-    APP_MODAL_BACK_LABEL,
-    DL_UNKNOWN_TOAST,
-    ENV_DETAIL_LABEL,
-    NAV_LABEL_ABOUT,
-    NAV_LABEL_DATA,
-    NAV_LABEL_ENV,
-    NAV_LABEL_MONITOR,
-    NAV_LABEL_RUN_CONFIG,
-    NAV_LABEL_SELECTION,
-    QUEUE_CLI_UNAVAILABLE,
-    QUEUE_PERSIST_FAILED_TOAST,
-    QUEUE_STATE_DOWNLOADING,
-    QUEUE_STATE_FAILED,
-    QUEUE_STATE_PENDING,
-    QUEUE_TOAST_ALREADY_QUEUED,
-    QUEUE_TOAST_ENQUEUED,
-    SEL_COL_COMPAT,
-    SEL_COL_DOWNLOAD,
-    SEL_COL_MARK,
-    SEL_COL_MODEL,
-    SEL_COL_SIZE,
-    SEL_COL_SPECIES,
-    SEL_COL_TYPE,
-    SEL_COMPAT_ADAPTED,
-    SEL_COMPAT_CUSTOM,
-    SEL_COMPAT_UNADAPTED,
-    SEL_COUNT_CUSTOM_SEGMENT,
-    SEL_CUSTOM_BADGE,
-    SEL_DISABLED_MARK_WARNING,
-    SEL_DISABLED_SUFFIX,
-    SEL_FILTER_COUNT_POOLED,
-    SEL_FILTER_KEY_LABEL,
-    SEL_FILTER_LABEL,
-    SEL_FILTER_NO_MATCH,
-    SEL_FILTER_PLACEHOLDER,
-    SEL_FILTER_UNKNOWN_AXIS,
-    SEL_LOADING_ROW,
-    SEL_MARK_LABEL,
-    SEL_MATRIX_LABEL,
-    SEL_MODEL_DL_MANUAL,
-    SEL_MODEL_DOWNLOAD_LABEL,
-    SEL_MODEL_MANUAL_TOAST,
-    SEL_MODEL_PRESENCE_MISSING,
-    SEL_MODEL_PRESENCE_PRESENT,
-    SEL_MODEL_PRESENT_TOAST,
-    SEL_POOL_ADAPTED,
-    SEL_POOL_ALL,
-    SEL_POOL_TOGGLE_LABEL,
-    SEL_PRESENCE_UNKNOWN,
-    SEL_PRESET_ALL,
-    SEL_PRESET_APPLIED,
-    SEL_PRESET_LABEL,
-    SEL_PRESET_NAME_PLACEHOLDER,
-    SEL_PRESET_NO_CUSTOMS,
-    SEL_PRESET_OVERWRITE_CONFIRM,
-    SEL_PRESET_SAVE_FAILED,
-    SEL_PRESET_SAVED,
-    SEL_PRESET_TIER_1,
-    SEL_PRESET_TIER_2,
-    SEL_PRESET_TITLE,
-    SEL_PRESET_UNKNOWN_KEYS,
-    SEL_REGISTRY_LOAD_FAILED,
-    SEL_SAVE_PRESET_LABEL,
-    SEL_SCREEN_TITLE_MODELS,
-    SEL_STATUS_LINE,
-    SEL_TEMPLATE_EXPORTED,
-    SEL_TEMPLATE_IMPORTED,
-    SEL_TEMPLATE_LABEL,
-    SEL_TEMPLATE_MENU_EXPORT,
-    SEL_TEMPLATE_MENU_IMPORT,
-    SEL_TEMPLATE_MENU_TIERS,
-    SEL_TEMPLATE_PATH_PLACEHOLDER,
-    SEL_TEMPLATE_PROBLEM_LINE,
-    SEL_TEMPLATE_PROBLEMS,
-    SEL_TEMPLATE_TITLE,
-    SEL_TEMPLATE_WRITE_FAILED,
-    SEL_TOGGLE_DISABLED_TOAST,
-    SEL_TOGGLE_ENABLED_TOAST,
-    SEL_TOGGLE_LABEL,
-    SEL_TOGGLE_OFFICIAL_NOOP,
-    SEL_WIZARD_LABEL,
-)
 
 if TYPE_CHECKING:
     from textual import getters
@@ -941,13 +859,13 @@ _MODEL_DOWNLOAD_W = 15
 #: The models-only column set (MLC-02): mark / model key / type /
 #: species / size / compat / download.
 _MODEL_COLUMNS: tuple[tuple[str, str, int], ...] = (
-    (_COL_MARK, SEL_COL_MARK, 2),
-    (_COL_KEY, SEL_COL_MODEL, _MODEL_KEY_W),
-    ("type", SEL_COL_TYPE, _MODEL_TYPE_W),
-    ("species", SEL_COL_SPECIES, _MODEL_SPECIES_W),
-    ("size", SEL_COL_SIZE, _MODEL_SIZE_W),
-    (_COL_COMPAT, SEL_COL_COMPAT, _MODEL_COMPAT_W),
-    (_COL_DOWNLOAD, SEL_COL_DOWNLOAD, _MODEL_DOWNLOAD_W),
+    (_COL_MARK, S.SEL_COL_MARK, 2),
+    (_COL_KEY, S.SEL_COL_MODEL, _MODEL_KEY_W),
+    ("type", S.SEL_COL_TYPE, _MODEL_TYPE_W),
+    ("species", S.SEL_COL_SPECIES, _MODEL_SPECIES_W),
+    ("size", S.SEL_COL_SIZE, _MODEL_SIZE_W),
+    (_COL_COMPAT, S.SEL_COL_COMPAT, _MODEL_COMPAT_W),
+    (_COL_DOWNLOAD, S.SEL_COL_DOWNLOAD, _MODEL_DOWNLOAD_W),
 )
 
 # Row keys for the non-registry state rows (never mark/filter targets).
@@ -971,9 +889,9 @@ _STYLE_PRESENCE_UNKNOWN = "$text-muted"
 #: pairing mirrors the data-manager queue table. An unrecognized live
 #: state renders VERBATIM (honest, never translated).
 _QUEUE_STATE_CELLS: "dict[str, tuple[str, str]]" = {
-    "pending": (QUEUE_STATE_PENDING, _STYLE_PRESENCE_UNKNOWN),
-    "downloading": (QUEUE_STATE_DOWNLOADING, "dim"),
-    "failed": (QUEUE_STATE_FAILED, _STYLE_PRESENCE_FAIL),
+    "pending": (S.QUEUE_STATE_PENDING, _STYLE_PRESENCE_UNKNOWN),
+    "downloading": (S.QUEUE_STATE_DOWNLOADING, "dim"),
+    "failed": (S.QUEUE_STATE_FAILED, _STYLE_PRESENCE_FAIL),
 }
 
 
@@ -1036,13 +954,13 @@ def _model_download_cell(data: SelectionData, key: str,
         return Text(copy, style=style)
     status = data.model_presence.get(key)
     if status == selection_service.MODEL_PRESENCE_PRESENT:
-        return Text(SEL_MODEL_PRESENCE_PRESENT, style=_STYLE_PRESENCE_PASS)
+        return Text(S.SEL_MODEL_PRESENCE_PRESENT, style=_STYLE_PRESENCE_PASS)
     if status == selection_service.MODEL_PRESENCE_MISSING:
         if _entry_is_adapted(data, key):
-            return Text(SEL_MODEL_PRESENCE_MISSING,
+            return Text(S.SEL_MODEL_PRESENCE_MISSING,
                         style=_STYLE_PRESENCE_FAIL)
-        return Text(SEL_MODEL_DL_MANUAL, style=_STYLE_PRESENCE_UNKNOWN)
-    return Text(SEL_PRESENCE_UNKNOWN, style=_STYLE_PRESENCE_UNKNOWN)
+        return Text(S.SEL_MODEL_DL_MANUAL, style=_STYLE_PRESENCE_UNKNOWN)
+    return Text(S.SEL_PRESENCE_UNKNOWN, style=_STYLE_PRESENCE_UNKNOWN)
 
 
 def _compat_cell(data: SelectionData, key: str) -> Text:
@@ -1054,10 +972,10 @@ def _compat_cell(data: SelectionData, key: str) -> Text:
     pool hides and the ``t`` ALL pool reveals).
     """
     if _entry_is_custom(data, key):
-        return Text(SEL_COMPAT_CUSTOM)
+        return Text(S.SEL_COMPAT_CUSTOM)
     if _entry_is_adapted(data, key):
-        return Text(SEL_COMPAT_ADAPTED)
-    return Text(SEL_COMPAT_UNADAPTED, style=_STYLE_DIM)
+        return Text(S.SEL_COMPAT_ADAPTED)
+    return Text(S.SEL_COMPAT_UNADAPTED, style=_STYLE_DIM)
 
 
 def _entry_is_custom(data: SelectionData, key: str) -> bool:
@@ -1095,12 +1013,12 @@ def _key_cell(key: str, status: "dict | None", width: int,
         return _cell(key, width)
     if status.get("enabled", True):
         return _truncate(Text.assemble(
-            Text(f"{SEL_CUSTOM_BADGE} ", style=accent_style), Text(key),
+            Text(f"{S.SEL_CUSTOM_BADGE} ", style=accent_style), Text(key),
         ), width)
     return _truncate(Text.assemble(
-        Text(f"{SEL_CUSTOM_BADGE} ", style="dim"),
+        Text(f"{S.SEL_CUSTOM_BADGE} ", style="dim"),
         Text(key),
-        Text(SEL_DISABLED_SUFFIX, style="dim"),
+        Text(S.SEL_DISABLED_SUFFIX, style="dim"),
     ), width)
 
 
@@ -1109,9 +1027,9 @@ def _preset_label(option: PresetOption) -> str:
     if option.kind == "custom":
         return option.name or option.id
     return {
-        "tier-1": SEL_PRESET_TIER_1,
-        "tier-2": SEL_PRESET_TIER_2,
-        "all": SEL_PRESET_ALL,
+        "tier-1": S.SEL_PRESET_TIER_1,
+        "tier-2": S.SEL_PRESET_TIER_2,
+        "all": S.SEL_PRESET_ALL,
     }.get(option.id, option.id)
 
 
@@ -1129,7 +1047,7 @@ class PresetModal(ModalScreen):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, options: Sequence[PresetOption],
@@ -1151,12 +1069,12 @@ class PresetModal(ModalScreen):
                 id="preset-list",
             )
             if self._customs_empty:
-                yield Static(SEL_PRESET_NO_CUSTOMS, id="preset-no-customs")
+                yield Static(S.SEL_PRESET_NO_CUSTOMS, id="preset-no-customs")
             yield Footer()
 
     def on_mount(self) -> None:
         self.query_one("#preset-box", Vertical).border_title = (
-            SEL_PRESET_TITLE
+            S.SEL_PRESET_TITLE
         )
 
     def on_selection_list_selection_toggled(
@@ -1170,7 +1088,7 @@ class TemplateMenuModal(ModalScreen):
     """The template menu: import / export / tier-convert (ListView)."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, on_choice: "Callable[[str], None]", **kwargs):
@@ -1180,16 +1098,16 @@ class TemplateMenuModal(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(id="template-menu-box", classes="modal-box"):
             yield ListView(
-                ListItem(Static(SEL_TEMPLATE_MENU_IMPORT), id="tpl-import"),
-                ListItem(Static(SEL_TEMPLATE_MENU_EXPORT), id="tpl-export"),
-                ListItem(Static(SEL_TEMPLATE_MENU_TIERS), id="tpl-tiers"),
+                ListItem(Static(S.SEL_TEMPLATE_MENU_IMPORT), id="tpl-import"),
+                ListItem(Static(S.SEL_TEMPLATE_MENU_EXPORT), id="tpl-export"),
+                ListItem(Static(S.SEL_TEMPLATE_MENU_TIERS), id="tpl-tiers"),
                 id="template-menu-list",
             )
             yield Footer()
 
     def on_mount(self) -> None:
         self.query_one("#template-menu-box", Vertical).border_title = (
-            SEL_TEMPLATE_TITLE
+            S.SEL_TEMPLATE_TITLE
         )
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
@@ -1213,7 +1131,7 @@ class PathInputModal(ModalScreen):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, title: str, placeholder: str,
@@ -1242,9 +1160,9 @@ class PathInputModal(ModalScreen):
             return
         problems = self._on_submit(value)
         if problems:
-            lines = [SEL_TEMPLATE_PROBLEMS.format(n=len(problems))]
+            lines = [S.SEL_TEMPLATE_PROBLEMS.format(n=len(problems))]
             lines.extend(
-                SEL_TEMPLATE_PROBLEM_LINE.format(
+                S.SEL_TEMPLATE_PROBLEM_LINE.format(
                     n=index + 1, location=location, message=message,
                 )
                 for index, (location, message) in enumerate(problems)
@@ -1263,7 +1181,7 @@ class ConfirmModal(ModalScreen):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "confirm", show=False),
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, message: str,
@@ -1283,6 +1201,34 @@ class ConfirmModal(ModalScreen):
         self._on_confirm()
 
 
+class LaunchConfirmModal(ConfirmModal):
+    """The LAUNCH-confirm variant (EHC-2, 261015-ehc ruling 2): ``y``
+    starts, ``esc`` cancels — ``enter`` can NEVER pass a launch gate (a
+    stray double-enter is structurally inert).
+
+    Plain-MRO method overriding (the 12-03 precedent — no binding-shadow
+    semantics needed): the subclass adds the hidden ``y`` binding and
+    OVERRIDES ``action_confirm`` to a documented no-op, so the inherited
+    ``enter`` binding lands on the no-op. ``ConfirmModal`` itself and
+    every non-launch consumer (preset overwrite, queue cancels, wizard
+    cancel) stay byte-identical on enter.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("y", "confirm_launch", show=False),
+    ]
+
+    def action_confirm(self) -> None:
+        """Enter is deliberately inert on launch confirms (EHC-2: only
+        ``y`` launches; the message copy names the [y] keycap)."""
+        # documented no-op: the inherited enter binding lands here
+
+    def action_confirm_launch(self) -> None:
+        """``y`` — the one key that confirms a launch."""
+        self.dismiss()
+        self._on_confirm()
+
+
 class RowDetailModal(ModalScreen):
     """The row-detail drill-down: every card field, never elided.
 
@@ -1292,7 +1238,7 @@ class RowDetailModal(ModalScreen):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, entry_key: str, card: dict, **kwargs):
@@ -1331,12 +1277,12 @@ class SelectionScreen(Screen):
         app = getters.app(DnallmMarkTui)
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("space", "toggle_mark", SEL_MARK_LABEL),
-        Binding("t", "toggle_pool", SEL_POOL_TOGGLE_LABEL),
-        Binding("p", "apply_preset", SEL_PRESET_LABEL),
-        Binding("x", "open_templates", SEL_TEMPLATE_LABEL),
-        Binding("s", "save_preset", SEL_SAVE_PRESET_LABEL),
-        Binding("slash", "focus_filter", SEL_FILTER_KEY_LABEL,
+        Binding("space", "toggle_mark", S.SEL_MARK_LABEL),
+        Binding("t", "toggle_pool", S.SEL_POOL_TOGGLE_LABEL),
+        Binding("p", "apply_preset", S.SEL_PRESET_LABEL),
+        Binding("x", "open_templates", S.SEL_TEMPLATE_LABEL),
+        Binding("s", "save_preset", S.SEL_SAVE_PRESET_LABEL),
+        Binding("slash", "focus_filter", S.SEL_FILTER_KEY_LABEL,
                 key_display="/"),
         # The 09-06 custom-entry actions (D-14/D-09): appended after the
         # mark/preset bindings and BEFORE the auxiliary actions — the
@@ -1344,28 +1290,28 @@ class SelectionScreen(Screen):
         # bar renders it; the clip policy drops least-primary first).
         # Since the 2026-10-14 slot split both act on the constant
         # MODELS kind (slot 2 is models only).
-        Binding("w", "open_wizard", SEL_WIZARD_LABEL),
-        Binding("e", "toggle_enabled", SEL_TOGGLE_LABEL),
+        Binding("w", "open_wizard", S.SEL_WIZARD_LABEL),
+        Binding("e", "toggle_enabled", S.SEL_TOGGLE_LABEL),
         # The MLC-02 model-download action: between the e pair and the
         # auxiliary actions — the [d] keycap renders after the toggle
         # keycap and before the matrix keycap (one d vocabulary with
         # the data-manager screen's d; the label + toasts live in
         # tui/strings.py).
-        Binding("d", "download_model", SEL_MODEL_DOWNLOAD_LABEL),
-        Binding("v", "open_matrix", SEL_MATRIX_LABEL),
-        Binding("enter", "show_detail", ENV_DETAIL_LABEL, show=False),
+        Binding("d", "download_model", S.SEL_MODEL_DOWNLOAD_LABEL),
+        Binding("v", "open_matrix", S.SEL_MATRIX_LABEL),
+        Binding("enter", "show_detail", S.ENV_DETAIL_LABEL, show=False),
         Binding("escape", "clear_filter", show=False),
         # The nav digits (09-03) — PLAIN per-screen bindings routed to
         # the app's ``nav`` action (never priority, Pattern 2); appended
         # AFTER the action bindings so the declaration order the bottom
         # bar renders is untouched. show=False: the top bar carries the
         # digit labels.
-        Binding("1", "app.nav(1)", NAV_LABEL_ENV, show=False),
-        Binding("2", "app.nav(2)", NAV_LABEL_SELECTION, show=False),
-        Binding("3", "app.nav(3)", NAV_LABEL_DATA, show=False),
-        Binding("4", "app.nav(4)", NAV_LABEL_RUN_CONFIG, show=False),
-        Binding("5", "app.nav(5)", NAV_LABEL_MONITOR, show=False),
-        Binding("6", "app.nav(6)", NAV_LABEL_ABOUT, show=False),
+        Binding("1", "app.nav(1)", S.NAV_LABEL_ENV, show=False),
+        Binding("2", "app.nav(2)", S.NAV_LABEL_SELECTION, show=False),
+        Binding("3", "app.nav(3)", S.NAV_LABEL_DATA, show=False),
+        Binding("4", "app.nav(4)", S.NAV_LABEL_RUN_CONFIG, show=False),
+        Binding("5", "app.nav(5)", S.NAV_LABEL_MONITOR, show=False),
+        Binding("6", "app.nav(6)", S.NAV_LABEL_ABOUT, show=False),
     ]
 
     class DataLoaded(Message):
@@ -1458,14 +1404,14 @@ class SelectionScreen(Screen):
         # shell bars own those rows now — row-neutral, D-16).
         yield TopMenuBar()
         with Horizontal(id="selection-title-bar"):
-            yield Label(SEL_SCREEN_TITLE_MODELS, id="selection-screen-title")
+            yield Label(S.SEL_SCREEN_TITLE_MODELS, id="selection-screen-title")
             yield Label("", id="selection-status")
         with Horizontal(id="selection-filter-bar"):
-            yield Label(SEL_FILTER_LABEL, id="selection-filter-label")
-            yield Input(placeholder=SEL_FILTER_PLACEHOLDER,
+            yield Label(S.SEL_FILTER_LABEL, id="selection-filter-label")
+            yield Input(placeholder=S.SEL_FILTER_PLACEHOLDER,
                         id="selection-filter", compact=True)
             yield Label(
-                SEL_FILTER_COUNT_POOLED.format(pool=SEL_POOL_ADAPTED, n=0,
+                S.SEL_FILTER_COUNT_POOLED.format(pool=S.SEL_POOL_ADAPTED, n=0,
                                         total=0),
                 id="selection-filter-count")
         yield Label("", id="selection-filter-warning")
@@ -1611,7 +1557,7 @@ class SelectionScreen(Screen):
             # read seam before rows compose (SEL-01 loading)
             self._view_keys = frozenset()
             self._add_state_row(
-                table, SEL_LOADING_ROW, _LOADING_ROW_KEY, _STYLE_DIM,
+                table, S.SEL_LOADING_ROW, _LOADING_ROW_KEY, _STYLE_DIM,
             )
             self._update_count_readout(0, 0)
             return
@@ -1623,7 +1569,7 @@ class SelectionScreen(Screen):
             # the registry-failure empty state names the path (SEL-01)
             self._add_state_row(
                 table,
-                SEL_REGISTRY_LOAD_FAILED.format(registry_path=load_error),
+                S.SEL_REGISTRY_LOAD_FAILED.format(registry_path=load_error),
                 _REGISTRY_ERROR_ROW_KEY, _STYLE_PRESENCE_FAIL,
             )
             self._update_count_readout(0, 0)
@@ -1634,7 +1580,7 @@ class SelectionScreen(Screen):
             # zero matches render the documented no-match row with the
             # Esc-clear hint — never a blank table (SEL-01 empty edge)
             self._add_state_row(
-                table, SEL_FILTER_NO_MATCH.format(total=len(entries)),
+                table, S.SEL_FILTER_NO_MATCH.format(total=len(entries)),
                 _NO_MATCH_ROW_KEY, _STYLE_DIM,
             )
         else:
@@ -1720,7 +1666,7 @@ class SelectionScreen(Screen):
         the management-read custom-status map, never the merged view);
         zero customs renders the exact Phase 8 line (byte-identical)."""
         data = self._data
-        line = SEL_STATUS_LINE.format(
+        line = S.SEL_STATUS_LINE.format(
             n=len(self._marked_models),
             models_total=len(data.model_entries) if data else 0,
             m=len(self._marked_tasks),
@@ -1738,7 +1684,7 @@ class SelectionScreen(Screen):
             1 for entry in data.dataset_entries
             if entry["key"] in custom
         )
-        segment = SEL_COUNT_CUSTOM_SEGMENT.format(
+        segment = S.SEL_COUNT_CUSTOM_SEGMENT.format(
             official_models=len(data.model_entries) - custom_models,
             official_datasets=len(data.dataset_entries) - custom_datasets,
             custom_models=custom_models,
@@ -1756,8 +1702,8 @@ class SelectionScreen(Screen):
         bar) — the {pool} segment carries the active pool mode so the
         default-filter state is always legible (MLC-02)."""
         self.query_one("#selection-filter-count", Label).update(
-            SEL_FILTER_COUNT_POOLED.format(
-                pool=(SEL_POOL_ALL if self._pool_all else SEL_POOL_ADAPTED),
+            S.SEL_FILTER_COUNT_POOLED.format(
+                pool=(S.SEL_POOL_ALL if self._pool_all else S.SEL_POOL_ADAPTED),
                 n=visible, total=total,
             )
         )
@@ -1769,7 +1715,7 @@ class SelectionScreen(Screen):
             label.update("")
             return
         label.update("; ".join(
-            SEL_FILTER_UNKNOWN_AXIS.format(
+            S.SEL_FILTER_UNKNOWN_AXIS.format(
                 axis=diagnostic.axis,
                 axes=", ".join(diagnostic.known_axes),
             )
@@ -1815,7 +1761,7 @@ class SelectionScreen(Screen):
         if disabled_status is not None and not disabled_status.get(
                 "enabled", True):
             self.app.notify(
-                SEL_DISABLED_MARK_WARNING.format(key=key),
+                S.SEL_DISABLED_MARK_WARNING.format(key=key),
                 severity="warning",
             )
             return
@@ -1894,7 +1840,7 @@ class SelectionScreen(Screen):
             return
         status = self._custom_status_for(key)
         if status is None:
-            self.app.notify(SEL_TOGGLE_OFFICIAL_NOOP)
+            self.app.notify(S.SEL_TOGGLE_OFFICIAL_NOOP)
             return
         enable = not status.get("enabled", True)
         if not self._custom.set_enabled("models", key, enable):
@@ -1903,8 +1849,8 @@ class SelectionScreen(Screen):
             self._load_data()
             return
         self.app.notify(
-            (SEL_TOGGLE_ENABLED_TOAST if enable
-             else SEL_TOGGLE_DISABLED_TOAST).format(key=key),
+            (S.SEL_TOGGLE_ENABLED_TOAST if enable
+             else S.SEL_TOGGLE_DISABLED_TOAST).format(key=key),
         )
         self._load_data()
 
@@ -1960,7 +1906,7 @@ class SelectionScreen(Screen):
             return
         status = data.model_presence.get(key)
         if status == selection_service.MODEL_PRESENCE_PRESENT:
-            self.app.notify(SEL_MODEL_PRESENT_TOAST)
+            self.app.notify(S.SEL_MODEL_PRESENT_TOAST)
             return
         if status != selection_service.MODEL_PRESENCE_MISSING:
             return  # unknown presence (no Model_path / drift): silent
@@ -1969,11 +1915,11 @@ class SelectionScreen(Screen):
             if path is None:
                 return
             self.app.notify(
-                SEL_MODEL_MANUAL_TOAST.format(key=key, path=path))
+                S.SEL_MODEL_MANUAL_TOAST.format(key=key, path=path))
             return
         outcome = self._queue.enqueue_model(key)
         if outcome.action == "enqueued":
-            self.app.notify(QUEUE_TOAST_ENQUEUED.format(key=key))
+            self.app.notify(S.QUEUE_TOAST_ENQUEUED.format(key=key))
             self.app.kick_download_queue()
             # C4J-1 immediate feedback: the pending overlay lands in the
             # cell right away (the driver's claim tick follows within
@@ -1982,17 +1928,17 @@ class SelectionScreen(Screen):
             self._live_models = self._live_model_entries()
             self._update_download_cell(key, "pending", None)
         elif outcome.action == "already_queued":
-            self.app.notify(QUEUE_TOAST_ALREADY_QUEUED.format(key=key))
+            self.app.notify(S.QUEUE_TOAST_ALREADY_QUEUED.format(key=key))
         elif outcome.action == "unknown":
             self.app.notify(
-                DL_UNKNOWN_TOAST.format(
+                S.DL_UNKNOWN_TOAST.format(
                     key=key, reason=outcome.reason_code or "unknown"),
                 severity="warning")
         elif outcome.action == "cli_unavailable":
-            self.app.notify(QUEUE_CLI_UNAVAILABLE, severity="error")
+            self.app.notify(S.QUEUE_CLI_UNAVAILABLE, severity="error")
         elif outcome.action == "persist_failed":
             self.app.notify(
-                QUEUE_PERSIST_FAILED_TOAST.format(key=key),
+                S.QUEUE_PERSIST_FAILED_TOAST.format(key=key),
                 severity="error")
         # unknown_key: silent return (the service already said it all)
 
@@ -2110,12 +2056,12 @@ class SelectionScreen(Screen):
         )
         if unknown:
             self.app.notify(
-                SEL_PRESET_UNKNOWN_KEYS.format(
+                S.SEL_PRESET_UNKNOWN_KEYS.format(
                     n=len(unknown), keys=", ".join(unknown),
                 ),
                 severity="warning",
             )
-        self.app.notify(SEL_PRESET_APPLIED.format(
+        self.app.notify(S.SEL_PRESET_APPLIED.format(
             preset=_preset_label(option),
             n=len(self._marked_models),
             m=len(self._marked_tasks),
@@ -2135,13 +2081,13 @@ class SelectionScreen(Screen):
     def _on_template_choice(self, action: str) -> None:
         """Route the chosen template menu entry to its input modal."""
         titles = {
-            "import": SEL_TEMPLATE_MENU_IMPORT,
-            "export": SEL_TEMPLATE_MENU_EXPORT,
-            "tiers": SEL_TEMPLATE_MENU_TIERS,
+            "import": S.SEL_TEMPLATE_MENU_IMPORT,
+            "export": S.SEL_TEMPLATE_MENU_EXPORT,
+            "tiers": S.SEL_TEMPLATE_MENU_TIERS,
         }
         self.app.push_screen(PathInputModal(
             title=titles[action],
-            placeholder=SEL_TEMPLATE_PATH_PLACEHOLDER,
+            placeholder=S.SEL_TEMPLATE_PATH_PLACEHOLDER,
             on_submit={
                 "import": self._submit_import,
                 "export": self._submit_export,
@@ -2155,7 +2101,7 @@ class SelectionScreen(Screen):
         if not outcome.ok:
             return outcome.problems
         self._replace_marks(outcome.models, outcome.tasks)
-        self.app.notify(SEL_TEMPLATE_IMPORTED.format(
+        self.app.notify(S.SEL_TEMPLATE_IMPORTED.format(
             n=len(self._marked_models), m=len(self._marked_tasks),
         ))
         self._rebuild_rows()
@@ -2177,10 +2123,10 @@ class SelectionScreen(Screen):
             # an unwritable/invalid operator path (a parent that is a
             # file, a read-only location, a full disk) — fail closed in
             # the modal, the console never crashes (CR-02)
-            return ((path, SEL_TEMPLATE_WRITE_FAILED.format(
+            return ((path, S.SEL_TEMPLATE_WRITE_FAILED.format(
                 error=f"{type(exc).__name__}: {exc}",
             )),)
-        self.app.notify(SEL_TEMPLATE_EXPORTED.format(path=path))
+        self.app.notify(S.SEL_TEMPLATE_EXPORTED.format(path=path))
         return None
 
     def _submit_tiers(self, path: str) -> "Sequence[tuple[str, str]] | None":
@@ -2193,10 +2139,10 @@ class SelectionScreen(Screen):
             return ((path, str(exc)),)
         except OSError as exc:
             # the same fail-closed contract as the template export (CR-02)
-            return ((path, SEL_TEMPLATE_WRITE_FAILED.format(
+            return ((path, S.SEL_TEMPLATE_WRITE_FAILED.format(
                 error=f"{type(exc).__name__}: {exc}",
             )),)
-        self.app.notify(SEL_TEMPLATE_EXPORTED.format(path=path))
+        self.app.notify(S.SEL_TEMPLATE_EXPORTED.format(path=path))
         return None
 
     def _replace_marks(self, models: Iterable[str],
@@ -2225,7 +2171,7 @@ class SelectionScreen(Screen):
         self._marked_tasks.update(key for key in tasks if key in task_keys)
         if unknown:
             self.app.notify(
-                SEL_PRESET_UNKNOWN_KEYS.format(
+                S.SEL_PRESET_UNKNOWN_KEYS.format(
                     n=len(unknown), keys=", ".join(unknown),
                 ),
                 severity="warning",
@@ -2234,8 +2180,8 @@ class SelectionScreen(Screen):
     def action_save_preset(self) -> None:
         """s: save the current mark sets as a custom preset."""
         self.app.push_screen(PathInputModal(
-            title=SEL_SAVE_PRESET_LABEL,
-            placeholder=SEL_PRESET_NAME_PLACEHOLDER,
+            title=S.SEL_SAVE_PRESET_LABEL,
+            placeholder=S.SEL_PRESET_NAME_PLACEHOLDER,
             on_submit=self._submit_save,
         ))
 
@@ -2251,7 +2197,7 @@ class SelectionScreen(Screen):
         if name in self._service.custom_names():
             self.app.call_after_refresh(
                 lambda name=name: self.app.push_screen(ConfirmModal(
-                    message=SEL_PRESET_OVERWRITE_CONFIRM.format(name=name),
+                    message=S.SEL_PRESET_OVERWRITE_CONFIRM.format(name=name),
                     on_confirm=lambda: self._do_save(name),
                 ))
             )
@@ -2269,14 +2215,14 @@ class SelectionScreen(Screen):
             # disk) — a warning toast, never a crash (CR-02: the save
             # flow degrades like every other write path)
             self.app.notify(
-                SEL_PRESET_SAVE_FAILED.format(
+                S.SEL_PRESET_SAVE_FAILED.format(
                     error=f"{type(exc).__name__}: {exc}",
                 ),
                 severity="warning",
             )
             self.query_one("#selection-table", DataTable).focus()
             return
-        self.app.notify(SEL_PRESET_SAVED.format(
+        self.app.notify(S.SEL_PRESET_SAVED.format(
             name=name,
             n=len(self._marked_models),
             m=len(self._marked_tasks),

@@ -28,9 +28,10 @@ pilot.pause()`` before every assertion; ``asyncio_mode = "auto"``
 
 from env_smoke import CheckResult
 from rich.text import Text
-from textual.widgets import DataTable, Label
+from textual.widgets import DataTable, Label, Static
 
-from tui.app import DnallmMarkTui
+from tui import strings
+from tui.app import DnallmMarkTui, remap_binding_descriptions
 from tui.screens.env_check import EnvCheckScreen
 from tui.strings import (
     ENV_KERNEL_LABELS,
@@ -123,3 +124,169 @@ async def test_boots_on_env_check_screen_quits_on_q():
         await pilot.press("q")
         await pilot.pause()
         assert app.return_code == 0, "q must quit the console cleanly"
+
+
+# =====================================================================
+# The L language toggle (261015-ehc, EHC-1 — Task 2 Pilot tests)
+# =====================================================================
+
+
+def _toast_messages(app):
+    """The active notification messages (the toast assertions)."""
+    return [notification.message for notification in app._notifications]
+
+
+def _env_row_word(app, row: int = 0) -> str:
+    """The first data row's kernel-label cell (plain text)."""
+    table = app.screen.query_one(DataTable)
+    cell = table.get_row_at(row)[1]
+    return cell.plain if isinstance(cell, Text) else str(cell)
+
+
+async def test_default_language_renders_english_on_a_fresh_boot():
+    """EHC-1: the committed default is English — with the registry set
+    to en inside the test (conftest pins zh at collection), a freshly
+    constructed app's opening screen renders the English copy: the
+    screen title, a state word, and the storage title."""
+    strings.set_language("en")
+    try:
+        app = DnallmMarkTui(env_check_service=_CacheHitFake())
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            title = str(
+                app.screen.query_one("#env-screen-title", Label).content)
+            assert title == "Environment Check", (
+                "the committed default language is English"
+            )
+            assert _env_row_word(app) == "version pins", (
+                "kernel labels render in the active language"
+            )
+            storage_labels = app.screen.query(Static).filter(
+                ".env-storage-title")
+            assert storage_labels, "the storage section must render"
+            assert str(storage_labels.first().content) == (
+                strings.ENV_STORAGE_TITLE)
+            assert strings.APP_TITLE == "DNALLM-Mark Console"
+    finally:
+        strings.set_language("zh")
+
+
+async def test_L_toggles_language_live_without_restart():
+    """EHC-1: L flips zh -> en on the SAME mounted screen (title + row
+    word re-render), the footer's quit label follows, a toast fires;
+    a second L returns zh. No restart, no unhandled-key error."""
+    app = DnallmMarkTui(env_check_service=_CacheHitFake())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert strings.language() == "zh"
+        assert _env_row_word(app) == "版本 pin"
+        title_before = str(
+            app.screen.query_one("#env-screen-title", Label).content)
+
+        await pilot.press("L")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert strings.language() == "en", "L must flip the registry"
+        assert isinstance(app.screen, EnvCheckScreen), (
+            "the SAME screen stays mounted (no restart, no re-push)"
+        )
+        title_after = str(
+            app.screen.query_one("#env-screen-title", Label).content)
+        assert title_after == "Environment Check" != title_before
+        assert _env_row_word(app) == "version pins", (
+            "the row re-renders in the new language (the recompose-alone "
+            "row-loss trap is the probe this pins)"
+        )
+        footer = str(app.screen.query_one(
+            "#nav-right-keycaps", Static).content)
+        assert "Quit" in footer and "退出" not in footer, (
+            "the app-level footer labels follow the toggle"
+        )
+        assert strings.APP_LANGUAGE_TOAST in _toast_messages(app), (
+            "the confirmation toast fires"
+        )
+
+        await pilot.press("L")
+        await pilot.pause()
+        await pilot.pause()
+        assert strings.language() == "zh"
+        assert _env_row_word(app) == "版本 pin", (
+            "the second L returns the zh copy"
+        )
+
+
+async def test_L_persists_language_and_boot_loads_it_back(
+        monkeypatch, tmp_path):
+    """EHC-1: L writes language.json under the redirectable XDG state
+    root; the __main__ boot-load helper (called directly) reads it back;
+    a corrupt or absent file resolves to DEFAULT_LANGUAGE, never
+    raises."""
+    import json as json_module
+
+    import tui.__main__ as tui_main
+    from tui.services import settings
+
+    state = tmp_path / "state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    try:
+        app = DnallmMarkTui(env_check_service=_CacheHitFake())
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("L")
+            await pilot.pause()
+
+            persisted = json_module.loads(
+                (state / "language.json").read_text(encoding="utf-8"))
+            assert persisted == {"language": "en"}, (
+                "pressing L persists the new language"
+            )
+            assert tui_main.load_persisted_language() == "en", (
+                "the boot-load helper reads the choice back"
+            )
+
+        # corrupt / wrong-value / absent files resolve to the default
+        (state / "language.json").write_text(
+            "{not json", encoding="utf-8")
+        assert (tui_main.load_persisted_language()
+                == strings.DEFAULT_LANGUAGE)
+        (state / "language.json").write_text(
+            json_module.dumps({"language": "klingon"}), encoding="utf-8")
+        assert (tui_main.load_persisted_language()
+                == strings.DEFAULT_LANGUAGE)
+        (state / "language.json").unlink()
+        assert (tui_main.load_persisted_language()
+                == strings.DEFAULT_LANGUAGE)
+    finally:
+        # module state is test-process-wide: restore BOTH the language
+        # and the remapped class BINDINGS descriptions (the toggle
+        # remutates them globally — an en residue breaks later zh
+        # footer/help assertions)
+        strings.set_language("zh")
+        remap_binding_descriptions("en", "zh")
+
+
+async def test_constructing_the_app_never_reads_the_language_file(
+        monkeypatch, tmp_path):
+    """EHC-1 (the boot_resume_queue inertness precedent): constructing
+    DnallmMarkTui NEVER reads language.json — the boot load lives only
+    in tui/__main__.main, so test-constructed apps stay inert."""
+    import json as json_module
+
+    import tui.__main__ as tui_main
+    from tui.services import settings
+
+    state = tmp_path / "state"
+    state.mkdir(parents=True)
+    (state / tui_main.LANGUAGE_FILE_NAME).write_text(
+        json_module.dumps({"language": "zh"}), encoding="utf-8")
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+
+    strings.set_language("en")
+    try:
+        DnallmMarkTui(env_check_service=_CacheHitFake())
+        assert strings.language() == "en", (
+            "construction must not apply the persisted language"
+        )
+    finally:
+        strings.set_language("zh")

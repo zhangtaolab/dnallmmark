@@ -10,10 +10,10 @@ Contract:
   switch seam — it validates against ``LANGUAGES`` and rebinds every
   registered constant through ``globals()`` so module-ATTRIBUTE access
   (``from tui import strings as S`` then ``S.CONST``) resolves the new
-  language immediately. ``from tui.strings import X`` copies stay frozen
-  at import (the committed test surface relies on the conftest zh pin;
-  production call sites use module-attribute access). Both languages are
-  single-homed HERE — zero CJK outside this module (the grep lock).
+  language immediately. Plain from-import copies of a constant stay
+  frozen at import (the committed test surface relies on the conftest zh
+  pin; production call sites use module-attribute access). Both
+  languages are single-homed HERE — zero CJK outside this module.
 - Chinese copy with technical terms in English verbatim — registry
   keys, kernel ids, filter axes, metric names, file paths, CLI commands,
   schema field names are never translated, in EITHER language.
@@ -166,6 +166,15 @@ APP_MIN_SIZE_MESSAGE = _t(
 # Keyboard map: "esc | modals | pop modal — never quits"). Lives next to
 # the APP_ chrome block it belongs to (the env block follows).
 APP_MODAL_BACK_LABEL = _t("APP_MODAL_BACK_LABEL", "返回", "Back")
+# The L language toggle (261015-ehc, EHC-1): the app-level binding's
+# footer label and the post-toggle confirmation toast. The toast's value
+# is read AFTER set_language, so it always names the language the console
+# just switched TO. NOTE: no APP_ inventory tripwire exists today; if one
+# lands, both names must register (recorded in the 261015-ehc SUMMARY).
+APP_LANGUAGE_TOGGLE_LABEL = _t(
+    "APP_LANGUAGE_TOGGLE_LABEL", "语言", "Language")
+APP_LANGUAGE_TOAST = _t(
+    "APP_LANGUAGE_TOAST", "已切换到中文", "Switched to English")
 
 # ===== 环境检查 (ENV-01..04) =====
 # Kernel-id → operator label for the eight env-check rows and drill-down
@@ -1404,8 +1413,8 @@ LNC_GATE_SUMMARY = _t(
     "{models} models × {tasks} tasks × {seeds} seeds = {cells} cells "
     "→ {output_root}")
 LNC_GATE_CONFIRM = _t(
-    "LNC_GATE_CONFIRM", "启动以上训练任务？— Enter 启动 / Esc 取消",
-    "Launch this sweep? — Enter launch / Esc cancel")
+    "LNC_GATE_CONFIRM", "启动以上训练任务？— [y] 启动 / Esc 取消",
+    "Launch this sweep? — [y] launch / Esc cancel")
 # The E2' escalation block (terraform-style typed phrase): the frozen
 # full-matrix warning wording, the authorization note, the type prompt,
 # and the live mismatch/match indicator pair.
@@ -1421,8 +1430,8 @@ LNC_E2_TYPE_PROMPT = _t(
     "LNC_E2_TYPE_PROMPT", "输入本次输出目录名以确认: {dirname}",
     "Type this run's output directory name to confirm: {dirname}")
 LNC_E2_MATCH_OK = _t(
-    "LNC_E2_MATCH_OK", "✓ 目录名匹配 — [enter] 确认启动",
-    "✓ dirname matches — [enter] to launch")
+    "LNC_E2_MATCH_OK", "✓ 目录名匹配 — [y] 确认启动",
+    "✓ dirname matches — [y] to launch")
 LNC_E2_MISMATCH = _t(
     "LNC_E2_MISMATCH", "✗ 目录名不一致 — 请完整输入 {dirname}",
     "✗ dirname mismatch — type {dirname} in full")
@@ -1595,9 +1604,9 @@ MON_RERUN_LABEL = _t("MON_RERUN_LABEL", "重跑失败", "Re-run Failed")
 MON_RERUN_CONFIRM = _t(
     "MON_RERUN_CONFIRM",
     "重跑 {pairs} 个失败组合 × 种子 {seeds} = {n} 个训练项（--from-failures）"
-    "？— Enter 重跑 / Esc 取消",
+    "？— [y] 重跑 / Esc 取消",
     "Re-run {pairs} failed pairs × seeds {seeds} = {n} cells "
-    "(--from-failures)? — Enter re-run / Esc cancel")
+    "(--from-failures)? — [y] re-run / Esc cancel")
 MON_RERUN_TOAST = _t(
     "MON_RERUN_TOAST", "✓ 失败重跑已启动 — {cells} 训练项 → {root}",
     "✓ failure re-run launched — {cells} cells → {root}")

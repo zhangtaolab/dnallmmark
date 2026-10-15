@@ -50,7 +50,10 @@ from tui.services import selection as selection_service
 from tui.services.download_queue import merge_presence
 from tui.services.run_config import PreviewResult, RunSpec
 from tui.strings import (
+    APP_HELP_LABEL,
     APP_HELP_ROW,
+    APP_LANGUAGE_TOGGLE_LABEL,
+    APP_QUIT_LABEL,
     ENV_DETAIL_LABEL,
     ENV_REFRESH_LABEL,
     NAV_LABEL_ABOUT,
@@ -529,7 +532,8 @@ def _bar_segments(screen):
 
 
 async def test_bottom_bar_env_keycaps_and_constant_right_segment():
-    """The env keycaps render [r]/[enter] (no s); the right pair is constant."""
+    """The env keycaps render [r]/[enter] (no s); the right trio is
+    constant (261015-ehc: the L language keycap joined help/quit)."""
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
@@ -537,7 +541,7 @@ async def test_bottom_bar_env_keycaps_and_constant_right_segment():
         left_plain = _plain(left.content)
         assert f"[r]{ENV_REFRESH_LABEL}" in left_plain
         assert f"[enter]{ENV_DETAIL_LABEL}" in left_plain
-        assert _plain(right.content) == "[?]帮助 [q]退出"
+        assert _plain(right.content) == "[?]帮助 [q]退出 [L]语言"
 
 
 async def test_bottom_bar_clips_at_80_help_modal_stays_complete():
@@ -639,9 +643,8 @@ async def test_no_priority_digit_binding_exists_anywhere():
 async def test_env_help_modal_reflects_the_s_removal():
     """The checker note: after the env s binding retires (superseded by
     menu slot 2), the ? help modal lists NO s row — its rows derive from
-    the same BINDINGS declarations, so the removal auto-reflects."""
-    from tui.strings import APP_HELP_LABEL, APP_QUIT_LABEL
-
+    the same BINDINGS declarations, so the removal auto-reflects
+    (261015-ehc: the L language row joined the app bindings)."""
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
@@ -649,10 +652,11 @@ async def test_env_help_modal_reflects_the_s_removal():
         await pilot.pause()
         assert isinstance(app.screen, HelpModal)
         rows = [str(static.content) for static in app.screen.query(Static)]
-        # the live map after the migration: q, ?, r, enter — and NO s
+        # the live map after the migration: q, ?, L, r, enter — and NO s
         assert rows == [
             APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
             APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
+            APP_HELP_ROW.format(key="L", label=APP_LANGUAGE_TOGGLE_LABEL),
             APP_HELP_ROW.format(key="r", label=ENV_REFRESH_LABEL),
             APP_HELP_ROW.format(key="enter", label=ENV_DETAIL_LABEL),
         ], "the help rows must auto-reflect the retired s binding"

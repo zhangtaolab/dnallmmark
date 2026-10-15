@@ -44,15 +44,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import Horizontal
 from textual.widgets import Static
 
-from tui.strings import (
-    NAV_LABEL_ABOUT,
-    NAV_LABEL_DATA,
-    NAV_LABEL_ENV,
-    NAV_LABEL_MONITOR,
-    NAV_LABEL_RUN_CONFIG,
-    NAV_LABEL_SELECTION,
-    NAV_PLACEHOLDER_SUFFIX,
-)
+from tui import strings as S
 
 # The keycap key char carries the live theme's accent (resolved from
 # ``app.current_theme`` at mount — a rich Text span CANNOT use a Textual
@@ -82,13 +74,20 @@ class NavSlot(NamedTuple):
 #: NAV_PLACEHOLDER_SUFFIX/NAV_PLACEHOLDER_TOAST retain ZERO consumers
 #: (kept with this annotation for the tripwire's consistency; the 11-07
 #: promotion removed the last).
+#:
+#: 261015-ehc (EHC-1): the labels freeze at THIS module's import language
+#: (production boots English; the zh-pinned test surface imports zh) —
+#: TopMenuBar re-translates them through ``translate_value`` at every
+#: mount so the bar follows the live language without a second registry.
+#: Routing (target/phase) is language-neutral and never re-derived.
+_NAV_SLOTS_LANGUAGE = S.language()
 NAV_SLOTS: "tuple[NavSlot, ...]" = (
-    NavSlot(1, NAV_LABEL_ENV, "env_check", None),
-    NavSlot(2, NAV_LABEL_SELECTION, "selection", None),
-    NavSlot(3, NAV_LABEL_DATA, "data_manager", None),
-    NavSlot(4, NAV_LABEL_RUN_CONFIG, "run_config", None),
-    NavSlot(5, NAV_LABEL_MONITOR, "monitor", None),
-    NavSlot(6, NAV_LABEL_ABOUT, "about", None),
+    NavSlot(1, S.NAV_LABEL_ENV, "env_check", None),
+    NavSlot(2, S.NAV_LABEL_SELECTION, "selection", None),
+    NavSlot(3, S.NAV_LABEL_DATA, "data_manager", None),
+    NavSlot(4, S.NAV_LABEL_RUN_CONFIG, "run_config", None),
+    NavSlot(5, S.NAV_LABEL_MONITOR, "monitor", None),
+    NavSlot(6, S.NAV_LABEL_ABOUT, "about", None),
 )
 
 NAV_SLOT_BY_INDEX = {slot.index: slot for slot in NAV_SLOTS}
@@ -170,19 +169,26 @@ class TopMenuBar(Horizontal):
     """
 
     def on_mount(self) -> None:
-        """Mount the six slot Statics from NAV_SLOTS + the active slot."""
+        """Mount the six slot Statics from NAV_SLOTS + the active slot.
+
+        261015-ehc: the slot label re-translates from the frozen
+        build-language into the ACTIVE language at every mount (the L
+        toggle recomposes the owning screen, which remounts this bar).
+        """
         active = getattr(self.screen, "NAV_SLOT", None)
         for position, slot in enumerate(NAV_SLOTS):
+            label = S.translate_value(
+                slot.label, _NAV_SLOTS_LANGUAGE, S.language())
             segments: list[Text] = []
             if position:
                 segments.append(Text(" "))  # single-space separator
             classes = "nav-slot"
-            text = f"{slot.index}{slot.label}"
+            text = f"{slot.index}{label}"
             if slot.index == active:
                 segments.append(Text("◆ "))  # glyph channel first
                 classes += " nav-slot-active"  # + bold/accent channels
             elif slot.phase is not None:
-                text += NAV_PLACEHOLDER_SUFFIX
+                text += S.NAV_PLACEHOLDER_SUFFIX
                 classes += " nav-slot-placeholder"
             segments.append(Text(text))
             self.mount(Static(Text.assemble(*segments), classes=classes))

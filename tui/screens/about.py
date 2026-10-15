@@ -41,29 +41,10 @@ from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Label, Static
 
+from tui import strings as S
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.services import about as about_service
 from tui.services.about import AboutData
-from tui.strings import (
-    ABOUT_DEP_ABSENT,
-    ABOUT_MILESTONE_STAGE,
-    ABOUT_N_AUDIT_ABSENT,
-    ABOUT_N_AUDIT_PRESENT,
-    ABOUT_ROW_DATA,
-    ABOUT_ROW_DEPS,
-    ABOUT_ROW_MILESTONE,
-    ABOUT_ROW_REPO,
-    ABOUT_ROW_SOFTWARE,
-    ABOUT_TITLE,
-    ABOUT_VALUE_DATA,
-    ABOUT_VALUE_SOFTWARE_WITH_SHA,
-    NAV_LABEL_ABOUT,
-    NAV_LABEL_DATA,
-    NAV_LABEL_ENV,
-    NAV_LABEL_MONITOR,
-    NAV_LABEL_RUN_CONFIG,
-    NAV_LABEL_SELECTION,
-)
 
 # Dim style for absent-dependency values (rich `dim` — a Textual
 # `$token` cannot style a rich Text span on the Static render path,
@@ -104,12 +85,12 @@ class AboutScreen(Screen):
     # left segment and the help modal (the top bar itself carries the
     # digit labels — listing them twice would duplicate the menu).
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("1", "app.nav(1)", NAV_LABEL_ENV, show=False),
-        Binding("2", "app.nav(2)", NAV_LABEL_SELECTION, show=False),
-        Binding("3", "app.nav(3)", NAV_LABEL_DATA, show=False),
-        Binding("4", "app.nav(4)", NAV_LABEL_RUN_CONFIG, show=False),
-        Binding("5", "app.nav(5)", NAV_LABEL_MONITOR, show=False),
-        Binding("6", "app.nav(6)", NAV_LABEL_ABOUT, show=False),
+        Binding("1", "app.nav(1)", S.NAV_LABEL_ENV, show=False),
+        Binding("2", "app.nav(2)", S.NAV_LABEL_SELECTION, show=False),
+        Binding("3", "app.nav(3)", S.NAV_LABEL_DATA, show=False),
+        Binding("4", "app.nav(4)", S.NAV_LABEL_RUN_CONFIG, show=False),
+        Binding("5", "app.nav(5)", S.NAV_LABEL_MONITOR, show=False),
+        Binding("6", "app.nav(6)", S.NAV_LABEL_ABOUT, show=False),
     ]
 
     class AboutLoaded(Message):
@@ -131,7 +112,7 @@ class AboutScreen(Screen):
         """The five fixed rows: 8-cell CJK label + wrapping value column."""
         yield TopMenuBar()
         with Vertical(id="about-box"):
-            yield Label(ABOUT_TITLE, id="about-title")
+            yield Label(S.ABOUT_TITLE, id="about-title")
             for row_id, row_label in self._rows():
                 with Horizontal(classes="about-row"):
                     yield Label(row_label, classes="about-label")
@@ -143,11 +124,11 @@ class AboutScreen(Screen):
     def _rows() -> "tuple[tuple[str, str], ...]":
         """The five (row id, label) pairs in D-13 row order."""
         return (
-            ("software", ABOUT_ROW_SOFTWARE),
-            ("data", ABOUT_ROW_DATA),
-            ("milestone", ABOUT_ROW_MILESTONE),
-            ("deps", ABOUT_ROW_DEPS),
-            ("repo", ABOUT_ROW_REPO),
+            ("software", S.ABOUT_ROW_SOFTWARE),
+            ("data", S.ABOUT_ROW_DATA),
+            ("milestone", S.ABOUT_ROW_MILESTONE),
+            ("deps", S.ABOUT_ROW_DEPS),
+            ("repo", S.ABOUT_ROW_REPO),
         )
 
     def on_mount(self) -> None:
@@ -170,7 +151,7 @@ class AboutScreen(Screen):
         data = message.data
         self._set_value("software", self._software_value(data))
         self._set_value("data", self._data_value(data))
-        self._set_value("milestone", ABOUT_MILESTONE_STAGE)
+        self._set_value("milestone", S.ABOUT_MILESTONE_STAGE)
         self._set_value("deps", self._deps_value(data))
         self._set_value("repo", data.repo_url)
 
@@ -184,7 +165,7 @@ class AboutScreen(Screen):
     def _software_value(data: AboutData) -> str:
         """Software row: the version, with the git sha appended when resolved."""
         if data.git_sha:
-            return ABOUT_VALUE_SOFTWARE_WITH_SHA.format(
+            return S.ABOUT_VALUE_SOFTWARE_WITH_SHA.format(
                 version=data.software_version, sha=data.git_sha)
         return data.software_version
 
@@ -192,10 +173,10 @@ class AboutScreen(Screen):
     def _data_value(data: AboutData) -> str:
         """Data row: official-only counts + custom counts + the n_audit signal."""
         audit = (
-            ABOUT_N_AUDIT_PRESENT if data.n_audit_present
-            else ABOUT_N_AUDIT_ABSENT
+            S.ABOUT_N_AUDIT_PRESENT if data.n_audit_present
+            else S.ABOUT_N_AUDIT_ABSENT
         )
-        return ABOUT_VALUE_DATA.format(
+        return S.ABOUT_VALUE_DATA.format(
             om=data.official_counts.models,
             od=data.official_counts.datasets,
             cm=data.custom_counts[0],
@@ -217,7 +198,7 @@ class AboutScreen(Screen):
                 segments.append(Text(" · "))
             segments.append(Text(f"{package} "))
             if version is None:
-                segments.append(Text(ABOUT_DEP_ABSENT, style=_STYLE_DIM))
+                segments.append(Text(S.ABOUT_DEP_ABSENT, style=_STYLE_DIM))
             else:
                 segments.append(Text(version))
         return Text.assemble(*segments)

@@ -105,6 +105,7 @@ from textual.widgets import (
 from textual.widgets.selection_list import Selection
 from textual.worker import get_current_worker
 
+from tui import strings as S
 from tui.screens.selection import ConfirmModal
 from tui.services.custom_validation import (
     DATASET_CATEGORY_VALUES,
@@ -112,60 +113,6 @@ from tui.services.custom_validation import (
     MODEL_TYPE_VALUES,
 )
 from tui.services.gauntlet import LEG_AUDIT, LEG_DRY_RUN, GauntletItem
-from tui.strings import (
-    APP_MODAL_BACK_LABEL,
-    ENV_STATE_PENDING,
-    GAUNTLET_BANNER_FAIL,
-    GAUNTLET_DRILL_HINT,
-    GAUNTLET_DRILL_TITLE,
-    GAUNTLET_EXPORT_EMPTY_TOAST,
-    GAUNTLET_EXPORT_PROBLEMS,
-    GAUNTLET_EXPORTED_TOAST,
-    GAUNTLET_IMPORT_CONFLICTS,
-    GAUNTLET_IMPORTED_TOAST,
-    GAUNTLET_ITEM_AUDIT,
-    GAUNTLET_ITEM_DRY_RUN,
-    GAUNTLET_ROW_DRY_RUN_PASS,
-    GAUNTLET_ROW_FAIL,
-    GAUNTLET_ROW_LANDED,
-    GAUNTLET_ROW_PASS,
-    GAUNTLET_ROW_PENDING,
-    GAUNTLET_ROW_RUNNING,
-    GAUNTLET_TITLE,
-    GAUNTLET_UNDO_AFFORDANCE,
-    GAUNTLET_UNDO_LABEL,
-    GAUNTLET_UNDO_TOAST,
-    SEL_TEMPLATE_PATH_PLACEHOLDER,
-    SEL_TEMPLATE_PROBLEM_LINE,
-    SEL_TEMPLATE_WRITE_FAILED,
-    WIZ_BACK_LABEL,
-    WIZ_BORDER_TITLE,
-    WIZ_CANCEL_CONFIRM,
-    WIZ_CANCEL_LABEL,
-    WIZ_EXPORT_LABEL,
-    WIZ_FOOTER_HINT,
-    WIZ_FOOTER_HINT_LAST,
-    WIZ_GAUNTLET_BACK_HINT,
-    WIZ_IMPORT_LABEL,
-    WIZ_KIND_DATASETS,
-    WIZ_KIND_MODELS,
-    WIZ_NEXT_LABEL,
-    WIZ_NUMERIC_HINT,
-    WIZ_PATH_EXISTS,
-    WIZ_PATH_MISSING_ADVISORY,
-    WIZ_PROBLEM_LINE,
-    WIZ_PROBLEMS_HEADER,
-    WIZ_QUIRK_FP32_ONLY,
-    WIZ_QUIRK_NO_SAFETENSORS,
-    WIZ_QUIRK_SPECIAL_HEAD,
-    WIZ_REPORT_BACK_HINT,
-    WIZ_REPORT_TITLE,
-    WIZ_SPLIT_FILE_PLACEHOLDER,
-    WIZD_FIELD_LABELS,
-    WIZD_STEPS,
-    WIZM_FIELD_LABELS,
-    WIZM_STEPS,
-)
 
 # ===== Locations =====
 # The advisory path probes resolve relative paths against the pipeline
@@ -237,32 +184,32 @@ class KindSpec:
 #: widget id). Unchecked default; the values land in the candidate's
 #: ``quirks`` field (the execution-side mapping is Phase 11's).
 QUIRK_FIELDS = (
-    ("no_safetensors", WIZ_QUIRK_NO_SAFETENSORS, "quirk-no-safetensors"),
-    ("fp32_only", WIZ_QUIRK_FP32_ONLY, "quirk-fp32-only"),
-    ("special_head", WIZ_QUIRK_SPECIAL_HEAD, "quirk-special-head"),
+    ("no_safetensors", S.WIZ_QUIRK_NO_SAFETENSORS, "quirk-no-safetensors"),
+    ("fp32_only", S.WIZ_QUIRK_FP32_ONLY, "quirk-fp32-only"),
+    ("special_head", S.WIZ_QUIRK_SPECIAL_HEAD, "quirk-special-head"),
 )
 
 #: The model wizard's four steps (09-UI-SPEC step table, CUST-01).
 MODEL_STEPS = (
-    StepSpec(WIZM_STEPS[0], (
+    StepSpec(S.WIZM_STEPS[0], (
         FieldSpec("key", "key", "input"),
         FieldSpec("Model_path", "model-path", "path"),
         FieldSpec("size (M)", "size-m", "numeric"),
         FieldSpec("species", "species", "selection"),
     )),
-    StepSpec(WIZM_STEPS[1], (
+    StepSpec(S.WIZM_STEPS[1], (
         FieldSpec("type", "type", "selection",
                   vocabulary=tuple(MODEL_TYPE_VALUES)),
         FieldSpec("architecture", "architecture", "input"),
         FieldSpec("Tokenizer", "tokenizer", "selection"),
         FieldSpec("context_len (bp)", "context-len", "numeric"),
     )),
-    StepSpec(WIZM_STEPS[2], (
+    StepSpec(S.WIZM_STEPS[2], (
         FieldSpec("huggingface", "huggingface", "input"),
         FieldSpec("modelscope", "modelscope", "input"),
         FieldSpec("series", "series", "input"),
     )),
-    StepSpec(WIZM_STEPS[3], (
+    StepSpec(S.WIZM_STEPS[3], (
         FieldSpec("quirks", "quirks", "quirks"),
     )),
 )
@@ -275,13 +222,13 @@ MODEL_STEPS = (
 #: none of them. Task_type stores under the registry field name
 #: ``type`` (Auto-Default #11).
 DATASET_STEPS = (
-    StepSpec(WIZD_STEPS[0], (
+    StepSpec(S.WIZD_STEPS[0], (
         FieldSpec("key", "key", "input"),
         FieldSpec("Dataset_path", "dataset-path", "path"),
         FieldSpec("Category", "category", "selection",
                   vocabulary=tuple(DATASET_CATEGORY_VALUES)),
     )),
-    StepSpec(WIZD_STEPS[1], (
+    StepSpec(S.WIZD_STEPS[1], (
         FieldSpec("train_file", "train-file", "splitfile",
                   label_key="Train"),
         FieldSpec("dev_file", "dev-file", "splitfile", label_key="Dev"),
@@ -290,12 +237,12 @@ DATASET_STEPS = (
         FieldSpec("labels", "labels", "numeric"),
         FieldSpec("length", "length", "numeric"),
     )),
-    StepSpec(WIZD_STEPS[2], (
+    StepSpec(S.WIZD_STEPS[2], (
         FieldSpec("type", "type", "selection",
                   vocabulary=tuple(DATASET_TYPE_VALUES)),
         FieldSpec("metric", "metric", "selection"),
     )),
-    StepSpec(WIZD_STEPS[3], (
+    StepSpec(S.WIZD_STEPS[3], (
         FieldSpec("citation", "citation", "input"),
         FieldSpec("source", "source", "input"),
         FieldSpec("license", "license", "input"),
@@ -307,13 +254,13 @@ DATASET_STEPS = (
 KINDS: dict = {
     "models": KindSpec(
         steps=MODEL_STEPS,
-        labels=WIZM_FIELD_LABELS,
-        kind_name=WIZ_KIND_MODELS,
+        labels=S.WIZM_FIELD_LABELS,
+        kind_name=S.WIZ_KIND_MODELS,
     ),
     "datasets": KindSpec(
         steps=DATASET_STEPS,
-        labels=WIZD_FIELD_LABELS,
-        kind_name=WIZ_KIND_DATASETS,
+        labels=S.WIZD_FIELD_LABELS,
+        kind_name=S.WIZ_KIND_DATASETS,
     ),
 }
 
@@ -399,9 +346,9 @@ def _legs_for_kind(kind):
     Returns:
         list[tuple[str, str]]: ``(leg, label)`` pairs in execution order.
     """
-    legs = [(LEG_DRY_RUN, GAUNTLET_ITEM_DRY_RUN)]
+    legs = [(LEG_DRY_RUN, S.GAUNTLET_ITEM_DRY_RUN)]
     if kind == "datasets":
-        legs.append((LEG_AUDIT, GAUNTLET_ITEM_AUDIT))
+        legs.append((LEG_AUDIT, S.GAUNTLET_ITEM_AUDIT))
     return legs
 
 
@@ -441,7 +388,7 @@ class _PathPromptModal(ModalScreen):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     #: The problems log's scroll bound (the wrap-never-elide rule; a
@@ -533,7 +480,7 @@ class _PathPromptModal(ModalScreen):
             log.clear()
             log.write(self._problems_header.format(n=len(message.problems)))
             for index, (location, msg) in enumerate(message.problems):
-                log.write(SEL_TEMPLATE_PROBLEM_LINE.format(
+                log.write(S.SEL_TEMPLATE_PROBLEM_LINE.format(
                     n=index + 1, location=location, message=msg))
         else:
             self.dismiss()
@@ -588,17 +535,17 @@ class WizardModal(ModalScreen):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "request_cancel", WIZ_CANCEL_LABEL, show=False),
-        Binding("enter", "advance", WIZ_NEXT_LABEL, show=False),
-        Binding("b", "go_back", WIZ_BACK_LABEL, show=False),
+        Binding("escape", "request_cancel", S.WIZ_CANCEL_LABEL, show=False),
+        Binding("enter", "advance", S.WIZ_NEXT_LABEL, show=False),
+        Binding("b", "go_back", S.WIZ_BACK_LABEL, show=False),
         # Step-1-only affordances (D-11): declared once, the actions
         # no-op outside step 1; the real views ride the 09-05 seams with
         # the plain callbacks as the no-service fallback.
-        Binding("f", "do_import", WIZ_IMPORT_LABEL, show=False),
-        Binding("o", "do_export", WIZ_EXPORT_LABEL, show=False),
+        Binding("f", "do_import", S.WIZ_IMPORT_LABEL, show=False),
+        Binding("o", "do_export", S.WIZ_EXPORT_LABEL, show=False),
         # The session-undo affordance (D-08): active only in the landed
         # state (the action guards; single use per session).
-        Binding("u", "undo_landed", GAUNTLET_UNDO_LABEL, show=False),
+        Binding("u", "undo_landed", S.GAUNTLET_UNDO_LABEL, show=False),
     ]
 
     def __init__(self, kind, validator, on_valid=None, on_import=None,
@@ -713,19 +660,19 @@ class WizardModal(ModalScreen):
                 yield from self._compose_step()
             elif self._phase == "report":
                 yield RichLog(wrap=True, id="wiz-report-log")
-                yield Static(WIZ_REPORT_BACK_HINT,
+                yield Static(S.WIZ_REPORT_BACK_HINT,
                              id="wiz-report-hint")
             elif self._phase == "drill":
                 yield RichLog(wrap=True, id="gauntlet-drill-log")
-                yield Static(WIZ_GAUNTLET_BACK_HINT,
+                yield Static(S.WIZ_GAUNTLET_BACK_HINT,
                              id="gauntlet-drill-hint")
             elif self._gauntlet_service is not None:
                 yield from self._compose_gauntlet_panel()
             else:
                 # The 09-04 minimal pending view (no service wired —
                 # the composition root wires the real GauntletService).
-                yield Static(ENV_STATE_PENDING, id="wiz-gauntlet-pending")
-                yield Static(WIZ_GAUNTLET_BACK_HINT,
+                yield Static(S.ENV_STATE_PENDING, id="wiz-gauntlet-pending")
+                yield Static(S.WIZ_GAUNTLET_BACK_HINT,
                              id="wiz-gauntlet-hint")
 
     def _compose_gauntlet_panel(self):
@@ -745,7 +692,7 @@ class WizardModal(ModalScreen):
         with VerticalScroll(id="gauntlet-rows"):
             for index, group in enumerate(self._gauntlet_rows):
                 if is_import:
-                    yield Static(GAUNTLET_TITLE.format(key=group["key"]),
+                    yield Static(S.GAUNTLET_TITLE.format(key=group["key"]),
                                  id=f"gauntlet-head-{index}")
                 for item_index, row in enumerate(group["items"]):
                     yield _GauntletRow(
@@ -755,9 +702,9 @@ class WizardModal(ModalScreen):
                     yield Static(group["status"]["text"],
                                  id=f"gauntlet-status-{index}")
         yield Static(self._gauntlet_banner["text"], id="gauntlet-banner")
-        yield Static(GAUNTLET_UNDO_AFFORDANCE if self._undo_available
+        yield Static(S.GAUNTLET_UNDO_AFFORDANCE if self._undo_available
                      else "", id="gauntlet-undo")
-        yield Static(f"{GAUNTLET_DRILL_HINT}  {WIZ_GAUNTLET_BACK_HINT}",
+        yield Static(f"{S.GAUNTLET_DRILL_HINT}  {S.WIZ_GAUNTLET_BACK_HINT}",
                      id="gauntlet-hint")
 
     def _compose_step(self):
@@ -771,7 +718,7 @@ class WizardModal(ModalScreen):
             )
             value = self._values.get(spec.field, "")
             if spec.control in ("input", "path", "numeric", "splitfile"):
-                placeholder = (WIZ_SPLIT_FILE_PLACEHOLDER
+                placeholder = (S.WIZ_SPLIT_FILE_PLACEHOLDER
                                if spec.control == "splitfile" else "")
                 yield Input(value="" if value is None else str(value),
                             placeholder=placeholder,
@@ -793,8 +740,8 @@ class WizardModal(ModalScreen):
                         value=bool(self._values["quirks"].get(name)),
                         id=f"wiz-{wid}",
                     )
-        hint = (WIZ_FOOTER_HINT_LAST
-                if self._step == len(self._steps) - 1 else WIZ_FOOTER_HINT)
+        hint = (S.WIZ_FOOTER_HINT_LAST
+                if self._step == len(self._steps) - 1 else S.WIZ_FOOTER_HINT)
         yield Static(hint, id="wiz-footer-hint")
 
     def _options_for(self, spec):
@@ -812,26 +759,26 @@ class WizardModal(ModalScreen):
             step = self._steps[self._step]
             indicator = f"[{self.app.current_theme.accent} bold]" \
                         f"{self._step + 1}/{len(self._steps)}[/]"
-            box.border_title = WIZ_BORDER_TITLE.format(
+            box.border_title = S.WIZ_BORDER_TITLE.format(
                 kind=KINDS[self._kind].kind_name,
                 indicator=indicator,
                 step=step.name,
             )
         elif self._phase == "report":
-            box.border_title = WIZ_REPORT_TITLE.format(
+            box.border_title = S.WIZ_REPORT_TITLE.format(
                 kind=KINDS[self._kind].kind_name)
         elif self._phase == "drill":
             label = self._drill_item_label()
-            box.border_title = (GAUNTLET_DRILL_TITLE.format(item=label)
-                                if label else GAUNTLET_TITLE.format(
+            box.border_title = (S.GAUNTLET_DRILL_TITLE.format(item=label)
+                                if label else S.GAUNTLET_TITLE.format(
                                     key=self._gauntlet_key))
         elif self._gauntlet_mode == "import":
-            box.border_title = WIZ_IMPORT_LABEL
+            box.border_title = S.WIZ_IMPORT_LABEL
         elif self._gauntlet_service is not None:
             # the landed panel keeps its key even after the form clears
-            box.border_title = GAUNTLET_TITLE.format(key=self._gauntlet_key)
+            box.border_title = S.GAUNTLET_TITLE.format(key=self._gauntlet_key)
         else:  # the 09-04 minimal pending view
-            box.border_title = GAUNTLET_TITLE.format(
+            box.border_title = S.GAUNTLET_TITLE.format(
                 key=self._values.get("key", ""))
         box.styles.width = min(
             _WIZARD_MAX_WIDTH, max(20, self.size.width - 4))
@@ -936,19 +883,19 @@ class WizardModal(ModalScreen):
         if spec.control == "numeric":
             if _parses_as_number(value):
                 return "", ""
-            return WIZ_NUMERIC_HINT, "wiz-hint-bad"
+            return S.WIZ_NUMERIC_HINT, "wiz-hint-bad"
         if spec.control == "path":
             if self._dir_exists(value):
-                return WIZ_PATH_EXISTS, "wiz-check-ok"
-            return WIZ_PATH_MISSING_ADVISORY, "wiz-check-bad"
+                return S.WIZ_PATH_EXISTS, "wiz-check-ok"
+            return S.WIZ_PATH_MISSING_ADVISORY, "wiz-check-bad"
         # splitfile: the name is checked under the collected dataset path
         dataset_path = self._values.get("Dataset_path", "")
         if not isinstance(dataset_path, str) or not dataset_path.strip():
             return "", ""
         target = str(Path(dataset_path) / value)
         if self._file_exists(target):
-            return WIZ_PATH_EXISTS, "wiz-check-ok"
-        return WIZ_PATH_MISSING_ADVISORY, "wiz-check-bad"
+            return S.WIZ_PATH_EXISTS, "wiz-check-ok"
+        return S.WIZ_PATH_MISSING_ADVISORY, "wiz-check-bad"
 
     # ===== Navigation: enter / b / esc =====
 
@@ -1002,9 +949,9 @@ class WizardModal(ModalScreen):
     def _write_report(self) -> None:
         """Render the numbered collect-all list (validator emission order)."""
         log = self.query_one("#wiz-report-log", RichLog)
-        log.write(WIZ_PROBLEMS_HEADER.format(n=len(self._problems)))
+        log.write(S.WIZ_PROBLEMS_HEADER.format(n=len(self._problems)))
         for index, (field_key, message) in enumerate(self._problems):
-            log.write(WIZ_PROBLEM_LINE.format(
+            log.write(S.WIZ_PROBLEM_LINE.format(
                 i=index + 1,
                 field_label=self._labels.get(field_key, field_key),
                 problem=message,
@@ -1076,7 +1023,7 @@ class WizardModal(ModalScreen):
         self._gauntlet_rows = [
             {"key": key,
              "items": [{"leg": leg, "label": label, "status": "pending",
-                        "text": GAUNTLET_ROW_PENDING.format(item=label),
+                        "text": S.GAUNTLET_ROW_PENDING.format(item=label),
                         "item": None}
                        for leg, label in _legs_for_kind(self._kind)],
              "status": {"text": "", "style": ""}}
@@ -1120,7 +1067,7 @@ class WizardModal(ModalScreen):
                 f"#gauntlet-head-{group_index}"))
                 if self._gauntlet_mode == "import" else None)
             if head is not None:
-                head.update(Text(GAUNTLET_TITLE.format(key=group["key"]),
+                head.update(Text(S.GAUNTLET_TITLE.format(key=group["key"]),
                                  style=_ROW_STYLE_PASS))
             if self._gauntlet_mode == "import":
                 status = _first_or_none(self.query(
@@ -1238,11 +1185,11 @@ class WizardModal(ModalScreen):
         """One finished item's row text (service data, never recomputed)."""
         if not item.ok:
             summary = ", ".join(item.details) or (item.raw_output or "")
-            return GAUNTLET_ROW_FAIL.format(item=label, summary=summary)
+            return S.GAUNTLET_ROW_FAIL.format(item=label, summary=summary)
         if leg == LEG_DRY_RUN:
-            return GAUNTLET_ROW_DRY_RUN_PASS.format(
+            return S.GAUNTLET_ROW_DRY_RUN_PASS.format(
                 cells=_detail_value(item.details, "planned_cells"))
-        return GAUNTLET_ROW_PASS.format(
+        return S.GAUNTLET_ROW_PASS.format(
             item=label, summary=", ".join(item.details))
 
     # ===== Message handlers (event-loop side: rendering + the one write) =====
@@ -1258,7 +1205,7 @@ class WizardModal(ModalScreen):
         group_index, item_index = found
         row_state = self._gauntlet_rows[group_index]["items"][item_index]
         row_state["status"] = "running"
-        row_state["text"] = GAUNTLET_ROW_RUNNING.format(
+        row_state["text"] = S.GAUNTLET_ROW_RUNNING.format(
             item=row_state["label"])
         self._update_row_widget(group_index, item_index, row_state["text"],
                                 self._row_style("running"))
@@ -1309,11 +1256,11 @@ class WizardModal(ModalScreen):
                 # failure must surface as a banner, never a crashed panel
                 self._render_entry_status(
                     group_index, False, message.entry_key,
-                    extra=SEL_TEMPLATE_WRITE_FAILED.format(error=exc),
+                    extra=S.SEL_TEMPLATE_WRITE_FAILED.format(error=exc),
                 )
                 return
             self._gauntlet_landed += 1
-            landed = GAUNTLET_ROW_LANDED.format(
+            landed = S.GAUNTLET_ROW_LANDED.format(
                 key=message.entry_key, path=path)
             self._render_entry_status(group_index, True, message.entry_key,
                                       text=landed)
@@ -1325,7 +1272,7 @@ class WizardModal(ModalScreen):
                 self._undo_available = True
                 undo = _first_or_none(self.query("#gauntlet-undo"))
                 if undo is not None:
-                    undo.update(GAUNTLET_UNDO_AFFORDANCE)
+                    undo.update(S.GAUNTLET_UNDO_AFFORDANCE)
                 self._reset_form()
         else:
             self._render_entry_status(group_index, False,
@@ -1338,7 +1285,7 @@ class WizardModal(ModalScreen):
         if self._gauntlet_stale(message.run_id):
             return
         if (self._gauntlet_mode == "import" and self._gauntlet_landed > 0):
-            self.app.notify(GAUNTLET_IMPORTED_TOAST.format(
+            self.app.notify(S.GAUNTLET_IMPORTED_TOAST.format(
                 n=self._gauntlet_landed,
                 kind=KINDS[self._kind].kind_name))
 
@@ -1360,7 +1307,7 @@ class WizardModal(ModalScreen):
         survive the return recompose), then in the widget if present.
         """
         if text is None:
-            text = GAUNTLET_BANNER_FAIL.format(key=entry_key)
+            text = S.GAUNTLET_BANNER_FAIL.format(key=entry_key)
         if extra:
             text = text + "\n" + extra
         style = self._row_style("pass" if ok else "fail")
@@ -1426,7 +1373,7 @@ class WizardModal(ModalScreen):
             return
         self._undo_available = False
         self._undo(self._kind, self._gauntlet_key)
-        toast = GAUNTLET_UNDO_TOAST.format(key=self._gauntlet_key)
+        toast = S.GAUNTLET_UNDO_TOAST.format(key=self._gauntlet_key)
         self.app.notify(toast)
         undo = _first_or_none(self.query("#gauntlet-undo"))
         if undo is not None:
@@ -1514,7 +1461,7 @@ class WizardModal(ModalScreen):
             self.dismiss()
             return
         self.app.push_screen(ConfirmModal(
-            WIZ_CANCEL_CONFIRM.format(n=filled),
+            S.WIZ_CANCEL_CONFIRM.format(n=filled),
             on_confirm=self._abandon,
         ))
 
@@ -1534,9 +1481,9 @@ class WizardModal(ModalScreen):
             return
         if self._import_read is not None and self._import_validate is not None:
             self.app.push_screen(_PathPromptModal(
-                title=WIZ_IMPORT_LABEL,
-                placeholder=SEL_TEMPLATE_PATH_PLACEHOLDER,
-                problems_header=GAUNTLET_IMPORT_CONFLICTS,
+                title=S.WIZ_IMPORT_LABEL,
+                placeholder=S.SEL_TEMPLATE_PATH_PLACEHOLDER,
+                problems_header=S.GAUNTLET_IMPORT_CONFLICTS,
                 validate=self._validate_import_path,
                 accept=self._accept_import_path,
             ))
@@ -1581,12 +1528,12 @@ class WizardModal(ModalScreen):
         if self.app.screen is not self:
             return
         if message.empty:
-            self.app.notify(GAUNTLET_EXPORT_EMPTY_TOAST)
+            self.app.notify(S.GAUNTLET_EXPORT_EMPTY_TOAST)
             return
         self.app.push_screen(_PathPromptModal(
-            title=WIZ_EXPORT_LABEL,
-            placeholder=SEL_TEMPLATE_PATH_PLACEHOLDER,
-            problems_header=GAUNTLET_EXPORT_PROBLEMS,
+            title=S.WIZ_EXPORT_LABEL,
+            placeholder=S.SEL_TEMPLATE_PATH_PLACEHOLDER,
+            problems_header=S.GAUNTLET_EXPORT_PROBLEMS,
             validate=self._validate_export_path,
             accept=self._accept_export_path,
         ))
@@ -1662,16 +1609,16 @@ class WizardModal(ModalScreen):
         try:
             ok, diagnostic = export(path)
         except OSError as exc:
-            return [("", SEL_TEMPLATE_WRITE_FAILED.format(error=exc))]
+            return [("", S.SEL_TEMPLATE_WRITE_FAILED.format(error=exc))]
         if ok:
             return None
-        return [("", SEL_TEMPLATE_WRITE_FAILED.format(
+        return [("", S.SEL_TEMPLATE_WRITE_FAILED.format(
             error=diagnostic or ""))]
 
     async def _accept_export_path(self, path, generation) -> None:
         """Toast the exported path (the copy already happened; the
         generation parameter is the shared prompt-seam shape — WR-07)."""
-        self.app.notify(GAUNTLET_EXPORTED_TOAST.format(path=path))
+        self.app.notify(S.GAUNTLET_EXPORTED_TOAST.format(path=path))
 
     async def _return_to_form(self) -> None:
         """Report/gauntlet dismissal: same step, every value intact."""

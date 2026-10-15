@@ -55,8 +55,9 @@ from textual.message import Message
 from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Footer, Label, RichLog
 
+from tui import strings as S
 from tui.screens.nav import BottomBar, TopMenuBar
-from tui.screens.selection import ConfirmModal, PathInputModal
+from tui.screens.selection import LaunchConfirmModal, PathInputModal
 from tui.services import run_config as run_config_svc
 from tui.services import sweep_launcher as sweep_launcher_module
 from tui.services import sweep_monitor
@@ -74,70 +75,6 @@ from tui.services.sweep_monitor import (
     SWEEP_RUNNING,
     format_eta,
     format_hms,
-)
-from tui.strings import (
-    APP_MODAL_BACK_LABEL,
-    CFG_VALUE_ABSENT,
-    ENV_DETAIL_LABEL,
-    LNC_LAUNCH_FAILED_TOAST,
-    MON_ATTACH_INVALID_TOAST,
-    MON_ATTACH_LABEL,
-    MON_ATTACH_PLACEHOLDER,
-    MON_ATTACH_TITLE,
-    MON_ATTACHED_TOAST,
-    MON_CELLS_EMPTY,
-    MON_CELLS_TITLE,
-    MON_COL_ETA,
-    MON_COL_MODEL,
-    MON_COL_PROGRESS,
-    MON_COL_ROOT,
-    MON_COL_SCALE,
-    MON_COL_SEED,
-    MON_COL_STATE,
-    MON_COL_TASK,
-    MON_DISCOVERED_EMPTY,
-    MON_DISCOVERED_TITLE,
-    MON_ENTRY_SEED_COUNTS,
-    MON_ETA_PENDING,
-    MON_ETA_RANGE,
-    MON_ETA_UNKNOWN,
-    MON_FAILURE_ROW,
-    MON_FAILURES_EMPTY,
-    MON_FAILURES_TITLE,
-    MON_FRACTION_LINE,
-    MON_LOG_TEE_LINE,
-    MON_LOG_TITLE,
-    MON_LOG_UNAVAILABLE,
-    MON_PROGRESS_INDETERMINATE,
-    MON_PROGRESS_STEPS,
-    MON_RERUN_CONFIRM,
-    MON_RERUN_LABEL,
-    MON_RERUN_NO_SEEDS,
-    MON_RERUN_TOAST,
-    MON_RESCAN_LABEL,
-    MON_RESCAN_TOAST,
-    MON_RESUME_NOTE,
-    MON_RESUME_NOTE_SHORT,
-    MON_SCAN_NOTE,
-    MON_SCREEN_TITLE,
-    MON_STATE_ARTIFACTS_SWEEP,
-    MON_STATE_DONE,
-    MON_STATE_FAILED,
-    MON_STATE_FINISHED_SWEEP,
-    MON_STATE_QUEUED,
-    MON_STATE_RUNNING,
-    MON_STATE_RUNNING_SWEEP,
-    MON_STATE_SKIPPED,
-    MON_STATS_LINE,
-    MON_STATS_LINE_NO_CURRENT,
-    MON_STATS_LINE_UNKNOWN_TOTAL,
-    MON_TOTAL_UNKNOWN,
-    NAV_LABEL_ABOUT,
-    NAV_LABEL_DATA,
-    NAV_LABEL_ENV,
-    NAV_LABEL_MONITOR,
-    NAV_LABEL_RUN_CONFIG,
-    NAV_LABEL_SELECTION,
 )
 
 if TYPE_CHECKING:
@@ -168,24 +105,24 @@ _DASH = "—"
 #: modal-title constants (the 11-06 keycap-budget precedent: no
 #: standalone 4-CJK-char constants exist in the frozen inventory and
 #: additions are tripwire-locked; the projection adds zero copy).
-_FAILURES_KEYCAP = MON_FAILURES_TITLE.split(" (")[0]
-_LOG_KEYCAP = MON_LOG_TITLE.split(" — {")[0]
+_FAILURES_KEYCAP = S.MON_FAILURES_TITLE.split(" (")[0]
+_LOG_KEYCAP = S.MON_LOG_TITLE.split(" — {")[0]
 
 #: The discovered-sweep state cell vocabulary (machine state -> the
 #: glyph-first copy + its style channel).
 _SWEEP_STATE_CELLS: "dict[str, tuple[str, str]]" = {
-    SWEEP_RUNNING: (MON_STATE_RUNNING_SWEEP, _STYLE_RUNNING),
-    SWEEP_FINISHED: (MON_STATE_FINISHED_SWEEP, _STYLE_DIM),
-    SWEEP_ARTIFACTS_ONLY: (MON_STATE_ARTIFACTS_SWEEP, _STYLE_DIM),
+    SWEEP_RUNNING: (S.MON_STATE_RUNNING_SWEEP, _STYLE_RUNNING),
+    SWEEP_FINISHED: (S.MON_STATE_FINISHED_SWEEP, _STYLE_DIM),
+    SWEEP_ARTIFACTS_ONLY: (S.MON_STATE_ARTIFACTS_SWEEP, _STYLE_DIM),
 }
 
 #: The per-seed cell-state vocabulary (machine state -> copy + style).
 _CELL_STATE_CELLS: "dict[str, tuple[str, str]]" = {
-    CELL_COMPLETED: (MON_STATE_DONE, _STYLE_DONE),
-    CELL_FAILED: (MON_STATE_FAILED, _STYLE_FAILED),
-    CELL_SKIPPED: (MON_STATE_SKIPPED, _STYLE_SKIPPED),
-    CELL_RUNNING: (MON_STATE_RUNNING, _STYLE_RUNNING),
-    CELL_QUEUED: (MON_STATE_QUEUED, _STYLE_DIM),
+    CELL_COMPLETED: (S.MON_STATE_DONE, _STYLE_DONE),
+    CELL_FAILED: (S.MON_STATE_FAILED, _STYLE_FAILED),
+    CELL_SKIPPED: (S.MON_STATE_SKIPPED, _STYLE_SKIPPED),
+    CELL_RUNNING: (S.MON_STATE_RUNNING, _STYLE_RUNNING),
+    CELL_QUEUED: (S.MON_STATE_QUEUED, _STYLE_DIM),
 }
 
 
@@ -200,35 +137,35 @@ def _eta_field(eta: Any) -> str:
     and none degradations render their designed constants (the caller
     drops the line's stray ≈ for them — never a double marker)."""
     if eta.mode == ETA_PENDING:
-        return MON_ETA_PENDING
+        return S.MON_ETA_PENDING
     if eta.mode == ETA_RANGE:
-        return MON_ETA_RANGE.format(
+        return S.MON_ETA_RANGE.format(
             lo=format_eta(eta.lo_seconds).lstrip("≈"),
             hi=format_eta(eta.hi_seconds).lstrip("≈"))
     if eta.mode == ETA_POINT:
         return format_eta(eta.point_seconds).lstrip("≈")
-    return MON_ETA_UNKNOWN
+    return S.MON_ETA_UNKNOWN
 
 
 def _stats_line(stats: Any, narrow: bool) -> str:
     """The MON-02/D-17 stats line over one SweepStats (all variants)."""
     elapsed = (
         format_hms(stats.elapsed_seconds)
-        if stats.elapsed_seconds is not None else MON_ETA_UNKNOWN)
+        if stats.elapsed_seconds is not None else S.MON_ETA_UNKNOWN)
     if stats.total is None:
-        return MON_STATS_LINE_UNKNOWN_TOTAL.format(
+        return S.MON_STATS_LINE_UNKNOWN_TOTAL.format(
             done=stats.done, elapsed=elapsed)
     eta_field = _eta_field(stats.eta)
     if narrow or stats.current is None:
-        line = MON_STATS_LINE_NO_CURRENT.format(
+        line = S.MON_STATS_LINE_NO_CURRENT.format(
             done=stats.done, total=stats.total,
             elapsed=elapsed, eta=eta_field)
     else:
-        line = MON_STATS_LINE.format(
+        line = S.MON_STATS_LINE.format(
             done=stats.done, total=stats.total,
             model=stats.current.model, task=stats.current.task,
             seed=stats.current.seed, elapsed=elapsed, eta=eta_field)
-    if eta_field in (MON_ETA_PENDING, MON_ETA_UNKNOWN):
+    if eta_field in (S.MON_ETA_PENDING, S.MON_ETA_UNKNOWN):
         # the degradation copy never rides the ≈ prefix
         line = line.replace("≈" + eta_field, eta_field)
     return line
@@ -240,7 +177,7 @@ def _progress_cell(summary: Any) -> Text:
     additive, never fabricated; unknown totals render the designed
     copy)."""
     if summary.total is None:
-        return Text(MON_TOTAL_UNKNOWN, style=_STYLE_DIM)
+        return Text(S.MON_TOTAL_UNKNOWN, style=_STYLE_DIM)
     fraction = Text(f"{summary.done}/{summary.total}")
     if summary.state != SWEEP_RUNNING:
         return fraction
@@ -255,17 +192,17 @@ def _discovered_eta_cell(summary: Any, stats: Any | None) -> Text:
     (point/range/pending); finished and prior-artifacts rows render the
     absent marker."""
     if summary.state != SWEEP_RUNNING or stats is None:
-        return Text(MON_ETA_UNKNOWN, style=_STYLE_DIM)
+        return Text(S.MON_ETA_UNKNOWN, style=_STYLE_DIM)
     eta = stats.eta
     if eta.mode == ETA_PENDING:
-        return Text(MON_ETA_PENDING, style=_STYLE_DIM)
+        return Text(S.MON_ETA_PENDING, style=_STYLE_DIM)
     if eta.mode == ETA_RANGE:
-        return Text("≈" + MON_ETA_RANGE.format(
+        return Text("≈" + S.MON_ETA_RANGE.format(
             lo=format_eta(eta.lo_seconds).lstrip("≈"),
             hi=format_eta(eta.hi_seconds).lstrip("≈")))
     if eta.mode == ETA_POINT:
         return Text(format_eta(eta.point_seconds))
-    return Text(MON_ETA_UNKNOWN, style=_STYLE_DIM)
+    return Text(S.MON_ETA_UNKNOWN, style=_STYLE_DIM)
 
 
 # =====================================================================
@@ -486,7 +423,7 @@ class FailureDetailModal(ModalScreen):
     never elided (data discipline)."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, title: str, error: str, **kwargs):
@@ -513,8 +450,8 @@ class FailuresModal(ModalScreen):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "drill_cursor", show=False),
-        Binding("r", "rerun_failures", MON_RERUN_LABEL),
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("r", "rerun_failures", S.MON_RERUN_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, root: str, failures: tuple,
@@ -533,16 +470,16 @@ class FailuresModal(ModalScreen):
 
     def on_mount(self) -> None:
         box = self.query_one("#mon-failures-box", Vertical)
-        box.border_title = MON_FAILURES_TITLE.format(n=len(self._failures))
+        box.border_title = S.MON_FAILURES_TITLE.format(n=len(self._failures))
         table = self.query_one("#mon-failures-table", DataTable)
         table.cursor_type = "row"
-        table.add_column(MON_FAILURE_ROW.format(
+        table.add_column(S.MON_FAILURE_ROW.format(
             model="model", task="task", seed="seed"), key="model")
         if not self._failures:
-            table.add_row(MON_FAILURES_EMPTY, key="__empty__")
+            table.add_row(S.MON_FAILURES_EMPTY, key="__empty__")
         else:
             for index, failure in enumerate(self._failures):
-                table.add_row(MON_FAILURE_ROW.format(
+                table.add_row(S.MON_FAILURE_ROW.format(
                     model=failure.model, task=failure.task,
                     seed=failure.seed), key=f"failure-{index}")
         table.focus()
@@ -566,7 +503,7 @@ class FailuresModal(ModalScreen):
         except (ValueError, IndexError):
             return
         self.app.push_screen(FailureDetailModal(
-            MON_FAILURE_ROW.format(model=failure.model, task=failure.task,
+            S.MON_FAILURE_ROW.format(model=failure.model, task=failure.task,
                                    seed=failure.seed),
             failure.error))
 
@@ -591,7 +528,7 @@ class LogTailModal(ModalScreen):
     empty log."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, root: str, tee_path: "str | None", tail_reader,
@@ -612,13 +549,13 @@ class LogTailModal(ModalScreen):
 
     def on_mount(self) -> None:
         box = self.query_one("#mon-log-box", Vertical)
-        box.border_title = MON_LOG_TITLE.format(root=self._root)
+        box.border_title = S.MON_LOG_TITLE.format(root=self._root)
         if self._tee_path is None:
             log = self.query_one("#mon-log-tail", RichLog)
-            log.write(MON_LOG_UNAVAILABLE)
+            log.write(S.MON_LOG_UNAVAILABLE)
             return  # CLI-launched: no refresh is ever scheduled
         self.query_one("#mon-log-tee-line", Label).update(Text(
-            MON_LOG_TEE_LINE.format(path=self._tee_path),
+            S.MON_LOG_TEE_LINE.format(path=self._tee_path),
             style=_STYLE_DIM))
         self._refresh_tick()
         self._timer = self.set_interval(self._interval, self._refresh_tick)
@@ -665,7 +602,7 @@ class CellDetailModal(ModalScreen):
     never translated, never elided."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, model: str, task: str, row: Any,
@@ -691,12 +628,12 @@ class CellDetailModal(ModalScreen):
         for seed in self._row.seeds:
             copy, _style = _CELL_STATE_CELLS.get(
                 seed.state, (seed.state, _STYLE_DIM))
-            log.write(f"{MON_COL_SEED.format(seed=seed.seed)}: {copy}")
+            log.write(f"{S.MON_COL_SEED.format(seed=seed.seed)}: {copy}")
             for name, state in seed.fraction_states or ():
                 frac_copy, _frac_style = _CELL_STATE_CELLS.get(
                     state, (state, _STYLE_DIM))
                 fraction = (name.removeprefix("frac_"))
-                log.write("  " + MON_FRACTION_LINE.format(
+                log.write("  " + S.MON_FRACTION_LINE.format(
                     fraction=fraction, state=frac_copy))
             record = self._records.get(seed.seed)
             if record:
@@ -813,17 +750,17 @@ class MonitorScreen(Screen):
     # are plain per-screen bindings routed to the app's nav action
     # (never priority, Pattern 2).
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("enter", "row_action", ENV_DETAIL_LABEL),
+        Binding("enter", "row_action", S.ENV_DETAIL_LABEL),
         Binding("f", "show_failures", _FAILURES_KEYCAP),
         Binding("t", "show_log_tail", _LOG_KEYCAP),
-        Binding("a", "attach_path", MON_ATTACH_LABEL),
-        Binding("r", "rescan", MON_RESCAN_LABEL),
-        Binding("1", "app.nav(1)", NAV_LABEL_ENV, show=False),
-        Binding("2", "app.nav(2)", NAV_LABEL_SELECTION, show=False),
-        Binding("3", "app.nav(3)", NAV_LABEL_DATA, show=False),
-        Binding("4", "app.nav(4)", NAV_LABEL_RUN_CONFIG, show=False),
-        Binding("5", "app.nav(5)", NAV_LABEL_MONITOR, show=False),
-        Binding("6", "app.nav(6)", NAV_LABEL_ABOUT, show=False),
+        Binding("a", "attach_path", S.MON_ATTACH_LABEL),
+        Binding("r", "rescan", S.MON_RESCAN_LABEL),
+        Binding("1", "app.nav(1)", S.NAV_LABEL_ENV, show=False),
+        Binding("2", "app.nav(2)", S.NAV_LABEL_SELECTION, show=False),
+        Binding("3", "app.nav(3)", S.NAV_LABEL_DATA, show=False),
+        Binding("4", "app.nav(4)", S.NAV_LABEL_RUN_CONFIG, show=False),
+        Binding("5", "app.nav(5)", S.NAV_LABEL_MONITOR, show=False),
+        Binding("6", "app.nav(6)", S.NAV_LABEL_ABOUT, show=False),
     ]
 
     class FullScanned(Message):
@@ -945,11 +882,11 @@ class MonitorScreen(Screen):
         title row), the 1-row stats line, the bottom bar."""
         yield TopMenuBar()
         with Horizontal(id="mon-title-bar"):
-            yield Label(MON_SCREEN_TITLE, id="mon-screen-title")
-            yield Label(MON_SCAN_NOTE, id="mon-scan-note")
+            yield Label(S.MON_SCREEN_TITLE, id="mon-screen-title")
+            yield Label(S.MON_SCAN_NOTE, id="mon-scan-note")
         with Vertical(id="mon-discovered-region"):
             with Horizontal(id="mon-discovered-title-row"):
-                yield Label(MON_DISCOVERED_TITLE.format(n=0),
+                yield Label(S.MON_DISCOVERED_TITLE.format(n=0),
                             id="mon-discovered-title")
             yield DataTable(id="mon-discovered")
         with Vertical(id="mon-cells-region"):
@@ -961,7 +898,20 @@ class MonitorScreen(Screen):
         yield BottomBar()
 
     def on_mount(self) -> None:
-        """Build the tables, focus the discovered list, arm the cadence."""
+        """Build the tables, focus the discovered list, arm the cadence.
+
+        261015-ehc (EHC-1): the mount body is IDEMPOTENT — the L language
+        toggle re-invokes it after a recompose (the app's _rerender_screen
+        mechanism), so the cadence timers stop BEFORE re-arming (a bare
+        second set_interval would orphan the first pair firing forever).
+        """
+        for timer in (self._frontier_timer, self._full_timer):
+            if timer is not None:
+                timer.stop()
+                if timer is self._frontier_timer:
+                    self._frontier_timer = None
+                else:
+                    self._full_timer = None
         discovered = self.query_one("#mon-discovered", DataTable)
         discovered.cursor_type = "row"
         discovered.zebra_stripes = True
@@ -1121,7 +1071,7 @@ class MonitorScreen(Screen):
         self._render_stats_line()
         if self._pending_rescan:
             self._pending_rescan = False
-            self.app.notify(MON_RESCAN_TOAST.format(
+            self.app.notify(S.MON_RESCAN_TOAST.format(
                 n=len(message.result.sweeps)))
 
     def on_monitor_screen_frontier_scanned(
@@ -1239,26 +1189,29 @@ class MonitorScreen(Screen):
                     summary_state = summary.state
         stats = self._last_stats
         done = (str(stats.done) if stats is not None
-                else CFG_VALUE_ABSENT)
+                else S.CFG_VALUE_ABSENT)
         total = (str(stats.total)
                  if stats is not None and stats.total is not None
-                 else CFG_VALUE_ABSENT)
+                 else S.CFG_VALUE_ABSENT)
         return (summary_state == SWEEP_RUNNING, str(root), done, total)
 
     def request_rerun(self, root: str, failures: tuple) -> None:
-        """The [f] modal's r path: the independent ConfirmModal naming
-        the PLANNED-CELL estimate — ``len(distinct (model, task) pairs)
-        x len(seeds)`` over the ONE shared ``derive_rerun_seeds``
+        """The [f] modal's r path: the independent LaunchConfirmModal
+        naming the PLANNED-CELL estimate — ``len(distinct (model, task)
+        pairs) x len(seeds)`` over the ONE shared ``derive_rerun_seeds``
         derivation (WR-03: the confirmed GPU spend is the executed GPU
         spend, never an understated entry count) — then the re-run
         through the same pipeline as slot 4 (env preflight included —
-        T-11-07-03)."""
+        T-11-07-03). Since 261015-ehc (EHC-2) the confirm is a
+        LAUNCH confirm: ``y`` starts, ``esc`` cancels, ``enter`` lands
+        on the documented no-op (a re-run spends GPU — the same
+        misfire-proof key the slot-4 gate carries)."""
         if self.app.below_minimum_grid:
             return
         seeds = derive_rerun_seeds(failures, self._cell_rows)
         pairs = len({(row.model, row.task) for row in failures or ()})
-        self.app.push_screen(ConfirmModal(
-            message=MON_RERUN_CONFIRM.format(
+        self.app.push_screen(LaunchConfirmModal(
+            message=S.MON_RERUN_CONFIRM.format(
                 pairs=pairs,
                 seeds=", ".join(str(seed) for seed in seeds),
                 n=pairs * len(seeds)),
@@ -1291,7 +1244,7 @@ class MonitorScreen(Screen):
         if message.run_id != self._rerun_stage_id:
             return
         self.app.notify(
-            LNC_LAUNCH_FAILED_TOAST.format(error=message.error),
+            S.LNC_LAUNCH_FAILED_TOAST.format(error=message.error),
             severity="error")
 
     def on_monitor_screen_rerun_preflight_done(
@@ -1334,7 +1287,7 @@ class MonitorScreen(Screen):
             seeds = derive_rerun_seeds(failures, self._cell_rows)
             if not seeds:
                 self.post_message(self.RerunFailed(
-                    MON_RERUN_NO_SEEDS, root, run_id))
+                    S.MON_RERUN_NO_SEEDS, root, run_id))
                 return
             failures_path = str(Path(root) / sweep_monitor.FAILURES_NAME)
             peft, config_variant = self._service.rerun_lane(root)
@@ -1383,19 +1336,19 @@ class MonitorScreen(Screen):
             detail = "; ".join(
                 f"{code}: {value}" for code, value in outcome.problems)
             self.app.notify(
-                LNC_LAUNCH_FAILED_TOAST.format(error=detail),
+                S.LNC_LAUNCH_FAILED_TOAST.format(error=detail),
                 severity="error")
             return
         if getattr(outcome, "spawned", False):
             cells = self._expected_totals.get(message.root)
-            self.app.notify(MON_RERUN_TOAST.format(
+            self.app.notify(S.MON_RERUN_TOAST.format(
                 cells=(str(cells) if cells is not None
-                       else MON_ETA_UNKNOWN),
+                       else S.MON_ETA_UNKNOWN),
                 root=Path(message.root).name))
             self.note_launch(message.root, 0)
             return
         self.app.notify(
-            LNC_LAUNCH_FAILED_TOAST.format(
+            S.LNC_LAUNCH_FAILED_TOAST.format(
                 error=getattr(outcome, "error", None) or ""),
             severity="error")
 
@@ -1404,11 +1357,11 @@ class MonitorScreen(Screen):
     def _discovered_columns(self) -> "list[tuple[str, str]]":
         """The discovered (label, key) columns; the scale column drops
         below the width threshold (the UI-SPEC responsive rule)."""
-        columns = [("", "state"), (MON_COL_ROOT, "root")]
+        columns = [("", "state"), (S.MON_COL_ROOT, "root")]
         if not self._narrow:
-            columns.append((MON_COL_SCALE, "scale"))
-        columns.append((MON_COL_PROGRESS, "progress"))
-        columns.append((MON_COL_ETA, "eta"))
+            columns.append((S.MON_COL_SCALE, "scale"))
+        columns.append((S.MON_COL_PROGRESS, "progress"))
+        columns.append((S.MON_COL_ETA, "eta"))
         return columns
 
     def _render_discovered(self) -> None:
@@ -1419,10 +1372,10 @@ class MonitorScreen(Screen):
         table = self.query_one("#mon-discovered", DataTable)
         sweeps = self._scan.sweeps if self._scan is not None else ()
         title = self.query_one("#mon-discovered-title", Label)
-        title.update(MON_DISCOVERED_TITLE.format(n=len(sweeps)))
+        title.update(S.MON_DISCOVERED_TITLE.format(n=len(sweeps)))
         rows: dict[str, list] = {}
         if not sweeps:
-            row: list = [MON_DISCOVERED_EMPTY]
+            row: list = [S.MON_DISCOVERED_EMPTY]
             row.extend([""] * (3 if self._narrow else 4))
             rows["__empty__"] = row
         else:
@@ -1442,7 +1395,7 @@ class MonitorScreen(Screen):
                     scale = self._scales.get(root_key)
                     row.append(Text(
                         "×".join(str(part) for part in scale)
-                        if scale else MON_ETA_UNKNOWN))
+                        if scale else S.MON_ETA_UNKNOWN))
                 row.append(_progress_cell(summary))
                 eta_cell = _discovered_eta_cell(
                     summary, self._root_stats.get(root_key))
@@ -1472,13 +1425,13 @@ class MonitorScreen(Screen):
         if self._attached_root is None or not rows_map:
             _set_table_rows(
                 table,
-                [(MON_COL_MODEL, "model"), (MON_COL_TASK, "task"),
-                 (MON_COL_STATE, "state"), (MON_COL_PROGRESS, "progress")],
-                {"__empty__": [MON_CELLS_EMPTY, "", "", ""]})
+                [(S.MON_COL_MODEL, "model"), (S.MON_COL_TASK, "task"),
+                 (S.MON_COL_STATE, "state"), (S.MON_COL_PROGRESS, "progress")],
+                {"__empty__": [S.MON_CELLS_EMPTY, "", "", ""]})
             return
-        columns = [(MON_COL_MODEL, "model"), (MON_COL_TASK, "task"),
-                   (MON_COL_STATE, "state"),
-                   (MON_COL_PROGRESS, "progress")]
+        columns = [(S.MON_COL_MODEL, "model"), (S.MON_COL_TASK, "task"),
+                   (S.MON_COL_STATE, "state"),
+                   (S.MON_COL_PROGRESS, "progress")]
         key_width = max(8, self.size.width // 3 - 2)
         rows: dict[str, list] = {}
         for key in sorted(rows_map):
@@ -1504,7 +1457,7 @@ class MonitorScreen(Screen):
         carry the meaning (the seed-cell degradation precedent)."""
         copy, style = _CELL_STATE_CELLS.get(
             fold.state, (fold.state, _STYLE_DIM))
-        counts = MON_ENTRY_SEED_COUNTS.format(
+        counts = S.MON_ENTRY_SEED_COUNTS.format(
             done=fold.done, total=fold.total)
         if self._narrow:
             return Text(f"{_glyph_of(copy)} {counts}", style=style)
@@ -1520,9 +1473,9 @@ class MonitorScreen(Screen):
         if fold.state != CELL_RUNNING:
             return Text(_DASH, style=_STYLE_SKIPPED)
         if progress is None or progress.percent is None:
-            return Text(MON_PROGRESS_INDETERMINATE,
+            return Text(S.MON_PROGRESS_INDETERMINATE,
                         style=_STYLE_RUNNING)
-        text = MON_PROGRESS_STEPS.format(
+        text = S.MON_PROGRESS_STEPS.format(
             step=progress.step, max=progress.max_steps,
             percent=progress.percent)
         if self._narrow:
@@ -1544,12 +1497,12 @@ class MonitorScreen(Screen):
         if self._attached_root is None:
             title.update("")
         else:
-            title.update(MON_CELLS_TITLE.format(
+            title.update(S.MON_CELLS_TITLE.format(
                 root=self._attached_root.name))
         note = self.query_one("#mon-resume-note", Label)
         if self._resume_count > 0:
-            note_copy = (MON_RESUME_NOTE_SHORT if self._narrow
-                         else MON_RESUME_NOTE)
+            note_copy = (S.MON_RESUME_NOTE_SHORT if self._narrow
+                         else S.MON_RESUME_NOTE)
             note.update(Text(note_copy.format(n=self._resume_count),
                              style=_STYLE_SKIPPED))
         else:
@@ -1590,7 +1543,7 @@ class MonitorScreen(Screen):
             if str(row_key) == "__empty__":
                 return
             self.attach(row_key)
-            self.app.notify(MON_ATTACHED_TOAST.format(
+            self.app.notify(S.MON_ATTACHED_TOAST.format(
                 root=Path(str(row_key)).name))
         elif focused.id == "mon-cells" and str(row_key) != "__empty__":
             detail_row = self._cell_rows.get(str(row_key))
@@ -1669,13 +1622,13 @@ class MonitorScreen(Screen):
                 self._pending_rescan = True
                 self._tick_full()
                 if not self.app.below_minimum_grid:
-                    self.app.notify(MON_ATTACHED_TOAST.format(
+                    self.app.notify(S.MON_ATTACHED_TOAST.format(
                         root=Path(path).name))
                 return None
-            return (("path", MON_ATTACH_INVALID_TOAST.format(path=path)),)
+            return (("path", S.MON_ATTACH_INVALID_TOAST.format(path=path)),)
 
         self.app.push_screen(PathInputModal(
-            MON_ATTACH_TITLE, MON_ATTACH_PLACEHOLDER, on_submit))
+            S.MON_ATTACH_TITLE, S.MON_ATTACH_PLACEHOLDER, on_submit))
 
     def action_rescan(self) -> None:
         """[r]: an immediate full rescan outside the 60s cadence; the

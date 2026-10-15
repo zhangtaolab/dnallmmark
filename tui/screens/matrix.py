@@ -48,19 +48,10 @@ from textual.coordinate import Coordinate
 from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Footer, Header, Label, RichLog, Static
 
+from tui import strings as S
 from tui.services.registries import (
     PRESENCE_MISSING,
     PRESENCE_PRESENT,
-)
-from tui.strings import (
-    APP_MODAL_BACK_LABEL,
-    ENV_DETAIL_LABEL,
-    MATRIX_CURSOR_READOUT,
-    MATRIX_SCROLL_HINT,
-    MATRIX_TITLE,
-    SEL_COL_MODEL,
-    SEL_N_AUDIT_MISSING,
-    SEL_REGISTRY_LOAD_FAILED,
 )
 
 if TYPE_CHECKING:
@@ -128,7 +119,7 @@ class MatrixKeyModal(ModalScreen):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, model_key: str, task_key: str, **kwargs):
@@ -156,8 +147,8 @@ class MatrixScreen(Screen):
     # pops back to selection, enter opens the full-key modal. No mark,
     # filter, or preset binding exists here (the out-of-scope ban).
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "close", APP_MODAL_BACK_LABEL),
-        Binding("enter", "show_key", ENV_DETAIL_LABEL, show=False),
+        Binding("escape", "close", S.APP_MODAL_BACK_LABEL),
+        Binding("enter", "show_key", S.ENV_DETAIL_LABEL, show=False),
     ]
 
     def __init__(self, data: "SelectionData",
@@ -176,18 +167,18 @@ class MatrixScreen(Screen):
         yield Header()
         with Horizontal(id="matrix-title-bar"):
             yield Label(
-                MATRIX_TITLE.format(
+                S.MATRIX_TITLE.format(
                     models=len(self._data.model_entries),
                     datasets=len(self._data.dataset_entries),
                 ),
                 id="matrix-screen-title",
             )
-            yield Label(MATRIX_SCROLL_HINT, id="matrix-scroll-hint")
+            yield Label(S.MATRIX_SCROLL_HINT, id="matrix-scroll-hint")
         if not self._data.audit_available:
             # n_audit absent: the documented column-level empty copy IS
             # the body — presence is the matrix's entire payload, and a
             # grid of unknown glyphs would hide the actual state
-            yield Static(SEL_N_AUDIT_MISSING, id="matrix-empty")
+            yield Static(S.SEL_N_AUDIT_MISSING, id="matrix-empty")
             return
         if self._data.models_load_error is not None:
             # a failed models-registry read (the selection screen's own
@@ -196,7 +187,7 @@ class MatrixScreen(Screen):
             # readout on mount (CellDoesNotExist) in exactly the state
             # this screen must survive (CR-03)
             yield Static(
-                SEL_REGISTRY_LOAD_FAILED.format(
+                S.SEL_REGISTRY_LOAD_FAILED.format(
                     registry_path=self._data.models_load_error,
                 ),
                 id="matrix-empty",
@@ -222,7 +213,7 @@ class MatrixScreen(Screen):
         table.cursor_type = "cell"
         table.zebra_stripes = True
         table.fixed_columns = 1
-        table.add_column(SEL_COL_MODEL, key=_COL_MODEL, width=_MODEL_COLUMN_W)
+        table.add_column(S.SEL_COL_MODEL, key=_COL_MODEL, width=_MODEL_COLUMN_W)
         for task_entry in self._data.dataset_entries:
             task_key = task_entry["key"]
             table.add_column(
@@ -265,7 +256,7 @@ class MatrixScreen(Screen):
         """The cursor readout line: the FULL task key under the cursor."""
         task_key = self._current_task_key() or ""
         self.query_one("#matrix-readout", Label).update(
-            MATRIX_CURSOR_READOUT.format(task_key=task_key)
+            S.MATRIX_CURSOR_READOUT.format(task_key=task_key)
         )
 
     @property

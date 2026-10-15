@@ -103,6 +103,7 @@ from textual.message import Message
 from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Footer, Label, RichLog, Static
 
+from tui import strings as S
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.selection import ConfirmModal
 from tui.services import download_queue, registries, settings, zenodo_bundle
@@ -116,70 +117,6 @@ from tui.services.download_queue import (
     QueueEntry,
     QueueEvent,
     ReauditOutcome,
-)
-from tui.strings import (
-    APP_MODAL_BACK_LABEL,
-    DL_BUNDLE_TASK_NAME,
-    DL_CANCEL_LABEL,
-    DL_COL_DOWNLOAD,
-    DL_DISABLED_TOAST,
-    DL_ENQUEUE_ALL_LABEL,
-    DL_ENQUEUE_LABEL,
-    DL_FULL_MISSING,
-    DL_FULL_PRESENT,
-    DL_FULL_UNKNOWN,
-    DL_MISSING_COL_KEY,
-    DL_MISSING_COL_ROWS,
-    DL_MISSING_EMPTY,
-    DL_MISSING_TITLE,
-    DL_PRESENCE_SUMMARY,
-    DL_PRESENCE_TITLE,
-    DL_PRESENCE_TOGGLE_LABEL,
-    DL_RETRY_LABEL,
-    DL_SCREEN_TITLE,
-    DL_UNKNOWN_TOAST,
-    DL_WIZARD_LABEL,
-    DL_ZENODO_DISABLED_TOAST,
-    DL_ZENODO_FAILED,
-    DL_ZENODO_KEY_LABEL,
-    DL_ZENODO_NOT_PUBLIC,
-    DL_ZENODO_PROBING,
-    DL_ZENODO_PUBLIC,
-    ENV_DETAIL_LABEL,
-    NAV_LABEL_ABOUT,
-    NAV_LABEL_DATA,
-    NAV_LABEL_ENV,
-    NAV_LABEL_MONITOR,
-    NAV_LABEL_RUN_CONFIG,
-    NAV_LABEL_SELECTION,
-    QUEUE_BANNER_MISMATCH,
-    QUEUE_CANCEL_NOOP,
-    QUEUE_CLI_UNAVAILABLE,
-    QUEUE_COL_PROGRESS,
-    QUEUE_COL_RECONCILE,
-    QUEUE_COL_STATE,
-    QUEUE_COL_TASK,
-    QUEUE_CONFIRM_CANCEL_DOWNLOADING,
-    QUEUE_CONFIRM_CANCEL_PENDING,
-    QUEUE_EMPTY,
-    QUEUE_PERSIST_FAILED_TOAST,
-    QUEUE_PROGRESS_INDETERMINATE,
-    QUEUE_REAUDIT_LABEL,
-    QUEUE_RECONCILE_MISMATCH,
-    QUEUE_RECONCILE_PASS,
-    QUEUE_RECONCILE_RUNNING,
-    QUEUE_RESTART_NOTE,
-    QUEUE_RETRY_NOOP,
-    QUEUE_STATE_DONE,
-    QUEUE_STATE_DOWNLOADING,
-    QUEUE_STATE_FAILED,
-    QUEUE_STATE_MISMATCH,
-    QUEUE_STATE_PENDING,
-    QUEUE_TITLE,
-    QUEUE_TOAST_ALREADY_QUEUED,
-    QUEUE_TOAST_ENQUEUED,
-    QUEUE_TOAST_ENQUEUED_ALL,
-    SEL_ENQUEUE_PRESENT_TOAST,
 )
 
 if TYPE_CHECKING:
@@ -212,24 +149,24 @@ _DOWNLOAD_W = 14
 #: (column key, header constant, width) — the column keys are the
 #: update_cell addressing scheme (English technical ids, I18N-01).
 _QUEUE_COLUMNS: tuple[tuple[str, str, int], ...] = (
-    ("task", QUEUE_COL_TASK, _TASK_W),
-    ("state", QUEUE_COL_STATE, _STATE_W),
-    ("progress", QUEUE_COL_PROGRESS, _PROGRESS_W),
-    ("reconcile", QUEUE_COL_RECONCILE, 0),  # 0 = the flex remainder
+    ("task", S.QUEUE_COL_TASK, _TASK_W),
+    ("state", S.QUEUE_COL_STATE, _STATE_W),
+    ("progress", S.QUEUE_COL_PROGRESS, _PROGRESS_W),
+    ("reconcile", S.QUEUE_COL_RECONCILE, 0),  # 0 = the flex remainder
 )
 
 _MISSING_COLUMNS: tuple[tuple[str, str, int], ...] = (
-    ("key", DL_MISSING_COL_KEY, _TASK_W),
-    ("rows", DL_MISSING_COL_ROWS, 0),
+    ("key", S.DL_MISSING_COL_KEY, _TASK_W),
+    ("rows", S.DL_MISSING_COL_ROWS, 0),
 )
 
 #: The PRIMARY full-list columns (MLC-03): key / download (the merged
 #: presence status, overlaid by a live queue entry's state word) /
 #: the declared-rows column (the n_audit baseline totals).
 _FULL_COLUMNS: tuple[tuple[str, str, int], ...] = (
-    ("key", DL_MISSING_COL_KEY, _TASK_W),
-    ("download", DL_COL_DOWNLOAD, _DOWNLOAD_W),
-    ("rows", DL_MISSING_COL_ROWS, 0),
+    ("key", S.DL_MISSING_COL_KEY, _TASK_W),
+    ("download", S.DL_COL_DOWNLOAD, _DOWNLOAD_W),
+    ("rows", S.DL_MISSING_COL_ROWS, 0),
 )
 
 # Row keys for the non-entry state rows (never action targets).
@@ -249,11 +186,11 @@ _STYLE_FAIL = "bold $error"
 _STYLE_WARN = "$warning"
 #: The five queue states -> (copy constant, style).
 _STATE_CELLS = {
-    "pending": (QUEUE_STATE_PENDING, _STYLE_MUTED),
-    "downloading": (QUEUE_STATE_DOWNLOADING, _STYLE_RUNNING),
-    "done": (QUEUE_STATE_DONE, _STYLE_DONE),
-    "failed": (QUEUE_STATE_FAILED, _STYLE_FAIL),
-    "mismatch": (QUEUE_STATE_MISMATCH, _STYLE_WARN),
+    "pending": (S.QUEUE_STATE_PENDING, _STYLE_MUTED),
+    "downloading": (S.QUEUE_STATE_DOWNLOADING, _STYLE_RUNNING),
+    "done": (S.QUEUE_STATE_DONE, _STYLE_DONE),
+    "failed": (S.QUEUE_STATE_FAILED, _STYLE_FAIL),
+    "mismatch": (S.QUEUE_STATE_MISMATCH, _STYLE_WARN),
 }
 
 
@@ -560,7 +497,7 @@ class QueueDetailModal(ModalScreen):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "dismiss", APP_MODAL_BACK_LABEL),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
     def __init__(self, entry_key: str,
@@ -603,21 +540,21 @@ class DataManagerScreen(Screen):
     # split). The nav digits are plain per-screen bindings routed to the
     # app's nav action (never priority, Pattern 2).
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("d", "enqueue_cursor", DL_ENQUEUE_LABEL),
-        Binding("r", "retry_cursor", DL_RETRY_LABEL),
-        Binding("x", "cancel_cursor", DL_CANCEL_LABEL),
-        Binding("a", "enqueue_all", DL_ENQUEUE_ALL_LABEL),
-        Binding("v", "toggle_presence_view", DL_PRESENCE_TOGGLE_LABEL),
-        Binding("w", "open_wizard", DL_WIZARD_LABEL),
-        Binding("enter", "show_detail", ENV_DETAIL_LABEL),
-        Binding("g", "reaudit_cursor", QUEUE_REAUDIT_LABEL, show=False),
-        Binding("z", "zenodo_bundle", DL_ZENODO_KEY_LABEL, show=False),
-        Binding("1", "app.nav(1)", NAV_LABEL_ENV, show=False),
-        Binding("2", "app.nav(2)", NAV_LABEL_SELECTION, show=False),
-        Binding("3", "app.nav(3)", NAV_LABEL_DATA, show=False),
-        Binding("4", "app.nav(4)", NAV_LABEL_RUN_CONFIG, show=False),
-        Binding("5", "app.nav(5)", NAV_LABEL_MONITOR, show=False),
-        Binding("6", "app.nav(6)", NAV_LABEL_ABOUT, show=False),
+        Binding("d", "enqueue_cursor", S.DL_ENQUEUE_LABEL),
+        Binding("r", "retry_cursor", S.DL_RETRY_LABEL),
+        Binding("x", "cancel_cursor", S.DL_CANCEL_LABEL),
+        Binding("a", "enqueue_all", S.DL_ENQUEUE_ALL_LABEL),
+        Binding("v", "toggle_presence_view", S.DL_PRESENCE_TOGGLE_LABEL),
+        Binding("w", "open_wizard", S.DL_WIZARD_LABEL),
+        Binding("enter", "show_detail", S.ENV_DETAIL_LABEL),
+        Binding("g", "reaudit_cursor", S.QUEUE_REAUDIT_LABEL, show=False),
+        Binding("z", "zenodo_bundle", S.DL_ZENODO_KEY_LABEL, show=False),
+        Binding("1", "app.nav(1)", S.NAV_LABEL_ENV, show=False),
+        Binding("2", "app.nav(2)", S.NAV_LABEL_SELECTION, show=False),
+        Binding("3", "app.nav(3)", S.NAV_LABEL_DATA, show=False),
+        Binding("4", "app.nav(4)", S.NAV_LABEL_RUN_CONFIG, show=False),
+        Binding("5", "app.nav(5)", S.NAV_LABEL_MONITOR, show=False),
+        Binding("6", "app.nav(6)", S.NAV_LABEL_ABOUT, show=False),
     ]
 
     class SnapshotLoaded(Message):
@@ -700,7 +637,7 @@ class DataManagerScreen(Screen):
         """
         yield TopMenuBar()
         with Horizontal(id="dl-title-bar"):
-            yield Label(DL_SCREEN_TITLE, id="dl-screen-title")
+            yield Label(S.DL_SCREEN_TITLE, id="dl-screen-title")
             yield Label("", id="dl-presence-summary")
         # The corrupt-load status line (10-06): hidden by default (zero
         # layout cost on the healthy path — the 80x24 budget keeps its
@@ -711,12 +648,12 @@ class DataManagerScreen(Screen):
         yield diagnostic_line
         with Vertical(id="dl-missing-region"):
             yield Label(
-                DL_PRESENCE_TITLE.format(n=0), id="dl-missing-title")
+                S.DL_PRESENCE_TITLE.format(n=0), id="dl-missing-title")
             yield DataTable(id="dl-missing")
         with Vertical(id="dl-queue-region"):
             with Horizontal(id="dl-queue-title-row"):
-                yield Label(QUEUE_TITLE.format(n=0), id="dl-queue-title")
-                yield Label(DL_ZENODO_PROBING, id="dl-zenodo-line")
+                yield Label(S.QUEUE_TITLE.format(n=0), id="dl-queue-title")
+                yield Label(S.DL_ZENODO_PROBING, id="dl-zenodo-line")
             yield Vertical(id="dl-queue-banners")
             yield DataTable(id="dl-queue")
         yield BottomBar()
@@ -876,7 +813,7 @@ class DataManagerScreen(Screen):
             self.query_one("#dl-presence-summary", Label).update("")
             return
         self.query_one("#dl-presence-summary", Label).update(
-            DL_PRESENCE_SUMMARY.format(
+            S.DL_PRESENCE_SUMMARY.format(
                 present=snapshot.present, total=snapshot.total,
                 missing=snapshot.missing))
 
@@ -912,12 +849,12 @@ class DataManagerScreen(Screen):
             else:
                 table.add_column(header, key=column_key)
         self.query_one("#dl-missing-title", Label).update(
-            DL_MISSING_TITLE.format(n=snapshot.missing))
+            S.DL_MISSING_TITLE.format(n=snapshot.missing))
         if not snapshot.rows:
             if snapshot.total:
                 # the happy zero (DATA-03's goal state)
                 table.add_row(
-                    Text(DL_MISSING_EMPTY.format(total=snapshot.total),
+                    Text(S.DL_MISSING_EMPTY.format(total=snapshot.total),
                          style=_STYLE_DONE),
                     "", key=_MISSING_EMPTY_ROW_KEY)
             return
@@ -947,7 +884,7 @@ class DataManagerScreen(Screen):
                 table.add_column(header, key=column_key)
         rows = snapshot.presence_rows
         self.query_one("#dl-missing-title", Label).update(
-            DL_PRESENCE_TITLE.format(n=len(rows)))
+            S.DL_PRESENCE_TITLE.format(n=len(rows)))
         live_states = {
             entry.key: entry.state
             for entry in self._queue_entries
@@ -955,11 +892,11 @@ class DataManagerScreen(Screen):
         }
         for row in rows:
             if row.status == registries.PRESENCE_PRESENT:
-                glyph, style, word = ("✓ ", _STYLE_DONE, DL_FULL_PRESENT)
+                glyph, style, word = ("✓ ", _STYLE_DONE, S.DL_FULL_PRESENT)
             elif row.status == registries.PRESENCE_MISSING:
-                glyph, style, word = ("✗ ", _STYLE_FAIL, DL_FULL_MISSING)
+                glyph, style, word = ("✗ ", _STYLE_FAIL, S.DL_FULL_MISSING)
             else:  # unknown / unavailable — the honest degraded states
-                glyph, style, word = ("◌ ", _STYLE_MUTED, DL_FULL_UNKNOWN)
+                glyph, style, word = ("◌ ", _STYLE_MUTED, S.DL_FULL_UNKNOWN)
             key_cell = _truncate(Text.assemble(
                 Text(glyph, style=style), Text(row.key),
             ), _TASK_W - _CONTENT_PAD)
@@ -993,11 +930,11 @@ class DataManagerScreen(Screen):
         table.clear()
         entries = _sorted_entries(self._queue_entries)
         self.query_one("#dl-queue-title", Label).update(
-            QUEUE_TITLE.format(n=len(entries)))
+            S.QUEUE_TITLE.format(n=len(entries)))
         self._render_banners()
         if not entries:
             table.add_row(
-                Text(QUEUE_EMPTY, style=_STYLE_MUTED),
+                Text(S.QUEUE_EMPTY, style=_STYLE_MUTED),
                 "", "", "", key=_QUEUE_EMPTY_ROW_KEY)
             return
         for entry in entries:
@@ -1028,7 +965,7 @@ class DataManagerScreen(Screen):
                     and isinstance(measured, dict)):
                 continue  # the bundle lane carries per_key, not numbers
             box.mount(Static(
-                Text(QUEUE_BANNER_MISMATCH.format(
+                Text(S.QUEUE_BANNER_MISMATCH.format(
                     key=entry.key, n=_int_sum(declared),
                     m=_int_sum(measured)),
                     style=_STYLE_WARN),
@@ -1039,19 +976,19 @@ class DataManagerScreen(Screen):
         line = self.query_one("#dl-zenodo-line", Label)
         state = self._zenodo_state
         if state is None:
-            line.update(Text(DL_ZENODO_PROBING, style=_STYLE_MUTED))
+            line.update(Text(S.DL_ZENODO_PROBING, style=_STYLE_MUTED))
         elif state == zenodo_bundle.PROBE_PUBLIC:
-            line.update(Text(DL_ZENODO_PUBLIC, style=_STYLE_DONE))
+            line.update(Text(S.DL_ZENODO_PUBLIC, style=_STYLE_DONE))
         elif state == zenodo_bundle.PROBE_NOT_PUBLIC:
             # {HH:MM} is not a legal str.format field (the colon parses
             # as a format spec) — the placeholder fills via replace
             line.update(Text(
-                DL_ZENODO_NOT_PUBLIC.replace(
+                S.DL_ZENODO_NOT_PUBLIC.replace(
                     "{HH:MM}", self._zenodo_probed_at),
                 style=_STYLE_MUTED))
         else:
             line.update(Text(
-                DL_ZENODO_FAILED.format(error=_PROBE_ERROR_DETAIL),
+                S.DL_ZENODO_FAILED.format(error=_PROBE_ERROR_DETAIL),
                 style=_STYLE_WARN))
 
     def _task_cell(self, entry: QueueEntry) -> Text:
@@ -1059,12 +996,12 @@ class DataManagerScreen(Screen):
         the dim restart note appended on recovered rows (the disabled-
         suffix append idiom — truncation may clip it for long keys; the
         full note rides the drill-down)."""
-        display = (DL_BUNDLE_TASK_NAME
+        display = (S.DL_BUNDLE_TASK_NAME
                    if entry.kind == KIND_ZENODO_BUNDLE else entry.key)
         segments: list[Text] = [Text(display)]
         if entry.interrupted:
             segments.append(
-                Text(" " + QUEUE_RESTART_NOTE, style=_STYLE_RUNNING))
+                Text(" " + S.QUEUE_RESTART_NOTE, style=_STYLE_RUNNING))
         return _truncate(Text.assemble(*segments),
                          _TASK_W - _CONTENT_PAD)
 
@@ -1083,7 +1020,7 @@ class DataManagerScreen(Screen):
             entry.key, entry.last_percent)
         if entry.state == "downloading":
             if percent is None:
-                return Text(QUEUE_PROGRESS_INDETERMINATE,
+                return Text(S.QUEUE_PROGRESS_INDETERMINATE,
                             style=_STYLE_RUNNING)
             filled = max(0, min(10, round(percent / 10)))
             accent = str(self.app.current_theme.accent)
@@ -1112,20 +1049,20 @@ class DataManagerScreen(Screen):
         measured = reconcile.get("measured")
         if entry.state == "done" and isinstance(measured, dict):
             return Text(
-                QUEUE_RECONCILE_PASS.format(n=_int_sum(measured)),
+                S.QUEUE_RECONCILE_PASS.format(n=_int_sum(measured)),
                 style=_STYLE_DONE)
         if entry.state == "downloading":
             percent = self._live_percents.get(
                 entry.key, entry.last_percent)
             if percent == 100:
                 # the post-landing transient (auto-default 14)
-                return Text(QUEUE_RECONCILE_RUNNING,
+                return Text(S.QUEUE_RECONCILE_RUNNING,
                             style=_STYLE_RUNNING)
         if entry.state == "mismatch":
             declared = reconcile.get("declared")
             if isinstance(declared, dict) and isinstance(measured, dict):
                 return Text(
-                    QUEUE_RECONCILE_MISMATCH.format(
+                    S.QUEUE_RECONCILE_MISMATCH.format(
                         n=_int_sum(declared), m=_int_sum(measured)),
                     style=_STYLE_WARN)
         return Text(_DASH, style=_STYLE_RUNNING)
@@ -1165,26 +1102,26 @@ class DataManagerScreen(Screen):
         """Render one enqueue outcome; True iff the kick should follow."""
         if outcome.action == "enqueued":
             self.app.notify(
-                QUEUE_TOAST_ENQUEUED.format(key=outcome.key))
+                S.QUEUE_TOAST_ENQUEUED.format(key=outcome.key))
             return True
         if outcome.action == "already_queued":
             self.app.notify(
-                QUEUE_TOAST_ALREADY_QUEUED.format(key=outcome.key))
+                S.QUEUE_TOAST_ALREADY_QUEUED.format(key=outcome.key))
         elif outcome.action == "disabled":
             self.app.notify(
-                DL_DISABLED_TOAST.format(key=outcome.key),
+                S.DL_DISABLED_TOAST.format(key=outcome.key),
                 severity="warning")
         elif outcome.action == "unknown":
             self.app.notify(
-                DL_UNKNOWN_TOAST.format(
+                S.DL_UNKNOWN_TOAST.format(
                     key=outcome.key,
                     reason=outcome.reason_code or "unknown"),
                 severity="warning")
         elif outcome.action == "cli_unavailable":
-            self.app.notify(QUEUE_CLI_UNAVAILABLE, severity="error")
+            self.app.notify(S.QUEUE_CLI_UNAVAILABLE, severity="error")
         elif outcome.action == "persist_failed":
             self.app.notify(
-                QUEUE_PERSIST_FAILED_TOAST.format(key=outcome.key),
+                S.QUEUE_PERSIST_FAILED_TOAST.format(key=outcome.key),
                 severity="error")
         return False
 
@@ -1209,7 +1146,7 @@ class DataManagerScreen(Screen):
         if self._presence_view and snapshot is not None and any(
                 row.key == key and row.status == registries.PRESENCE_PRESENT
                 for row in snapshot.presence_rows):
-            self.app.notify(SEL_ENQUEUE_PRESENT_TOAST)
+            self.app.notify(S.SEL_ENQUEUE_PRESENT_TOAST)
             return
         outcome = self._service.enqueue(key)
         if self._toast_enqueue_outcome(outcome):
@@ -1219,7 +1156,7 @@ class DataManagerScreen(Screen):
     def action_enqueue_all(self) -> None:
         """a: enqueue every missing downloadable key (the count toast)."""
         count = self._service.enqueue_all()
-        self.app.notify(QUEUE_TOAST_ENQUEUED_ALL.format(n=count))
+        self.app.notify(S.QUEUE_TOAST_ENQUEUED_ALL.format(n=count))
         if count:
             self.app.kick_download_queue()
             self._reload_snapshot()
@@ -1232,7 +1169,7 @@ class DataManagerScreen(Screen):
         if entry is None:
             return  # state rows: silent
         if entry.state not in ("failed", "mismatch"):
-            self.app.notify(QUEUE_RETRY_NOOP)
+            self.app.notify(S.QUEUE_RETRY_NOOP)
             return
         if self._service.retry(entry.key):
             self.app.kick_download_queue()
@@ -1247,12 +1184,12 @@ class DataManagerScreen(Screen):
         if entry is None:
             return  # state rows: silent
         if entry.state == "pending":
-            message = QUEUE_CONFIRM_CANCEL_PENDING.format(key=entry.key)
+            message = S.QUEUE_CONFIRM_CANCEL_PENDING.format(key=entry.key)
         elif entry.state == "downloading":
-            message = QUEUE_CONFIRM_CANCEL_DOWNLOADING.format(
+            message = S.QUEUE_CONFIRM_CANCEL_DOWNLOADING.format(
                 key=entry.key)
         else:
-            self.app.notify(QUEUE_CANCEL_NOOP)
+            self.app.notify(S.QUEUE_CANCEL_NOOP)
             return
         if self.app.below_minimum_grid:
             return  # WR-06: no chrome over the guard
@@ -1315,19 +1252,19 @@ class DataManagerScreen(Screen):
         """z: enqueue the whole-package bundle when public; otherwise
         the never-silent explanatory toast (D-12)."""
         if self._zenodo_state != zenodo_bundle.PROBE_PUBLIC:
-            self.app.notify(DL_ZENODO_DISABLED_TOAST)
+            self.app.notify(S.DL_ZENODO_DISABLED_TOAST)
             return
         outcome = self._service.enqueue_zenodo()
         if outcome.action == "enqueued":
             # the toast carries the operator-facing bundle label (the
             # queue identity is the raw record key — detail data)
             self.app.notify(
-                QUEUE_TOAST_ENQUEUED.format(key=DL_BUNDLE_TASK_NAME))
+                S.QUEUE_TOAST_ENQUEUED.format(key=S.DL_BUNDLE_TASK_NAME))
             self.app.kick_download_queue()
             self._reload_snapshot()
         else:
             self.app.notify(
-                QUEUE_TOAST_ALREADY_QUEUED.format(key=DL_BUNDLE_TASK_NAME))
+                S.QUEUE_TOAST_ALREADY_QUEUED.format(key=S.DL_BUNDLE_TASK_NAME))
 
     # ===== The drill-down (D-03: data, never translated, never elided) =====
 
@@ -1373,7 +1310,7 @@ class DataManagerScreen(Screen):
             if entry.last_percent is not None:
                 lines.append(f"last_percent: {entry.last_percent}")
             if entry.interrupted:
-                lines.append(QUEUE_RESTART_NOTE)
+                lines.append(S.QUEUE_RESTART_NOTE)
             if entry.problems:
                 lines.append("problems: " + ", ".join(entry.problems))
             reconcile = entry.reconcile if isinstance(
