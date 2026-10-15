@@ -1553,6 +1553,21 @@ async def test_apply_queue_progress_updates_the_cell_in_place(
         cell = _row(table, row)[6]
         assert cell.startswith(QUEUE_STATE_DOWNLOADING)
         assert "42%" in cell, f"the parsed percent renders: {cell!r}"
+        # EHC-4 (261015-ehc): the parsed rate token appends after the
+        # percent — verbatim data, never fabricated
+        screen.apply_queue_progress(_KEY_ADAPTED_MODEL, 42, "892kB/s")
+        await pilot.pause()
+        cell = _row(table, row)[6]
+        assert cell.startswith(QUEUE_STATE_DOWNLOADING)
+        assert "42%" in cell and "892kB/s" in cell, (
+            f"the rate token composes within the widened column: {cell!r}"
+        )
+        # the honest fallback: token None keeps the exact C4J composition
+        screen.apply_queue_progress(_KEY_ADAPTED_MODEL, 42, None)
+        await pilot.pause()
+        cell = _row(table, row)[6]
+        assert cell.startswith(QUEUE_STATE_DOWNLOADING)
+        assert "42%" in cell and "B/s" not in cell
 
         assert app.screen is screen, "the tick never remounts the screen"
         assert _row_keys(table) == rows_before, (

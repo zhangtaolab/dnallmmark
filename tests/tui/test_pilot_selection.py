@@ -1927,16 +1927,19 @@ async def test_backstop_longest_model_key_at_80x24():
 
         # the UAT geometry: the key column fits the longest real key
         # exactly (46) and the total budget (widths + per-column padding
-        # + the scrollbar) is 106 — past 80, so the table h-scrolls
+        # + the scrollbar) is 119 — past 80, so the table h-scrolls
         # (C4J-1, 261015-c4j: the download column grew 10 -> 15 for the
-        # live downloading word + the appended percent data word)
+        # live downloading word + the appended percent data word;
+        # EHC-4, 261015-ehc: 15 -> 28 for the appended rate token —
+        # measured with Rich over BOTH languages' widest honest
+        # composition, never clipping live data)
         widths = [
             table.columns[key].width for key in _MODEL_COLUMNS_KEYS
         ]
         assert table.columns["key"].width == 46
-        assert sum(widths) + 2 * len(widths) + 2 == 106
+        assert sum(widths) + 2 * len(widths) + 2 == 119
         assert table.max_scroll_x > 0, (
-            "the 106-wide table must h-scroll at the 80-column grid"
+            "the 119-wide table must h-scroll at the 80-column grid"
         )
 
         # the key cell carries the FULL key — no ellipsis (the DataTable

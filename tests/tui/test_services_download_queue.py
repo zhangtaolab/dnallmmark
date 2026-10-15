@@ -4752,3 +4752,113 @@ def test_persisted_pending_model_entry_survives_load_and_reclaims(
     assert claimed is not None
     assert claimed.kind == download_queue.KIND_MODEL
     assert claimed.key == MODEL_KEY
+
+
+# =====================================================================
+# EHC-4 (261015-ehc ruling 4) — the parsed download SPEED alongside the
+# percent (slots 2 + 3 only; the additive-fake pin holds: the existing
+# 2-arg-lambda tests above prove the no-rate path keeps calling the
+# callback with TWO arguments)
+# =====================================================================
+
+
+def test_parse_speed_tqdm_and_modelscope_tokens():
+    """TQDM-style rates parse verbatim — unspaced, spaced, and the
+    binary i-prefix variants."""
+    assert download_queue.parse_speed(
+        " 42%|x| 1G/2G [00:10<00:10, 892kB/s]") == "892kB/s"
+    assert download_queue.parse_speed("1.23MB/s") == "1.23MB/s"
+    assert download_queue.parse_speed("5.0 MiB/s") == "5.0 MiB/s"
+    assert download_queue.parse_speed("rate=892kB/s tail") == "892kB/s"
+
+
+def test_parse_speed_last_token_wins_none_without_rate():
+    """A multi-line chunk carries the NEWEST rate; chunks without a rate
+    token parse None — the honest fallback, never a fabricated speed."""
+    assert download_queue.parse_speed(
+        "old 1kB/s\nnewest 2.5GB/s") == "2.5GB/s"
+    assert download_queue.parse_speed(
+        "no rate here [00:10<00:10]") is None
+    assert download_queue.parse_speed("") is None
+
+
+def test_parse_speed_adversarial_garbage_never_raises():
+    """T-ehc-01: ANSI-laden, CR-carried, huge-digit garbage never raises
+    (regex-only extraction over the cleaned chunk)."""
+    for garbage in (
+        "\x1b[2K\r  50%\r\x1b[0m laden 892kB/s",
+        "\x1b[1A\x1b[2K 999999999999TB/s",
+        "B/s kB/s 12/34 5.0.0.0MB/s",
+    ):
+        result = download_queue.parse_speed(garbage)
+        assert result is None or isinstance(result, str)
+
+
+def test_progress_callback_carries_speed_on_the_pair_dedupe(
+        monkeypatch, tmp_path):
+    """EHC-4 plumbing: percent WITHOUT a rate fires the 2-ARG call
+    (every pre-existing 2-arg fake keeps conforming); a stalled percent
+    with a NEW rate still fires (the dedupe is on the (percent, speed)
+    PAIR — a big file's percent can stall while the rate streams); an
+    unchanged pair never re-fires."""
+    rated = ("Downloading [a/train.csv]: {p}%|x| y/y "
+             "[00:00<00:00, {s}]\n")
+    plain = "Downloading [a/train.csv]: {p}%|x| y/y [00:00<00:00]\n"
+    stderr = ChunkedStream([
+        plain.format(p=10),               # no rate -> the 2-arg call
+        rated.format(p=10, s="892kB/s"),  # stalled pct + new rate -> fires
+        rated.format(p=10, s="892kB/s"),  # pair unchanged -> deduped
+        rated.format(p=20, s="1.2MB/s"),  # both changed -> fires
+    ])
+    spawner = FakeSpawner(FakePopen(returncode=0, stderr=stderr))
+    service, repo, _ = engine_service(tmp_path, monkeypatch, spawner)
+    land_csvs(repo, "Demo", "task")
+    fired = []
+
+    event = service.run_task(
+        "Demo__task", run_id="r1",
+        progress_cb=lambda key, pct, speed=None: fired.append(
+            (key, pct, speed)))
+
+    assert fired == [
+        ("Demo__task", 10, None),
+        ("Demo__task", 10, "892kB/s"),
+        ("Demo__task", 20, "1.2MB/s"),
+    ], "speed-only changes are real ticks; unchanged pairs dedupe"
+    assert event.last_percent == 20
+
+
+def test_model_lane_progress_callback_carries_speed_identically(
+        monkeypatch, tmp_path):
+    """The -I model-lane pump behaves IDENTICALLY to the dataset CLI
+    lane (EHC-4): the same (percent, speed) pair dedupe and the same
+    additive 2-arg/3-arg call discipline."""
+    rated = ("Downloading [models/x/model.safetensors]:"
+             " {p}%|x| y/y [00:00<00:00, {s}]\n")
+    plain = ("Downloading [models/x/model.safetensors]:"
+             " {p}%|x| y/y [00:00<00:00]\n")
+    stderr = ChunkedStream([
+        plain.format(p=0),
+        rated.format(p=0, s="512kB/s"),
+        rated.format(p=0, s="512kB/s"),
+        rated.format(p=99, s="4.5MB/s"),
+    ])
+    spawner = ModelFakeSpawner(
+        returncode=0, stderr=stderr,
+        writer=lambda argv: write_modelscope_nesting(argv[4]))
+    service, _repo, _state, _root = model_engine_service(
+        tmp_path, monkeypatch, spawner)
+    fired = []
+
+    event = service.run_task(
+        MODEL_KEY, run_id="m-speed",
+        progress_cb=lambda key, pct, speed=None: fired.append(
+            (key, pct, speed)))
+
+    assert fired == [
+        (MODEL_KEY, 0, None),
+        (MODEL_KEY, 0, "512kB/s"),
+        (MODEL_KEY, 99, "4.5MB/s"),
+    ]
+    assert event.state == "done"
+    assert event.last_percent == 99

@@ -851,10 +851,12 @@ _MODEL_SIZE_W = 7
 #: 8 — the widest compat cell (adapted/unadapted/custom) is 6 display
 #: cells.
 _MODEL_COMPAT_W = 8
-#: 15 — the widest download cell: the live downloading word (8 display
-#: cells) + the appended percent data word (" 100%", C4J-1) fits exactly;
-#: the static four-state vocabulary stays untouched (8 cells).
-_MODEL_DOWNLOAD_W = 15
+#: 28 — the widest honest download cell across BOTH languages (EHC-4,
+#: 261015-ehc): the live downloading word (zh 8 cells / en 13) + the
+#: percent data word (" 100%") + the rate token (" 123.4MB/s") — the
+#: UAT-width precedent: widen, NEVER clip live data (narrow terminals
+#: h-scroll). The static four-state vocabulary stays untouched.
+_MODEL_DOWNLOAD_W = 28
 
 #: The models-only column set (MLC-02): mark / model key / type /
 #: species / size / compat / download.
@@ -922,7 +924,8 @@ def _size_text(value: object) -> str:
 
 def _model_download_cell(data: SelectionData, key: str,
                          live_state: "str | None" = None,
-                         live_percent: "int | None" = None) -> Text:
+                         live_percent: "int | None" = None,
+                         live_speed: "str | None" = None) -> Text:
     """One download-column cell — render only (MLC-02 + the C4J-1 live
     overlay).
 
@@ -942,15 +945,23 @@ def _model_download_cell(data: SelectionData, key: str,
     downloading word as a plain data word (no bar — the column has no
     bar room; percent None keeps the word's own ⠋ glyph, never a
     fabricated number). A pure function of its arguments.
+
+    EHC-4 (261015-ehc ruling 4): a parsed rate token (``live_speed``,
+    verbatim data) appends after the percent on downloading rows —
+    never a fabricated speed when the child emits no rate (the exact
+    C4J-1 composition is kept byte-identical on the None path).
     """
     if live_state is not None:
         copy, style = _QUEUE_STATE_CELLS.get(
             live_state, (live_state, _STYLE_PRESENCE_UNKNOWN))
         if live_state == "downloading" and live_percent is not None:
-            return Text.assemble(
+            segments: list[Text] = [
                 Text(copy, style=style),
                 Text(f" {live_percent}%"),
-            )
+            ]
+            if live_speed is not None:
+                segments.append(Text(f" {live_speed}"))
+            return Text.assemble(*segments)
         return Text(copy, style=style)
     status = data.model_presence.get(key)
     if status == selection_service.MODEL_PRESENCE_PRESENT:
@@ -1374,6 +1385,9 @@ class SelectionScreen(Screen):
         # streamed live percents (None = the honest indeterminate).
         self._live_models: dict[str, QueueEntry] = {}
         self._live_percents: dict[str, int | None] = {}
+        # EHC-4 (261015-ehc): the live rate tokens ride the same pattern
+        # (None = the honest no-rate fallback).
+        self._live_speeds: dict[str, str | None] = {}
         # MLC-02: the pool mode — False = the DEFAULT pool (dnllm-adapted
         # officials + customs), True = ALL officials (unadapted rows
         # present, honestly marked). Pure render state over the loaded
@@ -1476,17 +1490,20 @@ class SelectionScreen(Screen):
 
     def _update_download_cell(self, key: str,
                               live_state: "str | None",
-                              live_percent: "int | None") -> None:
+                              live_percent: "int | None",
+                              live_speed: "str | None" = None) -> None:
         """Update ONE row's download cell in place (the vanished-row
         guard rides the widget call — a filtered-out or pool-hidden row
-        is simply skipped, the next full render owns it)."""
+        is simply skipped, the next full render owns it). EHC-4: the
+        parsed rate token composes after the percent (None keeps the
+        C4J-1 composition)."""
         if self._data is None:
             return
         table = self.query_one("#selection-table", DataTable)
         try:
             table.update_cell(key, _COL_DOWNLOAD, _model_download_cell(
                 self._data, key, live_state=live_state,
-                live_percent=live_percent))
+                live_percent=live_percent, live_speed=live_speed))
         except Exception:  # noqa: BLE001 — a vanished row mid-rebuild
             return
 
@@ -1504,6 +1521,7 @@ class SelectionScreen(Screen):
         navigates. A landed-but-mismatched dataset never flips
         (``reconciled_rows`` overlays done entries only — semantic 6)."""
         self._live_percents.pop(event.key, None)
+        self._live_speeds.pop(event.key, None)
         if event.kind == KIND_MODEL:
             if event.state == "done":
                 self._live_models.pop(event.key, None)
@@ -1518,7 +1536,8 @@ class SelectionScreen(Screen):
         if event.state == "done":
             self._load_data()
 
-    def apply_queue_progress(self, key: "str", percent: "int | None") -> None:
+    def apply_queue_progress(self, key: "str", percent: "int | None",
+                             speed: "str | None" = None) -> None:
         """One app-forwarded live tick (C4J-1, 261015-c4j — the driver's
         per-integer-percent post, incl. the indeterminate claim tick):
         store the percent, re-read the entry through the queue seam
@@ -1527,12 +1546,16 @@ class SelectionScreen(Screen):
         entries whose state is not downloading, and update the row's
         download cell IN PLACE — never a rebuild, never a remount, never
         a snapshot reload. None percent is the indeterminate contract —
-        the downloading word's own ⠋ glyph, never a fabricated number."""
+        the downloading word's own ⠋ glyph, never a fabricated number.
+        EHC-4 (261015-ehc): the additive ``speed`` argument (the
+        verbatim parsed rate token) composes after the percent; None
+        keeps the exact C4J-1 composition."""
         self._live_percents[key] = percent
+        self._live_speeds[key] = speed
         entry = self._live_model_entries().get(key)
         if entry is None or entry.state != "downloading":
             return
-        self._update_download_cell(key, "downloading", percent)
+        self._update_download_cell(key, "downloading", percent, speed)
 
     # ----- row composition (state rows vs data rows) -----
 
@@ -1653,7 +1676,8 @@ class SelectionScreen(Screen):
             _model_download_cell(
                 data, key,
                 live_state=(live.state if live is not None else None),
-                live_percent=self._live_percents.get(key)),
+                live_percent=self._live_percents.get(key),
+                live_speed=self._live_speeds.get(key)),
         ]
 
     # ----- readouts -----

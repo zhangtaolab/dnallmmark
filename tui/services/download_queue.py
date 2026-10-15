@@ -441,6 +441,30 @@ def clean_chunk(chunk):
     return ANSI_RE.sub("", chunk.replace("\r", "\n"))
 
 
+#: EHC-4 (261015-ehc ruling 4): one tqdm/modelscope-style transfer-rate
+#: token — digits + optional decimal + optional space + optional unit
+#: letter + optional binary i-prefix + B/s (covers tqdm's "892kB/s" /
+#: "1.23MB/s" and modelscope's spaced "5.0 MiB/s" variants). The token
+#: is PARSED DATA, returned verbatim (never translated, bilingual-
+#: neutral — no new strings constants).
+SPEED_RE = re.compile(r"(\d+(?:\.\d+)?\s?[kKmMgGtT]?i?[bB]/s)")
+
+
+def parse_speed(chunk):
+    """Best-effort transfer-RATE extraction from one stderr chunk.
+
+    Args:
+        chunk (str): the raw decoded chunk (CR/ANSI-laden is fine).
+
+    Returns:
+        str | None: the LAST rate token in the chunk, verbatim (a
+        multi-line chunk carries the newest); None when no rate parses
+        (the honest fallback — never a fabricated speed).
+    """
+    tokens = SPEED_RE.findall(clean_chunk(chunk))
+    return tokens[-1] if tokens else None
+
+
 def parse_progress(chunk):
     """Best-effort percent extraction from one stderr chunk.
 
@@ -1824,6 +1848,14 @@ class DownloadQueueService:
         stdout_parts: list[str] = []
         stderr_parts: list[str] = []
         percent_state = {"last_fired": None}
+        # EHC-4 (261015-ehc): the speed rides the same pump — the dedupe
+        # is on the (percent, speed) PAIR (a big file's percent can
+        # stall while the rate streams — speed-only changes are real
+        # ticks). The callback grows the ADDITIVE ``speed`` argument:
+        # a 2-arg injected fake keeps conforming while no rate parses
+        # (called with two args whenever speed is None — the c4j
+        # additive-fake pin).
+        speed_state = {"last": None}
 
         def on_stdout(text):
             stdout_parts.append(text)
@@ -1836,10 +1868,16 @@ class DownloadQueueService:
             percent = items
             if percent is None and files:
                 percent = next(reversed(files.values()))
-            if percent is None or percent == percent_state["last_fired"]:
+            speed = parse_speed(text)
+            if (percent is None or percent == percent_state["last_fired"]) and (
+                    speed is None or speed == speed_state["last"]):
                 return
             percent_state["last_fired"] = percent
-            progress_cb(key, percent)
+            speed_state["last"] = speed
+            if speed is None:
+                progress_cb(key, percent)
+            else:
+                progress_cb(key, percent, speed)
 
         out_thread = threading.Thread(
             target=_pump, args=(proc.stdout, on_stdout), daemon=True)
@@ -1968,6 +2006,10 @@ class DownloadQueueService:
         stdout_parts: list[str] = []
         stderr_parts: list[str] = []
         percent_state = {"last_fired": None}
+        # EHC-4: the model lane's pump carries the identical (percent,
+        # speed) pair dedupe + the additive 2-arg/3-arg callback
+        # discipline (the dataset lane's closure, verbatim).
+        speed_state = {"last": None}
 
         def on_stdout(text):
             stdout_parts.append(text)
@@ -1982,10 +2024,16 @@ class DownloadQueueService:
             percent = items
             if percent is None and files:
                 percent = next(reversed(files.values()))
-            if percent is None or percent == percent_state["last_fired"]:
+            speed = parse_speed(text)
+            if (percent is None or percent == percent_state["last_fired"]) and (
+                    speed is None or speed == speed_state["last"]):
                 return
             percent_state["last_fired"] = percent
-            progress_cb(key, percent)
+            speed_state["last"] = speed
+            if speed is None:
+                progress_cb(key, percent)
+            else:
+                progress_cb(key, percent, speed)
 
         out_thread = threading.Thread(
             target=_pump, args=(proc.stdout, on_stdout), daemon=True)

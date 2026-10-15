@@ -248,9 +248,11 @@ class QueueDriverProtocol(Protocol):
         """Claim the head pending entry (None when the queue is idle)."""
 
     def run_task(self, key: str, run_id: str,
-                 progress_cb: Callable[[str, "int | None"], None] | None
+                 progress_cb: Callable[..., None] | None
                  = None) -> QueueEvent:
-        """Execute one claimed task; NEVER raises (the service boundary)."""
+        """Execute one claimed task; NEVER raises (the service boundary).
+        The callback receives ``(key, percent)`` while no rate parses
+        and ``(key, percent, speed)`` once one does (EHC-4 additive)."""
 
 
 class QueueEventMessage(Message):
@@ -271,17 +273,21 @@ class QueueEventMessage(Message):
 class QueueProgressMessage(Message):
     """One live progress tick (driver worker thread -> event loop).
 
-    Throttled to integer-percent changes at BOTH layers (the service's
-    parser dedupes within a task; the driver dedupes across posts);
-    percent None is the indeterminate contract (the screen renders the
-    indeterminate glyph, never a fabricated number).
+    Throttled to (percent, speed) PAIR changes at BOTH layers (the
+    service's parser dedupes within a task; the driver dedupes across
+    posts — EHC-4, 261015-ehc: a stalled percent with a streaming rate
+    is a real tick); percent None is the indeterminate contract (the
+    screen renders the indeterminate glyph, never a fabricated number).
+    ``speed`` is the verbatim parsed rate token (None = the honest
+    percent-only fallback).
     """
 
     def __init__(self, key: str, percent: "int | None",
-                 generation: int) -> None:
+                 generation: int, speed: "str | None" = None) -> None:
         self.key = key
         self.percent = percent
         self.generation = generation
+        self.speed = speed
         super().__init__()
 
 
@@ -663,16 +669,20 @@ class DnallmMarkTui(App):
         """
         worker = get_current_worker()
         generation = self._queue_generation
-        last_percent: dict[str, int | None] = {}
+        # EHC-4: the throttle compares (percent, speed) PAIRS — a
+        # percent stalled while the rate streams still posts.
+        last_pair: dict[str, tuple[int | None, str | None]] = {}
 
-        def on_progress(key: str, percent: "int | None") -> None:
+        def on_progress(key: str, percent: "int | None",
+                        speed: "str | None" = None) -> None:
             # throttle: the service dedupes within a task; this dedupes
             # the post itself across tasks/retries of the same key
-            if percent is not None and last_percent.get(key) == percent:
+            if (percent is not None
+                    and last_pair.get(key) == (percent, speed)):
                 return
-            last_percent[key] = percent
+            last_pair[key] = (percent, speed)
             self.post_message(
-                QueueProgressMessage(key, percent, generation))
+                QueueProgressMessage(key, percent, generation, speed))
 
         try:
             while True:
@@ -800,7 +810,8 @@ class DnallmMarkTui(App):
             apply_progress = getattr(
                 screen, "apply_queue_progress", None)
             if apply_progress is not None:
-                apply_progress(message.key, message.percent)
+                apply_progress(message.key, message.percent,
+                               message.speed)
 
     def on_queue_stalled_message(self, message: QueueStalledMessage) -> None:
         """The driver stalled on a persist-refused claim (CR-02): the

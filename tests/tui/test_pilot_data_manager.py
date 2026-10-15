@@ -1031,6 +1031,41 @@ async def test_progress_cell_percent_bar_and_indeterminate():
         assert _cell_text(progress_of("k-pend")) == "—"
 
 
+async def test_progress_cell_appends_parsed_speed_word():
+    """EHC-4 (261015-ehc ruling 4): a downloading row with a parsed rate
+    token renders it as a dim data word beside the percent/bar
+    composition; with no token the cell keeps exactly the prior
+    composition (the honest percent-only fallback — never a fabricated
+    speed)."""
+    service = FakeDataManagerService(entries=(
+        _queue_entry("k-speed", "downloading", last_percent=42),
+    ))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        table = _queue_table(screen)
+
+        def progress_of(key):
+            for index in range(table.row_count):
+                if _row(table, index)[0] == key:
+                    return _cell_text(table.get_row_at(index)[2])
+            raise AssertionError(f"row {key} not found")
+
+        # with the parsed rate: the word rides beside the composition
+        screen.apply_queue_progress("k-speed", 42, "892kB/s")
+        await pilot.pause()
+        assert progress_of("k-speed") == " 42% ████······ 892kB/s", (
+            "the verbatim rate token renders as a data word"
+        )
+        # the honest fallback: no token keeps exactly the prior cell
+        screen.apply_queue_progress("k-speed", 42, None)
+        await pilot.pause()
+        assert progress_of("k-speed") == " 42% ████······", (
+            "speed None keeps the byte-stable prior composition"
+        )
+
+
 async def test_reconcile_cells_four_vocabularies():
     """pass / running (post-landing transient) / mismatch / dash."""
     service = FakeDataManagerService(entries=(
@@ -1915,12 +1950,13 @@ async def test_progress_streams_live_and_throttles_duplicates():
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_data_manager(pilot, app)
         screen = app.screen
-        applied: list[int] = []
         original = screen.apply_queue_progress
 
-        def spy(key, percent):
-            applied.append(percent)
-            original(key, percent)
+        applied: list[tuple[object, object]] = []
+
+        def spy(key, percent, speed=None):
+            applied.append((percent, speed))
+            original(key, percent, speed)
 
         screen.apply_queue_progress = spy
 
@@ -1949,8 +1985,10 @@ async def test_progress_streams_live_and_throttles_duplicates():
         await pilot.pause()
         # the throttle: the claim tick (None) leads; duplicates in the
         # script never post twice
-        assert applied == [None, 10, 25, 40, 100], (
-            "the claim tick + deduped percents are the exact post stream"
+        assert applied == [(None, None), (10, None), (25, None),
+                           (40, None), (100, None)], (
+            "the claim tick + deduped percents are the exact post stream "
+            "(EHC-4: speed None on the fake's rate-less ticks)"
         )
         for index in range(table.row_count):
             if _row(table, index)[0] == "k-live":

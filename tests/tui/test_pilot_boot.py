@@ -171,10 +171,17 @@ async def test_default_language_renders_english_on_a_fresh_boot():
         strings.set_language("zh")
 
 
-async def test_L_toggles_language_live_without_restart():
+async def test_L_toggles_language_live_without_restart(
+        monkeypatch, tmp_path):
     """EHC-1: L flips zh -> en on the SAME mounted screen (title + row
     word re-render), the footer's quit label follows, a toast fires;
-    a second L returns zh. No restart, no unhandled-key error."""
+    a second L returns zh. No restart, no unhandled-key error. The
+    state root is pinned to tmp_path — the toggle persists, and the
+    REAL ``~/.local/state/dnallmmark`` must never see a test's write."""
+    from tui.services import settings
+
+    monkeypatch.setenv(
+        settings.STATE_DIR_ENV, str(tmp_path / "state"))
     app = DnallmMarkTui(env_check_service=_CacheHitFake())
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()

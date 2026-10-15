@@ -607,6 +607,9 @@ class DataManagerScreen(Screen):
         self._queue_entries: tuple[QueueEntry, ...] = ()
         # Live percents streamed from the driver (None = indeterminate).
         self._live_percents: dict[str, int | None] = {}
+        # EHC-4 (261015-ehc): the live rate tokens ride the same pattern
+        # (None = the honest percent-only fallback).
+        self._live_speeds: dict[str, str | None] = {}
         # The per-worker run ids (WR-02): bumped on every reload so a
         # superseded worker's late post drops.
         self._snapshot_run_id = 0
@@ -770,25 +773,31 @@ class DataManagerScreen(Screen):
         entries = self._service.entries()
         self._queue_entries = tuple(entries)
         self._live_percents.pop(event.key, None)
+        self._live_speeds.pop(event.key, None)
         self._render_queue()
         if event.state == "done":
             self._reload_snapshot()
 
     def apply_queue_progress(self, key: str,
-                             percent: "int | None") -> None:
+                             percent: "int | None",
+                             speed: "str | None" = None) -> None:
         """One live tick: update the running row's cells in place.
 
         Re-reads the entry from the service (persisted-state-as-truth,
         T-10-04-01): the cached copy predates the claim, so the FIRST
         tick (the driver's indeterminate claim post) is what flips the
         row from pending to its downloading state. None percent is the
-        indeterminate contract — never a fabricated number.
+        indeterminate contract — never a fabricated number. EHC-4
+        (261015-ehc): ``speed`` (the additive third argument — the
+        verbatim parsed rate token) renders as a dim data word beside
+        the percent; None keeps exactly the prior composition.
 
         C4J-1 (261015-c4j): a KIND_MODEL entry's ticks are IGNORED —
         a model download never re-renders slot 3 (the presentation
         split).
         """
         self._live_percents[key] = percent
+        self._live_speeds[key] = speed
         entries = self._service.entries()
         entry = next((item for item in entries if item.key == key), None)
         if (entry is None or entry.kind == KIND_MODEL
@@ -1015,21 +1024,34 @@ class DataManagerScreen(Screen):
     def _progress_cell(self, entry: QueueEntry) -> Text:
         """The progress cell (D-03/auto-default 3: never a fabricated
         percent; the bar's filled cells carry the live theme accent —
-        the probe-pinned span limitation)."""
+        the probe-pinned span limitation).
+
+        EHC-4 (261015-ehc): a parsed rate token renders as a DIM data
+        word beside the composition on downloading rows (verbatim
+        parsed data, never translated); no token keeps exactly the
+        prior cell — the honest percent-only fallback."""
         percent = self._live_percents.get(
             entry.key, entry.last_percent)
+        speed = self._live_speeds.get(entry.key)
         if entry.state == "downloading":
             if percent is None:
-                return Text(S.QUEUE_PROGRESS_INDETERMINATE,
-                            style=_STYLE_RUNNING)
+                segments: list[Text] = [
+                    Text(S.QUEUE_PROGRESS_INDETERMINATE,
+                         style=_STYLE_RUNNING)]
+                if speed is not None:
+                    segments.append(Text(f" {speed}", style=_STYLE_MUTED))
+                return Text.assemble(*segments)
             filled = max(0, min(10, round(percent / 10)))
             accent = str(self.app.current_theme.accent)
-            return Text.assemble(
+            segments = [
                 Text(f"{percent:>3}%", style=_STYLE_RUNNING),
                 Text(" "),
                 Text("█" * filled, style=accent),
                 Text("·" * (10 - filled), style=_STYLE_RUNNING),
-            )
+            ]
+            if speed is not None:
+                segments.append(Text(f" {speed}", style=_STYLE_MUTED))
+            return Text.assemble(*segments)
         if entry.state in ("done", "mismatch"):
             return Text("100%", style=_STYLE_RUNNING)
         if entry.state == "failed":
