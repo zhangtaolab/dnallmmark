@@ -2,19 +2,22 @@
 monitor — the slot-5 monitor screen (Phase 11, 11-07; menu slot 5).
 
 The operator's monitoring surface over the 11-04 pure scanner: the
-discovered-sweeps pane (three D-03 states, progress + ETA per D-17), the
-per-(model, task) cell table with seed columns and the five glyph states
-(incl. the ⊘ resume provenance), the stats line, the [f] failures modal
-with the gated from-failures re-run (D-11), the [t] tee log tail
-(D-10/MON-04), the [a] manual-root attach, and the [r] immediate rescan.
+discovered-sweeps pane (three D-03 states, progress + ETA per D-17),
+the model×dataset ENTRIES table (C4J-3, 261015-c4j — one row per
+(model, task) with the folded completion state + done/total seed
+counts and the training-progress cell parsed from the running seed's
+newest checkpoint trainer_state; per-seed/fraction detail stays in the
+enter drill-down), the stats line, the [f] failures modal with the
+gated from-failures re-run (D-11), the [t] tee log tail (D-10/MON-04),
+the [a] manual-root attach, and the [r] immediate rescan.
 
 Contract (locked decisions):
 
 - PRESENTATION ONLY (the ``tui/screens/`` tier contract): the screen
   derives NOTHING from the artifact tree itself — every scan, stat,
-  failure list, and tail read goes through the injected
-  ``MonitorServiceProtocol`` (the plan's rendering prohibition). The
-  screen owns only cadence, focus, and rendering.
+  failure list, entry fold, and progress parse goes through the
+  injected ``MonitorServiceProtocol`` (the plan's rendering
+  prohibition). The screen owns only cadence, focus, and rendering.
 - D-09 cadence: ``set_interval(2s)`` dispatches the frontier worker and
   ``set_interval(60s)`` the full-scan worker — a tick NEVER scans
   inline; each tick bumps its run id, dispatches an
@@ -22,10 +25,15 @@ Contract (locked decisions):
   group (the data_manager group-discipline note: exclusivity cancels by
   (node, group), so the two cadences must never share one), and posts a
   run-id-tagged message whose handler drops superseded posts (WR-02).
+  C4J-3: the frontier/full workers additionally refresh the attached
+  root's ``entries_progress`` (inside the SAME exclusive worker, never
+  the event loop; a fake service without the method reads {} — the
+  tolerant getattr seam).
 - Honesty over motion (the phase-10 progress rule): unknown totals,
-  pending ETAs, absent elapsed, and the no-tee log state are DESIGNED
-  renderings via the frozen MON_ constants — never fabricated numbers
-  and never errors.
+  pending ETAs, absent elapsed, the no-tee log state, and a running
+  entry whose checkpoint parses nothing are DESIGNED renderings via
+  the frozen MON_ constants — never fabricated numbers and never
+  errors.
 - WR-06: every async modal push checks ``app.below_minimum_grid``.
 
 I18N-01: zero Chinese literals in this module — every operator-facing
@@ -85,9 +93,11 @@ from tui.strings import (
     MON_COL_ROOT,
     MON_COL_SCALE,
     MON_COL_SEED,
+    MON_COL_STATE,
     MON_COL_TASK,
     MON_DISCOVERED_EMPTY,
     MON_DISCOVERED_TITLE,
+    MON_ENTRY_SEED_COUNTS,
     MON_ETA_PENDING,
     MON_ETA_RANGE,
     MON_ETA_UNKNOWN,
@@ -98,6 +108,8 @@ from tui.strings import (
     MON_LOG_TEE_LINE,
     MON_LOG_TITLE,
     MON_LOG_UNAVAILABLE,
+    MON_PROGRESS_INDETERMINATE,
+    MON_PROGRESS_STEPS,
     MON_RERUN_CONFIRM,
     MON_RERUN_LABEL,
     MON_RERUN_NO_SEEDS,
@@ -147,6 +159,10 @@ _STYLE_RUNNING = "dim"
 _STYLE_DONE = "$success"
 _STYLE_FAILED = "$error"
 _STYLE_SKIPPED = "dim"
+
+#: The entries list's non-running progress cell — a table symbol / data
+#: word (not operator copy — the data_manager module's _DASH precedent).
+_DASH = "—"
 
 #: Keycap labels for the [f]/[t] bindings, projected from their landed
 #: modal-title constants (the 11-06 keycap-budget precedent: no
@@ -250,24 +266,6 @@ def _discovered_eta_cell(summary: Any, stats: Any | None) -> Text:
     if eta.mode == ETA_POINT:
         return Text(format_eta(eta.point_seconds))
     return Text(MON_ETA_UNKNOWN, style=_STYLE_DIM)
-
-
-def _seed_cell(seed: Any, wide: bool) -> Text:
-    """One seed column cell: the glyph (+ word where the cell is wide);
-    a curve seed renders the folded glyph + the fraction mini-counts; an
-    unrecognized record status renders verbatim (honest)."""
-    copy, style = _CELL_STATE_CELLS.get(
-        seed.state, (seed.state, _STYLE_DIM))
-    if seed.fraction_states is not None:
-        done = sum(
-            1 for _name, state in seed.fraction_states
-            if state in (CELL_COMPLETED, CELL_SKIPPED))
-        return Text(
-            f"{_glyph_of(copy)} {done}/{len(seed.fraction_states)}",
-            style=style)
-    if wide:
-        return Text(copy, style=style)
-    return Text(_glyph_of(copy), style=style)
 
 
 # =====================================================================
@@ -832,22 +830,28 @@ class MonitorScreen(Screen):
         """The 60s full scan arrived (worker thread -> loop; WR-02)."""
 
         def __init__(self, result: Any, root_stats: dict,
-                     cells: Any, resume: int, run_id: int) -> None:
+                     cells: Any, resume: int, run_id: int,
+                     progress: "dict | None" = None) -> None:
             self.result = result
             self.root_stats = root_stats
             self.cells = cells
             self.resume = resume
             self.run_id = run_id
+            # C4J-3: the attached root's first entries-progress read
+            # (None when nothing was attached)
+            self.progress = progress
             super().__init__()
 
     class FrontierScanned(Message):
         """The 2s frontier pass arrived (worker thread -> loop; WR-02)."""
 
         def __init__(self, snapshot: Any, stats: Any,
-                     run_id: int) -> None:
+                     run_id: int, progress: "dict | None" = None) -> None:
             self.snapshot = snapshot
             self.stats = stats
             self.run_id = run_id
+            # C4J-3: the attached root's refreshed entries progress
+            self.progress = progress
             super().__init__()
 
     class FailuresRead(Message):
@@ -910,6 +914,10 @@ class MonitorScreen(Screen):
         self._root_stats: dict[str, Any] = {}
         self._scales: dict[str, tuple[int, int, int] | None] = {}
         self._cell_rows: dict[str, Any] = {}
+        # C4J-3 (261015-c4j): the attached root's entries progress —
+        # {(model, task): CellProgress} refreshed by the frontier/full
+        # workers; empty when nothing runs or nothing parses
+        self._cell_progress: dict[tuple[str, str], Any] = {}
         self._ever_discovered: set[str] = set()
         self._resume_count = 0
         self._last_stats: Any = None
@@ -995,10 +1003,26 @@ class MonitorScreen(Screen):
         self._full_run_id += 1
         self._run_full_scan(self._full_run_id)
 
+    def _entries_progress_of(self, root: str) -> dict:
+        """The attached root's entries progress through the TOLERANT
+        service seam (C4J-3): a fake without ``entries_progress`` (every
+        pre-C4J injected service) reads {} — the entries render their
+        honest indeterminate, never a crash."""
+        progress_getter = getattr(
+            self._service, "entries_progress", None)
+        if progress_getter is None:
+            return {}
+        try:
+            return dict(progress_getter(root) or {})
+        except Exception:  # noqa: BLE001 — the tolerant-reader promise
+            return {}
+
     @work(exclusive=True, thread=True, group="mon-full")
     def _run_full_scan(self, run_id: int) -> None:
         """The full scan + the per-running-root stats + the attached
-        rows — all off the event loop (T-11-07-01/04)."""
+        rows — all off the event loop (T-11-07-01/04). C4J-3: the
+        attached root's FIRST entries-progress read rides the same
+        worker (the cadence never scans inline)."""
         try:
             result = self._service.full_scan(self._watermarks or None)
             root_stats: dict[str, Any] = {}
@@ -1008,14 +1032,17 @@ class MonitorScreen(Screen):
                         str(summary.root))
             cells: Any = ()
             resume = 0
+            progress: dict | None = None
             if self._attached_root is not None:
                 cells = self._service.cells_view(self._attached_root)
                 resume = self._service.resume_count(self._attached_root)
+                progress = self._entries_progress_of(
+                    str(self._attached_root))
         except Exception:  # noqa: BLE001 — the tolerant-reader promise:
             # the previous render stands (last-known-good), never a crash
             return
         self.post_message(self.FullScanned(
-            result, root_stats, cells, resume, run_id))
+            result, root_stats, cells, resume, run_id, progress))
 
     def _stats_of(self, root: str) -> Any:
         """One root's stats with the launch injections threaded."""
@@ -1037,13 +1064,16 @@ class MonitorScreen(Screen):
     @work(exclusive=True, thread=True, group="mon-frontier")
     def _run_frontier(self, root: str, run_id: int) -> None:
         """The light 2s pass + the stats refresh (elapsed accrues
-        continuously, D-17) — off the event loop."""
+        continuously, D-17) + the entries-progress refresh (C4J-3) —
+        all off the event loop."""
         try:
             snapshot = self._service.frontier_scan(root)
             stats = self._stats_of(root)
+            progress = self._entries_progress_of(root)
         except Exception:  # noqa: BLE001 — same tolerant promise
             return
-        self.post_message(self.FrontierScanned(snapshot, stats, run_id))
+        self.post_message(self.FrontierScanned(
+            snapshot, stats, run_id, progress))
 
     # ===== message handlers (event-loop side: render only) =====
 
@@ -1074,12 +1104,15 @@ class MonitorScreen(Screen):
             self._attached_root = None
             self._last_stats = None
             self._cell_rows = {}
+            self._cell_progress = {}
             self._resume_count = 0
             self._ever_discovered.discard(attached_key)
         elif attached_key is not None:
             self._cell_rows = self._merge_cell_rows(
                 self._cell_rows, message.cells)
             self._resume_count = message.resume
+            if message.progress is not None:
+                self._cell_progress = message.progress
             stats = message.root_stats.get(attached_key)
             if stats is not None:
                 self._last_stats = stats
@@ -1103,6 +1136,8 @@ class MonitorScreen(Screen):
         root_key = str(self._attached_root)
         self._root_stats[root_key] = message.stats
         self._last_stats = message.stats
+        if message.progress is not None:
+            self._cell_progress = message.progress
         merged: dict[str, Any] = dict(self._cell_rows)
         for (model, task, seed), state in (
                 message.snapshot.cell_states.items()):
@@ -1183,6 +1218,7 @@ class MonitorScreen(Screen):
         on the next mount kick or tick."""
         self._attached_root = Path(str(root)).expanduser().resolve()
         self._cell_rows = {}
+        self._cell_progress = {}
         self._last_stats = None
         self._resume_count = 0
         if self.is_running:
@@ -1418,8 +1454,16 @@ class MonitorScreen(Screen):
         _set_table_rows(table, self._discovered_columns(), rows)
 
     def _render_cells(self) -> None:
-        """Diff the cell table to the merged rows + seed columns (WR-05:
-        the cursor row identity survives every cadence rebuild)."""
+        """Diff the ENTRIES table to the merged rows (C4J-3,
+        261015-c4j): one row per (model, task) with the folded state
+        word + the done/total seed counts and the training-progress
+        cell — per-seed/fraction detail stays in the enter drill-down
+        (WR-05: the cursor row identity survives every cadence rebuild).
+
+        The screen derives NOTHING: the fold and the progress both come
+        from the service (``sweep_monitor.entry_fold`` /
+        ``entries_progress``) — this composes their outputs only.
+        """
         if not self.is_running:
             return
         table = self.query_one("#mon-cells", DataTable)
@@ -1429,17 +1473,12 @@ class MonitorScreen(Screen):
             _set_table_rows(
                 table,
                 [(MON_COL_MODEL, "model"), (MON_COL_TASK, "task"),
-                 ("", "seed_0")],
-                {"__empty__": [MON_CELLS_EMPTY, "", ""]})
+                 (MON_COL_STATE, "state"), (MON_COL_PROGRESS, "progress")],
+                {"__empty__": [MON_CELLS_EMPTY, "", "", ""]})
             return
-        seeds = sorted({
-            cell_seed.seed
-            for row in rows_map.values()
-            for cell_seed in row.seeds})
-        columns = [(MON_COL_MODEL, "model"), (MON_COL_TASK, "task")]
-        columns.extend(
-            (MON_COL_SEED.format(seed=seed), f"seed_{seed}")
-            for seed in seeds)
+        columns = [(MON_COL_MODEL, "model"), (MON_COL_TASK, "task"),
+                   (MON_COL_STATE, "state"),
+                   (MON_COL_PROGRESS, "progress")]
         key_width = max(8, self.size.width // 3 - 2)
         rows: dict[str, list] = {}
         for key in sorted(rows_map):
@@ -1448,19 +1487,54 @@ class MonitorScreen(Screen):
             model_cell.truncate(key_width, overflow="ellipsis", pad=False)
             task_cell = Text(row.task)
             task_cell.truncate(key_width, overflow="ellipsis", pad=False)
-            cells = [model_cell, task_cell]
-            seed_map = {cell_seed.seed: cell_seed for cell_seed
-                        in row.seeds}
-            for seed in seeds:
-                cell_seed = seed_map.get(seed)
-                if cell_seed is None:
-                    cells.append(Text(_glyph_of(MON_STATE_QUEUED),
-                                      style=_STYLE_DIM))
-                else:
-                    cells.append(
-                        _seed_cell(cell_seed, wide=not self._narrow))
-            rows[key] = cells
+            fold = sweep_monitor.entry_fold(row)
+            rows[key] = [
+                model_cell,
+                task_cell,
+                self._entry_state_cell(fold),
+                self._entry_progress_cell(
+                    fold, self._cell_progress.get((row.model, row.task))),
+            ]
         _set_table_rows(table, columns, rows)
+
+    def _entry_state_cell(self, fold: Any) -> Text:
+        """The entries state cell: the folded state's glyph word from the
+        existing MON_STATE_* vocabulary plus the done/total seed counts
+        as data. The narrow grid drops the word — the glyph + counts
+        carry the meaning (the seed-cell degradation precedent)."""
+        copy, style = _CELL_STATE_CELLS.get(
+            fold.state, (fold.state, _STYLE_DIM))
+        counts = MON_ENTRY_SEED_COUNTS.format(
+            done=fold.done, total=fold.total)
+        if self._narrow:
+            return Text(f"{_glyph_of(copy)} {counts}", style=style)
+        return Text(f"{copy} {counts}", style=style)
+
+    def _entry_progress_cell(self, fold: Any, progress: Any) -> Text:
+        """The entries progress cell: steps/max + the integer percent + the
+        10-cell bar on RUNNING rows with parseable progress (the
+        data_manager progress grammar — the bar's filled cells carry
+        the live theme accent); the honest indeterminate constant on
+        running rows without progress (never a fabricated number); the
+        dim dash on non-running rows. The narrow grid drops the bar."""
+        if fold.state != CELL_RUNNING:
+            return Text(_DASH, style=_STYLE_SKIPPED)
+        if progress is None or progress.percent is None:
+            return Text(MON_PROGRESS_INDETERMINATE,
+                        style=_STYLE_RUNNING)
+        text = MON_PROGRESS_STEPS.format(
+            step=progress.step, max=progress.max_steps,
+            percent=progress.percent)
+        if self._narrow:
+            return Text(text, style=_STYLE_RUNNING)
+        filled = max(0, min(10, round(progress.percent / 10)))
+        accent = str(self.app.current_theme.accent)
+        return Text.assemble(
+            Text(text, style=_STYLE_RUNNING),
+            Text(" "),
+            Text("█" * filled, style=accent),
+            Text("·" * (10 - filled), style=_STYLE_RUNNING),
+        )
 
     def _render_cells_title(self) -> None:
         """The cells title + the standing resume note (MON-05)."""

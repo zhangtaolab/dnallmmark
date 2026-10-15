@@ -95,9 +95,13 @@ Marks live in shared app-state sets (not inside the table), so filter rebuilds a
 
 The 下载 column vocabulary: ✓ 已下载 (present) · ✗ 未下载 (missing + adapted — the `d`-able state) · 手动放置 (missing unadapted-or-custom — the honest private/no-source state) · ◌ 未知 (no `Model_path` or drift). The 适配 column: 已适配 · 未适配 (dim) · 自定义.
 
+Since the 2026-10-15 revision, the 下载 column is also the **live model-download surface**: a row whose key carries a live queue entry (pending / downloading / failed) renders the queue's own state word (◌ 待下载 / ⠋ 下载中 / ✗ 失败) in place of the static vocabulary, the driver's progress ticks update the cell in place (a parsed integer percent composes beside the 下载中 word; nothing parsed keeps the ⠋ indeterminate — never a fabricated number), and a finished download flips to ✓ 已下载 as before. Model downloads no longer appear on slot 3's queue table — the shared queue itself is unchanged, only the presentation splits by kind.
+
 ## Screen 3 — Datasets (数据集)
 
 Two stacked panes over one shared, persistent download queue: the **full official dataset list** (top, the primary pane — every registry key with a 下载 cell and the n_audit baseline row count) and the **queue table** (bottom; rows in five states — pending / downloading / done / failed / mismatch — with live percent + progress bar and a reconcile column). The missing-only list is the `v`-toggled alternate. Mismatch and failed rows sort to the top and each number-carrying mismatch gets a banner. The title bar shows the presence summary (present/total/missing); a right-aligned line in the **queue** title row probes the Zenodo whole-package record (19135551) — the 备选 alternate channel, never the default (per-dataset ModelScope downloads are the default channel).
+
+Since the 2026-10-15 revision the top pane is the **dominant** pane — roughly two thirds of the screen (scrollable; 9+ dataset rows visible even at the 80x24 minimum grid, 12+ at 120x40) — and the queue table lists **dataset entries only**: model downloads surface on slot 2, never here (the shared queue mechanism is unchanged; the presentation splits by kind).
 
 A row with a **live queue entry** renders the queue's own state word (待下载 / 下载中 / 失败 / 对账不一致) in its 下载 cell; a done entry reads ✓ 在场 through the merged presence instead.
 
@@ -115,7 +119,7 @@ Key-target contract (`d`/`r`/`x` act on their own table's cursor regardless of f
 | `g` | queue table | (Hidden) Re-run the n_audit audit for the cursor's **mismatch** row — live only on mismatch rows; refreshes both panes when done. |
 | `z` | — | (Hidden) Enqueue the Zenodo whole-package bundle (the 备选 alternate) — offered only when the publication probe answered "public"; otherwise an explanatory toast. |
 
-The queue is serial, persisted to XDG state, and resumed automatically on the next `make tui` if pending work exists (model downloads queue here too — `kind=model` entries persist and resume the same way, with no reconcile leg: a model download is done when its normalized landing dir holds `config.json` directly). A done dataset download that reconciles (declared vs measured row counts) is the moment presence flips to ✓ everywhere (the full list, the counts). A landed-but-mismatched dataset never flips; use `g` after fixing.
+The queue is serial, persisted to XDG state, and resumed automatically on the next `make tui` if pending work exists (model downloads ride the SAME shared queue — `kind=model` entries persist and resume the same way, with no reconcile leg: a model download is done when its normalized landing dir holds `config.json` directly — but they render on slot 2, never in this screen's queue table). A done dataset download that reconciles (declared vs measured row counts) is the moment presence flips to ✓ everywhere (the full list, the counts). A landed-but-mismatched dataset never flips; use `g` after fixing.
 
 ## Screen 4 — Run config (运行配置)
 
@@ -160,13 +164,15 @@ The CLI has no such gate, by design — `run_sweep.py` / `run_sweep_shard.py` ar
 
 ## Screen 5 — Monitor (任务监控)
 
-Monitoring over the artifact scanner. Cadence (shown right of the title): a 2-second frontier pass over the **attached** root and a 60-second full scan; `[r]` forces a full rescan immediately. The layout is a **discovered sweeps** table (top) and a **cell table** (bottom, the attached sweep's model × task rows with one column per seed), plus a one-row stats line (done/total, current model×task×seed, elapsed, ETA point/range/pending).
+Monitoring over the artifact scanner. Cadence (shown right of the title): a 2-second frontier pass over the **attached** root and a 60-second full scan; `[r]` forces a full rescan immediately. The layout is a **discovered sweeps** table (top) and the **entries table** (bottom — one row per model × dataset entry of the attached sweep), plus a one-row stats line (done/total, current model×task×seed, elapsed, ETA point/range/pending).
 
-Discovered rows carry three states — running / finished / artifacts-only (a root with artifacts but no live process and no completion) — with a `{done}/{total}` progress bar and ETA on running rows, and the manifest scale (`models×tasks×seeds`) when the terminal is wide. Cell seed glyphs: `✓` completed, `✗` failed, `⊘` skipped-by-resume-marker, `⠋` running, `◌` queued; curve cells fold to `glyph done/total`. A resume-count note sits on the cells title row.
+Discovered rows carry three states — running / finished / artifacts-only (a root with artifacts but no live process and no completion) — with a `{done}/{total}` progress bar and ETA on running rows, and the manifest scale (`models×tasks×seeds`) when the terminal is wide.
+
+The **entries table** (columns 模型 / 任务 / 状态 / 进度) folds each entry's seeds into one completion state — ⠋ 运行 when any seed runs, ✗ 失败 when any failed, ✓ 完成 when all finished (⊘ resume-skipped counts as finished), ◌ 排队 otherwise — with the done/total seed count beside the word (e.g. `⠋ 运行 1/3`). The 进度 cell reads the running seed's **newest checkpoint** (`checkpoint-*/trainer_state.json`, numerically-largest suffix) on the 2s cadence: `steps/max percent%` plus a 10-cell bar while training progresses. Honest degradation throughout — a running cell with no parseable checkpoint yet renders `⠋ …` (never a fabricated number), non-running entries render the dim dash. Per-seed states, curve-fraction lines, and each seed's `run_record` fields stay in the `enter` drill-down. A resume-count note sits on the entries title row.
 
 | Key | Action |
 |-----|--------|
-| `enter` | On the discovered table: **attach** the cursor's sweep root (the `◆` marker moves; the cell table, stats, failures, and log keys rebind to it; a toast confirms). On the cell table: open the cell-detail modal — per-seed states, per-fraction lines, and the seed's `run_record` fields verbatim. |
+| `enter` | On the discovered table: **attach** the cursor's sweep root (the `◆` marker moves; the entries table, stats, failures, and log keys rebind to it; a toast confirms). On the entries table: open the entry-detail modal — per-seed states, per-fraction lines, and each seed's `run_record` fields verbatim. |
 | `f` | Failures modal over the attached root (live failure records / `sweep_failures.json`): one row per failure; `enter` drills the verbatim error string. |
 | `r` *(inside the failures modal)* | Re-run the failures — behind its own confirm (real GPU spend), then the **same gate as slot 4**: env preflight first, the E2' phrase if the effective matrix demands it, then a `--from-failures` launch at the sweep's own root carrying the source sweep's own lane (`--peft` / `--config-variant` recovered from its artifacts). |
 | `t` | Log-tail modal: the attached sweep's tee file, refreshed on the 2s cadence while open; the dim line names the file. A CLI-launched sweep (no tee) renders the designed unavailable state and schedules no refresh. |

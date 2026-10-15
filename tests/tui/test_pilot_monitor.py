@@ -84,7 +84,9 @@ from tui.strings import (
     MON_SCREEN_TITLE,
     MON_STATE_ARTIFACTS_SWEEP,
     MON_STATE_DONE,
+    MON_STATE_FAILED,
     MON_STATE_FINISHED_SWEEP,
+    MON_STATE_RUNNING,
     MON_STATE_RUNNING_SWEEP,
     MON_STATS_LINE,
     MON_STATS_LINE_NO_CURRENT,
@@ -2095,7 +2097,7 @@ async def test_delta_a_discovered_pane_renders_worker_roots_independently():
         cells_table = screen.query_one("#mon-cells", DataTable)
         assert cells_table.row_count == 1
         assert _table_text(cells_table, "model-a__task-x",
-                           "seed_42").startswith("⠋")
+                           "state") == f"{MON_STATE_RUNNING} 0/2"
         assert _label_text(screen, "#mon-stats-line") == (
             MON_STATS_LINE.format(
                 done=4, total=10, model="model-a", task="task-x",
@@ -2115,7 +2117,7 @@ async def test_delta_a_discovered_pane_renders_worker_roots_independently():
         cells_table = screen.query_one("#mon-cells", DataTable)
         assert cells_table.row_count == 1
         assert _table_text(cells_table, "model-b__task-y",
-                           "seed_42").startswith("✓")
+                           "state") == f"{MON_STATE_DONE} 1/1"
         w1_line = _label_text(screen, "#mon-stats-line")
         assert "2/20" in w1_line, (
             "the stats line rebinds to worker 1's own fraction"

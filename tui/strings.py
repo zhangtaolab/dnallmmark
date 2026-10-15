@@ -967,11 +967,16 @@ MON_COL_ETA = "ETA"
 # (MON-05 standing chrome, never a scrolling toast), the empty state,
 # the column headers, the five per-seed cell states, and both
 # resume-note variants (the 80-col one drops the trainer_state reason).
+# C4J-3 (261015-c4j): the table is the model×dataset ENTRIES list —
+# the 状态 column carries the folded state word + the done/total seed
+# counts, the 进度 column the training progress (steps + percent + bar
+# on running rows, the honest indeterminate when nothing parses).
 MON_CELLS_TITLE = "cell 状态 — {root}"
 MON_CELLS_EMPTY = "未附加 sweep — 在上方列表 Enter 附加, 或 [a] 手动附加"
 MON_COL_MODEL = "模型"
 MON_COL_TASK = "任务"
 MON_COL_SEED = "s{seed}"
+MON_COL_STATE = "状态"
 MON_STATE_QUEUED = "◌ 排队"
 MON_STATE_RUNNING = "⠋ 运行"
 MON_STATE_DONE = "✓ 完成"
@@ -981,6 +986,15 @@ MON_RESUME_NOTE = "⊘ 续跑: {n} cell 因 trainer_state 标记跳过"
 # The 80-col resume-note variant (the contract's parenthetical wording;
 # derived constant name — the table words the copy, not a second name).
 MON_RESUME_NOTE_SHORT = "⊘ 续跑: {n} cell 跳过"
+
+# The entries list's progress cell (C4J-3): the steps+percent data-word
+# composition (the 10-cell bar appends in code — the data_manager
+# progress grammar), the honest indeterminate for running rows whose
+# checkpoint trainer_state parses nothing (never a fabricated number),
+# and the done/total seed-counts segment appended to the state word.
+MON_PROGRESS_STEPS = "{step}/{max} {percent}%"
+MON_PROGRESS_INDETERMINATE = "⠋ …"
+MON_ENTRY_SEED_COUNTS = "{done}/{total}"
 
 # The stats line directly above the bottom bar: the full shape, the
 # 80-col no-当前 shape, the unknown-total degradation, and the ETA

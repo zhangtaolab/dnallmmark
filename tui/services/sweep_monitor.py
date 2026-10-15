@@ -36,6 +36,17 @@ POST-cell, the manifest and failures file land only at sweep END, and
 the driver mkdirs the cell dir BEFORE the executor runs — so running
 detection never depends on records.
 
+C4J-3 (261015-c4j) — the training-progress parse: ``cell_progress``
+reads the newest ``checkpoint-*/trainer_state.json`` under a RUNNING
+seed dir (``RESUME_MARKER`` is the same artifact name as the completion
+marker — read from checkpoint dirs MID-RUN and from the seed root
+post-run). The parse is tolerant through ``artifact_loader``
+(damage/absence degrade to the all-None CellProgress — never a crash,
+never a fabricated number; percent = round(step/max*100) clamped 0..100
+only when max_steps > 0), and ``entries_progress`` parses ONLY the
+running seeds on the same bounded walk the frontier uses (the 2s
+cadence stays light).
+
 Clock discipline: every wall-clock input is injectable (``now=`` epoch
 seconds); with no injection the real clock is read once per call.
 """
@@ -186,6 +197,48 @@ class CellRow:
     model: str
     task: str
     seeds: tuple[CellSeed, ...]
+
+
+@dataclass(frozen=True)
+class EntryView:
+    """One (model, task) ENTRY's folded view over its seeds (C4J-3,
+    261015-c4j — the slot-5 entries list's state cell; pure data, the
+    screen renders).
+
+    Attributes:
+        state: the folded completion state — any seed running ->
+            ``running``; any failed -> ``failed``; all seeds terminal
+            (completed|skipped, non-empty) -> ``completed``; else
+            ``queued`` (the ``_fold_frac_states`` semantics at seed
+            level).
+        done: the count of TERMINAL seeds (completed|failed|skipped —
+            the stats-line ``done`` convention).
+        total: the row's seed count.
+    """
+
+    state: str
+    done: int
+    total: int
+
+
+@dataclass(frozen=True)
+class CellProgress:
+    """One running seed's training progress parsed from its newest
+    ``checkpoint-*/trainer_state.json`` (C4J-3; pure data, the screen
+    renders — each field None when nothing parsed, never fabricated).
+
+    Attributes:
+        step: the parsed ``global_step`` (non-bool int; None when
+            absent/damaged/non-numeric).
+        max_steps: the parsed ``max_steps`` (same tolerance).
+        percent: ``round(step/max_steps*100)`` clamped 0..100 — derived
+            ONLY when both parsed and ``max_steps > 0`` (else None, the
+            screen's honest indeterminate).
+    """
+
+    step: int | None
+    max_steps: int | None
+    percent: int | None
 
 
 @dataclass(frozen=True)
@@ -824,6 +877,143 @@ def resume_count(root) -> int:
         for record in _collect_records(root_path)
         if record.get("status") == CELL_SKIPPED
     )
+
+
+# =====================================================================
+# C4J-3 (261015-c4j): the entry fold + the checkpoint progress parse
+# =====================================================================
+
+#: The checkpoint dir prefix under a seed dir (HF Trainer's save shape).
+_CHECKPOINT_PREFIX = "checkpoint-"
+
+
+def _checkpoint_number(name: str) -> "int | None":
+    """checkpoint-1000 -> 1000; anything else (no prefix, non-numeric
+    suffix) -> None — the NUMERIC parse lexical sort gets wrong
+    (checkpoint-999 < checkpoint-1000)."""
+    if not name.startswith(_CHECKPOINT_PREFIX):
+        return None
+    digits = name[len(_CHECKPOINT_PREFIX):]
+    try:
+        return int(digits)
+    except ValueError:
+        return None
+
+
+def _non_bool_int(value) -> "int | None":
+    """A non-bool int or None (the repo's bool-exclusion convention)."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return None
+
+
+def cell_progress(seed_dir) -> CellProgress:
+    """Parse one seed dir's training progress (C4J-3) — the newest
+    ``checkpoint-*/trainer_state.json`` (the LARGEST NUMERIC suffix;
+    lexical order is wrong and pinned so).
+
+    Tolerant end to end (T-c4j-01): absent checkpoints, an unreadable
+    dir, or a damaged/unparseable trainer_state degrade to the all-None
+    CellProgress; ``global_step``/``max_steps`` must be non-bool ints;
+    ``percent`` derives ONLY when both parsed and ``max_steps > 0``,
+    clamped 0..100 — a poisoned checkpoint can never crash the cadence
+    or fabricate a number. Bounded by the module's per-dir entry cap.
+
+    Args:
+        seed_dir: the ``{root}/{model}/{task}/seed_{n}`` dir.
+
+    Returns:
+        CellProgress: the parsed (or all-None) progress.
+    """
+    seed_dir = Path(seed_dir)
+    best: tuple[int, Path] | None = None
+    for child in _sorted_children(seed_dir)[:_SCAN_DIR_ENTRY_CAP]:
+        number = _checkpoint_number(child.name)
+        if number is None or not _is_dir(child):
+            continue
+        if best is None or number > best[0]:
+            best = (number, child)
+    if best is None:
+        return CellProgress(step=None, max_steps=None, percent=None)
+    state = artifact_loader.load_json_artifact(best[1] / RESUME_MARKER)
+    if not isinstance(state, dict):
+        return CellProgress(step=None, max_steps=None, percent=None)
+    step = _non_bool_int(state.get("global_step"))
+    max_steps = _non_bool_int(state.get("max_steps"))
+    percent = None
+    if step is not None and max_steps is not None and max_steps > 0:
+        percent = max(0, min(100, round(step / max_steps * 100)))
+    return CellProgress(step=step, max_steps=max_steps, percent=percent)
+
+
+def entry_fold(row: CellRow) -> EntryView:
+    """Fold one CellRow's per-seed states to the ENTRY state (C4J-3 —
+    the ``_fold_frac_states`` semantics at seed level): any running ->
+    running, any failed -> failed, all terminal (completed|skipped,
+    non-empty) -> completed, else queued. ``done`` counts TERMINAL
+    seeds (completed|failed|skipped — the stats-line done convention)
+    over the row's total.
+
+    Args:
+        row (CellRow): one (model, task) row.
+
+    Returns:
+        EntryView: the folded state + the done/total seed counts.
+    """
+    states = [cell_seed.state for cell_seed in row.seeds]
+    if any(state == CELL_RUNNING for state in states):
+        state = CELL_RUNNING
+    elif any(state == CELL_FAILED for state in states):
+        state = CELL_FAILED
+    elif states and all(
+            state in (CELL_COMPLETED, CELL_SKIPPED) for state in states):
+        state = CELL_COMPLETED
+    else:
+        state = CELL_QUEUED
+    done = sum(1 for value in states
+               if value in TERMINAL_RECORD_STATUSES)
+    return EntryView(state=state, done=done, total=len(states))
+
+
+def entries_progress(root) -> "dict[tuple[str, str], CellProgress]":
+    """The slot-5 entries list's progress map (C4J-3): walk the seed
+    dirs ONCE (the frontier's bounded ``_iter_seed_dirs`` discipline),
+    derive each seed's state, and for every (model, task) row whose
+    fold is RUNNING parse progress for its running seed(s) — taking the
+    MAX-step progress when several run (the serial driver makes this
+    rare; mgpu worker roots are separate roots). Non-running rows parse
+    nothing (the 2s cadence stays light, T-c4j-03); a running seed
+    whose checkpoints parse nothing contributes no entry (the screen's
+    honest indeterminate).
+
+    Args:
+        root: the sweep output root.
+
+    Returns:
+        dict: ``{(model, task): CellProgress}`` — empty when nothing
+        runs (or nothing parses).
+    """
+    now = _utc_now_epoch()
+    states: dict[tuple[str, str], dict[int, str]] = {}
+    seed_dirs: dict[tuple[str, str, int], Path] = {}
+    for model, task, seed, seed_dir in _iter_seed_dirs(Path(root)):
+        state, _fraction_states = _seed_state_from_dir(seed_dir, now=now)
+        states.setdefault((model, task), {})[seed] = state
+        seed_dirs[(model, task, seed)] = seed_dir
+    result: dict[tuple[str, str], CellProgress] = {}
+    for (model, task), seeds in states.items():
+        best: CellProgress | None = None
+        for seed, state in seeds.items():
+            if state != CELL_RUNNING:
+                continue
+            progress = cell_progress(seed_dirs[(model, task, seed)])
+            if progress.step is None:
+                continue
+            if best is None or progress.step > (best.step or 0):
+                best = progress
+        if best is not None:
+            result[(model, task)] = best
+    return result
 
 
 # =====================================================================
