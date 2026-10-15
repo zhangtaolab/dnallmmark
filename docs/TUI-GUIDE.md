@@ -13,7 +13,7 @@ make tui
 
 Typical first session:
 
-1. `make tui` — the console opens on the **environment check** screen (slot 1). A same-day cached check renders instantly; otherwise the seven kernels run in a background worker.
+1. `make tui` — the console opens on the **environment check** screen (slot 1). A same-day cached check renders instantly; otherwise the eight kernels run in a background worker.
 2. Press `2` — the models screen: browse and mark models (space marks, `/` filters), download a missing adapted model with `d`, reveal unadapted entries with `t`.
 3. Press `3` — the datasets screen: the full dataset list with download state; `d` enqueues the cursor's missing dataset, `a` enqueues all; the queue persists across restarts and resumes at boot.
 4. Press `4` — compose the run (seeds, PEFT, variant, dirs), press `p` for a dry-run preview, press `enter` to go through the launch gate.
@@ -58,9 +58,9 @@ While any modal is open, screen/app keys do not fire (`esc` is the universal clo
 
 ## Screen 1 — Environment check (环境检查)
 
-Runs the seven `pipeline/env_smoke.py` kernels and shows the verdict that the slot-4 launch gate enforces. Results persist for the local calendar day: a same-day restart renders the cached result instantly and runs zero kernels.
+Runs the eight `pipeline/env_smoke.py` kernels and shows the verdict that the slot-4 launch gate enforces. Results persist for the local calendar day: a same-day restart renders the cached result instantly and runs zero kernels.
 
-The seven rows, in kernel order: `version_pins`, `dnallm`, `peft`, `cuda`, `matmul`, `numpy`, `dataset_dirs`.
+The eight rows, in kernel order: `version_pins`, `dnallm`, `peft`, `cuda`, `matmul`, `numpy`, `model_dirs`, `dataset_dirs`.
 
 | Key | Action |
 |-----|--------|

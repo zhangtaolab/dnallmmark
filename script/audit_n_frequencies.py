@@ -34,14 +34,14 @@ in the pipeline driver; with the default ``--datasets-root`` (``pipeline/
 datasets``) that prefix is stripped here.
 
 Filter semantics mirror the pipeline EXACTLY (``run_finetune.py``
-``validate_sequences`` call at :1423-1425, suite ``check_sequence`` at
+``validate_sequences`` call at :1502-1503, suite ``check_sequence`` at
 ``dnallm/utils/sequence.py`` @483a35c, read-only): a row survives a
 class iff ``set(seq.upper())`` is a subset of the class charset AND
 ``0 <= len(seq) <= 10010``. The ``gc=(0,1)`` default of that call can
 never reject (``calc_gc_content`` always returns a value in ``[0, 1]``,
 0.0 for the empty sequence), so it imposes no additional constraint and
 is not re-implemented. Two classes exist (the pipeline's per-model
-conditional at :1418-1422): STRICT ``"ACGTacgt|"`` (``models_no_char_n``
+conditional at :1494-1501): STRICT ``"ACGTacgt|"`` (``models_no_char_n``
 members — a single N discards the whole row) and N-TOLERANT
 ``"ACGTNacgtn|"`` (every other model). The unified eval N per task is
 the MIN over the per-class test survivor counts — the strictest class
@@ -72,7 +72,7 @@ explicit missing rows — the run still completes.
 
 See also:
     - ``pipeline/run_finetune.py`` — the ``--subset_file`` consumer and
-      the filter semantics mirrored here (:1418-1425).
+      the filter semantics mirrored here (:1494-1503).
     - ``script/make_dev_splits.py`` — the untrusted-CSV reading pattern.
     - ``tests/test_audit_n.py`` — the fixture-driven behavior contracts.
 """
@@ -104,7 +104,7 @@ _REGISTRY_LOADER_SPEC.loader.exec_module(_REGISTRY_LOADER)
 
 # ===== Configuration =====
 
-# The two pipeline charset classes (run_finetune.py:1418-1422, verbatim
+# The two pipeline charset classes (run_finetune.py:1494-1501, verbatim
 # literals). Suite check_sequence compares set(seq.upper()) against
 # set(valid_chars) — case-sensitive literal membership after uppercasing
 # the sequence (the lowercase members of the charsets are therefore inert
@@ -466,12 +466,12 @@ def emit_data_md(path: Path, tasks: dict[str, Any]) -> None:
         "## Method",
         "",
         "- **Filter semantics** mirror the pipeline exactly",
-        "  (`run_finetune.py` `validate_sequences` at :1423-1425; suite",
+        "  (`run_finetune.py` `validate_sequences` at :1502-1503; suite",
         "  `check_sequence` @483a35c): a row survives a charset class",
         "  iff `set(seq.upper())` is contained in the class charset and",
         "  `0 <= len(sequence) <= 10010`.",
         "- **Two model classes** exist (the pipeline's per-model",
-        "  conditional at :1418-1422): strict `ACGTacgt|`",
+        "  conditional at :1494-1501): strict `ACGTacgt|`",
         "  (`models_no_char_n` members — one N discards the whole row)",
         "  and N-tolerant `ACGTNacgtn|` (every other model).",
         "- **Unified eval N** per task = min over the per-class test",

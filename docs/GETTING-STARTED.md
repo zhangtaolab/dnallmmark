@@ -16,7 +16,7 @@ Notes:
 
 - uv reads `.python-version` and resolves Python 3.13 for the project environment — you do not need to pre-install that exact interpreter.
 - The leaderboard pages load Chart.js, SheetJS, and Google Fonts from CDNs at render time, so the browser needs internet access for full function.
-- The GPU fine-tuning pipeline has additional requirements (the external `dnallm` package, `torch`/`transformers` from the `gpu` group, datasets and models downloaded from Zenodo into `pipeline/datasets/` and `pipeline/models/`). None of that is needed for this guide — see the README's "Datasets and Models Preparation" section when you get there.
+- The GPU fine-tuning pipeline has additional requirements (the external `dnallm` package, `torch`/`transformers` from the `gpu` group, and the benchmark assets — a 59-model / 50-dataset registry). Acquisition is **ModelScope-first and TUI-driven** (see the console section below); manual placement into `pipeline/datasets/` and `pipeline/models/` is now the alternate route, required only for the 23 registry models not marked dnllm-adapted. None of that is needed for this guide — see the README's "Datasets and Models Preparation" section when you get there.
 
 ## Installation
 
@@ -63,8 +63,8 @@ make test
 Runs the Python lane (`uv run --group dev --group tui pytest`) and the Node lane (`node --test tests/js/`, zero npm dependencies). Expected shape of output (counts grow as the suite grows):
 
 ```
-============================= 389 passed in ~10s =============================   # Python lane
-ℹ pass 18                                                                     # Node lane summary
+============ 1743 passed, 9 xfailed in ~5 min ============                        # Python lane (xfails: strict SVG goldens)
+ℹ pass 26                                                                     # Node lane summary
 ```
 
 ### 3. Serve the leaderboard
@@ -83,13 +83,22 @@ Press Ctrl+C to stop the server
 
 `start-server.sh` serves `dnallm-mark/` via `python3 -m http.server 8080` (falling back to `python`, then `npx http-server`). The ES-module UI requires an HTTP origin — opening the HTML files via `file://` does not work.
 
-### Optional: launch the TUI operator console
+### Optional: the TUI operator console (the acquisition route)
 
 ```bash
 make tui
 ```
 
-This launches the Textual console (`uv run --group tui --group gpu python -m tui`) for environment checks, model/dataset selection, sweep launch, and live monitoring. Caveats:
+This launches the Textual console (`uv run --group tui --group gpu python -m tui`) for environment checks, model/dataset selection, **downloads**, sweep launch, and live monitoring. Six digit-keyed screens (UI copy is Chinese): `1` environment check, `2` 模型 (models), `3` 数据集 (datasets), `4` run config, `5` monitor, `6` about. The full key-by-key runbook is [TUI-GUIDE.md](TUI-GUIDE.md).
+
+Model and dataset acquisition is ModelScope-first through the console:
+
+- **Slot `2` (models)** — the model table's `d` key downloads the cursor's model through the dnllm channel (`dnallm.models.model.download_model` in an isolated child process). Only the 36 dnllm-adapted registry models are downloadable; the other 23 rows toast the manual-placement landing directory instead.
+- **Slot `3` (datasets)** — per-dataset downloads default to the ModelScope channel (`d` enqueues the cursor's dataset, `a` enqueues all missing); the Zenodo whole-package bundle is the demoted alternate (`z`), riding the queue title row.
+- Downloads land under the **effective storage roots** — CLI flag > `directories.json` > the repo `pipeline/` defaults — the same chain the configured sweep consumes, so a landed download immediately flips the presence cell the operator was looking at. See [CONFIGURATION.md](CONFIGURATION.md) for the `directories.json` format and the full resolution chain.
+- Download prerequisites: dataset downloads shell out to the `modelscope` console script (resolved from the venv sibling, then `PATH`); model downloads additionally need the external `dnallm` package installed.
+
+Caveats:
 
 - It installs the `tui` **and** `gpu` groups — including `torch` — on first run.
 - Full function (the env panel's CUDA checks, sweep launches) expects a CUDA GPU workstation; on a headless dev box the console still launches but environment checks will report failures honestly. The console needs a terminal of at least 80x24.
@@ -105,7 +114,7 @@ This launches the Textual console (`uv run --group tui --group gpu python -m tui
 | `make test` | full suite | pytest including `slow`, plus the Node JS lane |
 | `make lint` | static checks | `ruff check` over `tests/` plus the fixed-findings file list in the Makefile |
 | `make typecheck` | static checks | `ty check` over `script/`, `baseline/`, `tests/`, `scripts/`, `pipeline/`, `tui/` |
-| `make tui` | display runtime | the operator console (see above) |
+| `make tui` | display runtime | the operator console — env checks, ModelScope-first model/dataset downloads, sweep launch, monitoring (see above) |
 | `make snapshot` | maintainer | freeze the derived-data set into `baseline/snapshots/` (tar + SHA-256 manifest) |
 
 All targets accept `make UV=/path/to/uv` if your uv install is not on `PATH`.
@@ -133,11 +142,13 @@ All leaderboard data lives under `dnallm-mark/data/`, committed to the repositor
 - **`make: uv: Command not found` (Error 127)** — your uv install lives outside the locations on `PATH`. Run `make UV=/path/to/uv <target>`.
 - **`make data` shows a diff on a fresh clone** — do not commit it; report it. On an untouched checkout regeneration must be byte-identical, so a diff means the environment resolved different package versions than `uv.lock` pins (e.g. Python < 3.13) or the checkout is not clean.
 - **`make tui` installs torch but the env screen reports failures** — expected on machines without CUDA; the console's environment checks are honest. Full TUI function targets a GPU workstation.
+- **Slot 3 dataset download toasts `cli_unavailable`** — the per-dataset ModelScope channel shells out to the `modelscope` console script (`python -m modelscope` does not work — it has no `__main__`). Install it into the project venv (`uv pip install modelscope`) or anywhere on `PATH`; the queue resolves the venv sibling next to the interpreter first, then `PATH`.
 
 ## Next steps
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — how the pipeline, data chain, web UI, and TUI fit together
-- [CONFIGURATION.md](CONFIGURATION.md) — dependency groups, Makefile lanes, pipeline YAML/CLI flags, environment variables
+- [CONFIGURATION.md](CONFIGURATION.md) — dependency groups, Makefile lanes, pipeline YAML/CLI flags, `directories.json` storage roots, environment variables
+- [TUI-GUIDE.md](TUI-GUIDE.md) — the operator console runbook: every screen, key, gate, and troubleshooting entry
 - [METHODOLOGY.md](METHODOLOGY.md) — how the leaderboard numbers are computed
 - [ONBOARDING.md](ONBOARDING.md) — checklists for adding a new model or dataset to the benchmark
 - [multi-gpu.md](multi-gpu.md) — multi-GPU sweep orchestration

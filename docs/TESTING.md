@@ -46,6 +46,14 @@ uv run --group dev --group tui pytest tests/test_sweep.py -k dry_run
 node --test tests/js/data-api.test.js
 ```
 
+## Expected full-suite baseline
+
+`make test` currently reports, in the Python lane, **7 failed / 1,743 passed / 9 xfailed** (1,759 collected) plus **26/26** in the Node lane (~4.5 min). The 16 non-passing results are the documented pre-existing set — a lane that ends with exactly this tally is at baseline; anything else is a regression:
+
+- **9 strict-xfail SVG golden pins** — the nine golden-compare tests in `tests/tui/test_snapshots.py` are deliberately marked `xfail(strict=True)` because all nine committed goldens are stale pending the maintainer's `make snapshot-update` + visual review (see the snapshot contract below; tracked in `.planning/WINDOWS.md` #25). They count as xfailed, not failed — the suite stays green on them.
+- **6 stale data pins after data commit `9bc68e1`** — three `model_performance` schema rows plus the schema bucket-count pin and the dataset-enum pin in `tests/test_schemas.py`, and the real-tree byte-compare in `tests/test_determinism.py`: committed data moved ahead of these pinned expectations (tracked in `.planning/WINDOWS.md` #22 lineage; verified failing identically before the current work).
+- **1 machine-state pin** — `tests/tui/test_services_run_config.py::test_storage_overview_defaults_mirror_real_consumers` asserts `pipeline/logs` is absent ("the honest glyph on a fresh checkout"); it fails on a dev box where local pipeline runs have created that directory and passes on any fresh clone (CI included).
+
 ## Pytest markers
 
 | Marker | Meaning | Where it applies |
@@ -53,13 +61,13 @@ node --test tests/js/data-api.test.js
 | `slow` | Long-running real-tree determinism regression; excluded by `make test-fast`, included by `make test` and plain `pytest` | `tests/test_determinism.py` |
 | `ci` | The pinned CI lane: golden replay + metric-key parity + species spot checks + aggregation units | `tests/test_ci_replay.py`, `tests/test_export_runs.py`, `tests/test_known_defects.py`, `tests/test_aggregation.py` (module-level `pytestmark = pytest.mark.ci`) |
 
-`tests/test_determinism.py` (the only `slow`-marked test) copies the 45 committed `model_performance` inputs plus the 47 committed `task_performance` files into a tmp tree, runs the regeneration chain (`script/summarize_comparison.py` + `scripts/generate-tasks-index.js`) twice as subprocesses, and asserts: the two runs are byte-identical, every regenerated output is byte-identical to its committed counterpart under `dnallm-mark/data/`, and the committed tree itself is untouched (`git status --porcelain` empty). Byte equality is claimed same-machine only.
+`tests/test_determinism.py` (the only `slow`-marked test) copies the 45 committed `model_performance` inputs plus the 47 committed `task_performance` files into a tmp tree, runs the regeneration chain (`script/summarize_comparison.py` + `scripts/generate-tasks-index.js`) twice as subprocesses, and asserts: the two runs are byte-identical, every regenerated output is byte-identical to its committed counterpart under `dnallm-mark/data/`, and the committed tree itself is untouched (`git status --porcelain` empty). Byte equality is claimed same-machine only. (This compare is currently one of the six stale pins above — see the baseline section.)
 
 ## Test inventory
 
-The Python suite collects **1,584 tests** (at time of writing) across three areas.
+The Python suite collects **1,759 tests** (at time of writing) across three areas.
 
-### Data-chain suites (`tests/test_*.py`, 27 modules)
+### Data-chain suites (`tests/test_*.py`, 29 modules)
 
 CPU-only tests over the offline scripts and the committed data. Highlights:
 
@@ -67,12 +75,15 @@ CPU-only tests over the offline scripts and the committed data. Highlights:
 - **Determinism** — `tests/test_determinism.py` (the `slow` lane, described above).
 - **Known-defect locks** — `tests/test_known_defects.py`: defects are pinned test-first as `xfail(strict=True)` tests (an unexpected XPASS fails the suite), and a defect's fix lands only together with the deliberate marker removal in the same commit. The three original locks (species-as-dataset, non-finite float pass-through in `get_float`, bool/int cross-type comparison in `compare.py`) have since been fixed and unmarked into permanent green contracts; the module now carries the species-table spot checks over the committed data.
 - **Per-script unit suites** — aggregation units (`test_aggregation.py`), exporter contracts (`test_export_runs.py`), permutation engine (`test_permutation.py`), provenance emitter (`test_build_provenance.py`), dev splits (`test_dev_splits.py`), sweep driver and multi-GPU sharding (`test_sweep.py`, `test_sweep_shard.py`), registry converters and loaders (`test_convert_registry.py`, `test_registry_loader.py`, `test_registry_unification.py`, `test_model_registry.py`), snapshot primitive (`test_freeze_snapshot.py`), migration inventory (`test_migration_inventory.py`), frontier/VEP scripts (`test_frontier.py`, `test_zero_shot_vep.py`), committed-data schema validation (`test_schemas.py`), and vendored statistics parity (`test_vendored_stats.py`).
+- **Committed compatibility map** — `tests/test_dnallm_compat.py` pins `pipeline/dnallm_compat.json` (the dnllm-adapted verdict map consumed by the console's model-download screen): its key set is exactly the 59-entry `models_info.json` registry, adapted entries carry well-formed ModelScope repo ids and channels, unadapted entries carry nulls (no half-verdicts), and targeted alignment locks hold. CI-safe by contract — it reads only the two committed JSON files and imports nothing from the external `dnallm` package (the map itself is regenerated offline by `script/audit_dnallm_compat.py`).
+- **Startup-config loader** — `tests/test_directories_config.py`: tier-1 units over `pipeline/directories_config.py` (the one shared `directories.json` resolver — strict/tolerant load pair, key-tolerance policy, `effective()` precedence merge), machine-independent via the root conftest's per-test tmp-dir config pin.
 - **Pipeline modules without a GPU** — `tests/test_run_finetune_contracts.py` reads `pipeline/run_finetune.py` **as source text** (never imports it — `torch`/`dnallm` are unavailable CPU-side); `tests/test_flops_counter.py` tests `FlopsCounter` against CPU stub modules; `tests/test_env_smoke_bytes.py` and `tests/test_artifact_loader.py` pin their targets' byte/JSON contracts.
 
 ### TUI suites (`tests/tui/`)
 
 - **Tier 1 — services** (`test_services_*.py`): pure-Python unit tests for the textual-free `tui/services/` layer (env check/gate/quick check, selection, templates, settings, registries, custom entries/validation, download queue, zenodo bundle, run config, sweep launcher, sweep monitor, gauntlet, about). `test_import_lock.py` enforces the layer invariant: no module under `tui/services/` imports `textual`.
 - **Tier 2 — Pilot** (`test_pilot_*.py`): headless Textual `App.run_test()` suites that boot the real `DnallmMarkTui` with constructor-injected deterministic fakes (no filesystem, no clock, no network, no GPU) — boot, nav shell, selection (+ custom entries), matrix, data manager, run config, monitor, env check, wizard.
+- **Structural AST pins** — `test_work_site_hardening.py` enforces the `@work` never-exit floor: every textual `@work` site in `tui/` must pass `exit_on_error=False` in its decorator or own an internal broad `except` guard that renders the degraded state itself (a raising worker otherwise takes the whole console down through `App._handle_exception`); a ≥20-site non-vacuity floor keeps the scanner honest. `test_card_site_hardening.py` confines every `X["card"]` / `X.get("card")` extraction site in `tui/` to a four-function allowlist, each of which must still contain its `isinstance(..., dict)` guard — a new unguarded extraction anywhere fails with file:line (positive control + ≥4-node floor).
 - **Snapshots** — `test_snapshots.py`: the SVG golden corpus (below).
 - Plus `test_gen_progress.py` (web-mirror generator goldens) and `test_strings_phase11.py` (string-inventory tripwire).
 
@@ -82,9 +93,9 @@ CPU-only tests over the offline scripts and the committed data. Highlights:
 
 ## The TUI snapshot contract
 
-`tests/tui/test_snapshots.py` compares eight committed SVG screenshots of the console screens against live headless exports using Textual core's `App.run_test(size=(120, 40))` + `App.export_screenshot()` and plain UTF-8 string equality. The plugin-based alternative (`pytest-textual-snapshot`) is resolver-blocked against this repo's `pytest>=9.1.1` floor, so no snapshot plugin is installed — `pytest --snapshot-update` does **nothing** here.
+`tests/tui/test_snapshots.py` compares nine committed SVG screenshots of the console screens against live headless exports using Textual core's `App.run_test(size=(120, 40))` + `App.export_screenshot()` and plain UTF-8 string equality. The plugin-based alternative (`pytest-textual-snapshot`) is resolver-blocked against this repo's `pytest>=9.1.1` floor, so no snapshot plugin is installed — `pytest --snapshot-update` does **nothing** here.
 
-The eight committed goldens in `tests/tui/__snapshots__/`: `env_check`, `selection_models`, `selection_datasets`, `data_manager`, `run_config`, `monitor_running`, `monitor_empty`, `wizard`.
+The nine committed goldens in `tests/tui/__snapshots__/`: `env_check`, `selection_models`, `selection_datasets`, `data_manager`, `data_manager_presence`, `run_config`, `monitor_running`, `monitor_empty`, `wizard`.
 
 Rules of the contract:
 
@@ -93,12 +104,15 @@ Rules of the contract:
 - Every golden exports at the single design-grid size 120×40, from frozen fixtures (pinned timestamps, scripted stats, cursor blink disabled, static spinner glyph) so the export is byte-deterministic.
 - Two non-vacuousness tests keep the compare honest: `test_golden_export_is_deterministic_across_instances` (two independent app instances export byte-identical SVGs) and `test_golden_compare_is_sensitive_to_fixture_state` (different fixture states export distinct SVGs).
 
+**Current strict-xfail state (since 2026-10-14):** all nine golden-compare tests carry `xfail(strict=True)` with an explicit stale-golden reason (`_GOLDEN_REFRESH_REASON` in `test_snapshots.py`) — the selection-screen slot rework and the locked nav-label rename changed the rendered top bar of every screen, so all nine committed goldens are stale. The committed SVGs stay byte-untouched until the maintainer runs `make snapshot-update` and reviews each regenerated SVG (the human-review rule above; tracked in `.planning/WINDOWS.md` #25). `strict=True` makes the suite fail in the flip direction too: if the goldens are refreshed but a marker is left behind, the unexpected XPASS goes red, forcing the markers to be removed in the same change. Until then the nine compares report as xfailed (part of the baseline above), and the two non-vacuousness tests plus the sensitivity pin keep proving the compare machinery itself still detects drift.
+
 ## Writing new tests
 
 - **File naming**: `tests/test_*.py` (data chain), `tests/tui/test_*.py` (TUI — tier-1 service suites named `test_services_*.py`, tier-2 Pilot suites `test_pilot_*.py`), `tests/js/*.test.js` (JS). No `__init__.py` anywhere under `tests/`.
 - **Imports**: `script/`, `baseline/`, `pipeline/`, and the repo root are already on `sys.path` via the two conftest files — import siblings directly (`import summarize_comparison`, `from tui.app import DnallmMarkTui`). Do not add per-module path hacks.
 - **Pipeline modules**: never import `pipeline/run_finetune.py` (its module level pulls `torch`/`dnallm`). Read it as source text (the `test_run_finetune_contracts.py` pattern) or test CPU-importable siblings (`flops_counter.py`, `registry_loader.py`, `artifact_loader.py`, `run_sweep.py`, `env_smoke.py`).
 - **TUI tests**: follow the constructor-injection seam — build the real app/screen with deterministic fakes for every service; no wall-clock reads, filesystem scans, network, or GPU inside a test. Async Pilot tests run without markers under `asyncio_mode = "auto"`.
+- **Structural pins**: when a hardening rule is structural (a whole class of sites must not regrow), pin it with an AST scan like `test_work_site_hardening.py` / `test_card_site_hardening.py` — allowlist the audited sites, assert a non-vacuity floor on the scan count, and name file:line offenders.
 - **Defect pinning**: new confirmed defects get `xfail(strict=True)` with the finding ID in the reason string; the fix must land in the same commit that removes the marker.
 - **JS tests**: plain `node:test` + `node:assert`, `require(esm)` for the ES modules, no npm dependencies. `make test` picks up new `tests/js/*.test.js` automatically via the glob.
 - **New lanes**: lint scope for new Python files is an explicit list in the `Makefile` `lint` target — new pipeline/tui files join via the existence-guard variables (`PHASE6_SCRIPTS`, `PHASE7_MODULES`, `PHASE8_TUI`, `PHASE12_MODULES`) or an explicit path; ty scope is `[tool.ty.src]` in `pyproject.toml`.
@@ -123,7 +137,7 @@ The `test` job runs the full `make test` (including the `slow` lane), not the `m
 ## What is deliberately not tested in CI
 
 - **The GPU fine-tuning pipeline.** The `gpu` dependency group (`torch==2.11.0`, `transformers==5.17.0`, resolved from the cu130 index) is never installed in CI, and no CI job runs training. Pipeline code is covered CPU-side via source-contract tests, CPU stubs, and the stdlib-only sweep drivers.
-- **The external `dnallm` package.** It is deliberately absent from every dependency group (installed from a local dev clone only when GPU runs resume). Tests that would need it import nothing from it — pipeline modules with GPU imports are read as text or exercised through CPU-importable siblings.
+- **The external `dnallm` package.** It is deliberately absent from every dependency group (installed from a local dev clone only when GPU runs resume). Tests that would need it import nothing from it — pipeline modules with GPU imports are read as text or exercised through CPU-importable siblings, and the dnallm compatibility map is tested as a committed JSON artifact only.
 - **The Textual display runtime.** `make tui` (the interactive console) is a local display lane; CI knows textual only as a library inside `make test`'s headless Pilot tests.
 
 See [docs/ARCHITECTURE.md](ARCHITECTURE.md) for the subsystem map and [docs/CONFIGURATION.md](CONFIGURATION.md) for environment, group, and Makefile-target details.

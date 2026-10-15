@@ -181,8 +181,8 @@ Runs the Python lane (`uv run --group dev pytest`) and the Node lane
 the suite grows):
 
 ```
-============================= 389 passed in ~10s =============================   # Python lane
-ℹ pass 18                                                                     # Node lane summary
+=========================== 1743 passed in ~4.5m ============================   # Python lane
+ℹ pass 26                                                                     # Node lane summary
 ```
 
 ### 4. Serve the leaderboard
@@ -274,6 +274,16 @@ Users should also prepare a model for finetuning, the target model should be put
 
 Finetuning parameters can be adjusted in the `finetune_config.yaml` configuration file. The pipeline will run all finetuning with the parameters provide in the configuration file.
 
+### Model Registry and ModelScope-First Downloads
+
+Model and dataset acquisition is **ModelScope-first through dnallm**: every model download flows through `dnallm.models.model.download_model`, and the loader table (`MODEL_INFO`) in the dnallm framework is the single download authority.
+
+- **`pipeline/models_info.json`** — the official 59-model registry, with `huggingface`/`modelscope` ID fields aligned to the dnallm authority.
+- **`pipeline/dnallm_compat.json`** — the committed compatibility verdict map, one entry per registry model: `dnllm_adapted` (36 of 59 models), the resolved ModelScope repo id, the channel (`modelscope-slot` = dnallm's official slot; `modelscope-mirror` = dnallm's own `lgq12697` default mirror), and the architecture. Only dnllm-adapted models are downloadable through the operator console; the remaining registry entries are informational and still require manual weight placement into `pipeline/models/`.
+- **`script/audit_dnallm_compat.py`** — the maintainer-executed alignment/audit script that regenerates the compat map from a local read-only dnallm clone.
+
+Datasets follow the same policy in the operator console's data manager: per-dataset ModelScope downloads are the default channel, and the Zenodo record linked above is the alternate (whole-package) source.
+
 ### Run Pipeline
 
 After preparation of datasets and models, users can directly run the pipeline with the follow script (run from the `pipeline/` directory — `run_finetune.py` resolves `finetune_config.yaml`, its `./logs/` error-log directory, and its `./finetuned` output default against its working directory):
@@ -351,6 +361,26 @@ uv run --group data python script/export_runs.py --input-root ./finetuned
 
 This is the regeneration path for `dnallm-mark/data/task_performance/`. Until the benchmark recomputation (E2') produces real run records, the committed `task_performance/` files are **static data** — `make data` does not refresh them (its chain is `summarize_comparison.py` + the task index generator only).
 
+## 🖥️ Operator Console (TUI)
+
+Day-to-day benchmark operation — checking the environment, downloading models and datasets, composing and launching sweeps, monitoring runs — is driven from the terminal console (`tui/`, built with Textual):
+
+```bash
+make tui    # uv run --group tui --group gpu python -m tui
+```
+
+The shell is a top bar of six digit-prefixed screens (UI copy is Chinese; the slot digits `1`–`6` switch screens):
+
+| Digit | Slot | Purpose |
+|-------|------|---------|
+| `1` | 环境检查 (environment check) | Seven environment-smoke kernels; the critical set gates every launch |
+| `2` | 模型 (models) | One model table: selection marks, the dnllm-adaptation verdict (适配), and live disk presence (下载); `d` downloads the cursor's model through the dnallm channel |
+| `3` | 数据集 (datasets) | The dataset table plus a persistent download queue: per-dataset ModelScope downloads are the default channel, the Zenodo whole-package bundle is the alternate (`z`); presence flips only after a landed download reconciles against the declared row count |
+| `4` | 运行配置 (run config) | Compose the model × dataset × seed matrix and parameters; the launch gate runs env preflight, and a typed-phrase confirm guards full-matrix launches |
+| `5` | 任务监控 (monitor) | Attach to running sweeps (CLI-launched included), live rescans, and a failures modal with re-run |
+| `6` | 关于 (about) | Version and project information |
+
+The complete runbook — every key, modal, gate, and troubleshooting entry — is [docs/TUI-GUIDE.md](docs/TUI-GUIDE.md).
 
 ## 🔧 Data Processing
 
@@ -490,6 +520,8 @@ dnallmmark/
 │   └── doi_swap.py              # Zenodo DOI swap preparation (maintainer-executed)
 ├── scripts/                  # One-off generators (Node — run from repo root)
 │   └── generate-tasks-index.js  # Regenerate data/tasks.json task index
+├── tui/                      # Operator console (Textual TUI: screens + services — `make tui`)
+├── tests/                    # Test suite (pytest lanes + Node tests/js — `make test`)
 ├── baseline/                 # Reproducibility baseline (JSON comparator + SHA256 manifests + pin-validation evidence)
 ├── AUDIT.md                  # Published audit report (findings, migration records, secret-scan evidence)
 ├── LICENSE                   # MIT license (code)
