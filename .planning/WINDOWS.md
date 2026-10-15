@@ -1,9 +1,9 @@
 ---
 schema_version: 1
-open_count: 16
+open_count: 19
 waived_count: 0
 fixed_count: 9
-total_count: 25
+total_count: 28
 last_updated: 2026-10-15T06:45:36.321Z
 ---
 
@@ -40,6 +40,9 @@ last_updated: 2026-10-15T06:45:36.321Z
 | 23 | quick-261014-dcl | deviation | tests/tui/__snapshots__/wizard.svg |  | wizard.svg golden collateral drift: the wizard golden pins env-screen pixels at its left edge, so the 261014-dcl eighth env row drifted it (committed with the change per D-03; the plan pinned exactly four SVG diffs) | fixed |  | 2026-10-14T03:38:33.288Z | 2026-10-15T06:45:36.321Z |
 | 24 | quick-261014-f4w | deviation | tests/tui/__snapshots__/wizard.svg |  | wizard.svg golden collateral drift again during make snapshot-update (render-state flake documented in dcl deferred-items, ~2/17 loads, pre-existing at base): committed with the change per D-03 alongside the plan-pinned run_config.svg + env_check.svg | fixed |  | 2026-10-14T05:14:07.356Z | 2026-10-15T06:45:36.243Z |
 | 25 | quick-261014-mlc | deviation | tests/tui/test_snapshots.py |  | All 9 SVG goldens strict-xfail pending maintainer make snapshot-update + D-03 review (slot-2/3 rework + locked nav rename) | fixed |  | 2026-10-14T10:25:24.246Z | 2026-10-15T06:45:17.867Z |
+| 26 | quick-261015-pex | unmet-truth | tui/app.py |  | Post-second-launch console input death (pex rehearsals): after a SECOND in-session gated launch the console stops processing navigation while renders continue (the launch toast/auto-switch render late or never); the demo restructured to exactly one on-camera launch and the fast-failure sweep moved to CLI prep | open |  | 2026-10-15T23:59:00.000Z |  |
+| 27 | quick-261015-pex | unmet-truth | tui/screens/monitor.py |  | Monitor stalls ~60s after a TUI launch on this box (around the first cell's completion output burst): the stats cadence stops and keys stop processing; the fold-then-kill demo sequence (seed 42 completes, kill seed 43) is unreachable - the demo kill lands mid-seed-42 | open |  | 2026-10-15T23:59:00.000Z |  |
+| 28 | quick-261015-pex | unmet-truth | tui/screens/run_config.py | 1618 | Typing into the slot-4 filter while the screen is mid-mount crashes the console: on_input_changed -> _render_picker -> query_one('#cfg-picker') raises NoMatches (observed once in pex rehearsal; the demo driver works around it by anchoring the populated picker before typing) | open |  | 2026-10-15T23:59:00.000Z |  |
 
 ````json
 [
@@ -366,6 +369,45 @@ last_updated: 2026-10-15T06:45:36.321Z
     "reason": "maintainer D-03 review approved 2026-10-15; all 9 goldens regenerated via make snapshot-update (zh pin) and committed in d5cb44b with the strict-xfail markers retired; suite at the 7F baseline with the 9 goldens passing",
     "recorded_at": "2026-10-14T10:25:24.246Z",
     "resolved_at": "2026-10-15T06:45:17.867Z",
+    "milestone": "v1.2"
+  },
+  {
+    "id": 26,
+    "kind": "unmet-truth",
+    "phase": "quick-261015-pex",
+    "file": "tui/app.py",
+    "line": null,
+    "description": "Post-second-launch console input death (pex rehearsals): after a SECOND in-session gated launch the console stops processing navigation while renders continue (the launch toast/auto-switch render late or never); the demo restructured to exactly one on-camera launch and the fast-failure sweep moved to CLI prep",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T23:59:00.000Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
+  },
+  {
+    "id": 27,
+    "kind": "unmet-truth",
+    "phase": "quick-261015-pex",
+    "file": "tui/screens/monitor.py",
+    "line": null,
+    "description": "Monitor stalls ~60s after a TUI launch on this box (around the first cell's completion output burst): the stats cadence stops and keys stop processing; the fold-then-kill demo sequence (seed 42 completes, kill seed 43) is unreachable - the demo kill lands mid-seed-42",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T23:59:00.000Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
+  },
+  {
+    "id": 28,
+    "kind": "unmet-truth",
+    "phase": "quick-261015-pex",
+    "file": "tui/screens/run_config.py",
+    "line": "1618",
+    "description": "Typing into the slot-4 filter while the screen is mid-mount crashes the console: on_input_changed -> _render_picker -> query_one('#cfg-picker') raises NoMatches (observed once in pex rehearsal; the demo driver works around it by anchoring the populated picker before typing)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T23:59:00.000Z",
+    "resolved_at": null,
     "milestone": "v1.2"
   }
 ]
