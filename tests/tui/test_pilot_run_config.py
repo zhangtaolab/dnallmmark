@@ -960,19 +960,31 @@ async def test_gate_happy_path_confirms_and_launches():
         await _open_run_config(pilot, app)
         await pilot.press("enter")   # the picker holds focus: the gate
         await _settle(pilot, app, rounds=4)
-        from tui.screens.selection import ConfirmModal
+        from tui.screens.selection import ConfirmModal, LaunchConfirmModal
 
         assert isinstance(app.screen, ConfirmModal), (
             "the non-E2' gate lands on the summary confirm")
+        assert isinstance(app.screen, LaunchConfirmModal), (
+            "the gate confirm is the LAUNCH variant (EHC-2)")
         message = str(app.screen._message)
-        from tui.strings import LNC_GATE_SUMMARY
+        from tui.strings import LNC_GATE_CONFIRM, LNC_GATE_SUMMARY
 
         assert LNC_GATE_SUMMARY.format(
             models=1, tasks=1, seeds=3, cells=3,
             output_root="./finetuned") in message
+        assert LNC_GATE_CONFIRM in message, (
+            "the confirm copy names the [y] keycap")
+        # EHC-2: a stray double-enter can NEVER launch — the enter
+        # after the gate-opening one lands on the documented no-op
         await pilot.press("enter")
         await _settle(pilot, app, rounds=3)
-        assert len(launcher.launch_calls) == 1, "confirm launches once"
+        assert launcher.launch_calls == [], (
+            "enter must never pass a launch gate (EHC-2)")
+        assert isinstance(app.screen, ConfirmModal), (
+            "the inert enter leaves the modal up")
+        await pilot.press("y")
+        await _settle(pilot, app, rounds=3)
+        assert len(launcher.launch_calls) == 1, "y launches exactly once"
         spec, phrase = launcher.launch_calls[0]
         assert spec.models == ("model-a",)
         assert phrase is None, "a non-E2' launch carries no phrase"
@@ -1099,9 +1111,12 @@ async def test_gate_env_block_renders_reasons_verbatim():
 
 
 async def test_gate_e2x_phrase_flow():
-    """The E2' typed-phrase escalation: a wrong dirname renders the
-    mismatch and enter is a no-op; the exact dirname flips the
-    indicator and enter fires the launch WITH the phrase."""
+    """The E2' typed-phrase escalation (EHC-2, 261015-ehc): a wrong
+    dirname renders the mismatch and enter is a no-op; the exact
+    dirname flips the indicator and enter ADVANCES to the y-ready
+    state (input blurred, indicator on the [y] wording, nothing
+    launched — a further enter does nothing); y fires the launch WITH
+    the phrase (the phrase stays double insurance ON TOP of y)."""
     run_service = FakeRunConfigService(spec=RunSpec(
         models=("model-a",), tasks=("task-1",)))
     launcher = FakeLauncherService(summary=GateSummary(
@@ -1155,12 +1170,28 @@ async def test_gate_e2x_phrase_flow():
             await pilot.press(char)
         await pilot.pause()
         assert _plain(indicator.content) == LNC_E2_MATCH_OK
+        # the matched enter ADVANCES: input blurred (y armed), modal
+        # stays up, nothing launches — and a further enter is inert
         await pilot.press("enter")
+        await _settle(pilot, app, rounds=3)
+        assert launcher.launch_calls == [], (
+            "the matched enter advances, it never launches (EHC-2)")
+        assert isinstance(app.screen, E2PhraseModal)
+        assert app.focused is not e2_input, (
+            "the advance blurs the input — that is what arms the y key")
+        assert _plain(indicator.content) == LNC_E2_MATCH_OK
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=2)
+        assert launcher.launch_calls == [], (
+            "a further enter still never launches"
+        )
+        assert isinstance(app.screen, E2PhraseModal)
+        await pilot.press("y")
         await _settle(pilot, app, rounds=3)
         assert len(launcher.launch_calls) == 1
         spec, phrase = launcher.launch_calls[0]
         assert phrase == "finetuned", (
-            "the E2' confirm carries the typed phrase")
+            "the E2' y-confirm carries the typed phrase")
         assert spec.models == ("model-a",)
 
 
@@ -1274,7 +1305,7 @@ async def test_gate_launch_exception_after_confirm_is_never_silent():
         await pilot.press("enter")
         await _settle(pilot, app, rounds=4)
         assert isinstance(app.screen, ConfirmModal)
-        await pilot.press("enter")   # confirm -> the launch worker raises
+        await pilot.press("y")   # confirm -> the launch worker raises
         await _settle(pilot, app, rounds=3)
         assert any(LNC_LAUNCH_FAILED_TOAST.format(error="spawn boom")
                    in toast for toast in _toast_messages(app)), (
@@ -1297,7 +1328,7 @@ async def test_gate_spawn_failure_toast_nothing_launched():
         from tui.screens.selection import ConfirmModal
 
         assert isinstance(app.screen, ConfirmModal)
-        await pilot.press("enter")
+        await pilot.press("y")
         await _settle(pilot, app, rounds=3)
         from tui.strings import LNC_LAUNCH_FAILED_TOAST
 
@@ -1681,7 +1712,7 @@ async def test_launch_success_auto_navigates_to_monitor_attached():
         from tui.screens.selection import ConfirmModal
 
         assert isinstance(app.screen, ConfirmModal)
-        await pilot.press("enter")   # confirm the launch
+        await pilot.press("y")   # confirm the launch (EHC-2)
         await _settle(pilot, app, rounds=4)
 
         # the D-13 proof: the ACTIVE screen is the monitor, attached
@@ -1982,7 +2013,9 @@ async def test_b1_e2x_submit_path_refocuses_picker():
         for char in "finetuned":
             await pilot.press(char)
         await pilot.pause()
-        await pilot.press("enter")   # the matched submit: dismiss + launch
+        await pilot.press("enter")   # the matched ADVANCE: blur, no launch
+        await pilot.pause()
+        await pilot.press("y")       # the y submit: dismiss + launch (EHC-2)
         await _settle(pilot, app, rounds=3)
         assert isinstance(app.screen, RunConfigScreen), (
             "the failed spawn keeps the console on slot 4"

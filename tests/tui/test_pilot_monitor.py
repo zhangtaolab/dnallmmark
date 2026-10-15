@@ -1212,7 +1212,16 @@ async def test_rerun_confirm_routes_launch_from_failures_and_attaches():
         assert MON_RERUN_CONFIRM.format(
             pairs=1, seeds="42", n=1) in str(
             app.screen.query_one(Static).content)
-        await pilot.press("enter")   # confirm
+        # EHC-2: enter REFUSES the re-run confirm; y launches it
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert launcher.env_calls == 0, (
+            "enter must never pass a launch gate (EHC-2)")
+        assert launcher.rerun_calls == []
+        assert isinstance(app.screen, ConfirmModal), (
+            "the inert enter leaves the re-run confirm up"
+        )
+        await pilot.press("y")   # confirm
         await _settle(pilot, app)
         assert launcher.env_calls == 1, "the env preflight re-entered"
         assert len(launcher.rerun_calls) == 1
@@ -1265,7 +1274,7 @@ async def test_rerun_seeds_derive_from_failure_rows_not_a_default():
         assert MON_RERUN_CONFIRM.format(
             pairs=1, seeds="43", n=1) in str(
             app.screen.query_one(Static).content)
-        await pilot.press("enter")   # confirm
+        await pilot.press("y")   # confirm (EHC-2: y launches)
         await _settle(pilot, app)
         assert len(launcher.rerun_calls) == 1
         _path, seeds, _root, _peft, _variant, _phrase = (
@@ -1307,7 +1316,7 @@ async def test_rerun_underivable_seeds_refuses_loudly_never_launches():
         await _settle(pilot, app)
         assert isinstance(app.screen, FailuresModal)
         await pilot.press("r")
-        await pilot.press("enter")   # confirm the re-run
+        await pilot.press("y")   # confirm the re-run (EHC-2)
         await _settle(pilot, app)
         assert LNC_LAUNCH_FAILED_TOAST.format(
             error=MON_RERUN_NO_SEEDS) in _toast_messages(app), (
@@ -1358,7 +1367,7 @@ async def test_rerun_confirm_names_pairs_times_seeds_estimate():
             "the confirm names the pair count AND the seed fan-out with "
             "their product — the exact enumeration the launch performs"
         )
-        await pilot.press("enter")   # confirm
+        await pilot.press("y")   # confirm (EHC-2: y launches)
         await _settle(pilot, app)
         assert len(launcher.rerun_calls) == 1
         _path, seeds, _root, _peft, _variant, _phrase = (
@@ -1433,7 +1442,7 @@ async def test_rerun_carries_source_sweep_lane_never_base_default():
         assert isinstance(app.screen, FailuresModal)
         await pilot.press("r")
         await pilot.pause()
-        await pilot.press("enter")   # confirm the re-run
+        await pilot.press("y")   # confirm the re-run (EHC-2)
         await _settle(pilot, app)
         assert monitor.rerun_lane_calls == ["/scans/finetuned"], (
             "the lane is read through the service seam"
@@ -1477,7 +1486,7 @@ async def test_rerun_env_block_renders_the_same_modal():
         await _settle(pilot, app)
         assert isinstance(app.screen, FailuresModal)
         await pilot.press("r")
-        await pilot.press("enter")   # confirm the re-run
+        await pilot.press("y")   # confirm the re-run (EHC-2)
         await _settle(pilot, app)
         assert isinstance(app.screen, EnvBlockModal), (
             "a doomed re-run never launches — the same env block"
@@ -1532,7 +1541,7 @@ async def test_rerun_e2x_phrase_refusal_reprompts_then_launches():
         await pilot.press("r")
         await pilot.pause()
         assert isinstance(app.screen, ConfirmModal)
-        await pilot.press("enter")   # confirm the re-run
+        await pilot.press("y")   # confirm the re-run (EHC-2)
         await _settle(pilot, app)
         assert isinstance(app.screen, E2PhraseModal), (
             "the phrase-stage refusal escalates to the typed-phrase "
@@ -1547,7 +1556,9 @@ async def test_rerun_e2x_phrase_refusal_reprompts_then_launches():
         for key in "etuned":
             await pilot.press(key)
         await pilot.pause()
-        await pilot.press("enter")   # the exact match confirms
+        await pilot.press("enter")   # the exact match ADVANCES (EHC-2)
+        await pilot.pause()
+        await pilot.press("y")       # y carries the typed phrase
         await _settle(pilot, app)
         assert len(launcher.rerun_calls) == 2
         assert launcher.rerun_calls[1][5] == "finetuned", (
@@ -1585,7 +1596,7 @@ async def test_rerun_problems_refusal_surfaces_error_toast():
         await _settle(pilot, app)
         await pilot.press("r")
         await pilot.pause()
-        await pilot.press("enter")   # confirm the re-run
+        await pilot.press("y")   # confirm the re-run (EHC-2)
         await _settle(pilot, app)
         toasts = _toast_messages(app)
         assert any(
@@ -1622,7 +1633,7 @@ async def test_rerun_worker_exception_surfaces_error_toast():
         await _settle(pilot, app)
         await pilot.press("r")
         await pilot.pause()
-        await pilot.press("enter")   # confirm the re-run
+        await pilot.press("y")   # confirm the re-run (EHC-2)
         await _settle(pilot, app)
         assert any(LNC_LAUNCH_FAILED_TOAST.format(
             error="quick-check kernel spawn failed") in toast

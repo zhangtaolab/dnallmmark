@@ -1208,6 +1208,22 @@ class MonitorScreen(Screen):
         misfire-proof key the slot-4 gate carries)."""
         if self.app.below_minimum_grid:
             return
+        # EHC-3 (261015-ehc ruling 3): pre-check the single-GPU
+        # serialization guard BEFORE pushing the confirm (the tolerant
+        # getattr seam — a fake without the method never blocks, the
+        # 11-03 precedent; the service's own stage-0 guard is the
+        # structural backstop) — y is never reached on a busy
+        # single-GPU machine.
+        blocked_getter = getattr(
+            self._launcher, "single_gpu_launch_blocked", None)
+        blocked = (blocked_getter()
+                   if blocked_getter is not None else None)
+        if blocked:
+            self.app.notify(
+                S.LNC_SINGLE_GPU_BLOCKED.format(
+                    roots=", ".join(blocked)),
+                severity="error")
+            return
         seeds = derive_rerun_seeds(failures, self._cell_rows)
         pairs = len({(row.model, row.task) for row in failures or ()})
         self.app.push_screen(LaunchConfirmModal(
@@ -1309,9 +1325,11 @@ class MonitorScreen(Screen):
         if isinstance(outcome, sweep_launcher_module.GateRefusal):
             # CR-01: the composed re-run path's own gate spoke. A
             # phrase-stage refusal re-prompts (the E2' typed phrase —
-            # the D-07 escalation, never a silent no-op); a problems
-            # refusal (official-keys / unevaluatable manifest) surfaces
-            # as the launch-failed toast naming the problems verbatim.
+            # the D-07 escalation, never a silent no-op); the EHC-3
+            # single-GPU stage renders its bilingual copy naming the
+            # running root(s); any other problems refusal
+            # (official-keys / unevaluatable manifest) surfaces as the
+            # launch-failed toast naming the problems verbatim.
             if outcome.stage == sweep_launcher_module.REFUSAL_STAGE_PHRASE:
                 if self.app.below_minimum_grid:
                     return
@@ -1332,6 +1350,15 @@ class MonitorScreen(Screen):
                         self._launcher.phrase_matches(typed, root)),
                     on_confirm=on_phrase,
                 ))
+                return
+            if any(code == sweep_launcher_module.PROBLEM_SINGLE_GPU
+                   for code, _value in outcome.problems):
+                roots = "; ".join(
+                    str(value) for code, value in outcome.problems
+                    if code == sweep_launcher_module.PROBLEM_SINGLE_GPU)
+                self.app.notify(
+                    S.LNC_SINGLE_GPU_BLOCKED.format(roots=roots),
+                    severity="error")
                 return
             detail = "; ".join(
                 f"{code}: {value}" for code, value in outcome.problems)

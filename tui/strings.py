@@ -1439,6 +1439,18 @@ LNC_E2_MISMATCH = _t(
 # reused verbatim; no new copy for the verdict itself).
 LNC_ENV_BLOCKED_HINT = _t(
     "LNC_ENV_BLOCKED_HINT", "[1] 前往环境检查", "[1] open Environment Check")
+# EHC-3 (261015-ehc ruling 3): the single-GPU serialization refusal —
+# a live sweep registered on an effective-GPU-count == 1 machine blocks
+# both gated launch paths (the slot-4 gate + the monitor re-run) BEFORE
+# any confirm/phrase stage, naming the running root(s). The zh wording
+# applies the terminology table (训练任务 / 结果目录).
+LNC_SINGLE_GPU_BLOCKED = _t(
+    "LNC_SINGLE_GPU_BLOCKED",
+    "⚠ 单卡机器上已有训练任务在运行（{roots}）— 请等待完成、经退出门终止，"
+    "或换一个结果目录",
+    "⚠ a sweep is already running on this single-GPU machine ({roots}) "
+    "— wait for it, kill it via the exit modal, or use a different "
+    "output root")
 # Launch feedback: success (toast + auto-nav to the monitor) and the
 # spawn-failure toast ({error} is data).
 LNC_LAUNCH_TOAST = _t(

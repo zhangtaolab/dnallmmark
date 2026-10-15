@@ -353,6 +353,15 @@ class LauncherBackend:
     def tee_path_for(self, root: str) -> "str | None":
         return self._launcher.tee_path_for(root)
 
+    def single_gpu_launch_blocked(self) -> "tuple[str, ...] | None":
+        """The EHC-3 pre-check seam over the shared launcher (the
+        tolerant getattr both directions: the wrapped launcher may
+        predate the method — a fake or older double reads as never
+        blocked, the 11-03 precedent)."""
+        blocked = getattr(
+            self._launcher, "single_gpu_launch_blocked", None)
+        return blocked() if blocked is not None else None
+
 
 def _problem_line(code: str, detail: object) -> str:
     """One machine problem as its copy row (data, never re-worded).
@@ -362,23 +371,20 @@ def _problem_line(code: str, detail: object) -> str:
     code + detail verbatim — data discipline.
     """
     if code == "empty_selection":
-        
         return S.CFG_EMPTY_SELECTION_PROBLEM
     if code == "seeds_invalid":
-        
         return S.CFG_SEEDS_INVALID_PROBLEM.format(value=detail)
     if code == "curve_invalid":
-        
         return S.CFG_CURVE_INVALID_PROBLEM.format(value=detail)
     if code == "probe_ineligible":
-        
         return S.CFG_PROBE_INELIGIBLE_PROBLEM.format(model=detail)
     if code == "variant_peft":
-        
         return S.CFG_COMPOSITION_PROBLEM
     if code == "output_root_invalid":
-        
         return S.CFG_OUTPUT_ROOT_PROBLEM.format(value=detail)
+    if code == "single_gpu_busy":
+        # EHC-3 (261015-ehc): {roots} carries the joined live roots
+        return S.LNC_SINGLE_GPU_BLOCKED.format(roots=detail)
     return f"{code}: {detail}"
 
 
@@ -1854,6 +1860,23 @@ class RunConfigScreen(Screen):
             if not self.app.below_minimum_grid:
                 self.app.push_screen(ProblemsModal(
                     (("live_root", root_key),)))
+            return
+        # EHC-3 (261015-ehc ruling 3): the single-GPU serialization
+        # pre-check — beside the CR-02 live-root stage, BEFORE any env
+        # preflight or confirm: on an effective-GPU-count == 1 machine
+        # with a live sweep registered, the gate refuses naming the
+        # running root(s) (the tolerant getattr seam — a fake without
+        # the method never blocks, the 11-03 precedent; the service's
+        # own stage-0 guard is the structural backstop).
+        blocked_getter = getattr(
+            self._launcher, "single_gpu_launch_blocked", None)
+        blocked = (blocked_getter()
+                   if blocked_getter is not None else None)
+        if blocked:
+            self._gate_active = False
+            if not self.app.below_minimum_grid:
+                self.app.push_screen(ProblemsModal(
+                    (("single_gpu_busy", ", ".join(blocked)),)))
             return
         self._gate_stage_id += 1
         self._run_env_preflight(self._gate_stage_id)
