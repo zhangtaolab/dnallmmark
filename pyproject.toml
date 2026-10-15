@@ -15,6 +15,14 @@ data = [
     # the data group in the SAME dependency commit, each serving its own layer.
     "scipy>=1.15.2",      # statistics layer: vendored aggregate_seeds t-interval (suite floor)
     "evaluate>=0.4.6",    # metrics layer: HF evaluate cross-validates suite-computed metrics (D-15)
+    # modelscope (2026-10-15, maintainer core-integration directive): the TUI
+    # download queue (tui/services/download_queue.py) shells out to the
+    # `modelscope` console script — resolved from the venv sibling, then PATH —
+    # so `uv sync` now covers dataset downloads end-to-end. Pure-Python client
+    # with no GPU weight, so CI installing the data group is accepted; dnallm
+    # deliberately stays manual (local sibling clone, ../DNALLM). Bounded pin
+    # per the D-05 convention; 1.40.2 is the box-validated floor.
+    "modelscope>=1.40,<2",
 ]
 dev = [
     # Phase 2 harness (added 2026-10-09): floors here, exact pins in uv.lock.
