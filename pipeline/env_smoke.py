@@ -433,16 +433,18 @@ def _root_annotation(root=None):
 
 
 def _read_registry(path, kernel_name):
-    """Read one registry JSON file fail-closed (WR-01, 08-08).
+    """Read one registry JSON file fail-closed (WR-01, 08-08; 261016-a4f).
 
     The directory kernels' shared registry read: an unreadable, corrupt
-    (``json.JSONDecodeError``), or non-UTF-8 (``UnicodeDecodeError``)
-    official registry converts into ONE named ok=False ``CheckResult``
-    in the main() torch-gate wording shape — the registry file, then the
-    exception type + message — so the E2' gate exits 1 deterministically
-    on exactly the broken-checkout state it exists to diagnose, never a
-    traceback (kernels return structured results; main() stays the only
-    renderer, D-02).
+    (``json.JSONDecodeError``), non-UTF-8 (``UnicodeDecodeError``), or
+    valid-JSON-but-non-object registry — a top-level list, string,
+    number, or null, a plausible hand-edit or bad-merge state (WR-01,
+    261016-a4f) — converts into ONE named ok=False ``CheckResult`` in
+    the main() torch-gate wording shape — the registry file, then the
+    failure — so the E2' gate exits 1 deterministically on exactly the
+    broken-checkout state it exists to diagnose, never a traceback
+    (kernels return structured results; main() stays the only renderer,
+    D-02).
 
     Args:
         path (Path): the registry file (``MODELS_INFO_PATH`` /
@@ -457,7 +459,7 @@ def _read_registry(path, kernel_name):
     """
     try:
         with open(path, "r", encoding="utf-8") as fh:
-            return json.load(fh), None
+            parsed = json.load(fh)
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         return None, CheckResult(
             name=kernel_name,
@@ -467,6 +469,20 @@ def _read_registry(path, kernel_name):
                  f"{type(exc).__name__}: {exc}"),
             ),
         )
+    if not isinstance(parsed, dict):
+        # WR-01 (261016-a4f): readable and valid JSON but the wrong
+        # top-level shape — the kernels' sorted()/entry access would
+        # raise an uncaught TypeError, breaking the greppable gate
+        # contract; the fail-closed conversion owns this state too.
+        return None, CheckResult(
+            name=kernel_name,
+            ok=False,
+            lines=(
+                (f"FAIL: read registry {path} — not a JSON object "
+                 f"(top-level {type(parsed).__name__})"),
+            ),
+        )
+    return parsed, None
 
 
 def check_model_dirs(root=None) -> CheckResult:
@@ -480,8 +496,8 @@ def check_model_dirs(root=None) -> CheckResult:
     annotates the effective root actually checked. An unreadable or
     corrupt registry degrades fail-closed to ONE named FAIL line
     (``_read_registry``, WR-01 08-08); a broken entry shape (non-dict
-    value, absent ``Model_path``) counts as MISSING — cannot-verify
-    reads as missing, never a crash.
+    value, absent or EMPTY ``Model_path`` — WR-02, 261016-a4f) counts
+    as MISSING — cannot-verify reads as missing, never a crash.
 
     Args:
         root (str | None): the model storage root override (None = this
@@ -502,7 +518,12 @@ def check_model_dirs(root=None) -> CheckResult:
     for name in sorted(models_info):
         entry = models_info[name]
         value = entry.get("Model_path") if isinstance(entry, dict) else None
-        if not isinstance(value, str) or not Path(base + value).is_dir():
+        # WR-02 (261016-a4f): an EMPTY Model_path counts as MISSING —
+        # base + "" resolves to the existing base dir itself and would
+        # render a false all-present PASS; the sibling kernel's exact
+        # empty-string guard, mirrored here.
+        if (not isinstance(value, str) or not value
+                or not Path(base + value).is_dir()):
             missing.append(name)
     total = len(models_info)
     if missing:

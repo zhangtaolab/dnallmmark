@@ -461,19 +461,60 @@ def test_directory_kernels_degrade_fail_closed_on_corrupt_registry(
     assert "FileNotFoundError" in datasets_missing.lines[0]
 
 
+def test_directory_kernels_fail_closed_on_non_dict_top_level_registry(
+        monkeypatch, tmp_path):
+    """A readable, valid-JSON registry whose top level is NOT an object
+    — a top-level list or null, a plausible hand-edit or bad-merge state
+    of a broken checkout — yields the SAME named one-line FAIL result
+    from BOTH directory kernels (WR-01, 261016-a4f): the registry path,
+    then ``not a JSON object (top-level {type})``. The kernels can never
+    traceback on ``sorted()``/entry access again, so the E2' gate
+    renders its FAIL line + trailer and exits 1 deterministically."""
+    list_registry = tmp_path / "list_info.json"
+    list_registry.write_text(
+        json.dumps([{"Model_path": "models/a/b"}]), encoding="utf-8")
+    null_registry = tmp_path / "null_info.json"
+    null_registry.write_text("null", encoding="utf-8")
+
+    for path, type_name in (
+        (list_registry, "list"),
+        (null_registry, "NoneType"),
+    ):
+        for module_attr, kernel, kernel_id in (
+            ("MODELS_INFO_PATH", env_smoke.check_model_dirs, "model_dirs"),
+            ("DATASETS_INFO_PATH",
+             env_smoke.check_dataset_dirs, "dataset_dirs"),
+        ):
+            monkeypatch.setattr(env_smoke, module_attr, path)
+            result = kernel()
+            assert result.name == kernel_id
+            assert result.ok is False
+            assert len(result.lines) == 1  # ONE named FAIL line
+            line = result.lines[0]
+            assert line.startswith("FAIL: read registry")
+            assert str(path) in line
+            assert "not a JSON object" in line
+            assert f"top-level {type_name}" in line
+
+
 def test_directory_kernels_count_shape_broken_entries_as_missing(
         monkeypatch, tmp_path):
     """Broken registry ENTRY shapes read as fail-closed missing
-    (cannot-verify = missing): a non-dict entry and an entry lacking
-    its path field both join the FAIL missing listing BY NAME, while a
-    healthy entry renders exactly as before (present, never listed)."""
+    (cannot-verify = missing): a non-dict entry, an entry lacking its
+    path field, AND an entry with an EMPTY path string (WR-02,
+    261016-a4f — ``base + ""`` resolves to the existing base dir, so
+    the model kernel previously rendered a false all-present PASS) all
+    join the FAIL missing listing BY NAME, while a healthy entry
+    renders exactly as before (present, never listed)."""
     (tmp_path / "models_info.json").write_text(json.dumps({
         "m-healthy": {"Model_path": "models/m/healthy"},
+        "m-emptypath": {"Model_path": ""},
         "m-nondict": [1, 2],
         "m-nopath": {},
     }), encoding="utf-8")
     (tmp_path / "datasets_info.json").write_text(json.dumps({
         "d-healthy": {"Dataset_path": "datasets/d/healthy"},
+        "d-emptypath": {"Dataset_path": ""},
         "d-nondict": [1, 2],
         "d-nopath": {},
     }), encoding="utf-8")
@@ -489,8 +530,9 @@ def test_directory_kernels_count_shape_broken_entries_as_missing(
     models_result = env_smoke.check_model_dirs(root=str(tmp_path))
     assert models_result.ok is False
     assert models_result.lines == (
-        (f"FAIL: 2 of 3 registry model dir(s) missing on disk "
+        (f"FAIL: 3 of 4 registry model dir(s) missing on disk "
          f"(root: {tmp_path}):"),
+        "  - m-emptypath",
         "  - m-nondict",
         "  - m-nopath",
     )
@@ -498,8 +540,9 @@ def test_directory_kernels_count_shape_broken_entries_as_missing(
     datasets_result = env_smoke.check_dataset_dirs(root=str(tmp_path))
     assert datasets_result.ok is False
     assert datasets_result.lines == (
-        (f"FAIL: 2 of 3 registry dataset dir(s) missing on disk "
+        (f"FAIL: 3 of 4 registry dataset dir(s) missing on disk "
          f"(the E2' launch gate) (root: {tmp_path}):"),
+        "  - d-emptypath",
         "  - d-nondict",
         "  - d-nopath",
     )
