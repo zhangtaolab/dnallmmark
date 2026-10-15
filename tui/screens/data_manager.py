@@ -688,13 +688,15 @@ class DataManagerScreen(Screen):
     def compose(self) -> ComposeResult:
         """The screen frame: nav bars, title bar, the two stacked regions.
 
-        The top region is fixed-height (title + header + ~3 rows,
-        auto-default 1); the queue region takes the flex remainder; the
-        full-width rule separates them (the existing treatment — borders
-        stay reserved for modals). Since MLC-03 the Zenodo alternate line
-        lives right-aligned in the QUEUE title row (the demoted
-        alternate channel — D-12's placement moved out of the
-        missing-list title row).
+        The top region is the DOMINANT pane (C4J-2, 261015-c4j — 2fr of
+        the flex space: the full 60-key dataset list exposes far more
+        rows); the queue region takes the 1fr secondary share (scrolls;
+        never collapses below its 80x24 floor); the full-width rule
+        separates them (the existing treatment — borders stay reserved
+        for modals). Since MLC-03 the Zenodo alternate line lives
+        right-aligned in the QUEUE title row (the demoted alternate
+        channel — D-12's placement moved out of the missing-list title
+        row).
         """
         yield TopMenuBar()
         with Horizontal(id="dl-title-bar"):

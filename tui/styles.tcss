@@ -290,10 +290,14 @@ WizardModal {
 }
 
 /* ===== Data-manager screen (10-04, D-13/D-14/D-15) =====
- * Two stacked regions (auto-default 1): the missing list fixed-height
- * (title row + header + ~3 rows, scrolls), the queue the flex remainder
- * (scrolls); the full-width rule separates them (the existing treatment
- * — borders stay reserved for modals). Theme tokens only. */
+ * Two stacked regions. C4J-2 (261015-c4j, the maintainer's 2026-10-15
+ * ruling): the dataset list is the DOMINANT pane — the full 60-key
+ * registry list takes 2fr of the flex space (far more rows exposed at
+ * every grid), the queue a 1fr secondary status region (scrolls; never
+ * collapses below its 80x24 floor); the full-width rule separates them
+ * (the existing treatment — borders stay reserved for modals; the
+ * 10-04 fixed-5-cell-strip geometry note this block replaces). Theme
+ * tokens only. */
 
 #dl-title-bar {
     height: 1;      /* row token: one status line */
@@ -312,7 +316,7 @@ WizardModal {
 }
 
 #dl-missing-region {
-    height: 5;      /* fixed: the title row + header + ~3 visible rows */
+    height: 2fr;   /* the DOMINANT pane: the primary full-list surface */
 }
 
 #dl-missing-title {
@@ -327,11 +331,11 @@ WizardModal {
 }
 
 #dl-missing {
-    height: 1fr;   /* scrolls below the three visible rows */
+    height: 1fr;   /* scrolls inside the dominant region */
 }
 
 #dl-queue-region {
-    height: 1fr;                /* the flex remainder */
+    height: 1fr;                /* the secondary status region (scrolls) */
     border-top: solid $border;  /* 1-cell border exception — separator */
 }
 
