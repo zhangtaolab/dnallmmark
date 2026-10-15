@@ -86,6 +86,15 @@ for _root in (str(_REPO_ROOT / "pipeline"), str(_REPO_ROOT)):
     if _root not in sys.path:
         sys.path.insert(0, _root)
 
+# ===== zh language pin (the tests/tui/conftest.py contract, inlined) =====
+# Script mode lacks the conftest chain too, and the committed goldens
+# are zh-rendered: pin the registry to zh BEFORE any tui import so the
+# module-level from-import copies freeze zh (261015-ehc, EHC-1 — the
+# registry defaults to English).
+from tui import strings as _tui_strings
+
+_tui_strings.set_language("zh")
+
 # ===== F4W startup-config pin (the tests/conftest.py autouse twin) =====
 # Script mode also lacks the root conftest's autouse
 # DNALLMMARK_TUI_CONFIG_DIR pin, and the golden drive must stay
@@ -894,17 +903,22 @@ def _golden(golden_id: str) -> str:
 # The golden tests (one per id — CI compares, never regenerates)
 # =====================================================================
 
-#: The stale-golden reason (261014-mlc): the slot-2/3 rework staled the
-#: four plan-named goldens, and the LOCKED nav label rename (2 模型 /
-#: 3 数据集 — value-only, routing untouched) stales EVERY golden whose
-#: screen renders the top bar (all nine). The goldens regenerate ONLY
-#: via the maintainer's ``make snapshot-update`` (D-03 human-UAT review
-#: pending; the committed SVGs stay byte-untouched).
+#: The stale-golden reason (261015-ehc, amending the 261014-mlc note in
+#: place per its precedent): the 2026-10-14 slot split staled the four
+#: plan-named goldens and the LOCKED nav label rename staled every
+#: golden whose screen renders the top bar; quick-261015-ehc's bilingual
+#: registry keeps the committed zh values (the goldens' language) but
+#: applies the approved zh terminology table (训练任务/结果目录/监控/训练项
+#: word swaps) and adds the L language key to the shared footer — the
+#: copy drift keeps the already-stale goldens failing. The goldens
+#: regenerate ONLY via the maintainer's ``make snapshot-update`` (D-03
+#: human-UAT review pending; the committed SVGs stay byte-untouched).
 _GOLDEN_REFRESH_REASON = (
     "stale since quick-261014-mlc (the 2026-10-14 slot split reworked "
     "the screen and/or the locked nav label rename changed the top "
-    "bar) — golden refresh pending maintainer make snapshot-update + "
-    "D-03 review"
+    "bar) and further drifted by quick-261015-ehc (the bilingual "
+    "registry's zh terminology swaps + the L language key) — golden "
+    "refresh pending maintainer make snapshot-update + D-03 review"
 )
 
 

@@ -134,15 +134,25 @@ def test_cfg_lnc_mon_string_inventory_defined():
     """The drift tripwire: every CFG_/LNC_/MON_ name the 11-06/11-07
     plans consume exists, non-empty, at module level in tui/strings.py
     (the D-12 single home) — a rename or gap fails HERE, before any
-    screen lands."""
-    for prefix, names in (("CFG_", EXPECTED_CFG_CONSTANTS),
-                          ("LNC_", EXPECTED_LNC_CONSTANTS),
-                          ("MON_", EXPECTED_MON_CONSTANTS)):
-        for name in names:
-            assert hasattr(tui_strings, name), name
-            value = getattr(tui_strings, name)
-            assert isinstance(value, str) and value, name
-            assert name.startswith(prefix), name
+    screen lands.
+
+    261015-ehc (EHC-1): the check runs over BOTH languages — the
+    registry rebinds its constants per language, so each side must
+    carry the full inventory (zh restored for the committed zh-rendering
+    test surface)."""
+    try:
+        for lang in ("zh", "en"):
+            tui_strings.set_language(lang)
+            for prefix, names in (("CFG_", EXPECTED_CFG_CONSTANTS),
+                                  ("LNC_", EXPECTED_LNC_CONSTANTS),
+                                  ("MON_", EXPECTED_MON_CONSTANTS)):
+                for name in names:
+                    assert hasattr(tui_strings, name), (lang, name)
+                    value = getattr(tui_strings, name)
+                    assert isinstance(value, str) and value, (lang, name)
+                    assert name.startswith(prefix), name
+    finally:
+        tui_strings.set_language("zh")
 
 
 def test_cfg_lnc_mon_inventory_complete_no_unlisted_constants():
@@ -186,9 +196,106 @@ def test_mon_state_copy_first_char_is_the_glyph():
     """Every MON_ state constant — the five cell states, the three sweep
     states, and both resume-note variants — opens with its glyph, the
     NO_COLOR carrier (the glyph+color redundancy rule: color never
-    carries the meaning alone)."""
-    for name in MON_STATEFUL_CONSTANTS:
-        value = getattr(tui_strings, name)
-        assert value[0] in MON_STATE_GLYPHS, (
-            f"{name} must lead with its glyph (NO_COLOR carrier)"
-        )
+    carries the meaning alone). 261015-ehc: the glyph leads in BOTH
+    languages."""
+    try:
+        for lang in ("zh", "en"):
+            tui_strings.set_language(lang)
+            for name in MON_STATEFUL_CONSTANTS:
+                value = getattr(tui_strings, name)
+                assert value[0] in MON_STATE_GLYPHS, (
+                    f"{lang}:{name} must lead with its glyph "
+                    "(NO_COLOR carrier)"
+                )
+    finally:
+        tui_strings.set_language("zh")
+
+
+# =====================================================================
+# The bilingual registry tripwires (261015-ehc, EHC-1 — Task 1)
+# =====================================================================
+
+
+def test_registry_consistency_same_zh_implies_same_en():
+    """translate_value's well-definedness precondition: for every
+    distinct zh value carried by more than one constant, all such
+    constants share ONE en value — a zh phrase always translates to the
+    same English words, wherever it renders (the Task-2 binding-label
+    remap depends on it). Structured (dict/tuple) entries are excluded
+    from the value-equality join — they compare as whole objects, and
+    the shape test below covers them."""
+    from collections import defaultdict
+
+    zh_owners: defaultdict[str, set[str]] = defaultdict(set)
+    for zh, en in tui_strings._REGISTRY.values():
+        if isinstance(zh, str) and isinstance(en, str):
+            zh_owners[zh].add(en)
+    ambiguous = {zh: ens for zh, ens in zh_owners.items() if len(ens) > 1}
+    assert not ambiguous, (
+        "same-zh constants must share one en value (translate_value "
+        f"would be ambiguous for: {sorted(ambiguous)})"
+    )
+
+
+def test_registry_entries_carry_both_languages_and_matching_shapes():
+    """Every _REGISTRY entry has both values non-empty; the structured
+    (dict/tuple) entries carry identical key sets / arities across
+    languages with non-empty str leaves (keys and shape are data —
+    only the leaf copy translates)."""
+    for name, (zh, en) in tui_strings._REGISTRY.items():
+        if isinstance(zh, str) and isinstance(en, str):
+            assert isinstance(zh, str) and zh, name
+            assert isinstance(en, str) and en, name
+        elif isinstance(zh, dict) and isinstance(en, dict):
+            assert zh and en, name
+            assert set(zh) == set(en), (
+                f"{name}: dict keys must be identical across languages")
+            for key in zh:
+                assert isinstance(zh[key], str) and zh[key], (name, key)
+                assert isinstance(en[key], str) and en[key], (name, key)
+        elif isinstance(zh, tuple) and isinstance(en, tuple):
+            assert zh and en, name
+            assert len(zh) == len(en), (
+                f"{name}: tuple arity must be identical across languages")
+            for zh_item, en_item in zip(zh, en):
+                assert isinstance(zh_item, str) and zh_item, name
+                assert isinstance(en_item, str) and en_item, name
+
+
+def test_zh_terminology_table_applied():
+    """The approved 2026-10-15 zh terminology table: the retired zh
+    terms never appear in any zh value, and the bare words sweep / cell
+    are fully retired from zh copy (word-boundary match — English-
+    verbatim DATA such as the sweep_failures.json filename and the
+    sweep_priorities tier name keeps its underscore-joined spelling in
+    both languages)."""
+    import re
+
+    retired = ("输出根", "短语门", "存储根")
+    word_re = re.compile(r"\b(sweep|cell)\b")
+    for name, (zh, _en) in tui_strings._REGISTRY.items():
+        text = zh if isinstance(zh, str) else "".join(
+            str(item) for item in (
+                zh.values() if isinstance(zh, dict) else zh))
+        for term in retired:
+            assert term not in text, (name, term)
+        assert not word_re.search(text), (
+            f"{name}: the bare word sweep/cell is retired in zh copy")
+
+
+def test_default_language_is_english_and_set_language_persists():
+    """EHC-1: the committed default is English — DEFAULT_LANGUAGE is
+    'en', set_language('en') lands language() on 'en', and the module
+    state persists until the next call (zh restored afterward for the
+    committed zh-rendering test surface)."""
+    assert tui_strings.DEFAULT_LANGUAGE == "en"
+    assert "en" in tui_strings.LANGUAGES and "zh" in tui_strings.LANGUAGES
+    try:
+        tui_strings.set_language("en")
+        assert tui_strings.language() == "en"
+        assert tui_strings.APP_TITLE == "DNALLM-Mark Console"
+        tui_strings.set_language("zh")
+        assert tui_strings.language() == "zh"
+        assert tui_strings.APP_TITLE == "DNALLM-Mark 控制台"
+    finally:
+        tui_strings.set_language("zh")

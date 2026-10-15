@@ -3341,15 +3341,25 @@ def test_dl_and_queue_string_inventory_defined():
     """The drift tripwire: every DL_/QUEUE_/SEL_ name the 10-04/10-05
     plans consume exists, non-empty, at module level in tui/strings.py
     (the I18N-01 single home) — a rename or gap fails HERE, before any
-    screen lands."""
-    for prefix, names in (("DL_", EXPECTED_DL_CONSTANTS),
-                          ("QUEUE_", EXPECTED_QUEUE_CONSTANTS),
-                          ("SEL_", EXPECTED_SEL_CONSTANTS)):
-        for name in names:
-            assert hasattr(tui_strings, name), name
-            value = getattr(tui_strings, name)
-            assert isinstance(value, str) and value, name
-            assert name.startswith(prefix), name
+    screen lands.
+
+    261015-ehc (EHC-1): the check runs over BOTH languages — the
+    registry rebinds its constants per language, so each side must
+    carry the full inventory (zh restored for the committed zh-rendering
+    test surface)."""
+    try:
+        for lang in ("zh", "en"):
+            tui_strings.set_language(lang)
+            for prefix, names in (("DL_", EXPECTED_DL_CONSTANTS),
+                                  ("QUEUE_", EXPECTED_QUEUE_CONSTANTS),
+                                  ("SEL_", EXPECTED_SEL_CONSTANTS)):
+                for name in names:
+                    assert hasattr(tui_strings, name), (lang, name)
+                    value = getattr(tui_strings, name)
+                    assert isinstance(value, str) and value, (lang, name)
+                    assert name.startswith(prefix), name
+    finally:
+        tui_strings.set_language("zh")
 
 
 def test_dl_queue_inventory_complete_no_unlisted_constants():
@@ -3369,16 +3379,22 @@ def test_dl_queue_inventory_complete_no_unlisted_constants():
 
 def test_queue_state_strings_glyph_first_and_distinct():
     """The NO_COLOR redundancy contract: each of the five queue states
-    leads with its distinct glyph (◌ ⠋ ✓ ✗ ⚠)."""
-    state_glyphs = [
-        tui_strings.QUEUE_STATE_PENDING[0],
-        tui_strings.QUEUE_STATE_DOWNLOADING[0],
-        tui_strings.QUEUE_STATE_DONE[0],
-        tui_strings.QUEUE_STATE_FAILED[0],
-        tui_strings.QUEUE_STATE_MISMATCH[0],
-    ]
-    assert state_glyphs == ["◌", "⠋", "✓", "✗", "⚠"]
-    assert len(set(state_glyphs)) == 5
+    leads with its distinct glyph (◌ ⠋ ✓ ✗ ⚠). 261015-ehc: the glyph
+    leads in BOTH languages."""
+    try:
+        for lang in ("zh", "en"):
+            tui_strings.set_language(lang)
+            state_glyphs = [
+                tui_strings.QUEUE_STATE_PENDING[0],
+                tui_strings.QUEUE_STATE_DOWNLOADING[0],
+                tui_strings.QUEUE_STATE_DONE[0],
+                tui_strings.QUEUE_STATE_FAILED[0],
+                tui_strings.QUEUE_STATE_MISMATCH[0],
+            ]
+            assert state_glyphs == ["◌", "⠋", "✓", "✗", "⚠"], lang
+            assert len(set(state_glyphs)) == 5, lang
+    finally:
+        tui_strings.set_language("zh")
 
 
 def test_env_route_amendment_carries_keycap_and_cli_command():

@@ -20,3 +20,14 @@ from pathlib import Path
 # ===== Import root =====
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))  # tui (package-qualified imports; pipeline/ comes from the parent conftest)
+
+# ===== zh language pin (261015-ehc, EHC-1) =====
+# tui/strings.py defaults to ENGLISH (the committed default); this pin
+# flips the registry to zh BEFORE any test module imports it, so the
+# test-side ``from tui.strings import X`` copies freeze zh and match the
+# zh-rendering apps the committed Pilot assertions pin (conftest runs
+# before test-module imports by construction). Default-English coverage
+# lives as dedicated Pilot tests (tests/tui/test_pilot_boot.py).
+from tui import strings
+
+strings.set_language("zh")
