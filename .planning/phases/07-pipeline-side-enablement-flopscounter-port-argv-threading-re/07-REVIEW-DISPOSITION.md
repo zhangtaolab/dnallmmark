@@ -5,23 +5,23 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`_read_registry` still tracebacks on valid-JSON-but-non-dict registries — the fail-closed contract is incomplete"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "empty-string `Model_path` counts as PRESENT (false gate PASS) — asymmetric with the sibling kernel fixed in the same commit"
   - id: WR-03
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`run_full_check` persist/completion tail is unguarded — a raising `persist` strands the run with no verdict and no last-check line"
   - id: WR-04
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "registry read-failure result renders a misleading \"0 dirs missing\" routing line"
   - id: IN-01
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`_degraded_result` annotation promises `BaseException` but both call sites catch `Exception` only"
   - id: CR-01
     severity: critical
@@ -35,7 +35,7 @@ findings:
     severity: info
     disposition: open
     title: "Pre-existing registry data inconsistencies in fields adjacent to this change (flagged for the maintainer since the registry was just edited)"
-open: 8
+open: 3
 total: 8
 recorded: 2026-10-15T16:16:29.307Z
 ---
@@ -44,11 +44,11 @@ recorded: 2026-10-15T16:16:29.307Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
-| IN-01 | info | open | - |
+| WR-01 | warning | fixed | f64e764 |
+| WR-02 | warning | fixed | f64e764 |
+| WR-03 | warning | fixed | 7217ca1 |
+| WR-04 | warning | fixed | 7217ca1 |
+| IN-01 | info | fixed | 7217ca1 |
 | CR-01 | critical | open | - (not in the current review) |
 | IN-02 | info | open | - (not in the current review) |
 | IN-03 | info | open | - (not in the current review) |

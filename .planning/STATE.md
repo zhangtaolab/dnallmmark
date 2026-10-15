@@ -2,15 +2,15 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: TUI任务
-current_phase: 12
-current_phase_name: multi-gpu-orchestration-console-hardening
+current_phase: 07
+current_phase_name: Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
 current_plan: 1
 status: executing
 stopped_at: "Completed 11-08-PLAN.md (gap closure: CR-01 + WR-01..05)"
-last_updated: "2026-10-15T04:49:04.501Z"
-last_activity: 2026-10-15
-last_activity_desc: Phase 12 execution started
-state_head: 3ebb2cad506a75bf5960aa5c43d8d4fea28f0d06
+last_updated: "2026-10-15T16:06:39.560Z"
+last_activity: 2026-10-16
+last_activity_desc: Phase 07 execution started
+state_head: 6de675b457bed7dacd000dea2a54969c8a2434c6
 progress:
   total_phases: 6
   completed_phases: 5
@@ -26,15 +26,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-11)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 12 — multi-gpu-orchestration-console-hardening
+**Current focus:** Phase 07 — Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
 
 ## Current Position
 
-Phase: 12 (multi-gpu-orchestration-console-hardening) — EXECUTING
+Phase: 07 (Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)) — EXECUTING
 Current Plan: 1
-Total Plans in Phase: 5
-Status: Executing Phase 12
-Last activity: 2026-10-15 - Completed quick task 261015-pex (TUI demo doc): 10 real-task scenes x en+zh recorded via asciinema+agg, TUI-DEMO.md + driver + regeneration script landed
+Total Plans in Phase: 6
+Status: Executing Phase 07
+Last activity: 2026-10-16 — Phase 07 execution started
 
 Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 plans executed — all 38 requirements Complete)
 
@@ -266,6 +266,7 @@ None yet.
 | 261015-ehc | TUI 三项硬化：双语 strings 注册表（默认英文，L 实时切换+持久化，已批中文术语表）+ 启动 y 确认门（enter 不可穿门）+ 单卡串行闸（两条发射路径 stage-0 拒绝）+ 下载速度显示（仅 slot 2/3） | 2026-10-15 | f0b7243 | [261015-ehc-tui-1-i18n-strings-py-english-2-y-y-esc-](./quick/261015-ehc-tui-1-i18n-strings-py-english-2-y-y-esc-/) |
 | 261015-h8i | modelscope 入核：pyproject data 组加 modelscope>=1.40,<2（uv sync 即得完整下载能力，手动安装指引移除）；uv.lock 93→98 块（pandas/numpy 锚不动）；requirements.txt 带哈希重导出；GETTING-STARTED/DEVELOPMENT/PIN-VALIDATION 同步；CI 零改动 | 2026-10-15 | 3ebb2ca | [261015-h8i-modelscope-pyproject-toml-data-uv-lock-r](./quick/261015-h8i-modelscope-pyproject-toml-data-uv-lock-r/) |
 | 261015-pex | TUI 演示文档 docs/TUI-DEMO.md：pexpect 场景驱动 + asciinema/agg 录制十个真实操作旅程场景 × 双语（真实 ModelScope 模型/数据集下载、有界 plant-dnabert-6mer 训练过 y 门、EHC-3 拒绝、q→k 终止、失败重跑到完成） | 2026-10-15 | ab61868 | [261015-pex-tui-demo-doc-docs-tui-demo-md-real-task-](./quick/261015-pex-tui-demo-doc-docs-tui-demo-md-real-task-/) |
+| 261016-a4f | Fix 07-REVIEW scoped findings WR-01..04 + IN-01 (fail-closed env_smoke non-dict/empty-path registry reads, guarded env-screen persist tail, honest unreadable-registry verdict, _degraded_result annotation) | 2026-10-16 | 7217ca1 | [261016-a4f-fix-4-warning-1-info-from-the-07-scoped-](./quick/261016-a4f-fix-4-warning-1-info-from-the-07-scoped-/) |
 
 ## Deferred Items
 
