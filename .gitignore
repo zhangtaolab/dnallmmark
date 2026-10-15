@@ -120,3 +120,7 @@ worktrees/
 # Reviewer response report (maintainer-only, never committed)
 reviewer-response/
 finetuned-smoke/
+# TUI demo output roots (quick-261015-pex): the recorded walkthrough's
+# bounded sweeps land here — the real finetuned/ tree is never written.
+finetuned-demo/
+finetuned-demo-fail/
