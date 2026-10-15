@@ -1,210 +1,204 @@
 ---
 phase: 07-pipeline-side-enablement-flopscounter-port-argv-threading-re
-reviewed: 2026-10-14T11:14:13Z
-depth: standard
-files_reviewed: 9
+reviewed: 2026-10-15T16:14:13Z
+depth: quick
+files_reviewed: 4
 files_reviewed_list:
-  - Makefile
-  - pipeline/run_finetune.py
-  - pipeline/registry_loader.py
-  - pipeline/models_info.json
-  - schemas/custom_registry.json
-  - tests/test_run_finetune_contracts.py
-  - tests/test_registry_loader.py
-  - tests/test_registry_unification.py
-  - tests/test_model_registry.py
+  - pipeline/env_smoke.py
+  - tests/test_env_smoke_bytes.py
+  - tests/tui/test_pilot_env_check.py
+  - tui/screens/env_check.py
 findings:
-  critical: 1
-  warning: 2
-  info: 3
-  total: 6
+  critical: 0
+  warning: 4
+  info: 1
+  total: 5
 status: issues_found
-incremental: true
-diff_base: 67027b29ccd49aadbd8bbe57285cfc97d25086a1
 ---
 
-# Phase 07: Code Review Report (Incremental)
+# Phase 07: Code Review Report (scoped incremental — commit 16e21b5)
 
-**Reviewed:** 2026-10-14T11:14:13Z
-**Depth:** standard (incremental re-review over `67027b2..HEAD`)
-**Files Reviewed:** 9
+**Reviewed:** 2026-10-15T16:14:13Z
+**Depth:** quick
+**Files Reviewed:** 4
 **Status:** issues_found
 
 ## Summary
 
-Incremental review of the Phase 07 deliverable surface after later phases (08-12)
-and quick tasks (261014-c2l, 261014-f4w, 261014-ir9, 261014-l6h, 09-01/09-02)
-modified it: `run_finetune.py` gained the `directories_config` startup merge
-(`--model_root`/`--dataset_root`/`--log_dir`/cache-dir file branch),
-`registry_loader.py` gained the D-09 `enabled:false` skip and the CR-01
-`UnicodeDecodeError` catch, `models_info.json` got 5 repo-ID fixes and the
-62→59 Chaoba removal, and `schemas/custom_registry.json` landed as the custom
-entry contract.
+Scoped incremental review of commit 16e21b5 ("fix(08-08): WR-01 — fail-closed
+env_smoke registry reads + the guarded env-screen worker"), the complete
+four-file diff of `16e21b5^..16e21b5`. The commit does what it claims on its
+primary paths: corrupt/absent/non-UTF-8 registries now convert into one named
+ok=False `CheckResult` (verified by reading `_read_registry` and the tests),
+the per-kernel and `kernels()`-enumeration guards in the TUI worker are
+correctly shaped, run-id staleness dropping is preserved, and the two test
+fixes are themselves correct — the `"Expecting property name"` assertion was
+empirically verified against real `json` behavior (`json.loads('{ not json')`
+raises "Expecting property name enclosed in double quotes", so the pre-commit
+assertion `"Expecting value"` was wrong and this commit fixes it).
 
-Verified sound (no findings): the loader's D-09 sentinel semantics (`is not
-False`, dict-guarded, collision-check-first) and its test coverage; the
-`UnicodeDecodeError` fix (correctly a `ValueError` sibling, not a
-`JSONDecodeError` subclass); the storage-root separator normalization and
-byte-identical absent-flag branches; the strict-vs-tolerant
-`directories_config` split; the Chaoba removal (no dangling references
-anywhere in pipeline/script/tui/tests/js); the schema's property enumeration
-(covers every official model and dataset field — a verbatim-mirrored official
-row validates); the registry count/`key == Model_name` contract (59 entries,
-verified); the Makefile extensions (`snapshot-update`'s script-mode entry
-point exists with `--regenerate` handling and script-mode sys.path setup;
-`.PHONY` covers all new targets; existence-guard lists are sound). All 105
-tests in the four in-scope test files pass (`uv run --group dev pytest
-tests/test_registry_loader.py tests/test_registry_unification.py
-tests/test_model_registry.py tests/test_run_finetune_contracts.py -q`).
+However, the fail-closed guard is **incomplete for its own stated contract**,
+and the diff introduces two new reachable states with operator-facing
+defects. All findings below were verified by *executing* the kernels against
+synthetic corrupt registries, not by reading alone. Note: the on-disk files
+also carry one later cosmetic commit (ec1447d, strings-import consolidation to
+`S.`-qualified names) that does not change any logic reviewed here.
 
-The one blocker is a contract mismatch between the shipped custom-registry
-schema/wizard and the pipeline consumer: a fully schema-valid, wizard-landed
-custom entry can omit fields `run_finetune.py` hard-indexes, crashing the run
-with an uncaught `KeyError` that names neither the file nor the entry.
+No security findings: no secrets, no `eval`/`exec`, no injection surface; all
+paths come from repo-local registries and maintainer-run CLI/TUI contexts.
 
 ## Critical Issues
 
-### CR-01: Schema-valid custom entries crash `run_finetune.py` with uncaught `KeyError` — required-field sets are inconsistent across the overlay chain
-
-**File:** `schemas/custom_registry.json:9,43-46` + `pipeline/run_finetune.py:1021,1322,1008,1077` + `pipeline/registry_loader.py:161-168`
-**Issue:** The custom-registry entry contract declares `required` as
-`["Model_path", "size (M)", "type", "Tokenizer"]` (models) and
-`["Dataset_path", "Category", "Train", "Dev", "Test", "labels", "type", "metric"]`
-(datasets); `Mean_token_length` and `length` are explicitly optional numerics
-("optional numerics may be absent"), and `Model_name`/`Dataset_name` are
-optional (stamped only by the TUI `land()` path — hand-edited files, the
-documented user-file contract per the schema `$comment`, never pass through
-it). The TUI wizard validator mirrors this (`tui/services/custom_validation.py`
-has no required check for `Mean_token_length`; its `_check_numeric(values,
-"length", ...)` at :281 skips absent values and no `_check_required` backs it).
-But `run_finetune.py` hard-indexes exactly those fields with no try/except and
-no loader-side validation:
-
-- `pipeline/run_finetune.py:1021` — `mean_token_len = model_row["Mean_token_length"]` (before the per-model error log even opens; kills the whole bare run at that model)
-- `pipeline/run_finetune.py:1322` — `data_length = row["length"]` (after the GPU model load — a wasted load, then the whole run dies)
-- `pipeline/run_finetune.py:1008` / `:1077` — `model_row["Model_name"]` / `row["Dataset_name"]` (hand-edit path)
-
-`registry_loader._load_registry` merges custom entries with zero shape
-validation (by design — validation lives only in the TUI import path), so a
-minimal wizard-completed entry — the documented happy path ("required = the
-wizard-required subset") — reaches the pipeline and aborts a multi-day bare
-sweep with a raw `KeyError` traceback naming neither the custom file nor the
-offending key. This directly contradicts the loader's own fail-loud contract
-("a hard error naming the file") and the project's wrong-root/wrong-input
-hazard discipline. Reproduction: land a model via the wizard filling only the
-required four fields; run bare `python run_finetune.py` → `KeyError:
-'Mean_token_length'` at line 1021, remaining models never run (completed cells
-are marker-protected, but the sweep aborts).
-
-**Fix:** Close the gap at one seam (or both):
-1. In `schemas/custom_registry.json`, move the pipeline-consumed fields into
-   `required`: models add `Model_name`, `Mean_token_length`; datasets add
-   `Dataset_name`, `length` — and mirror in
-   `tui/services/custom_validation.py` (`_check_required(values,
-   "Mean_token_length", ...)` model-side; `_check_required(values, "length",
-   ...)` dataset-side), or stamp them in `custom_entries.land()`.
-2. Defense-in-depth in `pipeline/registry_loader.py::_load_registry`: after
-   the collision loop, verify each merged custom entry carries the
-   pipeline-consumed field set and `raise SystemExit` naming the custom file,
-   the key, and the missing field — keeping the crash loud but diagnosable
-   for hand-edited files:
-
-```python
-PIPELINE_REQUIRED = {
-    "models": ("Model_name", "Model_path", "Tokenizer", "Mean_token_length"),
-    "datasets": ("Dataset_name", "Dataset_path", "Train", "Dev", "Test",
-                 "labels", "type", "metric", "length"),
-}
-```
+None. The E2' gate's fail direction is preserved in every scenario found
+(exit code is non-zero even on the traceback path below).
 
 ## Warnings
 
-### WR-01: The 5 repo-ID fixes in `models_info.json` were not propagated — the committed display data (and the public Models page) still carries the stale IDs
+### WR-01: `_read_registry` still tracebacks on valid-JSON-but-non-dict registries — the fail-closed contract is incomplete
 
-**File:** `pipeline/models_info.json:66,172,280,570,768` (fixed side) vs `dnallm-mark/data/model_performance/DNABERT-2-117M_performance.json:13` (+ 4 siblings, stale side)
-**Issue:** The incremental fix corrected five repo IDs in the registry
-(`DNABERT-2-117M` modelscope → `ZhejiangLab-LifeScience/...`, `GenomeOcean-500M`
-huggingface → `pGenomeOcean/...`, `MutBERT-Multi` huggingface → `JadenLong/...`,
-`agro-nucleotide-transformer-1b` and `hyenadna-large-1m-seqlen-hf` modelscope →
-`ZhejiangLab-LifeScience/...`), but the hand-maintained
-`dnallm-mark/data/model_performance/*_performance.json` info blocks and the
-committed `task_performance/*.json` still carry the old IDs
-(`lgq12697/DNABERT-2-117M`, `DOEJGI/GenomeOcean-500M`, `CompBioDSA/MutBERT`,
-...). `dnallm-mark/js/models.js:59-60,122-123` renders `modelscope`/
-`huggingface` links directly from `model_performance/`, so the public Models
-page keeps publishing the stale/wrong repo links the registry fix was made to
-correct — a recurrence of exactly the dual-source drift class D-10 exists to
-prevent (registry is the declared single source of truth for these fields).
-(`task_performance/` staleness is already deferred to E2' regeneration, but
-`model_performance/` is the hand-maintained input and is not covered by that
-deferral.)
-**Fix:** Apply the same five corrections to the info blocks in
-`dnallm-mark/data/model_performance/{DNABERT-2-117M,GenomeOcean-500M,MutBERT-Multi,agro-nucleotide-transformer-1b,hyenadna-large-1m-seqlen-hf}_performance.json`,
-re-run `make data`, and record the before/after per the fix discipline.
+**File:** `pipeline/env_smoke.py:458-469` (crash sites `502-504` and `565-567`)
+**Issue:** `_read_registry` catches only `(OSError, json.JSONDecodeError,
+UnicodeDecodeError)`. A registry that is *readable, valid JSON, but the wrong
+top-level shape* (a list, string, number, or `null` — a plausible hand-edit or
+bad-merge state of a "broken checkout") parses successfully and then crashes
+with an uncaught `TypeError` in the kernels. Empirically reproduced:
 
-### WR-02: Empty-string CLI values for the new directory flags crash or silently degenerate — inconsistent with both `output_dir`'s handling and `directories_config`'s own drop-empty policy
+- `[{"Model_path": "models/a/b"}]` → `TypeError: list indices must be
+  integers or slices, not dict` (in `sorted(models_info)` at line 502)
+- `["x"]` → `TypeError: list indices must be integers or slices, not str`
+- `null` → `TypeError: 'NoneType' object is not iterable`
 
-**File:** `pipeline/run_finetune.py:1029-1030,993-1000,772` + `pipeline/directories_config.py:227-229`
-**Issue:** `directories_config.effective()` returns the CLI value when it
-`is not None`, so `--log_dir ""` yields `log_base = ""` and
-`os.makedirs("", exist_ok=True)` raises a bare `FileNotFoundError` at
-`run_finetune.py:1030`; `--model_root ""` yields `model_base = "/"` and model
-paths resolve to `/models/...`. Contrast `output_dir` at :772/:1277, which
-uses truthiness (`save_root = output_dir if output_dir else "./finetuned"`)
-and treats `""` as absent — and contrast `_parse_directories`, which
-deliberately drops empty/whitespace values ("a whitespace-only or empty value
-= the key is absent"). The CLI path bypasses the normalization the file path
-enforces, and the three flags disagree with their sibling flag.
-**Fix:** Normalize once in `directories_config.effective()` so an empty or
-whitespace-only CLI value falls through to the file lookup, matching the
-documented key-tolerance rule:
+This violates the contract this very commit establishes ("the E2' gate exits 1
+deterministically on exactly the broken-checkout state it exists to diagnose,
+**never a traceback**"): the traceback goes to stderr, the kernel renders no
+`FAIL:` line, and the `=== SMOKE RESULT: ... ===` trailer never prints — the
+greppable contract the golden suite exists to protect is broken. The gate
+still exits non-zero (uncaught exception), so this is Warning, not Critical.
+The TUI path is incidentally safe (the per-kernel `except Exception` guard
+converts the `TypeError` into a degraded row), but the CLI — the E2' dual-gate
+half — is not.
+**Fix:** Validate the top-level shape inside `_read_registry` so the single
+reader owns it:
 
 ```python
-if cli_value is not None and cli_value.strip():
-    return cli_value
-return load_directories(path).get(key)
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        parsed = json.load(fh)
+except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+    return None, _registry_read_failure(path, kernel_name, exc)
+if not isinstance(parsed, dict):
+    return None, CheckResult(
+        name=kernel_name, ok=False,
+        lines=(f"FAIL: read registry {path} — not a JSON object "
+               f"(top-level {type(parsed).__name__})",),
+    )
+return parsed, None
 ```
+
+and extend the new test to cover a top-level list and `null` for both kernels.
+
+### WR-02: empty-string `Model_path` counts as PRESENT (false gate PASS) — asymmetric with the sibling kernel fixed in the same commit
+
+**File:** `pipeline/env_smoke.py:504-506` (contrast `567-570`)
+**Issue:** `check_dataset_dirs` gained `if not isinstance(value, str) or not
+value:` — treating an empty `Dataset_path` as missing. `check_model_dirs`,
+which the docstring says "mirrors `check_dataset_dirs` exactly", did NOT get
+the `not value` guard. Empirically reproduced: a registry
+`{"m1": {"Model_path": ""}}` renders `PASS: all 1 registry model dir(s)
+present on disk` — because `base + ""` is the base directory itself, which
+exists. An empty path is a broken entry per the commit's own docstring
+("a broken entry shape ... counts as MISSING — cannot-verify reads as
+missing"), yet the model kernel emits a false all-present PASS for it. The
+two kernels now disagree on the identical broken-entry shape.
+**Fix:**
+
+```python
+value = entry.get("Model_path") if isinstance(entry, dict) else None
+if not isinstance(value, str) or not value \
+        or not Path(base + value).is_dir():
+    missing.append(name)
+```
+
+### WR-03: `run_full_check` persist/completion tail is unguarded — a raising `persist` strands the run with no verdict and no last-check line
+
+**File:** `tui/screens/env_check.py:459-467`
+**Issue:** The WR-01 guards cover exactly two of the three raise sites in the
+worker. `checked_at = self._service.persist(results)` (line 464) is outside
+both guards. The real backend's persist does an atomic write to
+`settings.state_dir()` — a read-only or unwritable state directory (a classic
+broken-checkout state) raises `OSError` there. With the newly added
+`exit_on_error=False` the app survives, but `CheckRunComplete` never posts:
+all rows sit in their final glyphs, the verdict block never renders, the
+last-check line stays empty, nothing is persisted, and the error is silently
+swallowed by the worker machinery. The commit's own test for the enumeration
+guard asserts "the last-check line rendered — the run completed, not
+stranded"; the persist site strands the run in exactly that sense. Every
+run-path must route through "the same persist + completion tail" per the
+docstring — this one can skip it.
+**Fix:** Wrap the tail so a persist failure still reaches a completion render
+(e.g. post a degraded completion carrying the results with a placeholder
+checked_at, or a dedicated message the handler renders as a fail-verdict
+line):
+
+```python
+try:
+    checked_at = self._service.persist(results)
+except Exception as exc:  # WR-01 tail guard — never strand the run
+    self.post_message(self.CheckRunComplete(
+        _degraded_persist_marker(exc), tuple(results), run_id))
+    return
+self.post_message(
+    self.CheckRunComplete(checked_at, tuple(results), run_id))
+```
+
+with the handler treating the marker as a degraded outcome (verdict from
+results; last-check line showing the persist failure).
+
+### WR-04: registry read-failure result renders a misleading "0 dirs missing" routing line
+
+**File:** `tui/screens/env_check.py:537-556` (with `_missing_count` at `243-253`)
+**Issue:** The read-failure `CheckResult` introduced by this diff carries one
+`FAIL: read registry ...` line and no `  - name` listing lines. When it flows
+into the (pre-existing) per-kernel routing block — reachable directly, since
+`tui/services/env_check.py:209,212` call these kernels — `_missing_count`
+returns 0 and the screen renders `⚠ 0 model dirs missing — ...` / `⚠ 0
+dataset dirs missing — ...` while the actual state is "the registry cannot
+even be read" (count unknowable, not zero). This is operator-facing
+misinformation during exactly the broken-checkout scenario the commit
+targets; the row summary and drill-down do carry the true FAIL line, but the
+verdict block's count contradicts it.
+**Fix:** In `_render_check_outcome`, route on the result shape: when a
+directory kernel failed with no listing lines, render the kernel's own first
+line (or dedicated unreadable-registry wording) instead of the count-based
+`ENV_ROUTE_MISSING_*` line:
+
+```python
+if model_dirs is not None and not model_dirs.ok:
+    listing = _missing_count(model_dirs)
+    line = (S.ENV_ROUTE_MISSING_MODELS.format(n=listing)
+            if listing or _has_listing_shape(model_dirs)
+            else model_dirs.lines[0])
+    box.mount(Static(line, classes="verdict-route"))
+```
+
+(Or add a count-free unreadable-registry constant to `tui/strings.py`.)
 
 ## Info
 
-### IN-01: Stale "62/50" official-entry count in the schema `$comment` (registry is 59 since 261014-ir9)
+### IN-01: `_degraded_result` annotation promises `BaseException` but both call sites catch `Exception` only
 
-**File:** `schemas/custom_registry.json:4`
-**Issue:** The `$comment` says "field types probed across all 62/50 official
-entries"; the Chaoba removal (261014-ir9) took the models registry to 59 and
-updated both test files, but this contract-file comment was missed. (The "62"
-strings in `tests/tui/test_pilot_env_check.py:145,359,625` are fake-service
-fixture text, not pins — harmless.)
-**Fix:** Update the `$comment` to "59/50".
-
-### IN-02: Duplicated `gpu_memory_override = args.gpu_memory` assignment (pre-existing at diff_base)
-
-**File:** `pipeline/run_finetune.py:763-764`
-**Issue:** The assignment appears twice back-to-back; the second is dead code.
-Present already at `67027b2` (lines 721-722 there), so not introduced by the
-incremental changes — but it sits in an in-scope file and is trivially removable.
-**Fix:** Delete line 764.
-
-### IN-03: Pre-existing registry data inconsistencies in fields adjacent to this change (flagged for the maintainer since the registry was just edited)
-
-**File:** `pipeline/models_info.json:2-16,1028-1044`
-**Issue:** (a) `CrossDNA_519M` carries `Model_size: "8.1M"` and `size (M): 8.1`
-— identical to `CrossDNA_8.1M` and contradicting its own name (likely a
-copy-paste; expected ~519). (b) `prokbert-mini` carries operational
-`Mean_token_length: 6` while its card says `mean_token_len: 1` and
-`tokenizer: "overlapped 6-mer"` — for overlapped k-mers the per-token bp is 1,
-and the `models_with_limited_length` cap of 1027 is unreachable under a /6
-division (only meaningful at ~1 bp/token), so either the operational value or
-the cap rationale is wrong. Both predate `67027b2` (untouched by the
-incremental diff); both feed the public Models page.
-**Fix:** Maintainer-verify against the source model cards and correct
-`CrossDNA_519M`'s size pair; reconcile `prokbert-mini`'s
-`Mean_token_length` with the overlapped-tokenizer reality (and note that
-changing it alters max_length resolution, so document before/after per the fix
-discipline).
+**File:** `tui/screens/env_check.py:256-273` (call sites `443`, `455`)
+**Issue:** The signature is `exc: BaseException`, but the only producers are
+`except Exception` blocks — `KeyboardInterrupt`/`SystemExit`/`GeneratorExit`
+can never reach it (which is the correct behavior; they should propagate).
+The annotation overstates the contract and invites a future caller to widen a
+catch site.
+**Fix:** Narrow the annotation to `exc: Exception` (the deliberate exclusion
+of `BaseException` is worth encoding, and matches the noqa'd catch sites).
 
 ---
 
-_Reviewed: 2026-10-14T11:14:13Z_
+_Reviewed: 2026-10-15T16:14:13Z_
 _Reviewer: Claude (gsd-code-reviewer)_
-_Depth: standard (incremental over 67027b2..HEAD)_
+_Depth: quick (scoped incremental review of commit 16e21b5; findings verified
+by executing the kernels against synthetic corrupt registries)_
