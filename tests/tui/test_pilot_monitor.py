@@ -58,6 +58,7 @@ from tui.services.sweep_monitor import (
     SWEEP_ARTIFACTS_ONLY,
     SWEEP_FINISHED,
     SWEEP_RUNNING,
+    CellProgress,
     CellRow,
     CellSeed,
     CurrentCell,
@@ -77,6 +78,7 @@ from tui.strings import (
     MON_ETA_PENDING,
     MON_FAILURES_EMPTY,
     MON_FRACTION_LINE,
+    MON_PROGRESS_INDETERMINATE,
     MON_RESUME_NOTE,
     MON_SCAN_NOTE,
     MON_SCREEN_TITLE,
@@ -149,11 +151,15 @@ class FakeMonitorService:
                  frontiers=None, failures=None, tails=None,
                  resume_counts=None, scales=None,
                  valid_roots=(), manual_roundtrip=None, records=None,
-                 rerun_lanes=None):
+                 rerun_lanes=None, progress=None):
         self._scans = list(scans) if scans else []
         self._cells = dict(cells or {})
         self._stats = dict(stats or {})
         self._frontiers = dict(frontiers or {})
+        # C4J-3 (261015-c4j): the entries_progress fake —
+        # {(model, task): CellProgress}; absent from every pre-C4J fake
+        # so the screen's tolerant getattr seam stays pinned by omission
+        self._progress = dict(progress or {})
         # WR-02 staging: a LIST value is a per-call SEQUENCE of reads
         # (each failures_view call pops the next while more than one
         # remains, the last is sticky) so a test can stage a DIFFERENT
@@ -174,6 +180,7 @@ class FakeMonitorService:
         self.frontier_calls = []
         self.cells_calls = []
         self.stats_calls = []
+        self.progress_calls = []
         self.failures_calls = []
         self.tail_calls = []
         self.record_calls = []
@@ -210,6 +217,10 @@ class FakeMonitorService:
     def cells_view(self, root):
         self.cells_calls.append(str(root))
         return self._cells.get(str(root), ())
+
+    def entries_progress(self, root):
+        self.progress_calls.append(str(root))
+        return dict(self._progress)
 
     def stats(self, root, expected_total=None, fallback_start=None):
         self.stats_calls.append((str(root), expected_total,
@@ -550,8 +561,13 @@ async def test_discovered_progress_bar_grammar_and_unknown_total():
         )
 
 
-async def test_cell_table_per_seed_glyphs_and_curve_minicounts():
-    """Per-seed glyphs incl. the resume marker; curve mini-counts."""
+async def test_cell_table_renders_entries_fold_counts_and_progress():
+    """C4J-3 (261015-c4j): the cells table is the model×dataset ENTRIES
+    list — one row per (model, task) with the folded state word + the
+    done/total seed counts and the training-progress cell (steps/max +
+    integer percent + the 10-cell bar on running rows with parseable
+    progress; the dim dash on non-running rows). The per-seed detail
+    stays in the enter drill-down."""
     monitor = FakeMonitorService(
         scans=[ScanResult(sweeps=(_summary(
             "finetuned", SWEEP_RUNNING, done=3, total=36),), watermarks={})],
@@ -563,6 +579,9 @@ async def test_cell_table_per_seed_glyphs_and_curve_minicounts():
             _row("plant-dnabert-6mer", "mouse__DMS",
                  {42: CELL_FAILED, 43: CELL_FAILED, 44: CELL_FAILED}),
         )},
+        progress={
+            ("plant-dnamamba-6mer", "GUE__emp_H3"): CellProgress(
+                step=300, max_steps=1000, percent=30)},
         stats={"/scans/finetuned": _stats(
             done=3, total=36,
             current=_current("plant-dnamamba-6mer", "GUE__emp_H3", 42),
@@ -578,20 +597,29 @@ async def test_cell_table_per_seed_glyphs_and_curve_minicounts():
         await _settle(pilot, app)
         table = screen.query_one("#mon-cells", DataTable)
         assert table.row_count == 3
-        row = "plant-dnabert-6mer__GUE__emp_H3"
-        assert _table_text(table, row, "seed_42").startswith("✓")
-        assert _table_text(table, row, "seed_43").startswith("⊘"), (
-            "the resume marker renders the distinct skipped glyph"
+
+        # the running entry: folded ⠋ word + 0/3 terminal seeds + the
+        # parseable progress cell (steps, percent, 3-cell bar of 10)
+        running = "plant-dnamamba-6mer__GUE__emp_H3"
+        assert _table_text(table, running, "state") == (
+            f"{MON_STATE_RUNNING} 0/3")
+        assert _table_text(table, running, "progress") == (
+            "300/1000 30% ███·······"), (
+            "steps/max + integer percent + the 10-cell bar grammar"
         )
-        assert _table_text(table, "plant-dnabert-6mer__mouse__DMS",
-                           "seed_42").startswith("✗")
-        assert _table_text(table, "plant-dnamamba-6mer__GUE__emp_H3",
-                           "seed_42").startswith("⠋")
-        assert _table_text(table, "plant-dnamamba-6mer__GUE__emp_H3",
-                           "seed_43").startswith("◌")
-        # the words ride the wide cells (the glyph+word redundancy)
-        assert MON_STATE_DONE.split(" ")[1] in _table_text(
-            table, row, "seed_42")
+
+        # the completed entry (a skipped seed counts terminal): ✓ word +
+        # 3/3 + the dim dash — no bar on non-running rows
+        completed = "plant-dnabert-6mer__GUE__emp_H3"
+        assert _table_text(table, completed, "state") == (
+            f"{MON_STATE_DONE} 3/3")
+        assert _table_text(table, completed, "progress") == "—"
+
+        # the failed entry folds to ✗ with all-finished counts
+        failed = "plant-dnabert-6mer__mouse__DMS"
+        assert _table_text(table, failed, "state") == (
+            f"{MON_STATE_FAILED} 3/3")
+
         # the resume note rides the cells title row (standing chrome)
         assert MON_RESUME_NOTE.format(n=1) in _label_text(
             screen, "#mon-resume-note")
@@ -599,18 +627,24 @@ async def test_cell_table_per_seed_glyphs_and_curve_minicounts():
             MON_CELLS_TITLE.format(root="finetuned"))
 
 
-async def test_cell_table_curve_seed_renders_mini_counts():
-    """A curve seed cell renders the folded glyph + {done}/{total}."""
+async def test_running_entry_without_progress_renders_indeterminate():
+    """The honest degradation: a RUNNING entry whose progress source
+    yields nothing (no parseable checkpoint trainer_state yet — or a
+    pre-C4J service fake without the method) renders the designed
+    indeterminate constant, never a fabricated number. The row is a
+    CURVE cell (fraction_states) — the entry fold composes over the
+    seed's own folded state. The narrow grid drops the state WORD
+    (glyph + counts) and the bar."""
     monitor = FakeMonitorService(
         scans=[ScanResult(sweeps=(_summary(
             "finetuned", SWEEP_RUNNING, done=1, total=9),), watermarks={})],
         cells={"/scans/finetuned": (
-            _row("model-a", "task-1", {42: CELL_RUNNING}, fractions={
-                42: (("frac_0.3", CELL_COMPLETED),
-                     ("frac_0.6", CELL_RUNNING),
-                     ("frac_1.0", CELL_QUEUED)),
-            }),
-        )},
+            _row("model-a", "task-1",
+                 {42: CELL_RUNNING, 43: CELL_QUEUED}, fractions={
+                     42: (("frac_0.3", CELL_COMPLETED),
+                          ("frac_0.6", CELL_RUNNING),
+                          ("frac_1.0", CELL_QUEUED)),
+                 }),)},
         stats={"/scans/finetuned": _stats(
             done=1, total=9, elapsed=100.0, eta=_eta(ETA_PENDING))},
     )
@@ -620,12 +654,38 @@ async def test_cell_table_curve_seed_renders_mini_counts():
         app.screen.attach("/scans/finetuned")
         await _settle(pilot, app)
         table = app.screen.query_one("#mon-cells", DataTable)
-        cell = _table_text(table, "model-a__task-1", "seed_42")
-        assert cell.startswith("⠋"), (
-            "the curve seed folds to the running glyph")
-        assert "1/3" in cell, (
-            "the mini-counts carry the fraction done/total"
+        entry = "model-a__task-1"
+        assert _table_text(table, entry, "state") == (
+            f"{MON_STATE_RUNNING} 0/2"), (
+            "the curve seed folds to the running entry state"
         )
+        assert _table_text(table, entry, "progress") == (
+            MON_PROGRESS_INDETERMINATE), (
+            "nothing parses — the honest indeterminate, never a number"
+        )
+
+    # the narrow degradation at the 80-col grid
+    app = _app(monitor=FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=9),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=9, elapsed=100.0, eta=_eta(ETA_PENDING))},
+        progress={("model-a", "task-1"): CellProgress(
+            step=5, max_steps=10, percent=50)}))
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        table = app.screen.query_one("#mon-cells", DataTable)
+        entry = "model-a__task-1"
+        assert _table_text(table, entry, "state") == "⠋ 0/1", (
+            "narrow drops the state word — glyph + counts carry it"
+        )
+        progress = _table_text(table, entry, "progress")
+        assert progress == "5/10 50%"
+        assert "█" not in progress, "the narrow grid drops the bar"
 
 
 async def test_stats_line_variants():

@@ -1207,3 +1207,189 @@ def test_format_hms_and_format_eta_table():
     assert sweep_monitor.format_eta(3600) == "≈1h"  # trailing zero drops
     assert sweep_monitor.format_eta(7560) == "≈2.1h"
     assert sweep_monitor.format_eta(97200) == "≈1d3h"
+
+
+# =====================================================================
+# Lane 4 (C4J-3, 261015-c4j): checkpoint training progress + the entry
+# fold — the newest checkpoint-*/trainer_state.json under a RUNNING seed
+# is the slot-5 entries list's progress source (RESUME_MARKER is the
+# same artifact name as the completion marker, D-05 same-source; read
+# from checkpoint dirs MID-RUN and from the seed root post-run)
+# =====================================================================
+
+
+def write_checkpoint(seed_path, number, payload=None):
+    """Stage one checkpoint-<n>/trainer_state.json under a seed dir."""
+    checkpoint = Path(seed_path) / f"checkpoint-{number}"
+    checkpoint.mkdir(parents=True, exist_ok=True)
+    state = {"global_step": 50, "max_steps": 200}
+    if payload is not None:
+        state.update(payload)
+    return write_json(checkpoint / RESUME_MARKER, state)
+
+
+def test_cell_progress_numeric_suffix_ordering_not_lexical(tmp_path):
+    """checkpoint-1000 beats checkpoint-999 — the suffix parses as an
+    INT (lexical sort is WRONG and this pins it)."""
+    running = seed_dir(tmp_path, "m", "t", 42)
+    running.mkdir(parents=True)
+    write_checkpoint(running, 999, {"global_step": 999})
+    write_checkpoint(running, 1000, {"global_step": 1000})
+
+    progress = sweep_monitor.cell_progress(running)
+
+    assert progress == sweep_monitor.CellProgress(
+        step=1000, max_steps=200, percent=100), (
+        "the NUMERICALLY largest checkpoint suffix wins"
+    )
+
+
+def test_cell_progress_percent_math_rounds_and_clamps(tmp_path):
+    """percent = round(step/max*100) clamped 0..100 — a step beyond max
+    clamps to 100, a mid-flight ratio rounds honestly."""
+    running = seed_dir(tmp_path, "m", "t", 42)
+    running.mkdir(parents=True)
+    write_checkpoint(running, 10, {"global_step": 50, "max_steps": 200})
+
+    assert sweep_monitor.cell_progress(running).percent == 25
+
+    write_checkpoint(running, 11, {"global_step": 250, "max_steps": 200})
+    assert sweep_monitor.cell_progress(running).percent == 100, (
+        "step beyond max clamps to 100, never a fabricated >100"
+    )
+
+    write_checkpoint(running, 12, {"global_step": -5, "max_steps": 200})
+    assert sweep_monitor.cell_progress(running).percent == 0, (
+        "a negative step clamps to 0"
+    )
+
+
+def test_cell_progress_absent_checkpoints_degrade_all_none(tmp_path):
+    """A seed dir with NO checkpoint-* children parses nothing — the
+    all-None CellProgress (the screen's honest indeterminate)."""
+    queued = seed_dir(tmp_path, "m", "t", 42)
+    queued.mkdir(parents=True)
+
+    assert sweep_monitor.cell_progress(queued) == sweep_monitor.CellProgress(
+        step=None, max_steps=None, percent=None)
+    # an absent dir degrades identically (never an exception)
+    assert sweep_monitor.cell_progress(
+        tmp_path / "no-such-seed").step is None
+
+
+def test_cell_progress_tolerant_damage_degrades_all_none(tmp_path):
+    """A damaged (unparseable) trainer_state.json in the newest
+    checkpoint degrades to all-None — a poisoned checkpoint can never
+    crash the cadence or fabricate a number (T-c4j-01)."""
+    running = seed_dir(tmp_path, "m", "t", 42)
+    running.mkdir(parents=True)
+    write_checkpoint(running, 5, {"global_step": 10})
+    write_checkpoint(running, 6, {"global_step": 20})
+    (running / "checkpoint-6" / RESUME_MARKER).write_text(
+        "{damaged json", encoding="utf-8")
+
+    assert sweep_monitor.cell_progress(running) == (
+        sweep_monitor.CellProgress(
+            step=None, max_steps=None, percent=None)), (
+        "damage in the newest checkpoint degrades honestly"
+    )
+
+
+def test_cell_progress_non_int_fields_and_bad_max_degrade(tmp_path):
+    """global_step/max_steps must be non-bool INTS (bools excluded); a
+    max_steps <= 0 yields percent None (the divide guard) even when the
+    step parsed."""
+    running = seed_dir(tmp_path, "m", "t", 42)
+    running.mkdir(parents=True)
+    write_checkpoint(running, 3, {"global_step": True, "max_steps": 100})
+    assert sweep_monitor.cell_progress(running).step is None, (
+        "a bool global_step is not an int (the repo's bool-exclusion)"
+    )
+
+    write_checkpoint(running, 4, {"global_step": 10, "max_steps": 0})
+    progress = sweep_monitor.cell_progress(running)
+    assert progress.max_steps == 0
+    assert progress.percent is None, "max_steps <= 0 never divides"
+
+
+def test_entry_fold_states_and_seed_counts():
+    """The fold (the _fold_frac_states semantics at seed level): any
+    running -> running, any failed -> failed, all terminal -> completed,
+    else queued; done counts TERMINAL seeds (completed/failed/skipped —
+    the stats-line done convention) over the row's total."""
+    def row(seeds):
+        return sweep_monitor.CellRow(
+            model="m", task="t",
+            seeds=tuple(sweep_monitor.CellSeed(
+                seed=number, state=state, fraction_states=None)
+                for number, state in seeds))
+
+    fold = sweep_monitor.entry_fold(row([
+        (42, sweep_monitor.CELL_RUNNING), (43, sweep_monitor.CELL_QUEUED)]))
+    assert (fold.state, fold.done, fold.total) == (
+        sweep_monitor.CELL_RUNNING, 0, 2)
+
+    fold = sweep_monitor.entry_fold(row([
+        (42, sweep_monitor.CELL_COMPLETED), (43, sweep_monitor.CELL_FAILED)]))
+    assert (fold.state, fold.done, fold.total) == (
+        sweep_monitor.CELL_FAILED, 2, 2)
+
+    fold = sweep_monitor.entry_fold(row([
+        (42, sweep_monitor.CELL_COMPLETED),
+        (43, sweep_monitor.CELL_SKIPPED)]))
+    assert (fold.state, fold.done, fold.total) == (
+        sweep_monitor.CELL_COMPLETED, 2, 2)
+
+    fold = sweep_monitor.entry_fold(row([(42, sweep_monitor.CELL_QUEUED)]))
+    assert (fold.state, fold.done, fold.total) == (
+        sweep_monitor.CELL_QUEUED, 0, 1)
+
+
+def test_entries_progress_running_seed_yields_completed_only_empty(
+        tmp_path):
+    """entries_progress walks the seed dirs once: a RUNNING seed with a
+    checkpoint yields its {(model, task): CellProgress}; a completed-only
+    root yields {} (progress parses ONLY for running rows — the 2s
+    cadence stays light)."""
+    # the running cell: fresh mtime inside the grace + a checkpoint
+    running = seed_dir(tmp_path, "m-a", "t-1", 42)
+    running.mkdir(parents=True)
+    write_checkpoint(running, 7, {"global_step": 100, "max_steps": 400})
+    set_mtime(running, NOW_REAL() - 10)
+    # the completed cell: a record wins over any churn signal
+    plant_record(tmp_path, "m-b", "t-2", 42,
+                 make_record("m-b", "t-2", 42, status="completed"))
+    age_tree(tmp_path, now=NOW_REAL(), skip=(running,),
+             age_seconds=7200.0)
+
+    progress = sweep_monitor.entries_progress(tmp_path)
+
+    assert set(progress) == {("m-a", "t-1")}, (
+        "only the running row carries progress"
+    )
+    assert progress[("m-a", "t-1")] == sweep_monitor.CellProgress(
+        step=100, max_steps=400, percent=25)
+
+
+def test_entries_progress_max_step_wins_across_running_seeds(tmp_path):
+    """Several running seeds under one row: the MAX-step progress wins
+    (the serial driver makes this rare; mgpu worker roots are separate
+    roots)."""
+    fresh = NOW_REAL() - 10
+    seed_42 = seed_dir(tmp_path, "m", "t", 42)
+    seed_43 = seed_dir(tmp_path, "m", "t", 43)
+    for path in (seed_42, seed_43):
+        path.mkdir(parents=True)
+        set_mtime(path, fresh)
+    write_checkpoint(seed_42, 3, {"global_step": 90})
+    write_checkpoint(seed_43, 9, {"global_step": 400})
+    age_tree(tmp_path, now=NOW_REAL(), skip=(seed_42, seed_43),
+             age_seconds=7200.0)
+    # age everything under the seed dirs EXCEPT the dirs themselves (the
+    # churn signal rides the seed dir mtimes above)
+    for path in sorted(Path(tmp_path).rglob("checkpoint-*")):
+        set_mtime(path, NOW_REAL() - 7200)
+
+    progress = sweep_monitor.entries_progress(tmp_path)
+
+    assert progress[("m", "t")].step == 400, "the max-step seed wins"

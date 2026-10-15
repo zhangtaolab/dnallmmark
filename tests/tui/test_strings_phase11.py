@@ -97,6 +97,11 @@ EXPECTED_MON_CONSTANTS = (
     "MON_ATTACH_TITLE", "MON_ATTACH_PLACEHOLDER", "MON_ATTACH_INVALID_TOAST",
     "MON_ATTACHED_TOAST", "MON_RESCAN_LABEL", "MON_RESCAN_TOAST",
     "MON_CELL_DETAIL_TITLE", "MON_FRACTION_LINE",
+    # C4J-3 (261015-c4j): the entries-list columns/cells — the 状态
+    # column header, the steps+percent progress format, the honest
+    # indeterminate, and the done/total seed-counts segment.
+    "MON_COL_STATE", "MON_PROGRESS_STEPS",
+    "MON_PROGRESS_INDETERMINATE", "MON_ENTRY_SEED_COUNTS",
 )
 
 #: The per-seed cell states in spec order, and their contract glyphs.
