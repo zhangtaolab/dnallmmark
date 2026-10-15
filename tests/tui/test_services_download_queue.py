@@ -4593,8 +4593,9 @@ def test_model_run_task_normalizes_nesting_and_gates_on_config_json(
     assert event.state == "done"
     assert event.problems == ()
     assert event.last_percent is None, (
-        "dnallm logs carry no parseable percents — the row renders "
-        "indeterminate"
+        "this fake child emits no parseable percents — percent None "
+        "stays the honest indeterminate (C4J-1 parses best-effort, "
+        "never fabricates)"
     )
     assert (landing / "config.json").is_file()
     assert (landing / "tokenizer_config.json").is_file()
