@@ -34,7 +34,7 @@ Phase: 12 (multi-gpu-orchestration-console-hardening) — EXECUTING
 Current Plan: 1
 Total Plans in Phase: 5
 Status: Executing Phase 12
-Last activity: 2026-10-15 - Completed quick task 261015-h8i: modelscope joins the pyproject data group (uv sync installs it; lock re-resolved, docs synced, CI untouched)
+Last activity: 2026-10-15 - Completed quick task 261015-pex (TUI demo doc): 10 real-task scenes x en+zh recorded via asciinema+agg, TUI-DEMO.md + driver + regeneration script landed
 
 Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 plans executed — all 38 requirements Complete)
 
@@ -265,6 +265,7 @@ None yet.
 | 261015-c4j | TUI 三屏 UX 修订：slot 2 模型下载活进度面（percent+状态词）；slot 3 队列 kind 拆分（仅数据集条目）+ 密度（≥9 行 @80x24）；slot 5 模型×数据集条目化（进度条+状态） | 2026-10-15 | 5b04b23 | [261015-c4j-tui-ux-1-slot-2-kind-model-slot-3-downlo](./quick/261015-c4j-tui-ux-1-slot-2-kind-model-slot-3-downlo/) |
 | 261015-ehc | TUI 三项硬化：双语 strings 注册表（默认英文，L 实时切换+持久化，已批中文术语表）+ 启动 y 确认门（enter 不可穿门）+ 单卡串行闸（两条发射路径 stage-0 拒绝）+ 下载速度显示（仅 slot 2/3） | 2026-10-15 | f0b7243 | [261015-ehc-tui-1-i18n-strings-py-english-2-y-y-esc-](./quick/261015-ehc-tui-1-i18n-strings-py-english-2-y-y-esc-/) |
 | 261015-h8i | modelscope 入核：pyproject data 组加 modelscope>=1.40,<2（uv sync 即得完整下载能力，手动安装指引移除）；uv.lock 93→98 块（pandas/numpy 锚不动）；requirements.txt 带哈希重导出；GETTING-STARTED/DEVELOPMENT/PIN-VALIDATION 同步；CI 零改动 | 2026-10-15 | 3ebb2ca | [261015-h8i-modelscope-pyproject-toml-data-uv-lock-r](./quick/261015-h8i-modelscope-pyproject-toml-data-uv-lock-r/) |
+| 261015-pex | TUI 演示文档 docs/TUI-DEMO.md：pexpect 场景驱动 + asciinema/agg 录制十个真实操作旅程场景 × 双语（真实 ModelScope 模型/数据集下载、有界 plant-dnabert-6mer 训练过 y 门、EHC-3 拒绝、q→k 终止、失败重跑到完成） | 2026-10-15 | ab61868 | [261015-pex-tui-demo-doc-docs-tui-demo-md-real-task-](./quick/261015-pex-tui-demo-doc-docs-tui-demo-md-real-task-/) |
 
 ## Deferred Items
 
