@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: TUI任务
-current_phase: 11
-current_phase_name: run-config-launch-gates-single-gpu-monitoring
+current_phase: 12
+current_phase_name: multi-gpu-orchestration-console-hardening
 current_plan: 1
 status: executing
-stopped_at: Completed 11-08-PLAN.md (gap closure: CR-01 + WR-01..05)
-last_updated: "2026-10-14T17:12:00.000Z"
+stopped_at: "Completed 11-08-PLAN.md (gap closure: CR-01 + WR-01..05)"
+last_updated: "2026-10-15T01:45:53.162Z"
 last_activity: 2026-10-15
-last_activity_desc: Phase 11 gap-closure plan 11-08 executed
-state_head: 6ea3a8884cffff5846fd0c533173f61ba86e3998
+last_activity_desc: Phase 12 execution started
+state_head: bbeda85172096bc5f254d433f4d9dd6cb7f66e74
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 40
-  completed_plans: 40
+  total_plans: 41
+  completed_plans: 41
   percent: 83
 ---
 
@@ -26,15 +26,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-11)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 11 — run-config-launch-gates-single-gpu-monitoring
+**Current focus:** Phase 12 — multi-gpu-orchestration-console-hardening
 
 ## Current Position
 
-Phase: 11 (run-config-launch-gates-single-gpu-monitoring) — EXECUTING
+Phase: 12 (multi-gpu-orchestration-console-hardening) — EXECUTING
 Current Plan: 1
-Total Plans in Phase: 7
-Status: Executing Phase 11 (11-08 gap closure complete; awaiting re-verification)
-Last activity: 2026-10-15 — Phase 11 gap-closure plan 11-08 executed
+Total Plans in Phase: 5
+Status: Executing Phase 12
+Last activity: 2026-10-15 - Completed quick task 261015-c4j: TUI three-screen UX revision (slot-2 live download surface, slot-3 density+split, slot-5 entries)
 
 Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 plans executed — all 38 requirements Complete)
 
@@ -262,6 +262,7 @@ None yet.
 | 261014-l6h | 认真适配 DNALLM：MODEL_INFO 对齐审计（5 处 ID 修正）+ dnallm_compat.json 判定图 + download_queue 落点重路由 + plant-dnamamba-6mer 下载 + 2×2 dry-run 验证 | 2026-10-14 | acb50a4 | [261014-l6h-dnallm-dnallmmark-dnallm-dev-cd4be43-rep](./quick/261014-l6h-dnallm-dnallmmark-dnallm-dev-cd4be43-rep/) |
 | 261014-mlc | TUI slot 2/3 拆分（maintainer 2026-10-14 ruling）：KIND_MODEL dnallm 下载通道（-I 子进程 + modelscope 嵌套归一化，DNABERT-2-117M 实机验证）+ slot 2 纯模型屏（适配/下载列，t 池切换，d 模型下载，手动放置诚实态）+ slot 3 数据集主列表（队列态叠加，Zenodo 降为备选，w 数据集向导）+ 导航 2模型/3数据集 | 2026-10-14 | a0fab7a | [261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download](./quick/261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download/) |
 | 261014-mlc | TUI slot 2/3 重构：slot 2 纯模型屏（适配/下载列，t 揭示未适配，d 走 dnallm+ModelScope 队列下载）；slot 3 数据集主面板（ModelScope 默认，Zenodo 降 z 备选，w 向导保留）；nav 2 模型/3 数据集；真下载取证 DNABERT-2-117M 通过 | 2026-10-14 | a0fab7a | [261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download](./quick/261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download/) |
+| 261015-c4j | TUI 三屏 UX 修订：slot 2 模型下载活进度面（percent+状态词）；slot 3 队列 kind 拆分（仅数据集条目）+ 密度（≥9 行 @80x24）；slot 5 模型×数据集条目化（进度条+状态） | 2026-10-15 | bbeda85 | [261015-c4j-tui-ux-1-slot-2-kind-model-slot-3-downlo](./quick/261015-c4j-tui-ux-1-slot-2-kind-model-slot-3-downlo/) |
 
 ## Deferred Items
 
