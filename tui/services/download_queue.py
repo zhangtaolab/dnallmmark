@@ -1788,7 +1788,7 @@ class DownloadQueueService:
         if self._entry_kind(key) == KIND_ZENODO_BUNDLE:
             return self._run_zenodo_bundle(key, run_id)
         if self._entry_kind(key) == KIND_MODEL:
-            return self._run_model_download(key, run_id)
+            return self._run_model_download(key, run_id, progress_cb)
         cli = self._resolve_cli()
         if cli is None:
             return self._finish(
@@ -1897,7 +1897,7 @@ class DownloadQueueService:
 
     # ===== The KIND_MODEL branch (MLC-01: the dnallm invocation) =====
 
-    def _run_model_download(self, key, run_id):
+    def _run_model_download(self, key, run_id, progress_cb=None):
         """Execute one claimed model download (never raises).
 
         The maintainer's 2026-10-14 dnallm-authority ruling (the L6H-04
@@ -1914,19 +1914,27 @@ class DownloadQueueService:
         Lifecycle: re-probe the CLI (the modelscope-package presence
         proxy — absent -> failed ``cli_unavailable``); resolve the
         channel (degraded -> failed carrying the reason); spawn through
-        the injectable seam; pump stdout/stderr into the log (percent
-        stays None — dnallm logs carry no parseable percents, the row
-        renders indeterminate); reap in cancel-aware chunks; nonzero
-        exit -> failed ``exit_<code>`` (``cancelled_by_operator`` when
-        the flag is set); exit 0 -> ``_normalize_model_landing`` hoists
-        the modelscope 1.40.2 nesting, then the done gate requires
-        ``config.json`` DIRECTLY in the landing dir. NO reconcile leg —
-        models are not n_audit subjects (the done gate is the
-        normalized config.json check only).
+        the injectable seam; pump stdout/stderr into the log with
+        BEST-EFFORT percent parsing (C4J-1, 261015-c4j: the stderr pump
+        runs the dataset lane's exact ``parse_progress`` extraction with
+        the identical per-integer-percent dedupe closure — a child
+        emitting parseable percents fires ``progress_cb`` and the last
+        parse lands on the event; a child emitting nothing parseable
+        fires nothing and percent None stays the honest indeterminate
+        the screen contract carries); reap in cancel-aware chunks;
+        nonzero exit -> failed ``exit_<code>`` (``cancelled_by_operator``
+        when the flag is set); exit 0 ->
+        ``_normalize_model_landing`` hoists the modelscope 1.40.2
+        nesting, then the done gate requires ``config.json`` DIRECTLY in
+        the landing dir. NO reconcile leg — models are not n_audit
+        subjects (the done gate is the normalized config.json check
+        only).
 
         Args:
             key (str): the claimed model registry key.
             run_id (str): the caller's run tag (echoed on the event).
+            progress_cb: optional ``callable(key, percent)`` fired from
+                the stderr reader thread (the dataset lane's contract).
 
         Returns:
             QueueEvent: the structured outcome (state persisted).
@@ -1959,12 +1967,25 @@ class DownloadQueueService:
             self._active[key] = proc
         stdout_parts: list[str] = []
         stderr_parts: list[str] = []
+        percent_state = {"last_fired": None}
 
         def on_stdout(text):
             stdout_parts.append(text)
 
         def on_stderr(text):
             stderr_parts.append(text)
+            if progress_cb is None:
+                return
+            # C4J-1: the dataset lane's exact best-effort extraction +
+            # dedupe closure — nothing fires until a percent parses.
+            files, items = parse_progress(text)
+            percent = items
+            if percent is None and files:
+                percent = next(reversed(files.values()))
+            if percent is None or percent == percent_state["last_fired"]:
+                return
+            percent_state["last_fired"] = percent
+            progress_cb(key, percent)
 
         out_thread = threading.Thread(
             target=_pump, args=(proc.stdout, on_stdout), daemon=True)
@@ -1985,9 +2006,9 @@ class DownloadQueueService:
                        if key in self._cancel_requested
                        else "exit_" + str(returncode))
             return self._finish(
-                key, run_id, "failed", None, (problem,), tuple(details),
-                stdout_text, stderr_text, argv=argv,
-                returncode=returncode)
+                key, run_id, "failed", percent_state["last_fired"],
+                (problem,), tuple(details), stdout_text, stderr_text,
+                argv=argv, returncode=returncode)
         # exit 0: normalize the modelscope nesting, then gate on the
         # config.json marker (exit 0 alone can never mean done — the
         # CLI-lane Pitfall-3 rule mirrored).
@@ -1996,20 +2017,21 @@ class DownloadQueueService:
         details.extend(landing_details)
         if problem is not None:
             return self._finish(
-                key, run_id, "failed", None, (problem,), tuple(details),
-                stdout_text, stderr_text, argv=argv,
-                returncode=returncode)
+                key, run_id, "failed", percent_state["last_fired"],
+                (problem,), tuple(details), stdout_text, stderr_text,
+                argv=argv, returncode=returncode)
         if not (spec.landing / MODEL_DONE_MARKER).is_file():
             details.append("missing=" + MODEL_DONE_MARKER)
             return self._finish(
-                key, run_id, "failed", None,
+                key, run_id, "failed", percent_state["last_fired"],
                 (PROBLEM_LANDING_INCOMPLETE,), tuple(details),
                 stdout_text, stderr_text, argv=argv,
                 returncode=returncode)
         details.append("landing=ok")
         return self._finish(
-            key, run_id, "done", None, (), tuple(details),
-            stdout_text, stderr_text, argv=argv, returncode=returncode)
+            key, run_id, "done", percent_state["last_fired"], (),
+            tuple(details), stdout_text, stderr_text, argv=argv,
+            returncode=returncode)
 
     def _normalize_model_landing(self, landing):
         """Collapse the modelscope 1.40.2 cache nesting to the landing

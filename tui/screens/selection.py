@@ -50,6 +50,20 @@ Contract (locked decisions):
   no-Model_path/drift state. The service decided presence
   (``model_presence`` over the effective model root); the compat map
   decided adaptation — this screen renders only.
+- C4J-1 (261015-c4j; the maintainer's 2026-10-15 ruling): the
+  model-download progress surface lives HERE — a model row whose key
+  carries a live (non-done) KIND_MODEL queue entry renders that
+  entry's state word (the queue table's own kind-agnostic
+  ``QUEUE_STATE_*`` vocabulary, reused) in the download column, the
+  app-forwarded progress ticks update the cell IN PLACE (a parsed
+  integer percent composes beside the downloading word; None keeps
+  the honest indeterminate), and the overlay re-derives from the
+  shared queue's ``entries()`` on every rebuild so filter rebuilds,
+  the ``t`` pool toggle, and a fresh mount mid-download all show the
+  live state. Slot 3's queue table shows ONLY dataset entries — the
+  shared ``DownloadQueueService`` mechanism is untouched (the
+  PRESENTATION splits by kind; the split's slot-3 half lives in
+  ``data_manager``).
 - SEL-02 (presets, replacing semantics): applying a preset REPLACES the
   relevant mark set(s) — tier-1 marks pair models AND tasks, tier-2
   models only, all marks every registry key in both lists, customs
@@ -129,7 +143,12 @@ from tui.services.custom_validation import (
     validate_import_document,
     validate_model_candidate,
 )
-from tui.services.download_queue import EnqueueOutcome, QueueEvent
+from tui.services.download_queue import (
+    KIND_MODEL,
+    EnqueueOutcome,
+    QueueEntry,
+    QueueEvent,
+)
 from tui.services.gauntlet import GauntletService
 from tui.services.registries import Presence
 from tui.strings import (
@@ -144,6 +163,9 @@ from tui.strings import (
     NAV_LABEL_SELECTION,
     QUEUE_CLI_UNAVAILABLE,
     QUEUE_PERSIST_FAILED_TOAST,
+    QUEUE_STATE_DOWNLOADING,
+    QUEUE_STATE_FAILED,
+    QUEUE_STATE_PENDING,
     QUEUE_TOAST_ALREADY_QUEUED,
     QUEUE_TOAST_ENQUEUED,
     SEL_COL_COMPAT,
@@ -599,7 +621,12 @@ class SelectionQueueServiceProtocol(Protocol):
     The real adapter and the tier-2 Pilot fakes conform structurally
     (the EnvCheckServiceProtocol pattern). Since MLC-02 the selection
     screen's ``d`` is the MODEL lane (``enqueue_model``); the dataset
-    lane's ``enqueue`` stays declared for the slot-3 seam.
+    lane's ``enqueue`` stays declared for the slot-3 seam. Since C4J-1
+    the seam also exposes ``entries`` — the live KIND_MODEL overlay
+    source; the screen reads it through a TOLERANT ``getattr`` fallback
+    so every pre-C4J injected fake (no ``entries`` method) keeps
+    conforming and renders the plain four-state cells (the additive-
+    fake pattern recorded at ``MissingSnapshot.presence_rows``).
     """
 
     def enqueue(self, key: str) -> EnqueueOutcome:
@@ -607,6 +634,9 @@ class SelectionQueueServiceProtocol(Protocol):
 
     def enqueue_model(self, key: str) -> EnqueueOutcome:
         """Idempotently enqueue one model key (the KIND_MODEL lane)."""
+
+    def entries(self) -> "tuple[QueueEntry, ...]":
+        """The shared queue's live entries (the slot-2 overlay source)."""
 
 
 class SelectionQueueBackend:
@@ -643,6 +673,10 @@ class SelectionQueueBackend:
     def enqueue_model(self, key: str) -> EnqueueOutcome:
         """Delegate the idempotent model enqueue (MLC-01 semantics)."""
         return self._queue.enqueue_model(key)
+
+    def entries(self) -> "tuple[QueueEntry, ...]":
+        """Delegate the live entries read (the C4J-1 overlay source)."""
+        return tuple(self._queue.entries())
 
 
 # ===== The custom-onboarding service (09-06: the w/e actions' seam) =====
@@ -899,9 +933,10 @@ _MODEL_SIZE_W = 7
 #: 8 — the widest compat cell (adapted/unadapted/custom) is 6 display
 #: cells.
 _MODEL_COMPAT_W = 8
-#: 10 — the widest download cell (the present/missing pair) is 8
-#: display cells.
-_MODEL_DOWNLOAD_W = 10
+#: 15 — the widest download cell: the live downloading word (8 display
+#: cells) + the appended percent data word (" 100%", C4J-1) fits exactly;
+#: the static four-state vocabulary stays untouched (8 cells).
+_MODEL_DOWNLOAD_W = 15
 
 #: The models-only column set (MLC-02): mark / model key / type /
 #: species / size / compat / download.
@@ -929,6 +964,18 @@ _STYLE_PRESENCE_PASS = "$success"
 _STYLE_PRESENCE_FAIL = "bold $error"
 _STYLE_PRESENCE_UNKNOWN = "$text-muted"
 
+#: The live model-download overlay's state -> (copy, style) cells
+#: (C4J-1, 261015-c4j): the COPY comes from the queue block's
+#: kind-agnostic ``QUEUE_STATE_*`` vocabulary (reused verbatim, never
+#: re-minted — the queue table renders the same words); only the style
+#: pairing mirrors the data-manager queue table. An unrecognized live
+#: state renders VERBATIM (honest, never translated).
+_QUEUE_STATE_CELLS: "dict[str, tuple[str, str]]" = {
+    "pending": (QUEUE_STATE_PENDING, _STYLE_PRESENCE_UNKNOWN),
+    "downloading": (QUEUE_STATE_DOWNLOADING, "dim"),
+    "failed": (QUEUE_STATE_FAILED, _STYLE_PRESENCE_FAIL),
+}
+
 
 def _truncate(text: Text, width: int) -> Text:
     """Ellipsis-truncate one rich Text in place to the width (Rich's own
@@ -955,17 +1002,38 @@ def _size_text(value: object) -> str:
     return format(value, "g")
 
 
-def _model_download_cell(data: SelectionData, key: str) -> Text:
-    """One download-column cell — render only (MLC-02).
+def _model_download_cell(data: SelectionData, key: str,
+                         live_state: "str | None" = None,
+                         live_percent: "int | None" = None) -> Text:
+    """One download-column cell — render only (MLC-02 + the C4J-1 live
+    overlay).
 
     The service already decided presence (``model_presence`` over the
     effective model root) and the compat map decided adaptation; the
     screen maps the composed truth to the honest four-state vocabulary:
-    present the downloaded copy; missing+adapted the d-able not-downloaded state
-    (error style); missing unadapted-or-custom the manual-placement cell
-    (muted — the private/no-source state per the ruling); absent/other
-    the shared unknown cell (the no-Model_path/drift state).
+    present the downloaded copy; missing+adapted the d-able
+    not-downloaded state (error style); missing unadapted-or-custom the
+    manual-placement cell (muted — the private/no-source state per the
+    ruling); absent/other the shared unknown cell (the
+    no-Model_path/drift state).
+
+    C4J-1 (261015-c4j): a LIVE queue entry (``live_state`` from the
+    shared queue's own entries — the kind-agnostic QUEUE_STATE_*
+    vocabulary, reused) renders FIRST: pending/downloading/failed land
+    their state word, and a PARSED integer percent composes beside the
+    downloading word as a plain data word (no bar — the column has no
+    bar room; percent None keeps the word's own ⠋ glyph, never a
+    fabricated number). A pure function of its arguments.
     """
+    if live_state is not None:
+        copy, style = _QUEUE_STATE_CELLS.get(
+            live_state, (live_state, _STYLE_PRESENCE_UNKNOWN))
+        if live_state == "downloading" and live_percent is not None:
+            return Text.assemble(
+                Text(copy, style=style),
+                Text(f" {live_percent}%"),
+            )
+        return Text(copy, style=style)
     status = data.model_presence.get(key)
     if status == selection_service.MODEL_PRESENCE_PRESENT:
         return Text(SEL_MODEL_PRESENCE_PRESENT, style=_STYLE_PRESENCE_PASS)
@@ -1352,6 +1420,14 @@ class SelectionScreen(Screen):
             marked_tasks if marked_tasks is not None else set()
         )
         self._data: SelectionData | None = None
+        # C4J-1 (261015-c4j): the live model-download overlay — the
+        # shared queue's non-done KIND_MODEL entries, re-derived from
+        # ``entries()`` on every rebuild and every queue event
+        # (persisted-state-as-truth, the data_manager idiom — a late or
+        # duplicate tick can never overwrite a newer state), plus the
+        # streamed live percents (None = the honest indeterminate).
+        self._live_models: dict[str, QueueEntry] = {}
+        self._live_percents: dict[str, int | None] = {}
         # MLC-02: the pool mode — False = the DEFAULT pool (dnllm-adapted
         # officials + customs), True = ALL officials (unadapted rows
         # present, honestly marked). Pure render state over the loaded
@@ -1431,17 +1507,86 @@ class SelectionScreen(Screen):
 
     # ----- the app-forwarded queue events (10-05, D-11 live flip) -----
 
+    def _live_model_entries(self) -> "dict[str, QueueEntry]":
+        """The live (non-done) KIND_MODEL entries keyed by model key —
+        the overlay source, read through the TOLERANT getattr seam so
+        every pre-C4J injected fake (no ``entries`` method) keeps
+        conforming and the plain four-state cells render (the
+        additive-fake pattern; a raising read degrades to no overlay,
+        never a crash)."""
+        entries_getter = getattr(self._queue, "entries", None)
+        if entries_getter is None:
+            return {}
+        try:
+            entries = entries_getter() or ()
+        except Exception:  # noqa: BLE001 — the tolerant render seam
+            return {}
+        return {
+            entry.key: entry
+            for entry in entries
+            if getattr(entry, "kind", "") == KIND_MODEL
+            and entry.state != "done"
+        }
+
+    def _update_download_cell(self, key: str,
+                              live_state: "str | None",
+                              live_percent: "int | None") -> None:
+        """Update ONE row's download cell in place (the vanished-row
+        guard rides the widget call — a filtered-out or pool-hidden row
+        is simply skipped, the next full render owns it)."""
+        if self._data is None:
+            return
+        table = self.query_one("#selection-table", DataTable)
+        try:
+            table.update_cell(key, _COL_DOWNLOAD, _model_download_cell(
+                self._data, key, live_state=live_state,
+                live_percent=live_percent))
+        except Exception:  # noqa: BLE001 — a vanished row mid-rebuild
+            return
+
     def apply_queue_event(self, event: QueueEvent) -> None:
-        """One app-forwarded queue event (the 10-04 generic forward): a
-        done event re-runs the existing exclusive snapshot worker — for
-        a done KIND_MODEL entry the reload re-derives ``model_presence``
-        from disk so the row's download cell flips in place; for a
-        done dataset entry the overlay-wired presence view refreshes on
-        the next matrix render. The table stays mounted; nothing
+        """One app-forwarded queue event (the 10-04 generic forward).
+        C4J-1 (261015-c4j): a done KIND_MODEL entry re-runs the existing
+        exclusive snapshot worker — the reload re-derives
+        ``model_presence`` from disk so the row's download cell flips to
+        the downloaded copy in place (the overlay and percent caches pop
+        with the key); a NON-done model event refreshes the overlay from
+        the queue's own truth — the failed state word lands in the cell
+        and the percent cache pops (no stale number rides a failed
+        row). A done dataset entry refreshes the overlay-wired presence
+        view on the next matrix render. The table stays mounted; nothing
         navigates. A landed-but-mismatched dataset never flips
         (``reconciled_rows`` overlays done entries only — semantic 6)."""
+        self._live_percents.pop(event.key, None)
+        if event.kind == KIND_MODEL:
+            if event.state == "done":
+                self._live_models.pop(event.key, None)
+                self._load_data()
+                return
+            self._live_models = self._live_model_entries()
+            entry = self._live_models.get(event.key)
+            self._update_download_cell(
+                event.key, entry.state if entry is not None else None,
+                None)
+            return
         if event.state == "done":
             self._load_data()
+
+    def apply_queue_progress(self, key: "str", percent: "int | None") -> None:
+        """One app-forwarded live tick (C4J-1, 261015-c4j — the driver's
+        per-integer-percent post, incl. the indeterminate claim tick):
+        store the percent, re-read the entry through the queue seam
+        (persisted-state-as-truth — the FIRST tick is what flips the
+        row to its downloading state), ignore non-model keys and
+        entries whose state is not downloading, and update the row's
+        download cell IN PLACE — never a rebuild, never a remount, never
+        a snapshot reload. None percent is the indeterminate contract —
+        the downloading word's own ⠋ glyph, never a fabricated number."""
+        self._live_percents[key] = percent
+        entry = self._live_model_entries().get(key)
+        if entry is None or entry.state != "downloading":
+            return
+        self._update_download_cell(key, "downloading", percent)
 
     # ----- row composition (state rows vs data rows) -----
 
@@ -1449,8 +1594,12 @@ class SelectionScreen(Screen):
         """Rebuild the visible table for the current state.
 
         Marks live in the shared sets — a rebuild can never lose them
-        (Pitfall 1); rows re-add with the SAME registry keys.
+        (Pitfall 1); rows re-add with the SAME registry keys. The
+        C4J-1 overlay re-derives from the queue's entries() on every
+        rebuild, so filter rebuilds, the ``t`` pool toggle, and a fresh
+        screen mount mid-download all show the live state.
         """
+        self._live_models = self._live_model_entries()
         table = self.query_one("#selection-table", DataTable)
         table.clear(columns=True)
         for column_key, header, width in _MODEL_COLUMNS:
@@ -1527,6 +1676,9 @@ class SelectionScreen(Screen):
 
         The mark cell renders from the shared set at add time; the
         spacebar updates it in place via ``update_cell`` afterwards.
+        The download cell composes the C4J-1 live overlay first (the
+        queue's own state word + the streamed percent), falling back to
+        the four-state vocabulary when no live entry exists.
         """
         key = entry["key"]
         mark_cell = (
@@ -1544,6 +1696,7 @@ class SelectionScreen(Screen):
         # spans cannot carry $token styles — probe-pinned, see _key_cell).
         accent_style = f"bold {self.app.current_theme.accent}"
         badge_status = data.custom_status.get(key)
+        live = self._live_models.get(key)
         return [
             mark_cell,
             _key_cell(key, badge_status, _MODEL_KEY_W, accent_style),
@@ -1551,7 +1704,10 @@ class SelectionScreen(Screen):
             _cell(entry.get("species") or "", _MODEL_SPECIES_W),
             _cell(_size_text(entry.get("size_m")), _MODEL_SIZE_W),
             _compat_cell(data, key),
-            _model_download_cell(data, key),
+            _model_download_cell(
+                data, key,
+                live_state=(live.state if live is not None else None),
+                live_percent=self._live_percents.get(key)),
         ]
 
     # ----- readouts -----
@@ -1819,6 +1975,12 @@ class SelectionScreen(Screen):
         if outcome.action == "enqueued":
             self.app.notify(QUEUE_TOAST_ENQUEUED.format(key=key))
             self.app.kick_download_queue()
+            # C4J-1 immediate feedback: the pending overlay lands in the
+            # cell right away (the driver's claim tick follows within
+            # moments on the real path — a kicked-but-blocked driver
+            # still shows the honest pending word)
+            self._live_models = self._live_model_entries()
+            self._update_download_cell(key, "pending", None)
         elif outcome.action == "already_queued":
             self.app.notify(QUEUE_TOAST_ALREADY_QUEUED.format(key=key))
         elif outcome.action == "unknown":

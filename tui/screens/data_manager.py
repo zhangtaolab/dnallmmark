@@ -28,6 +28,15 @@ Contract (locked decisions):
   queue state word in the full-list download cell — a pure render-time
   composition of ``presence_rows`` with the ``entries()`` snapshot
   delivered in the same SnapshotLoaded message (no service change).
+- C4J-1 (261015-c4j; the maintainer's 2026-10-15 ruling): slot 3's
+  queue surface is DATASET-ONLY — the queue table (and its title
+  count), the banners, the full-list live-states join, and both
+  app-forwarded handlers ignore ``KIND_MODEL`` entries entirely (a
+  model download never re-renders this screen; model progress surfaces
+  on slot 2). The Zenodo bundle row stays (it is the dataset lane's
+  alternate). The shared ``DownloadQueueService`` mechanism is
+  untouched — one queue, one driver, one state file; only the
+  PRESENTATION splits by kind.
 - D-02/SC5: every service I/O leg (snapshot reads, the Zenodo probe, the
   ``g`` re-audit) runs inside an exclusive ``@work(exclusive=True,
   thread=True)`` worker; results cross the worker-thread -> event-loop
@@ -98,6 +107,7 @@ from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.selection import ConfirmModal
 from tui.services import download_queue, registries, settings, zenodo_bundle
 from tui.services.download_queue import (
+    KIND_MODEL,
     KIND_ZENODO_BUNDLE,
     ZENODO_BUNDLE_KEY,
     EnqueueOutcome,
@@ -529,9 +539,13 @@ def _int_sum(values: object) -> int:
 
 def _sorted_entries(entries: "tuple[QueueEntry, ...]"
                     ) -> "tuple[QueueEntry, ...]":
-    """Mismatch and failed rows first (stable file order within groups)."""
+    """The queue pane's DATASET-side rows in render order (C4J-1,
+    261015-c4j — KIND_MODEL entries never render on slot 3; the Zenodo
+    bundle row stays, it is the dataset lane's alternate), mismatch and
+    failed first (stable file order within groups)."""
     return tuple(sorted(
-        entries,
+        (entry for entry in entries
+         if entry.kind != KIND_MODEL),
         key=lambda entry: 0 if entry.state in ("mismatch", "failed") else 1,
     ))
 
@@ -807,7 +821,13 @@ class DataManagerScreen(Screen):
         state — T-10-04-01) and re-renders the table + banners; a done
         event additionally reloads the missing list (the D-11 flip
         moment: the reconciled key left the missing set).
+
+        C4J-1 (261015-c4j): KIND_MODEL events are IGNORED entirely —
+        model downloads surface on slot 2, never here (the presentation
+        split; the shared queue mechanism is untouched).
         """
+        if event.kind == KIND_MODEL:
+            return
         entries = self._service.entries()
         self._queue_entries = tuple(entries)
         self._live_percents.pop(event.key, None)
@@ -824,11 +844,16 @@ class DataManagerScreen(Screen):
         tick (the driver's indeterminate claim post) is what flips the
         row from pending to its downloading state. None percent is the
         indeterminate contract — never a fabricated number.
+
+        C4J-1 (261015-c4j): a KIND_MODEL entry's ticks are IGNORED —
+        a model download never re-renders slot 3 (the presentation
+        split).
         """
         self._live_percents[key] = percent
         entries = self._service.entries()
         entry = next((item for item in entries if item.key == key), None)
-        if entry is None or entry.state != "downloading":
+        if (entry is None or entry.kind == KIND_MODEL
+                or entry.state != "downloading"):
             return
         self._queue_entries = tuple(entries)
         table = self.query_one("#dl-queue", DataTable)
@@ -924,7 +949,7 @@ class DataManagerScreen(Screen):
         live_states = {
             entry.key: entry.state
             for entry in self._queue_entries
-            if entry.state != "done"
+            if entry.kind != KIND_MODEL and entry.state != "done"
         }
         for row in rows:
             if row.status == registries.PRESENCE_PRESENT:
@@ -955,10 +980,16 @@ class DataManagerScreen(Screen):
                 key=row.key)
 
     def _render_queue(self) -> None:
-        """The queue pane: five-state rows, banners, the empty state."""
+        """The queue pane: five-state rows, banners, the empty state.
+
+        C4J-1 (261015-c4j): the pane renders ONLY dataset-side entries
+        (the title count included) — a model download never re-renders
+        slot 3 (the presentation split; the Zenodo bundle row stays, it
+        is the dataset lane's alternate).
+        """
         table = self.query_one("#dl-queue", DataTable)
         table.clear()
-        entries = self._queue_entries
+        entries = _sorted_entries(self._queue_entries)
         self.query_one("#dl-queue-title", Label).update(
             QUEUE_TITLE.format(n=len(entries)))
         self._render_banners()
@@ -967,7 +998,7 @@ class DataManagerScreen(Screen):
                 Text(QUEUE_EMPTY, style=_STYLE_MUTED),
                 "", "", "", key=_QUEUE_EMPTY_ROW_KEY)
             return
-        for entry in _sorted_entries(entries):
+        for entry in entries:
             table.add_row(
                 self._task_cell(entry),
                 self._state_cell(entry),
@@ -976,11 +1007,16 @@ class DataManagerScreen(Screen):
                 key=entry.key)
 
     def _render_banners(self) -> None:
-        """One prominent banner per number-carrying mismatch (D-07)."""
+        """One prominent banner per number-carrying mismatch (D-07).
+
+        C4J-1: the banners ignore KIND_MODEL entries (a model entry can
+        never carry the dataset lane's reconcile numbers — the filter is
+        explicit defense, never incidental).
+        """
         box = self.query_one("#dl-queue-banners", Vertical)
         box.remove_children()
         for entry in self._queue_entries:
-            if entry.state != "mismatch":
+            if entry.kind == KIND_MODEL or entry.state != "mismatch":
                 continue
             reconcile = entry.reconcile if isinstance(
                 entry.reconcile, dict) else {}
