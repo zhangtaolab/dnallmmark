@@ -19,9 +19,9 @@ affects: [11-03 sweep_launcher (consumes compose_argv verbatim + re-proves phras
 actuals:
   tokens: 20804   # chars/4 over the realized diff (83216 chars, 2 files)
   tasks: 3
-  commits: 6      # measured: git rev-list --count eb75be4..HEAD
-plan_head_before: eb75be4c5ff2a9c76fdfa2b72b8df7ae8d1a812f
-plan_head_after: 8fe61a2a125e00a5607b58d6dc836801dc434a3a
+  commits: 6      # measured: git rev-list --count a524497..HEAD
+plan_head_before: a524497ae622c48ae32c33da7e83378b1944a690
+plan_head_after: b50e7a1361117e17adf905eac35bc856c1b8d439
 
 tech-stack:
   added: []   # stdlib + the existing run_sweep/settings seams only; zero packages installed
@@ -91,7 +91,7 @@ Landed `tui/services/run_config.py` — the pure brain under the slot-4 screen a
 
 ## What Was Built
 
-### Task 1 — RunSpec + validation + persistence + dirs (commits 016487d RED, 235e40d GREEN)
+### Task 1 — RunSpec + validation + persistence + dirs (commits 380d2b2 RED, d05c8ce GREEN)
 
 - Module skeleton in the download_queue idiom: numbered-decision docstring (D-01/D-05/D-07/D-14/D-19 + the O4 superset rationale recorded verbatim), persistence path + tolerance policy declared, zero textual (both tier locks extend automatically by glob).
 - `RunSpec` frozen dataclass: sorted-dedup models/tasks/seeds/fractions, seeds default (42, 43, 44), peft/config_variant vocabularies (run_sweep's choices), curve/subset/epochs/EBS, `output_root="./finetuned"`, `dataset_root="./datasets"` (presence/docs only — D-19), `cache_dir=None`.
@@ -100,7 +100,7 @@ Landed `tui/services/run_config.py` — the pure brain under the slot-4 screen a
 - `save_state`/`load_state` over `settings.state_dir()/run_config.json` (schema_version 1, atomic_write): missing/corrupt/schema-drift/any-field-shape-drift → the WHOLE default spec, never raises (10 drift shapes pinned).
 - `resolve_dirs` → `DirPlan`: display forms verbatim (repo-relative defaults), argv forms absolute against REPO_ROOT (`REPO_ROOT / value` join — absolute inputs pass through); nonexistent output root advisory-only.
 
-### Task 2 — same-source preview + probe extraction + E2' + phrase (commits 2ca1c1d RED, 9dd98cf GREEN)
+### Task 2 — same-source preview + probe extraction + E2' + phrase (commits d212635 RED, e884005 GREEN)
 
 - `load_probe_ineligible(source_text)`: regex over the `PROBE_INELIGIBLE = [...]` literal + string-literal scan (the read-source-never-import pattern); `probe_ineligible()` reads the real 9-name frozen list; parity-pinned (both space spellings, evo2/megaDNA, gpn-brassicales, Omni-DNA-700M).
 - `preview(spec, registry_dir=None)` → `PreviewResult`: cells are the imported `enumerate_matrix` output VERBATIM with peft/config_variant/fractions threaded (alias cells appear as 11-01's machinery emits them); counts derive from the cells (fractions_count is the spec's axis-mode); problems = the Task-1 composition codes over the REAL frozen names; empty selection previews zero cells (the falsy-filter guard — see Deviations).
@@ -108,7 +108,7 @@ Landed `tui/services/run_config.py` — the pure brain under the slot-4 screen a
 - `is_full_e2x(spec, official)`: base names (via `run_sweep.base_model_name` strip) ⊇ official ∧ tasks ⊇ official ∧ seeds ≥ 3; a diagnostic-bearing reference NEVER returns True (fail-closed); superset escalation pinned (official ∪ customs still gates — O4).
 - `expected_phrase`/`phrase_matches`: exact string equality on `Path(output_root).resolve().name` — no strip/case-fold/prefix, service tier.
 
-### Task 3 — argv composition + full gates (commits 622e2b1 RED, 8fe61a2 GREEN)
+### Task 3 — argv composition + full gates (commits aed5ed4 RED, b50e7a1 GREEN)
 
 - `compose_argv(spec)`: `[sys.executable, run_sweep.py, --models, --tasks, --seeds, --output-root(abs)]` (10 base elements) then present-only pairs in the pinned order `--peft, --config-variant, --curve, --subset_file, --num_train_epochs, --effective_batch_size, --cache_dir`; absent flags contribute ZERO elements; path values absolute before threading; defensive ValueError on empty selection. The full-present argv is pinned element-for-element.
 - `compose_from_failures_argv(failures_path, seeds, output_root, peft, config_variant, extra)`: the [r] re-run path (D-11) — resolved failures path, present-only alias pairs, caller `extra` tail; never the full matrix by construction (documented — never subject to the E2' typed gate).
@@ -131,20 +131,20 @@ Landed `tui/services/run_config.py` — the pure brain under the slot-4 screen a
 - **Issue:** `enumerate_matrix` treats an empty models/tasks filter as "no filter" (falsy) — an empty selection fed straight in enumerated the FULL registry (558 cells in the test), silently previewing a full sweep the operator did not select (the WR-07 hazard class the driver refuses at its own start).
 - **Fix:** `preview` short-circuits an empty selection to zero cells + the `empty_selection` problem (comment cites the falsy-filter semantics).
 - **Files modified:** tui/services/run_config.py
-- **Commit:** 9dd98cf
+- **Commit:** e884005
 
 **2. [Rule 1 - Test bug] Import-purity probe moved to a fresh `python -I` subprocess**
 - **Found during:** Task 3 full-gate `make test` run
 - **Issue:** The in-process `assert "torch" not in sys.modules` passed standalone but failed in the full suite — the GB10 dev host's venv has torch installed and earlier suite modules (env-check kernels) legitimately load it; the assertion proved nothing about THIS module's imports.
 - **Fix:** The probe now spawns `sys.executable -I -c` with both import roots, asserting torch/dnallm/transformers absent AND `run_sweep` present in the fresh interpreter (the live-probe discipline, deterministic regardless of suite order).
 - **Files modified:** tests/tui/test_services_run_config.py
-- **Commit:** 8fe61a2
+- **Commit:** b50e7a1
 
 **3. [Rule 1 - Gate fixes] ruff PLW1510/B017/FURB167 + ty read-only frozen dataclass**
 - **Found during:** Task 3 `make lint` / `make typecheck`
 - **Fix:** explicit `check=False` on the probe subprocess; `FrozenInstanceError` + the 08-01 `setattr`/noqa-B010 precedent for the frozen-mutation test; `re.DOTALL` for the extraction regex.
 - **Files modified:** tests/tui/test_services_run_config.py, tui/services/run_config.py
-- **Commit:** 8fe61a2
+- **Commit:** b50e7a1
 
 ### Implementation Notes (within the plan's own discretion)
 
@@ -164,7 +164,7 @@ None — every register entry landed as planned: T-11-02-01 (overlay-free direct
 
 - tui/services/run_config.py — FOUND
 - tests/tui/test_services_run_config.py — FOUND
-- 016487d, 235e40d, 2ca1c1d, 9dd98cf, 622e2b1, 8fe61a2 — all ancestors of HEAD
+- 380d2b2, d05c8ce, d212635, e884005, aed5ed4, b50e7a1 — all ancestors of HEAD
 - Deletion check: no tracked files deleted by any plan commit
 - Untracked scan: only the pre-existing `.planning/.gsd-allow-shrink` (present at spawn)
-- Ledger: commits measured 6 (`eb75be4..8fe61a2`), no uncommitted code changes
+- Ledger: commits measured 6 (`a524497..b50e7a1`), no uncommitted code changes

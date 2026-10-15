@@ -68,9 +68,9 @@ metrics:
 actuals:
   tokens: 100424   # chars/4 over the realized diff (401699 chars); plan estimate 120000
   tasks: 5
-  commits: 5       # MEASURED: git rev-list --count df9aac0..87a7db4
+  commits: 5       # MEASURED: git rev-list --count 54977cc..f0b7243
 plan_head_before: df9aac03f5d0b764b4312a70bf30e75e2799f57d
-plan_head_after: 87a7db40f0fdfb1ef8bb396060a796544d57e51e
+plan_head_after: f0b72434ed1c0ea0f00c7da43e2a1d9597ce229e
 status: complete
 ---
 
@@ -80,7 +80,7 @@ status: complete
 
 ## What Was Built
 
-### Task 1 — EHC-1a: the bilingual strings registry (f2c7a32)
+### Task 1 — EHC-1a: the bilingual strings registry (4c11655)
 
 - `tui/strings.py` restructured in place: every constant is `CONST = _t("CONST", "<zh>", "<en>")` (PEP 695 TypeVar — ty keeps seeing named typed attributes); `LANGUAGES`/`DEFAULT_LANGUAGE = "en"`/`set_language()`/`language()`/`translate_value()` are the machinery; `set_language` rebinds every registry constant through `globals()` so module-attribute access resolves live.
 - The approved zh terminology table applied verbatim (sweep→训练任务, 输出根→结果目录, 附加/attach→监控, 发射/launch→启动, 短语门→二次确认, cell→训练项, 存储根→存储位置, 发现的 sweep→自动找到的训练任务); the whole-file grep gate over the retired zh terms is zero (comments included); English keeps sweep/cell/output root.
@@ -88,7 +88,7 @@ status: complete
 - conftest + the snapshot script-mode bootstrap pin zh (frozen from-import copies match the zh-rendering committed tests); `_GOLDEN_REFRESH_REASON` amended in place (the 261014-mlc precedent) naming this task's copy drift.
 - Both-language inventory loops (phase11 + download_queue tripwires), the registry-consistency tripwire (same-zh implies same-en — `translate_value`'s well-definedness), the terminology tripwire (word-boundary sweep/cell match so `sweep_failures.json` and `sweep_priorities` stay verbatim data), and the default-English test.
 
-### Task 2 — EHC-1b: the L toggle, persistence, module-attribute conversion (b31ae68)
+### Task 2 — EHC-1b: the L toggle, persistence, module-attribute conversion (ec1447d)
 
 - Every production strings reference converted to `from tui import strings as S` + `S.CONST` (tokenize-based: string literals/comments untouched); `grep -rn "from tui.strings import" tui/` is empty.
 - App-level `L` binding (verified free — no screen binds L/l; a focused Input consumes it as text). `action_toggle_language`: flip, atomic-persist `language.json` under the redirectable state root (OSError-tolerant), remap every rendered binding description (all Binding-owning classes), re-render every stacked screen, toast; below the minimum grid it sets+persists only (WR-06).
@@ -96,7 +96,7 @@ status: complete
 - `tui/__main__.main` owns the ONLY boot read (`load_persisted_language`: missing/corrupt/wrong-value → DEFAULT_LANGUAGE, never raises) plus the boot-time description remap; test-constructed apps stay inert (pinned).
 - TopMenuBar re-translates the frozen NAV_SLOTS labels at mount via `translate_value` from the captured build language; the boot screen title follows via `self.title`.
 
-### Task 3 — EHC-2: y-confirm launch gates (1b66fb5)
+### Task 3 — EHC-2: y-confirm launch gates (5d0a2b2)
 
 - `LaunchConfirmModal(ConfirmModal)`: the hidden `y` binding + `action_confirm` overridden to a documented no-op (plain MRO — the inherited enter lands on the no-op); ConfirmModal and its non-launch consumers stay byte-identical (the preset-overwrite and queue-cancel enter pins untouched and green).
 - `_GateConfirmModal` re-parents onto it; the monitor's `request_rerun` pushes it.
@@ -104,13 +104,13 @@ status: complete
 - Registry values updated through `_t` naming the [y] keycap (LNC_GATE_CONFIRM / LNC_E2_MATCH_OK / MON_RERUN_CONFIRM, both languages).
 - Pilot pins rewritten with enter-refusal call-count assertions on all three gates.
 
-### Task 4 — EHC-3: single-GPU serialization guard (4cf15ac)
+### Task 4 — EHC-3: single-GPU serialization guard (538e65b)
 
 - `effective_gpu_count()`: WORLD_SIZE (parsed int >= 1) wins without importing torch (proven in a fresh `-I` subprocess — the dev venv holds torch, so in-process asserts prove nothing); else lazy `torch.cuda.device_count()` (honors CUDA_VISIBLE_DEVICES) inside except-everything → 0; no module-top torch import (grep-gated).
 - `SweepLauncher(gpu_count=None)` + `single_gpu_launch_blocked()`; the guard is the FIRST stage of BOTH `launch_spec` and `launch_from_failures` — the tier-1 pins prove the preview/official-keys/phrase counters stay zero and the spawner is never called; count >= 2 and count == 0 unrestricted; `launch_argv` stays ungated.
 - Screen pre-checks through the tolerant getattr seam (the LauncherBackend pass-through added; fakes without the method never block — pilot-pinned): the slot-4 gate refuses with the bilingual ProblemsModal copy naming the running root(s); the monitor refuses before the confirm modal; the service-refusal render path maps the code to LNC_SINGLE_GPU_BLOCKED (registered + inventoried).
 
-### Task 5 — EHC-4: download speed on slots 2+3 (87a7db4)
+### Task 5 — EHC-4: download speed on slots 2+3 (f0b7243)
 
 - `SPEED_RE` + `parse_speed` (tqdm 892kB/s / 1.23MB/s + spaced 5.0 MiB/s; LAST token wins; adversarial ANSI/CR/huge-digit garbage never raises); the token returns VERBATIM (parsed data — no new strings constants).
 - Both stderr pumps fire on (percent, speed) PAIR changes (a stalled percent with a streaming rate is a real tick); the callback keeps the 2-arg call when no rate parses (additive-fake pin).
@@ -135,29 +135,29 @@ status: complete
 - **Issue:** `screen.recompose()` rebuilds the compose tree but never re-runs the screen's own `on_mount` — every base screen populates there, so a language toggle would leave EMPTY tables (env-check proven 8 → 0 rows).
 - **Fix:** The uniform mechanism recomposes AND re-invokes the screen's `on_mount`; the monitor's cadence timers gained a stop-before-re-arm guard making its on_mount idempotent. The plan's "pick ONE mechanism and apply uniformly" clause resolved by probe.
 - **Files modified:** tui/app.py, tui/screens/monitor.py
-- **Commit:** b31ae68
+- **Commit:** ec1447d
 
 **2. [Rule 2 - Missing correctness] Stacked-instances-only binding remap strands later-built screens**
 - **Issue:** Remapping only app.BINDINGS + stacked screens' BINDINGS leaves every screen class constructed AFTER a toggle rendering the import-time language forever (screens are rebuilt per navigation).
 - **Fix:** The remap walks ALL Binding-owning screen classes (sys.modules sweep over tui.screens + the app-local modal registry) — future screen modules join automatically; `__main__`'s boot load runs the same remap.
 - **Files modified:** tui/app.py, tui/__main__.py
-- **Commit:** b31ae68
+- **Commit:** ec1447d
 
 **3. [Rule 3 - Blocking] NAV_SLOTS labels are import-frozen**
 - **Issue:** The top bar's slot labels freeze at nav.py import (en in production, zh under the conftest pin) — a bare recompose re-renders the same frozen tuple.
 - **Fix:** nav.py captures the build language; TopMenuBar translates each label at mount via `translate_value` (correct in every import-language/toggle combination).
 - **Files modified:** tui/screens/nav.py
-- **Commit:** b31ae68
+- **Commit:** ec1447d
 
 **4. [Rule 1 - Bug] Test-side leaks found at final verification**
 - **Issue:** The L-toggle Pilot test wrote the REAL `~/.local/state/dnallmmark/language.json` (unpinned state root); the persistence test left the registry + class BINDINGS descriptions in the post-toggle language, breaking later zh assertions order-dependently.
 - **Fix:** The toggle test pins its state root (tmp_path); the persistence test restores language AND remaps descriptions back in finally; the stray real-state file removed.
 - **Files modified:** tests/tui/test_pilot_boot.py
-- **Commits:** b31ae68, 87a7db4
+- **Commits:** ec1447d, f0b7243
 
 **5. [Rule 3 - Blocking] Lint/style conformance of the new machinery**
 - PEP 695 type parameters for `_t` (UP047), PERF102/TRY004/UP037 fixes, ruff --fix for the mechanical import sorting after the conversion; the dangling blank lines the conversion left in `_problem_line` cleaned.
-- **Commits:** f2c7a32, b31ae68, 1b66fb5, 4cf15ac, 87a7db4
+- **Commits:** 4c11655, ec1447d, 5d0a2b2, 538e65b, f0b7243
 
 ## Known Stubs
 
@@ -185,6 +185,6 @@ The known snapshot-determinism flake under load (261014-dcl deferred-items) rema
 
 ## Self-Check: PASSED
 
-- Files: all modified files exist on disk (`git diff --name-only df9aac0..87a7db4` — 28 files, all present).
-- Commits: f2c7a32, b31ae68, 1b66fb5, 4cf15ac, 87a7db4 — all ancestors of HEAD (`git merge-base --is-ancestor` verified via the ledger range listing at write time).
+- Files: all modified files exist on disk (`git diff --name-only 54977cc..f0b7243` — 28 files, all present).
+- Commits: 4c11655, ec1447d, 5d0a2b2, 538e65b, f0b7243 — all ancestors of HEAD (`git merge-base --is-ancestor` verified via the ledger range listing at write time).
 - Full-suite baseline: 7F + 9XF exactly; goldens byte-untouched; lint + typecheck green on the final tree.

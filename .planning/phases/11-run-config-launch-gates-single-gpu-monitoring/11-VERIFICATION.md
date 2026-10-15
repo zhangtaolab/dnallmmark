@@ -61,9 +61,9 @@ re_verification:
 # Phase 11: Run Config, Launch Gates & Single-GPU Monitoring — Gap-Closure Re-Verification (Round 2)
 
 **Phase Goal:** The operator's core loop is closed and safe — compose a complete run spec, preview it from the same pure planning functions execution uses, pass the env + confirmation gates, launch `run_sweep.py` as a detached subprocess, and monitor/recover the sweep from the same console — proven end-to-end by a maintainer-authorized bounded smoke on GB10, with E2' provably still maintainer-gated
-**Verified:** 2026-10-14T17:17:48Z (HEAD `1db46b6`, branch `autorun`; working tree code-clean; the maintainer-authorized dnamamba subset smoke was RUNNING throughout — read-only)
+**Verified:** 2026-10-14T17:17:48Z (HEAD `bdacbae`, branch `autorun`; working tree code-clean; the maintainer-authorized dnamamba subset smoke was RUNNING throughout — read-only)
 **Status:** passed
-**Re-verification:** Yes — round 2 after gap plan 11-08 (commits `40faee0..1db46b6`, 9 commits). All six prior gaps flip-checked this pass; the two deterministic reproductions (CR-01, WR-01) re-executed by this verifier with standalone scripts, the four warning-class gaps confirmed behaviorally via their committed pins plus code reads.
+**Re-verification:** Yes — round 2 after gap plan 11-08 (commits `0ea6ad7..bdacbae`, 9 commits). All six prior gaps flip-checked this pass; the two deterministic reproductions (CR-01, WR-01) re-executed by this verifier with standalone scripts, the four warning-class gaps confirmed behaviorally via their committed pins plus code reads.
 
 ## Goal Achievement
 
@@ -132,7 +132,7 @@ No NEW advisory findings this pass (zero debt markers, zero stubs, lint/typechec
 | live smoke chain | child argv + artifacts | parent run_sweep argv → per-cell outputs | Yes — dnabert final_metrics/flops_report on disk with real values; dnamamba subset mid-training | ✓ FLOWING |
 | re-run confirm copy | pairs/seeds/n | FailureRow.seed via derive_rerun_seeds | Yes — pin asserts copy and launch agree | ✓ FLOWING |
 
-### Behavioral Spot-Checks (all run this pass at HEAD `1db46b6`)
+### Behavioral Spot-Checks (all run this pass at HEAD `bdacbae`)
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
@@ -180,7 +180,7 @@ None. The prior pass's single human item (GB10 smoke execution) was closed by th
 
 ### Gaps Summary
 
-None. All six prior gaps closed and flip-checked at HEAD `1db46b6`: the CR-01 blocker and WR-01 were re-reproduced independently by this verifier and now exhibit the fixed behavior (one path basis from validation through every reader; one REPO_ROOT basis across argv/registry/pre-check/auto-attach), and WR-02..05 are pinned green with the exact adversarial shapes the gaps described (failure-derived seeds with loud refusal, pairs × seeds confirm, O_EXCL tee with sentinel survival, all-roots exit). Full suite at the exact box baseline (7 failed / 1743 passed / 9 xfailed, zero new), lint/typecheck clean, goldens and live-smoke paths byte-untouched, and the phase's end-to-end proof is grounded by the live GB10 smoke running through this chain right now (dnabert half complete with full artifacts; dnamamba subset in flight).
+None. All six prior gaps closed and flip-checked at HEAD `bdacbae`: the CR-01 blocker and WR-01 were re-reproduced independently by this verifier and now exhibit the fixed behavior (one path basis from validation through every reader; one REPO_ROOT basis across argv/registry/pre-check/auto-attach), and WR-02..05 are pinned green with the exact adversarial shapes the gaps described (failure-derived seeds with loud refusal, pairs × seeds confirm, O_EXCL tee with sentinel survival, all-roots exit). Full suite at the exact box baseline (7 failed / 1743 passed / 9 xfailed, zero new), lint/typecheck clean, goldens and live-smoke paths byte-untouched, and the phase's end-to-end proof is grounded by the live GB10 smoke running through this chain right now (dnabert half complete with full artifacts; dnamamba subset in flight).
 
 ---
 

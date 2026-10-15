@@ -15,11 +15,11 @@ affects:
   - tests/tui/test_pilot_selection.py
   - tests/tui/test_card_site_hardening.py
 actuals:
-  tokens: 8159    # chars/4 over the realized diff (32638 chars, 1ad474f..20b06cb)
+  tokens: 8159    # chars/4 over the realized diff (32638 chars, 850e047..a1d1591)
   tasks: 2
-  commits: 3      # measured: git rev-list --count 1ad474f..20b06cb
-plan_head_before: 1ad474f957b70e458f85ad512f3e35af71fc65aa
-plan_head_after: 20b06cb708b889f953948501d7ab1da1632e718f
+  commits: 3      # measured: git rev-list --count 850e047..a1d1591
+plan_head_before: 850e047ae0b872e158b8137f957ff3f0ac460d62
+plan_head_after: a1d1591647aeb29b1014e72242b3941a49fef4f3
 tech-stack:
   added: []        # zero new dependencies; textual stays pinned 8.2.8
   patterns:
@@ -48,14 +48,14 @@ status: complete
 
 **One-liner:** Three extraction-site-local isinstance(card, dict) guards (wizard vocabularies, card-less detail modal, manual-landing path) close the round-2 Truth-6 crash family on the real app's w/enter/d action paths, and the new AST pin confines every future card extraction in tui/ to a guard-carrying four-function allowlist — the closure is structural, not instance-by-instance.
 
-Closes the second 08-VERIFICATION.md's single residual gap (Truth 6, machine-evidenced at HEAD 3267836: the `w`-press and degraded-row-`enter` console exits, plus the incidentally-shielded `_manual_landing_path`), so phase re-verification can pass 6/6.
+Closes the second 08-VERIFICATION.md's single residual gap (Truth 6, machine-evidenced at HEAD 3a6e56a: the `w`-press and degraded-row-`enter` console exits, plus the incidentally-shielded `_manual_landing_path`), so phase re-verification can pass 6/6.
 
 ## Tasks Completed
 
 | # | Task | Commit | Outcome |
 |---|------|--------|---------|
-| 1 | The three screen-side guards + the _manual_landing_path hardening, pinned by real-app Pilot reproductions | RED d04ed04 / GREEN 156e13d | 4 tests over the REAL app + REAL selection backend (env fake only, non-dict overlay via DNALLMMARK_CUSTOM_REGISTRY_DIR + state isolation): w/enter reproduced the verifier's exact AttributeErrors pre-fix; all green post-fix; the 34 pre-existing selection-lane tests stay green |
-| 2 | The card-extraction family pin — sweep ledger + AST structural invariant | 20b06cb (RED evidence in-file) | pin green over the full tui tree (5 extraction nodes, exactly the 4 allowlisted functions, each guard-carrying); RED honestly captured against the guard-removed tree (named all three guard removals with file:line); positive control proven; the 08-08 @work pin green in the same lane |
+| 1 | The three screen-side guards + the _manual_landing_path hardening, pinned by real-app Pilot reproductions | RED f69d616 / GREEN fd5009d | 4 tests over the REAL app + REAL selection backend (env fake only, non-dict overlay via DNALLMMARK_CUSTOM_REGISTRY_DIR + state isolation): w/enter reproduced the verifier's exact AttributeErrors pre-fix; all green post-fix; the 34 pre-existing selection-lane tests stay green |
+| 2 | The card-extraction family pin — sweep ledger + AST structural invariant | a1d1591 (RED evidence in-file) | pin green over the full tui tree (5 extraction nodes, exactly the 4 allowlisted functions, each guard-carrying); RED honestly captured against the guard-removed tree (named all three guard removals with file:line); positive control proven; the 08-08 @work pin green in the same lane |
 
 ## TDD Gate Compliance
 
@@ -73,14 +73,14 @@ Closes the second 08-VERIFICATION.md's single residual gap (Truth 6, machine-evi
 
 **1. [Process] Task 2's RED protocol — stash shape vs committed guards**
 - **Found during:** Task 2 RED capture.
-- **Issue:** the plan's `git stash push -- tui/screens/selection.py` assumed the Task-1 guards were still uncommitted; per the task-commit protocol they were already committed (156e13d), so a stash would be a no-op on the clean tree.
-- **Fix:** the identical working-tree state ("the Task-1 guards leave the working tree") was produced with the file-scoped `git checkout 156e13d~1 -- tui/screens/selection.py`, the pin run (FAILED naming all three guard removals), then restored with `git checkout HEAD -- tui/screens/selection.py` (file-scoped — the sanctioned discard form; no blanket reset, no stash). Same tree state, same assertion, honest RED. Recorded in the evidence JSON and here.
+- **Issue:** the plan's `git stash push -- tui/screens/selection.py` assumed the Task-1 guards were still uncommitted; per the task-commit protocol they were already committed (fd5009d), so a stash would be a no-op on the clean tree.
+- **Fix:** the identical working-tree state ("the Task-1 guards leave the working tree") was produced with the file-scoped `git checkout fd5009d~1 -- tui/screens/selection.py`, the pin run (FAILED naming all three guard removals), then restored with `git checkout HEAD -- tui/screens/selection.py` (file-scoped — the sanctioned discard form; no blanket reset, no stash). Same tree state, same assertion, honest RED. Recorded in the evidence JSON and here.
 - **Files modified:** none (transient working-tree state only).
 
 **2. [Test-side] Task-1 RED fixture spelling**
 - **Found during:** the first RED run — the w test failed with NameError (`DnallmMarkTui` typo) instead of the crash; the initial test insertion also left two dangling header lines.
 - **Fix:** corrected the app-class spelling and removed the dangling lines before capturing RED; the re-run reproduced the exact AttributeError. Zero implementation impact; noted in the evidence JSON's semantic assessment.
-- **Files modified:** tests/tui/test_pilot_selection.py (test-side only, part of the RED commit d04ed04).
+- **Files modified:** tests/tui/test_pilot_selection.py (test-side only, part of the RED commit f69d616).
 
 **3. [Tooling] gsd_run unavailable** (exit 1) — the TDD red-evidence classifier and the state handler verbs ran manually: evidence records committed under `.planning/tdd-evidence/`, STATE.md updated by direct edit (the 08-08 deviation #4 precedent).
 
@@ -98,8 +98,8 @@ Otherwise the plan executed exactly as written (guard shapes, the card-less moda
 | Verifier reproduction 1 (post-fix) | the w Pilot test over the real app + real backend | wizard pushed, `app._exception` None, officials' species/tokenizer vocabularies populate, the degraded card contributes nothing |
 | Verifier reproduction 2 (post-fix) | the degraded-row enter Pilot test (t → filter → tab → enter) | card-less RowDetailModal pushed (entry_key the key, `_card == {}`, empty log), `app._exception` None |
 | Prohibition: snapshots | `git status --short -- tests/tui/__snapshots__/` | clean (untouched) |
-| Prohibition: loader contract | `git diff 22ca261..HEAD -- pipeline/registry_loader.py` | empty (byte-unmodified) |
-| Prohibition: services/strings/deps | `git diff 1ad474f..HEAD --stat -- tui/strings.py tui/services/ pyproject.toml uv.lock` | 0 lines — zero new strings constants, services byte-unchanged, zero new dependencies, textual pinned 8.2.8 |
+| Prohibition: loader contract | `git diff 0559c40..HEAD -- pipeline/registry_loader.py` | empty (byte-unmodified) |
+| Prohibition: services/strings/deps | `git diff 850e047..HEAD --stat -- tui/strings.py tui/services/ pyproject.toml uv.lock` | 0 lines — zero new strings constants, services byte-unchanged, zero new dependencies, textual pinned 8.2.8 |
 
 ## Known Stubs
 
@@ -117,4 +117,4 @@ Phase 8 Truth 6 can flip to verified on re-verification — every consumer of th
 
 ## Self-Check: PASSED
 
-All created/modified files exist on disk; all three commits (d04ed04, 156e13d, 20b06cb) verified as ancestors of HEAD via `git merge-base --is-ancestor`.
+All created/modified files exist on disk; all three commits (f69d616, fd5009d, a1d1591) verified as ancestors of HEAD via `git merge-base --is-ancestor`.

@@ -15,11 +15,11 @@ provides:
 affects: [quick-check launch preflight, env screen cache shape (seven-item state files now miss), selection models table, data-manager bottom bar]
 
 actuals:
-  tokens: 116552   # chars/4 over the realized diff 6df795d..25eb849 (466,210 chars incl. the five SVG goldens; code-only is a fraction of that)
+  tokens: 116552   # chars/4 over the realized diff 226153b..13e0786 (466,210 chars incl. the five SVG goldens; code-only is a fraction of that)
   tasks: 3
-  commits: 4       # measured: git rev-list --count 6df795d..25eb849 (the task's own commits: 3 feat + 1 fake-conformance fix; a concurrent foreign docs commit d2f77c0 landed mid-run and is excluded)
-plan_head_before: 6df795d
-plan_head_after: 25eb849
+  commits: 4       # measured: git rev-list --count 226153b..13e0786 (the task's own commits: 3 feat + 1 fake-conformance fix; a concurrent foreign docs commit 6f10cef landed mid-run and is excluded)
+plan_head_before: 226153b
+plan_head_after: 13e0786
 
 tech-stack:
   added: []         # zero new dependencies anywhere (T-dcl-SC)
@@ -149,10 +149,10 @@ status: complete
 
 Each task was committed atomically (TDD: RED evidence captured per task — the tier-1 blocks failed on the missing symbols before each implementation):
 
-1. **Task 1: model_dirs env kernel + run-config-aware roots (tracer)** - `aa6161d` (feat); tracer feedback gate re-ran `<verify>` end-to-end clean (end-of-phase mode, automated-only verify)
-2. **Task 2: live models presence column** - `2281c81` (feat)
-3. **Task 3: data-manager full presence view with v toggle** - `c199ff5` (feat)
-4. **Rule-3 fix: conform app-level queue fakes to the presence_rows read** - `25eb849` (fix)
+1. **Task 1: model_dirs env kernel + run-config-aware roots (tracer)** - `fa0852a` (feat); tracer feedback gate re-ran `<verify>` end-to-end clean (end-of-phase mode, automated-only verify)
+2. **Task 2: live models presence column** - `023ad63` (feat)
+3. **Task 3: data-manager full presence view with v toggle** - `2779588` (feat)
+4. **Rule-3 fix: conform app-level queue fakes to the presence_rows read** - `13e0786` (fix)
 
 ## Files Created/Modified
 - `pipeline/env_smoke.py` — MODELS_INFO_PATH, `_effective_base`/`_root_annotation`, `check_model_dirs`, re-based `check_dataset_dirs(root=...)`, main() renders model_dirs before dataset_dirs (eight kernels; docstring items renumbered 5-8)
@@ -182,22 +182,22 @@ Each task was committed atomically (TDD: RED evidence captured per task — the 
 - **Issue:** The plan pinned exactly four SVG diffs, but `wizard.svg` also drifted: the wizard golden renders env-screen pixels at its left edge (the modal never spans the grid), so the eighth row changed them (verified by text-element diff: ✓/版本 pin/dnallm rows at x=0..231)
 - **Fix:** Regenerated and committed with the change that drifted it (the D-03 discipline); recorded in the Windows ledger
 - **Files modified:** tests/tui/__snapshots__/wizard.svg
-- **Commit:** aa6161d
+- **Commit:** fa0852a
 
 **2. [Rule 3 - Blocking] app-level driver-queue fakes lacked the presence_rows leg**
 - **Found during:** the plan-level `make test` gate (after Task 3)
 - **Issue:** `DataManagerBackend.missing_snapshot` now delegates the full view through the queue, so digit-navigation tests mounting the slot-3 screen over `_QueueDriverFake`-shaped fakes failed with AttributeError
 - **Fix:** Added an inert `presence_rows()` to the nav-shell, run-config, monitor, and snapshot app-level queue fakes (files outside the plan's per-task lists — the widened Protocol surface they structurally implement)
 - **Files modified:** tests/tui/test_pilot_nav_shell.py, tests/tui/test_pilot_run_config.py, tests/tui/test_pilot_monitor.py, tests/tui/test_snapshots.py
-- **Commit:** 25eb849
+- **Commit:** 13e0786
 
 **3. [Plan-text reconciliation] kernel parameter spelling**
 - The plan's action named `check_model_dirs(model_root=None)` / `check_dataset_dirs(dataset_root=None)` while its behavior block, service wiring spec, and test spec all pin the `root=` kwarg — implemented as `root=` uniformly (see Decisions). No behavioral difference.
 
 ## Issues Encountered
-- The full suite shows EXACTLY the 10 documented pre-existing failures (deferred-items.md of 261014-c2l): 5 stale schema/determinism pins after data commit 9bc68e1 + 5 root-user chmod persist-failure sims — four of the latter live in files this task touches and fail identically before and after; out of scope
-- The snapshot golden lane intermittently flakes under load (`test_golden_export_is_deterministic_across_instances` and occasionally a `test_*_golden` compare): probed at the TRUE base commit 6df795d in a scratch worktree — it flakes there too (~2/17 isolated runs), so pre-existing and out of scope; logged to `deferred-items.md` in this directory
-- A concurrent foreign commit (d2f77c0, backlog docs — not this task) landed on the branch mid-run; the SUMMARY's commits/plan_head_after exclude it (measured to 25eb849, this plan's last commit)
+- The full suite shows EXACTLY the 10 documented pre-existing failures (deferred-items.md of 261014-c2l): 5 stale schema/determinism pins after data commit 9e803ca + 5 root-user chmod persist-failure sims — four of the latter live in files this task touches and fail identically before and after; out of scope
+- The snapshot golden lane intermittently flakes under load (`test_golden_export_is_deterministic_across_instances` and occasionally a `test_*_golden` compare): probed at the TRUE base commit 226153b in a scratch worktree — it flakes there too (~2/17 isolated runs), so pre-existing and out of scope; logged to `deferred-items.md` in this directory
+- A concurrent foreign commit (6f10cef, backlog docs — not this task) landed on the branch mid-run; the SUMMARY's commits/plan_head_after exclude it (measured to 13e0786, this plan's last commit)
 
 ## User Setup Required
 
@@ -210,7 +210,7 @@ None - no external service configuration required.
 ## Self-Check: PASSED
 
 - All created/modified artifacts exist on disk (the 29 files above; data_manager_presence.svg created, wizard.svg + three regenerated goldens committed)
-- All four task commits (aa6161d, 2281c81, c199ff5, 25eb849) verified as ancestors of HEAD; `git rev-list --count 6df795d..25eb849` == 4 (matches `commits:` in frontmatter)
+- All four task commits (fa0852a, 023ad63, 2779588, 13e0786) verified as ancestors of HEAD; `git rev-list --count 226153b..13e0786` == 4 (matches `commits:` in frontmatter)
 - `status: complete` present in frontmatter
 - Working tree clean over tests/tui/__snapshots__/; whole-plan SVG diffs are exactly the four planned + the documented wizard collateral
 - make lint + make typecheck green; full make test == the ten documented pre-existing failures; import-purity probe green over the three touched services

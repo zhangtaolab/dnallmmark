@@ -26,9 +26,9 @@ affects: [11-07 monitor screen (slot 5 promotion; the auto-nav half of D-13 land
 actuals:
   tokens: 36282   # chars/4 over the realized diff (145130 chars, 7 files)
   tasks: 3
-  commits: 5      # measured: git rev-list --count 1a3fedf..HEAD
-plan_head_before: 1a3fedf9dfafaff990c86185fb3e136f43b02a5e
-plan_head_after: 67d1274
+  commits: 5      # measured: git rev-list --count cce1b4a..HEAD
+plan_head_before: cce1b4acd3111f3ff6deccfaee3b510081b19331
+plan_head_after: 68c7810
 
 tech-stack:
   added: []   # textual built-ins only (SelectionList/RadioSet/RadioButton/Checkbox/Input/RichLog); zero packages installed
@@ -114,7 +114,7 @@ status: complete
 
 ## What Was Built
 
-### Task 1 — the shell + promotion (commits 60635d1 RED, 0b5984b GREEN)
+### Task 1 — the shell + promotion (commits a860554 RED, 8436858 GREEN)
 
 - `RunConfigScreen` (NAV_SLOT 4): TopMenuBar -> title bar (CFG_SCREEN_TITLE + the CFG_STATUS_LINE counts right-aligned) -> the two-column split (#cfg-columns, border-top/bottom rules; the picker column 47% — ~56 cells at 120, ~38 at 80, re-derived on resize) -> the 1-row preview line -> BottomBar with the wireframe keycap order ([space]标记 [m]数据集 [/]过滤 [p]预览 [enter]启动门).
 - The pickers: `PickerList(SelectionList)` — m flips the kind + title; `/` focuses the filter Input (the 08-05 grammar via the backend's parse/apply delegation, right-aligned (n/total) count, esc clears + refocuses); space marks — the marks live IN the RunSpec (D-01: slot-2 state never read; XDG round-trip through the preview worker's save_state). Model rows carry the ◇ badge + the （已停用） suffix for disabled customs with in-item truncation.
@@ -123,13 +123,13 @@ status: complete
 - nav.py slot-4 promotion; app.py constructor seams (run_config_service/launcher_service; the launcher is the app-owned shared instance), build_run_config_screen (the shared-instance rationale comment), the action_nav branch.
 - nav-shell suite edits (bare slot-4 text, placeholder loop narrowed to slot 5, digit-4 switch assertion, shell fakes).
 
-### Task 2 — the [p] modal + the gate pipeline (commit 0f27f03)
+### Task 2 — the [p] modal + the gate pipeline (commit 5194aaa)
 
 - `PreviewModal` (border 干跑预览): the dimension summary, CFG_PREVIEW_NOTE, the composed LIST argv VERBATIM, the numbered problems.
 - The gate as modal states, each step in its OWN worker group, every push below_minimum_grid-guarded: [enter] -> fresh enumeration (problems => ProblemsModal, nothing else opens) -> env preflight (FAIL => EnvBlockModal: the ENV_QUICK_CHECK_FAIL header, reasons VERBATIM in a bounded RichLog, the [1] hint row) -> gate_confirm_data => the ConfirmModal (LNC_GATE_SUMMARY + LNC_GATE_CONFIRM) or the `E2PhraseModal` (⚠ block, the type prompt with the dirname, a live indicator flipping LNC_E2_MISMATCH -> LNC_E2_MATCH_OK per keystroke through the SERVICE phrase_matches verdict, enter live only on exact match) -> the launch worker -> LNC_LAUNCH_TOAST / LNC_LAUNCH_FAILED_TOAST; a stage-"phrase" GateRefusal re-opens the modal (asserted path).
 - The enter-key pin: PickerList shadows the inherited enter with the gate action; every Input consumes its own Enter — Pilot-asserted both ways.
 
-### Task 3 — ExitModal + choices + full gates (commits b7bec14, 67d1274)
+### Task 3 — ExitModal + choices + full gates (commits 5158d23, 68c7810)
 
 - `ExitModal` (app.py, ConfirmModal family): enter=detach-then-quit (default), k=kill_sweep-then-quit, esc=return; `action_quit` (async — the App base LSP) pushes it iff live_sweeps() non-empty and the grid is above minimum, else exits directly.
 - The RadioSet choice modals: first press applies + closes; the row re-renders, the spec persists, the hints refresh (the probe hint names the frozen intersection).
@@ -152,21 +152,21 @@ status: complete
 - **Issue:** (a) native `disabled=True` SelectionList rows are SKIPPED by OptionList cursor navigation — the disabled-custom warn interaction was unreachable; (b) private `_on_*` message handlers are MRO-dispatched (an override + `super()` call double-fires — the mark toggled twice per space); (c) unprefixed widget-binding actions do NOT resolve on the screen (the ChoiceRow's enter fell through to the screen's gate binding).
 - **Fix:** (a) disabled customs stay reachable rows; `PickerList.action_select` warns at the chokepoint both keyboard and mouse share (OptionList._on_click routes through action_select); (b)+(c) the PickerList/ChoiceRow binding actions delegate explicitly to the screen's action (getattr-guarded for ty). All three probe-pinned in code comments.
 - **Files modified:** tui/screens/run_config.py
-- **Commits:** 0b5984b, b7bec14, 67d1274
+- **Commits:** 8436858, 5158d23, 68c7810
 
 **2. [Rule 3 - Promotion consequence] The nav-target vocabulary test**
 - **Found during:** Task 1's tests/tui gate.
 - **Issue:** tests/tui/test_pilot_selection_custom.py::test_the_menu_carries_no_wizard_item pins the allowed NAV_SLOTS targets — the slot-4 promotion added "run_config".
 - **Fix:** the tuple extends with "run_config" (+ comment), exactly as the 10-04 slot-3 precedent inside that same test.
 - **Files modified:** tests/tui/test_pilot_selection_custom.py
-- **Commit:** 0b5984b
+- **Commit:** 8436858
 
 **3. [Rule 1 - Lint-caught] The head-variant hint rendered no copy**
 - **Found during:** Task 2's scoped ruff run (F401 on CFG_VARIANT_HEAD_NOTE).
 - **Issue:** `_render_hints` toggled the head hint's display without ever writing its text.
 - **Fix:** the hint renders CFG_VARIANT_HEAD_NOTE under variant=head; pinned by the existing hint tests.
 - **Files modified:** tui/screens/run_config.py
-- **Commit:** 0f27f03
+- **Commit:** 5194aaa
 
 ### Implementation Notes (within the plan's own discretion)
 
@@ -191,10 +191,10 @@ The app owns ONE shared launcher instance (`app._launcher` — the fake-injectab
 ## Self-Check: PASSED
 
 - tui/screens/run_config.py, tests/tui/test_pilot_run_config.py — FOUND (created)
-- 60635d1, 0b5984b, 0f27f03, b7bec14, 67d1274 — all ancestors of HEAD
+- a860554, 8436858, 5194aaa, 5158d23, 68c7810 — all ancestors of HEAD
 - Deletion check: no tracked files deleted by any plan commit (diff --stat: 7 files, 3259 insertions, 20 deletions — the deletions are the nav-shell/selection-custom assertion lines this plan's edits replaced)
 - Untracked scan: only the pre-existing .planning/.gsd-allow-shrink (present at spawn)
-- Ledger: commits measured 5 (1a3fedf..67d1274), no uncommitted code changes
+- Ledger: commits measured 5 (cce1b4a..68c7810), no uncommitted code changes
 
 ---
 *Phase: 11-run-config-launch-gates-single-gpu-monitoring*

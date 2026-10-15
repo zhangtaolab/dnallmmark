@@ -49,9 +49,9 @@ metrics:
 actuals:
   tokens: 28251    # chars/4 over the realized diff (113007 chars); plan estimate 90000
   tasks: 3
-  commits: 7       # MEASURED: git rev-list --count 7cf6ef5..HEAD
-plan_head_before: 7cf6ef5172c0401a534d1a119391cf03677394c0
-plan_head_after: bbeda85172096bc5f254d433f4d9dd6cb7f66e74
+  commits: 7       # MEASURED: git rev-list --count cbb1c29..HEAD
+plan_head_before: cbb1c29860e5e0b5b22a5d87050c572a04f4cd2a
+plan_head_after: 5b04b2398cd3ea5c7d16e975580ec6cfafebadab
 status: complete
 ---
 
@@ -87,14 +87,14 @@ status: complete
 - **Issue:** The plan asked for the percent "beside/appended to the downloading word within the column budget", but the 下载中 word alone exactly fills the 10-cell column's 8-cell content budget — a two-digit percent would be invisible (clipped data, not honest progress).
 - **Fix:** Widened `_MODEL_DOWNLOAD_W` 10 → 15 (content 13 = "⠋ 下载中 100%"); updated the width comment and the one 80x24 budget pin faithfully (101 → 106; h-scroll and the min grid unchanged).
 - **Files modified:** tui/screens/selection.py, tests/tui/test_pilot_selection.py
-- **Commit:** 2c1459d
+- **Commit:** f7876b3
 
 **2. [Test-fixture accommodation] The seeded-state-file test seeds pending, not downloading**
 - **Found during:** Task 1
 - **Issue:** The plan's seeded-state test described "one KIND_MODEL and one KIND_DATASET entry"; seeding `downloading` in the state file hits the D-06 restart downgrade (`load()` rewrites downloading → pending + interrupted), appending the restart note to the task cell.
 - **Fix:** Seed both entries as `pending` (the honest persisted shape any mount actually reads); the kind-split assertions are identical.
 - **Files modified:** tests/tui/test_pilot_data_manager.py
-- **Commit:** 2c1459d
+- **Commit:** f7876b3
 
 Plus one additive decision within the plan's spirit: a successful `d` enqueue lands the pending word immediately (see Decisions).
 
@@ -136,5 +136,5 @@ The known snapshot-determinism flake under load (261014-dcl deferred-items) rema
 ## Self-Check: PASSED
 
 - Files: all 15 modified files exist on disk (`git diff --name-only` over the plan range).
-- Commits: e5ca6cd, 2c1459d, 3f043a3, fad59ec, 68845f2, 9d607d7, bbeda85 — all ancestors of HEAD (`git merge-base --is-ancestor` verified for each at write time via the ledger range listing).
+- Commits: 3495dd6, f7876b3, e12e629, 6754034, a8deb27, 6a59178, 5b04b23 — all ancestors of HEAD (`git merge-base --is-ancestor` verified for each at write time via the ledger range listing).
 - Full-suite baseline: 7F + 9XF exactly; goldens byte-untouched.

@@ -17,14 +17,14 @@ note: the 3 "skipped" are IN-02/IN-03/IN-04, kept open BY DESIGN with
 **Fixed at:** 2026-10-13
 **Source review:** `.planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-REVIEW.md`
 **Iteration:** 1
-**Committed disposition (per-finding SHA + rationale):** `11-REVIEW-DISPOSITION.md` (commit `40cb0bd`)
+**Committed disposition (per-finding SHA + rationale):** `11-REVIEW-DISPOSITION.md` (commit `9b15613`)
 
 **Summary:**
 - Findings in scope: 14 (2 CR + 7 WR + 5 IN)
 - Fixed: 11 (2 CR, 7 WR, IN-01, IN-05)
 - Kept open with rationale: 3 (IN-02 policy, IN-03 watch-at-smoke, IN-04 polish)
 
-**Final gates (main checkout, autorun @ 40cb0bd):**
+**Final gates (main checkout, autorun @ 9b15613):**
 - `make test`: PASS — 1501 pytest tests (1471 baseline + 30 regressions) + JS lane 18/18
 - `make lint`: PASS (ruff, full fixed-findings scope)
 - `make typecheck`: PASS (ty, zero diagnostics)

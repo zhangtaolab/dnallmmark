@@ -16,9 +16,9 @@ affects: [run_sweep_shard passthrough, TUI launch gate, sweep manifest consumers
 actuals:
   tokens: 48245   # chars/4 over the realized diff (192,979 chars incl. the regenerated SVG; code-only diff is 62,056 chars ~ 15,514)
   tasks: 3
-  commits: 3       # measured: git rev-list --count 9f9404a..HEAD
-plan_head_before: 9f9404a
-plan_head_after: 451782d
+  commits: 3       # measured: git rev-list --count 8f3af3c..HEAD
+plan_head_before: 8f3af3c
+plan_head_after: aaf671a
 
 tech-stack:
   added: []         # zero new dependencies anywhere (T-c2l-SC)
@@ -112,9 +112,9 @@ status: complete
 
 Each task was committed atomically:
 
-1. **Task 1: Pipeline override flags end-to-end (tracer)** - `5074408` (feat)
-2. **Task 2: RunSpec model_root + live dataset_root threading** - `153c6cf` (feat)
-3. **Task 3: Screen model-root input + strings + golden** - `451782d` (feat)
+1. **Task 1: Pipeline override flags end-to-end (tracer)** - `ed63d10` (feat)
+2. **Task 2: RunSpec model_root + live dataset_root threading** - `f874c3e` (feat)
+3. **Task 3: Screen model-root input + strings + golden** - `aaf671a` (feat)
 
 ## Files Created/Modified
 - `pipeline/run_finetune.py` - both flags in parse_args; override-aware model_base/dataset_base (None branch keeps base_dir verbatim; flag branch rstrip+sep); both resolution sites rewired
@@ -135,7 +135,7 @@ Each task was committed atomically:
 None - plan executed exactly as written.
 
 ## Issues Encountered
-- `make test` shows 10 failures — ALL pre-existing at the base commit 9f9404a (verified in a temporary worktree, identical failures): 5 schema/determinism pins stale after the helixgen data commit 9bc68e1, and 5 persist-failure-simulation tests ineffective when pytest runs as root (root bypasses chmod read-only). Out of scope per the scope boundary; logged to `deferred-items.md` in this directory. Everything this plan touches is green; the node lane matches baseline (26 pass).
+- `make test` shows 10 failures — ALL pre-existing at the base commit 8f3af3c (verified in a temporary worktree, identical failures): 5 schema/determinism pins stale after the helixgen data commit 9e803ca, and 5 persist-failure-simulation tests ineffective when pytest runs as root (root bypasses chmod read-only). Out of scope per the scope boundary; logged to `deferred-items.md` in this directory. Everything this plan touches is green; the node lane matches baseline (26 pass).
 
 ## User Setup Required
 
@@ -148,7 +148,7 @@ None - no external service configuration required.
 ## Self-Check: PASSED
 
 - All 11 modified artifacts exist on disk (SUMMARY, deferred-items, the 5 production files, the 5 test files incl. the regenerated golden)
-- All 3 task commits (5074408, 153c6cf, 451782d) verified as ancestors of HEAD; `git rev-list --count 9f9404a..HEAD` == 3 (measured, matches `commits:` in frontmatter)
+- All 3 task commits (ed63d10, f874c3e, aaf671a) verified as ancestors of HEAD; `git rev-list --count 8f3af3c..HEAD` == 3 (measured, matches `commits:` in frontmatter)
 - `status: complete` present in frontmatter
 - Working tree carries only uncommitted orchestrator-owned docs (SUMMARY.md, deferred-items.md, STATE.md, WINDOWS.md)
 

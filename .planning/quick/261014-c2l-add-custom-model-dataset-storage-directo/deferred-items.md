@@ -1,17 +1,17 @@
 # Deferred Items — quick task 261014-c2l
 
 Out-of-scope discoveries logged during execution (pre-existing at the
-base commit 9f9404a, verified in a temporary worktree; NOT caused by
+base commit 8f3af3c, verified in a temporary worktree; NOT caused by
 this task's changes and deliberately not fixed here — the scope
 boundary forbids touching unrelated failures):
 
-## Pre-existing full-suite failures (10, all failing identically at 9f9404a)
+## Pre-existing full-suite failures (10, all failing identically at 8f3af3c)
 
 1. **tests/test_schemas.py::test_committed_file_matches_schema[model_performance-path29/30/31]**
    and **test_schema_bucket_counts_are_pinned** and
    **test_dataset_enums_match_committed_data_across_all_schemas** —
    the committed schema pins/bucket counts/enums are stale relative to
-   the helixgen model-performance data landed in commit 9bc68e1
+   the helixgen model-performance data landed in commit 9e803ca
    ("data: helixgen model performance (2stage, 2stage-w015625, mlm) +
    multi-species comparison"): the three new `*_performance.json`
    files (paths 29-31) do not satisfy the committed schema and the
@@ -20,7 +20,7 @@ boundary forbids touching unrelated failures):
 
 2. **tests/test_determinism.py::test_chain_is_deterministic_and_matches_committed**
    — the derived data chain no longer matches the committed derived
-   files after the same 9bc68e1 data commit (stale
+   files after the same 9e803ca data commit (stale
    `models_comparison*` / `tasks.json` regeneration needed:
    `make data`).
 

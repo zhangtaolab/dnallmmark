@@ -17,8 +17,8 @@ actuals:
   tokens: 2941
   tasks: 1
   commits: 2
-plan_head_before: ac26570e921d4a292dc7df975c0687a6b304f256
-plan_head_after: 00f3e196a25e1393dd62699c65b201f6d6541af1
+plan_head_before: b14339b5df8387d1756966cc51d77cb6d9450c3a
+plan_head_after: 45d321167371ef23dbec159b5ea31200be125ffb
 
 tech-stack:
   added: []
@@ -76,11 +76,11 @@ status: complete
 ## Performance
 
 - **Duration:** ~9 min (15:41–15:50 UTC, code + gates; full-suite run included)
-- **Commits:** 2 (RED `cfbd9aa`, GREEN `00f3e19`)
+- **Commits:** 2 (RED `b6e019e`, GREEN `45d3211`)
 
 ## TDD Evidence
 
-### RED (commit cfbd9aa)
+### RED (commit b6e019e)
 
 The three `_cr01` agreement tests added to the L6H-03 section; the module autouse fixture extended with the state-root pin in the same change. Modes 1 and 2 failed under the pre-reroute code — exactly the verifier's reproduced divergence:
 
@@ -94,7 +94,7 @@ E   AssertionError: assert PosixPath('/tmp/pytest-of-forrest/pytest-481/test_dat
 
 Mode 1 (spec-without-file): the base answered repo `pipeline/` while consumption answered the configured root. Mode 2 (relative file value, CWD != repo): the base answered `<CWD>/rel-ds` while consumption answered `REPO_ROOT/rel-ds`. The control (aligned default) passed before the fix, as the plan requires — it pins byte-identity, not divergence.
 
-### GREEN (commit 00f3e19)
+### GREEN (commit 45d3211)
 
 The one-helper reroute in `tui/services/download_queue.py::_datasets_base` — the exact `_models_base` twin:
 
@@ -148,10 +148,10 @@ None — plan executed exactly as written. No WR-01/WR-02/IN-01/IN-02 scope touc
 
 ## Self-Check: PASSED
 
-- `tui/services/download_queue.py` — FOUND (modified, committed 00f3e19)
-- `tests/tui/test_services_download_queue.py` — FOUND (modified, committed cfbd9aa)
-- `cfbd9aa` ancestor of HEAD — FOUND
-- `00f3e19` ancestor of HEAD — FOUND
+- `tui/services/download_queue.py` — FOUND (modified, committed 45d3211)
+- `tests/tui/test_services_download_queue.py` — FOUND (modified, committed b6e019e)
+- `b6e019e` ancestor of HEAD — FOUND
+- `45d3211` ancestor of HEAD — FOUND
 
 ## Notes for Re-verification
 

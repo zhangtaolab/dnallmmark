@@ -54,16 +54,16 @@ re_verification:
 advisory:
   - finding: "WR-01 — a failed KIND_MODEL download flips the selection 下载 column to 已下载: model_presence gates on is_dir only (tui/services/selection.py) while the model-lane done gate requires config.json (MODEL_DONE_MARKER)"
     category: other
-    reason: "Carried forward unchanged (selection.py untouched since the 4baaa2b pass — git-confirmed). Operator-facing correctness defect in the model presence column; model lane and its presence column are dcl/mlc scope layered after phase 10; no phase-10 SC covers it. Disposition-open in 10-REVIEW-DISPOSITION.md"
-    evidence_status: "reproduced at the 4baaa2b pass; untouched by 11-08 (file outside its diff)"
+    reason: "Carried forward unchanged (selection.py untouched since the 20512e9 pass — git-confirmed). Operator-facing correctness defect in the model presence column; model lane and its presence column are dcl/mlc scope layered after phase 10; no phase-10 SC covers it. Disposition-open in 10-REVIEW-DISPOSITION.md"
+    evidence_status: "reproduced at the 20512e9 pass; untouched by 11-08 (file outside its diff)"
   - finding: "WR-02 — the slot-3 drill-down renders channel: unknown (unknown_key) for healthy KIND_MODEL queue rows (channel_detail consults only the DATASET registry)"
     category: other
-    reason: "Carried forward unchanged (data_manager.py untouched since 4baaa2b). Degrades the D-03 drill-down surface only for KIND_MODEL rows that did not exist at phase 10; no phase-10 SC covers model-row drill-down content. Disposition-open"
-    evidence_status: "code-traced at the 4baaa2b pass; untouched by 11-08"
+    reason: "Carried forward unchanged (data_manager.py untouched since 20512e9). Degrades the D-03 drill-down surface only for KIND_MODEL rows that did not exist at phase 10; no phase-10 SC covers model-row drill-down content. Disposition-open"
+    evidence_status: "code-traced at the 20512e9 pass; untouched by 11-08"
   - finding: "IN-01 — z pressed during the mount probe-in-flight window fires DL_ZENODO_DISABLED_TOAST as fact while _zenodo_state is still None (tui/screens/data_manager.py)"
     category: other
     reason: "Carried forward unchanged. Transient copy issue; SC4 reachability and never-silent behavior unaffected. Disposition-open"
-    evidence_status: "code-read at the 4baaa2b pass; untouched by 11-08"
+    evidence_status: "code-read at the 20512e9 pass; untouched by 11-08"
   - finding: "IN-02 — ABOUT_MILESTONE_STAGE stale (names phase 9) in tui/strings.py (:605)"
     category: other
     reason: "Carried forward unchanged (strings.py WAS touched by 11-08, but only in the LNC_EXIT/MON_ blocks — this line is byte-identical). Cosmetic milestone metadata; no SC relevance. Disposition-open"
@@ -73,9 +73,9 @@ advisory:
 # Phase 10: Data Manager (Downloads & Verification) Verification Report — Convergence Re-Verification (Staleness Refresh, Round 3)
 
 **Phase Goal:** Dataset gaps are closable in-session before launch — one-click ModelScope download driven by the registry's authoritative `download_url`, a persistent resumable queue, and row-count reconciliation against n_audit — so an env-check presence FAIL is always diagnosable and fixable from the console
-**Verified:** 2026-10-14T17:42:32Z at HEAD dd16ad6 (branch autorun)
+**Verified:** 2026-10-14T17:42:32Z at HEAD 646bcd5 (branch autorun)
 **Status:** passed — 5/5 SCs hold at the refreshed HEAD; zero regressions from the 11-08 delta
-**Re-verification:** Yes — staleness refresh. Prior pass 5/5 at HEAD 4baaa2b (2026-10-14T16:01:25Z, digest `v3:sha256:b1282997…`). Since then, phase 11's gap plan 11-08 (verified passed in phase 11's own pass at fcdc4b6) touched THREE of this phase's covered files: `tui/app.py` (WR-05 multi-root ExitModal), `tui/services/sweep_launcher.py` (WR-04 O_EXCL tee + WR-01 root-basis `rc.resolve_dirs(spec).output_root_abs` in `_spawn`), `tui/strings.py` (WR-02/03/05 string constants). The SC1 chain files — `tui/services/download_queue.py`, `tui/services/run_config.py`, `tui/services/env_check.py` — are byte-identical since 4baaa2b (git-confirmed: `git diff --name-only 4baaa2b..dd16ad6` lists neither).
+**Re-verification:** Yes — staleness refresh. Prior pass 5/5 at HEAD 20512e9 (2026-10-14T16:01:25Z, digest `v3:sha256:b1282997…`). Since then, phase 11's gap plan 11-08 (verified passed in phase 11's own pass at ddc7390) touched THREE of this phase's covered files: `tui/app.py` (WR-05 multi-root ExitModal), `tui/services/sweep_launcher.py` (WR-04 O_EXCL tee + WR-01 root-basis `rc.resolve_dirs(spec).output_root_abs` in `_spawn`), `tui/strings.py` (WR-02/03/05 string constants). The SC1 chain files — `tui/services/download_queue.py`, `tui/services/run_config.py`, `tui/services/env_check.py` — are byte-identical since 20512e9 (git-confirmed: `git diff --name-only 20512e9..646bcd5` lists neither).
 
 **Method:** every covered test lane re-run green at HEAD (388 test executions by this verifier, zero failures), plus this verifier's OWN agreement probe (bare production construction, both divergence modes + control) and a NON-VACUOUS env-kernel flip probe with a contrast control; structural gates, scoped ruff+ty, decision coverage, and a fresh covered-input fingerprint.
 
@@ -87,7 +87,7 @@ advisory:
 
 | # | Truth (ROADMAP SC) | Status | Evidence |
 |---|--------------------|--------|----------|
-| 1 | SC1 one-click download via registry `download_url`; on landing, presence flips to ✓ in the selection table AND the environment check | ✓ VERIFIED | **Agreement property undisturbed by 11-08 — re-proven at HEAD.** The 11-08 `resolve_dirs` threading is on the OUTPUT-root axis only: `sweep_launcher.launch_spec` keys `_spawn` on `rc.resolve_dirs(spec).output_root_abs` (:612, the WR-01 launcher-registry basis — kill/detach/tee/attach keys, D-14); it never touches `dataset_root`. The dataset lane is byte-identical: `_datasets_base()` (download_queue.py:1187-1212) reads `run_config.resolve_dirs(run_config.load_state()).dataset_root_abs`; consumption env_check.py:182/:212 binds the same chain; `compose_argv` threads `--dataset_root` via `_abs_against_repo_root` (run_config.py:1158-1160). Committed lane: queue module 195 passed in 0.65s (three `_cr01` agreement tests + four L6H-03 pins included). Verifier's own probe at HEAD (`.venv/bin/python -I /tmp/cr01-repro3/repro.py`, exit-verified): mode1 spec-without-file landing==consumption==configured root; mode2 relative-file CWD≠repo both == REPO_ROOT-anchored; control both == repo `pipeline/`. **Non-vacuous flip probe** (`/tmp/cr01-repro3/flip.py`, real `default_kernels()["dataset_dirs"]` under a configured root): control 50-of-50 missing with `GUE__emp_H3` exactly listed → after landing at the queue's resolved base 49-of-50, key ABSENT from the missing lines. Six landing legs funnel through the one helper at :2125/:2154/:2330/:2401/:2469/:2919 (line refs byte-identical to the 4baaa2b pass). |
+| 1 | SC1 one-click download via registry `download_url`; on landing, presence flips to ✓ in the selection table AND the environment check | ✓ VERIFIED | **Agreement property undisturbed by 11-08 — re-proven at HEAD.** The 11-08 `resolve_dirs` threading is on the OUTPUT-root axis only: `sweep_launcher.launch_spec` keys `_spawn` on `rc.resolve_dirs(spec).output_root_abs` (:612, the WR-01 launcher-registry basis — kill/detach/tee/attach keys, D-14); it never touches `dataset_root`. The dataset lane is byte-identical: `_datasets_base()` (download_queue.py:1187-1212) reads `run_config.resolve_dirs(run_config.load_state()).dataset_root_abs`; consumption env_check.py:182/:212 binds the same chain; `compose_argv` threads `--dataset_root` via `_abs_against_repo_root` (run_config.py:1158-1160). Committed lane: queue module 195 passed in 0.65s (three `_cr01` agreement tests + four L6H-03 pins included). Verifier's own probe at HEAD (`.venv/bin/python -I /tmp/cr01-repro3/repro.py`, exit-verified): mode1 spec-without-file landing==consumption==configured root; mode2 relative-file CWD≠repo both == REPO_ROOT-anchored; control both == repo `pipeline/`. **Non-vacuous flip probe** (`/tmp/cr01-repro3/flip.py`, real `default_kernels()["dataset_dirs"]` under a configured root): control 50-of-50 missing with `GUE__emp_H3` exactly listed → after landing at the queue's resolved base 49-of-50, key ABSENT from the missing lines. Six landing legs funnel through the one helper at :2125/:2154/:2330/:2401/:2469/:2919 (line refs byte-identical to the 20512e9 pass). |
 | 2 | SC2 queue persists across TUI exit/crash and resumes where it stopped after restart | ✓ VERIFIED | Queue module fully green at HEAD (restart-resume end-to-end service tier, 20-row exhaustive transition table, credential-free 12-field persisted set — all in the 195); `test_boot_resume_rehydrates_and_kicks_once` green in the 32-pass named set; boot kick solely via `tui/__main__.py` (untouched — not in the 11-08 diff). The app.py 11-08 delta is confined to ExitModal/action_quit (WR-05) — the app's shared bare `DownloadQueueService()` construction (:400-403) and the queue worker/kick paths are byte-identical. All four covered Pilot modules (data_manager/nav_shell/selection/selection_custom — the app.py regression surface) green: 129 passed. |
 | 3 | SC3 every landed download reconciles rows vs n_audit; mismatches prominent, never silently accepted | ✓ VERIFIED | Queue module green at HEAD: real-subprocess reconcile pass pair, mismatch-no-deletion, `test_committed_artifacts_byte_unchanged_across_real_reconcile_run`, `test_reaudit_argv_exactly_interpreter_and_script_no_flags`; `test_mismatch_banner_block_and_sort_to_top` green in the named set. The reconcile staged `Dataset_path` absolutization joins against the rerouted base (:2469) — unchanged since the passed round. |
 | 4 | SC4 Zenodo bulk bundle (record 19135551, once public) reachable as alternate whole-package entry | ✓ VERIFIED | Full zenodo module green (23 tests, in the 32-pass run); `test_z_enqueues_only_when_public_never_silent_otherwise` green; extract target :2330 rides the rerouted base. strings.py's 11-08 additions touch only LNC_/MON_ blocks — the DL_/QUEUE_ string contract is untouched. |
@@ -100,7 +100,7 @@ advisory:
 The caller-flagged risk: 11-08 threaded `rc.resolve_dirs(spec).output_root_abs` through `launch_spec` (`sweep_launcher.py:612`) and the CR-02 live-root pre-check (`tui/screens/run_config.py:1900` — phase 11's covered set, not phase 10's). Verification:
 
 1. **Axis separation** — the threading concerns `output_root_abs` (where the sweep WRITES; launcher registry keys for kill/detach/tee/auto-attach). Phase 10's SC1 property concerns `dataset_root_abs` (where downloads LAND vs where the run/env-check READS). No code path from `launch_spec`/`_spawn` touches the dataset base.
-2. **Chain byte-identity** — `download_queue.py`, `run_config.py`, `env_check.py` all unchanged in `4baaa2b..dd16ad6` (last touches: `00f3e19` / `1f16b3d` / `aa6161d` respectively, all at-or-before the passed 4baaa2b state).
+2. **Chain byte-identity** — `download_queue.py`, `run_config.py`, `env_check.py` all unchanged in `20512e9..646bcd5` (last touches: `45d3211` / `06f7dd4` / `fa0852a` respectively, all at-or-before the passed 20512e9 state).
 3. **Behavioral re-proof** — the three `_cr01` agreement tests green in the 195-pass lane, plus this verifier's own fresh probe (agreement ×3 configurations + kernel flip 50→49 with exact-token contrast) at HEAD.
 4. **Same discipline, not a conflict** — WR-01's root-basis rule aligns the launcher with the SAME `resolve_dirs`/REPO_ROOT anchoring the 10-07 reroute established for the dataset lane; the two changes compose rather than compete.
 
@@ -108,8 +108,8 @@ The caller-flagged risk: 11-08 threaded `rc.resolve_dirs(spec).output_root_abs` 
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `tui/services/download_queue.py` | The rerouted `_datasets_base` (run-config chain, the `_models_base` twin); six landing legs funnel through it | ✓ VERIFIED | Byte-identical to the passed 4baaa2b state (outside the 11-08 diff); reroute live at :1187-1212; legs at :2125/:2154/:2330/:2401/:2469/:2919; module lane 195 green |
-| `tests/tui/test_services_download_queue.py` | Three `_cr01` agreement tests + dual-root autouse pin + four L6H-03 pins | ✓ VERIFIED | Unchanged since 00f3e19/cfbd9aa; 195 passed in 0.65s at HEAD |
+| `tui/services/download_queue.py` | The rerouted `_datasets_base` (run-config chain, the `_models_base` twin); six landing legs funnel through it | ✓ VERIFIED | Byte-identical to the passed 20512e9 state (outside the 11-08 diff); reroute live at :1187-1212; legs at :2125/:2154/:2330/:2401/:2469/:2919; module lane 195 green |
+| `tests/tui/test_services_download_queue.py` | Three `_cr01` agreement tests + dual-root autouse pin + four L6H-03 pins | ✓ VERIFIED | Unchanged since 45d3211/b6e019e; 195 passed in 0.65s at HEAD |
 | `tui/app.py` (11-08-delta covered file) | Phase-10 surfaces (queue construction, worker, boot resume, data-manager wiring) intact under the WR-05 exit-modal change | ✓ VERIFIED | Bare `DownloadQueueService()` at :400-403 unchanged; queue/worker paths untouched; all four covered Pilot modules green (129 passed) |
 | `tui/services/sweep_launcher.py` (11-08-delta covered file) | WR-04 tee + WR-01 root-basis; no dataset-lane contact | ✓ VERIFIED | `resolve_dirs` appears only at :573/:612 for `output_root_abs`; `grep dataset` → no hits; covered test surface green |
 | `tui/strings.py` (11-08-delta covered file) | Phase-10 DL_/QUEUE_ string contract untouched | ✓ VERIFIED | 11-08 diff touches only `LNC_EXIT_MESSAGE_MULTI`, `MON_RERUN_CONFIRM`, `MON_RERUN_NO_SEEDS` |
@@ -139,7 +139,7 @@ The caller-flagged risk: 11-08 threaded `rc.resolve_dirs(spec).output_root_abs` 
 | Structural gates on the production file | `grep "^import directories_config"` / `grep "load_directories_tolerant"` over download_queue.py | both absent | ✓ PASS |
 | ruff + ty (scoped to covered files incl. the three 11-08-delta files) | `.venv/bin/python -m ruff check …` / `.venv/bin/python -m ty check …` | All checks passed (both) | ✓ PASS |
 
-Full-suite note (caller-provided box baseline, not re-run here — single-named-test discipline): 7 failed / 1743 passed / 9 xfailed. The delta vs the 4baaa2b baseline (7/1734/9) is exactly +9 passed = 11-08's new tests; the 7 failures are the recorded pre-existing set (test_determinism ×1, test_schemas ×5, test_services_run_config::test_storage_overview_defaults_mirror_real_consumers ×1), none in any phase-10 covered lane — this verifier's own covered-lane runs (388 executions) are fully green. The 2×2 GPU smoke writes only under `pipeline/finetuned/smoke-2x2-261014` + `pipeline/logs` (background noise, outside the covered surface).
+Full-suite note (caller-provided box baseline, not re-run here — single-named-test discipline): 7 failed / 1743 passed / 9 xfailed. The delta vs the 20512e9 baseline (7/1734/9) is exactly +9 passed = 11-08's new tests; the 7 failures are the recorded pre-existing set (test_determinism ×1, test_schemas ×5, test_services_run_config::test_storage_overview_defaults_mirror_real_consumers ×1), none in any phase-10 covered lane — this verifier's own covered-lane runs (388 executions) are fully green. The 2×2 GPU smoke writes only under `pipeline/finetuned/smoke-2x2-261014` + `pipeline/logs` (background noise, outside the covered surface).
 
 ### Probe Execution
 
@@ -166,11 +166,11 @@ None. Debt-marker greps (`TBD|FIXME|XXX`, `TODO|HACK|PLACEHOLDER`) clean over al
 
 ### Advisory (New Scope / Out-of-SC, carried forward)
 
-All four remain `open` in 10-REVIEW-DISPOSITION.md. None is a phase-10 SC; the model lane, model presence column, and model drill-down rows are dcl/mlc scope layered after phase 10. Three of the four host files are untouched since the 4baaa2b pass (selection.py, data_manager.py, and strings.py's IN-02 line — 11-08 edited strings.py but not that line). None gained or lost evidence this round; none breaches an SC; none blocks.
+All four remain `open` in 10-REVIEW-DISPOSITION.md. None is a phase-10 SC; the model lane, model presence column, and model drill-down rows are dcl/mlc scope layered after phase 10. Three of the four host files are untouched since the 20512e9 pass (selection.py, data_manager.py, and strings.py's IN-02 line — 11-08 edited strings.py but not that line). None gained or lost evidence this round; none breaches an SC; none blocks.
 
 | # | Finding | Category | Why Advisory |
 |---|---------|----------|--------------|
-| 1 | WR-01 failed KIND_MODEL download → 下载 column 已下载 (is_dir presence vs config.json done gate) | other | Reproduced at the 4baaa2b pass; model-presence column is dcl/mlc scope, no phase-10 SC covers it |
+| 1 | WR-01 failed KIND_MODEL download → 下载 column 已下载 (is_dir presence vs config.json done gate) | other | Reproduced at the 20512e9 pass; model-presence column is dcl/mlc scope, no phase-10 SC covers it |
 | 2 | WR-02 channel_detail renders unknown (unknown_key) for healthy KIND_MODEL rows | other | Degrades the D-03 drill-down only for post-phase-10 row kinds |
 | 3 | IN-01 z probe-in-flight window asserts 未公开 as fact | other | Transient copy issue; SC4 reachability and never-silent behavior unaffected |
 | 4 | IN-02 ABOUT_MILESTONE_STAGE names phase 9 (strings.py:605) | other | Cosmetic milestone metadata; no SC relevance; re-read at this pass, still stale |
@@ -179,7 +179,7 @@ Housekeeping notes for the maintainer: (a) 10-REVIEW-DISPOSITION.md's table row 
 
 ### Human Verification Required
 
-None — both prior live items remain discharged (10-UAT.md, 2026-10-13: the GB10 live smoke incl. the presence flip, and the `g` four-artifact check, baseline `2f7211d`). This refresh's delta (11-08) changed no phase-10 user-facing surface: the exit-modal/tee/strings changes are phase-11 SC surfaces, and the SC1 flip is re-proven mechanically (agreement ×3) and behaviorally (the non-vacuous kernel-flip contrast above). An optional live smoke under a configured slot-4 root remains available via the 10-06 procedure but gates nothing here.
+None — both prior live items remain discharged (10-UAT.md, 2026-10-13: the GB10 live smoke incl. the presence flip, and the `g` four-artifact check, baseline `0332aee`). This refresh's delta (11-08) changed no phase-10 user-facing surface: the exit-modal/tee/strings changes are phase-11 SC surfaces, and the SC1 flip is re-proven mechanically (agreement ×3) and behaviorally (the non-vacuous kernel-flip contrast above). An optional live smoke under a configured slot-4 root remains available via the 10-06 procedure but gates nothing here.
 
 ### Gaps Summary
 
@@ -187,9 +187,9 @@ None. The staleness trigger (11-08 touching three covered files) is fully cleare
 
 ### Fingerprint Refresh
 
-`covered_files`/`covered_digest` in the frontmatter are the verbatim `verification.fingerprint` output at HEAD dd16ad6 (supersedes `v3:sha256:b1282997…` of the 4baaa2b pass; identical file scope, new digest reflecting the 11-08 edits to app.py/sweep_launcher.py/strings.py).
+`covered_files`/`covered_digest` in the frontmatter are the verbatim `verification.fingerprint` output at HEAD 646bcd5 (supersedes `v3:sha256:b1282997…` of the 20512e9 pass; identical file scope, new digest reflecting the 11-08 edits to app.py/sweep_launcher.py/strings.py).
 
 ---
 
-_Verified: 2026-10-14T17:42:32Z (HEAD dd16ad6)_
+_Verified: 2026-10-14T17:42:32Z (HEAD 646bcd5)_
 _Verifier: Claude (gsd-verifier, convergence staleness refresh round 3)_

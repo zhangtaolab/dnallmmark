@@ -54,10 +54,10 @@ metrics:
   completed: 2026-10-14
 status: complete
 actuals:
-  tokens: 64827    # chars/4 over the realized 991f481..HEAD diff (259,308 chars)
+  tokens: 64827    # chars/4 over the realized 1e0c19a..HEAD diff (259,308 chars)
   tasks: 3
-  commits: 4       # MEASURED: git rev-list --count 991f481..HEAD
-plan_head_before: 991f481fc48a9ff86cd9f658aef3528b7b319c4e
+  commits: 4       # MEASURED: git rev-list --count 1e0c19a..HEAD
+plan_head_before: 1e0c19a01282ad1f2d30e364a0b62a3697a59ee0
 plan_head_after: a0fab7a4bbd98998a71602390ee1b16187ad6a8e
 ---
 
@@ -69,9 +69,9 @@ plan_head_after: a0fab7a4bbd98998a71602390ee1b16187ad6a8e
 
 ### TDD record
 
-**RED (f1e961e):** the new service/registries tests failed on the missing API only (AttributeError on `load_dnallm_compat` / `KIND_MODEL` / `enqueue_model` / `resolve_model_channel` / `_models_base`; the registries module failed at import); the 169 pre-existing queue tests stayed green.
+**RED (5d19d8d):** the new service/registries tests failed on the missing API only (AttributeError on `load_dnallm_compat` / `KIND_MODEL` / `enqueue_model` / `resolve_model_channel` / `_models_base`; the registries module failed at import); the 169 pre-existing queue tests stayed green.
 
-**GREEN (7200011):** implementation below; `tests/tui/test_services_download_queue.py tests/tui/test_services_registries.py tests/tui/test_import_lock.py` → 216 passed. `make lint` + `make typecheck` green.
+**GREEN (3e9bc22):** implementation below; `tests/tui/test_services_download_queue.py tests/tui/test_services_registries.py tests/tui/test_import_lock.py` → 216 passed. `make lint` + `make typecheck` green.
 
 ### What landed
 
@@ -101,7 +101,7 @@ MLC LIVE PROOF OK: normalized landing holds config.json directly
 
 12 files hoisted, scaffolding removed, config.json (904 B) direct in the landing dir, entry done with reconcile None. First-try pass; real-run artifacts stayed outside the repo (gitignored-class /tmp only).
 
-## Task 2 — Slot 2 becomes the models-only screen (MLC-02): commit 1aaab93
+## Task 2 — Slot 2 becomes the models-only screen (MLC-02): commit f377bed
 
 - **SelectionData.compat** (additive, default `{}` keeps every Phase 8/9/10 fake conforming) populated by the real backend through the ONE loader; **the m toggle, the datasets table, `_DATASETS_VIEW`, `action_switch_list`, and the dataset d are gone** — the table is models-only with the column set 标 · 模型 · 类型 · 物种 · 规模(M) · **适配** · **下载** (budget 101 = widths 85 + 14 padding + 2 scrollbar; h-scroll below, 80x24 minimum intact; the backstop tests re-pinned to the 46-char longest model key `caduceus-ph_seqlen-131k_d_model-256_n_layer-16`).
 - **The default pool**: dnllm-adapted officials + customs (customs always visible per the private-models-visible ruling); the **t** binding reveals ALL officials with unadapted rows marked 未适配 (dim) — never hidden data. The filter-count readout carries the pool segment (已适配/全部) via the new `SEL_FILTER_COUNT_POOLED`; the text filter composes AND over the active pool.
@@ -110,7 +110,7 @@ MLC LIVE PROOF OK: normalized landing holds config.json directly
 - w/e act on the constant models kind; marks on datasets remain settable through presets (p) and template import (x) and still display in the matrix (v) and the status line — pinned unchanged.
 - i18n: zero Chinese literals in the module (grep lock green); the dataset-wizard full loop moved out of this screen (successor surfaces: slot 3 w + the wizard suite); the dataset D-11 overlay proofs re-pinned as backend-snapshot assertions (the rendering surfaces are slot 3 / the matrix, pinned in their own suites).
 
-## Task 3 — Slot 3 datasets-primary + nav labels + docs (MLC-03): commit a0fab7a
+## Task 3 — Slot 3 datasets-primary + nav labels + docs (MLC-03): commit 0cbd14e
 
 - **The pane promotion**: the FULL official dataset list is the primary top pane — key · 下载 · n_audit 基线行数 columns; the missing-only list is the v-toggled alternate (direction flipped from DCL-03; per-view column sets re-compose on render).
 - **The queue-state overlay** (screen-side join over the entries snapshot in the same SnapshotLoaded message; no service change): a row with a live non-done entry renders the queue's own state word (待下载/下载中/失败/对账不一致) in its 下载 cell; a done entry reads ✓ 在场 through the merged presence (pinned per-state, incl. the done-exclusion).
@@ -176,5 +176,5 @@ None beyond the plan's register — T-qt-01 (LIST argv, -I, FIXED program, start
 ## Self-Check: PASSED
 
 - Files: tui/services/registries.py, tui/services/download_queue.py, tui/screens/selection.py, tui/screens/data_manager.py, tui/app.py, tui/strings.py, tui/styles.tcss, tests/tui/test_snapshots.py, docs/TUI-GUIDE.md — all FOUND (modified, committed)
-- Commits: f1e961e, 7200011, 1aaab93, a0fab7a are ancestors of HEAD (git merge-base --is-ancestor verified via rev-list 991f481..HEAD == 4)
+- Commits: 5d19d8d, 3e9bc22, f377bed, 0cbd14e are ancestors of HEAD (git merge-base --is-ancestor verified via rev-list 1e0c19a..HEAD == 4)
 - docs artifacts (SUMMARY.md/STATE.md) intentionally uncommitted — the orchestrator owns the docs commit per the dispatch constraints

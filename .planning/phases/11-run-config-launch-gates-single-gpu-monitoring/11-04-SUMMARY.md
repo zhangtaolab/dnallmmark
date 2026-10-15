@@ -20,9 +20,9 @@ affects: [11-07 monitor screen (stats line + cell table + discovered pane + [f]/
 actuals:
   tokens: 21613   # chars/4 over the realized diff (86450 chars, 2 files)
   tasks: 3
-  commits: 6      # measured: git rev-list --count de45827..HEAD
-plan_head_before: de45827708966dcf9ee10f74bf78900f1803abb3
-plan_head_after: 10c8def7741243cff84760a9fd889ea11469e19b
+  commits: 6      # measured: git rev-list --count 891fb9d..HEAD
+plan_head_before: 891fb9d75751d7a0fd35d290b2bde10d2445f315
+plan_head_after: 8c05a4b38f34793abd9a8850fd929421560422de
 
 tech-stack:
   added: []   # stdlib + the existing artifact_loader/run_sweep/settings seams only
@@ -142,7 +142,7 @@ The plan's Task 1 structurally consumes pieces its text assigns to Task 2 (its o
 - **Issue:** the corrupt manifest was written AFTER `age_tree`, so its fresh mtime classified the root running under the injected past clock — testing the wrong thing.
 - **Fix:** re-age the tree after each manifest write; the corruption→absent fallback is now actually under test.
 - **Files modified:** tests/tui/test_services_sweep_monitor.py
-- **Commit:** 4f5d41f
+- **Commit:** da471c5
 
 ### Documented decisions (plan-left-open points, no behavior conflict)
 

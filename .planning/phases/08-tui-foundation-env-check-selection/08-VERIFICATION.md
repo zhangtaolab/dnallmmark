@@ -60,7 +60,7 @@ re_verification:
 deferred:
   - truth: "Critical FAILs block entry into the launch flow (ENV-03) and the quick-check re-validates before each task launch (ENV-04) — the launch-flow wiring itself"
     addressed_in: "Phase 11"
-    evidence: "CLOSED by its successor: Phase 11 landed the env preflight + E2' typed gate (d8e63ed) and the launch gate screen — Phase 11 verification passed. Kept as the historical deferral record."
+    evidence: "CLOSED by its successor: Phase 11 landed the env preflight + E2' typed gate (e63a08d) and the launch gate screen — Phase 11 verification passed. Kept as the historical deferral record."
 advisory:
   - finding: "Pin guard-granularity: the card-site pin's guard-presence check is per-FUNCTION — stripping ONE of build_wizard's two comprehension guards leaves the sibling's isinstance in the function and the pin stays green"
     category: other
@@ -68,15 +68,15 @@ advisory:
     evidence_status: "none provided — mutation-evidenced in the fourth pass's report; unchanged this pass"
   - finding: "WR-02: degraded dnallm_compat map renders a silent blank models table on slot 2 (no degraded-state row when the default pool yields zero entries)"
     category: architectural
-    reason: "quick-261014-mlc scope (post-phase); tracked open in 08-REVIEW-DISPOSITION.md. selection.py + data_manager.py byte-unchanged since 783f43a — finding unchanged this pass. (Distinct from the phase-11 monitor WR-02 label.)"
+    reason: "quick-261014-mlc scope (post-phase); tracked open in 08-REVIEW-DISPOSITION.md. selection.py + data_manager.py byte-unchanged since d9b96b5 — finding unchanged this pass. (Distinct from the phase-11 monitor WR-02 label.)"
     evidence_status: "none provided"
   - finding: "WR-03: new synchronous event-loop file reads (_render_storage, _submit_save→custom_names) contradict the module's own D-03 read-seam discipline"
     category: architectural
-    reason: "quick tasks 261014-f4w/mlc scope (post-phase); bounded local-file stalls, not a Phase 8 must-have breach; tracked open in the disposition. Files byte-unchanged since 783f43a — unchanged this pass. (Distinct from the phase-11 monitor WR-03 label.)"
+    reason: "quick tasks 261014-f4w/mlc scope (post-phase); bounded local-file stalls, not a Phase 8 must-have breach; tracked open in the disposition. Files byte-unchanged since d9b96b5 — unchanged this pass. (Distinct from the phase-11 monitor WR-03 label.)"
     evidence_status: "none provided"
   - finding: "IN-01..IN-04: dead strings constants after the slot split; matrix Header() chrome inconsistency; missing is_valid_coordinate guard in EnvCheckScreen.action_show_detail (present in SelectionScreen.action_show_detail); degenerate filter tokens (=x, type=)"
     category: other
-    reason: "Info-level, post-phase scope, tracked open in 08-REVIEW-DISPOSITION.md; none breaches a Phase 8 must-have. matrix.py + env_check.py byte-unchanged since 783f43a — unchanged this pass."
+    reason: "Info-level, post-phase scope, tracked open in 08-REVIEW-DISPOSITION.md; none breaches a Phase 8 must-have. matrix.py + env_check.py byte-unchanged since d9b96b5 — unchanged this pass."
     evidence_status: "none provided"
 ---
 
@@ -85,11 +85,11 @@ advisory:
 **Phase Goal:** The console exists and is trustworthy at rest — `make tui` opens a Textual app whose startup shows a persisted full environment-check panel, and operators build model×dataset selections k9s-style with presets, templates, and presence columns — with every non-retrofittable decision (textual-free services layer, `[tui]` dependency group, Pilot test harness, tolerant artifact loader, constants-module i18n convention) landed so later phases add screens, not architecture
 **Verified:** 2026-10-14T17:45:49Z
 **Status:** passed
-**Re-verification:** Yes — fifth pass (second stale-refresh tonight), at HEAD dd16ad6. The fourth pass verified 6/6 at 783f43a; since then, later phases' gap closures (11-08) touched three files in this phase's covered set. This pass established the exact delta, re-confirmed all six truths at HEAD (live service executions + named tests + Pilot lanes), re-executed both round-2 crash chains via the 08-09 named tests, re-ran both AST pins, and ran the full suite once against the updated box baseline.
+**Re-verification:** Yes — fifth pass (second stale-refresh tonight), at HEAD 646bcd5. The fourth pass verified 6/6 at d9b96b5; since then, later phases' gap closures (11-08) touched three files in this phase's covered set. This pass established the exact delta, re-confirmed all six truths at HEAD (live service executions + named tests + Pilot lanes), re-executed both round-2 crash chains via the 08-09 named tests, re-ran both AST pins, and ran the full suite once against the updated box baseline.
 
 ## Stale-Refresh Delta Analysis (why this pass exists)
 
-`git diff 783f43a..HEAD` over the covered tree — **only 3 of 26 covered implementation files changed**, all phase-11-scope:
+`git diff d9b96b5..HEAD` over the covered tree — **only 3 of 26 covered implementation files changed**, all phase-11-scope:
 
 | File | Delta | Phase-8 impact |
 | ---- | ----- | -------------- |
@@ -105,7 +105,7 @@ advisory:
 
 | # | Truth | Status | Evidence |
 | --- | ----- | ------ | -------- |
-| 1 | SC1: `make tui` opens the console; startup runs the full environment check reusing env_smoke kernels; per-item ✓/✗ status with drill-down | ✓ VERIFIED | Makefile recipe unchanged (0 diff since 783f43a); `get_default_screen() → EnvCheckScreen` survived the WR-05 app.py delta (app.py:438-440); live `len(ENV_KERNEL_LABELS) == 8`; boot + env-check Pilot lanes green this pass (67 passed across boot/env-check/matrix/registries) |
+| 1 | SC1: `make tui` opens the console; startup runs the full environment check reusing env_smoke kernels; per-item ✓/✗ status with drill-down | ✓ VERIFIED | Makefile recipe unchanged (0 diff since d9b96b5); `get_default_screen() → EnvCheckScreen` survived the WR-05 app.py delta (app.py:438-440); live `len(ENV_KERNEL_LABELS) == 8`; boot + env-check Pilot lanes green this pass (67 passed across boot/env-check/matrix/registries) |
 | 2 | SC2: Check results persist with visible 上次检查 date; same-day restarts read the cache; manual refresh re-checks | ✓ VERIFIED | `ENV_LAST_CHECK_LINE = "上次检查: {checked_at}"` byte-identical (strings.py:94 — the strings delta touched only MON_/LNC_ families); `Binding("r", "refresh", ENV_REFRESH_LABEL)` (env_check.py:324); env-check lane green in the suite run |
 | 3 | SC3: Critical FAILs visibly block with reason; missing-dataset routes to data management; quick-check re-validates launch-required subset | ✓ VERIFIED | Live at HEAD (`PYTHONPATH` over real services): CRITICAL {cuda, dnallm, matmul, numpy, peft, version_pins} ∩ ROUTING {model_dirs, dataset_dirs} = ∅; `QUICK_CHECK_KERNEL_IDS` 7 ids ⊂ the 8 kernel labels; env_gate.py + quick_check.py byte-unchanged; Phase-11 deferral stays CLOSED |
 | 4 | SC4: Model/dataset lists first-class selectable; k9s filter; spacebar marks on stable row_keys; presets; read-only matrix auxiliary view | ✓ VERIFIED | Live real `SelectionBackend().load_selection_data()`: 59 models / 50 datasets, both load errors None; full selection Pilot lane 38 passed this pass; matrix lane green |
@@ -118,11 +118,11 @@ advisory:
 
 | # | Item | Addressed In | Evidence |
 |---|------|-------------|----------|
-| 1 | ENV-03/ENV-04 launch-flow wiring (historical record) | Phase 11 | CLOSED by Phase 11: env preflight + E2' typed gate landed (d8e63ed), Phase 11 verification passed. Kept for the audit trail |
+| 1 | ENV-03/ENV-04 launch-flow wiring (historical record) | Phase 11 | CLOSED by Phase 11: env preflight + E2' typed gate landed (e63a08d), Phase 11 verification passed. Kept for the audit trail |
 
 ### Advisory (New Scope, Unevidenced)
 
-Carried forward unchanged from the fourth pass (files underlying each finding are byte-unchanged since 783f43a, so the findings cannot have moved). No new-scope findings this pass.
+Carried forward unchanged from the fourth pass (files underlying each finding are byte-unchanged since d9b96b5, so the findings cannot have moved). No new-scope findings this pass.
 
 | # | Finding | Category | Why Advisory |
 |---|---------|----------|--------------|
@@ -135,15 +135,15 @@ Carried forward unchanged from the fourth pass (files underlying each finding ar
 
 | Artifact | Expected | Status | Details |
 | -------- | -------- | ------ | ------- |
-| `tui/screens/selection.py` | slot-2 models screen + the three extraction-site guards | ✓ VERIFIED | Byte-unchanged since 783f43a (0 diff lines); guards read directly at HEAD; four named behavior tests re-run green |
+| `tui/screens/selection.py` | slot-2 models screen + the three extraction-site guards | ✓ VERIFIED | Byte-unchanged since d9b96b5 (0 diff lines); guards read directly at HEAD; four named behavior tests re-run green |
 | `tests/tui/test_pilot_selection.py` | w/enter/d real-app Pilot trio + the unit pin | ✓ VERIFIED | 4 named tests green; full lane 38 passed this pass |
 | `tests/tui/test_card_site_hardening.py` | the card-extraction family pin | ✓ VERIFIED | Green this pass; file byte-unchanged since the mutation-proven pass |
-| `pipeline/env_smoke.py` | structured kernels; fail-closed registry reads | ✓ VERIFIED | Byte-unchanged since 783f43a; goldens green in the suite |
+| `pipeline/env_smoke.py` | structured kernels; fail-closed registry reads | ✓ VERIFIED | Byte-unchanged since d9b96b5; goldens green in the suite |
 | `tui/services/registries.py` | entries + presence + compat; isinstance-guarded projections | ✓ VERIFIED | Byte-unchanged; live 59/50 through the real seam |
 | `tui/services/selection.py` | filter/presets/presence; model_presence guard | ✓ VERIFIED | Byte-unchanged; live presets derivation correct (tier-1/tier-2/all + custom, zero unknowns) |
 | `tests/tui/test_work_site_hardening.py` | the 08-08 @work never-exit AST pin | ✓ VERIFIED | Green this pass (3 passed with the card pin); byte-unchanged |
 | `tui/app.py` / `tui/strings.py` / `pyproject.toml [tui]` | composition root / i18n single home / textual isolation | ✓ VERIFIED | app.py changed ONLY by phase-11 WR-05 (exit-modal multi-root) — default screen + boot verified at HEAD; strings.py gained only phase-11 constants, 0 CJK outside it; group contents exact, textual 8.2.8 |
-| `pipeline/registry_loader.py` | fail-loud contract BYTE-UNMODIFIED (prohibition) | ✓ VERIFIED | `git diff 22ca261..HEAD` over the file: 0 lines |
+| `pipeline/registry_loader.py` | fail-loud contract BYTE-UNMODIFIED (prohibition) | ✓ VERIFIED | `git diff 0559c40..HEAD` over the file: 0 lines |
 
 ### Key Link Verification
 
@@ -171,7 +171,7 @@ Carried forward unchanged from the fourth pass (files underlying each finding ar
 
 ### Behavioral Spot-Checks
 
-All executed by this verifier at HEAD dd16ad6.
+All executed by this verifier at HEAD 646bcd5.
 
 | Behavior | Command | Result | Status |
 | -------- | ------- | ------ | ------ |
@@ -184,11 +184,11 @@ All executed by this verifier at HEAD dd16ad6.
 | Live selection backend | `SelectionBackend().load_selection_data()` | 59/50, load errors None, presence 50 + model_presence 59 (4/55), presets correct, custom d1 | ✓ PASS |
 | **Full suite (once)** | `uv run --group dev --group tui pytest -q` | **7 failed / 1743 passed / 9 xfailed** — exactly the updated box baseline (same 7: 6 documented data/schema + 1 machine-state storage-overview; 1743 = 1731 + 12 tests added by phases 10-11 delta); zero new failures | ✓ PASS |
 | Lint + typecheck | `make lint` / `make typecheck` | All checks passed (both) | ✓ PASS |
-| Loader prohibition | `git diff 22ca261..HEAD -- pipeline/registry_loader.py` | 0 lines | ✓ PASS |
+| Loader prohibition | `git diff 0559c40..HEAD -- pipeline/registry_loader.py` | 0 lines | ✓ PASS |
 | Snapshots prohibition | `git status --short -- tests/tui/__snapshots__/` | clean | ✓ PASS |
 | Architecture greps | textual imports in services / CJK outside strings / [tui] group | 0 / 0 / exact (textual 8.2.8) | ✓ PASS |
 | Debt markers | TBD/FIXME/XXX/TODO/HACK over the changed + core covered files | 0 (strings.py PLACEHOLDER hits are the 7 named Input-placeholder constants, as documented) | ✓ PASS |
-| Covered-set delta | `git diff 783f43a..HEAD --stat` over covered tree | Only app.py / monitor.py / strings.py, all phase-11 scope; all 08-core files 0 diff | ✓ PASS (no 08-surface change) |
+| Covered-set delta | `git diff d9b96b5..HEAD --stat` over covered tree | Only app.py / monitor.py / strings.py, all phase-11 scope; all 08-core files 0 diff | ✓ PASS (no 08-surface change) |
 
 ### Probe Execution
 
@@ -224,9 +224,9 @@ None. Every truth is machine-evidenced by this verifier's own executions this pa
 
 ### Gaps Summary
 
-No gaps. The stale-refresh trigger was precisely bounded: only `tui/app.py` (phase-11 WR-05 exit-modal multi-root), `tui/screens/monitor.py` (phase-11 rerun hardening), and `tui/strings.py` (three phase-11-family constants) changed inside the covered set since the machine-proven pass at 783f43a — every 08-core file (selection.py with all three guards, env_check.py, the five services, styles, all seven 08 test files, env_smoke, registry_loader, n_audit, Makefile, pyproject, uv.lock) is byte-unchanged. At HEAD dd16ad6 this verifier re-confirmed all six truths with fresh executions: the default screen survives the app.py delta, the i18n lock holds at zero CJK outside strings.py including the changed files, the T3 gates are live-disjoint with the quick-check subset intact, the real backend still yields 59/50 with flowing presence and correct presets, both crash chains re-executed green through the named Pilot tests, both AST pins pass, ruff and ty are green, all three prohibitions hold (loader byte-unmodified, snapshots clean, textual isolation exact at 8.2.8), and the full suite sits exactly at the updated box baseline — 7 failed / 1743 passed / 9 xfailed, zero new failures (the +12 passing tests are phases 10-11 additions). The four carried-forward advisories are unchanged by construction (their files did not move). Phase 8 remains 6/6: the console is trustworthy at rest, and later phases are still adding screens, not architecture.
+No gaps. The stale-refresh trigger was precisely bounded: only `tui/app.py` (phase-11 WR-05 exit-modal multi-root), `tui/screens/monitor.py` (phase-11 rerun hardening), and `tui/strings.py` (three phase-11-family constants) changed inside the covered set since the machine-proven pass at d9b96b5 — every 08-core file (selection.py with all three guards, env_check.py, the five services, styles, all seven 08 test files, env_smoke, registry_loader, n_audit, Makefile, pyproject, uv.lock) is byte-unchanged. At HEAD 646bcd5 this verifier re-confirmed all six truths with fresh executions: the default screen survives the app.py delta, the i18n lock holds at zero CJK outside strings.py including the changed files, the T3 gates are live-disjoint with the quick-check subset intact, the real backend still yields 59/50 with flowing presence and correct presets, both crash chains re-executed green through the named Pilot tests, both AST pins pass, ruff and ty are green, all three prohibitions hold (loader byte-unmodified, snapshots clean, textual isolation exact at 8.2.8), and the full suite sits exactly at the updated box baseline — 7 failed / 1743 passed / 9 xfailed, zero new failures (the +12 passing tests are phases 10-11 additions). The four carried-forward advisories are unchanged by construction (their files did not move). Phase 8 remains 6/6: the console is trustworthy at rest, and later phases are still adding screens, not architecture.
 
 ---
 
-_Verified: 2026-10-14T17:45:49Z (fifth pass, second stale-refresh tonight, at HEAD dd16ad6)_
+_Verified: 2026-10-14T17:45:49Z (fifth pass, second stale-refresh tonight, at HEAD 646bcd5)_
 _Verifier: Claude (gsd-verifier)_

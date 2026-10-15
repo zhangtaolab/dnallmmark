@@ -19,8 +19,8 @@ actuals:
   tokens: 12266   # chars/4 over the realized diff (49063 chars, 2 files)
   tasks: 2
   commits: 2
-plan_head_before: 4c1514bac82755c5d2cd5752a96ae49f2444ac72
-plan_head_after: 14d632b1fd69e34b4f0f8b4e1f4f07a2152e32d2
+plan_head_before: 9d820a8ebc9f9633700bd6f41f99a2312d504b66
+plan_head_after: 52fd7a677cf41fb308fe9e01ac29cfc538cdc088
 
 tech-stack:
   added: []   # zero new dependencies (stdlib-only module unchanged)
@@ -79,7 +79,7 @@ Landed the D-18 `--config-variant head|probe|curve` threading in `pipeline/run_s
 
 ## What Was Built
 
-### Task 1 — the aliasing machinery (commit 4f4367a)
+### Task 1 — the aliasing machinery (commit 647741c)
 
 - `HEAD_KEEP_BASE_NAMES = ("evo2_1b_base", "megaDNA_updated")` — verbatim from run_finetune.py:1207-1209 (the child exempts the pair from the +head alias; their with-head config IS their base config).
 - argparse `--config-variant` (choices head/probe/curve, default None) after the `--cache_dir` block, help mirroring the `--peft` alias documentation.
@@ -90,7 +90,7 @@ Landed the D-18 `--config-variant head|probe|curve` threading in `pipeline/run_s
 - `main()`: collect-all refusal when `args.config_variant is not None and args.peft != "none"` (message names both flags, child's probe×peft refusal cited as backstop); `config_variant = args.config_variant or "none"`; threaded into the enumerate call, the from-failures filter, and the run_matrix call; `sweep_flags["config_variant"]` set only when present.
 - Module docstring: the "Config variants compose STANDALONE" note replaced by the D-18 landing note; run_record schema doc gains `config_variant`.
 
-### Task 2 — the parity suite (commit 14d632b)
+### Task 2 — the parity suite (commit 52fd7a6)
 
 20 tests, every assertion style copied from existing idioms (make_registry / run_cli / flag_value / _capturing_launcher / _failures_manifest / _manifest_cells / fake-executor run_matrix):
 
@@ -142,8 +142,8 @@ Landed the D-18 `--config-variant head|probe|curve` threading in `pipeline/run_s
 
 - pipeline/run_sweep.py — FOUND
 - tests/test_sweep.py — FOUND
-- 4f4367a ancestor of HEAD — FOUND
-- 14d632b ancestor of HEAD — FOUND
+- 647741c ancestor of HEAD — FOUND
+- 52fd7a6 ancestor of HEAD — FOUND
 - Deletion check: neither commit deletes tracked files
 - Untracked scan: only the pre-existing `.planning/.gsd-allow-shrink` (present at spawn; not this plan's artifact)
-- Ledger: commits measured 2 (`4c1514b..14d632b`), no uncommitted code changes
+- Ledger: commits measured 2 (`9d820a8..52fd7a6`), no uncommitted code changes

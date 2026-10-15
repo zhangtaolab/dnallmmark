@@ -4,9 +4,9 @@ plan: 01
 subsystem: registry
 tags: [security, registry, data-removal, tests]
 status: complete
-commit: 1f16b3d
+commit: 06f7dd4
 requires:
-  - "HEAD at/after 650ba0a (planning baseline)"
+  - "HEAD at/after 7df4687 (planning baseline)"
 provides:
   - "Official model registry with 59 entries, zero confidential-series references in tracked files"
   - "Every real-registry count pin consistent with 59 (tests, operator copy, docstrings, docs, schema comment)"
@@ -117,13 +117,13 @@ Sites considered and deliberately LEFT (past-tense/history/fakes, per the plan's
 - **Found during:** Task 1 verification (pilot lane run)
 - **Issue:** Plan specified `len(keys_after) == 62  # 59 official + the disabled custom`, but the management-table composition is 59 official + 1 disabled custom = **60** keys (pre-change it was 62 + 1 = 63). The plan's own comment states the correct intent.
 - **Fix:** Pinned `== 60` with the plan's comment verbatim; test passes.
-- **Commit:** 1f16b3d
+- **Commit:** 06f7dd4
 
 **2. [Rule 2 - Correctness] Count-embedding test names kept truthful**
 - **Found during:** Task 1 (B1/B5 edits)
 - **Issue:** `test_registry_parses_with_62_entries_and_name_key_contract` and `test_official_counts_committed_registries_are_62_50` embed the old count; a "62" name asserting 59 is exactly the untrustworthiness this milestone removes.
 - **Fix:** Renamed to the `_59_` forms after verifying zero external references (grep across repo).
-- **Commit:** 1f16b3d
+- **Commit:** 06f7dd4
 
 **3. [Rule 2 - Correctness] 14 additional stale current-count sites fixed** (table above) — all one-number docstring/comment/sample edits in the exact Part C discipline; no structural changes were needed, so the plan's stop-and-report threshold was never reached.
 
@@ -144,5 +144,5 @@ Sites considered and deliberately LEFT (past-tense/history/fakes, per the plan's
 
 ## Self-Check: PASSED
 
-- Created/modified artifacts verified on disk (33 tracked files in commit 1f16b3d; SUMMARY present at this path).
-- Commit 1f16b3d is HEAD of `autorun` and contains exactly the 33 files staged (no whole-file deletions; working tree clean after commit).
+- Created/modified artifacts verified on disk (33 tracked files in commit 06f7dd4; SUMMARY present at this path).
+- Commit 06f7dd4 is HEAD of `autorun` and contains exactly the 33 files staged (no whole-file deletions; working tree clean after commit).

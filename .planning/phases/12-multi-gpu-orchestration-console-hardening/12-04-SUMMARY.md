@@ -18,9 +18,9 @@ provides:
 affects: [12-05, phase-12-verification, gsd-verify-work, multi-gpu-smoke-executor (maintainer, other machine)]
 
 actuals:
-  tokens: 19994   # chars/4 over the realized diff (git diff 6de1afc..HEAD = 79976 chars)
+  tokens: 19994   # chars/4 over the realized diff (git diff 13632e9..HEAD = 79976 chars)
   tasks: 3
-  commits: 4      # MEASURED: git rev-list --count 6de1afc..HEAD
+  commits: 4      # MEASURED: git rev-list --count 13632e9..HEAD
 
 tech-stack:
   added: []        # stdlib only: hashlib + shutil; zero pyproject/uv.lock change (verified empty diff)
@@ -81,8 +81,8 @@ coverage:
 duration: 28min
 completed: 2026-10-13
 status: complete
-plan_head_before: 6de1afcb22b9cb64e7c8f800f089df611ab193ec
-plan_head_after: 22a490df93e4b0583be665b420e3c686903292ee
+plan_head_before: 13632e95a4d1c400cb52f412f7f7e9c5d96d5666
+plan_head_after: f55caa355582e72c648d13bd40bd086b776d0b8d
 ---
 
 # Phase 12 Plan 04: Merge Mode + Multi-GPU Decision Doc Summary
@@ -105,10 +105,10 @@ plan_head_after: 22a490df93e4b0583be665b420e3c686903292ee
 
 ## Task Commits
 
-1. **Task 1 RED — merge lane-equality + rewrite tranche** - `eda9153` (test; includes the interface skeleton, the 12-01 precedent)
-2. **Task 1 GREEN — the --merge mode** - `e6e1328` (feat)
-3. **Task 2 — the full merge suite** - `278a21e` (test)
-4. **Task 3 — the decision doc + README link** - `22a490d` (docs)
+1. **Task 1 RED — merge lane-equality + rewrite tranche** - `cfb8e8e` (test; includes the interface skeleton, the 12-01 precedent)
+2. **Task 1 GREEN — the --merge mode** - `db2886b` (feat)
+3. **Task 2 — the full merge suite** - `bfb1408` (test)
+4. **Task 3 — the decision doc + README link** - `f55caa3` (docs)
 
 **Plan metadata:** (this commit)
 
@@ -116,7 +116,7 @@ plan_head_after: 22a490df93e4b0583be665b420e3c686903292ee
 
 - Module lane during TDD: RED 6 failed / 22 green → GREEN 28/28 → suite 39/39; `ruff check pipeline/run_sweep_shard.py tests/test_sweep_shard.py` clean.
 - **Full gate ONCE at plan end** (SPEED DIRECTIVE): `make test` → **1569 passed** pytest + node lane **26/26**; `make lint` → All checks passed; `make typecheck` → All checks passed.
-- **Hard constraints verified:** `git diff --stat 6de1afc..HEAD -- pyproject.toml uv.lock pipeline/run_sweep.py pipeline/run_finetune.py tui/ Makefile` is EMPTY (zero dependency changes, run_sweep byte-untouched — the orchestrator's flag surface grew by exactly `--merge` and `--include-checkpoints`); the plan diff is exactly the 4 planned files + the evidence JSON.
+- **Hard constraints verified:** `git diff --stat 13632e9..HEAD -- pyproject.toml uv.lock pipeline/run_sweep.py pipeline/run_finetune.py tui/ Makefile` is EMPTY (zero dependency changes, run_sweep byte-untouched — the orchestrator's flag surface grew by exactly `--merge` and `--include-checkpoints`); the plan diff is exactly the 4 planned files + the evidence JSON.
 - **SUMMARY spot evidence — merge console output over the fixture pair** (per-worker counts + union count):
 
 ```text
@@ -190,7 +190,7 @@ None. No placeholder data, no skipped tests, no unrun `<verify>` steps (module l
 
 ## Self-Check: PASSED
 
-Files found: pipeline/run_sweep_shard.py, tests/test_sweep_shard.py, docs/multi-gpu.md, README.md, evidence/12-04-task1-red.json. Commits eda9153, e6e1328, 278a21e, 22a490d are ancestors of HEAD. Measured commit count 4 matches the ledger (6de1afc..HEAD).
+Files found: pipeline/run_sweep_shard.py, tests/test_sweep_shard.py, docs/multi-gpu.md, README.md, evidence/12-04-task1-red.json. Commits cfb8e8e, db2886b, bfb1408, f55caa3 are ancestors of HEAD. Measured commit count 4 matches the ledger (13632e9..HEAD).
 
 ---
 *Phase: 12-multi-gpu-orchestration-console-hardening*

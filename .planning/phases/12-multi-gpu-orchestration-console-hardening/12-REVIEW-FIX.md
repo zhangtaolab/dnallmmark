@@ -31,7 +31,7 @@ module-suite-only iteration per the maintainer speed directive
 ### WR-01: `--gpus` is int-validated although documented as verbatim "operator-owned strings, ARITY-validated only"
 
 **Files modified:** `pipeline/run_sweep_shard.py`, `tests/test_sweep_shard.py`
-**Commit:** d8c54a8
+**Commit:** 8ff6931
 **Applied fix:** `_parse_gpus` now keeps each stripped token as a verbatim
 operator-owned string — the only malformed token is an EMPTY element (the
 arity check is unchanged); the default assignment builds `"0".."N-1"`
@@ -46,7 +46,7 @@ forward verbatim, D-05). RED→GREEN:
 ### WR-02: Frozen worker-log path opened `"w"` — a resume relaunch destroys the previous run's diagnostic log
 
 **Files modified:** `pipeline/run_sweep_shard.py`, `tests/test_sweep_shard.py`, `docs/multi-gpu.md`
-**Commit:** caa8f67
+**Commit:** db18759
 **Applied fix:** The launcher's per-launch timestamped-log idiom, as the
 dispatch directed: `worker_log_path(base, i, timestamp)` returns
 `{base}-mgpu-w{i}-{stamp}.log` (`WORKER_LOG_TIMESTAMP_FORMAT` copies the
@@ -63,7 +63,7 @@ deterministic clocks.
 ### WR-03: Re-merge over a previously-merged root with a changed worker set leaves stale cell files that downstream consumers will export
 
 **Files modified:** `pipeline/run_sweep_shard.py`, `tests/test_sweep_shard.py`
-**Commit:** 4c20d42
+**Commit:** db59420
 **Applied fix:** Refusal, not reconciliation (minimal safe fix per
 dispatch): before the copy pass, the merge enumerates the merged root's
 existing `MERGE_ALLOWLIST`-named files and refuses with a precise
@@ -80,7 +80,7 @@ the existing byte-stable idempotency test keeps holding.
 ### WR-04: Unhandled `OSError` from `shutil.copyfile`/`mkdir` bypasses the designed merge-refusal message
 
 **Files modified:** `pipeline/run_sweep_shard.py`, `tests/test_sweep_shard.py`
-**Commit:** 0addc67
+**Commit:** 29c9b6b
 **Applied fix:** In `_copy_verified`, the `dst.parent.mkdir` +
 `shutil.copyfile` pair is wrapped; an `OSError` (ENOSPC / EACCES /
 read-only destination) converts to the mismatch path (`False`), landing
@@ -92,7 +92,7 @@ the designed diagnostic + no merged manifests on a `PermissionError` copy.
 ### WR-05: Lane-equality comparison canonicalizes Python sets via `json.dumps(..., default=str)` — hash-order-fragile
 
 **Files modified:** `pipeline/run_sweep_shard.py`, `tests/test_sweep_shard.py`
-**Commit:** 471656b
+**Commit:** 9a811b6
 **Applied fix:** New `_canonical_lane_value`: sets/frozensets canonicalize
 through `sorted()` before `json.dumps` (the old inline form serialized
 `str(set)`, whose element order is the internal iteration order —
@@ -109,7 +109,7 @@ semantics NOT needed — the property is pure-function pinned.
 ### WR-06: `--models` is silently ignored in merge mode
 
 **Files modified:** `pipeline/run_sweep_shard.py`, `tests/test_sweep_shard.py`
-**Commit:** 59fafaf
+**Commit:** ae8bcbe
 **Applied fix:** `run_merge`'s validation block refuses a provided
 `--models` with the module's own collect-all pattern
 (`--merge takes no --models (the worker manifests are the merge's source
@@ -120,7 +120,7 @@ no merged manifest lands.
 ### WR-07: A marked-then-disabled custom model is stuck in the run spec — rendered unmarked, counted, launched, and impossible to unmark from the picker
 
 **Files modified:** `tui/screens/run_config.py`, `tests/tui/test_pilot_run_config.py`
-**Commit:** e788acb
+**Commit:** 851d840
 **Applied fix:** Sanitize at load (the review's primary option):
 `_sanitize_disabled_custom_marks` runs in `on_run_config_screen_loaded`
 right after the entries land and drops disabled customs from BOTH spec
@@ -137,7 +137,7 @@ SVG golden drift (the full `make test` snapshot suite passed — no
 ### WR-08: Operator-facing copy composed in the screen module with CJK punctuation — bypasses the I18N-01 grep lock
 
 **Files modified:** `tui/strings.py`, `tui/screens/run_config.py`, `tests/tui/test_pilot_run_config.py`, `tests/tui/test_strings_phase11.py`
-**Commits:** ae303de (+ follow-ups 5a6855e lint alignment, 3bb2926 inventory registration)
+**Commits:** df54a69 (+ follow-ups 931bc5d lint alignment, ba77518 inventory registration)
 **Applied fix:** The OFF-with-path copy shape moved wholly into
 `tui/strings.py` (`CFG_SUBSET_OFF_WITH_PATH = "关（{path}）"`), the screen
 renders it via `.format(path=path)` and the now-unused `CFG_SUBSET_OFF`
@@ -149,7 +149,7 @@ literals), green after the move. Lock scope: extended ONLY in this
 suite's lock over `run_config.py` (the finding's module) — extending the
 other suites' locks was not in scope. The phase-11 string inventory's
 bidirectional lock required registering the new constant
-(`3bb2926`). `test_params_defaults_render` now pins the exact constant
+(`ba77518`). `test_params_defaults_render` now pins the exact constant
 shape. I18N lock green.
 
 ## Skipped Issues
@@ -167,7 +167,7 @@ None — all 8 in-scope findings were fixed.
   are reproducible from the tree as-is): `make test` 1581 passed
   (0 failed; incl. the snapshot SVG goldens — no drift);
   `make lint` all checks passed (after the DTZ001/RUF100 follow-up
-  5a6855e); `make typecheck` (ty) all checks passed.
+  931bc5d); `make typecheck` (ty) all checks passed.
 - Standing constraint held: zero `pyproject.toml` / `uv.lock` /
   `requirements.txt` changes (verified in the final commit's diff
   scope).

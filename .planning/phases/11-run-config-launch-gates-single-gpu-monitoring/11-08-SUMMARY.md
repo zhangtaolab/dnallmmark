@@ -27,9 +27,9 @@ affects: [Phase 11 re-verification (this SUMMARY is the per-gap before/after rec
 actuals:
   tokens: 12143   # chars/4 over the realized diff (48572 chars, 9 files; plan estimate 78000 — over-estimated)
   tasks: 3
-  commits: 8      # measured: git rev-list --count 7d4c03b..HEAD (the docs commit follows)
-plan_head_before: 7d4c03b45c264ad6bf50a68eb6cb1ff36a50a8f1
-plan_head_after: 320cb97
+  commits: 8      # measured: git rev-list --count 3380247..HEAD (the docs commit follows)
+plan_head_before: 33802478b36dc9055212f54c4c83db0301614b2f
+plan_head_after: cc8d442
 
 tech-stack:
   added: []   # zero packages, zero new modules (the surgical-fix prohibition held)
@@ -72,12 +72,12 @@ All three tasks executed TDD (RED reproduction committed first, then the fix; th
 
 | Gap | Before (the reproduction) | After (the pin) | Commits |
 |-----|---------------------------|-----------------|---------|
-| **#1 CR-01** (blocker) | `attach()` stored `Path(str(root))` — a `~/sweeps/run1` root VALIDATED (add_manual_root resolves internally), toasted success, then every reader read the literal nonexistent path. RED (over the REAL MonitorBackend/scanner, temp HOME/state): `_attached_root == '~/sweeps/run1'`, empty cells region | attach stores `Path(str(root)).expanduser().resolve()`; `test_attach_tilde_spelled_monitors_resolved_root_real_scanner` — modal dismisses, stored root == resolved, ◆ renders on the discovered row, the run_record's (model, task) row renders in cells; every absolute-path attach test passes byte-unmodified | 40faee0 / aca912e |
-| **#2 WR-01** | launch_spec passed RAW `spec.output_root` to `_spawn` (CWD-based key) while compose_argv threads REPO_ROOT. RED (service, CWD != repo): `outcome.root == {tmp}/finetuned` vs argv `{repo}/finetuned`; screen pre-check slipped past to the confirm (`_GateConfirmModal` not `ProblemsModal`) | launch_spec threads `rc.resolve_dirs(spec).output_root_abs`; the slot-4 pre-check reads the same Protocol seam. `test_launch_spec_registry_key_rides_repo_root_basis_from_any_cwd` (registry key == argv root == live_sweeps()) + `test_gate_live_root_precheck_reads_repo_root_basis_any_cwd` (the gate FIRES naming the REPO_ROOT key); the existing repo-CWD lane green unmodified; RunConfigDouble gains resolve_dirs | 40faee0 / aca912e |
-| **#3 WR-02** | `_run_rerun_launch` derived seeds from `_cell_rows or [42]` — empty cell table → silent `[42]`. RED: empty cells + a seed-43 failure row → launch received `(42,)`; the staged empty worker re-read → the re-run LAUNCHED (no refusal) | ONE pure `derive_rerun_seeds(failures, cell_rows)`; the worker re-derives over its own failures_view re-read. `test_rerun_seeds_derive_from_failure_rows_not_a_default` (launch receives `(43,)`) + `test_rerun_underivable_seeds_refuses_loudly_never_launches` (the MON_RERUN_NO_SEEDS toast fires under LNC_LAUNCH_FAILED_TOAST's ✗ prefix; `rerun_calls == []`); the E2' re-prompt path re-invokes and re-derives identically | 4adb526 / 1c69cba |
-| **#4 WR-03** | the confirm named `len(failures)` ENTRIES while the launch enumerates pairs × seeds (~3x understated). RED: 2 pairs × 2 seeds rendered "重跑 2 个失败 cell" then launched 4 cells | `request_rerun` computes pairs × seeds over the shared derivation; MON_RERUN_CONFIRM amended in place ("重跑 {pairs} 个失败组合 × 种子 {seeds} = {n} 个 cell…"). `test_rerun_confirm_names_pairs_times_seeds_estimate` — the confirm copy carries pairs=2/seeds="42, 43"/n=4 AND the launch receives `(42, 43)` (confirm and launch provably share ONE derivation) | 4adb526 / 1c69cba |
-| **#5 WR-04** | tee opened mode `"w"` — two same-basename roots spawned in one second shared ONE file. RED: both spawns returned the IDENTICAL tee path and the sentinel written into the first log was lost to the second's truncating open | mode `"x"` (O_EXCL) + `_1.._99` suffix fallback (TEE_COLLISION_SUFFIX_CAP; exhausted cap rides the OSError refusal). `test_spawn_same_second_same_basename_never_shares_tee_file` — first name byte-identical (`sweep_20261013_083005_finetuned.log`), second suffixed (`_1`), the sentinel SURVIVES, both entries live; the existing FixedClock name pins and the same-root reclaim test green unmodified | 88186ff / 7e5af59 |
-| **#6 WR-05** | action_quit built ExitModal around `roots[0]`; `[k]`/`[enter]` acted on one root. RED: two live roots → the single-root message (done/total + "finetuned") and `detach_calls == [root_a]` only | ExitModal carries every root (str → one-root tuple); kill/detach loop ALL then exit; LNC_EXIT_MESSAGE_MULTI (n + full resolved paths joined, done/total dropped) when `len(roots) > 1`. `test_exit_modal_multi_root_kills_every_live_sweep` + `test_exit_modal_multi_root_enter_detaches_every_live_sweep`; the four single-root exit-triple tests byte-unmodified; the attached-running-only path unchanged | 88186ff / 7e5af59 |
+| **#1 CR-01** (blocker) | `attach()` stored `Path(str(root))` — a `~/sweeps/run1` root VALIDATED (add_manual_root resolves internally), toasted success, then every reader read the literal nonexistent path. RED (over the REAL MonitorBackend/scanner, temp HOME/state): `_attached_root == '~/sweeps/run1'`, empty cells region | attach stores `Path(str(root)).expanduser().resolve()`; `test_attach_tilde_spelled_monitors_resolved_root_real_scanner` — modal dismisses, stored root == resolved, ◆ renders on the discovered row, the run_record's (model, task) row renders in cells; every absolute-path attach test passes byte-unmodified | 0ea6ad7 / 43172b4 |
+| **#2 WR-01** | launch_spec passed RAW `spec.output_root` to `_spawn` (CWD-based key) while compose_argv threads REPO_ROOT. RED (service, CWD != repo): `outcome.root == {tmp}/finetuned` vs argv `{repo}/finetuned`; screen pre-check slipped past to the confirm (`_GateConfirmModal` not `ProblemsModal`) | launch_spec threads `rc.resolve_dirs(spec).output_root_abs`; the slot-4 pre-check reads the same Protocol seam. `test_launch_spec_registry_key_rides_repo_root_basis_from_any_cwd` (registry key == argv root == live_sweeps()) + `test_gate_live_root_precheck_reads_repo_root_basis_any_cwd` (the gate FIRES naming the REPO_ROOT key); the existing repo-CWD lane green unmodified; RunConfigDouble gains resolve_dirs | 0ea6ad7 / 43172b4 |
+| **#3 WR-02** | `_run_rerun_launch` derived seeds from `_cell_rows or [42]` — empty cell table → silent `[42]`. RED: empty cells + a seed-43 failure row → launch received `(42,)`; the staged empty worker re-read → the re-run LAUNCHED (no refusal) | ONE pure `derive_rerun_seeds(failures, cell_rows)`; the worker re-derives over its own failures_view re-read. `test_rerun_seeds_derive_from_failure_rows_not_a_default` (launch receives `(43,)`) + `test_rerun_underivable_seeds_refuses_loudly_never_launches` (the MON_RERUN_NO_SEEDS toast fires under LNC_LAUNCH_FAILED_TOAST's ✗ prefix; `rerun_calls == []`); the E2' re-prompt path re-invokes and re-derives identically | 8adbdd3 / 19de121 |
+| **#4 WR-03** | the confirm named `len(failures)` ENTRIES while the launch enumerates pairs × seeds (~3x understated). RED: 2 pairs × 2 seeds rendered "重跑 2 个失败 cell" then launched 4 cells | `request_rerun` computes pairs × seeds over the shared derivation; MON_RERUN_CONFIRM amended in place ("重跑 {pairs} 个失败组合 × 种子 {seeds} = {n} 个 cell…"). `test_rerun_confirm_names_pairs_times_seeds_estimate` — the confirm copy carries pairs=2/seeds="42, 43"/n=4 AND the launch receives `(42, 43)` (confirm and launch provably share ONE derivation) | 8adbdd3 / 19de121 |
+| **#5 WR-04** | tee opened mode `"w"` — two same-basename roots spawned in one second shared ONE file. RED: both spawns returned the IDENTICAL tee path and the sentinel written into the first log was lost to the second's truncating open | mode `"x"` (O_EXCL) + `_1.._99` suffix fallback (TEE_COLLISION_SUFFIX_CAP; exhausted cap rides the OSError refusal). `test_spawn_same_second_same_basename_never_shares_tee_file` — first name byte-identical (`sweep_20261013_083005_finetuned.log`), second suffixed (`_1`), the sentinel SURVIVES, both entries live; the existing FixedClock name pins and the same-root reclaim test green unmodified | 92179b5 / acfb0b5 |
+| **#6 WR-05** | action_quit built ExitModal around `roots[0]`; `[k]`/`[enter]` acted on one root. RED: two live roots → the single-root message (done/total + "finetuned") and `detach_calls == [root_a]` only | ExitModal carries every root (str → one-root tuple); kill/detach loop ALL then exit; LNC_EXIT_MESSAGE_MULTI (n + full resolved paths joined, done/total dropped) when `len(roots) > 1`. `test_exit_modal_multi_root_kills_every_live_sweep` + `test_exit_modal_multi_root_enter_detaches_every_live_sweep`; the four single-root exit-triple tests byte-unmodified; the attached-running-only path unchanged | 92179b5 / acfb0b5 |
 
 ## TDD Gate Compliance
 
@@ -98,13 +98,13 @@ Every task's RED evidence is the real command's target-assertion failure (gsd_ru
 **1. [Rule 1 - Bug] app.py docstring violated the i18n lock**
 - **Found during:** plan-level gate 4 (the first full-suite run: 8 failed — one ABOVE baseline)
 - **Issue:** the WR-05 ExitModal docstring quoted the [k] key's Chinese label (终止后退出) verbatim; `test_app_module_carries_zero_chinese_literals` scans source text including docstrings
-- **Fix:** reworded to the key description ("kill-and-quit") — operator-facing copy lives in tui/strings.py only (commit 320cb97); the re-run full suite returned to the exact 7-failure baseline
+- **Fix:** reworded to the key description ("kill-and-quit") — operator-facing copy lives in tui/strings.py only (commit cc8d442); the re-run full suite returned to the exact 7-failure baseline
 - **Files modified:** tui/app.py
 
 **2. [Rule 1 - Bug] ruff findings on the new pins**
 - **Found during:** plan-level gate 1 (make lint)
 - **Issue:** UP032 (a join→f-string in the WR-05 message assertion) + F841 (an unused state-dir variable in the WR-04 pin)
-- **Fix:** commit d6241ab (the pins' behavior untouched)
+- **Fix:** commit 1dbb763 (the pins' behavior untouched)
 - **Files modified:** tests/tui/test_pilot_run_config.py, tests/tui/test_services_sweep_launcher.py
 
 Otherwise: none — the fixes landed exactly as the plan's action elements specified. FakeMonitorService was extended with the plan-sanctioned per-call failures staging (a LIST value = a sequence of reads; a TUPLE stays one sticky read — every pre-existing fixture shape unmodified).
@@ -113,7 +113,7 @@ Otherwise: none — the fixes landed exactly as the plan's action elements speci
 
 | Gate | Command | Result |
 |------|---------|--------|
-| lint | `make lint` | All checks passed (after d6241ab) |
+| lint | `make lint` | All checks passed (after 1dbb763) |
 | typecheck | `make typecheck` (ty, --group dev --group tui) | All checks passed |
 | Task lanes | per-task `-q` runs | 137 / 43 / 110 passed |
 | Targeted gap lanes | pytest test_pilot_monitor + test_pilot_run_config + test_services_sweep_launcher + test_strings_phase11 + test_services_sweep_monitor + test_import_lock | **198 passed** |
@@ -121,7 +121,7 @@ Otherwise: none — the fixes landed exactly as the plan's action elements speci
 | Snapshots | `git status tests/tui/__snapshots__/` after the full suite | clean — byte-untouched |
 | Live smoke | `git status pipeline/` + the sweep process alive | clean / running (undisturbed; smoke-2x2-261014 + pipeline/logs read-only throughout) |
 
-The 7 baseline failures are the known box class: `test_determinism` + 5 × `test_schemas` (pre-existing data-side failures — those test files import zero tui code and the plan range touches only `tui/` + `tests/tui/`, proven by `git diff --name-only 7d4c03b..HEAD`) and `test_storage_overview_defaults_mirror_real_consumers` (the documented env-only failure: `pipeline/logs` exists because the live smoke runs).
+The 7 baseline failures are the known box class: `test_determinism` + 5 × `test_schemas` (pre-existing data-side failures — those test files import zero tui code and the plan range touches only `tui/` + `tests/tui/`, proven by `git diff --name-only 3380247..HEAD`) and `test_storage_overview_defaults_mirror_real_consumers` (the documented env-only failure: `pipeline/logs` exists because the live smoke runs).
 
 ## Known Stubs
 

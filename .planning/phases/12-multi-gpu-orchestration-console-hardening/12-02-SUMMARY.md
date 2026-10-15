@@ -49,10 +49,10 @@ metrics:
 estimate:
   tokens: 66000
 actuals:
-  tokens: 13790   # chars/4 over the realized diff (git diff 7927f04..HEAD)
+  tokens: 13790   # chars/4 over the realized diff (git diff 7b74ac2..HEAD)
   tasks: 2
-  commits: 2      # MEASURED: git rev-list --count 7927f04..HEAD
-plan_head_before: 7927f04ff6664c63b4903aa25bd7e18948fd52b7
+  commits: 2      # MEASURED: git rev-list --count 7b74ac2..HEAD
+plan_head_before: 7b74ac2e666bcec52d36e204497eb0a26f103ff4
 plan_head_after: c9058b8353f24ae293ec11bd6db92b88c50ff490
 status: complete
 ---
@@ -115,7 +115,7 @@ Golden sweep.json over the three-root fixture (spot evidence, trimmed):
 
 - Module lanes during TDD: `pytest tests/tui/test_gen_progress.py -q` 8 passed (stable across 3 consecutive runs); ruff clean on both new Python files after two auto-fixes (import order, an unused noqa under ruff 0.16 defaults); `node --test tests/js/progress-page.test.js` 8 passed.
 - **Full gate (SPEED DIRECTIVE — once green):** `make test` → **1531 passed** pytest (baseline 1523 + 8 new) + node lane **26/26** (existing 18 + 8 new); `make lint` → All checks passed (gen_progress.py joined via 12-01's PHASE12_MODULES existence guard — zero Makefile edits, as planned); `make typecheck` → All checks passed. Note: the FIRST full-gate run failed only `test_chain_is_deterministic_and_matches_committed` because the then-untracked `dnallm-mark/data/progress/` tripped its committed-data-tree porcelain guard — commit ordering, not a code fault; green immediately after the Task-2 commit.
-- Hard constraints verified: `git diff --stat 7927f04..HEAD -- pipeline/ tui/strings.py pyproject.toml uv.lock Makefile` is EMPTY (frozen surfaces byte-untouched); the plan diff is exactly the 10 planned files (+1352/−2).
+- Hard constraints verified: `git diff --stat 7b74ac2..HEAD -- pipeline/ tui/strings.py pyproject.toml uv.lock Makefile` is EMPTY (frozen surfaces byte-untouched); the plan diff is exactly the 10 planned files (+1352/−2).
 
 ## TDD Cycle (both tasks tdd="true")
 
@@ -154,4 +154,4 @@ None. No placeholder data, no unimplemented paths, no skipped tests, no unrun `<
 
 ## Self-Check: PASSED
 
-Files found: script/gen_progress.py, tests/tui/test_gen_progress.py, dnallm-mark/progress.html, dnallm-mark/js/progress.js, dnallm-mark/css/progress.css, dnallm-mark/data/progress/.gitkeep, tests/js/progress-page.test.js (+ the three modified one-liner files). Commits 08fbee5 (Task 1) and c9058b8 (Task 2) are ancestors of HEAD. Measured commit count 2 matches the ledger (7927f04..HEAD).
+Files found: script/gen_progress.py, tests/tui/test_gen_progress.py, dnallm-mark/progress.html, dnallm-mark/js/progress.js, dnallm-mark/css/progress.css, dnallm-mark/data/progress/.gitkeep, tests/js/progress-page.test.js (+ the three modified one-liner files). Commits 3db47ae (Task 1) and 4096bb3 (Task 2) are ancestors of HEAD. Measured commit count 2 matches the ledger (7b74ac2..HEAD).

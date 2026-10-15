@@ -28,11 +28,11 @@ affects:
   - tests/test_env_smoke_bytes.py
   - tests/tui/test_work_site_hardening.py
 actuals:
-  tokens: 11183   # chars/4 over the realized code diff (44730 chars, tui/+pipeline/+tests/, 22ca261..514721d)
+  tokens: 11183   # chars/4 over the realized code diff (44730 chars, tui/+pipeline/+tests/, 0559c40..5eb6f1f)
   tasks: 3
-  commits: 6      # measured: git rev-list --count 22ca261..514721d (2 test-RED + 2 fix-GREEN + 1 feat pin+kwarg sweep + 1 docs ledger typo); the SUMMARY/docs commit follows
-plan_head_before: 22ca261ccd280c95805b06519bc8ea1d828a9d7d
-plan_head_after: 514721dcf17249b62d14646e37ca0e335caef17b
+  commits: 6      # measured: git rev-list --count 0559c40..5eb6f1f (2 test-RED + 2 fix-GREEN + 1 feat pin+kwarg sweep + 1 docs ledger typo); the SUMMARY/docs commit follows
+plan_head_before: 0559c40c5f53efd0c90737c988aa869734993bb2
+plan_head_after: 5eb6f1f4edca9052b2836e2dc8c6edd89d3603ea
 tech-stack:
   added: []        # zero new dependencies; textual stays pinned 8.2.8; exit_on_error is textual's own decorator kwarg
   patterns:
@@ -78,15 +78,15 @@ status: complete
 
 **One-liner:** The two reproduced registry-input crash chains and the WR-01 broken-checkout boot crash now degrade through their real seams (empty-card rows, SEL_REGISTRY_LOAD_FAILED state rows, named fail-closed env_smoke FAIL lines, degraded env rows) with a structural AST pin holding exit_on_error=False or an internal broad except at every @work site — no worker exception can exit the console through textual 8.2.8's default handler.
 
-Closes the 08-VERIFICATION Truth-6 gap (CR-01, #3304-adjudicated; machine-evidenced at HEAD 0852b53) plus the WR-01 fold-in, so phase re-verification can pass 6/6.
+Closes the 08-VERIFICATION Truth-6 gap (CR-01, #3304-adjudicated; machine-evidenced at HEAD e842f76) plus the WR-01 fold-in, so phase re-verification can pass 6/6.
 
 ## Tasks Completed
 
 | # | Task | Commit | Outcome |
 |---|------|--------|---------|
-| 1 | Chains 1+2 — isinstance guards in registries projections + widened _load_entries tuple | RED 87c1458 / GREEN 39505dd | 3 regression tests through the real SelectionBackend seam; loader contract tests byte-unmodified and green |
-| 2 | WR-01 — fail-closed env_smoke directory kernels + guarded env-screen worker | RED e65af73 / GREEN e762a42 | 4 degraded-input tests; S1-S4 byte goldens green unmodified (healthy-path stdout untouched) |
-| 3 | @work never-exit net — exit_on_error=False ledger (12 remaining sites) + AST structural pin | d6f2a2c (+ docs 514721d) | pin found 24 sites, flagged 11 pre-sweep; 13 total kwarg sites incl. Task-2's env_check; zero worker-body restructuring |
+| 1 | Chains 1+2 — isinstance guards in registries projections + widened _load_entries tuple | RED 215ea48 / GREEN ce822da | 3 regression tests through the real SelectionBackend seam; loader contract tests byte-unmodified and green |
+| 2 | WR-01 — fail-closed env_smoke directory kernels + guarded env-screen worker | RED 40354d8 / GREEN 16e21b5 | 4 degraded-input tests; S1-S4 byte goldens green unmodified (healthy-path stdout untouched) |
+| 3 | @work never-exit net — exit_on_error=False ledger (12 remaining sites) + AST structural pin | fb8cd8f (+ docs 5eb6f1f) | pin found 24 sites, flagged 11 pre-sweep; 13 total kwarg sites incl. Task-2's env_check; zero worker-body restructuring |
 
 ## TDD Gate Compliance
 
@@ -96,7 +96,7 @@ Closes the 08-VERIFICATION Truth-6 gap (CR-01, #3304-adjudicated; machine-eviden
 - **Task 1 GREEN:** `_project_model_entry`/`_project_dataset_entry` guards + the widened tuple + the model_presence companion guard (Rule-1 deviation, below). Verify lane `tests/tui/test_pilot_selection.py tests/test_registry_loader.py`: **58 passed** (55 baseline + 3 new), loader contract byte-unmodified.
 - **Task 2 RED** (two commands, 2+2 failed): kernel tests failed with `JSONDecodeError` escaping the bare `open/json.load` and `AttributeError` at `env_smoke.py:460` (non-dict entry); Pilot tests failed with both `RuntimeError`s escaping the unguarded worker — exactly the WR-01 opening-screen death. The strings constant `ENV_KERNEL_DEGRADED` landed WITH the RED commit as a zero-consumer constant so the failures are behavioral, not import faults. VALID_RED.
 - **Task 2 GREEN:** `_read_registry` fail-closed helper + per-entry guards; the two worker guards + `exit_on_error=False`. Verify lane `tests/test_env_smoke_bytes.py tests/tui/test_pilot_env_check.py`: **36 passed** (32 baseline + 4 new; S1-S4 byte goldens green unmodified). Two test-side assertion refinements during GREEN (the corrupt file's actual JSON message wording; the standard scenario's deliberate dataset_dirs FAIL expected alongside the degraded middle row) — test corrections, zero implementation impact.
-- **Task 3 RED** (`uv run --group dev pytest tests/tui/test_work_site_hardening.py -q` → 1 failed): the pin's assertion listed exactly the 11 unguarded sites (floor assertion passed first: 24 sites found — non-vacuous). VALID_RED, with one granularity deviation: the RED run was executed against the pre-sweep tree, but the pin and the 12-kwarg sweep landed together in the atomic Task-3 commit d6f2a2c (execution order preserved the discipline; recorded in the evidence JSON).
+- **Task 3 RED** (`uv run --group dev pytest tests/tui/test_work_site_hardening.py -q` → 1 failed): the pin's assertion listed exactly the 11 unguarded sites (floor assertion passed first: 24 sites found — non-vacuous). VALID_RED, with one granularity deviation: the RED run was executed against the pre-sweep tree, but the pin and the 12-kwarg sweep landed together in the atomic Task-3 commit fb8cd8f (execution order preserved the discipline; recorded in the evidence JSON).
 - **REFACTOR:** none needed — no cleanup opportunities beyond what landed (the shared `_read_registry`/`_degraded_result`/`_project_*` helpers ARE the refactor-level dedup, landed with GREEN).
 
 ## Deviations from Plan
@@ -108,11 +108,11 @@ Closes the 08-VERIFICATION Truth-6 gap (CR-01, #3304-adjudicated; machine-eviden
 - **Issue:** `load_selection_data()` calls `selection_service.model_presence(model_entries, ...)`; its `entry.get("card", {}).get("Model_path")` raised AttributeError on a non-dict card (a truthy list defeats the `or`-free `.get` chain). Without this guard the plan's own truth ("loads through SelectionBackend.load_selection_data() … the projection completes without raising") is unachievable.
 - **Fix:** one isinstance(card, dict) guard in `tui/services/selection.py::model_presence` — a non-dict card maps to MODEL_PRESENCE_UNKNOWN (the documented no-usable-Model_path branch). Same root-cause family, one guard, zero behavior change for dict cards.
 - **Files modified:** tui/services/selection.py
-- **Commit:** 39505dd
+- **Commit:** ce822da
 
-**2. [Process] Task 3 commit granularity** — RED run captured pre-sweep but pin+sweep landed in one atomic commit (d6f2a2c) instead of separate RED/GREEN commits as in Tasks 1-2. Documented in `.planning/tdd-evidence/08-08-task3-red.json`.
+**2. [Process] Task 3 commit granularity** — RED run captured pre-sweep but pin+sweep landed in one atomic commit (fb8cd8f) instead of separate RED/GREEN commits as in Tasks 1-2. Documented in `.planning/tdd-evidence/08-08-task3-red.json`.
 
-**3. [Docs] Plan ledger prose typo** — line 169 said "14 decorator sites"; the ledger rows count 13 (12 in Task 3 + env_check in Task 2; verified: 13 `exit_on_error=False` decorators in the tree). Fixed in commit 514721d per the orchestrator's checker note.
+**3. [Docs] Plan ledger prose typo** — line 169 said "14 decorator sites"; the ledger rows count 13 (12 in Task 3 + env_check in Task 2; verified: 13 `exit_on_error=False` decorators in the tree). Fixed in commit 5eb6f1f per the orchestrator's checker note.
 
 **4. [Tooling] gsd_run unavailable** (exit 127) — the TDD red-evidence classifier and the state handler verbs ran manually: evidence records committed under `.planning/tdd-evidence/`, STATE.md updated by direct edit.
 
@@ -156,4 +156,4 @@ Phase 8 Truth 6 can flip to verified on re-verification.
 
 ## Self-Check: PASSED
 
-All created/modified files exist on disk; all six commits (87c1458, 39505dd, e65af73, e762a42, d6f2a2c, 514721d) verified as ancestors of HEAD via `git merge-base --is-ancestor`.
+All created/modified files exist on disk; all six commits (215ea48, ce822da, 40354d8, 16e21b5, fb8cd8f, 5eb6f1f) verified as ancestors of HEAD via `git merge-base --is-ancestor`.

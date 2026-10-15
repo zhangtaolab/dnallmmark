@@ -55,11 +55,11 @@ metrics:
   completed: 2026-10-14T05:26:02Z
 status: complete
 actuals:
-  tokens: 123567   # chars/4 over the realized diff 9cd938a..4ade716 (SVG goldens included)
+  tokens: 123567   # chars/4 over the realized diff 28b455a..bc8f36b (SVG goldens included)
   tasks: 3
-  commits: 3        # MEASURED: git rev-list --count 9cd938a..HEAD
-plan_head_before: 9cd938a5a2fcfe9b3d06dbd8201214dc342b651c
-plan_head_after: 4ade716f91054033ccf122df452116d115cb3620
+  commits: 3        # MEASURED: git rev-list --count 28b455a..HEAD
+plan_head_before: 28b455a0abf75caea82c7e5e176375561d3f50af
+plan_head_after: bc8f36b1766da10b29e3f1c6fc9983bcfc866f94
 ---
 
 # Phase quick-261014-f4w Plan 01: startup config file + run-artifact directories Summary
@@ -96,7 +96,7 @@ One-liner: a shared stdlib-only `directories.json` startup config (flag > file k
 
 - `make lint` green; `make typecheck` green.
 - Per-task lanes: Task 1 (233 passed), Task 2 (159 passed incl. import lock), Task 3 (245 passed).
-- Full `make test`: **exactly the 10 documented pre-existing failures** (5 schemas + 1 determinism stale pins after data commit 9bc68e1, 4 root-user chmod persist-failure sims — see the c2l deferred-items.md), 1677 passed, 3 skipped; node lane 26/26 green.
+- Full `make test`: **exactly the 10 documented pre-existing failures** (5 schemas + 1 determinism stale pins after data commit 9e803ca, 4 root-user chmod persist-failure sims — see the c2l deferred-items.md), 1677 passed, 3 skipped; node lane 26/26 green.
 - Acceptance probe (CPU): with `DNALLMMARK_TUI_CONFIG_DIR` at a tmp dir holding all five keys, a bare `run_sweep.py --dry-run` threads the five file values resolved absolute into every manifest cell; with an empty config dir and no flags the manifest carries exactly the five base cell keys (the c2l proof style).
 - Machine-independence: the sweep suite green under an ambient `DNALLMMARK_TUI_CONFIG_DIR` pointing at a planted directories.json (the autouse pin wins); the snapshot lane passed 3 consecutive runs after regeneration.
 - SVG drift over the whole plan: run_config.svg + env_check.svg (pinned) + wizard.svg (collateral flake, WINDOWS #24).
@@ -110,20 +110,20 @@ One-liner: a shared stdlib-only `directories.json` startup config (flag > file k
 - **Issue:** The autouse fixture created its pin directory inside pytest's per-test `tmp_path`, breaking the exact-listing assertions (`test_persist_twice_leaves_single_valid_file_no_tmp_residue`, `test_run_quick_check_never_persists`, `test_export_with_zero_customs_toasts_writes_nothing`).
 - **Fix:** The pin now uses `tmp_path_factory` (a directory OUTSIDE the per-test tmp_path); docstring records why.
 - **Files modified:** tests/conftest.py
-- **Commit:** 02bfbdd
+- **Commit:** b0644d5
 
 **2. [Rule 2 - Missing functionality] The save-failure toast constant**
 - **Found during:** Task 3
 - **Issue:** The plan requires the [s] failure to "surface as the error toast (the WR-03 surface)" but its strings list names no failure constant; reusing LNC_LAUNCH_FAILED_TOAST ("launch failed") would be wrong copy.
 - **Fix:** Added `CFG_SAVE_DEFAULTS_FAILED_TOAST` ("✗ 保存默认目录失败: {error}") and registered it in the bidirectional IN-09 inventory (nine new CFG_ names total).
 - **Files modified:** tui/strings.py, tests/tui/test_strings_phase11.py
-- **Commit:** 4ade716
+- **Commit:** bc8f36b
 
 **3. [Rule 3 - Blocking] Probe-pinned textual 8.2.8 seams the plan's wording had to reconcile with**
 - **Found during:** Task 3 development
 - **Issue/fixes:** (a) the directories-only mechanism is the `filter_paths` METHOD (no `filter_directories` on 8.2.8); (b) enter fires BOTH the name-based handler per MRO class AND the @on toggle — the override needs `prevent_default()` (without it the modal closed on the first enter; the probe-pinned MRO double-fire lesson); (c) rich Text spans cannot carry `$success`/`$error` on the Static render path (MissingStyle) — the storage glyphs resolve `app.current_theme.success/.error` at render (the nav.py precedent), the footer note uses rich-native dim.
 - **Files modified:** tui/screens/run_config.py, tui/screens/env_check.py
-- **Commit:** 4ade716
+- **Commit:** bc8f36b
 
 ### Sanctioned amendments of predecessor test literals (source-text pins this plan replaces by design)
 
@@ -139,4 +139,4 @@ None — no security-relevant surface beyond the plan's threat_model (T-f4w-01..
 
 ## Self-Check: PASSED
 
-All key files exist on disk; all three task commits (02bfbdd, 96928eb, 4ade716) are ancestors of HEAD; the measured commit count (3) matches the frontmatter.
+All key files exist on disk; all three task commits (b0644d5, 18bad38, bc8f36b) are ancestors of HEAD; the measured commit count (3) matches the frontmatter.

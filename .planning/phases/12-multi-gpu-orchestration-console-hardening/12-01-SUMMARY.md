@@ -40,11 +40,11 @@ metrics:
 estimate:
   tokens: 62000
 actuals:
-  tokens: 14487   # chars/4 over the realized diff (git diff 41453ce..c732fbb)
+  tokens: 14487   # chars/4 over the realized diff (git diff 8480a39..9ca3d07)
   tasks: 2
-  commits: 2      # MEASURED: git rev-list --count 41453ce..HEAD
+  commits: 2      # MEASURED: git rev-list --count 8480a39..HEAD
 plan_head_before: 41453ceffa4548f19de8087d89b0de1be174a50c
-plan_head_after: c732fbbe2cdc863658e5f4844af171e2264fa7bf
+plan_head_after: 9ca3d0739ad98a57faddd3b76849d1f98b5ce7a3
 status: complete
 ---
 
@@ -75,7 +75,7 @@ LPT properties (disjoint+cover, determinism, both tie-breaks pinned, 0.0-weight 
 
 - Module suites during TDD: 15 -> 22 tests green; ruff clean on both new files from the first GREEN run.
 - **Full gate ONCE at plan end** (SPEED DIRECTIVE): `make test && make lint && make typecheck` -> exit 0, **1523 passed** (baseline 1501 + 22 new), lint "All checks passed!", ty "All checks passed!".
-- Hard constraint verified: `git diff --stat 41453ce..HEAD -- pipeline/run_sweep.py pipeline/run_finetune.py pyproject.toml uv.lock tui/strings.py` is EMPTY — the frozen argv surface, dependency manifests, and TUI strings are byte-untouched; pipeline/ gained exactly one file.
+- Hard constraint verified: `git diff --stat 8480a39..HEAD -- pipeline/run_sweep.py pipeline/run_finetune.py pyproject.toml uv.lock tui/strings.py` is EMPTY — the frozen argv surface, dependency manifests, and TUI strings are byte-untouched; pipeline/ gained exactly one file.
 - Verbatim verdict-table stdout (the scripted-returncode scenario, exit 1 path):
 
 ```text
@@ -125,4 +125,4 @@ None. No placeholder data, no unimplemented paths, no skipped tests, no unrun `<
 
 ## Self-Check: PASSED
 
-Files found: pipeline/run_sweep_shard.py, tests/test_sweep_shard.py, Makefile, 12-01-SUMMARY.md. Commits 683f2ff (Task 1) and c732fbb (Task 2) are ancestors of HEAD. Measured commit count 2 matches the ledger.
+Files found: pipeline/run_sweep_shard.py, tests/test_sweep_shard.py, Makefile, 12-01-SUMMARY.md. Commits bd9a7a8 (Task 1) and 9ca3d07 (Task 2) are ancestors of HEAD. Measured commit count 2 matches the ledger.

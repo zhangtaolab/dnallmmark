@@ -23,8 +23,8 @@ actuals:
   tokens: 5393   # chars/4 over the realized diff (21572 chars, 4 files)
   tasks: 2
   commits: 4
-plan_head_before: 840f0d383f702714beacf43d224be6dbfd41f5f2
-plan_head_after: 7e9fba7d0a907378570668aa34e7dd7689ffd7e1
+plan_head_before: 05be7c20275d271c373d3b91d6944b7acf46aa2f
+plan_head_after: fceb1ecfb3602942309079efc88ea8e4818d91ae
 
 tech-stack:
   added: []   # zero new dependencies (constants + tests only)
@@ -106,7 +106,7 @@ coverage:
     description: "The sanctioned one-line 11-UI-SPEC prose correction — PROBE_INELIGIBLE '(data, 7 names, …)' → '(data, 9 names, …)' matching the verified frozen list"
     verification:
       - kind: other
-        ref: "pipeline/run_finetune.py:527-537 PROBE_INELIGIBLE carries 9 names; 11-UI-SPEC.md lines 212-213 now read '(data, 9 names, never duplicated…)' (commit 7e9fba7, one changed line)"
+        ref: "pipeline/run_finetune.py:527-537 PROBE_INELIGIBLE carries 9 names; 11-UI-SPEC.md lines 212-213 now read '(data, 9 names, never duplicated…)' (commit fceb1ec, one changed line)"
         status: pass
     human_judgment: false
 
@@ -139,8 +139,8 @@ status: complete
 
 Each task executed as a TDD RED → GREEN pair:
 
-1. **Task 1: The CFG_/LNC_/MON_ blocks + the bidirectional tripwire** — RED `9413297` (test) / GREEN `b113627` (feat)
-2. **Task 2: ENV_VERDICT amendment + consumer update + spec correction + full gates** — RED `631a40d` (test) / GREEN `7e9fba7` (feat; includes the sanctioned .planning one-liner)
+1. **Task 1: The CFG_/LNC_/MON_ blocks + the bidirectional tripwire** — RED `5be8d6b` (test) / GREEN `c888bb7` (feat)
+2. **Task 2: ENV_VERDICT amendment + consumer update + spec correction + full gates** — RED `73c1c28` (test) / GREEN `fceb1ec` (feat; includes the sanctioned .planning one-liner)
 
 **Plan metadata:** (see final docs commit below)
 
@@ -189,7 +189,7 @@ The slot-4 **enter-key pin** is a Pilot assertion in `tests/tui/test_pilot_run_c
 
 ## Self-Check: PASSED
 
-All 5 claimed files exist on disk; all 4 task commits (9413297, b113627, 631a40d, 7e9fba7) are ancestors of HEAD; the spec edit verified at lines 212-213 ("(data, 9" / "names, never duplicated…"), committed in 7e9fba7.
+All 5 claimed files exist on disk; all 4 task commits (5be8d6b, c888bb7, 73c1c28, fceb1ec) are ancestors of HEAD; the spec edit verified at lines 212-213 ("(data, 9" / "names, never duplicated…"), committed in fceb1ec.
 
 ---
 *Phase: 11-run-config-launch-gates-single-gpu-monitoring*

@@ -475,7 +475,7 @@ Written by the driver at `{output_root}/{model}/{task}/seed_{seed}/run_record.js
 {
     "error": null,
     "finished_at": "2026-10-13T00:47:23.018982+00:00",
-    "git_commit": "0c735b0000cbc5119951f6c8793901721c1f3a41",
+    "git_commit": "77d4b86a257828557d0cf99bfcaae31b6b62db88",
     "metrics": { "eval_f1": 0.91 },
     "model": "plant-dnabert-6mer",
     "output_dir": "/tmp/sw-fake/plant-dnabert-6mer/iDNA_ABF_datasets__5mC/seed_42",

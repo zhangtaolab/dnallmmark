@@ -10,7 +10,7 @@ stopped_at: "Completed 11-08-PLAN.md (gap closure: CR-01 + WR-01..05)"
 last_updated: "2026-10-15T04:49:04.501Z"
 last_activity: 2026-10-15
 last_activity_desc: Phase 12 execution started
-state_head: 097eda3cd010123b14d9651265a349f247d3cf04
+state_head: 3ebb2cad506a75bf5960aa5c43d8d4fea28f0d06
 progress:
   total_phases: 6
   completed_phases: 5
@@ -255,16 +255,16 @@ None yet.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 261014-c2l | Add custom model/dataset storage directory support (pipeline --model_root/--dataset_root flags + TUI run-config threading) | 2026-10-14 | 451782d | [261014-c2l-add-custom-model-dataset-storage-directo](./quick/261014-c2l-add-custom-model-dataset-storage-directo/) |
-| 261014-dcl | TUI presence/directory visibility (model_dirs env kernel + run-config-aware roots, selection models presence column, data-manager v-toggled full presence view) | 2026-10-14 | 25eb849 | [261014-dcl-tui-presence-directory-visibility-improv](./quick/261014-dcl-tui-presence-directory-visibility-improv/) |
-| 261014-f4w | Startup config file + run-artifact directory overrides (directories.json shared loader, --log_dir end-to-end, TUI file-default seeding + atomic save + ctrl+o dir picker, slot-1 storage overview) | 2026-10-14 | 4ade716 | [261014-f4w-startup-config-file-run-artifact-directo](./quick/261014-f4w-startup-config-file-run-artifact-directo/) |
-| 261014-ir9 | Remove confidential Chaoba model series from HEAD (registry 62 -> 59; all real-data count pins + stale current-count statements re-based; zero chaoba hits in tracked files) | 2026-10-14 | 1f16b3d | [261014-ir9-remove-confidential-chaoba-model-series-](./quick/261014-ir9-remove-confidential-chaoba-model-series-/) |
-| 261014-l6h | 认真适配 DNALLM：MODEL_INFO 对齐审计（5 处 ID 修正）+ dnallm_compat.json 判定图 + download_queue 落点重路由 + plant-dnamamba-6mer 下载 + 2×2 dry-run 验证 | 2026-10-14 | acb50a4 | [261014-l6h-dnallm-dnallmmark-dnallm-dev-cd4be43-rep](./quick/261014-l6h-dnallm-dnallmmark-dnallm-dev-cd4be43-rep/) |
-| 261014-mlc | TUI slot 2/3 拆分（maintainer 2026-10-14 ruling）：KIND_MODEL dnallm 下载通道（-I 子进程 + modelscope 嵌套归一化，DNABERT-2-117M 实机验证）+ slot 2 纯模型屏（适配/下载列，t 池切换，d 模型下载，手动放置诚实态）+ slot 3 数据集主列表（队列态叠加，Zenodo 降为备选，w 数据集向导）+ 导航 2模型/3数据集 | 2026-10-14 | a0fab7a | [261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download](./quick/261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download/) |
-| 261014-mlc | TUI slot 2/3 重构：slot 2 纯模型屏（适配/下载列，t 揭示未适配，d 走 dnallm+ModelScope 队列下载）；slot 3 数据集主面板（ModelScope 默认，Zenodo 降 z 备选，w 向导保留）；nav 2 模型/3 数据集；真下载取证 DNABERT-2-117M 通过 | 2026-10-14 | a0fab7a | [261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download](./quick/261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download/) |
-| 261015-c4j | TUI 三屏 UX 修订：slot 2 模型下载活进度面（percent+状态词）；slot 3 队列 kind 拆分（仅数据集条目）+ 密度（≥9 行 @80x24）；slot 5 模型×数据集条目化（进度条+状态） | 2026-10-15 | bbeda85 | [261015-c4j-tui-ux-1-slot-2-kind-model-slot-3-downlo](./quick/261015-c4j-tui-ux-1-slot-2-kind-model-slot-3-downlo/) |
-| 261015-ehc | TUI 三项硬化：双语 strings 注册表（默认英文，L 实时切换+持久化，已批中文术语表）+ 启动 y 确认门（enter 不可穿门）+ 单卡串行闸（两条发射路径 stage-0 拒绝）+ 下载速度显示（仅 slot 2/3） | 2026-10-15 | 87a7db4 | [261015-ehc-tui-1-i18n-strings-py-english-2-y-y-esc-](./quick/261015-ehc-tui-1-i18n-strings-py-english-2-y-y-esc-/) |
-| 261015-h8i | modelscope 入核：pyproject data 组加 modelscope>=1.40,<2（uv sync 即得完整下载能力，手动安装指引移除）；uv.lock 93→98 块（pandas/numpy 锚不动）；requirements.txt 带哈希重导出；GETTING-STARTED/DEVELOPMENT/PIN-VALIDATION 同步；CI 零改动 | 2026-10-15 | 097eda3 | [261015-h8i-modelscope-pyproject-toml-data-uv-lock-r](./quick/261015-h8i-modelscope-pyproject-toml-data-uv-lock-r/) |
+| 261014-c2l | Add custom model/dataset storage directory support (pipeline --model_root/--dataset_root flags + TUI run-config threading) | 2026-10-14 | aaf671a | [261014-c2l-add-custom-model-dataset-storage-directo](./quick/261014-c2l-add-custom-model-dataset-storage-directo/) |
+| 261014-dcl | TUI presence/directory visibility (model_dirs env kernel + run-config-aware roots, selection models presence column, data-manager v-toggled full presence view) | 2026-10-14 | 13e0786 | [261014-dcl-tui-presence-directory-visibility-improv](./quick/261014-dcl-tui-presence-directory-visibility-improv/) |
+| 261014-f4w | Startup config file + run-artifact directory overrides (directories.json shared loader, --log_dir end-to-end, TUI file-default seeding + atomic save + ctrl+o dir picker, slot-1 storage overview) | 2026-10-14 | bc8f36b | [261014-f4w-startup-config-file-run-artifact-directo](./quick/261014-f4w-startup-config-file-run-artifact-directo/) |
+| 261014-ir9 | Remove confidential Chaoba model series from HEAD (registry 62 -> 59; all real-data count pins + stale current-count statements re-based; zero chaoba hits in tracked files) | 2026-10-14 | 06f7dd4 | [261014-ir9-remove-confidential-chaoba-model-series-](./quick/261014-ir9-remove-confidential-chaoba-model-series-/) |
+| 261014-l6h | 认真适配 DNALLM：MODEL_INFO 对齐审计（5 处 ID 修正）+ dnallm_compat.json 判定图 + download_queue 落点重路由 + plant-dnamamba-6mer 下载 + 2×2 dry-run 验证 | 2026-10-14 | 30caf85 | [261014-l6h-dnallm-dnallmmark-dnallm-dev-cd4be43-rep](./quick/261014-l6h-dnallm-dnallmmark-dnallm-dev-cd4be43-rep/) |
+| 261014-mlc | TUI slot 2/3 拆分（maintainer 2026-10-14 ruling）：KIND_MODEL dnallm 下载通道（-I 子进程 + modelscope 嵌套归一化，DNABERT-2-117M 实机验证）+ slot 2 纯模型屏（适配/下载列，t 池切换，d 模型下载，手动放置诚实态）+ slot 3 数据集主列表（队列态叠加，Zenodo 降为备选，w 数据集向导）+ 导航 2模型/3数据集 | 2026-10-14 | 0cbd14e | [261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download](./quick/261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download/) |
+| 261014-mlc | TUI slot 2/3 重构：slot 2 纯模型屏（适配/下载列，t 揭示未适配，d 走 dnallm+ModelScope 队列下载）；slot 3 数据集主面板（ModelScope 默认，Zenodo 降 z 备选，w 向导保留）；nav 2 模型/3 数据集；真下载取证 DNABERT-2-117M 通过 | 2026-10-14 | 0cbd14e | [261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download](./quick/261014-mlc-tui-slot-2-3-ui-slot-2-d-dnallm-download/) |
+| 261015-c4j | TUI 三屏 UX 修订：slot 2 模型下载活进度面（percent+状态词）；slot 3 队列 kind 拆分（仅数据集条目）+ 密度（≥9 行 @80x24）；slot 5 模型×数据集条目化（进度条+状态） | 2026-10-15 | 5b04b23 | [261015-c4j-tui-ux-1-slot-2-kind-model-slot-3-downlo](./quick/261015-c4j-tui-ux-1-slot-2-kind-model-slot-3-downlo/) |
+| 261015-ehc | TUI 三项硬化：双语 strings 注册表（默认英文，L 实时切换+持久化，已批中文术语表）+ 启动 y 确认门（enter 不可穿门）+ 单卡串行闸（两条发射路径 stage-0 拒绝）+ 下载速度显示（仅 slot 2/3） | 2026-10-15 | f0b7243 | [261015-ehc-tui-1-i18n-strings-py-english-2-y-y-esc-](./quick/261015-ehc-tui-1-i18n-strings-py-english-2-y-y-esc-/) |
+| 261015-h8i | modelscope 入核：pyproject data 组加 modelscope>=1.40,<2（uv sync 即得完整下载能力，手动安装指引移除）；uv.lock 93→98 块（pandas/numpy 锚不动）；requirements.txt 带哈希重导出；GETTING-STARTED/DEVELOPMENT/PIN-VALIDATION 同步；CI 零改动 | 2026-10-15 | 3ebb2ca | [261015-h8i-modelscope-pyproject-toml-data-uv-lock-r](./quick/261015-h8i-modelscope-pyproject-toml-data-uv-lock-r/) |
 
 ## Deferred Items
 

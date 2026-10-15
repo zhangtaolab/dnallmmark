@@ -35,7 +35,7 @@ status: issues_found
 **Depth:** standard
 **Files Reviewed:** 17
 **Status:** issues_found
-**Scope:** incremental delta since diff_base `bc8e52c3a3` — quick tasks 261014-f4w (directories.json startup config + `--log_dir` + slot-4 save/picker seeding), 261014-c2l (storage-root threading), 261014-mlc (nav labels + queue backend bridge), and tonight's gap rounds (run_config state consumption chain). Cross-referenced `pipeline/directories_config.py`, `tui/services/settings.py`, `pipeline/run_finetune.py` flag surface, and the live 2x2 GPU smoke (`pipeline/logs/smoke-2x2-261014.log` + `ps` argv of the running processes) as ground truth.
+**Scope:** incremental delta since diff_base `cbfc4e6a7f` — quick tasks 261014-f4w (directories.json startup config + `--log_dir` + slot-4 save/picker seeding), 261014-c2l (storage-root threading), 261014-mlc (nav labels + queue backend bridge), and tonight's gap rounds (run_config state consumption chain). Cross-referenced `pipeline/directories_config.py`, `tui/services/settings.py`, `pipeline/run_finetune.py` flag surface, and the live 2x2 GPU smoke (`pipeline/logs/smoke-2x2-261014.log` + `ps` argv of the running processes) as ground truth.
 
 ## Summary
 

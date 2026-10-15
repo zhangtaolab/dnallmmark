@@ -37,7 +37,7 @@ metrics:
   completed: 2026-10-15
 status: complete
 actuals:
-  tokens: 16700   # 66,891 diff chars / 4 over the two code commits (1fc18b0..HEAD)
+  tokens: 16700   # 66,891 diff chars / 4 over the two code commits (6dbefd2..HEAD)
   tasks: 3
   commits: 2
 ---
@@ -48,7 +48,7 @@ actuals:
 
 ## What was done
 
-### Task 1 — pyproject + lock + export + sync (commit 4f950b1)
+### Task 1 — pyproject + lock + export + sync (commit e36439f)
 
 - Added `"modelscope>=1.40,<2",` to `[dependency-groups] data` after the evaluate line, with a house-style comment block recording the maintainer 2026-10-15 directive, the venv-sibling-then-PATH console-script resolution in `tui/services/download_queue.py`, the pure-Python/no-GPU-weight CI acceptance, the deliberate dnallm-stays-manual boundary, and the D-05 bounded-pin convention with the 1.40.2 floor.
 - `uv lock`: resolved cleanly, no conflict — Added modelscope 1.40.2, modelscope-hub 0.4.6, cffi 2.1.1, cryptography 50.0.2, pycparser 3.11 (93 → 98 `[[package]]` blocks). Nothing else moved.
@@ -56,7 +56,7 @@ actuals:
 - `uv sync --inexact` (see deviation): modelscope 1.40.2 was already present at exactly the locked version, so the manual install formally became the group install; `.venv/bin/modelscope` stayed linked.
 - `uv lock --check` exits 0. Full Task 1 verify chain printed `TASK1-OK`.
 
-### Task 2 — acquisition-doc sync (commit 097eda3)
+### Task 2 — acquisition-doc sync (commit 3ebb2ca)
 
 1. GETTING-STARTED "Download prerequisites" bullet: now states the console script ships in the data group — `uv sync` installs it (venv-sibling resolution, then PATH fallback) — while model downloads still need the external `dnallm` (manual, sibling clone).
 2. GETTING-STARTED `cli_unavailable` troubleshooting entry: remedy is now "Re-run `uv sync` — modelscope ships in the pyproject data group…" (the `python -m modelscope` has-no-`__main__` explanation kept verbatim).
@@ -94,7 +94,7 @@ The pytest lane ran through `uv run`, so it consumed the new lock (auto-sync; th
 - **Issue:** First wording used backticks around `data` ("the pyproject `data` group"), which breaks the contiguous `data group` phrase the plan's verify greps for.
 - **Fix:** Reworded the troubleshooting bullet to "ships in the pyproject data group" (plain). Re-verify: `DOCS-OK`.
 - **Files modified:** docs/GETTING-STARTED.md
-- **Commit:** 097eda3 (folded into Task 2's commit)
+- **Commit:** 3ebb2ca (folded into Task 2's commit)
 
 ## Verification Results
 
@@ -112,10 +112,10 @@ The pytest lane ran through `uv run`, so it consumed the new lock (auto-sync; th
 
 | Commit | Type | Content |
 |--------|------|---------|
-| 4f950b1 | feat | pyproject data-group entry + uv.lock (98 blocks) + requirements.txt export |
-| 097eda3 | docs | GETTING-STARTED x2, DEVELOPMENT x1, PIN-VALIDATION addendum |
+| e36439f | feat | pyproject data-group entry + uv.lock (98 blocks) + requirements.txt export |
+| 3ebb2ca | docs | GETTING-STARTED x2, DEVELOPMENT x1, PIN-VALIDATION addendum |
 
 ## Self-Check: PASSED
 
 - pyproject.toml, uv.lock, requirements.txt, docs/GETTING-STARTED.md, docs/DEVELOPMENT.md, baseline/PIN-VALIDATION.md — all present on disk (verified via git show of both commits).
-- Commits 4f950b1 and 097eda3 — both ancestors of HEAD on `autorun` (git log).
+- Commits e36439f and 3ebb2ca — both ancestors of HEAD on `autorun` (git log).

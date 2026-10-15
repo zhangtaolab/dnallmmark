@@ -20,7 +20,7 @@ findings:
 status: issues_found
 ---
 
-# Phase 12: Code Review Report (incremental, since 8535d68)
+# Phase 12: Code Review Report (incremental, since 9429ddf)
 
 **Reviewed:** 2026-10-14T17:27:21Z
 **Depth:** standard (delta-focused: interactions between the post-base changes and the phase deliverables)
@@ -30,13 +30,13 @@ status: issues_found
 ## Summary
 
 Incremental review of the phase's deliverable files that changed since the
-converged base 8535d68b3b (quick tasks 261014-ir9 / l6h / mlc / f4w-adjacent
+converged base 9429ddf279 (quick tasks 261014-ir9 / l6h / mlc / f4w-adjacent
 goldens, plus the 11-08 gap round). Verified empirically, not by inspection
 alone:
 
 - **`pipeline/run_sweep_shard.py` is byte-stable since base** — confirmed:
-  `git diff 8535d68b3b HEAD -- pipeline/run_sweep_shard.py` is empty and
-  `git rev-list 8535d68b3b..HEAD -- pipeline/run_sweep_shard.py` counts 0
+  `git diff 9429ddf279 HEAD -- pipeline/run_sweep_shard.py` is empty and
+  `git rev-list 9429ddf279..HEAD -- pipeline/run_sweep_shard.py` counts 0
   commits. Not re-reviewed; its unchanged bytes were re-checked only at the
   interaction seams below.
 - **Test evidence:** `uv run --group dev --group tui pytest

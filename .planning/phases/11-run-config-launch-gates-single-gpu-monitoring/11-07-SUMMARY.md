@@ -27,9 +27,9 @@ affects: [Phase 12 (single-GPU validation evidence: this SUMMARY + the smoke pro
 actuals:
   tokens: 37055   # chars/4 over the realized diff (148222 chars, 9 files)
   tasks: 3
-  commits: 4      # measured: git rev-list --count 5f7e6b6..HEAD
-plan_head_before: 5f7e6b690a43faf00e1275ed2e25f2562ece8194
-plan_head_after: 3ddc10f
+  commits: 4      # measured: git rev-list --count c190d07..HEAD
+plan_head_before: c190d07ed20d3320f7ae3c9a538e83b16f7dfd5e
+plan_head_after: ccc7c14
 
 tech-stack:
   added: []   # textual built-ins only (DataTable/RichLog/ModalScreen/set_interval); zero packages installed
@@ -109,7 +109,7 @@ status: complete
 
 ## What Was Built
 
-### Task 1 — the shell + cadence + promotion (commits b36b4e1 RED, e6da784 GREEN)
+### Task 1 — the shell + cadence + promotion (commits 6b785a0 RED, 2a5ae8c GREEN)
 
 - `MonitorScreen` (NAV_SLOT 5): TopMenuBar → title bar (MON_SCREEN_TITLE + the right-aligned MON_SCAN_NOTE cadence note — standing chrome) → the discovered region (fixed height 5: title + header + ~2 rows, scrolls) → full-width rule → the cell region (flex; MON_CELLS_TITLE + the right-aligned resume note on its title row) → the 1-row stats line → BottomBar (`[enter]详情 [f]失败清单 [t]日志尾随 [a]附加 [r]重扫` in wireframe order).
 - Discovered rows: the three states glyph-first (● dim / ○ muted / ◌ muted), root name, 规模 (`{m}×{t}×{s}` from the manifest via the backend's sweep_scale; drops at 80), progress (`{done}/{total}` + the 10-cell █· bar on running rows only; unknown total ⇒ MON_TOTAL_UNKNOWN), ETA cell (running only: ≈point / ≈lo–hi / 估算中…; finished ⇒ —). The attached row carries the ◆ accent (state-cell prefix at 120; appended after ETA at 80 — Color amendment 13).
@@ -117,7 +117,7 @@ status: complete
 - The cadence (the plan's no-analog piece): `set_interval(2.0/60.0)` ticks that ONLY bump run ids and dispatch `@work(exclusive=True, thread=True, group="mon-frontier"/"mon-full")` workers (separate groups — the data_manager group-discipline note); run-id-tagged messages with stale-drop handlers; the mount kick runs the first full scan immediately; timers stop on unmount (Pilot-proven: no zombie mon-* workers).
 - `MonitorServiceProtocol` + `MonitorBackend` over the frozen 11-04 scanner with the shared launcher's `live_sweeps()` injected into every scan; constructor injection for Pilot fakes. app.py: the monitor seams, the ONE cached factory, the nav branch. nav.py: slot 5 promoted.
 
-### Task 2 — the interactions (commit 118d2f6)
+### Task 2 — the interactions (commit 0f3e259)
 
 - Attach (enter on a discovered row): ◆ moves, cells/stats/failures/logs rebind, the frontier target updates. `[a]`: PathInputModal — `add_manual_root` validates; invalid renders the MON_ATTACH_INVALID_TOAST copy inside the modal's problem row (never silent, never attached); valid adds + persists + attaches + toasts.
 - Cell detail (enter on a cell row): full model/task keys, per-seed states, `frac_{f}: {state}` lines, and the run_record fields VERBATIM through the new `cell_record` tolerant seam (worker-read).
@@ -125,7 +125,7 @@ status: complete
 - `[t]`: the bounded RichLog tail refreshed on the 2s cadence while open (its own mon-logtail worker), the dim tee line naming the file; no tee (CLI-launched) renders MON_LOG_UNAVAILABLE and schedules NO refresh; esc stops the tail. `[r]`: immediate full rescan + the count toast.
 - Three 8.2.8 probe findings pinned (see key-decisions); `LauncherServiceProtocol`/`LauncherBackend` gained `launch_from_failures`.
 
-### Task 3 — integration + degradation + gates (commit 3ddc10f)
+### Task 3 — integration + degradation + gates (commit ccc7c14)
 
 - D-13: `app.sweep_launched(root, cells)` (called by the slot-4 launch-finished site after the toast) records the plan (`note_launch` → expected_total + fallback_start, the 11-04 stats seams), attaches, and posts `MonitorSwitchRequested` (the queue-forward precedent) whose async handler switches to the cached monitor screen. The q-intercept predicate extends to `live_sweeps() OR the attached sweep running`; the ExitModal message threads the monitor's live done/total (absent markers when unknown).
 - The degradation sweep (all Pilot-green): corrupt-record throw → last-known-good; manifest-mid-write stays running; artifacts-only never ●; attached-root-deleted → row drops + cells empty + no stale ◆ (the ever-discovered rule); the min-size guard round trip with an open modal; the responsiveness proof (a fake scan blocked on a threading.Event while presses still open chrome — T-11-07-04).
@@ -177,20 +177,20 @@ status: complete
 - **Issue:** `FailuresModal.action_rerun_failures` looked up `self.screen` for the parent monitor — inside a pushed modal that returns the MODAL, so the confirm never pushed.
 - **Fix:** the owning `MonitorScreen` is passed into the modal constructor (never looked up); probe-pinned in the code comment.
 - **Files modified:** tui/screens/monitor.py
-- **Commit:** 118d2f6
+- **Commit:** 0f3e259
 
 **2. [Rule 1 - 8.2.8] `MessagePump._task` clobbers a same-named field**
 - **Found during:** Task 2 GREEN (the detail title rendered an asyncio Task).
 - **Issue:** `CellDetailModal._task` was silently overwritten by the framework's own pump-task attribute on mount.
 - **Fix:** renamed `_task_key`; probe-pinned in the comment.
-- **Commit:** 118d2f6
+- **Commit:** 0f3e259
 
 **3. [Rule 3 - Protocol consequence] `LauncherServiceProtocol` lacked `launch_from_failures`**
 - **Found during:** Task 2's ty gate.
 - **Issue:** the app passes the shared launcher (typed `LauncherServiceProtocol`) into the monitor screen whose seam expects the re-run method; ty flagged the mismatch.
 - **Fix:** the protocol + `LauncherBackend` gained the delegating `launch_from_failures` (the adapter over the app-owned `SweepLauncher`, which already had it); the three launcher fakes extended.
 - **Files modified:** tui/screens/run_config.py, tests/tui/test_pilot_nav_shell.py, tests/tui/test_pilot_run_config.py
-- **Commit:** 118d2f6
+- **Commit:** 0f3e259
 
 ### Implementation Notes (within the plan's own discretion)
 
@@ -211,10 +211,10 @@ None — no placeholder values, no unwired data paths; every surface is behavior
 ## Self-Check: PASSED
 
 - tui/screens/monitor.py, tests/tui/test_pilot_monitor.py — FOUND (created)
-- b36b4e1, e6da784, 118d2f6, 3ddc10f — all ancestors of HEAD
+- 6b785a0, 2a5ae8c, 0f3e259, ccc7c14 — all ancestors of HEAD
 - Deletion check: no tracked files deleted (diff --stat: 9 files, 3209 insertions, 54 deletions — the deletions are the nav-shell/selection-custom assertion lines this plan's edits replaced)
 - Untracked scan: only the pre-existing .planning/.gsd-allow-shrink (present at spawn)
-- Ledger: commits measured 4 (5f7e6b6..3ddc10f), no uncommitted code changes
+- Ledger: commits measured 4 (c190d07..ccc7c14), no uncommitted code changes
 
 ---
 *Phase: 11-run-config-launch-gates-single-gpu-monitoring*

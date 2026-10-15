@@ -20,9 +20,9 @@ affects: [11-06 run-config screen (its [enter] launch gate calls env_preflight -
 actuals:
   tokens: 14600   # chars/4 over the realized diff (58373 chars, 2 files)
   tasks: 3
-  commits: 6      # measured: git rev-list --count fea8eac..HEAD
-plan_head_before: fea8eac5d3ac148b2c4ef12deca8c5941399e53d
-plan_head_after: 7a3430f
+  commits: 6      # measured: git rev-list --count 11724a0..HEAD
+plan_head_before: 11724a0810dd322e573c6d3007fc78c7c09394fe
+plan_head_after: a8dacdf
 
 tech-stack:
   added: []   # stdlib + the existing settings/quick_check/env_gate/run_config seams only; zero packages installed
@@ -97,7 +97,7 @@ Landed `tui/services/sweep_launcher.py` — the execution tier of the operator l
 
 ## What Was Built
 
-### Task 1 — Spawner seam + tee launch + live-sweep registry (commits a8d1f39 RED, ea51363 GREEN)
+### Task 1 — Spawner seam + tee launch + live-sweep registry (commits ddd7530 RED, 4ff0866 GREEN)
 
 - Module in the download_queue idiom: numbered-decision docstring (D-06/D-07/D-08/D-10/D-11), zero textual (the import-lock glob extends automatically), spawner-injectable declared.
 - `_default_spawner(argv, **kwargs)` + `_signal_group(proc, sig)` copied VERBATIM from download_queue:698-712/870-878 — pure Popen forward; killpg with already-dead races absorbed.
@@ -105,7 +105,7 @@ Landed `tui/services/sweep_launcher.py` — the execution tier of the operator l
 - `_spawn(argv, output_root, spawner=None, clock=None)` → `LaunchOutcome`: mkdir `state_dir()/logs`; tee `sweep_{YYYYmmdd_HHMMSS}_{rootname}.log` (`rootname` = the RESOLVED root's basename — the E2' phrase identity); `spawner(list(argv), start_new_session=True, cwd=str(REPO_ROOT/"pipeline"), env={**os.environ, "PYTHONUNBUFFERED": "1"}, stdout=tee, stderr=STDOUT)`; OSError → failed outcome with the diagnostic, tee closed+unlinked (nothing launched leaves no log), registry untouched.
 - `kill_sweep(root)`: poll → "already_dead" (zero signals) | SIGTERM via killpg → poll-with-short-grace → SIGKILL escalation → "signalled"; entry dropped after. `detach(root)`: pop, no wait, no kill → "detached"/"noop". `live_sweeps()` sorted roots (the ExitModal predicate + 11-04's live_roots scans); `tee_path_for(root)` (None ⇒ the CLI-launched unavailable state).
 
-### Task 2 — The gate (commits 6089336 RED, d8e63ed GREEN)
+### Task 2 — The gate (commits 957cd00 RED, e63a08d GREEN)
 
 - `env_preflight(kernels=None)` → `EnvPreflight(can_launch, reasons, failed_kernels)`: `quick_check.run_quick_check(kernels)` → `env_gate.gate_verdict(results)` VERBATIM (zero edits to either frozen file — spy-proven); failed_kernels = CRITICAL failures in input order.
 - `gate_confirm_data(spec, run_config_service=None)` → `GateSummary(models, tasks, seeds, cells, output_root, is_e2x, expected_phrase)`: FRESH preview/official/is_full_e2x recompute — the counting spy proves the screen's cached preview is never reused (T-11-03-02).
@@ -113,7 +113,7 @@ Landed `tui/services/sweep_launcher.py` — the execution tier of the operator l
 - `launch_argv(argv, output_root, ...)`: the raw pre-composed seam carrying the from-failures-only docstring warning (plan-checker obs 3).
 - Test fixture fix (RED→GREEN): fake kernels are zero-arg callables returning CheckResult — the frozen face's injectable contract.
 
-### Task 3 — From-failures path + full gates (commits 6515380 RED, 7a3430f GREEN)
+### Task 3 — From-failures path + full gates (commits 2231e42 RED, a8dacdf GREEN)
 
 - `launch_from_failures(failures_path, seeds, output_root, peft="none", config_variant="none", ...)`: composes via `run_config.compose_from_failures_argv` then routes through `launch_argv` — the SAME pipeline every launch source shares; the docstring records D-11 (env preflight is the screen's preceding step; failure-pairs-only enumeration can never be the full matrix, so the E2' typed gate cannot apply by construction).
 - The construction proof pinned over the REAL official registries: an E2'-shaped `--models/--tasks` argv through `launch_argv` is NOT refused — the seam takes no spec and never consults the phrase gate; full-matrix launches must go through `launch_spec`.
@@ -135,13 +135,13 @@ Landed `tui/services/sweep_launcher.py` — the execution tier of the operator l
 - **Issue:** The suite's first fake kernels were CheckResult instances; the frozen face expects zero-arg callables each RETURNING a CheckResult.
 - **Fix:** The `kernel()` helper returns `lambda: result`. The service was never at fault; the double conforms to the frozen seam (correct direction of conformance).
 - **Files modified:** tests/tui/test_services_sweep_launcher.py
-- **Commit:** d8e63ed
+- **Commit:** e63a08d
 
 **2. [Rule 1 - Gate fixes] ruff DTZ001/UP017/SIM102/SIM115 findings**
 - **Found during:** per-task lint runs.
 - **Fix:** tz-aware `datetime(UTC)` for the fixed clock; `UTC` alias; the E2' refusal check combined into one `if ... and ...` (same call order — is_full_e2x still evaluates first); a justified `# noqa: SIM115` on the tee open (deliberately NOT a context manager — the handle lives for the child's lifetime, per the plan's own action note).
 - **Files modified:** tui/services/sweep_launcher.py, tests/tui/test_services_sweep_launcher.py
-- **Commits:** ea51363, d8e63ed
+- **Commits:** 4ff0866, e63a08d
 
 ### Implementation Notes (within the plan's own discretion)
 
@@ -165,7 +165,7 @@ The run-config screen's [enter] launch gate composes three service calls in orde
 
 - tui/services/sweep_launcher.py — FOUND
 - tests/tui/test_services_sweep_launcher.py — FOUND
-- a8d1f39, ea51363, 6089336, d8e63ed, 6515380, 7a3430f — all ancestors of HEAD
+- ddd7530, 4ff0866, 957cd00, e63a08d, 2231e42, a8dacdf — all ancestors of HEAD
 - Deletion check: no tracked files deleted by any plan commit (diff --stat: 2 files, 1449 insertions, 0 deletions)
 - Untracked scan: only the pre-existing `.planning/.gsd-allow-shrink` (present at spawn)
-- Ledger: commits measured 6 (`fea8eac..7a3430f`), no uncommitted code changes
+- Ledger: commits measured 6 (`11724a0..a8dacdf`), no uncommitted code changes

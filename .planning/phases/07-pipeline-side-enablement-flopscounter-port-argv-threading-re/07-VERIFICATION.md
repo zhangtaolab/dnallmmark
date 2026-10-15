@@ -20,13 +20,13 @@ re_verification:
 **Phase Goal:** The pipeline can be fully driven, measured, and extended by an external operator tool — FlopsCounter's 20+ architecture forward-hook FLOPs instrumentation ported from the deprecated `dnallmmark_pipeline.py` into `run_finetune.py`, the four sanctioned `run_sweep.py` argv flags threaded through with CLI parity, the official+custom registry overlay seam (user-maintained custom entries load on top of official registries; byte-identical when absent), and the tolerant JSON loader contract that FLOPs output and the future monitor share
 **Verified:** 2026-10-14T11:28:53Z
 **Status:** passed
-**Re-verification:** Yes — #4682 stale-fingerprint route (fourth stale-fingerprint re-run over this phase). The 2026-10-14T00:00:00Z pass (passed 14/14 at HEAD `def16a5`) went stale because the 261014 quick-task series (c2l, f4w, ir9, l6h, mlc) plus the incremental Phase 7 code review touched covered files: `run_sweep.py` (+225), `run_finetune.py` (+93), `tests/test_sweep.py` (+416), `tests/test_run_finetune_contracts.py` (+266), `Makefile` (+7), `README.md` (+18), `script/audit_n_frequencies.py` (12), `script/export_runs.py` (5), `AUDIT.md` (4), `docs/TUI-REVIEW.md` not in set; `docs/TUI-REQUIREMENTS.md` (4). This pass hunk-audited the full delta, re-ran the six phase-7 suites, re-executed the live overlay/tolerant-loader/import/lint contracts, assessed the open critical review finding CR-01 against the must-haves (see Warnings), and recomputed the covered-input fingerprint at HEAD `ec4056c`.
+**Re-verification:** Yes — #4682 stale-fingerprint route (fourth stale-fingerprint re-run over this phase). The 2026-10-14T00:00:00Z pass (passed 14/14 at HEAD `43d3544`) went stale because the 261014 quick-task series (c2l, f4w, ir9, l6h, mlc) plus the incremental Phase 7 code review touched covered files: `run_sweep.py` (+225), `run_finetune.py` (+93), `tests/test_sweep.py` (+416), `tests/test_run_finetune_contracts.py` (+266), `Makefile` (+7), `README.md` (+18), `script/audit_n_frequencies.py` (12), `script/export_runs.py` (5), `AUDIT.md` (4), `docs/TUI-REVIEW.md` not in set; `docs/TUI-REQUIREMENTS.md` (4). This pass hunk-audited the full delta, re-ran the six phase-7 suites, re-executed the live overlay/tolerant-loader/import/lint contracts, assessed the open critical review finding CR-01 against the must-haves (see Warnings), and recomputed the covered-input fingerprint at HEAD `075a621`.
 
-## Re-verification (stale refresh, HEAD ec4056c, 2026-10-14)
+## Re-verification (stale refresh, HEAD 075a621, 2026-10-14)
 
 ### Staleness diagnosis (commit-anchored, verified this pass)
 
-`git diff --stat def16a5..HEAD` over the covered set:
+`git diff --stat 43d3544..HEAD` over the covered set:
 
 - **261014-c2l + 261014-f4w (sibling flag family + startup config):** `run_sweep.py` +225 — adds `--model_root`/`--dataset_root`/`--log_dir` as pass-through family members following the exact 07-03 discipline (only-when-present LIST argv append, D-15 abs-resolution, WR-05 empty-refusal, D-13 only-when-present manifest keys) plus the `directories.json` startup read (`pipeline/directories_config`, flag > file > built-in default); `run_finetune.py` +93 — the matching child flags, the `directories_config.effective()` merge, storage-root base resolution, and the effective log dir (all absent-everywhere branches documented and tested byte-identical). `--output-root` argparse default moved `./finetuned` → None with an explicit `file_dirs.get("output_root") or "./finetuned"` fallback — bare resolution unchanged.
 - **Test extensions:** `tests/test_sweep.py` +416, `tests/test_run_finetune_contracts.py` +266 — new tests for the above (suite grew 276 → 302, all green).
@@ -53,7 +53,7 @@ re_verification:
 | T12 (legacy deleted, zero references) | ✓ VERIFIED | Re-executed: `test ! -e pipeline/dnallmmark_pipeline.py` → absent; grep over `pipeline/ script/ tests/ Makefile schemas/` → 0 lines |
 | T14 (lint/typecheck/test gates, GPU-free/dnallm-free) | ✓ VERIFIED | `make -n lint` PHASE7 expansion re-proven (PHASE7-EXPANSION-OK); typecheck recipe byte-unchanged CPU-side; phase-7 suites 302 green; the 7 full-suite failures are the documented machine baseline (5 schema/determinism pins + 1 storage_overview machine-state) — none in phase-7 covered test files |
 
-### Spot-checks (executed by this verifier at HEAD ec4056c)
+### Spot-checks (executed by this verifier at HEAD 075a621)
 
 | Command | Result |
 |---|---|
@@ -68,7 +68,7 @@ re_verification:
 
 **Fresh fingerprint (verbatim from `verification.fingerprint`):** `v3:sha256:888330253a0e5c06c3e36d32b6795a0e4e98b19ef07d354264f83500716f837d` over 19 implementation files + 4 docs + the auto-added PLAN/SUMMARY set (frontmatter `covered_files` is the command's verbatim output).
 
-**Verdict: PASSED — 14/14 must-haves hold at HEAD ec4056c.** Zero regressions in the phase-7 contract; the staleness was the sanctioned 261014 quick-task delta plus the incremental review artifacts, none of which weakens a Phase 7 clause. One open critical review finding (CR-01) was reproduced and assessed in full — it is a real, evidenced defect in the CURRENT overlay chain's end-to-end robustness but does not breach any enumerated Phase 7 must-have (analysis below); it is reported as Warning W4 for maintainer triage, not silently absorbed.
+**Verdict: PASSED — 14/14 must-haves hold at HEAD 075a621.** Zero regressions in the phase-7 contract; the staleness was the sanctioned 261014 quick-task delta plus the incremental review artifacts, none of which weakens a Phase 7 clause. One open critical review finding (CR-01) was reproduced and assessed in full — it is a real, evidenced defect in the CURRENT overlay chain's end-to-end robustness but does not breach any enumerated Phase 7 must-have (analysis below); it is reported as Warning W4 for maintainer triage, not silently absorbed.
 
 ---
 
@@ -146,7 +146,7 @@ Wiring re-confirmed this pass: FLOPs chain byte-identity + grep over the two cha
 
 ### Behavioral Spot-Checks
 
-All executed by this verifier at HEAD `ec4056c`.
+All executed by this verifier at HEAD `075a621`.
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
@@ -179,7 +179,7 @@ Orphan check: REQUIREMENTS.md maps exactly 4 IDs to Phase 7 (CUST-05, PIPE-01, P
 |-----------|-----------|--------|---------|----------|-----------------|---------|
 | tests/test_sweep.py | PIPE-02 | all | 0 | no | Value (argv-shape literals, byte-identity) | OK |
 | tests/test_flops_counter.py | PIPE-01 | all | 0 | no | Value (per-family arithmetic, schema pins, dispatch order) | OK |
-| tests/test_registry_loader.py | CUST-05 | all | 0 (root-guard skips not hit this host at def16a5; none observed in this run) | no | Value (collision message, merge equality) | OK |
+| tests/test_registry_loader.py | CUST-05 | all | 0 (root-guard skips not hit this host at 43d3544; none observed in this run) | no | Value (collision message, merge equality) | OK |
 | tests/test_artifact_loader.py | PIPE-03 | all | 0 | no | Value (4-case returns) | OK |
 | tests/test_run_finetune_contracts.py | PIPE-01 | all | 0 | no | Value (source-order contracts, parity literals with source-commit provenance) | OK |
 
@@ -210,8 +210,8 @@ N/A — Infrastructure/foundation phase (pipeline tooling, no user-facing elemen
 
 ### Re-Verification Record
 
-- **Route:** #4682 stale fingerprint (fourth stale-fingerprint re-run over this phase; prior pass `passed` 14/14 at 2026-10-14T00:00:00Z / HEAD `def16a5`).
-- **Staleness diagnosis confirmed:** `git diff --stat def16a5..HEAD` over the covered set → 10 files changed (261014-c2l/f4w sibling-flag family + startup config in run_sweep/run_finetune and their tests; Makefile lint append; comment/doc updates); 9 covered files byte-identical including the whole FLOPs chain core and `registry_loader.py`.
+- **Route:** #4682 stale fingerprint (fourth stale-fingerprint re-run over this phase; prior pass `passed` 14/14 at 2026-10-14T00:00:00Z / HEAD `43d3544`).
+- **Staleness diagnosis confirmed:** `git diff --stat 43d3544..HEAD` over the covered set → 10 files changed (261014-c2l/f4w sibling-flag family + startup config in run_sweep/run_finetune and their tests; Makefile lint append; comment/doc updates); 9 covered files byte-identical including the whole FLOPs chain core and `registry_loader.py`.
 - **Delta contract analysis:** every hunk audited against the 14-truth contract — four-flag threading, GA pass-through, manifest discipline, calibration/write spans, PHASE7 gate expansion all intact; no gate lane gains GPU/dnallm exposure.
 - **Regression check:** all 14 truths verified against the current tree (live re-execution for the loader/overlay/legacy/gate contracts; delta audit + green 302-test run for the rest). Zero regressions.
 - **CR-01 (open critical review finding):** fact-checked against the code, deterministically reproduced at the seam level, provenance-traced (`c6b3137`, pre-Phase-7; not a regression), and adjudicated against every enumerated must-have clause — no clause falsified; reported as Warning W4 with the reproduction and fix-ownership analysis.
@@ -219,9 +219,9 @@ N/A — Infrastructure/foundation phase (pipeline tooling, no user-facing elemen
 
 ### Gaps Summary
 
-No gaps. The stale fingerprint was diagnosed (the 261014 quick-task series plus the incremental review artifacts), the delta hunk-audited against every Phase 7 assertion (four-flag threading, GA pass-through, calibration/write contracts, PHASE7 gate expansion — all intact), all 14 must-have truths verified against the current tree, six phase-7 suites re-run green (302 passed), live overlay/tolerant-loader/torch-free-import/lint contracts re-executed, all 4 requirement IDs satisfied with no orphans, 27/27 decisions honored, zero debt markers, and the covered-input fingerprint regenerated at HEAD `ec4056c`. The open critical review finding CR-01 was reproduced and adjudicated: real and evidenced, but owned by the Phase 9 custom-registry schema/wizard surface plus pre-Phase-7 consumer indexing — no Phase 7 clause breaches; carried as Warning W4 for maintainer triage.
+No gaps. The stale fingerprint was diagnosed (the 261014 quick-task series plus the incremental review artifacts), the delta hunk-audited against every Phase 7 assertion (four-flag threading, GA pass-through, calibration/write contracts, PHASE7 gate expansion — all intact), all 14 must-have truths verified against the current tree, six phase-7 suites re-run green (302 passed), live overlay/tolerant-loader/torch-free-import/lint contracts re-executed, all 4 requirement IDs satisfied with no orphans, 27/27 decisions honored, zero debt markers, and the covered-input fingerprint regenerated at HEAD `075a621`. The open critical review finding CR-01 was reproduced and adjudicated: real and evidenced, but owned by the Phase 9 custom-registry schema/wizard surface plus pre-Phase-7 consumer indexing — no Phase 7 clause breaches; carried as Warning W4 for maintainer triage.
 
 ---
 
-_Verified: 2026-10-14T11:28:53Z (stale refresh at HEAD ec4056c; prior pass 2026-10-14T00:00:00Z at HEAD def16a5)_
+_Verified: 2026-10-14T11:28:53Z (stale refresh at HEAD 075a621; prior pass 2026-10-14T00:00:00Z at HEAD 43d3544)_
 _Verifier: Claude (gsd-verifier)_

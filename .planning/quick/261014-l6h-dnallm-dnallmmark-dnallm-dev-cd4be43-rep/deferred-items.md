@@ -61,7 +61,7 @@ E       AssertionError: ... assert True is False   (StorageRow .../pipeline/logs
   or skip/derive the expectation from the live dir).
 - **Baseline accounting at l6h close:** pytest 1697 passed / 7 failed =
   6 documented baseline (5 test_schemas + 1 test_determinism, the
-  post-9bc68e1 stale pins) + this 1 environmental; the 4 root-user chmod
+  post-9e803ca stale pins) + this 1 environmental; the 4 root-user chmod
   persist-sims are GREEN on this non-root machine (environmentally
   green, per c2l's own note); node lane 26/26; the known snapshot flake
   did not strike.

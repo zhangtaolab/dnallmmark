@@ -44,11 +44,11 @@ metrics:
   completed: 2026-10-14
 status: complete
 actuals:
-  tokens: 14077   # chars/4 over the realized c96a7e2..HEAD diff (56,310 chars); the plan's 70k estimate also covered the machine-local env/download work that produces no diff
+  tokens: 14077   # chars/4 over the realized 0066a1a..HEAD diff (56,310 chars); the plan's 70k estimate also covered the machine-local env/download work that produces no diff
   tasks: 3
-  commits: 2      # MEASURED: git rev-list --count c96a7e2..HEAD
-plan_head_before: c96a7e21cef55713b50147c9d97fe5137090c038
-plan_head_after: acb50a4eb0a7e13069de2c3f5398f2ed74289ee4
+  commits: 2      # MEASURED: git rev-list --count 0066a1a..HEAD
+plan_head_before: 0066a1ae49a1be3d35fe7f7af74142cf987e91d1
+plan_head_after: 30caf857675e5cfd7277ed9c723bbbc311728fa4
 ---
 
 # Phase quick-261014-l6h Plan 01: DNALLM channel adaptation (env + alignment audit + dataset-root reroute + 2x2 presence) Summary
@@ -73,9 +73,9 @@ plan_head_after: acb50a4eb0a7e13069de2c3f5398f2ed74289ee4
 
 ### TDD record
 
-**RED (4b14ce5):** `uv run --group dev --group tui pytest tests/test_dnallm_compat.py -q` → **10 failed** (FileNotFoundError on the not-yet-generated pipeline/dnallm_compat.json; AssertionError on the four alignment locks) — every failure on the planned artifact/behavior, zero collection/fixture faults. Queue reroute: targeted run → **2 failed** (`test_file_dataset_root_redirects_spec_local_dir_and_gate_naming` failing on the local_dir assertion — config not yet read; `test_constructor_dataset_root_beats_file_key` failing with TypeError on the missing `dataset_root` kwarg) + 2 guard pins passing by design (byte-identity + corrupt-degrade are regression guards for GREEN, not new-behavior REDs).
+**RED (b32dc47):** `uv run --group dev --group tui pytest tests/test_dnallm_compat.py -q` → **10 failed** (FileNotFoundError on the not-yet-generated pipeline/dnallm_compat.json; AssertionError on the four alignment locks) — every failure on the planned artifact/behavior, zero collection/fixture faults. Queue reroute: targeted run → **2 failed** (`test_file_dataset_root_redirects_spec_local_dir_and_gate_naming` failing on the local_dir assertion — config not yet read; `test_constructor_dataset_root_beats_file_key` failing with TypeError on the missing `dataset_root` kwarg) + 2 guard pins passing by design (byte-identity + corrupt-degrade are regression guards for GREEN, not new-behavior REDs).
 
-**GREEN (acb50a4):** implementation below; `pytest tests/test_dnallm_compat.py tests/tui/test_services_download_queue.py` → **179 passed** (10 + 169; the queue file's true pytest count was 165 pre-task + 4 new — the plan's "144" was a grep-based count, the actual collected count is 169).
+**GREEN (30caf85):** implementation below; `pytest tests/test_dnallm_compat.py tests/tui/test_services_download_queue.py` → **179 passed** (10 + 169; the queue file's true pytest count was 165 pre-task + 4 new — the plan's "144" was a grep-based count, the actual collected count is 169).
 
 **REFACTOR:** none needed — the helper is single-purpose; the script's mirror-form check was already implemented with string ops over regex during GREEN.
 
@@ -102,7 +102,7 @@ plan_head_after: acb50a4eb0a7e13069de2c3f5398f2ed74289ee4
 
 - `make lint` green; `make typecheck` green (ty covers the new script + the queue reroute).
 - Targeted suites: `tests/test_dnallm_compat.py tests/tui/test_services_download_queue.py tests/test_model_registry.py tests/test_registry_unification.py` → **187 passed**.
-- Full `make test`: **1697 passed / 7 failed / node lane 26/26**. Failure accounting vs the documented baseline: 6 documented baseline failures present (5 test_schemas + 1 test_determinism, the post-9bc68e1 stale pins); the 4 root-user chmod persist-failure sims are GREEN on this non-root machine (environmentally green, exactly as c2l's deferred-items predicts); **1 failure beyond the documented set — proven pre-existing machine state, see Deviations**. The known snapshot flake did not strike this run.
+- Full `make test`: **1697 passed / 7 failed / node lane 26/26**. Failure accounting vs the documented baseline: 6 documented baseline failures present (5 test_schemas + 1 test_determinism, the post-9e803ca stale pins); the 4 root-user chmod persist-failure sims are GREEN on this non-root machine (environmentally green, exactly as c2l's deferred-items predicts); **1 failure beyond the documented set — proven pre-existing machine state, see Deviations**. The known snapshot flake did not strike this run.
 
 ## Task 3 — Download + presence + dry-run (L6H-04/L6H-05): machine-local, no commit
 
@@ -166,5 +166,5 @@ None — no stub patterns introduced; the compat map and reroute are fully wired
 ## Self-Check: PASSED
 
 - Files: script/audit_dnallm_compat.py FOUND; pipeline/dnallm_compat.json FOUND; tests/test_dnallm_compat.py FOUND; tui/services/download_queue.py FOUND (modified); pipeline/models_info.json FOUND (modified); Makefile FOUND (modified); tests/tui/test_services_download_queue.py FOUND (modified)
-- Commits: 4b14ce5 and acb50a4 are ancestors of HEAD (verified via git merge-base --is-ancestor)
+- Commits: b32dc47 and 30caf85 are ancestors of HEAD (verified via git merge-base --is-ancestor)
 - SUMMARY written by the executor; docs commit handled by the orchestrator per the dispatch constraints

@@ -102,7 +102,7 @@ Two surfaces, two frozen stacks — **zero new runtime dependencies either way**
 
 **TUI:** Enumerated by `.venv/bin/python -c "import textual.widgets as w; print(len(w.__all__))"` — 42 components — textual@8.2.8 (resolved via `importlib.metadata`, uv.lock-pinned) — 2026-10-13.
 
-**Web:** Enumerated by `grep -o '^\.[a-z-]*' dnallm-mark/css/components.css | sort -u | wc -l` — 64 unique top-level class selectors (118 rule starts) — dnallm-mark/css/components.css@79ef569 — 2026-10-13.
+**Web:** Enumerated by `grep -o '^\.[a-z-]*' dnallm-mark/css/components.css | sort -u | wc -l` — 64 unique top-level class selectors (118 rule starts) — dnallm-mark/css/components.css@5ef870f — 2026-10-13.
 
 Both tables are **non-exhaustive** known-good lists, never closed allowlists;
 `gsd-ui-checker` Dimension 7 treats the provenance lines above as evidence.

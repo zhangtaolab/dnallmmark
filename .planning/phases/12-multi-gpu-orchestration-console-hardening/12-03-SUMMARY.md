@@ -15,9 +15,9 @@ provides:
 affects: [12-04, 12-05, phase-12-verification, gsd-verify-work]
 
 actuals:
-  tokens: 104000   # chars/4 over the realized diff (156c497..HEAD; the 8 SVGs are ~350KB of it)
+  tokens: 104000   # chars/4 over the realized diff (a66ef75..HEAD; the 8 SVGs are ~350KB of it)
   tasks: 2
-  commits: 9       # measured git rev-list 156c497..HEAD (6 plan commits + 3 pause-work chore(handoff) commits that landed inside the window)
+  commits: 9       # measured git rev-list a66ef75..HEAD (6 plan commits + 3 pause-work chore(handoff) commits that landed inside the window)
 
 tech-stack:
   added: []          # zero new dependencies (T-12-03-SC held; plugin REMOVED by resolver conflict)
@@ -76,8 +76,8 @@ coverage:
 duration: 65min
 completed: 2026-10-13
 status: complete
-plan_head_before: 156c4975958e0550840fb5bee59359f8ddc58e66
-plan_head_after: 83eeef4
+plan_head_before: a66ef753818e816665da08137a15624e1adfa48d
+plan_head_after: 1ec42d3
 ---
 
 # Phase 12 Plan 03: Slot-4 Focus Fix + TUI Snapshot Goldens Summary
@@ -101,12 +101,12 @@ plan_head_after: 83eeef4
 
 ## Task Commits
 
-1. **Task 1 RED — B1-B5 Pilot tests** - `3bef8e0` (test) — prior executor
-2. **Task 1 GREEN — the shared dismiss() override (delta B)** - `a617eca` (feat) — prior executor
-3. **Task 2 RED — the fallback-lane snapshot harness** - `b9ad52d` (test) — 8 goldens missing, determinism+sensitivity already green
-4. **Fix RED — params Input values invisible in the export** - `483bcb8` (test) — + evidence records embedded/repaired
-5. **Fix GREEN — compact=True on the 8 clipped Inputs** - `f2f09cb` (fix) — + lint repair on Task-1-committed lines (UP037/RUF012/S110)
-6. **Task 2 GREEN — the 8-SVG corpus + make snapshot-update** - `83eeef4` (feat)
+1. **Task 1 RED — B1-B5 Pilot tests** - `c415ec1` (test) — prior executor
+2. **Task 1 GREEN — the shared dismiss() override (delta B)** - `88ce24c` (feat) — prior executor
+3. **Task 2 RED — the fallback-lane snapshot harness** - `bde769a` (test) — 8 goldens missing, determinism+sensitivity already green
+4. **Fix RED — params Input values invisible in the export** - `ef30511` (test) — + evidence records embedded/repaired
+5. **Fix GREEN — compact=True on the 8 clipped Inputs** - `536da03` (fix) — + lint repair on Task-1-committed lines (UP037/RUF012/S110)
+6. **Task 2 GREEN — the 8-SVG corpus + make snapshot-update** - `1ec42d3` (feat)
 
 *(Three `chore(handoff)` commits inside the measurement window are pause-work session snapshots, not plan work.)*
 
@@ -133,10 +133,10 @@ plan_head_after: 83eeef4
 **1. [Rule 1 - Bug] Params Input values rendered invisible (the 11-UAT empty-bar phenomenon)**
 - **Found during:** Task 2 (golden generation; the prior executor's stall breadcrumb named the symptom)
 - **Issue:** Default Textual Inputs are `height: 3` + `border: tall`; inside the `height: 1` `.cfg-param-row` / `#cfg-filter-bar` containers only the top border rendered — the value row was clipped away. Live users saw empty bars for seeds/曲线档位/epochs/ebs/输出根/数据集根 (phase-11 UAT advisory #2).
-- **Fix:** `compact=True` on the 8 clipped sites (`-textual-compact`: border none, height 1, padding 0 — the `#selection-filter` precedent, selection.py:1303). RED: `test_params_input_values_render_in_export` (evidence `12-03-fix-red.json`, RED_EVIDENCE_OK). GREEN: `f2f09cb`.
+- **Fix:** `compact=True` on the 8 clipped sites (`-textual-compact`: border none, height 1, padding 0 — the `#selection-filter` precedent, selection.py:1303). RED: `test_params_input_values_render_in_export` (evidence `12-03-fix-red.json`, RED_EVIDENCE_OK). GREEN: `536da03`.
 - **Files modified:** tui/screens/run_config.py, tests/tui/test_pilot_run_config.py
 - **Verification:** 47/47 run_config Pilot tests; the regenerated run_config golden carries `42,43,44` / `./finetuned` / `./datasets` as visible text.
-- **Committed in:** `483bcb8` (RED) + `f2f09cb` (GREEN)
+- **Committed in:** `ef30511` (RED) + `536da03` (GREEN)
 
 **2. [Rule 3 - Blocking] Plan-end lint gate failed on Task-1-committed lines**
 - **Found during:** the plan-end `make lint` (the SPEED DIRECTIVE defers the gate to plan end — Task 1's commits never saw it)
@@ -144,7 +144,7 @@ plan_head_after: 83eeef4
 - **Fix:** unquoted annotations, `ClassVar[list[Binding]]` (the 08-03 idiom), S110 added to the existing BLE001 per-line noqa (the run_finetune.py justified-noqa precedent).
 - **Files modified:** tests/tui/test_pilot_run_config.py, tui/screens/run_config.py
 - **Verification:** `make lint` all checks passed.
-- **Committed in:** `f2f09cb`
+- **Committed in:** `536da03`
 
 **3. [Rule 3 - Blocking] Inherited RED evidence records were classifier-invalid**
 - **Found during:** resume (validation of the prior executor's evidence before continuing Task 2's GREEN)
@@ -152,7 +152,7 @@ plan_head_after: 83eeef4
 - **Fix:** Task 1's original XML survived on disk and was embedded into the repaired record (genuine original-run output; mtime matches its 12:09Z run start); Task 2's RED was re-captured by parking the goldens aside and re-running the identical missing-golden failure mode. Both now RED_EVIDENCE_OK.
 - **Files modified:** .planning/phases/12-.../evidence/12-03-task{1,2}-red.json
 - **Verification:** `gsd_run check tdd-red-evidence` → passed for all three records.
-- **Committed in:** `483bcb8`
+- **Committed in:** `ef30511`
 
 ---
 
@@ -168,11 +168,11 @@ plan_head_after: 83eeef4
 
 | Gate | Commit | Evidence |
 |------|--------|----------|
-| Task 1 RED | `3bef8e0` | `evidence/12-03-task1-red.json` (RED_EVIDENCE_OK after record repair — original run's XML embedded) |
-| Task 1 GREEN | `a617eca` | 47/47 module suite (prior executor's run + re-verified this resume) |
-| Task 2 RED | `b9ad52d` | `evidence/12-03-task2-red.json` (RED_EVIDENCE_OK; re-captured missing-golden RED, same harness) |
-| Task 2 GREEN | `83eeef4` | 10/10 snapshot module |
-| Deviation RED/GREEN | `483bcb8`/`f2f09cb` | `evidence/12-03-fix-red.json` (RED_EVIDENCE_OK) |
+| Task 1 RED | `c415ec1` | `evidence/12-03-task1-red.json` (RED_EVIDENCE_OK after record repair — original run's XML embedded) |
+| Task 1 GREEN | `88ce24c` | 47/47 module suite (prior executor's run + re-verified this resume) |
+| Task 2 RED | `bde769a` | `evidence/12-03-task2-red.json` (RED_EVIDENCE_OK; re-captured missing-golden RED, same harness) |
+| Task 2 GREEN | `1ec42d3` | 10/10 snapshot module |
+| Deviation RED/GREEN | `ef30511`/`536da03` | `evidence/12-03-fix-red.json` (RED_EVIDENCE_OK) |
 
 No gate violations. All three RED records embed complete JUnit XML reports.
 
@@ -188,7 +188,7 @@ None - no external service configuration required.
 
 ## Self-Check: PASSED
 
-All 15 created/modified files exist on disk; all 6 task commits are ancestors of HEAD; the zero-diff guard set (styles.tcss, strings.py, selection.py, monitor.py) shows zero changes across the plan window (156c497..HEAD).
+All 15 created/modified files exist on disk; all 6 task commits are ancestors of HEAD; the zero-diff guard set (styles.tcss, strings.py, selection.py, monitor.py) shows zero changes across the plan window (a66ef75..HEAD).
 
 ---
 *Phase: 12-multi-gpu-orchestration-console-hardening*

@@ -22,9 +22,9 @@ provides:
 affects: [phase-12-verification, gsd-verify-work, gsd-audit-milestone, gsd-complete-milestone, maintainer N=2 run (other machine)]
 
 actuals:
-  tokens: 5304    # chars/4 over the realized diff (git diff 810bf61..c53b92d = 21218 chars)
+  tokens: 5304    # chars/4 over the realized diff (git diff 87d5616..f7370c9 = 21218 chars)
   tasks: 2
-  commits: 2      # MEASURED: git rev-list --count 810bf61..HEAD
+  commits: 2      # MEASURED: git rev-list --count 87d5616..HEAD
 
 tech-stack:
   added: []        # zero packages; zero pyproject/uv.lock changes (verified: empty diff over the plan window)
@@ -79,8 +79,8 @@ coverage:
 duration: 18min
 completed: 2026-10-13
 status: complete
-plan_head_before: 810bf61e6f22c9b4ffa35883877d1ec339327494
-plan_head_after: c53b92dbb395f5e69634a6efdbb66e7bf2d8138e
+plan_head_before: 87d56165262520d2016a72a28f56fab4b9ffd744
+plan_head_after: f7370c9761f892c6291d3405d8af8cf552264917
 ---
 
 # Phase 12 Plan 05: Phase Close — Integration Proofs + SC Ledger Summary
@@ -106,13 +106,13 @@ plan_head_after: c53b92dbb395f5e69634a6efdbb66e7bf2d8138e
 - Module lanes: `uv run --group dev --group tui pytest tests/tui/test_pilot_monitor.py tests/test_sweep_shard.py -q` → **75 passed** (34 pilot + 41 shard).
 - **Full gate ONCE at plan end** (SPEED DIRECTIVE; the phase-final and milestone-final run): `make test` → **1572 passed** pytest (12-04's 1569 + 3 new) **+ node lane 26/26**; `make lint` → All checks passed; `make typecheck` → All checks passed. Baseline accounting: phase entry was 1501 → Phase 12 added 71 pytest tests + 8 node tests, zero regressions.
 - **Zero-diff proof:** `git diff --stat HEAD -- tui/screens/monitor.py pipeline/run_sweep.py pipeline/run_finetune.py` is EMPTY — delta A's zero-monitor-code claim and the frozen pipeline files hold at plan end (monitor.py byte-identical before and after this plan).
-- **Standing constraint:** `git diff --stat 810bf61..HEAD -- pyproject.toml uv.lock requirements.txt Makefile` is EMPTY — zero dependency/manifest changes (T-12-SC held for the whole phase).
+- **Standing constraint:** `git diff --stat 87d5616..HEAD -- pyproject.toml uv.lock requirements.txt Makefile` is EMPTY — zero dependency/manifest changes (T-12-SC held for the whole phase).
 - **WINDOWS verify:** `grep -c "id: 21\|21 | 12 | unrun-verify" .planning/WINDOWS.md` → 1; `open_count: 15` present.
 
 ## Task Commits
 
-1. **Task 1 — the three proofs (delta A + D-08 + N=1)** - `a9a7d77` (test)
-2. **Task 2 — WINDOWS #21 in the unrun-verify shape** - `c53b92d` (docs)
+1. **Task 1 — the three proofs (delta A + D-08 + N=1)** - `f1d6177` (test)
+2. **Task 2 — WINDOWS #21 in the unrun-verify shape** - `f7370c9` (docs)
 
 **Plan metadata:** (this commit)
 
@@ -182,7 +182,7 @@ Both standing deferrals remain deferred, unchanged by this phase:
 - **Fix:** Amended #21 in place to the plan's directed shape — kind `unrun-verify`, file the 12-05-SUMMARY path, description re-pointed to "docs/multi-gpu.md + 12-05-SUMMARY" — in BOTH the table and the JSON block (milestone v1.2 preserved); counters stay open 15 / total 21; `last_updated` bumped. The end state is byte-for-byte the plan's intended ledger.
 - **Files modified:** .planning/WINDOWS.md
 - **Verification:** the Task-2 verify command green (entry match + `open_count: 15`).
-- **Committed in:** c53b92d (Task 2 commit)
+- **Committed in:** f7370c9 (Task 2 commit)
 
 ---
 
@@ -220,7 +220,7 @@ Phase 12 is COMPLETE (5/5 plans) — and with it milestone v1.2 reaches its audi
 
 ## Self-Check: PASSED
 
-Files found: tests/tui/test_pilot_monitor.py, tests/test_sweep_shard.py, .planning/WINDOWS.md, 12-05-SUMMARY.md. Commits a9a7d77, c53b92d are ancestors of HEAD. Measured commit count 2 matches the ledger (810bf61..HEAD). Zero-diff and constraint checks green (above).
+Files found: tests/tui/test_pilot_monitor.py, tests/test_sweep_shard.py, .planning/WINDOWS.md, 12-05-SUMMARY.md. Commits f1d6177, f7370c9 are ancestors of HEAD. Measured commit count 2 matches the ledger (87d5616..HEAD). Zero-diff and constraint checks green (above).
 
 ---
 *Phase: 12-multi-gpu-orchestration-console-hardening*
