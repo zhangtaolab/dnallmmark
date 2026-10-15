@@ -359,6 +359,11 @@ def run_scan() -> ScanResult:
         if (registries_service.presence_for(key, audit).status
                 == registries_service.PRESENCE_MISSING):
             result.missing_datasets.append(key)
+        dataset_path = entry.get("Dataset_path")
+        if (isinstance(dataset_path, str) and dataset_path
+                and not (REPO_ROOT / "pipeline" / dataset_path).is_dir()
+                and key not in result.missing_datasets):
+            result.missing_datasets.append(key)
     if result.missing_datasets:
         result.dataset_target = result.missing_datasets[0]
         result.dataset_target_downs = 0  # cursor starts on the first row
@@ -409,11 +414,14 @@ def scene_prep(scene: str, lang: str, scan: ScanResult) -> list[str]:
         failures = DEMO_FAIL_ROOT / "sweep_failures.json"
         if not failures.is_file():
             import subprocess
+            # direct .venv python (no nested uv run: the driver's own
+            # --with overlay env makes a nested uv sync race the parent)
             subprocess.run(
-                ["uv", "run", "--group", "gpu", "python",
+                [str(REPO_ROOT / ".venv" / "bin" / "python"),
                  str(REPO_ROOT / "pipeline" / "run_sweep.py"),
                  "--models", DEMO_MODEL,
-                 "--tasks", scan.dataset_target or DEMO_TASK,
+                 "--tasks", scan.missing_datasets[0] if scan.missing_datasets
+                 else DEMO_TASK,
                  "--seeds", DEMO_SEEDS_FAIL,
                  "--output-root", str(DEMO_FAIL_ROOT),
                  "--num_train_epochs", DEMO_EPOCHS],
@@ -608,7 +616,8 @@ def scene_model_download(b: Builder, sc: ScanResult) -> None:
     # is fast enough that a small model can finish inside one render
     # frame (RECORDED.md documents what the GIF truly shows)
     b.wait(5.0)
-    b.anchor("\u2713 downloa", timeout=DOWNLOAD_TIMEOUT,
+    b.anchor(b._resolve("SEL_MODEL_PRESENCE_PRESENT").split(" ")[-1],
+             timeout=DOWNLOAD_TIMEOUT,
              label="finished flip (download cell)")
     b.wait(1.0)
     b.note(f"REAL ModelScope download of {sc.model_target} (smallest "
@@ -639,8 +648,11 @@ def scene_dataset_download(b: Builder, sc: ScanResult) -> None:
     for _ in range(sc.dataset_target_downs):
         b.key(DOWN, settle=0.3)
     b.key("d", settle=1.2)
-    # (the toast wraps after the glyph — anchor the post-glyph word)
-    b.anchor("enqueued", timeout=20, label="enqueue toast")
+    # (the toast wraps after the glyph — anchor the post-glyph word in
+    # the ACTIVE language: en "enqueued", zh 已入队)
+    b.anchor(b._resolve("QUEUE_TOAST_ENQUEUED",
+                        {"key": "x"}).split(" ")[1].split(":")[0],
+             timeout=20, label="enqueue toast")
     # queue-row percent + progress bar + rate (the EHC-4 surface) render
     # only while the transfer streams — the maintainer's ModelScope
     # mirror is fast enough that small datasets finish inside one render
@@ -654,6 +666,9 @@ def scene_dataset_download(b: Builder, sc: ScanResult) -> None:
     b.anchor(b._resolve("DL_PRESENCE_SUMMARY", {"present": 50, "total": 50,
                                                 "missing": 0}),
              timeout=120, label="presence summary all-present")
+    # (both anchors above resolve through strings.py in the ACTIVE scene
+    # language — the en cast shows "rows match"/"present 50/50", the zh
+    # cast 行一致/在场 50/50)
     # drill-down on the finished queue row (focus the queue table first)
     b.key(TAB, settle=0.6)
     b.key(ENTER, settle=1.4)
@@ -842,11 +857,16 @@ def scene_launch_monitor_kill(b: Builder, sc: ScanResult) -> None:
     for _ in range(_TAB_ROOT_TO_PICKER):
         b.key(TAB, settle=0.25)
     b.key(ENTER, settle=2.5)
-    # (the problems modal wraps the refusal at ~54 cols — anchor the
-    # pre-wrap segment only)
-    b.anchor(b._resolve("LNC_SINGLE_GPU_BLOCKED",
-                        {"roots": "x"}).split("single-")[0]
-             + "single-", timeout=30, label="EHC-3 single-GPU refusal")
+    # (the problems modal wraps the refusal at ~54 cols — anchor a
+    # pre-wrap segment of the RESOLVED constant: the leading glyph is a
+    # styled span and the {roots} path starts the wrap; split on the
+    # opening parenthesis/paren both languages share structurally)
+    refusal = b._resolve("LNC_SINGLE_GPU_BLOCKED", {"roots": "x"})
+    refusal_head = refusal.split("(")[0].split("（")[0]
+    head = (refusal_head.split(" ", 1)[1] if " " in refusal_head
+            else refusal_head)
+    b.anchor(head[:30].rstrip(), timeout=30,
+             label="EHC-3 single-GPU refusal")
     b.wait(2.0)
     # q->k straight from slot 4 (no post-modal navigation needed): q is
     # app-level; with the live sweep it pushes the exit modal, k kills

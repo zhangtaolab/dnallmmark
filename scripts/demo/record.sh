@@ -43,6 +43,17 @@ cd "$ROOT"
 asciinema rec --overwrite --idle-time-limit 3 \
     -c "$DRIVER --scene $SCENE --lang $LANG" "$CAST"
 
+# asciinema rec does NOT propagate the wrapped command's exit status —
+# the driver's meta sidecar is the authoritative success signal
+META="$ROOT/docs/demo/.meta-$SCENE-$LANG.json"
+uv run --group dev python - "$META" <<'PYCHECK'
+import json, sys
+meta = json.load(open(sys.argv[1], encoding="utf-8"))
+if meta.get("exit_code") != 0:
+    sys.exit(f"driver failed (exit_code={meta.get('exit_code')}) — "
+             "the cast is incomplete; fix and re-record")
+PYCHECK
+
 # Normalize the cast header to the pinned console grid (100x30).
 uv run --group dev python - "$CAST" <<'PYFIX'
 import json, sys
