@@ -62,7 +62,11 @@ from tui.services import custom_entries
 from tui.services import registries as registries_service
 from tui.services import run_config as run_config_service
 from tui.services import selection as selection_service
-from tui.services.download_queue import EnqueueOutcome, QueueEvent
+from tui.services.download_queue import (
+    EnqueueOutcome,
+    QueueEntry,
+    QueueEvent,
+)
 from tui.services.gauntlet import (
     LEG_AUDIT,
     LEG_DRY_RUN,
@@ -79,6 +83,9 @@ from tui.strings import (
     QUEUE_CLI_UNAVAILABLE,
     QUEUE_FLIP_TOAST_MODEL,
     QUEUE_PERSIST_FAILED_TOAST,
+    QUEUE_STATE_DOWNLOADING,
+    QUEUE_STATE_FAILED,
+    QUEUE_STATE_PENDING,
     QUEUE_TOAST_ALREADY_QUEUED,
     QUEUE_TOAST_ENQUEUED,
     SEL_COUNT_CUSTOM_SEGMENT,
@@ -86,11 +93,13 @@ from tui.strings import (
     SEL_DISABLED_MARK_WARNING,
     SEL_DISABLED_SUFFIX,
     SEL_MATRIX_LABEL,
+    SEL_MODEL_DL_MANUAL,
     SEL_MODEL_DOWNLOAD_LABEL,
     SEL_MODEL_MANUAL_TOAST,
     SEL_MODEL_PRESENCE_MISSING,
     SEL_MODEL_PRESENCE_PRESENT,
     SEL_MODEL_PRESENT_TOAST,
+    SEL_PRESENCE_UNKNOWN,
     SEL_PRESET_UNKNOWN_KEYS,
     SEL_STATUS_LINE,
     SEL_TOGGLE_DISABLED_TOAST,
@@ -1002,8 +1011,40 @@ def _d_fixture_data():
 
 class _QueueFake:
     """The enqueue-seam fake (the FakeEnvCheckService idiom): scripted
-    ``EnqueueOutcome`` per key (default enqueued), every call recorded —
-    no real registry read, no state write, no CLI probe."""
+    ``EnqueueOutcome`` per key (default enqueued), a scriptable live-
+    entries view (C4J-1's overlay source), every call recorded — no real
+    registry read, no state write, no CLI probe."""
+
+    def __init__(self, outcomes=None, entries=()):
+        self.outcomes = dict(outcomes or {})
+        self.enqueue_calls = []
+        self.enqueue_model_calls = []
+        self.entries_list = list(entries)
+
+    def entries(self):
+        return tuple(self.entries_list)
+
+    def enqueue(self, key):
+        self.enqueue_calls.append(key)
+        outcome = self.outcomes.get(key)
+        if outcome is not None:
+            return outcome
+        return EnqueueOutcome(action="enqueued", key=key)
+
+    def enqueue_model(self, key):
+        self.enqueue_model_calls.append(key)
+        outcome = self.outcomes.get(key)
+        if outcome is not None:
+            return outcome
+        return EnqueueOutcome(action="enqueued", key=key)
+
+
+class _QueueFakeSansEntries:
+    """The ADDITIVE-FAKE pin's subject (C4J-1): the pre-C4J queue-seam
+    shape with NO ``entries`` method — every EXISTING injected fake keeps
+    conforming structurally, and the screen's tolerant getattr read
+    renders the plain four-state cells (the MissingSnapshot.presence_rows
+    additive pattern)."""
 
     def __init__(self, outcomes=None):
         self.outcomes = dict(outcomes or {})
@@ -1421,3 +1462,166 @@ async def test_live_model_download_flip_through_the_app_event_forward(
         )
         assert app.screen is screen, "the flip never remounts the screen"
         assert QUEUE_FLIP_TOAST_MODEL.format(key=key) in _toasts(app)
+
+
+# =====================================================================
+# C4J-1 (261015-c4j): the slot-2 live model-download overlay — KIND_MODEL
+# queue entries surface LIVE in the model table's 下载 column (state word
+# from the queue's own kind-agnostic vocabulary + the parsed percent;
+# percent None stays the honest indeterminate)
+# =====================================================================
+
+
+def _model_entry(key, state, last_percent=None):
+    """One KIND_MODEL QueueEntry (the live-overlay fixture sugar)."""
+    from tui.services.download_queue import KIND_MODEL
+
+    return QueueEntry(
+        key=key, kind=KIND_MODEL, state=state, attempts=1,
+        enqueued_at="2026-10-15T00:00:00", started_at=None,
+        finished_at=None, last_percent=last_percent, interrupted=False,
+        log_path=None, problems=(), reconcile=None)
+
+
+async def test_live_model_entry_states_render_in_the_download_cell(
+        monkeypatch, tmp_path):
+    """The overlay: a model row whose key carries a live (non-done)
+    KIND_MODEL queue entry renders that state's QUEUE_STATE_* word — the
+    queue table's own kind-agnostic vocabulary reused verbatim (pending /
+    downloading), never a new constant; a done entry reads through the
+    existing model_presence path (the flip test above pins it)."""
+    _pin_state_root(monkeypatch, tmp_path)
+    queue = _QueueFake(entries=[
+        _model_entry(_KEY_ADAPTED_MODEL, "downloading"),
+        _model_entry(_KEY_UNADAPTED_MODEL, "pending"),
+    ])
+    app = _app(_SelectionFake(data=_d_fixture_data()))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, queue_fake=queue)
+        screen = app.screen
+        table = screen.query_one(DataTable)
+        keys = _row_keys(table)
+
+        row = keys.index(_KEY_ADAPTED_MODEL)
+        assert _row(table, row)[6] == QUEUE_STATE_DOWNLOADING, (
+            "a live downloading entry renders the queue's own state word"
+        )
+        # t reveals the pending overlay on the unadapted row (hidden in
+        # the default pool) — the overlay survives the pool toggle
+        await pilot.press("t")
+        await pilot.pause()
+        keys = _row_keys(table)
+        row = keys.index(_KEY_UNADAPTED_MODEL)
+        assert _row(table, row)[6] == QUEUE_STATE_PENDING, (
+            "a pending entry renders its word and the overlay survives "
+            "the pool-toggle rebuild"
+        )
+
+
+async def test_apply_queue_progress_updates_the_cell_in_place(
+        monkeypatch, tmp_path):
+    """The app-forwarded progress tick: the cursor-visible row's download
+    cell updates IN PLACE (table.update_cell — no clear/rebuild, no
+    remount, no snapshot reload) with the downloading word + the plain
+    percent data word; a None tick keeps the honest indeterminate word
+    with no percent."""
+    _pin_state_root(monkeypatch, tmp_path)
+    queue = _QueueFake(entries=[
+        _model_entry(_KEY_ADAPTED_MODEL, "downloading"),
+    ])
+    fake_selection = _SelectionFake(data=_d_fixture_data())
+    app = _app(fake_selection)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, queue_fake=queue)
+        screen = app.screen
+        table = screen.query_one(DataTable)
+        keys = _row_keys(table)
+        row = keys.index(_KEY_ADAPTED_MODEL)
+        loads_before = fake_selection.load_calls
+        rows_before = _row_keys(table)
+
+        # the claim tick (percent None): flips the cell to the
+        # downloading word, never a fabricated number
+        screen.apply_queue_progress(_KEY_ADAPTED_MODEL, None)
+        await pilot.pause()
+        assert _row(table, row)[6] == QUEUE_STATE_DOWNLOADING
+        assert "%" not in _row(table, row)[6]
+
+        # a parsed percent composes beside the word
+        screen.apply_queue_progress(_KEY_ADAPTED_MODEL, 42)
+        await pilot.pause()
+        cell = _row(table, row)[6]
+        assert cell.startswith(QUEUE_STATE_DOWNLOADING)
+        assert "42%" in cell, f"the parsed percent renders: {cell!r}"
+
+        assert app.screen is screen, "the tick never remounts the screen"
+        assert _row_keys(table) == rows_before, (
+            "in-place cell update — the rows never rebuild"
+        )
+        assert fake_selection.load_calls == loads_before, (
+            "a progress tick never re-runs the snapshot worker"
+        )
+
+
+async def test_failed_model_event_lands_the_failed_word(
+        monkeypatch, tmp_path):
+    """A non-done KIND_MODEL event refreshes the overlay from the queue's
+    truth: the failed state word lands in the cell and the percent cache
+    pops (no stale number rides a failed row)."""
+    from tui.services.download_queue import KIND_MODEL
+
+    _pin_state_root(monkeypatch, tmp_path)
+    queue = _QueueFake(entries=[
+        _model_entry(_KEY_ADAPTED_MODEL, "downloading", last_percent=42),
+    ])
+    app = _app(_SelectionFake(data=_d_fixture_data()))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, queue_fake=queue)
+        screen = app.screen
+        table = screen.query_one(DataTable)
+        keys = _row_keys(table)
+        row = keys.index(_KEY_ADAPTED_MODEL)
+
+        # the queue's own truth flips to failed, then the event lands
+        queue.entries_list[0] = _model_entry(
+            _KEY_ADAPTED_MODEL, "failed", last_percent=42)
+        screen.apply_queue_event(QueueEvent(
+            run_id="driver-1", key=_KEY_ADAPTED_MODEL, kind=KIND_MODEL,
+            state="failed", last_percent=42, problems=(),
+            details=(), log_path=None))
+        await pilot.pause()
+
+        assert _row(table, row)[6] == QUEUE_STATE_FAILED, (
+            "the failed state word lands in the download cell"
+        )
+        assert "%" not in _row(table, row)[6], (
+            "the percent cache pops — no stale number on a failed row"
+        )
+
+
+async def test_no_entries_fake_renders_the_plain_four_state_cells(
+        monkeypatch, tmp_path):
+    """The additive-fake pin: a queue seam WITHOUT ``entries`` (every
+    pre-C4J injected fake) keeps conforming — the table renders the
+    static four-state vocabulary byte-identically (已下载/未下载/手动放置/
+    ◌ 未知), never a crash."""
+    _pin_state_root(monkeypatch, tmp_path)
+    queue = _QueueFakeSansEntries()
+    app = _app(_SelectionFake(data=_d_fixture_data()))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, queue_fake=queue)
+        screen = app.screen
+        table = screen.query_one(DataTable)
+        keys = _row_keys(table)
+
+        assert _row(table, keys.index(_KEY_PRESENT_MODEL))[6] == (
+            SEL_MODEL_PRESENCE_PRESENT)
+        assert _row(table, keys.index(_KEY_ADAPTED_MODEL))[6] == (
+            SEL_MODEL_PRESENCE_MISSING)
+        await pilot.press("t")   # reveal the unadapted manual row
+        await pilot.pause()
+        keys = _row_keys(table)
+        assert _row(table, keys.index(_KEY_UNADAPTED_MODEL))[6] == (
+            SEL_MODEL_DL_MANUAL)
+        assert _row(table, keys.index(_KEY_NO_PATH_MODEL))[6] == (
+            SEL_PRESENCE_UNKNOWN)

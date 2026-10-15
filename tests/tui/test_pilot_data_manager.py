@@ -819,6 +819,125 @@ async def test_full_list_queue_state_overlays_every_live_word():
         )
 
 
+async def test_model_entries_never_render_the_queue_is_dataset_only():
+    """C4J-1 (261015-c4j, the kind split): slot 3's queue table renders
+    ONLY dataset-side entries — a KIND_MODEL entry is invisible in the
+    queue rows AND the title count, and even a model-kind entry whose key
+    COLLIDES with a presence row never overlays the full-list download
+    cell (the live-states join filters kind); forwarded model events and
+    progress ticks are provably inert for this screen."""
+    service = FakeDataManagerService(
+        presence_rows=(
+            PresenceRow(key="GUE__emp_H3",
+                        status=registries_service.PRESENCE_MISSING,
+                        declared_total=7349),
+            PresenceRow(key="mouse__DMS",
+                        status=registries_service.PRESENCE_MISSING,
+                        declared_total=12411),
+        ),
+        entries=(
+            # a MODEL-kind entry over a key the full list ALSO renders —
+            # the join must ignore it entirely (presentation split)
+            _queue_entry("GUE__emp_H3", "downloading", kind="model"),
+            _queue_entry("mouse__DMS", "downloading"),
+        ))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+
+        # the queue table: ONLY the dataset row renders (title count 1)
+        queue = _queue_table(screen)
+        assert queue.row_count == 1, (
+            "a KIND_MODEL entry never renders in slot 3's queue table"
+        )
+        assert _row(queue, 0)[0] == "mouse__DMS"
+        assert _label_text(screen, "#dl-queue-title") == (
+            QUEUE_TITLE.format(n=1))
+
+        # the full-list join: the colliding model entry never overlays
+        missing = _missing_table(screen)
+        assert _row(missing, 0)[1] == DL_FULL_MISSING, (
+            "a model-kind entry must not overlay the dataset lane's cell"
+        )
+        assert _row(missing, 1)[1] == QUEUE_STATE_DOWNLOADING
+
+        # forwarded model events are inert: no reload, no re-render
+        snapshots_before = service.snapshot_calls
+        screen.apply_queue_event(QueueEvent(
+            run_id="driver-1", key="GUE__emp_H3", kind="model",
+            state="done", last_percent=None, problems=(), details=(),
+            log_path=None))
+        await pilot.pause()
+        assert service.snapshot_calls == snapshots_before, (
+            "a model done event never reloads slot 3's snapshot"
+        )
+        assert _row(missing, 0)[1] == DL_FULL_MISSING
+
+        # forwarded model progress ticks are inert: no cell update
+        entries_before = service.snapshot_calls
+        screen.apply_queue_progress("GUE__emp_H3", 55)
+        await pilot.pause()
+        assert _row(missing, 0)[1] == DL_FULL_MISSING, (
+            "a model progress tick never touches slot 3's cells"
+        )
+        assert _row(missing, 0)[1] == DL_FULL_MISSING
+        assert service.snapshot_calls == entries_before
+        assert _row(queue, 0)[0] == "mouse__DMS", (
+            "the queue rows never change under model traffic"
+        )
+
+
+async def test_seeded_state_file_renders_only_the_dataset_entry(
+        monkeypatch, tmp_path):
+    """C4J-1 at the tier the Pilot e2e usually fakes: the REAL
+    DataManagerBackend over the REAL DownloadQueueService whose seeded
+    state file carries one KIND_MODEL and one KIND_DATASET entry — the
+    queue pane renders ONLY the dataset row (the title counts it), the
+    model key appears nowhere on the screen."""
+    import json as _json
+
+    from tui.services import settings as tui_settings
+
+    state = tmp_path / "state"
+    state.mkdir(parents=True)
+    monkeypatch.setenv(tui_settings.STATE_DIR_ENV, str(state))
+    (state / download_queue_module.QUEUE_FILE_NAME).write_text(_json.dumps({
+        "schema_version": 1,
+        "entries": [
+            {"key": "DNABERT-2-117M", "kind": "model",
+             "state": "downloading", "attempts": 1,
+             "enqueued_at": "2026-10-15T00:00:00", "started_at": None,
+             "finished_at": None, "last_percent": 40,
+             "interrupted": False, "log_path": None, "problems": [],
+             "reconcile": None},
+            {"key": "GUE__emp_H3", "kind": "dataset",
+             "state": "downloading", "attempts": 1,
+             "enqueued_at": "2026-10-15T00:00:00", "started_at": None,
+             "finished_at": None, "last_percent": None,
+             "interrupted": False, "log_path": None, "problems": [],
+             "reconcile": None},
+        ]}), encoding="utf-8")
+    real_service = download_queue_module.DownloadQueueService()
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.push_screen(DataManagerScreen(
+            data_service=DataManagerBackend(real_service)))
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        screen = app.screen
+
+        queue = _queue_table(screen)
+        assert queue.row_count == 1
+        assert _row(queue, 0)[0] == "GUE__emp_H3"
+        assert _label_text(screen, "#dl-queue-title") == (
+            QUEUE_TITLE.format(n=1))
+        assert "DNABERT-2-117M" not in [
+            _row(queue, index)[0] for index in range(queue.row_count)]
+
+
 async def test_toggle_rerenders_from_the_cached_snapshot_no_worker():
     """The toggle re-renders from the CACHED snapshot — the dl-snapshot
     worker never re-runs (service call count unchanged across both

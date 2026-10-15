@@ -4185,9 +4185,11 @@ class ModelFakeSpawner:
     optionally stages a modelscope-1.40.2-shaped landing tree under the
     argv landing dir before answering (the normalization fixture)."""
 
-    def __init__(self, returncode=0, writer=None):
+    def __init__(self, returncode=0, writer=None,
+                 stderr=b"downloading model ...\n"):
         self.returncode_value = returncode
         self.writer = writer
+        self._stderr = stderr
         self.calls = []
 
     def __call__(self, argv, **kwargs):
@@ -4195,7 +4197,7 @@ class ModelFakeSpawner:
         if self.writer is not None:
             self.writer(argv)
         return FakePopen(returncode=self.returncode_value,
-                         stdout=b"", stderr=b"downloading model ...\n")
+                         stdout=b"", stderr=self._stderr)
 
 
 def write_modelscope_nesting(landing, org_repo=MODEL_REPO_ID, files=None):
@@ -4535,6 +4537,42 @@ def test_model_run_task_pins_isolated_python_argv_env_and_session(
     assert call["kwargs"]["start_new_session"] is True
     assert call["kwargs"]["stdout"] == subprocess.PIPE
     assert call["kwargs"]["stderr"] == subprocess.PIPE
+
+
+def test_model_run_task_progress_cb_fires_on_integer_change(
+        monkeypatch, tmp_path):
+    """C4J-1 (261015-c4j): the model lane threads ``progress_cb`` — its
+    stderr pump runs the SAME best-effort ``parse_progress`` extraction
+    the dataset lane uses (dedupe per integer-percent change, the
+    ``run_task`` percent_state closure verbatim); the final event carries
+    the last parsed percent. A child emitting nothing parseable fires
+    nothing (the neighboring nesting-gate test pins that None path)."""
+    line = ("Downloading [models/x/model.safetensors]:"
+            " {p}%|x| y/y [00:00<00:00]\n")
+    stderr = ChunkedStream([
+        "dnallm chatter (no percent)\n",
+        line.format(p=0), line.format(p=0),
+        line.format(p=50),
+        line.format(p=100), line.format(p=100),
+    ])
+    spawner = ModelFakeSpawner(
+        returncode=0, stderr=stderr,
+        writer=lambda argv: write_modelscope_nesting(argv[4]))
+    service, _repo, _state, _root = model_engine_service(
+        tmp_path, monkeypatch, spawner)
+    fired = []
+
+    event = service.run_task(
+        MODEL_KEY, run_id="m-pct",
+        progress_cb=lambda key, pct: fired.append((key, pct)))
+
+    assert fired == [(MODEL_KEY, 0), (MODEL_KEY, 50), (MODEL_KEY, 100)], (
+        "dedupe per integer change — the dataset lane's exact closure"
+    )
+    assert event.state == "done"
+    assert event.last_percent == 100, (
+        "the last parsed percent lands on the event (slot 2 renders it)"
+    )
 
 
 def test_model_run_task_normalizes_nesting_and_gates_on_config_json(
