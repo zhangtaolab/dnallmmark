@@ -245,6 +245,21 @@ ENV_LAST_CHECK_LINE = _t(
     "ENV_LAST_CHECK_LINE", "上次检查: {checked_at}",
     "Last check: {checked_at}")
 
+# Last-check line — degraded (WR-03, 261016-a4f): rendered when the run
+# COMPLETED but the persist tail itself failed (e.g. a read-only state
+# dir). WHY a dedicated constant: a bare timestamp would promise a
+# persisted same-day cache that does not exist — the degraded wording
+# states the results were not saved and the check re-runs on restart
+# (the next boot re-runs it as an honest cache miss). {checked_at}
+# marks the attempt moment; {error} is DATA (the exception type +
+# message rides verbatim, never translated — the ENV_KERNEL_DEGRADED
+# precedent).
+ENV_LAST_CHECK_DEGRADED = _t(
+    "ENV_LAST_CHECK_DEGRADED",
+    "上次检查: {checked_at} — 检查结果未保存（{error}），重启后重新检查",
+    "Last check: {checked_at} — results not saved ({error}); "
+    "the check re-runs on restart")
+
 # Gate verdict — pass (08-UI-SPEC Copywriting Contract; renders from the
 # tui.services.env_gate judgment, advisory this phase per D-09).
 ENV_VERDICT_PASS = _t(

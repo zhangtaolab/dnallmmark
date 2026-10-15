@@ -253,7 +253,37 @@ def _missing_count(result: CheckResult | None) -> int:
     return sum(1 for line in result.lines if line.startswith("  - "))
 
 
-def _degraded_result(kernel_id: str, exc: BaseException) -> CheckResult:
+def _route_line(result: CheckResult, template: str) -> str:
+    """The verdict-route line for one FAILED directory kernel (WR-04,
+    261016-a4f).
+
+    With listing lines (``  - name`` entries) the count is knowable
+    and the count-based ``ENV_ROUTE_MISSING_*`` template renders
+    exactly as before (byte-identical healthy behavior). With NONE —
+    the registry read-failure / degraded shapes, where a count is
+    UNKNOWABLE — the kernel's own first FAIL line renders VERBATIM
+    (the same byte-stable data the row summary and drill-down show; no
+    glyph prefix, no translation — kernel lines are data): a failed
+    kernel must never claim ``0 dirs missing``. The empty-lines
+    fallback is defensive only (unreachable for the directory kernels
+    today — render, never crash).
+
+    Args:
+        result: the failed directory kernel's result.
+        template: the count-based route template for that kernel.
+
+    Returns:
+        The rendered route line.
+    """
+    count = _missing_count(result)
+    if count > 0:
+        return template.format(n=count)
+    if result.lines:
+        return result.lines[0]
+    return template.format(n=0)
+
+
+def _degraded_result(kernel_id: str, exc: Exception) -> CheckResult:
     """One degraded kernel result for an exception inside the check run.
 
     WR-01 (08-08): a raising kernel (or a failing ``kernels()``
@@ -264,6 +294,10 @@ def _degraded_result(kernel_id: str, exc: BaseException) -> CheckResult:
     the way every real kernel line already does, and the row renders the
     fail glyph — the console stays alive and the run persists whole
     (D-05).
+
+    IN-01 (261016-a4f): the annotation is ``Exception``, matching both
+    ``except Exception`` call sites — KeyboardInterrupt/SystemExit
+    deliberately NEVER reach it (they must propagate).
     """
     return CheckResult(
         name=kernel_id,
@@ -332,15 +366,22 @@ class EnvCheckScreen(Screen):
     class CheckRunComplete(Message):
         """The whole run finished (persisted); carries the outcome (D-03).
 
-        Carries the run id it belongs to — dropped when superseded (WR-02).
+        Carries the run id it belongs to — dropped when superseded
+        (WR-02). WR-03 (261016-a4f): ``persist_error`` stays None on
+        the healthy path (the default — every pre-existing construction
+        site is untouched) and carries ``"{type}: {exc}"`` when the
+        persist tail itself failed, so the completion handler renders
+        the degraded last-check line instead of the plain one.
         """
 
         def __init__(self, checked_at: str,
                      results: "tuple[CheckResult, ...]",
-                     run_id: int) -> None:
+                     run_id: int,
+                     persist_error: "str | None" = None) -> None:
             self.checked_at = checked_at
             self.results = results
             self.run_id = run_id
+            self.persist_error = persist_error
             super().__init__()
 
     def __init__(self, env_check_service: EnvCheckServiceProtocol | None = None,
@@ -434,6 +475,11 @@ class EnvCheckScreen(Screen):
         the same persist + completion tail (D-05 partial-failure
         persists whole), and the decorator's ``exit_on_error=False`` is
         the residual net (textual 8.2.8's default exits the console).
+        WR-03 (261016-a4f) closes the THIRD raise site: the persist
+        call itself is guarded too — a raising persist (e.g. a
+        read-only state dir) posts ONE degraded completion instead of
+        stranding the run, so ALL three raise sites route through the
+        persist + completion tail.
         """
         worker = get_current_worker()
         run_id = self._run_id  # the run this worker serves (WR-02)
@@ -461,7 +507,27 @@ class EnvCheckScreen(Screen):
             # stale results over the fresh run's state (the same WR-02
             # race, on the persisted side)
             return
-        checked_at = self._service.persist(results)
+        # WR-03 (261016-a4f): the persist tail is the THIRD raise site
+        # — guard it in the same WR-01 idiom, so a read-only state dir
+        # still reaches a completion render instead of stranding the
+        # run (rows final, no verdict, no last-check line, the error
+        # silently swallowed by the worker machinery).
+        try:
+            checked_at = self._service.persist(results)
+        except Exception as exc:  # noqa: BLE001 — the WR-03 tail guard
+            # Nothing was written: the display timestamp is computed
+            # HERE on the same basis the real backend's persist derives
+            # its own from (the 08-04 aware-local idiom) — it labels
+            # the attempt moment, never a persisted state.
+            attempt_at = datetime.now().astimezone().strftime(
+                env_check.CHECKED_AT_FORMAT)
+            self.post_message(self.CheckRunComplete(
+                attempt_at,
+                tuple(results),
+                run_id,
+                persist_error=f"{type(exc).__name__}: {exc}",
+            ))
+            return
         self.post_message(
             self.CheckRunComplete(checked_at, tuple(results), run_id)
         )
@@ -494,7 +560,9 @@ class EnvCheckScreen(Screen):
         """Render the last-check line + the verdict block (ENV-02/ENV-03)."""
         if message.run_id != self._run_id:
             return  # a newer exclusive run superseded this outcome (WR-02)
-        self._render_check_outcome(message.checked_at, message.results)
+        self._render_check_outcome(
+            message.checked_at, message.results,
+            persist_error=message.persist_error)
 
     # ===== Rendering (pure UI state mutation over service results) =====
 
@@ -509,11 +577,25 @@ class EnvCheckScreen(Screen):
         table.update_cell(result.name, _COL_SUMMARY, _summary_of(result))
 
     def _render_check_outcome(self, checked_at: str,
-                              results: "tuple[CheckResult, ...]") -> None:
-        """The last-check line + the advisory verdict/routing block (D-09)."""
-        self.query_one("#env-last-check", Label).update(
-            S.ENV_LAST_CHECK_LINE.format(checked_at=checked_at)
-        )
+                              results: "tuple[CheckResult, ...]",
+                              persist_error: "str | None" = None) -> None:
+        """The last-check line + the advisory verdict/routing block (D-09).
+
+        WR-03 (261016-a4f): ``persist_error`` None (the default — the
+        on_mount cache-hit call site and every healthy run) renders the
+        plain ``ENV_LAST_CHECK_LINE`` byte-identically; a persist
+        failure renders ``ENV_LAST_CHECK_DEGRADED`` — a bare timestamp
+        would promise a persisted same-day cache that does not exist.
+        """
+        if persist_error is None:
+            self.query_one("#env-last-check", Label).update(
+                S.ENV_LAST_CHECK_LINE.format(checked_at=checked_at)
+            )
+        else:
+            self.query_one("#env-last-check", Label).update(
+                S.ENV_LAST_CHECK_DEGRADED.format(
+                    checked_at=checked_at, error=persist_error)
+            )
         verdict = env_gate.gate_verdict(results)
         box = self.query_one("#env-verdict", Vertical)
         box.remove_children()
@@ -533,15 +615,18 @@ class EnvCheckScreen(Screen):
         # route_to_data bool alone: a model_dirs failure must not
         # fabricate a zero-count datasets line (and vice versa). Each
         # directory kernel renders its own copy only when THAT kernel
-        # itself failed.
+        # itself failed. WR-04 (261016-a4f): the lines route through
+        # _route_line — a failed kernel with NO listing lines (the
+        # registry read-failure / degraded shapes) renders its own
+        # first FAIL line verbatim, never a fabricated zero-count
+        # route.
         model_dirs = next(
             (result for result in results if result.name == "model_dirs"),
             None,
         )
         if model_dirs is not None and not model_dirs.ok:
             box.mount(Static(
-                S.ENV_ROUTE_MISSING_MODELS.format(
-                    n=_missing_count(model_dirs)),
+                _route_line(model_dirs, S.ENV_ROUTE_MISSING_MODELS),
                 classes="verdict-route",
             ))
         dataset_dirs = next(
@@ -550,8 +635,7 @@ class EnvCheckScreen(Screen):
         )
         if dataset_dirs is not None and not dataset_dirs.ok:
             box.mount(Static(
-                S.ENV_ROUTE_MISSING_DATASETS.format(
-                    n=_missing_count(dataset_dirs)),
+                _route_line(dataset_dirs, S.ENV_ROUTE_MISSING_DATASETS),
                 classes="verdict-route",
             ))
 

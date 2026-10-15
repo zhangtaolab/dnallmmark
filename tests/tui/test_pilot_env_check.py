@@ -73,6 +73,7 @@ from tui.strings import (
     ENV_DETAIL_TITLE,
     ENV_KERNEL_DEGRADED,
     ENV_KERNEL_LABELS,
+    ENV_LAST_CHECK_DEGRADED,
     ENV_LAST_CHECK_LINE,
     ENV_REFRESH_LABEL,
     ENV_ROUTE_MISSING_DATASETS,
@@ -1135,3 +1136,105 @@ async def test_broken_checkout_kernels_enumeration_survives():
         assert _label_text(app.screen, "#env-last-check") == (
             ENV_LAST_CHECK_LINE.format(checked_at=fake.checked_at)
         )
+
+
+# =====================================================================
+# 261016-a4f — WR-03/WR-04: the guarded persist tail + honest routing
+# =====================================================================
+
+
+class _PersistRaisingFake(FakeEnvCheckService):
+    """WR-03 (261016-a4f): persist() raises after recording the attempt
+    — a read-only state dir, the classic broken-checkout condition the
+    WR-01 guards target. The run must STILL reach a completion render:
+    rows keep their final glyphs, the verdict renders from the results,
+    and the last-check line carries the degraded wording with the
+    exception text."""
+
+    def persist(self, results):
+        self.persist_calls.append(list(results))
+        raise OSError("state dir is read-only")
+
+
+async def test_raising_persist_still_completes_with_degraded_last_check():
+    """WR-03 (261016-a4f): a raising persist never strands the run —
+    every row keeps its final glyph (nothing stranded mid-run), the
+    verdict block renders from the results, the last-check line renders
+    the degraded wording carrying the exception text (never the plain
+    ENV_LAST_CHECK_LINE form), the app stays alive, and persist was
+    attempted exactly once (nothing written — the next boot re-runs the
+    check as an honest cache miss)."""
+    fake = _PersistRaisingFake(cached=None)
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await _wait_for_check(pilot, app)
+
+        assert app.return_code is None, "the console must stay alive"
+
+        # every row reached its OWN final glyph — the standard scenario's
+        # outcomes, the deliberate dataset_dirs FAIL included
+        table = app.screen.query_one(DataTable)
+        for index, outcome in enumerate(_mixed_results()):
+            row = _row(table, index)
+            expected = ENV_STATE_PASS if outcome.ok else ENV_STATE_FAIL
+            assert row[0] == expected, (
+                f"row {index} must keep its final glyph, not strand"
+            )
+
+        # the verdict block rendered from the results (non-empty)
+        assert _verdict_lines(app.screen)
+
+        # the degraded last-check line: the exception text rides
+        # verbatim (data, never translated) — in the
+        # ENV_LAST_CHECK_DEGRADED shape, NOT the plain form
+        line = _label_text(app.screen, "#env-last-check")
+        assert "OSError: state dir is read-only" in line
+        expected_shape = ENV_LAST_CHECK_DEGRADED.replace(
+            "{error}", "OSError: state dir is read-only")
+        prefix, suffix = expected_shape.split("{checked_at}")
+        assert line.startswith(prefix) and line.endswith(suffix), (
+            "the last-check line must be the degraded wording around a "
+            "real attempt-moment timestamp"
+        )
+        assert len(line) > len(prefix) + len(suffix)  # a real timestamp
+        assert line != ENV_LAST_CHECK_LINE.format(
+            checked_at=fake.checked_at)
+
+        # persist attempted exactly once; the raising call wrote nothing
+        assert len(fake.persist_calls) == 1
+
+
+async def test_read_failure_dir_kernel_renders_own_fail_line_not_zero_count():
+    """WR-04 (261016-a4f): a failed directory kernel with NO listing
+    lines — the registry read-failure shape — renders its OWN first FAIL
+    line VERBATIM as the verdict-route line (the count is unknowable,
+    not zero); a listing-carrying failure keeps the count-based
+    ENV_ROUTE_MISSING_* line byte-identically (the 261014-dcl routing
+    test above stays green unmodified)."""
+    read_fail_line = (
+        "FAIL: read registry /pin/dnallmmark/pipeline/models_info.json — "
+        "JSONDecodeError: Expecting property name enclosed in double "
+        "quotes")
+    results = [
+        _pass("version_pins"),
+        _pass("dnallm"),
+        _pass("peft"),
+        _pass("cuda"),
+        _pass("matmul"),
+        _pass("numpy"),
+        _fail("model_dirs", [read_fail_line]),
+        _pass("dataset_dirs"),
+    ]
+    fake = FakeEnvCheckService(cached=None, results=results)
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await _wait_for_check(pilot, app)
+        lines = _verdict_lines(app.screen)
+        # the kernel's own FAIL line rides VERBATIM — the same
+        # byte-stable data the row summary and drill-down carry
+        assert read_fail_line in lines
+        # NEVER a fabricated zero-count route line of either family
+        assert ENV_ROUTE_MISSING_MODELS.format(n=0) not in lines
+        assert ENV_ROUTE_MISSING_DATASETS.format(n=0) not in lines
