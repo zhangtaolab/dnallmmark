@@ -1115,6 +1115,16 @@ if __name__ == "__main__":
                     configs["finetune"].fp16 = False
                     configs["finetune"].bf16 = False
 
+                # evo2 (vortex StripedHyena, evo2 0.6): its flash-attention
+                # kernels assert fp16/bf16 inputs, so the with_head config's
+                # fp32 mode crashes on the first attention; force bf16
+                # autocast (backbone weights stay fp32 masters after the
+                # loader's upcast — same mixed-precision regime as every
+                # other bf16 model here).
+                if model_name.startswith("evo2_"):
+                    configs["finetune"].fp16 = False
+                    configs["finetune"].bf16 = True
+
                 # Disable safetensors for specific models
                 if model_name in model_not_use_safetensors:
                     # Disable safetensors when shared shades in model
@@ -1476,6 +1486,12 @@ if __name__ == "__main__":
                 )
 
                 # Start finetuning
+                # --peft_dry_run builds no inner HF Trainer, so guard the
+                # safetensors override against trainer.trainer being None.
+                if model_name in model_not_use_safetensors and getattr(
+                    trainer.trainer, "args", None
+                ) is not None:
+                    trainer.trainer.args.save_safetensors = False
                 local_rank = int(os.environ.get("LOCAL_RANK", "0"))
                 try:
                     metrics = trainer.train()
@@ -1505,7 +1521,10 @@ if __name__ == "__main__":
                             })
                             json.dump(metrics, f, indent=4)
                         shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json", outdir)
-                    trainer.evaluate()
+                    # trainer.evaluate()
+                    test_results = trainer.evaluate("test")
+                    with open(outdir + "test_metrics.json", "w") as f:
+                        json.dump(test_results, f, indent=4)
                 # Blind except is the designed isolation (D-08 sanctioned):
                 # a dataset-train failure logs and CONTINUEs to the next
                 # dataset; narrowing the exception type risks aborting a
@@ -1521,10 +1540,22 @@ if __name__ == "__main__":
                     continue
 
                 if local_rank == 0:
+                    # --remove_checkpoints deliberately deletes EVERY
+                    # checkpoint dir: with load_best_model_at_end=True the
+                    # final save at the outdir root carries the best model's
+                    # weights, so dropping the best checkpoint too is safe
+                    # and halves the per-cell disk footprint.
                     if remove_checkpoints:
                         for checkpoint in checkpoints:
-                            if not checkpoint.endswith("-"+str(last_step)):
-                                shutil.rmtree(checkpoint)
+                            shutil.rmtree(checkpoint)
+                    # no-safetensors models end up with BOTH model.safetensors
+                    # (the final save) and pytorch_model.bin (the trainer
+                    # checkpoints' format) at the outdir root — drop the
+                    # duplicate .bin when the safetensors copy exists.
+                    if remove_pt or remove_checkpoints:
+                        bin_copy = outdir + "pytorch_model.bin"
+                        if os.path.exists(outdir + "model.safetensors") and os.path.exists(bin_copy):
+                            os.remove(bin_copy)
                     if remove_pt:
                         for pt_file in glob(outdir + "checkpoint-*/*.pt"):
                             os.remove(pt_file)
