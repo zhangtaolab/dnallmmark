@@ -466,7 +466,7 @@ from tui.strings import (
     QUEUE_TOAST_ALREADY_QUEUED,
     QUEUE_TOAST_ENQUEUED,
     QUEUE_TOAST_ENQUEUED_ALL,
-    SEL_ENQUEUE_PRESENT_TOAST,
+    DL_ENQUEUE_PRESENT_TOAST,
 )
 
 #: The 68-char-key backstop fixture (the UAT lesson: the longest
@@ -531,7 +531,7 @@ class FakeDataManagerService:
                  probe_state="not_public", enqueue_outcomes=None,
                  enqueue_all_count=0, channel_details=None, logs=None,
                  reaudit_gate=None, probe_gate=None, load_diagnostic=None,
-                 presence_rows=None):
+                 presence_rows=None, zenodo_outcome=None):
         self._missing = tuple(missing)
         self._total = total
         self._present = present
@@ -548,6 +548,7 @@ class FakeDataManagerService:
         self._reaudit_gate = reaudit_gate
         self._probe_gate = probe_gate
         self._load_diagnostic = load_diagnostic
+        self._zenodo_outcome = zenodo_outcome
         self.snapshot_calls = 0
         self.enqueue_calls = []
         self.enqueue_all_calls = 0
@@ -584,6 +585,8 @@ class FakeDataManagerService:
 
     def enqueue_zenodo(self):
         self.zenodo_calls += 1
+        if self._zenodo_outcome is not None:
+            return self._zenodo_outcome
         return EnqueueOutcome(
             action="enqueued", key=download_queue_module.ZENODO_BUNDLE_KEY)
 
@@ -885,6 +888,58 @@ async def test_model_entries_never_render_the_queue_is_dataset_only():
         assert service.snapshot_calls == entries_before
         assert _row(queue, 0)[0] == "mouse__DMS", (
             "the queue rows never change under model traffic"
+        )
+
+
+async def test_kind_model_tick_stores_no_live_dict_residue():
+    """IN-01 (quick-261016-hhx, the 08 review): a KIND_MODEL progress
+    tick stores NOTHING in the live percent/speed dicts — the stores
+    sit below the ignore guard, so model keys cannot accumulate for the
+    session (contract drift + a latent trap for unconditional readers)."""
+    service = FakeDataManagerService(entries=(
+        _queue_entry("DNABERT-2-117M", "downloading", kind="model"),
+    ))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+
+        screen.apply_queue_progress("DNABERT-2-117M", 40, "892kB/s")
+
+        assert "DNABERT-2-117M" not in screen._live_percents, (
+            "a model tick must not store a live percent (C4J-1: model "
+            "ticks are ignored entirely)"
+        )
+        assert "DNABERT-2-117M" not in screen._live_speeds, (
+            "a model tick must not store a live speed"
+        )
+
+
+async def test_kind_model_done_event_pops_preseeded_live_residue():
+    """IN-01: a KIND_MODEL completion event pops any pre-seeded residue
+    for its key — the pops run before the ignore return, so a model
+    done cleans the dicts instead of stranding the entry forever."""
+    service = FakeDataManagerService(entries=(
+        _queue_entry("DNABERT-2-117M", "downloading", kind="model"),
+    ))
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        screen = app.screen
+        # pre-seed the residue the pre-fix store path could leave behind
+        screen._live_percents["DNABERT-2-117M"] = 40
+        screen._live_speeds["DNABERT-2-117M"] = "892kB/s"
+
+        screen.apply_queue_event(QueueEvent(
+            run_id="driver-1", key="DNABERT-2-117M", kind="model",
+            state="done", last_percent=None, problems=(), details=(),
+            log_path=None))
+
+        assert "DNABERT-2-117M" not in screen._live_percents, (
+            "a model completion must pop the pre-seeded live percent"
+        )
+        assert "DNABERT-2-117M" not in screen._live_speeds, (
+            "a model completion must pop the pre-seeded live speed"
         )
 
 
@@ -1252,6 +1307,42 @@ async def test_z_enqueues_only_when_public_never_silent_otherwise():
             key=DL_BUNDLE_TASK_NAME) in _toast_messages(app)
 
 
+async def test_z_persist_failed_toasts_error_and_kicks_nothing():
+    """WR-02 (quick-261016-hhx, the 08 review): a persist-refused
+    bundle enqueue toasts QUEUE_PERSIST_FAILED_TOAST with the bundle
+    label at ERROR severity and kicks nothing — the screen never again
+    mislabels a persist failure as the already-queued toast."""
+    service = FakeDataManagerService(
+        probe_state="public",
+        zenodo_outcome=EnqueueOutcome(
+            action="persist_failed",
+            key=download_queue_module.ZENODO_BUNDLE_KEY))
+    queue_fake = FakeQueueService()
+    app = _app(queue=queue_fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_screen(pilot, app, service)
+        await pilot.press("z")
+        await pilot.pause()
+        assert service.zenodo_calls == 1
+        expected = QUEUE_PERSIST_FAILED_TOAST.format(
+            key=DL_BUNDLE_TASK_NAME)
+        assert expected in _toast_messages(app), (
+            "the persist failure surfaces with the operator-facing "
+            "bundle label, never silently"
+        )
+        assert QUEUE_TOAST_ALREADY_QUEUED.format(
+            key=DL_BUNDLE_TASK_NAME) not in _toast_messages(app), (
+            "the else-branch must never mislabel a persist failure"
+        )
+        assert queue_fake.claim_next_calls == 0, (
+            "a refused enqueue must kick no driver"
+        )
+        severity = next(
+            (notification.severity for notification in app._notifications
+             if notification.message == expected), None)
+        assert severity == "error"
+
+
 # ---------------------------------------------------------------------
 # The d/r/x/a actions over the fakes
 # ---------------------------------------------------------------------
@@ -1277,7 +1368,7 @@ async def test_d_enqueues_missing_cursor_with_all_outcome_toasts():
         await pilot.press("d")
         await pilot.pause()
         assert service.enqueue_calls == []
-        assert SEL_ENQUEUE_PRESENT_TOAST in _toast_messages(app)
+        assert DL_ENQUEUE_PRESENT_TOAST in _toast_messages(app)
 
         # happy: row 1 (mouse__DMS, missing) enqueues through the SAME
         # per-dataset ModelScope channel as before

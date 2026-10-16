@@ -1576,7 +1576,16 @@ class DownloadQueueService:
                 "problems": [],
                 "reconcile": None,
             })
-            self._persist_locked()
+            # WR-02 (quick-261016-hhx, the 08 review): the bundle lane
+            # carries the WR-04 rollback contract like its siblings —
+            # an unwritable state rail rolls the append back and
+            # answers persist_failed (never a ghost in-memory row a
+            # restart would silently drop, and never the driver's
+            # claim-refusal stall path).
+            if self._persist_locked() is not None:
+                self._entries.pop()   # the refusal leaves no ghost row
+                return EnqueueOutcome(
+                    action=ACTION_PERSIST_FAILED, key=ZENODO_BUNDLE_KEY)
             return EnqueueOutcome(
                 action="enqueued", key=ZENODO_BUNDLE_KEY)
 

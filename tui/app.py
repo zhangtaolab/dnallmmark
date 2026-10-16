@@ -997,10 +997,13 @@ class DnallmMarkTui(App):
         re-invokes the screen's ``on_mount`` population: every base
         screen's on_mount is population-only over instance state behind
         exclusive workers (re-running is idempotent — the monitor's
-        interval arming carries its own stop-before-re-arm guard), and
-        modal content is ctor-frozen copy that recompose re-renders as
-        declared. ``call_after_refresh`` schedules the coroutine; an
-        awaitable on_mount result is awaited.
+        interval arming carries its own stop-before-re-arm guard, and
+        env_check became population-only by guard: its re-mount path
+        re-applies landed results or leaves an in-flight run's rows
+        alone, WR-03 quick-261016-hhx), and modal content is ctor-frozen
+        copy that recompose re-renders as declared.
+        ``call_after_refresh`` schedules the coroutine; an awaitable
+        on_mount result is awaited.
         """
         await screen.recompose()
         mount_hook = getattr(screen, "on_mount", None)
@@ -1013,8 +1016,9 @@ class DnallmMarkTui(App):
         """L — toggle zh <-> en LIVE, persist, and re-render everything.
 
         (a) the other language becomes active in ``tui/strings`` (every
-        module-attribute read re-resolves); (b) the choice persists as
-        ``language.json`` under the XDG state root (atomic, tolerant — a
+        module-attribute read re-resolves); (b) the choice persists under
+        the XDG state root as ``settings.LANGUAGE_FILE_NAME`` — the ONE
+        filename definition, IN-02/261016-hhx (atomic, tolerant — a
         read-only state root degrades to no persistence, never a crash);
         (c) every rendered binding description is remapped (class BINDINGS
         rebuilt in place — Binding.description is frozen on 8.2.8); (d)
@@ -1029,7 +1033,7 @@ class DnallmMarkTui(App):
         S.set_language(new)
         try:
             settings.atomic_write(
-                settings.state_dir() / "language.json",
+                settings.state_dir() / settings.LANGUAGE_FILE_NAME,
                 json.dumps({"language": new}, ensure_ascii=False),
             )
         except OSError:

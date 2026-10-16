@@ -779,16 +779,19 @@ class DataManagerScreen(Screen):
         event additionally reloads the missing list (the D-11 flip
         moment: the reconciled key left the missing set).
 
-        C4J-1 (261015-c4j): KIND_MODEL events are IGNORED entirely —
+        C4J-1 (261015-c4j): KIND_MODEL events are ignored for RENDER —
         model downloads surface on slot 2, never here (the presentation
-        split; the shared queue mechanism is untouched).
+        split; the shared queue mechanism is untouched). IN-01
+        (quick-261016-hhx): the live-dict pops run BEFORE that ignore
+        return, so a model completion still cleans any pre-seeded
+        residue for its key.
         """
+        self._live_percents.pop(event.key, None)
+        self._live_speeds.pop(event.key, None)
         if event.kind == KIND_MODEL:
             return
         entries = self._service.entries()
         self._queue_entries = tuple(entries)
-        self._live_percents.pop(event.key, None)
-        self._live_speeds.pop(event.key, None)
         self._render_queue()
         if event.state == "done":
             self._reload_snapshot()
@@ -809,15 +812,18 @@ class DataManagerScreen(Screen):
 
         C4J-1 (261015-c4j): a KIND_MODEL entry's ticks are IGNORED —
         a model download never re-renders slot 3 (the presentation
-        split).
+        split). IN-01 (quick-261016-hhx): the live-dict stores sit BELOW
+        that ignore guard, so only passing (dataset, downloading) ticks
+        store — model keys cannot accumulate in either dict for the
+        session.
         """
-        self._live_percents[key] = percent
-        self._live_speeds[key] = speed
         entries = self._service.entries()
         entry = next((item for item in entries if item.key == key), None)
         if (entry is None or entry.kind == KIND_MODEL
                 or entry.state != "downloading"):
             return
+        self._live_percents[key] = percent
+        self._live_speeds[key] = speed
         self._queue_entries = tuple(entries)
         table = self.query_one("#dl-queue", DataTable)
         try:
@@ -1184,7 +1190,9 @@ class DataManagerScreen(Screen):
         if self._presence_view and snapshot is not None and any(
                 row.key == key and row.status == registries.PRESENCE_PRESENT
                 for row in snapshot.presence_rows):
-            self.app.notify(S.SEL_ENQUEUE_PRESENT_TOAST)
+            # IN-03 (quick-261016-hhx): the slot-3 toast consumes its
+            # OWN DL_ constant (the retired SEL_ twin)
+            self.app.notify(S.DL_ENQUEUE_PRESENT_TOAST)
             return
         outcome = self._service.enqueue(key)
         if self._toast_enqueue_outcome(outcome):
@@ -1300,6 +1308,15 @@ class DataManagerScreen(Screen):
                 S.QUEUE_TOAST_ENQUEUED.format(key=S.DL_BUNDLE_TASK_NAME))
             self.app.kick_download_queue()
             self._reload_snapshot()
+        elif outcome.action == "persist_failed":
+            # WR-02 (quick-261016-hhx): the refused persist surfaces as
+            # the error toast with the operator-facing bundle label —
+            # the _toast_enqueue_outcome persist_failed arm, mirrored
+            # here because the label is not the raw outcome.key
+            self.app.notify(
+                S.QUEUE_PERSIST_FAILED_TOAST.format(
+                    key=S.DL_BUNDLE_TASK_NAME),
+                severity="error")
         else:
             self.app.notify(
                 S.QUEUE_TOAST_ALREADY_QUEUED.format(key=S.DL_BUNDLE_TASK_NAME))

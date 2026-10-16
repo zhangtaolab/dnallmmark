@@ -242,6 +242,31 @@ def test_registry_consistency_same_zh_implies_same_en():
     )
 
 
+def test_registry_consistency_same_en_implies_same_zh():
+    """WR-01 (quick-261016-hhx, the 08 review): the MIRROR tripwire —
+    for every distinct en value carried by more than one constant, all
+    such constants share ONE zh value. translate_value matches by byte
+    equality in BOTH directions (remap_binding_descriptions rebuilds
+    class BINDINGS en->zh on every toggle), so an en phrase must also
+    translate to the same zh words everywhere — the zh->en tripwire
+    alone covered only one direction while WIZ_BACK_LABEL/APP_MODAL_
+    BACK_LABEL ("Back") and QUEUE_STATE_PENDING/ENV_STATE_PENDING
+    ("◌ pending") already collided. Structured entries excluded (the
+    shape test covers them)."""
+    from collections import defaultdict
+
+    en_owners: defaultdict[str, set[str]] = defaultdict(set)
+    for zh, en in tui_strings._REGISTRY.values():
+        if isinstance(zh, str) and isinstance(en, str):
+            en_owners[en].add(zh)
+    ambiguous = {en: zhs for en, zhs in en_owners.items() if len(zhs) > 1}
+    assert not ambiguous, (
+        "same-en constants must share one zh value (the en->zh remap "
+        "would be ambiguous for: "
+        f"{sorted(ambiguous)})"
+    )
+
+
 def test_registry_entries_carry_both_languages_and_matching_shapes():
     """Every _REGISTRY entry has both values non-empty; the structured
     (dict/tuple) entries carry identical key sets / arities across

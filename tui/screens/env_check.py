@@ -396,6 +396,17 @@ class EnvCheckScreen(Screen):
         # cancelled run's late messages — its OS thread cannot be
         # interrupted — are recognized as stale and dropped.
         self._run_id = 0
+        # WR-03 (quick-261016-hhx, the 08 review): the remount guards.
+        # ``_check_in_flight`` marks a run the worker is executing (set
+        # at run entry, cleared ONLY by the accepted completion — a
+        # stale-dropped completion belongs to a superseding run that set
+        # the flag itself); ``_last_outcome`` caches the last rendered
+        # (checked_at, results, persist_error) triple so a remount
+        # re-renders the outcome instead of re-deriving it. Together
+        # they make on_mount population-only on EVERY re-mount: the L
+        # toggle mid-run restarts zero kernels and resets nothing.
+        self._check_in_flight = False
+        self._last_outcome: "tuple[str, tuple[CheckResult, ...], str | None] | None" = None
 
     def compose(self) -> ComposeResult:
         """The screen frame: nav bars, title bar, kernel table, verdict.
@@ -420,6 +431,14 @@ class EnvCheckScreen(Screen):
         contract; the dict keys double as the stable DataTable row keys.
         A same-day cache hit renders every row in its FINAL state and
         starts zero kernels; a miss starts the one exclusive worker.
+
+        WR-03 (quick-261016-hhx): the tail is population-only on
+        RE-MOUNT — with results already on the instance they re-apply
+        (plus the cached outcome); with a run in flight the freshly
+        built pending rows stand and the worker keeps posting onto them;
+        only a FIRST mount consults the cache / starts the worker. A
+        remount therefore never restarts kernels the operator never
+        asked to re-run (the L toggle's re-render path).
         """
         table = self.query_one("#env-kernels", DataTable)
         table.cursor_type = "row"   # 08-UI-SPEC DataTable usage contract
@@ -438,15 +457,33 @@ class EnvCheckScreen(Screen):
             )
         table.focus()
 
-        cached = self._service.cached_results()
-        if cached is not None:
-            checked_at, results = cached
-            for result in results:
-                self._results[result.name] = result
+        if self._results:
+            # WR-03: a re-mount over landed results — re-apply them
+            # (partial results re-apply fine: the in-flight worker's
+            # run-id-tagged messages keep landing on the rebuilt rows)
+            # and re-render the cached outcome when one exists.
+            for result in self._results.values():
                 self._apply_result_to_table(result)
-            self._render_check_outcome(checked_at, results)
+            if self._last_outcome is not None:
+                checked_at, results, persist_error = self._last_outcome
+                self._render_check_outcome(
+                    checked_at, results, persist_error=persist_error)
+        elif self._check_in_flight:
+            # WR-03: a run is executing — leave the freshly built
+            # pending rows alone (no cache consult, no run_full_check:
+            # the operator asked for a re-render, never for GPU work)
+            pass
         else:
-            self.run_full_check()
+            cached = self._service.cached_results()
+            if cached is not None:
+                checked_at, results = cached
+                for result in results:
+                    self._results[result.name] = result
+                    self._apply_result_to_table(result)
+                self._render_check_outcome(checked_at, results)
+                self._last_outcome = (checked_at, results, None)
+            else:
+                self.run_full_check()
         self._render_storage()
 
     # ===== The exclusive thread worker (D-03: the ONLY kernel execution site) =====
@@ -483,6 +520,7 @@ class EnvCheckScreen(Screen):
         """
         worker = get_current_worker()
         run_id = self._run_id  # the run this worker serves (WR-02)
+        self._check_in_flight = True  # the WR-03 remount guard
         results: list[CheckResult] = []
         try:
             kernels = self._service.kernels().items()
@@ -560,6 +598,12 @@ class EnvCheckScreen(Screen):
         """Render the last-check line + the verdict block (ENV-02/ENV-03)."""
         if message.run_id != self._run_id:
             return  # a newer exclusive run superseded this outcome (WR-02)
+        # WR-03: only the ACCEPTED completion clears the in-flight flag
+        # and caches the outcome — a stale-dropped completion belongs to
+        # a superseding run that set the flag itself.
+        self._check_in_flight = False
+        self._last_outcome = (
+            message.checked_at, message.results, message.persist_error)
         self._render_check_outcome(
             message.checked_at, message.results,
             persist_error=message.persist_error)

@@ -169,11 +169,12 @@ class FakeEnvCheckService:
     """
 
     def __init__(self, cached=None, results=None,
-                 checked_at="2026-10-11 09:30", gate=None):
+                 checked_at="2026-10-11 09:30", gate=None, gate_index=0):
         self.cached = cached
         self.results = list(results) if results is not None else _mixed_results()
         self.checked_at = checked_at
         self.gate = gate
+        self.gate_index = gate_index
         self.kernel_queries = 0   # kernels() calls (worker spawns)
         self.kernel_calls = []    # executed kernel ids, in execution order
         self.persist_calls = []   # each entry: the full result list
@@ -204,7 +205,7 @@ class FakeEnvCheckService:
 
     def _make_kernel(self, result, index):
         def _kernel():
-            if index == 0 and self.gate is not None:
+            if index == self.gate_index and self.gate is not None:
                 self.gate.wait(timeout=10)  # deterministic gate, not a sleep
             self.kernel_calls.append(result.name)
             return result
@@ -430,6 +431,84 @@ async def test_refresh_resets_rows_to_pending_and_reruns():
         await _wait_for_check(pilot, app)
         assert len(fake.kernel_calls) == 16  # every kernel re-ran
         assert len(fake.persist_calls) == 2  # and persisted again
+
+
+async def test_rerender_midrun_restarts_zero_kernels():
+    """WR-03 (quick-261016-hhx, the 08 review): the ``_rerender_screen``
+    remount (the L toggle's exact mechanism) while an env check is in
+    flight restarts ZERO kernels — the on_mount tail is population-only
+    by guard when a run is in flight (no cache consult, no
+    ``run_full_check``), the already-landed rows RE-APPLY their final
+    glyphs (never reset to pending), and the in-flight worker's
+    run-id-tagged messages keep landing on the rebuilt rows so the run
+    completes and renders its verdict.
+
+    The gate blocks kernel 3 of 8: kernels 0-2 have landed their final
+    glyphs when the remount fires — the no-reset proof surface."""
+    gate = threading.Event()
+    fake = FakeEnvCheckService(cached=None, gate=gate, gate_index=3)
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        table = app.screen.query_one(DataTable)
+        # kernels 0-2 complete; kernel 3 holds the checking state
+        for _ in range(200):
+            await pilot.pause()
+            if _row(table, 3)[0] == ENV_STATE_CHECKING:
+                break
+        assert _row(table, 3)[0] == ENV_STATE_CHECKING
+        for index in range(3):
+            expected = (ENV_STATE_PASS if _mixed_results()[index].ok
+                        else ENV_STATE_FAIL)
+            assert _row(table, index)[0] == expected, (
+                f"row {index} landed before the gate"
+            )
+        calls_before = list(fake.kernel_calls)
+        spawns_before = fake.kernel_queries
+        assert len(calls_before) == 3  # kernels 0-2 done, 3 blocked
+
+        # the toggle's exact mechanism, mid-run
+        await app._rerender_screen(app.screen)
+        await pilot.pause()
+        table = app.screen.query_one(DataTable)  # recompose rebuilt it
+
+        assert fake.kernel_queries == spawns_before == 1, (
+            "the remount must not consult the cache or restart the "
+            "exclusive worker (WR-03)"
+        )
+        assert fake.kernel_calls == calls_before, (
+            "no kernel restarted — the operator asked for a re-render, "
+            "never for GPU work"
+        )
+        for index in range(3):
+            expected = (ENV_STATE_PASS if _mixed_results()[index].ok
+                        else ENV_STATE_FAIL)
+            assert _row(table, index)[0] == expected, (
+                f"row {index} must RE-APPLY its final glyph across the "
+                "remount — never reset to pending (WR-03)"
+            )
+        for index in range(3, 8):
+            assert _row(table, index)[0] == ENV_STATE_PENDING, (
+                f"row {index} renders the rebuilt pending surface (the "
+                "in-flight row's checking glyph is transient chrome; "
+                "its result still lands)"
+            )
+
+        gate.set()
+        await _wait_for_check(pilot, app)
+        # the ORIGINAL run completed on the rebuilt rows: final glyphs,
+        # the last-check line, and the verdict all rendered
+        table = app.screen.query_one(DataTable)
+        for index, result in enumerate(_mixed_results()):
+            assert _row(table, index)[0] == (
+                ENV_STATE_PASS if result.ok else ENV_STATE_FAIL
+            ), f"row {index} ({result.name}) must reach its final glyph"
+        assert _label_text(app.screen, "#env-last-check") == (
+            ENV_LAST_CHECK_LINE.format(checked_at=fake.checked_at)
+        )
+        assert _verdict_lines(app.screen), (
+            "the completed run must render its verdict after the remount"
+        )
+        assert len(fake.kernel_calls) == 8  # exactly one full run total
 
 
 class _StaleRunFake(FakeEnvCheckService):

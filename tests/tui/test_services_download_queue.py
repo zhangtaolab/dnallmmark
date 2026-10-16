@@ -3289,9 +3289,11 @@ from tui import strings as tui_strings
 
 #: The complete expected DL_ inventory (the screen chrome, the Zenodo
 #: four states + toasts/labels, the keycaps, the derived gap-fillers,
-#: the full presence view pair DCL-03/261014-dcl added, and the
+#: the full presence view pair DCL-03/261014-dcl added, the
 #: datasets-primary rework additions MLC-03/261014-mlc: the full-list
-#: download column + its three status words, and the w wizard keycap).
+#: download column + its three status words and the w wizard keycap,
+#: and the slot-3 present-row enqueue toast IN-03/261016-hhx moved
+#: from the SEL_ block to its owning surface).
 EXPECTED_DL_CONSTANTS = (
     "DL_SCREEN_TITLE", "DL_MISSING_TITLE", "DL_MISSING_COL_KEY",
     "DL_MISSING_COL_ROWS", "DL_MISSING_EMPTY", "DL_PRESENCE_SUMMARY",
@@ -3301,7 +3303,7 @@ EXPECTED_DL_CONSTANTS = (
     "DL_ZENODO_KEY_LABEL", "DL_BUNDLE_TASK_NAME", "DL_DISABLED_TOAST",
     "DL_UNKNOWN_TOAST",
     "DL_ENQUEUE_LABEL", "DL_RETRY_LABEL", "DL_CANCEL_LABEL",
-    "DL_ENQUEUE_ALL_LABEL",
+    "DL_ENQUEUE_ALL_LABEL", "DL_ENQUEUE_PRESENT_TOAST",
     "DL_COL_DOWNLOAD", "DL_FULL_PRESENT", "DL_FULL_MISSING",
     "DL_FULL_UNKNOWN", "DL_WIZARD_LABEL",
 )
@@ -3329,10 +3331,11 @@ EXPECTED_QUEUE_CONSTANTS = (
 #: pair (DCL-02, 261014-dcl) — this file is the established SEL_
 #: registration site (the one-directional defined-check covers them).
 #: SEL_ENQUEUE_LABEL was RETIRED at 261014-mlc (slot 2's d is the model
-#: download — its own label); SEL_ENQUEUE_PRESENT_TOAST stays (the
-#: slot-3 full-list present-row toast).
+#: download — its own label); the SEL_-prefixed present-row toast was
+#: RETIRED at 261016-hhx IN-03 (the slot-3 full-list present-row toast
+#: moved to its owning surface as DL_ENQUEUE_PRESENT_TOAST — the SEL
+#: copy could drift for slot 2's model context while slot 3 renders it).
 EXPECTED_SEL_CONSTANTS = (
-    "SEL_ENQUEUE_PRESENT_TOAST",
     "SEL_MODEL_PRESENCE_PRESENT", "SEL_MODEL_PRESENCE_MISSING",
 )
 
@@ -3697,6 +3700,37 @@ def test_enqueue_persist_failure_refused_no_ghost_row(
         )
     finally:
         writable_state(state)
+
+
+def test_enqueue_zenodo_persist_failure_refused_no_ghost_row(
+        tmp_path, monkeypatch):
+    """WR-02 (quick-261016-hhx, the 08 review): the bundle lane carries
+    the WR-04 rollback contract too — with the state dir read-only,
+    ``enqueue_zenodo`` returns ``persist_failed`` and rolls the append
+    back; a FRESH queue load over the same rail sees zero entries (no
+    ghost in-memory row a restart would silently drop)."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    state.mkdir(parents=True, exist_ok=True)
+    service = download_queue.DownloadQueueService()
+    read_only_state(state)
+    try:
+        outcome = service.enqueue_zenodo()
+
+        assert outcome.action == "persist_failed"
+        assert outcome.key == download_queue.ZENODO_BUNDLE_KEY
+        assert service.entries() == [], (
+            "the refused bundle enqueue must roll its in-memory append "
+            "back (the sibling lanes' discipline)"
+        )
+    finally:
+        writable_state(state)
+
+    # the fresh boot's view: nothing ever persisted
+    fresh = download_queue.DownloadQueueService()
+    assert fresh.load() is None
+    assert fresh.entries() == [], (
+        "a ghost bundle row must not survive a reload"
+    )
 
 
 def test_claim_next_persist_failure_reverts_returns_none(

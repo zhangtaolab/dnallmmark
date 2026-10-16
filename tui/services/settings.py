@@ -44,6 +44,13 @@ APP_NAME = "dnallmmark"
 STATE_DIR_ENV = "DNALLMMARK_TUI_STATE_DIR"
 CONFIG_DIR_ENV = "DNALLMMARK_TUI_CONFIG_DIR"
 
+#: The persisted-language filename under the XDG state root — the ONE
+#: definition (IN-02, quick-261016-hhx: the 08 review; EHC-1's persisted
+#: language file). Consumed by ``tui/__main__``'s boot read and the
+#: app's toggle write; a rename in one place must never silently break
+#: the other (the toggle would persist a file the boot never loads).
+LANGUAGE_FILE_NAME = "language.json"
+
 
 def state_dir():
     """Resolve the XDG STATE root for regenerable machine state (D-04).

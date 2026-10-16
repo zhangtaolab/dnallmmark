@@ -840,9 +840,13 @@ WIZ_FOOTER_HINT_LAST = _t(
     "WIZ_FOOTER_HINT_LAST", "[enter] 提交校验  [b] 上一步  [esc] 取消",
     "[enter] validate  [b] back  [esc] cancel")
 # Binding labels (the hint's keycap segments; Binding descriptions use
-# the same wording).
+# the same wording). WR-01 (quick-261016-hhx, the 08 review): the en
+# value is "Back a step" (NOT "Back") — APP_MODAL_BACK_LABEL already
+# owns en "Back" with a different zh, and translate_value's byte
+# equality needs the registry injective in BOTH directions (the b
+# binding's en->zh remap returned the esc-back wording 返回 before).
 WIZ_NEXT_LABEL = _t("WIZ_NEXT_LABEL", "下一步", "Next")
-WIZ_BACK_LABEL = _t("WIZ_BACK_LABEL", "上一步", "Back")
+WIZ_BACK_LABEL = _t("WIZ_BACK_LABEL", "上一步", "Back a step")
 WIZ_SUBMIT_LABEL = _t("WIZ_SUBMIT_LABEL", "提交校验", "Validate")
 WIZ_CANCEL_LABEL = _t("WIZ_CANCEL_LABEL", "取消", "Cancel")
 # Destructive — wizard esc-cancel with entered values (ConfirmModal gate;
@@ -1063,6 +1067,13 @@ DL_ENQUEUE_LABEL = _t("DL_ENQUEUE_LABEL", "入队", "Enqueue")
 DL_RETRY_LABEL = _t("DL_RETRY_LABEL", "重试", "Retry")
 DL_CANCEL_LABEL = _t("DL_CANCEL_LABEL", "取消", "Cancel")
 DL_ENQUEUE_ALL_LABEL = _t("DL_ENQUEUE_ALL_LABEL", "全部入队", "Enqueue All")
+# IN-03 (quick-261016-hhx, the 08 review): slot 3's full-list d-on-
+# present-row no-op toast — its OWN DL_ constant (the retired SEL_
+# present-toast twin, same values), so the copy lives with its owning
+# surface (a slot-2 rewording of the SEL_ block can never drift slot
+# 3's dataset wording).
+DL_ENQUEUE_PRESENT_TOAST = _t(
+    "DL_ENQUEUE_PRESENT_TOAST", "该数据集已在场", "Dataset already present")
 
 # Derived gap-fillers (the SEL_PRESENCE_UNKNOWN precedent — the
 # contract names no wording for these rows): the title-line presence
@@ -1110,8 +1121,13 @@ QUEUE_EMPTY = _t(
     "Queue empty — press [d] to enqueue missing datasets")
 
 # The five state cells (D-02 verbatim; glyph+color dual channel — the
-# leading glyph is the NO_COLOR carrier).
-QUEUE_STATE_PENDING = _t("QUEUE_STATE_PENDING", "◌ 待下载", "◌ pending")
+# leading glyph is the NO_COLOR carrier). WR-01 (quick-261016-hhx):
+# QUEUE_STATE_PENDING en is "◌ waiting" (NOT "◌ pending") —
+# ENV_STATE_PENDING already owns en "◌ pending" with a different zh
+# (待检 vs 待下载), and the registry must stay injective in BOTH
+# directions (the reviewer's example "◌ queued" would collide with
+# MON_STATE_QUEUED's ◌ 排队 instead).
+QUEUE_STATE_PENDING = _t("QUEUE_STATE_PENDING", "◌ 待下载", "◌ waiting")
 QUEUE_STATE_DOWNLOADING = _t(
     "QUEUE_STATE_DOWNLOADING", "⠋ 下载中", "⠋ downloading")
 QUEUE_STATE_DONE = _t("QUEUE_STATE_DONE", "✓ 完成", "✓ done")
@@ -1215,10 +1231,10 @@ QUEUE_REAUDIT_LABEL = _t("QUEUE_REAUDIT_LABEL", "重新审计", "Re-audit")
 # ===== 选择屏 d-入队 amendments (SEL_, Phase 10, 10-03; D-14) =====
 # The selection-screen d key is the MODEL download since the 2026-10-14
 # slot split (its label + toasts live in the MLC-02 block above); the
-# dataset present-row no-op toast below keeps its consumer on the slot-3
-# data manager (the full-list d on a present row).
-SEL_ENQUEUE_PRESENT_TOAST = _t(
-    "SEL_ENQUEUE_PRESENT_TOAST", "该数据集已在场", "Dataset already present")
+# dataset present-row no-op toast moved to the DL_ block at
+# 261016-hhx IN-03 (DL_ENQUEUE_PRESENT_TOAST — its owning surface is
+# the slot-3 data manager's full-list d; the former SEL_-prefixed name
+# is RETIRED).
 
 # ===== 运行配置 (CFG_, Phase 11, D-12) =====
 # The slot-4 run-config screen chrome + the params pane + the preview

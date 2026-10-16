@@ -20,8 +20,9 @@ Contract:
 - The repo root itself is inserted first so package-qualified imports
   (``tui.app``) resolve regardless of how ``__main__`` was reached.
 - 261015-ehc (EHC-1): this module owns the ONLY persisted-language boot
-  load — ``load_persisted_language`` reads ``language.json`` under the XDG
-  state root tolerantly (missing/corrupt/wrong-value → DEFAULT_LANGUAGE,
+  load — ``load_persisted_language`` reads the persisted-language file
+  (``settings.LANGUAGE_FILE_NAME``) under the XDG state root tolerantly
+  (missing/corrupt/wrong-value → DEFAULT_LANGUAGE,
   never raises, never blocks boot) and ``main`` applies it (plus the
   binding-description remap — class BINDINGS freeze at import in the
   import-time language) BEFORE ``app.run``. Test-constructed apps never
@@ -45,18 +46,21 @@ sys.path.insert(0, str(REPO_ROOT / "pipeline"))
 from tui import strings as S
 from tui.app import DnallmMarkTui, remap_binding_descriptions
 from tui.services import settings
+from tui.services.settings import LANGUAGE_FILE_NAME
 
-#: The persisted language file under the XDG state root (EHC-1).
-LANGUAGE_FILE_NAME = "language.json"
+#: The persisted language file's name is imported from the services
+#: seam (IN-02, quick-261016-hhx): ``settings.LANGUAGE_FILE_NAME`` is
+#: the ONE definition; this re-export keeps the module attribute the
+#: boot read (below) and the existing tests reference.
 
 
 def load_persisted_language() -> str:
     """Tolerantly load the persisted UI language (the ONLY boot read).
 
-    Resolution: a readable ``language.json`` carrying a ``language`` value
-    in ``LANGUAGES`` wins; anything else (missing file, unreadable,
-    non-JSON, wrong shape, unknown value) resolves to ``DEFAULT_LANGUAGE``
-    — never raises, never blocks boot (T-ehc-02).
+    Resolution: a readable persisted-language file carrying a
+    ``language`` value in ``LANGUAGES`` wins; anything else (missing
+    file, unreadable, non-JSON, wrong shape, unknown value) resolves to
+    ``DEFAULT_LANGUAGE`` — never raises, never blocks boot (T-ehc-02).
 
     Returns:
         str: the boot language.
