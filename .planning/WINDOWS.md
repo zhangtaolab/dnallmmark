@@ -300,8 +300,8 @@ last_updated: 2026-10-15T06:45:36.321Z
     "file": ".planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-07-SUMMARY.md",
     "line": null,
     "description": "GB10 smoke (SC5 execution half) pending maintainer run — procedure in 11-07-SUMMARY, not executor-executable (D-15)",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "executed live 2026-10-13 (11-UAT.md status passed 2/2, maintainer-authorized bounded smoke incl. the E2'-blocks proof); artifacts re-read on disk by the 2026-10-16 refresh verifiers (finetuned-smoke/ both cells + trainer_state markers) — ledger row left open by bookkeeping oversight, closed 2026-10-16",
     "recorded_at": "2026-10-13T06:06:35.033Z",
     "resolved_at": null,
     "milestone": "v1.2"
