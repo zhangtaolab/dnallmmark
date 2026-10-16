@@ -2266,7 +2266,7 @@ async def test_running_entry_renders_eta_segment_or_honest_dash():
             "the derivable eta rides the progress cell after the bar"
         )
         assert _table_text(table, "model-b__task-2", "progress") == (
-            "600/1000 60% █████····· —"), (
+            "600/1000 60% ██████···· —"), (
             "eta None renders the trailing dim dash, never a guess"
         )
 

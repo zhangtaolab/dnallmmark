@@ -1504,7 +1504,13 @@ class MonitorScreen(Screen):
         data_manager progress grammar — the bar's filled cells carry
         the live theme accent); the honest indeterminate constant on
         running rows without progress (never a fabricated number); the
-        dim dash on non-running rows. The narrow grid drops the bar."""
+        dim dash on non-running rows. The narrow grid drops the bar.
+
+        261016-vxr (VXR-1): a derivable checkpoint-pair eta appends the
+        ``format_eta`` segment after the text/bar (data, CJK-free);
+        eta None appends the dim dash — the honest underivable. Zero
+        new operator copy (format_eta is data; _DASH is the existing
+        table symbol)."""
         if fold.state != CELL_RUNNING:
             return Text(_DASH, style=_STYLE_SKIPPED)
         if progress is None or progress.percent is None:
@@ -1513,8 +1519,17 @@ class MonitorScreen(Screen):
         text = S.MON_PROGRESS_STEPS.format(
             step=progress.step, max=progress.max_steps,
             percent=progress.percent)
+        eta_segment = (
+            Text(format_eta(progress.eta_seconds))
+            if progress.eta_seconds is not None
+            else Text(_DASH, style=_STYLE_SKIPPED))
         if self._narrow:
-            return Text(text, style=_STYLE_RUNNING)
+            # the narrow form keeps the steps text + eta, drops the bar
+            return Text.assemble(
+                Text(text, style=_STYLE_RUNNING),
+                Text(" "),
+                eta_segment,
+            )
         filled = max(0, min(10, round(progress.percent / 10)))
         accent = str(self.app.current_theme.accent)
         return Text.assemble(
@@ -1522,6 +1537,8 @@ class MonitorScreen(Screen):
             Text(" "),
             Text("█" * filled, style=accent),
             Text("·" * (10 - filled), style=_STYLE_RUNNING),
+            Text(" "),
+            eta_segment,
         )
 
     def _render_cells_title(self) -> None:

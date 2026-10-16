@@ -47,6 +47,14 @@ only when max_steps > 0), and ``entries_progress`` parses ONLY the
 running seeds on the same bounded walk the frontier uses (the 2s
 cadence stays light).
 
+261016-vxr (VXR-1) — the checkpoint-pair ETA: ``cell_progress`` also
+derives ``CellProgress.eta_seconds`` from the TWO NEWEST checkpoints
+(rate = Δglobal_step / Δ trainer_state.json FILE mtime; probed:
+trainer_state.json carries NO wall-clock field, so the file mtime IS
+the cadence source — every launch mode, no tee-log coupling). Strict
+validity gates; every underivable shape degrades to None (the screen's
+honest dim dash) — never a fabricated estimate, never a raise.
+
 Clock discipline: every wall-clock input is injectable (``now=`` epoch
 seconds); with no injection the real clock is read once per call.
 """
@@ -234,11 +242,23 @@ class CellProgress:
         percent: ``round(step/max_steps*100)`` clamped 0..100 — derived
             ONLY when both parsed and ``max_steps > 0`` (else None, the
             screen's honest indeterminate).
+        eta_seconds: the checkpoint-pair step-cadence estimate
+            (261016-vxr, VXR-1): ``rate = Δglobal_step /
+            Δ(trainer_state.json file mtime)`` over the seed's TWO
+            NEWEST checkpoints, ``eta = (max_steps − newest step) /
+            rate``. ``trainer_state.json`` carries NO wall-clock field
+            (probed), so the FILE mtime is the cadence source — works
+            for every launch mode, no tee-log coupling. None whenever
+            the pair is underivable (a single checkpoint, a damaged
+            second, non-positive Δstep or Δmtime, max_steps at/past
+            the current step) — the screen's honest dim dash, never a
+            fabricated estimate.
     """
 
     step: int | None
     max_steps: int | None
     percent: int | None
+    eta_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -907,10 +927,61 @@ def _non_bool_int(value) -> "int | None":
     return None
 
 
+def _trainer_state_mtime(checkpoint: Path) -> "float | None":
+    """One checkpoint dir's trainer_state.json FILE mtime (None when the
+    file is absent/unreadable — the ETA's wall-clock source, 261016-vxr;
+    trainer_state.json itself carries no timestamp field)."""
+    try:
+        return (checkpoint / RESUME_MARKER).stat().st_mtime
+    except OSError:
+        return None
+
+
+def _eta_from_checkpoint_pair(
+        newest: "tuple[int, Path] | None",
+        second: "tuple[int, Path] | None",
+        step: "int | None",
+        max_steps: "int | None") -> "float | None":
+    """The checkpoint-pair ETA (261016-vxr, VXR-1): rate = Δstep / Δmtime
+    over the two NEWEST checkpoints, eta = remaining / rate.
+
+    Strict validity gates, EVERY failure -> None (the honest dash, never
+    a guess): both checkpoint dirs known, the second's trainer_state
+    parses as a dict, its ``global_step`` is a non-bool int strictly
+    below the newest's, both trainer_state.json FILE mtimes read with
+    mtime_new > mtime_old, and ``max_steps`` strictly above the newest
+    step (at/past the end nothing remains to estimate). Tolerant end to
+    end — never raises into the cadence. No clamping: a stalled run
+    shows a large honest ETA, a resumed run's first interval is simply
+    underivable.
+    """
+    if (newest is None or second is None
+            or step is None or max_steps is None):
+        return None
+    if max_steps <= step:
+        return None
+    old_state = artifact_loader.load_json_artifact(
+        second[1] / RESUME_MARKER)
+    if not isinstance(old_state, dict):
+        return None
+    step_old = _non_bool_int(old_state.get("global_step"))
+    if step_old is None or step_old >= step:
+        return None
+    mtime_new = _trainer_state_mtime(newest[1])
+    mtime_old = _trainer_state_mtime(second[1])
+    if mtime_new is None or mtime_old is None or mtime_new <= mtime_old:
+        return None
+    rate = (step - step_old) / (mtime_new - mtime_old)
+    if rate <= 0:
+        return None
+    return (max_steps - step) / rate
+
+
 def cell_progress(seed_dir) -> CellProgress:
     """Parse one seed dir's training progress (C4J-3) — the newest
     ``checkpoint-*/trainer_state.json`` (the LARGEST NUMERIC suffix;
-    lexical order is wrong and pinned so).
+    lexical order is wrong and pinned so), plus the checkpoint-pair
+    step-cadence ETA over the two newest (261016-vxr).
 
     Tolerant end to end (T-c4j-01): absent checkpoints, an unreadable
     dir, or a damaged/unparseable trainer_state degrade to the all-None
@@ -927,12 +998,16 @@ def cell_progress(seed_dir) -> CellProgress:
     """
     seed_dir = Path(seed_dir)
     best: tuple[int, Path] | None = None
+    second: tuple[int, Path] | None = None
     for child in _sorted_children(seed_dir)[:_SCAN_DIR_ENTRY_CAP]:
         number = _checkpoint_number(child.name)
         if number is None or not _is_dir(child):
             continue
         if best is None or number > best[0]:
+            second = best
             best = (number, child)
+        elif second is None or number > second[0]:
+            second = (number, child)
     if best is None:
         return CellProgress(step=None, max_steps=None, percent=None)
     state = artifact_loader.load_json_artifact(best[1] / RESUME_MARKER)
@@ -943,7 +1018,11 @@ def cell_progress(seed_dir) -> CellProgress:
     percent = None
     if step is not None and max_steps is not None and max_steps > 0:
         percent = max(0, min(100, round(step / max_steps * 100)))
-    return CellProgress(step=step, max_steps=max_steps, percent=percent)
+    eta_seconds = _eta_from_checkpoint_pair(
+        best, second, step, max_steps)
+    return CellProgress(
+        step=step, max_steps=max_steps, percent=percent,
+        eta_seconds=eta_seconds)
 
 
 def entry_fold(row: CellRow) -> EntryView:
