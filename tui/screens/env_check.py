@@ -406,7 +406,7 @@ class EnvCheckScreen(Screen):
         # they make on_mount population-only on EVERY re-mount: the L
         # toggle mid-run restarts zero kernels and resets nothing.
         self._check_in_flight = False
-        self._last_outcome: "tuple[str, tuple[CheckResult, ...], str | None] | None" = None
+        self._last_outcome: tuple[str, tuple[CheckResult, ...], str | None] | None = None
 
     def compose(self) -> ComposeResult:
         """The screen frame: nav bars, title bar, kernel table, verdict.

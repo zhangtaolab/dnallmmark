@@ -428,6 +428,7 @@ from tui.services.download_queue import (
 from tui.strings import (
     DL_BUNDLE_TASK_NAME,
     DL_DISABLED_TOAST,
+    DL_ENQUEUE_PRESENT_TOAST,
     DL_FULL_MISSING,
     DL_FULL_PRESENT,
     DL_FULL_UNKNOWN,
@@ -466,7 +467,6 @@ from tui.strings import (
     QUEUE_TOAST_ALREADY_QUEUED,
     QUEUE_TOAST_ENQUEUED,
     QUEUE_TOAST_ENQUEUED_ALL,
-    DL_ENQUEUE_PRESENT_TOAST,
 )
 
 #: The 68-char-key backstop fixture (the UAT lesson: the longest
