@@ -22,8 +22,8 @@ modules. Every CFG_/LNC_/MON_ constant the screens render comes from
 this module by name.
 
 The slot-4 enter-key pin (UI-checker fix 2: enter on the picker / with
-no field focused opens the 启动门 launch gate; Inputs consume their own
-Enter — typing never launches) is a Pilot assertion in
+no field focused opens the 启动确认 launch confirmation; Inputs consume
+their own Enter — typing never launches) is a Pilot assertion in
 ``tests/tui/test_pilot_run_config.py`` (11-06), NOT a copy change —
 recorded here so the next plan finds it next to its copy constants.
 """
@@ -62,12 +62,16 @@ EXPECTED_CFG_CONSTANTS = (
     "CFG_SAVE_DEFAULTS_FAILED_TOAST", "CFG_SAVE_DEFAULTS_HINT",
     "CFG_DIR_PICKER_LABEL",
     "CFG_DIR_PICKER_TITLE", "CFG_DIR_PICKER_SELECT_LABEL",
+    # 261016-poa (UX-4): the slot-4 launch-confirmation entry hint.
+    "CFG_GATE_HINT",
 )
 
-#: The complete expected LNC_ inventory (gate modal + E2' typed-phrase
-#: escalation, launch toasts, the exit-modal kill/detach/cancel row).
+#: The complete expected LNC_ inventory (launch-confirmation modal +
+#: E2' typed-phrase escalation, launch toasts, the exit-modal
+#: kill/detach/cancel row).
 EXPECTED_LNC_CONSTANTS = (
     "LNC_GATE_TITLE", "LNC_GATE_SUMMARY", "LNC_GATE_CONFIRM",
+    "LNC_GATE_PAIR_LINE", "LNC_GATE_PAIRS_MORE",
     "LNC_E2_WARNING", "LNC_E2_AUTH_NOTE", "LNC_E2_TYPE_PROMPT",
     "LNC_E2_MATCH_OK", "LNC_E2_MISMATCH", "LNC_ENV_BLOCKED_HINT",
     "LNC_SINGLE_GPU_BLOCKED",

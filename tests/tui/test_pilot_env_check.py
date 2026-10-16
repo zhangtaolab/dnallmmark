@@ -382,9 +382,10 @@ async def test_critical_fail_verdict_names_kernels_and_routes_missing_data():
         assert expected_verdict in lines
         # 11-05 amendment (11-UI-SPEC Existing-Surface Amendments): the
         # blocking is real this phase — present tense through the launch
-        # gate; the retired future-tense wiring note is gone for good
-        # (same constant name, same {kernel_names} field, ✗ glyph kept)
-        assert "启动已被运行配置启动门阻断" in expected_verdict
+        # confirmation; the retired future-tense wiring note is gone for
+        # good (same constant name, same {kernel_names} field, ✗ glyph
+        # kept; 261016-poa UX-3 — the copy reads 启动确认)
+        assert "启动已被运行配置启动确认阻断" in expected_verdict
         assert "启动流程将被阻断" not in expected_verdict
         # the routing line carries the missing-dataset count AND the CLI
         # audit command (I18N-01: the command stays English verbatim)

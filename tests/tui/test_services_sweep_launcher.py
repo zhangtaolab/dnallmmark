@@ -742,6 +742,51 @@ def test_gate_confirm_data_non_e2x_over_real_module(tmp_path):
     assert summary.expected_phrase == "out"
 
 
+def test_gate_confirm_data_pairs_first_occurrence_seeds_collapsed(
+        tmp_path):
+    """UX-5 (261016-poa): the confirm summary carries the planned
+    (model, task) pairs — an ordered FIRST-OCCURRENCE dedupe of the
+    FRESH preview cells over the REAL module. A 2x2x3 spec enumerates
+    12 cells but exactly 4 pairs (seeds stay collapsed in the counts
+    formula, never per-row); the order is the cells' own (sorted
+    model-major) order, service-derived — the UI never computes."""
+    spec = run_config.RunSpec(
+        models=("DNABERT-2-117M", "plant-dnabert-6mer"),
+        tasks=("GUE__emp_H3", "BEND__CpG_methylation"),
+        seeds=(42, 43, 44), output_root=str(tmp_path / "out"))
+
+    summary = sweep_launcher.gate_confirm_data(spec)
+
+    assert summary.cells == 12
+    assert list(summary.pairs) == [
+        ("DNABERT-2-117M", "BEND__CpG_methylation"),
+        ("DNABERT-2-117M", "GUE__emp_H3"),
+        ("plant-dnabert-6mer", "BEND__CpG_methylation"),
+        ("plant-dnabert-6mer", "GUE__emp_H3"),
+    ]
+
+
+def test_gate_confirm_data_pairs_curve_fractions_4tuples(tmp_path):
+    """The same pairs derive under curve fractions — the 4-tuple cells
+    (model, task, seed, fraction) project to the IDENTICAL pair list
+    (cell[0], cell[1] is shape-agnostic)."""
+    spec = run_config.RunSpec(
+        models=("DNABERT-2-117M", "plant-dnabert-6mer"),
+        tasks=("GUE__emp_H3", "BEND__CpG_methylation"),
+        seeds=(42,), curve_fractions=(0.25, 0.5),
+        output_root=str(tmp_path / "out"))
+
+    summary = sweep_launcher.gate_confirm_data(spec)
+
+    assert summary.cells == 8            # 2 x 2 x 1 x 2 fractions
+    assert list(summary.pairs) == [
+        ("DNABERT-2-117M", "BEND__CpG_methylation"),
+        ("DNABERT-2-117M", "GUE__emp_H3"),
+        ("plant-dnabert-6mer", "BEND__CpG_methylation"),
+        ("plant-dnabert-6mer", "GUE__emp_H3"),
+    ]
+
+
 # ===== launch_spec (the structural gate — D-07 / LNC-03) =====
 
 

@@ -18,7 +18,7 @@ and stdlib-only):
   re-renders on mark change through the run-id-tagged worker; the
   empty-selection problem copy; zero Chinese literals in the module;
 - Task 2 (the gate): the [p] modal's verbatim argv + numbered problems;
-  the [enter] 启动门 pipeline (problems block, env block with verbatim
+  the [enter] 启动确认 pipeline (problems block, env block with verbatim
   reasons, non-E2' confirm, the E2' typed-phrase live-match escalation,
   launch toasts, the enter-key pin);
 - Task 3 (exit + choices): the app-level q intercept (ExitModal
@@ -2560,3 +2560,154 @@ async def test_filter_and_kind_flip_rebuilds_keep_index_clamp():
         await pilot.pause()
         assert picker.highlighted == 0
         assert picker.key_at(picker.highlighted) == "model-07"
+
+
+# =====================================================================
+# 261016-poa Task 2 — the launch-confirmation flow: planned-pair task
+# list (UX-5), Y/N (UX-6), the entry hint line (UX-4)
+# =====================================================================
+
+
+def _pairs_fixture(n=20):
+    """n scripted (model, task) pairs for the capped-list assertions."""
+    return tuple(
+        (f"model-{i:02d}", f"task-{i:02d}") for i in range(n))
+
+
+async def test_gate_confirm_modal_lists_planned_pairs_capped():
+    """UX-5: the non-E2' confirm modal lists the ACTUAL plan under the
+    counts formula — one 模型+数据集 pair per line (LNC_GATE_PAIR_LINE)
+    from summary.pairs, service-derived (the UI renders, never
+    computes). With 20 scripted pairs the bounded RichLog shows the
+    FIRST 12 plus LNC_GATE_PAIRS_MORE with the total, never the 13th
+    pair; and from that scrollable-list state y STILL launches (the
+    log never eats the confirm keys)."""
+    from textual.widgets import RichLog
+
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import LNC_GATE_PAIR_LINE, LNC_GATE_PAIRS_MORE
+
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=1, tasks=1, seeds=3, cells=3, output_root="./finetuned",
+        is_e2x=False, expected_phrase="finetuned",
+        pairs=_pairs_fixture(20)))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        assert isinstance(app.screen, ConfirmModal)
+        log = app.screen.query_one("#cfg-gate-log", RichLog)
+        joined = "\n".join(line.text for line in log.lines)
+        assert LNC_GATE_PAIR_LINE.format(
+            model="model-00", task="task-00") in joined, (
+            "the first planned pair renders under the counts formula")
+        assert LNC_GATE_PAIR_LINE.format(
+            model="model-11", task="task-11") in joined, (
+            "the 12th pair renders (the cap)")
+        assert LNC_GATE_PAIR_LINE.format(
+            model="model-12", task="task-12") not in joined, (
+            "the 13th pair is capped away")
+        assert LNC_GATE_PAIRS_MORE.format(pairs=20) in joined, (
+            "the truncation line carries the total")
+        await pilot.press("y")
+        await _settle(pilot, app, rounds=3)
+        assert len(launcher.launch_calls) == 1, (
+            "y still launches from the scrollable-list state — the "
+            "RichLog never eats the confirm keys"
+        )
+
+
+async def test_n_cancels_gate_confirm_without_launch():
+    """UX-6: n on the launch-confirmation modal dismisses it (= esc) —
+    nothing ever launches. The binding rides the LaunchConfirmModal
+    BASE, so the slot-4 gate and the monitor [f] re-run both inherit
+    it; enter stays the documented no-op (EHC-2 untouched)."""
+    from tui.screens.selection import ConfirmModal
+
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=1, tasks=1, seeds=3, cells=3, output_root="./finetuned",
+        is_e2x=False, expected_phrase="finetuned"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        assert isinstance(app.screen, ConfirmModal)
+        await pilot.press("n")
+        await _settle_dismiss(pilot)
+        assert isinstance(app.screen, RunConfigScreen), (
+            "n dismisses the confirm modal"
+        )
+        assert launcher.launch_calls == [], "n never launches"
+
+
+async def test_n_cancels_e2_modal_only_after_y_ready_blur():
+    """UX-6 E2' twin: while the phrase Input holds focus, n TYPES (the
+    character lands in the field); after the matched-enter advance
+    (the y-ready blur), n dismisses the modal without launching."""
+    from tui.screens.run_config import E2PhraseModal
+
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=62, tasks=50, seeds=3, cells=9300,
+        output_root="./finetuned", is_e2x=True,
+        expected_phrase="finetuned"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        assert isinstance(app.screen, E2PhraseModal)
+        e2_input = app.screen.query_one("#cfg-e2-input", Input)
+        # while the Input holds focus, n is a character, never a key
+        await pilot.press("n")
+        await pilot.pause()
+        assert e2_input.value == "n", (
+            "n types into the focused phrase Input"
+        )
+        assert isinstance(app.screen, E2PhraseModal)
+        # reach the y-ready state (exact phrase + the advance blur)
+        e2_input.value = ""
+        await pilot.pause()
+        for char in "finetuned":
+            await pilot.press(char)
+        await pilot.pause()
+        await pilot.press("enter")   # the ADVANCE: blur, never launch
+        await _settle(pilot, app, rounds=2)
+        assert isinstance(app.screen, E2PhraseModal)
+        assert app.focused is not e2_input, "the advance blurred the input"
+        await pilot.press("n")
+        await _settle_dismiss(pilot)
+        assert isinstance(app.screen, RunConfigScreen), (
+            "n dismisses the E2' modal from the y-ready state"
+        )
+        assert launcher.launch_calls == [], "the n cancel never launches"
+
+
+async def test_gate_hint_line_renders_below_preview():
+    """UX-4: the persistent dim hint row renders CFG_GATE_HINT directly
+    below the preview line (the hidden enter/Y/N bindings become
+    discoverable on-screen)."""
+    from tui.strings import CFG_GATE_HINT
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        hint = screen.query_one("#cfg-gate-hint", Static)
+        assert _plain(hint.content) == CFG_GATE_HINT
+        assert "cfg-hint" in hint.classes, (
+            "the row rides the existing dim height-1 hint styling"
+        )
+        ordered = [child.id or type(child).__name__
+                   for child in screen.children]
+        assert (ordered.index("cfg-preview-line")
+                < ordered.index("cfg-gate-hint")), (
+            "the hint sits immediately after the preview line"
+        )
