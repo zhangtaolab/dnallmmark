@@ -1223,7 +1223,7 @@ async def test_rerun_confirm_routes_launch_from_failures_and_attaches():
         await pilot.press("enter")
         await _settle(pilot, app)
         assert launcher.env_calls == 0, (
-            "enter must never pass a launch gate (EHC-2)")
+            "enter must never pass a launch confirmation (EHC-2)")
         assert launcher.rerun_calls == []
         assert isinstance(app.screen, ConfirmModal), (
             "the inert enter leaves the re-run confirm up"

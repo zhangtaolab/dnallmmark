@@ -270,6 +270,12 @@ class GateSummary:
         output_root: the spec's output root, verbatim.
         is_e2x: the fresh ``is_full_e2x`` verdict.
         expected_phrase: the phrase the E2' gate demands.
+        pairs: the planned (model, task) pairs behind the counts
+            formula — the confirm modal's task list (UX-5, 261016-poa).
+            Derived SERVICE-SIDE from the fresh preview cells as an
+            ordered first-occurrence dedupe (seeds stay collapsed in
+            the counts formula, never per-row); defaulted so pre-UX-5
+            fakes construct unchanged. The UI renders, never computes.
     """
 
     models: int
@@ -279,6 +285,7 @@ class GateSummary:
     output_root: str
     is_e2x: bool
     expected_phrase: str
+    pairs: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -417,11 +424,25 @@ def gate_confirm_data(spec, run_config_service=None):
             REAL run_config module.
 
     Returns:
-        GateSummary: the fresh counts + verdict + expected phrase.
+        GateSummary: the fresh counts + verdict + expected phrase + the
+        planned (model, task) pairs (the confirm modal's task list).
     """
     rc = _run_config_service(run_config_service)
     preview_result = rc.preview(spec)
     official = rc.official_keys()
+    # UX-5 (261016-poa): the planned (model, task) pairs, service-side
+    # — an ordered first-occurrence dedupe over the FRESH preview cells
+    # ((model, task) = cell[0], cell[1]; both the 3-tuple and the
+    # curve-fraction 4-tuple shapes project identically). Seeds stay in
+    # the counts formula, never per-row; the modal renders this, it
+    # never computes its own list.
+    pairs: list[tuple[str, str]] = []
+    seen_pairs: set[tuple[str, str]] = set()
+    for cell in preview_result.cells:
+        pair = (str(cell[0]), str(cell[1]))
+        if pair not in seen_pairs:
+            seen_pairs.add(pair)
+            pairs.append(pair)
     return GateSummary(
         models=preview_result.models_count,
         tasks=preview_result.tasks_count,
@@ -430,6 +451,7 @@ def gate_confirm_data(spec, run_config_service=None):
         output_root=spec.output_root,
         is_e2x=rc.is_full_e2x(spec, official),
         expected_phrase=rc.expected_phrase(spec.output_root),
+        pairs=tuple(pairs),
     )
 
 

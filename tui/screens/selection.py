@@ -1221,25 +1221,30 @@ class ConfirmModal(ModalScreen):
 
 
 class LaunchConfirmModal(ConfirmModal):
-    """The LAUNCH-confirm variant (EHC-2, 261015-ehc ruling 2): ``y``
-    starts, ``esc`` cancels — ``enter`` can NEVER pass a launch gate (a
-    stray double-enter is structurally inert).
+    """The LAUNCH-confirm variant (EHC-2, 261015-ehc ruling 2; UX-6,
+    261016-poa): ``y`` starts, ``n``/``esc`` cancel — ``enter`` can
+    NEVER pass a launch confirmation (a stray double-enter is
+    structurally inert).
 
     Plain-MRO method overriding (the 12-03 precedent — no binding-shadow
-    semantics needed): the subclass adds the hidden ``y`` binding and
-    OVERRIDES ``action_confirm`` to a documented no-op, so the inherited
-    ``enter`` binding lands on the no-op. ``ConfirmModal`` itself and
-    every non-launch consumer (preset overwrite, queue cancels, wizard
-    cancel) stay byte-identical on enter.
+    semantics needed): the subclass adds the hidden ``y``/``n``
+    bindings and OVERRIDES ``action_confirm`` to a documented no-op, so
+    the inherited ``enter`` binding lands on the no-op. The ``n``
+    cancel rides THIS base so every launch confirm — the slot-4 gate
+    (``run_config.py`` _GateConfirmModal) and the monitor's [f]
+    re-run — inherits it. ``ConfirmModal`` itself and every non-launch
+    consumer (preset overwrite, queue cancels, wizard cancel) stay
+    byte-identical on enter.
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("y", "confirm_launch", show=False),
+        Binding("n", "dismiss", show=False),
     ]
 
     def action_confirm(self) -> None:
         """Enter is deliberately inert on launch confirms (EHC-2: only
-        ``y`` launches; the message copy names the [y] keycap)."""
+        ``y`` launches; the message copy names the [Y] keycap)."""
         # documented no-op: the inherited enter binding lands here
 
     def action_confirm_launch(self) -> None:

@@ -268,14 +268,16 @@ ENV_VERDICT_PASS = _t(
 
 # Gate verdict — critical fail (ENV-03): names the failing CRITICAL kernel
 # ids (English verbatim, main() order) with the blocking note. Amended
-# 11-05: the blocking is real (the run-config launch gate consumes the
-# verdict), so the value states it in the present tense — same constant
-# name, same {kernel_names} field.
+# 11-05: the blocking is real (the run-config launch confirmation
+# consumes the verdict), so the value states it in the present tense —
+# same constant name, same {kernel_names} field. 261016-poa (UX-3):
+# the old gate title term retired — the copy reads 启动确认 /
+# launch confirmation.
 ENV_VERDICT_CRITICAL_FAIL = _t(
     "ENV_VERDICT_CRITICAL_FAIL",
-    "✗ 关键项未通过: {kernel_names} — 启动已被运行配置启动门阻断",
+    "✗ 关键项未通过: {kernel_names} — 启动已被运行配置启动确认阻断",
     "✗ critical checks failed: {kernel_names} — launch is blocked by "
-    "the run-config gate")
+    "the run-config launch confirmation")
 
 # Missing-data routing (ENV-03/SEL-04; amended 10-03): the count, the [3]
 # keycap hint routing to the data-manager screen (the nav digit 3 IS the
@@ -1424,28 +1426,47 @@ CFG_DIR_PICKER_TITLE = _t(
     "Pick a directory — {field}")
 CFG_DIR_PICKER_SELECT_LABEL = _t(
     "CFG_DIR_PICKER_SELECT_LABEL", "选此目录", "Select Dir")
+# The slot-4 persistent dim hint line below the preview (UX-4,
+# 261016-poa): the enter/Y/N affordances are otherwise hidden bindings
+# — this row makes the launch-confirmation entry discoverable.
+CFG_GATE_HINT = _t(
+    "CFG_GATE_HINT", "回车 打开启动确认 · Y 启动 / N 取消",
+    "Enter opens launch confirmation · Y launch / N cancel")
 
-# ===== 启动门/执行 (LNC_, Phase 11) =====
-# The [enter] launch-gate pipeline, the E2' typed-phrase escalation
-# (LNC-03 — the maintainer-authorization boundary, never bypassable
-# from the UI), the launch toasts, and the app-level exit modal's
-# kill/detach/cancel row (11-UI-SPEC Copywriting Contract verbatim;
-# 11-06 renders). Format fields: {models}/{tasks}/{seeds}/{cells}
-# enumeration dimensions, {output_root}/{root} the resolved output
-# root, {dirname} the E2' typed phrase (this run's output directory
-# name), {error} a spawn diagnostic, {done}/{total} live-sweep counts.
+# ===== 启动确认/执行 (LNC_, Phase 11) =====
+# The [enter] launch-confirmation pipeline, the E2' typed-phrase
+# escalation (LNC-03 — the maintainer-authorization boundary, never
+# bypassable from the UI), the launch toasts, and the app-level exit
+# modal's kill/detach/cancel row (11-UI-SPEC Copywriting Contract
+# verbatim; 11-06 renders). Format fields: {models}/{tasks}/{seeds}/
+# {cells} enumeration dimensions, {output_root}/{root} the resolved
+# output root, {dirname} the E2' typed phrase (this run's output
+# directory name), {error} a spawn diagnostic, {done}/{total}
+# live-sweep counts.
 # 261015-ehc terminology: the zh side says 训练任务/训练项 (the en side
-# keeps the established sweep/cells wording).
+# keeps the established sweep/cells wording). 261016-poa (UX-3): the
+# old gate title term retired everywhere living — the title now
+# reads 启动确认 / Launch Confirmation; 261016-poa (UX-5/UX-6): the
+# confirm modal lists the planned {model} × {task} pairs (12 + total
+# line) and the copy names the [Y]/[N] pair.
 
-LNC_GATE_TITLE = _t("LNC_GATE_TITLE", "启动门", "Launch Gate")
+LNC_GATE_TITLE = _t("LNC_GATE_TITLE", "启动确认", "Launch Confirmation")
 LNC_GATE_SUMMARY = _t(
     "LNC_GATE_SUMMARY",
     "{models} 模型 × {tasks} 任务 × {seeds} 种子 = {cells} 训练项 → {output_root}",
     "{models} models × {tasks} tasks × {seeds} seeds = {cells} cells "
     "→ {output_root}")
 LNC_GATE_CONFIRM = _t(
-    "LNC_GATE_CONFIRM", "启动以上训练任务？— [y] 启动 / Esc 取消",
-    "Launch this sweep? — [y] launch / Esc cancel")
+    "LNC_GATE_CONFIRM", "确认启动以上训练？— [Y] 启动 / [N] 取消",
+    "Launch these training runs? — [Y] launch / [N] cancel")
+# The confirm modal's planned-pair list (UX-5): one 模型+数据集 pair per
+# line, service-derived from the fresh preview cells (seeds stay in the
+# counts formula above, never per-row); language-neutral copy. Large
+# lists cap at the first 12 pairs + the {pairs} total line.
+LNC_GATE_PAIR_LINE = _t(
+    "LNC_GATE_PAIR_LINE", "{model} × {task}", "{model} × {task}")
+LNC_GATE_PAIRS_MORE = _t(
+    "LNC_GATE_PAIRS_MORE", "…共 {pairs} 组", "… {pairs} pairs total")
 # The E2' escalation block (terraform-style typed phrase): the frozen
 # full-matrix warning wording, the authorization note, the type prompt,
 # and the live mismatch/match indicator pair.
@@ -1461,8 +1482,8 @@ LNC_E2_TYPE_PROMPT = _t(
     "LNC_E2_TYPE_PROMPT", "输入本次输出目录名以确认: {dirname}",
     "Type this run's output directory name to confirm: {dirname}")
 LNC_E2_MATCH_OK = _t(
-    "LNC_E2_MATCH_OK", "✓ 目录名匹配 — [y] 确认启动",
-    "✓ dirname matches — [y] to launch")
+    "LNC_E2_MATCH_OK", "✓ 目录名匹配 — [Y] 启动 / [N] 取消",
+    "✓ dirname matches — [Y] launch / [N] cancel")
 LNC_E2_MISMATCH = _t(
     "LNC_E2_MISMATCH", "✗ 目录名不一致 — 请完整输入 {dirname}",
     "✗ dirname mismatch — type {dirname} in full")

@@ -5,7 +5,7 @@ The operator's composition surface: OWN model/dataset pickers (the
 slot-2 interaction grammar over the registries — D-01 ruling B: slot-2
 state is NEVER read), the full CFG-01 params pane, the CFG-02/D-14 dirs
 section, the live same-source dry-run preview line (CFG-03/D-05), the
-``[p]`` detail modal, the terraform-style launch-gate pipeline (LNC-01..03)
+``[p]`` detail modal, the terraform-style launch-confirmation pipeline (LNC-01..03)
 and the RadioSet choice modals. The app-level ``q`` intercept
 (ExitModal, D-06) lives in ``tui/app.py``.
 
@@ -27,7 +27,7 @@ Contract (locked decisions):
 - WR-06: every async modal push checks ``app.below_minimum_grid`` — no
   chrome may open over the min-size guard.
 - The enter-key pin (UI-checker fix 2): ``enter`` on the picker or an
-  unfocused surface opens the launch gate; any focused Input consumes its own
+  unfocused surface opens the launch confirmation; any focused Input consumes its own
   Enter — typing can never launch (Pilot-asserted). The picker subclass
   shadows the inherited OptionList ``enter`` binding with the gate
   action; choice rows shadow it with the RadioSet action.
@@ -408,7 +408,7 @@ class PickerList(SelectionList):
     """The slot-4 picker: the SelectionList with the enter-key pin.
 
     The inherited OptionList ``enter`` binding (select) is SHADOWED by
-    the gate action — enter on the picker opens the launch gate (the
+    the gate action — enter on the picker opens the launch confirmation (the
     UI-checker fix 2 pin; only space toggles a mark).
 
     Disabled customs stay CURSOR-REACHABLE (native ``disabled=`` rows
@@ -683,16 +683,17 @@ class E2PhraseModal(_PickerReturnModal):
     INJECTED service verdict (``matches`` — the widget holds no
     matching logic, T-11-06-01). ``enter`` NEVER launches: on the
     exact-match verdict it ADVANCES to the y-ready state (blur the
-    input — while the input holds focus, ``y`` types into it, which is
-    correct; the blur is what arms the modal's ``y`` binding — the
-    indicator stays on the [y] wording); a mismatch enter stays the
-    no-op pin. ``y`` then launches, carrying the typed phrase; ``esc``
-    cancels unchanged.
+    input — while the input holds focus, ``y`` and ``n`` type into it,
+    which is correct; the blur is what arms the modal's ``y``/``n``
+    bindings — the indicator stays on the [Y]/[N] wording); a mismatch
+    enter stays the no-op pin. ``y`` then launches, carrying the typed
+    phrase; ``n``/``esc`` cancel unchanged (UX-6, 261016-poa).
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "confirm_phrase", show=False),
         Binding("y", "confirm_phrase_y", show=False),
+        Binding("n", "dismiss", show=False),
         Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
@@ -734,9 +735,9 @@ class E2PhraseModal(_PickerReturnModal):
 
     def _advance_to_y_ready(self) -> None:
         """The matched-enter ADVANCE: blur the input (arming the modal's
-        ``y`` binding — textual 8.2.8's ``set_focus(None)`` clears
+        ``y``/``n`` bindings — textual 8.2.8's ``set_focus(None)`` clears
         focused-widget key consumption) and keep the indicator on the
-        [y] wording. Never dismisses, never confirms."""
+        [Y]/[N] wording. Never dismisses, never confirms."""
         self.set_focus(None)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -800,12 +801,49 @@ class ChoiceModal(_PickerReturnModal):
         self._on_pick(value)
 
 
+#: The confirm modal's pair-list cap (UX-5, 261016-poa): at most this
+#: many model+dataset rows render before the LNC_GATE_PAIRS_MORE total
+#: line — with the formula line + the confirm row the modal stays
+#: inside the design grid even for a full-matrix plan (T-poa-02).
+_GATE_PAIR_CAP = 12
+
+
 class _GateConfirmModal(_PickerReturnModal, LaunchConfirmModal):
-    """The launch gate's confirm over the shared slot-4 base (delta B,
-    B4's one-shared-helper ruling): the local subclass ONLY adds the
-    picker-return dismiss for this screen's push site. Since 261015-ehc
-    (EHC-2) the base is ``LaunchConfirmModal`` — ``y`` starts the sweep,
-    ``esc`` cancels, ``enter`` lands on the documented no-op."""
+    """The launch confirmation's confirm over the shared slot-4 base
+    (delta B, B4's one-shared-helper ruling; UX-5, 261016-poa): the
+    local subclass adds the picker-return dismiss for this screen's
+    push site AND the planned-pair task list — the actual model+dataset
+    rows the sweep will run, SERVICE-DERIVED (``GateSummary.pairs``,
+    never UI-computed), rendered in a bounded RichLog (the EnvBlockModal
+    pattern): every pair within the cap, else the first
+    ``_GATE_PAIR_CAP`` plus the LNC_GATE_PAIRS_MORE total line. Since
+    261015-ehc (EHC-2) the base is ``LaunchConfirmModal`` — ``y``
+    starts the sweep, ``n``/``esc`` cancel, ``enter`` lands on the
+    documented no-op. The RichLog takes no focus-stealing measures: it
+    has no y/n/enter bindings of its own, so the confirm keys fall
+    through to the modal even from a clicked/focused log (Pilot-pinned).
+    """
+
+    def __init__(self, pairs: "tuple[tuple[str, str], ...] | None" = None,
+                 **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._pairs = tuple(pairs) if pairs is not None else ()
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="cfg-gate-box", classes="modal-box"):
+            yield Static(self._message, id="cfg-gate-message")
+            yield RichLog(wrap=True, id="cfg-gate-log")
+            yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one("#cfg-gate-box", Vertical).border_title = (
+            S.LNC_GATE_TITLE)
+        log = self.query_one("#cfg-gate-log", RichLog)
+        for model, task in self._pairs[:_GATE_PAIR_CAP]:
+            log.write(S.LNC_GATE_PAIR_LINE.format(model=model, task=task))
+        if len(self._pairs) > _GATE_PAIR_CAP:
+            log.write(S.LNC_GATE_PAIRS_MORE.format(
+                pairs=len(self._pairs)))
 
 
 class _DirsOnlyTree(DirectoryTree):
@@ -950,7 +988,7 @@ class DirPickerModal(ModalScreen):
 
 class RunConfigScreen(Screen):
     """The run-config screen: own pickers + params + dirs + preview +
-    the launch-gate pipeline over the two injected services."""
+    the launch-confirmation pipeline over the two injected services."""
 
     # D-13 slot 4 (the top-menu active-slot marker the nav bar reads).
     NAV_SLOT: ClassVar[int] = 4
@@ -1236,6 +1274,10 @@ class RunConfigScreen(Screen):
                             id="cfg-hint-save-defaults",
                             classes="cfg-hint")
         yield Label("", id="cfg-preview-line")
+        # UX-4 (261016-poa): the persistent dim hint below the preview —
+        # the enter/Y/N affordances are hidden bindings otherwise; the
+        # existing .cfg-hint class carries the dim height-1 row styling.
+        yield Label(S.CFG_GATE_HINT, id="cfg-gate-hint", classes="cfg-hint")
         yield BottomBar()
 
     def on_mount(self) -> None:
@@ -1312,7 +1354,7 @@ class RunConfigScreen(Screen):
         mark paths refuse them — so a spec still carrying one (marked in
         a previous session, disabled in the management overlay since)
         rendered the row UNMARKED while the status line, the preview,
-        and the launch-gate enumeration all counted and launched it, and
+        and the launch-confirmation enumeration all counted and launched it, and
         the operator could not unmark it from the UI. Sanitizing here
         makes the spec agree with the render; the first preview-worker
         save then persists the sanitized spec (the XDG state
@@ -1842,7 +1884,7 @@ class RunConfigScreen(Screen):
         root = run_config_service.directory_picker_root(focused.value)
         self.app.push_screen(DirPickerModal(focused, label, root))
 
-    # ===== the launch-gate pipeline (LNC-01..03 — [enter]) =====
+    # ===== the launch-confirmation pipeline (LNC-01..03 — [enter]) =====
 
     def action_open_gate(self) -> None:
         """[enter] opens the gate: fresh enumeration -> env preflight
@@ -1980,6 +2022,7 @@ class RunConfigScreen(Screen):
             ))
         else:
             self.app.push_screen(_GateConfirmModal(
+                pairs=summary.pairs,
                 message=(S.LNC_GATE_SUMMARY.format(
                     models=summary.models, tasks=summary.tasks,
                     seeds=summary.seeds, cells=summary.cells,

@@ -649,7 +649,8 @@ ProblemsModal,
 EnvBlockModal,
 E2PhraseModal,
 ChoiceModal,
-ExitModal {
+ExitModal,
+_GateConfirmModal {
     align: center middle;      /* the bordered box centers on screen */
 }
 
@@ -662,6 +663,15 @@ ExitModal {
 #cfg-envblock-log {
     height: auto;
     max-height: 20;  /* the bounded reasons RichLog (the inherited bound) */
+}
+
+/* UX-5 (261016-poa): the confirm modal's planned-pair list — the
+ * EnvBlockModal inherited bound, tightened to 14 so the counts formula
+ * + the capped 12-pair list + the confirm row compose inside the
+ * design grid (a scroll bound, not a spacing token; T-poa-02). */
+#cfg-gate-log {
+    height: auto;
+    max-height: 14;
 }
 
 #cfg-envblock-header {

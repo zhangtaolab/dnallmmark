@@ -1,6 +1,6 @@
 """
 Tier-2 Pilot suite for the run-config screen (Phase 11, 11-06; slot 4,
-D-01..D-05, D-14, D-19, the LNC-01..03 launch-gate pipeline, and the
+D-01..D-05, D-14, D-19, the LNC-01..03 launch-confirmation pipeline, and the
 D-06 exit triple).
 
 Pins the slot-4 screen and its app/nav wiring against the REAL
@@ -904,7 +904,7 @@ async def test_probe_hint_renders_under_variant_probe():
 
 
 # =====================================================================
-# Task 2 — the [p] modal + the launch-gate pipeline + launch toasts
+# Task 2 — the [p] modal + the launch-confirmation pipeline + launch toasts
 # =====================================================================
 
 async def test_preview_modal_renders_argv_and_problems():
@@ -986,7 +986,7 @@ async def test_gate_happy_path_confirms_and_launches():
         await pilot.press("enter")
         await _settle(pilot, app, rounds=3)
         assert launcher.launch_calls == [], (
-            "enter must never pass a launch gate (EHC-2)")
+            "enter must never pass a launch confirmation (EHC-2)")
         assert isinstance(app.screen, ConfirmModal), (
             "the inert enter leaves the modal up")
         await pilot.press("y")
@@ -1316,7 +1316,7 @@ async def test_enter_key_pin_inputs_never_launch():
         await pilot.press("enter")
         await _settle(pilot, app, rounds=4)
         assert launcher.env_calls >= 1, (
-            "enter on the picker must open the launch gate")
+            "enter on the picker must open the launch confirmation")
 
 
 async def test_gate_worker_exception_releases_flag_and_surfaces():

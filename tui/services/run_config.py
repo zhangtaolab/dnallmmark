@@ -2,7 +2,7 @@
 run_config — the slot-4 composition service (Phase 11, 11-02; CFG-01/
 CFG-02/CFG-03 + LNC-03's service-tier foundation).
 
-The pure brain under the run-config screen and the launch gate: the
+The pure brain under the run-config screen and the launch confirmation: the
 run-spec model + collect-all validation, XDG persistence of the slot-4
 OWN selection, directory resolution, the same-source dry-run preview,
 the E2' verdict + typed-phrase check, the PROBE_INELIGIBLE read-source
@@ -1126,7 +1126,7 @@ def compose_argv(spec):
     if not spec.models or not spec.tasks:
         raise ValueError(
             "compose_argv refuses an empty selection — the preview/"
-            "launch gate owns refusing it; this is the defensive "
+            "launch confirmation owns refusing it; this is the defensive "
             "backstop")
     argv = [
         sys.executable,
