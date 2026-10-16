@@ -1,7 +1,7 @@
 <!-- generated-by: quick-261015-pex (scripts/demo/record_tui_demo.py + record.sh); anchors + footage regenerate from tui/strings.py and the live presence scan -->
 # TUI Demo — The Operator Journey, Recorded on Real Tasks
 
-This is the recorded walkthrough of the DNALLM-Mark operator console: every section below embeds GIFs of the **real console driving real work** on the recording machine — a real environment check, real ModelScope downloads, a real (bounded) `plant-dnabert-6mer × iDNA_ABF_datasets__5mC` training through the y-confirm launch gate, live monitoring, a real kill, and a from-failures re-run driven to completion. There is no mockup anywhere in this document: the numbers, gates, and guardrails visible in the GIFs are the production behaviors (EHC-1..4) — the same code paths the [TUI guide](TUI-GUIDE.md) documents.
+This is the recorded walkthrough of the DNALLM-Mark operator console: every section below embeds GIFs of the **real console driving real work** on the recording machine — a real environment check, real ModelScope downloads, a real (bounded) `plant-dnabert-6mer × iDNA_ABF_datasets__5mC` training through the y-confirm launch confirmation, live monitoring, a real kill, and a from-failures re-run driven to completion. There is no mockup anywhere in this document: the numbers, gates, and guardrails visible in the GIFs are the production behaviors (EHC-1..4) — the same code paths the [TUI guide](TUI-GUIDE.md) documents.
 
 Every section ships **two recordings**: the `en` GIF boots in the default English; the `zh` GIF reaches 中文 by pressing `L` on camera (the live toggle is itself demo footage) and restores the boot language before the recording ends.
 
@@ -15,7 +15,7 @@ One trust note: the demo sweeps write only to the gitignored `finetuned/demo` an
 |---|---|
 | ![env check en](demo/gifs/env-check-en.gif) | ![env check zh](demo/gifs/env-check-zh.gif) |
 
-Each recording boots the console with a **fresh state directory**, so the eight environment kernels (`version_pins`, `dnallm`, `peft`, `cuda`, `matmul`, `numpy`, `model_dirs`, `dataset_dirs`) run live on camera; `r` re-runs them, and `enter` drills into a row's verbatim detail. The verdict block is what the slot-4 launch gate enforces.
+Each recording boots the console with a **fresh state directory**, so the eight environment kernels (`version_pins`, `dnallm`, `peft`, `cuda`, `matmul`, `numpy`, `model_dirs`, `dataset_dirs`) run live on camera; `r` re-runs them, and `enter` drills into a row's verbatim detail. The verdict block is what the slot-4 launch confirmation enforces.
 
 | Key | Action |
 |-----|--------|
@@ -93,13 +93,13 @@ Composing the run: the picker `m` flip between models and datasets, filter marks
 |-----|--------|
 | `space` / `m` | Mark a picker row / flip models ↔ datasets |
 | `p` | Dry-run preview modal (counts + the exact argv) |
-| `enter` | Open the launch gate (next section) |
+| `enter` | Open the launch confirmation (next section) |
 
 Full params pane: [Screen 4 — Run config](TUI-GUIDE.md#screen-4--run-config-运行配置).
 
 *What actually happened:* the preview line re-derives on every keystroke (`Dry run: 1 models × 1 tasks × 2 seeds = 2 cells`), and the modal's argv carries `--num_train_epochs 1` and the demo output root exactly as launched in section 6.
 
-## 6. The launch gate, y-confirm, monitoring, and the kill
+## 6. The launch confirmation, y-confirm, monitoring, and the kill
 
 | English | 中文 |
 |---|---|
@@ -109,12 +109,13 @@ The gated launch of the bounded demo training (`plant-dnabert-6mer × iDNA_ABF_d
 
 | Key | Action |
 |-----|--------|
-| `enter` | Open the launch gate (from the picker) |
+| `enter` | Open the launch confirmation (from the picker) |
 | `y` | Confirm the launch (the only key that can) |
+| `n` | Cancel the launch confirmation (2026-10-16 UX round — the confirm modal now also lists the planned 模型 × 数据集 pairs under the counts formula; both postdate this recording) |
 | `t` / `f` | Log-tail modal / failures modal |
 | `q` → `k` | Exit modal → kill the live sweep and quit |
 
-Full gate pipeline and the E2' typed-phrase escalation: [The launch gate and the E2' trust boundary](TUI-GUIDE.md#the-launch-gate-and-the-e2-trust-boundary).
+Full confirmation pipeline and the E2' typed-phrase escalation: [The launch confirmation and the E2' trust boundary](TUI-GUIDE.md#the-launch-confirmation-and-the-e2-trust-boundary).
 
 *What actually happened (honest limits, WINDOWS #26/#27):* the recording machine's console reliably stops processing input ~60 s after a launch (around the first cell's completion output burst), which makes two planned moments unreachable on this box — folding seed 42 to `1/2` before the kill, and carrying a second in-session launch. The recording therefore kills mid-seed-42 (`0/2` running), and the fast-failure sweep that feeds section 8's re-run was produced off-camera through the maintainer CLI surface (`run_sweep.py` on the reset dataset) before the recording booted — RECORDED.md documents that prep on the launch rows.
 

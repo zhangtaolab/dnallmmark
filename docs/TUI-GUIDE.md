@@ -16,7 +16,7 @@ Typical first session:
 1. `make tui` — the console opens on the **environment check** screen (slot 1). A same-day cached check renders instantly; otherwise the eight kernels run in a background worker.
 2. Press `2` — the models screen: browse and mark models (space marks, `/` filters), download a missing adapted model with `d`, reveal unadapted entries with `t`.
 3. Press `3` — the datasets screen: the full dataset list with download state; `d` enqueues the cursor's missing dataset, `a` enqueues all; the queue persists across restarts and resumes at boot.
-4. Press `4` — compose the run (seeds, PEFT, variant, dirs), press `p` for a dry-run preview, press `enter` to go through the launch gate.
+4. Press `4` — compose the run (seeds, PEFT, variant, dirs), press `p` for a dry-run preview, press `enter` to go through the launch confirmation.
 5. Press `5` (or let the launch jump you there) — watch the sweep: cell states, ETA, failures, log tail.
 
 Terminal contract: the console requires at least **80x24**. Below that, every screen is replaced by the min-size message showing the current dimensions; grow the window to restore.
@@ -59,7 +59,7 @@ While any modal is open, screen/app keys do not fire (`esc` is the universal clo
 
 ## Screen 1 — Environment check (环境检查)
 
-Runs the eight `pipeline/env_smoke.py` kernels and shows the verdict that the slot-4 launch gate enforces. Results persist for the local calendar day: a same-day restart renders the cached result instantly and runs zero kernels.
+Runs the eight `pipeline/env_smoke.py` kernels and shows the verdict that the slot-4 launch confirmation enforces. Results persist for the local calendar day: a same-day restart renders the cached result instantly and runs zero kernels.
 
 The eight rows, in kernel order: `version_pins`, `dnallm`, `peft`, `cuda`, `matmul`, `numpy`, `model_dirs`, `dataset_dirs`.
 
@@ -70,7 +70,7 @@ The eight rows, in kernel order: `version_pins`, `dnallm`, `peft`, `cuda`, `matm
 
 Verdict block (rendered from `tui/services/env_gate.py`):
 
-- A failure in any **critical** kernel — `version_pins`, `dnallm`, `peft`, `cuda`, `matmul`, `numpy` — renders "✗ 关键项未通过" naming the kernels, and the slot-4 launch gate blocks the launch (env preflight re-runs the same critical set at gate time).
+- A failure in any **critical** kernel — `version_pins`, `dnallm`, `peft`, `cuda`, `matmul`, `numpy` — renders "✗ 关键项未通过" naming the kernels, and the slot-4 launch confirmation blocks the launch (env preflight re-runs the same critical set at gate time).
 - A `dataset_dirs` failure does not block launch by itself; it renders the routing hint "⚠ {n} 个数据集目录缺失 — [3] 前往数据管理" with the CLI re-audit command (`python script/audit_n_frequencies.py`).
 
 ## Screen 2 — Models (模型)
@@ -124,14 +124,14 @@ The queue is serial, persisted to XDG state, and resumed automatically on the ne
 
 ## Screen 4 — Run config (运行配置)
 
-The composition surface: its own model/dataset pickers (slot 2's marks are never read here — this screen owns a persistent run spec), the params pane, directory fields, a live dry-run preview line, and the launch gate.
+The composition surface: its own model/dataset pickers (slot 2's marks are never read here — this screen owns a persistent run spec), the params pane, directory fields, a live dry-run preview line, the launch-confirmation entry hint, and the launch confirmation.
 
 | Key | Action |
 |-----|--------|
 | `space` | Toggle the mark on the picker's cursor row. Marks live in the run spec itself and persist to XDG state; disabled customs warn instead of marking. |
 | `m` | Flip the picker between models and datasets. |
 | `/` | Focus the picker filter (same grammar as slot 2). `esc` clears it. |
-| `enter` | **Open the launch gate** (see the next section). On the picker itself, `enter` is pinned to the gate — only `space` marks. On a focused choice row (PEFT / variant), `enter` opens that row's radio-set modal instead; a focused text input consumes its own `enter` (re-applies the field) — typing can never launch. |
+| `enter` | **Open the launch confirmation** (see the next section). On the picker itself, `enter` is pinned to the confirmation — only `space` marks. On a focused choice row (PEFT / variant), `enter` opens that row's radio-set modal instead; a focused text input consumes its own `enter` (re-applies the field) — typing can never launch. |
 | `p` | Dry-run preview modal: the same-source enumeration counts, the note that the gate re-derives everything fresh, the exact `run_sweep.py` argv (verbatim, when the spec is clean), and the numbered problem list otherwise. |
 
 Params pane fields (edits persist and re-derive the preview line on every change):
@@ -148,16 +148,16 @@ Params pane fields (edits persist and re-derive the preview line on every change
 
 After a successful launch the console toasts the cell count and auto-switches to the monitor (slot 5) with the new sweep attached.
 
-## The launch gate and the E2' trust boundary
+## The launch confirmation and the E2' trust boundary
 
-`enter` on slot 4 opens a terraform-style gate pipeline. Every stage recomputes through the services — the preview line's cache is never trusted:
+`enter` on slot 4 opens a terraform-style confirmation pipeline — a persistent dim hint line below the preview line (`回车 打开启动确认 · Y 启动 / N 取消`) names the entry key and the confirm keys so the flow is discoverable without the docs. Every stage recomputes through the services — the preview line's cache is never trusted:
 
 1. **Fresh enumeration** — invalid specs (empty selection, bad seeds/curve, probe-ineligible models, PEFT×variant composition, invalid output root) open the numbered problems modal and nothing launches. A launch into an output root that already has a **live** sweep is also refused here, naming the root.
 2. **Env preflight** — the critical kernel set re-runs; failure opens the env-block modal naming the failing kernels and their verbatim reasons (route to slot 1, press `r` after fixing).
-3. **Confirm** — a summary modal (models × tasks × seeds → cells, output root). **`y` launches, `esc` cancels** — `enter` is deliberately inert on launch confirms (EHC-2, 2026-10-15: a stray double-enter can never start GPU work).
+3. **Confirm** — a summary modal: the counts formula (models × tasks × seeds → cells, output root) with the actual **task plan listed under it** — one `模型 × 数据集` pair per line, derived fresh from the same enumeration (never the screen's cache); long plans cap at the first 12 pairs plus a `…共 N 组` total line. **`y` launches, `n`/`esc` cancel** — `enter` is deliberately inert on launch confirms (EHC-2, 2026-10-15: a stray double-enter can never start GPU work; the `n` cancel joined with UX-6, 2026-10-16).
 4. **E2' escalation (when applicable)** — if the spec is the **full official re-run** (models superset of the official registry, tasks superset of the official trainable tasks, and **≥ 3 seeds** — `E2X_MIN_SEEDS = 3`, `tui/services/run_config.py`), the plain confirm is replaced by the typed-phrase modal.
 
-The typed-phrase modal ("⚠ 全量 E2' 训练任务 — 59 模型 × 50 数据集 × 3 种子 = 8850 训练项") demands the operator type the **final directory name of the resolved absolute output root** (e.g. an output root `./finetuned` demands the phrase `finetuned` — the modal itself shows the exact expected name). The verdict is exact string equality — no stripping, no case folding — evaluated by the service tier on every keystroke (the widget holds no matching logic). **The confirm is a two-step (EHC-2, 2026-10-15): type the phrase, press `enter` to advance to the y-ready state (the input blurs, the indicator shows the [y] wording — `enter` never launches), then press `y` to launch.** The phrase stays double insurance on top of the y-confirm. The check fails closed on a degenerate empty phrase, and the launcher service re-proves the phrase structurally before spawning — no widget path can normalize its way past it. This is the maintainer authorization boundary for full E2' runs.
+The typed-phrase modal ("⚠ 全量 E2' 训练任务 — 59 模型 × 50 数据集 × 3 种子 = 8850 训练项") demands the operator type the **final directory name of the resolved absolute output root** (e.g. an output root `./finetuned` demands the phrase `finetuned` — the modal itself shows the exact expected name). The verdict is exact string equality — no stripping, no case folding — evaluated by the service tier on every keystroke (the widget holds no matching logic). **The confirm is a two-step (EHC-2, 2026-10-15): type the phrase, press `enter` to advance to the y-ready state (the input blurs, the indicator shows the [Y] 启动 / [N] 取消 wording — `enter` never launches), then press `y` to launch or `n` to cancel.** The phrase stays double insurance on top of the y-confirm. The check fails closed on a degenerate empty phrase, and the launcher service re-proves the phrase structurally before spawning — no widget path can normalize its way past it. This is the maintainer authorization boundary for full E2' runs.
 
 The same gate, including the E2' phrase, applies to the monitor's from-failures re-run (below): an E2'-class effective matrix refuses at the phrase stage and re-prompts.
 
@@ -177,7 +177,7 @@ The **entries table** (columns 模型 / 任务 / 状态 / 进度) folds each ent
 |-----|--------|
 | `enter` | On the discovered table: **attach** the cursor's sweep root (the `◆` marker moves; the entries table, stats, failures, and log keys rebind to it; a toast confirms). On the entries table: open the entry-detail modal — per-seed states, per-fraction lines, and each seed's `run_record` fields verbatim. |
 | `f` | Failures modal over the attached root (live failure records / `sweep_failures.json`): one row per failure; `enter` drills the verbatim error string. |
-| `r` *(inside the failures modal)* | Re-run the failures — behind its own **launch confirm** (real GPU spend: `y` starts, `esc` cancels, `enter` is inert — EHC-2), then the **same gate as slot 4**: env preflight first, the E2' phrase (type, `enter` to advance, `y` to launch) if the effective matrix demands it, then a `--from-failures` launch at the sweep's own root carrying the source sweep's own lane (`--peft` / `--config-variant` recovered from its artifacts). |
+| `r` *(inside the failures modal)* | Re-run the failures — behind its own **launch confirm** (real GPU spend: `y` starts, `n`/`esc` cancel, `enter` is inert — EHC-2), then the **same gate as slot 4**: env preflight first, the E2' phrase (type, `enter` to advance, `y` to launch) if the effective matrix demands it, then a `--from-failures` launch at the sweep's own root carrying the source sweep's own lane (`--peft` / `--config-variant` recovered from its artifacts). |
 | `t` | Log-tail modal: the attached sweep's tee file, refreshed on the 2s cadence while open; the dim line names the file. A CLI-launched sweep (no tee) renders the designed unavailable state and schedules no refresh. |
 | `a` | Attach a **manual root**: path modal, validated as a real sweep root; invalid paths keep the modal open with the reason. Manual roots persist across sessions. |
 | `r` *(screen level)* | Immediate full rescan; the count toast lands when the scan does. |
@@ -228,11 +228,11 @@ Overrides (whole directory; empty value = unset): `DNALLMMARK_TUI_STATE_DIR`, `D
 
 ## Troubleshooting
 
-**The launch gate blocked with an env failure (EnvBlockModal).** The critical kernels are `version_pins`, `dnallm`, `peft`, `cuda`, `matmul`, `numpy`. Go to slot 1, `enter` the failing row for the verbatim reason, fix, press `r`, then retry the gate. Common causes: `dnallm` is deliberately not in any committed dependency group — it must be installed manually from a local clone (see `docs/CONFIGURATION.md`); `cuda`/`matmul` require the `gpu` group and a real GPU (`make tui` already includes `--group gpu`).
+**The launch confirmation blocked with an env failure (EnvBlockModal).** The critical kernels are `version_pins`, `dnallm`, `peft`, `cuda`, `matmul`, `numpy`. Go to slot 1, `enter` the failing row for the verbatim reason, fix, press `r`, then retry the gate. Common causes: `dnallm` is deliberately not in any committed dependency group — it must be installed manually from a local clone (see `docs/CONFIGURATION.md`); `cuda`/`matmul` require the `gpu` group and a real GPU (`make tui` already includes `--group gpu`).
 
 **Missing datasets (dataset_dirs ✗ / presence ✗).** Slot 1 shows the count and the `[3]` routing hint. On slot 3, `d` enqueues the cursor's missing row or `a` enqueues all; watch the queue pane (states, progress bar, reconcile column). Presence flips to ✓ exactly when a download lands and reconciles. If a download finishes as **mismatch** (declared vs measured rows differ), fix the cause and press `g` on the row to re-audit; **failed** rows are re-queued with `r`. A `cli_unavailable` toast means the ModelScope CLI is not on PATH; a `disabled` toast names the dataset key whose channel is disabled in the registry.
 
-**Keys 1–6 or `enter` "do nothing" while typing.** A focused input consumes its keystrokes. Press `esc` (clears the filter and refocuses the table) or move focus off the input. Related pin: a focused text input also consumes `enter`, so typing parameters can never open the launch gate — `enter` opens the gate only from the picker or an unfocused surface.
+**Keys 1–6 or `enter` "do nothing" while typing.** A focused input consumes its keystrokes. Press `esc` (clears the filter and refocuses the table) or move focus off the input. Related pin: a focused text input also consumes `enter`, so typing parameters can never open the launch confirmation — `enter` opens the confirmation only from the picker or an unfocused surface.
 
 **The terminal went blank with a single Chinese line.** The window is below 80×24 — the min-size guard replaced everything. Enlarge the window; the previous screen (and any open modal beneath the guard) is restored exactly.
 

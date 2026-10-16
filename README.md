@@ -376,7 +376,7 @@ The shell is a top bar of six digit-prefixed screens (UI copy is Chinese; the sl
 | `1` | 环境检查 (environment check) | Seven environment-smoke kernels; the critical set gates every launch |
 | `2` | 模型 (models) | One model table: selection marks, the dnllm-adaptation verdict (适配), and live disk presence (下载); `d` downloads the cursor's model through the dnallm channel |
 | `3` | 数据集 (datasets) | The dataset table plus a persistent download queue: per-dataset ModelScope downloads are the default channel, the Zenodo whole-package bundle is the alternate (`z`); presence flips only after a landed download reconciles against the declared row count |
-| `4` | 运行配置 (run config) | Compose the model × dataset × seed matrix and parameters; the launch gate runs env preflight, and a typed-phrase confirm guards full-matrix launches |
+| `4` | 运行配置 (run config) | Compose the model × dataset × seed matrix and parameters; the launch confirmation runs env preflight, lists the planned model × dataset pairs, and a typed-phrase confirm guards full-matrix launches |
 | `5` | 任务监控 (monitor) | Attach to running sweeps (CLI-launched included), live rescans, and a failures modal with re-run |
 | `6` | 关于 (about) | Version and project information |
 

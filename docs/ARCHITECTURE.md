@@ -43,7 +43,7 @@ Supporting CPU-importable seams (importable without torch or dnallm installed):
 - **`pipeline/flops_counter.py`** — `FlopsCounter` registers per-layer PyTorch forward hooks with class-name dispatch across ~20 attention/SSM/CNN architectures (BERT-style, Llama/Gemma GQA, BigBird, Hyena, Mamba/Mamba2, Caduceus, Enformer/Borzoi, megaDNA, …). `torch.nn` resolves through the lazy `_torch_nn()` seam so the CPU dev/CI lane can import and stub-test it. Reports carry `schema_version`, `uncovered_layers`, and an optional `hardware` section per `schemas/flops_report.json`.
 - **`pipeline/registry_loader.py`** — the single official + custom registry overlay seam (custom files live under the user's XDG config dir, collisions fail fast, byte-identical to the official view when no overlay exists).
 - **`pipeline/artifact_loader.py`** — tolerant JSON artifact reads returning a `None` sentinel on any parse-level failure.
-- **`pipeline/env_smoke.py`** — structured `PASS:`/`FAIL:` environment kernels (torch/transformers pin checks, CUDA availability, dataset presence) behind the E2' launch gate.
+- **`pipeline/env_smoke.py`** — structured `PASS:`/`FAIL:` environment kernels (torch/transformers pin checks, CUDA availability, dataset presence) behind the E2' launch confirmation.
 - **`pipeline/dnallm_compat.json`** — the committed dnallm adaptation verdict map (59 model keys, 36 with `dnllm_adapted` true, stamped with the audited `dnallm_commit`; regenerated offline by `script/audit_dnallm_compat.py`). Read only through `tui/services/registries.py::load_dnallm_compat()` — the one tolerant loader, consumed by both the slot-2 model pool filter and the download queue's model channel resolution.
 
 ### 2. Offline data chain (`script/` + `scripts/`, CPU-only)
