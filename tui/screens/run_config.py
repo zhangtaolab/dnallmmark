@@ -1744,15 +1744,21 @@ class RunConfigScreen(Screen):
 
     # ===== the F4W actions (261014-f4w: [s] save-defaults, ctrl+o picker) =====
 
-    #: The five dir-input ids -> their CFG_FIELD labels (the picker's
-    #: modal title + the open-condition allowlist).
-    _DIR_INPUT_FIELDS: ClassVar[dict[str, str]] = {
-        "#cfg-input-output-root": S.CFG_FIELD_OUTPUT_ROOT,
-        "#cfg-input-dataset-root": S.CFG_FIELD_DATASET_ROOT,
-        "#cfg-input-model-root": S.CFG_FIELD_MODEL_ROOT,
-        "#cfg-input-log-dir": S.CFG_FIELD_LOG_DIR,
-        "#cfg-input-cache": S.CFG_FIELD_CACHE,
-    }
+    @staticmethod
+    def _dir_input_fields() -> "dict[str, str]":
+        """The five dir-input ids -> their CFG_FIELD labels (the picker's
+        modal title + the open-condition allowlist), re-derived at CALL
+        time (CR-01, quick-261016-hhx — the 08 review: a class-body
+        ClassVar froze the import-time language into the ctrl+o picker
+        title; the function reads S.* fresh so the title follows the
+        live language)."""
+        return {
+            "#cfg-input-output-root": S.CFG_FIELD_OUTPUT_ROOT,
+            "#cfg-input-dataset-root": S.CFG_FIELD_DATASET_ROOT,
+            "#cfg-input-model-root": S.CFG_FIELD_MODEL_ROOT,
+            "#cfg-input-log-dir": S.CFG_FIELD_LOG_DIR,
+            "#cfg-input-cache": S.CFG_FIELD_CACHE,
+        }
 
     def action_save_directory_defaults(self) -> None:
         """[s] — atomically write the five dir values to
@@ -1795,7 +1801,7 @@ class RunConfigScreen(Screen):
         focused = self.focused
         if not isinstance(focused, Input) or focused.id is None:
             return
-        label = self._DIR_INPUT_FIELDS.get(f"#{focused.id}")
+        label = self._dir_input_fields().get(f"#{focused.id}")
         if label is None:
             return
         root = run_config_service.directory_picker_root(focused.value)

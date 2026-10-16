@@ -858,17 +858,22 @@ _MODEL_COMPAT_W = 8
 #: h-scroll). The static four-state vocabulary stays untouched.
 _MODEL_DOWNLOAD_W = 28
 
-#: The models-only column set (MLC-02): mark / model key / type /
-#: species / size / compat / download.
-_MODEL_COLUMNS: tuple[tuple[str, str, int], ...] = (
-    (_COL_MARK, S.SEL_COL_MARK, 2),
-    (_COL_KEY, S.SEL_COL_MODEL, _MODEL_KEY_W),
-    ("type", S.SEL_COL_TYPE, _MODEL_TYPE_W),
-    ("species", S.SEL_COL_SPECIES, _MODEL_SPECIES_W),
-    ("size", S.SEL_COL_SIZE, _MODEL_SIZE_W),
-    (_COL_COMPAT, S.SEL_COL_COMPAT, _MODEL_COMPAT_W),
-    (_COL_DOWNLOAD, S.SEL_COL_DOWNLOAD, _MODEL_DOWNLOAD_W),
-)
+def _model_columns() -> "tuple[tuple[str, str, int], ...]":
+    """The models-only column set (MLC-02), re-derived at CALL time
+    (CR-01, quick-261016-hhx — the 08 review): a module-level tuple
+    would freeze the import-time language into every _rebuild_rows;
+    reading S.* fresh keeps the headers in ONE language after the L
+    toggle or a persisted-zh boot. mark / model key / type / species /
+    size / compat / download."""
+    return (
+        (_COL_MARK, S.SEL_COL_MARK, 2),
+        (_COL_KEY, S.SEL_COL_MODEL, _MODEL_KEY_W),
+        ("type", S.SEL_COL_TYPE, _MODEL_TYPE_W),
+        ("species", S.SEL_COL_SPECIES, _MODEL_SPECIES_W),
+        ("size", S.SEL_COL_SIZE, _MODEL_SIZE_W),
+        (_COL_COMPAT, S.SEL_COL_COMPAT, _MODEL_COMPAT_W),
+        (_COL_DOWNLOAD, S.SEL_COL_DOWNLOAD, _MODEL_DOWNLOAD_W),
+    )
 
 # Row keys for the non-registry state rows (never mark/filter targets).
 _LOADING_ROW_KEY = "_loading"
@@ -884,17 +889,20 @@ _STYLE_PRESENCE_PASS = "$success"
 _STYLE_PRESENCE_FAIL = "bold $error"
 _STYLE_PRESENCE_UNKNOWN = "$text-muted"
 
-#: The live model-download overlay's state -> (copy, style) cells
-#: (C4J-1, 261015-c4j): the COPY comes from the queue block's
-#: kind-agnostic ``QUEUE_STATE_*`` vocabulary (reused verbatim, never
-#: re-minted — the queue table renders the same words); only the style
-#: pairing mirrors the data-manager queue table. An unrecognized live
-#: state renders VERBATIM (honest, never translated).
-_QUEUE_STATE_CELLS: "dict[str, tuple[str, str]]" = {
-    "pending": (S.QUEUE_STATE_PENDING, _STYLE_PRESENCE_UNKNOWN),
-    "downloading": (S.QUEUE_STATE_DOWNLOADING, "dim"),
-    "failed": (S.QUEUE_STATE_FAILED, _STYLE_PRESENCE_FAIL),
-}
+def _queue_state_cells() -> "dict[str, tuple[str, str]]":
+    """The live model-download overlay's state -> (copy, style) cells
+    (C4J-1, 261015-c4j; CR-01, quick-261016-hhx: re-derived at CALL time
+    so the state words follow the live language): the COPY comes from
+    the queue block's kind-agnostic ``QUEUE_STATE_*`` vocabulary (reused
+    verbatim, never re-minted — the queue table renders the same
+    words); only the style pairing mirrors the data-manager queue
+    table. An unrecognized live state renders VERBATIM (honest, never
+    translated)."""
+    return {
+        "pending": (S.QUEUE_STATE_PENDING, _STYLE_PRESENCE_UNKNOWN),
+        "downloading": (S.QUEUE_STATE_DOWNLOADING, "dim"),
+        "failed": (S.QUEUE_STATE_FAILED, _STYLE_PRESENCE_FAIL),
+    }
 
 
 def _truncate(text: Text, width: int) -> Text:
@@ -952,7 +960,7 @@ def _model_download_cell(data: SelectionData, key: str,
     C4J-1 composition is kept byte-identical on the None path).
     """
     if live_state is not None:
-        copy, style = _QUEUE_STATE_CELLS.get(
+        copy, style = _queue_state_cells().get(
             live_state, (live_state, _STYLE_PRESENCE_UNKNOWN))
         if live_state == "downloading" and live_percent is not None:
             segments: list[Text] = [
@@ -1571,7 +1579,7 @@ class SelectionScreen(Screen):
         self._live_models = self._live_model_entries()
         table = self.query_one("#selection-table", DataTable)
         table.clear(columns=True)
-        for column_key, header, width in _MODEL_COLUMNS:
+        for column_key, header, width in _model_columns():
             table.add_column(header, key=column_key, width=width)
 
         data = self._data

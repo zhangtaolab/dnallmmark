@@ -1616,6 +1616,13 @@ MON_ETA_UNKNOWN = _t("MON_ETA_UNKNOWN", "—", "—")
 MON_FAILURES_TITLE = _t(
     "MON_FAILURES_TITLE", "失败清单 ({n}) — sweep_failures.json",
     "Failures ({n}) — sweep_failures.json")
+# CR-01 (quick-261016-hhx, 08 review): the [f] keycap's OWN registry
+# constant — byte-equal to the old MON_FAILURES_TITLE.split(" (")[0]
+# projection in BOTH languages, so the zh goldens stay byte-identical —
+# replacing the consuming module's split() substring, which never
+# byte-matched any registry value and therefore could not translate
+# under remap_binding_descriptions.
+MON_FAILURES_KEYCAP = _t("MON_FAILURES_KEYCAP", "失败清单", "Failures")
 MON_FAILURES_EMPTY = _t(
     "MON_FAILURES_EMPTY", "✓ 无失败训练项", "✓ no failed cells")
 MON_FAILURE_ROW = _t(
@@ -1648,6 +1655,11 @@ MON_RERUN_NO_SEEDS = _t(
 # The [t] log tail (MON-04/D-10): title, the dim tee line, the designed
 # CLI-launched unavailable state (never a fabricated empty log).
 MON_LOG_TITLE = _t("MON_LOG_TITLE", "日志尾随 — {root}", "Log tail — {root}")
+# CR-01 (quick-261016-hhx, 08 review): the [t] keycap's OWN registry
+# constant — byte-equal to the old MON_LOG_TITLE.split(" — {")[0]
+# projection in BOTH languages (zh goldens stay byte-identical); also
+# removes the width coupling to the title's separator wording.
+MON_LOG_KEYCAP = _t("MON_LOG_KEYCAP", "日志尾随", "Log tail")
 MON_LOG_TEE_LINE = _t(
     "MON_LOG_TEE_LINE", "tee 落盘: {path}", "tee file: {path}")
 MON_LOG_UNAVAILABLE = _t(

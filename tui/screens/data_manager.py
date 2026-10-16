@@ -146,28 +146,39 @@ _CONTENT_PAD = 2
 #: mismatch state cell) needs 12 display cells.
 _DOWNLOAD_W = 14
 
-#: (column key, header constant, width) — the column keys are the
-#: update_cell addressing scheme (English technical ids, I18N-01).
-_QUEUE_COLUMNS: tuple[tuple[str, str, int], ...] = (
-    ("task", S.QUEUE_COL_TASK, _TASK_W),
-    ("state", S.QUEUE_COL_STATE, _STATE_W),
-    ("progress", S.QUEUE_COL_PROGRESS, _PROGRESS_W),
-    ("reconcile", S.QUEUE_COL_RECONCILE, 0),  # 0 = the flex remainder
-)
+#: The queue table's column set, re-derived at CALL time (CR-01,
+#: quick-261016-hhx — the 08 review): a module-level tuple would freeze
+#: the import-time language into every render; the function reads S.*
+#: fresh so the L toggle and a persisted-zh boot label the table in ONE
+#: language. (column key, header constant, width) — the column keys are
+#: the update_cell addressing scheme (English technical ids, I18N-01).
+def _queue_columns() -> "tuple[tuple[str, str, int], ...]":
+    return (
+        ("task", S.QUEUE_COL_TASK, _TASK_W),
+        ("state", S.QUEUE_COL_STATE, _STATE_W),
+        ("progress", S.QUEUE_COL_PROGRESS, _PROGRESS_W),
+        ("reconcile", S.QUEUE_COL_RECONCILE, 0),  # 0 = the flex remainder
+    )
 
-_MISSING_COLUMNS: tuple[tuple[str, str, int], ...] = (
-    ("key", S.DL_MISSING_COL_KEY, _TASK_W),
-    ("rows", S.DL_MISSING_COL_ROWS, 0),
-)
 
-#: The PRIMARY full-list columns (MLC-03): key / download (the merged
-#: presence status, overlaid by a live queue entry's state word) /
-#: the declared-rows column (the n_audit baseline totals).
-_FULL_COLUMNS: tuple[tuple[str, str, int], ...] = (
-    ("key", S.DL_MISSING_COL_KEY, _TASK_W),
-    ("download", S.DL_COL_DOWNLOAD, _DOWNLOAD_W),
-    ("rows", S.DL_MISSING_COL_ROWS, 0),
-)
+def _missing_columns() -> "tuple[tuple[str, str, int], ...]":
+    """The missing-only alternate view's columns (CR-01: render-time)."""
+    return (
+        ("key", S.DL_MISSING_COL_KEY, _TASK_W),
+        ("rows", S.DL_MISSING_COL_ROWS, 0),
+    )
+
+
+def _full_columns() -> "tuple[tuple[str, str, int], ...]":
+    """The PRIMARY full-list columns (MLC-03; CR-01: render-time): key /
+    download (the merged presence status, overlaid by a live queue
+    entry's state word) / the declared-rows column (the n_audit
+    baseline totals)."""
+    return (
+        ("key", S.DL_MISSING_COL_KEY, _TASK_W),
+        ("download", S.DL_COL_DOWNLOAD, _DOWNLOAD_W),
+        ("rows", S.DL_MISSING_COL_ROWS, 0),
+    )
 
 # Row keys for the non-entry state rows (never action targets).
 _MISSING_EMPTY_ROW_KEY = "_missing-empty"
@@ -184,14 +195,18 @@ _STYLE_RUNNING = "dim"
 _STYLE_DONE = "bold $success"
 _STYLE_FAIL = "bold $error"
 _STYLE_WARN = "$warning"
-#: The five queue states -> (copy constant, style).
-_STATE_CELLS = {
-    "pending": (S.QUEUE_STATE_PENDING, _STYLE_MUTED),
-    "downloading": (S.QUEUE_STATE_DOWNLOADING, _STYLE_RUNNING),
-    "done": (S.QUEUE_STATE_DONE, _STYLE_DONE),
-    "failed": (S.QUEUE_STATE_FAILED, _STYLE_FAIL),
-    "mismatch": (S.QUEUE_STATE_MISMATCH, _STYLE_WARN),
-}
+
+
+def _state_cells() -> "dict[str, tuple[str, str]]":
+    """The five queue states -> (copy constant, style), re-derived at
+    CALL time (CR-01 — the state words follow the live language)."""
+    return {
+        "pending": (S.QUEUE_STATE_PENDING, _STYLE_MUTED),
+        "downloading": (S.QUEUE_STATE_DOWNLOADING, _STYLE_RUNNING),
+        "done": (S.QUEUE_STATE_DONE, _STYLE_DONE),
+        "failed": (S.QUEUE_STATE_FAILED, _STYLE_FAIL),
+        "mismatch": (S.QUEUE_STATE_MISMATCH, _STYLE_WARN),
+    }
 
 
 @dataclass(frozen=True)
@@ -671,7 +686,7 @@ class DataManagerScreen(Screen):
         table = self.query_one("#dl-queue", DataTable)
         table.cursor_type = "row"
         table.zebra_stripes = True
-        for column_key, header, width in _QUEUE_COLUMNS:
+        for column_key, header, width in _queue_columns():
             if width:
                 table.add_column(header, key=column_key, width=width)
             else:
@@ -852,7 +867,7 @@ class DataManagerScreen(Screen):
         if self._presence_view:
             self._render_presence_view(table, snapshot)
             return
-        for column_key, header, width in _MISSING_COLUMNS:
+        for column_key, header, width in _missing_columns():
             if width:
                 table.add_column(header, key=column_key, width=width)
             else:
@@ -886,7 +901,7 @@ class DataManagerScreen(Screen):
         message; no service change) and the declared total right-aligned
         in the rows column — the service already decided (PresenceRow);
         this renders only."""
-        for column_key, header, width in _FULL_COLUMNS:
+        for column_key, header, width in _full_columns():
             if width:
                 table.add_column(header, key=column_key, width=width)
             else:
@@ -915,7 +930,7 @@ class DataManagerScreen(Screen):
                 # (pending/downloading/failed/mismatch — the queue
                 # table's own vocabulary; a done entry reads through the
                 # merged presence instead)
-                copy, overlay_style = _STATE_CELLS.get(
+                copy, overlay_style = _state_cells().get(
                     live_states[row.key],
                     (live_states[row.key], _STYLE_MUTED))
                 download_cell = Text(copy, style=overlay_style)
@@ -1016,8 +1031,9 @@ class DataManagerScreen(Screen):
 
     @staticmethod
     def _state_cell(entry: QueueEntry) -> Text:
-        """The state cell: the glyph-first copy + its style vocabulary."""
-        copy, style = _STATE_CELLS.get(
+        """The state cell: the glyph-first copy + its style vocabulary
+        (CR-01: the vocabulary re-derives at render time)."""
+        copy, style = _state_cells().get(
             entry.state, (entry.state, _STYLE_MUTED))
         return Text(copy, style=style)
 

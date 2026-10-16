@@ -180,89 +180,116 @@ class KindSpec:
     kind_name: str
 
 
-#: The D-02 quirk checkbox trio: entry ``quirks`` key -> (label constant,
-#: widget id). Unchecked default; the values land in the candidate's
-#: ``quirks`` field (the execution-side mapping is Phase 11's).
-QUIRK_FIELDS = (
-    ("no_safetensors", S.WIZ_QUIRK_NO_SAFETENSORS, "quirk-no-safetensors"),
-    ("fp32_only", S.WIZ_QUIRK_FP32_ONLY, "quirk-fp32-only"),
-    ("special_head", S.WIZ_QUIRK_SPECIAL_HEAD, "quirk-special-head"),
-)
+#: The wizard's kind vocabulary — language-NEUTRAL ids (data, never
+#: copy), the ctor-validation set (CR-01, quick-261016-hhx: the old KINDS
+#: dict froze the import-time language into its KindSpec values).
+_KIND_NAMES: tuple = ("models", "datasets")
 
-#: The model wizard's four steps (09-UI-SPEC step table, CUST-01).
-MODEL_STEPS = (
-    StepSpec(S.WIZM_STEPS[0], (
-        FieldSpec("key", "key", "input"),
-        FieldSpec("Model_path", "model-path", "path"),
-        FieldSpec("size (M)", "size-m", "numeric"),
-        FieldSpec("species", "species", "selection"),
-    )),
-    StepSpec(S.WIZM_STEPS[1], (
-        FieldSpec("type", "type", "selection",
-                  vocabulary=tuple(MODEL_TYPE_VALUES)),
-        FieldSpec("architecture", "architecture", "input"),
-        FieldSpec("Tokenizer", "tokenizer", "selection"),
-        FieldSpec("context_len (bp)", "context-len", "numeric"),
-    )),
-    StepSpec(S.WIZM_STEPS[2], (
-        FieldSpec("huggingface", "huggingface", "input"),
-        FieldSpec("modelscope", "modelscope", "input"),
-        FieldSpec("series", "series", "input"),
-    )),
-    StepSpec(S.WIZM_STEPS[3], (
-        FieldSpec("quirks", "quirks", "quirks"),
-    )),
-)
 
-#: The dataset wizard's four steps (09-UI-SPEC step table, CUST-02).
-#: The step-2 split-file Inputs collect FILE NAMES (advisory live
-#: existence under the dataset path) — the Train/Dev/Test row counts
-#: are NEVER wizard fields: declarations derive at composition
-#: downstream (the 09-01 decision), so the composed candidate carries
-#: none of them. Task_type stores under the registry field name
-#: ``type`` (Auto-Default #11).
-DATASET_STEPS = (
-    StepSpec(S.WIZD_STEPS[0], (
-        FieldSpec("key", "key", "input"),
-        FieldSpec("Dataset_path", "dataset-path", "path"),
-        FieldSpec("Category", "category", "selection",
-                  vocabulary=tuple(DATASET_CATEGORY_VALUES)),
-    )),
-    StepSpec(S.WIZD_STEPS[1], (
-        FieldSpec("train_file", "train-file", "splitfile",
-                  label_key="Train"),
-        FieldSpec("dev_file", "dev-file", "splitfile", label_key="Dev"),
-        FieldSpec("test_file", "test-file", "splitfile", label_key="Test"),
-        FieldSpec("label_column", "label-column", "input"),
-        FieldSpec("labels", "labels", "numeric"),
-        FieldSpec("length", "length", "numeric"),
-    )),
-    StepSpec(S.WIZD_STEPS[2], (
-        FieldSpec("type", "type", "selection",
-                  vocabulary=tuple(DATASET_TYPE_VALUES)),
-        FieldSpec("metric", "metric", "selection"),
-    )),
-    StepSpec(S.WIZD_STEPS[3], (
-        FieldSpec("citation", "citation", "input"),
-        FieldSpec("source", "source", "input"),
-        FieldSpec("license", "license", "input"),
-        FieldSpec("preprocessing", "preprocessing", "input"),
-    )),
-)
+def _quirk_fields() -> "tuple[tuple[str, str, str], ...]":
+    """The D-02 quirk checkbox trio, re-derived at CALL time (CR-01 —
+    the quirk labels follow the live language): entry ``quirks`` key ->
+    (label constant, widget id). Unchecked default; the values land in
+    the candidate's ``quirks`` field (the execution-side mapping is
+    Phase 11's)."""
+    return (
+        ("no_safetensors", S.WIZ_QUIRK_NO_SAFETENSORS,
+         "quirk-no-safetensors"),
+        ("fp32_only", S.WIZ_QUIRK_FP32_ONLY, "quirk-fp32-only"),
+        ("special_head", S.WIZ_QUIRK_SPECIAL_HEAD, "quirk-special-head"),
+    )
 
-#: Kind -> the type-aware instance's tables + labels.
-KINDS: dict = {
-    "models": KindSpec(
-        steps=MODEL_STEPS,
-        labels=S.WIZM_FIELD_LABELS,
-        kind_name=S.WIZ_KIND_MODELS,
-    ),
-    "datasets": KindSpec(
-        steps=DATASET_STEPS,
+
+def _model_steps() -> "tuple[StepSpec, ...]":
+    """The model wizard's four steps (09-UI-SPEC step table, CUST-01),
+    re-derived at CALL time (CR-01 — the step names follow the live
+    language; the FieldSpec wiring is language-neutral)."""
+    return (
+        StepSpec(S.WIZM_STEPS[0], (
+            FieldSpec("key", "key", "input"),
+            FieldSpec("Model_path", "model-path", "path"),
+            FieldSpec("size (M)", "size-m", "numeric"),
+            FieldSpec("species", "species", "selection"),
+        )),
+        StepSpec(S.WIZM_STEPS[1], (
+            FieldSpec("type", "type", "selection",
+                      vocabulary=tuple(MODEL_TYPE_VALUES)),
+            FieldSpec("architecture", "architecture", "input"),
+            FieldSpec("Tokenizer", "tokenizer", "selection"),
+            FieldSpec("context_len (bp)", "context-len", "numeric"),
+        )),
+        StepSpec(S.WIZM_STEPS[2], (
+            FieldSpec("huggingface", "huggingface", "input"),
+            FieldSpec("modelscope", "modelscope", "input"),
+            FieldSpec("series", "series", "input"),
+        )),
+        StepSpec(S.WIZM_STEPS[3], (
+            FieldSpec("quirks", "quirks", "quirks"),
+        )),
+    )
+
+
+def _dataset_steps() -> "tuple[StepSpec, ...]":
+    """The dataset wizard's four steps (09-UI-SPEC step table, CUST-02),
+    re-derived at CALL time (CR-01).
+
+    The step-2 split-file Inputs collect FILE NAMES (advisory live
+    existence under the dataset path) — the Train/Dev/Test row counts
+    are NEVER wizard fields: declarations derive at composition
+    downstream (the 09-01 decision), so the composed candidate carries
+    none of them. Task_type stores under the registry field name
+    ``type`` (Auto-Default #11)."""
+    return (
+        StepSpec(S.WIZD_STEPS[0], (
+            FieldSpec("key", "key", "input"),
+            FieldSpec("Dataset_path", "dataset-path", "path"),
+            FieldSpec("Category", "category", "selection",
+                      vocabulary=tuple(DATASET_CATEGORY_VALUES)),
+        )),
+        StepSpec(S.WIZD_STEPS[1], (
+            FieldSpec("train_file", "train-file", "splitfile",
+                      label_key="Train"),
+            FieldSpec("dev_file", "dev-file", "splitfile", label_key="Dev"),
+            FieldSpec("test_file", "test-file", "splitfile",
+                      label_key="Test"),
+            FieldSpec("label_column", "label-column", "input"),
+            FieldSpec("labels", "labels", "numeric"),
+            FieldSpec("length", "length", "numeric"),
+        )),
+        StepSpec(S.WIZD_STEPS[2], (
+            FieldSpec("type", "type", "selection",
+                      vocabulary=tuple(DATASET_TYPE_VALUES)),
+            FieldSpec("metric", "metric", "selection"),
+        )),
+        StepSpec(S.WIZD_STEPS[3], (
+            FieldSpec("citation", "citation", "input"),
+            FieldSpec("source", "source", "input"),
+            FieldSpec("license", "license", "input"),
+            FieldSpec("preprocessing", "preprocessing", "input"),
+        )),
+    )
+
+
+def _kind_spec(kind) -> KindSpec:
+    """Build one kind's tables + label map from FRESH S.* reads (CR-01,
+    quick-261016-hhx — the 08 review): the old module-level ``KINDS``
+    dict froze the import-time language into every wizard label and
+    step name; the builder reads the ACTIVE language at call time.
+    ``WizardModal`` captures the result once in ``__init__`` —
+    ctor-frozen copy is the accepted modal semantics (constructed at
+    push time in the active language); the freeze being removed here is
+    the MODULE-level one."""
+    if kind == "models":
+        return KindSpec(
+            steps=_model_steps(),
+            labels=S.WIZM_FIELD_LABELS,
+            kind_name=S.WIZ_KIND_MODELS,
+        )
+    return KindSpec(
+        steps=_dataset_steps(),
         labels=S.WIZD_FIELD_LABELS,
         kind_name=S.WIZ_KIND_DATASETS,
-    ),
-}
+    )
 
 #: The numeric-input fields whose text composes as a JSON number when
 #: parseable (unparseable text passes through raw — the collect-all
@@ -555,10 +582,10 @@ class WizardModal(ModalScreen):
                  import_validate=None, export_registry=None,
                  has_custom_entries=None, **kwargs):
         super().__init__(**kwargs)
-        if kind not in KINDS:
+        if kind not in _KIND_NAMES:
             raise ValueError(
                 f"unknown wizard kind {kind!r} — expected one of "
-                f"{sorted(KINDS)}"
+                f"{sorted(_KIND_NAMES)}"
             )
         self._kind = kind
         self._validator = validator
@@ -577,7 +604,12 @@ class WizardModal(ModalScreen):
         self._import_validate = import_validate
         self._export_registry = export_registry
         self._has_custom_entries = has_custom_entries
-        kind_spec = KINDS[kind]
+        kind_spec = _kind_spec(kind)
+        # CR-01 (quick-261016-hhx): the spec builds from FRESH S.* reads
+        # at construction; the instance copy is ctor-frozen by design
+        # (the modal is pushed in the active language — the removed
+        # freeze was the module-level one).
+        self._kind_spec = kind_spec
         self._steps = kind_spec.steps
         self._labels = kind_spec.labels
         self._step = 0
@@ -592,7 +624,7 @@ class WizardModal(ModalScreen):
         # Heterogeneous by design: string field values plus the
         # quirk checkbox state dict (D-02) — plain dict, Any values.
         self._values: dict = {"quirks": {name: False
-                                       for name, _, _ in QUIRK_FIELDS}}
+                                       for name, _, _ in _quirk_fields()}}
         self._apply_prefill(prefill)
         # ===== The gauntlet panel state (09-05) =====
         # The current run's id (WR-02): incremented on every launch; the
@@ -644,7 +676,7 @@ class WizardModal(ModalScreen):
                 if spec.control == "quirks":
                     quirks = entry.get("quirks")
                     if isinstance(quirks, dict):
-                        for name, _, _ in QUIRK_FIELDS:
+                        for name, _, _ in _quirk_fields():
                             self._values["quirks"][name] = bool(
                                 quirks.get(name, False))
                     continue
@@ -734,7 +766,7 @@ class WizardModal(ModalScreen):
                     id=f"wiz-{spec.wid}",
                 )
             elif spec.control == "quirks":
-                for name, label, wid in QUIRK_FIELDS:
+                for name, label, wid in _quirk_fields():
                     yield Checkbox(
                         label,
                         value=bool(self._values["quirks"].get(name)),
@@ -760,13 +792,13 @@ class WizardModal(ModalScreen):
             indicator = f"[{self.app.current_theme.accent} bold]" \
                         f"{self._step + 1}/{len(self._steps)}[/]"
             box.border_title = S.WIZ_BORDER_TITLE.format(
-                kind=KINDS[self._kind].kind_name,
+                kind=self._kind_spec.kind_name,
                 indicator=indicator,
                 step=step.name,
             )
         elif self._phase == "report":
             box.border_title = S.WIZ_REPORT_TITLE.format(
-                kind=KINDS[self._kind].kind_name)
+                kind=self._kind_spec.kind_name)
         elif self._phase == "drill":
             label = self._drill_item_label()
             box.border_title = (S.GAUNTLET_DRILL_TITLE.format(item=label)
@@ -850,7 +882,7 @@ class WizardModal(ModalScreen):
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         """Quirk checkboxes land in the ``quirks`` dict (D-02)."""
         wid = (event.checkbox.id or "")
-        for name, _, quirk_wid in QUIRK_FIELDS:
+        for name, _, quirk_wid in _quirk_fields():
             if wid == f"wiz-{quirk_wid}":
                 self._values["quirks"][name] = bool(event.value)
 
@@ -1287,7 +1319,7 @@ class WizardModal(ModalScreen):
         if (self._gauntlet_mode == "import" and self._gauntlet_landed > 0):
             self.app.notify(S.GAUNTLET_IMPORTED_TOAST.format(
                 n=self._gauntlet_landed,
-                kind=KINDS[self._kind].kind_name))
+                kind=self._kind_spec.kind_name))
 
     def _entry_for(self, entry_key):
         """The queued entry dict for one key (single mode: candidate)."""
@@ -1326,7 +1358,7 @@ class WizardModal(ModalScreen):
         """Clear the form (a successful land clears it — one of the
         three clearing events with esc-confirm and a used undo)."""
         self._values = {"quirks": {name: False
-                                   for name, _, _ in QUIRK_FIELDS}}
+                                   for name, _, _ in _quirk_fields()}}
         self._step = 0
 
     # ===== Drill-down (enter on a row -> verbatim subprocess output) =====

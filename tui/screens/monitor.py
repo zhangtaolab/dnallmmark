@@ -101,29 +101,37 @@ _STYLE_SKIPPED = "dim"
 #: word (not operator copy — the data_manager module's _DASH precedent).
 _DASH = "—"
 
-#: Keycap labels for the [f]/[t] bindings, projected from their landed
-#: modal-title constants (the 11-06 keycap-budget precedent: no
-#: standalone 4-CJK-char constants exist in the frozen inventory and
-#: additions are tripwire-locked; the projection adds zero copy).
-_FAILURES_KEYCAP = S.MON_FAILURES_TITLE.split(" (")[0]
-_LOG_KEYCAP = S.MON_LOG_TITLE.split(" — {")[0]
+#: Keycap labels for the [f]/[t] bindings (CR-01, quick-261016-hhx — the
+#: 08 review): the dedicated MON_FAILURES_KEYCAP / MON_LOG_KEYCAP
+#: registry constants replace the old ``split()``-substring projections
+#: of the modal-title constants — byte-equal values in BOTH languages,
+#: but now registry entries themselves, so ``remap_binding_descriptions``
+#: can translate them on the L toggle (a split() substring never
+#: byte-matched any registry value and stayed frozen in the boot
+#: language forever).
 
-#: The discovered-sweep state cell vocabulary (machine state -> the
-#: glyph-first copy + its style channel).
-_SWEEP_STATE_CELLS: "dict[str, tuple[str, str]]" = {
-    SWEEP_RUNNING: (S.MON_STATE_RUNNING_SWEEP, _STYLE_RUNNING),
-    SWEEP_FINISHED: (S.MON_STATE_FINISHED_SWEEP, _STYLE_DIM),
-    SWEEP_ARTIFACTS_ONLY: (S.MON_STATE_ARTIFACTS_SWEEP, _STYLE_DIM),
-}
+def _sweep_state_cells() -> "dict[str, tuple[str, str]]":
+    """The discovered-sweep state cell vocabulary (machine state -> the
+    glyph-first copy + its style channel), re-derived at CALL time
+    (CR-01, quick-261016-hhx — the state words follow the live
+    language)."""
+    return {
+        SWEEP_RUNNING: (S.MON_STATE_RUNNING_SWEEP, _STYLE_RUNNING),
+        SWEEP_FINISHED: (S.MON_STATE_FINISHED_SWEEP, _STYLE_DIM),
+        SWEEP_ARTIFACTS_ONLY: (S.MON_STATE_ARTIFACTS_SWEEP, _STYLE_DIM),
+    }
 
-#: The per-seed cell-state vocabulary (machine state -> copy + style).
-_CELL_STATE_CELLS: "dict[str, tuple[str, str]]" = {
-    CELL_COMPLETED: (S.MON_STATE_DONE, _STYLE_DONE),
-    CELL_FAILED: (S.MON_STATE_FAILED, _STYLE_FAILED),
-    CELL_SKIPPED: (S.MON_STATE_SKIPPED, _STYLE_SKIPPED),
-    CELL_RUNNING: (S.MON_STATE_RUNNING, _STYLE_RUNNING),
-    CELL_QUEUED: (S.MON_STATE_QUEUED, _STYLE_DIM),
-}
+
+def _cell_state_cells() -> "dict[str, tuple[str, str]]":
+    """The per-seed cell-state vocabulary (machine state -> copy +
+    style), re-derived at CALL time (CR-01 — same rule)."""
+    return {
+        CELL_COMPLETED: (S.MON_STATE_DONE, _STYLE_DONE),
+        CELL_FAILED: (S.MON_STATE_FAILED, _STYLE_FAILED),
+        CELL_SKIPPED: (S.MON_STATE_SKIPPED, _STYLE_SKIPPED),
+        CELL_RUNNING: (S.MON_STATE_RUNNING, _STYLE_RUNNING),
+        CELL_QUEUED: (S.MON_STATE_QUEUED, _STYLE_DIM),
+    }
 
 
 def _glyph_of(copy: str) -> str:
@@ -626,11 +634,11 @@ class CellDetailModal(ModalScreen):
         box.border_title = f"{self._model} × {self._task_key}"
         log = self.query_one("#mon-celldetail-log", RichLog)
         for seed in self._row.seeds:
-            copy, _style = _CELL_STATE_CELLS.get(
+            copy, _style = _cell_state_cells().get(
                 seed.state, (seed.state, _STYLE_DIM))
             log.write(f"{S.MON_COL_SEED.format(seed=seed.seed)}: {copy}")
             for name, state in seed.fraction_states or ():
-                frac_copy, _frac_style = _CELL_STATE_CELLS.get(
+                frac_copy, _frac_style = _cell_state_cells().get(
                     state, (state, _STYLE_DIM))
                 fraction = (name.removeprefix("frac_"))
                 log.write("  " + S.MON_FRACTION_LINE.format(
@@ -751,8 +759,8 @@ class MonitorScreen(Screen):
     # (never priority, Pattern 2).
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "row_action", S.ENV_DETAIL_LABEL),
-        Binding("f", "show_failures", _FAILURES_KEYCAP),
-        Binding("t", "show_log_tail", _LOG_KEYCAP),
+        Binding("f", "show_failures", S.MON_FAILURES_KEYCAP),
+        Binding("t", "show_log_tail", S.MON_LOG_KEYCAP),
         Binding("a", "attach_path", S.MON_ATTACH_LABEL),
         Binding("r", "rescan", S.MON_RESCAN_LABEL),
         Binding("1", "app.nav(1)", S.NAV_LABEL_ENV, show=False),
@@ -1410,7 +1418,7 @@ class MonitorScreen(Screen):
                             if self._attached_root is not None else None)
             for summary in sweeps:
                 root_key = str(summary.root)
-                copy, style = _SWEEP_STATE_CELLS.get(
+                copy, style = _sweep_state_cells().get(
                     summary.state, (summary.state, _STYLE_DIM))
                 state_cell = Text(copy, style=style)
                 attached = root_key == attached_key
@@ -1482,7 +1490,7 @@ class MonitorScreen(Screen):
         existing MON_STATE_* vocabulary plus the done/total seed counts
         as data. The narrow grid drops the word — the glyph + counts
         carry the meaning (the seed-cell degradation precedent)."""
-        copy, style = _CELL_STATE_CELLS.get(
+        copy, style = _cell_state_cells().get(
             fold.state, (fold.state, _STYLE_DIM))
         counts = S.MON_ENTRY_SEED_COUNTS.format(
             done=fold.done, total=fold.total)

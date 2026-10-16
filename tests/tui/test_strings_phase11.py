@@ -103,6 +103,10 @@ EXPECTED_MON_CONSTANTS = (
     # indeterminate, and the done/total seed-counts segment.
     "MON_COL_STATE", "MON_PROGRESS_STEPS",
     "MON_PROGRESS_INDETERMINATE", "MON_ENTRY_SEED_COUNTS",
+    # CR-01 (quick-261016-hhx): the [f]/[t] keycap constants —
+    # byte-equal registry twins of the old split() title projections so
+    # remap_binding_descriptions can finally translate them.
+    "MON_FAILURES_KEYCAP", "MON_LOG_KEYCAP",
 )
 
 #: The per-seed cell states in spec order, and their contract glyphs.
