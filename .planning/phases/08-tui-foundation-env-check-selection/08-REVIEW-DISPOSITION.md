@@ -6,38 +6,38 @@ findings:
   - id: CR-01
     severity: critical
     disposition: open
-    title: "Loader-contract registry input crashes the entire console (tolerant seam incomplete + `exit_on_error=True`)"
+    title: "The L language toggle / persisted-zh boot renders a mixed-language UI — module-frozen copy never re-resolves"
   - id: WR-01
     severity: warning
     disposition: open
-    title: "env_smoke directory kernels raise on missing/malformed registry — console crash at boot, violating the gate's own never-traceback contract"
+    title: "`translate_value` en→zh collisions — the documented well-definedness invariant is false in one direction, and the wizard's `b` label is already mistranslated"
   - id: WR-02
     severity: warning
     disposition: open
-    title: "Degraded compat map renders a silent blank models table on slot 2"
+    title: "`enqueue_zenodo` ignores persist failure — the WR-04 rollback/`persist_failed` contract is missing on the bundle lane (pre-delta, verified also at 2341f1c)"
   - id: WR-03
     severity: warning
     disposition: open
-    title: "New synchronous event-loop file reads contradict the pinned D-03/WR-04 read-seam discipline"
+    title: "Pressing L while an env check is in flight restarts the whole kernel run from zero"
   - id: IN-01
     severity: info
     disposition: open
-    title: "Dead strings constants after the 2026-10-14 slot split"
+    title: "`data_manager.apply_queue_progress` stores live percent/speed for KIND_MODEL keys before the ignore check — and `apply_queue_event` never pops them"
   - id: IN-02
     severity: info
     disposition: open
-    title: "Matrix screen still composes a Textual `Header()` after the nav-shell migration"
+    title: "The persisted-language filename is duplicated as an inline literal"
   - id: IN-03
     severity: info
     disposition: open
-    title: "`EnvCheckScreen.action_show_detail` lacks the `is_valid_coordinate` guard its sibling screens carry"
+    title: "Slot-3's present-row enqueue toast reuses a slot-2 (SEL_) constant"
   - id: IN-04
     severity: info
     disposition: open
     title: "Filter grammar accepts degenerate tokens that render oddly"
 open: 8
 total: 8
-recorded: 2026-10-14T11:53:21.528Z
+recorded: 2026-10-16T04:35:44.750Z
 ---
 
 # Phase 08: Code Review Disposition
@@ -51,8 +51,6 @@ recorded: 2026-10-14T11:53:21.528Z
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |
-| IN-04 | info | open | - |
+| IN-04 | info | open | - (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
-Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
-Re-running the gate keeps every row it can. A row the current review no longer reports is kept and its Source cell flagged, so a finding does not leave this record silently. ONE exception: when a finding id is REUSED by a different finding, the earlier decision cannot keep a row — the id is taken — and it is dropped. A RECORDED decision (anything but `open`) is named on the console when that happens; a row still at `open` is replaced silently, because `open` records no decision to lose.
