@@ -266,7 +266,7 @@ Plans:
   4. A read-only web progress mirror generated from sweep artifacts lets the team follow progress in a browser — static files only, no backend (static-hosting constraint holds)
   5. Canonical screens are pinned by Textual snapshot SVG goldens reviewed and committed by the maintainer, failing CI CPU-side on visual regression
 
-**Plans**: 5/5 plans executed
+**Plans**: 5/5 plans complete
 Plans:
 
 **Wave 1** *(parallel)*
@@ -295,7 +295,7 @@ Phase 12 is hard-gated on Phase 11's single-GPU validation (maintainer sequencin
 | 9. Custom Model & Dataset Onboarding | v1.2 | 6/6 | Complete    | 2026-10-12 |
 | 10. Data Manager (Downloads & Verification) | v1.2 | 7/7 | Complete    | 2026-10-13 |
 | 11. Run Config, Launch Gates & Single-GPU Monitoring | v1.2 | 8/8 | Complete    | 2026-10-13 |
-| 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 5/5 | In Progress | - |
+| 12. Multi-GPU Orchestration & Console Hardening | v1.2 | 5/5 | Complete    | 2026-10-16 |
 
 ---
 *v0.7.1 (Phases 1-6) shipped 2026-10-11 — collapsed above; full record in `.planning/MILESTONES.md`.*

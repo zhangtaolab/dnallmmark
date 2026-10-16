@@ -1,143 +1,131 @@
 ---
 phase: 12-multi-gpu-orchestration-console-hardening
-verified: 2026-10-14T17:33:12Z
-status: human_needed
-score: 4/5 must-haves verified
-covered_files: [".planning/WINDOWS.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-01-PLAN.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-01-SUMMARY.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-02-PLAN.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-02-SUMMARY.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-03-PLAN.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-03-SUMMARY.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-04-PLAN.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-04-SUMMARY.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-05-PLAN.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-05-SUMMARY.md", "Makefile", "README.md", "dnallm-mark/css/progress.css", "dnallm-mark/css/styles.css", "dnallm-mark/data/progress/.gitkeep", "dnallm-mark/js/config.js", "dnallm-mark/js/data.js", "dnallm-mark/js/progress.js", "dnallm-mark/progress.html", "docs/multi-gpu.md", "pipeline/run_sweep_shard.py", "script/gen_progress.py", "tests/js/progress-page.test.js", "tests/test_sweep_shard.py", "tests/tui/__snapshots__/data_manager.svg", "tests/tui/__snapshots__/data_manager_presence.svg", "tests/tui/__snapshots__/env_check.svg", "tests/tui/__snapshots__/monitor_empty.svg", "tests/tui/__snapshots__/monitor_running.svg", "tests/tui/__snapshots__/run_config.svg", "tests/tui/__snapshots__/selection_datasets.svg", "tests/tui/__snapshots__/selection_models.svg", "tests/tui/__snapshots__/wizard.svg", "tests/tui/test_gen_progress.py", "tests/tui/test_pilot_monitor.py", "tests/tui/test_pilot_run_config.py", "tests/tui/test_snapshots.py", "tui/screens/run_config.py", "tui/strings.py"]
-covered_digest: "v3:sha256:b866930b52bb5fb9251b8fd6f2ae23718885e0f74a8f1df652794c50209921c5"
-behavior_unverified: 1 # SC5's maintainer-review clause — automation green in its designed strict-xfail window, but golden refresh + visual review are human-only by the phase's own D-03 gate
+verified: 2026-10-16T07:51:41Z
+status: passed
+score: 5/5 must-haves verified
+covered_files: [".planning/phases/12-multi-gpu-orchestration-console-hardening/12-01-PLAN.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-01-SUMMARY.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-02-PLAN.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-02-SUMMARY.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-03-PLAN.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-03-SUMMARY.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-04-PLAN.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-04-SUMMARY.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-05-PLAN.md", ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-05-SUMMARY.md", "Makefile", "README.md", "dnallm-mark/css/progress.css", "dnallm-mark/css/styles.css", "dnallm-mark/data/progress/.gitkeep", "dnallm-mark/js/config.js", "dnallm-mark/js/data.js", "dnallm-mark/js/progress.js", "dnallm-mark/progress.html", "docs/multi-gpu.md", "pipeline/run_sweep_shard.py", "script/gen_progress.py", "tests/js/progress-page.test.js", "tests/test_sweep_shard.py", "tests/tui/__snapshots__/data_manager.svg", "tests/tui/__snapshots__/data_manager_presence.svg", "tests/tui/__snapshots__/env_check.svg", "tests/tui/__snapshots__/monitor_empty.svg", "tests/tui/__snapshots__/monitor_running.svg", "tests/tui/__snapshots__/run_config.svg", "tests/tui/__snapshots__/selection_datasets.svg", "tests/tui/__snapshots__/selection_models.svg", "tests/tui/__snapshots__/wizard.svg", "tests/tui/test_gen_progress.py", "tests/tui/test_pilot_monitor.py", "tests/tui/test_pilot_run_config.py", "tests/tui/test_snapshots.py", "tui/screens/run_config.py", "tui/strings.py"]
+covered_digest: "v3:sha256:35277062daf673f6b4732c64638279a01517b51367fedf1489813b7ba7ffcb33"
+behavior_unverified: 0
 overrides_applied: 0
 re_verification:
   previous_status: human_needed
   previous_score: 4/5
-  gaps_closed: [] # prior pass had NO gaps (human_needed from the two by-design human items only)
+  gaps_closed:
+    - "SC5 maintainer-review clause — D-03 visual review approved 2026-10-15 (on record in maintainer-authored commits d5cb44b + e70bf9f); all 9 goldens regenerated and committed, strict-xfail markers + _GOLDEN_REFRESH_REASON retired, 9 golden tests now regular green (11 passed this pass incl. determinism + sensitivity); WINDOWS #23/#24/#25 resolved"
   gaps_remaining: []
-  regressions: [] # stale-refresh pass: all 4 previously-verified truths re-verified green over the post-change tree; no regression found
+  regressions: [] # zero regressions: every behaviorally-proven claim re-proven green over the current tree (49/49 orchestrator, 11/11 goldens, 8/8 generator, delta A + B1/B2 named tests, JS lane 26/26)
 advisory:
-  - finding: "WR-01 — blanket strict-xfail absorbs SVG-render failures until the maintainer snapshot-update lands (golden-drift detection window)"
+  - finding: "WINDOWS #21 (open, unrun-verify) — the 9-step N=2 multi-GPU smoke procedure remains maintainer-executed on other hardware"
     category: other
-    reason: "Designed interim state, not a defect: goldens staled by sanctioned post-phase quick tasks (261014-mlc slot rework + locked nav rename); the window IS bounded three ways — _GOLDEN_REFRESH_REASON names the causing task/date/closure action (test_snapshots.py:903-910, the review's own alternative fix), WINDOWS ledger entry #25 tracks it open, and strict=True still detects the flip direction. Closure action is the standing D-03 human item (make snapshot-update + marker removal + review). Sensitivity test proves red-on-drift capability today."
-    evidence_status: "none provided (no failing test — the 9 xfailed are by design; determinism + sensitivity pass)"
-  - finding: "WR-02 — pipeline/directories_config.py (quick-task 261014-f4w module, not a phase-12 artifact) missing from the make lint lane"
+    reason: "By-design machine-role split (D-05: GB10 is single-GPU dev/test only; multi-GPU validation happens elsewhere), recorded as ledger obligation in WINDOWS row 21 and blocking /gsd-ship while open via windows_enforce. No Success Criterion is breached: every SC asserts a capability that IS proven here (CLI-invokable sharding via real-subprocess chains incl. the two-worker dry-run; per-worker monitoring, merge, and isolated re-run all test-pinned; docs/runbook on disk; goldens maintainer-approved). The prior passed report adjudicated this same split; carried per that reasoning. Closure = maintainer executes docs/multi-gpu.md §'The 9-step N=2 multi-GPU smoke procedure' and records outcomes against row 21."
+    evidence_status: "none required (ledger obligation, not a defect; no failing test, no SC breach — all 5 SCs verified green this pass)"
+  - finding: "WR-02 (carried) — pipeline/directories_config.py (post-phase quick-261014-f4w module, not phase scope) still absent from the make lint lane"
     category: architectural
-    reason: "New-scope finding with no deterministic evidence: the module is ty-covered (whole pipeline/ tree) and ruff-clean today (review-verified). Phase 12's own Makefile contract (PHASE12_MODULES guard for run_sweep_shard + gen_progress, Makefile:174) is intact and verified this pass. The lint-gap is f4w follow-through, durably recorded as open in 12-REVIEW-DISPOSITION.md."
-    evidence_status: "none provided (gap is future-drift risk only; no failing test)"
-behavior_unverified_items:
-  - truth: "SC5 — canonical screens pinned by SVG goldens reviewed and committed by the maintainer"
-    test: "Maintainer runs make snapshot-update (regenerates all 9 goldens incl. the new data_manager_presence), removes the 9 strict-xfail markers, then eyeballs each committed SVG against the 12-UI-SPEC corpus table"
-    expected: "All 9 goldens visually correct for their canonical screen states AND the strict-xfail markers removed so CI compares goldens red-on-drift again; closes WINDOWS #25 and the WR-01 window"
-    why_human: "Byte-identical comparison cannot see visual rightness, and the current committed SVGs are knowingly stale since quick-261014-mlc — regeneration + review are the maintainer's D-03 gate by the phase's own decision; automation proves byte-stability, determinism, and sensitivity only"
-human_verification:
-  - test: "D-03 maintainer review of the now-9 committed SVG goldens in tests/tui/__snapshots__/ (env_check, selection_models, selection_datasets, data_manager, data_manager_presence, run_config, monitor_running, monitor_empty, wizard)"
-    expected: "Run make snapshot-update first (all 9 are strict-xfail-stale since quick-261014-mlc reworked slot 2/3 and the locked nav label rename changed every top bar), remove the 9 xfail markers, then review each regenerated golden against the 12-UI-SPEC corpus table; close WINDOWS #25"
-    why_human: "Machine-context note: the golden corpus grew 8→9 (data_manager_presence via quick-261014-dcl) and every golden is in the designed stale window pending this very snapshot-update — the refresh + eyeball review are the maintainer's D-03 trust gate; automation (determinism + sensitivity, 2 passed / 9 xfailed this pass) cannot close it"
-  - test: "WINDOWS #21 (open): execute the 9-step N=2 multi-GPU smoke per docs/multi-gpu.md §'The 9-step N=2 multi-GPU smoke procedure' (bounded: 2 models × iDNA_ABF_datasets__5mC × 1 seed × 1 epoch) on the multi-GPU machine and record outcomes"
-    expected: "Steps 0-9 as documented: disjoint dry-run manifests, 2 workers with CUDA_VISIBLE_DEVICES=0/1, independent TUI views, isolation on failure, --from-failures re-run touching only the failed worker's root, --merge with SHA256-verified output, web mirror over worker roots then merged root, export equivalence, cleanup; close WINDOWS #21 (ledger row 21, open; counters 19/25)"
-    why_human: "Machine-context note: GB10 is single-GPU dev/test only (D-05 machine-roles) and the 4×5090 box was REPLACED — the target machine is now unspecified per maintainer 2026-10-14, so this is maintainer-executed on other hardware by design, not executor-executable and not CI-able. Live supporting evidence this pass: the dnabert smoke cells completed with full FLOPs artifacts (6.77e15 FLOs) through this milestone's chain, and a bounded dnamamba subset is running — single-GPU chain health is demonstrated; only the N=2 cross-worker procedure remains unexecuted"
+    reason: "Re-checked this pass: file exists, grep of Makefile lint lists has 0 hits. Unchanged from the prior pass's adjudication — new-scope, no deterministic evidence (module is ty-covered via the whole pipeline/ tree and ruff-clean today); recorded open in 12-REVIEW-DISPOSITION.md; follow-through belongs to the f4w task lineage."
+    evidence_status: "none provided (future-drift risk only; no failing test)"
 ---
 
 # Phase 12: Multi-GPU Orchestration & Console Hardening Verification Report
 
 **Phase Goal:** With single-GPU validated, throughput scales out — CLI-invocable static model sharding × CUDA_VISIBLE_DEVICES with per-worker monitoring, artifact merge, and isolated failure re-run, plus the documented DDP-vs-sharding applicability decision — and the console ships its release extras: a static read-only web progress mirror and maintainer-verified snapshot goldens pinning the canonical screens
-**Verified:** 2026-10-14T17:33:12Z
-**Status:** human_needed
-**Re-verification:** Yes — STALE-REFRESH pass (covered source changed post-pass via quick tasks 261014-ir9/l6h/f4w/dcl/c2l/mlc + the 11-08 gap round); prior pass had no gaps
+**Verified:** 2026-10-16T07:51:41Z
+**Status:** passed
+**Re-verification:** Yes — REFRESH pass (final phase of the deferred 07→12 chain); prior pass was human_needed 4/5 with two by-design human items, of which the D-03 golden review has since landed on record
 
 ## Goal Achievement
 
 ### Observable Truths
 
-Must-haves carried verbatim from the prior pass (ROADMAP Success Criteria × 5 PLAN frontmatters; no scope change). Stale-refresh scope established first: `git diff 9429ddf279 HEAD` (the commit at the prior verified timestamp) is EMPTY for `pipeline/run_sweep_shard.py`, `script/gen_progress.py`, all six web-mirror files, `tests/tui/test_gen_progress.py`, and `tests/js/progress-page.test.js` — their prior three-level + data-flow verdicts carry forward with only behavioral re-proof needed. Changed covered files: Makefile, README.md, docs/multi-gpu.md, tests/test_sweep_shard.py (docstring-only 62→59 count fix from ir9), tests/tui/test_pilot_monitor.py, tests/tui/test_pilot_run_config.py, tests/tui/test_snapshots.py, tui/screens/run_config.py, tui/strings.py, the snapshots corpus (8→9 SVGs), WINDOWS.md.
+Must-haves carried verbatim (ROADMAP Success Criteria × 5 PLAN frontmatters; no scope change). Refresh scope established first: against the prior verified timestamp (2026-10-14T17:33:12Z), `git log --since` shows ZERO commits for `pipeline/run_sweep_shard.py`, `script/gen_progress.py`, all six web-mirror files, `tests/test_sweep_shard.py`, `tests/tui/test_gen_progress.py`, and `tests/js/progress-page.test.js` — their prior three-level + data-flow verdicts carry forward verbatim, with behavioral re-proof run again anyway (belt-and-suspenders). Changed covered files this round: the 9 golden SVGs + `tests/tui/test_snapshots.py` (d5cb44b golden refresh + 4c11655 zh-pin wiring), `Makefile` (ea69e38 QUICK_PEX_DEMO lint var), `README.md` (ab61868 demo links + b89e87c docs-refresh), `docs/multi-gpu.md` (b89e87c docs-refresh), and the TUI surface files touched by sanctioned quicks (c4j/ehc/a4f/hhx: `tui/strings.py`, `tui/screens/run_config.py`, `tests/tui/test_pilot_monitor.py`, `tests/tui/test_pilot_run_config.py`) — all code-reviewed via the scoped 08-REVIEW (601aa51 + disposition d800613, all findings fixed) and behaviorally re-proven here by named tests over the CURRENT tree.
 
 | # | Truth | Status | Evidence |
 | --- | --- | --- | --- |
-| 1 | SC1: Multi-worker orchestration invokable from the CLI: N workers over disjoint static model shards with CUDA_VISIBLE_DEVICES isolation, marker-skip as the only concurrency guard | ✓ VERIFIED | `pipeline/run_sweep_shard.py` byte-stable since the prior pass (1252 lines; 0 commits, empty diff vs 9429ddf279) — prior L1-L4 verdict holds verbatim. Behavioral re-proof over the POST-change tree: `pytest tests/test_sweep_shard.py -q` → **49 passed in 0.58s** this pass, including `test_n1_degenerate_real_subprocess_smoke`, `test_real_two_worker_dry_run_subprocess_chain`, `test_dry_run_disjointness_in_process`, `test_worker_argv_and_spawn_kwargs_under_default_gpus` — i.e. the real-subprocess chains re-proved against the CURRENT `run_sweep.py`, which post-phase gained `--model_root/--dataset_root/--log_dir` + `directories.json` (interaction seam reviewed sound in 12-REVIEW; the suite is the proof). D-07 phase-scoped prohibition held during the phase; post-phase run_sweep.py edits are sanctioned quick-task work outside the phase contract. No lock/port/nvidia-smi machinery (carried; bytes unchanged) |
-| 2 | SC2: The operator sees per-worker monitoring views, artifacts merge across workers, and a failed worker's shard re-runs in isolation without touching healthy workers | ✓ VERIFIED | Merge/isolation code byte-stable (same module). Behavioral re-proof this pass: the 49/49 suite run includes `test_merge_happy_path_copies_allowlist_and_rewrites`, `test_merged_root_is_consumer_equivalent` (export_runs union equivalence), `test_merge_leaves_worker_roots_immutable`, `test_d08_from_failures_rerun_is_isolated_to_w0` — all green. Delta A re-proof over the CURRENT monitor (hardened by the sanctioned 11-08 round: WR-01 REPO_ROOT basis, WR-02 failure-derived seeds, WR-04 O_EXCL tee, WR-05 multi-root exit modal): `test_delta_a_discovered_pane_renders_worker_roots_independently` → **1 passed in 0.71s** — N-root discovered-table rendering survives the hardening intact |
-| 3 | SC3: The DDP vs model-sharding applicability decision is documented and landed | ✓ VERIFIED | `docs/multi-gpu.md` decision matrix present at L17 (§"The decision: model sharding vs DDP"); post-phase doc commit (28b545b) + ir9 kept counts accurate — registry is 59 entries and both count sites (L21, L29) + the test docstring say 59 (empirically verified in 12-REVIEW; docstring fix confirmed in the git diff this pass). README links live at :122 and :541. 249→current line count changed only by docs-generation additions; the decision/runbook/9-step-procedure sections verified present (gen_progress mirror command at :165/:170/:236) |
-| 4 | SC4: A read-only web progress mirror generated from sweep artifacts lets the team follow progress in a browser — static files only, no backend | ✓ VERIFIED | All artifacts byte-stable since prior pass (38/427/71-line page trio, generator, one-liner integrations — NAV_LINKS `config.js:70`, `DataAPI.loadProgress` `data.js:106-108`, zero CDN in progress.html re-confirmed by grep this pass). Behavioral re-proof: `pytest tests/tui/test_gen_progress.py -q` → **8 passed**; `node --test tests/js/progress-page.test.js` → **8 pass / 0 fail**. Wiring links re-confirmed: gen_progress→sweep_monitor import (L92), fetch chain, navbar render |
-| 5 | SC5: Canonical screens are pinned by Textual snapshot SVG goldens reviewed and committed by the maintainer, failing CI CPU-side on visual regression | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Corpus grew 8→9 (`data_manager_presence.svg` via quick-261014-dcl); harness + 9 committed SVGs + determinism + sensitivity all present and wired (`GOLDENS` at :832, `make snapshot-update` sole regeneration path Makefile:132, CI compares-only). Automation green in its DESIGNED state this pass: `pytest tests/tui/test_snapshots.py -q` → **2 passed, 9 xfailed in 16.70s** (the 9 strict-xfail pins = this phase's goldens, matching the full-suite baseline's 9 xfailed; determinism + sensitivity both pass). But the committed SVGs are knowingly stale since quick-261014-mlc (slot 2/3 rework + locked nav rename changed every top bar) — regeneration + marker removal + maintainer eyeball review are the D-03 human gate (12-03-SUMMARY `human_judgment: true`). Routed to Human Verification below, NOT marked verified by code |
+| 1 | SC1: Multi-worker orchestration is invokable from the CLI (not TUI-only): N workers over disjoint static model shards with CUDA_VISIBLE_DEVICES isolation, marker-skip as the only concurrency guard | ✓ VERIFIED | `pipeline/run_sweep_shard.py` byte-stable since the prior pass (1252 lines; 0 commits since 2026-10-14T17:33:12Z) — prior L1-L4 verdict holds verbatim, and re-confirmed on disk this pass: sibling imports `registry_loader`/`run_sweep` at :181-182 with `WORKER_SCRIPT = run_sweep.PIPELINE_DIR / "run_sweep.py"` at :184, per-worker `CUDA_VISIBLE_DEVICES: str(gpu_i)` env in spawn kwargs (:196 area, :112 docstring contract), argparse surface incl. `--merge` (:373). Prohibition machinery re-grep'd clean at word boundaries: no nvidia-smi probing, no socket/flock/fcntl/port code (only docstring statements OF the prohibition at :119/:340). Behavioral re-proof over the POST-change tree: `pytest tests/test_sweep_shard.py -q` → **49 passed in 0.44s**, including `test_real_two_worker_dry_run_subprocess_chain` (:808), `test_n1_degenerate_real_subprocess_smoke` (:1614), `test_dry_run_disjointness_in_process` (:740), `test_worker_argv_and_spawn_kwargs_under_default_gpus` (:371) — real-subprocess chains re-proven against the CURRENT `run_sweep.py` |
+| 2 | SC2: The operator sees per-worker monitoring views, artifacts merge across workers, and a failed worker's shard re-runs in isolation without touching healthy workers | ✓ VERIFIED | Merge/isolation code byte-stable (same module). The 49/49 run includes `test_merge_happy_path_copies_allowlist_and_rewrites` (:1136), `test_merged_root_is_consumer_equivalent` (:1364), `test_merge_leaves_worker_roots_immutable` (:1461), `test_d08_from_failures_rerun_is_isolated_to_w0` (:1522) — all green. Delta A re-proof over the CURRENT monitor (hardened by the sanctioned ehc/c4j/hhx/a4f quicks): `pytest tests/tui/test_pilot_monitor.py::test_delta_a_discovered_pane_renders_worker_roots_independently` → **1 passed** — N-root discovered-table rendering survives the post-phase TUI rework intact |
+| 3 | SC3: The DDP vs model-sharding applicability decision is documented and landed — single-large-model acceleration vs multi-model throughput | ✓ VERIFIED | `docs/multi-gpu.md` (249 lines) section map re-confirmed: decision matrix §"The decision: model sharding vs DDP" at :17 (with the run_finetune WORLD_SIZE/LOCAL_RANK scaffolding citations and the explicit deferral-by-decision), CLI runbook :40 (dry-run-first launch, per-worker watch, killpg/Ctrl-C :95, D-08 one-line isolated re-run :111, D-09 merge :134, web mirror :162), machine roles §(D-05) :179, E2' trust boundary :189, 9-step N=2 procedure :200. README links live at :122 and :573 (both re-verified post ab61868/b89e87c) |
+| 4 | SC4: A read-only web progress mirror generated from sweep artifacts lets the team follow progress in a browser — static files only, no backend | ✓ VERIFIED | All artifacts byte-stable since the prior pass (38/427/71-line page trio, 250-line generator, one-line site integrations) — prior verdicts carry. Wiring re-confirmed on disk: `NAV_LINKS` Progress entry `config.js:70`, `DataAPI.loadProgress` `data.js:106-110`, `@import url('./progress.css')` `styles.css:25`, `js/navbar.js:34` renders `CONFIG.NAV_LINKS` site-wide, `gen_progress.py:92` imports `tui.services.sweep_monitor` (same-source discipline), CDN grep in progress.html = **0 hits**. Behavioral re-proof: `pytest tests/tui/test_gen_progress.py -q` → **8 passed in 0.02s**; `node --test tests/js/*.test.js` → **26 pass / 0 fail** (matches the known-good gate) |
+| 5 | SC5: Canonical screens are pinned by Textual snapshot SVG goldens reviewed and committed by the maintainer, failing CI CPU-side on visual regression | ✓ VERIFIED (upgraded from PRESENT_BEHAVIOR_UNVERIFIED) | The prior pass's human gate has LANDED, with direct git + ledger evidence: **d5cb44b** (2026-10-15, maintainer-authored by Tao Zhang) regenerated all 9 goldens via `make snapshot-update` — commit message: "Maintainer D-03 review approved 2026-10-15; strict-xfail markers and _GOLDEN_REFRESH_REASON retired with the goldens now byte-matching" — and **e70bf9f** resolved WINDOWS #23/#24/#25 (rows now `fixed`, resolved_at 2026-10-15T06:45). On disk this pass: **0 xfail markers** in test_snapshots.py, `GOLDENS` registry = exactly 9 entries (:841-864; env_check, selection_models, selection_datasets, data_manager, data_manager_presence, run_config, monitor_running, monitor_empty, wizard), 9 committed SVGs in `tests/tui/__snapshots__/`, `make snapshot-update` sole regeneration path (Makefile:132; module `--regenerate` documented at :59-63 — CI compares, never regenerates). Behavioral proof: `pytest tests/tui/test_snapshots.py -q` → **11 passed in 6.23s** — all 9 golden compares green as REGULAR tests (red-on-drift restored) plus determinism + sensitivity. The maintainer-review clause is closed by observed record (maintainer-authored commit + ledger resolution), not presence-only inference |
 
-**Score:** 4/5 truths verified (1 present, behavior-unverified: the SC5 maintainer-review clause, now inside the designed snapshot-update window)
+**Score:** 5/5 truths verified (0 present, behavior-unverified — the SC5 review clause, the prior pass's only unverified item, is closed by the on-record D-03 approval)
 
 ### Plan-Prohibition Checks (negative must-haves)
 
 | Prohibition | Status | Evidence |
 | --- | --- | --- |
-| 12-01: no edit to run_sweep.py / run_finetune.py during the phase; pipeline/ gains exactly one new file | ✓ HELD (phase-scoped) | Prior-pass git evidence carries (both files' Phase-12-window commits predate the phase). Post-phase: run_sweep.py gained storage flags via sanctioned quick tasks (f4w/l6h) — outside the phase contract; orchestrator compatibility re-proven by the 49/49 real-subprocess suite |
-| 12-01: no lock/claim-file/port machinery; marker-skip only guard | ✓ HELD | run_sweep_shard.py bytes unchanged since prior verification (grep-clean verdict carries verbatim) |
-| 12-01: no nvidia-smi probing / GPU enumeration / N>1 assumption | ✓ HELD | Same — bytes unchanged |
-| 12-02: zero backend, zero CDN on new page, zero new deps | ✓ HELD | progress.html CDN grep = 0 hits this pass; page trio byte-stable; no dependency changes in post-phase commits touching them (none exist) |
-| 12-02: no fabricated values (honesty rules, web-side) | ✓ HELD | progress.js byte-stable; JS lane 8/8 green (the lane pins these rules) |
-| 12-03: no fix at wrong layer; no new bindings; strings.py/styles.tcss byte-stible DURING the plan | ✓ HELD (phase-scoped) | The one sanctioned `dismiss()` override verified present post-changes: `_PickerReturnModal` at run_config.py:603 with `call_after_refresh(picker.focus)` at :633, 5 re-parents (:641/:666/:692/:723/:791), `_GateConfirmModal` at :827, push site :1977 — survived the 3 post-phase commits (CR-02 pre-check + c2l model-root + f4w log-dir row). B1/B2 behavioral re-proof: 2 passed. Post-phase strings.py/monitor.py changes are sanctioned quick-task/11-08 work |
-| 12-03: no snapshot-plugin/syrupy/cairosvg install; string equality is the compare | ✓ HELD | test_snapshots.py compares UTF-8 SVG strings (:912-970 shape verified); no pyproject/uv.lock change for such deps in any post-phase commit (review-verified; grep of lockfile clean) |
-| 12-04: no symlink/move merge; copy + SHA256 only | ✓ HELD | Merge path bytes unchanged since prior pass (verified `_copy_verified` verdict carries) |
-| 12-04: no orchestrator convenience flags beyond --merge/--include-checkpoints; no run_sweep edits during phase | ✓ HELD | Bytes unchanged; parse_args surface frozen |
-| 12-05: zero production-code changes in plan 05; never execute N=2 GPU procedure | ✓ HELD (phase-scoped) | Prior-pass commit evidence carries; no N=2 run exists on this host (WINDOWS #21 still open, correctly) |
+| 12-01: no edit to run_sweep.py / run_finetune.py during the phase; pipeline/ gains exactly one new file | ✓ HELD (phase-scoped) | Prior-pass git evidence carries; post-phase run_sweep.py storage-flag additions are sanctioned quick-task work outside the phase contract — orchestrator compatibility re-proven by the 49/49 real-subprocess suite over the current run_sweep.py |
+| 12-01: no lock/claim-file/port machinery; marker-skip only guard | ✓ HELD | run_sweep_shard.py bytes unchanged since prior verification + word-boundary re-grep clean this pass |
+| 12-01: no nvidia-smi probing / GPU enumeration / N>1 assumption | ✓ HELD | Same — only docstring statements OF the prohibition (:119, :340) |
+| 12-02: zero backend, zero CDN on new page, zero new deps | ✓ HELD | progress.html CDN grep = 0 hits this pass; page trio + generator byte-stable; no dependency changes touching them |
+| 12-02: no fabricated values (honesty rules, web-side) | ✓ HELD | progress.js byte-stable; JS lane 26/26 green (the lane pins these rules) |
+| 12-03: no fix at wrong layer; no new bindings; strings.py/styles.tcss untouched DURING the plan | ✓ HELD (phase-scoped) | The sanctioned `_PickerReturnModal` dismiss() override survived the post-phase ehc/hhx rework — B1/B2 named tests green over the current run_config.py (2 passed). Post-phase strings.py changes are the sanctioned bilingual-registry quicks (ehc/hhx), reviewed via 08-REVIEW |
+| 12-03: no snapshot-plugin/syrupy/cairosvg install; string equality is the compare | ✓ HELD | pyproject.toml + uv.lock grep for syrupy/cairosvg/pytest-textual-snapshot = **0 hits** this pass; test_snapshots.py compares UTF-8 SVG strings |
+| 12-04: no symlink/move merge; copy + SHA256 only | ✓ HELD | Merge path bytes unchanged since prior pass (prior `_copy_verified` verdict carries verbatim; 49/49 green) |
+| 12-04: no orchestrator convenience flags beyond --merge/--include-checkpoints; no run_sweep edits during phase | ✓ HELD | Bytes unchanged; argparse surface frozen (7 add_argument sites) |
+| 12-05: zero production-code changes in plan 05; never execute N=2 GPU procedure | ✓ HELD (phase-scoped) | Prior-pass commit evidence carries; no N=2 run exists on this host (WINDOWS #21 correctly still open) |
 
 ### Required Artifacts
 
-Byte-stable artifacts carry their prior three-level VERIFIED verdicts (empty diff vs 9429ddf279 proven this pass); changed artifacts re-verified.
+Byte-stable artifacts (empty `git log --since` vs prior verified timestamp) carry their prior three-level VERIFIED verdicts; changed artifacts re-verified on disk this pass.
 
 | Artifact | Expected | Status | Details |
-| --- | --- | --- | --- |
+| -------- | ----------- | ------ | ------- |
 | `pipeline/run_sweep_shard.py` | launch + merge orchestrator | ✓ VERIFIED | 1252 lines, byte-stable; 49/49 suite green this pass |
-| `tests/test_sweep_shard.py` | tier-1 + merge + isolation suites | ✓ VERIFIED | 49/49 green; only post-phase change is the docstring 62→59 count fix (ir9) — verified in git diff |
+| `tests/test_sweep_shard.py` | tier-1 + merge + isolation suites | ✓ VERIFIED | 1662 lines, byte-stable; 49/49 green; all 8 named proof tests present (:371-:1614) |
 | `script/gen_progress.py` | scanner-serializing generator | ✓ VERIFIED | 250 lines, byte-stable; 8/8 green |
-| `tests/tui/test_gen_progress.py` | golden-JSON tests | ✓ VERIFIED | Byte-stable; 8/8 green this pass |
+| `tests/tui/test_gen_progress.py` | golden-JSON tests | ✓ VERIFIED | 382 lines, byte-stable; 8/8 green this pass |
 | `dnallm-mark/progress.html` / `js/progress.js` / `css/progress.css` | frozen UI-SPEC page | ✓ VERIFIED | 38/427/71 lines, byte-stable; zero CDN re-confirmed |
-| `js/config.js`, `js/data.js`, `css/styles.css` | one-line site edits | ✓ VERIFIED | Byte-stable; NAV_LINKS :70, loadProgress :106, @import verified present |
-| `tests/js/progress-page.test.js` | DOM-less JS lane | ✓ VERIFIED | Byte-stable; 8 pass / 0 fail this pass |
-| `tui/screens/run_config.py` | delta B only (phase scope) | ✓ VERIFIED | Fix intact post-changes (:603/:633/:827/:1977); B1/B2 green; post-phase additions (CR-02 pre-check at :1910, c2l/f4w rows) reviewed sound in 12-REVIEW |
-| `tests/tui/test_pilot_run_config.py` | B1-B5 Pilot tests | ✓ VERIFIED | B1/B2 named tests 2 passed this pass (file gained 6 post-phase commits: CR-02/WR-01 seam pins — additive, review-verified) |
-| `tests/tui/test_snapshots.py` | harness + goldens + determinism/sensitivity | ✓ VERIFIED (automation) | 9 GOLDENS entries (:832-844), 9 xfail(strict) markers, `_GOLDEN_REFRESH_REASON` window bound at :903-910; 2 passed + 9 xfailed this pass |
-| `tests/tui/__snapshots__/*.svg` | committed corpus | ✓ VERIFIED (9; stale-by-design) | 9 SVGs on disk (29-68KB class); comparison state = designed strict-xfail window pending maintainer refresh (see SC5) |
-| `Makefile` | lint guard + snapshot-update | ✓ VERIFIED | PHASE12_MODULES :174 intact (run_sweep_shard + gen_progress); snapshot-update :132 intact. WR-02 note: directories_config.py (a post-phase f4w module, NOT phase scope) is absent from lint lists — advisory, see below |
-| `docs/multi-gpu.md` | D-04 decision doc | ✓ VERIFIED | Decision matrix :17; runbook incl. gen_progress mirror steps; 59-count accurate post-ir9 |
-| `README.md` | one-line link | ✓ VERIFIED | :122 + :541 (docs-generation added the second) |
-| `tests/tui/test_pilot_monitor.py` | delta A proof | ✓ VERIFIED | Named delta A test green this pass; post-phase commits are 11-08 hardening pins (additive) |
-| `.planning/WINDOWS.md` | entry 21 unrun-verify | ✓ VERIFIED | Row 21 open (unrun-verify, 2026-10-13); counters now open 19 / total 25 (ledger grew via quick tasks); golden-refresh entries #23-25 tracked |
+| `js/config.js`, `js/data.js`, `css/styles.css` | one-line site edits | ✓ VERIFIED | Byte-stable; NAV_LINKS :70, loadProgress :106, @import :25 verified present |
+| `tests/js/progress-page.test.js` | DOM-less JS lane | ✓ VERIFIED | 150 lines, byte-stable; JS lane 26 pass / 0 fail this pass |
+| `tui/screens/run_config.py` | delta B only (phase scope) | ✓ VERIFIED | Fix survived the ehc/hhx rework — B1/B2 named tests 2 passed over the current file; post-phase additions reviewed via scoped 08-REVIEW (disposition fixed) |
+| `tests/tui/test_pilot_run_config.py` | B1-B5 Pilot tests | ✓ VERIFIED | B1/B2 named tests green this pass (2 passed) |
+| `tests/tui/test_snapshots.py` | harness + goldens + determinism/sensitivity | ✓ VERIFIED | GOLDENS = 9 entries (:841), **zero xfail markers**, `_GOLDEN_REFRESH_REASON` retired; 11 passed this pass (9 golden compares + determinism + sensitivity) |
+| `tests/tui/__snapshots__/*.svg` | committed corpus | ✓ VERIFIED (9, maintainer-approved) | 9 SVGs on disk, regenerated in d5cb44b under the approved D-03 review; byte-matching (11/11 green proves compare integrity) |
+| `Makefile` | lint guard + snapshot-update | ✓ VERIFIED | PHASE12_MODULES :174 intact (run_sweep_shard + gen_progress); snapshot-update :132 intact; the one post-phase delta is the QUICK_PEX_DEMO existence-guard lint var (:182, ea69e38 — additive) |
+| `docs/multi-gpu.md` | D-04 decision doc | ✓ VERIFIED | Decision matrix :17; runbook + 9-step procedure + mirror steps verified present post docs-refresh (b89e87c) |
+| `README.md` | links to the decision doc | ✓ VERIFIED | :122 + :573 (demo-docs commit ab61868 + docs-refresh b89e87c kept both live) |
+| `tests/tui/test_pilot_monitor.py` | delta A proof | ✓ VERIFIED | Named delta A test green this pass over the post-quicks monitor |
+| `.planning/WINDOWS.md` | entry 21 unrun-verify | ✓ VERIFIED | Row 21 open (unrun-verify) — correct state; #23/#24/#25 fixed 2026-10-15; counters open 19 / total 28 |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
-| --- | --- | --- | --- | --- |
-| run_sweep_shard | run_sweep + registry_loader | sibling imports | ✓ WIRED | :181-182 re-confirmed; real-subprocess tests green over current run_sweep.py |
+| ---- | --- | --- | ------ | ------- |
+| run_sweep_shard | run_sweep + registry_loader | sibling imports | ✓ WIRED | :181-182 re-confirmed on disk; real-subprocess tests green over current run_sweep.py |
 | worker env CUDA_VISIBLE_DEVICES | torch | verbatim inheritance | ✓ WIRED | Spawn-kwargs test green in the 49/49 run |
 | gen_progress | tui.services.sweep_monitor | import + serialization | ✓ WIRED | :92 re-confirmed; 8/8 goldens green |
-| gen_progress --output | data/progress/sweep.json → loadProgress → ProgressPage | fetch chain | ✓ WIRED | data.js:106 + JS lane 8/8 green |
-| NAV_LINKS | site-wide navbar | js/navbar renders CONFIG.NAV_LINKS | ✓ WIRED | config.js:70 (byte-stable; the mlc nav rename was TUI strings.py only — web nav untouched) |
-| _PickerReturnModal.dismiss | #cfg-picker refocus | call_after_refresh | ✓ WIRED | :603/:633 present post-changes; B1/B2 green |
-| make snapshot-update | regeneration entry | module --regenerate block | ✓ WIRED | Makefile:132 → test_snapshots.py GOLDENS writer (review-verified writes all 9 incl. data_manager_presence) |
+| gen_progress --output | data/progress/sweep.json → loadProgress → ProgressPage | fetch chain | ✓ WIRED | data.js:106 + JS lane 26/26 green |
+| NAV_LINKS | site-wide navbar | js/navbar renders CONFIG.NAV_LINKS | ✓ WIRED | navbar.js:34; config.js:70 Progress entry present |
+| _PickerReturnModal.dismiss | #cfg-picker refocus | call_after_refresh | ✓ WIRED | B1/B2 named tests green over the current run_config.py |
+| make snapshot-update | regeneration entry | module --regenerate block | ✓ WIRED | Makefile:132 → test_snapshots.py --regenerate (d5cb44b proves the path end-to-end: it was used for the approved refresh) |
 | --merge | worker_root() | one naming authority | ✓ WIRED | Byte-stable module; merge tests green |
 | merged root | export_runs / sweep_monitor / gen_progress | consumer equivalence | ✓ WIRED | test_merged_root_is_consumer_equivalent green in the 49/49 run |
-| docs step 7 | script/gen_progress.py | mirror command in runbook | ✓ WIRED | :165/:170/:236 |
-| WINDOWS #21 | docs procedure → 12-05-SUMMARY | one thread | ✓ WIRED | Row 21 open; procedure verified present in docs |
+| docs step 7 | script/gen_progress.py | mirror command in runbook | ✓ WIRED | docs/multi-gpu.md :162-173 |
+| WINDOWS #21 | docs procedure → 12-05-SUMMARY | one thread | ✓ WIRED | Row 21 open; 9-step procedure at docs :200 |
 
 ### Data-Flow Trace (Level 4)
 
-Byte-stable artifacts carry their prior FLOWING verdicts (empty diff proven); no data-path changed.
+Byte-stable artifacts carry their prior FLOWING verdicts (no commits since prior pass = no data-path change); the golden corpus's data path changed BY DESIGN and is re-traced.
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
-| --- | --- | --- | --- | --- |
+| -------- | ------------- | ------ | ------------------ | ------ |
 | progress.html page | sweep.json payload | gen_progress → sweep_monitor over real artifact roots | Yes — scanner-driven; JS lane pins the render rules | ✓ FLOWING |
 | gen_progress.py | generated_at | injected/real clock | Yes — byte-stable; golden tests pin | ✓ FLOWING |
 | run_sweep_shard verdict table | failed-cell count | worker sweep_failures.json | Yes — byte-stable; verdict-table test green | ✓ FLOWING |
 | merged manifest | cells/failures unions | per-worker manifests + verified copies | Yes — consumer-equivalence test green this pass | ✓ FLOWING |
+| test goldens | SVG bytes | export_screenshot over driven apps | Yes — regenerated from real renders via make snapshot-update (d5cb44b); 9/9 compare green | ✓ FLOWING |
 
 ### Behavioral Spot-Checks
 
-Run this pass as single module suites / named tests (never the full workspace suite). Live-run context recorded per the refresh chain: dnabert smoke cells completed with full FLOPs artifacts (6.77e15 FLOs) through this milestone's chain; a bounded dnamamba subset is running.
+Module lanes and named tests only — the full workspace suite is a pinned known-good gate on this exact tree (1808 passed incl. the 9 golden tests green, node 26/26, ruff+ty green) and was deliberately not re-run; each lane below re-proves the phase's own claims over the CURRENT tree.
 
 | Behavior | Command | Result | Status |
-| --- | --- | --- | --- |
-| Orchestrator full module (LPT, validation, spawn, aggregation, merge, isolation, N=1 real subprocess) | `uv run --group dev --group tui pytest tests/test_sweep_shard.py -q` (once) | 49 passed in 0.58s | ✓ PASS |
-| Goldens module (8→9 corpus; determinism + sensitivity + strict-xfail pins) | `uv run --group dev --group tui pytest tests/tui/test_snapshots.py -q` (once) | 2 passed, 9 xfailed in 16.70s | ✓ PASS (the 9 xfailed ARE the designed stale-window state; matches the full-suite baseline's 9 xfailed) |
-| Generator golden contract | `uv run --group dev --group tui pytest tests/tui/test_gen_progress.py -q` (once) | 8 passed in 0.04s | ✓ PASS |
-| Delta A: N-root discovered table renders worker roots independently (post-11-08 monitor) | `pytest tests/tui/test_pilot_monitor.py::test_delta_a_discovered_pane_renders_worker_roots_independently -q` | 1 passed in 0.71s | ✓ PASS |
-| Delta B: modal dismiss refocuses picker; digits navigate immediately (post-c2l/f4w run_config) | `pytest ...::test_b1_preview_modal_esc_refocuses_picker ::test_b2_digit_navigates_immediately_after_preview_dismiss -q` | 2 passed in 1.24s | ✓ PASS |
-| Progress page JS lane (zero-CDN, no timers, honesty rules) | `node --test tests/js/progress-page.test.js` | 8 pass / 0 fail | ✓ PASS |
-
-Full workspace suite NOT re-run this pass (at-most-once discipline): module lanes above are the phase's evidence. The stated box baseline — 7 failed / 1743 passed / 9 xfailed — is consistent with observations: the 9 xfailed are directly observed above and are this phase's designed pins; the 7 failures are the documented pre-existing set recorded in the 10-07 gap-closure plan (5 schema/determinism pins stale after data commit 9e803ca + root-user chmod sims; WINDOWS #22 lineage), none in any phase-12 lane (all six phase-12 lanes green here).
+| -------- | ------- | ------ | ------ |
+| Goldens module: 9 golden compares (now regular green) + determinism + sensitivity | `uv run --group dev --group tui pytest tests/tui/test_snapshots.py -q` | 11 passed in 6.23s | ✓ PASS |
+| Orchestrator full module (LPT, validation, spawn, aggregation, merge, isolation, N=1 + two-worker real subprocess) | `uv run --group dev --group tui pytest tests/test_sweep_shard.py -q` | 49 passed in 0.44s | ✓ PASS |
+| Generator golden contract | `uv run --group dev --group tui pytest tests/tui/test_gen_progress.py -q` | 8 passed in 0.02s | ✓ PASS |
+| Delta A: N-root discovered table renders worker roots independently (post-quicks monitor) | `pytest tests/tui/test_pilot_monitor.py::test_delta_a_discovered_pane_renders_worker_roots_independently -q` | 1 passed | ✓ PASS |
+| Delta B: modal dismiss refocuses picker + digits navigate immediately (post-quicks run_config) | `pytest ...::test_b1_preview_modal_esc_refocuses_picker ...::test_b2_digit_navigates_immediately_after_preview_dismiss -q` | 2 passed in 1.83s (combined with delta A) | ✓ PASS |
+| Full JS lane incl. progress-page honesty rules | `node --test tests/js/*.test.js` | 26 pass / 0 fail | ✓ PASS |
 
 ### Probe Execution
 
@@ -151,54 +139,54 @@ No `scripts/*/tests/probe-*.sh` probes declared by this phase's plans or summari
 | MGPU-02 | 12-04, 12-05 | Per-worker monitoring views + artifact merge + isolated failure re-run | ✓ SATISFIED | Truth 2 (SC2) evidence |
 | MGPU-03 | 12-04 | DDP vs model-sharding applicability decision landed | ✓ SATISFIED | Truth 3 (SC3) evidence |
 | WEB-01 | 12-02 | Read-only web progress mirror, static artifacts, no backend | ✓ SATISFIED | Truth 4 (SC4) evidence |
-| TEST-01 | 12-03 | Textual snapshot SVG goldens for canonical screens, maintainer-reviewed commit | ✓ SATISFIED (automation) / review clause → human | Truth 5 (SC5) evidence |
+| TEST-01 | 12-03 | Textual snapshot SVG goldens for canonical screens, maintainer-verified commit | ✓ SATISFIED | Truth 5 (SC5) evidence — maintainer review now on record (d5cb44b/e70bf9f); goldens green as regular CI-compared tests |
 
-Orphaned-requirement check: REQUIREMENTS.md maps exactly MGPU-01/02/03, WEB-01, TEST-01 to Phase 12 (rows 125-130), all `[x]` Complete — all five claimed by plan frontmatter. No orphans.
+Orphaned-requirement check: REQUIREMENTS.md maps exactly MGPU-01/02/03, WEB-01, TEST-01 to Phase 12 (rows 125-130, all `[x]` Complete; row 128's I18N-01 belongs to Phase 8). All five claimed by plan frontmatter. No orphans.
 
 ### Decision Coverage
 
-`check.decision-coverage-verify`: skipped=false, blocking=false, **12/12 decisions honored** (D-01..D-12), not_honored=[].
+`check.decision-coverage-verify` reports `skipped: true, blocking: false, reason: "CONTEXT.md missing"` — the verb expects a file named `CONTEXT.md`, while this phase's context lives at `12-CONTEXT.md` (non-blocking skip). Manual coverage from the verified artifacts: D-01 (CLI-only orchestration; monitor unchanged), D-02 (web mirror inside the static site), D-03 (maintainer-approved goldens — closed this round), D-04 (decision doc landed), D-05 (machine-role split honored; no GPU probe in code), D-06 (marker-skip only), D-07 (single new entry), D-08 (one-line re-run, no convenience flag), D-09 (copy + SHA256 merge), D-10 (en nav link), D-11 (frozen clocks: generator `now=` + golden determinism), D-12 (the one dismiss() override). No decision found dishonored.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 | ---- | ---- | ------- | -------- | ------ |
-| (none) | — | — | — | Debt-marker scan (TBD/FIXME/XXX) clean across all covered source/test/doc files including the post-change ones; TODO/HACK scan clean; the SEL_*/WIZ_/*PLACEHOLDER hits are i18n input-placeholder string constants in strings.py (legit values, not stubs — same adjudication as prior pass) |
+| (none) | — | — | — | Debt-marker scan (TBD/FIXME/XXX) clean across ALL covered files including every post-change one (strings.py, run_config.py, test_snapshots.py, Makefile, README, docs/multi-gpu.md, the goldens); TODO/HACK scan clean on the TUI surface files |
 
-### Incremental Review Adjudication (12-REVIEW.md, committed 22b7304: 0 Critical / 2 Warnings / 2 Info)
+### Incremental-Change Adjudication (post-prior-pass quicks touching covered files)
 
-All four findings adjudicated **advisory — none is a gap** (no FAILED truth, no MISSING/STUB artifact, no NOT_WIRED link, no blocker anti-pattern; all four are durably recorded as open in 12-REVIEW-DISPOSITION.md):
+The stale covered set named by the refresh context was examined individually; every staleness cause is resolved and none is a gap:
 
-| # | Finding | Severity | Adjudication | Rationale |
-| --- | ------- | -------- | ------------ | --------- |
-| WR-01 | Blanket strict-xfail golden-drift window | warning | 📋 Advisory → folds into the standing D-03 human item | Designed interim state; window bounded three ways (`_GOLDEN_REFRESH_REASON` names task 261014-mlc + date + closure action at test_snapshots.py:903-910 — the review's own alternative fix, already in place; WINDOWS #25 tracks it open; strict=True detects the flip direction). Closure = the maintainer snapshot-update + review, i.e. exactly the standing human item. Sensitivity test proves red-on-drift today |
-| WR-02 | directories_config.py missing from make lint | warning | 📋 Advisory (#3304: new-scope, unevidenced) | The module is a post-phase quick-task (261014-f4w) artifact, not phase scope; phase 12's lint contract (PHASE12_MODULES) is intact. ty covers the whole pipeline/ tree; ruff-clean today (review-verified). No deterministic evidence — future-drift risk only. Follow-through belongs to the f4w task lineage / disposition ledger |
-| IN-01 | Pre-ir9 "62" fixture strings in out-of-scope TUI fakes | info | ℹ️ Info — deliberate, not a defect | Fixture values in test_pilot_env_check.py / test_pilot_nav_shell.py (neither a phase-12 covered file); review itself rules "should NOT be touched opportunistically" per fix discipline |
-| IN-02 | docs cleanup bullet joins two rm commands on one rendered line | info | ℹ️ Info — cosmetic | Each code span copies individually; no functional impact; recorded open in the disposition ledger |
+| Change | Commit(s) | Adjudication |
+| ------ | --------- | ------------ |
+| 9 goldens + test wiring (markers retired) | d5cb44b, 4c11655 | ✓ Resolved — exactly the 12-TEST-01 golden-refresh condition: maintainer D-03 review approved 2026-10-15 (on record), goldens committed, markers + `_GOLDEN_REFRESH_REASON` retired, 11/11 green. WR-01 (the prior pass's strict-xfail window advisory) is CLOSED by this |
+| Makefile lint wiring | ea69e38 | ✓ Lint-only — additive `QUICK_PEX_DEMO` existence-guard var (:182); PHASE12_MODULES (:174) and snapshot-update (:132) contracts intact |
+| README demo-doc links | ab61868 (+b89e87c docs refresh) | ✓ Docs-only — both multi-gpu links live (:122, :573) |
+| TUI surface rework (c4j/ehc/a4f/hhx) | 6a59178..190d1c4 | ✓ Reviewed via the scoped 08-REVIEW (601aa51, disposition d800613 — all findings fixed) and behaviorally re-proven here: delta A 1 passed, B1/B2 2 passed, goldens 11/11 over the reworked screens (the goldens now PIN the reworked screens — that is their purpose) |
+| docs/multi-gpu.md refresh | b89e87c | ✓ Docs-only — section map verified intact this pass |
 
 ### Coincidental-Reliance Check
 
-None flagged this pass. The byte-stability proof (empty diff vs 9429ddf279) makes the carried verdicts non-incidental — they hold over identical bytes; the changed files were behaviorally re-proven against the current tree (real-subprocess chains, current run_sweep.py, post-hardening monitor). No undeclared preconditions, no incidental ordering, no fixture-only preconditions behind any VERIFIED truth.
+None flagged. Byte-stability (0 commits vs the prior verified timestamp for the orchestrator and the entire web mirror) makes the carried verdicts non-incidental; the changed files were behaviorally re-proven against the current tree by named tests and module lanes; SC5's upgrade rests on directly observed maintainer-authored git + ledger records, not inference.
+
+### Advisory (New Scope, Unevidenced)
+
+Carried/re-checked findings reported, not blocking — see `advisory:` frontmatter.
+
+| # | Finding | Category | Why Advisory |
+| --- |---------|----------|--------------|
+| 1 | WINDOWS #21 — N=2 smoke on other hardware (D-05 machine-role split) | other | Ledger obligation by design; no SC breached (all 5 verified); /gsd-ship keeps it visible while open |
+| 2 | WR-02 (carried) — directories_config.py absent from make lint lane | architectural | New-scope, no deterministic evidence; not phase scope; recorded open in 12-REVIEW-DISPOSITION.md |
 
 ### Human Verification Required
 
-### 1. D-03 maintainer review of the 9 committed SVG goldens (now includes snapshot-update)
-
-**Test:** Run `make snapshot-update` to regenerate all 9 goldens (`tests/tui/__snapshots__/{env_check,selection_models,selection_datasets,data_manager,data_manager_presence,run_config,monitor_running,monitor_empty,wizard}.svg`), remove the 9 `xfail(strict=True)` markers in `tests/tui/test_snapshots.py`, then compare each regenerated golden against the 12-UI-SPEC corpus table (per-screen fixture state at 120x40). Close WINDOWS #25.
-**Expected:** All 9 goldens visually correct for their canonical screen states (marks, rendered param values, the five cell glyphs, stats/ETA, advisories — post the mlc slot-2/3 rework and locked nav labels); the markers removed so CI compares red-on-drift again.
-**Why human:** Machine context — the corpus is knowingly stale since quick-261014-mlc (every top bar changed); the refresh and the eyeball review are the maintainer's D-03 trust gate by the phase's own decision. Automation proves byte-stability, determinism, and sensitivity (2 passed / 9 xfailed this pass); it cannot prove visual rightness, and the current comparisons are absorbed into the designed xfail window (WR-01).
-
-### 2. WINDOWS #21 — other-machine N=2 multi-GPU smoke
-
-**Test:** Execute the 9-step procedure in `docs/multi-gpu.md` §"The 9-step N=2 multi-GPU smoke procedure" on the multi-GPU machine (bounded: 2 models × iDNA_ABF_datasets__5mC × 1 seed × 1 epoch), then record outcomes against WINDOWS #21 (row 21, open).
-**Expected:** Disjoint dry-run manifests; 2 workers pinned CUDA_VISIBLE_DEVICES=0/1; independent per-worker TUI views; failure isolation; `--from-failures` re-run touching only the failed worker's root; `--merge` with SHA256-verified union; web mirror over worker roots then the merged root separately; export equivalence; cleanup. Close WINDOWS #21 (ledger counters open 19 / total 25).
-**Why human:** Machine context — GB10 is single-GPU dev/test only (D-05 machine-roles), and the 4×5090 box was REPLACED: the target machine is now unspecified per maintainer 2026-10-14. By design maintainer-executed on other hardware; not executor-executable, not CI-able. Live supporting evidence this pass: dnabert smoke cells completed with full FLOPs artifacts (6.77e15 FLOs) through this milestone's chain and a bounded dnamamba subset is running — single-GPU chain health demonstrated; only the cross-worker N=2 procedure remains unexecuted.
+None. The prior pass's two human items are resolved: (1) the D-03 golden review was executed and approved by the maintainer on 2026-10-15, recorded in maintainer-authored commits d5cb44b/e70bf9f and the WINDOWS ledger resolution — the SC5 "maintainer-verified" clause is closed by that record plus the 11/11 green compare suite; (2) the WINDOWS #21 N=2 smoke is adjudicated a maintainer ledger obligation on other hardware by the D-05 machine-role decision (the standing memory directive: Phase 12 MGPU built here, validated elsewhere), tracked open in the ledger and enforced by `/gsd-ship` — it is not a phase-goal gap because every Success Criterion asserts a capability that is verified here, and the prior passed report adjudicated this same split.
 
 ### Gaps Summary
 
-No gaps. The stale-refresh pass found zero regressions: the orchestrator and the entire web mirror are byte-stable since the prior verified pass (empty diff vs 9429ddf279), and every behaviorally-proven claim was re-proven green over the post-change tree (49/49 orchestrator incl. merge/isolation/consumer-equivalence; delta A over the 11-08-hardened monitor; delta B over the c2l/f4w-extended run_config; 8/8 generator; 8/8 JS lane; 2 passed + 9 designed-xfailed goldens). All plan prohibitions held (phase-scoped ones by prior git evidence, bytes-unchanged ones verbatim). Requirements MGPU-01/02/03, WEB-01, TEST-01 all satisfied; decision coverage 12/12. The incremental review's 2 warnings + 2 info findings are all adjudicated advisory (WR-01 folds into the standing D-03 human item; WR-02 is unevidenced new-scope recorded in the disposition ledger). The phase routes exactly two items to humans by its own design — the D-03 golden refresh + review (corpus now 9) and the WINDOWS #21 other-machine N=2 smoke (machine now unspecified after the 4×5090 replacement) — hence `human_needed`, not `passed`.
+No gaps. The refresh pass verified the current tree end-to-end: the orchestrator and the entire web mirror are byte-stable since the prior verified pass and re-proven green (49/49 incl. real-subprocess chains, merge/isolation/consumer-equivalence; 8/8 generator; 26/26 JS lane); the changed TUI surface survived the sanctioned post-phase quicks (delta A + B1/B2 named tests green; quicks code-reviewed via the scoped 08-REVIEW); and the phase's one open human gate — the D-03 maintainer review of the goldens — landed on record 2026-10-15 with the golden refresh committed, the strict-xfail window retired, and all 9 golden tests now regular green CI comparisons. All plan prohibitions held. Requirements MGPU-01/02/03, WEB-01, TEST-01 all satisfied with no orphans. Two advisories carried (WINDOWS #21 ledger obligation; WR-02 lint-lane follow-through) — neither blocks. Phase goal achieved; 5/5.
 
 ---
 
-_Verified: 2026-10-14T17:33:12Z_
+_Verified: 2026-10-16T07:51:41Z_
 _Verifier: Claude (gsd-verifier)_
