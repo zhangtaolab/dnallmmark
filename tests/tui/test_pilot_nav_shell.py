@@ -533,7 +533,9 @@ def _bar_segments(screen):
 
 async def test_bottom_bar_env_keycaps_and_constant_right_segment():
     """The env keycaps render [r]/[enter] (no s); the right trio is
-    constant (261015-ehc: the L language keycap joined help/quit)."""
+    constant (261015-ehc: the L language keycap joined help/quit;
+    261016-v0z: the q label VALUE stays byte-identical — it renders in
+    every golden-pinned bottom bar, regeneration is maintainer-only)."""
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
@@ -580,6 +582,10 @@ async def test_bottom_bar_clips_at_80_help_modal_stays_complete():
         await pilot.pause()
 
         # at the 120x40 design grid the full left map renders (no clip)
+        # (261016-v0z deviation: APP_QUIT_LABEL's value stays
+        # byte-identical — it renders in every golden-pinned bottom bar
+        # and the golden discipline forbids regeneration — so the grid
+        # budgets are unchanged)
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_selection(pilot, app)
@@ -623,17 +629,26 @@ async def test_focused_input_eats_digits_no_screen_switch():
         assert isinstance(app.screen, EnvCheckScreen)
 
 
-async def test_no_priority_digit_binding_exists_anywhere():
-    """The prohibition, grep-pinned: no Binding(priority=True) anywhere
-    under tui/ — a priority binding would fire before a focused Input
-    and break typing (the verified textual semantics)."""
+async def test_no_priority_typing_key_binding_exists_anywhere():
+    """The prohibition, grep-pinned: no Binding(priority=True) on any
+    TYPING key anywhere under tui/ — a priority binding fires before a
+    focused Input and breaks typing (the verified textual semantics).
+    Modifier-combo keys are exempt (261016-v0z): ctrl+q — the declared
+    mirror of textual 8.2.8's own App default, which is priority=True —
+    cannot insert a character into an Input, so the typing hazard the
+    prohibition guards cannot arise from it."""
     tui_dir = Path(nav_module.__file__).parents[1]
     offenders = []
     for py in sorted(tui_dir.rglob("*.py")):
-        source = py.read_text(encoding="utf-8")
-        if re.search(r"priority\s*=\s*True", source):
-            offenders.append(py.name)
-    assert not offenders, f"priority bindings are prohibited: {offenders}"
+        for line in py.read_text(encoding="utf-8").splitlines():
+            if not re.search(r"priority\s*=\s*True", line):
+                continue
+            key_match = re.search(r'Binding\(\s*"([^"]+)"', line)
+            if key_match is not None and "+" not in key_match.group(1):
+                offenders.append(f"{py.name}: {line.strip()}")
+    assert not offenders, (
+        f"priority bindings on typing keys are prohibited: {offenders}"
+    )
 
 
 # =====================================================================

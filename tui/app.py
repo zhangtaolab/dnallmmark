@@ -15,8 +15,12 @@ onto this root.
   ``env_check_service`` override (the ``EnvCheckServiceProtocol`` seam —
   tier-2 Pilot tests inject deterministic fakes so no real kernel, GPU
   or otherwise, ever executes in CI, D-03); None means the real service.
-- App-level bindings (08-UI-SPEC Keyboard map): ``q`` quits from any
-  screen; ``?`` opens the help modal listing every active binding with
+- App-level bindings (08-UI-SPEC Keyboard map): ``q`` opens the quit
+  confirmation from any screen (261016-v0z: no exit without an explicit
+  operator confirm — no live sweep opens the Y/N quit modal, a live
+  sweep the kill/detach ExitModal; the inherited ctrl+q default is
+  declared explicitly and routes through the same guard);
+  ``?`` opens the help modal listing every active binding with
   its Chinese label from ``tui/strings.py`` (I18N-01).
 - Min-size guard (08-UI-SPEC Terminal Contract): below 80x24 the app
   renders ONLY the min-size message with the current dimensions — a
@@ -219,6 +223,56 @@ class ExitModal(ModalScreen):
         self.app.exit()
 
 
+class QuitConfirmModal(ModalScreen):
+    """The 261016-v0z no-sweep quit confirm: ``y`` exits, ``n``/``esc``
+    cancel — no key combination kills the console without an explicit
+    operator confirmation (the maintainer's 2026-10-16 ruling).
+
+    ``enter`` is STRUCTURALLY inert: the key is bound to a documented
+    no-op action (the LaunchConfirmModal EHC-2 idiom — a stray
+    double-enter can never quit). ``q``/``ctrl+q`` are inert while the
+    modal is top (the modal binding chain blocks app-level bindings,
+    Pitfall 11), so repeat presses cannot quit either. Deliberately NOT
+    the ExitModal surface: with a live sweep the kill/detach/cancel
+    triple stays, and its ``[enter]`` detach default is that modal's own
+    design — the two exit surfaces intentionally differ.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("y", "confirm_quit", show=False),
+        Binding("n", "dismiss", show=False),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
+        Binding("enter", "enter_inert", show=False),
+    ]
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(**kwargs)
+        self._message = message
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="quit-confirm-box", classes="modal-box"):
+            yield Static(self._message)
+            yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one("#quit-confirm-box", Vertical).border_title = (
+            S.LNC_EXIT_TITLE)
+
+    def action_confirm_quit(self) -> None:
+        """``y`` — the only key that confirms the quit (the ExitModal
+        tail idiom: exit straight, no dismiss needed)."""
+        self.app.exit()
+
+    def action_enter_inert(self) -> None:
+        """Enter is deliberately inert on the quit confirm (EHC-2
+        extended to the exit surface by the 261016-v0z ruling: enter
+        can never confirm a quit — a stray double-enter must not kill
+        the console; the live-sweep ExitModal keeps its own ``[enter]``
+        detach default by design — the two exit surfaces intentionally
+        differ)."""
+        # documented no-op: the enter binding lands here
+
+
 class MonitorSwitchRequested(Message):
     """D-13: switch to the monitor screen with the newly launched sweep
     attached (posted by ``sweep_launched`` so the async screen switch
@@ -315,9 +369,9 @@ class QueueStalledMessage(Message):
 # =====================================================================
 
 #: The app-local Binding-carrying screen classes (the sys.modules sweep
-#: below covers tui/screens/*; these three live HERE).
+#: below covers tui/screens/*; these four live HERE).
 _APP_LOCAL_BINDING_SCREENS: "tuple[type, ...]" = (
-    HelpModal, MinSizeScreen, ExitModal)
+    HelpModal, MinSizeScreen, ExitModal, QuitConfirmModal)
 
 
 def _binding_owning_screen_classes() -> "list[type]":
@@ -395,8 +449,9 @@ class DnallmMarkTui(App):
     # deliberately not landed, default theme tokens satisfy the contract).
     CSS_PATH = "styles.tcss"
 
-    # App-level bindings: q quits from any screen (unhandled keys bubble
-    # widget -> screen -> app, so a focused DataTable does not swallow q);
+    # App-level bindings: q opens the quit confirm from any screen
+    # (unhandled keys bubble widget -> screen -> app, so a focused
+    # DataTable does not swallow q; 261016-v0z — never a direct exit);
     # ? opens the help modal; L toggles the language (EHC-1, 261015-ehc —
     # uppercase L, no screen binds L/l; a focused Input consumes the
     # keystroke as text, which is the correct k9s behavior). The ClassVar
@@ -404,6 +459,24 @@ class DnallmMarkTui(App):
     # RUF012 resolution) — framework-read class constants.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("q", "quit", S.APP_QUIT_LABEL),
+        # 261016-v0z: the DECLARED mirror of the inherited App default
+        # (textual 8.2.8 app.py: ctrl+q -> quit, show=False,
+        # priority=True). Probe-pinned merge semantics (dom.py
+        # _merge_bindings walks reversed(cls.__mro__), per-key
+        # last-writer-wins): this derived same-key entry REPLACES the
+        # base entry entirely, and the action dispatch already resolved
+        # to the overridden action_quit (App-level bindings run their
+        # action on the app namespace) — the entry makes the inherited
+        # surface DECLARED and drift-proof while behaving identically
+        # (live sweep -> the ExitModal, none -> the quit confirm; never
+        # a direct exit on any path). show=False keeps it out of the
+        # footer/binding_row (the help row is declared manually in
+        # _binding_rows); system=True preserves the framework default's
+        # key-panel exclusion; priority=True preserves its
+        # fires-over-focused-Input reach (ctrl+q cannot type into an
+        # Input, so the priority-binding typing prohibition holds).
+        Binding("ctrl+q", "quit", show=False, priority=True,
+                system=True),
         Binding("question_mark", "help", S.APP_HELP_LABEL, key_display="?"),
         Binding("L", "toggle_language", S.APP_LANGUAGE_TOGGLE_LABEL),
     ]
@@ -911,13 +984,23 @@ class DnallmMarkTui(App):
     # ===== Actions (app-level) =====
 
     async def action_quit(self) -> None:
-        """The D-06 q intercept: a live sweep (``live_sweeps`` non-empty
-        OR the monitor's attached sweep running — a CLI-launched sweep
-        the TUI did not spawn) pushes the ExitModal (kill/detach/cancel,
-        default detach) instead of quitting; with neither, q quits
-        directly (the inherited path). Never pushes over the min-size
-        guard (WR-06). 11-07 threads the monitor's live done/total into
-        the message (absent markers when unknown — never fabricated).
+        """The guarded exit (the 261016-v0z contract: q and ctrl+q
+        ALWAYS confirm before exit — no key combination kills the console
+        without an explicit operator confirmation).
+
+        Legs, in order: (1) below the minimum grid NOTHING fires — no
+        chrome over the guard (WR-06) and never an unguarded exit (the
+        latent fall-through where a live sweep + below-min grid
+        previously reached ``self.exit()`` is closed); (2) a live sweep
+        (``live_sweeps`` non-empty OR the monitor's attached sweep
+        running — a CLI-launched sweep the TUI did not spawn) pushes the
+        ExitModal (kill/detach/cancel, default detach) instead of
+        quitting, byte-unchanged — no double confirm on top of the
+        operator's own kill/detach choice; (3) with neither, the
+        QuitConfirmModal (y-only, EHC-2; n/esc cancel) — the old direct
+        ``self.exit()`` tail is gone. 11-07 threads the monitor's live
+        done/total into the ExitModal message (absent markers when
+        unknown — never fabricated).
 
         WR-05 (phase-11 stale-refresh review): with MULTIPLE live
         sweeps the modal names EVERY live root (full resolved paths —
@@ -930,6 +1013,8 @@ class DnallmMarkTui(App):
         kill stays the documented launcher-noop). Async — the App base
         declares the coroutine signature (ty LSP).
         """
+        if self.below_minimum_grid:
+            return  # below the minimum grid: nothing fires, never an exit
         roots = self._launcher.live_sweeps()
         attached_running = False
         done = S.CFG_VALUE_ABSENT
@@ -938,7 +1023,7 @@ class DnallmMarkTui(App):
         if self._monitor_screen is not None:
             (attached_running, attached_root,
              done, total) = self._monitor_screen.attached_running_counts()
-        if (roots or attached_running) and not self.below_minimum_grid:
+        if roots or attached_running:
             if len(roots) > 1:
                 self.push_screen(ExitModal(
                     roots=tuple(roots), launcher=self._launcher,
@@ -952,7 +1037,7 @@ class DnallmMarkTui(App):
                               done=done, total=total,
                               root=Path(root).name)))
             return
-        self.exit()
+        self.push_screen(QuitConfirmModal(message=S.LNC_EXIT_CONFIRM))
 
     def action_help(self) -> None:
         """The ``?`` key: the help modal over the current screen.
@@ -979,6 +1064,15 @@ class DnallmMarkTui(App):
         """
         rows = [row for row in map(binding_row, self.BINDINGS)
                 if row is not None]
+        # 261016-v0z: the app-level exit keys whose bindings stay
+        # show=False/system — the declared ctrl+q mirror (the inherited
+        # default made explicit) and the audited ctrl+c help_quit
+        # default (notify-only, never exits) — get their help rows
+        # HERE, after the app bindings and before the screen's;
+        # resolved live from the strings registry so the L toggle
+        # re-derives them.
+        rows.append(("ctrl+q", S.APP_CTRLQ_LABEL))
+        rows.append(("ctrl+c", S.APP_CTRLC_LABEL))
         rows.extend(row for row
                     in map(binding_row, getattr(self.screen, "BINDINGS", []))
                     if row is not None)

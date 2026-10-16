@@ -144,8 +144,25 @@ def translate_value(text: Any, from_lang: str, to_lang: str) -> Any:
 APP_TITLE = _t("APP_TITLE", "DNALLM-Mark 控制台", "DNALLM-Mark Console")
 # Footer label for the app-level q binding (08-UI-SPEC Screen 1 footer:
 # "[q] 退出"). App-level copy, not screen copy, because the binding lives
-# on the composition root (08-03).
+# on the composition root (08-03). 261016-v0z: q never exits directly
+# anymore — no live sweep opens the Y/N quit confirm (LNC_EXIT_CONFIRM),
+# a live sweep the kill/detach ExitModal — but the label VALUE stays
+# byte-identical by deviation: it renders in the bottom bar of every
+# golden-pinned screen, and the task's golden discipline forbids
+# regeneration (D-03, maintainer-only); the confirm step is surfaced by
+# the modal copy + the ctrl+q/ctrl+c help rows instead.
 APP_QUIT_LABEL = _t("APP_QUIT_LABEL", "退出", "Quit")
+# 261016-v0z: the help-modal rows for the two app-level exit keys whose
+# bindings stay hidden from the bars (declared manually in
+# DnallmMarkTui._binding_rows, resolved live so the L toggle re-derives
+# them). ctrl+q is the declared mirror of the inherited App framework
+# default — the same guarded quit action as q; ctrl+c is textual 8.2.8's
+# help_quit default, audited notify-only (it names the key that quits,
+# it never quits itself).
+APP_CTRLQ_LABEL = _t(
+    "APP_CTRLQ_LABEL", "退出（同 q）", "Quit (same as q)")
+APP_CTRLC_LABEL = _t(
+    "APP_CTRLC_LABEL", "提示退出键（不退出）", "Quit-key hint (does not quit)")
 # Footer label + title for the app-level ? help binding/modal (08-UI-SPEC
 # Keyboard map: "? | app | help modal (all bindings)").
 APP_HELP_LABEL = _t("APP_HELP_LABEL", "帮助", "Help")
@@ -1532,6 +1549,14 @@ LNC_EXIT_MESSAGE_MULTI = _t(
     "[enter] 分离退出（默认） / [k] 终止后退出 / [esc] 返回",
     "Running sweeps: {n} ({roots}) — "
     "[enter] detach & exit (default) / [k] kill & exit / [esc] back")
+# 261016-v0z (the maintainer's always-confirm ruling: 退出的时候要确认，
+# 不能一按q就直接退出了): the no-sweep quit-confirm row — the [Y]/[N]
+# pair mirrors LNC_GATE_CONFIRM; y is the ONLY confirm key (enter is
+# structurally inert, EHC-2), n/esc cancel. The live-sweep ExitModal
+# above keeps its own kill/detach/cancel triple unchanged.
+LNC_EXIT_CONFIRM = _t(
+    "LNC_EXIT_CONFIRM", "确认退出控制台？— [Y] 退出 / [N] 取消",
+    "Quit the console? — [Y] quit / [N] cancel")
 
 # ===== 任务监控 (MON_, Phase 11) =====
 # The slot-5 monitor screen chrome, the discovered-sweep pane, the cell
