@@ -2392,3 +2392,171 @@ async def test_dir_picker_roots_at_nearest_existing_ancestor(
         assert Path(str(tree.path)) == root.resolve(), (
             "the tree roots at the deep path's nearest existing ancestor"
         )
+
+
+# =====================================================================
+# 261016-poa Task 1 — toggle anchor preservation (UX-1) + contrast pin
+# (UX-2)
+# =====================================================================
+
+
+def _wide_entries(n=40):
+    """The scrollable picker fixture: ``n`` sortable model keys (the
+    list must overflow every design-grid viewport so the toggle path's
+    scroll behavior is observable)."""
+    return PickerEntries(
+        model_entries=tuple(
+            _model_entry(f"model-{i:02d}") for i in range(n)),
+        dataset_entries=tuple(_FAKE_DATASETS),
+        custom_status={},
+    )
+
+
+async def _walk_to_midviewport_scrolled(pilot, app, downs=35, ups=3):
+    """Drive the cursor DEEP (past the bottom edge — the list scrolls,
+    the cursor rides the edge) then back up so it sits MID-viewport over
+    a scrolled list: the exact state a rebuild's bottom-edge snap
+    breaks (a cursor still ON the edge re-lands on the edge and hides
+    the bug)."""
+    picker = app.screen.query_one("#cfg-picker", PickerList)
+    for _ in range(downs):
+        await pilot.press("down")
+    for _ in range(ups):
+        await pilot.press("up")
+    await pilot.pause()
+    before_y = picker.scroll_offset.y
+    before_key = picker.key_at(picker.highlighted)
+    assert before_y > 0, (
+        "the fixture must scroll — a deeper cursor or smaller viewport"
+    )
+    return picker, before_key, before_y
+
+
+async def test_space_toggle_deep_row_keeps_cursor_key_and_scroll_offset():
+    """UX-1 (261016-poa): space-toggling a DEEP row in a scrolled picker
+    leaves BOTH the highlighted registry key and the EXACT scroll offset
+    unchanged. Pre-fix, the toggle's full rebuild ran
+    ``PickerList.set_rows`` -> ``clear_options`` (textual 8.2.8 resets
+    the scroll) -> highlighted restore -> ``watch_highlighted``'s
+    ``scroll_to_region(force=True)`` snapped the cursor row to the
+    viewport's BOTTOM EDGE — the visible list jump the maintainer
+    reported. The fix pins the final offset to the captured pre-toggle
+    value (byte-stable, never edge-derived)."""
+    run_service = FakeRunConfigService(entries=_wide_entries())
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        picker = screen.query_one("#cfg-picker", PickerList)
+        assert app.focused is picker
+        picker, before_key, before_y = await _walk_to_midviewport_scrolled(
+            pilot, app)
+        await pilot.press("space")
+        await _settle(pilot, app)
+        assert picker.key_at(picker.highlighted) == before_key, (
+            "the cursor stays on the SAME registry key across the toggle"
+        )
+        assert picker.scroll_offset.y == before_y, (
+            "the scroll offset is byte-stable across the toggle — no "
+            f"bottom-edge snap (was {before_y}, is "
+            f"{picker.scroll_offset.y})"
+        )
+        assert run_service.saved_specs[-1].models == (before_key,), (
+            "the toggled model joined the spec (the mark round-trip "
+            "through the fake's save_state)"
+        )
+
+
+async def test_screen_space_toggle_keeps_cursor_key_and_scroll_offset():
+    """UX-1 screen-level path: [space] with focus OFF the picker (a
+    params choice row — no space binding of its own) marks the picker's
+    cursor row through the screen action; the SAME key + scroll
+    invariants hold (both mark paths funnel through the one anchored
+    rebuild)."""
+    run_service = FakeRunConfigService(entries=_wide_entries())
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        picker = screen.query_one("#cfg-picker", PickerList)
+        picker, before_key, before_y = await _walk_to_midviewport_scrolled(
+            pilot, app)
+        # focus OFF the picker: the screen-level space action fires
+        screen.query_one("#cfg-value-peft").focus()
+        await pilot.pause()
+        assert app.focused is not picker
+        await pilot.press("space")
+        await _settle(pilot, app)
+        assert picker.key_at(picker.highlighted) == before_key, (
+            "the screen-space path keeps the cursor key too"
+        )
+        assert picker.scroll_offset.y == before_y, (
+            "the screen-space path keeps the scroll offset too"
+        )
+        assert run_service.saved_specs[-1].models == (before_key,), (
+            "the screen-space path marks the same cursor row"
+        )
+
+
+def test_styles_carry_picker_scoped_selected_contrast_rule():
+    """UX-2: styles.tcss overrides the MARKED-row component classes
+    scoped to the PickerList TYPE selector ONLY. textual 8.2.8's
+    SelectionList DEFAULT_CSS renders the marked row as $text-success on
+    $panel (low contrast — the maintainer complaint); a bare
+    ``SelectionList``/``OptionList`` rule would also restyle the
+    selection screen's preset picker and the wizard's enum lists and
+    drift THEIR goldens — forbidden. Presence pin; the visual truth is
+    the run_config golden + the maintainer D-03 review."""
+    tcss_path = (Path(__file__).resolve().parents[2] / "tui"
+                 / "styles.tcss")
+    source = tcss_path.read_text(encoding="utf-8")
+    assert "PickerList > .selection-list--button-selected" in source, (
+        "the selected component class is overridden on PickerList"
+    )
+    assert ("PickerList > .selection-list--button-selected-highlighted"
+            in source), (
+        "the selected+highlighted component class is overridden too"
+    )
+    assert "SelectionList >" not in source and (
+        "\nSelectionList" not in source), (
+        "no bare SelectionList rule — the selection screens' own lists "
+        "must keep the 8.2.8 default (their goldens stay byte-identical)"
+    )
+    assert "OptionList >" not in source and "\nOptionList" not in source, (
+        "no bare OptionList rule (same scope-leak guard)"
+    )
+
+
+async def test_filter_and_kind_flip_rebuilds_keep_index_clamp():
+    """UX-1 regression pin: the anchor restore rides ONLY the toggle
+    paths — the filter-typing and m-kind-flip rebuilds keep today's
+    index-clamp behavior exactly (highlighted = min(previous, last
+    row), no scroll restore)."""
+    run_service = FakeRunConfigService(entries=_wide_entries())
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        picker = screen.query_one("#cfg-picker", PickerList)
+        for _ in range(5):
+            await pilot.press("down")
+        await pilot.pause()
+        assert picker.highlighted == 5
+        # the m flip: 40 model rows -> 2 dataset rows; the clamp lands
+        # on the LAST dataset row (min(5, 1) == 1)
+        await pilot.press("m")
+        await pilot.pause()
+        assert picker.highlighted == 1
+        assert picker.key_at(picker.highlighted) == "task-2"
+        # flip back (clamp min(1, 39) == 1) then narrow to one row via
+        # the filter: the clamp lands on the single surviving row
+        await pilot.press("m")
+        await pilot.pause()
+        assert picker.highlighted == 1
+        await pilot.press("slash")
+        await pilot.pause()
+        for char in "model-07":
+            await pilot.press(char)
+        await pilot.pause()
+        assert picker.highlighted == 0
+        assert picker.key_at(picker.highlighted) == "model-07"
