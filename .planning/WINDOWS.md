@@ -303,7 +303,7 @@ last_updated: 2026-10-15T06:45:36.321Z
     "status": "fixed",
     "reason": "executed live 2026-10-13 (11-UAT.md status passed 2/2, maintainer-authorized bounded smoke incl. the E2'-blocks proof); artifacts re-read on disk by the 2026-10-16 refresh verifiers (finetuned-smoke/ both cells + trainer_state markers) — ledger row left open by bookkeeping oversight, closed 2026-10-16",
     "recorded_at": "2026-10-13T06:06:35.033Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-13T00:00:00.000Z",
     "milestone": "v1.2"
   },
   {
