@@ -2,15 +2,15 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: TUI任务
-current_phase: 12
-current_phase_name: Multi-GPU Orchestration & Console Hardening
-current_plan: 5
-status: verifying
+current_phase: 08
+current_phase_name: TUI Foundation (env check + selection)
+current_plan: 1
+status: executing
 stopped_at: Phase 07 complete, ready to verify Phase 12
-last_updated: "2026-10-16T00:01:45.107Z"
+last_updated: "2026-10-16T00:02:27.779Z"
 last_activity: 2026-10-16
-last_activity_desc: Phase 07 complete, transitioned to Phase 12
-state_head: 18838c0578af345950872e99e5ccacc0f1f68969
+last_activity_desc: Phase 08 execution started
+state_head: d94f29e57700c07ba3d006fbf2bc81f819b21f63
 progress:
   total_phases: 6
   completed_phases: 5
@@ -26,15 +26,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-11)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 07 — Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)
+**Current focus:** Phase 08 — TUI Foundation (env check + selection)
 
 ## Current Position
 
-Phase: 12 — Multi-GPU Orchestration & Console Hardening
-Current Plan: 5
-Total Plans in Phase: 6
-Status: Phase complete — ready for verification
-Last activity: 2026-10-16 — Phase 07 complete, transitioned to Phase 12
+Phase: 08 (TUI Foundation (env check + selection)) — EXECUTING
+Current Plan: 1
+Total Plans in Phase: 9
+Status: Executing Phase 08
+Last activity: 2026-10-16 — Phase 08 execution started
 
 Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 plans executed — all 38 requirements Complete)
 
@@ -267,6 +267,7 @@ None yet.
 | 261015-h8i | modelscope 入核：pyproject data 组加 modelscope>=1.40,<2（uv sync 即得完整下载能力，手动安装指引移除）；uv.lock 93→98 块（pandas/numpy 锚不动）；requirements.txt 带哈希重导出；GETTING-STARTED/DEVELOPMENT/PIN-VALIDATION 同步；CI 零改动 | 2026-10-15 | 3ebb2ca | [261015-h8i-modelscope-pyproject-toml-data-uv-lock-r](./quick/261015-h8i-modelscope-pyproject-toml-data-uv-lock-r/) |
 | 261015-pex | TUI 演示文档 docs/TUI-DEMO.md：pexpect 场景驱动 + asciinema/agg 录制十个真实操作旅程场景 × 双语（真实 ModelScope 模型/数据集下载、有界 plant-dnabert-6mer 训练过 y 门、EHC-3 拒绝、q→k 终止、失败重跑到完成） | 2026-10-15 | ab61868 | [261015-pex-tui-demo-doc-docs-tui-demo-md-real-task-](./quick/261015-pex-tui-demo-doc-docs-tui-demo-md-real-task-/) |
 | 261016-a4f | Fix 07-REVIEW scoped findings WR-01..04 + IN-01 (fail-closed env_smoke non-dict/empty-path registry reads, guarded env-screen persist tail, honest unreadable-registry verdict, _degraded_result annotation) | 2026-10-16 | 7217ca1 | [261016-a4f-fix-4-warning-1-info-from-the-07-scoped-](./quick/261016-a4f-fix-4-warning-1-info-from-the-07-scoped-/) |
+| 261016-hhx | Fix 08 delta review CR-01 + WR-01..03 + IN-01..03 (render-time i18n re-derivation, registry injectivity both directions, zenodo persist lane, env-remount guard, live-dict hygiene, shared language filename, DL_ toast twin) + zh demo GIF re-record (10 scenes + language-toggle-en, pure-zh casts) | 2026-10-16 | c76c315 | [261016-hhx-fix-08-delta-review-findings-cr-01-rende](./quick/261016-hhx-fix-08-delta-review-findings-cr-01-rende/) |
 
 ## Deferred Items
 
