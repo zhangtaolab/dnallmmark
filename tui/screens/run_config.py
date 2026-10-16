@@ -438,11 +438,27 @@ class PickerList(SelectionList):
             handler()
 
     def set_rows(self, keys: Sequence[str], prompts: Sequence[Text],
-                 marked: Sequence[bool], disabled: Sequence[bool]) -> None:
-        """Rebuild the rows, preserving the cursor where it still fits."""
+                 marked: Sequence[bool], disabled: Sequence[bool],
+                 anchor_key: "str | None" = None) -> None:
+        """Rebuild the rows, preserving the cursor where it still fits.
+
+        ``anchor_key`` (the toggle paths — the row set is IDENTICAL
+        before and after) additionally restores BOTH the highlighted row
+        (pinned to the registry KEY, not the index) and the EXACT
+        pre-rebuild scroll offset. WHY: textual 8.2.8's ``clear_options``
+        resets the scroll and ``watch_highlighted`` force-scrolls the
+        restored cursor to a viewport EDGE (``scroll_to_region(
+        force=True)``), so the full rebuild visibly jumps the list on
+        every space toggle; the captured offset is re-applied after the
+        restore (and re-asserted once the layout refresh settles — the
+        final authority over the watcher's edge snap). Without an
+        anchor (or when the key left the row set) today's index-clamp
+        behavior stands exactly, scroll untouched.
+        """
         self._row_keys = list(keys)
         self._row_disabled = list(disabled)
         highlighted = self.highlighted
+        prev_y = self.scroll_offset.y
         self.clear_options()
         rows = [
             Selection(prompt, key, initial_state=mark)
@@ -451,8 +467,22 @@ class PickerList(SelectionList):
         ]
         if rows:
             self.add_options(rows)
-            self.highlighted = min(
-                highlighted if highlighted is not None else 0, len(rows) - 1)
+            if anchor_key is not None and anchor_key in self._row_keys:
+                # the highlighted restore fires the 8.2.8 edge-snap
+                # watcher; the explicit scroll_to back to the captured
+                # offset is the final authority (synchronous on
+                # ScrollView), the call_after_refresh follow-up
+                # re-asserts it after add_options' pending layout
+                # refresh settles.
+                self.highlighted = self._row_keys.index(anchor_key)
+                self.scroll_to(y=prev_y, animate=False, immediate=True)
+                self.call_after_refresh(
+                    lambda: self.scroll_to(
+                        y=prev_y, animate=False, immediate=True))
+            else:
+                self.highlighted = min(
+                    highlighted if highlighted is not None else 0,
+                    len(rows) - 1)
 
     def key_at(self, index: "int | None") -> "str | None":
         """The registry key at a row index (None when out of range)."""
@@ -1394,7 +1424,7 @@ class RunConfigScreen(Screen):
                    else self._entries.dataset_entries)
         return tuple(str(entry["key"]) for entry in entries)
 
-    def _render_picker(self) -> None:
+    def _render_picker(self, anchor_key: "str | None" = None) -> None:
         entries, kind = self._current_entries()
         picker = self.query_one("#cfg-picker", PickerList)
         marked_set = (set(self._spec.models) if kind == "models"
@@ -1426,7 +1456,8 @@ class RunConfigScreen(Screen):
             keys.append(key)
             marked.append(key in marked_set and not is_disabled)
             disabled.append(is_disabled)
-        picker.set_rows(keys, prompts, marked, disabled)
+        picker.set_rows(keys, prompts, marked, disabled,
+                        anchor_key=anchor_key)
         self._render_counts()
         self._render_filter_count(len(filtered), len(entries))
 
@@ -1596,11 +1627,13 @@ class RunConfigScreen(Screen):
         if kind == "models":
             marks = set(self._spec.models)
             marks.symmetric_difference_update({key})
-            self._apply_spec_change(models=tuple(marks))
+            self._apply_spec_change(models=tuple(marks),
+                                    picker_anchor=key)
         else:
             marks = set(self._spec.tasks)
             marks.symmetric_difference_update({key})
-            self._apply_spec_change(tasks=tuple(marks))
+            self._apply_spec_change(tasks=tuple(marks),
+                                    picker_anchor=key)
 
     def on_disabled_mark_requested(
             self, message: DisabledMarkRequested) -> None:
@@ -1660,11 +1693,13 @@ class RunConfigScreen(Screen):
         if kind == "models":
             marks = set(self._spec.models)
             marks.symmetric_difference_update({key})
-            self._apply_spec_change(models=tuple(marks))
+            self._apply_spec_change(models=tuple(marks),
+                                    picker_anchor=key)
         else:
             marks = set(self._spec.tasks)
             marks.symmetric_difference_update({key})
-            self._apply_spec_change(tasks=tuple(marks))
+            self._apply_spec_change(tasks=tuple(marks),
+                                    picker_anchor=key)
 
     def action_switch_kind(self) -> None:
         """[m] flips models <-> datasets (the title flips with it)."""
@@ -2039,12 +2074,18 @@ class RunConfigScreen(Screen):
 
     # ===== spec mutation (persist + preview through the worker) =====
 
-    def _apply_spec_change(self, **changes: Any) -> None:
+    def _apply_spec_change(self, picker_anchor: "str | None" = None,
+                           **changes: Any) -> None:
         """One spec mutation: advance the base, re-render counts, then
-        persist + preview through the exclusive worker."""
+        persist + preview through the exclusive worker.
+
+        ``picker_anchor`` is consumed HERE — never a spec field (the
+        ``replace`` below receives only the real changes): the toggled
+        registry key the picker rebuild restores its cursor + scroll
+        around (UX-1, 261016-poa)."""
         self._spec = replace(self._spec, **changes)
         self._render_counts()
-        self._render_picker()
+        self._render_picker(anchor_key=picker_anchor)
         self._refresh_preview()
 
 

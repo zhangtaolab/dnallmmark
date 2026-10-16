@@ -556,6 +556,21 @@ BottomBar {
     height: 1fr;    /* the list owns the picker's remaining rows; scrolls */
 }
 
+/* UX-2 (261016-poa): the slot-4 picker's MARKED row at higher contrast.
+ * textual 8.2.8's SelectionList DEFAULT_CSS renders the marked row as
+ * color $text-success on background $panel through exactly these two
+ * component classes (.selection-list--button-selected[-highlighted]) —
+ * low contrast against the neighboring rows. $boost (the brighter
+ * surface token) + bold raises the marked row clear of its neighbors.
+ * Scoped to the PickerList TYPE selector ONLY: a bare SelectionList or
+ * OptionList rule would also restyle the selection screen's preset
+ * picker and the wizard's enum lists, drifting THEIR goldens. */
+PickerList > .selection-list--button-selected,
+PickerList > .selection-list--button-selected-highlighted {
+    background: $boost;
+    text-style: bold;
+}
+
 #cfg-params-col {
     width: 1fr;                /* the params column keeps the remainder */
     height: auto;
