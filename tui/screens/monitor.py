@@ -43,6 +43,7 @@ verbatim.
 """
 
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
@@ -57,7 +58,11 @@ from textual.widgets import DataTable, Footer, Label, RichLog
 
 from tui import strings as S
 from tui.screens.nav import BottomBar, TopMenuBar
-from tui.screens.selection import LaunchConfirmModal, PathInputModal
+from tui.screens.selection import (
+    ConfirmModal,
+    LaunchConfirmModal,
+    PathInputModal,
+)
 from tui.services import run_config as run_config_svc
 from tui.services import sweep_launcher as sweep_launcher_module
 from tui.services import sweep_monitor
@@ -528,6 +533,46 @@ class FailuresModal(ModalScreen):
         self._monitor.request_rerun(self._root, tuple(self._failures))
 
 
+class KillConfirmModal(ConfirmModal):
+    """The 261016-vxr [k] kill confirm: ``y`` is the ONLY key that
+    stops the training, ``n``/``esc`` cancel, and ``enter`` is
+    STRUCTURALLY inert — bound to a documented no-op (the
+    LaunchConfirmModal EHC-2 idiom: a stray double-enter can never
+    SIGTERM a live sweep).
+
+    This modal NEVER exits the console: stopping a training task and
+    quitting the console are distinct operator acts — y dismisses and
+    fires the ``on_confirm`` callback (the screen's off-loop kill
+    worker), nothing else.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("y", "confirm_kill", show=False),
+        Binding("n", "dismiss", show=False),
+        # escape inherited from ConfirmModal
+    ]
+
+    def __init__(self, message: str, root: str,
+                 on_confirm: "Callable[[], None]", **kwargs):
+        super().__init__(message, on_confirm, **kwargs)
+        self._root = root
+
+    def on_mount(self) -> None:
+        box = self.query_one("#confirm-box", Vertical)
+        box.border_title = S.MON_KILL_TITLE.format(root=self._root)
+
+    def action_confirm(self) -> None:
+        """Enter is deliberately inert on the kill confirm (EHC-2
+        extended to the kill surface by 261016-vxr: only ``y`` stops a
+        training; the message copy names the [Y] keycap)."""
+        # documented no-op: the inherited enter binding lands here
+
+    def action_confirm_kill(self) -> None:
+        """``y`` — the one key that confirms the kill."""
+        self.dismiss()
+        self._on_confirm()
+
+
 class LogTailModal(ModalScreen):
     """The [t] log-tail modal: the bounded RichLog tail of the tee file
     refreshed on the 2s cadence while open; the dim tee line names the
@@ -763,6 +808,9 @@ class MonitorScreen(Screen):
         Binding("t", "show_log_tail", S.MON_LOG_KEYCAP),
         Binding("a", "attach_path", S.MON_ATTACH_LABEL),
         Binding("r", "rescan", S.MON_RESCAN_LABEL),
+        # 261016-vxr (VXR-2): stop the attached training through the
+        # launcher's kill channel — y-only confirm, console stays up
+        Binding("k", "kill_running", S.MON_KILL_KEYCAP),
         Binding("1", "app.nav(1)", S.NAV_LABEL_ENV, show=False),
         Binding("2", "app.nav(2)", S.NAV_LABEL_SELECTION, show=False),
         Binding("3", "app.nav(3)", S.NAV_LABEL_DATA, show=False),
@@ -836,6 +884,28 @@ class MonitorScreen(Screen):
             self.run_id = run_id
             super().__init__()
 
+    class KillFinished(Message):
+        """The kill outcome arrived (worker thread -> loop; 261016-vxr,
+        VXR-2). The console NEVER exits on this path — the handler only
+        renders the outcome toast."""
+
+        def __init__(self, outcome: str, root: str, run_id: int) -> None:
+            self.outcome = outcome
+            self.root = root
+            self.run_id = run_id
+            super().__init__()
+
+    class KillFailed(Message):
+        """The kill worker RAISED (WR-03): surfaced as the MON_KILL_
+        FAILED error toast — a confirmed kill that dies is never a
+        silent no-op."""
+
+        def __init__(self, error: str, root: str, run_id: int) -> None:
+            self.error = error
+            self.root = root
+            self.run_id = run_id
+            super().__init__()
+
     def __init__(self,
                  monitor_service: "MonitorServiceProtocol | None" = None,
                  launcher_service: "MonitorLauncherProtocol | None" = None,
@@ -876,6 +946,9 @@ class MonitorScreen(Screen):
         self._full_run_id = 0
         self._frontier_run_id = 0
         self._rerun_stage_id = 0
+        # 261016-vxr (VXR-2): the kill worker's stage id (the WR-02
+        # idiom — a superseded kill's late outcome toast drops)
+        self._kill_stage_id = 0
         self._pending_rescan = False
         self._frontier_timer = None
         self._full_timer = None
@@ -1385,6 +1458,89 @@ class MonitorScreen(Screen):
         self.app.notify(
             S.LNC_LAUNCH_FAILED_TOAST.format(
                 error=getattr(outcome, "error", None) or ""),
+            severity="error")
+
+    # ===== the [k] kill channel (261016-vxr, VXR-2) =====
+
+    def action_kill_running(self) -> None:
+        """[k]: stop the attached training through the launcher's kill
+        channel — behind its OWN y-only confirm (enter structurally
+        inert, EHC-2); the console NEVER exits on this path (stopping a
+        training task and quitting the console are distinct operator
+        acts). Degradations: below the minimum grid nothing opens
+        (WR-06); no attached root is silent (the [f]/[t] precedent); an
+        attached root NOT in ``live_sweeps()`` (CLI-launched or already
+        dead) refuses BEFORE the confirm with MON_KILL_UNAVAILABLE —
+        never a confirm the channel cannot execute."""
+        if self.app.below_minimum_grid:
+            return
+        root = self._attached_root
+        if root is None:
+            return
+        root_key = str(root)
+        if root_key not in self._launcher.live_sweeps():
+            self.app.notify(
+                S.MON_KILL_UNAVAILABLE.format(root=root_key))
+            return
+        # EHC-3 (261015-ehc ruling 3): the single-GPU serialization
+        # guard is deliberately NOT consulted here — kill is the
+        # REMEDY on a busy single-GPU machine, not a launch.
+        self.app.push_screen(KillConfirmModal(
+            message=S.MON_KILL_CONFIRM,
+            root=root_key,
+            on_confirm=lambda: self._kill_confirmed(root_key)))
+
+    def _kill_confirmed(self, root: str) -> None:
+        """y landed on the kill confirm: bump the kill stage id (the
+        WR-02 idiom — a superseded kill's late outcome toast drops) and
+        dispatch the off-loop kill worker."""
+        self._kill_stage_id += 1
+        self._run_kill(root, self._kill_stage_id)
+
+    @work(exclusive=True, thread=True, group="mon-kill",
+          exit_on_error=False)
+    def _run_kill(self, root: str, run_id: int) -> None:
+        """The kill through the TOLERANT getattr seam (261016-vxr): a
+        launcher face without ``kill_sweep`` (every pre-existing fake —
+        the Protocol deliberately does NOT declare it, so no fake is
+        ever ty-flagged) reads the noop outcome, exactly the
+        entries_progress / single_gpu_launch_blocked precedent.
+        ``kill_sweep`` blocks up to the kill grace polling the process
+        group — NEVER on the event loop. WR-03: an exception posts
+        KillFailed, never a silent post-confirm no-op."""
+        kill_getter = getattr(self._launcher, "kill_sweep", None)
+        try:
+            outcome = (kill_getter(root) if kill_getter is not None
+                       else sweep_launcher_module.OUTCOME_NOOP)
+        except Exception as exc:  # noqa: BLE001 — WR-03
+            self.post_message(self.KillFailed(
+                str(exc) or repr(exc), root, run_id))
+            return
+        self.post_message(self.KillFinished(outcome, root, run_id))
+
+    def on_monitor_screen_kill_finished(
+            self, message: KillFinished) -> None:
+        """The kill outcome toast — the console stays up (this handler
+        never exits anything; the sweep's own scanner state refreshes
+        on the next cadence tick)."""
+        if message.run_id != self._kill_stage_id:
+            return  # a superseded kill's late post (WR-02)
+        if message.outcome == sweep_launcher_module.OUTCOME_SIGNALLED:
+            self.app.notify(S.MON_KILL_TOAST.format(root=message.root))
+        elif (message.outcome
+                == sweep_launcher_module.OUTCOME_ALREADY_DEAD):
+            self.app.notify(
+                S.MON_KILL_TOAST_DEAD.format(root=message.root))
+        else:  # noop: the channel no longer knows the root
+            self.app.notify(
+                S.MON_KILL_UNAVAILABLE.format(root=message.root))
+
+    def on_monitor_screen_kill_failed(self, message: KillFailed) -> None:
+        """WR-03: the kill worker raised — the error toast names it."""
+        if message.run_id != self._kill_stage_id:
+            return
+        self.app.notify(
+            S.MON_KILL_FAILED.format(error=message.error),
             severity="error")
 
     # ===== rendering (event-loop side only) =====

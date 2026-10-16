@@ -163,6 +163,16 @@ APP_CTRLQ_LABEL = _t(
     "APP_CTRLQ_LABEL", "退出（同 q）", "Quit (same as q)")
 APP_CTRLC_LABEL = _t(
     "APP_CTRLC_LABEL", "提示退出键（不退出）", "Quit-key hint (does not quit)")
+# 261016-vxr (VXR-3): the help-modal row for the uppercase-Q any-focus
+# exit — an App.on_event intercept (NOT a BINDINGS entry: a printable
+# priority binding cannot fire over a focused Input, probe P1, and
+# would stack modals over modals, probe P9), consumed before it can
+# type; declared manually in _binding_rows beside the ctrl+q/ctrl+c
+# rows so the L toggle re-derives it. The base-screen typing sacrifice
+# (a capital Q no longer types into base-screen Inputs) is the
+# maintainer's chosen tradeoff; modals stay exempt.
+APP_Q_LABEL = _t(
+    "APP_Q_LABEL", "退出（任意焦点生效）", "Quit (works at any focus)")
 # Footer label + title for the app-level ? help binding/modal (08-UI-SPEC
 # Keyboard map: "? | app | help modal (all bindings)").
 APP_HELP_LABEL = _t("APP_HELP_LABEL", "帮助", "Help")
@@ -1751,6 +1761,33 @@ MON_RESCAN_LABEL = _t("MON_RESCAN_LABEL", "重扫", "Rescan")
 MON_RESCAN_TOAST = _t(
     "MON_RESCAN_TOAST", "✓ 已完成全扫（{n} 训练任务）",
     "✓ full scan done ({n} sweeps)")
+
+# 261016-vxr (VXR-2): the slot-5 [k] kill-confirm family — stop the
+# ATTACHED training through the launcher's kill channel WITHOUT exiting
+# the console (the maintainer's live-session batch). The keycap mirrors
+# MON_FAILURES_KEYCAP/MON_LOG_KEYCAP style; the confirm's [Y]/[N] pair
+# mirrors LNC_GATE_CONFIRM/LNC_EXIT_CONFIRM (y the ONLY confirm key —
+# enter is structurally inert, EHC-2 extended to the kill). Consumers:
+# tui/screens/monitor.py (KillConfirmModal + action_kill_running +
+# the outcome toasts).
+MON_KILL_KEYCAP = _t("MON_KILL_KEYCAP", "停止", "Kill")
+MON_KILL_TITLE = _t(
+    "MON_KILL_TITLE", "停止训练 — {root}", "Stop training — {root}")
+MON_KILL_CONFIRM = _t(
+    "MON_KILL_CONFIRM", "确认停止当前训练任务？— [Y] 停止 / [N] 取消",
+    "Stop the current training task? — [Y] stop / [N] cancel")
+MON_KILL_TOAST = _t(
+    "MON_KILL_TOAST", "✓ 已发送停止信号：{root}",
+    "✓ Stop signal sent: {root}")
+MON_KILL_TOAST_DEAD = _t(
+    "MON_KILL_TOAST_DEAD", "任务已先行结束：{root}",
+    "Already finished before the stop: {root}")
+MON_KILL_UNAVAILABLE = _t(
+    "MON_KILL_UNAVAILABLE",
+    "无法停止：{root} 上没有本控制台启动的运行中训练",
+    "Cannot stop: no live TUI-launched sweep at {root}")
+MON_KILL_FAILED = _t(
+    "MON_KILL_FAILED", "✗ 停止失败: {error}", "✗ stop failed: {error}")
 
 # Cell detail (enter): the title shape and the per-fraction line under
 # --curve (record fields render verbatim — data, never translated).

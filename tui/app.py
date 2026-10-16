@@ -1039,6 +1039,46 @@ class DnallmMarkTui(App):
             return
         self.push_screen(QuitConfirmModal(message=S.LNC_EXIT_CONFIRM))
 
+    async def on_event(self, event: events.Event) -> None:
+        """261016-vxr (VXR-3): the uppercase-Q any-focus exit intercept
+        (the maintainer's 2026-10-16 live-session option (a) — the
+        filter-input focus trap: quit must work from ANY base-screen
+        focus).
+
+        Why an ``on_event`` intercept and NOT a BINDINGS entry
+        (probe-pinned on textual 8.2.8): (P1) an App-level Q binding
+        declared with the priority flag does NOT fire while an Input
+        is focused — Screen._binding_chain applies a consume-key
+        filter, and a focused Input's ``check_consume_key`` returns
+        True for EVERY printable character, stripping the key from
+        every later namespace's binding map INCLUDING the app's, so the
+        priority walk finds no Q anywhere. Only intercepting the Key
+        event BEFORE the binding machinery delivers the intent. (P9) a
+        priority binding would ALSO fire while a modal is top (the
+        priority path walks the full _binding_chain, not the
+        modal-cut chain), stacking a second confirm over an open one —
+        the explicit ``not is_modal`` guard here makes Q inert under
+        every modal, so a capital Q stays TYPEABLE inside modal Inputs
+        (an E2' phrase or a path containing Q).
+
+        Contract (P10-P14): Q with a mounted, non-modal top screen
+        routes to the guarded ``action_quit`` chain (below-min-grid ->
+        nothing; live sweep -> ExitModal; neither -> QuitConfirmModal)
+        and is CONSUMED — returned without ``super()``, never
+        forwarded, never typed. Documented consequence of option (a):
+        a capital Q can no longer be typed into BASE-screen Inputs (the
+        selection filter, the run-config inputs) — it is reserved as
+        the exit key on base screens; modals are exempt. Every other
+        event delegates to the App base unchanged (lowercase q keeps
+        its Input semantics).
+        """
+        if (isinstance(event, events.Key) and event.key == "Q"
+                and self.screen is not None
+                and not self.screen.is_modal):
+            await self.action_quit()
+            return  # consumed: never forwarded, never typed
+        await super().on_event(event)
+
     def action_help(self) -> None:
         """The ``?`` key: the help modal over the current screen.
 
@@ -1073,6 +1113,10 @@ class DnallmMarkTui(App):
         # re-derives them.
         rows.append(("ctrl+q", S.APP_CTRLQ_LABEL))
         rows.append(("ctrl+c", S.APP_CTRLC_LABEL))
+        # 261016-vxr (VXR-3): the any-focus Q exit row joins after the
+        # ctrl+c row (the same manual-row pattern — the intercept is an
+        # on_event override, so it has no BINDINGS entry to project).
+        rows.append(("Q", S.APP_Q_LABEL))
         rows.extend(row for row
                     in map(binding_row, getattr(self.screen, "BINDINGS", []))
                     if row is not None)
