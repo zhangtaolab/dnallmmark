@@ -1794,6 +1794,145 @@ async def test_exit_modal_multi_root_enter_detaches_every_live_sweep():
         assert app._exit, "detach-then-quit initiates the exit"
 
 
+async def test_q_uppercase_quits_from_focused_input_never_types():
+    """VXR-3 (the maintainer's 2026-10-16 live-session trap): uppercase Q
+    fires the guarded quit chain even while an Input holds focus — and
+    the key is CONSUMED: never typed into the Input (the on_event
+    intercept; a printable priority Binding cannot do this). y then
+    confirms the quit the Q opened."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        from tui.app import QuitConfirmModal
+
+        seeds_input = app.screen.query_one("#cfg-input-seeds", Input)
+        seeds_input.focus()
+        await pilot.pause()
+        value_before = seeds_input.value
+        await pilot.press("Q")
+        await pilot.pause()
+        assert isinstance(app.screen, QuitConfirmModal), (
+            "Q must fire the quit chain over a focused Input"
+        )
+        assert not app._exit, "Q alone never quits — the chain confirms"
+        assert seeds_input.value == value_before, (
+            "the Q keypress is consumed — never typed into the Input"
+        )
+        await pilot.press("y")
+        await pilot.pause()
+        assert app._exit, "y confirms the quit the Q opened"
+
+
+async def test_q_uppercase_live_sweep_routes_to_exit_modal():
+    """VXR-3: with a live sweep, Q from a focused Input routes to the
+    ExitModal (the v0z live leg) — input unchanged, never exited."""
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        from tui.app import ExitModal
+
+        seeds_input = app.screen.query_one("#cfg-input-seeds", Input)
+        seeds_input.focus()
+        await pilot.pause()
+        value_before = seeds_input.value
+        await pilot.press("Q")
+        await pilot.pause()
+        assert isinstance(app.screen, ExitModal), (
+            "Q over a focused Input routes through the live-sweep leg"
+        )
+        assert not app._exit
+        assert seeds_input.value == value_before, "Q never types"
+
+
+async def test_q_lowercase_still_types_into_inputs():
+    """VXR-3 regression pin: lowercase q keeps its Input semantics —
+    it types, opens no modal (byte-unchanged behavior)."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        seeds_input = app.screen.query_one("#cfg-input-seeds", Input)
+        seeds_input.focus()
+        await pilot.pause()
+        await pilot.press("q")
+        await pilot.pause()
+        # Textual Input's select_on_focus: focus() selects the content,
+        # so the typed q REPLACES it — the standard focused-input typing
+        # semantics (the key arrives at the Input, not the app binding)
+        assert seeds_input.value == "q", (
+            "lowercase q still types into the focused Input"
+        )
+        assert isinstance(app.screen, RunConfigScreen), (
+            "lowercase q opens no modal while an Input holds focus"
+        )
+
+
+async def test_q_uppercase_inert_under_modals_types_in_modal_inputs():
+    """VXR-3 modal guard: Q under the QuitConfirmModal neither quits nor
+    stacks a second modal; Q under an Input-bearing modal TYPES the
+    character (an E2' phrase or path containing a capital Q stays
+    enterable — modals are exempt from the intercept)."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        from tui.app import QuitConfirmModal
+        from tui.screens.selection import PathInputModal
+
+        await pilot.press("q")   # no live sweep -> the quit confirm
+        await pilot.pause()
+        assert isinstance(app.screen, QuitConfirmModal)
+        await pilot.press("Q")
+        await pilot.pause()
+        assert sum(isinstance(screen, QuitConfirmModal)
+                   for screen in app.screen_stack) == 1, (
+            "Q under a modal must never stack a second one"
+        )
+        assert not app._exit, "Q under a modal never quits"
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, RunConfigScreen)
+
+        # an Input-bearing modal top: the Q TYPES, never quits
+        app.push_screen(PathInputModal(
+            "title", "placeholder", on_submit=lambda _path: None))
+        await pilot.pause()
+        path_input = app.screen.query_one("#path-input", Input)
+        await pilot.press("Q")
+        await pilot.pause()
+        assert path_input.value == "Q", (
+            "capital Q stays typeable inside modal Inputs"
+        )
+        assert isinstance(app.screen, PathInputModal), (
+            "no quit, no second modal under the input modal"
+        )
+        assert not app._exit
+
+
+async def test_q_uppercase_below_min_grid_never_exits():
+    """VXR-3: below 80x24, Q opens nothing and exits nothing — the
+    guarded chain's first leg is the WR-06 posture (no chrome over the
+    guard, never an unguarded exit), live sweep included."""
+    from tui.app import ExitModal, MinSizeScreen
+
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+        await pilot.press("Q")
+        await pilot.pause()
+        assert not app._exit, "Q below the min grid must never exit"
+        assert not any(isinstance(screen, ExitModal)
+                       for screen in app.screen_stack), (
+            "no ExitModal may open over the min-size guard"
+        )
+        assert isinstance(app.screen, MinSizeScreen), (
+            "the guard stays the top screen"
+        )
+
+
 async def test_peft_choice_radioset_flow():
     """The PEFT choice row: enter opens the RadioSet; picking lora
     writes the param, persists, refreshes the preview + alias hint."""

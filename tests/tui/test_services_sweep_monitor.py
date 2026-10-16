@@ -1393,3 +1393,151 @@ def test_entries_progress_max_step_wins_across_running_seeds(tmp_path):
     progress = sweep_monitor.entries_progress(tmp_path)
 
     assert progress[("m", "t")].step == 400, "the max-step seed wins"
+
+
+# =====================================================================
+# 261016-vxr (VXR-1): the checkpoint-pair ETA — CellProgress.eta_seconds
+# derived from the TWO NEWEST checkpoint-*/trainer_state.json files
+# (rate = Δglobal_step / Δtrainer_state.json FILE mtime over the newest
+# pair; trainer_state.json carries NO wall-clock field, so the file
+# mtime IS the cadence source). Every underivable shape degrades to
+# None — the screen's honest dim dash, never a fabricated estimate.
+# =====================================================================
+
+
+def _pin_trainer_state_mtime(trainer_state_path, epoch):
+    """os.utime one checkpoint's trainer_state.json to a controlled
+    mtime (the ETA's wall-clock source — real file mtimes, never a
+    monkeypatched clock)."""
+    set_mtime(trainer_state_path, epoch)
+
+
+def test_cell_progress_eta_from_two_newest_checkpoint_pair(tmp_path):
+    """VXR-1: two checkpoints with controlled steps + FILE mtimes ->
+    rate = Δstep/Δmtime over the newest PAIR, eta_seconds = remaining /
+    rate (1000->1500 = 500 steps over 100s = 5 steps/s; 500 steps
+    remain of max 2000 -> eta 100.0s)."""
+    running = seed_dir(tmp_path, "m", "t", 42)
+    running.mkdir(parents=True)
+    old_state = write_checkpoint(
+        running, 1000, {"global_step": 1000, "max_steps": 2000})
+    new_state = write_checkpoint(
+        running, 1500, {"global_step": 1500, "max_steps": 2000})
+    base = NOW_REAL()
+    _pin_trainer_state_mtime(old_state, base)
+    _pin_trainer_state_mtime(new_state, base + 100.0)
+
+    progress = sweep_monitor.cell_progress(running)
+
+    assert progress == sweep_monitor.CellProgress(
+        step=1500, max_steps=2000, percent=75, eta_seconds=100.0), (
+        "eta = (max_steps - step) / (Δstep / Δmtime) over the newest pair"
+    )
+
+
+def test_cell_progress_eta_none_with_only_one_checkpoint(tmp_path):
+    """One checkpoint parses steps/percent but carries NO cadence pair —
+    eta_seconds None (the honest underivable)."""
+    running = seed_dir(tmp_path, "m", "t", 42)
+    running.mkdir(parents=True)
+    write_checkpoint(running, 500, {"global_step": 500, "max_steps": 2000})
+
+    progress = sweep_monitor.cell_progress(running)
+
+    assert (progress.step, progress.max_steps, progress.percent) == (
+        500, 2000, 25)
+    assert progress.eta_seconds is None, (
+        "a single checkpoint never yields a rate — never a guess"
+    )
+
+
+def test_cell_progress_eta_none_when_deltas_vanish(tmp_path):
+    """Identical trainer_state mtimes (steps differ) or equal steps
+    (mtimes differ) — both zero-denominator shapes degrade to None."""
+    running = seed_dir(tmp_path, "m", "t", 42)
+    running.mkdir(parents=True)
+
+    # shape A: identical mtimes
+    old_state = write_checkpoint(
+        running, 1000, {"global_step": 1000, "max_steps": 2000})
+    new_state = write_checkpoint(
+        running, 1500, {"global_step": 1500, "max_steps": 2000})
+    same = NOW_REAL()
+    _pin_trainer_state_mtime(old_state, same)
+    _pin_trainer_state_mtime(new_state, same)
+    assert sweep_monitor.cell_progress(running).eta_seconds is None, (
+        "zero Δmtime never divides")
+
+    # shape B: equal steps (a newer checkpoint written at the same step;
+    # the mtimes DO advance so only the step gate blocks)
+    newest_state = write_checkpoint(
+        running, 1600, {"global_step": 1500, "max_steps": 2000})
+    _pin_trainer_state_mtime(newest_state, same + 100.0)
+    assert sweep_monitor.cell_progress(running).eta_seconds is None, (
+        "zero Δstep never yields a rate"
+    )
+
+
+def test_cell_progress_eta_none_when_second_newest_damaged(tmp_path):
+    """A damaged second-newest trainer_state degrades ONLY the eta —
+    the newest checkpoint's steps/percent still parse (tolerance is
+    per-input, never all-or-nothing)."""
+    running = seed_dir(tmp_path, "m", "t", 42)
+    running.mkdir(parents=True)
+    old_state = write_checkpoint(
+        running, 1000, {"global_step": 1000, "max_steps": 2000})
+    new_state = write_checkpoint(
+        running, 1500, {"global_step": 1500, "max_steps": 2000})
+    base = NOW_REAL()
+    _pin_trainer_state_mtime(old_state, base)
+    _pin_trainer_state_mtime(new_state, base + 100.0)
+    old_state.write_text("{damaged json", encoding="utf-8")
+
+    progress = sweep_monitor.cell_progress(running)
+
+    assert (progress.step, progress.max_steps, progress.percent) == (
+        1500, 2000, 75), "the newest checkpoint still parses"
+    assert progress.eta_seconds is None, (
+        "a damaged pair member kills the eta, never the steps"
+    )
+
+
+def test_cell_progress_eta_none_at_or_past_max_steps(tmp_path):
+    """The newest step at/past its max (a run at the very end): nothing
+    remains to estimate — eta None, never a zero or negative."""
+    running = seed_dir(tmp_path, "m", "t", 42)
+    running.mkdir(parents=True)
+    old_state = write_checkpoint(
+        running, 1000, {"global_step": 1000, "max_steps": 2000})
+    new_state = write_checkpoint(
+        running, 2000, {"global_step": 2000, "max_steps": 2000})
+    base = NOW_REAL()
+    _pin_trainer_state_mtime(old_state, base)
+    _pin_trainer_state_mtime(new_state, base + 100.0)
+
+    progress = sweep_monitor.cell_progress(running)
+
+    assert progress.percent == 100
+    assert progress.eta_seconds is None, "at the end nothing remains"
+
+
+def test_entries_progress_carries_the_checkpoint_pair_eta(tmp_path):
+    """VXR-1 passthrough: entries_progress's best-by-step pick carries
+    the running seed's eta_seconds — the field threads through the
+    boundary with no re-derivation."""
+    running = seed_dir(tmp_path, "m-a", "t-1", 42)
+    running.mkdir(parents=True)
+    old_state = write_checkpoint(
+        running, 1000, {"global_step": 1000, "max_steps": 2000})
+    new_state = write_checkpoint(
+        running, 1500, {"global_step": 1500, "max_steps": 2000})
+    base = NOW_REAL()
+    _pin_trainer_state_mtime(old_state, base)
+    _pin_trainer_state_mtime(new_state, base + 100.0)
+    set_mtime(running, base + 1)   # the fresh-churn running signal
+
+    progress = sweep_monitor.entries_progress(tmp_path)
+
+    assert progress[("m-a", "t-1")].eta_seconds == 100.0, (
+        "the running seed's eta rides the entries passthrough"
+    )

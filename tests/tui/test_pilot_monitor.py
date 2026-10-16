@@ -277,7 +277,8 @@ class FakeMonitorLauncher:
 
     def __init__(self, preflight=None, live=(), tee=None,
                  rerun_outcomes=None, env_raises=None,
-                 single_gpu_blocked=None):
+                 single_gpu_blocked=None,
+                 kill_outcomes=None, kill_raises=None):
         self._preflight = (preflight if preflight is not None
                            else EnvPreflight(
                                can_launch=True, reasons=(),
@@ -290,8 +291,18 @@ class FakeMonitorLauncher:
         # EHC-3 (261015-ehc): the single-GPU guard seam (None = the
         # method absent-equivalent — never blocks)
         self._single_gpu_blocked = single_gpu_blocked
+        # 261016-vxr (VXR-2): the kill_sweep scripting — a per-call
+        # outcome list (popped per call, the rerun_outcomes pattern), a
+        # raiser for the WR-03 surface, and the recording list
+        self._kill_outcomes = list(kill_outcomes) if kill_outcomes else None
+        self._kill_raises = kill_raises
         self.env_calls = 0
         self.rerun_calls = []
+        self.kill_calls = []
+
+    #: optional kill-blocking gate (VXR-2, the responsiveness proof):
+    #: kill_sweep waits on it — the full_scan_gate precedent.
+    kill_gate = None
 
     def env_preflight(self, kernels=None):
         self.env_calls += 1
@@ -316,6 +327,20 @@ class FakeMonitorLauncher:
 
     def live_sweeps(self):
         return self._live
+
+    def kill_sweep(self, root):
+        """The scripted kill channel (VXR-2): records the resolved root,
+        optionally raises / blocks on the gate / pops the next outcome;
+        the launcher's signalled default."""
+        self.kill_calls.append(str(root))
+        if self._kill_raises is not None:
+            raise self._kill_raises
+        gate = self.kill_gate
+        if gate is not None:
+            gate.wait(timeout=5.0)   # bounded: a bug never hangs the lane
+        if self._kill_outcomes:
+            return self._kill_outcomes.pop(0)
+        return "signalled"
 
     def tee_path_for(self, root):
         return self._tee.get(str(root))
@@ -608,13 +633,16 @@ async def test_cell_table_renders_entries_fold_counts_and_progress():
         assert table.row_count == 3
 
         # the running entry: folded ⠋ word + 0/3 terminal seeds + the
-        # parseable progress cell (steps, percent, 3-cell bar of 10)
+        # parseable progress cell (steps, percent, 3-cell bar of 10);
+        # 261016-vxr: the fixture carries no derivable eta, so the
+        # trailing segment is the honest dim dash
         running = "plant-dnamamba-6mer__GUE__emp_H3"
         assert _table_text(table, running, "state") == (
             f"{MON_STATE_RUNNING} 0/3")
         assert _table_text(table, running, "progress") == (
-            "300/1000 30% ███·······"), (
-            "steps/max + integer percent + the 10-cell bar grammar"
+            "300/1000 30% ███······· —"), (
+            "steps/max + integer percent + the 10-cell bar grammar "
+            "+ the eta segment (the dash when underivable)"
         )
 
         # the completed entry (a skipped seed counts terminal): ✓ word +
@@ -693,7 +721,10 @@ async def test_running_entry_without_progress_renders_indeterminate():
             "narrow drops the state word — glyph + counts carry it"
         )
         progress = _table_text(table, entry, "progress")
-        assert progress == "5/10 50%"
+        assert progress == "5/10 50% —", (
+            "the narrow form keeps the steps text + eta segment "
+            "(the dash here), dropping only the bar"
+        )
         assert "█" not in progress, "the narrow grid drops the bar"
 
 
@@ -2194,3 +2225,332 @@ async def test_delta_a_discovered_pane_renders_worker_roots_independently():
         )
         column_keys = {str(key.value) for key in table.columns}
         assert "scale" not in column_keys
+
+
+# =====================================================================
+# 261016-vxr (VXR-1/VXR-2/VXR-3): the entry ETA render, the [k] kill
+# confirm over the launcher channel, and the monitor help rows
+# =====================================================================
+
+
+async def test_running_entry_renders_eta_segment_or_honest_dash():
+    """VXR-1: a running entry whose CellProgress carries a derivable
+    eta appends the format_eta segment after the bar; eta None renders
+    the trailing dim dash — the honest underivable, never a fabricated
+    number."""
+    from tui.services.sweep_monitor import format_eta
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=4),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),
+            _row("model-b", "task-2", {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=4, elapsed=60.0, eta=_eta(ETA_NONE))},
+        progress={
+            ("model-a", "task-1"): CellProgress(
+                step=300, max_steps=1000, percent=30, eta_seconds=1800.0),
+            ("model-b", "task-2"): CellProgress(
+                step=600, max_steps=1000, percent=60),  # eta underivable
+        },
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        table = app.screen.query_one("#mon-cells", DataTable)
+        assert _table_text(table, "model-a__task-1", "progress") == (
+            f"300/1000 30% ███······· {format_eta(1800.0)}"), (
+            "the derivable eta rides the progress cell after the bar"
+        )
+        assert _table_text(table, "model-b__task-2", "progress") == (
+            "600/1000 60% █████····· —"), (
+            "eta None renders the trailing dim dash, never a guess"
+        )
+
+
+def _kill_fixture_monitor():
+    """The canonical k-kill fixture: one running root + cells + stats."""
+    return FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=2, elapsed=60.0, eta=_eta(ETA_NONE))},
+    )
+
+
+async def test_k_opens_kill_confirm_y_kills_without_exiting():
+    """VXR-2: k over a live TUI-launched attached sweep opens the y-only
+    kill confirm (enter structurally inert — EHC-2 extended to the kill;
+    n/esc cancel), and y dispatches the off-loop kill through the
+    launcher channel with the RESOLVED attached root — the console
+    NEVER exits on this path (stop training ≠ exit console)."""
+    from tui.screens.monitor import KillConfirmModal
+    from tui.strings import MON_KILL_CONFIRM, MON_KILL_TOAST
+
+    launcher = FakeMonitorLauncher(live=("/scans/finetuned",))
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal), (
+            "k over a live attached TUI sweep opens the kill confirm"
+        )
+        assert MON_KILL_CONFIRM in _plain(
+            app.screen.query_one(Static).content)
+        assert "/scans/finetuned" in str(
+            app.screen.query_one("#confirm-box").border_title), (
+            "the border title names the root the kill would signal"
+        )
+
+        # EHC-2: enter is structurally inert on the kill confirm
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, KillConfirmModal), (
+            "enter must never confirm a kill (EHC-2)"
+        )
+        assert launcher.kill_calls == []
+
+        # n cancels back to the monitor, nothing signalled
+        await pilot.press("n")
+        await pilot.pause()
+        assert isinstance(app.screen, MonitorScreen)
+        assert launcher.kill_calls == []
+
+        # reopen with k, esc likewise cancels
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, MonitorScreen)
+        assert launcher.kill_calls == []
+
+        # reopen, y: the worker kills via the channel exactly once
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal)
+        await pilot.press("y")
+        await _settle(pilot, app)
+        assert launcher.kill_calls == ["/scans/finetuned"], (
+            "y dispatched the kill with the RESOLVED attached root"
+        )
+        assert not app._exit, (
+            "stopping training NEVER exits the console"
+        )
+        assert MON_KILL_TOAST.format(
+            root="/scans/finetuned") in _toast_messages(app)
+
+
+async def test_k_outcome_toasts_dead_noop_and_failure():
+    """VXR-2 outcome surfaces: already_dead -> MON_KILL_TOAST_DEAD; noop
+    (the channel no longer knows the root) -> MON_KILL_UNAVAILABLE; a
+    RAISING kill_sweep -> the MON_KILL_FAILED error toast (WR-03 — a
+    post-confirm worker death surfaces, never a silent no-op)."""
+    from tui.screens.monitor import KillConfirmModal
+    from tui.strings import (
+        MON_KILL_FAILED,
+        MON_KILL_TOAST_DEAD,
+        MON_KILL_UNAVAILABLE,
+    )
+
+    for outcome, expected_toast in (
+            ("already_dead",
+             lambda: MON_KILL_TOAST_DEAD.format(root="/scans/finetuned")),
+            ("noop",
+             lambda: MON_KILL_UNAVAILABLE.format(root="/scans/finetuned"))):
+        launcher = FakeMonitorLauncher(
+            live=("/scans/finetuned",), kill_outcomes=[outcome])
+        app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_monitor(pilot, app)
+            app.screen.attach("/scans/finetuned")
+            await _settle(pilot, app)
+            await pilot.press("k")
+            await pilot.pause()
+            assert isinstance(app.screen, KillConfirmModal)
+            await pilot.press("y")
+            await _settle(pilot, app)
+            assert expected_toast() in _toast_messages(app), (
+                f"the {outcome} outcome surfaces its designed toast"
+            )
+            assert not app._exit
+
+    launcher = FakeMonitorLauncher(
+        live=("/scans/finetuned",),
+        kill_raises=OSError("killpg failed"))
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("k")
+        await pilot.pause()
+        await pilot.press("y")
+        await _settle(pilot, app)
+        assert MON_KILL_FAILED.format(
+            error="killpg failed") in _toast_messages(app), (
+            "a raising kill surfaces the error toast — never silence"
+        )
+        assert not app._exit
+
+
+async def test_k_attached_but_not_live_refuses_before_the_confirm():
+    """VXR-2: an attached root NOT in live_sweeps() (CLI-launched or
+    already dead) surfaces MON_KILL_UNAVAILABLE and NEVER opens a
+    confirm the channel cannot execute — kill_sweep is never called."""
+    from tui.screens.monitor import KillConfirmModal
+    from tui.strings import MON_KILL_UNAVAILABLE
+
+    launcher = FakeMonitorLauncher(live=())   # nothing TUI-launched
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("k")
+        await _settle(pilot, app)
+        assert MON_KILL_UNAVAILABLE.format(
+            root="/scans/finetuned") in _toast_messages(app)
+        assert not any(isinstance(screen, KillConfirmModal)
+                       for screen in app.screen_stack), (
+            "no confirm may open over a channel that cannot kill"
+        )
+        assert launcher.kill_calls == []
+
+
+async def test_k_without_attach_or_below_grid_is_silent():
+    """VXR-2 degradation: no attached root -> k is silent (the [f]/[t]
+    precedent — no toast, no modal); below the minimum grid with a LIVE
+    attached root -> no modal ever opens (no chrome over the guard)."""
+    from tui.app import MinSizeScreen
+    from tui.screens.monitor import KillConfirmModal
+
+    monitor = FakeMonitorService(scans=[_three_state_scan()])
+    launcher = FakeMonitorLauncher(live=("/scans/finetuned",))
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("k")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, MonitorScreen), (
+            "no attach: k opens nothing"
+        )
+        assert _toast_messages(app) == [], "no attach: k is fully silent"
+        assert launcher.kill_calls == []
+
+    app = _app(monitor=_kill_fixture_monitor(),
+               launcher=FakeMonitorLauncher(live=("/scans/finetuned",)))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+        await pilot.press("k")
+        await _settle(pilot, app)
+        assert not any(isinstance(screen, KillConfirmModal)
+                       for screen in app.screen_stack), (
+            "no kill chrome may open over the min-size guard"
+        )
+
+
+async def test_k_kill_never_consults_the_single_gpu_guard():
+    """VXR-2 (EHC-3 pin): the kill path NEVER consults the single-GPU
+    serialization guard — kill is the REMEDY for a busy single-GPU
+    machine, not a launch; a guard reporting live roots must not block
+    the stop."""
+    from tui.screens.monitor import KillConfirmModal
+
+    launcher = FakeMonitorLauncher(
+        live=("/scans/finetuned",),
+        single_gpu_blocked=("/scans/somewhere-else",))
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal), (
+            "the single-GPU guard never gates the kill confirm"
+        )
+        await pilot.press("y")
+        await _settle(pilot, app)
+        assert launcher.kill_calls == ["/scans/finetuned"], (
+            "y still kills on a guard-reported-busy machine"
+        )
+
+
+async def test_kill_runs_off_the_event_loop_console_stays_responsive():
+    """VXR-2: kill_sweep blocks up to the launcher's kill grace — the
+    call lands in the exclusive mon-kill worker, never on the event
+    loop: while the kill blocks, the console still opens chrome (the
+    responsiveness precedent), and the outcome toast lands once the
+    gate releases."""
+    import threading
+
+    from tui.screens.monitor import KillConfirmModal
+    from tui.screens.selection import PathInputModal
+    from tui.strings import MON_KILL_TOAST
+
+    gate = threading.Event()
+    launcher = FakeMonitorLauncher(live=("/scans/finetuned",))
+    launcher.kill_gate = gate
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal)
+        await pilot.press("y")   # the worker now blocks on the gate
+        await pilot.pause()
+        await pilot.pause()
+
+        # the loop stays responsive while the kill worker blocks
+        await pilot.press("a")
+        await pilot.pause()
+        assert isinstance(app.screen, PathInputModal), (
+            "the console stays responsive while kill_sweep blocks"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+
+        gate.set()   # release; the worker completes and posts
+        await _settle(pilot, app, rounds=4)
+        assert launcher.kill_calls == ["/scans/finetuned"]
+        assert MON_KILL_TOAST.format(
+            root="/scans/finetuned") in _toast_messages(app)
+
+
+async def test_monitor_help_lists_the_kill_row():
+    """VXR-2/VXR-3: the ? help modal over the monitor carries the k row
+    (the BINDINGS projection — the keycap joins after the [r] rescan)
+    and the app-level Q row."""
+    from tui.app import HelpModal
+    from tui.strings import APP_HELP_ROW, APP_Q_LABEL, MON_KILL_KEYCAP
+
+    app = _app(monitor=FakeMonitorService(scans=[_three_state_scan()]))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpModal)
+        rows = [str(static.content) for static in app.screen.query(Static)]
+        assert APP_HELP_ROW.format(key="k", label=MON_KILL_KEYCAP) in rows, (
+            "the slot-5 kill keycap lists in the monitor help"
+        )
+        assert APP_HELP_ROW.format(key="Q", label=APP_Q_LABEL) in rows, (
+            "the any-focus Q exit row lists in the monitor help"
+        )

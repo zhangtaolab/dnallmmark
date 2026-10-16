@@ -114,6 +114,12 @@ EXPECTED_MON_CONSTANTS = (
     # byte-equal registry twins of the old split() title projections so
     # remap_binding_descriptions can finally translate them.
     "MON_FAILURES_KEYCAP", "MON_LOG_KEYCAP",
+    # 261016-vxr (VXR-2): the slot-5 [k] kill-confirm family — the
+    # keycap, the modal title/confirm, the three outcome toasts, and
+    # the channel-unavailable refusal.
+    "MON_KILL_KEYCAP", "MON_KILL_TITLE", "MON_KILL_CONFIRM",
+    "MON_KILL_TOAST", "MON_KILL_TOAST_DEAD", "MON_KILL_UNAVAILABLE",
+    "MON_KILL_FAILED",
 )
 
 #: The per-seed cell states in spec order, and their contract glyphs.
