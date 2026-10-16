@@ -13,7 +13,9 @@ runs — and asserts the boot contract end-to-end:
   the 08-06 cache path), its kernel label from ``tui/strings.py``
   constants (I18N-01), keyed on the stable kernel id;
 - the last-check line renders from the cached ``checked_at`` (ENV-02);
-- pressing ``q`` quits cleanly (return code 0).
+- pressing ``q`` opens the quit confirmation (261016-v0z: no exit
+  without an explicit confirm) and ``y`` then quits cleanly
+  (return code 0).
 
 08-06 update: the shell this test pinned (seven PENDING rows, zero
 service calls) was replaced by the full screen build — the boot test now
@@ -120,10 +122,21 @@ async def test_boots_on_env_check_screen_quits_on_q():
             checked_at=_CACHED_CHECKED_AT
         )
 
-        # q quits cleanly (the app-level binding registered in 08-03)
+        # q opens the quit confirm (261016-v0z — no unconfirmed exit);
+        # y then quits cleanly (the clean-exit intent of the original
+        # 08-03 pin)
         await pilot.press("q")
         await pilot.pause()
-        assert app.return_code == 0, "q must quit the console cleanly"
+        from tui.app import QuitConfirmModal
+
+        assert isinstance(app.screen, QuitConfirmModal), (
+            "q must open the quit confirmation, never exit directly"
+        )
+        await pilot.press("y")
+        await pilot.pause()
+        assert app.return_code == 0, (
+            "y on the quit confirm must quit the console cleanly"
+        )
 
 
 # =====================================================================

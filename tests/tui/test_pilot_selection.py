@@ -1200,11 +1200,17 @@ async def test_help_modal_opens_on_the_selection_screen():
         # the declared surface, the 09-03 chrome-pin-update class). The
         # t pool toggle replaced the retired m table toggle at 261014-mlc
         # (the slot split — slot 2 is models only); the d row is the
-        # MODEL download since the same split.
+        # MODEL download since the same split. The ctrl+q/ctrl+c rows
+        # joined at 261016-v0z (after the app bindings: the declared
+        # ctrl+q mirror + the audited notify-only ctrl+c hint).
+        from tui.strings import APP_CTRLC_LABEL, APP_CTRLQ_LABEL
+
         assert rows == [
             APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
             APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
             APP_HELP_ROW.format(key="L", label=APP_LANGUAGE_TOGGLE_LABEL),
+            APP_HELP_ROW.format(key="ctrl+q", label=APP_CTRLQ_LABEL),
+            APP_HELP_ROW.format(key="ctrl+c", label=APP_CTRLC_LABEL),
             APP_HELP_ROW.format(key="space", label=SEL_MARK_LABEL),
             APP_HELP_ROW.format(key="t", label=SEL_POOL_TOGGLE_LABEL),
             APP_HELP_ROW.format(key="p", label=SEL_PRESET_LABEL),

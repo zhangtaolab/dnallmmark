@@ -627,7 +627,13 @@ async def test_cross_screen_navigation_integration():
         }
         assert selection.marked_tasks == {"GUE__emp_H3"}
 
-        # q quits the whole console cleanly
+        # q opens the quit confirm (261016-v0z — no unconfirmed exit);
+        # y then quits the whole console cleanly
         await pilot.press("q")
+        await pilot.pause()
+        from tui.app import QuitConfirmModal
+
+        assert isinstance(app.screen, QuitConfirmModal)
+        await pilot.press("y")
         await pilot.pause()
         assert app.return_code == 0

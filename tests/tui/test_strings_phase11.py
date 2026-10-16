@@ -77,6 +77,9 @@ EXPECTED_LNC_CONSTANTS = (
     "LNC_SINGLE_GPU_BLOCKED",
     "LNC_LAUNCH_TOAST", "LNC_LAUNCH_FAILED_TOAST", "LNC_EXIT_TITLE",
     "LNC_EXIT_MESSAGE", "LNC_EXIT_MESSAGE_MULTI",
+    # 261016-v0z: the no-sweep quit-confirm row (the [Y]/[N] pair
+    # mirrors LNC_GATE_CONFIRM — y the only confirm key, enter inert).
+    "LNC_EXIT_CONFIRM",
 )
 
 #: The complete expected MON_ inventory (screen chrome + cadence note,

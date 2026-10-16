@@ -652,11 +652,18 @@ async def test_env_help_modal_reflects_the_s_removal():
         await pilot.pause()
         assert isinstance(app.screen, HelpModal)
         rows = [str(static.content) for static in app.screen.query(Static)]
-        # the live map after the migration: q, ?, L, r, enter — and NO s
+        # the live map after the migration: q, ?, L, ctrl+q, ctrl+c, r,
+        # enter — and NO s (the 261016-v0z ctrl+q/ctrl+c rows join
+        # after the app bindings: the declared mirror + the audited
+        # notify-only hint)
+        from tui.strings import APP_CTRLC_LABEL, APP_CTRLQ_LABEL
+
         assert rows == [
             APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
             APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
             APP_HELP_ROW.format(key="L", label=APP_LANGUAGE_TOGGLE_LABEL),
+            APP_HELP_ROW.format(key="ctrl+q", label=APP_CTRLQ_LABEL),
+            APP_HELP_ROW.format(key="ctrl+c", label=APP_CTRLC_LABEL),
             APP_HELP_ROW.format(key="r", label=ENV_REFRESH_LABEL),
             APP_HELP_ROW.format(key="enter", label=ENV_DETAIL_LABEL),
         ], "the help rows must auto-reflect the retired s binding"

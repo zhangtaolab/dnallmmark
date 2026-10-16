@@ -861,15 +861,22 @@ async def test_help_modal_lists_bindings_and_esc_closes():
         assert modal.query_one("#help-box").border_title == APP_HELP_TITLE
         rows = [str(static.content) for static in modal.query(Static)]
         # every binding row, Chinese labels from strings via APP_HELP_ROW
-        # (app: q quit + ? help + L language, 261015-ehc; env screen:
+        # (app: q quit + ? help + L language, 261015-ehc; 261016-v0z:
+        # the ctrl+q/ctrl+c rows join after the app bindings — ctrl+q
+        # the declared mirror of the framework default (same guard as
+        # q), ctrl+c the audited notify-only hint; env screen:
         # r refresh + enter detail — the s row retired with the 09-03
         # nav-shell migration: menu slot 2 supersedes the alias, and the
         # digit bindings are show=False so the modal's rows are exactly
         # this map)
+        from tui.strings import APP_CTRLC_LABEL, APP_CTRLQ_LABEL
+
         expected_rows = [
             APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
             APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
             APP_HELP_ROW.format(key="L", label=APP_LANGUAGE_TOGGLE_LABEL),
+            APP_HELP_ROW.format(key="ctrl+q", label=APP_CTRLQ_LABEL),
+            APP_HELP_ROW.format(key="ctrl+c", label=APP_CTRLC_LABEL),
             APP_HELP_ROW.format(key="r", label=ENV_REFRESH_LABEL),
             APP_HELP_ROW.format(key="enter", label=ENV_DETAIL_LABEL),
         ]

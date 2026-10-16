@@ -1498,21 +1498,181 @@ async def test_gate_modal_push_guarded_below_minimum_grid():
 # Task 3 — the exit triple (app-level q) + the choice modals
 # =====================================================================
 
-async def test_q_with_no_live_sweep_quits_directly():
-    """D-06: no live sweep — q quits directly (no ExitModal)."""
+async def test_q_with_no_live_sweep_opens_quit_confirm():
+    """261016-v0z (the maintainer's always-confirm ruling): no live
+    sweep — q opens the plain Y/N quit-confirm modal, never a direct
+    exit; enter is structurally inert (EHC-2), q inside the modal is
+    blocked by the modal binding chain, and y is the ONLY confirm key."""
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_run_config(pilot, app)
         await pilot.press("q")
         await pilot.pause()
+        from tui.app import QuitConfirmModal
+        from tui.strings import LNC_EXIT_CONFIRM, LNC_EXIT_TITLE
+
+        assert isinstance(app.screen, QuitConfirmModal), (
+            "no live sweep: q must open the quit confirm, never exit")
+        assert not app._exit, "q alone must never quit the console"
+        assert str(app.screen.query_one(
+            "#quit-confirm-box").border_title) == LNC_EXIT_TITLE
+        message = _plain(app.screen.query(Static)[0].content)
+        assert LNC_EXIT_CONFIRM in message, message
+
+        # enter is structurally inert — a stray double-enter can never
+        # quit (the EHC-2 idiom, extended to the quit surface)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, QuitConfirmModal), (
+            "enter must never confirm a quit")
+        assert not app._exit
+
+        # q INSIDE the modal is inert (the modal binding chain blocks
+        # app-level bindings — Pitfall 11)
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, QuitConfirmModal), (
+            "repeat q under the modal must not quit or reopen anything")
+        assert not app._exit
+
+        # y is the ONLY confirm key
+        await pilot.press("y")
+        await pilot.pause()
+        assert app._exit, "y confirms the quit"
+
+
+async def test_quit_confirm_n_and_esc_cancel():
+    """The quit confirm's cancel pair: n and esc both return to the
+    screen with nothing recorded — the app stays alive."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        from tui.app import QuitConfirmModal
+
+        assert isinstance(app.screen, QuitConfirmModal)
+        await pilot.press("n")
+        await pilot.pause()
+        assert isinstance(app.screen, RunConfigScreen), (
+            "n cancels the quit confirm back to the screen")
+        assert not app._exit, "n must never quit"
+
+        # reopen and esc likewise — nothing recorded
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, QuitConfirmModal)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, RunConfigScreen), (
+            "esc cancels the quit confirm back to the screen")
+        assert not app._exit, "esc must never quit"
+
+
+async def test_ctrlq_with_live_sweep_routes_to_exit_modal():
+    """The regression pin (probe P1): ctrl+q already dispatches to the
+    overridden action_quit on 8.2.8 — a live sweep opens the ExitModal
+    (kill/detach/cancel), and q INSIDE that modal is inert (no
+    double-confirm escape)."""
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("ctrl+q")
+        await pilot.pause()
         from tui.app import ExitModal
 
+        assert isinstance(app.screen, ExitModal), (
+            "ctrl+q with a live sweep must route through the ExitModal")
+        assert not app._exit, "ctrl+q alone must never exit"
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, ExitModal), (
+            "q under the ExitModal stays inert — no double-confirm")
+        assert not app._exit
+
+
+async def test_ctrlq_no_sweep_opens_quit_confirm():
+    """261016-v0z: ctrl+q with NO live sweep opens the same quit
+    confirm as q — the inherited default is never a direct exit."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        from tui.app import QuitConfirmModal
+
+        assert isinstance(app.screen, QuitConfirmModal), (
+            "ctrl+q with no live sweep must open the quit confirm")
+        assert not app._exit, "ctrl+q alone must never quit the console"
+
+
+async def test_q_and_ctrlq_below_min_grid_never_exit():
+    """V0Z-4: below 80x24, q AND ctrl+q exit nothing and open nothing —
+    including with a live sweep (this closes the latent fall-through
+    where a live sweep + below-min grid previously reached an unguarded
+    ``self.exit()``)."""
+    from tui.app import ExitModal, MinSizeScreen
+
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+
+        await pilot.press("q")
+        await pilot.pause()
+        assert not app._exit, (
+            "below the min grid a live sweep + q must never exit "
+            "(the latent fall-through)")
         assert not any(isinstance(screen, ExitModal)
                        for screen in app.screen_stack), (
-            "no live sweep: q must never push the ExitModal")
-        # App.exit() sets the private _exit flag (the deterministic
-        # signal on 8.2.8 — no public is_exiting exists)
-        assert app._exit, "q with no live sweep quits directly"
+            "no ExitModal may open over the min-size guard")
+        assert isinstance(app.screen, MinSizeScreen), (
+            "the guard stays the top screen")
+
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        assert not app._exit, "ctrl+q below the min grid must never exit"
+        assert not any(isinstance(screen, ExitModal)
+                       for screen in app.screen_stack)
+        assert isinstance(app.screen, MinSizeScreen)
+
+    # the q leg with NO live sweep must not exit below the grid either
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+        await pilot.press("q")
+        await pilot.pause()
+        assert not app._exit, (
+            "q below the min grid with no sweep must never exit either")
+        assert isinstance(app.screen, MinSizeScreen)
+
+
+async def test_ctrlc_never_exits_or_opens_modal():
+    """The audit pin (probe P5): ctrl+c is textual 8.2.8's help_quit —
+    it scans active_bindings and NOTIFIES which key quits; it never
+    exits and never opens a screen. Preserved verbatim."""
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        before = app.screen
+        await pilot.press("ctrl+c")
+        await pilot.pause()
+        assert not app._exit, "ctrl+c must never exit the console"
+        assert app.screen is before, "ctrl+c must open no screen"
+        from tui.app import ExitModal
+        from tui.screens.selection import ConfirmModal
+
+        assert not any(isinstance(screen, (ExitModal, ConfirmModal))
+                       for screen in app.screen_stack), (
+            "ctrl+c must never push an exit or confirm modal")
 
 
 async def test_q_with_live_sweep_pushes_exit_modal():
