@@ -139,6 +139,13 @@ class ScanResult:
     custom_keys: list[str] = field(default_factory=list)
     demo_custom_present: bool = False
     card: dict = field(default_factory=dict)
+    #: The MERGED registry counts the selection matrix renders (official
+    #: + the live config root's landed customs) — the matrix-title anchor
+    #: and the scene notes derive from THESE, never a hardcoded total
+    #: (the live config root carries demo customs across sessions, so
+    #: the merged model count is 59 + customs, not the bare official 59).
+    merged_models: int = 0
+    merged_datasets: int = 0
 
 
 @dataclass
@@ -380,6 +387,16 @@ def run_scan() -> ScanResult:
         except (OSError, ValueError):
             result.custom_keys = []
     result.demo_custom_present = DEMO_CUSTOM_KEY in result.custom_keys
+    custom_dataset_file = _config_root() / "custom_datasets.json"
+    custom_dataset_count = 0
+    if custom_dataset_file.is_file():
+        try:
+            custom_dataset_count = len(json.loads(
+                custom_dataset_file.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            custom_dataset_count = 0
+    result.merged_models = len(models) + len(result.custom_keys)
+    result.merged_datasets = len(datasets) + custom_dataset_count
     card = models.get(DEMO_MODEL)
     result.card = card if isinstance(card, dict) else {}
     return result
@@ -585,13 +602,16 @@ def scene_selection_presets(b: Builder, sc: ScanResult) -> None:
         timeout=15, label="preset saved toast")
     # presence matrix
     b.key("v", settle=1.4)
-    b.A("MATRIX_TITLE", fmt={"models": 59, "datasets": 50}, timeout=20,
+    b.A("MATRIX_TITLE", fmt={"models": sc.merged_models,
+                             "datasets": sc.merged_datasets}, timeout=20,
         label="matrix title")
     b.wait(1.0)
     b.key(ESC, settle=0.7)
     b.note("space marks on the plant-dnabert family (filter+tab idiom); "
            "species:plants registry-grammar filter; tier-1 preset apply; "
-           f"preset save '{DEMO_PRESET_NAME}'; 59x50 presence matrix")
+           f"preset save '{DEMO_PRESET_NAME}'; {sc.merged_models}x"
+           f"{sc.merged_datasets} presence matrix (official + live "
+           "customs)")
 
 
 def scene_model_download(b: Builder, sc: ScanResult) -> None:
@@ -608,9 +628,15 @@ def scene_model_download(b: Builder, sc: ScanResult) -> None:
     b.filter_position(sc.model_target)  # stay filtered: d acts on the row
     b.key("d", settle=1.0)
     # anchors clip-safely: the download column sits at the right edge of
-    # the 100-col grid, so the cell text is CLIPPED mid-word on the wire
-    # ("⠋ downloadin" — probe-pinned); anchor the clipped-stable prefix.
-    b.anchor("downloadin", timeout=90, label="download starts (claim tick)")
+    # the 100-col grid, so the EN cell text is CLIPPED mid-word on the
+    # wire ("⠋ downloadin" — probe-pinned); the zh claim word anchors
+    # whole. CR-01 (261016-hhx): the live overlay word now follows the
+    # ACTIVE language — the 10-15 zh cast's "downloadin" was the frozen
+    # en import value on film — so the anchor derives BOTH languages'
+    # claim words from the registry constant.
+    b.anchor("downloadin",
+             b._resolve("QUEUE_STATE_DOWNLOADING").split(" ")[-1],
+             timeout=90, label="download starts (claim tick)")
     # EHC-4 observation window: the percent/rate ticks render only while
     # the transfer actually streams — the maintainer's ModelScope mirror
     # is fast enough that a small model can finish inside one render
@@ -1002,19 +1028,22 @@ def scene_custom_entries(b: Builder, sc: ScanResult) -> None:
     b.A("SEL_SCREEN_TITLE_MODELS", timeout=30)
     b.filter_position(DEMO_CUSTOM_KEY)  # stay filtered: e/w act on the row
     b.key("e", settle=1.2)  # disable
+    # (the toast anchors use the WORD between the glyph and the key —
+    # the zh toast wraps exactly between 已停用/已启用 and the key, so a
+    # pattern carrying the trailing space never appears contiguously on
+    # the wire; the word itself is one styled span, wrap-proof)
     b.A("SEL_TOGGLE_DISABLED_TOAST", fmt={"key": DEMO_CUSTOM_KEY},
         substring=b._resolve("SEL_TOGGLE_DISABLED_TOAST",
-                             {"key": DEMO_CUSTOM_KEY}).split(
-                                 DEMO_CUSTOM_KEY)[0],
+                             {"key": DEMO_CUSTOM_KEY}).split(" ")[1],
         timeout=15, label="disabled toast")
     b.A("SEL_DISABLED_SUFFIX", timeout=15, label="disabled suffix")
-    b.wait(0.8)
+    b.wait(1.2)
     b.key("e", settle=1.2)  # RESTORE on camera (PEX-3)
     b.A("SEL_TOGGLE_ENABLED_TOAST", fmt={"key": DEMO_CUSTOM_KEY},
         substring=b._resolve("SEL_TOGGLE_ENABLED_TOAST",
-                             {"key": DEMO_CUSTOM_KEY}).split(
-                                 DEMO_CUSTOM_KEY)[0],
+                             {"key": DEMO_CUSTOM_KEY}).split(" ")[1],
         timeout=15, label="enabled toast")
+    b.wait(1.2)
     b.key("w", settle=1.4)  # prefilled edit form on the custom row
     b.A("WIZ_BORDER_TITLE", substring=b._resolve("WIZ_KIND_MODELS"),
         timeout=20, label="prefilled wizard")
@@ -1044,7 +1073,7 @@ SCENES: dict[str, Callable[[Builder, ScanResult], None]] = {
 SCENE_BLURBS = {
     "env-check": "8 kernels live on boot (fresh state), r re-run, drill-down",
     "selection-presets": "marks, registry-grammar filter, preset apply/save, "
-                         "59x50 presence matrix",
+                         "presence matrix (merged registry view)",
     "model-download": "REAL ModelScope model download (live-scan target) "
                       "with percent + rate, flip",
     "dataset-download": "REAL ModelScope dataset download, queue percent + "
@@ -1111,7 +1140,12 @@ def run_scene(scene: str, lang: str, args: argparse.Namespace) -> int:
 
     builder = Builder(boot_lang="en", body_lang=lang, speed=args.speed)
     SCENES[scene](builder, scan)
-    builder.restore_boot_language()
+    # 261016-hhx: NO generic on-camera restore for zh recordings — the
+    # restore frames render the EN tables and pollute the zh cast with
+    # en-only header strings; isolation needs nothing (each recording's
+    # state dir — language.json included — is destroyed at teardown, so
+    # the next recording boots English regardless). Scenes that toggle
+    # mid-scene (language-toggle) restore within their own steps.
     steps = builder.steps
     meta.notes.extend(builder.notes)
 
@@ -1329,7 +1363,6 @@ def _dry_run(scene: str, lang: str, args: argparse.Namespace) -> int:
     scan = run_scan()
     builder = Builder(boot_lang="en", body_lang=lang, speed=args.speed)
     SCENES[scene](builder, scan)
-    builder.restore_boot_language()
     print(f"scene={scene} lang={lang} speed={args.speed}")
     print(f"scan: model_target={scan.model_target} "
           f"dataset_target={scan.dataset_target} "
