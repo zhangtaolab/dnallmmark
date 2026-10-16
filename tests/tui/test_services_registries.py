@@ -326,9 +326,9 @@ def test_load_n_audit_missing_file_yields_none(tmp_path, monkeypatch):
 
 
 def test_load_dnallm_compat_reads_the_committed_verdict_map():
-    """The committed map: schema keys intact, exactly 59 model keys, 36
-    with dnllm_adapted true (11 modelscope-slot + 25 modelscope-mirror
-    channels — the 261014-l6h census), every adapted entry carrying a
+    """The committed map: schema keys intact, exactly 59 model keys, 38
+    with dnllm_adapted true (13 modelscope-slot + 25 modelscope-mirror
+    channels — the 261016 v1.3 census), every adapted entry carrying a
     usable modelscope repo id (the download channel data)."""
     compat = load_dnallm_compat()
 
@@ -338,12 +338,12 @@ def test_load_dnallm_compat_reads_the_committed_verdict_map():
         if isinstance(verdict, dict)
         and verdict.get("dnllm_adapted") is True
     )
-    assert len(adapted) == 36
+    assert len(adapted) == 38
     slot = [key for key in adapted
             if compat[key].get("channel") == "modelscope-slot"]
     mirror = [key for key in adapted
               if compat[key].get("channel") == "modelscope-mirror"]
-    assert len(slot) == 11
+    assert len(slot) == 13
     assert len(mirror) == 25
     for key in adapted:
         repo_id = compat[key].get("modelscope")

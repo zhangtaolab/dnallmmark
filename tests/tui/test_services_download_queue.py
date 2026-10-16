@@ -4323,12 +4323,12 @@ def test_model_reason_codes_are_machine_vocabulary():
 # ===== resolve_model_channel + _models_base =====
 
 
-def test_model_channel_census_36_clean_23_not_adapted_over_committed(
+def test_model_channel_census_38_clean_21_not_adapted_over_committed(
         monkeypatch, tmp_path):
     """THE compat gate: over the committed 59-key models registry,
-    exactly 36 keys resolve a clean spec (repo id == the compat map's
+    exactly 38 keys resolve a clean spec (repo id == the compat map's
     modelscope id; landing == the model_presence join over the effective
-    base; source_url carries the repo id) and 23 degrade with
+    base; source_url carries the repo id) and 21 degrade with
     not_dnllm_adapted — computed key-by-key, drift surfaces loudly."""
     pin_state_dir(monkeypatch, tmp_path)
     service = download_queue.DownloadQueueService(
@@ -4347,8 +4347,8 @@ def test_model_channel_census_36_clean_23_not_adapted_over_committed(
         else:
             degraded[key] = spec.reason_code
 
-    assert len(clean) == 36
-    assert len(degraded) == 23
+    assert len(clean) == 38
+    assert len(degraded) == 21
     assert set(degraded.values()) == {"not_dnllm_adapted"}
     base = str(service._models_base()).rstrip(os.sep) + os.sep
     for key, spec in clean.items():

@@ -898,11 +898,11 @@ async def test_full_loop_models_wizard_lands_badges_counts_and_disables(
         await pilot.pause()
 
         # the refreshed table: the badge on the new row + the count line
-        # (MLC-02: the DEFAULT pool renders the 36 adapted officials, so
-        # the landed custom — always visible — appends at index 36)
+        # (MLC-02: the DEFAULT pool renders the 38 adapted officials, so
+        # the landed custom — always visible — appends at index 38)
         keys = _row_keys(table)
-        assert keys.index("loop-model-lm") == 36  # appended after the pool
-        assert _row(table, 36)[1] == f"{SEL_CUSTOM_BADGE} loop-model-lm"
+        assert keys.index("loop-model-lm") == 38  # appended after the pool
+        assert _row(table, 38)[1] == f"{SEL_CUSTOM_BADGE} loop-model-lm"
         assert _status_line(screen) == (
             SEL_STATUS_LINE.format(
                 n=0, models_total=60, m=0, tasks_total=50,
@@ -914,7 +914,7 @@ async def test_full_loop_models_wizard_lands_badges_counts_and_disables(
 
         # e: the disable keeps the row visible with the suffix while the
         # REAL loader drops it, and the count still counts it
-        table.move_cursor(row=36)
+        table.move_cursor(row=38)
         await pilot.pause()
         await pilot.press("e")
         await pilot.pause()
@@ -922,7 +922,7 @@ async def test_full_loop_models_wizard_lands_badges_counts_and_disables(
         await pilot.pause()
         assert SEL_TOGGLE_DISABLED_TOAST.format(
             key="loop-model-lm") in _toasts(app)
-        assert _row(table, 36)[1] == (
+        assert _row(table, 38)[1] == (
             f"{SEL_CUSTOM_BADGE} loop-model-lm{SEL_DISABLED_SUFFIX}")
         assert "loop-model-lm" not in (
             registry_loader.load_models_registry())

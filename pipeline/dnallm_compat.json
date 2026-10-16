@@ -1,5 +1,5 @@
 {
-    "dnallm_commit": "cd4be4399367cbc324eb9c8ac3e9d62d4ed2469a",
+    "dnallm_commit": "44c22d499c3c3cd48e792b60f13024b8f669ab71",
     "models": {
         "CrossDNA_519M": {
             "architecture": null,
@@ -30,11 +30,11 @@
             "modelscope": "ZhejiangLab-LifeScience/DNABERT-2-117M"
         },
         "FungiHelixSeek": {
-            "architecture": null,
-            "channel": null,
-            "dnllm_adapted": false,
-            "family": null,
-            "modelscope": null
+            "architecture": "HelixSeekForMaskedLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "FungiHelixSeek",
+            "modelscope": "zhangtaolab/FungiHelixSeek"
         },
         "GENA-LM-yeast": {
             "architecture": "BertForMaskedLM",
@@ -184,11 +184,11 @@
             "modelscope": null
         },
         "PlantHelixSeek": {
-            "architecture": null,
-            "channel": null,
-            "dnllm_adapted": false,
-            "family": null,
-            "modelscope": null
+            "architecture": "HelixSeekForCausalLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "PlantHelixSeek",
+            "modelscope": "zhangtaolab/PlantHelixSeek"
         },
         "SPACE": {
             "architecture": null,

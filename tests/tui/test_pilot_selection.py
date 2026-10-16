@@ -1445,7 +1445,7 @@ def test_backend_loads_the_committed_registries_and_presence(
     assert data.model_presence, "at least one model presence resolved"
     # MLC-02 (261014-mlc): the compat verdict map rides the snapshot —
     # the committed 59-key artifact through the ONE loader (an empty map
-    # is the degraded read; 36 adapted)
+    # is the degraded read; 38 adapted)
     assert data.compat, "the committed compat map loads through the seam"
     assert set(data.compat) == {
         entry["key"] for entry in data.model_entries
@@ -1454,7 +1454,7 @@ def test_backend_loads_the_committed_registries_and_presence(
         1 for verdict in data.compat.values()
         if isinstance(verdict, dict)
         and verdict.get("dnllm_adapted") is True
-    ) == 36
+    ) == 38
 
 
 def test_backend_model_presence_all_missing_under_empty_configured_root(
