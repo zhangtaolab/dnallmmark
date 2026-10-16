@@ -6,7 +6,7 @@ current_phase: 12
 current_plan: Not started
 status: completed
 stopped_at: Phase 12 complete — all phases complete
-last_updated: "2026-10-16T07:54:22.221Z"
+last_updated: "2026-10-16T11:20:00.000Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 12 complete
 state_head: a640cbea8e13c69fa074fb6a95bbd4d313859bbd
@@ -103,6 +103,7 @@ Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 
 | Phase quick-261014-f4w P01 | 92 min | 3 tasks | 22 files |
 | Phase 10 P10-07 | 9 min | 1 tasks | 2 files |
 | Phase 11 P11-08 | 32 min | 3 tasks | 9 files |
+| Phase quick-261016-poa P01 | 32 min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -267,6 +268,7 @@ None yet.
 | 261015-pex | TUI 演示文档 docs/TUI-DEMO.md：pexpect 场景驱动 + asciinema/agg 录制十个真实操作旅程场景 × 双语（真实 ModelScope 模型/数据集下载、有界 plant-dnabert-6mer 训练过 y 门、EHC-3 拒绝、q→k 终止、失败重跑到完成） | 2026-10-15 | ab61868 | [261015-pex-tui-demo-doc-docs-tui-demo-md-real-task-](./quick/261015-pex-tui-demo-doc-docs-tui-demo-md-real-task-/) |
 | 261016-a4f | Fix 07-REVIEW scoped findings WR-01..04 + IN-01 (fail-closed env_smoke non-dict/empty-path registry reads, guarded env-screen persist tail, honest unreadable-registry verdict, _degraded_result annotation) | 2026-10-16 | 7217ca1 | [261016-a4f-fix-4-warning-1-info-from-the-07-scoped-](./quick/261016-a4f-fix-4-warning-1-info-from-the-07-scoped-/) |
 | 261016-hhx | Fix 08 delta review CR-01 + WR-01..03 + IN-01..03 (render-time i18n re-derivation, registry injectivity both directions, zenodo persist lane, env-remount guard, live-dict hygiene, shared language filename, DL_ toast twin) + zh demo GIF re-record (10 scenes + language-toggle-en, pure-zh casts) | 2026-10-16 | c76c315 | [261016-hhx-fix-08-delta-review-findings-cr-01-rende](./quick/261016-hhx-fix-08-delta-review-findings-cr-01-rende/) |
+| 261016-poa | slot 4 运行配置 UX 修复批 — toggle 光标/滚动锚点、选中行对比度、启动确认术语、入口提示行、任务清单、Y/N 确认 | 2026-10-16 | cf6335c | [261016-poa-slot-4-run-config-ux-fixes-toggle-cursor](./quick/261016-poa-slot-4-run-config-ux-fixes-toggle-cursor/) |
 
 ## Deferred Items
 
