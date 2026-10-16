@@ -271,6 +271,7 @@ None yet.
 | 261016-hhx | Fix 08 delta review CR-01 + WR-01..03 + IN-01..03 (render-time i18n re-derivation, registry injectivity both directions, zenodo persist lane, env-remount guard, live-dict hygiene, shared language filename, DL_ toast twin) + zh demo GIF re-record (10 scenes + language-toggle-en, pure-zh casts) | 2026-10-16 | c76c315 | [261016-hhx-fix-08-delta-review-findings-cr-01-rende](./quick/261016-hhx-fix-08-delta-review-findings-cr-01-rende/) |
 | 261016-poa | slot 4 运行配置 UX 修复批 — toggle 光标/滚动锚点、选中行对比度、启动确认术语、入口提示行、任务清单、Y/N 确认 | 2026-10-16 | cf6335c | [261016-poa-slot-4-run-config-ux-fixes-toggle-cursor](./quick/261016-poa-slot-4-run-config-ux-fixes-toggle-cursor/) |
 | 261016-v0z | 退出守卫 — q/ctrl+q 一律先确认（无训练任务 Y/N 确认弹窗，enter 不确认），ctrl+q 显式绑定走守卫，ctrl+c 审计入帮助，金标不动 | 2026-10-16 | a32d74a | [261016-v0z-guard-ctrl-q-exit-route-the-inherited-te](./quick/261016-v0z-guard-ctrl-q-exit-route-the-inherited-te/) |
+| 261016-vxr | slot-5 批 — 训练行 ETA（checkpoint 对推算，不可推显 —）+ k 停止确认（Y-only，不退 console）+ 大写 Q 任意焦点退出（on_event 拦截，modal 内惰性） | 2026-10-16 | ef2e365 | [261016-vxr-slot-5-monitor-batch-eta-remaining-time-](./quick/261016-vxr-slot-5-monitor-batch-eta-remaining-time-/) |
 
 ## Deferred Items
 

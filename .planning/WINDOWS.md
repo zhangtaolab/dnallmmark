@@ -409,6 +409,18 @@ last_updated: 2026-10-16T10:22:00.000Z
     "recorded_at": "2026-10-15T23:59:00.000Z",
     "resolved_at": null,
     "milestone": "v1.2"
+  },
+  {
+    "id": 29,
+    "kind": "deviation",
+    "phase": "quick-261016-vxr",
+    "file": "tests/tui/__snapshots__/monitor_running.svg",
+    "description": "monitor_running.svg AND monitor_empty.svg regenerated (the slot-5 [k] 停止 keycap row) via make snapshot-update, deliberately UNCOMMITTED pending the maintainer's D-03 review - the committed tree fails test_snapshots on exactly these two until they land (run_config.svg byte-preserved, sha256 afa89e7e...)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T00:00:00.000Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
   }
 ]
 ````
