@@ -1386,6 +1386,74 @@ async def test_gate_launch_exception_after_confirm_is_never_silent():
         )
 
 
+async def test_gate_worker_error_scope_tags_split_the_id_spaces():
+    """IN-02 (08 review, fix batch 261017-klw): the GateWorkerError
+    staleness filter compares run_id against EXACTLY ONE counter per
+    scope tag — a superseded STAGE error whose id numerically equals the
+    CURRENT launch id (both counters increment independently from 1) is
+    DROPPED, so a successful launch is never followed by a spurious
+    launch-failed toast; a genuinely-current error in either space still
+    surfaces, and the run_id-None mount worker always surfaces."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService()
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        screen._gate_stage_id = 1
+        screen._gate_launch_id = 3
+        screen._gate_active = True
+
+        # the COLLISION: a stale stage error (belongs to stage id 1)
+        # whose id numerically equals the CURRENT launch id (3) — today
+        # it passes the either-counter filter and surfaces a spurious
+        # launch-failed toast right after a successful launch
+        screen.post_message(screen.GateWorkerError(
+            "stage boom", run_id=3, scope="stage"))
+        await pilot.pause()
+        assert not any("stage boom" in toast
+                       for toast in _toast_messages(app)), (
+            "a stale STAGE error whose id collides with the launch "
+            "counter must be dropped (IN-02)"
+        )
+        assert screen_gate_active(screen) is True, (
+            "a dropped stale error never touches the gate flag"
+        )
+
+        # control 1: the same id in the LAUNCH space IS current
+        screen.post_message(screen.GateWorkerError(
+            "launch boom", run_id=3, scope="launch"))
+        await pilot.pause()
+        assert any("launch boom" in toast
+                   for toast in _toast_messages(app)), (
+            "a CURRENT launch error still surfaces (IN-02)"
+        )
+        assert screen_gate_active(screen) is False, (
+            "a surfaced error releases the gate flag"
+        )
+
+        # control 2: a current STAGE id surfaces
+        screen._gate_active = True
+        screen.post_message(screen.GateWorkerError(
+            "current stage boom", run_id=1, scope="stage"))
+        await pilot.pause()
+        assert any("current stage boom" in toast
+                   for toast in _toast_messages(app)), (
+            "a CURRENT stage error still surfaces (IN-02)"
+        )
+
+        # control 3: the mount worker (run_id None) always surfaces
+        screen._gate_active = True
+        screen.post_message(screen.GateWorkerError("mount boom"))
+        await pilot.pause()
+        assert any("mount boom" in toast
+                   for toast in _toast_messages(app)), (
+            "the run_id-None mount worker always surfaces (IN-02)"
+        )
+        assert screen_gate_active(screen) is False
+
+
 async def test_gate_spawn_failure_toast_nothing_launched():
     """Spawn failure: the failed toast fires; nothing launched."""
     run_service = FakeRunConfigService(spec=RunSpec(

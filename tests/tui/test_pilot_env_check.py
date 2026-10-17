@@ -434,6 +434,46 @@ async def test_refresh_resets_rows_to_pending_and_reruns():
         assert len(fake.persist_calls) == 2  # and persisted again
 
 
+async def test_refresh_sets_in_flight_flag_synchronously(monkeypatch):
+    """IN-03 (08 review, fix batch 261017-klw): action_refresh sets
+    ``_check_in_flight`` SYNCHRONOUSLY (on the event loop, immediately
+    after the run-id bump and BEFORE dispatching run_full_check) — an
+    L-toggle remount landing between the refresh dispatch and the worker
+    thread's first line now hits the ``elif _check_in_flight`` branch
+    and renders pending rows, never the same-day cached pre-refresh
+    outcome. The worker-body set (the mount-path belt) stays; the
+    recorder here proves the flag no longer depends on the worker
+    starting."""
+    gate = threading.Event()
+    fake = FakeEnvCheckService(cached=None, gate=gate)
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        gate.set()
+        await pilot.pause()
+        await _wait_for_check(pilot, app)
+        screen = app.screen
+        assert isinstance(screen, EnvCheckScreen)  # ty narrowing (idiom)
+        assert screen._results, "the first run landed its results"
+        assert screen._check_in_flight is False
+
+        # replace the worker with a recorder that NEVER runs — the flag
+        # must already be True the instant action_refresh returns
+        dispatched = []
+        monkeypatch.setattr(
+            screen, "run_full_check", lambda: dispatched.append(1))
+        screen.action_refresh()
+
+        assert screen._check_in_flight is True, (
+            "the in-flight flag must be set synchronously in "
+            "action_refresh (IN-03) — a remount in the dispatch window "
+            "would otherwise consult the same-day cache"
+        )
+        assert screen._results == {}, (
+            "the refresh cleared the landed results (rows reset)"
+        )
+        assert dispatched == [1], "the worker dispatch still fires"
+
+
 async def test_rerender_midrun_restarts_zero_kernels():
     """WR-03 (quick-261016-hhx, the 08 review): the ``_rerender_screen``
     remount (the L toggle's exact mechanism) while an env check is in

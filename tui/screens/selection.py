@@ -1603,12 +1603,19 @@ class SelectionScreen(Screen):
         the downloading word's own ⠋ glyph, never a fabricated number.
         EHC-4 (261015-ehc): the additive ``speed`` argument (the
         verbatim parsed rate token) composes after the percent; None
-        keeps the exact C4J-1 composition."""
-        self._live_percents[key] = percent
-        self._live_speeds[key] = speed
+        keeps the exact C4J-1 composition.
+
+        IN-01 (08 review, fix batch 261017-klw): the live-dict stores
+        sit BELOW that ignore guard — the exact ordering of the fixed
+        slot-3 twin (data_manager.py, quick-261016-hhx) — so only
+        passing (model, downloading) ticks store; dataset keys cannot
+        accumulate in either slot-2 dict for the session.
+        """
         entry = self._live_model_entries().get(key)
         if entry is None or entry.state != "downloading":
             return
+        self._live_percents[key] = percent
+        self._live_speeds[key] = speed
         self._update_download_cell(key, "downloading", percent, speed)
 
     # ----- row composition (state rows vs data rows) -----

@@ -1578,6 +1578,41 @@ async def test_apply_queue_progress_updates_the_cell_in_place(
         )
 
 
+async def test_dataset_kind_tick_stores_no_live_dict_residue(
+        monkeypatch, tmp_path):
+    """IN-01 (08 review, fix batch 261017-klw): a DATASET-kind
+    downloading tick stores NOTHING in the slot-2 live percent/speed
+    dicts — the stores sit below the (model, downloading) guard, the
+    exact ordering of the fixed slot-3 twin (data_manager.py IN-01,
+    quick-261016-hhx), so dataset keys cannot accumulate in the slot-2
+    live dicts for the session (hygiene residue, never a render bug —
+    but contract drift and a latent trap for unconditional readers)."""
+    from tui.services.download_queue import KIND_DATASET
+
+    _pin_state_root(monkeypatch, tmp_path)
+    queue = _QueueFake(entries=[
+        QueueEntry(key="GUE__emp_H3", kind=KIND_DATASET,
+                   state="downloading", attempts=1,
+                   enqueued_at="2026-10-15T00:00:00", started_at=None,
+                   finished_at=None, last_percent=40, interrupted=False,
+                   log_path=None, problems=(), reconcile=None),
+    ])
+    app = _app(_SelectionFake(data=_d_fixture_data()))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app, queue_fake=queue)
+        screen = app.screen
+
+        screen.apply_queue_progress("GUE__emp_H3", 40, "892kB/s")
+
+        assert "GUE__emp_H3" not in screen._live_percents, (
+            "a dataset tick must not store a live percent — the stores "
+            "sit below the (model, downloading) guard (IN-01)"
+        )
+        assert "GUE__emp_H3" not in screen._live_speeds, (
+            "a dataset tick must not store a live speed (IN-01)"
+        )
+
+
 async def test_failed_model_event_lands_the_failed_word(
         monkeypatch, tmp_path):
     """A non-done KIND_MODEL event refreshes the overlay from the queue's

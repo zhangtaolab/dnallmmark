@@ -1121,12 +1121,26 @@ class RunConfigScreen(Screen):
         as a silent no-op (the confirm-then-crash class).
 
         ``run_id`` is the dispatching worker's id (None for the mount
-        load, which has no id space — always surfaced)."""
+        load, which has no id space — always surfaced).
+
+        IN-02 (08 review, fix batch 261017-klw): ``scope`` names the id
+        space the run_id belongs to — ``'stage'`` (the
+        enumeration/preflight/confirm-data workers) compares against
+        ``_gate_stage_id``, ``'launch'`` (the launch worker) against
+        ``_gate_launch_id``; None keeps the run_id-None mount-worker
+        always-surface semantics. The two counters increment
+        independently from 1, so an untagged either-counter comparison
+        lets a superseded stage error whose id numerically equals the
+        CURRENT launch id surface a spurious launch-failed toast — the
+        scope tag restores exactly-one-counter comparison. Internal
+        discriminator, NOT user copy."""
 
         def __init__(self, error: str,
-                     run_id: "int | None" = None) -> None:
+                     run_id: "int | None" = None,
+                     scope: "str | None" = None) -> None:
             self.error = error
             self.run_id = run_id
+            self.scope = scope
             super().__init__()
 
     # ===== construction =====
@@ -1932,7 +1946,8 @@ class RunConfigScreen(Screen):
             result = self._run_service.preview(spec)
         except Exception as exc:  # noqa: BLE001 — WR-03
             self.post_message(
-                self.GateWorkerError(_exc_text(exc), run_id))
+                self.GateWorkerError(_exc_text(exc), run_id,
+                                     scope="stage"))
             return
         self.post_message(
             self.GateEnumerationDone(result, self._gate_parse_problems,
@@ -1995,7 +2010,8 @@ class RunConfigScreen(Screen):
             verdict = self._launcher.env_preflight()
         except Exception as exc:  # noqa: BLE001 — WR-03
             self.post_message(
-                self.GateWorkerError(_exc_text(exc), run_id))
+                self.GateWorkerError(_exc_text(exc), run_id,
+                                     scope="stage"))
             return
         self.post_message(self.EnvPreflightDone(verdict, run_id))
 
@@ -2022,7 +2038,8 @@ class RunConfigScreen(Screen):
             summary = self._launcher.gate_confirm_data(spec)
         except Exception as exc:  # noqa: BLE001 — WR-03
             self.post_message(
-                self.GateWorkerError(_exc_text(exc), run_id))
+                self.GateWorkerError(_exc_text(exc), run_id,
+                                     scope="stage"))
             return
         self.post_message(self.GateSummaryReady(summary, run_id))
 
@@ -2071,7 +2088,8 @@ class RunConfigScreen(Screen):
             outcome = self._launcher.launch_spec(spec, phrase)
         except Exception as exc:  # noqa: BLE001 — WR-03
             self.post_message(
-                self.GateWorkerError(_exc_text(exc), run_id))
+                self.GateWorkerError(_exc_text(exc), run_id,
+                                     scope="launch"))
             return
         self.post_message(
             self.LaunchFinished(outcome, self._gate_summary, run_id))
@@ -2127,12 +2145,22 @@ class RunConfigScreen(Screen):
         """WR-03 (phase-11 review): a gate/mount worker raised — the
         pre-modal flag releases (the gate is re-enterable, never
         wedged) and the error toast surfaces it (a confirm-then-crash
-        is never a silent no-op)."""
+        is never a silent no-op).
+
+        IN-02 (08 review, fix batch 261017-klw): the staleness filter
+        compares run_id against EXACTLY ONE counter — scope ``'launch'``
+        against ``_gate_launch_id``, everything else (stage or untagged)
+        against ``_gate_stage_id`` — never the either-counter collision
+        that surfaced a superseded stage error as a spurious
+        launch-failed toast. run_id None (the mount worker) always
+        surfaces."""
         run_id = message.run_id
-        if (run_id is not None
-                and run_id != self._gate_stage_id
-                and run_id != self._gate_launch_id):
-            return  # a superseded worker's late error (WR-02)
+        if run_id is not None:
+            if message.scope == "launch":
+                if run_id != self._gate_launch_id:
+                    return  # a superseded launch worker's late error
+            elif run_id != self._gate_stage_id:
+                return  # a superseded stage worker's late error (WR-02)
         self._gate_active = False
         self.app.notify(
             S.LNC_LAUNCH_FAILED_TOAST.format(error=message.error),

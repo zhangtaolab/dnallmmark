@@ -707,6 +707,16 @@ class EnvCheckScreen(Screen):
         self.query_one("#env-last-check", Label).update("")
         self._render_storage()
         self._run_id += 1  # a new run: the old one's messages now drop (WR-02)
+        # IN-03 (08 review, fix batch 261017-klw): the remount guard must
+        # hold from DISPATCH, not from the worker thread's first line —
+        # an L-toggle remount landing between this dispatch and the
+        # worker body's own set would otherwise see the flag still
+        # False, consult the same-day cache, and render the stale
+        # pre-refresh outcome (the app's kick_download_queue busy-flag
+        # discipline: set synchronously on the event loop, before the
+        # worker is spawned). The worker-body set stays as the belt for
+        # the mount-path dispatch (on_mount's run_full_check call).
+        self._check_in_flight = True
         self.run_full_check()
 
     def _render_storage(self) -> None:
