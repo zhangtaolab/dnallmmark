@@ -2,7 +2,7 @@
 schema_version: 1
 open_count: 18
 waived_count: 0
-fixed_count: 10
+fixed_count: 11
 total_count: 28
 last_updated: 2026-10-16T10:22:00.000Z
 ---
@@ -416,10 +416,10 @@ last_updated: 2026-10-16T10:22:00.000Z
     "phase": "quick-261016-vxr",
     "file": "tests/tui/__snapshots__/monitor_running.svg",
     "description": "monitor_running.svg AND monitor_empty.svg regenerated (the slot-5 [k] 停止 keycap row) via make snapshot-update, deliberately UNCOMMITTED pending the maintainer's D-03 review - the committed tree fails test_snapshots on exactly these two until they land (run_config.svg byte-preserved, sha256 afa89e7e...)",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "D-03 review approved 2026-10-17; the three SVGs landed in f2a772a",
     "recorded_at": "2026-10-17T00:00:00.000Z",
-    "resolved_at": null,
+    2026-10-17T00:00:00.000Z"resolved_at": "2026-10-17T01:34:00.000Z",
     "milestone": "v1.2"
   }
 ]
