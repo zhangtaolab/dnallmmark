@@ -969,7 +969,10 @@ if __name__ == "__main__":
             _error_log_path = f"./logs/{model_name}_error_log.txt"
         else:
             _error_log_path = f"./logs/{model_name}_error_log_rank{_world_rank}.txt"
-        with open(_error_log_path, "w") as error_log:
+        # Line-buffered: RUNBOOK monitoring greps the canonical file live,
+        # but default block buffering kept a logged failure invisible for
+        # the whole multi-day process (only flushed at exit/8KB).
+        with open(_error_log_path, "w", buffering=1) as error_log:
 
             # Config-variant reload (SC-6 lanes, 06-05): --config-variant
             # <name> loads the variant's YAML for ANY model at this exact
