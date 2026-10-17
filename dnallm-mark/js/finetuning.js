@@ -3,8 +3,8 @@
    微调结果页面
    ======================================== */
 
-import CONFIG from './config.js';
 import DataAPI from './data.js';
+import { renderNavbar } from './navbar.js';
 
 class FineTuningPage {
   constructor() {
@@ -29,8 +29,10 @@ class FineTuningPage {
     console.log('Setting up Fine-tuning page...');
 
     try {
+      // The navbar is static chrome — render it before any I/O so a failed
+      // data fetch still leaves the user able to navigate (WR-03).
+      renderNavbar();
       await this.loadData();
-      this.renderNavbar();
       this.renderHero();
       this.renderModelSelector();
       this.renderLeaderboard();
@@ -47,22 +49,6 @@ class FineTuningPage {
     const comparison = await DataAPI.loadModelsComparison();
     this.state.modelsList = Object.keys(comparison);
     this.state.performanceData = await DataAPI.loadAllModelPerformance();
-  }
-
-  renderNavbar() {
-    const navbarHTML = `
-      <nav class="navbar">
-        <div class="navbar-logo">
-          <a href="/" class="logo">${CONFIG.APP_NAME}</a>
-        </div>
-        <ul class="navbar-nav">
-          ${CONFIG.NAV_LINKS.map(link => `
-            <li><a href="${link.url}" class="nav-link ${link.active ? 'active' : ''}">${link.name}</a></li>
-          `).join('')}
-        </ul>
-      </nav>
-    `;
-    document.querySelector('.navbar-container').innerHTML = navbarHTML;
   }
 
   renderHero() {
@@ -129,7 +115,7 @@ class FineTuningPage {
     for (const [modelName, perfData] of Object.entries(this.state.performanceData)) {
       if (this.state.selectedModel && modelName !== this.state.selectedModel) continue;
 
-      for (const [datasetName, data] of Object.entries(perfData)) {
+      for (const [datasetName, data] of Object.entries(perfData.performance || {})) {
         const p = data.performance || {};
         const d = data.dataset || {};
 
@@ -189,7 +175,7 @@ class FineTuningPage {
     const modal = document.getElementById('parameter-modal');
     const paramsDiv = document.getElementById('modal-parameters');
 
-    const data = this.state.performanceData[modelName]?.[datasetName];
+    const data = this.state.performanceData[modelName]?.performance?.[datasetName];
     if (!data) return;
 
     const params = data.parameters || {};
@@ -244,20 +230,21 @@ class FineTuningPage {
       this.renderLeaderboard();
     });
 
-    document.querySelectorAll('.clickable-row').forEach(row => {
-      row.addEventListener('click', () => {
-        const modelName = row.dataset.model;
-        const datasetName = row.dataset.dataset;
-        this.showParameterModal(modelName, datasetName);
-      });
+    // Event delegation on the persistent containers (AUD-12): the row and
+    // modal controls live inside containers whose innerHTML is re-rendered,
+    // so direct bindings would be lost after the first model-select change.
+    document.querySelector('.leaderboard-container')?.addEventListener('click', (e) => {
+      const row = e.target.closest('.clickable-row');
+      if (!row) return;
+      this.showParameterModal(row.dataset.model, row.dataset.dataset);
     });
 
-    document.querySelector('.modal-close')?.addEventListener('click', () => {
-      document.getElementById('parameter-modal').style.display = 'none';
-    });
-
-    document.querySelector('.modal-overlay')?.addEventListener('click', () => {
-      document.getElementById('parameter-modal').style.display = 'none';
+    document.querySelector('.modal-container')?.addEventListener('click', (e) => {
+      const modal = document.getElementById('parameter-modal');
+      if (!modal) return;
+      if (e.target.closest('.modal-close') || e.target.classList.contains('modal-overlay')) {
+        modal.style.display = 'none';
+      }
     });
   }
 }

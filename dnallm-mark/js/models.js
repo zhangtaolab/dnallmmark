@@ -3,8 +3,8 @@
    模型页面
    ======================================== */
 
-import CONFIG from './config.js';
 import DataAPI from './data.js';
+import { renderNavbar } from './navbar.js';
 
 class ModelsPage {
   constructor() {
@@ -28,8 +28,10 @@ class ModelsPage {
     console.log('Setting up Models page...');
 
     try {
+      // The navbar is static chrome — render it before any I/O so a failed
+      // data fetch still leaves the user able to navigate (WR-03).
+      renderNavbar();
       await this.loadData();
-      this.renderNavbar();
       this.renderHero();
       this.renderModelsTable();
       this.bindEvents();
@@ -53,26 +55,10 @@ class ModelsPage {
       architecture: data.model?.architecture || 'N/A',
       series: data.model?.series || 'N/A',
       contextLen: data.model?.['context_len (bp)'] || 'N/A',
-      species: DataAPI.aggregateSpecies(key, performanceData[key]),
+      species: DataAPI.aggregateSpecies(key, performanceData[key]?.performance),
       huggingface: data.model?.huggingface || '',
       modelscope: data.model?.modelscope || ''
     }));
-  }
-
-  renderNavbar() {
-    const navbarHTML = `
-      <nav class="navbar">
-        <div class="navbar-logo">
-          <a href="/" class="logo">${CONFIG.APP_NAME}</a>
-        </div>
-        <ul class="navbar-nav">
-          ${CONFIG.NAV_LINKS.map(link => `
-            <li><a href="${link.url}" class="nav-link ${link.active ? 'active' : ''}">${link.name}</a></li>
-          `).join('')}
-        </ul>
-      </nav>
-    `;
-    document.querySelector('.navbar-container').innerHTML = navbarHTML;
   }
 
   renderHero() {
@@ -145,17 +131,19 @@ class ModelsPage {
   }
 
   bindEvents() {
-    document.querySelectorAll('.models-table th.sortable').forEach(th => {
-      th.addEventListener('click', () => {
-        const field = th.dataset.sort;
-        if (this.state.sortField === field) {
-          this.state.sortAscending = !this.state.sortAscending;
-        } else {
-          this.state.sortField = field;
-          this.state.sortAscending = false;
-        }
-        this.renderModelsTable();
-      });
+    // Event delegation on the persistent container (AUD-12): sorting must
+    // survive the table re-renders that replace the header elements.
+    document.querySelector('.models-container')?.addEventListener('click', (e) => {
+      const th = e.target.closest('.models-table th.sortable');
+      if (!th) return;
+      const field = th.dataset.sort;
+      if (this.state.sortField === field) {
+        this.state.sortAscending = !this.state.sortAscending;
+      } else {
+        this.state.sortField = field;
+        this.state.sortAscending = false;
+      }
+      this.renderModelsTable();
     });
   }
 }

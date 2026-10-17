@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="DNALLM Mark - Sweep Progress">
+  <title>DNALLM Mark | Progress</title>
+
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧬</text></svg>">
+
+  <link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+  <!-- Navbar (rendered by the shared js/navbar.js into this container) -->
+  <div class="navbar-container"></div>
+  <div class="hero-container"></div>
+
+  <main class="content">
+    <!-- Summary card (sweep name, state, done/total, progress bar, ETA) -->
+    <div class="progress-summary-container"></div>
+
+    <!-- Controls (sweep selector when >1 sweep, model/task selects, status tags) -->
+    <div class="model-selector-wrapper" style="margin-bottom: 24px;"></div>
+
+    <!-- Cell table (Model | Task | one column per seed) / empty states -->
+    <div class="leaderboard-container"></div>
+
+    <!-- Data stamp (generated_at rendered VERBATIM from sweep.json) -->
+    <div class="progress-stamp-container"></div>
+  </main>
+
+  <footer style="text-align: center; padding: 32px; margin-top: 48px; border-top: 1px solid var(--color-border-light); color: var(--color-text-secondary);">
+    <p>&copy; 2026 DNALLM Mark. All rights reserved.</p>
+  </footer>
+
+  <script type="module" src="./js/progress.js"></script>
+</body>
+</html>

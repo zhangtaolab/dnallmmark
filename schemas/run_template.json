@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/zhangtaolab/dnallmmark/main/schemas/run_template.json",
+  "$comment": "Strict contract (D-07, one-way) for run-configuration templates — the operator-shareable selection + run-parameter document exported/imported by the DNALLM-Mark console (Phase 8 selection screen; read and written by tui/services/templates.py) and consumed by the Phase 11 run-config screen through this SAME schema. Ratified verbatim by the maintainer on 2026-10-11 (08-05 Task-1 checkpoint, verdict: ratify — field set frozen as proposed): the v1 field names are a published contract — once template files are shared between operators, renaming any field breaks real user files, so field names are frozen from this landing (the one-way door was opened deliberately). Field set: schema_version (const 1); models / tasks (registry-key arrays, minItems 1, uniqueItems true — an empty selection can neither be imported nor exported as a template); seeds (integer array, default 42/43/44 — the three-seed protocol); peft (enum none/lora/ia3, default none); config_variant (enum default/head/probe/curve, default default); curve_fractions (optional numeric array), subset_file (optional string), effective_batch_size (optional integer, minimum 1), num_train_epochs (optional positive number, exclusiveMinimum 0), cache_dir (optional string). GA semantics (the maintainer's TUI-REQUIREMENTS open-question-#7 wording, matching Phase 7 D-10 child-side product semantics): GA = max(1, effective_batch // batch_size), where effective_batch is this file's effective_batch_size value and batch_size is the run's dynamic per-step batch size (determine_batch_size in pipeline/run_finetune.py); the maintainer default is 16 — a small-model starting batch size above 16 (e.g. 64) yields GA 1. additionalProperties is false at every object level (this schema has exactly one object level, the document root). File locations (ratified alongside the field set): saved custom presets live separately as presets.json under the XDG config root (~/.config/dnallmmark/, schema_version 1, presets mapped name -> {models, tasks}); template files themselves export to operator-chosen paths. Templates are pure data (T-08-04): template JSON is untrusted file input shared between machines — import validates strictly against this schema with collect-all problem listing (every problem surfaced together, ordered by JSON pointer) BEFORE any selection state changes, and no code path anywhere evaluates strings from a template.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "models",
+    "tasks"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "seeds": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      },
+      "default": [42, 43, 44]
+    },
+    "peft": {
+      "enum": ["none", "lora", "ia3"],
+      "default": "none"
+    },
+    "config_variant": {
+      "enum": ["default", "head", "probe", "curve"],
+      "default": "default"
+    },
+    "curve_fractions": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    },
+    "subset_file": {
+      "type": "string"
+    },
+    "effective_batch_size": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "num_train_epochs": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "cache_dir": {
+      "type": "string"
+    }
+  }
+}

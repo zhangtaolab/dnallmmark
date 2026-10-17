@@ -5,13 +5,19 @@
 
 import CONFIG from './config.js';
 import DataAPI from './data.js';
+import { renderNavbar } from './navbar.js';
 
 class DNALLMMark {
   constructor() {
     this.state = {
       currentArena: 'all',
       currentFilter: 'all',
-      currentSort: 'rank_score',
+      // F6 Q4 (05-02): the weighted view is the DEFAULT public number; the
+      // raw-rank view is one click away. currentSort defaults to the view's
+      // metric field and is re-derived on every view switch.
+      currentView: 'weighted',
+      currentSort: 'weighted_score',
+      dataManifest: null,
       models: [],
       filteredModels: [],
       sortAscending: false,
@@ -34,7 +40,13 @@ class DNALLMMark {
     console.log('Setting up DNALLM Mark...');
 
     try {
+      // The navbar is static chrome — render it before any I/O so a failed
+      // data fetch still leaves the user able to navigate (WR-03).
+      renderNavbar();
       await this.loadData();
+      // DATA-06 (05-02): the footer stamp comes from the data manifest — a
+      // failed fetch hides the stamp entirely (null), never a live clock.
+      this.state.dataManifest = await DataAPI.loadDataManifest().catch(() => null);
       this.renderHero();
       this.renderCategoryNav();
       this.filterAndSortModels();
@@ -69,26 +81,6 @@ class DNALLMMark {
     console.log(`Loaded ${this.state.models.length} models for arena: ${this.state.currentArena}`);
   }
 
-  renderNavbar() {
-    // Determine active link based on current page
-    const currentPage = window.location.pathname;
-    const navbarHTML = `
-      <nav class="navbar">
-        <div class="navbar-logo">
-          <a href="/" class="logo">${CONFIG.APP_NAME}</a>
-        </div>
-        <ul class="navbar-nav">
-          ${CONFIG.NAV_LINKS.map(link => {
-            const isActive = (link.url === '/' && currentPage === '/') ||
-                             (link.url !== '/' && currentPage.includes(link.url));
-            return `<li><a href="${link.url}" class="nav-link ${isActive ? 'active' : ''}">${link.name}</a></li>`;
-          }).join('')}
-        </ul>
-      </nav>
-    `;
-    document.querySelector('.navbar-container').innerHTML = navbarHTML;
-  }
-
   renderHero() {
     const heroHTML = `
       <section class="hero">
@@ -116,28 +108,70 @@ class DNALLMMark {
     document.querySelector('.category-nav-container').innerHTML = categoryNavHTML;
   }
 
+  /**
+   * The active view's metric field (F6 Q4, 05-02): weighted -> weighted_score,
+   * rank -> rank_score. Drives the sort, the scatter y axis, and the metric
+   * column; the value itself is only ever READ from the performance block —
+   * never computed client-side.
+   * @returns {string}
+   */
+  viewSortField() {
+    return CONFIG.SCATTER_CONFIG.HOME.viewYAxis[this.state.currentView].field;
+  }
+
+  /**
+   * Switch the leaderboard view (weighted default / raw rank): re-derive the
+   * sort field, re-sort, and re-render the scatter (destroy-first) and the
+   * leaderboard with the view-derived metric column.
+   * @param {string} viewId - 'weighted' | 'rank'
+   */
+  switchView(viewId) {
+    if (!CONFIG.VIEW_OPTIONS.some(option => option.id === viewId)) return;
+    if (viewId === this.state.currentView) return;
+    this.state.currentView = viewId;
+    this.state.currentSort = this.viewSortField();
+    this.state.sortAscending = false;
+    this.filterAndSortModels();
+    this.renderScatterChart();
+    this.renderLeaderboard();
+  }
+
   filterAndSortModels() {
-    let models = [...this.state.models];
-
-    // Filter by count
-    if (this.state.currentFilter === 'top-20') {
-      models = models.slice(0, 20);
-    } else if (this.state.currentFilter === 'top-10') {
-      models = models.slice(0, 10);
-    }
-
-    // Sort by rank_score (descending, higher Rank Score = better)
+    // Sort by the current sort field, honoring direction (AUD-11):
+    // rank_score descending stays the default until a header is clicked.
+    const models = [...this.state.models];
+    const sortField = this.state.currentSort;
+    const ascending = this.state.sortAscending;
     models.sort((a, b) => {
-      const rankA = a.performance?.rank_score ?? 0;
-      const rankB = b.performance?.rank_score ?? 0;
-      return rankB - rankA;
+      let aVal = sortField === 'id' ? a.id : a.performance?.[sortField];
+      let bVal = sortField === 'id' ? b.id : b.performance?.[sortField];
+
+      // Model name sorts lexically; every other sortable column numerically.
+      if (typeof aVal === 'string' || typeof bVal === 'string') {
+        const aStr = String(aVal ?? '');
+        const bStr = String(bVal ?? '');
+        return ascending ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
+      }
+      const aNum = Number(aVal ?? 0);
+      const bNum = Number(bVal ?? 0);
+      return ascending ? aNum - bNum : bNum - aNum;
     });
 
-    models.forEach((model, index) => {
+    // Top-N filters slice AFTER the sort (CR-01): models_comparison*.json is
+    // written with sort_keys=True, so state.models arrives alphabetically —
+    // slicing first displayed an alphabetical subset, not the ranked top N.
+    let filtered = models;
+    if (this.state.currentFilter === 'top-20') {
+      filtered = models.slice(0, 20);
+    } else if (this.state.currentFilter === 'top-10') {
+      filtered = models.slice(0, 10);
+    }
+
+    filtered.forEach((model, index) => {
       model.displayRank = index + 1;
     });
 
-    this.state.filteredModels = models;
+    this.state.filteredModels = filtered;
   }
 
   /**
@@ -200,18 +234,21 @@ class DNALLMMark {
       this.state.chart.destroy();
     }
 
-    // Set title based on arena
+    // Set title based on arena; the score name follows the active view
+    // (F6 Q4: Weighted is the default, Raw Rank one click away)
+    const viewAxis = CONFIG.SCATTER_CONFIG.HOME.viewYAxis[this.state.currentView];
+    const scoreName = this.state.currentView === 'weighted' ? 'Weighted Score' : 'Rank Score';
     const arenaTitles = {
-      'all': 'FLOPs vs Rank Score (All Species)',
-      'animal': 'FLOPs vs Rank Score (Animal)',
-      'plant': 'FLOPs vs Rank Score (Plant)',
-      'microbe': 'FLOPs vs Rank Score (Microbe)'
+      'all': `FLOPs vs ${scoreName} (All Species)`,
+      'animal': `FLOPs vs ${scoreName} (Animal)`,
+      'plant': `FLOPs vs ${scoreName} (Plant)`,
+      'microbe': `FLOPs vs ${scoreName} (Microbe)`
     };
     const arenaDescriptions = {
-      'all': 'Top-right corner shows models with higher rank score and better performance',
-      'animal': 'Animal genome models: higher Rank Score = better performance',
-      'plant': 'Plant genome models: higher Rank Score = better performance',
-      'microbe': 'Microbe genome models: higher Rank Score = better performance'
+      'all': `Top-right corner shows models with higher ${scoreName.toLowerCase()} and better performance`,
+      'animal': `Animal genome models: higher ${scoreName} = better performance`,
+      'plant': `Plant genome models: higher ${scoreName} = better performance`,
+      'microbe': `Microbe genome models: higher ${scoreName} = better performance`
     };
 
     // Update chart title
@@ -235,7 +272,7 @@ class DNALLMMark {
       label: model.id,
       data: [{
         x: model.performance?.sum_PFLOPs || 0,
-        y: model.performance?.rank_score || 0,
+        y: model.performance?.[viewAxis.field] || 0,
         model: model
       }],
       backgroundColor: model.color + '99', // Add semi-transparency (60% alpha)
@@ -251,7 +288,7 @@ class DNALLMMark {
     const allScores = this.state.filteredModels
       .map(m => m.performance?.sum_PFLOPs || 0)
       .filter(v => v > 0);
-    const allRanks = this.state.filteredModels.map(m => m.performance?.rank_score || 0);
+    const allRanks = this.state.filteredModels.map(m => m.performance?.[viewAxis.field] || 0);
     const minScore = allScores.length ? Math.min(...allScores) : 0;
     const maxScore = allScores.length ? Math.max(...allScores) : 0;
     const minRank = Math.min(...allRanks) || 0;
@@ -307,7 +344,9 @@ class DNALLMMark {
                 const p = m.performance;
                 return [
                   `Sum PFLOPs: ${(p?.sum_PFLOPs || 0).toFixed(2)}`,
-                  `Rank Score: ${p?.rank_score || 0}`,
+                  viewAxis.field === 'weighted_score'
+                    ? `Weighted Score: ${(p?.weighted_score || 0).toFixed(4)}`
+                    : `Rank Score: ${p?.rank_score || 0}`,
                   `Avg Raw: ${(p?.avg_raw || 0).toFixed(4)}`,
                   `Top 3: ${p?.top3_count || 0}`,
                   `Top 5: ${p?.top5_count || 0}`,
@@ -326,7 +365,7 @@ class DNALLMMark {
             type: 'linear',
             title: {
               display: true,
-              text: 'Rank Score (higher = better)',
+              text: viewAxis.label,
               color: '#595F6E'
             },
             ticks: { color: '#595F6E' },
@@ -360,15 +399,38 @@ class DNALLMMark {
     legendContainer.innerHTML = legendHTML;
   }
 
+  /**
+   * The stamped footer line (DATA-06, D-17/OQ2): the manifest's date +
+   * data_version — never a live clock. When the manifest fetch failed
+   * (state.dataManifest null) the stamp is hidden entirely rather than
+   * showing any client-derived value.
+   * @returns {string} The `<small>` element, or '' when no stamp is available.
+   */
+  renderFooterStamp() {
+    const manifest = this.state.dataManifest;
+    if (!manifest || !manifest.date || !manifest.data_version) return '';
+    return `<small>Updated: ${manifest.date} · data v${manifest.data_version}</small>`;
+  }
+
   renderLeaderboard() {
+    const viewAxis = CONFIG.SCATTER_CONFIG.HOME.viewYAxis[this.state.currentView];
+    const metricLabel = this.state.currentView === 'weighted' ? 'Weighted Score' : 'Rank Score';
     const leaderboardHTML = `
       <div class="leaderboard">
         <div class="leaderboard-header">
           <div class="leaderboard-title">
             <h3>Model Performance</h3>
-            <small>Updated: ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</small>
+            ${this.renderFooterStamp()}
           </div>
           <div class="leaderboard-controls">
+            ${CONFIG.VIEW_OPTIONS.map(option => `
+              <button
+                class="btn btn-sm ${this.state.currentView === option.id ? 'active' : ''}"
+                data-view="${option.id}"
+              >
+                ${option.name}
+              </button>
+            `).join('')}
             ${CONFIG.FILTER_OPTIONS.map(option => `
               <button
                 class="btn btn-sm ${this.state.currentFilter === option.id ? 'active' : ''}"
@@ -387,7 +449,7 @@ class DNALLMMark {
                 <tr>
                   <th class="sortable" data-sort="rank">Rank</th>
                   <th class="sortable" data-sort="id">Model</th>
-                  <th class="sortable" data-sort="rank_score">Rank Score</th>
+                  <th class="sortable" data-sort="${viewAxis.field}">${metricLabel}</th>
                   <th class="sortable" data-sort="sum_minmax">Sum MinMax</th>
                   <th class="sortable" data-sort="sum_PFLOPs">Sum PFLOPs</th>
                   <th class="sortable" data-sort="top3_count">Top3 Count</th>
@@ -410,6 +472,12 @@ class DNALLMMark {
   renderModelRow(model) {
     const rankClass = model.displayRank <= 3 ? `rank-${model.displayRank}` : 'rank-default';
     const p = model.performance || {};
+    // View-derived metric cell (F6 Q4): weighted reads performance.weighted_score
+    // (precomputed offline) — never computed client-side.
+    const viewAxis = CONFIG.SCATTER_CONFIG.HOME.viewYAxis[this.state.currentView];
+    const metricValue = viewAxis.field === 'weighted_score'
+      ? (p.weighted_score ?? 0).toFixed(3)
+      : (p.rank_score || 0);
 
     return `
       <tr>
@@ -428,7 +496,7 @@ class DNALLMMark {
           </div>
         </td>
         <td>
-          <span class="rank-value">${p.rank_score || 0}</span>
+          <span class="rank-value">${metricValue}</span>
         </td>
         <td>
           <span class="rank-value">${(p.sum_minmax || 0).toFixed(2)}</span>
@@ -469,6 +537,22 @@ class DNALLMMark {
           this.renderCategoryNav();
           this.renderScatterChart();
           this.renderLeaderboard();
+        }).catch((error) => {
+          // WR-05: a failed arena file must not die as an unhandled
+          // rejection. Log it and surface an inline error state — the page
+          // keeps the previous arena's rendered content and nav highlight
+          // (renderCategoryNav only runs on success), so the user can retry.
+          console.error('Arena switch failed:', error);
+          const container = document.querySelector('.leaderboard-container');
+          if (container) {
+            container.innerHTML = `
+              <div class="empty-state">
+                <div class="empty-state-icon">⚠️</div>
+                <div class="empty-state-text">Failed to load the ${DataAPI.escapeHTML(String(this.state.currentArena))} leaderboard.</div>
+                <div class="empty-state-hint">Check your connection and try switching arenas again.</div>
+              </div>
+            `;
+          }
         });
       }
     });
@@ -485,18 +569,31 @@ class DNALLMMark {
       }
     });
 
-    document.querySelectorAll('.arena-table th.sortable').forEach(th => {
-      th.addEventListener('click', () => {
-        const sortField = th.dataset.sort;
-        if (this.state.currentSort === sortField) {
-          this.state.sortAscending = !this.state.sortAscending;
-        } else {
-          this.state.currentSort = sortField;
-          this.state.sortAscending = false;
-        }
-        this.filterAndSortModels();
-        this.renderLeaderboard();
-      });
+    // View toggle (F6 Q4, 05-02): same delegation idiom as data-filter — the
+    // leaderboard re-render replaces the buttons, so direct bindings would
+    // be orphaned. switchView ignores unknown ids and no-op re-clicks.
+    document.addEventListener('click', (e) => {
+      const viewBtn = e.target.closest('button[data-view]');
+      if (viewBtn) {
+        this.switchView(viewBtn.dataset.view);
+      }
+    });
+
+    // Sortable headers: delegated on the persistent container (AUD-12) so
+    // sorting survives leaderboard re-renders (direct th bindings would be
+    // orphaned by the first innerHTML replacement).
+    document.querySelector('.leaderboard-container')?.addEventListener('click', (e) => {
+      const th = e.target.closest('th.sortable');
+      if (!th) return;
+      const sortField = th.dataset.sort;
+      if (this.state.currentSort === sortField) {
+        this.state.sortAscending = !this.state.sortAscending;
+      } else {
+        this.state.currentSort = sortField;
+        this.state.sortAscending = false;
+      }
+      this.filterAndSortModels();
+      this.renderLeaderboard();
     });
   }
 }

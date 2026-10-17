@@ -1,0 +1,43 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": "v1.2 — TUI任务",
+  "phases": [
+    {
+      "number": "7",
+      "name": "Pipeline-Side Enablement (FlopsCounter Port, argv Threading & Registry Overlay)",
+      "status": "complete"
+    },
+    {
+      "number": "8",
+      "name": "TUI Foundation (Env Check & Selection)",
+      "status": "complete"
+    },
+    {
+      "number": "9",
+      "name": "Custom Model & Dataset Onboarding",
+      "status": "complete"
+    },
+    {
+      "number": "10",
+      "name": "Data Manager (Downloads & Verification)",
+      "status": "complete"
+    },
+    {
+      "number": "11",
+      "name": "Run Config, Launch Gates & Single-GPU Monitoring",
+      "status": "complete"
+    },
+    {
+      "number": "12",
+      "name": "Multi-GPU Orchestration & Console Hardening",
+      "status": "complete"
+    }
+  ],
+  "next": {
+    "command": "/gsd-progress --next",
+    "label": "Advance to the next step (plan phase 12)",
+    "reason": "Phase 6 of 6 — needs a plan"
+  },
+  "updated_at": "2026-10-17T07:53:56.703Z"
+}

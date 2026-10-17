@@ -1,0 +1,48 @@
+{
+  "task": "Task 1 RED",
+  "quickTask": "261016-vxr",
+  "command": ".venv/bin/python -m pytest tests/tui/test_services_sweep_monitor.py tests/tui/test_pilot_monitor.py tests/tui/test_pilot_run_config.py tests/tui/test_strings_phase11.py tests/tui/test_pilot_env_check.py tests/tui/test_pilot_nav_shell.py tests/tui/test_pilot_selection.py -q",
+  "exitCode": 1,
+  "result": "23 failed, 262 passed in 111.85s",
+  "baselineBeforeChange": "full suite 7 failed / 1823 passed (7F membership: test_determinism 1, test_schemas 5, test_services_run_config 1); node 26/26; tui lane 1 failed / 1125 passed (the same test_services_run_config baseline member)",
+  "runConfigSvgSnapshot": {
+    "file": ".planning/quick/261016-vxr-slot-5-monitor-batch-eta-remaining-time-/run_config.svg.task1-snapshot",
+    "sha256": "afa89e7e5452e15aebd4ac11584d794a9dd29d002ab9bc8d8b1e92d39ced8ef2",
+    "note": "the pre-existing 261016-poa D-03 worktree artifact, snapshotted before any change; byte-compared again at Task 4"
+  },
+  "expectedSplit": "RED = service ETA tests 1-6, pilot ETA render (new) + the two amended exact pins, k-kill tests 11-16 + monitor help row, Q-over-Input tests 17/18, the three help-row pins, the two inventory tests; GREEN = every unmodified existing test, the indeterminate pin (test 10), q-lowercase (19), Q-under-modals (20), Q-below-min-grid (21)",
+  "actualSplit": "matches exactly: 23 failed / 262 passed",
+  "failures": [
+    {"test": "test_services_sweep_monitor.py::test_cell_progress_eta_from_two_newest_checkpoint_pair", "expected": "TypeError (eta_seconds kwarg does not exist)", "actual": "TypeError: CellProgress.__init__() got an unexpected keyword argument 'eta_seconds'"},
+    {"test": "test_services_sweep_monitor.py::test_cell_progress_eta_none_with_only_one_checkpoint", "expected": "AttributeError (eta_seconds attribute missing)", "actual": "AttributeError: 'CellProgress' object has no attribute 'eta_seconds'"},
+    {"test": "test_services_sweep_monitor.py::test_cell_progress_eta_none_when_deltas_vanish", "expected": "same AttributeError family", "actual": "AttributeError on eta_seconds"},
+    {"test": "test_services_sweep_monitor.py::test_cell_progress_eta_none_when_second_newest_damaged", "expected": "same AttributeError family", "actual": "AttributeError on eta_seconds"},
+    {"test": "test_services_sweep_monitor.py::test_cell_progress_eta_none_at_or_past_max_steps", "expected": "same AttributeError family", "actual": "AttributeError on eta_seconds"},
+    {"test": "test_services_sweep_monitor.py::test_entries_progress_carries_the_checkpoint_pair_eta", "expected": "AttributeError on the passthrough read", "actual": "AttributeError: 'CellProgress' object has no attribute 'eta_seconds'"},
+    {"test": "test_pilot_monitor.py::test_cell_table_renders_entries_fold_counts_and_progress", "expected": "amended pin: render lacks the trailing eta dash segment", "actual": "AssertionError: '300/1000 30% ███·······' != '300/1000 30% ███······· —'"},
+    {"test": "test_pilot_monitor.py::test_running_entry_without_progress_renders_indeterminate", "expected": "amended narrow pin: render lacks the dash segment", "actual": "AssertionError: '5/10 50%' != '5/10 50% —'"},
+    {"test": "test_pilot_monitor.py::test_running_entry_renders_eta_segment_or_honest_dash", "expected": "TypeError (eta_seconds kwarg in the fixture)", "actual": "TypeError on CellProgress eta_seconds kwarg"},
+    {"test": "test_pilot_monitor.py::test_k_opens_kill_confirm_y_kills_without_exiting", "expected": "ImportError (KillConfirmModal missing)", "actual": "ImportError: cannot import name 'KillConfirmModal' from 'tui.screens.monitor'"},
+    {"test": "test_pilot_monitor.py::test_k_outcome_toasts_dead_noop_and_failure", "expected": "ImportError (KillConfirmModal + MON_KILL_* strings missing)", "actual": "ImportError on KillConfirmModal"},
+    {"test": "test_pilot_monitor.py::test_k_attached_but_not_live_refuses_before_the_confirm", "expected": "ImportError", "actual": "ImportError on KillConfirmModal"},
+    {"test": "test_pilot_monitor.py::test_k_without_attach_or_below_grid_is_silent", "expected": "ImportError", "actual": "ImportError on KillConfirmModal"},
+    {"test": "test_pilot_monitor.py::test_k_kill_never_consults_the_single_gpu_guard", "expected": "ImportError", "actual": "ImportError on KillConfirmModal"},
+    {"test": "test_pilot_monitor.py::test_kill_runs_off_the_event_loop_console_stays_responsive", "expected": "ImportError", "actual": "ImportError on KillConfirmModal"},
+    {"test": "test_pilot_monitor.py::test_monitor_help_lists_the_kill_row", "expected": "ImportError (APP_Q_LABEL missing)", "actual": "ImportError: cannot import name 'APP_Q_LABEL' from 'tui.strings'"},
+    {"test": "test_pilot_run_config.py::test_q_uppercase_quits_from_focused_input_never_types", "expected": "Q types instead of quitting (no modal, input value changed)", "actual": "AssertionError: screen is RunConfigScreen, not QuitConfirmModal (Q typed into the focused Input)"},
+    {"test": "test_pilot_run_config.py::test_q_uppercase_live_sweep_routes_to_exit_modal", "expected": "same Q-types shape", "actual": "AssertionError: no ExitModal (Q typed)"},
+    {"test": "test_strings_phase11.py::test_cfg_lnc_mon_string_inventory_defined", "expected": "hasAttribute fails on the seven new names", "actual": "AttributeError family on MON_KILL_* names"},
+    {"test": "test_strings_phase11.py::test_cfg_lnc_mon_inventory_complete_no_unlisted_constants", "expected": "stale registrations: the seven listed-but-undefined names", "actual": "AssertionError listing the seven MON_KILL_* names as stale registrations"},
+    {"test": "test_pilot_env_check.py::test_help_modal_lists_bindings_and_esc_closes", "expected": "ImportError (APP_Q_LABEL missing)", "actual": "ImportError: cannot import name 'APP_Q_LABEL'"},
+    {"test": "test_pilot_nav_shell.py::test_env_help_modal_reflects_the_s_removal", "expected": "ImportError", "actual": "ImportError on APP_Q_LABEL"},
+    {"test": "test_pilot_selection.py::test_help_modal_opens_on_the_selection_screen", "expected": "ImportError", "actual": "ImportError on APP_Q_LABEL"}
+  ],
+  "greenPins": [
+    "test_pilot_run_config.py::test_q_lowercase_still_types_into_inputs (the select_on_focus replace: value '42,43,44' -> 'q' — the key arrives at the Input)",
+    "test_pilot_run_config.py::test_q_uppercase_inert_under_modals_types_in_modal_inputs",
+    "test_pilot_run_config.py::test_q_uppercase_below_min_grid_never_exits",
+    "the indeterminate pin inside test_running_entry_without_progress_renders_indeterminate (wide leg) and every other unmodified existing test in the seven lanes"
+  ],
+  "semanticAssessment": "Every failure is the planned honest RED: the service lane fails on the missing eta_seconds field (TypeError on construction, AttributeError on reads — no fabricated pass), the k-kill lane on the missing KillConfirmModal class and MON_KILL_* strings, the Q lane on Q typing into the focused Input instead of firing the guarded chain (probe P1 mechanism), and the inventory/help lanes on the unregistered APP_Q_LABEL and the seven MON_KILL_* names. The three regression pins expected GREEN (q-lowercase, Q-under-modals, Q-below-grid) pass, proving the test surface isolates exactly the new behavior. One fixture correction during RED authoring: the seeds Input's value is repopulated by the screen load and Textual's select_on_focus replaces content on the first keystroke — the Q tests capture value_before (today: replaced by the typed Q; after the fix: unchanged) and the q pin asserts the standard replace-typing 'q'.",
+  "redCommit": "f1277ff"
+}

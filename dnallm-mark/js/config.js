@@ -30,6 +30,17 @@ const CONFIG = {
     { id: 'top-10', name: 'Top 10' }
   ],
 
+  // Leaderboard view options (F6 Q4, 05-02): the z-score × uniform-difficulty
+  // weighted view is the DEFAULT public number; the raw-rank view stays one
+  // click away. The weighted value is precomputed offline
+  // (performance.weighted_score in models_comparison*.json) — selected
+  // client-side, never recomputed (the lesson of the dead
+  // recalculateComparison client-side recompute, since removed — DATA-07).
+  VIEW_OPTIONS: [
+    { id: 'weighted', name: 'Weighted (default)' },
+    { id: 'rank', name: 'Raw Rank' }
+  ],
+
   // Ranking display options
   RANKING_DISPLAY: {
     SHOW_RANKINGS: true,
@@ -46,14 +57,17 @@ const CONFIG = {
     DEFAULT_FILTER: 'top-20'
   },
 
-  // Nav links (active state is set dynamically based on current page)
+  // Nav links (active state is set dynamically based on current page).
+  // './'-relative like every other asset the pages reference — root-absolute
+  // URLs break under subpath hosting (GitHub Pages project sites, WR-04).
   NAV_LINKS: [
-    { name: 'Leaderboards', url: '/' },
-    { name: 'Task Benchmark', url: '/task.html' },
-    { name: 'Fine-tuning', url: '/finetuning.html' },
-    { name: 'Models', url: '/models.html' },
-    { name: 'Datasets', url: '/datasets.html' },
-    { name: 'Submit', url: '/submit.html' }
+    { name: 'Leaderboards', url: './index.html' },
+    { name: 'Task Benchmark', url: './task.html' },
+    { name: 'Fine-tuning', url: './finetuning.html' },
+    { name: 'Models', url: './models.html' },
+    { name: 'Datasets', url: './datasets.html' },
+    { name: 'Submit', url: './submit.html' },
+    { name: 'Progress', url: './progress.html' }
   ],
 
   // Social links
@@ -85,7 +99,20 @@ const CONFIG = {
       xAxis: 'sum_PFLOPs',
       yAxis: 'rank_score',
       xAxisLabel: 'Sum PFLOPs (lower = more efficient)',
-      yAxisLabel: 'Rank Score (higher = better)'
+      yAxisLabel: 'Rank Score (higher = better)',
+      // F6 dual view (05-02): per-view y-axis field + label. The field is
+      // READ from the performance block (weighted_score is precomputed
+      // offline); the label is view-derived.
+      viewYAxis: {
+        weighted: {
+          field: 'weighted_score',
+          label: 'Weighted Score (z-score × uniform difficulty, higher = better)'
+        },
+        rank: {
+          field: 'rank_score',
+          label: 'Rank Score (higher = better)'
+        }
+      }
     },
     FINETUNING: {
       defaultX: 'FLOPs',

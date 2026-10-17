@@ -1,7 +1,8 @@
 # DNALLM-Mark
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![CI](https://github.com/zhangtaolab/dnallmmark/actions/workflows/ci.yml/badge.svg)](https://github.com/zhangtaolab/dnallmmark/actions/workflows/ci.yml)
 
 DNALLM-Mark is a comprehensive benchmark platform for evaluating DNA Large Language Models (LLMs) across various genomic prediction tasks. It provides standardized evaluation metrics, interactive leaderboards, and reproducible benchmarks to advance DNA language model research.
 
@@ -85,8 +86,8 @@ DNALLM-Mark is a centralized evaluation system designed to assess and compare th
 
 ### Prerequisites
 
-- Python 3.11+
-- Node.js 18+ (for web interface)
+- Python 3.13+ (data toolchain — see `.python-version`; the GPU pipeline has its own requirements)
+- Node.js 18+ (only for the task-index generator `scripts/generate-tasks-index.js` and the optional `npx http-server` fallback — the web interface itself is static and needs no Node)
 - Git
 
 ### Clone the Repository
@@ -109,10 +110,144 @@ python3 -m http.server 8080
 open http://localhost:8080
 ```
 
+## 🔁 Reproducing the Leaderboard
+
+Every command below is literal copy-paste, run from the repository root of
+a fresh clone. Each step shows its expected output, so a failed step is
+immediately visible. How the numbers are computed is documented in one
+place — [docs/METHODOLOGY.md](docs/METHODOLOGY.md); extending the
+benchmark (new model or dataset) is documented in
+[docs/ONBOARDING.md](docs/ONBOARDING.md); running the sweep across
+multiple GPUs is documented in
+[docs/multi-gpu.md](docs/multi-gpu.md).
+
+### 1. Install the data toolchain
+
+```bash
+uv sync
+```
+
+`uv sync` installs only the `data` dependency group — `default-groups =
+["data"]` in `pyproject.toml` deliberately replaces uv's `["dev"]` default
+(see the comment there). The dev tools (`pytest`, `ruff`, `ty`,
+`jsonschema`) are pulled automatically on demand by the `make` targets
+below via `uv run --group dev`. Expected output ends with lines like:
+
+```
+Resolved N packages, installed M packages in S
+```
+
+(Prerequisites: Python 3.13+ [see `.python-version`], Node.js 18+, and
+[uv](https://docs.astral.sh/uv/). No GPU is needed for anything in this
+section.)
+
+### 2. Verify the derived data is byte-stable (the drift invariant)
+
+```bash
+make data
+git status --porcelain dnallm-mark/data/ DATA.md
+```
+
+`make data` regenerates the entire derived-data chain from the committed
+inputs (aggregation → permutation family → provenance → task index). On
+an untouched clone it is a **byte-identical no-op** — the `git status`
+line must print nothing. Expected command output:
+
+```
+✅ Global comparison results saved to: models_comparison.json
+✅ Species [Microbe] comparison saved to: models_comparison_microbe.json (contains 13 dataset(s))
+✅ Species [Animals] comparison saved to: models_comparison_animal.json (contains 22 dataset(s))
+✅ Species [Plants] comparison saved to: models_comparison_plant.json (contains 12 dataset(s))
+✅ Data manifest saved to: manifest.json (data_version 1.1.0)
+🎉 All statistical comparisons generated successfully!
+✅ Permutation tests: 861 pair(s) (0 excluded) saved to: .../dnallm-mark/data/permutation_tests.json (657 significant at BH FDR 0.05)
+✅ Provenance artifacts (50 datasets):
+Found 47 task files
+✓ Generated tasks.json with 47 tasks
+```
+
+This is the repository's core reproducibility guarantee: CI's drift job
+runs exactly this check on every pull request and fails on any byte of
+drift.
+
+### 3. Run the test suite (both lanes)
+
+```bash
+make test
+```
+
+Runs the Python lane (`uv run --group dev pytest`) and the Node lane
+(`node --test tests/js/`, zero npm deps). Expected output (counts grow as
+the suite grows):
+
+```
+=========================== 1743 passed in ~4.5m ============================   # Python lane
+ℹ pass 26                                                                     # Node lane summary
+```
+
+### 4. Serve the leaderboard
+
+```bash
+bash start-server.sh
+```
+
+Expected output, then open <http://localhost:8080> (the ES-module UI needs
+an HTTP origin — `file://` does not work):
+
+```
+Starting DNALLM Mark server...
+Server URL: http://localhost:8080
+Press Ctrl+C to stop the server
+```
+
+### Fresh-clone proof
+
+The [CI badge](https://github.com/zhangtaolab/dnallmmark/actions/workflows/ci.yml)
+at the top of this page replays exactly this chain on every push and pull
+request: the pinned CI lane (`make ci`) replays the golden export →
+aggregate chain over a committed fixture (`tests/fixtures/e2_replay/`),
+and the drift job asserts step 2's no-op invariant — so a green badge is
+machine-checked evidence that a fresh clone reproduces the committed
+leaderboard data.
+
+### Results snapshots (tamper-evident archives)
+
+The derived-data set (everything in `dnallm-mark/data/` except the
+`model_performance/` input) can be frozen into a tar + SHA-256 manifest
+for deposition (e.g. Zenodo supplementary information):
+
+```bash
+make snapshot
+cd baseline/snapshots && sha256sum -c snapshot-*.sha256   # re-verify: every line OK
+```
+
+The frozen commit hash is read from the committed
+`dnallm-mark/data/manifest.json` (`generated_from`) — never from a live
+`git` call — so the lane also works from a tarball-exported tree. The
+`.tar` is gitignored (a deposition artifact); only the `.sha256` manifest
+is committed as tamper-evidence (`baseline/snapshots/`).
+
+**Re-freeze procedure** (after a future data revision lands, e.g. the
+post-recomputation data-v2):
+
+```bash
+make data                                   # regenerate from the new inputs
+git status --porcelain dnallm-mark/data/ DATA.md   # must be empty BEFORE freezing
+make snapshot                               # freeze; verify the new .sha256
+git add baseline/snapshots/snapshot-<hash>.sha256 && git commit   # commit the manifest
+```
+
 ## 📊 Benchmark Pipeline
 
 ### Datasets and Models Preparation
 
+<!-- Load-bearing link (do not rotate or strip casually): the Zenodo URL below
+     carries an intentional, record-scoped, read-only preview token — maintainer
+     decision D-08, see AUDIT.md "Secret-scan evidence". The .gitleaks.toml
+     allowlist exists solely to suppress this one link; any change here must
+     update that allowlist in the same commit. When Zenodo record 19135551 is
+     published, replace this with the public record DOI/URL and drop the
+     allowlist rule (tracked as a Phase 6 release item in .planning/ROADMAP.md). -->
 Before starting benchmark models on different tasks, users should first download the preseted datasets from [Zenodo](https://zenodo.org/records/19135551?preview=1&token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImVhYzE2MTJmLWQzZDMtNDMxZC04ZTc3LTkyNzk1MTQzMmIxOCIsImRhdGEiOnt9LCJyYW5kb20iOiJhZTc1OTk5N2FjNzA3MjczNzJiYzE4MGM5NDA2ZDg5YiJ9.Btz9VeF52JLK1fzuMXcBJ8ZtD1aR9sHWwNSyc20eahZjgidmlWaRZ6lImsA5Pnw8Ei9vjyGpdXCeY8JdhlntlQ), then extract the datasets to `pipeline/datasets/` directory.
 
 Detailed datasets information are listed in the `datasets_info.json` file, which is used for running the pipeline.
@@ -139,12 +274,30 @@ Users should also prepare a model for finetuning, the target model should be put
 
 Finetuning parameters can be adjusted in the `finetune_config.yaml` configuration file. The pipeline will run all finetuning with the parameters provide in the configuration file.
 
+### Model Registry and ModelScope-First Downloads
+
+Model and dataset acquisition is **ModelScope-first through dnallm**: every model download flows through `dnallm.models.model.download_model`, and the loader table (`MODEL_INFO`) in the dnallm framework is the single download authority.
+
+- **`pipeline/models_info.json`** — the official 59-model registry, with `huggingface`/`modelscope` ID fields aligned to the dnallm authority.
+- **`pipeline/dnallm_compat.json`** — the committed compatibility verdict map, one entry per registry model: `dnllm_adapted` (36 of 59 models), the resolved ModelScope repo id, the channel (`modelscope-slot` = dnallm's official slot; `modelscope-mirror` = dnallm's own `lgq12697` default mirror), and the architecture. Only dnllm-adapted models are downloadable through the operator console; the remaining registry entries are informational and still require manual weight placement into `pipeline/models/`.
+- **`script/audit_dnallm_compat.py`** — the maintainer-executed alignment/audit script that regenerates the compat map from a local read-only dnallm clone.
+
+Datasets follow the same policy in the operator console's data manager: per-dataset ModelScope downloads are the default channel, and the Zenodo record linked above is the alternate (whole-package) source.
+
 ### Run Pipeline
 
-After preparation of datasets and models, users can directly run the pipeline with the follow script:
+After preparation of datasets and models, users can directly run the pipeline with the follow script (run from the `pipeline/` directory — `run_finetune.py` resolves `finetune_config.yaml`, its `./logs/` error-log directory, and its `./finetuned` output default against its working directory):
 
 ```bash
-python dnallmmark_pipeline.py --target_model model_name --batch_size initial_batch_size --remove_pt
+cd pipeline
+python run_finetune.py --target_model model_name --target_dataset dataset_name --seed 9527
+```
+
+To drive the full model x task x seed matrix, use the sweep driver instead (launched from the repo root; it launches one `run_finetune.py` subprocess per cell and pins each subprocess to `pipeline/` internally):
+
+```bash
+python pipeline/run_sweep.py --seeds 42,43 --output-root ./finetuned --dry-run  # enumerate only, launches nothing
+python pipeline/run_sweep.py --seeds 42,43 --output-root ./finetuned           # launch the sweep
 ```
 
 The detailed arguments are shown below:
@@ -155,31 +308,79 @@ The detailed arguments are shown below:
                         Name of the target dataset for training
   --batch_size BATCH_SIZE
                         Manual batch size
-  --fix_token_len FIX_TOKEN_LEN
-                        Manual set max token length
   --max_token_len MAX_TOKEN_LEN
                         Manual max token length in case model with singlebase tokenizer processing extra-long sequences
   --remove_pt           If set, remove .pt files in checkpoints
   --remove_checkpoints  If set, remove the all checkpoints directory except the last one
+  --category CATEGORY   Filter datasets by category, supports multiple categories separated by comma (e.g., Plants,Animals,Microbe)
+  --task_index TASK_INDEX
+                        Filter datasets by index number from datasets_info.json, supports multiple indices separated by comma (e.g., 1,2,7,10)
+  --auto_batch_size     If set, automatically adjust batch size based on model size
+  --gradient_checkpointing
+                        If set, enable HF gradient checkpointing to trade compute for memory
+  --ddp_find_unused_parameters
+                        If set, force DDP find_unused_parameters=True. Required for MoE models under torchrun
+  --cache_dir CACHE_DIR
+                        Cache directory for HF_HOME and MS_CACHE_HOME. Overrides env vars. Default: ../../cache relative to this script (or HF_HOME env if set).
   --seed SEED           Random seed
+  --gpu_memory GPU_MEMORY
+                        Override GPU memory in GB (useful for multi-GPU or incorrect detection)
+  --mem_ratio MEM_RATIO
+                        Target GPU memory usage ratio (0.0-1.0, default 0.70 for 70%)
+  --effective_batch_size EFFECTIVE_BATCH_SIZE
+                        Target effective batch size (batch_size * gradient_accumulation_steps). If set, gradient_accumulation will be adjusted to achieve this product.
+  --output_dir OUTPUT_DIR
+                        Custom output directory for saving finetuned models (default: ./finetuned)
+  --save_model_name SAVE_MODEL_NAME
+                        Custom model name used in output path (default: use Model_name from models_info.json)
 ```
 
 Users need to specify a target model with `--target_model` for benchmarking, otherwise all the models defined in the `models_info.json` and existed in the `models/` directory will be processed.
 
-`--target_dataset` can be used for finetuning model on specific datasets (multiple datasets are separated by comma). When finetuning model for all the tasks at one time, an appropariate/optimal `--batch_size` should be manual set as an initial batch_size, since this script will automatically adjust batch size for each dataset according to the sequence length.
+`--target_dataset` can be used for finetuning model on specific datasets (multiple datasets are separated by comma). When finetuning model for all the tasks at one time, an appropariate/optimal `--batch_size` should be manual set as an initial batch size, and `--auto_batch_size` can be set to automatically adjust the batch size based on model size and sequence length.
 
-`--fix_token_len` is used if users want to fix the tokenized sequence length, `--max_token_len` is used for hard cut tokenized sequence if the length is longer than the max_token_len.
+`--max_token_len` is used for hard cut tokenized sequence if the length is longer than the max_token_len.
 
 `remove_pt` and `remove_checkpoints` are used for saving disk space.
 
-When the pipeline finished, the finetuned models will be stored at `finetuned/{model_name}/{dataset_name}/` directories. Error logs wiil be saved at `logs/` directory. All the finetuned metrics can be visualized via *tensorboard* by setting the log dir to the output foloder:
+When the pipeline finished, the finetuned models will be stored at `finetuned/{model_name}/{dataset_name}/seed_{seed}/` directories (one seed-isolated output per `--seed`; the sweep driver additionally writes a per-cell `run_record.json` plus `sweep_manifest.json` and `sweep_failures.json` at the output root). Error logs wiil be saved at `logs/` directory. All the finetuned metrics can be visualized via *tensorboard* by setting the log dir to the output foloder:
 
 ```bash
 tensorboard --logdir=finetuned/
 ```
 
-The pipeline will also generate a summarized performance result for the target model named `{model_name}_performance.json` in the `finetuned/{model_name}/` directory. This file can be further used for visualized and comparison in the DNALLM-Mark, please see the next section for detailed usage.
+Run records land under `finetuned/{model_name}/{task}/seed_{seed}/` (metrics, parameters, resume markers). The per-model leaderboard files (`{model_name}_performance.json`) are NOT written by the training run itself — they are produced by the unified exporter in the next section.
 
+### Export Runs to the Leaderboard
+
+The unified exporter (`script/export_runs.py`) turns finished sweep runs into the leaderboard's task-centric data: it reads the per-cell `run_record.json` files (F2 layout, `finetuned/{model}/{task}/seed_{seed}/`), applies the exporter-owned metric-key mapping, joins `models_info.json` / `datasets_info.json` and `finetune_config.yaml` (the training-parameter block), aggregates over seeds, and writes one `{dataset}_task_performance.json` per task plus a per-seed statistics artifact:
+
+```bash
+uv run --group data python script/export_runs.py --input-root ./finetuned
+```
+
+This is the regeneration path for `dnallm-mark/data/task_performance/`. Until the benchmark recomputation (E2') produces real run records, the committed `task_performance/` files are **static data** — `make data` does not refresh them (its chain is `summarize_comparison.py` + the task index generator only).
+
+## 🖥️ Operator Console (TUI)
+
+Day-to-day benchmark operation — checking the environment, downloading models and datasets, composing and launching sweeps, monitoring runs — is driven from the terminal console (`tui/`, built with Textual):
+
+```bash
+make tui    # uv run --group tui --group gpu python -m tui
+```
+
+The shell is a top bar of six digit-prefixed screens (UI copy is Chinese; the slot digits `1`–`6` switch screens):
+
+| Digit | Slot | Purpose |
+|-------|------|---------|
+| `1` | 环境检查 (environment check) | Seven environment-smoke kernels; the critical set gates every launch |
+| `2` | 模型 (models) | One model table: selection marks, the dnllm-adaptation verdict (适配), and live disk presence (下载); `d` downloads the cursor's model through the dnallm channel |
+| `3` | 数据集 (datasets) | The dataset table plus a persistent download queue: per-dataset ModelScope downloads are the default channel, the Zenodo whole-package bundle is the alternate (`z`); presence flips only after a landed download reconciles against the declared row count |
+| `4` | 运行配置 (run config) | Compose the model × dataset × seed matrix and parameters; the launch confirmation runs env preflight, lists the planned model × dataset pairs, and a typed-phrase confirm guards full-matrix launches |
+| `5` | 任务监控 (monitor) | Attach to running sweeps (CLI-launched included), live rescans, and a failures modal with re-run |
+| `6` | 关于 (about) | Version and project information |
+
+The complete runbook — every key, modal, gate, and troubleshooting entry — is [docs/TUI-GUIDE.md](docs/TUI-GUIDE.md). For a recorded, full-feature walkthrough of the operator journey on real tasks (real downloads, a real bounded training through the y-confirm gate, live monitoring, the kill, and a from-failures re-run — in both English and 中文), see [docs/TUI-DEMO.md](docs/TUI-DEMO.md).
 
 ## 🔧 Data Processing
 
@@ -238,8 +439,8 @@ python ../../script/summarize_comparison.py
 
 This will generate:
 - `models_comparison.json` - Overall comparison across all tasks with Rank Score, Sum MinMax, Top counts, and efficiency metrics
-- `models_comparison_animals.json` - Comparison filtered by animal species
-- `models_comparison_plants.json` - Comparison filtered by plant species
+- `models_comparison_animal.json` - Comparison filtered by animal species
+- `models_comparison_plant.json` - Comparison filtered by plant species
 - `models_comparison_microbe.json` - Comparison filtered by microbe species
 
 **Output fields:**
@@ -249,24 +450,30 @@ This will generate:
 - `sum_robust` - Sum of robust normalized scores
 - `avg_raw` - Average raw metric value across tasks
 - `avg_rank` - Average rank across tasks
-- `top1_count`, `top3_count`, `top5_count`, `top10_count` - Number of tasks in top positions
+- `avg_PFLOPs` - Average computational cost in PetaFLOPs per task
+- `top1_count`, `top3_count`, `top5_count`, `top8_count`, `top10_count` - Number of tasks in top positions
 - `sum_PFLOPs` - Total computational cost in PetaFLOPs
 - `rank` - Overall ranking position
 
-### Generate Task Performance Data
+### Task Performance Data (per-dataset files)
 
-Run the task performance script to reorganize data by dataset/task for fine-tuning results page:
-
-```bash
-cd dnallm-mark/data
-
-# Generate task_performance/ directory with per-dataset JSON files
-python ../../script/get_task_performance.py
-```
-
-This will generate `task_performance/{dataset_name}_task_performance.json` for each dataset, containing:
+`dnallm-mark/data/task_performance/` holds one `{dataset}_task_performance.json` per dataset, containing:
 - `info` - Dataset metadata (species, type, labels, train/test/dev sizes, etc.)
 - `performance` - Per-model performance metrics for this specific dataset/task
+
+These files are **committed static data** until the benchmark recomputation (E2') regenerates them with the unified exporter (see [Export Runs to the Leaderboard](#export-runs-to-the-leaderboard)) — the legacy offline pivot from `model_performance/` was removed; there is no script that regenerates them today.
+
+### Generate Task Index
+
+Regenerate the lightweight task index (`dnallm-mark/data/tasks.json`) consumed by the task benchmark page. Unlike the Python generator above, this one is **not** CWD-sensitive — it resolves paths relative to its own location, so run it from the repo root:
+
+```bash
+node scripts/generate-tasks-index.js
+```
+
+This rewrites `tasks.json` from the `task_performance/` files. Regenerate it whenever `task_performance/` changes — otherwise the task page serves a stale index (missing or outdated task entries).
+
+> **Note:** the full regeneration chain (`make data`) is: (1) `cd dnallm-mark/data && python ../../script/summarize_comparison.py`, (2) `node scripts/generate-tasks-index.js` (repo root). Shipping only a partial chain leaves derived files inconsistent with `model_performance/`. The `task_performance/` files are inputs to step (2), not outputs of the chain — until E2' regenerates them via `script/export_runs.py`.
 
 ## 📁 Project Structure
 
@@ -285,7 +492,8 @@ dnallmmark/
 │   │   └── components.css    # UI component styles
 │   └── data/                 # Data directory
 │       ├── model_performance/  # Input: per-model JSON files
-│       ├── task_performance/   # Generated: per-dataset JSON files
+│       ├── task_performance/   # Per-dataset JSON files (committed static data until E2')
+│       ├── tasks.json          # Generated: task index (scripts/generate-tasks-index.js)
 │       └── models_comparison*.json  # Generated: summary comparison files
 ├── pipeline/                 # Fine-tuning pipeline
 │   ├── datasets/             # Datasets directory
@@ -294,12 +502,34 @@ dnallmmark/
 │   ├── logs/                 # Finetuning logs directory
 │   ├── datasets_info.json    # Datasets information
 │   ├── models_info.json      # Models information
-│   ├── dnallmmark_pipeline.py  # Training script
+│   ├── run_finetune.py         # Training script (benchmark entry point)
+│   ├── flops_counter.py        # FLOPs instrumentation (FlopsCounter port; writes flops_report.json per run)
 │   ├── finetune_config.yaml  # Training script
 │   └── finetune_config_with_head.yaml  # Configuration file with specific head
-├── script/                   # Data processing scripts
+├── script/                   # Data processing scripts (Python — repo-root-runnable via make/uv)
 │   ├── summarize_comparison.py  # Generate summary comparison data
-│   └── get_task_performance.py  # Generate per-dataset performance data
+│   ├── export_runs.py           # Unified exporter (run records -> task_performance; E2' path)
+│   ├── convert_registry.py      # Bidirectional registry JSON<->CSV (provenance correction path)
+│   ├── audit_n_frequencies.py   # N-frequency + non-ACGT census + eval-subset emission
+│   ├── make_dev_splits.py       # Stratified dev-split carving
+│   ├── freeze_snapshot.py       # Results snapshot tar + SHA-256 manifest (make snapshot)
+│   ├── run_migration_inventory.py  # Data-migration diff inventory + write-manifest
+│   ├── permutation_tests.py     # Pairwise permutation tests (861-family, BH-corrected)
+│   ├── build_frontier.py        # Cost-accuracy frontier table generator
+│   ├── zero_shot_vep.py         # Zero-shot VEP registry batch driver
+│   └── doi_swap.py              # Zenodo DOI swap preparation (maintainer-executed)
+├── scripts/                  # One-off generators (Node — run from repo root)
+│   └── generate-tasks-index.js  # Regenerate data/tasks.json task index
+├── tui/                      # Operator console (Textual TUI: screens + services — `make tui`)
+├── tests/                    # Test suite (pytest lanes + Node tests/js — `make test`)
+├── baseline/                 # Reproducibility baseline (JSON comparator + SHA256 manifests + pin-validation evidence)
+├── AUDIT.md                  # Published audit report (findings, migration records, secret-scan evidence)
+├── LICENSE                   # MIT license (code)
+├── pyproject.toml            # Dependency groups (data / dev / pipeline)
+├── uv.lock                   # Committed lockfile for the data chain
+├── requirements.txt          # pip export of the data group
+├── .python-version           # Interpreter pin (3.13)
+├── .gitleaks.toml            # Secret-scan config (narrow allowlist for the intentional sharing link)
 └── README.md
 ```
 
@@ -308,6 +538,12 @@ dnallmmark/
 - **Issues**: [GitHub Issues](https://github.com/zhangtaolab/dnallmmark/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/zhangtaolab/dnallmmark/discussions)
 - **Discord**: [Join our community](https://discord.com/invite/Bw9Ajcb3pR)
+
+## 📄 License
+
+- **Code** in this repository is licensed under the [MIT License](LICENSE) (see the badge at the top of this page).
+- **Derived leaderboard aggregates** produced by this repository (`dnallm-mark/data/model_performance/`, `dnallm-mark/data/task_performance/`, `models_comparison*.json`, and `tasks.json`) are offered under the [Creative Commons Attribution 4.0 International License (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
+- **Upstream datasets are not redistributed by this repository.** The benchmark datasets are downloaded from the Zenodo record linked in the [Datasets and Models Preparation](#datasets-and-models-preparation) section (the repository tracks only JSON metadata and derived aggregate results) and remain under their original terms; the CC BY 4.0 statement above covers only the repository-produced aggregates.
 
 ## 📖 Citation
 
@@ -321,6 +557,25 @@ If you use DNALLM-Mark in your research, please cite:
   howpublished={\url{https://github.com/zhangtaolab/dnallmmark}}
 }
 ```
+
+## 📚 Documentation
+
+The documents below expand on specific areas of the project. **[GETTING-STARTED.md](docs/GETTING-STARTED.md)** and **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** are the best entry points; the rest are task-specific:
+
+- **[GETTING-STARTED.md](docs/GETTING-STARTED.md)**: Prerequisites and the shortest path from a fresh clone to a running local leaderboard
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)**: How the three subsystems (static web UI, offline data scripts, fine-tuning pipeline) fit together
+- **[DEVELOPMENT.md](docs/DEVELOPMENT.md)**: Local development setup, `make` targets, code style, and branch/PR conventions
+- **[TESTING.md](docs/TESTING.md)**: The Python (`pytest`) and Node (`node --test`) test lanes, test conventions, and CI integration
+- **[CONFIGURATION.md](docs/CONFIGURATION.md)**: Dependency groups, configuration files, and pipeline knobs
+- **[CONTRIBUTING.md](CONTRIBUTING.md)**: How to report issues and submit changes
+- **[METHODOLOGY.md](docs/METHODOLOGY.md)**: How leaderboard numbers are computed, from per-model results to Rank Score
+- **[ONBOARDING.md](docs/ONBOARDING.md)**: Checklists for adding a new model or dataset to the benchmark
+- **[multi-gpu.md](docs/multi-gpu.md)**: Multi-GPU sweep orchestration — sharding vs DDP decisions and the runbook
+- **[TUI-GUIDE.md](docs/TUI-GUIDE.md)**: Guide to the `tui/` terminal console for driving benchmark runs
+- **[TUI-DEMO.md](docs/TUI-DEMO.md)**: Recorded GIF walkthrough of every console feature on real tasks (bilingual)
+- **[TUI-REQUIREMENTS.md](docs/TUI-REQUIREMENTS.md)**: Open requirements collection for the TUI milestone
+- **[DATA.md](DATA.md)**: Generated dataset audit (N-frequency and non-ACGT census)
+- **[AUDIT.md](AUDIT.md)**: Published audit report (findings, migration records, secret-scan evidence)
 
 ---
 

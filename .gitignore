@@ -4,7 +4,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-.python-version
 build/
 develop-eggs/
 dist/
@@ -44,7 +43,6 @@ ENV/
 
 # uv
 .uv.toml
-uv.lock
 
 # Testing
 .coverage
@@ -83,51 +81,51 @@ Thumbs.db
 *.log
 *.bak
 
-# Project specific
-dnallm/models/downloads/
-dnallm/data/cache/
-dnallm/ui/tmp/
-.planning/
-
-# Jupyter Notebook tmp files
-.ipynb_checkpoints/
-*.output.txt
-example/notebooks/*/output*/
-example/notebooks/*/*.pdf
-example/notebooks/*/results*/
-
-# Marimo cache
-.marimo-cache/
-.marimo-env/
-example/marimo/*/__marimo__/
-
-# Mkdocs cache
-site
-
 # MyPy cache
 .mypy_cache/
+
+# Snapshot tars (06-04, OQ 2): deposition artifacts stay untracked; only
+# the .sha256 manifests under baseline/snapshots/ are committed as
+# tamper-evidence (mirrors baseline/data-v1.sha256). The global *.tar rule
+# above already ignores them; this entry documents the intent and stays
+# correct if that rule is ever narrowed.
+baseline/snapshots/*.tar
 
 results/
 
 .ruff_cache/
 
-test/inference/pdf/
-tests/inference/pdf/demo_attention_pdf.pdf
-tests/inference/pdf/demo_bars_pdf.pdf
-tests/inference/pdf/demo_curves_pdf.pdf
-tests/inference/pdf/demo_embeddings_pdf.pdf
-tests/inference/pdf/demo_scatter_pdf.pdf
-tests/inference/pdf/format_compatibility_test_pdf.pdf
-
-
+# Project specific (benchmark data — downloaded/produced by the pipeline, never committed)
 datasets/
 models/
 finetuned/
-.DS_Store
-Arena/
-instruct/
+# ...except the committed canned-replay fixture tree (Phase 5, REV-06 Q1):
+# re-include the directory itself FIRST (git does not descend into an
+# ignored directory, so a child-only negation can never match), then its
+# contents — tests/test_ci_replay.py replays this exact tree in CI.
+!tests/fixtures/e2_replay/finetuned/
+!tests/fixtures/e2_replay/finetuned/**
 
 # Worktrees
 .worktrees/
 worktrees/
 
+# GSD planning scratch (untracked runtime noise)
+.planning/tmp/
+
+
+# GSD research dedup cache (ephemeral, tool-internal)
+.planning/research/.cache/
+
+# Reviewer response report (maintainer-only, never committed)
+reviewer-response/
+finetuned-smoke/
+# TUI demo meta sidecars (quick-261015-pex): per-recording driver state,
+# consumed by record.sh's exit gate — never committed.
+docs/demo/.meta-*.json
+
+# Storage landing paths (261017 audit): the repo-root HF cache default
+# (run_finetune module-top default; multi-GB on first write) and the
+# documented demo output root — never committable.
+cache/
+finetuned-demo/

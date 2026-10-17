@@ -3,6 +3,7 @@
    ======================================== */
 
 import DataAPI from './data.js';
+import { renderNavbar } from './navbar.js';
 
 /**
  * LoadingController - Manages loading overlay UI
@@ -129,9 +130,12 @@ class TaskBenchmark {
     console.log('Setting up Task Benchmark...');
 
     try {
+      // The navbar is static chrome — render it before any I/O so a failed
+      // task-index fetch still leaves the user able to navigate (WR-03).
+      renderNavbar();
       // Initialize task loader and load lightweight task index (~5KB)
       this.state.taskList = await this.loader.initialize();
-      
+
       // Render UI immediately
       this.renderHero();
       this.populateTaskDropdown();
@@ -196,21 +200,30 @@ class TaskBenchmark {
       .filter(([_, value]) => value !== '' && value !== undefined && value !== null)
       .map(([key, _]) => key);
 
-    // Determine default metric
+    // Determine default metric. info.metric carries the dataset's declared
+    // primary metric, which may be cased (AUPRC, AUROC, F1, MCC, R2) while
+    // the performance keys are lowercase — map every cased variant to its
+    // key so the default view selects the matching option (AUD-20).
     const metricMap = {
       pearsonr: 'pearson_r',
       spearmanr: 'spearman_r',
+      AUPRC: 'auprc',
+      AUROC: 'auroc',
+      F1: 'f1',
+      MCC: 'mcc',
+      R2: 'r2',
     };
 
     const rawMetric = taskData.info?.metric || 'accuracy';
     const defaultMetric = metricMap[rawMetric] || rawMetric;
 
-    // Build metric options with sort direction indicators
+    // Build metric options with sort direction indicators (FIX-04 bounded
+    // escaping: metric keys/labels are interpolated into innerHTML here).
     const options = availableMetrics.map(metric => {
       const isAscending = this.ascendingMetrics.has(metric);
       const direction = isAscending ? '↓' : '↑';
       const label = this.formatMetricName(metric);
-      return `<option value="${metric}" ${metric === defaultMetric ? 'selected' : ''}>${label} ${direction}</option>`;
+      return `<option value="${DataAPI.escapeHTML(metric)}" ${metric === defaultMetric ? 'selected' : ''}>${DataAPI.escapeHTML(label)} ${direction}</option>`;
     });
 
     metricSelect.innerHTML = options.join('');
@@ -254,7 +267,7 @@ class TaskBenchmark {
     let actualMetricKey = this.state.currentMetric;
     if (firstModelPerf && !(this.state.currentMetric in firstModelPerf)) {
       const lowercaseMetric = this.state.currentMetric.toLowerCase();
-      for (const [key, value] of Object.entries(firstModelPerf)) {
+      for (const key of Object.keys(firstModelPerf)) {
         if (key.toLowerCase() === lowercaseMetric) {
           actualMetricKey = key;
           break;

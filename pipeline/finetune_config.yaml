@@ -56,3 +56,22 @@ finetune:
     metric_for_best_model: "eval_loss"
     report_to: "tensorboard"
     resume_from_checkpoint:
+# Parameter-efficient fine-tuning sections (SC-6 lane tracer, 06-01).
+# Field surfaces are suite-owned (dnallm/configuration/configs.py:400-423
+# LoraConfig, :436-478 Ia3Config @ v1.2.1 (30dfd6d)) — no invented fields;
+# values are the suite defaults. The lora: section is REQUIRED whenever the
+# trainer is built with use_lora=True (dnallm trainer.py:421 indexes
+# config["lora"] directly — KeyError without it) and inert otherwise; ia3:
+# is optional for the suite (config.get default + preset resolution) and
+# carried for explicitness.
+lora:
+    r: 8                     # LoRA attention dimension (rank)
+    lora_alpha: 16
+    target_modules: null     # null => suite preset auto-selection (lora_targets.yaml)
+    lora_dropout: 0.1
+    bias: "none"             # none|all|lora_only
+    task_type: "SEQ_CLS"
+ia3:
+    target_modules: null     # null => suite preset auto-selection
+    feedforward_modules: null  # preset fills; must stay a subset of target_modules
+    task_type: "SEQ_CLS"

@@ -1,0 +1,19 @@
+{
+  "feature": "UX-1 picker toggle anchor preservation (+ UX-2 contrast presence pin)",
+  "command": "uv run --group dev --group tui pytest tests/tui/test_pilot_run_config.py -q -k \"toggle_deep_row or screen_space_toggle or contrast or clamp\"",
+  "exitCode": 1,
+  "targetTest": "tests/tui/test_pilot_run_config.py::test_space_toggle_deep_row_keeps_cursor_key_and_scroll_offset",
+  "targetTests": [
+    "tests/tui/test_pilot_run_config.py::test_space_toggle_deep_row_keeps_cursor_key_and_scroll_offset",
+    "tests/tui/test_pilot_run_config.py::test_screen_space_toggle_keeps_cursor_key_and_scroll_offset",
+    "tests/tui/test_pilot_run_config.py::test_styles_carry_picker_scoped_selected_contrast_rule"
+  ],
+  "expected": "after space on a deep mid-viewport row over a scrolled 40-row picker: highlighted key unchanged AND scroll_offset.y == the captured pre-toggle value (6)",
+  "actual": "scroll offset 6 -> 3 (the textual 8.2.8 bottom-edge snap: clear_options resets scroll to 0, the highlighted restore fires watch_highlighted -> scroll_to_region(force=True), re-landing the cursor row on the bottom edge = exactly the 3 up-steps); the key assertion PASSED pre-fix (the index clamp already preserved the row)",
+  "output": "3 failed, 1 passed, 61 deselected in 7.51s\n\nFAILED tests/tui/test_pilot_run_config.py::test_space_toggle_deep_row_keeps_cursor_key_and_scroll_offset\nE       AssertionError: the scroll offset is byte-stable across the toggle - no bottom-edge snap (was 6, is 3)\nE       assert 3 == 6\n\nFAILED tests/tui/test_pilot_run_config.py::test_screen_space_toggle_keeps_cursor_key_and_scroll_offset\nE       AssertionError: the screen-space path keeps the scroll offset too\nE       assert 3 == 6\n\nFAILED tests/tui/test_pilot_run_config.py::test_styles_carry_picker_scoped_selected_contrast_rule\nE       AssertionError: the selected component class is overridden on PickerList\n\nPASSED tests/tui/test_pilot_run_config.py::test_filter_and_kind_flip_rebuilds_keep_index_clamp (regression pin — today's clamp behavior, expected green pre-fix)",
+  "reportPath": "/tmp/gsd-poa-red1-junit.xml",
+  "junitXml": "captured at /tmp/gsd-poa-red1-junit.xml (3 failures, 1 pass, 61 deselected)",
+  "classifier": "gsd_run check tdd-red-evidence NOT RUN — gsd_run is not installed on this machine; manual semantic assessment recorded here",
+  "semanticAssessment": "VALID RED: both target anchor tests executed and failed on the PLANNED scroll-offset assertion for the intended reason (the 8.2.8 rebuild snap, evidenced by the failure delta equaling the up-steps); the contrast test failed on the planned presence assertion; no fixture/load/collection faults; the regression test passed as designed (pins existing behavior).",
+  "redCommit": "5729d36"
+}

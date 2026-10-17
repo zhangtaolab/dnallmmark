@@ -1,0 +1,403 @@
+"""
+Tier-1 service tests for ``tui/services/registries.py`` (Phase 8; 08-03
+tracer, 08-04 expansion).
+
+The tui → pipeline seam proof: the first services module imports the
+REAL pipeline registry loader and returns the REAL committed registry
+counts — no fakes on this path (the plan's acceptance criterion). Pinned
+decisions:
+
+- one-directional seam: the service imports ``registry_loader`` as a
+  top-level module; the parent ``tests/conftest.py`` supplies the
+  ``pipeline/`` sys.path root for this lane (``tests/tui/conftest.py``
+  adds the repo root for the package-qualified ``tui`` import).
+- machine independence (the ``tests/test_registry_loader.py``
+  ``pin_custom_dir`` discipline, its Pitfall 3): the custom overlay dir
+  is pinned to a fresh empty tmp dir, so the assertions pin the
+  COMMITTED official registries — 59 models / 50 datasets — regardless
+  of any local ``~/.config/dnallmmark/custom_{models,datasets}.json``
+  a machine may carry. The overlay MERGE semantics are pinned by
+  ``tests/test_registry_loader.py``; these tests pin the seam plus the
+  real data. (62 -> 59 official models, 261014-ir9: the confidential
+  3-entry series was removed from the committed registry.)
+- 08-04 entry view (SEL-04/D-08): canonical entry keys {key, type,
+  species, size_m, card} / {key, category, type, metric, card}; the
+  model-card casing twins resolved once via the service's canonical
+  constants; presence_for returns PURE data (exact integer rows, no
+  formatting — the 08-07 screen formats); n_audit reads go through
+  the tolerant artifact_loader None sentinel with the repo-root path
+  resolved from the module's own location, never CWD.
+
+See also:
+    ``tui/services/registries.py`` — the service under test.
+    ``tests/test_registry_loader.py`` — the overlay merge contract.
+"""
+
+import re
+from pathlib import Path
+
+import registry_loader  # conftest puts pipeline/ on sys.path
+
+from tui.services import registries as registries_module
+from tui.services.registries import (
+    MODEL_CARD_MEAN_TOKEN_LEN_FIELD,
+    MODEL_CARD_SIZE_FIELD,
+    MODEL_CARD_TOKENIZER_FIELD,
+    PRESENCE_MISSING,
+    PRESENCE_PRESENT,
+    PRESENCE_UNAVAILABLE,
+    PRESENCE_UNKNOWN,
+    load_dataset_entries,
+    load_dnallm_compat,
+    load_model_entries,
+    load_n_audit,
+    load_registry_counts,
+    presence_for,
+)
+
+
+def test_load_registry_counts_returns_committed_registry_counts(
+        monkeypatch, tmp_path):
+    """The seam returns the real committed counts: (59, 50).
+
+    ``load_registry_counts()`` loads through
+    ``pipeline/registry_loader`` (the overlay-merged view); with the
+    custom overlay pinned empty, the merged view IS the committed
+    official registry.
+    """
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
+
+    assert load_registry_counts() == (59, 50)
+
+
+# ===== Entry view (08-04, SEL-04) =====
+
+
+def test_load_model_entries_projects_the_canonical_keys(monkeypatch,
+                                                        tmp_path):
+    """59 entries, each EXACTLY {key, type, species, size_m, card}."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
+    entries = load_model_entries()
+    assert len(entries) == 59
+    for entry in entries:
+        assert set(entry) == {"key", "type", "species", "size_m", "card"}
+        assert isinstance(entry["key"], str)
+        assert isinstance(entry["type"], str)
+        assert isinstance(entry["species"], str)
+        assert isinstance(entry["size_m"], float)
+        assert isinstance(entry["card"], dict)
+
+
+def test_load_dataset_entries_projects_the_canonical_keys(monkeypatch,
+                                                          tmp_path):
+    """50 entries, each EXACTLY {key, category, type, metric, card}."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
+    entries = load_dataset_entries()
+    assert len(entries) == 50
+    for entry in entries:
+        assert set(entry) == {"key", "category", "type", "metric", "card"}
+        assert isinstance(entry["category"], str)
+        assert isinstance(entry["type"], str)
+        assert isinstance(entry["metric"], str)
+
+
+def test_entry_keys_are_the_registry_row_keys(monkeypatch, tmp_path):
+    """Entry keys == the registry dict keys (the stable row_key vocab)."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
+    assert {e["key"] for e in load_model_entries()} == set(
+        registry_loader.load_models_registry()
+    )
+    assert {e["key"] for e in load_dataset_entries()} == set(
+        registry_loader.load_datasets_registry()
+    )
+
+
+def test_entry_lists_and_counts_stay_consistent(monkeypatch, tmp_path):
+    """load_registry_counts is implemented over the entry loaders."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
+    counts = load_registry_counts()
+    assert len(load_model_entries()) == counts.models
+    assert len(load_dataset_entries()) == counts.datasets
+
+
+def test_model_entries_carry_raw_values_with_empty_string_absents(
+        monkeypatch, tmp_path):
+    """Filter axes hold the RAW registry values; absent -> "" not None."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
+    entries = {e["key"]: e for e in load_model_entries()}
+    # mamba2_370M's committed card carries empty type/species — the repo
+    # data convention: missing values are "", never None/0.
+    assert entries["mamba2_370M"]["type"] == ""
+    assert entries["mamba2_370M"]["species"] == ""
+    assert "" in {e["type"] for e in entries.values()}
+    # a populated card passes through verbatim
+    assert entries["mamba2_370M"]["card"]["Model_size"] == "370M"
+
+
+def test_dataset_entries_carry_raw_values(monkeypatch, tmp_path):
+    """Dataset filter axes pass the committed card values through."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
+    entries = {e["key"]: e for e in load_dataset_entries()}
+    bend = entries["BEND__CpG_methylation"]
+    assert bend["category"] == "Animals"
+    assert bend["type"] == "multilabel"
+    assert bend["metric"] == "AUPRC"
+
+
+def test_size_m_is_the_numeric_card_field_as_float(monkeypatch, tmp_path):
+    """size_m == float(card["size (M)"]) — the numeric field, not the
+    "400M" string twin (the projection choice is load-bearing)."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
+    for entry in load_model_entries():
+        assert entry["size_m"] == float(entry["card"]["size (M)"])
+
+
+def test_model_card_casing_twins_have_one_canonical_reading():
+    """The casing twins are resolved ONCE, by the service's constants.
+
+    The committed cards carry duplicate-casing twins whose values
+    genuinely diverge (agro-nucleotide-transformer-1b: Tokenizer '6mer'
+    vs tokenizer '6-mer'; prokbert-mini: Mean_token_length 6 vs
+    mean_token_len 1) — every consumer must read one canonical field.
+    """
+    assert MODEL_CARD_SIZE_FIELD == "size (M)"
+    assert MODEL_CARD_TOKENIZER_FIELD == "Tokenizer"
+    assert MODEL_CARD_MEAN_TOKEN_LEN_FIELD == "Mean_token_length"
+
+
+# ===== n_audit presence (SEL-04, D-08) =====
+
+
+def _synthetic_audit_tasks():
+    """A synthetic tasks mapping covering every presence shape."""
+    return {
+        "T__present": {
+            "missing": False,
+            "splits": {
+                "train": {"rows": 743095},
+                "dev": {"rows": 109717},
+                "test": {"rows": 106227},
+            },
+            "unified_eval_n": 106224,
+        },
+        "T__missing": {
+            "missing": True,
+            "splits": None,
+            "unified_eval_n": None,
+        },
+    }
+
+
+def test_presence_present_returns_exact_integer_rows():
+    """missing=false -> present with the exact (train, dev, test) ints."""
+    presence = presence_for("T__present", _synthetic_audit_tasks())
+    assert presence.status == PRESENCE_PRESENT
+    assert presence.rows == (743095, 109717, 106227)
+    for count in presence.rows:
+        assert isinstance(count, int)
+        assert not isinstance(count, bool)
+
+
+def test_presence_missing_flag_beats_any_counts():
+    """missing=true -> missing with rows None, regardless of counts."""
+    tasks = {
+        "T": {
+            "missing": True,
+            "splits": {
+                "train": {"rows": 5},
+                "dev": {"rows": 5},
+                "test": {"rows": 5},
+            },
+        }
+    }
+    presence = presence_for("T", tasks)
+    assert presence.status == PRESENCE_MISSING
+    assert presence.rows is None
+
+
+def test_presence_unknown_for_key_absent_from_audit():
+    """Registry/audit drift (either direction) -> unknown, no exception."""
+    presence = presence_for("registry-only-task", _synthetic_audit_tasks())
+    assert presence.status == PRESENCE_UNKNOWN
+    assert presence.rows is None
+
+
+def test_presence_unavailable_when_audit_is_none():
+    """Absent/unreadable n_audit -> column-unavailable for EVERY key."""
+    for key in ("anything", "T__present", ""):
+        presence = presence_for(key, None)
+        assert presence.status == PRESENCE_UNAVAILABLE
+        assert presence.rows is None
+
+
+def test_load_n_audit_reads_the_real_committed_artifact():
+    """The committed n_audit.json is readable and structurally sound.
+    Refresh-stable truths ONLY (the R-03 follow-up rule: the baseline is
+    maintainer-refreshable — 43/50 -> 50/50 landed as a data commit — so
+    the pin asserts the SCHEMA the services consume, never specific
+    keys, counts, or a specific missing set)."""
+    tasks = load_n_audit()
+    assert tasks is not None
+    assert tasks, "the artifact carries a non-empty tasks mapping"
+    for key, record in tasks.items():
+        assert isinstance(key, str) and key, key
+        assert isinstance(record, dict), key
+        assert isinstance(record.get("missing"), bool), key
+        if record.get("missing") is False:
+            splits = record.get("splits")
+            assert isinstance(splits, dict), key
+            rows = presence_for(key, tasks).rows
+            assert rows is not None and all(
+                isinstance(count, int) and count > 0
+                for count in rows), (
+                f"{key}: a present record carries three positive "
+                "integer split rows"
+            )
+
+
+def test_every_registry_dataset_key_maps_to_a_definite_presence(
+        monkeypatch, tmp_path):
+    """Real-data adjacency, refresh-stable (the R-03 follow-up rule):
+    every registry dataset key resolves to a DEFINITE presence — present
+    or missing, whichever the current baseline says — never unknown
+    (registry/audit drift) and never unavailable; and the committed
+    artifact's key set stays exactly the registry's dataset key set."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
+    tasks = load_n_audit()
+    registry_keys = {entry["key"] for entry in load_dataset_entries()}
+    assert set(tasks) == registry_keys, (
+        "the committed n_audit keys and the registry dataset keys must "
+        "stay in lockstep across refreshes"
+    )
+    statuses = {
+        presence_for(entry["key"], tasks).status
+        for entry in load_dataset_entries()
+    }
+    assert statuses <= {PRESENCE_PRESENT, PRESENCE_MISSING}, (
+        "definite presence for every key — the artifact's key-set pin "
+        "above makes unknown impossible; this catches any drift class"
+    )
+    assert statuses, "at least one dataset key exists"
+
+
+def test_load_n_audit_corrupt_file_yields_none(tmp_path, monkeypatch):
+    """A corrupt n_audit.json -> None sentinel; the service stays alive."""
+    corrupt = tmp_path / "n_audit.json"
+    corrupt.write_text('{"tasks": {"trunca', encoding="utf-8")
+    monkeypatch.setattr(registries_module, "N_AUDIT_PATH", corrupt)
+    assert load_n_audit() is None
+    # the column-unavailable sentinel flows from the None audit
+    assert presence_for("any", None).status == PRESENCE_UNAVAILABLE
+
+
+def test_load_n_audit_missing_file_yields_none(tmp_path, monkeypatch):
+    """A missing n_audit.json -> None sentinel, never a crash."""
+    monkeypatch.setattr(
+        registries_module, "N_AUDIT_PATH", tmp_path / "absent.json"
+    )
+    assert load_n_audit() is None
+
+
+# ===== The dnallm compat map loader (MLC-01, 261014-mlc) =====
+#
+# pipeline/dnallm_compat.json is the 261014-l6h artifact: the ONE
+# dnllm_adapted verdict map over exactly the 59 official registry keys.
+# This loader is the SINGLE tolerant read both the slot-2 default filter
+# (SelectionBackend) and the queue's model channel resolution consume —
+# the ONE-loader rule (never a duplicated read).
+
+
+def test_load_dnallm_compat_reads_the_committed_verdict_map():
+    """The committed map: schema keys intact, exactly 59 model keys, 38
+    with dnllm_adapted true (13 modelscope-slot + 25 modelscope-mirror
+    channels — the 261016 v1.3 census), every adapted entry carrying a
+    usable modelscope repo id (the download channel data)."""
+    compat = load_dnallm_compat()
+
+    assert len(compat) == 59
+    adapted = sorted(
+        key for key, verdict in compat.items()
+        if isinstance(verdict, dict)
+        and verdict.get("dnllm_adapted") is True
+    )
+    assert len(adapted) == 38
+    slot = [key for key in adapted
+            if compat[key].get("channel") == "modelscope-slot"]
+    mirror = [key for key in adapted
+              if compat[key].get("channel") == "modelscope-mirror"]
+    assert len(slot) == 13
+    assert len(mirror) == 25
+    for key in adapted:
+        repo_id = compat[key].get("modelscope")
+        assert isinstance(repo_id, str) and re.fullmatch(
+            r"[\w.-]+/[\w.-]+", repo_id), key
+
+
+def test_load_dnallm_compat_keys_are_exactly_the_official_models(
+        monkeypatch, tmp_path):
+    """The map's key set == the official models registry key set (the
+    l6h alignment audit's construction; drift surfaces loudly here)."""
+    empty_overlay = tmp_path / "custom"
+    empty_overlay.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(empty_overlay))
+    assert set(load_dnallm_compat()) == {
+        entry["key"] for entry in load_model_entries()
+    }
+
+
+def test_load_dnallm_compat_missing_file_yields_empty_mapping(
+        tmp_path, monkeypatch):
+    """A missing map degrades to the empty mapping — never an exception
+    (the consumers treat empty as the degraded compat_unavailable
+    state)."""
+    monkeypatch.setattr(
+        registries_module, "DNALLM_COMPAT_PATH",
+        tmp_path / "absent-compat.json")
+    assert load_dnallm_compat() == {}
+
+
+def test_load_dnallm_compat_corrupt_file_yields_empty_mapping(
+        tmp_path, monkeypatch):
+    """A corrupt (unparseable) map degrades to the empty mapping."""
+    corrupt = tmp_path / "dnallm_compat.json"
+    corrupt.write_text('{"models": {"trunca', encoding="utf-8")
+    monkeypatch.setattr(registries_module, "DNALLM_COMPAT_PATH", corrupt)
+    assert load_dnallm_compat() == {}
+
+
+def test_load_dnallm_compat_wrong_shape_yields_empty_mapping(
+        tmp_path, monkeypatch):
+    """A top-level non-object, a missing models mapping, or a non-dict
+    models mapping degrades to the empty mapping (wrong shape)."""
+    for bad in ('["a", "list"]', '{"no_models": {}}', '{"models": [1]}',
+                '"a bare string"'):
+        path = tmp_path / "dnallm_compat.json"
+        path.write_text(bad, encoding="utf-8")
+        monkeypatch.setattr(registries_module, "DNALLM_COMPAT_PATH", path)
+        assert load_dnallm_compat() == {}, bad
+
+
+def test_service_source_carries_zero_chinese_and_no_rendered_copy():
+    """SEL-04 purity: the service returns data — copy and formatting
+    belong to the 08-07 screen (I18N-01: tui/strings.py is the only
+    home for operator copy)."""
+    source = Path(registries_module.__file__).read_text(encoding="utf-8")
+    assert not re.search(r"[一-鿿]", source)

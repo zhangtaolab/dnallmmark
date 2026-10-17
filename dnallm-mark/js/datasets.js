@@ -3,8 +3,8 @@
    数据集页面
    ======================================== */
 
-import CONFIG from './config.js';
 import DataAPI from './data.js';
+import { renderNavbar } from './navbar.js';
 
 class DatasetsPage {
   constructor() {
@@ -28,8 +28,10 @@ class DatasetsPage {
     console.log('Setting up Datasets page...');
 
     try {
+      // The navbar is static chrome — render it before any I/O so a failed
+      // data fetch still leaves the user able to navigate (WR-03).
+      renderNavbar();
       await this.loadData();
-      this.renderNavbar();
       this.renderHero();
       this.renderDatasetsTable();
       this.bindEvents();
@@ -44,7 +46,7 @@ class DatasetsPage {
     const performanceData = await DataAPI.loadAllModelPerformance();
 
     for (const [modelName, modelData] of Object.entries(performanceData)) {
-      for (const [datasetName, data] of Object.entries(modelData)) {
+      for (const [datasetName, data] of Object.entries(modelData.performance || {})) {
         if (!this.state.datasets.has(datasetName)) {
           this.state.datasets.set(datasetName, {
             name: datasetName,
@@ -61,22 +63,6 @@ class DatasetsPage {
         this.state.datasets.get(datasetName).models.push(modelName);
       }
     }
-  }
-
-  renderNavbar() {
-    const navbarHTML = `
-      <nav class="navbar">
-        <div class="navbar-logo">
-          <a href="/" class="logo">${CONFIG.APP_NAME}</a>
-        </div>
-        <ul class="navbar-nav">
-          ${CONFIG.NAV_LINKS.map(link => `
-            <li><a href="${link.url}" class="nav-link ${link.active ? 'active' : ''}">${link.name}</a></li>
-          `).join('')}
-        </ul>
-      </nav>
-    `;
-    document.querySelector('.navbar-container').innerHTML = navbarHTML;
   }
 
   renderHero() {
@@ -146,17 +132,19 @@ class DatasetsPage {
   }
 
   bindEvents() {
-    document.querySelectorAll('.datasets-table th.sortable').forEach(th => {
-      th.addEventListener('click', () => {
-        const field = th.dataset.sort;
-        if (this.state.sortField === field) {
-          this.state.sortAscending = !this.state.sortAscending;
-        } else {
-          this.state.sortField = field;
-          this.state.sortAscending = false;
-        }
-        this.renderDatasetsTable();
-      });
+    // Event delegation on the persistent container (AUD-12): sorting must
+    // survive the table re-renders that replace the header elements.
+    document.querySelector('.datasets-container')?.addEventListener('click', (e) => {
+      const th = e.target.closest('.datasets-table th.sortable');
+      if (!th) return;
+      const field = th.dataset.sort;
+      if (this.state.sortField === field) {
+        this.state.sortAscending = !this.state.sortAscending;
+      } else {
+        this.state.sortField = field;
+        this.state.sortAscending = false;
+      }
+      this.renderDatasetsTable();
     });
   }
 }

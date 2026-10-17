@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/zhangtaolab/dnallmmark/main/schemas/task_performance.json",
+  "$comment": "Fully strict contract (D-01) for the 47 task_performance files (dataset-centric pivot of the 42 producer files). info is the 8-key dataset block; performance is an open map of model alias to {model, parameters, performance}. Defs duplicated from model_performance.json on purpose: each schema file is self-contained (no cross-file $ref) so strictness is per-file and forced versioning stays local. Key sets surveyed live from all 47 committed files (Phase 2 research, 2026-10-09).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["info", "performance"],
+  "properties": {
+    "info": { "$ref": "#/$defs/datasetBlock" },
+    "performance": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/modelEntry" }
+    }
+  },
+  "$defs": {
+    "datasetBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dev",
+        "labels",
+        "length",
+        "metric",
+        "species",
+        "test",
+        "train",
+        "type"
+      ],
+      "properties": {
+        "dev": { "type": "integer" },
+        "labels": { "type": "integer" },
+        "length": { "type": "integer" },
+        "metric": { "enum": ["f1", "mcc", "spearmanr", "AUPRC"] },
+        "species": { "enum": ["Animals", "Plants", "Microbe"] },
+        "test": { "type": "integer" },
+        "train": { "type": "integer" },
+        "type": { "enum": ["binary", "multiclass", "regression", "multilabel"] }
+      }
+    },
+    "modelEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "parameters", "performance"],
+      "properties": {
+        "model": { "$ref": "#/$defs/modelCard" },
+        "parameters": { "$ref": "#/$defs/parametersBlock" },
+        "performance": { "$ref": "#/$defs/metricBlock" }
+      }
+    },
+    "modelCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "architecture",
+        "context_len (bp)",
+        "huggingface",
+        "mean_token_len",
+        "modelscope",
+        "name",
+        "series",
+        "size (M)",
+        "species",
+        "tokenizer",
+        "type"
+      ],
+      "properties": {
+        "architecture": { "type": "string" },
+        "context_len (bp)": { "type": "integer" },
+        "huggingface": { "type": "string" },
+        "mean_token_len": { "type": "integer" },
+        "modelscope": { "type": "string" },
+        "name": { "type": "string" },
+        "series": { "type": "string" },
+        "size (M)": { "type": "integer" },
+        "species": { "type": "string" },
+        "tokenizer": { "type": "string" },
+        "type": { "type": "string" }
+      }
+    },
+    "parametersBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "batch_size",
+        "bf16",
+        "epochs",
+        "fp16",
+        "gradient_accumulation_steps",
+        "learning_rate",
+        "lr_scheduler_type",
+        "steps",
+        "warmup"
+      ],
+      "properties": {
+        "batch_size": {
+          "anyOf": [{ "type": "integer" }, { "const": "" }]
+        },
+        "bf16": { "type": "boolean" },
+        "epochs": { "type": "integer" },
+        "fp16": { "type": "boolean" },
+        "gradient_accumulation_steps": { "type": "integer" },
+        "learning_rate": { "type": "number" },
+        "lr_scheduler_type": { "type": "string" },
+        "steps": { "type": "integer" },
+        "warmup": { "type": "number" }
+      }
+    },
+    "metricBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "FLOPs",
+        "accuracy",
+        "auprc",
+        "auroc",
+        "f1",
+        "loss",
+        "mcc",
+        "mse",
+        "pearson_r",
+        "precision",
+        "r2",
+        "recall",
+        "runtime",
+        "spearman_r"
+      ],
+      "properties": {
+        "FLOPs": { "type": "number" },
+        "accuracy": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+        "auprc": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+        "auroc": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+        "f1": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+        "loss": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+        "mcc": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+        "mse": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+        "pearson_r": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+        "precision": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+        "r2": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+        "recall": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+        "runtime": { "anyOf": [{ "type": "number" }, { "const": "" }] },
+        "spearman_r": { "anyOf": [{ "type": "number" }, { "const": "" }] }
+      }
+    }
+  }
+}

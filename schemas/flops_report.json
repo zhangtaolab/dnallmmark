@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/zhangtaolab/dnallmmark/main/schemas/flops_report.json",
+  "$comment": "Strict contract (D-27, one-way) for flops_report.json — the per-run FLOPs measurement artifact written by the pipeline into each run's own output directory (PIPE-01; produced by pipeline/flops_counter.py from a pre-training calibration forward pass, hooks removed before training). Ratified at the 07-01 Task-1 checkpoint (maintainer decision publish-as-derived, 2026-10-11): the v1 field names are immutable downstream contract consumed by the Phase 11 monitor and the leaderboard efficiency axis. Shape is strictly ADDITIVE over the legacy writer (D-02): every legacy key is present unchanged, plus schema_version (D-27), uncovered_layers (D-03), and the OPTIONAL hardware section (D-05 — present only when captured; each field nullable so CPU/NPU runs record nulls rather than lying; gpu_device is the verbatim torch.cuda.get_device_name() string, no enum mapping). layer_details maps layer names to per-layer FLOPs from the LAST calibration forward (legacy overwrite-per-pass semantics); values are typed number rather than integer because the verbatim HyenaFilter FFT formula yields fractional FLOPs (math.log2 terms) — integer values remain the common case and validate identically. uncovered_layers lists every parameter-owning module no dispatch branch hooked (D-03: loud, never silently under-counted). The artifact is machine-specific and NOT committed (D-26); consumers validate tolerantly-read documents against this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "num_tokens",
+    "all_tokens",
+    "num_params",
+    "total_flops_G",
+    "total_flops_exact",
+    "total_flops_per_token",
+    "total_flops_all_tokens",
+    "computation_size_ratio",
+    "config",
+    "layer_details",
+    "uncovered_layers"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "num_tokens": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "all_tokens": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "num_params": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "total_flops_G": {
+      "type": "number"
+    },
+    "total_flops_exact": {
+      "type": "number"
+    },
+    "total_flops_per_token": {
+      "type": ["number", "null"]
+    },
+    "total_flops_all_tokens": {
+      "type": ["number", "null"]
+    },
+    "computation_size_ratio": {
+      "type": ["number", "null"]
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["include_norm", "include_act", "include_embed"],
+      "properties": {
+        "include_norm": {
+          "type": "boolean"
+        },
+        "include_act": {
+          "type": "boolean"
+        },
+        "include_embed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "layer_details": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "uncovered_layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "classname"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "classname": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "hardware": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gpu_device", "train_time", "max_mem_gb"],
+      "properties": {
+        "gpu_device": {
+          "type": ["string", "null"]
+        },
+        "train_time": {
+          "type": ["number", "null"]
+        },
+        "max_mem_gb": {
+          "type": ["number", "null"]
+        }
+      }
+    }
+  }
+}

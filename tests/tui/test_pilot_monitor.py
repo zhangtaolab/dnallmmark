@@ -1,0 +1,2982 @@
+"""
+Tier-2 Pilot suite for the monitor screen (Phase 11, 11-07; menu slot 5,
+D-03/D-09/D-13, MON-01..05 over the 11-04 scanner service).
+
+Pins the slot-5 screen and its app/nav wiring against the REAL
+``DnallmMarkTui`` with constructor-injected deterministic fakes (no real
+filesystem scan, no real registry read, no real subprocess, no real
+sleep — the D-03 discipline; the cadence is proven by directly invoking
+the interval callbacks plus fake call counters, never by sleeping):
+
+- Task 1 (the shell): the stacked regions compose at 120x40 AND 80x24;
+  the discovered pane renders the three sweep states with counts + the
+  progress-bar grammar + the unknown-total degradation; the cell table
+  renders per-seed glyphs (incl. the resume marker and curve
+  mini-counts); the stats-line variants; the resume note; the cadence
+  dispatches workers and stops on unmount; zero Chinese literals;
+- Task 2 (interactions): attach moves the marker and rebinds; the [a]
+  path modal (valid/invalid); the cell detail; the [f] failures modal
+  with the gated re-run; the [t] log tail with tee/no-tee variants; the
+  [r] rescan toast; the 68-char-key backstop;
+- Task 3 (integration + degradation): the D-13 auto-nav, the extended
+  q-intercept predicate, the degradation sweep, the responsiveness
+  proof while a scan blocks;
+- Phase 12 (12-05, delta A / D-01): the N-root operator view — the two
+  frozen sibling worker roots plus a default root render verbatim with
+  independent state glyphs and progress fractions, and enter switches
+  the per-worker view, over the UNTOUCHED Phase-11 renderer (zero
+  monitor code — the multi-worker monitoring claim IS this proof).
+"""
+
+import re
+from pathlib import Path
+
+from rich.text import Text
+from textual.widgets import DataTable, Label, RichLog, Static
+
+import tui.screens.monitor as monitor_screen_module
+from tui.app import DnallmMarkTui
+from tui.screens.monitor import MonitorScreen
+from tui.screens.nav import BottomBar, TopMenuBar
+from tui.screens.selection import PresetMenu, SelectionData
+from tui.services import registries as registries_service
+from tui.services.download_queue import merge_presence
+from tui.services.sweep_launcher import (
+    EnvPreflight,
+    GateRefusal,
+    LaunchOutcome,
+)
+from tui.services.sweep_monitor import (
+    CELL_COMPLETED,
+    CELL_FAILED,
+    CELL_INTERRUPTED,
+    CELL_QUEUED,
+    CELL_RUNNING,
+    CELL_SKIPPED,
+    ETA_NONE,
+    ETA_PENDING,
+    ETA_POINT,
+    SWEEP_ARTIFACTS_ONLY,
+    SWEEP_FINISHED,
+    SWEEP_RUNNING,
+    CellProgress,
+    CellRow,
+    CellSeed,
+    CurrentCell,
+    EtaEstimate,
+    FailureRow,
+    FrontierSnapshot,
+    ScanResult,
+    SweepStats,
+    SweepSummary,
+)
+from tui.strings import (
+    MON_ATTACHED_TOAST,
+    MON_CELLS_EMPTY,
+    MON_CELLS_TITLE,
+    MON_CONTEXT_HEADER,
+    MON_DISCOVERED_EMPTY,
+    MON_DISCOVERED_TITLE,
+    MON_ETA_PENDING,
+    MON_FAILURES_EMPTY,
+    MON_FRACTION_LINE,
+    MON_PROGRESS_INDETERMINATE,
+    MON_RESUME_NOTE,
+    MON_SCAN_NOTE,
+    MON_SCREEN_TITLE,
+    MON_STATE_ARTIFACTS_SWEEP,
+    MON_STATE_DONE,
+    MON_STATE_FAILED,
+    MON_STATE_FINISHED_SWEEP,
+    MON_STATE_INTERRUPTED,
+    MON_STATE_RUNNING,
+    MON_STATE_RUNNING_SWEEP,
+    MON_STATS_LINE,
+    MON_STATS_LINE_NO_CURRENT,
+    MON_STATS_LINE_UNKNOWN_TOTAL,
+    MON_TOTAL_UNKNOWN,
+)
+
+# The i18n grep lock (the test_pilot_env_check.py precedent): the new
+# screen module joins the zero-Chinese-literals scan (11-05 contract
+# note — each new Pilot suite adds its screen module to its tuple).
+_MONITOR_MODULE_FILE = Path(monitor_screen_module.__file__)
+_GREP_LOCK_MODULES = (
+    _MONITOR_MODULE_FILE,
+)
+
+
+# =====================================================================
+# Deterministic fakes (D-03: no real scan / registry / state / spawn)
+# =====================================================================
+
+def _summary(root, state, done=None, total=None):
+    """One SweepSummary fixture (root name -> tmp-ish path string)."""
+    return SweepSummary(
+        root=Path(f"/scans/{root}"), state=state,
+        done=done if done is not None else 0,
+        total=total, newest_mtime=None)
+
+
+def _eta(mode, point=None, lo=None, hi=None):
+    return EtaEstimate(mode, point, lo, hi)
+
+
+def _stats(done=0, total=None, current=None, elapsed=None, eta=None):
+    return SweepStats(
+        done=done, total=total, current=current,
+        elapsed_seconds=elapsed,
+        eta=eta if eta is not None else _eta(ETA_NONE))
+
+
+def _current(model, task, seed):
+    return CurrentCell(model=model, task=task, seed=seed)
+
+
+def _row(model, task, seeds, fractions=None):
+    """One CellRow fixture; seeds maps seed -> machine state; fractions
+    maps seed -> tuple of (frac_name, state) pairs."""
+    cells = []
+    for seed, state in seeds.items():
+        cells.append(CellSeed(
+            seed=seed, state=state,
+            fraction_states=fractions.get(seed) if fractions else None))
+    return CellRow(model=model, task=task, seeds=tuple(cells))
+
+
+class FakeMonitorService:
+    """The monitor-service fake (the injection seam's fake side).
+
+    Deterministic and recording: scripted per-root scans/cells/stats;
+    every call counted. The screen never touches the artifact tree
+    except through this seam (the plan's rendering-only prohibition).
+    """
+
+    def __init__(self, scans=None, cells=None, stats=None,
+                 frontiers=None, failures=None, tails=None,
+                 resume_counts=None, scales=None,
+                 valid_roots=(), manual_roundtrip=None, records=None,
+                 rerun_lanes=None, progress=None):
+        self._scans = list(scans) if scans else []
+        self._cells = dict(cells or {})
+        self._stats = dict(stats or {})
+        self._frontiers = dict(frontiers or {})
+        # C4J-3 (261015-c4j): the entries_progress fake —
+        # {(model, task): CellProgress}; absent from every pre-C4J fake
+        # so the screen's tolerant getattr seam stays pinned by omission
+        self._progress = dict(progress or {})
+        # WR-02 staging: a LIST value is a per-call SEQUENCE of reads
+        # (each failures_view call pops the next while more than one
+        # remains, the last is sticky) so a test can stage a DIFFERENT
+        # worker-side re-read than the confirm-side one; a TUPLE value
+        # is ONE sticky read (the pre-existing fixture shape)
+        self._failures = {
+            str(key): (list(value) if isinstance(value, list) else [value])
+            for key, value in (failures or {}).items()}
+        self._tails = dict(tails or {})
+        self._resume = dict(resume_counts or {})
+        self._scales = dict(scales or {})
+        self._valid_roots = set(valid_roots)
+        self._manual_roundtrip = (
+            manual_roundtrip if manual_roundtrip is not None else [])
+        self._records = dict(records or {})
+        self._rerun_lanes = dict(rerun_lanes or {})
+        self.full_calls = []
+        self.frontier_calls = []
+        self.cells_calls = []
+        self.stats_calls = []
+        self.progress_calls = []
+        self.failures_calls = []
+        self.tail_calls = []
+        self.record_calls = []
+        self.rerun_lane_calls = []
+        self.added_roots = []
+
+    # ----- the scan surface -----
+
+    #: optional degradation hooks (Task 3): a gate the scan waits on
+    #: (the responsiveness proof) and a one-shot throw (the corrupt
+    #: tree beyond the loader's tolerance).
+    full_scan_gate = None
+    full_scan_throws = False
+
+    def full_scan(self, prev_watermarks=None):
+        self.full_calls.append(dict(prev_watermarks or {}))
+        if self.full_scan_throws:
+            self.full_scan_throws = False
+            raise RuntimeError("damaged artifact tree")
+        gate = self.full_scan_gate
+        if gate is not None:
+            gate.wait(timeout=5.0)   # bounded: a bug never hangs the lane
+        if self._scans:
+            self._last_scan = self._scans.pop(0)
+        return getattr(self, "_last_scan",
+                       ScanResult(sweeps=(), watermarks={}))
+
+    def frontier_scan(self, root):
+        self.frontier_calls.append(str(root))
+        return self._frontiers.get(str(root), FrontierSnapshot(
+            root=Path(root), state=SWEEP_ARTIFACTS_ONLY,
+            newest_mtime=None, newest_cell=None, cell_states={}))
+
+    def cells_view(self, root):
+        self.cells_calls.append(str(root))
+        return self._cells.get(str(root), ())
+
+    def entries_progress(self, root):
+        self.progress_calls.append(str(root))
+        return dict(self._progress)
+
+    def stats(self, root, expected_total=None, fallback_start=None):
+        self.stats_calls.append((str(root), expected_total,
+                                 fallback_start))
+        return self._stats.get(
+            str(root), _stats(done=0, total=None))
+
+    def sweep_scale(self, root):
+        return self._scales.get(str(root))
+
+    def resume_count(self, root):
+        return self._resume.get(str(root), 0)
+
+    # ----- the modal surfaces -----
+
+    def failures_view(self, root):
+        self.failures_calls.append(str(root))
+        scripted = self._failures.get(str(root))
+        if scripted is None:
+            return ()
+        if len(scripted) > 1:
+            return scripted.pop(0)   # WR-02: the staged next read
+        return scripted[0]
+
+    def rerun_lane(self, root):
+        self.rerun_lane_calls.append(str(root))
+        return self._rerun_lanes.get(str(root), ("none", "none"))
+
+    def cell_record(self, root, model, task, seed):
+        self.record_calls.append((str(root), model, task, seed))
+        return self._records.get((str(root), model, task, seed))
+
+    def read_log_tail(self, path, max_lines=200, max_bytes=65536):
+        self.tail_calls.append(str(path))
+        return self._tails.get(str(path))
+
+    # ----- the attach surface -----
+
+    def is_sweep_root(self, path):
+        return str(path) in self._valid_roots or Path(
+            str(path)).name in self._valid_roots
+
+    def add_manual_root(self, path):
+        self.added_roots.append(str(path))
+        if self._manual_roundtrip:
+            return self._manual_roundtrip.pop(0)
+        return True
+
+
+class FakeMonitorLauncher:
+    """The launcher-seam fake for the monitor screen (recorded)."""
+
+    def __init__(self, preflight=None, live=(), tee=None,
+                 rerun_outcomes=None, env_raises=None,
+                 single_gpu_blocked=None,
+                 kill_outcomes=None, kill_raises=None):
+        self._preflight = (preflight if preflight is not None
+                           else EnvPreflight(
+                               can_launch=True, reasons=(),
+                               failed_kernels=()))
+        self._live = tuple(live)
+        self._tee = dict(tee or {})
+        self._rerun_outcomes = (
+            list(rerun_outcomes) if rerun_outcomes else None)
+        self._env_raises = env_raises
+        # EHC-3 (261015-ehc): the single-GPU guard seam (None = the
+        # method absent-equivalent — never blocks)
+        self._single_gpu_blocked = single_gpu_blocked
+        # 261016-vxr (VXR-2): the kill_sweep scripting — a per-call
+        # outcome list (popped per call, the rerun_outcomes pattern), a
+        # raiser for the WR-03 surface, and the recording list
+        self._kill_outcomes = list(kill_outcomes) if kill_outcomes else None
+        self._kill_raises = kill_raises
+        self.env_calls = 0
+        self.rerun_calls = []
+        self.kill_calls = []
+
+    #: optional kill-blocking gate (VXR-2, the responsiveness proof):
+    #: kill_sweep waits on it — the full_scan_gate precedent.
+    kill_gate = None
+
+    def env_preflight(self, kernels=None):
+        self.env_calls += 1
+        if self._env_raises is not None:
+            raise self._env_raises
+        return self._preflight
+
+    def launch_from_failures(self, failures_path, seeds, output_root,
+                             peft="none", config_variant="none",
+                             phrase=None):
+        self.rerun_calls.append((str(failures_path), tuple(seeds),
+                                 str(output_root), peft, config_variant,
+                                 phrase))
+        if self._rerun_outcomes:
+            return self._rerun_outcomes.pop(0)
+        return LaunchOutcome(
+            spawned=True, root=str(output_root),
+            tee_path="/state/logs/sweep_rerun.log", error=None)
+
+    def phrase_matches(self, typed, output_root):
+        return typed == Path(str(output_root)).name
+
+    def live_sweeps(self):
+        return self._live
+
+    def kill_sweep(self, root):
+        """The scripted kill channel (VXR-2): records the resolved root,
+        optionally raises / blocks on the gate / pops the next outcome;
+        the launcher's signalled default."""
+        self.kill_calls.append(str(root))
+        if self._kill_raises is not None:
+            raise self._kill_raises
+        gate = self.kill_gate
+        if gate is not None:
+            gate.wait(timeout=5.0)   # bounded: a bug never hangs the lane
+        if self._kill_outcomes:
+            return self._kill_outcomes.pop(0)
+        return "signalled"
+
+    def tee_path_for(self, root):
+        return self._tee.get(str(root))
+
+    def single_gpu_launch_blocked(self):
+        return self._single_gpu_blocked
+
+
+# ----- the app-shell fakes (the nav-shell suite's minimal set) -----
+
+class _EnvCacheHitFake:
+    """The minimal env-check service fake (same-day cache hit)."""
+
+    def cached_results(self):
+        from env_smoke import CheckResult
+
+        from tui.strings import ENV_KERNEL_LABELS
+        return ("2026-10-11 09:30", tuple(
+            CheckResult(name=k, ok=True, lines=(f"PASS: {k}",))
+            for k in ENV_KERNEL_LABELS
+        ))
+
+    def storage_rows(self):
+        # F4W-04 (261014-f4w): frozen display rows — no filesystem scan.
+        from tui.services.run_config import StorageRow
+
+        return (
+            StorageRow("model_root", "/golden/models", True),
+            StorageRow("dataset_root", "/golden/datasets", False),
+            StorageRow("output_root", "/golden/finetuned", True),
+            StorageRow("log_dir", "/golden/logs", False),
+            StorageRow("cache_dir", "/golden/cache", True),
+        )
+
+    def kernels(self):
+        raise AssertionError("a cache-hit boot must never spawn the worker")
+
+    def persist(self, results):
+        raise AssertionError("a cache-hit boot must never persist")
+
+
+class _SelectionFake:
+    """The minimal selection-service fake (empty data, real grammar)."""
+
+    def load_selection_data(self):
+        return SelectionData()
+
+    def preset_menu(self):
+        return PresetMenu(options=(), load_error=None)
+
+    def custom_names(self):
+        return ()
+
+    def save_preset(self, name, models, tasks):
+        raise AssertionError("the monitor tests never save presets")
+
+    def parse_filter(self, query):
+        from tui.services import selection as selection_service
+
+        return selection_service.parse_filter_query(query)
+
+    def apply_filter(self, entries, parsed):
+        from tui.services import selection as selection_service
+
+        return selection_service.apply_filter(entries, parsed.terms)
+
+    def import_template(self, path):
+        raise AssertionError("never imports templates")
+
+    def export_template(self, path, models, tasks):
+        raise AssertionError("never exports templates")
+
+    def export_tiers(self, path, models, tasks):
+        raise AssertionError("never exports tiers")
+
+
+class _QueueDriverFake:
+    """The minimal download-queue fake (inert, driver surface only)."""
+
+    def load(self):
+        return None
+
+    def entries(self):
+        return ()
+
+    def claim_next(self):
+        return None
+
+    def missing_datasets(self):
+        return ()
+
+    def merged_audit_tasks(self):
+        return merge_presence(registries_service.load_n_audit(), {})
+
+    def presence_rows(self):
+        # DCL-03 (261014-dcl): the full-view read the slot-3 mount also
+        # delegates through the queue — inert like the missing set
+        return ()
+
+    def probe_zenodo(self):
+        return "not_public"
+
+    def run_task(self, *args, **kwargs):
+        raise AssertionError("the monitor tests never run queue tasks")
+
+
+def _app(monitor=None, launcher=None):
+    """The real app over the fake services (constructor injection)."""
+    return DnallmMarkTui(
+        env_check_service=_EnvCacheHitFake(),
+        selection_service=_SelectionFake(),
+        download_queue_service=_QueueDriverFake(),
+        monitor_service=(monitor if monitor is not None
+                         else FakeMonitorService()),
+        monitor_launcher=(launcher if launcher is not None
+                          else FakeMonitorLauncher()),
+    )
+
+
+# =====================================================================
+# Pilot helpers
+# =====================================================================
+
+def _plain(content) -> str:
+    """Plain text of a Static's content (cells may carry rich Text)."""
+    return content.plain if isinstance(content, Text) else str(content)
+
+
+def _label_text(screen, selector) -> str:
+    return _plain(screen.query_one(selector, Label).content)
+
+
+def _table_text(table: DataTable, row_key: str, column_key: str) -> str:
+    """One DataTable cell as plain text."""
+    value = table.get_cell(row_key, column_key)
+    return value.plain if isinstance(value, Text) else str(value)
+
+
+def _toast_messages(app):
+    """The active notification messages (the toast assertions)."""
+    return [notification.message for notification in app._notifications]
+
+
+async def _open_monitor(pilot, app):
+    """Push the monitor screen and deterministically await its scans."""
+    app.push_screen(app.build_monitor_screen())
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+
+
+async def _settle(pilot, app, rounds=3):
+    """Await sequential worker->handler chains (each round: workers,
+    then the messages they posted)."""
+    for _ in range(rounds):
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+
+def _three_state_scan():
+    """The canonical three-root scan: running + finished + artifacts."""
+    return ScanResult(sweeps=(
+        _summary("finetuned", SWEEP_RUNNING, done=12, total=36),
+        _summary("finetuned-e2e-rerun", SWEEP_FINISHED,
+                 done=9300, total=9300),
+        _summary("seed-9527-artifacts", SWEEP_ARTIFACTS_ONLY, done=5),
+    ), watermarks={})
+
+
+# =====================================================================
+# Task 1 — the screen shell (both grids, discovered pane, cells, stats)
+# =====================================================================
+
+async def test_screen_composes_stacked_regions_at_both_grids():
+    """The stacked regions compose at 120x40 AND 80x24 with both bars."""
+    monitor = FakeMonitorService(scans=[_three_state_scan()])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert isinstance(screen, MonitorScreen)
+        assert list(screen.query(TopMenuBar)), "the top bar renders"
+        assert list(screen.query(BottomBar)), "the bottom bar renders"
+        assert _label_text(screen, "#mon-screen-title") == MON_SCREEN_TITLE
+        assert _label_text(screen, "#mon-scan-note") == MON_SCAN_NOTE, (
+            "the D-09 cadence note is standing chrome on the title row"
+        )
+        discovered = screen.query_one("#mon-discovered-region")
+        cells = screen.query_one("#mon-cells-region")
+        assert discovered.region.height >= 4, (
+            "the discovered region is fixed-height (title+header+rows)")
+        assert cells.region.height >= 3, "the cell region takes the flex"
+        assert screen.query_one("#mon-stats-line", Label) is not None
+
+    monitor = FakeMonitorService(scans=[_three_state_scan()])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        table = screen.query_one("#mon-discovered", DataTable)
+        column_keys = {str(key.value) for key in table.columns}
+        assert "scale" not in column_keys, (
+            "the 80-col degradation drops the scale column")
+        assert _label_text(screen, "#mon-screen-title") == MON_SCREEN_TITLE
+
+
+async def test_discovered_pane_renders_three_states_and_counts():
+    """The three D-03 states render glyph-first with the count title."""
+    monitor = FakeMonitorService(scans=[_three_state_scan()])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert _label_text(screen, "#mon-discovered-title") == (
+            MON_DISCOVERED_TITLE.format(n=3))
+        table = screen.query_one("#mon-discovered", DataTable)
+        assert table.row_count == 3, "one row per discovered sweep"
+        assert _table_text(table, "/scans/finetuned",
+                           "state") == MON_STATE_RUNNING_SWEEP
+        assert _table_text(table, "/scans/finetuned-e2e-rerun",
+                           "state") == MON_STATE_FINISHED_SWEEP
+        assert _table_text(table, "/scans/seed-9527-artifacts",
+                           "state") == MON_STATE_ARTIFACTS_SWEEP
+        assert _table_text(table, "/scans/finetuned", "root") == (
+            "finetuned")
+
+
+async def test_discovered_progress_bar_grammar_and_unknown_total():
+    """The phase-10 progress grammar verbatim: {done}/{total} + the
+    10-cell bar on running rows; the unknown-total degradation."""
+    monitor = FakeMonitorService(scans=[_three_state_scan()])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        table = app.screen.query_one("#mon-discovered", DataTable)
+        running = _table_text(table, "/scans/finetuned", "progress")
+        assert "12/36" in running
+        assert "█" in running and "·" in running, (
+            "the 10-cell bar rides the fraction"
+        )
+        assert running.count("█") == 3, (
+            "12/36 rounds to 3 filled cells of 10")
+        finished = _table_text(table, "/scans/finetuned-e2e-rerun",
+                               "progress")
+        assert "9300/9300" in finished
+        assert "█" not in finished, "finished rows carry no bar"
+        unknown = _table_text(table, "/scans/seed-9527-artifacts",
+                              "progress")
+        assert unknown == MON_TOTAL_UNKNOWN, (
+            "the unknown-total row renders the designed copy, never a "
+            "fabricated fraction"
+        )
+
+
+async def test_cell_table_renders_entries_fold_counts_and_progress():
+    """C4J-3 (261015-c4j): the cells table is the model×dataset ENTRIES
+    list — one row per (model, task) with the folded state word + the
+    done/total seed counts and the training-progress cell (steps/max +
+    integer percent + the 10-cell bar on running rows with parseable
+    progress; the dim dash on non-running rows). The per-seed detail
+    stays in the enter drill-down."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=3, total=36),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("plant-dnamamba-6mer", "GUE__emp_H3",
+                 {42: CELL_RUNNING, 43: CELL_QUEUED, 44: CELL_QUEUED}),
+            _row("plant-dnabert-6mer", "GUE__emp_H3",
+                 {42: CELL_COMPLETED, 43: CELL_SKIPPED, 44: CELL_COMPLETED}),
+            _row("plant-dnabert-6mer", "mouse__DMS",
+                 {42: CELL_FAILED, 43: CELL_FAILED, 44: CELL_FAILED}),
+        )},
+        progress={
+            ("plant-dnamamba-6mer", "GUE__emp_H3"): CellProgress(
+                step=300, max_steps=1000, percent=30)},
+        stats={"/scans/finetuned": _stats(
+            done=3, total=36,
+            current=_current("plant-dnamamba-6mer", "GUE__emp_H3", 42),
+            elapsed=4360.0,
+            eta=_eta(ETA_POINT, point=7560.0))},
+        resume_counts={"/scans/finetuned": 1},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        table = screen.query_one("#mon-cells", DataTable)
+        assert table.row_count == 3
+
+        # the running entry: folded ⏵ word + 0/3 terminal seeds + the
+        # parseable progress cell (steps, percent, 3-cell bar of 10);
+        # 261016-vxr: the fixture carries no derivable eta, so the
+        # trailing segment is the honest dim dash
+        running = "plant-dnamamba-6mer__GUE__emp_H3"
+        assert _table_text(table, running, "state") == (
+            f"{MON_STATE_RUNNING} 0/3")
+        assert _table_text(table, running, "progress") == (
+            "300/1000 30% ███······· —"), (
+            "steps/max + integer percent + the 10-cell bar grammar "
+            "+ the eta segment (the dash when underivable)"
+        )
+
+        # the completed entry (a skipped seed counts terminal): ✓ word +
+        # 3/3 + the dim dash — no bar on non-running rows
+        completed = "plant-dnabert-6mer__GUE__emp_H3"
+        assert _table_text(table, completed, "state") == (
+            f"{MON_STATE_DONE} 3/3")
+        assert _table_text(table, completed, "progress") == "—"
+
+        # the failed entry folds to ✗ with all-finished counts
+        failed = "plant-dnabert-6mer__mouse__DMS"
+        assert _table_text(table, failed, "state") == (
+            f"{MON_STATE_FAILED} 3/3")
+
+        # the resume note rides the cells title row (standing chrome)
+        assert MON_RESUME_NOTE.format(n=1) in _label_text(
+            screen, "#mon-resume-note")
+        assert _label_text(screen, "#mon-cells-title") == (
+            MON_CELLS_TITLE.format(root="finetuned"))
+
+
+async def test_running_entry_without_progress_renders_indeterminate():
+    """The honest degradation: a RUNNING entry whose progress source
+    yields nothing (no parseable checkpoint trainer_state yet — or a
+    pre-C4J service fake without the method) renders the designed
+    indeterminate constant, never a fabricated number. The row is a
+    CURVE cell (fraction_states) — the entry fold composes over the
+    seed's own folded state. The narrow grid drops the state WORD
+    (glyph + counts) and the bar."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=9),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1",
+                 {42: CELL_RUNNING, 43: CELL_QUEUED}, fractions={
+                     42: (("frac_0.3", CELL_COMPLETED),
+                          ("frac_0.6", CELL_RUNNING),
+                          ("frac_1.0", CELL_QUEUED)),
+                 }),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=9, elapsed=100.0, eta=_eta(ETA_PENDING))},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        table = app.screen.query_one("#mon-cells", DataTable)
+        entry = "model-a__task-1"
+        assert _table_text(table, entry, "state") == (
+            f"{MON_STATE_RUNNING} 0/2"), (
+            "the curve seed folds to the running entry state"
+        )
+        assert _table_text(table, entry, "progress") == (
+            MON_PROGRESS_INDETERMINATE), (
+            "nothing parses — the honest indeterminate, never a number"
+        )
+
+    # the narrow degradation at the 80-col grid
+    app = _app(monitor=FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=9),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=9, elapsed=100.0, eta=_eta(ETA_PENDING))},
+        progress={("model-a", "task-1"): CellProgress(
+            step=5, max_steps=10, percent=50)}))
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        table = app.screen.query_one("#mon-cells", DataTable)
+        entry = "model-a__task-1"
+        assert _table_text(table, entry, "state") == "⏵ 0/1", (
+            "narrow drops the state word — glyph + counts carry it "
+            "(261017-uwr: the running glyph is ⏵)"
+        )
+        progress = _table_text(table, entry, "progress")
+        assert progress == "5/10 50% —", (
+            "the narrow form keeps the steps text + eta segment "
+            "(the dash here), dropping only the bar"
+        )
+        assert "█" not in progress, "the narrow grid drops the bar"
+
+
+async def test_stats_line_variants():
+    """The three D-17 stats-line variants render verbatim."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=5, total=36),), watermarks={})],
+        cells={"/scans/finetuned": ()},
+        stats={"/scans/finetuned": _stats(
+            done=5, total=36,
+            current=_current("model-a", "task-1", 42),
+            elapsed=4360.0, eta=_eta(ETA_POINT, point=7560.0))},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        line = _label_text(app.screen, "#mon-stats-line")
+        assert line == MON_STATS_LINE.format(
+            done=5, total=36,
+            model="model-a", task="task-1", seed=42,
+            elapsed="1:12:40", eta="2.1h"), (
+            f"the full stats line renders verbatim (is {line!r})"
+        )
+
+    # the 80-col variant drops the current segment
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=5, total=36),), watermarks={})],
+        cells={"/scans/finetuned": ()},
+        stats={"/scans/finetuned": _stats(
+            done=5, total=36,
+            current=_current("model-a", "task-1", 42),
+            elapsed=4360.0, eta=_eta(ETA_POINT, point=7560.0))},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        line = _label_text(app.screen, "#mon-stats-line")
+        assert line == MON_STATS_LINE_NO_CURRENT.format(
+            done=5, total=36, elapsed="1:12:40", eta="2.1h")
+
+    # the unknown-total degradation (CLI-launched, no manifest yet)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=2),), watermarks={})],
+        cells={"/scans/finetuned": ()},
+        stats={"/scans/finetuned": _stats(
+            done=2, total=None, elapsed=100.0, eta=_eta(ETA_NONE))},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        line = _label_text(app.screen, "#mon-stats-line")
+        assert line == MON_STATS_LINE_UNKNOWN_TOTAL.format(
+            done=2, elapsed="0:01:40"), (
+            f"the unknown-total variant renders verbatim (is {line!r})"
+        )
+
+
+async def test_stats_line_pending_eta_degradation():
+    """Before the first completion the ETA renders the pending copy."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=0, total=36),), watermarks={})],
+        cells={"/scans/finetuned": ()},
+        stats={"/scans/finetuned": _stats(
+            done=0, total=36, elapsed=60.0, eta=_eta(ETA_PENDING))},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        assert MON_ETA_PENDING in _label_text(app.screen, "#mon-stats-line")
+
+
+async def test_empty_states_are_designed_rows():
+    """No sweeps discovered: both panes render their designed empty
+    copy and the cadence keeps running."""
+    monitor = FakeMonitorService(scans=[ScanResult(sweeps=(), watermarks={})])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert _label_text(screen, "#mon-discovered-title") == (
+            MON_DISCOVERED_TITLE.format(n=0))
+        discovered = screen.query_one("#mon-discovered", DataTable)
+        assert _table_text(discovered, "__empty__",
+                           "state") == MON_DISCOVERED_EMPTY
+        cells = screen.query_one("#mon-cells", DataTable)
+        assert _table_text(cells, "__empty__", "model") == MON_CELLS_EMPTY
+        # the cadence stays armed
+        screen._tick_full()
+        await _settle(pilot, app)
+        assert len(monitor.full_calls) >= 2
+
+
+async def test_cadence_dispatches_workers_and_stops_on_unmount():
+    """D-09 cadence: the mount kick + the interval callbacks dispatch
+    the exclusive workers (fake counters prove the chain — never real
+    sleeps); switching away leaves no zombie workers."""
+    monitor = FakeMonitorService(
+        scans=[_three_state_scan()],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=36, elapsed=10.0, eta=_eta(ETA_NONE))},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert len(monitor.full_calls) >= 1, (
+            "the mount kick runs the full scan immediately (never a "
+            "60s blank screen)"
+        )
+        assert screen._frontier_timer is not None, (
+            "the 2s frontier interval is armed"
+        )
+        assert screen._full_timer is not None, (
+            "the 60s full interval is armed"
+        )
+
+        screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        before_frontier = len(monitor.frontier_calls)
+        screen._tick_frontier()   # the interval's callback, invoked directly
+        await _settle(pilot, app)
+        assert len(monitor.frontier_calls) > before_frontier, (
+            "the frontier tick dispatched the scan worker (the fake "
+            "counter is the cadence proof)"
+        )
+
+        before_full = len(monitor.full_calls)
+        screen._tick_full()
+        await _settle(pilot, app)
+        assert len(monitor.full_calls) > before_full
+
+        # switching away: the timers stop (Textual cancels on unmount)
+        # and no monitor worker survives
+        await app.switch_screen(app.get_default_screen())
+        await _settle(pilot, app)
+        mon_workers = [
+            worker for worker in app.workers
+            if str(getattr(worker, "group", "") or "").startswith("mon-")
+        ]
+        assert not mon_workers, (
+            f"no zombie monitor workers after unmount "
+            f"({[w.group for w in mon_workers]})"
+        )
+
+
+def test_monitor_module_carries_zero_chinese_literals():
+    """I18N-01 single home: no operator-facing copy in the module."""
+    source = _MONITOR_MODULE_FILE.read_text(encoding="utf-8")
+    offenders = re.findall(r"[一-鿿]", source)
+    assert not offenders, (
+        "Chinese literals must live in tui/strings.py only "
+        f"({len(offenders)} found in {_MONITOR_MODULE_FILE.name})"
+    )
+
+
+# =====================================================================
+# Task 2 — interactions (attach, [a], cell detail, [f], [t], [r])
+# =====================================================================
+
+async def test_attach_via_enter_moves_marker_and_rebinds():
+    """Enter on a discovered row attaches: the marker moves and the
+    stats/cells rebind to that root (fake posts per-root data)."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(
+            _summary("root-a", SWEEP_RUNNING, done=1, total=9),
+            _summary("root-b", SWEEP_RUNNING, done=7, total=9),
+        ), watermarks={})],
+        cells={
+            "/scans/root-a": (
+                _row("model-a", "task-1", {42: CELL_RUNNING}),),
+            "/scans/root-b": (
+                _row("model-b", "task-2", {42: CELL_COMPLETED}),),
+        },
+        stats={
+            "/scans/root-a": _stats(
+                done=1, total=9, elapsed=60.0, eta=_eta(ETA_NONE)),
+            "/scans/root-b": _stats(
+                done=7, total=9, elapsed=600.0, eta=_eta(ETA_NONE)),
+        },
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert screen.focused.id == "mon-discovered"
+        await pilot.press("enter")   # row 0: root-a
+        await _settle(pilot, app)
+        table = screen.query_one("#mon-discovered", DataTable)
+        assert _table_text(table, "/scans/root-a", "state").startswith("◆")
+        assert not _table_text(table, "/scans/root-b",
+                               "state").startswith("◆")
+        assert "model-a" in _table_text(
+            screen.query_one("#mon-cells", DataTable),
+            "model-a__task-1", "model")
+        assert "60" in _label_text(screen, "#mon-stats-line") or (
+            "0:01:00" in _label_text(screen, "#mon-stats-line"))
+
+        # down + enter: the marker MOVES to root-b, everything rebinds
+        await pilot.press("down")
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert not _table_text(table, "/scans/root-a",
+                               "state").startswith("◆")
+        assert _table_text(table, "/scans/root-b", "state").startswith("◆")
+        assert "model-b" in _table_text(
+            screen.query_one("#mon-cells", DataTable),
+            "model-b__task-2", "model")
+        assert "0:10:00" in _label_text(screen, "#mon-stats-line")
+        assert MON_ATTACHED_TOAST not in _toast_messages(app) or any(
+            "root-b" in message for message in _toast_messages(app))
+
+
+async def test_attach_path_invalid_keeps_modal_never_attaches():
+    """[a] with an invalid path: the toast copy renders INSIDE the
+    modal (never silent), the root is never added, never attached."""
+    from tui.screens.selection import PathInputModal
+    from tui.strings import MON_ATTACH_INVALID_TOAST
+
+    monitor = FakeMonitorService(
+        scans=[_three_state_scan()], manual_roundtrip=[False])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("a")
+        await pilot.pause()
+        assert isinstance(app.screen, PathInputModal)
+        await pilot.press(*"/no/such/root")
+        await pilot.press("enter")
+        await pilot.pause()
+        # the modal stays open with the invalid copy as its problem row
+        assert isinstance(app.screen, PathInputModal)
+        problems = app.screen.query_one("#path-problems", Static)
+        assert MON_ATTACH_INVALID_TOAST.format(
+            path="/no/such/root") in _plain(problems.content)
+        # never attached, never persisted (the fake records the ATTEMPT;
+        # the predicate refused it — add_manual_root returned False)
+        assert monitor.added_roots == ["/no/such/root"]
+        # the screen behind never attached
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.screen._attached_root is None
+        table = app.screen.query_one("#mon-discovered", DataTable)
+        assert not any(
+            _table_text(table, str(row_key), "state").startswith("◆")
+            for row_key in ("/scans/finetuned",
+                            "/scans/finetuned-e2e-rerun",
+                            "/scans/seed-9527-artifacts"))
+
+
+async def test_attach_path_valid_adds_attaches_and_persists():
+    """[a] with a valid root: add_manual_root called, the toast fires,
+    and the root attaches (the fake round-trip)."""
+    from tui.screens.selection import PathInputModal
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(), watermarks={})],
+        manual_roundtrip=[True],
+        cells={"/scans/manual-root": (
+            _row("model-x", "task-x", {42: CELL_COMPLETED}),)},
+        stats={"/scans/manual-root": _stats(
+            done=1, total=1, elapsed=5.0, eta=_eta(ETA_NONE))},
+        valid_roots={"/scans/manual-root"},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("a")
+        await pilot.pause()
+        assert isinstance(app.screen, PathInputModal)
+        await pilot.press(*"/scans/manual-root")
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert not isinstance(app.screen, PathInputModal), (
+            "a valid path dismisses the modal"
+        )
+        assert monitor.added_roots == ["/scans/manual-root"]
+        assert MON_ATTACHED_TOAST.format(
+            root="manual-root") in _toast_messages(app)
+        assert str(app.screen._attached_root) == "/scans/manual-root"
+
+
+async def test_attach_tilde_spelled_monitors_resolved_root_real_scanner(
+        monkeypatch, tmp_path):
+    """CR-01 (gap #1): a ``~`` -spelled root submitted through the [a]
+    modal validates, attaches, and MONITORS the RESOLVED root — over the
+    REAL MonitorBackend/scanner (temp HOME + temp state dir; the coverage
+    hole: every earlier Pilot attach test used absolute fake paths).
+
+    attach() must store ``Path(str(root)).expanduser().resolve()`` so the
+    validation layer and the attach state agree on ONE path semantics:
+    every reader (cells_view/stats/failures_view via the service, the ◆
+    marker's discovered-table key comparison, attached_running_counts,
+    the frontier target) sees a REAL path. Pre-fix reproduction:
+    ``_attached_root == "~/sweeps/run1"`` with an empty cells region
+    while the validated sweep sat on disk."""
+    import json
+
+    from tui.screens.monitor import MonitorBackend
+    from tui.screens.selection import PathInputModal
+    from tui.services import settings, sweep_monitor
+
+    tmp_home = tmp_path / "home"
+    tmp_home.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_home))
+    monkeypatch.setenv(
+        settings.STATE_DIR_ENV, str(tmp_path / "state"))
+    # hermetic discovery: the scan reads EXACTLY the tmp HOME's manual
+    # root — the repo defaults (pipeline/finetuned, the live smoke's
+    # read-only territory) are never walked by this lane
+    monkeypatch.setattr(sweep_monitor, "DEFAULT_OUTPUT_ROOTS", ())
+
+    model, task = "model-a", "task-1"
+    seed_dir = tmp_home / "sweeps" / "run1" / model / task / "seed_42"
+    seed_dir.mkdir(parents=True)
+    (seed_dir / "run_record.json").write_text(json.dumps({
+        "status": "completed", "model": model, "task": task, "seed": 42,
+    }), encoding="utf-8")
+
+    app = _app(monitor=MonitorBackend())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        await pilot.press("a")
+        await pilot.pause()
+        assert isinstance(app.screen, PathInputModal)
+        await pilot.press(*"~/sweeps/run1")
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert not isinstance(app.screen, PathInputModal), (
+            "the ~ -spelled root VALIDATED (add_manual_root expands + "
+            "resolves internally) — the modal dismisses"
+        )
+        resolved = (tmp_home / "sweeps" / "run1").resolve()
+        assert str(screen._attached_root) == str(resolved), (
+            "the literal '~' spelling is never stored — attach owns the "
+            "same resolution the validation layer applied"
+        )
+        table = screen.query_one("#mon-discovered", DataTable)
+        assert _table_text(
+            table, str(resolved), "state").startswith("◆"), (
+            "the ◆ marker matches the scanner's resolved discovered key"
+        )
+        cells = screen.query_one("#mon-cells", DataTable)
+        assert "model-a" in _table_text(cells, f"{model}__{task}", "model"), (
+            "the cells table reads a REAL path — the run_record's row "
+            "renders (never the empty 未附加 state)"
+        )
+
+
+async def test_cell_detail_renders_states_fractions_record_verbatim():
+    """The cell-detail modal: full keys, per-seed states, fraction
+    lines, and the run_record fields VERBATIM (data, never elided)."""
+    from tui.screens.monitor import CellDetailModal
+
+    record = {
+        "status": "completed", "started_at": "2026-10-13T01:00:00+00:00",
+        "finished_at": "2026-10-13T01:01:05+00:00",
+        "error": "", "peft": "none", "config_variant": "none",
+        "metrics": {"accuracy": 0.9123},
+    }
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=3),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("plant-dnabert-6mer", "GUE__emp_H3",
+                 {42: CELL_RUNNING}, fractions={
+                     42: (("frac_0.3", CELL_COMPLETED),
+                          ("frac_0.6", CELL_QUEUED)),
+                 }),
+        )},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=3, elapsed=30.0, eta=_eta(ETA_NONE))},
+        records={
+            ("/scans/finetuned", "plant-dnabert-6mer", "GUE__emp_H3",
+             42): record,
+        },
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        screen.query_one("#mon-cells", DataTable).focus()
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, CellDetailModal)
+        await pilot.pause()   # the modal's on_mount writes the title
+        joined = "\n".join(line.text for line
+                           in app.screen.query_one(
+                               "#mon-celldetail-log", RichLog).lines)
+        assert "plant-dnabert-6mer" in str(
+            app.screen.query_one("#mon-celldetail-box").border_title)
+        assert "GUE__emp_H3" in str(
+            app.screen.query_one("#mon-celldetail-box").border_title)
+        assert "s42" in joined
+        assert MON_FRACTION_LINE.format(
+            fraction="0.3", state=MON_STATE_DONE) in joined
+        for field_name, value in record.items():
+            assert f"{field_name}: {value}" in joined, (
+                f"the record field {field_name} renders verbatim")
+
+
+async def test_failures_modal_rows_drill_and_empty_state():
+    """[f]: one row per failure, enter drills the verbatim error, and
+    the empty list renders the designed zero copy."""
+    from tui.screens.monitor import FailureDetailModal, FailuresModal
+    from tui.strings import MON_FAILURE_ROW as ROW_COPY
+
+    failures = (
+        FailureRow(model="model-a", task="task-1", seed=42,
+                   error="CUDA out of memory: tried to allocate 2.00 GiB",
+                   output_dir="/scans/finetuned/model-a/task-1/seed_42"),
+        FailureRow(model="model-a", task="task-2", seed=43,
+                   error="KeyError: 'dataset'",
+                   output_dir="/x"),
+    )
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=3, total=5),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_FAILED}),)},
+        stats={"/scans/finetuned": _stats(
+            done=3, total=5, elapsed=60.0, eta=_eta(ETA_NONE))},
+        failures={"/scans/finetuned": failures},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        table = app.screen.query_one("#mon-failures-table", DataTable)
+        assert table.row_count == 2
+        assert _table_text(table, "failure-0", "model") == ROW_COPY.format(
+            model="model-a", task="task-1", seed=42)
+        # enter drills the VERBATIM error
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, FailureDetailModal)
+        joined = "\n".join(line.text for line in app.screen.query_one(
+            "#mon-faildetail-log", RichLog).lines)
+        assert "CUDA out of memory" in joined
+        assert "2.00 GiB" in joined
+        await pilot.press("escape")
+        await pilot.pause()
+
+    # the empty list renders the designed zero copy
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_FINISHED, done=5, total=5),), watermarks={})],
+        failures={"/scans/finetuned": ()},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        table = app.screen.query_one("#mon-failures-table", DataTable)
+        assert _table_text(table, "__empty__", "model") == (
+            MON_FAILURES_EMPTY)
+
+
+async def test_rerun_confirm_routes_launch_from_failures_and_attaches():
+    """[f] -> r -> confirm: launch_from_failures called with the root's
+    failures file + the FAILURE-referenced seed set; the toast fires and
+    the re-run sweep auto-attaches (T-11-07-03: the same pipeline).
+
+    WR-02 (sanctioned pin change, 11-08): the seeds now derive from the
+    failure rows themselves — with cells {42: FAILED, 43: QUEUED} but
+    the single failure row at seed 42, the launch receives (42,) — the
+    failure-referenced seed set. The alias seed 43 (queued, never
+    failed) is no longer silently re-attempted, and the confirm names
+    exactly what will run (WR-03's pairs × seeds estimate)."""
+    from tui.screens.monitor import FailuresModal
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import MON_RERUN_CONFIRM, MON_RERUN_TOAST
+
+    failures = (FailureRow(model="model-a", task="task-1", seed=42,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=3, total=5),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_FAILED, 43: CELL_QUEUED}),)},
+        stats={"/scans/finetuned": _stats(
+            done=3, total=5, elapsed=60.0, eta=_eta(ETA_NONE))},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher()
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmModal), (
+            "the re-run always sits behind its own confirm"
+        )
+        assert MON_RERUN_CONFIRM.format(
+            pairs=1, seeds="42", n=1) in str(
+            app.screen.query_one(Static).content)
+        # EHC-2: enter REFUSES the re-run confirm; y launches it
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert launcher.env_calls == 0, (
+            "enter must never pass a launch confirmation (EHC-2)")
+        assert launcher.rerun_calls == []
+        assert isinstance(app.screen, ConfirmModal), (
+            "the inert enter leaves the re-run confirm up"
+        )
+        await pilot.press("y")   # confirm
+        await _settle(pilot, app)
+        assert launcher.env_calls == 1, "the env preflight re-entered"
+        assert len(launcher.rerun_calls) == 1
+        failures_path, seeds, root, _peft, _variant, phrase = (
+            launcher.rerun_calls[0])
+        assert failures_path == "/scans/finetuned/sweep_failures.json"
+        assert seeds == (42,), (
+            "the failure-referenced seed set fans out — the queued alias "
+            "seed is never silently re-attempted"
+        )
+        assert root == "/scans/finetuned"
+        assert phrase is None, "an ordinary partial re-run carries no phrase"
+        assert MON_RERUN_TOAST.format(
+            cells="—", root="finetuned") in _toast_messages(app)
+        assert str(app.screen._attached_root) == "/scans/finetuned"
+
+
+async def test_rerun_single_gpu_busy_refuses_before_the_confirm():
+    """EHC-3 (261015-ehc ruling 3): with the single-GPU guard seam
+    reporting live roots, the [f]->[r] request REFUSES before the
+    re-run confirm modal is ever pushed — the bilingual toast names
+    the running root, y is never reachable, nothing launches."""
+    from tui.screens.monitor import FailuresModal
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import LNC_SINGLE_GPU_BLOCKED
+
+    failures = (FailureRow(model="model-a", task="task-1", seed=42,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=3, total=5),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_FAILED}),)},
+        stats={"/scans/finetuned": _stats(done=3, total=5)},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher(
+        single_gpu_blocked=("/scans/finetuned-live",))
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await _settle(pilot, app)
+        assert not isinstance(app.screen, ConfirmModal), (
+            "the single-GPU pre-check refuses BEFORE the confirm modal"
+        )
+        assert any(LNC_SINGLE_GPU_BLOCKED.format(
+            roots="/scans/finetuned-live") in message
+            for message in _toast_messages(app)), _toast_messages(app)
+        assert launcher.env_calls == 0, "the preflight never runs"
+        assert launcher.rerun_calls == [], "nothing ever launches"
+
+
+async def test_rerun_seeds_derive_from_failure_rows_not_a_default():
+    """WR-02 (gap #3): with the cell table EMPTY (no scan landed — the
+    attach -> [f] -> [r] window before the first pass), the re-run's
+    seed fan-out derives from the FAILURE rows themselves (seed 43
+    here) — never the silent ``[42]`` default that would re-run a
+    different experiment than the one confirmed."""
+    from tui.screens.monitor import FailuresModal
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import MON_RERUN_CONFIRM
+
+    failures = (FailureRow(model="model-x", task="task-x", seed=43,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=0, total=1),), watermarks={})],
+        # NO cells staged: _cell_rows stays empty after the attach
+        stats={"/scans/finetuned": _stats(done=0, total=1)},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher()
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        assert app.screen._cell_rows == {}, "the empty-cells staging holds"
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmModal)
+        assert MON_RERUN_CONFIRM.format(
+            pairs=1, seeds="43", n=1) in str(
+            app.screen.query_one(Static).content)
+        await pilot.press("y")   # confirm (EHC-2: y launches)
+        await _settle(pilot, app)
+        assert len(launcher.rerun_calls) == 1
+        _path, seeds, _root, _peft, _variant, _phrase = (
+            launcher.rerun_calls[0])
+        assert seeds == (43,), (
+            "the failure rows are the derivation source — the silent "
+            "[42] default is gone"
+        )
+
+
+async def test_rerun_underivable_seeds_refuses_loudly_never_launches():
+    """WR-02 (refuse loudly): when NOTHING is derivable — the worker's
+    own failures_view re-read yields no seeds AND the cell table is
+    empty — the pipeline posts RerunFailed (the error toast carries
+    MON_RERUN_NO_SEEDS under the ✗ prefix) and launch_from_failures is
+    NEVER called: a confirmed GPU spend never becomes a different,
+    unconfirmed experiment."""
+    from tui.screens.monitor import FailuresModal
+    from tui.strings import LNC_LAUNCH_FAILED_TOAST, MON_RERUN_NO_SEEDS
+
+    failures = (FailureRow(model="model-x", task="task-x", seed=42,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=0, total=1),), watermarks={})],
+        stats={"/scans/finetuned": _stats(done=0, total=1)},
+        # the confirm-side read sees the seed-42 row; the WORKER-side
+        # re-read (the second call) yields NOTHING (the staged empty
+        # re-read — the derivation finds no seeds)
+        failures={"/scans/finetuned": [failures, ()]},
+    )
+    launcher = FakeMonitorLauncher()
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await pilot.press("y")   # confirm the re-run (EHC-2)
+        await _settle(pilot, app)
+        assert LNC_LAUNCH_FAILED_TOAST.format(
+            error=MON_RERUN_NO_SEEDS) in _toast_messages(app), (
+            "the underivable seed set refuses LOUDLY — never a default"
+        )
+        assert launcher.rerun_calls == [], (
+            "the launcher is never consulted when nothing is derivable"
+        )
+
+
+async def test_rerun_confirm_names_pairs_times_seeds_estimate():
+    """WR-03 (gap #4): the confirm names the PLANNED-CELL estimate —
+    len(distinct (model, task) pairs) x len(seeds), the exact
+    enumeration launch_from_failures performs — so the confirmed GPU
+    spend is never understated. Two failures at two pairs and two
+    seeds confirm 4 planned cells and launch the full fan-out."""
+    from tui.screens.monitor import FailuresModal
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import MON_RERUN_CONFIRM
+
+    failures = (
+        FailureRow(model="model-a", task="task-1", seed=42,
+                   error="boom", output_dir="/x"),
+        FailureRow(model="model-b", task="task-2", seed=43,
+                   error="boom", output_dir="/y"),
+    )
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=0, total=4),), watermarks={})],
+        stats={"/scans/finetuned": _stats(done=0, total=4)},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher()
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmModal)
+        copy = str(app.screen.query_one(Static).content)
+        assert MON_RERUN_CONFIRM.format(
+            pairs=2, seeds="42, 43", n=4) in copy, (
+            "the confirm names the pair count AND the seed fan-out with "
+            "their product — the exact enumeration the launch performs"
+        )
+        await pilot.press("y")   # confirm (EHC-2: y launches)
+        await _settle(pilot, app)
+        assert len(launcher.rerun_calls) == 1
+        _path, seeds, _root, _peft, _variant, _phrase = (
+            launcher.rerun_calls[0])
+        assert seeds == (42, 43), (
+            "confirm and launch share ONE derivation — the confirmed "
+            "fan-out is the executed fan-out"
+        )
+
+
+async def test_note_launch_cells_zero_clears_stale_expected_total():
+    """WR-02: the re-run's note_launch(root, 0) clears a prior launch's
+    stale expected total at the same root — the next stats call threads
+    expected_total=None (the honest unknown), never the prior sweep's
+    number; a real plan (cells > 0) still injects."""
+    monitor = FakeMonitorService(scans=[ScanResult(sweeps=(
+        _summary("finetuned", SWEEP_RUNNING, done=1, total=2),),
+        watermarks={})])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen.note_launch("/scans/finetuned", 9300)
+        await _settle(pilot, app)
+        assert monitor.stats_calls[-1][1] == 9300, (
+            "the launch plan injects the expected total"
+        )
+
+        screen.note_launch("/scans/finetuned", 0)   # the re-run note
+        screen._tick_frontier()                     # the next stats read
+        await _settle(pilot, app)
+        assert monitor.stats_calls[-1][1] is None, (
+            "the re-run's unknown plan clears the stale expectation — "
+            "never 9300 for a 15-cell re-run"
+        )
+        assert monitor.stats_calls[-1][2] is not None, (
+            "the fallback start still threads (the run scoping seam)"
+        )
+
+        screen.note_launch("/scans/finetuned", 15)
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert monitor.stats_calls[-1][1] == 15
+
+
+async def test_rerun_carries_source_sweep_lane_never_base_default():
+    """WR-01: a --peft lora sweep's [r] re-run threads the SOURCE lane
+    into launch_from_failures (recovered via the service's rerun_lane)
+    — never a none/none default that would re-train BASE cells of the
+    failed pairs instead of the confirmed alias cells."""
+    from tui.screens.monitor import FailuresModal
+
+    failures = (FailureRow(model="model-a+lora", task="task-1", seed=42,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=3, total=5),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a+lora", "task-1", {42: CELL_FAILED, 43: CELL_QUEUED}),)},
+        stats={"/scans/finetuned": _stats(done=3, total=5)},
+        failures={"/scans/finetuned": failures},
+        rerun_lanes={"/scans/finetuned": ("lora", "none")},
+    )
+    launcher = FakeMonitorLauncher()
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.press("y")   # confirm the re-run (EHC-2)
+        await _settle(pilot, app)
+        assert monitor.rerun_lane_calls == ["/scans/finetuned"], (
+            "the lane is read through the service seam"
+        )
+        assert len(launcher.rerun_calls) == 1
+        _path, _seeds, _root, peft, variant, _phrase = (
+            launcher.rerun_calls[0])
+        assert peft == "lora", "the source sweep's lane threads through"
+        assert variant == "none"
+
+
+async def test_rerun_env_block_renders_the_same_modal():
+    """A preflight FAIL on the re-run renders the SAME env-block modal
+    as slot 4 — the re-run can never bypass the gate (T-11-07-03)."""
+    from tui.screens.env_check import EnvCheckScreen  # noqa: F401
+    from tui.screens.monitor import FailuresModal
+    from tui.screens.run_config import EnvBlockModal
+    from tui.strings import ENV_QUICK_CHECK_FAIL
+
+    failures = (FailureRow(model="model-a", task="task-1", seed=42,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_FAILED}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=2, elapsed=60.0, eta=_eta(ETA_NONE))},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher(preflight=EnvPreflight(
+        can_launch=False,
+        reasons=("torch: import failed", "cuda: no device"),
+        failed_kernels=("torch", "cuda")))
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await pilot.press("y")   # confirm the re-run (EHC-2)
+        await _settle(pilot, app)
+        assert isinstance(app.screen, EnvBlockModal), (
+            "a doomed re-run never launches — the same env block"
+        )
+        joined = "\n".join(line.text for line in app.screen.query_one(
+            "#cfg-envblock-log", RichLog).lines)
+        assert "torch: import failed" in joined
+        assert "cuda: no device" in joined
+        assert ENV_QUICK_CHECK_FAIL.format(
+            kernel_names="torch, cuda") in _plain(app.screen.query_one(
+                "#cfg-envblock-header", Static).content)
+        assert launcher.rerun_calls == [], (
+            "the launch never happened after the env block"
+        )
+
+
+async def test_rerun_e2x_phrase_refusal_reprompts_then_launches():
+    """CR-01: a complete failures manifest over 3 seeds IS the full
+    matrix — the service's phrase-stage refusal re-prompts the E2'
+    typed phrase on the monitor (the D-07 escalation, same modal as
+    slot 4), and only the typed match re-launches WITH the phrase."""
+    from tui.screens.monitor import FailuresModal
+    from tui.screens.run_config import E2PhraseModal
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import MON_RERUN_TOAST
+
+    failures = tuple(
+        FailureRow(model=f"model-{index}", task="task-1", seed=seed,
+                   error="boom", output_dir="/x")
+        for index in range(3) for seed in (42, 43, 44))
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=3, total=9),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row(f"model-{index}", "task-1",
+                 {42: CELL_FAILED, 43: CELL_FAILED, 44: CELL_FAILED})
+            for index in range(3))},
+        stats={"/scans/finetuned": _stats(done=3, total=9)},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher(rerun_outcomes=[
+        GateRefusal(stage="phrase", expected="finetuned"),
+    ])
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+        await pilot.press("r")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmModal)
+        await pilot.press("y")   # confirm the re-run (EHC-2)
+        await _settle(pilot, app)
+        assert isinstance(app.screen, E2PhraseModal), (
+            "the phrase-stage refusal escalates to the typed-phrase "
+            "modal — the E2' boundary holds on the [f]->[r] path"
+        )
+        assert launcher.rerun_calls[0][5] is None, (
+            "the first attempt carried no phrase (the gate refused)"
+        )
+        await pilot.press("f", "i", "n")   # a partial phrase stays mismatched
+        await pilot.pause()
+        assert isinstance(app.screen, E2PhraseModal)
+        for key in "etuned":
+            await pilot.press(key)
+        await pilot.pause()
+        await pilot.press("enter")   # the exact match ADVANCES (EHC-2)
+        await pilot.pause()
+        await pilot.press("y")       # y carries the typed phrase
+        await _settle(pilot, app)
+        assert len(launcher.rerun_calls) == 2
+        assert launcher.rerun_calls[1][5] == "finetuned", (
+            "the re-prompt's typed phrase threads the re-launch"
+        )
+        assert MON_RERUN_TOAST.format(
+            cells="—", root="finetuned") in _toast_messages(app)
+
+
+async def test_rerun_problems_refusal_surfaces_error_toast():
+    """CR-01: a problems-stage refusal (official-keys diagnostic /
+    unevaluatable manifest) is never a silent no-op — the launch-failed
+    toast names the problems and NOTHING launches."""
+    failures = (FailureRow(model="model-a", task="task-1", seed=42,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_FAILED}),)},
+        stats={"/scans/finetuned": _stats(done=1, total=2)},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher(rerun_outcomes=[GateRefusal(
+        stage="problems",
+        problems=(("official_keys",
+                   "unreadable or shape-invalid: pipeline/models_info.json"),),
+    )])
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.press("y")   # confirm the re-run (EHC-2)
+        await _settle(pilot, app)
+        toasts = _toast_messages(app)
+        assert any(
+            "official_keys" in message
+            and "unreadable or shape-invalid" in message
+            for message in toasts), toasts
+        assert len(launcher.rerun_calls) == 1, "no second attempt"
+
+
+async def test_rerun_worker_exception_surfaces_error_toast():
+    """WR-03 (the monitor sibling): a re-run worker raising after the
+    operator confirmed is surfaced as the error toast — never a silent
+    no-op launch."""
+    from tui.strings import LNC_LAUNCH_FAILED_TOAST
+
+    failures = (FailureRow(model="model-a", task="task-1", seed=42,
+                           error="boom", output_dir="/x"),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_FAILED}),)},
+        stats={"/scans/finetuned": _stats(done=1, total=2)},
+        failures={"/scans/finetuned": failures},
+    )
+    launcher = FakeMonitorLauncher(
+        env_raises=OSError("quick-check kernel spawn failed"))
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.press("y")   # confirm the re-run (EHC-2)
+        await _settle(pilot, app)
+        assert any(LNC_LAUNCH_FAILED_TOAST.format(
+            error="quick-check kernel spawn failed") in toast
+            for toast in _toast_messages(app)), _toast_messages(app)
+        assert launcher.rerun_calls == [], "nothing launched"
+
+
+async def test_log_tail_renders_lines_and_tee_line():
+    """[t] with a tee: the bounded tail renders + the dim tee line
+    names the file (D-10)."""
+    from tui.screens.monitor import LogTailModal
+    from tui.strings import MON_LOG_TEE_LINE
+
+    tee_path = "/state/logs/sweep_20261013_finetuned.log"
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=2, elapsed=60.0, eta=_eta(ETA_NONE))},
+        tails={tee_path: ("[01:00:05] epoch 1", "[01:00:40] done")},
+    )
+    launcher = FakeMonitorLauncher(tee={"/scans/finetuned": tee_path})
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("t")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, LogTailModal)
+        joined = "\n".join(line.text for line in app.screen.query_one(
+            "#mon-log-tail", RichLog).lines)
+        assert "[01:00:05] epoch 1" in joined
+        assert "[01:00:40] done" in joined
+        assert MON_LOG_TEE_LINE.format(path=tee_path) in _label_text(
+            app.screen, "#mon-log-tee-line")
+        # esc returns; the tail stops with the modal
+        reads_before = len(monitor.tail_calls)
+        await pilot.press("escape")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, MonitorScreen)
+        assert len(monitor.tail_calls) == reads_before, (
+            "no tail read fires after esc (the timer stopped)"
+        )
+
+
+async def test_log_tail_no_tee_is_designed_unavailable():
+    """[t] with no tee (a CLI-launched sweep): the unavailable state
+    renders and NO refresh is ever scheduled."""
+    from tui.screens.monitor import LogTailModal
+    from tui.strings import MON_LOG_UNAVAILABLE
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=2, elapsed=60.0, eta=_eta(ETA_NONE))},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("t")
+        await pilot.pause()
+        assert isinstance(app.screen, LogTailModal)
+        joined = "\n".join(line.text for line in app.screen.query_one(
+            "#mon-log-tail", RichLog).lines)
+        assert MON_LOG_UNAVAILABLE in joined, (
+            "the CLI-launched state renders the designed copy — never a "
+            "fabricated empty log"
+        )
+        assert monitor.tail_calls == [], (
+            "no refresh was ever scheduled without a tee"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+
+
+async def test_rescan_fires_immediate_full_scan_with_toast():
+    """[r]: an immediate full rescan outside the 60s cadence; the
+    toast carries the discovered count."""
+    from tui.strings import MON_RESCAN_TOAST
+
+    monitor = FakeMonitorService(
+        scans=[_three_state_scan(), _three_state_scan()])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        calls_after_mount = len(monitor.full_calls)
+        await pilot.press("r")
+        await _settle(pilot, app)
+        assert len(monitor.full_calls) > calls_after_mount, (
+            "[r] dispatched the immediate full rescan"
+        )
+        assert MON_RESCAN_TOAST.format(n=3) in _toast_messages(app)
+
+
+async def test_table_updates_preserve_cursor_across_ticks():
+    """WR-05 (phase-11 review): the cadence rebuilds are diff-preserving
+    (the PickerList.set_rows precedent) — a 2s frontier tick or a 60s
+    full scan never resets the focused table's cursor to row 0, so an
+    [enter] pressed after a tick acts on the row the operator SEES
+    (the cell detail of the highlighted row, the attach of the
+    highlighted root)."""
+    monitor = FakeMonitorService(
+        scans=[_three_state_scan()],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING, 43: CELL_QUEUED}),
+            _row("model-b", "task-2", {42: CELL_FAILED, 43: CELL_QUEUED}),
+            _row("model-c", "task-3", {42: CELL_COMPLETED, 43: CELL_QUEUED}),
+        )},
+        stats={"/scans/finetuned": _stats(done=3, total=9, elapsed=60.0)},
+        frontiers={"/scans/finetuned": FrontierSnapshot(
+            root=Path("/scans/finetuned"), state=SWEEP_RUNNING,
+            newest_mtime=None, newest_cell=("model-a", "task-1", 42),
+            cell_states={
+                ("model-a", "task-1", 42): CELL_RUNNING,
+                ("model-b", "task-2", 42): CELL_FAILED,
+                ("model-c", "task-3", 42): CELL_COMPLETED,
+                ("model-a", "task-1", 43): CELL_RUNNING,
+            })},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+
+        cells_table = screen.query_one("#mon-cells", DataTable)
+        cells_table.focus()
+        await pilot.pause()
+        cells_table.action_cursor_down()
+        cells_table.action_cursor_down()   # row 2: model-c x task-3
+        await pilot.pause()
+        key_before = str(cells_table.coordinate_to_cell_key(
+            cells_table.cursor_coordinate)[0].value)
+        assert key_before == "model-c__task-3"
+        screen._tick_frontier()            # the 2s rebuild
+        await _settle(pilot, app)
+        assert str(cells_table.coordinate_to_cell_key(
+            cells_table.cursor_coordinate)[0].value) == key_before, (
+            "a frontier tick must not snap the cursor back to row 0"
+        )
+
+        discovered = screen.query_one("#mon-discovered", DataTable)
+        discovered.focus()
+        await pilot.pause()
+        discovered.action_cursor_down()    # row 1: the finished root
+        await pilot.pause()
+        root_before = str(discovered.coordinate_to_cell_key(
+            discovered.cursor_coordinate)[0].value)
+        assert root_before == "/scans/finetuned-e2e-rerun"
+        screen._tick_full()                # the 60s rebuild
+        await _settle(pilot, app)
+        assert str(discovered.coordinate_to_cell_key(
+            discovered.cursor_coordinate)[0].value) == root_before, (
+            "a full-scan rebuild must not snap the cursor back to row 0"
+        )
+
+
+async def test_long_keys_backstop_both_tables():
+    """The 68-char-key lesson: long model/task keys truncate in-cell
+    (never breaking the grid) and the full key rides the detail."""
+    from tui.screens.monitor import CellDetailModal
+
+    long_model = ("plant-dnabert-6mer-with-a-very-long-custom-alias-name"
+                  "-that-exceeds-any-column")
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(
+            _summary("finetuned-a-really-long-root-name-here",
+                     SWEEP_RUNNING, done=1, total=2),), watermarks={})],
+        cells={"/scans/finetuned-a-really-long-root-name-here": (
+            _row(long_model, "GUE__emp_H3", {42: CELL_COMPLETED}),)},
+        stats={"/scans/finetuned-a-really-long-root-name-here": _stats(
+            done=1, total=2, elapsed=60.0, eta=_eta(ETA_NONE))},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        table = screen.query_one("#mon-discovered", DataTable)
+        root_cell = _table_text(
+            table, "/scans/finetuned-a-really-long-root-name-here",
+            "root")
+        assert root_cell == "finetuned-a-really-long-root-name-here"
+        screen.attach("/scans/finetuned-a-really-long-root-name-here")
+        await _settle(pilot, app)
+        cells_table = screen.query_one("#mon-cells", DataTable)
+        model_cell = _table_text(cells_table, f"{long_model}__GUE__emp_H3",
+                                 "model")
+        assert "…" in model_cell, (
+            "the in-cell truncation carries the ellipsis (display-only)"
+        )
+        # the full key rides the detail (never elided)
+        screen.query_one("#mon-cells", DataTable).focus()
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, CellDetailModal)
+        assert long_model in str(
+            app.screen.query_one("#mon-celldetail-box").border_title)
+
+
+# =====================================================================
+# Task 3 — the degradation sweep (T-11-07-02) + responsiveness (04)
+# =====================================================================
+
+async def test_degradation_corrupt_record_renders_last_known_good():
+    """A service that THROWS mid-scan (the damaged-tree edge beyond the
+    loader's tolerance): the previous render stands, the console never
+    crashes (T-11-07-02)."""
+    monitor = FakeMonitorService(
+        scans=[_three_state_scan(), _three_state_scan()])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        table = app.screen.query_one("#mon-discovered", DataTable)
+        assert table.row_count == 3, "the healthy first render landed"
+        # a throwing full scan: the worker absorbs it; the rows stand
+        monitor.full_scan_throws = True
+        app.screen._tick_full()
+        await _settle(pilot, app)
+        assert isinstance(app.screen, MonitorScreen), (
+            "a throwing scan never crashes the console"
+        )
+        assert app.screen.query_one(
+            "#mon-discovered", DataTable).row_count == 3, (
+            "the last-known-good render stands")
+
+
+async def test_degradation_manifest_mid_write_stays_running():
+    """A manifest missing mid-write: the running rules hold (no
+    finished flip, unknown total) — the finished state requires the
+    COMPLETE manifest."""
+    monitor = FakeMonitorService(scans=[ScanResult(sweeps=(
+        _summary("finetuned", SWEEP_RUNNING, done=2),
+    ), watermarks={})] * 3)
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        table = app.screen.query_one("#mon-discovered", DataTable)
+        assert _table_text(table, "/scans/finetuned",
+                           "state") == MON_STATE_RUNNING_SWEEP
+        assert _table_text(table, "/scans/finetuned",
+                           "progress") == MON_TOTAL_UNKNOWN
+        app.screen._tick_full()
+        await _settle(pilot, app)
+        assert _table_text(table, "/scans/finetuned",
+                           "state") == MON_STATE_RUNNING_SWEEP, (
+            "no manifest means no finished flip — the running rules hold"
+        )
+
+
+async def test_degradation_artifacts_only_never_running_glyph():
+    """The prior-artifacts root renders the third state with the
+    unknown total — never a fabricated running glyph or fraction."""
+    monitor = FakeMonitorService(scans=[ScanResult(sweeps=(
+        _summary("seed-9527-artifacts", SWEEP_ARTIFACTS_ONLY, done=5),
+    ), watermarks={})] * 2)
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        table = app.screen.query_one("#mon-discovered", DataTable)
+        state = _table_text(table, "/scans/seed-9527-artifacts", "state")
+        assert state == MON_STATE_ARTIFACTS_SWEEP
+        assert "●" not in state, "artifacts-only never renders running"
+        assert _table_text(table, "/scans/seed-9527-artifacts",
+                           "progress") == MON_TOTAL_UNKNOWN
+
+
+async def test_degradation_attached_root_deleted_mid_monitor():
+    """The attached root deleted mid-monitor: the scan skips it, the
+    discovered row drops, the cell region returns to its empty state —
+    no crash, no stale marker."""
+    with_root = ScanResult(sweeps=(
+        _summary("finetuned", SWEEP_RUNNING, done=1, total=4),
+        _summary("other", SWEEP_FINISHED, done=2, total=2),
+    ), watermarks={})
+    monitor = FakeMonitorService(
+        scans=[with_root, with_root])   # mount scan + the attach re-scan
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        assert screen._attached_root is not None
+        discovered = screen.query_one("#mon-discovered", DataTable)
+        assert discovered.row_count == 2
+        assert _table_text(discovered, "/scans/finetuned",
+                           "state").startswith("◆")
+
+        monitor._scans.append(ScanResult(sweeps=(
+            _summary("other", SWEEP_FINISHED, done=2, total=2),
+        ), watermarks={}))
+        screen._tick_full()   # THIS scan drops the deleted root
+        await _settle(pilot, app)
+        assert isinstance(app.screen, MonitorScreen), "no crash"
+        assert discovered.row_count == 1, "the deleted root's row dropped"
+        assert screen._attached_root is None, "no stale attach"
+        cells = screen.query_one("#mon-cells", DataTable)
+        assert _table_text(cells, "__empty__", "model") == MON_CELLS_EMPTY
+        assert _label_text(screen, "#mon-stats-line") == ""
+        assert not _table_text(discovered, "/scans/other",
+                               "state").startswith("◆"), (
+            "no stale marker after the detach"
+        )
+
+
+async def test_degradation_min_size_guard_round_trip_with_open_modal():
+    """An open monitor modal survives the below-min round trip (the
+    app-level guard owns the behavior; the screen must not fight it)."""
+    from tui.app import MinSizeScreen
+    from tui.screens.monitor import FailuresModal
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_FAILED}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=2, elapsed=60.0, eta=_eta(ETA_NONE))},
+        failures={"/scans/finetuned": (
+            FailureRow(model="model-a", task="task-1", seed=42,
+                       error="boom", output_dir="/x"),)},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("f")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, FailuresModal)
+
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen), (
+            "below the minimum grid the guard is the whole surface"
+        )
+        await pilot.resize_terminal(120, 40)
+        await pilot.pause()
+        assert isinstance(app.screen, FailuresModal), (
+            "the open modal survives the round trip beneath the guard"
+        )
+
+
+async def test_console_stays_responsive_while_scan_blocks():
+    """T-11-07-04: while a fake full scan BLOCKS on a threading.Event,
+    pilot presses still reach the app (a modal opens) — the console
+    never freezes because every tick dispatches a worker."""
+    import threading
+
+    gate = threading.Event()
+    monitor = FakeMonitorService(scans=[_three_state_scan()])
+    monitor.full_scan_gate = gate
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        # arm the block, then dispatch a full scan that will hang
+        monitor.full_scan_gate = threading.Event()
+        app.screen._tick_full()
+        await pilot.pause()
+        await pilot.pause()
+        # the press still lands (a toast-capable action opens chrome)
+        await pilot.press("a")
+        await pilot.pause()
+        from tui.screens.selection import PathInputModal
+
+        assert isinstance(app.screen, PathInputModal), (
+            "the console stays responsive while the scan worker blocks"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+        monitor.full_scan_gate.set()   # release; the worker completes
+        await _settle(pilot, app)
+        assert isinstance(app.screen, MonitorScreen)
+
+
+# =====================================================================
+# Phase 12 (12-05): delta A — the N-root operator view (D-01, zero code)
+# =====================================================================
+
+
+def _mgpu_scan():
+    """The multi-worker discovery fixture (12-05, delta A): the two
+    frozen sibling worker roots (the ``{root}-mgpu-w{i}`` naming
+    ``run_sweep_shard.worker_root`` freezes) plus one default root —
+    the exact tree a two-worker orchestrator launch leaves on disk."""
+    return ScanResult(sweeps=(
+        _summary("finetuned-mgpu-w0", SWEEP_RUNNING, done=4, total=10),
+        _summary("finetuned-mgpu-w1", SWEEP_RUNNING, done=2, total=20),
+        _summary("finetuned", SWEEP_FINISHED, done=6, total=6),
+    ), watermarks={})
+
+
+async def test_delta_a_discovered_pane_renders_worker_roots_independently():
+    """Delta A (D-01/SC2, 12-05): the discovery list renders the two
+    sibling worker roots plus the default root — names VERBATIM,
+    per-row state glyphs and progress fractions independent — and enter
+    switches the attached per-worker view, over the UNTOUCHED Phase-11
+    renderer: ``tui/screens/monitor.py`` ``_render_discovered`` renders
+    ``Text(summary.root.name)`` (:1331) with ``_progress_cell``
+    (:220-233) per summary; ZERO monitor edits (this plan's read-only
+    claim, pinned by the zero-diff verify)."""
+    monitor = FakeMonitorService(
+        scans=[_mgpu_scan()],
+        cells={
+            "/scans/finetuned-mgpu-w0": (
+                _row("model-a", "task-x",
+                     {42: CELL_RUNNING, 43: CELL_QUEUED}),),
+            "/scans/finetuned-mgpu-w1": (
+                _row("model-b", "task-y", {42: CELL_COMPLETED}),),
+        },
+        stats={
+            "/scans/finetuned-mgpu-w0": _stats(
+                done=4, total=10,
+                current=_current("model-a", "task-x", 42),
+                elapsed=4360.0, eta=_eta(ETA_POINT, point=7560.0)),
+            "/scans/finetuned-mgpu-w1": _stats(
+                done=2, total=20, elapsed=100.0, eta=_eta(ETA_NONE)),
+        },
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert _label_text(screen, "#mon-discovered-title") == (
+            MON_DISCOVERED_TITLE.format(n=3))
+        table = screen.query_one("#mon-discovered", DataTable)
+        assert table.row_count == 3, (
+            "one row per discovered root — the N+1 multi-worker view"
+        )
+        # the frozen worker-root names render VERBATIM
+        assert _table_text(table, "/scans/finetuned-mgpu-w0",
+                           "root") == "finetuned-mgpu-w0"
+        assert _table_text(table, "/scans/finetuned-mgpu-w1",
+                           "root") == "finetuned-mgpu-w1"
+        assert _table_text(table, "/scans/finetuned", "root") == (
+            "finetuned")
+        # independent state glyphs: both workers running, default finished
+        assert _table_text(table, "/scans/finetuned-mgpu-w0",
+                           "state") == MON_STATE_RUNNING_SWEEP
+        assert _table_text(table, "/scans/finetuned-mgpu-w1",
+                           "state") == MON_STATE_RUNNING_SWEEP
+        assert _table_text(table, "/scans/finetuned",
+                           "state") == MON_STATE_FINISHED_SWEEP
+        # independent progress fractions + bars (worker isolation at a
+        # glance): 4/10 -> 4 filled cells, 2/20 -> 1, finished no bar
+        w0 = _table_text(table, "/scans/finetuned-mgpu-w0", "progress")
+        w1 = _table_text(table, "/scans/finetuned-mgpu-w1", "progress")
+        default = _table_text(table, "/scans/finetuned", "progress")
+        assert "4/10" in w0 and w0.count("█") == 4
+        assert "2/20" in w1 and w1.count("█") == 1
+        assert w0 != w1, "the two worker rows must never alias"
+        assert "6/6" in default and "█" not in default
+
+        # enter attaches worker 0: the cells table + stats line rebind to
+        # THAT root's fixture (the existing attach idiom over the new
+        # fixture — D-01's per-worker view with zero new screens)
+        await pilot.press("enter")   # row 0: finetuned-mgpu-w0
+        await _settle(pilot, app)
+        assert _table_text(table, "/scans/finetuned-mgpu-w0",
+                           "state").startswith("◆")
+        assert _label_text(screen, "#mon-cells-title") == (
+            MON_CELLS_TITLE.format(root="finetuned-mgpu-w0"))
+        cells_table = screen.query_one("#mon-cells", DataTable)
+        assert cells_table.row_count == 1
+        assert _table_text(cells_table, "model-a__task-x",
+                           "state") == f"{MON_STATE_RUNNING} 0/2"
+        assert _label_text(screen, "#mon-stats-line") == (
+            MON_STATS_LINE.format(
+                done=4, total=10, model="model-a", task="task-x",
+                seed=42, elapsed="1:12:40", eta="2.1h"))
+
+        # down + enter: the per-worker view SWITCHES to worker 1 — the
+        # marker moves, cells/stats rebind to w1's fixture
+        await pilot.press("down")
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert not _table_text(table, "/scans/finetuned-mgpu-w0",
+                               "state").startswith("◆")
+        assert _table_text(table, "/scans/finetuned-mgpu-w1",
+                           "state").startswith("◆")
+        assert _label_text(screen, "#mon-cells-title") == (
+            MON_CELLS_TITLE.format(root="finetuned-mgpu-w1"))
+        cells_table = screen.query_one("#mon-cells", DataTable)
+        assert cells_table.row_count == 1
+        assert _table_text(cells_table, "model-b__task-y",
+                           "state") == f"{MON_STATE_DONE} 1/1"
+        w1_line = _label_text(screen, "#mon-stats-line")
+        assert "2/20" in w1_line, (
+            "the stats line rebinds to worker 1's own fraction"
+        )
+
+    # the 80x24 grid composes with all three rows (the responsive drop
+    # is the scale column only — never a row)
+    monitor = FakeMonitorService(scans=[_mgpu_scan()])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_monitor(pilot, app)
+        table = app.screen.query_one("#mon-discovered", DataTable)
+        assert table.row_count == 3, (
+            "the 80-col grid still carries every discovered root"
+        )
+        column_keys = {str(key.value) for key in table.columns}
+        assert "scale" not in column_keys
+
+
+# =====================================================================
+# 261016-vxr (VXR-1/VXR-2/VXR-3): the entry ETA render, the [k] kill
+# confirm over the launcher channel, and the monitor help rows
+# =====================================================================
+
+
+async def test_running_entry_renders_eta_segment_or_honest_dash():
+    """VXR-1: a running entry whose CellProgress carries a derivable
+    eta appends the format_eta segment after the bar; eta None renders
+    the trailing dim dash — the honest underivable, never a fabricated
+    number."""
+    from tui.services.sweep_monitor import format_eta
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=4),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),
+            _row("model-b", "task-2", {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=4, elapsed=60.0, eta=_eta(ETA_NONE))},
+        progress={
+            ("model-a", "task-1"): CellProgress(
+                step=300, max_steps=1000, percent=30, eta_seconds=1800.0),
+            ("model-b", "task-2"): CellProgress(
+                step=600, max_steps=1000, percent=60),  # eta underivable
+        },
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        table = app.screen.query_one("#mon-cells", DataTable)
+        assert _table_text(table, "model-a__task-1", "progress") == (
+            f"300/1000 30% ███······· {format_eta(1800.0)}"), (
+            "the derivable eta rides the progress cell after the bar"
+        )
+        assert _table_text(table, "model-b__task-2", "progress") == (
+            "600/1000 60% ██████···· —"), (
+            "eta None renders the trailing dim dash, never a guess"
+        )
+
+
+def _kill_fixture_monitor():
+    """The canonical k-kill fixture: one running root + cells + stats."""
+    return FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2),), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=2, elapsed=60.0, eta=_eta(ETA_NONE))},
+    )
+
+
+async def test_k_opens_kill_confirm_y_kills_without_exiting():
+    """VXR-2: k over a live TUI-launched attached sweep opens the y-only
+    kill confirm (enter structurally inert — EHC-2 extended to the kill;
+    n/esc cancel), and y dispatches the off-loop kill through the
+    launcher channel with the RESOLVED attached root — the console
+    NEVER exits on this path (stop training ≠ exit console)."""
+    from tui.screens.monitor import KillConfirmModal
+    from tui.strings import MON_KILL_CONFIRM, MON_KILL_TOAST
+
+    launcher = FakeMonitorLauncher(live=("/scans/finetuned",))
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal), (
+            "k over a live attached TUI sweep opens the kill confirm"
+        )
+        assert MON_KILL_CONFIRM in _plain(
+            app.screen.query_one(Static).content)
+        assert "/scans/finetuned" in str(
+            app.screen.query_one("#confirm-box").border_title), (
+            "the border title names the root the kill would signal"
+        )
+
+        # EHC-2: enter is structurally inert on the kill confirm
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, KillConfirmModal), (
+            "enter must never confirm a kill (EHC-2)"
+        )
+        assert launcher.kill_calls == []
+
+        # n cancels back to the monitor, nothing signalled
+        await pilot.press("n")
+        await pilot.pause()
+        assert isinstance(app.screen, MonitorScreen)
+        assert launcher.kill_calls == []
+
+        # reopen with k, esc likewise cancels
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, MonitorScreen)
+        assert launcher.kill_calls == []
+
+        # reopen, y: the worker kills via the channel exactly once
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal)
+        await pilot.press("y")
+        await _settle(pilot, app)
+        assert launcher.kill_calls == ["/scans/finetuned"], (
+            "y dispatched the kill with the RESOLVED attached root"
+        )
+        assert not app._exit, (
+            "stopping training NEVER exits the console"
+        )
+        assert MON_KILL_TOAST.format(
+            root="/scans/finetuned") in _toast_messages(app)
+
+
+async def test_kill_confirm_footer_shows_y_n_keycaps():
+    """DNR-2 (261017-dnr): the kill confirm's answer keys are visible at
+    a glance — the KillConfirmModal y/n bindings carry show=True with
+    the exact-reuse descriptions (MON_KILL_KEYCAP for y, the
+    LNC_EXIT_CONFIRM_NO pair for n) so the Footer renders the y/n
+    keycaps beside esc; the inherited base enter stays show=False (the
+    EHC-2 inert no-op is never advertised)."""
+    launcher = FakeMonitorLauncher(live=("/scans/finetuned",))
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("k")
+        await pilot.pause()
+        from textual.binding import Binding
+        from textual.widgets import Footer as FooterWidget
+
+        from tui.screens.monitor import KillConfirmModal
+        from tui.screens.selection import ConfirmModal
+        from tui.strings import LNC_EXIT_CONFIRM_NO, MON_KILL_KEYCAP
+
+        assert isinstance(app.screen, KillConfirmModal)
+        entries = {binding.key: binding
+                   for binding in KillConfirmModal.BINDINGS
+                   if isinstance(binding, Binding)}
+        assert entries["y"].show is True, (
+            "the y answer key must render in the Footer"
+        )
+        assert entries["y"].description == MON_KILL_KEYCAP, (
+            "y reuses the exact 停止/Kill pair — it is what y does"
+        )
+        assert entries["n"].show is True, (
+            "the n answer key must render in the Footer"
+        )
+        assert entries["n"].description == LNC_EXIT_CONFIRM_NO
+        base_entries = {binding.key: binding
+                        for binding in ConfirmModal.BINDINGS
+                        if isinstance(binding, Binding)}
+        assert base_entries["enter"].show is False, (
+            "the inert enter no-op is never advertised (EHC-2)"
+        )
+        assert app.screen.query(FooterWidget), (
+            "the modal composes a Footer — the keycaps render"
+        )
+
+
+async def test_kill_confirm_message_bolds_y_n_tokens():
+    """DNR-2 (261017-dnr): the kill confirm's [Y]/[N] tokens are
+    prominent — the message Static's content is a rich Text with a bold
+    span over every [Y]/[N] occurrence while the plain value still
+    carries MON_KILL_CONFIRM byte-unchanged (span-safe existing
+    assertions); the #confirm-box id and message-Static-first layout
+    are preserved (on_mount + the first-Static test queries)."""
+    launcher = FakeMonitorLauncher(live=("/scans/finetuned",))
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("k")
+        await pilot.pause()
+        from tui.screens.monitor import KillConfirmModal
+        from tui.strings import MON_KILL_CONFIRM
+
+        assert isinstance(app.screen, KillConfirmModal)
+        content = app.screen.query_one(Static).content
+        assert isinstance(content, Text), (
+            "the message composes as a rich Text over the registry "
+            "constant — never a markup string"
+        )
+        plain = content.plain
+        assert MON_KILL_CONFIRM in plain, plain
+        for token in ("[Y]", "[N]"):
+            offset = plain.find(token)
+            assert offset != -1, f"the {token} token must be present"
+            while offset != -1:
+                start, end = offset, offset + len(token)
+                covered = any(span.start <= start and span.end >= end
+                              and str(span.style) == "bold"
+                              for span in content.spans)
+                assert covered, (
+                    f"the {token} at offset {offset} must carry a bold "
+                    "span (Text.highlight_words)"
+                )
+                offset = plain.find(token, end)
+
+
+async def test_k_outcome_toasts_dead_noop_and_failure():
+    """VXR-2 outcome surfaces: already_dead -> MON_KILL_TOAST_DEAD; noop
+    (the channel no longer knows the root) -> MON_KILL_UNAVAILABLE; a
+    RAISING kill_sweep -> the MON_KILL_FAILED error toast (WR-03 — a
+    post-confirm worker death surfaces, never a silent no-op)."""
+    from tui.screens.monitor import KillConfirmModal
+    from tui.strings import (
+        MON_KILL_FAILED,
+        MON_KILL_TOAST_DEAD,
+        MON_KILL_UNAVAILABLE,
+    )
+
+    for outcome, expected_toast in (
+            ("already_dead",
+             lambda: MON_KILL_TOAST_DEAD.format(root="/scans/finetuned")),
+            ("noop",
+             lambda: MON_KILL_UNAVAILABLE.format(root="/scans/finetuned"))):
+        launcher = FakeMonitorLauncher(
+            live=("/scans/finetuned",), kill_outcomes=[outcome])
+        app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_monitor(pilot, app)
+            app.screen.attach("/scans/finetuned")
+            await _settle(pilot, app)
+            await pilot.press("k")
+            await pilot.pause()
+            assert isinstance(app.screen, KillConfirmModal)
+            await pilot.press("y")
+            await _settle(pilot, app)
+            assert expected_toast() in _toast_messages(app), (
+                f"the {outcome} outcome surfaces its designed toast"
+            )
+            assert not app._exit
+
+    launcher = FakeMonitorLauncher(
+        live=("/scans/finetuned",),
+        kill_raises=OSError("killpg failed"))
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("k")
+        await pilot.pause()
+        await pilot.press("y")
+        await _settle(pilot, app)
+        assert MON_KILL_FAILED.format(
+            error="killpg failed") in _toast_messages(app), (
+            "a raising kill surfaces the error toast — never silence"
+        )
+        assert not app._exit
+
+
+async def test_k_attached_but_not_live_refuses_before_the_confirm():
+    """VXR-2: an attached root NOT in live_sweeps() (CLI-launched or
+    already dead) surfaces MON_KILL_UNAVAILABLE and NEVER opens a
+    confirm the channel cannot execute — kill_sweep is never called."""
+    from tui.screens.monitor import KillConfirmModal
+    from tui.strings import MON_KILL_UNAVAILABLE
+
+    launcher = FakeMonitorLauncher(live=())   # nothing TUI-launched
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("k")
+        await _settle(pilot, app)
+        assert MON_KILL_UNAVAILABLE.format(
+            root="/scans/finetuned") in _toast_messages(app)
+        assert not any(isinstance(screen, KillConfirmModal)
+                       for screen in app.screen_stack), (
+            "no confirm may open over a channel that cannot kill"
+        )
+        assert launcher.kill_calls == []
+
+
+async def test_k_without_attach_or_below_grid_is_silent():
+    """VXR-2 degradation: no attached root -> k is silent (the [f]/[t]
+    precedent — no toast, no modal); below the minimum grid with a LIVE
+    attached root -> no modal ever opens (no chrome over the guard)."""
+    from tui.app import MinSizeScreen
+    from tui.screens.monitor import KillConfirmModal
+
+    monitor = FakeMonitorService(scans=[_three_state_scan()])
+    launcher = FakeMonitorLauncher(live=("/scans/finetuned",))
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("k")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, MonitorScreen), (
+            "no attach: k opens nothing"
+        )
+        assert _toast_messages(app) == [], "no attach: k is fully silent"
+        assert launcher.kill_calls == []
+
+    app = _app(monitor=_kill_fixture_monitor(),
+               launcher=FakeMonitorLauncher(live=("/scans/finetuned",)))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+        await pilot.press("k")
+        await _settle(pilot, app)
+        assert not any(isinstance(screen, KillConfirmModal)
+                       for screen in app.screen_stack), (
+            "no kill chrome may open over the min-size guard"
+        )
+
+
+async def test_k_kill_never_consults_the_single_gpu_guard():
+    """VXR-2 (EHC-3 pin): the kill path NEVER consults the single-GPU
+    serialization guard — kill is the REMEDY for a busy single-GPU
+    machine, not a launch; a guard reporting live roots must not block
+    the stop."""
+    from tui.screens.monitor import KillConfirmModal
+
+    launcher = FakeMonitorLauncher(
+        live=("/scans/finetuned",),
+        single_gpu_blocked=("/scans/somewhere-else",))
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal), (
+            "the single-GPU guard never gates the kill confirm"
+        )
+        await pilot.press("y")
+        await _settle(pilot, app)
+        assert launcher.kill_calls == ["/scans/finetuned"], (
+            "y still kills on a guard-reported-busy machine"
+        )
+
+
+async def test_kill_runs_off_the_event_loop_console_stays_responsive():
+    """VXR-2: kill_sweep blocks up to the launcher's kill grace — the
+    call lands in the exclusive mon-kill worker, never on the event
+    loop: while the kill blocks, the console still opens chrome (the
+    responsiveness precedent), and the outcome toast lands once the
+    gate releases."""
+    import threading
+
+    from tui.screens.monitor import KillConfirmModal
+    from tui.screens.selection import PathInputModal
+    from tui.strings import MON_KILL_TOAST
+
+    gate = threading.Event()
+    launcher = FakeMonitorLauncher(live=("/scans/finetuned",))
+    launcher.kill_gate = gate
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal)
+        await pilot.press("y")   # the worker now blocks on the gate
+        await pilot.pause()
+        await pilot.pause()
+
+        # the loop stays responsive while the kill worker blocks
+        await pilot.press("a")
+        await pilot.pause()
+        assert isinstance(app.screen, PathInputModal), (
+            "the console stays responsive while kill_sweep blocks"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+
+        gate.set()   # release; the worker completes and posts
+        await _settle(pilot, app, rounds=4)
+        assert launcher.kill_calls == ["/scans/finetuned"]
+        assert MON_KILL_TOAST.format(
+            root="/scans/finetuned") in _toast_messages(app)
+
+
+async def test_monitor_help_lists_the_kill_row():
+    """VXR-2/261017-cdr/261017-mad: the ? help modal over the monitor
+    carries the k row (the BINDINGS projection — the keycap joins after
+    the [r] rescan); the 261016-vxr app-level Q row is RETIRED with its
+    intercept (Q is a plain typing letter again — F10 is the any-focus
+    exit since the 2026-10-17 16:02 ruling, and no [f10] row starts a
+    screen row here: the f10 help row renders as an app-level manual
+    row, so this screen-scoped assertion set stays true unchanged)."""
+    from tui.app import HelpModal
+    from tui.strings import APP_HELP_ROW, MON_KILL_KEYCAP
+
+    app = _app(monitor=FakeMonitorService(scans=[_three_state_scan()]))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpModal)
+        rows = [str(static.content) for static in app.screen.query(Static)]
+        assert APP_HELP_ROW.format(key="k", label=MON_KILL_KEYCAP) in rows, (
+            "the slot-5 kill keycap lists in the monitor help"
+        )
+        assert not any(row.startswith("[Q]") for row in rows), (
+            "the retired any-focus Q row must not list"
+        )
+
+
+# =====================================================================
+# 261017-uwr (UWR-3/UWR-4 Task 3): the context header + the ⏸ glyph +
+# live-on-top ordering with WR-05 cursor identity
+# =====================================================================
+
+
+def _uwr_row(model, states, newest_mtime=None):
+    """One CellRow fixture with explicit seed states (the _row twin
+    carrying the UWR-4 newest_mtime sort key)."""
+    return CellRow(
+        model=model, task="task-x",
+        seeds=tuple(CellSeed(seed=42 + index, state=state,
+                             fraction_states=None)
+                    for index, state in enumerate(states)),
+        newest_mtime=newest_mtime)
+
+
+def _uwr_service(cells):
+    """The fake service over one attached running root."""
+    return FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned-smoke", SWEEP_RUNNING, done=2, total=5),),
+            watermarks={})],
+        cells={"/scans/finetuned-smoke": tuple(cells)},
+        stats={"/scans/finetuned-smoke": _stats(
+            done=2, total=5, elapsed=100.0, eta=_eta(ETA_NONE))},
+    )
+
+
+async def test_context_header_renders_attached_root_fold_counts():
+    """UWR-3: attached, the one-row header renders the root name, n =
+    the entry-row count, and the three fold-family counts — the
+    maintainer's exact 5/1/2/2 line over 2 completed + 1 running +
+    2 interrupted rows; unattached the header Label is EMPTY (the
+    stats-line precedent)."""
+    monitor = _uwr_service((
+        _uwr_row("model-done-1", (CELL_COMPLETED, CELL_COMPLETED)),
+        _uwr_row("model-done-2", (CELL_COMPLETED, CELL_SKIPPED)),
+        _uwr_row("model-live", (CELL_RUNNING, CELL_QUEUED)),
+        _uwr_row("model-dead-1", (CELL_INTERRUPTED, CELL_INTERRUPTED)),
+        _uwr_row("model-dead-2", (CELL_INTERRUPTED,)),
+    ))
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert _label_text(screen, "#mon-context-header") == "", (
+            "unattached: the header is the empty string"
+        )
+        screen.attach("/scans/finetuned-smoke")
+        await _settle(pilot, app)
+        assert _label_text(screen, "#mon-context-header") == (
+            MON_CONTEXT_HEADER.format(
+                root="finetuned-smoke", n=5, running=1, done=2,
+                interrupted=2)), (
+            "the maintainer's one-glance line: where the rows come "
+            "from + the three honest counts"
+        )
+
+
+async def test_context_header_attached_empty_root_renders_n_zero():
+    """Attached with ZERO entry rows: the header renders the line with
+    n=0 and zero counts (honest, never blank-while-attached)."""
+    monitor = _uwr_service(())
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned-smoke")
+        await _settle(pilot, app)
+        assert _label_text(app.screen, "#mon-context-header") == (
+            MON_CONTEXT_HEADER.format(
+                root="finetuned-smoke", n=0, running=0, done=0,
+                interrupted=0))
+
+
+async def test_entries_live_on_top_ordering_with_fresh_running_first():
+    """UWR-4: group 0 running rows on top (freshest newest_mtime
+    FIRST, mtime-None last), group 1 unfinished non-running rows
+    (failed / interrupted / queued) key ASC, group 2 completed rows
+    sink — the live row is never buried under dead history."""
+    monitor = _uwr_service((
+        _uwr_row("d-done", (CELL_COMPLETED,)),
+        _uwr_row("m-int", (CELL_INTERRUPTED,)),
+        _uwr_row("a-run-old", (CELL_RUNNING,), newest_mtime=1000.0),
+        _uwr_row("z-run-fresh", (CELL_RUNNING,), newest_mtime=2000.0),
+        _uwr_row("c-queued", (CELL_QUEUED,)),
+        _uwr_row("b-fail", (CELL_FAILED,)),
+        _uwr_row("y-run-nomtime", (CELL_RUNNING,)),
+    ))
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned-smoke")
+        await _settle(pilot, app)
+        table = app.screen.query_one("#mon-cells", DataTable)
+        order = [str(key.value) for key in table.rows]
+        assert order == [
+            "z-run-fresh__task-x",   # group 0: freshest running first
+            "a-run-old__task-x",
+            "y-run-nomtime__task-x",  # running without mtime last
+            "b-fail__task-x",        # group 1: unfinished, key ASC
+            "c-queued__task-x",
+            "m-int__task-x",
+            "d-done__task-x",        # group 2: completed sinks
+        ], order
+
+
+async def test_fold_flip_reorders_table_preserving_cursor_identity():
+    """UWR-4 + WR-05: a mid-session fold flip (a completed pair becomes
+    running) reorders the LIVE table — the promoted row moves to the
+    top — and the operator's CURSOR ROW IDENTITY survives the reorder
+    (move_cursor by key, scroll=False)."""
+    monitor = _uwr_service((
+        _uwr_row("model-a", (CELL_RUNNING,), newest_mtime=1000.0),
+        _uwr_row("model-b", (CELL_COMPLETED,)),
+        _uwr_row("model-c", (CELL_COMPLETED,)),
+    ))
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen.attach("/scans/finetuned-smoke")
+        await _settle(pilot, app)
+        table = screen.query_one("#mon-cells", DataTable)
+        table.focus()
+        table.move_cursor(row=table.get_row_index("model-b__task-x"))
+        await pilot.pause()
+        cursor_key = str(table.coordinate_to_cell_key(
+            table.cursor_coordinate)[0].value)
+        assert cursor_key == "model-b__task-x"
+
+        # the flip: model-b's pair goes live (fresher than model-a)
+        monitor._cells["/scans/finetuned-smoke"] = (
+            _uwr_row("model-a", (CELL_RUNNING,), newest_mtime=1000.0),
+            _uwr_row("model-b", (CELL_RUNNING,), newest_mtime=3000.0),
+            _uwr_row("model-c", (CELL_COMPLETED,)),
+        )
+        screen._tick_full()
+        await _settle(pilot, app)
+
+        order = [str(key.value) for key in table.rows]
+        assert order == [
+            "model-b__task-x",   # the promoted row: freshest running
+            "model-a__task-x",
+            "model-c__task-x",
+        ], order
+        after_key = str(table.coordinate_to_cell_key(
+            table.cursor_coordinate)[0].value)
+        assert after_key == "model-b__task-x", (
+            "the cursor follows its ROW KEY across the reorder — the "
+            "operator's selection never snaps to row 0"
+        )
+
+
+async def test_interrupted_entry_renders_glyph_word_and_counts():
+    """UWR-1's render leg: an interrupted fold row carries the ⏸
+    glyph-word + its done/total seed counts (wide), and the narrow
+    grid keeps the glyph + counts form (the _entry_state_cell
+    degradation)."""
+    monitor = _uwr_service((
+        _uwr_row("model-dead", (CELL_INTERRUPTED, CELL_INTERRUPTED)),
+    ))
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned-smoke")
+        await _settle(pilot, app)
+        table = app.screen.query_one("#mon-cells", DataTable)
+        entry = "model-dead__task-x"
+        assert _table_text(table, entry, "state") == (
+            f"{MON_STATE_INTERRUPTED} 0/2"), (
+            "the interrupted fold renders the ⏸ glyph-word + its "
+            "terminal/total seed counts"
+        )
+        assert _table_text(table, entry, "progress") == "—", (
+            "interrupted rows carry no progress (nothing parses)"
+        )
+
+    # the narrow degradation at the 80-col grid
+    app = _app(monitor=_uwr_service((
+        _uwr_row("model-dead", (CELL_INTERRUPTED,)),
+    )))
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned-smoke")
+        await _settle(pilot, app)
+        table = app.screen.query_one("#mon-cells", DataTable)
+        assert _table_text(
+            table, "model-dead__task-x", "state") == "⏸ 0/1", (
+            "narrow drops the state word — the ⏸ glyph + counts remain"
+        )
+
+
+# =====================================================================
+# 261018-08g (SOAK-1/F1): the session hoist over the fresh-build factory
+# =====================================================================
+
+
+async def test_build_monitor_screen_builds_fresh_instances_over_one_session():
+    """The F1 fix's structural pin: ``build_monitor_screen`` returns a
+    FRESH MonitorScreen per call (the deleted cached-instance design
+    never repainted after its first removal — the dead-5 freeze), and
+    every build carries the ONE shared MonitorSession constructed on
+    the composition root (the SEL-01 marks-set precedent)."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        first = app.build_monitor_screen()
+        second = app.build_monitor_screen()
+        assert first is not second, (
+            "each navigation must build a fresh MonitorScreen — the "
+            "cached-instance design is the dead-5 root cause"
+        )
+        assert first._session is app._monitor_session, (
+            "a built screen reads the composition-root session"
+        )
+        assert second._session is app._monitor_session, (
+            "every build shares the ONE session — navigation state "
+            "must not fork per instance"
+        )
+
+
+async def test_session_attach_and_launch_injections_survive_rebuilds():
+    """The session hoist's state-survival pin: attach + the D-13 launch
+    injections recorded through one screen (or the session) are visible
+    on a FRESHLY BUILT screen — the guarantee the cached instance used
+    to provide, now without the repaint bug. The cells==0 re-run
+    semantics (a stale expected total pops, WR-02) survive too."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        first = app.build_monitor_screen()
+        app.push_screen(first)
+        await _settle(pilot, app)
+        first.attach("/scans/finetuned")
+        app._monitor_session.note_launch("/scans/finetuned", 3)
+        app.pop_screen()
+        await pilot.pause()
+
+        second = app.build_monitor_screen()
+        assert second is not first
+        assert str(second._attached_root) == "/scans/finetuned", (
+            "the attached root survives the screen rebuild via the session"
+        )
+        assert second._expected_totals.get("/scans/finetuned") == 3, (
+            "the D-13 expected total survives the rebuild"
+        )
+        assert second._fallback_starts.get("/scans/finetuned") is not None, (
+            "the fallback start survives the rebuild"
+        )
+
+        # WR-02 semantics ride on the session: a cells==0 note (the
+        # re-run flow) clears the stale expected total
+        app._monitor_session.note_launch("/scans/finetuned", 0)
+        assert "/scans/finetuned" not in second._expected_totals, (
+            "a cells==0 note pops the stale expected total (WR-02)"
+        )
+
+
+async def test_sweep_launched_records_via_session_lands_on_fresh_screen():
+    """The D-13 auto-nav on the fresh-instance design: ``sweep_launched``
+    records on the shared session WITHOUT building a screen, and the
+    MonitorSwitchRequested handler switches to a FRESH build reading
+    the session — the launch lands attached with its expected total."""
+    from tui.screens.monitor import MonitorScreen as _MonitorScreen
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert app._monitor_screen is None, (
+            "no monitor screen exists before the first launch"
+        )
+        app.sweep_launched("/scans/launched-root", 5)
+        # the record landed on the session synchronously — no screen
+        # was built to carry it (the F1 design: the fresh screen is
+        # built by the switch handler)
+        assert app._monitor_session.expected_totals.get(
+            "/scans/launched-root") == 5
+        assert app._monitor_session.fallback_starts.get(
+            "/scans/launched-root") is not None
+        await _settle(pilot, app, rounds=4)
+        assert isinstance(app.screen, _MonitorScreen), (
+            "the D-13 message switched to the monitor screen"
+        )
+        screen = app.screen
+        assert str(screen._attached_root) == "/scans/launched-root", (
+            "the fresh screen reads the launch attach from the session"
+        )
+        assert screen._expected_totals.get("/scans/launched-root") == 5, (
+            "the fresh screen reads the expected total from the session"
+        )
+
+
+async def test_kill_confirm_uppercase_twins_match_lowercase():
+    """261018-08g (SOAK-2/F3): the kill confirm's copy advertises [Y]/
+    [N] — uppercase Y must fire the kill callback exactly like y (the
+    console never exits), uppercase N must cancel exactly like n. On
+    HEAD the uppercase presses were inert (the soak read the modal as a
+    dead console)."""
+    from tui.screens.monitor import KillConfirmModal
+
+    launcher = FakeMonitorLauncher(live=("/scans/finetuned",))
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal)
+        # uppercase N cancels, nothing signalled
+        await pilot.press("N")
+        await pilot.pause()
+        assert isinstance(app.screen, MonitorScreen), (
+            "uppercase N must cancel the kill confirm (the copy says [N])"
+        )
+        assert launcher.kill_calls == []
+
+        # uppercase Y fires the confirm callback — the console stays up
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal)
+        await pilot.press("Y")
+        await _settle(pilot, app)
+        assert launcher.kill_calls == ["/scans/finetuned"], (
+            "uppercase Y dispatched the kill exactly like y"
+        )
+        assert not app._exit, "uppercase Y kills the sweep, never the console"

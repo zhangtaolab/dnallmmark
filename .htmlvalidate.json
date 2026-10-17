@@ -1,0 +1,12 @@
+{
+  "$schema": "https://htmlvalidate.org/schemas/config.json",
+  "root": true,
+  "rules": {
+    "close-order": "error",
+    "no-dup-id": "error",
+    "no-dup-attr": "error",
+    "element-permitted-content": "error",
+    "element-permitted-parent": "error",
+    "element-name": "error"
+  }
+}

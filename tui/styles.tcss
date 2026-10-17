@@ -1,0 +1,756 @@
+/*
+ * ===== styles.tcss — DNALLM-Mark console styles (Phase 8; 08-02 base,
+ * 08-06 complete) =====
+ *
+ * Contract (08-UI-SPEC Color + Spacing Scale + Typography, approved
+ * 2026-10-11):
+ *
+ * - Semantic Textual theme tokens ONLY — $background, $surface, $panel,
+ *   $boost, $accent, $success, $warning, $error, $text, $text-muted,
+ *   $border — which adapt to light/dark/NO_COLOR automatically. Hardcoded
+ *   hex is forbidden; the single permitted hex site (the optional
+ *   `dnallmmark` brand-teal theme) is deliberately NOT landed — default
+ *   theme tokens satisfy the contract unchanged.
+ * - Spacing uses ONLY the declared terminal-cell tokens: md = 4 cells
+ *   (padding: 1 4 panels/modals), plus the documented exceptions — 1-cell
+ *   widget borders, and `padding: 0 1`/`0 2` on status lines. No invented
+ *   intermediate paddings (no 3/5/6-cell values anywhere).
+ * - Typography: exactly two weights — regular (body) and bold (heading +
+ *   emphasis roles); no italics, underline, or blink. CJK copy counts
+ *   double width; all measurement is Textual/Rich's.
+ * - Every color-coded state carries its glyph first (the constants carry
+ *   ✓/✗/⚠/◌/⠋) — the UI stays legible under NO_COLOR; color here is the
+ *   redundant second channel.
+ */
+
+/* ===== Header / Footer surfaces =====
+ * Textual's built-in Header/Footer already render on semantic theme
+ * variables ($surface-family + $accent keycaps); no overrides needed. */
+
+/* ===== Env-check screen: title bar (status line) ===== */
+
+#env-title-bar {
+    height: 1;      /* row token: one status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#env-screen-title {
+    text-style: bold;          /* Heading role */
+    width: auto;
+}
+
+#env-last-check {
+    width: 1fr;                /* right edge of the same status line */
+    text-align: right;
+    color: $text-muted;        /* Secondary role */
+}
+
+/* ===== Env-check screen: kernel table ===== */
+
+#env-kernels {
+    height: 1fr;   /* the table owns every remaining row; scrolls below */
+}
+
+/* Table header: bold + $text-muted on $surface (Typography + Color) */
+#env-kernels > .datatable--header {
+    text-style: bold;
+    color: $text-muted;
+    background: $surface;
+}
+
+/* ===== Env-check screen: verdict / routing block ===== */
+
+#env-verdict {
+    height: auto;
+    border-top: solid $border;   /* 1-cell border exception — separator */
+    padding: 1 4;                /* md token: panel padding */
+}
+
+.verdict-pass {
+    color: $success;
+    text-style: bold;            /* Emphasis role */
+}
+
+.verdict-fail {
+    color: $error;
+    text-style: bold;            /* Emphasis role */
+}
+
+.verdict-route {
+    color: $warning;
+}
+
+/* ===== Modals (env drill-down + help) ===== */
+
+EnvDetailModal,
+HelpModal {
+    align: center middle;        /* the bordered box centers on screen */
+}
+
+#env-detail-box,
+#help-box {
+    width: 60;                   /* modal token (min(60, width-4) narrow) */
+    height: auto;
+    padding: 1 4;                /* modal token */
+    border: solid $accent;       /* 1-cell border exception */
+    background: $surface;
+}
+
+/* Bounded so the log scrolls its own viewport (wrap + scroll, never
+ * elide); a height cap is not a spacing token — the padding prohibition
+ * governs paddings, and the bound matches the min-screen height class. */
+#env-detail-log {
+    height: auto;
+    max-height: 20;
+}
+
+/* ===== Selection screen (08-07) ===== */
+
+#selection-title-bar {
+    height: 1;      /* row token: one status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#selection-screen-title {
+    text-style: bold;          /* Heading role */
+    width: auto;
+}
+
+#selection-status {
+    width: 1fr;                /* right edge of the same status line */
+    text-align: right;
+    color: $text-muted;        /* Secondary role */
+}
+
+#selection-filter-bar {
+    height: 1;      /* the compact Input renders one row */
+    padding: 0 1;   /* 1-cell status-line exception */
+}
+
+#selection-filter-label {
+    width: auto;
+    color: $text-muted;        /* Secondary role */
+}
+
+#selection-filter {
+    width: 1fr;                /* the Input owns the bar's remaining width */
+}
+
+#selection-filter-count {
+    width: auto;               /* the (N/total) readout right-aligns after it */
+    color: $text-muted;        /* Secondary role */
+}
+
+#selection-filter-warning {
+    height: 1;      /* reserved row — the layout never jumps */
+    padding: 0 2;   /* 2-cell status-line exception */
+    color: $warning;
+}
+
+#selection-table {
+    height: 1fr;    /* the table owns every remaining row; scrolls below */
+}
+
+#selection-table > .datatable--header {
+    text-style: bold;
+    color: $text-muted;
+    background: $surface;
+}
+
+/* ===== Matrix overview screen (08-07, Task 2) ===== */
+
+#matrix-title-bar {
+    height: 1;      /* row token: one status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#matrix-screen-title {
+    text-style: bold;          /* Heading role */
+    width: auto;
+}
+
+#matrix-scroll-hint {
+    width: 1fr;                /* the hint right-aligns on the same line */
+    text-align: right;
+    color: $text-muted;        /* Secondary role */
+}
+
+#matrix-table {
+    height: 1fr;    /* the grid owns every remaining row; scrolls below */
+}
+
+#matrix-table > .datatable--header {
+    text-style: bold;
+    color: $text-muted;
+    background: $surface;
+}
+
+#matrix-readout {
+    height: 1;      /* row token: the cursor readout line below the grid */
+    padding: 0 2;   /* 2-cell status-line exception */
+    color: $text-muted;        /* Secondary role */
+}
+
+#matrix-empty {
+    padding: 1 4;   /* md token: the empty-state copy sits like a panel */
+    color: $warning;
+}
+
+/* ===== Selection/matrix modals (08-07) — the shared box pattern ===== */
+
+PresetModal,
+TemplateMenuModal,
+PathInputModal,
+ConfirmModal,
+RowDetailModal,
+MatrixKeyModal {
+    align: center middle;      /* the bordered box centers on screen */
+}
+
+.modal-box {
+    width: 60;                   /* modal token (min(60, width-4) narrow) */
+    height: auto;
+    padding: 1 4;                /* modal token */
+    border: solid $accent;       /* 1-cell border exception */
+    background: $surface;
+}
+
+#row-detail-log {
+    height: auto;
+    max-height: 20;   /* scroll bound (not a spacing token) — wrap, never elide */
+}
+
+#matrix-key-log {
+    height: auto;
+    max-height: 20;   /* scroll bound (not a spacing token) — wrap, never elide */
+}
+
+/* ===== Wizard modal (09-04, D-01/D-03 — the width-100 amendment) =====
+ * The onboarding wizard family. Modal token AMENDED from 60 to 100
+ * cells (09-UI-SPEC Spacing amendment — the UAT lesson: 68-char keys and
+ * long paths must fit). The exact min(100, width-4) cap is applied in
+ * code (WizardModal._apply_chrome): Textual CSS has no min() or cell
+ * arithmetic (probe-pinned on 8.2.8) — this base width is the ≥100-col
+ * terminal's steady state. Theme tokens only. */
+
+WizardModal {
+    align: center middle;        /* the bordered box centers on screen */
+}
+
+.wizard-box {
+    width: 100;                  /* amended modal token (code caps to w-4) */
+    height: auto;
+    max-height: 100%;            /* long steps scroll inside the modal */
+    padding: 1 4;                /* modal token */
+    border: solid $accent;       /* 1-cell border exception */
+    background: $surface;
+}
+
+.wiz-field-label {
+    height: 1;      /* row token: one label line per field */
+}
+
+/* The advisory lines under path/numeric fields (D-03): glyph first
+ * (NO_COLOR-legible), color the redundant channel. */
+.wiz-check {
+    height: 1;      /* row token: reserved — the layout never jumps */
+}
+
+.wiz-check-ok {
+    color: $success;
+}
+
+.wiz-check-bad {
+    color: $error;
+}
+
+/* The numeric hint renders DIM (the UI-SPEC "inline dim" wording). */
+.wiz-hint-bad {
+    color: $text-muted;          /* Secondary role */
+}
+
+.wiz-field-label,
+#wiz-footer-hint,
+#wiz-report-hint,
+#wiz-gauntlet-hint {
+    color: $text-muted;          /* Secondary role */
+}
+
+#wiz-footer-hint {
+    height: 1;      /* row token: the modal's own 1-row keycap hint */
+}
+
+#wiz-report-log {
+    height: auto;
+    max-height: 16;  /* scroll bound (not a spacing token) — wrap, never elide */
+}
+
+#wiz-gauntlet-pending {
+    height: 1;      /* row token: the minimal pending view (panel = 09-05) */
+}
+
+/* ===== Data-manager screen (10-04, D-13/D-14/D-15) =====
+ * Two stacked regions. C4J-2 (261015-c4j, the maintainer's 2026-10-15
+ * ruling): the dataset list is the DOMINANT pane — the full 60-key
+ * registry list takes 2fr of the flex space (far more rows exposed at
+ * every grid), the queue a 1fr secondary status region (scrolls; never
+ * collapses below its 80x24 floor); the full-width rule separates them
+ * (the existing treatment — borders stay reserved for modals; the
+ * 10-04 fixed-5-cell-strip geometry note this block replaces). Theme
+ * tokens only. */
+
+#dl-title-bar {
+    height: 1;      /* row token: one status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#dl-screen-title {
+    text-style: bold;          /* Heading role */
+    width: auto;
+}
+
+#dl-presence-summary {
+    width: 1fr;                /* right edge of the same status line */
+    text-align: right;
+    color: $text-muted;        /* Secondary role */
+}
+
+#dl-missing-region {
+    height: 2fr;   /* the DOMINANT pane: the primary full-list surface */
+}
+
+#dl-missing-title {
+    height: 1;      /* row token: the primary full-list title */
+    padding: 0 1;   /* 1-cell status-line exception */
+}
+
+#dl-zenodo-line {
+    width: 1fr;                /* the right-aligned D-12 alternate line */
+    text-align: right;
+    color: $text-muted;        /* probing/not-public render dim */
+}
+
+#dl-missing {
+    height: 1fr;   /* scrolls inside the dominant region */
+}
+
+#dl-queue-region {
+    height: 1fr;                /* the secondary status region (scrolls) */
+    border-top: solid $border;  /* 1-cell border exception — separator */
+}
+
+#dl-queue-title-row {
+    height: 1;      /* row token: the queue title + the Zenodo line */
+    padding: 0 1;   /* 1-cell status-line exception */
+}
+
+#dl-queue-title {
+    width: auto;
+}
+
+#dl-queue-banners {
+    height: auto;   /* 0..N banner rows under the queue title (D-07) */
+}
+
+.queue-banner-mismatch {
+    height: auto;                /* long keys wrap, never elide */
+    padding: 0 2;                /* 2-cell status-line exception */
+    color: $warning;             /* the ⚠ redundant color channel */
+}
+
+#dl-missing > .datatable--header,
+#dl-queue > .datatable--header {
+    text-style: bold;
+    color: $text-muted;
+    background: $surface;
+}
+
+/* ===== Monitor screen (11-07, slot 5 — D-03/D-09/D-17) =====
+ * Two stacked regions (the data-manager precedent): the discovered
+ * list fixed-height (title row + header + ~2 visible rows, scrolls),
+ * the cell table the flex remainder (scrolls); the full-width rule
+ * separates them (borders stay reserved for modals). Theme tokens
+ * only. */
+
+#mon-title-bar {
+    height: 1;      /* row token: one status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#mon-screen-title {
+    text-style: bold;          /* Heading role */
+    width: auto;
+}
+
+#mon-scan-note {
+    width: 1fr;                /* right edge of the same status line */
+    text-align: right;
+    color: $text-muted;        /* the D-09 cadence note (standing chrome) */
+}
+
+#mon-discovered-region {
+    height: 5;     /* fixed: the title row + header + ~2 visible rows */
+}
+
+#mon-discovered-title-row {
+    height: 1;     /* row token */
+    padding: 0 1;  /* 1-cell status-line exception */
+}
+
+#mon-discovered-title {
+    width: auto;
+}
+
+#mon-discovered {
+    height: 1fr;   /* scrolls below the two visible rows */
+}
+
+#mon-cells-region {
+    height: 1fr;                /* the flex remainder */
+    border-top: solid $border;  /* 1-cell border exception — separator */
+}
+
+#mon-cells-title-row {
+    height: 1;     /* row token: the cells title + the resume note */
+    padding: 0 1;  /* 1-cell status-line exception */
+}
+
+#mon-cells-title {
+    width: auto;
+}
+
+#mon-resume-note {
+    width: 1fr;                /* the right-aligned MON-05 note */
+    text-align: right;
+    color: $text-muted;        /* the ⊘ skipped provenance renders dim */
+}
+
+#mon-stats-line {
+    height: 1;      /* row token: the MON-02/D-17 stats line */
+    padding: 0 2;   /* 2-cell status-line exception */
+    color: $text-muted;        /* Secondary role (the table owns focus) */
+}
+
+#mon-discovered > .datatable--header,
+#mon-cells > .datatable--header {
+    text-style: bold;
+    color: $text-muted;
+    background: $surface;
+}
+
+#mon-log-tee-line {
+    height: 1;      /* row token: the dim tee-file line */
+    padding: 0 1;   /* 1-cell status-line exception */
+    color: $text-muted;
+}
+
+/* ===== Min-size guard screen ===== */
+
+MinSizeScreen {
+    align: center middle;        /* the message is the ONLY content */
+}
+
+#min-size-message {
+    text-style: bold;
+    color: $warning;
+    padding: 0 2;                /* 2-cell status-line exception */
+}
+
+/* ===== Navigation shell bars (09-03, D-13/D-15) =====
+ * Two 1-row chrome rows replacing Header+Footer on the base screens
+ * (row-neutral: 1+1 replaces 1+1; both count against the 80x24 budget,
+ * D-16). Theme tokens only; the ◆ glyph + bold + $accent triple channel
+ * marks the active slot, $text-muted dims the placeholder slots. */
+
+TopMenuBar {
+    height: 1;      /* row token: one menu row (no horizontal padding —
+                     * the six-slot fixed vocabulary owns the full 80) */
+}
+
+.nav-slot {
+    width: auto;
+}
+
+.nav-slot-active {
+    color: $accent;           /* color channel after the ◆ glyph */
+    text-style: bold;         /* weight channel (NO_COLOR-legible) */
+}
+
+.nav-slot-placeholder {
+    color: $text-muted;       /* Secondary role */
+}
+
+BottomBar {
+    height: 1;      /* row token: one submenu row */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#nav-left-keycaps {
+    width: 1fr;                /* clips at the width left of the right pair */
+}
+
+#nav-right-keycaps {
+    width: auto;               /* the constant help/quit keycap pair */
+    color: $text-muted;        /* labels muted (keys carry $accent inline) */
+}
+
+/* ===== Run-config screen (11-06, slot 4 — D-01..D-05/D-14) =====
+ * Two columns (picker | params) inside full-width rules — borders stay
+ * reserved for modals (the dl-region precedent). The picker column is
+ * a WIDTH RATIO (~47% — ~56 cells at 120, ~38 at 80), not a spacing
+ * token; Textual re-derives it on every resize. Theme tokens only. */
+
+#cfg-title-bar {
+    height: 1;      /* row token: one status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+#cfg-screen-title {
+    text-style: bold;          /* Heading role */
+    width: auto;
+}
+
+#cfg-status-line {
+    width: 1fr;                /* right edge of the same status line */
+    text-align: right;
+    color: $text-muted;        /* Secondary role */
+}
+
+#cfg-columns {
+    height: 1fr;                /* the split owns the content rows */
+    border-top: solid $border;  /* 1-cell border exception — separator */
+    border-bottom: solid $border;
+}
+
+#cfg-picker-col {
+    width: 47%;    /* the column-split ratio (auto-default 2) */
+    height: auto;
+}
+
+#cfg-picker-title {
+    height: 1;      /* row token: the picker title with live counts */
+    padding: 0 1;   /* 1-cell status-line exception */
+    text-style: bold;          /* Heading role */
+}
+
+#cfg-filter-bar {
+    height: 1;      /* the compact Input renders one row */
+    padding: 0 1;   /* 1-cell status-line exception */
+}
+
+#cfg-filter-label {
+    width: auto;
+    color: $text-muted;        /* Secondary role */
+}
+
+#cfg-filter {
+    width: 1fr;                /* the Input owns the bar's remaining width */
+}
+
+#cfg-filter-count {
+    width: auto;               /* the (N/total) readout right-aligns after it */
+    color: $text-muted;        /* Secondary role */
+}
+
+#cfg-picker {
+    height: 1fr;    /* the list owns the picker's remaining rows; scrolls */
+}
+
+/* UX-2 (261016-poa): the slot-4 picker's MARKED row at higher contrast.
+ * textual 8.2.8's SelectionList DEFAULT_CSS renders the marked row as
+ * color $text-success on background $panel through exactly these two
+ * component classes (.selection-list--button-selected[-highlighted]) —
+ * low contrast against the neighboring rows. $boost (the brighter
+ * surface token) + bold raises the marked row clear of its neighbors.
+ * Scoped to the PickerList TYPE selector ONLY: a bare SelectionList or
+ * OptionList rule would also restyle the selection screen's preset
+ * picker and the wizard's enum lists, drifting THEIR goldens. */
+PickerList > .selection-list--button-selected,
+PickerList > .selection-list--button-selected-highlighted {
+    background: $boost;
+    text-style: bold;
+}
+
+#cfg-params-col {
+    width: 1fr;                /* the params column keeps the remainder */
+    height: auto;
+    padding: 0 1;   /* 1-cell status-line exception */
+}
+
+#cfg-params-title {
+    height: 1;      /* row token */
+    text-style: bold;          /* Heading role */
+}
+
+.cfg-param-row {
+    height: 1;      /* row token: one label/value row per field */
+}
+
+.cfg-param-label {
+    width: 22;      /* 20-cell effective_batch_size + 2-cell gap */
+}
+
+/* The 80-col degradation: the narrow label column (eff_batch_size). */
+#cfg-params-col.cfg-narrow .cfg-param-label {
+    width: 16;
+}
+
+.cfg-param-input {
+    width: 1fr;                /* the value column keeps the remainder */
+}
+
+.cfg-param-value {
+    width: 1fr;
+}
+
+.cfg-subset-toggle {
+    width: auto;               /* the bare toggle box sits before the value */
+}
+
+.cfg-choice-value {
+    width: 1fr;
+}
+
+/* Focus visibility on the choice rows (the keyboard-first contract). */
+.cfg-choice-value:focus {
+    background: $boost;
+    text-style: bold;
+}
+
+.cfg-hint {
+    height: 1;      /* row token: the derived dim hint lines */
+    color: $text-muted;        /* Secondary role (the UI-SPEC dim hints) */
+}
+
+.cfg-adv {
+    height: 1;      /* row token: the path advisory lines */
+}
+
+.cfg-section-title {
+    height: 2;                    /* the ─ rule row + the section title row */
+    border-top: solid $border;    /* 1-cell border exception — separator */
+    color: $text-muted;           /* Secondary role */
+}
+
+#cfg-preview-line {
+    height: 1;      /* row token: the 1-row preview status line */
+    padding: 0 2;   /* 2-cell status-line exception */
+}
+
+/* Problems render the ⚠ warning channel (glyph first — NO_COLOR-safe). */
+.cfg-preview-problem {
+    color: $warning;
+}
+
+/* ===== Run-config modals (11-06 — the shared box pattern) ===== */
+
+PreviewModal,
+ProblemsModal,
+EnvBlockModal,
+E2PhraseModal,
+ChoiceModal,
+ExitModal,
+_GateConfirmModal {
+    align: center middle;      /* the bordered box centers on screen */
+}
+
+#cfg-preview-log,
+#cfg-problems-log {
+    height: auto;
+    max-height: 20;  /* scroll bound (not a spacing token) — wrap, never elide */
+}
+
+#cfg-envblock-log {
+    height: auto;
+    max-height: 20;  /* the bounded reasons RichLog (the inherited bound) */
+}
+
+/* UX-5 (261016-poa): the confirm modal's planned-pair list — the
+ * EnvBlockModal inherited bound, tightened to 14 so the counts formula
+ * + the capped 12-pair list + the confirm row compose inside the
+ * design grid (a scroll bound, not a spacing token; T-poa-02). */
+#cfg-gate-log {
+    height: auto;
+    max-height: 14;
+}
+
+#cfg-envblock-header {
+    color: $error;              /* the ✗ refusal channel */
+    text-style: bold;           /* Emphasis role */
+}
+
+#cfg-envblock-hint {
+    color: $text-muted;         /* the [1] route hint renders dim */
+}
+
+.cfg-e2-warning {
+    color: $warning;            /* the ⚠ block (glyph first) */
+}
+
+/* Color amendment 12: the E2' match indicator — the moment the
+ * destructive authorization becomes actionable is the focus of
+ * attention (accent + bold; the mismatch renders the ✗ error family). */
+.cfg-e2-match {
+    color: $accent;
+    text-style: bold;
+}
+
+.cfg-e2-mismatch {
+    color: $error;
+}
+
+/* ===== About screen (09-03, D-13 slot 6) ===== */
+
+#about-box {
+    padding: 1 4;                /* md token: the rows sit like a panel */
+}
+
+#about-title {
+    text-style: bold;            /* Heading role */
+    height: 1;                   /* row token */
+}
+
+.about-row {
+    height: auto;                /* wrapping values grow the row, never elide */
+}
+
+.about-label {
+    width: 10;                   /* fixed 8-cell CJK label + 2-cell gap */
+    height: auto;
+}
+
+.about-value {
+    width: 1fr;                  /* the wrapping value column */
+    height: auto;
+}
+
+/* ===== 261014-f4w: slot-1 storage overview + the slot-4 dir picker ===== */
+
+#env-storage {
+    height: auto;
+    border-top: solid $border;   /* 1-cell border exception — separator */
+    padding: 1 4;                /* md token: panel padding */
+}
+
+.env-storage-title {
+    text-style: bold;            /* Heading role */
+    height: 1;                   /* row token */
+}
+
+.env-storage-row {
+    height: 1;                   /* row token: one line per directory */
+}
+
+.env-storage-note {
+    color: $text-muted;          /* Secondary role: the routing hint */
+    height: 1;                   /* row token */
+}
+
+DirPickerModal {
+    align: center middle;        /* the bordered box centers on screen */
+}
+
+#cfg-dirpick-tree {
+    height: 16;   /* scroll bound (not a spacing token) — the tree scrolls its own viewport */
+    border: round $border;       /* the tree's viewport edge */
+}

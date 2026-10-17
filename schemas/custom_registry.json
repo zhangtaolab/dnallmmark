@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/zhangtaolab/dnallmmark/main/schemas/custom_registry.json",
+  "$comment": "Entry-shape contract for the user-owned custom registries (D-11, Phase 9) — the file contract for operator-shared custom_model/dataset JSON going forward. TWO LOAD-BEARING RULES about the FILE this schema does not itself describe: (1) the custom registry file's TOP LEVEL is a PLAIN {key: entry} map — NO envelope object, no schema_version wrapper at the top level, no entries array — because pipeline/registry_loader.py merges EVERY top-level key as a registry entry (an envelope key would collide with an official key or land as a garbage entry); this schema describes each ENTRY value via $defs, and import validation applies model_entry/dataset_entry per entry. (2) landed Model_path/Dataset_path values are pipeline-RELATIVE paths (e.g. models/my-lm, datasets/My/task) because pipeline/run_finetune.py resolves them by STRING CONCATENATION over the pipeline dir — an absolute path breaks the trainer (09-RESEARCH Pitfall 4); the wizard collects absolute operator paths and tui/services/custom_entries.land() relativizes them at land time. Field vocabulary: the official 16-field model / 17-field dataset shapes from pipeline/{models,datasets}_info.json verbatim (field types probed across all 62/50 official entries: context_len (bp) int-or-str, size (M) int-or-float, every other numeric an integer), plus the custom-only fields — enabled (boolean, D-09: absence means enabled, ONLY the literal false disables; registry_loader skips enabled:false entries), quirks (model-only, D-02: the three-boolean quirk checklist recorded on the entry; execution-side quirk-to-CLI mapping is Phase 11's business), label_column (dataset-only: the collected label column the split headers must contain), and an inert per-entry schema_version const 1 (the run_template.json discipline; the pipeline reads named keys only, so the field is inert). required = the wizard-required subset (models: Model_path/size (M)/type/Tokenizer; datasets: Dataset_path/Category/Train/Dev/Test/labels/type/metric); optional string fields default to \"\" at composition time in the wizard service, optional numerics may be absent, and Index (dataset ordering int) is enumerated as optional because no verified consumer reads it (09-RESEARCH OQ3). Reversibility (09-01 Task 3): these field names become the user-file contract once entries land; renames would break real user files, judged NOT one-way because the vocabulary mirrors the already-frozen official field names and user files are re-generable via the delete-and-re-record path (D-12). Pure data (T-09-01): imported registry JSON is UNTRUSTED file input — validated strictly against this schema with collect-all problem listing before anything merges; nothing is ever evaluated.",
+  "$defs": {
+    "model_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Model_path", "size (M)", "type", "Tokenizer"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "enabled": { "type": "boolean" },
+        "Mean_token_length": { "type": "integer" },
+        "Model_name": { "type": "string" },
+        "Model_path": { "type": "string" },
+        "Model_size": { "type": "string" },
+        "Tokenizer": { "type": "string" },
+        "architecture": { "type": "string" },
+        "context_len (bp)": { "type": ["integer", "string"] },
+        "huggingface": { "type": "string" },
+        "mean_token_len": { "type": "integer" },
+        "modelscope": { "type": "string" },
+        "name": { "type": "string" },
+        "series": { "type": "string" },
+        "size (M)": { "type": "number" },
+        "species": { "type": "string" },
+        "tokenizer": { "type": "string" },
+        "type": { "type": "string" },
+        "quirks": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "no_safetensors": { "type": "boolean" },
+            "fp32_only": { "type": "boolean" },
+            "special_head": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "dataset_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Dataset_path", "Category", "Train", "Dev", "Test", "labels",
+        "type", "metric"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "enabled": { "type": "boolean" },
+        "label_column": { "type": "string" },
+        "Category": { "enum": ["Animals", "Plants", "Microbe", "Multiple"] },
+        "Dataset_name": { "type": "string" },
+        "Dataset_path": { "type": "string" },
+        "Dev": { "type": "integer" },
+        "Index": { "type": "integer" },
+        "Test": { "type": "integer" },
+        "Train": { "type": "integer" },
+        "citation": { "type": "string" },
+        "download_url": { "type": "string" },
+        "download_url_alternates": { "type": "string" },
+        "labels": { "type": "integer" },
+        "length": { "type": "integer" },
+        "license": { "type": "string" },
+        "metric": { "type": "string" },
+        "preprocessing": { "type": "string" },
+        "source": { "type": "string" },
+        "type": { "enum": ["binary", "multiclass", "regression", "multilabel"] }
+      }
+    }
+  }
+}

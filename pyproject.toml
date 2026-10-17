@@ -1,0 +1,134 @@
+# Source: structure per docs.astral.sh/uv (package=false, PEP 735 groups verified in
+# .planning/research/STACK.md on 2026-10-08; flags verified against installed uv 0.12.23)
+[project]
+name = "dnallmmark"
+version = "0.7.1"
+description = "DNALLM-Mark — DNA language-model benchmark platform (offline data toolchain)"
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+data = [
+    "pandas>=2.2,<3.0",   # D-05 floor; latest 2.x = 2.3.3 (verified; pandas 3.0.6 excluded)
+    "numpy>=2.0,<3",      # bounded alongside pandas per D-05
+    # D-15 dependency unification (2026-10-10, maintainer Option C): both join
+    # the data group in the SAME dependency commit, each serving its own layer.
+    "scipy>=1.15.2",      # statistics layer: vendored aggregate_seeds t-interval (suite floor)
+    "evaluate>=0.4.6",    # metrics layer: HF evaluate cross-validates suite-computed metrics (D-15)
+    # modelscope (2026-10-15, maintainer core-integration directive): the TUI
+    # download queue (tui/services/download_queue.py) shells out to the
+    # `modelscope` console script — resolved from the venv sibling, then PATH —
+    # so `uv sync` now covers dataset downloads end-to-end. Pure-Python client
+    # with no GPU weight, so CI installing the data group is accepted; dnallm
+    # deliberately stays manual (local sibling clone, ../DNALLM). Bounded pin
+    # per the D-05 convention; 1.40.2 is the box-validated floor.
+    "modelscope>=1.40,<2",
+]
+dev = [
+    # Phase 2 harness (added 2026-10-09): floors here, exact pins in uv.lock.
+    # Makefile invokes via `uv run --group dev` — default-groups stays ["data"]
+    # (RESEARCH Pitfall 2: default-groups replaces uv's ["dev"] default).
+    "jsonschema>=4.26.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.10",
+    # ty (Phase 3, maintainer directive 2026-10-09): floors here, exact pins in
+    # uv.lock — pre-1.0 tool, version bumps are deliberate (RESEARCH Pitfall 7).
+    "ty>=0.0.85",
+    # pytest-asyncio (Phase 8, 08-02, 2026-10-11): tier-2 Pilot tests are async
+    # (`App.run_test()`); asyncio_mode = "auto" in [tool.pytest.ini_options] is
+    # the documented Textual testing integration (08-RESEARCH Standard Stack).
+    # Requires pytest<10,>=8.4 — the repo's pytest>=9.1.1 satisfies it.
+    "pytest-asyncio>=1.4,<2",
+    # pexpect (2026-10-17, quick-261017-eea): the demo scene driver
+    # (scripts/demo/record_tui_demo.py) imports it lazily at two spawn-path
+    # sites, but ty resolves imports statically — CI's lock-built env failed
+    # with unresolved-import x2 while the local venv passed environmentally.
+    # Real group member, no ty masking (real types, never any). Floor 4.9:
+    # 4.9.0 is PyPI latest and the version the script docstring cites.
+    # Legitimacy: PyPI-verified per the 08-02 delegation — verdict lines in
+    # 261017-eea-SUMMARY.md. Sole dependency: ptyprocess (locked alongside).
+    "pexpect>=4.9",
+]
+# GPU-only, NEVER installed in CI (REL-02). Definition lands Phase 3; the BUILD
+# is deferred (D-05). dnallm stays deliberately absent — installed from the local
+# dev clone when runs resume (../DNALLM, branch `revision`).
+gpu = [
+    "torch==2.11.0",
+    "transformers==5.17.0",
+]
+# TUI console runtime (Phase 8, D-01 + binding constraint 10, 2026-10-11).
+# Exactly two packages: textual is pinned >=8.2,<9 (majors are frequent and
+# real — upgrades are deliberate `uv lock --upgrade-package textual` + CHANGELOG
+# scan events); platformdirs resolves the XDG state/config split (D-04) and is
+# declared directly to stop transitive-luck imports. Package legitimacy:
+# maintainer-approved 2026-10-11 (08-02 Task 1 blocking-gate verdict, recorded
+# in 08-02-SUMMARY.md). textual-dev / textual-serve NEVER enter any committed
+# group (constraint 10) — devtools are on-demand
+# `uv run --group tui --with textual-dev==1.8.0 ...` only. The data/gpu lanes
+# never install this group: textual-the-library rides the existing CI test
+# lane via make test's --group tui (D-01); the display runtime (make tui,
+# --group tui --group gpu) is GB10-local, never CI.
+tui = [
+    "textual>=8.2,<9",
+    "platformdirs>=3.6,<5",
+    # 08-07 (the 08-05 handoff flag): the selection screen wires template
+    # import, and tui/services/templates.py imports jsonschema at module top
+    # — the make tui display lane (--group tui --group gpu) must carry it or
+    # the console ImportErrors at composition. Same locked range as dev.
+    "jsonschema>=4.26.0",
+]
+
+[tool.uv]
+package = false            # virtual project: deps installed, repo not built/packaged
+default-groups = ["data"]  # `uv sync` installs data chain only
+
+# cu130 wheel source for torch (Phase 3, D-05): explicit = true confines this
+# index to packages whose [tool.uv.sources] entry names it — torch only here.
+# transformers and everything else stay on PyPI (dependency-confusion boundary,
+# T-03-07). The gpu group carrying this resolution is never installed by default
+# (default-groups above) or in CI (REL-02).
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+
+# ty type checker (Phase 3, maintainer directive 2026-10-09). Config verified
+# empirically at research time: zero diagnostics over the whole src set.
+[tool.ty.environment]
+python-version = "3.13"                      # repo floor (requires-python >=3.13)
+extra-paths = ["script", "baseline", "pipeline", "."]  # mirrors tests/conftest.py sys.path contract (pipeline/ = run_sweep, 03-04) + the repo root (08-02): tui is imported package-qualified (from tui.app import ...), so the repo root itself must be an import root
+
+[tool.ty.analysis]
+replace-imports-with-any = ["torch.**", "dnallm.**", "transformers.**", "peft.**", "datasets.**", "torch_npu.**", "evaluate.**"]
+# GPU-side imports, never installed CPU-side; substitution keeps ty green without lying about types
+# (torch_npu: Huawei Ascend NPU adapter, run_finetune.py:44 — found empirically, research glob incomplete).
+# evaluate (04-02, D-15 metrics layer): its partial py.typed annotations make ty misread
+# EvaluationModule.compute as an unbound union member — replaced with Any; its behavior is
+# pinned by tests/test_export_runs.py's D-15 golden-case cross-check, not by types.
+
+[tool.ty.src]
+include = ["script", "baseline", "tests", "scripts", "pipeline", "tui"]  # tui/ joins the checked set (08-02, binding constraint 9)
+
+[tool.pytest.ini_options]
+# Phase 2 test harness (2026-10-09). `slow` gates the ~80s real-tree determinism
+# regression (plan 02-03, D-10); `make test-fast` runs `-m "not slow"`.
+# `ci` (Phase 5, REV-06 Q2): the pinned CI lane — reuses the existing suite
+# (no duplicated tests); `make ci` runs `pytest -m ci` selecting exactly the
+# golden replay (tests/test_ci_replay.py), metric-key parity
+# (tests/test_export_runs.py), species-table spot checks
+# (tests/test_known_defects.py), and aggregation units (tests/test_aggregation.py).
+testpaths = ["tests"]
+# Phase 8 (08-02, 2026-10-11): tier-2 Pilot tests (`App.run_test()`) are async —
+# auto mode needs no per-test marker and leaves sync tests unaffected (A3,
+# proven by make test-fast staying green; 08-RESEARCH Standard Stack cites
+# textual.textualize.io/guide/testing/).
+asyncio_mode = "auto"
+markers = [
+    "slow: long-running real-tree regression tests; excluded by make test-fast",
+    "ci: pinned CI lane — metric-key parity, species spot checks, aggregation units, golden replay",
+]

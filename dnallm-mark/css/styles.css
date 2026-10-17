@@ -21,6 +21,9 @@
 /* 图表样式 */
 @import url('./charts.css');
 
+/* Sweep 进度镜像页面样式（12-02, page-specific — the task.css precedent） */
+@import url('./progress.css');
+
 /* ===== 全局样式 ===== */
 body {
   background: var(--color-bg-white);

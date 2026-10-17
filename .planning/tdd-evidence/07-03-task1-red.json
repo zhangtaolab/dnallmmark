@@ -1,0 +1,17 @@
+{
+  "command": "uv run --group dev pytest tests/test_sweep.py::test_build_argv_threads_four_flags_as_list_elements --junitxml=/tmp/red-junit-07-03-t1.xml -q",
+  "exitCode": 1,
+  "output": "<?xml version=\"1.0\" encoding=\"utf-8\"?><testsuites name=\"pytest tests\"><testsuite name=\"pytest\" errors=\"0\" failures=\"1\" skipped=\"0\" tests=\"1\" time=\"0.077\" timestamp=\"2026-10-11T15:08:08.987628+08:00\" hostname=\"edgexpert-296a\"><testcase classname=\"tests.test_sweep\" name=\"test_build_argv_threads_four_flags_as_list_elements\" time=\"0.000\"><failure message=\"TypeError: build_argv() got an unexpected keyword argument 'subset_file'\">def test_build_argv_threads_four_flags_as_list_elements():\n        \"\"\"Each present flag appends exactly two LIST elements \u2014 flag then\n        str(value) \u2014 the --peft/--train_fraction append idiom verbatim\n        (T-03-10: every flag and value a separate element, never a shell\n        string).\"\"\"\n&gt;       argv = run_sweep.build_argv(\n            \"model-a\", \"task-x\", 42, \"/tmp/root\",\n            subset_file=\"/tmp/subsets.json\", effective_batch_size=16,\n            num_train_epochs=1, cache_dir=\"/tmp/cache\")\nE       TypeError: build_argv() got an unexpected keyword argument 'subset_file'\n\ntests/test_sweep.py:1992: TypeError</failure></testcase></testsuite></testsuites>",
+  "reportPath": "/tmp/red-junit-07-03-t1.xml",
+  "runStartedAt": "2026-10-11T07:08:25Z",
+  "reportModifiedAt": "1791702489.0644674",
+  "targetTest": "test_build_argv_threads_four_flags_as_list_elements",
+  "targetFile": "tests/test_sweep.py",
+  "expected": "build_argv(subset_file=..., effective_batch_size=16, num_train_epochs=1, cache_dir=...) appends each present flag as two separate LIST elements (flag then str(value))",
+  "actual": "TypeError: build_argv() got an unexpected keyword argument 'subset_file' at the test's direct build_argv call \u2014 the four flag kwargs do not exist yet, so the planned argv threading is absent",
+  "console": "FAILED tests/test_sweep.py::test_build_argv_threads_four_flags_as_list_elements - TypeError: build_argv() got an unexpected keyword argument 'subset_file' / 1 failed in 0.08s (plus 8 sibling RED failures; the absent-parity test passes today as designed)",
+  "runner": "pytest (junitxml)",
+  "phase": "07-03",
+  "task": 1,
+  "semanticAssessment": "JUnit XML shows exactly 1 test executed (tests=1, failures=1) and it IS the named target test_build_argv_threads_four_flags_as_list_elements. It failed at the planned API surface \u2014 the direct build_argv call with the four new kwargs raised TypeError because the kwargs do not exist \u2014 i.e. the planned argv-threading behavior is absent and the test cannot pass. Not a collection/import/fixture fault: the module and test body loaded and ran. Intentional RED confirmed."
+}

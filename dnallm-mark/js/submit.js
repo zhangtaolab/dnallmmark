@@ -3,7 +3,8 @@
    数据提交页面
    ======================================== */
 
-import CONFIG from './config.js';
+import DataAPI from './data.js';
+import { renderNavbar } from './navbar.js';
 
 class SubmitPage {
   constructor() {
@@ -28,28 +29,12 @@ class SubmitPage {
   setup() {
     console.log('Setting up Submit page...');
 
-    this.renderNavbar();
+    renderNavbar();
     this.renderHero();
     this.renderUploadForm();
     this.bindEvents();
 
     console.log('Submit page setup complete!');
-  }
-
-  renderNavbar() {
-    const navbarHTML = `
-      <nav class="navbar">
-        <div class="navbar-logo">
-          <a href="/" class="logo">${CONFIG.APP_NAME}</a>
-        </div>
-        <ul class="navbar-nav">
-          ${CONFIG.NAV_LINKS.map(link => `
-            <li><a href="${link.url}" class="nav-link ${link.active ? 'active' : ''}">${link.name}</a></li>
-          `).join('')}
-        </ul>
-      </nav>
-    `;
-    document.querySelector('.navbar-container').innerHTML = navbarHTML;
   }
 
   renderHero() {
@@ -137,37 +122,53 @@ class SubmitPage {
 
     if (!previewContainer || !previewContent) return;
 
-    const datasetCount = Object.keys(data).length;
-    const firstDataset = Object.values(data)[0];
-    const firstDatasetName = Object.keys(data)[0];
+    // AUD-10: dataset entries live under the document's performance map.
+    const datasetCount = Object.keys(data.performance).length;
+    const firstDataset = Object.values(data.performance)[0];
+    const firstDatasetName = Object.keys(data.performance)[0];
 
+    // FIX-04: every user-entered string (and file-sourced dataset names)
+    // rendered on this page is escaped. WR-01: the preview table's
+    // file-sourced values (species/type/labels, sizes, metrics) are escaped
+    // too — the uploaded JSON is the page's one fully untrusted input.
+    // String() coerces before escaping (escapeHTML passes non-strings
+    // through unchanged); the numeric || 0 / 'N/A' defaults stay outside.
     previewContent.innerHTML = `
       <div class="preview-summary">
         <h4>Submission Summary</h4>
         <ul>
-          <li><strong>Model Name:</strong> ${this.state.modelName}</li>
+          <li><strong>Model Name:</strong> ${DataAPI.escapeHTML(this.state.modelName)}</li>
           <li><strong>Dataset Count:</strong> ${datasetCount}</li>
-          <li><strong>Submitter:</strong> ${this.state.submitterName}</li>
-          <li><strong>Email:</strong> ${this.state.submitterEmail}</li>
+          <li><strong>Submitter:</strong> ${DataAPI.escapeHTML(this.state.submitterName)}</li>
+          <li><strong>Email:</strong> ${DataAPI.escapeHTML(this.state.submitterEmail)}</li>
         </ul>
       </div>
 
-      <h4>Sample Dataset: ${firstDatasetName}</h4>
+      <h4>Sample Dataset: ${DataAPI.escapeHTML(firstDatasetName)}</h4>
       <table class="preview-table">
         <tr><th>Field</th><th>Value</th></tr>
-        <tr><th>Species</th><td>${firstDataset.dataset?.species || 'N/A'}</td></tr>
-        <tr><th>Type</th><td>${firstDataset.dataset?.type || 'N/A'}</td></tr>
-        <tr><th>Labels</th><td>${firstDataset.dataset?.labels || 'N/A'}</td></tr>
-        <tr><th>Train/Test/Dev</th><td>${firstDataset.dataset?.train || 0} / ${firstDataset.dataset?.test || 0} / ${firstDataset.dataset?.dev || 0}</td></tr>
-        <tr><th>Accuracy</th><td>${firstDataset.performance?.accuracy || 'N/A'}</td></tr>
-        <tr><th>F1</th><td>${firstDataset.performance?.f1 || 'N/A'}</td></tr>
-        <tr><th>AUROC</th><td>${firstDataset.performance?.auroc || 'N/A'}</td></tr>
+        <tr><th>Species</th><td>${DataAPI.escapeHTML(String(firstDataset.dataset?.species || 'N/A'))}</td></tr>
+        <tr><th>Type</th><td>${DataAPI.escapeHTML(String(firstDataset.dataset?.type || 'N/A'))}</td></tr>
+        <tr><th>Labels</th><td>${DataAPI.escapeHTML(String(firstDataset.dataset?.labels || 'N/A'))}</td></tr>
+        <tr><th>Train/Test/Dev</th><td>${DataAPI.escapeHTML(String(firstDataset.dataset?.train || 0))} / ${DataAPI.escapeHTML(String(firstDataset.dataset?.test || 0))} / ${DataAPI.escapeHTML(String(firstDataset.dataset?.dev || 0))}</td></tr>
+        <tr><th>Accuracy</th><td>${DataAPI.escapeHTML(String(firstDataset.performance?.accuracy || 'N/A'))}</td></tr>
+        <tr><th>F1</th><td>${DataAPI.escapeHTML(String(firstDataset.performance?.f1 || 'N/A'))}</td></tr>
+        <tr><th>AUROC</th><td>${DataAPI.escapeHTML(String(firstDataset.performance?.auroc || 'N/A'))}</td></tr>
       </table>
     `;
 
     previewContainer.style.display = 'block';
   }
 
+  /**
+   * Validate an uploaded file against the current model_performance schema
+   * shape (schemas/model_performance.json): top level {info, performance};
+   * each performance.{dataset} entry carries dataset / parameters /
+   * performance sub-objects. Structural mirror of the schema's required
+   * keys — client-side and vanilla by the static-hosting constraint.
+   * @param {File} file - Uploaded JSON file
+   * @returns {Promise<Object>} The parsed document
+   */
   validateJSON(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -176,21 +177,36 @@ class SubmitPage {
         try {
           const parsed = JSON.parse(e.target.result);
 
-          if (typeof parsed !== 'object' || parsed === null) {
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
             reject(new Error('JSON must be an object'));
             return;
           }
 
-          const keys = Object.keys(parsed);
-          if (keys.length === 0) {
-            reject(new Error('JSON must contain at least one dataset'));
+          if (!parsed.info || typeof parsed.info !== 'object') {
+            reject(new Error('Top level is missing the required "info" object (model card)'));
+            return;
+          }
+          if (!parsed.performance || typeof parsed.performance !== 'object') {
+            reject(new Error('Top level is missing the required "performance" map'));
             return;
           }
 
-          for (const [key, value] of Object.entries(parsed)) {
-            if (!value.dataset || !value.performance) {
-              reject(new Error(`Dataset "${key}" missing required fields (dataset, performance)`));
+          const entries = Object.entries(parsed.performance);
+          if (entries.length === 0) {
+            reject(new Error('The "performance" map must contain at least one dataset entry'));
+            return;
+          }
+
+          for (const [datasetName, entry] of entries) {
+            if (typeof entry !== 'object' || entry === null) {
+              reject(new Error(`Dataset "${datasetName}": entry must be an object`));
               return;
+            }
+            for (const subKey of ['dataset', 'parameters', 'performance']) {
+              if (!entry[subKey] || typeof entry[subKey] !== 'object') {
+                reject(new Error(`Dataset "${datasetName}" is missing the required "${subKey}" sub-object (dataset, parameters, performance)`));
+                return;
+              }
             }
           }
 
@@ -209,6 +225,8 @@ class SubmitPage {
     const statusDiv = document.getElementById('status-message');
     const safeModelName = this.state.modelName.replace(/[^a-zA-Z0-9_-]/g, '-');
     const branchName = `submit-${safeModelName}-${Date.now()}`;
+    const alias = safeModelName; // alias == filename minus the _performance.json suffix (js/data.js derivation)
+    const datasetCount = Object.keys(this.state.parsedData?.performance || {}).length;
 
     statusDiv.innerHTML = `
       <div class="pr-instructions">
@@ -224,16 +242,16 @@ class SubmitPage {
 
           <li>
             <strong>Save your JSON file to:</strong>
-            <pre>data/model_performance/${safeModelName}_performance.json</pre>
+            <pre>dnallm-mark/data/model_performance/${alias}_performance.json</pre>
           </li>
 
           <li>
             <strong>Commit your changes:</strong>
-            <pre>git add data/model_performance/${safeModelName}_performance.json
-git commit -m "data: Add performance data for ${this.state.modelName}
+            <pre>git add dnallm-mark/data/model_performance/${alias}_performance.json
+git commit -m "data: Add performance data for ${DataAPI.escapeHTML(this.state.modelName)}
 
-Submitted by: ${this.state.submitterName}
-Email: ${this.state.submitterEmail}"</pre>
+Submitted by: ${DataAPI.escapeHTML(this.state.submitterName)}
+Email: ${DataAPI.escapeHTML(this.state.submitterEmail)}"</pre>
           </li>
 
           <li>
@@ -246,16 +264,17 @@ Email: ${this.state.submitterEmail}"</pre>
         <div class="submission-info">
           <h4>Submission Details</h4>
           <ul>
-            <li><strong>Model:</strong> ${this.state.modelName}</li>
-            <li><strong>Submitter:</strong> ${this.state.submitterName}</li>
-            <li><strong>Email:</strong> ${this.state.submitterEmail}</li>
-            <li><strong>Datasets:</strong> ${Object.keys(this.state.parsedData || {}).length} datasets</li>
+            <li><strong>Model:</strong> ${DataAPI.escapeHTML(this.state.modelName)}</li>
+            <li><strong>Submitter:</strong> ${DataAPI.escapeHTML(this.state.submitterName)}</li>
+            <li><strong>Email:</strong> ${DataAPI.escapeHTML(this.state.submitterEmail)}</li>
+            <li><strong>Datasets:</strong> ${datasetCount} datasets</li>
           </ul>
         </div>
 
         <p class="note">
-          <strong>Note:</strong> After your PR is merged, the models_comparison.json will be recalculated
-          to include your model's performance in the main leaderboard.
+          <strong>Note:</strong> After your PR is merged, the derived comparison files
+          (models_comparison*.json) and task_performance/ are regenerated from
+          dnallm-mark/data/model_performance/ so your model appears on the leaderboards.
         </p>
       </div>
     `;
@@ -281,7 +300,7 @@ Email: ${this.state.submitterEmail}"</pre>
         this.renderPreview(parsed);
       } catch (error) {
         const statusDiv = document.getElementById('status-message');
-        statusDiv.innerHTML = `<p class="status-error">Validation Error: ${error.message}</p>`;
+        statusDiv.innerHTML = `<p class="status-error">Validation Error: ${DataAPI.escapeHTML(error.message)}</p>`;
       }
     });
 

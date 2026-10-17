@@ -1,0 +1,39 @@
+{
+  "version": "1.0.0",
+  "count": 3,
+  "tasks": [
+    {
+      "id": "FakeDS__missing_task",
+      "name": "FakeDS__missing_task",
+      "displayName": "FakeDS missing task",
+      "species": "Plants",
+      "type": "multiclass",
+      "labels": 4,
+      "length": 500,
+      "metric": "f1",
+      "fileName": "FakeDS__missing_task_task_performance.json"
+    },
+    {
+      "id": "FakeDS__regress_task",
+      "name": "FakeDS__regress_task",
+      "displayName": "FakeDS regress task",
+      "species": "Microbe",
+      "type": "regression",
+      "labels": 1,
+      "length": 500,
+      "metric": "spearmanr",
+      "fileName": "FakeDS__regress_task_task_performance.json"
+    },
+    {
+      "id": "FakeDS__tie_task",
+      "name": "FakeDS__tie_task",
+      "displayName": "FakeDS tie task",
+      "species": "Animals",
+      "type": "binary",
+      "labels": 2,
+      "length": 500,
+      "metric": "f1",
+      "fileName": "FakeDS__tie_task_task_performance.json"
+    }
+  ]
+}

@@ -1,0 +1,134 @@
+{
+  "info": {
+    "name": "Fake Gamma",
+    "size (M)": 9,
+    "type": "MLM",
+    "tokenizer": "fake-bpe",
+    "mean_token_len": 1,
+    "architecture": "Fake Gamma Architecture",
+    "series": "FakeSeries",
+    "context_len (bp)": 512,
+    "species": "multi-species",
+    "huggingface": "fake-org/fake-gamma",
+    "modelscope": "fake-org/fake-gamma-ms"
+  },
+  "performance": {
+    "FakeDS__tie_task": {
+      "dataset": {
+        "species": "Animals",
+        "type": "binary",
+        "labels": 2,
+        "train": 100,
+        "test": 20,
+        "dev": 20,
+        "length": 500,
+        "metric": "f1"
+      },
+      "parameters": {
+        "epochs": 3,
+        "steps": 10,
+        "batch_size": 8,
+        "gradient_accumulation_steps": 1,
+        "learning_rate": 0.0002,
+        "warmup": 0.0,
+        "lr_scheduler_type": "linear",
+        "bf16": true,
+        "fp16": false
+      },
+      "performance": {
+        "runtime": "",
+        "FLOPs": 1200.0,
+        "loss": 0.5,
+        "accuracy": "",
+        "precision": "",
+        "recall": "",
+        "f1": 0.8,
+        "mcc": "",
+        "auroc": "",
+        "auprc": "",
+        "pearson_r": "",
+        "spearman_r": "",
+        "mse": "",
+        "r2": ""
+      }
+    },
+    "FakeDS__missing_task": {
+      "dataset": {
+        "species": "Plants",
+        "type": "multiclass",
+        "labels": 4,
+        "train": 100,
+        "test": 20,
+        "dev": 20,
+        "length": 500,
+        "metric": "f1"
+      },
+      "parameters": {
+        "epochs": 3,
+        "steps": 10,
+        "batch_size": 8,
+        "gradient_accumulation_steps": 1,
+        "learning_rate": 0.0002,
+        "warmup": 0.0,
+        "lr_scheduler_type": "linear",
+        "bf16": true,
+        "fp16": false
+      },
+      "performance": {
+        "runtime": "",
+        "FLOPs": 2200.0,
+        "loss": 0.6,
+        "accuracy": "",
+        "precision": "",
+        "recall": "",
+        "f1": "",
+        "mcc": "",
+        "auroc": "",
+        "auprc": "",
+        "pearson_r": "",
+        "spearman_r": "",
+        "mse": "",
+        "r2": ""
+      }
+    },
+    "FakeDS__regress_task": {
+      "dataset": {
+        "species": "Microbe",
+        "type": "regression",
+        "labels": 1,
+        "train": 100,
+        "test": 20,
+        "dev": 20,
+        "length": 500,
+        "metric": "spearmanr"
+      },
+      "parameters": {
+        "epochs": 3,
+        "steps": 10,
+        "batch_size": 8,
+        "gradient_accumulation_steps": 1,
+        "learning_rate": 0.0002,
+        "warmup": 0.0,
+        "lr_scheduler_type": "linear",
+        "bf16": true,
+        "fp16": false
+      },
+      "performance": {
+        "runtime": "",
+        "FLOPs": 3200.0,
+        "loss": 0.7,
+        "accuracy": "",
+        "precision": "",
+        "recall": "",
+        "f1": "",
+        "mcc": "",
+        "auroc": "",
+        "auprc": "",
+        "pearson_r": "",
+        "spearman_r": 0.4,
+        "mse": "",
+        "r2": ""
+      }
+    }
+  }
+}

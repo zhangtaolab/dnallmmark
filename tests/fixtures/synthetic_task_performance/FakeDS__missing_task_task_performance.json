@@ -1,0 +1,140 @@
+{
+    "info": {
+        "dev": 20,
+        "labels": 4,
+        "length": 500,
+        "metric": "f1",
+        "species": "Plants",
+        "test": 20,
+        "train": 100,
+        "type": "multiclass"
+    },
+    "performance": {
+        "fake-alpha": {
+            "model": {
+                "architecture": "Fake Alpha Architecture",
+                "context_len (bp)": 512,
+                "huggingface": "fake-org/fake-alpha",
+                "mean_token_len": 1,
+                "modelscope": "fake-org/fake-alpha-ms",
+                "name": "Fake Alpha",
+                "series": "FakeSeries",
+                "size (M)": 7,
+                "species": "multi-species",
+                "tokenizer": "fake-bpe",
+                "type": "MLM"
+            },
+            "parameters": {
+                "batch_size": 8,
+                "bf16": true,
+                "epochs": 3,
+                "fp16": false,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 0.0002,
+                "lr_scheduler_type": "linear",
+                "steps": 10,
+                "warmup": 0.0
+            },
+            "performance": {
+                "FLOPs": 2000.0,
+                "accuracy": "",
+                "auprc": "",
+                "auroc": "",
+                "f1": 0.7,
+                "loss": 0.6,
+                "mcc": "",
+                "mse": "",
+                "pearson_r": "",
+                "precision": "",
+                "r2": "",
+                "recall": "",
+                "runtime": "",
+                "spearman_r": ""
+            }
+        },
+        "fake-beta": {
+            "model": {
+                "architecture": "Fake Beta Architecture",
+                "context_len (bp)": 512,
+                "huggingface": "fake-org/fake-beta",
+                "mean_token_len": 1,
+                "modelscope": "fake-org/fake-beta-ms",
+                "name": "Fake Beta",
+                "series": "FakeSeries",
+                "size (M)": 8,
+                "species": "multi-species",
+                "tokenizer": "fake-bpe",
+                "type": "MLM"
+            },
+            "parameters": {
+                "batch_size": 8,
+                "bf16": true,
+                "epochs": 3,
+                "fp16": false,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 0.0002,
+                "lr_scheduler_type": "linear",
+                "steps": 10,
+                "warmup": 0.0
+            },
+            "performance": {
+                "FLOPs": 2100.0,
+                "accuracy": "",
+                "auprc": "",
+                "auroc": "",
+                "f1": 0.8,
+                "loss": 0.6,
+                "mcc": "",
+                "mse": "",
+                "pearson_r": "",
+                "precision": "",
+                "r2": "",
+                "recall": "",
+                "runtime": "",
+                "spearman_r": ""
+            }
+        },
+        "fake-gamma": {
+            "model": {
+                "architecture": "Fake Gamma Architecture",
+                "context_len (bp)": 512,
+                "huggingface": "fake-org/fake-gamma",
+                "mean_token_len": 1,
+                "modelscope": "fake-org/fake-gamma-ms",
+                "name": "Fake Gamma",
+                "series": "FakeSeries",
+                "size (M)": 9,
+                "species": "multi-species",
+                "tokenizer": "fake-bpe",
+                "type": "MLM"
+            },
+            "parameters": {
+                "batch_size": 8,
+                "bf16": true,
+                "epochs": 3,
+                "fp16": false,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 0.0002,
+                "lr_scheduler_type": "linear",
+                "steps": 10,
+                "warmup": 0.0
+            },
+            "performance": {
+                "FLOPs": 2200.0,
+                "accuracy": "",
+                "auprc": "",
+                "auroc": "",
+                "f1": "",
+                "loss": 0.6,
+                "mcc": "",
+                "mse": "",
+                "pearson_r": "",
+                "precision": "",
+                "r2": "",
+                "recall": "",
+                "runtime": "",
+                "spearman_r": ""
+            }
+        }
+    }
+}
