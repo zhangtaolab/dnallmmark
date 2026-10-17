@@ -49,6 +49,7 @@ from tui.services.sweep_launcher import (
 from tui.services.sweep_monitor import (
     CELL_COMPLETED,
     CELL_FAILED,
+    CELL_INTERRUPTED,
     CELL_QUEUED,
     CELL_RUNNING,
     CELL_SKIPPED,
@@ -73,6 +74,7 @@ from tui.strings import (
     MON_ATTACHED_TOAST,
     MON_CELLS_EMPTY,
     MON_CELLS_TITLE,
+    MON_CONTEXT_HEADER,
     MON_DISCOVERED_EMPTY,
     MON_DISCOVERED_TITLE,
     MON_ETA_PENDING,
@@ -86,6 +88,7 @@ from tui.strings import (
     MON_STATE_DONE,
     MON_STATE_FAILED,
     MON_STATE_FINISHED_SWEEP,
+    MON_STATE_INTERRUPTED,
     MON_STATE_RUNNING,
     MON_STATE_RUNNING_SWEEP,
     MON_STATS_LINE,
@@ -632,7 +635,7 @@ async def test_cell_table_renders_entries_fold_counts_and_progress():
         table = screen.query_one("#mon-cells", DataTable)
         assert table.row_count == 3
 
-        # the running entry: folded ⠋ word + 0/3 terminal seeds + the
+        # the running entry: folded ⏵ word + 0/3 terminal seeds + the
         # parseable progress cell (steps, percent, 3-cell bar of 10);
         # 261016-vxr: the fixture carries no derivable eta, so the
         # trailing segment is the honest dim dash
@@ -717,8 +720,9 @@ async def test_running_entry_without_progress_renders_indeterminate():
         await _settle(pilot, app)
         table = app.screen.query_one("#mon-cells", DataTable)
         entry = "model-a__task-1"
-        assert _table_text(table, entry, "state") == "⠋ 0/1", (
-            "narrow drops the state word — glyph + counts carry it"
+        assert _table_text(table, entry, "state") == "⏵ 0/1", (
+            "narrow drops the state word — glyph + counts carry it "
+            "(261017-uwr: the running glyph is ⏵)"
         )
         progress = _table_text(table, entry, "progress")
         assert progress == "5/10 50% —", (
@@ -2645,4 +2649,197 @@ async def test_monitor_help_lists_the_kill_row():
         )
         assert not any(row.startswith("[Q]") for row in rows), (
             "the retired any-focus Q row must not list"
+        )
+
+
+# =====================================================================
+# 261017-uwr (UWR-3/UWR-4 Task 3): the context header + the ⏸ glyph +
+# live-on-top ordering with WR-05 cursor identity
+# =====================================================================
+
+
+def _uwr_row(model, states, newest_mtime=None):
+    """One CellRow fixture with explicit seed states (the _row twin
+    carrying the UWR-4 newest_mtime sort key)."""
+    return CellRow(
+        model=model, task="task-x",
+        seeds=tuple(CellSeed(seed=42 + index, state=state,
+                             fraction_states=None)
+                    for index, state in enumerate(states)),
+        newest_mtime=newest_mtime)
+
+
+def _uwr_service(cells):
+    """The fake service over one attached running root."""
+    return FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned-smoke", SWEEP_RUNNING, done=2, total=5),),
+            watermarks={})],
+        cells={"/scans/finetuned-smoke": tuple(cells)},
+        stats={"/scans/finetuned-smoke": _stats(
+            done=2, total=5, elapsed=100.0, eta=_eta(ETA_NONE))},
+    )
+
+
+async def test_context_header_renders_attached_root_fold_counts():
+    """UWR-3: attached, the one-row header renders the root name, n =
+    the entry-row count, and the three fold-family counts — the
+    maintainer's exact 5/1/2/2 line over 2 completed + 1 running +
+    2 interrupted rows; unattached the header Label is EMPTY (the
+    stats-line precedent)."""
+    monitor = _uwr_service((
+        _uwr_row("model-done-1", (CELL_COMPLETED, CELL_COMPLETED)),
+        _uwr_row("model-done-2", (CELL_COMPLETED, CELL_SKIPPED)),
+        _uwr_row("model-live", (CELL_RUNNING, CELL_QUEUED)),
+        _uwr_row("model-dead-1", (CELL_INTERRUPTED, CELL_INTERRUPTED)),
+        _uwr_row("model-dead-2", (CELL_INTERRUPTED,)),
+    ))
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert _label_text(screen, "#mon-context-header") == "", (
+            "unattached: the header is the empty string"
+        )
+        screen.attach("/scans/finetuned-smoke")
+        await _settle(pilot, app)
+        assert _label_text(screen, "#mon-context-header") == (
+            MON_CONTEXT_HEADER.format(
+                root="finetuned-smoke", n=5, running=1, done=2,
+                interrupted=2)), (
+            "the maintainer's one-glance line: where the rows come "
+            "from + the three honest counts"
+        )
+
+
+async def test_context_header_attached_empty_root_renders_n_zero():
+    """Attached with ZERO entry rows: the header renders the line with
+    n=0 and zero counts (honest, never blank-while-attached)."""
+    monitor = _uwr_service(())
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned-smoke")
+        await _settle(pilot, app)
+        assert _label_text(app.screen, "#mon-context-header") == (
+            MON_CONTEXT_HEADER.format(
+                root="finetuned-smoke", n=0, running=0, done=0,
+                interrupted=0))
+
+
+async def test_entries_live_on_top_ordering_with_fresh_running_first():
+    """UWR-4: group 0 running rows on top (freshest newest_mtime
+    FIRST, mtime-None last), group 1 unfinished non-running rows
+    (failed / interrupted / queued) key ASC, group 2 completed rows
+    sink — the live row is never buried under dead history."""
+    monitor = _uwr_service((
+        _uwr_row("d-done", (CELL_COMPLETED,)),
+        _uwr_row("m-int", (CELL_INTERRUPTED,)),
+        _uwr_row("a-run-old", (CELL_RUNNING,), newest_mtime=1000.0),
+        _uwr_row("z-run-fresh", (CELL_RUNNING,), newest_mtime=2000.0),
+        _uwr_row("c-queued", (CELL_QUEUED,)),
+        _uwr_row("b-fail", (CELL_FAILED,)),
+        _uwr_row("y-run-nomtime", (CELL_RUNNING,)),
+    ))
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned-smoke")
+        await _settle(pilot, app)
+        table = app.screen.query_one("#mon-cells", DataTable)
+        order = [str(key.value) for key in table.rows]
+        assert order == [
+            "z-run-fresh__task-x",   # group 0: freshest running first
+            "a-run-old__task-x",
+            "y-run-nomtime__task-x",  # running without mtime last
+            "b-fail__task-x",        # group 1: unfinished, key ASC
+            "c-queued__task-x",
+            "m-int__task-x",
+            "d-done__task-x",        # group 2: completed sinks
+        ], order
+
+
+async def test_fold_flip_reorders_table_preserving_cursor_identity():
+    """UWR-4 + WR-05: a mid-session fold flip (a completed pair becomes
+    running) reorders the LIVE table — the promoted row moves to the
+    top — and the operator's CURSOR ROW IDENTITY survives the reorder
+    (move_cursor by key, scroll=False)."""
+    monitor = _uwr_service((
+        _uwr_row("model-a", (CELL_RUNNING,), newest_mtime=1000.0),
+        _uwr_row("model-b", (CELL_COMPLETED,)),
+        _uwr_row("model-c", (CELL_COMPLETED,)),
+    ))
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen.attach("/scans/finetuned-smoke")
+        await _settle(pilot, app)
+        table = screen.query_one("#mon-cells", DataTable)
+        table.focus()
+        table.move_cursor(row=table.get_row_index("model-b__task-x"))
+        await pilot.pause()
+        cursor_key = str(table.coordinate_to_cell_key(
+            table.cursor_coordinate)[0].value)
+        assert cursor_key == "model-b__task-x"
+
+        # the flip: model-b's pair goes live (fresher than model-a)
+        monitor._cells["/scans/finetuned-smoke"] = (
+            _uwr_row("model-a", (CELL_RUNNING,), newest_mtime=1000.0),
+            _uwr_row("model-b", (CELL_RUNNING,), newest_mtime=3000.0),
+            _uwr_row("model-c", (CELL_COMPLETED,)),
+        )
+        screen._tick_full()
+        await _settle(pilot, app)
+
+        order = [str(key.value) for key in table.rows]
+        assert order == [
+            "model-b__task-x",   # the promoted row: freshest running
+            "model-a__task-x",
+            "model-c__task-x",
+        ], order
+        after_key = str(table.coordinate_to_cell_key(
+            table.cursor_coordinate)[0].value)
+        assert after_key == "model-b__task-x", (
+            "the cursor follows its ROW KEY across the reorder — the "
+            "operator's selection never snaps to row 0"
+        )
+
+
+async def test_interrupted_entry_renders_glyph_word_and_counts():
+    """UWR-1's render leg: an interrupted fold row carries the ⏸
+    glyph-word + its done/total seed counts (wide), and the narrow
+    grid keeps the glyph + counts form (the _entry_state_cell
+    degradation)."""
+    monitor = _uwr_service((
+        _uwr_row("model-dead", (CELL_INTERRUPTED, CELL_INTERRUPTED)),
+    ))
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned-smoke")
+        await _settle(pilot, app)
+        table = app.screen.query_one("#mon-cells", DataTable)
+        entry = "model-dead__task-x"
+        assert _table_text(table, entry, "state") == (
+            f"{MON_STATE_INTERRUPTED} 0/2"), (
+            "the interrupted fold renders the ⏸ glyph-word + its "
+            "terminal/total seed counts"
+        )
+        assert _table_text(table, entry, "progress") == "—", (
+            "interrupted rows carry no progress (nothing parses)"
+        )
+
+    # the narrow degradation at the 80-col grid
+    app = _app(monitor=_uwr_service((
+        _uwr_row("model-dead", (CELL_INTERRUPTED,)),
+    )))
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned-smoke")
+        await _settle(pilot, app)
+        table = app.screen.query_one("#mon-cells", DataTable)
+        assert _table_text(
+            table, "model-dead__task-x", "state") == "⏸ 0/1", (
+            "narrow drops the state word — the ⏸ glyph + counts remain"
         )

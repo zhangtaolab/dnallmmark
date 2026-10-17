@@ -1674,10 +1674,17 @@ MON_COL_TASK = _t("MON_COL_TASK", "任务", "Task")
 MON_COL_SEED = _t("MON_COL_SEED", "s{seed}", "s{seed}")
 MON_COL_STATE = _t("MON_COL_STATE", "状态", "State")
 MON_STATE_QUEUED = _t("MON_STATE_QUEUED", "◌ 排队", "◌ queued")
-MON_STATE_RUNNING = _t("MON_STATE_RUNNING", "⠋ 运行", "⠋ running")
+# 261017-uwr (UWR-1/UWR-4): the running glyph joins the ruling's ⏵/✓/⏸
+# triple so header and table carry the SAME glyph for the same state.
+MON_STATE_RUNNING = _t("MON_STATE_RUNNING", "⏵ 运行", "⏵ running")
 MON_STATE_DONE = _t("MON_STATE_DONE", "✓ 完成", "✓ done")
 MON_STATE_FAILED = _t("MON_STATE_FAILED", "✗ 失败", "✗ failed")
 MON_STATE_SKIPPED = _t("MON_STATE_SKIPPED", "⊘ 跳过", "⊘ skipped")
+# 261017-uwr (UWR-1): the third state — no record, no marker, and no
+# live sweep plans the pair (kill-left checkpoint residue / stale
+# dirs). Honest history, never a phantom running glyph (WINDOWS #34).
+MON_STATE_INTERRUPTED = _t(
+    "MON_STATE_INTERRUPTED", "⏸ 中断", "⏸ interrupted")
 MON_RESUME_NOTE = _t(
     "MON_RESUME_NOTE", "⊘ 续跑: {n} 训练项 因 trainer_state 标记跳过",
     "⊘ resume: {n} cells skipped via trainer_state markers")
@@ -1694,10 +1701,29 @@ MON_RESUME_NOTE_SHORT = _t(
 # and the done/total seed-counts segment appended to the state word.
 MON_PROGRESS_STEPS = _t(
     "MON_PROGRESS_STEPS", "{step}/{max} {percent}%", "{step}/{max} {percent}%")
+# 261017-uwr: the running row's indeterminate cell rides the ⏵ glyph
+# (the state cell's own glyph — one glyph per state across the row).
 MON_PROGRESS_INDETERMINATE = _t(
-    "MON_PROGRESS_INDETERMINATE", "⠋ …", "⠋ …")
+    "MON_PROGRESS_INDETERMINATE", "⏵ …", "⏵ …")
 MON_ENTRY_SEED_COUNTS = _t(
     "MON_ENTRY_SEED_COUNTS", "{done}/{total}", "{done}/{total}")
+
+# 261017-uwr (UWR-3): the one-row context header directly under the
+# monitor title bar — the ATTACHED root only (unattached renders the
+# empty string, the stats-line precedent; every other context line on
+# this screen already binds to the attached root). n = total entry
+# rows; the three counts are the fold-state families running /
+# completed / interrupted (failed and queued rows stay visible in the
+# table with their own glyphs but are not in the three-segment
+# header). zh wording note: the maintainer's ruling sketch said
+# 「输出根 {path} · {n} 对」 but the 2026-10-15 approved terminology
+# table (binding) fixes zh output root = 结果目录 and cell = 训练项 —
+# the ruling's wording is direction, the table governs the copy.
+MON_CONTEXT_HEADER = _t(
+    "MON_CONTEXT_HEADER",
+    "结果目录 {root} · {n} 训练项：⏵{running} 运行 / ✓{done} 完成 / ⏸{interrupted} 中断",
+    "Output root {root} · {n} cells: ⏵{running} running / ✓{done} done / "
+    "⏸{interrupted} interrupted")
 
 # The stats line directly above the bottom bar: the full shape, the
 # 80-col no-当前 shape, the unknown-total degradation, and the ETA

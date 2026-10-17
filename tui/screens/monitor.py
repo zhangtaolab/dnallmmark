@@ -69,6 +69,7 @@ from tui.services import sweep_monitor
 from tui.services.sweep_monitor import (
     CELL_COMPLETED,
     CELL_FAILED,
+    CELL_INTERRUPTED,
     CELL_QUEUED,
     CELL_RUNNING,
     CELL_SKIPPED,
@@ -129,13 +130,16 @@ def _sweep_state_cells() -> "dict[str, tuple[str, str]]":
 
 def _cell_state_cells() -> "dict[str, tuple[str, str]]":
     """The per-seed cell-state vocabulary (machine state -> copy +
-    style), re-derived at CALL time (CR-01 — same rule)."""
+    style), re-derived at CALL time (CR-01 — same rule). The
+    interrupted leg (261017-uwr, UWR-1) rides the muted channel —
+    honest history, no failure semantics."""
     return {
         CELL_COMPLETED: (S.MON_STATE_DONE, _STYLE_DONE),
         CELL_FAILED: (S.MON_STATE_FAILED, _STYLE_FAILED),
         CELL_SKIPPED: (S.MON_STATE_SKIPPED, _STYLE_SKIPPED),
         CELL_RUNNING: (S.MON_STATE_RUNNING, _STYLE_RUNNING),
         CELL_QUEUED: (S.MON_STATE_QUEUED, _STYLE_DIM),
+        CELL_INTERRUPTED: (S.MON_STATE_INTERRUPTED, _STYLE_DIM),
     }
 
 
@@ -314,22 +318,71 @@ class MonitorBackend:
     def __init__(self, launcher: Any = None):
         self._launcher = launcher
 
-    def _live_roots(self) -> tuple:
+    def _registry_live_roots(self) -> tuple:
+        """The launcher REGISTRY's live roots alone — the kill-face
+        basis (261017-uwr UWR-2: a probed CLI sweep is display-live
+        but never handle-killable, so [k]'s predicate NEVER widens to
+        the probe union)."""
         if self._launcher is None:
             return ()
         return tuple(self._launcher.live_sweeps())
 
+    def _live_evidence(self) -> "tuple[tuple, dict]":
+        """The live-sweep evidence union (261017-uwr, UWR-2): the
+        launcher REGISTRY's live roots plus the /proc-probed CLI roots,
+        with each root's planned pair matrix. Tolerant at the seam (the
+        entries_progress precedent): a launcher without
+        ``live_sweep_matrices`` (every pre-existing fake) degrades to
+        ``live_sweeps()`` alone with NO per-root matrices; a raising
+        call degrades the same way — the previous render stands."""
+        live_roots = self._registry_live_roots()
+        if self._launcher is None:
+            return live_roots, {}
+        matrices_getter = getattr(
+            self._launcher, "live_sweep_matrices", None)
+        if matrices_getter is None:
+            return live_roots, {}
+        try:
+            matrices = dict(matrices_getter() or {})
+        except Exception:  # noqa: BLE001 — the tolerant-reader promise
+            return live_roots, {}
+        merged = tuple(dict.fromkeys(live_roots + tuple(matrices)))
+        return merged, matrices
+
+    def _live_pairs_for(self, root, matrices: dict):
+        """The root's live-pair evidence: a strict miss (the root
+        absent from the evidence dict) reads the EMPTY set — the
+        dead-root case, every non-terminal cell derives interrupted."""
+        root_key = str(Path(root).expanduser().resolve())
+        return matrices.get(root_key, frozenset())
+
     def full_scan(self, prev_watermarks: "dict | None" = None) -> Any:
+        live_roots, _matrices = self._live_evidence()
         return sweep_monitor.full_scan(
-            live_roots=self._live_roots(),
+            live_roots=live_roots,
             prev_watermarks=prev_watermarks)
 
     def frontier_scan(self, root) -> Any:
+        live_roots, matrices = self._live_evidence()
         return sweep_monitor.frontier_scan(
-            root, live_roots=self._live_roots())
+            root, live_roots=live_roots,
+            live_pairs=self._live_pairs_for(root, matrices))
 
     def cells_view(self, root) -> Any:
-        return sweep_monitor.cells_view(root)
+        _live_roots, matrices = self._live_evidence()
+        return sweep_monitor.cells_view(
+            root, live_pairs=self._live_pairs_for(root, matrices))
+
+    def entries_progress(self, root) -> Any:
+        """C4J-3's backend leg: the attached root's progress map over
+        the live-evidence-threaded derivation (Rule 2, 261017-uwr — the
+        adapter had NO entries_progress delegation, so the REAL screen
+        read {} through the tolerant getattr seam and the progress
+        column was dead in production while every Pilot fake carried
+        it; the delegation lands here with the evidence threading)."""
+        _live_roots, matrices = self._live_evidence()
+        return sweep_monitor.entries_progress(
+            root, live_pairs=self._live_pairs_for(root, matrices))
 
     def stats(self, root, expected_total: "int | None" = None,
               fallback_start: "float | None" = None) -> Any:
@@ -418,7 +471,10 @@ class MonitorBackend:
         return run_config_svc.phrase_matches(typed, output_root)
 
     def live_sweeps(self) -> tuple:
-        return self._live_roots()
+        """The registry-only kill face (261017-uwr UWR-2 pin): [k]'s
+        gate reads the LAUNCHER REGISTRY alone — a probed CLI sweep is
+        display-live but never handle-killable."""
+        return self._registry_live_roots()
 
     def tee_path_for(self, root) -> "str | None":
         if self._launcher is None:
@@ -742,6 +798,14 @@ def _set_table_rows(table: DataTable, columns, rows) -> None:
     is re-pinned to its ROW KEY (identity, not coordinate) with
     ``scroll=False`` so the operator's view never jumps.
 
+    261017-uwr (UWR-4): when the desired row-key ORDER differs from
+    the table's current order (a fold flip moving a running row to the
+    top), the moved rows are removed and re-added in the desired
+    order — Textual's DataTable has no move-row API — and the same
+    cursor-key re-pin below preserves the operator's row identity
+    across the reorder. An unchanged order takes the in-place update
+    path: zero added churn on steady ticks.
+
     Args:
         table: the target DataTable.
         columns: ``[(label, key), ...]`` in display order.
@@ -763,12 +827,22 @@ def _set_table_rows(table: DataTable, columns, rows) -> None:
     existing = {str(key.value) for key in table.rows}
     for row_key in existing - set(rows):
         table.remove_row(row_key)
-    for row_key, cells in rows.items():
-        if row_key in existing:
-            for column_key, value in zip(wanted, cells, strict=True):
-                table.update_cell(row_key, column_key, value)
-        else:
+    current_order = [str(key.value) for key in table.rows]
+    if current_order != list(rows):
+        # order drift: rebuild the surviving rows in the desired order
+        # (remove + re-add — no move-row API); the cursor re-pin below
+        # restores the operator's row identity.
+        for row_key in current_order:
+            table.remove_row(row_key)
+        for row_key, cells in rows.items():
             table.add_row(*cells, key=row_key)
+    else:
+        for row_key, cells in rows.items():
+            if row_key in existing:
+                for column_key, value in zip(wanted, cells, strict=True):
+                    table.update_cell(row_key, column_key, value)
+            else:
+                table.add_row(*cells, key=row_key)
     if cursor_key is not None and cursor_key in rows:
         try:
             table.move_cursor(
@@ -988,13 +1062,17 @@ class MonitorScreen(Screen):
 
     def compose(self) -> ComposeResult:
         """The screen frame: nav bars, the title bar (the cadence note
-        right-aligned — standing chrome, D-09), the discovered region
-        (fixed height), the cell region (flex, the resume note on its
-        title row), the 1-row stats line, the bottom bar."""
+        right-aligned — standing chrome, D-09), the one-row context
+        header (261017-uwr, UWR-3 — the attached root + its fold
+        counts; empty while unattached, the stats-line precedent), the
+        discovered region (fixed height), the cell region (flex, the
+        resume note on its title row), the 1-row stats line, the
+        bottom bar."""
         yield TopMenuBar()
         with Horizontal(id="mon-title-bar"):
             yield Label(S.MON_SCREEN_TITLE, id="mon-screen-title")
             yield Label(S.MON_SCAN_NOTE, id="mon-scan-note")
+        yield Label("", id="mon-context-header")
         with Vertical(id="mon-discovered-region"):
             with Horizontal(id="mon-discovered-title-row"):
                 yield Label(S.MON_DISCOVERED_TITLE.format(n=0),
@@ -1634,9 +1712,19 @@ class MonitorScreen(Screen):
         cell — per-seed/fraction detail stays in the enter drill-down
         (WR-05: the cursor row identity survives every cadence rebuild).
 
+        261017-uwr (UWR-4): the rows sort by fold GROUP — running rows
+        on top (freshest ``newest_mtime`` first, mtime-None last), then
+        the unfinished non-running rows (failed / interrupted / queued
+        / unrecognized, key ASC), completed rows sink (key ASC) — the
+        live row is always visible at the top of the table, dead
+        history never hides it.
+
         The screen derives NOTHING: the fold and the progress both come
         from the service (``sweep_monitor.entry_fold`` /
-        ``entries_progress``) — this composes their outputs only.
+        ``entries_progress``) — this composes their outputs only, and
+        the context header's counts reuse the SAME per-row fold results
+        (each row folds exactly once per render pass, no double
+        derivation).
         """
         if not self.is_running:
             return
@@ -1649,19 +1737,39 @@ class MonitorScreen(Screen):
                 [(S.MON_COL_MODEL, "model"), (S.MON_COL_TASK, "task"),
                  (S.MON_COL_STATE, "state"), (S.MON_COL_PROGRESS, "progress")],
                 {"__empty__": [S.MON_CELLS_EMPTY, "", "", ""]})
+            self._render_context_header()
             return
         columns = [(S.MON_COL_MODEL, "model"), (S.MON_COL_TASK, "task"),
                    (S.MON_COL_STATE, "state"),
                    (S.MON_COL_PROGRESS, "progress")]
         key_width = max(8, self.size.width // 3 - 2)
+        folds = {key: sweep_monitor.entry_fold(row)
+                 for key, row in rows_map.items()}
+
+        def _row_sort_key(key: str) -> tuple:
+            fold_state = folds[key].state
+            if fold_state == CELL_RUNNING:
+                # freshest activity first; a missing mtime sorts last
+                return (0, -(rows_map[key].newest_mtime or 0.0), key)
+            if fold_state == CELL_COMPLETED:
+                return (2, 0.0, key)
+            return (1, 0.0, key)
+
+        running = done = interrupted = 0
         rows: dict[str, list] = {}
-        for key in sorted(rows_map):
+        for key in sorted(rows_map, key=_row_sort_key):
             row = rows_map[key]
+            fold = folds[key]
+            if fold.state == CELL_RUNNING:
+                running += 1
+            elif fold.state == CELL_COMPLETED:
+                done += 1
+            elif fold.state == CELL_INTERRUPTED:
+                interrupted += 1
             model_cell = Text(row.model)
             model_cell.truncate(key_width, overflow="ellipsis", pad=False)
             task_cell = Text(row.task)
             task_cell.truncate(key_width, overflow="ellipsis", pad=False)
-            fold = sweep_monitor.entry_fold(row)
             rows[key] = [
                 model_cell,
                 task_cell,
@@ -1670,6 +1778,31 @@ class MonitorScreen(Screen):
                     fold, self._cell_progress.get((row.model, row.task))),
             ]
         _set_table_rows(table, columns, rows)
+        self._render_context_header(running, done, interrupted)
+
+    def _render_context_header(self, running: int = 0, done: int = 0,
+                               interrupted: int = 0) -> None:
+        """The one-row context header (261017-uwr, UWR-3): the ATTACHED
+        root's name, the total entry count, and the three fold-family
+        counts — the single line that answers 「these rows come from
+        WHERE?」at a glance. Unattached renders the empty string (the
+        stats-line precedent); attached-with-zero-rows renders the
+        line with n=0 and zero counts (honest, never blank-when-
+        attached). ``no_wrap`` so a long line can never push the
+        layout. The counts arrive from ``_render_cells``'s single fold
+        pass (render-side composition only — the screen derives
+        nothing from the artifact tree)."""
+        if not self.is_running:
+            return
+        header = self.query_one("#mon-context-header", Label)
+        if self._attached_root is None:
+            header.update("")
+            return
+        header.update(Text(S.MON_CONTEXT_HEADER.format(
+            root=self._attached_root.name,
+            n=len(self._cell_rows),
+            running=running, done=done, interrupted=interrupted),
+            no_wrap=True))
 
     def _entry_state_cell(self, fold: Any) -> Text:
         """The entries state cell: the folded state's glyph word from the

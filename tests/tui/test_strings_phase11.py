@@ -132,12 +132,15 @@ EXPECTED_MON_CONSTANTS = (
     "MON_KILL_KEYCAP", "MON_KILL_TITLE", "MON_KILL_CONFIRM",
     "MON_KILL_TOAST", "MON_KILL_TOAST_DEAD", "MON_KILL_UNAVAILABLE",
     "MON_KILL_FAILED",
+    # 261017-uwr (UWR-1/UWR-3): the third cell state + the context
+    # header line (the maintainer's slot-5 ruling).
+    "MON_STATE_INTERRUPTED", "MON_CONTEXT_HEADER",
 )
 
 #: The per-seed cell states in spec order, and their contract glyphs.
 MON_CELL_STATE_CONSTANTS = (
     "MON_STATE_QUEUED", "MON_STATE_RUNNING", "MON_STATE_DONE",
-    "MON_STATE_FAILED", "MON_STATE_SKIPPED",
+    "MON_STATE_FAILED", "MON_STATE_SKIPPED", "MON_STATE_INTERRUPTED",
 )
 
 #: The discovered-sweep states in spec order (running / finished /
@@ -156,8 +159,9 @@ MON_STATEFUL_CONSTANTS = (
 )
 
 #: The glyph vocabulary these states draw from (the additive Phase-11
-#: amendment: ● ○ ⊘ join the inherited set).
-MON_STATE_GLYPHS = {"◌", "⠋", "✓", "✗", "⊘", "●", "○"}
+#: amendment: ● ○ ⊘ join the inherited set; 261017-uwr: ⏵ replaces ⠋ in
+#: the MON family and ⏸ joins — no MON stateful constant carries ⠋).
+MON_STATE_GLYPHS = {"◌", "⏵", "✓", "✗", "⊘", "●", "○", "⏸"}
 
 
 def test_cfg_lnc_mon_string_inventory_defined():
@@ -203,13 +207,14 @@ def test_cfg_lnc_mon_inventory_complete_no_unlisted_constants():
 
 
 def test_mon_cell_state_strings_glyph_first_and_distinct():
-    """The NO_COLOR redundancy contract: each of the five per-seed cell
-    states leads with its distinct glyph (◌ ⠋ ✓ ✗ ⊘, spec order)."""
+    """The NO_COLOR redundancy contract: each of the six per-seed cell
+    states leads with its distinct glyph (◌ ⏵ ✓ ✗ ⊘ ⏸, spec order —
+    261017-uwr: ⏵ replaces the ⠋ spinner glyph and ⏸ joins)."""
     state_glyphs = [
         getattr(tui_strings, name)[0] for name in MON_CELL_STATE_CONSTANTS
     ]
-    assert state_glyphs == ["◌", "⠋", "✓", "✗", "⊘"]
-    assert len(set(state_glyphs)) == 5
+    assert state_glyphs == ["◌", "⏵", "✓", "✗", "⊘", "⏸"]
+    assert len(set(state_glyphs)) == 6
 
 
 def test_mon_sweep_state_strings_glyph_first_and_distinct():
@@ -237,6 +242,43 @@ def test_mon_state_copy_first_char_is_the_glyph():
                     f"{lang}:{name} must lead with its glyph "
                     "(NO_COLOR carrier)"
                 )
+    finally:
+        tui_strings.set_language("zh")
+
+
+def test_mon_context_header_placeholders_and_terminology():
+    """261017-uwr (UWR-3): MON_CONTEXT_HEADER carries the IDENTICAL
+    placeholder set {root, n, running, done, interrupted} in both
+    languages, the zh side uses the approved terminology table's
+    结果目录 / 训练项 (the ruling's 「输出根/对」 wording is direction,
+    the table is binding), and both sides open their three segments
+    with the ruling's ⏵/✓/⏸ glyph triple."""
+    import string
+
+    def placeholders(value):
+        return {field for _literal, field, _spec, _conv
+                in string.Formatter().parse(value) if field}
+
+    zh, en = tui_strings._REGISTRY["MON_CONTEXT_HEADER"]
+    assert placeholders(zh) == placeholders(en) == {
+        "root", "n", "running", "done", "interrupted"}
+    assert "结果目录" in zh and "训练项" in zh
+    assert "输出根" not in zh  # the retired term never returns
+    for value in (zh, en):
+        assert "⏵" in value and "✓" in value and "⏸" in value
+
+
+def test_mon_running_and_interrupted_glyphs_match_header_triple():
+    """The state constants and the header carry the SAME glyph for the
+    same state: MON_STATE_RUNNING opens ⏵, MON_STATE_INTERRUPTED opens
+    ⏸ (the header's three segments render those exact constants'
+    glyphs — one glyph per state everywhere)."""
+    try:
+        for lang in ("zh", "en"):
+            tui_strings.set_language(lang)
+            assert tui_strings.MON_STATE_RUNNING[0] == "⏵"
+            assert tui_strings.MON_STATE_INTERRUPTED[0] == "⏸"
+            assert tui_strings.MON_PROGRESS_INDETERMINATE[0] == "⏵"
     finally:
         tui_strings.set_language("zh")
 
