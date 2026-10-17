@@ -123,3 +123,9 @@ finetuned-smoke/
 # TUI demo meta sidecars (quick-261015-pex): per-recording driver state,
 # consumed by record.sh's exit gate — never committed.
 docs/demo/.meta-*.json
+
+# Storage landing paths (261017 audit): the repo-root HF cache default
+# (run_finetune module-top default; multi-GB on first write) and the
+# documented demo output root — never committable.
+cache/
+finetuned-demo/
