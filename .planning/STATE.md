@@ -5,11 +5,11 @@ milestone_name: TUI任务
 current_phase: 12
 current_plan: Not started
 status: completed
-stopped_at: Phase 12 complete — all phases complete
-last_updated: "2026-10-17T05:27:23.431Z"
+stopped_at: Completed quick task 261017-klw (08-review fix batch WR-01..03 + IN-01..03 + 07-CR-01)
+last_updated: "2026-10-17T07:35:45.109Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 12 complete
-state_head: ba0c8d60748aced3781a326ef91c5fe877e824ce
+state_head: 6e331d3afa78cf20758e64a97b921c6121adbc80
 progress:
   total_phases: 6
   completed_phases: 6
@@ -105,6 +105,7 @@ Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 
 | Phase 11 P11-08 | 32 min | 3 tasks | 9 files |
 | Phase quick-261016-poa P01 | 32 min | 3 tasks | 16 files |
 | Phase quick-261016-v0z P01 | 34 min | 3 tasks | 10 files |
+| Phase quick-261017-klw PP01 | 24 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -239,6 +240,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 10]: [Phase 10]: 10-07 CR-01 reroute: _datasets_base resolves constructor param > run_config.resolve_dirs(load_state()).dataset_root_abs (read per call, never memoized) > repo pipeline/ — the _models_base twin; the directories.json file tier survives INSIDE the chain via load_state's seeding, so all four L6H-03 pins held byte-unmodified
 - [Phase 10]: [Phase 10]: 10-07 hermeticity: the queue test module's autouse fixture pins BOTH roots (DNALLMMARK_TUI_CONFIG_DIR + DNALLMMARK_TUI_STATE_DIR via tmp_path_factory) — post-reroute every _datasets_base() call reads the state root, and the maintainer box carries a live run_config.json
 - [Phase 11]: 11-08 gap closure: attach() owns the expanduser().resolve() contract (one path basis with validation); rerun seeds derive through ONE shared derive_rerun_seeds used by confirm AND worker (empty = RerunFailed, never a default); tee opens O_EXCL with _1.._99 suffix (filesystem-level uniqueness — a pid suffix cannot disambiguate two spawns from one TUI process); ExitModal carries every live root with LNC_EXIT_MESSAGE_MULTI dropping done/total (mixed sources); the registry key rides rc.resolve_dirs(spec).output_root_abs everywhere (the argv's REPO_ROOT basis)
+- [Phase quick-261017-klw]: [quick-261017-klw]: WR-01 delegation gated to exactly (Input focus + truthy selected_text + non-modal top) — selected_text at _input.py:854 is the verified 8.2.8 seam (the sketch's .selection does not exist); the two CDR-2 focus-then-ctrl+c tests adapted to the empty-selection form (select_on_focus auto-selection is exactly the WR-01 corner); WR-02 exit lands only on unconditional ExitKillsDone (esc-after-k no longer cancels — committed intent); WR-03 mixed form keeps all three existing forms byte-unchanged; IN-02 scope strings are internal discriminators (zero strings.py churn); 07-CR-01 defaults Model_name->ix / Mean_token_length->1 with the dataset-side siblings (:849/:1077/:1322) recorded NOT fixed (outside the ruling); ty narrowing via string cast in ExitModal (same-module App class defeats the getters.app class-body idiom)
 
 ### Pending Todos
 
@@ -275,6 +277,7 @@ None yet.
 | 261017-cdr | 退出键修订 — ctrl+c 任意焦点主退出（on_event 拦截走 v0z 确认链，modal 内惰性，notify 审计全消），大写 Q 恢复普通字母，P9 退出弹窗堆叠守卫（action_quit 出口族早退），退出确认 [Y]/[N] 加粗 + y/n Footer 键帽 | 2026-10-17 | 0980956 | [261017-cdr-exit-keys-revision-ctrl-c-any-focus-quit](./quick/261017-cdr-exit-keys-revision-ctrl-c-any-focus-quit/) |
 | 261017-dnr | 确认族醒目 Y/N — 启动确认门/重跑/停止确认加粗 [Y]/[N] + y/n 键帽（E2 匹配态仅加粗，键帽按 armed-after-blur 设计保持隐藏），ExitModal enter/k 键帽 + 加粗三键（语义零改），3 新常量 + 2 精确复用，27 弹窗六准则审计表（WizardModal 待裁定） | 2026-10-17 | 8c995da | [261017-dnr-uniform-prominent-y-n-across-all-confirm](./quick/261017-dnr-uniform-prominent-y-n-across-all-confirm/) |
 | 261017-eea | CI 四红车道修复批 — pexpect 入 dev 组（lock 仅增 pexpect+ptyprocess，requirements 重导出字节不变）；helixgen 三文件 schema 修复（info.path 剥离 + dataset.species 规范 22/12/13 + FLOPs anyOf 规范化）；multi-species 杂散删除 + 四 arena 文件与 permutation 重生成（42→45 模型，family 861→990，零 verdict 翻转）双跑幂等；新基线 1F/1859P + node 26/26 | 2026-10-17 | c6b510f | [261017-eea-ci-fix-batch-pexpect-into-dev-lockfile-d](./quick/261017-eea-ci-fix-batch-pexpect-into-dev-lockfile-d/) |
+| 261017-klw | 08-review 修复批（closeout 前最后一批）— WR-01 ctrl+c 选区复制委托（selected_text 委托至 Input 自有 copy 绑定）/ WR-02 [k] 终止走 app 级 exit-kill 线程 worker（每 root 宽守卫 + 无条件 ExitKillsDone 后退出，绝不冻结事件循环）/ WR-01..03+IN-01..03+07-CR-01 全七项；run_finetune 两处守护读（Model_name→key、Mean_token_length→1），dataset 侧 :849/:1077/:1322 记录未改；WizardModal 键帽裁定仍待 maintainer；1F/1867P + node 26/26 + 金标绿 + 零新字符串 | 2026-10-17 | 6e331d3 | [261017-klw-fix-batch-feedback-round-review-wr-01-03](./quick/261017-klw-fix-batch-feedback-round-review-wr-01-03/) |
 
 ## Deferred Items
 
@@ -286,8 +289,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T02:52:00.000Z
-Stopped at: Phase 12 complete — all phases complete
+Last session: 2026-10-17T07:35:44.803Z
+Stopped at: Completed quick task 261017-klw (08-review fix batch WR-01..03 + IN-01..03 + 07-CR-01)
 Resume file: None
 
 ## Operator Next Steps

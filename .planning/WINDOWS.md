@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 19
+open_count: 20
 waived_count: 0
 fixed_count: 11
-total_count: 30
-last_updated: 2026-10-17T02:55:52.918Z
+total_count: 31
+last_updated: 2026-10-17T07:36:01.293Z
 ---
 
 # Broken Windows Ledger
@@ -45,6 +45,7 @@ last_updated: 2026-10-17T02:55:52.918Z
 | 28 | quick-261015-pex | unmet-truth | tui/screens/run_config.py | 1618 | Typing into the slot-4 filter while the screen is mid-mount crashes the console: on_input_changed -> _render_picker -> query_one('#cfg-picker') raises NoMatches (observed once in pex rehearsal; the demo driver works around it by anchoring the populated picker before typing) | open |  | 2026-10-15T23:59:00.000Z |  |
 | 29 | quick-261016-vxr | deviation | tests/tui/__snapshots__/monitor_running.svg |  | monitor_running.svg AND monitor_empty.svg regenerated (the slot-5 [k] 停止 keycap row) via make snapshot-update, deliberately UNCOMMITTED pending the maintainer's D-03 review - the committed tree fails test_snapshots on exactly these two until they land (run_config.svg byte-preserved, sha256 afa89e7e...) | fixed | D-03 review approved 2026-10-17; the three SVGs landed in f2a772a | 2026-10-17T00:00:00.000Z | 2026-10-17T01:34:00.000Z |
 | 30 | quick-261017-eea | deviation | schemas/model_performance.json |  | Rule-2 deviation (eea commit 9a83066): the 141 helixgen entries carry FLOPs empty-string where the schema demanded strict number — schema conformed to the sibling anyOf [number, const ''] shape (1 line) after verifying the  documents '' as the missing-value convention, all 13 sibling metrics already use anyOf, summarize is ''-safe, and no test pins FLOPs strictness; fabricating numbers forbidden | open |  | 2026-10-17T02:55:52.918Z |  |
+| 31 | quick | deviation | pipeline/run_finetune.py | 849 | run_finetune sibling hard-index sites deliberately unfixed (07-CR-01 batch covered only the model-loop reads): :849 probe-branch row[Model_name], :1077 dataset-loop row[Dataset_name], :1322 row[length] — schema-legal minimal custom entries crash these paths; future maintainer-ruled batch (see 261017-klw-SUMMARY Maintainer Items) | open |  | 2026-10-17T07:36:01.293Z |  |
 
 ````json
 [
@@ -435,6 +436,19 @@ last_updated: 2026-10-17T02:55:52.918Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-17T02:55:52.918Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
+  },
+  {
+    "id": 31,
+    "kind": "deviation",
+    "phase": "quick",
+    "file": "pipeline/run_finetune.py",
+    "line": 849,
+    "description": "run_finetune sibling hard-index sites deliberately unfixed (07-CR-01 batch covered only the model-loop reads): :849 probe-branch row[Model_name], :1077 dataset-loop row[Dataset_name], :1322 row[length] — schema-legal minimal custom entries crash these paths; future maintainer-ruled batch (see 261017-klw-SUMMARY Maintainer Items)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T07:36:01.293Z",
     "resolved_at": null,
     "milestone": "v1.2"
   }
