@@ -2037,6 +2037,7 @@ async def test_quit_confirm_footer_shows_y_n_keycaps():
         await _open_run_config(pilot, app)
         await pilot.press("q")
         await pilot.pause()
+        from textual.binding import Binding
         from textual.widgets import Footer as FooterWidget
 
         from tui.app import QuitConfirmModal
@@ -2044,7 +2045,8 @@ async def test_quit_confirm_footer_shows_y_n_keycaps():
 
         assert isinstance(app.screen, QuitConfirmModal)
         entries = {binding.key: binding
-                   for binding in QuitConfirmModal.BINDINGS}
+                   for binding in QuitConfirmModal.BINDINGS
+                   if isinstance(binding, Binding)}
         assert entries["y"].show is True, (
             "the y answer key must render in the Footer"
         )

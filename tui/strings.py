@@ -152,27 +152,22 @@ APP_TITLE = _t("APP_TITLE", "DNALLM-Mark 控制台", "DNALLM-Mark Console")
 # regeneration (D-03, maintainer-only); the confirm step is surfaced by
 # the modal copy + the ctrl+q/ctrl+c help rows instead.
 APP_QUIT_LABEL = _t("APP_QUIT_LABEL", "退出", "Quit")
-# 261016-v0z: the help-modal rows for the two app-level exit keys whose
-# bindings stay hidden from the bars (declared manually in
-# DnallmMarkTui._binding_rows, resolved live so the L toggle re-derives
-# them). ctrl+q is the declared mirror of the inherited App framework
-# default — the same guarded quit action as q; ctrl+c is textual 8.2.8's
-# help_quit default, audited notify-only (it names the key that quits,
-# it never quits itself).
+# 261016-v0z / 261017-cdr: the help-modal rows for the two app-level
+# exit keys whose bindings stay hidden from the bars (declared manually
+# in DnallmMarkTui._binding_rows, resolved live so the L toggle
+# re-derives them). ctrl+q is the declared mirror of the inherited App
+# framework default — the same guarded quit action as q. ctrl+c is the
+# ANY-FOCUS primary exit since 261017-cdr (the maintainer revision that
+# replaced the 261016-vxr uppercase-Q intercept): an App.on_event
+# intercept routing through the v0z confirm chain — it shadows textual
+# 8.2.8's notify-only help_quit default on base screens and is
+# chain-cut under modals, so the notify-only audit is retired
+# everywhere. APP_Q_LABEL was withdrawn with the vxr intercept: a
+# capital Q is a plain typing letter again.
 APP_CTRLQ_LABEL = _t(
     "APP_CTRLQ_LABEL", "退出（同 q）", "Quit (same as q)")
 APP_CTRLC_LABEL = _t(
-    "APP_CTRLC_LABEL", "提示退出键（不退出）", "Quit-key hint (does not quit)")
-# 261016-vxr (VXR-3): the help-modal row for the uppercase-Q any-focus
-# exit — an App.on_event intercept (NOT a BINDINGS entry: a printable
-# priority binding cannot fire over a focused Input, probe P1, and
-# would stack modals over modals, probe P9), consumed before it can
-# type; declared manually in _binding_rows beside the ctrl+q/ctrl+c
-# rows so the L toggle re-derives it. The base-screen typing sacrifice
-# (a capital Q no longer types into base-screen Inputs) is the
-# maintainer's chosen tradeoff; modals stay exempt.
-APP_Q_LABEL = _t(
-    "APP_Q_LABEL", "退出（任意焦点生效）", "Quit (works at any focus)")
+    "APP_CTRLC_LABEL", "退出（任意焦点生效）", "Quit (works at any focus)")
 # Footer label + title for the app-level ? help binding/modal (08-UI-SPEC
 # Keyboard map: "? | app | help modal (all bindings)").
 APP_HELP_LABEL = _t("APP_HELP_LABEL", "帮助", "Help")
@@ -1567,6 +1562,16 @@ LNC_EXIT_MESSAGE_MULTI = _t(
 LNC_EXIT_CONFIRM = _t(
     "LNC_EXIT_CONFIRM", "确认退出控制台？— [Y] 退出 / [N] 取消",
     "Quit the console? — [Y] quit / [N] cancel")
+# 261017-cdr (CDR-3): the QuitConfirmModal Footer keycaps for the y/n
+# answer keys — mirroring the message's [Y]/[N] words so the answers
+# are visible at a glance. Identical registry pairs already exist
+# (退出/Quit as APP_QUIT_LABEL/LNC_EXIT_TITLE, 取消/Cancel as
+# WIZ_CANCEL_LABEL/DL_CANCEL_LABEL — the WIZ_BACK identical-pair
+# precedent), so both bidirectional injectivity tripwires stay green.
+LNC_EXIT_CONFIRM_YES = _t(
+    "LNC_EXIT_CONFIRM_YES", "退出", "Quit")
+LNC_EXIT_CONFIRM_NO = _t(
+    "LNC_EXIT_CONFIRM_NO", "取消", "Cancel")
 
 # ===== 任务监控 (MON_, Phase 11) =====
 # The slot-5 monitor screen chrome, the discovered-sweep pane, the cell

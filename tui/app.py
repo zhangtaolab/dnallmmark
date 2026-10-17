@@ -19,7 +19,11 @@ onto this root.
   confirmation from any screen (261016-v0z: no exit without an explicit
   operator confirm — no live sweep opens the Y/N quit modal, a live
   sweep the kill/detach ExitModal; the inherited ctrl+q default is
-  declared explicitly and routes through the same guard);
+  declared explicitly and routes through the same guard; 261017-cdr:
+  ``ctrl+c`` exits from any BASE-SCREEN focus through the same confirm
+  chain — an ``on_event`` intercept, so it survives the filter-input
+  focus trap while the restored capital Q types as a plain letter
+  again, and action_quit guards against exit-modal stacking);
   ``?`` opens the help modal listing every active binding with
   its Chinese label from ``tui/strings.py`` (I18N-01).
 - Min-size guard (08-UI-SPEC Terminal Contract): below 80x24 the app
@@ -230,17 +234,32 @@ class QuitConfirmModal(ModalScreen):
 
     ``enter`` is STRUCTURALLY inert: the key is bound to a documented
     no-op action (the LaunchConfirmModal EHC-2 idiom — a stray
-    double-enter can never quit). ``q``/``ctrl+q`` are inert while the
-    modal is top (the modal binding chain blocks app-level bindings,
-    Pitfall 11), so repeat presses cannot quit either. Deliberately NOT
-    the ExitModal surface: with a live sweep the kill/detach/cancel
-    triple stays, and its ``[enter]`` detach default is that modal's own
-    design — the two exit surfaces intentionally differ.
+    double-enter can never quit). Corrected inertness map (261017-cdr):
+    plain ``q`` stays chain-cut under the modal (Pitfall 11 — the modal
+    binding chain blocks the non-priority app binding), while the
+    priority ``ctrl+q`` DOES fire over the modal and re-enters
+    action_quit, whose exit-family guard (CDR-4) returns immediately —
+    nothing observable happens; ``ctrl+c`` delegates to the modal-cut
+    chain and is likewise inert (CDR-2). The 261017-cdr prominence
+    ruling (CDR-3): the message's [Y]/[N] tokens render BOLD via the
+    Rich Text API (``Text.highlight_words`` — Text content is never
+    markup-parsed, so the literal bracket tokens stay literal; no
+    markup-string ambiguity), and the y/n bindings carry show=True so
+    the modal's Footer renders the y/n keycaps beside esc. Deliberately
+    NOT the ExitModal surface: with a live sweep the kill/detach/cancel
+    triple stays, and its ``[enter]`` detach default is that modal's
+    own design — the two exit surfaces intentionally differ.
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("y", "confirm_quit", show=False),
-        Binding("n", "dismiss", show=False),
+        # CDR-3 (261017-cdr): the answer keys are VISIBLE — y/n carry
+        # show=True with the LNC_EXIT_CONFIRM_YES/NO descriptions, so
+        # the modal's Footer renders them beside esc (QuitConfirmModal
+        # is in the L-toggle remap registry; the keycaps re-derive on
+        # language switch). enter stays show=False — the inert no-op is
+        # never advertised.
+        Binding("y", "confirm_quit", S.LNC_EXIT_CONFIRM_YES, show=True),
+        Binding("n", "dismiss", S.LNC_EXIT_CONFIRM_NO, show=True),
         Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
         Binding("enter", "enter_inert", show=False),
     ]
@@ -250,8 +269,18 @@ class QuitConfirmModal(ModalScreen):
         self._message = message
 
     def compose(self) -> ComposeResult:
+        # CDR-3: the [Y]/[N] tokens are bolded through the Rich Text
+        # API, never markup strings — Text content is never
+        # markup-parsed (the HelpModal literal-keycap precedent), so
+        # the bracket tokens stay literal, and 'bold' is a Rich core
+        # style (no $token MissingStyle hazard on the Static path).
+        # highlight_words mutates the Text IN PLACE and returns the
+        # count (probed in the installed rich: text.py:639 -> int) —
+        # never chained.
+        message = Text(self._message)
+        message.highlight_words(("[Y]", "[N]"), style="bold")
         with Vertical(id="quit-confirm-box", classes="modal-box"):
-            yield Static(self._message)
+            yield Static(message)
             yield Footer()
 
     def on_mount(self) -> None:
@@ -986,12 +1015,15 @@ class DnallmMarkTui(App):
     async def action_quit(self) -> None:
         """The guarded exit (the 261016-v0z contract: q and ctrl+q
         ALWAYS confirm before exit — no key combination kills the console
-        without an explicit operator confirmation).
+        without an explicit operator confirmation; 261017-cdr adds
+        ctrl+c as the any-focus trigger through the same chain).
 
-        Legs, in order: (1) below the minimum grid NOTHING fires — no
-        chrome over the guard (WR-06) and never an unguarded exit (the
-        latent fall-through where a live sweep + below-min grid
-        previously reached ``self.exit()`` is closed); (2) a live sweep
+        Legs, in order: (0) an exit-family modal already top returns
+        IMMEDIATELY (the CDR-4 stacking guard — see below); (1) below
+        the minimum grid NOTHING fires — no chrome over the guard
+        (WR-06) and never an unguarded exit (the latent fall-through
+        where a live sweep + below-min grid previously reached
+        ``self.exit()`` is closed); (2) a live sweep
         (``live_sweeps`` non-empty OR the monitor's attached sweep
         running — a CLI-launched sweep the TUI did not spawn) pushes the
         ExitModal (kill/detach/cancel, default detach) instead of
@@ -1013,6 +1045,18 @@ class DnallmMarkTui(App):
         kill stays the documented launcher-noop). Async — the App base
         declares the coroutine signature (ty LSP).
         """
+        if isinstance(self.screen, (ExitModal, QuitConfirmModal)):
+            # CDR-4 (261017-cdr, the P9/vxr finding): the priority
+            # ctrl+q binding fires over open modals (the full
+            # binding-chain walk) and re-entered here, stacking a
+            # second exit modal over an open one — return instead, so
+            # no key combination can push a second exit-family modal
+            # while one is top. KillConfirmModal/E2PhraseModal (and
+            # every launch-side/selection modal) are deliberately OUT
+            # of the guard set: kill != exit, and a quit issued over
+            # them is a NEW legitimate intent — the exit modal stacks
+            # over them and esc peels back.
+            return
         if self.below_minimum_grid:
             return  # below the minimum grid: nothing fires, never an exit
         roots = self._launcher.live_sweeps()
@@ -1040,43 +1084,41 @@ class DnallmMarkTui(App):
         self.push_screen(QuitConfirmModal(message=S.LNC_EXIT_CONFIRM))
 
     async def on_event(self, event: events.Event) -> None:
-        """261016-vxr (VXR-3): the uppercase-Q any-focus exit intercept
-        (the maintainer's 2026-10-16 live-session option (a) — the
-        filter-input focus trap: quit must work from ANY base-screen
-        focus).
+        """261017-cdr (CDR-2, the maintainer's 2026-10-17 revision):
+        ctrl+c is the ANY-FOCUS primary exit — the intercept replaces
+        the 261016-vxr uppercase-Q one (a capital Q is a plain typing
+        letter again), routing through the v0z confirm chain so the
+        quit works from ANY base-screen focus, including the
+        filter-input focus trap.
 
-        Why an ``on_event`` intercept and NOT a BINDINGS entry
-        (probe-pinned on textual 8.2.8): (P1) an App-level Q binding
-        declared with the priority flag does NOT fire while an Input
-        is focused — Screen._binding_chain applies a consume-key
-        filter, and a focused Input's ``check_consume_key`` returns
-        True for EVERY printable character, stripping the key from
-        every later namespace's binding map INCLUDING the app's, so the
-        priority walk finds no Q anywhere. Only intercepting the Key
-        event BEFORE the binding machinery delivers the intent. (P9) a
-        priority binding would ALSO fire while a modal is top (the
-        priority path walks the full _binding_chain, not the
-        modal-cut chain), stacking a second confirm over an open one —
-        the explicit ``not is_modal`` guard here makes Q inert under
-        every modal, so a capital Q stays TYPEABLE inside modal Inputs
-        (an E2' phrase or a path containing Q).
-
-        Contract (P10-P14): Q with a mounted, non-modal top screen
-        routes to the guarded ``action_quit`` chain (below-min-grid ->
-        nothing; live sweep -> ExitModal; neither -> QuitConfirmModal)
-        and is CONSUMED — returned without ``super()``, never
-        forwarded, never typed. Documented consequence of option (a):
-        a capital Q can no longer be typed into BASE-screen Inputs (the
-        selection filter, the run-config inputs) — it is reserved as
-        the exit key on base screens; modals are exempt. Every other
-        event delegates to the App base unchanged (lowercase q keeps
-        its Input semantics).
+        Why an ``on_event`` intercept and NOT a declared binding with
+        the priority flag (probe-pinned on textual 8.2.8): a priority
+        ctrl+c would deliver the same focused-Input reach (ctrl combos
+        are never consumed by an Input), but the priority path walks
+        the FULL binding chain, so it would also fire under EVERY open
+        modal (the P9 mechanism) and stack an exit modal over the
+        wizard, the E2' phrase modal, or a picker. The intercept with
+        the explicit ``not is_modal`` guard delivers the same
+        base-screen reach with base-screen-only semantics: under every
+        modal the key delegates to ``super().on_event`` and the
+        modal-cut binding chain, where the inherited ctrl+c help_quit
+        default is non-priority and therefore chain-cut — inert, no
+        notify. On base screens the intercept consumes the key before
+        the machinery, so the inherited default never fires anywhere
+        and no replacement binding is declared (it could never fire:
+        shadowed on base screens, chain-cut under modals — dead code).
+        Below the minimum grid the intercept routes into action_quit,
+        whose first leg returns — the same behavior as q (the guard
+        screen is a plain non-modal Screen). zellij's default config
+        passes ctrl+c through to the pane program. Every other event
+        delegates to the App base unchanged (lowercase q keeps its
+        Input semantics; a capital Q types everywhere again).
         """
-        if (isinstance(event, events.Key) and event.key == "Q"
+        if (isinstance(event, events.Key) and event.key == "ctrl+c"
                 and self.screen is not None
                 and not self.screen.is_modal):
             await self.action_quit()
-            return  # consumed: never forwarded, never typed
+            return  # consumed: never forwarded, never a notify
         await super().on_event(event)
 
     def action_help(self) -> None:
@@ -1106,17 +1148,15 @@ class DnallmMarkTui(App):
                 if row is not None]
         # 261016-v0z: the app-level exit keys whose bindings stay
         # show=False/system — the declared ctrl+q mirror (the inherited
-        # default made explicit) and the audited ctrl+c help_quit
-        # default (notify-only, never exits) — get their help rows
-        # HERE, after the app bindings and before the screen's;
-        # resolved live from the strings registry so the L toggle
-        # re-derives them.
+        # default made explicit) — get their help rows HERE, after the
+        # app bindings and before the screen's; resolved live from the
+        # strings registry so the L toggle re-derives them. 261017-cdr:
+        # the ctrl+c row is now the any-focus primary exit (the
+        # on_event intercept routing through the v0z confirm chain);
+        # the 261016-vxr Q row is retired with its intercept — a
+        # capital Q is a plain typing letter again.
         rows.append(("ctrl+q", S.APP_CTRLQ_LABEL))
         rows.append(("ctrl+c", S.APP_CTRLC_LABEL))
-        # 261016-vxr (VXR-3): the any-focus Q exit row joins after the
-        # ctrl+c row (the same manual-row pattern — the intercept is an
-        # on_event override, so it has no BINDINGS entry to project).
-        rows.append(("Q", S.APP_Q_LABEL))
         rows.extend(row for row
                     in map(binding_row, getattr(self.screen, "BINDINGS", []))
                     if row is not None)
