@@ -6,11 +6,11 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: Not started
 status: planning
-stopped_at: Quick task 261017-mad complete; Phase 12 planning next
-last_updated: "2026-10-17T08:52:00.000Z"
+stopped_at: Quick task 261017-uwr complete (slot-5 monitor UX overhaul)
+last_updated: "2026-10-17T15:07:19.096Z"
 last_activity: 2026-10-17
 last_activity_desc: Quick task 261017-mad (exit keys final state) complete
-state_head: fb7bb53f67bac10eaffcc7fb31b508b2e6508636
+state_head: f3b42ba52c1fd16f1408948fdf9918b9b455803d
 progress:
   total_phases: 6
   completed_phases: 6
@@ -108,6 +108,7 @@ Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 
 | Phase quick-261016-v0z P01 | 34 min | 3 tasks | 10 files |
 | Phase quick-261017-klw PP01 | 24 min | 3 tasks | 10 files |
 | Phase quick-261017-mad P01 | 35 min | 3 tasks | 7 files |
+| Phase quick-261017-uwr PP01 | 33 min | 4 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -246,6 +247,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [quick-261017-mad]: F10 declarative seam probe-confirmed and landed (the 2026-10-17 16:02 exit-key final ruling) — priority Binding(f10) fires over a focused Input (non-printables pass the consume-key filter that strips printable priority bindings) and over modals (the P9 mechanism; CDR-4 owns exit-family stacking); the on_event fallback never needed — RED 1 failing inert then going green on the declaration alone is the live proof
 - [quick-261017-mad]: ctrl+c interception withdrawn — the ENTIRE on_event override deleted (cdr intercept + klw WR-01 delegation + vxr residue together; selected_text and is_modal both count zero over tui/app.py); native terminal semantics pinned by tests: selection-holding Input copies through textual's own binding, bare press = inherited notify-only help_quit default (accepted, not pinned), modals chain-cut; ctrl+c never exits anywhere
 - [quick-261017-mad]: help-modal-only string churn, goldens untouched — APP_F10_LABEL added (zh 退出（任意焦点） / en Quit (any focus), injectivity-safe), APP_CTRLC_LABEL reworded to the anti-misreading note (row KEPT per the ruling's preference), APP_QUIT_LABEL/APP_CTRLQ_LABEL byte-identical (bottom-bar golden discipline; the f10 binding carries no description so no bar renders it); the priority-typing-key tripwire now derives printability from textual's key_to_character + isprintable (f10 is not a typing key — the old no-'+' heuristic misclassified function keys)
+- [Phase quick-261017-uwr]: 261017-uwr: slot-5 three-state derivation — live-pair evidence (launcher registry ∪ /proc probe -> argv_matrix planned pairs) gates the interrupted leg; from-failures matrices thread the driver's enumerate-and-filter so alias re-runs never false-interrupt; header/ordering/glyphs per the maintainer ruling (⏵/✓/⏸); MonitorBackend entries_progress delegation was missing (Rule 2); monitor goldens regenerated uncommitted (WINDOWS #35), #34 closed
 
 ### Pending Todos
 
@@ -284,6 +286,7 @@ None yet.
 | 261017-eea | CI 四红车道修复批 — pexpect 入 dev 组（lock 仅增 pexpect+ptyprocess，requirements 重导出字节不变）；helixgen 三文件 schema 修复（info.path 剥离 + dataset.species 规范 22/12/13 + FLOPs anyOf 规范化）；multi-species 杂散删除 + 四 arena 文件与 permutation 重生成（42→45 模型，family 861→990，零 verdict 翻转）双跑幂等；新基线 1F/1859P + node 26/26 | 2026-10-17 | c6b510f | [261017-eea-ci-fix-batch-pexpect-into-dev-lockfile-d](./quick/261017-eea-ci-fix-batch-pexpect-into-dev-lockfile-d/) |
 | 261017-klw | 08-review 修复批（closeout 前最后一批）— WR-01 ctrl+c 选区复制委托（selected_text 委托至 Input 自有 copy 绑定）/ WR-02 [k] 终止走 app 级 exit-kill 线程 worker（每 root 宽守卫 + 无条件 ExitKillsDone 后退出，绝不冻结事件循环）/ WR-01..03+IN-01..03+07-CR-01 全七项；run_finetune 两处守护读（Model_name→key、Mean_token_length→1），dataset 侧 :849/:1077/:1322 记录未改；WizardModal 键帽裁定仍待 maintainer；1F/1867P + node 26/26 + 金标绿 + 零新字符串 | 2026-10-17 | 6e331d3 | [261017-klw-fix-batch-feedback-round-review-wr-01-03](./quick/261017-klw-fix-batch-feedback-round-review-wr-01-03/) |
 | 261017-mad | 退出键终态（maintainer 2026-10-17 16:02 裁定）— F10 任意焦点主退出（声明式 priority 绑定走 v0z 确认链，probe 证实非打印键穿透 focused-Input consume-key 过滤；P9 过 modal 由 CDR-4 守卫）；ctrl+c 拦截整体撤回（on_event 全删，WR-01 委托随之删除，终端原生复制/中断语义回归并钉测：选区 Input 原生复制、裸按仅 notify、modal 内链切）；q/ctrl+q 字节不变；帮助弹窗双语同步（APP_F10_LABEL 新增 + APP_CTRLC_LABEL 改写为防误读行，APP_QUIT/CTRLQ 字节不动金标零动）；1F/1869P + node 26/26 + 金标 11/11 | 2026-10-17 | c8f6f44 | [261017-mad-exit-keys-final-f10-any-focus-quit-prima](./quick/261017-mad-exit-keys-final-f10-any-focus-quit-prima/) |
+| 261017-uwr | slot-5 监控 UX 修订（maintainer 2026-10-17 22:15 裁定）— 三态推导（⏵ live / ✓ done / ⏸ interrupted，closes WINDOWS #34）：活证据 = launcher 注册表 ∪ /proc 探测 -> argv_matrix 计划矩阵（from-failures 走 driver 自身 enumerate-and-filter，alias 重跑不误判中断）；上下文头部一行（结果目录 {root} · {n} 训练项：⏵/✓/⏸ 计数，approved 术语表）；live 置顶排序（freshest mtime 优先，completed 沉底）+ WR-05 光标身份跨重排；MonitorBackend 补 entries_progress 委托（Rule 2，生产进度列此前死数据）；monitor 双金标 make snapshot-update 重生成不提交（WINDOWS #35 D-03 待审）；1F/1901P（+32 新）+ node 26/26 + 金标 11/11 工作树绿 | 2026-10-17 | f3b42ba | [261017-uwr-slot-5-monitor-ux-overhaul-context-heade](./quick/261017-uwr-slot-5-monitor-ux-overhaul-context-heade/) |
 
 ## Deferred Items
 
@@ -295,8 +298,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T08:52:00.000Z
-Stopped at: Quick task 261017-mad complete (F10 any-focus exit + ctrl+c withdrawal) — Phase 12 planning next
+Last session: 2026-10-17T15:07:18.420Z
+Stopped at: Quick task 261017-uwr complete (slot-5 monitor UX overhaul)
 Resume file: None
 
 ## Operator Next Steps
