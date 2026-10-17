@@ -273,6 +273,7 @@ None yet.
 | 261016-v0z | 退出守卫 — q/ctrl+q 一律先确认（无训练任务 Y/N 确认弹窗，enter 不确认），ctrl+q 显式绑定走守卫，ctrl+c 审计入帮助，金标不动 | 2026-10-16 | a32d74a | [261016-v0z-guard-ctrl-q-exit-route-the-inherited-te](./quick/261016-v0z-guard-ctrl-q-exit-route-the-inherited-te/) |
 | 261016-vxr | slot-5 批 — 训练行 ETA（checkpoint 对推算，不可推显 —）+ k 停止确认（Y-only，不退 console）+ 大写 Q 任意焦点退出（on_event 拦截，modal 内惰性） | 2026-10-16 | ef2e365 | [261016-vxr-slot-5-monitor-batch-eta-remaining-time-](./quick/261016-vxr-slot-5-monitor-batch-eta-remaining-time-/) |
 | 261017-cdr | 退出键修订 — ctrl+c 任意焦点主退出（on_event 拦截走 v0z 确认链，modal 内惰性，notify 审计全消），大写 Q 恢复普通字母，P9 退出弹窗堆叠守卫（action_quit 出口族早退），退出确认 [Y]/[N] 加粗 + y/n Footer 键帽 | 2026-10-17 | 0980956 | [261017-cdr-exit-keys-revision-ctrl-c-any-focus-quit](./quick/261017-cdr-exit-keys-revision-ctrl-c-any-focus-quit/) |
+| 261017-dnr | 确认族醒目 Y/N — 启动确认门/重跑/停止确认加粗 [Y]/[N] + y/n 键帽（E2 匹配态仅加粗，键帽按 armed-after-blur 设计保持隐藏），ExitModal enter/k 键帽 + 加粗三键（语义零改），3 新常量 + 2 精确复用，27 弹窗六准则审计表（WizardModal 待裁定） | 2026-10-17 | 8c995da | [261017-dnr-uniform-prominent-y-n-across-all-confirm](./quick/261017-dnr-uniform-prominent-y-n-across-all-confirm/) |
 
 ## Deferred Items
 
