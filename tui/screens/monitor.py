@@ -943,7 +943,7 @@ class MonitorSession:
     """
 
     def __init__(self) -> None:
-        self.attached_root: "Path | None" = None
+        self.attached_root: Path | None = None
         self.expected_totals: dict[str, int] = {}
         self.fallback_starts: dict[str, float] = {}
         self.ever_discovered: set[str] = set()
