@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 20
+open_count: 21
 waived_count: 0
 fixed_count: 11
-total_count: 31
-last_updated: 2026-10-17T07:36:01.293Z
+total_count: 32
+last_updated: 2026-10-17T08:50:31.381Z
 ---
 
 # Broken Windows Ledger
@@ -46,6 +46,7 @@ last_updated: 2026-10-17T07:36:01.293Z
 | 29 | quick-261016-vxr | deviation | tests/tui/__snapshots__/monitor_running.svg |  | monitor_running.svg AND monitor_empty.svg regenerated (the slot-5 [k] 停止 keycap row) via make snapshot-update, deliberately UNCOMMITTED pending the maintainer's D-03 review - the committed tree fails test_snapshots on exactly these two until they land (run_config.svg byte-preserved, sha256 afa89e7e...) | fixed | D-03 review approved 2026-10-17; the three SVGs landed in f2a772a | 2026-10-17T00:00:00.000Z | 2026-10-17T01:34:00.000Z |
 | 30 | quick-261017-eea | deviation | schemas/model_performance.json |  | Rule-2 deviation (eea commit 9a83066): the 141 helixgen entries carry FLOPs empty-string where the schema demanded strict number — schema conformed to the sibling anyOf [number, const ''] shape (1 line) after verifying the  documents '' as the missing-value convention, all 13 sibling metrics already use anyOf, summarize is ''-safe, and no test pins FLOPs strictness; fabricating numbers forbidden | open |  | 2026-10-17T02:55:52.918Z |  |
 | 31 | quick | deviation | pipeline/run_finetune.py | 849 | run_finetune sibling hard-index sites deliberately unfixed (07-CR-01 batch covered only the model-loop reads): :849 probe-branch row[Model_name], :1077 dataset-loop row[Dataset_name], :1322 row[length] — schema-legal minimal custom entries crash these paths; future maintainer-ruled batch (see 261017-klw-SUMMARY Maintainer Items) | open |  | 2026-10-17T07:36:01.293Z |  |
+| 32 | quick-261017-mad | deviation | tests/tui/test_snapshots.py | 944 | test_monitor_running_golden load-timing flake (pre-existing, observed once at the 261017-mad pre-task baseline): the SVG terminal-id is an adler32 hash over every rendered segment, and one full-suite run under load rendered one differing segment; identical rerun green, module green 11/11 in isolation, all fixture data frozen — root cause a load-dependent refresh artifact at export time, not reproduced by 261017-mad changes | open |  | 2026-10-17T08:50:31.381Z |  |
 
 ````json
 [
@@ -449,6 +450,19 @@ last_updated: 2026-10-17T07:36:01.293Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-17T07:36:01.293Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
+  },
+  {
+    "id": 32,
+    "kind": "deviation",
+    "phase": "quick-261017-mad",
+    "file": "tests/tui/test_snapshots.py",
+    "line": 944,
+    "description": "test_monitor_running_golden load-timing flake (pre-existing, observed once at the 261017-mad pre-task baseline): the SVG terminal-id is an adler32 hash over every rendered segment, and one full-suite run under load rendered one differing segment; identical rerun green, module green 11/11 in isolation, all fixture data frozen — root cause a load-dependent refresh artifact at export time, not reproduced by 261017-mad changes",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T08:50:31.381Z",
     "resolved_at": null,
     "milestone": "v1.2"
   }
