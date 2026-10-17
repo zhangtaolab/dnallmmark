@@ -150,6 +150,7 @@ See also:
     registry every quirk-list member must resolve against.
 """
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -2908,4 +2909,142 @@ def test_unpack_block_merges_effective_for_all_four_dir_settings():
     assert log_unpack_idx < model_loop_idx, (
         "the log_dir effective unpack must precede the model loop whose "
         "error-log site consumes it"
+    )
+
+
+# =====================================================================
+# The minimal custom-entry guard (07-CR-01 / 07-VERIFICATION W4, the
+# 2026-10-17 fix batch) — AST structural pin
+# =====================================================================
+
+
+def _model_loop_node(tree):
+    """The ``for ix, model_row in models_info.items():`` loop node."""
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.For)
+            and isinstance(node.target, ast.Tuple)
+            and len(node.target.elts) == 2
+            and isinstance(node.target.elts[0], ast.Name)
+            and node.target.elts[0].id == "ix"
+            and isinstance(node.target.elts[1], ast.Name)
+            and node.target.elts[1].id == "model_row"
+            and isinstance(node.iter, ast.Call)
+            and isinstance(node.iter.func, ast.Attribute)
+            and node.iter.func.attr == "items"
+            and isinstance(node.iter.func.value, ast.Name)
+            and node.iter.func.value.id == "models_info"
+        ):
+            return node
+    return None
+
+
+def test_minimal_custom_entry_reads_are_guarded():
+    """07-CR-01 (07-VERIFICATION W4 adjudication, fix batch 261017-klw):
+    inside the model loop, the two schema-OPTIONAL registry reads go
+    through ``model_row.get(...)`` — ``Model_name`` defaulting to ``ix``
+    (the registry key — the exact value ``custom_entries.land()`` stamps
+    as Model_name for every wizard-landed entry, so wizard entries never
+    hit the fallback and ``--target_model`` filtering keeps working over
+    the key for minimal hand-written entries) and ``Mean_token_length``
+    defaulting to ``1`` (the no-compression floor every official
+    singlebase/one-hot row carries — the sole consumer degrades to
+    ``data_length + 2``, over-long but never truncating). A
+    schema-legal minimal custom model entry (required subset
+    ``{Model_path, size (M), type, Tokenizer}`` per
+    schemas/custom_registry.json) must not raise KeyError at loop entry.
+
+    Structural AST pin (the file is read as SOURCE TEXT, never imported
+    — torch/dnallm sit at its module top): (a) both reads are guarded
+    ``.get`` calls with exactly those defaults; (b) NO bare
+    ``model_row[...]`` subscript with a Constant 'Model_name' or
+    'Mean_token_length' slice remains anywhere in the module; (c) the
+    boundary — ``Model_path`` and ``Tokenizer`` stay HARD-INDEXED
+    (schema-REQUIRED fields; their absence is a malformed entry that
+    SHOULD fail loudly).
+    """
+    tree = ast.parse(RUN_FINETUNE.read_text(encoding="utf-8"))
+
+    def _model_row_subscript_fields():
+        fields = []
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Subscript)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "model_row"
+                and isinstance(node.slice, ast.Constant)
+                and isinstance(node.slice.value, str)
+            ):
+                fields.append(node.slice.value)
+        return fields
+
+    # (b) the negative: no bare subscript on the two optional fields
+    fields = _model_row_subscript_fields()
+    for optional_field in ("Model_name", "Mean_token_length"):
+        assert optional_field not in fields, (
+            f"a bare model_row[{optional_field!r}] subscript survives — "
+            "a schema-legal minimal custom entry (the required subset "
+            "is Model_path / size (M) / type / Tokenizer per "
+            "schemas/custom_registry.json) raises KeyError at loop "
+            "entry (07-CR-01, 07-VERIFICATION W4)"
+        )
+    # (c) the boundary: the schema-REQUIRED pair stays hard-indexed
+    for required_field in ("Model_path", "Tokenizer"):
+        assert required_field in fields, (
+            f"model_row[{required_field!r}] is no longer hard-indexed — "
+            "the field is schema-REQUIRED for custom entries; a missing "
+            "value is a malformed entry that must fail loudly, never "
+            "silently default"
+        )
+
+    # (a) the guarded reads inside the model loop
+    loop = _model_loop_node(tree)
+    assert loop is not None, (
+        "no `for ix, model_row in models_info.items():` model-loop "
+        "header found — the guarded-read contract is anchored on it"
+    )
+
+    def _loop_assign_value(target_name):
+        values = [
+            node.value
+            for node in ast.walk(loop)
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == target_name
+        ]
+        assert len(values) == 1, (
+            f"expected exactly one {target_name} assignment inside the "
+            f"model loop (found {len(values)})"
+        )
+        return values[0]
+
+    def _is_get_call(value, field, default_predicate):
+        return (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Attribute)
+            and value.func.attr == "get"
+            and isinstance(value.func.value, ast.Name)
+            and value.func.value.id == "model_row"
+            and len(value.args) == 2
+            and isinstance(value.args[0], ast.Constant)
+            and value.args[0].value == field
+            and default_predicate(value.args[1])
+        )
+
+    model_name_value = _loop_assign_value("model_name")
+    assert _is_get_call(
+        model_name_value, "Model_name",
+        lambda arg: isinstance(arg, ast.Name) and arg.id == "ix"), (
+        "model_name must read model_row.get(\"Model_name\", ix) — the "
+        "registry key is the fallback (exactly what custom_entries.land() "
+        "stamps, so wizard-landed entries never hit it)"
+    )
+    mean_token_value = _loop_assign_value("mean_token_len")
+    assert _is_get_call(
+        mean_token_value, "Mean_token_length",
+        lambda arg: isinstance(arg, ast.Constant) and arg.value == 1), (
+        "mean_token_len must read model_row.get(\"Mean_token_length\", 1) "
+        "— 1 is the no-compression floor (the consumer degrades to "
+        "data_length + 2, over-long but never truncating)"
     )

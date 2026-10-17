@@ -1005,7 +1005,14 @@ if __name__ == "__main__":
     init_batch_size = -1
     init_token_len = -1
     for ix, model_row in models_info.items():
-        model_name = model_row["Model_name"]
+        # 07-CR-01 (07-VERIFICATION W4, fix batch 261017-klw): Model_name
+        # is schema-OPTIONAL for custom entries — schemas/custom_registry.json
+        # requires only {Model_path, size (M), type, Tokenizer}. The registry
+        # KEY is the fallback: exactly what custom_entries.land() stamps as
+        # Model_name for every wizard-landed entry (Pitfall 6/11), so landed
+        # customs never hit it and --target_model filtering keeps working
+        # over the key for minimal hand-written entries.
+        model_name = model_row.get("Model_name", ix)
         if target_model is not None and model_name != target_model:
             continue
 
@@ -1018,7 +1025,14 @@ if __name__ == "__main__":
 
         model_path = model_base + model_row["Model_path"]
         tokenizer_type = model_row["Tokenizer"]
-        mean_token_len = model_row["Mean_token_length"]
+        # 07-CR-01 sibling (schema-OPTIONAL like Model_name): 1 is the
+        # no-compression floor every official singlebase/one-hot row carries
+        # — the sole consumer (max_length = int(data_length /
+        # mean_token_len) + 2, non-singlebase branch) degrades to
+        # data_length + 2 (over-long, never truncating), still bounded
+        # downstream by the max_token_len cap and the
+        # models_with_limited_length clamp.
+        mean_token_len = model_row.get("Mean_token_length", 1)
 
         # Open error log file — the effective log dir (261014-f4w,
         # F4W-02): --log_dir flag > directories.json log_dir key > the
