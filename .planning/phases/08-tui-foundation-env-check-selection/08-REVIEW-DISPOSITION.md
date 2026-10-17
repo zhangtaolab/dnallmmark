@@ -44,12 +44,12 @@ recorded: 2026-10-17T04:43:05.046Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
+| WR-01 | warning | fixed | fixed in 06d2679 (klw): ctrl+c delegates to Input copy on selection |
+| WR-02 | warning | fixed | fixed in 06d2679 (klw): kill-and-exit off-loop @work worker |
+| WR-03 | warning | fixed | fixed in 06d2679 (klw): mixed roots join the multi-root ExitModal |
+| IN-01 | info | fixed | fixed in 0d02e18 (klw): store below the kind guard |
+| IN-02 | info | fixed | fixed in 0d02e18 (klw): scope-tagged single-counter staleness filter |
+| IN-03 | info | fixed | fixed in 0d02e18 (klw): _check_in_flight set synchronously |
 | CR-01 | critical | fixed | f9528e3 (quick-261016-hhx Task 1) (not in the current review) |
 | IN-04 | info | open | - (not in the current review) |
 
