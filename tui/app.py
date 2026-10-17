@@ -563,6 +563,26 @@ class DnallmMarkTui(App):
         # Input, so the priority-binding typing prohibition holds).
         Binding("ctrl+q", "quit", show=False, priority=True,
                 system=True),
+        # 261017-mad (the maintainer's 2026-10-17 16:02 exit-key final
+        # ruling): F10 is the ANY-FOCUS primary exit — the F-key family
+        # is the only one clean on all three sides (an unscoped terminal
+        # ctrl+shift+c passthrough is an indistinguishable 0x03, so a
+        # ctrl+c binding can never own the exit role; ctrl+q is dead
+        # under zellij; a capital Q steals typing). Probe evidence
+        # (locked textual 8.2.8): the App priority check runs BEFORE the
+        # focused-widget forward and NON-PRINTABLE f10 passes the
+        # consume-key filter that strips printable priority bindings
+        # over a focused Input — the declared seam delivers the
+        # any-focus reach with no on_event fallback — and the priority
+        # chain fires over open modals (the ctrl+q P9 mechanism; the
+        # action_quit CDR-4 guard owns exit-family stacking). show=False
+        # keeps every Footer/bottom bar byte-unchanged (the golden
+        # discipline); system=True keeps the ctrl+p key panel clean (the
+        # ctrl+q precedent); NO description — the help row is manual in
+        # _binding_rows and therefore live-language-resolved (the
+        # ctrl+q idiom; remap_binding_descriptions skips
+        # description-less entries by design).
+        Binding("f10", "quit", show=False, priority=True, system=True),
         Binding("question_mark", "help", S.APP_HELP_LABEL, key_display="?"),
         Binding("L", "toggle_language", S.APP_LANGUAGE_TOGGLE_LABEL),
     ]
@@ -1289,11 +1309,14 @@ class DnallmMarkTui(App):
         # show=False/system — the declared ctrl+q mirror (the inherited
         # default made explicit) — get their help rows HERE, after the
         # app bindings and before the screen's; resolved live from the
-        # strings registry so the L toggle re-derives them. 261017-cdr:
-        # the ctrl+c row is now the any-focus primary exit (the
-        # on_event intercept routing through the v0z confirm chain);
-        # the 261016-vxr Q row is retired with its intercept — a
-        # capital Q is a plain typing letter again.
+        # strings registry so the L toggle re-derives them. 261017-mad:
+        # the F10 row is FIRST among the manual exit rows — F10 is the
+        # any-focus PRIMARY exit since the 2026-10-17 16:02 ruling (the
+        # declared priority binding routing through the v0z confirm
+        # chain); q/ctrl+q are same-role alternates behind it; the
+        # 261016-vxr Q row is retired with its intercept — a capital Q
+        # is a plain typing letter again.
+        rows.append(("f10", S.APP_F10_LABEL))
         rows.append(("ctrl+q", S.APP_CTRLQ_LABEL))
         rows.append(("ctrl+c", S.APP_CTRLC_LABEL))
         rows.extend(row for row

@@ -633,10 +633,19 @@ async def test_no_priority_typing_key_binding_exists_anywhere():
     """The prohibition, grep-pinned: no Binding(priority=True) on any
     TYPING key anywhere under tui/ — a priority binding fires before a
     focused Input and breaks typing (the verified textual semantics).
-    Modifier-combo keys are exempt (261016-v0z): ctrl+q — the declared
-    mirror of textual 8.2.8's own App default, which is priority=True —
-    cannot insert a character into an Input, so the typing hazard the
-    prohibition guards cannot arise from it."""
+    The typing-key test is TEXTUAL'S OWN character mapping
+    (261017-mad): a key breaks typing only when it carries a PRINTABLE
+    character (``key_to_character`` + ``isprintable`` — the runtime
+    predicate ``Key.is_printable`` that gates Input insertion).
+    Modifier-combo keys are exempt by construction (261016-v0z:
+    ctrl+q, the declared mirror of textual 8.2.8's own App default,
+    which is priority=True — the mapping returns None for any
+    modifier-combined key). Non-printable function keys are exempt by
+    the same rule (261017-mad: f10, the any-focus primary exit —
+    probe-pinned on 8.2.8, a non-printable priority binding passes the
+    consume-key filter over a focused Input without typing)."""
+    from textual.keys import key_to_character
+
     tui_dir = Path(nav_module.__file__).parents[1]
     offenders = []
     for py in sorted(tui_dir.rglob("*.py")):
@@ -644,8 +653,12 @@ async def test_no_priority_typing_key_binding_exists_anywhere():
             if not re.search(r"priority\s*=\s*True", line):
                 continue
             key_match = re.search(r'Binding\(\s*"([^"]+)"', line)
-            if key_match is not None and "+" not in key_match.group(1):
-                offenders.append(f"{py.name}: {line.strip()}")
+            if key_match is None:
+                continue
+            character = key_to_character(key_match.group(1))
+            if character is None or not character.isprintable():
+                continue  # cannot insert text — not a typing key
+            offenders.append(f"{py.name}: {line.strip()}")
     assert not offenders, (
         f"priority bindings on typing keys are prohibited: {offenders}"
     )
@@ -667,17 +680,24 @@ async def test_env_help_modal_reflects_the_s_removal():
         await pilot.pause()
         assert isinstance(app.screen, HelpModal)
         rows = [str(static.content) for static in app.screen.query(Static)]
-        # the live map after the 261017-cdr revision: q, ?, L, ctrl+q,
-        # ctrl+c, r, enter — and NO s and NO Q (the 261016-vxr Q row
-        # retired with its intercept: Q is a plain typing letter again;
-        # ctrl+c is now the any-focus primary exit through the v0z
-        # confirm chain — the on_event intercept, no BINDINGS entry)
-        from tui.strings import APP_CTRLC_LABEL, APP_CTRLQ_LABEL
+        # the live map after the 261017-mad ruling: q, ?, L, f10,
+        # ctrl+q, ctrl+c, r, enter — and NO s and NO Q (the 261016-vxr Q
+        # row retired with its intercept: Q is a plain typing letter
+        # again; f10 is now the any-focus PRIMARY exit per the
+        # 2026-10-17 16:02 ruling — the declared priority binding
+        # routing through the v0z confirm chain, its manual row FIRST
+        # among the exit rows)
+        from tui.strings import (
+            APP_CTRLC_LABEL,
+            APP_CTRLQ_LABEL,
+            APP_F10_LABEL,
+        )
 
         assert rows == [
             APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
             APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
             APP_HELP_ROW.format(key="L", label=APP_LANGUAGE_TOGGLE_LABEL),
+            APP_HELP_ROW.format(key="f10", label=APP_F10_LABEL),
             APP_HELP_ROW.format(key="ctrl+q", label=APP_CTRLQ_LABEL),
             APP_HELP_ROW.format(key="ctrl+c", label=APP_CTRLC_LABEL),
             APP_HELP_ROW.format(key="r", label=ENV_REFRESH_LABEL),

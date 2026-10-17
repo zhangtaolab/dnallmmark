@@ -904,19 +904,26 @@ async def test_help_modal_lists_bindings_and_esc_closes():
         # (app: q quit + ? help + L language, 261015-ehc; 261016-v0z:
         # the ctrl+q/ctrl+c rows join after the app bindings — ctrl+q
         # the declared mirror of the framework default (same guard as
-        # q); 261017-cdr: ctrl+c is now the any-focus primary exit
-        # (the on_event intercept) and the 261016-vxr Q row is RETIRED
-        # with its intercept — Q is a plain typing letter again; env
+        # q); 261017-mad: f10 is now the any-focus PRIMARY exit (the
+        # declared priority binding, 2026-10-17 16:02 ruling) and its
+        # manual row lists FIRST among the exit rows, before the
+        # same-role ctrl+q alternate — and the 261016-vxr Q row stays
+        # RETIRED — Q is a plain typing letter; env
         # screen: r refresh + enter detail — the s row retired with the
         # 09-03 nav-shell migration: menu slot 2 supersedes the alias,
         # and the digit bindings are show=False so the modal's rows are
         # exactly this map)
-        from tui.strings import APP_CTRLC_LABEL, APP_CTRLQ_LABEL
+        from tui.strings import (
+            APP_CTRLC_LABEL,
+            APP_CTRLQ_LABEL,
+            APP_F10_LABEL,
+        )
 
         expected_rows = [
             APP_HELP_ROW.format(key="q", label=APP_QUIT_LABEL),
             APP_HELP_ROW.format(key="?", label=APP_HELP_LABEL),
             APP_HELP_ROW.format(key="L", label=APP_LANGUAGE_TOGGLE_LABEL),
+            APP_HELP_ROW.format(key="f10", label=APP_F10_LABEL),
             APP_HELP_ROW.format(key="ctrl+q", label=APP_CTRLQ_LABEL),
             APP_HELP_ROW.format(key="ctrl+c", label=APP_CTRLC_LABEL),
             APP_HELP_ROW.format(key="r", label=ENV_REFRESH_LABEL),

@@ -2398,6 +2398,151 @@ async def test_ctrlc_below_min_grid_never_exits():
         )
 
 
+# =====================================================================
+# The 2026-10-17 16:02 exit-key final ruling (261017-mad) — F10 is the
+# any-focus primary exit: a DECLARED priority binding (the probe-
+# confirmed declarative seam; no on_event fallback), routing through the
+# v0z confirm chain from ANY base-screen focus — including a focused
+# Input (non-printable f10 passes the consume-key filter that strips
+# printable priority bindings) — and over open modals (the ctrl+q P9
+# mechanism, owned by the CDR-4 exit-family guard)
+# =====================================================================
+
+
+async def test_f10_no_sweep_opens_quit_confirm_over_focused_input():
+    """MAD-1 (the 2026-10-17 16:02 final ruling): F10 is the ANY-FOCUS
+    primary exit — the DECLARED priority binding fires over a focused
+    base-screen Input (probe-pinned on textual 8.2.8: the App priority
+    check runs BEFORE the focused-widget forward, and non-printable f10
+    passes the consume-key filter that strips printable priority
+    bindings), opening the QuitConfirmModal through the v0z chain (no
+    live sweep), the Input value unchanged, no exit; y confirms the quit
+    the f10 opened. The live-seam proof is this test itself: before the
+    binding lands it fails with f10 inert (no modal opens)."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        from tui.app import QuitConfirmModal
+
+        seeds_input = app.screen.query_one("#cfg-input-seeds", Input)
+        seeds_input.focus()
+        await pilot.pause()
+        # collapse the select_on_focus whole-content auto-selection (the
+        # WR-01 tests' selection-driving discipline): this leg pins the
+        # PRIORITY reach itself, never any selection interplay
+        await pilot.press("end")
+        await pilot.pause()
+        value_before = seeds_input.value
+        await pilot.press("f10")
+        await pilot.pause()
+        assert isinstance(app.screen, QuitConfirmModal), (
+            "f10 must fire the quit chain over a focused Input (the "
+            "declared priority seam)"
+        )
+        assert not app._exit, "f10 alone never quits — the chain confirms"
+        assert seeds_input.value == value_before, (
+            "the f10 keypress is consumed — never typed into the Input"
+        )
+        await pilot.press("y")
+        await pilot.pause()
+        assert app._exit, "y confirms the quit the f10 opened"
+
+
+async def test_f10_live_sweep_routes_to_exit_modal_over_focused_input():
+    """MAD-1: with a live sweep, f10 from a focused Input routes to the
+    ExitModal (the v0z live leg) — input unchanged, never exited. The
+    F10 twin of the CDR-2 live-sweep leg; priority reach identical, only
+    the modal differs."""
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        from tui.app import ExitModal
+
+        seeds_input = app.screen.query_one("#cfg-input-seeds", Input)
+        seeds_input.focus()
+        await pilot.pause()
+        # collapse the select_on_focus auto-selection (the WR-01 idiom)
+        await pilot.press("end")
+        await pilot.pause()
+        value_before = seeds_input.value
+        await pilot.press("f10")
+        await pilot.pause()
+        assert isinstance(app.screen, ExitModal), (
+            "f10 over a focused Input routes through the live-sweep leg"
+        )
+        assert not app._exit
+        assert seeds_input.value == value_before, "f10 never types"
+
+
+async def test_f10_under_exit_modal_never_stacks_second():
+    """MAD-1: the priority f10 fires over open modals (the P9 mechanism,
+    the ctrl+q twin) and re-enters action_quit, whose CDR-4 exit-family
+    guard returns immediately — exactly ONE exit modal, never a second,
+    never an exit."""
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        from tui.app import ExitModal
+
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, ExitModal)
+        await pilot.press("f10")
+        await pilot.pause()
+        assert sum(isinstance(screen, ExitModal)
+                   for screen in app.screen_stack) == 1, (
+            "f10 under the ExitModal must never stack a second one"
+        )
+        assert not app._exit, "f10 under the ExitModal never exits"
+
+    # the QuitConfirmModal twin: fresh app, no live sweep
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        from tui.app import QuitConfirmModal
+
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, QuitConfirmModal)
+        await pilot.press("f10")
+        await pilot.pause()
+        assert sum(isinstance(screen, QuitConfirmModal)
+                   for screen in app.screen_stack) == 1, (
+            "f10 under the QuitConfirmModal must never stack a second"
+        )
+        assert not app._exit, "f10 under the QuitConfirmModal never exits"
+
+
+async def test_f10_below_min_grid_never_exits():
+    """MAD-1: below 80x24, f10 opens nothing and exits nothing — the
+    priority binding routes into action_quit whose first leg is the
+    WR-06 posture (no chrome over the guard, never an unguarded exit),
+    live sweep included. Regression pin: passes before AND after (while
+    f10 is inert nothing opens either — the before-state twin of the
+    CDR-2 below-min-grid pin)."""
+    from tui.app import ExitModal, MinSizeScreen
+
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+        await pilot.press("f10")
+        await pilot.pause()
+        assert not app._exit, "f10 below the min grid must never exit"
+        assert not any(isinstance(screen, ExitModal)
+                       for screen in app.screen_stack), (
+            "no ExitModal may open over the min-size guard"
+        )
+        assert isinstance(app.screen, MinSizeScreen), (
+            "the guard stays the top screen"
+        )
+
+
 async def test_quit_confirm_footer_shows_y_n_keycaps():
     """CDR-3: the quit confirm's answer keys are visible at a glance —
     the y/n bindings carry show=True with the live-language

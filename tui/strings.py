@@ -152,18 +152,20 @@ APP_TITLE = _t("APP_TITLE", "DNALLM-Mark 控制台", "DNALLM-Mark Console")
 # regeneration (D-03, maintainer-only); the confirm step is surfaced by
 # the modal copy + the ctrl+q/ctrl+c help rows instead.
 APP_QUIT_LABEL = _t("APP_QUIT_LABEL", "退出", "Quit")
-# 261016-v0z / 261017-cdr: the help-modal rows for the two app-level
-# exit keys whose bindings stay hidden from the bars (declared manually
-# in DnallmMarkTui._binding_rows, resolved live so the L toggle
+# 261016-v0z / 261017-cdr / 261017-mad: the help-modal rows for the
+# app-level exit keys whose bindings stay hidden from the bars (declared
+# manually in DnallmMarkTui._binding_rows, resolved live so the L toggle
 # re-derives them). ctrl+q is the declared mirror of the inherited App
-# framework default — the same guarded quit action as q. ctrl+c is the
-# ANY-FOCUS primary exit since 261017-cdr (the maintainer revision that
-# replaced the 261016-vxr uppercase-Q intercept): an App.on_event
-# intercept routing through the v0z confirm chain — it shadows textual
-# 8.2.8's notify-only help_quit default on base screens and is
-# chain-cut under modals, so the notify-only audit is retired
-# everywhere. APP_Q_LABEL was withdrawn with the vxr intercept: a
-# capital Q is a plain typing letter again.
+# framework default — the same guarded quit action as q. 261017-mad (the
+# maintainer's 2026-10-17 16:02 exit-key final ruling): F10 is the
+# ANY-FOCUS primary exit — the F-key family is the only one clean against
+# the terminal copy passthrough (an unscoped ctrl+shift+c is an
+# indistinguishable 0x03), zellij, and typing; the declared priority
+# binding routes through the v0z confirm chain. APP_Q_LABEL was
+# withdrawn with the 261016-vxr intercept: a capital Q is a plain typing
+# letter again.
+APP_F10_LABEL = _t(
+    "APP_F10_LABEL", "退出（任意焦点）", "Quit (any focus)")
 APP_CTRLQ_LABEL = _t(
     "APP_CTRLQ_LABEL", "退出（同 q）", "Quit (same as q)")
 APP_CTRLC_LABEL = _t(
