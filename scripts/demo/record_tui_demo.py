@@ -28,10 +28,12 @@ Contract:
   finetuned-demo``, ``pipeline/finetuned-demo-fail``) and the exact scanned
   download-target directories — never the real ``pipeline/finetuned`` tree.
 - pexpect is imported LAZILY inside the spawn path: ``--dry-run`` and
-  ``--list-scenes`` run under plain ``uv run --group dev`` with no pexpect,
-  no GPU, no network. The recording invocation pulls it on demand via
-  ``uv run --group dev --with pexpect==4.9.0`` (the textual-dev precedent;
-  never a committed dependency group).
+  ``--list-scenes`` run with no pexpect on the execution path, no GPU, no
+  network. It is a real member of the ``dev`` dependency group since
+  quick-261017-eea, so plain ``uv run --group dev`` now resolves it — the
+  former ``--with pexpect==4.9.0`` overlay is retired (ty resolves imports
+  statically, so the lazy import still needs the dependency installed in
+  type-check environments).
 - Under asciinema the driver's stdout must carry ONLY relayed console bytes:
   all diagnostics go to a per-recording meta JSON sidecar
   (``docs/demo/.meta-<scene>-<lang>.json``) that

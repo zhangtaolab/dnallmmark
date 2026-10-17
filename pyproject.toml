@@ -39,6 +39,15 @@ dev = [
     # the documented Textual testing integration (08-RESEARCH Standard Stack).
     # Requires pytest<10,>=8.4 — the repo's pytest>=9.1.1 satisfies it.
     "pytest-asyncio>=1.4,<2",
+    # pexpect (2026-10-17, quick-261017-eea): the demo scene driver
+    # (scripts/demo/record_tui_demo.py) imports it lazily at two spawn-path
+    # sites, but ty resolves imports statically — CI's lock-built env failed
+    # with unresolved-import x2 while the local venv passed environmentally.
+    # Real group member, no ty masking (real types, never any). Floor 4.9:
+    # 4.9.0 is PyPI latest and the version the script docstring cites.
+    # Legitimacy: PyPI-verified per the 08-02 delegation — verdict lines in
+    # 261017-eea-SUMMARY.md. Sole dependency: ptyprocess (locked alongside).
+    "pexpect>=4.9",
 ]
 # GPU-only, NEVER installed in CI (REL-02). Definition lands Phase 3; the BUILD
 # is deferred (D-05). dnallm stays deliberately absent — installed from the local
