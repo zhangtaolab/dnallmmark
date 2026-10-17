@@ -2843,3 +2843,102 @@ async def test_interrupted_entry_renders_glyph_word_and_counts():
             table, "model-dead__task-x", "state") == "⏸ 0/1", (
             "narrow drops the state word — the ⏸ glyph + counts remain"
         )
+
+
+# =====================================================================
+# 261018-08g (SOAK-1/F1): the session hoist over the fresh-build factory
+# =====================================================================
+
+
+async def test_build_monitor_screen_builds_fresh_instances_over_one_session():
+    """The F1 fix's structural pin: ``build_monitor_screen`` returns a
+    FRESH MonitorScreen per call (the deleted cached-instance design
+    never repainted after its first removal — the dead-5 freeze), and
+    every build carries the ONE shared MonitorSession constructed on
+    the composition root (the SEL-01 marks-set precedent)."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        first = app.build_monitor_screen()
+        second = app.build_monitor_screen()
+        assert first is not second, (
+            "each navigation must build a fresh MonitorScreen — the "
+            "cached-instance design is the dead-5 root cause"
+        )
+        assert first._session is app._monitor_session, (
+            "a built screen reads the composition-root session"
+        )
+        assert second._session is app._monitor_session, (
+            "every build shares the ONE session — navigation state "
+            "must not fork per instance"
+        )
+
+
+async def test_session_attach_and_launch_injections_survive_rebuilds():
+    """The session hoist's state-survival pin: attach + the D-13 launch
+    injections recorded through one screen (or the session) are visible
+    on a FRESHLY BUILT screen — the guarantee the cached instance used
+    to provide, now without the repaint bug. The cells==0 re-run
+    semantics (a stale expected total pops, WR-02) survive too."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        first = app.build_monitor_screen()
+        app.push_screen(first)
+        await _settle(pilot, app)
+        first.attach("/scans/finetuned")
+        app._monitor_session.note_launch("/scans/finetuned", 3)
+        app.pop_screen()
+        await pilot.pause()
+
+        second = app.build_monitor_screen()
+        assert second is not first
+        assert str(second._attached_root) == "/scans/finetuned", (
+            "the attached root survives the screen rebuild via the session"
+        )
+        assert second._expected_totals.get("/scans/finetuned") == 3, (
+            "the D-13 expected total survives the rebuild"
+        )
+        assert second._fallback_starts.get("/scans/finetuned") is not None, (
+            "the fallback start survives the rebuild"
+        )
+
+        # WR-02 semantics ride on the session: a cells==0 note (the
+        # re-run flow) clears the stale expected total
+        app._monitor_session.note_launch("/scans/finetuned", 0)
+        assert "/scans/finetuned" not in second._expected_totals, (
+            "a cells==0 note pops the stale expected total (WR-02)"
+        )
+
+
+async def test_sweep_launched_records_via_session_lands_on_fresh_screen():
+    """The D-13 auto-nav on the fresh-instance design: ``sweep_launched``
+    records on the shared session WITHOUT building a screen, and the
+    MonitorSwitchRequested handler switches to a FRESH build reading
+    the session — the launch lands attached with its expected total."""
+    from tui.screens.monitor import MonitorScreen as _MonitorScreen
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert app._monitor_screen is None, (
+            "no monitor screen exists before the first launch"
+        )
+        app.sweep_launched("/scans/launched-root", 5)
+        # the record landed on the session synchronously — no screen
+        # was built to carry it (the F1 design: the fresh screen is
+        # built by the switch handler)
+        assert app._monitor_session.expected_totals.get(
+            "/scans/launched-root") == 5
+        assert app._monitor_session.fallback_starts.get(
+            "/scans/launched-root") is not None
+        await _settle(pilot, app, rounds=4)
+        assert isinstance(app.screen, _MonitorScreen), (
+            "the D-13 message switched to the monitor screen"
+        )
+        screen = app.screen
+        assert str(screen._attached_root) == "/scans/launched-root", (
+            "the fresh screen reads the launch attach from the session"
+        )
+        assert screen._expected_totals.get("/scans/launched-root") == 5, (
+            "the fresh screen reads the expected total from the session"
+        )

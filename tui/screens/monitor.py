@@ -890,9 +890,94 @@ def derive_rerun_seeds(failures, cell_rows) -> "tuple[int, ...]":
     return tuple(sorted(seeds))
 
 
+# =====================================================================
+# MonitorSession — the session state hoisted OFF the screen (261018-08g)
+# =====================================================================
+
+
+class MonitorSession:
+    """The monitor's SESSION state, textual-free (261018-08g, SOAK-1/F1).
+
+    Why this class exists: the screen used to carry this state as plain
+    instance attributes, which was only safe because the app cached ONE
+    MonitorScreen forever — and that cached-instance design is the root
+    cause of the dead-5 freeze (textual 8.2.8 ``switch_screen`` ->
+    ``_replace_screen`` awaits ``screen.remove()`` on the outgoing
+    instance when navigating away; re-switching re-registers the REMOVED
+    instance, which switches the stack but never repaints — real-pty
+    probe-pinned, Pilot-blind, the 2026-10-18 soak report FINDING 1).
+    The app now builds a FRESH MonitorScreen per navigation exactly like
+    every other slot factory, and the cross-navigation state lives HERE
+    — constructed once on the composition root and injected into every
+    build (the SEL-01 marks-set precedent). Derived scan caches
+    (_scan, watermarks, cell rows, timers, ...) deliberately stay
+    screen-local: the mount kick rebuilds them, exactly like today's
+    first visit after boot.
+
+    Fields:
+        attached_root: the attached sweep root (None = the cells
+            region's empty state), stored EXPANDED and RESOLVED —
+            ``attach()`` owns that path-basis contract (CR-01).
+        expected_totals: the D-13 launch injections — the TUI-launched
+            plan's cell count per resolved root key.
+        fallback_starts: the launch moment per resolved root key (the
+            11-04 stats seam; superseded by the first record's
+            started_at once it lands).
+        ever_discovered: every root any scan ever listed (the
+            deleted-mid-monitor degradation predicate).
+
+    ``note_launch`` carries the EXACT semantics the screen's own
+    ``note_launch`` had: a truthy ``cells`` sets the expected total, a
+    ``cells == 0`` (the re-run flow, plan unknown) POPS any stale
+    expected total a prior launch at the same root left behind (WR-02),
+    the fallback start stamps now, and the attach fires ONLY when no
+    root is attached yet.
+    """
+
+    def __init__(self) -> None:
+        self.attached_root: "Path | None" = None
+        self.expected_totals: dict[str, int] = {}
+        self.fallback_starts: dict[str, float] = {}
+        self.ever_discovered: set[str] = set()
+
+    def note_launch(self, root, cells: int) -> None:
+        """Record a TUI-launched sweep's plan (see the class docstring —
+        the exact former MonitorScreen.note_launch semantics, screen
+        side-effects excluded: the fresh screen's mount kick rebuilds
+        the derived caches)."""
+        # CR-01 note: this pre-resolution is a documented NO-OP for
+        # correctness (attach() owns the expanduser().resolve()
+        # contract) — kept so the key computation stays locally
+        # explicit.
+        root_key = str(Path(str(root)).resolve())
+        if cells:
+            self.expected_totals[root_key] = int(cells)
+        else:
+            self.expected_totals.pop(root_key, None)
+        self.fallback_starts[root_key] = time.time()
+        if self.attached_root is None:
+            self.attach(root_key)
+
+    def attach(self, root) -> None:
+        """Store the root EXPANDED and RESOLVED — the one path-basis
+        contract every reader (cells_view / stats / failures_view /
+        attached_running_counts / the frontier target) shares with the
+        [a] validation layer (CR-01; an already-absolute resolved key
+        passes through as identity)."""
+        self.attached_root = Path(str(root)).expanduser().resolve()
+
+
 class MonitorScreen(Screen):
     """The slot-5 monitor: discovered sweeps + cell table + stats line
-    over the 11-04 scanner, with the D-09 worker cadence."""
+    over the 11-04 scanner, with the D-09 worker cadence.
+
+    261018-08g (SOAK-1/F1): the screen is built FRESH per navigation
+    (``build_monitor_screen`` — the cached-instance design is deleted);
+    the session state that must survive navigation lives on the
+    injected :class:`MonitorSession` (``session=None`` constructs a
+    private instance — every existing direct-construction use stays
+    source-compatible) and the four fields below are write-through
+    properties over it."""
 
     # D-13 slot 5 (the top-menu active-slot marker the nav bar reads).
     NAV_SLOT: ClassVar[int] = 5
@@ -1015,6 +1100,7 @@ class MonitorScreen(Screen):
                  launcher_service: "MonitorLauncherProtocol | None" = None,
                  frontier_interval: float = FRONTIER_INTERVAL_SECONDS,
                  full_interval: float = FULL_INTERVAL_SECONDS,
+                 session: "MonitorSession | None" = None,
                  **kwargs):
         super().__init__(**kwargs)
         self._service: MonitorServiceProtocol = (
@@ -1027,7 +1113,17 @@ class MonitorScreen(Screen):
             else MonitorBackend())
         self._frontier_interval = frontier_interval
         self._full_interval = full_interval
-        # the scan state (event-loop side only; workers post into it)
+        # 261018-08g (SOAK-1/F1): the cross-navigation session state —
+        # the shared instance arrives from the composition root (the
+        # app's build_monitor_screen); None builds a private one so
+        # every existing direct-construction test stays
+        # source-compatible.
+        self._session: MonitorSession = (
+            session if session is not None else MonitorSession())
+        # the scan state (event-loop side only; workers post into it) —
+        # screen-LOCAL by design (the mount kick rebuilds it; the F1
+        # fix deletes the cached-instance design, so a fresh screen
+        # starts fresh exactly like today's first visit after boot)
         self._scan: Any = None
         self._watermarks: dict[str, float] = {}
         self._root_stats: dict[str, Any] = {}
@@ -1037,14 +1133,8 @@ class MonitorScreen(Screen):
         # {(model, task): CellProgress} refreshed by the frontier/full
         # workers; empty when nothing runs or nothing parses
         self._cell_progress: dict[tuple[str, str], Any] = {}
-        self._ever_discovered: set[str] = set()
         self._resume_count = 0
         self._last_stats: Any = None
-        # the attached sweep (None = the cells region's empty state)
-        self._attached_root: Path | None = None
-        # the D-13 launch injections (expected totals + fallback starts)
-        self._expected_totals: dict[str, int] = {}
-        self._fallback_starts: dict[str, float] = {}
         # per-worker run ids (WR-02): bumped on every kick so a
         # superseded worker's late post drops
         self._full_run_id = 0
@@ -1057,6 +1147,32 @@ class MonitorScreen(Screen):
         self._frontier_timer = None
         self._full_timer = None
         self._narrow = False
+
+    # ===== the session write-through properties (261018-08g, SOAK-1) =====
+    # attached_root / expected_totals / fallback_starts / ever_discovered
+    # live on the shared MonitorSession so they survive the rebuild-per-
+    # navigation design; the property pair keeps every existing reader
+    # (and the direct-attribute tests) source-compatible.
+
+    @property
+    def _attached_root(self) -> "Path | None":
+        return self._session.attached_root
+
+    @_attached_root.setter
+    def _attached_root(self, value: "Path | None") -> None:
+        self._session.attached_root = value
+
+    @property
+    def _expected_totals(self) -> "dict[str, int]":
+        return self._session.expected_totals
+
+    @property
+    def _fallback_starts(self) -> "dict[str, float]":
+        return self._session.fallback_starts
+
+    @property
+    def _ever_discovered(self) -> "set[str]":
+        return self._session.ever_discovered
 
     # ===== compose / mount =====
 
@@ -1232,7 +1348,9 @@ class MonitorScreen(Screen):
                         if self._attached_root is not None else None)
         discovered_roots = {
             str(summary.root) for summary in message.result.sweeps}
-        self._ever_discovered |= discovered_roots
+        # (the property getter returns the session's LIVE set — update
+        # mutates it in place; an |= assignment would need a setter)
+        self._ever_discovered.update(discovered_roots)
         if (attached_key is not None
                 and attached_key in self._ever_discovered
                 and attached_key not in discovered_roots):

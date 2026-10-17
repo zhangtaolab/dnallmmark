@@ -89,6 +89,7 @@ from tui.screens.monitor import (
     MonitorLauncherProtocol,
     MonitorScreen,
     MonitorServiceProtocol,
+    MonitorSession,
 )
 from tui.screens.nav import NAV_SLOT_BY_INDEX, binding_row
 from tui.screens.run_config import (
@@ -671,8 +672,17 @@ class DnallmMarkTui(App):
         # launcher face (both default to the shared registry).
         self._monitor_service = monitor_service
         self._monitor_launcher = monitor_launcher
-        # The app-owned monitor screen (ONE cached instance — attach
-        # state and the D-13 launch injections survive navigation).
+        # 261018-08g (SOAK-1/F1): the monitor's SESSION state — ONE
+        # shared MonitorSession constructed here and injected into
+        # every MonitorScreen build, so attach state and the D-13
+        # launch injections survive the rebuild-per-navigation design
+        # (the SEL-01 marks-set precedent applied to the monitor; the
+        # cached-instance design it replaces never repainted after its
+        # first removal — the soak report's dead-5).
+        self._monitor_session = MonitorSession()
+        # The LAST-BUILT monitor screen (see build_monitor_screen — a
+        # FRESH screen per navigation since 261018-08g; this reference
+        # exists for action_quit's attached_running_counts read below).
         self._monitor_screen: MonitorScreen | None = None
         # The driver state (T-10-04-02): the busy flag is set
         # SYNCHRONOUSLY in kick and cleared in the worker's drain exit,
@@ -755,23 +765,33 @@ class DnallmMarkTui(App):
         """Build the monitor screen over the shared launcher + the
         injected-or-real scan service (the 11-07 factory).
 
-        ONE cached instance (unlike the other rebuild-per-nav
-        factories): the monitor's attach state and the D-13 launch
-        injections are session state — navigating away and back must
-        never drop the attached sweep. The screen re-composes on
-        re-mount; the state survives on the instance.
+        A FRESH MonitorScreen per call (261018-08g, SOAK-1/F1 — the
+        one-cached-instance design this docstring used to document is
+        DELETED): textual 8.2.8's ``switch_screen`` -> ``_replace_screen``
+        awaits ``screen.remove()`` on the outgoing screen when you
+        navigate away, and re-switching to that REMOVED instance
+        re-registers it on the stack but the render layer NEVER
+        repaints it — after one visit to slot 5, every later press of 5
+        was dead for the whole session (the 2026-10-18 soak report
+        FINDING 1, real-pty probe-pinned, 100% deterministic, invisible
+        to in-process Pilot). The session state the old design cached
+        the instance to protect (attach state, D-13 launch injections)
+        lives on the shared ``self._monitor_session`` instead —
+        constructed once in ``__init__`` and injected into every build
+        (the SEL-01 marks-set precedent); the derived scan caches stay
+        screen-local and the mount kick rebuilds them exactly like
+        today's first visit after boot. ``self._monitor_screen`` keeps
+        the LAST-BUILT instance for action_quit's frozen-read below.
         """
-        if self._monitor_screen is None:
-            self._monitor_screen = MonitorScreen(
-                monitor_service=(
-                    self._monitor_service
-                    if self._monitor_service is not None
-                    else MonitorBackend(launcher=self._launcher)),
-                launcher_service=(
-                    self._monitor_launcher
-                    if self._monitor_launcher is not None
-                    else self._launcher),
-            )
+        self._monitor_screen = MonitorScreen(
+            monitor_service=(self._monitor_service
+                             if self._monitor_service is not None
+                             else MonitorBackend(launcher=self._launcher)),
+            launcher_service=(self._monitor_launcher
+                              if self._monitor_launcher is not None
+                              else self._launcher),
+            session=self._monitor_session,
+        )
         return self._monitor_screen
 
     # ===== Digit navigation (D-13, 09-03) =====
@@ -1020,26 +1040,36 @@ class DnallmMarkTui(App):
         sweep, and switch to the monitor screen (the toast has already
         fired on the run-config side).
 
+        261018-08g (SOAK-1/F1): the record lands on the shared
+        ``_monitor_session`` DIRECTLY — no screen is built here (the
+        fresh screen is built by the switch handler below, and the
+        D-13 auto-nav lands on a fresh instance reading the session).
         The record + attach land synchronously; the screen switch rides
         a posted message (the queue-forward precedent — the async
         ``switch_screen`` needs the message loop, never a bare fire).
         """
-        screen = self.build_monitor_screen()
-        screen.note_launch(root, cells)
+        self._monitor_session.note_launch(root, cells)
         if not self.below_minimum_grid:
             self.post_message(MonitorSwitchRequested(root))
 
     async def on_monitor_switch_requested(
             self, message: MonitorSwitchRequested) -> None:
-        """Complete the D-13 jump: switch to the (already attached)
-        monitor screen (async handler — the message loop owns the
-        coroutine, no bare task firing)."""
-        screen = self._monitor_screen
-        if screen is None or self.screen is screen:
+        """Complete the D-13 jump: switch to a FRESH monitor screen
+        reading the session (async handler — the message loop owns the
+        coroutine, no bare task firing). 261018-08g: build_monitor_screen
+        constructs a new instance per call (the F1 fix); the session
+        state (the just-recorded launch + attach) rides in with it. The
+        same-screen short-circuit keeps its old meaning — a monitor
+        screen already on top needs no switch (no redundant rebuild,
+        no worker restart); the old ``screen is None`` bail is GONE
+        with it (sweep_launched no longer builds the screen, so None is
+        the normal first-launch state this handler must switch through).
+        """
+        if isinstance(self.screen, MonitorScreen):
             return
         if self.below_minimum_grid:
             return  # no chrome over the guard (WR-06)
-        await self.switch_screen(screen)
+        await self.switch_screen(self.build_monitor_screen())
 
     # ===== Min-size guard (08-UI-SPEC Terminal Contract) =====
 
@@ -1159,6 +1189,13 @@ class DnallmMarkTui(App):
         total = S.CFG_VALUE_ABSENT
         attached_root = ""
         if self._monitor_screen is not None:
+            # 261018-08g (SOAK-1/F1): the LAST-BUILT monitor screen —
+            # deliberately kept (not the session): today's frozen-read
+            # semantics are preserved because the removed cached
+            # instance's state was equally frozen once its timers
+            # stopped on removal (the read below is a point-in-time
+            # verdict, never a live subscription; the session-hoisted
+            # attach state it derives from IS live).
             (attached_running, attached_root,
              done, total) = self._monitor_screen.attached_running_counts()
         if roots or attached_running:
