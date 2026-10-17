@@ -2350,6 +2350,94 @@ async def test_k_opens_kill_confirm_y_kills_without_exiting():
             root="/scans/finetuned") in _toast_messages(app)
 
 
+async def test_kill_confirm_footer_shows_y_n_keycaps():
+    """DNR-2 (261017-dnr): the kill confirm's answer keys are visible at
+    a glance — the KillConfirmModal y/n bindings carry show=True with
+    the exact-reuse descriptions (MON_KILL_KEYCAP for y, the
+    LNC_EXIT_CONFIRM_NO pair for n) so the Footer renders the y/n
+    keycaps beside esc; the inherited base enter stays show=False (the
+    EHC-2 inert no-op is never advertised)."""
+    launcher = FakeMonitorLauncher(live=("/scans/finetuned",))
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("k")
+        await pilot.pause()
+        from textual.binding import Binding
+        from textual.widgets import Footer as FooterWidget
+
+        from tui.screens.monitor import KillConfirmModal
+        from tui.screens.selection import ConfirmModal
+        from tui.strings import LNC_EXIT_CONFIRM_NO, MON_KILL_KEYCAP
+
+        assert isinstance(app.screen, KillConfirmModal)
+        entries = {binding.key: binding
+                   for binding in KillConfirmModal.BINDINGS
+                   if isinstance(binding, Binding)}
+        assert entries["y"].show is True, (
+            "the y answer key must render in the Footer"
+        )
+        assert entries["y"].description == MON_KILL_KEYCAP, (
+            "y reuses the exact 停止/Kill pair — it is what y does"
+        )
+        assert entries["n"].show is True, (
+            "the n answer key must render in the Footer"
+        )
+        assert entries["n"].description == LNC_EXIT_CONFIRM_NO
+        base_entries = {binding.key: binding
+                        for binding in ConfirmModal.BINDINGS
+                        if isinstance(binding, Binding)}
+        assert base_entries["enter"].show is False, (
+            "the inert enter no-op is never advertised (EHC-2)"
+        )
+        assert app.screen.query(FooterWidget), (
+            "the modal composes a Footer — the keycaps render"
+        )
+
+
+async def test_kill_confirm_message_bolds_y_n_tokens():
+    """DNR-2 (261017-dnr): the kill confirm's [Y]/[N] tokens are
+    prominent — the message Static's content is a rich Text with a bold
+    span over every [Y]/[N] occurrence while the plain value still
+    carries MON_KILL_CONFIRM byte-unchanged (span-safe existing
+    assertions); the #confirm-box id and message-Static-first layout
+    are preserved (on_mount + the first-Static test queries)."""
+    launcher = FakeMonitorLauncher(live=("/scans/finetuned",))
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+        await pilot.press("k")
+        await pilot.pause()
+        from tui.screens.monitor import KillConfirmModal
+        from tui.strings import MON_KILL_CONFIRM
+
+        assert isinstance(app.screen, KillConfirmModal)
+        content = app.screen.query_one(Static).content
+        assert isinstance(content, Text), (
+            "the message composes as a rich Text over the registry "
+            "constant — never a markup string"
+        )
+        plain = content.plain
+        assert MON_KILL_CONFIRM in plain, plain
+        for token in ("[Y]", "[N]"):
+            offset = plain.find(token)
+            assert offset != -1, f"the {token} token must be present"
+            while offset != -1:
+                start, end = offset, offset + len(token)
+                covered = any(span.start <= start and span.end >= end
+                              and str(span.style) == "bold"
+                              for span in content.spans)
+                assert covered, (
+                    f"the {token} at offset {offset} must carry a bold "
+                    "span (Text.highlight_words)"
+                )
+                offset = plain.find(token, end)
+
+
 async def test_k_outcome_toasts_dead_noop_and_failure():
     """VXR-2 outcome surfaces: already_dead -> MON_KILL_TOAST_DEAD; noop
     (the channel no longer knows the root) -> MON_KILL_UNAVAILABLE; a

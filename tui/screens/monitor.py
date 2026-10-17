@@ -54,7 +54,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen, Screen
-from textual.widgets import DataTable, Footer, Label, RichLog
+from textual.widgets import DataTable, Footer, Label, RichLog, Static
 
 from tui import strings as S
 from tui.screens.nav import BottomBar, TopMenuBar
@@ -544,11 +544,24 @@ class KillConfirmModal(ConfirmModal):
     quitting the console are distinct operator acts — y dismisses and
     fires the ``on_confirm`` callback (the screen's off-loop kill
     worker), nothing else.
+
+    The 261017-dnr prominence ruling (DNR-2): the message's [Y]/[N]
+    tokens render bold and the y/n bindings carry show=True with
+    bilingual keycaps — visibility only; y stays the ONLY key that
+    stops a training, enter lands on the documented no-op, n/esc
+    cancel (vxr semantics untouched).
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("y", "confirm_kill", show=False),
-        Binding("n", "dismiss", show=False),
+        # DNR-2 (261017-dnr): the answer keys are VISIBLE — y/n carry
+        # show=True with bilingual keycaps. Exact-identical-pair reuse
+        # (the WIZ_BACK precedent): MON_KILL_KEYCAP (the Kill word) is
+        # exactly what y does; LNC_EXIT_CONFIRM_NO (the Cancel pair) is
+        # exactly what n does — zero new constants. enter stays
+        # show=False — the inert no-op is never advertised (EHC-2: y the
+        # ONLY key that stops a training, keys/actions byte-unchanged).
+        Binding("y", "confirm_kill", S.MON_KILL_KEYCAP, show=True),
+        Binding("n", "dismiss", S.LNC_EXIT_CONFIRM_NO, show=True),
         # escape inherited from ConfirmModal
     ]
 
@@ -556,6 +569,23 @@ class KillConfirmModal(ConfirmModal):
                  on_confirm: "Callable[[], None]", **kwargs):
         super().__init__(message, on_confirm, **kwargs)
         self._root = root
+
+    def compose(self) -> ComposeResult:
+        # DNR-2 (261017-dnr): the message's [Y]/[y]/[N]/[n] tokens render
+        # BOLD via the Rich Text API (the 261017-cdr QuitConfirmModal
+        # pattern — Text content is never markup-parsed; 'bold' is a
+        # Rich core style, no $token MissingStyle hazard). highlight_words
+        # mutates the Text IN PLACE and returns the count (cdr-probed
+        # rich text.py:639 -> int) — never chained, two-step only. The
+        # layout mirrors ConfirmModal.compose EXACTLY — same
+        # #confirm-box Vertical (on_mount queries it for the border
+        # title) with the message Static FIRST (the tests query the
+        # first Static) — then the Footer that renders the new keycaps.
+        message = Text(self._message)
+        message.highlight_words(("[Y]", "[y]", "[N]", "[n]"), style="bold")
+        with Vertical(id="confirm-box", classes="modal-box"):
+            yield Static(message)
+            yield Footer()
 
     def on_mount(self) -> None:
         box = self.query_one("#confirm-box", Vertical)

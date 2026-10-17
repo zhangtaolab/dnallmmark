@@ -71,6 +71,10 @@ EXPECTED_CFG_CONSTANTS = (
 #: kill/detach/cancel row).
 EXPECTED_LNC_CONSTANTS = (
     "LNC_GATE_TITLE", "LNC_GATE_SUMMARY", "LNC_GATE_CONFIRM",
+    # 261017-dnr (DNR-1): the launch-confirm y Footer keycap beside the
+    # confirm copy (a NEW registry pair — 启动/Launch had no twin; the n
+    # side reuses LNC_EXIT_CONFIRM_NO below, the WIZ_BACK precedent).
+    "LNC_GATE_CONFIRM_YES",
     "LNC_GATE_PAIR_LINE", "LNC_GATE_PAIRS_MORE",
     "LNC_E2_WARNING", "LNC_E2_AUTH_NOTE", "LNC_E2_TYPE_PROMPT",
     "LNC_E2_MATCH_OK", "LNC_E2_MISMATCH", "LNC_ENV_BLOCKED_HINT",

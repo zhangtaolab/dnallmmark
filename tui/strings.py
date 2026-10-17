@@ -1481,6 +1481,15 @@ LNC_GATE_SUMMARY = _t(
 LNC_GATE_CONFIRM = _t(
     "LNC_GATE_CONFIRM", "确认启动以上训练？— [Y] 启动 / [N] 取消",
     "Launch these training runs? — [Y] launch / [N] cancel")
+# 261017-dnr (DNR-1): the launch-confirm Footer keycap for the y answer
+# key — mirroring the message's [Y] word so the answer is visible at a
+# glance (the 261017-cdr QuitConfirmModal precedent). Verified: NO
+# identical 启动/Launch pair exists anywhere in the registry (a new
+# pair, both injectivity tripwires stay green); the n side reuses
+# LNC_EXIT_CONFIRM_NO (its 取消/Cancel pair is exact — the WIZ_BACK
+# identical-pair precedent, zero new constant for n).
+LNC_GATE_CONFIRM_YES = _t(
+    "LNC_GATE_CONFIRM_YES", "启动", "Launch")
 # The confirm modal's planned-pair list (UX-5): one 模型+数据集 pair per
 # line, service-derived from the fresh preview cells (seeds stay in the
 # counts formula above, never per-row); language-neutral copy. Large

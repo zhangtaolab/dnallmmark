@@ -727,7 +727,19 @@ class E2PhraseModal(_PickerReturnModal):
         self._matched = bool(self._matches(event.value))
         indicator = self.query_one("#cfg-e2-indicator", Static)
         if self._matched:
-            indicator.update(S.LNC_E2_MATCH_OK)
+            # DNR-3 (261017-dnr): the MATCHED indicator's [Y]/[N] tokens
+            # render BOLD via the Rich Text API (the 261017-cdr pattern —
+            # Text content is never markup-parsed; highlight_words mutates
+            # IN PLACE and returns an int, never chained). The y/n
+            # bindings below STAY show=False BY DESIGN: they only arm
+            # after the matched-enter blur — a visible y keycap while the
+            # Input holds focus would advertise a key that types into
+            # the Input; the armed-state bold copy carries the affordance
+            # (the 261017 brief's simplicity ruling). The mismatch branch
+            # stays a plain string.
+            matched = Text(S.LNC_E2_MATCH_OK)
+            matched.highlight_words(("[Y]", "[N]"), style="bold")
+            indicator.update(matched)
             indicator.set_classes(["cfg-e2-match"])
         else:
             indicator.update(S.LNC_E2_MISMATCH.format(dirname=self._dirname))
@@ -830,8 +842,19 @@ class _GateConfirmModal(_PickerReturnModal, LaunchConfirmModal):
         self._pairs = tuple(pairs) if pairs is not None else ()
 
     def compose(self) -> ComposeResult:
+        # DNR-1 (261017-dnr): the confirm line's [Y]/[y]/[N]/[n] tokens
+        # render BOLD via the Rich Text API (the 261017-cdr
+        # QuitConfirmModal pattern; the same 4-token tuple the
+        # LaunchConfirmModal compose override carries — this subclass
+        # owns its compose, so the wrap lands HERE). highlight_words
+        # mutates the Text IN PLACE and returns the count (cdr-probed
+        # rich text.py:639 -> int) — never chained, two-step only. The
+        # Static keeps its #cfg-gate-message id; the pair-list RichLog,
+        # cap logic, and on_mount stay untouched.
+        message = Text(self._message)
+        message.highlight_words(("[Y]", "[y]", "[N]", "[n]"), style="bold")
         with Vertical(id="cfg-gate-box", classes="modal-box"):
-            yield Static(self._message, id="cfg-gate-message")
+            yield Static(message, id="cfg-gate-message")
             yield RichLog(wrap=True, id="cfg-gate-log")
             yield Footer()
 

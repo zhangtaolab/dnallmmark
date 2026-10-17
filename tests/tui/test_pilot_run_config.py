@@ -2101,6 +2101,161 @@ async def test_quit_confirm_message_bolds_y_n_tokens():
                 offset = plain.find(token, end)
 
 
+async def test_launch_confirm_footer_shows_y_n_keycaps():
+    """DNR-1 (261017-dnr): the launch confirm's answer keys are visible
+    at a glance — the LaunchConfirmModal y/n bindings carry show=True
+    with the live-language descriptions (LNC_GATE_CONFIRM_YES /
+    LNC_EXIT_CONFIRM_NO — the exact reuse) so every launch surface's
+    Footer (the slot-4 gate AND the monitor re-run, both this base)
+    renders the y/n keycaps beside esc; the inherited base enter stays
+    show=False (the EHC-2 inert no-op is never advertised)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=1, tasks=1, seeds=3, cells=3, output_root="./finetuned",
+        is_e2x=False, expected_phrase="finetuned"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")   # the picker holds focus: the gate
+        await _settle(pilot, app, rounds=4)
+        from textual.binding import Binding
+        from textual.widgets import Footer as FooterWidget
+
+        from tui.screens.selection import ConfirmModal, LaunchConfirmModal
+        from tui.strings import (
+            LNC_EXIT_CONFIRM_NO,
+            LNC_GATE_CONFIRM_YES,
+        )
+
+        assert isinstance(app.screen, LaunchConfirmModal), (
+            "the slot-4 gate confirm is the launch variant"
+        )
+        entries = {binding.key: binding
+                   for binding in LaunchConfirmModal.BINDINGS
+                   if isinstance(binding, Binding)}
+        assert entries["y"].show is True, (
+            "the y answer key must render in the Footer"
+        )
+        assert entries["y"].description == LNC_GATE_CONFIRM_YES
+        assert entries["n"].show is True, (
+            "the n answer key must render in the Footer"
+        )
+        assert entries["n"].description == LNC_EXIT_CONFIRM_NO
+        base_entries = {binding.key: binding
+                        for binding in ConfirmModal.BINDINGS
+                        if isinstance(binding, Binding)}
+        assert base_entries["enter"].show is False, (
+            "the inert enter no-op is never advertised (EHC-2)"
+        )
+        assert app.screen.query(FooterWidget), (
+            "the modal composes a Footer — the keycaps render"
+        )
+
+
+async def test_gate_confirm_message_bolds_y_n_tokens():
+    """DNR-1 (261017-dnr): the gate confirm line's [Y]/[N] tokens are
+    prominent — the message Static's content is a rich Text (the cdr
+    Text-API pattern: never markup strings, the bracket tokens stay
+    literal) with a bold span covering every [Y] and [N] occurrence;
+    the plain value still carries LNC_GATE_CONFIRM byte-unchanged so
+    every existing _plain()/str() content assertion keeps passing."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=1, tasks=1, seeds=3, cells=3, output_root="./finetuned",
+        is_e2x=False, expected_phrase="finetuned"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")   # the gate
+        await _settle(pilot, app, rounds=4)
+        from tui.strings import LNC_GATE_CONFIRM
+
+        content = app.screen.query_one("#cfg-gate-message", Static).content
+        assert isinstance(content, Text), (
+            "the confirm line composes as a rich Text over the registry "
+            "constant — never a markup string"
+        )
+        plain = content.plain
+        assert LNC_GATE_CONFIRM in plain, plain
+        for token in ("[Y]", "[N]"):
+            offset = plain.find(token)
+            assert offset != -1, f"the {token} token must be present"
+            while offset != -1:
+                start, end = offset, offset + len(token)
+                covered = any(span.start <= start and span.end >= end
+                              and str(span.style) == "bold"
+                              for span in content.spans)
+                assert covered, (
+                    f"the {token} at offset {offset} must carry a bold "
+                    "span (Text.highlight_words)"
+                )
+                offset = plain.find(token, end)
+
+
+async def test_e2_matched_indicator_bolds_tokens_keycaps_stay_hidden():
+    """DNR-3 (261017-dnr): on the exact-phrase match the indicator's
+    [Y]/[N] tokens render bold (the matched branch only — the mismatch
+    branch stays a plain string), with .plain still equal to
+    LNC_E2_MATCH_OK; the y/n bindings STAY show=False by design — they
+    only arm after the matched-enter blur, and a visible y keycap while
+    the Input holds focus would advertise a key that types into it."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=62, tasks=50, seeds=3, cells=9300,
+        output_root="./finetuned", is_e2x=True,
+        expected_phrase="finetuned"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")   # the gate escalates to E2'
+        await _settle(pilot, app, rounds=4)
+        from textual.binding import Binding
+
+        from tui.screens.run_config import E2PhraseModal
+        from tui.strings import LNC_E2_MATCH_OK
+
+        assert isinstance(app.screen, E2PhraseModal)
+        for char in "finetuned":
+            await pilot.press(char)
+        await pilot.pause()
+        indicator = app.screen.query_one("#cfg-e2-indicator", Static)
+        content = indicator.content
+        assert isinstance(content, Text), (
+            "the MATCHED indicator composes as a rich Text (the bold "
+            "token pattern); the mismatch branch stays a plain string"
+        )
+        assert _plain(content) == LNC_E2_MATCH_OK
+        plain = content.plain
+        for token in ("[Y]", "[N]"):
+            offset = plain.find(token)
+            assert offset != -1, f"the {token} token must be present"
+            while offset != -1:
+                start, end = offset, offset + len(token)
+                covered = any(span.start <= start and span.end >= end
+                              and str(span.style) == "bold"
+                              for span in content.spans)
+                assert covered, (
+                    f"the {token} at offset {offset} must carry a bold "
+                    "span (Text.highlight_words)"
+                )
+                offset = plain.find(token, end)
+        # the DNR-3 pin: the y/n keycaps stay hidden while the Input
+        # holds focus (armed-after-blur semantics — visibility would
+        # advertise a key that types into the Input)
+        entries = {binding.key: binding
+                   for binding in E2PhraseModal.BINDINGS
+                   if isinstance(binding, Binding)}
+        assert entries["y"].show is False, (
+            "y stays hidden until the matched-enter blur arms it"
+        )
+        assert entries["n"].show is False, (
+            "n stays hidden until the matched-enter blur arms it"
+        )
+
+
 async def test_peft_choice_radioset_flow():
     """The PEFT choice row: enter opens the RadioSet; picking lora
     writes the param, persists, refreshes the preview + alias hint."""

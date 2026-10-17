@@ -1235,12 +1235,53 @@ class LaunchConfirmModal(ConfirmModal):
     re-run — inherits it. ``ConfirmModal`` itself and every non-launch
     consumer (preset overwrite, queue cancels, wizard cancel) stay
     byte-identical on enter.
+
+    The 261017-dnr prominence ruling (DNR-1): the message's
+    [Y]/[y]/[N]/[n] tokens render bold (the cdr Rich-Text pattern) and
+    the y/n bindings carry show=True with bilingual keycaps —
+    visibility only; y stays the ONLY key that launches, enter lands
+    on the documented no-op, n/esc dismiss.
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("y", "confirm_launch", show=False),
-        Binding("n", "dismiss", show=False),
+        # DNR-1 (261017-dnr): the answer keys are VISIBLE — y/n carry
+        # show=True with bilingual keycap descriptions (LNC_GATE_CONFIRM_YES
+        # the Launch word for y; LNC_EXIT_CONFIRM_NO the Cancel pair —
+        # the exact identical-pair reuse for n, the WIZ_BACK precedent),
+        # so the modal's Footer renders them beside esc. This base
+        # serves BOTH launch surfaces — the slot-4 gate
+        # (_GateConfirmModal in run_config.py) and the monitor's [f]
+        # re-run push — one binding edit surfaces the keycaps on each.
+        # The family is swept by the L-toggle remap, so the keycaps
+        # re-derive on language switch. enter stays show=False — the
+        # inert no-op is never advertised (EHC-2: keys, actions, and the
+        # inherited enter->no-op are byte-unchanged).
+        Binding("y", "confirm_launch", S.LNC_GATE_CONFIRM_YES, show=True),
+        Binding("n", "dismiss", S.LNC_EXIT_CONFIRM_NO, show=True),
     ]
+
+    def compose(self) -> ComposeResult:
+        # DNR-1 (261017-dnr): the message's [Y]/[y]/[N]/[n] tokens render
+        # BOLD via the Rich Text API (the 261017-cdr QuitConfirmModal
+        # pattern — Text content is never markup-parsed, so the literal
+        # bracket tokens stay literal; 'bold' is a Rich core style, no
+        # $token MissingStyle hazard on the Static path). The lowercase
+        # [y]/[n] tuple members matter: the monitor re-run message
+        # (MON_RERUN_CONFIRM, pushed through THIS base) carries
+        # lowercase "[y] re-run / Esc cancel" while LNC_GATE_CONFIRM carries
+        # uppercase — the 4-token tuple bolds both. highlight_words
+        # mutates the Text IN PLACE and returns the count (cdr-probed
+        # rich text.py:639 -> int) — never chained, two-step only. The
+        # layout mirrors ConfirmModal.compose exactly (same #confirm-box
+        # Vertical, message Static FIRST, Footer) so the first-Static
+        # test queries and the on_mount #confirm-box border-title reads
+        # keep passing; ConfirmModal itself and every non-launch
+        # consumer stay byte-untouched.
+        message = Text(self._message)
+        message.highlight_words(("[Y]", "[y]", "[N]", "[n]"), style="bold")
+        with Vertical(id="confirm-box", classes="modal-box"):
+            yield Static(message)
+            yield Footer()
 
     def action_confirm(self) -> None:
         """Enter is deliberately inert on launch confirms (EHC-2: only
