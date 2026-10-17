@@ -242,7 +242,7 @@ class FakeLauncherService:
 
     def __init__(self, preflight=None, summary=None, outcomes=None,
                  live=(), confirm_raises=None, launch_raises=None,
-                 single_gpu_blocked=None):
+                 single_gpu_blocked=None, kill_raises=None):
         self._preflight = (preflight if preflight is not None
                            else EnvPreflight(
                                can_launch=True, reasons=(),
@@ -252,6 +252,11 @@ class FakeLauncherService:
         self._live = tuple(live)
         self._confirm_raises = confirm_raises
         self._launch_raises = launch_raises
+        # WR-02 (08 review, fix batch 261017-klw): the raising-kill knob —
+        # a kill_sweep that raises BEFORE recording is the fan-out-abort
+        # probe; one that raises AFTER recording proves the NEXT root is
+        # still attempted.
+        self._kill_raises = kill_raises
         # EHC-3 (261015-ehc): the single-GPU guard seam (None = the
         # method absent-equivalent — never blocks)
         self._single_gpu_blocked = single_gpu_blocked
@@ -298,6 +303,8 @@ class FakeLauncherService:
 
     def kill_sweep(self, root):
         self.kill_calls.append(root)
+        if self._kill_raises is not None:
+            raise self._kill_raises
         return "signalled"
 
     def detach(self, root):
@@ -1855,6 +1862,211 @@ async def test_exit_modal_multi_root_enter_detaches_every_live_sweep():
         assert app._exit, "detach-then-quit initiates the exit"
 
 
+# =====================================================================
+# The 2026-10-17 fix batch (08 review WR-01/02/03) — the exit-channel
+# trio: ctrl+c copy delegation on selection-holding Inputs, the
+# off-loop kill-and-exit, and the mixed live-root modal form
+# =====================================================================
+
+
+async def test_ctrlc_copies_when_input_holds_a_real_selection():
+    """WR-01 (08 review, fix batch 261017-klw): on a BASE screen, ctrl+c
+    over a focused Input holding a NON-EMPTY selection delegates through
+    super().on_event to textual 8.2.8's own ctrl+c,super+c -> copy Input
+    binding (_input.py:139) — the selection reaches the clipboard, NO
+    quit surface opens, the screen stays the base screen, nothing exits
+    (copy parity with modal Inputs; the EHC-ratified explicit operator
+    gesture on selected text, never an exit dodge). The selection is
+    driven by REAL key presses (home, then shift+end) after typing —
+    never a private-attribute poke. The empty-selection contrast lives
+    below (collapse + ctrl+c -> the quit confirm exactly as before)."""
+    from tui.app import QuitConfirmModal
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        seeds_input = app.screen.query_one("#cfg-input-seeds", Input)
+        seeds_input.focus()
+        await pilot.pause()
+        # collapse the select_on_focus whole-content selection, then TYPE
+        # (a real selection must survive its own typing flow)
+        await pilot.press("end")
+        for char in "hello":
+            await pilot.press(char)
+        await pilot.pause()
+        assert seeds_input.value == "42,43,44hello", (
+            "the typed text landed (typing sanity for the selection flow)"
+        )
+        # drive the REAL selection: home, then shift+end selects the line
+        await pilot.press("home")
+        await pilot.press("shift+end")
+        await pilot.pause()
+        assert seeds_input.selected_text == "42,43,44hello", (
+            "shift+end drove a non-empty selection (probe-pinned seam)"
+        )
+        value_before = seeds_input.value
+
+        await pilot.press("ctrl+c")
+        await pilot.pause()
+
+        assert not any(isinstance(screen, QuitConfirmModal)
+                       for screen in app.screen_stack), (
+            "ctrl+c over a selection-holding Input must NOT open the quit "
+            "confirm (WR-01: the key delegates to Input's copy binding)"
+        )
+        assert isinstance(app.screen, RunConfigScreen), (
+            "the base screen stays top — the key was a copy, not an exit"
+        )
+        assert not app._exit, "a copy gesture never exits the console"
+        assert app.clipboard == "42,43,44hello", (
+            "the selected text reached the app clipboard (the Input's own "
+            "copy binding fired through the delegation)"
+        )
+        assert seeds_input.value == value_before, (
+            "copy never mutates the Input (cut would; copy must not)"
+        )
+
+        # the CONTRAST (the empty-selection case, same Input): collapse
+        # the selection, ctrl+c -> the quit confirm exactly as before
+        await pilot.press("end")
+        await pilot.pause()
+        assert seeds_input.selected_text == "", (
+            "end collapsed the selection for the contrast leg"
+        )
+        await pilot.press("ctrl+c")
+        await pilot.pause()
+        assert isinstance(app.screen, QuitConfirmModal), (
+            "an EMPTY selection keeps today's routing — ctrl+c opens the "
+            "quit confirm (the delegation fires only on selected text)"
+        )
+        assert not app._exit
+
+
+async def test_exit_k_kills_every_root_then_exits_on_completion():
+    """WR-02 (08 review, fix batch 261017-klw): [k] on the multi-root
+    ExitModal fans the kill out through ONE app-level thread worker —
+    every live root is SIGTERMed BEFORE the exit lands (the exit is
+    driven by worker completion, never by a synchronous loop), the
+    console never runs the blocking kill polling on the event loop (the
+    monitor's mon-kill discipline, now honored on the exit path)."""
+    root_a = "/repo/a"
+    root_b = "/repo/b"
+    launcher = FakeLauncherService(live=(root_a, root_b))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        from tui.app import ExitModal
+
+        assert isinstance(app.screen, ExitModal)
+        await pilot.press("k")
+        await _settle(pilot, app, rounds=3)
+        assert launcher.kill_calls == [root_a, root_b], (
+            "the worker attempts EVERY live root — kill before exit"
+        )
+        assert launcher.detach_calls == [], "kill never detaches"
+        assert app._exit, (
+            "the exit lands on worker completion (ExitKillsDone -> exit)"
+        )
+
+
+async def test_exit_k_raising_kill_still_attempts_every_root_and_exits():
+    """WR-02's guard pin: a kill_sweep that RAISES can never strand a
+    killed-but-unexited console — the per-root broad guard logs and the
+    fan-out CONTINUES (every root attempted), and the completion posts
+    unconditionally so the app still exits. Today the first raise
+    escapes the synchronous loop action: root B is never attempted and
+    the exception takes the action down."""
+    root_a = "/repo/a"
+    root_b = "/repo/b"
+    launcher = FakeLauncherService(
+        live=(root_a, root_b), kill_raises=OSError("no such process"))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        from tui.app import ExitModal
+
+        assert isinstance(app.screen, ExitModal)
+        await pilot.press("k")
+        await _settle(pilot, app, rounds=3)
+        assert launcher.kill_calls == [root_a, root_b], (
+            "a raising kill must not abort the fan-out — root B is still "
+            "attempted (per-root broad guard, WR-02)"
+        )
+        assert app._exit, (
+            "ExitKillsDone posts unconditionally — the console still exits"
+        )
+
+
+async def test_mixed_roots_exit_names_and_kills_both_tui_and_attached():
+    """WR-03 (08 review, fix batch 261017-klw): exactly ONE TUI-launched
+    live root PLUS the monitor's attached root being a DIFFERENT running
+    (CLI-launched) sweep now joins the MULTI-root ExitModal form — both
+    full paths named via LNC_EXIT_MESSAGE_MULTI, and [k] kills BOTH (no
+    CLI-launched sweep survives a kill-and-exit silently). The attached
+    root rides a minimal seam stub (attached_running_counts on the real
+    but unmounted monitor screen — never a mounted MonitorScreen)."""
+    from tui.app import ExitModal
+    from tui.strings import LNC_EXIT_MESSAGE_MULTI
+
+    launcher = FakeLauncherService(live=("/repo/tui-root",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        monitor_screen = app.build_monitor_screen()
+        monitor_screen.attached_running_counts = lambda: (
+            True, "/repo/cli-root", "3", "9")
+        app._monitor_screen = monitor_screen
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+
+        assert isinstance(app.screen, ExitModal)
+        assert app.screen._roots == ("/repo/tui-root", "/repo/cli-root"), (
+            "the mixed form carries BOTH live roots — the attached "
+            "CLI-launched sweep is never silently dropped (WR-03)"
+        )
+        message = _plain(app.screen.query(Static)[0].content)
+        assert LNC_EXIT_MESSAGE_MULTI.format(
+            n=2, roots="/repo/tui-root, /repo/cli-root") in message, (
+            message)
+        await pilot.press("k")
+        await _settle(pilot, app, rounds=3)
+        assert launcher.kill_calls == ["/repo/tui-root", "/repo/cli-root"], (
+            "[k] acts on BOTH roots — no unnamed sweep keeps the GPU on"
+        )
+        assert app._exit
+
+
+async def test_mixed_roots_exit_enter_detaches_both():
+    """WR-03's detach twin: [enter] on the mixed-root form detaches BOTH
+    the TUI root and the attached CLI root — every live root is named
+    and acted on, on every exit path."""
+    from tui.app import ExitModal
+
+    launcher = FakeLauncherService(live=("/repo/tui-root",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        monitor_screen = app.build_monitor_screen()
+        monitor_screen.attached_running_counts = lambda: (
+            True, "/repo/cli-root", "3", "9")
+        app._monitor_screen = monitor_screen
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+
+        assert isinstance(app.screen, ExitModal)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert launcher.detach_calls == ["/repo/tui-root", "/repo/cli-root"], (
+            "[enter] detaches BOTH roots (each survives resume-safe)"
+        )
+        assert launcher.kill_calls == [], "detach never kills"
+        assert app._exit
+
+
 async def test_q_uppercase_is_a_plain_typing_letter_again():
     """CDR-1 (261017-cdr): the 261016-vxr uppercase-Q intercept is FULLY
     withdrawn — a capital Q is a PLAIN TYPING LETTER again everywhere.
@@ -1899,6 +2111,13 @@ async def test_ctrlc_no_sweep_opens_quit_confirm_over_focused_input():
         seeds_input = app.screen.query_one("#cfg-input-seeds", Input)
         seeds_input.focus()
         await pilot.pause()
+        # WR-01 (08 review, fix batch 261017-klw): focus() auto-selects
+        # the whole content (select_on_focus) — collapse it so this test
+        # stays the EMPTY-selection case it was written to pin (a
+        # selection-holding Input now receives the copy delegation, the
+        # test_ctrlc_copies_when_input_holds_a_real_selection pin above)
+        await pilot.press("end")
+        await pilot.pause()
         value_before = seeds_input.value
         await pilot.press("ctrl+c")
         await pilot.pause()
@@ -1931,6 +2150,10 @@ async def test_ctrlc_live_sweep_routes_to_exit_modal_over_focused_input():
 
         seeds_input = app.screen.query_one("#cfg-input-seeds", Input)
         seeds_input.focus()
+        await pilot.pause()
+        # WR-01: collapse the select_on_focus auto-selection (this test
+        # pins the EMPTY-selection routing; a real selection copies)
+        await pilot.press("end")
         await pilot.pause()
         value_before = seeds_input.value
         await pilot.press("ctrl+c")

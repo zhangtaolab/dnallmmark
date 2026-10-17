@@ -61,9 +61,10 @@ import inspect
 import json
 import sys
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from threading import Lock
-from typing import Any, ClassVar, Protocol
+from typing import Any, ClassVar, Protocol, cast
 
 from rich.text import Text
 from textual import events, work
@@ -72,7 +73,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import Vertical
 from textual.message import Message
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Footer, Static
+from textual.widgets import Footer, Input, Static
 from textual.worker import get_current_worker
 
 from tui import strings as S
@@ -188,6 +189,16 @@ class ExitModal(ModalScreen):
     monitor's live counts land in 11-07; the multi-root form drops
     them — per-root counts from one attached root would mix sources).
 
+    WR-02 (08 review, fix batch 261017-klw): the kill fan-out NO LONGER
+    runs on the event loop — [k] delegates to the app's exit-kill
+    worker (the monitor.py mon-kill discipline: blocking kill polling
+    belongs on a worker thread, never on the loop), the exit lands on
+    the ExitKillsDone completion, and a per-root broad guard keeps
+    every root attempted even when one kill raises. Edge semantics:
+    [k] is a COMMITTED intent — after k, esc no longer cancels the
+    exit (the completion message still arrives and exits; before WR-02
+    esc-after-k was unreachable anyway because k froze the loop).
+
     The 261017-dnr affordance ruling (DNR-4): the Footer now ADVERTISES
     the triple the copy names — enter/k render with keycaps lifted
     verbatim from the message wording, and the message's
@@ -248,10 +259,17 @@ class ExitModal(ModalScreen):
         self.app.exit()
 
     def action_kill_quit(self) -> None:
-        """[k] SIGTERM every live process group (killpg), then exit."""
-        for root in self._roots:
-            self._launcher.kill_sweep(root)
-        self.app.exit()
+        """[k] SIGTERM every live process group, then exit — dispatched
+        to the app's exit-kill worker (WR-02): the blocking kill polling
+        runs off the event loop and the exit lands on the completion
+        message (never before every root was attempted). No loop, no
+        synchronous ``self.app.exit()`` here."""
+        # WR-02: the composition root owns the exit-kill worker; the
+        # cast narrows MessagePump's ``App[object]`` (the RunConfigScreen
+        # getters.app idiom — a cast because DnallmMarkTui is this
+        # module's own class, defined below the modal).
+        cast("DnallmMarkTui", self.app).request_kill_and_exit(
+            tuple(self._roots))
 
 
 class QuitConfirmModal(ModalScreen):
@@ -336,6 +354,18 @@ class MonitorSwitchRequested(Message):
 
     def __init__(self, root: str) -> None:
         self.root = root
+        super().__init__()
+
+
+class ExitKillsDone(Message):
+    """WR-02 (08 review, fix batch 261017-klw): the app-level exit-kill
+    worker attempted EVERY live root (each under its own broad guard) —
+    the console may now exit. Posted UNCONDITIONALLY on worker
+    completion, so a ``kill_sweep`` that raises can never strand a
+    killed-but-unexited console: the exit lands on this message, never
+    before every root was attempted."""
+
+    def __init__(self) -> None:
         super().__init__()
 
 
@@ -1069,8 +1099,12 @@ class DnallmMarkTui(App):
         root keeps the single-root form byte-identical, and the
         attached-running-only path (a CLI-launched sweep the launcher
         never spawned) keeps today's single-root form unchanged (its
-        kill stays the documented launcher-noop). Async — the App base
-        declares the coroutine signature (ty LSP).
+        kill stays the documented launcher-noop). WR-03 (08 review,
+        fix batch 261017-klw): one TUI root PLUS a DIFFERENT attached
+        running root joins the MULTI form — the modal names EVERY live
+        root (a CLI-launched sweep never survives a kill-and-exit
+        silently, no unnamed sweep keeps the GPU on detach-and-exit).
+        Async — the App base declares the coroutine signature (ty LSP).
         """
         if isinstance(self.screen, (ExitModal, QuitConfirmModal)):
             # CDR-4 (261017-cdr, the P9/vxr finding): the priority
@@ -1095,11 +1129,18 @@ class DnallmMarkTui(App):
             (attached_running, attached_root,
              done, total) = self._monitor_screen.attached_running_counts()
         if roots or attached_running:
-            if len(roots) > 1:
+            # WR-03: an attached running root that is NOT one of the
+            # launcher's roots (CLI-launched — the exact case
+            # attached_running exists to catch) must not be silently
+            # dropped by the single-root form below
+            attached_extra = attached_running and attached_root not in roots
+            if len(roots) > 1 or (roots and attached_extra):
+                combined = tuple(roots) + (
+                    (attached_root,) if attached_extra else ())
                 self.push_screen(ExitModal(
-                    roots=tuple(roots), launcher=self._launcher,
+                    roots=combined, launcher=self._launcher,
                     message=S.LNC_EXIT_MESSAGE_MULTI.format(
-                        n=len(roots), roots=", ".join(roots))))
+                        n=len(combined), roots=", ".join(combined))))
                 return
             root = roots[0] if roots else attached_root
             self.push_screen(
@@ -1117,6 +1158,22 @@ class DnallmMarkTui(App):
         letter again), routing through the v0z confirm chain so the
         quit works from ANY base-screen focus, including the
         filter-input focus trap.
+
+        WR-01 (08 review, fix batch 261017-klw) — the copy delegation:
+        when the focused widget is an ``Input`` holding a NON-EMPTY
+        selection, ctrl+c delegates through ``super().on_event`` to
+        textual 8.2.8's own ``ctrl+c,super+c -> copy`` Input binding
+        (``_input.py:139``) — base-screen Inputs get copy parity with
+        modal Inputs (the 08-REVIEW asymmetry: inside modals the key
+        already delegates and copy works; the loss was base-screen
+        only). The delegation fires ONLY for
+        ``isinstance(self.focused, Input)`` with truthy
+        ``selected_text`` while the top screen is non-modal — an empty
+        selection, a non-Input focus, or no focus still routes ctrl+c
+        into the action_quit chain exactly as today, and ctrl+c under
+        modals stays inert (the not-modal guard precedes everything).
+        NOT an exit bypass: a selection-holding Input + ctrl+c is the
+        EHC-ratified explicit operator gesture on selected text.
 
         Why an ``on_event`` intercept and NOT a declared binding with
         the priority flag (probe-pinned on textual 8.2.8): a priority
@@ -1144,9 +1201,64 @@ class DnallmMarkTui(App):
         if (isinstance(event, events.Key) and event.key == "ctrl+c"
                 and self.screen is not None
                 and not self.screen.is_modal):
+            # WR-01: a selection-holding Input owns the key first —
+            # delegate so the Input's own copy binding fires
+            focused = self.focused
+            if isinstance(focused, Input) and focused.selected_text:
+                await super().on_event(event)
+                return  # delegated: the Input's copy binding owns the key
             await self.action_quit()
             return  # consumed: never forwarded, never a notify
         await super().on_event(event)
+
+    # ===== The exit-kill worker (WR-02, 08 review fix batch 261017-klw) =====
+
+    def request_kill_and_exit(self, roots) -> None:
+        """The ExitModal's [k] seam (WR-02): kill every live root OFF
+        the event loop, then exit on completion.
+
+        The modal never runs ``kill_sweep`` itself — each call blocks
+        up to the launcher's kill grace (SIGTERM -> poll -> SIGKILL),
+        and the multi-root form would stack those freezes serially on
+        the loop (N roots that ignore SIGTERM = N x grace of a frozen
+        console). This is the monitor.py mon-kill discipline brought to
+        the exit path: the fan-out runs on one exclusive thread worker
+        and the exit lands on the ``ExitKillsDone`` message — never
+        before every root was attempted.
+        """
+        self._exit_kill_worker(tuple(roots))
+
+    @work(exclusive=True, thread=True, group="exit-kill",
+          exit_on_error=False)
+    def _exit_kill_worker(self, roots: "tuple[str, ...]") -> None:
+        """SIGTERM-fan-out over every live root, then post completion.
+
+        Per-root broad guard: a raising ``kill_sweep`` is logged
+        (timestamped print, the pipeline's logging convention — the app
+        is exiting, the log rail is not a consumer here) and the
+        fan-out CONTINUES — every root must be attempted even when one
+        raises. ``ExitKillsDone`` posts UNCONDITIONALLY after the loop
+        (also in the structural never-exit floor's belt-and-suspenders
+        shape: ``exit_on_error=False`` AND an internal broad guard —
+        tests/tui/test_work_site_hardening.py's pin).
+        """
+        for root in roots:
+            try:
+                self._launcher.kill_sweep(root)
+            except Exception as exc:  # noqa: BLE001 — every root attempted
+                print(
+                    f"[{datetime.now().astimezone().strftime(
+                        '%Y-%m-%d %H:%M:%S')}] "
+                    f"exit-kill failed for {root}: "
+                    f"{type(exc).__name__}: {exc}")
+                continue
+        self.post_message(ExitKillsDone())
+
+    def on_exit_kills_done(self, message: ExitKillsDone) -> None:
+        """Every root was attempted — the committed [k] intent
+        completes: exit now (the only exit on the kill path; esc after
+        k cannot cancel this, per the modal's WR-02 edge note)."""
+        self.exit()
 
     def action_help(self) -> None:
         """The ``?`` key: the help modal over the current screen.
