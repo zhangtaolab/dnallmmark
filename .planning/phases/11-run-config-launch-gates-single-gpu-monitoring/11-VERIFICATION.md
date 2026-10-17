@@ -1,6 +1,6 @@
 ---
 phase: 11-run-config-launch-gates-single-gpu-monitoring
-verified: 2026-10-17T05:19:32Z
+verified: 2026-10-17T07:42:47Z
 status: passed
 score: 5/5 must-haves verified
 covered_files:
@@ -20,7 +20,9 @@ covered_files:
   - .planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-07-SUMMARY.md
   - .planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-08-PLAN.md
   - .planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-08-SUMMARY.md
+  - pipeline/run_finetune.py
   - pipeline/run_sweep.py
+  - tests/test_run_finetune_contracts.py
   - tests/test_sweep.py
   - tests/tui/__snapshots__/monitor_empty.svg
   - tests/tui/__snapshots__/monitor_running.svg
@@ -35,7 +37,9 @@ covered_files:
   - tests/tui/test_services_sweep_monitor.py
   - tests/tui/test_snapshots.py
   - tests/tui/test_strings_phase11.py
+  - tests/tui/test_work_site_hardening.py
   - tui/app.py
+  - tui/screens/env_check.py
   - tui/screens/monitor.py
   - tui/screens/nav.py
   - tui/screens/run_config.py
@@ -45,190 +49,185 @@ covered_files:
   - tui/services/sweep_monitor.py
   - tui/strings.py
   - tui/styles.tcss
-covered_digest: "v3:sha256:cd04b143688ac7a38d56b624e935d8c4a2441be6ac359c26749ecf1beb85e7ba"
+covered_digest: "v3:sha256:b86dad995dfe1565fdaf066d4d02ed564a2e5c4455fee3ef12d5122d0ff98123"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
   previous_status: passed
   previous_score: 5/5
-  previous_verified: 2026-10-16T07:39:44Z
+  previous_verified: 2026-10-17T05:19:32Z
   gaps_closed: []
   gaps_remaining: []
   regressions: []
 advisory:
-  - finding: "08-REVIEW WR-01 — the ctrl+c on_event intercept (app.py:1144-1148) consumes ctrl+c on every base screen before Inputs receive it, so ctrl+c-copy is dead in base Inputs"
+  - finding: "08-REVIEW-DISPOSITION.md ledger rows WR-01/02/03 + IN-01/02/03 still read `open` (recorded 2026-10-17T04:43Z, BEFORE the fixes landed 07:20-07:27Z) — the code resolution is verified this pass, but the disposition ledger awaits its gate re-run to flip the six rows to fixed"
     category: other
-    reason: "Maintainer-ruled trade-off (2026-10-17: ctrl+c is the any-focus primary exit). No SC promises input clipboard copy; exit-chain pins green. Would resolve by a copy-binding on focused Inputs or an explicit ruling that copy is forfeit"
-    evidence_status: "none provided"
-  - finding: "08-REVIEW WR-02 — ExitModal.action_kill_quit calls kill_sweep synchronously on the event loop while the monitor's [k] channel dispatches an off-loop thread worker (monitor.py:_run_kill)"
+    reason: "Ledger formality on the phase-8 artifact, not a code or SC concern; the fix commits (06d2679/0d02e18) and their RED-first evidence are in history. Resolves by re-running the disposition gate over 08-REVIEW.md"
+    evidence_status: "resolved-in-code, ledger pending"
+  - finding: "run_finetune.py sibling hard-index sites (:849 probe-branch Model_name enumeration, :1077 row['Dataset_name'], :1322 row['length']) remain bare subscripts — recorded in the klw SUMMARY as deliberately outside the ruling's seven findings; a schema-legal minimal custom entry hitting those paths still raises KeyError"
     category: other
-    reason: "Bounded block (kill-grace poll) on an exiting app; kill/detach/cancel choice and multi-root kill both pinned green. Consistency polish, not a capability loss"
+    reason: "Maintainer-ruled scope boundary (only the two model-loop reads were sanctioned); phase-7 surface, no phase-11 SC or requirement touches those paths; queued for a future ruled batch with its own AST pin"
     evidence_status: "none provided"
-  - finding: "08-REVIEW WR-03 — with a CLI-launched (attached-only) sweep running, the single-root ExitModal advertises [k] kill for a root the launcher registry does not hold (kill_sweep is a documented noop)"
+  - finding: "WizardModal keycap visibility still NEEDS A MAINTAINER RULING (all six bindings show=False — step-aware visibility would be a redesign); carried from 261017-dnr and re-raised by the klw batch's non-goals"
     category: other
-    reason: "Detach is the accurate action for foreign sweeps and is resume-safe (SC3's clause); TUI-launched kill is pinned green; the monitor's own [k] refuses honestly (MON_KILL_UNAVAILABLE). Exit-gate copy honesty gap, no SC breach"
-    evidence_status: "none provided"
-  - finding: "Goldens changed since the prior pass (f2a772a refresh of monitor_empty/monitor_running/run_config SVGs) vs 11-08's plan-time 'snapshots stay byte-untouched' prohibition"
-    category: architectural
-    reason: "D-03-approved maintainer golden refresh (k-keycap set) — a post-phase ruling that supersedes the plan-time prohibition, same class as the EHC adjudications. Snapshot suite green this pass (11 passed)"
+    reason: "Phase-9 surface; showing them unconditionally would mislead (f/o step-1-only, u landed-state-only); the step-view copy carries the affordances; no phase-11 SC involved"
     evidence_status: "none provided"
   - finding: "WINDOWS #26 / #27 — post-second-launch console input death; monitor ~60s stall at first-cell burst"
     category: other
-    reason: "Carried ledger advisories; no SC promises two in-session gated launches (EHC-3 refuses the second on single-GPU) and the launch→monitor→kill chain completed on camera"
+    reason: "Carried ledger advisories (unchanged by this batch); no SC promises two in-session gated launches (EHC-3 refuses the second on single-GPU) and the launch→monitor→kill chain completed on camera"
     evidence_status: "none provided"
 ---
 
-# Phase 11: Run Config, Launch Gates & Single-GPU Monitoring — Refresh Re-Verification (Round 2)
+# Phase 11: Run Config, Launch Gates & Single-GPU Monitoring — Micro Refresh Re-Verification (Round 3, post-klw)
 
 **Phase Goal:** The operator's core loop is closed and safe — compose a complete run spec, preview it from the same pure planning functions execution uses, pass the env + confirmation gates, launch `run_sweep.py` as a detached subprocess, and monitor/recover the sweep from the same console — proven end-to-end by a maintainer-authorized bounded smoke on GB10, with E2' provably still maintainer-gated
-**Verified:** 2026-10-17T05:19:32Z (HEAD `eed1f75`, branch `autorun`, working tree carries only .planning/ state files)
+**Verified:** 2026-10-17T07:42:47Z (HEAD `855202e` — code-identical to `1cb8512`; the interleaved commit is the docs-only phase-7 round-3 refresh; branch `autorun`, working tree clean except an untracked `.planning/` state file)
 **Status:** passed
-**Re-verification:** Yes — covered-set REFRESH round 2 (not gap closure). The round-1 refresh (`2026-10-16T07:39:44Z`, HEAD `8aacc58`, 5/5) went stale again: the live-feedback quicks poa / v0z / vxr / cdr / dnr landed after it — the largest feedback-round delta, all on this phase's surfaces (picker cursor/scroll anchor + marked-row contrast + 启动确认 rename + gate pair task-list + N cancel + entry hint; quit-confirm on every exit path; entry ETA from checkpoint cadence + slot-5 k kill-confirm via the launcher channel; ctrl+c any-focus exit + P9 modal-stacking guard + bold Y/N; confirm-family keycap prominence + ExitModal enter/k keycaps), plus the D-03-approved golden refresh (f2a772a). Much of this delta was maintainer-DESIGNED through live 2026-10-16/17 rulings: the launch gate must list model+dataset pairs then Y/N; every quit path must confirm; k must confirm; ctrl+c is the any-focus primary and Q is a plain letter again. This pass re-verified all five SCs against the CURRENT codebase — adjudicating the ruling-driven deltas against each SC's intent (the gates now CONFIRM where the original SC prose described direct refusal/messaging; each adjudication below) — re-ran the phase's behavioral pins as named tests (125 green across 12 batches), and regenerated the fingerprint.
+**Re-verification:** Yes — THIRD refresh (micro). Round 2 passed 5/5 at `ba0c8d6` (verified 2026-10-17T05:19:32Z). The delta on this phase's covered set since: quick-261017-klw — the maintainer's pre-closeout 08-review fix batch (`06d2679` exit-channel trio WR-01/02/03, `0d02e18` screen-hygiene trio IN-01/02/03, `6e331d3` 07-CR-01 guarded model-loop reads), all RED-first with the evidence table in the klw SUMMARY. Scope of this pass per the refresh instructions: verify the fix sites directly, re-check the SC standings through the fix-shaped surfaces (kill path now off-loop, mixed-root exit form, ctrl+c selection-delegation corner), confirm the EHC ruling tests intact, and adjudicate the round-2 advisories' resolution state. The full suite was NOT re-run (documented gates at this HEAD: 1F/1867P, the sole F being this phase's machine-local `test_storage_overview_defaults_mirror_real_consumers` member — re-run individually this pass and confirmed environment-conditional: it asserts `pipeline/logs` absent as on a fresh checkout, but this GB10 machine carries live-run logs; the service's `exists=True` is the honest read of a path that genuinely exists here; node 26/26; ruff+ty green).
 
 ## Goal Achievement
 
 ### Observable Truths (SC1-5, ROADMAP verbatim anchor)
 
-| # | Truth | Status | Evidence (this pass, HEAD `eed1f75`) |
+| # | Truth | Status | Evidence (this pass, HEAD `855202e`) |
 |---|-------|--------|----------|
-| 1 | **SC1** full parameter set + separated dirs + same-source dry-run preview with enumerated cell counts | ✓ VERIFIED | Same-source seam UNTOUCHED since the round-1 pass (`git diff 8aacc58..HEAD` over pipeline/run_sweep.py, run_finetune.py, env_gate.py, quick_check.py = empty): `tui/services/run_config.py:115` module-level `import run_sweep`, `:907` `enumerate_matrix` verbatim; screen surface re-read — seeds Input default `"42,43,44"` (:1195), PEFT ChoiceRow (:1200), variant ChoiceRow (:1206), curve Input (:1217), subset Checkbox + path (:1222-1227), epochs Input (:1235), cache Input (:1280), `effective_batch_size` threaded through the spec refresh (:1350), dirs section (:1242) with per-language `_dir_input_fields()` (:1848). poa's picker anchor/contrast re-verified live: `test_space_toggle_deep_row_keeps_cursor_key_and_scroll_offset` + `test_screen_space_toggle_keeps_cursor_key_and_scroll_offset` + `test_styles_carry_picker_scoped_selected_contrast_rule` green this pass. Same-source service tests green (15 passed: enumerate/preview/resolve family incl. `test_importing_service_leaves_gpu_stack_absent`) |
-| 2 | **SC2** terraform-style gate: env preflight blocks with reason, preview precedes explicit confirm, E2' typed phrase unbypassable | ✓ VERIFIED — **strengthened by the maintainer's poa/dnr rulings** | Refusal chain re-read at HEAD (`sweep_launcher.py:642-712`): stage 0 EHC-3 single-GPU guard → fresh preview problems → official-keys diagnostic (fail-closed) → E2' exact-phrase → `_spawn` — every stage BEFORE the spawner (`:596-601` pins re-confirmed: `list(argv)`, `start_new_session=True`, cwd=PIPELINE_DIR, `PYTHONUNBUFFERED=1`, stdout→tee, stderr=STDOUT). Screen gate chain re-read (`run_config.py:1960-2055`): CR-02 live-root pre-check on the `resolve_dirs` basis → EHC-3 pre-check → env preflight worker → EnvBlockModal on FAIL (kernel names + reasons verbatim) → FRESH `gate_confirm_data` → E2PhraseModal (every keystroke re-reads the SERVICE verdict `:729-745`; y arms only after matched-enter blur, enter inert) or `_GateConfirmModal`. **poa adjudication:** the maintainer's pair-list + Y/N ruling STRENGTHENS "preview precedes explicit confirmation" — the confirm now lists the planned model+dataset pairs (SERVICE-derived `GateSummary.pairs`, capped 12 + total line, `:823-869`), `y` launches, `n`/`esc` cancel, enter documented no-op — the original SC's "explicit confirm" is more explicit, not less. Named tests green this pass: `test_launch_spec_e2x_wrong_phrase_refuses_spawner_silent`, `test_launch_from_failures_complete_manifest_three_seeds_demands_phrase`, `test_single_gpu_busy_refuses_launch_spec_before_every_stage`, `test_gate_happy_path_confirms_and_launches`, `test_gate_confirm_modal_lists_planned_pairs_capped`, `test_n_cancels_gate_confirm_without_launch`, `test_enter_key_pin_inputs_never_launch` |
-| 3 | **SC3** execution always a `run_sweep.py` subprocess (LIST argv + PYTHONUNBUFFERED=1 + start_new_session); exit kill/detach/cancel; detached sweeps resume-safe to re-attach | ✓ VERIFIED — **strengthened by v0z/cdr/dnr** | Spawn pins green this pass (`test_spawn_pins_list_argv_session_cwd_env_tee`); O_EXCL tee collision pin green (`test_spawn_same_second_same_basename_never_shares_tee_file`). Exit surface re-read at HEAD — the maintainer's quit rulings EXTEND the "operator chooses kill/detach/cancel" contract to every exit path: `action_quit` (app.py:1042-1111) legs: exit-family stacking guard (CDR-4) → below-min-grid nothing → live-sweep ExitModal (WR-05 multi-root names every root, `[k]`/`[enter]` act on ALL) → QuitConfirmModal (y-only; n/esc cancel) — the old direct `self.exit()` tail is gone; `on_event` intercept (:1113-1149) makes ctrl+c the any-focus primary over base screens with the `not is_modal` guard (P9: never stacks over open modals); plain q keeps Input semantics, capital Q types again. dnr: ExitModal footer advertises enter/k/esc keycaps verbatim from the copy, tokens bold (:231-246). Named tests green this pass: `test_q_with_no_live_sweep_opens_quit_confirm`, `test_quit_confirm_n_and_esc_cancel`, `test_ctrlq_with_live_sweep_routes_to_exit_modal`, `test_ctrlq_no_sweep_opens_quit_confirm`, `test_q_and_ctrlq_below_min_grid_never_exit`, `test_ctrlc_no_sweep_opens_quit_confirm_over_focused_input`, `test_ctrlc_live_sweep_routes_to_exit_modal_over_focused_input`, `test_ctrlc_inert_under_modals_never_stacks`, `test_ctrlq_under_exit_modal_never_stacks_second`, `test_ctrlc_below_min_grid_never_exits`, `test_quit_confirm_footer_shows_y_n_keycaps`, `test_quit_confirm_message_bolds_y_n_tokens`, `test_exit_modal_multi_root_kills_every_live_sweep`. Resume-safety grounded on disk: `finetuned-smoke/plant-dnabert-6mer/{iDNA_ABF_datasets__5mC,GUE__virus_species_40}/seed_42/trainer_state.json` + full artifact set re-read this pass |
-| 4 | **SC4** monitor dashboard: cell states via tolerant scans, stats/ETA, attach for CLI sweeps, gated re-run, bounded tail + tee, ⊘ resume | ✓ VERIFIED — **strengthened by vxr/dnr** | Scanner contract re-verified by test this pass (35 green: full_scan / cells_view / stats_view / failures_view / read_log_tail / eta family incl. pending/point/range-boundary/skipped-excluded/per-model-median). CR-01 attach resolution re-read (`monitor.py:1261-1280` `expanduser().resolve()`) — tilde pin green this pass. WR-02/03 re-run derivation re-confirmed — pairs × seeds pin green. **vxr adjudication:** the slot-5 [k] kill-confirm and the entry ETA extend the monitor's recovery capability without weakening any SC4 clause — the kill routes through the LAUNCHER channel behind its own y-only confirm (enter inert), refuses BEFORE the confirm with MON_KILL_UNAVAILABLE for roots the channel cannot execute, dispatches an OFF-LOOP thread worker (never the event loop), and NEVER exits the console (`monitor.py:1493-1580` re-read); the entry ETA derives from the two-newest-checkpoint step cadence with an honest dash when underivable (`sweep_monitor.py:50-52,245-252`) — `test_k_opens_kill_confirm_y_kills_without_exiting`, `test_kill_confirm_footer_shows_y_n_keycaps`, `test_kill_confirm_message_bolds_y_n_tokens`, `test_running_entry_renders_eta_segment_or_honest_dash` all green this pass. hhx render-time i18n intact; strings tripwire green (10 passed, both keycap names registered); D-03-refreshed goldens green (snapshot suite 11 passed) |
-| 5 | **SC5** bounded smoke runs launch→monitor→failure-re-run E2E on GB10 while E2' demonstrably blocks; every capability headless via CLI | ✓ VERIFIED | The prior adjudications STAND and gain NEW live corroboration through the CURRENT gate shapes: 11-UAT.md `status: passed` (executed live 2026-10-13 under maintainer authorization, incl. the E2'-blocks proof — wrong dirname → 确认 dead, zero processes launched); smoke artifacts re-read on disk THIS pass (`finetuned-smoke/` 1 model × 2 tasks × seed 42 with final_metrics/flops_report/trainer_state per cell; `pipeline/finetuned/smoke-2x2-261014/`). NEW: the maintainer's 2026-10-16 session launched a REAL PlantHelixSeek sweep through the NEW pair-list Y/N gate — its tree is on disk this pass (`finetuned-smoke/PlantHelixSeek/PDLLMs_datasets__plant-multi-species-H3K27ac/seed_42/`), and the single-GPU stage-0 refusal was demo-recorded (pex casts). The external TUI+sweep kill in that session was orchestrator-issued (not a UI path) — no UI-failure inference drawn or needed. CLI parity re-proven this pass by argparse scan: `--models --tasks --seeds --peft --config-variant --curve --subset_file --num_train_epochs --effective_batch_size --cache_dir --from-failures --output-root --dry-run` (+ `--dataset_root --model_root --log_dir --registry-dir --priority-file`) all present in `run_sweep.py` |
+| 1 | **SC1** full parameter set + separated dirs + same-source dry-run preview with enumerated cell counts | ✓ VERIFIED | The same-source seam is OUTSIDE the klw delta (`git diff --name-status ba0c8d6..1cb8512` over code: `tui/services/*` and `pipeline/run_sweep.py` untouched — the delta is exactly app.py, screens/{env_check,run_config,selection}.py, run_finetune.py + 4 test files) and re-read this pass: `tui/services/run_config.py:115` module-level `import run_sweep`, `:907` `run_sweep.enumerate_matrix` verbatim. Screen param surface untouched by the batch; strings.py zero-diff (`git diff ba0c8d6..1cb8512 -- tui/strings.py` = 0 lines — zero new strings, as the batch claims). Strings tripwire green this pass (10 passed). Goldens green (snapshot suite 11 passed; `tests/tui/__snapshots__/` zero-diff — zero SVG interaction) |
+| 2 | **SC2** terraform-style gate: env preflight blocks with reason, preview precedes explicit confirm, E2' typed phrase unbypassable | ✓ VERIFIED — **IN-02 strengthens the gate's error hygiene** | The refusal chain in the LAUNCHER service is outside the delta and re-pinned green this pass: `test_launch_spec_e2x_wrong_phrase_refuses_spawner_silent`, `test_single_gpu_busy_refuses_launch_spec_before_every_stage`, `test_spawn_pins_list_argv_session_cwd_env_tee`, `test_spawn_same_second_same_basename_never_shares_tee_file` (4 passed). The screen gate chain (`tui/screens/run_config.py`) was touched ONLY by IN-02: `GateWorkerError` gains `scope` (:1117-1143) and the four posting sites tag 'stage' (:1950/:2014/:2042) vs 'launch' (:2092); the staleness filter (:2151-2169) compares run_id against EXACTLY ONE counter per scope — a superseded stage error can no longer surface as a spurious launch-failed toast after a successful launch. No gate stage, modal order, or confirmation semantics changed. The ruling set re-pinned green this pass: `test_enter_key_pin_inputs_never_launch` (enter-inert), `test_gate_happy_path_confirms_and_launches`, `test_gate_confirm_modal_lists_planned_pairs_capped`, `test_n_cancels_gate_confirm_without_launch` (20-test batch, all green) |
+| 3 | **SC3** execution always a `run_sweep.py` subprocess (LIST argv + PYTHONUNBUFFERED=1 + start_new_session); exit kill/detach/cancel; detached sweeps resume-safe to re-attach | ✓ VERIFIED — **STRENGTHENED by the WR-01/02/03 exit-channel fixes** | Spawn pins green (above). The exit surface was the WR trio's target; every fix site re-read at HEAD: **WR-01** `on_event` (app.py:1201-1212) delegates ctrl+c through `super().on_event` ONLY for `isinstance(focused, Input) and focused.selected_text` on a non-modal top screen — empty selection / non-Input / modals keep the CDR-2 routing, so the any-focus exit ruling survives with copy parity restored (the round-2 WR-01 advisory). **WR-02** `ExitModal.action_kill_quit` (:261-272) now delegates to `request_kill_and_exit` (:1216) → `_exit_kill_worker` (:1231-1255, `@work(exclusive=True, thread=True, group="exit-kill", exit_on_error=False)`) with a per-root broad guard and UNCONDITIONAL `ExitKillsDone` → `on_exit_kills_done` → `self.exit()` (:1257-1261) — the kill polling is OFF the event loop (the monitor mon-kill discipline, the round-2 WR-02 advisory). **WR-03** `action_quit` (:1131-1144) computes `attached_extra = attached_running and attached_root not in roots`; the MULTI form fires on `len(roots) > 1 or (roots and attached_extra)` with `combined = tuple(roots) + ((attached_root,) if attached_extra else ())` — a TUI-launched + attached-CLI root pair now names and acts on BOTH (the round-2 WR-03 advisory). Named tests green this pass: `test_ctrlc_copies_when_input_holds_a_real_selection`, `test_exit_k_kills_every_root_then_exits_on_completion`, `test_exit_k_raising_kill_still_attempts_every_root_and_exits`, `test_mixed_roots_exit_names_and_kills_both_tui_and_attached`, `test_mixed_roots_exit_enter_detaches_both`, `test_exit_modal_multi_root_kills_every_live_sweep`, `test_exit_modal_multi_root_enter_detaches_every_live_sweep`, the two adapted CDR-2 pins (`test_ctrlc_no_sweep_opens_quit_confirm_over_focused_input`, `test_ctrlc_live_sweep_routes_to_exit_modal_over_focused_input` — now `press("end")`-collapsed to pin the empty-selection corner they were written for), plus `tests/tui/test_work_site_hardening.py` green with ZERO edits (the new @work site carries exit_on_error=False AND the internal broad guard). The unmodified ruling set green: every-exit-confirms (q/ctrl+q no-sweep → QuitConfirm; n/esc cancel; below-min-grid never), y-only keycap/bold pins, ctrl+c inert-under-modals (P9), ctrl+q stacking guard, Q-plain-letter / q-types pins (20-test batch) |
+| 4 | **SC4** monitor dashboard: cell states via tolerant scans, stats/ETA, attach for CLI sweeps, gated re-run, bounded tail + tee, ⊘ resume | ✓ VERIFIED | Monitor surface outside the klw delta (`tui/screens/monitor.py`, `tui/services/sweep_monitor.py` untouched since round 2) and re-pinned green this pass: `test_k_opens_kill_confirm_y_kills_without_exiting` (the off-loop `_run_kill` @work thread group="mon-kill" re-read at monitor.py:1530-1532, `MON_KILL_UNAVAILABLE` honest refusal :1503-1513), `test_attach_tilde_spelled_monitors_resolved_root_real_scanner`, `test_rerun_confirm_names_pairs_times_seeds_estimate`, `test_kill_confirm_footer_shows_y_n_keycaps`, `test_kill_confirm_message_bolds_y_n_tokens` (5 passed). Selection-side IN-01 fix (`selection.apply_queue_progress` :1614-1619 — the `_live_percents`/`_live_speeds` stores now sit BELOW the `(entry is None or state != "downloading")` guard, the slot-3 twin's ordering) re-read and `test_dataset_kind_tick_stores_no_live_dict_residue` green; env-side IN-03 fix (`env_check.action_refresh` sets `_check_in_flight = True` synchronously at :719-720 before `run_full_check()`) re-read and `test_refresh_sets_in_flight_flag_synchronously` green |
+| 5 | **SC5** bounded smoke runs launch→monitor→failure-re-run E2E on GB10 while E2' demonstrably blocks; every capability headless via CLI | ✓ VERIFIED | Unchanged this round (SC5's evidence is the executed 2026-10-13 UAT + the 2026-10-16 live PlantHelixSeek launch through the current gate) and the artifacts re-read on disk THIS pass: `finetuned-smoke/` (repo root) with `plant-dnabert-6mer/iDNA_ABF_datasets__5mC/seed_42/trainer_state.json` (+ the full per-cell artifact set), `plant-dnamamba-6mer/`, `PlantHelixSeek/PDLLMs_datasets__plant-multi-species-H3K27ac/seed_42/`, `sweep_manifest.json` + `sweep_failures.json`, and `pipeline/finetuned/smoke-2x2-261014/`. 11-UAT.md `status: passed` (round-2, unmodified). CLI parity surface (`pipeline/run_sweep.py`) byte-untouched by the delta. The 07-CR-01 fix in `pipeline/run_finetune.py` (guarded `model_row.get("Model_name", ix)` :1015 / `.get("Mean_token_length", 1)` :1035) only widens which registry entries the child tolerates — pinned by the new AST source-contract test `test_minimal_custom_entry_reads_are_guarded` (green this pass); no SC5 behavior altered |
 
-**Score:** 5/5 truths verified (zero behavior-unverified)
+**Score:** 5/5 truths verified (zero behavior-unverified — every behavior-dependent claim in this round's delta is exercised by a passing named test: the WR-01 delegation routing, the WR-02 exit-lands-only-on-completion + every-root-attempted fan-out, the WR-03 mixed-root naming/acting, the IN-01 store gating, the IN-02 scope-split id spaces, the IN-03 synchronous flag, the CR-01 guarded reads)
 
-### Ruling-Driven Delta Adjudication (the round-2 core question)
+### Round-2 Advisory Adjudication (the round-3 core question)
 
-The maintainer's 2026-10-16/17 rulings moved several surfaces from "direct refusal / refusal-messaging" (the SC prose's original shape) to "confirm chains". Adjudicated against each SC's INTENT:
+The klw batch claims to resolve the round-2 report's WR-01/02/03 + IN-01/02/03 advisories. Adjudicated against the code and tests this pass:
 
-| Ruling | SC clause touched | Adjudication |
-|--------|-------------------|--------------|
-| Launch gate lists model+dataset pairs, then Y/N (poa) | SC2 "preview precedes explicit confirmation" | STRENGTHENS — the confirm now carries the actual planned pairs (service-derived) + counts; the structural service gate is unchanged and re-refuses everything independently. Y is the only launch key; enter inert; n cancels |
-| Every quit path confirms (v0z); ctrl+c any-focus primary, Q plain letter (cdr) | SC3 "on TUI exit the operator chooses kill/detach/cancel" | EXTENDS — the kill/detach/cancel choice now exists on EVERY exit trigger (q/ctrl+q/ctrl+c); the no-sweep path gained its own y-only confirm (previously direct exit — a safety improvement); P9 guard prevents modal stacking |
-| slot-5 k kill-confirm via launcher channel (vxr) | SC4 recovery surface | STRENGTHENS — kill was previously ExitModal-only; now available in-console behind y-only confirm, off-loop, honest refusal for unkillable roots, console never exits on this path |
-| Bold Y/N + keycap prominence (cdr/dnr) | presentation only | No SC semantics touched; goldens refreshed under D-03 approval accordingly |
+| Round-2 advisory | Fix commit | Resolution state (this pass) |
+|------------------|-----------|------------------------------|
+| WR-01 — ctrl+c intercept killed Input copy on base screens | `06d2679` | **RESOLVED** — delegation verified at app.py:1201-1212 (Input + truthy `selected_text` + non-modal only); `test_ctrlc_copies_when_input_holds_a_real_selection` green; the two CDR-2 over-focused-Input tests adapted (documented Rule-1 deviation: textual 8.2.8 `select_on_focus` auto-selects, so `press("end")` collapses to the empty-selection corner the tests were written for — every original assertion preserved, and BOTH corners now pinned) |
+| WR-02 — ExitModal kill ran synchronously on the event loop | `06d2679` | **RESOLVED** — off-loop `@work(exclusive, thread, group="exit-kill", exit_on_error=False)` worker with per-root broad guard + unconditional `ExitKillsDone` verified at app.py:1216-1261; `test_exit_k_kills_every_root_then_exits_on_completion` + `test_exit_k_raising_kill_still_attempts_every_root_and_exits` green (the raising-run's broad-guard prints observed in this pass's output); `test_work_site_hardening.py` green with zero edits |
+| WR-03 — attached-CLI-root exit advertised a noop kill / dropped the CLI sweep | `06d2679` | **RESOLVED** — mixed one-TUI-root + one-attached-CLI-root now joins the MULTI form naming and acting on BOTH (app.py:1131-1144); `test_mixed_roots_exit_names_and_kills_both_tui_and_attached` + `test_mixed_roots_exit_enter_detaches_both` green; the three pre-existing forms byte-unchanged (single-root, >1-TUI-roots, attached-only — the latter keeps the documented launcher-noop kill, and the monitor's own [k] still refuses honestly with MON_KILL_UNAVAILABLE) |
+| IN-01 — GateWorkerError either-counter id collision (spurious launch-failed toast) | `0d02e18` | **RESOLVED** — scope-tagged single-counter filter verified (run_config.py:1117-1143 posting sites, :2151-2169 filter); `test_gate_worker_error_scope_tags_split_the_id_spaces` green (collision case + three controls) |
+| IN-02 — round-2 info tier: slot-2 selection live-dict residue (08-REVIEW IN-01) | `0d02e18` | **RESOLVED** — stores below the guard (selection.py:1614-1619); `test_dataset_kind_tick_stores_no_live_dict_residue` green |
+| IN-03 — round-2 info tier: env remount stale-cache window (08-REVIEW IN-03) | `0d02e18` | **RESOLVED** — synchronous `_check_in_flight` set (env_check.py:719-720); `test_refresh_sets_in_flight_flag_synchronously` green |
+| Golden-refresh supersession (D-03) note | — | **STANDS** — no SVG interaction this round (`git diff` over snapshots = 0 lines); suite green (11 passed) |
+| WINDOWS #26/#27 | — | **CARRIED** — unchanged ledger advisories (frontmatter) |
+
+Ledger note: `08-REVIEW-DISPOSITION.md` still shows the six rows `open` (recorded 04:43Z, before the 07:20Z fixes); the rows await the disposition-gate re-run — code resolution is verified here (frontmatter advisory #1).
 
 ### Advisory (New Scope, Unevidenced; re-verification ran)
 
-Independently re-verified this pass — none breaches an SC (full statements in frontmatter `advisory:`):
-
 | # | Finding | Category | Why Advisory |
 |---|---------|----------|--------------|
-| 1 | 08-REVIEW WR-01: ctrl+c intercept kills Input copy on base screens | other | Maintainer-ruled exit-primary trade-off; no SC promises clipboard copy |
-| 2 | 08-REVIEW WR-02: ExitModal kill runs on the event loop (monitor's is off-loop) | other | Bounded kill-grace block on an exiting app; kill effectiveness pinned green |
-| 3 | 08-REVIEW WR-03: attached-CLI-root ExitModal advertises a noop kill | other | Detach is the accurate foreign-sweep action and is resume-safe; monitor's own [k] refuses honestly |
-| 4 | Goldens changed (f2a772a) vs 11-08's plan-time byte-untouched prohibition | architectural | D-03-approved maintainer refresh supersedes the plan-time prohibition; suite green this pass |
-| 5 | WINDOWS #26/#27 ledger rows | other | Carried advisories; no SC breach (established round 1) |
-
-Prior info-tier items (IN-01 copy-drift in LNC_E2_WARNING constants, IN-02 stale-gate-error id filter — the filter at run_config.py:2131-2135 drops only errors matching NEITHER stage id, correct stale-drop semantics, re-read this pass — IN-03/04/05 polish, 08-REVIEW IN-01/03/04) remain open at info tier; none is SC-relevant.
+| 1 | 08-REVIEW-DISPOSITION ledger rows not yet flipped to fixed | other | Ledger formality; code resolution verified this pass |
+| 2 | run_finetune sibling hard-index sites (:849/:1077/:1322) | other | Outside the maintainer's ruling scope; phase-7 surface, queued future batch |
+| 3 | WizardModal keycap ruling needed | other | Carried maintainer decision item; phase-9 surface |
+| 4 | WINDOWS #26/#27 ledger rows | other | Carried; no SC breach |
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `pipeline/run_sweep.py` + `tests/test_sweep.py` | D-18 variant aliasing + parity suite (11-01) | ✓ VERIFIED | Byte-untouched since round-1 pass (git diff empty); argparse surface re-scanned this pass |
-| `tui/services/run_config.py` + tier-1 suite | Same-source service (11-02) | ✓ VERIFIED | `import run_sweep` / enumerate verbatim re-confirmed; 15 same-source tests green this pass |
-| `tui/services/sweep_launcher.py` + suite | Gated launch lifecycle (11-03, hardened 11-08 + ehc + 08-review) | ✓ VERIFIED | 4-stage refusal chain + O_EXCL tee + REPO_ROOT basis re-read; 5 named tests green this pass |
-| `tui/services/sweep_monitor.py` + suite | Pure scanner (11-04; +vxr checkpoint-cadence ETA) | ✓ VERIFIED | 35 contract/ETA tests green this pass |
-| `tui/strings.py` + `tests/tui/test_strings_phase11.py` | Copy contract + bidirectional tripwire (11-05) | ✓ VERIFIED | Full tripwire file green this pass (10 passed; poa/v0z/vxr/cdr/dnr names registered) |
-| `tui/screens/run_config.py` (+ `tui/screens/selection.py` LaunchConfirmModal base) | Slot-4 screen + gates (11-06; pair-list + Y/N since poa; bold Y/N since dnr) | ✓ VERIFIED | 14 named pilot pins green this pass across gate/quit/anchor/contrast/keycap surfaces |
-| `tui/screens/monitor.py` | Slot-5 screen (11-07; k kill-confirm + entry ETA since vxr) | ✓ VERIFIED | 9 named monitor pins green this pass |
-| `tui/app.py`, `tui/screens/nav.py`, `tui/styles.tcss` | App wiring, ExitModal/QuitConfirm, ctrl+c intercept, promotion | ✓ VERIFIED | Quit chain + P9 guard + ExitModal keycaps re-read; 13 quit-chain tests green this pass |
-| `tests/tui/__snapshots__/{monitor_empty,monitor_running,run_config}.svg` | Goldens (D-03-refreshed k-keycap set) | ✓ VERIFIED | Snapshot suite green this pass (11 passed) |
+| `pipeline/run_sweep.py` + `tests/test_sweep.py` | D-18 variant aliasing + parity suite (11-01) | ✓ VERIFIED | Byte-untouched by the klw delta (git-diff verified ba0c8d6..1cb8512) |
+| `tui/services/run_config.py` + tier-1 suite | Same-source service (11-02) | ✓ VERIFIED | Untouched by the delta; `import run_sweep`/enumerate re-read (:115/:907); the file's sole full-suite failure member is machine-local (pipeline/logs exists on this dev box — re-run individually this pass, failure text confirms the fresh-checkout assertion, not a code defect) |
+| `tui/services/sweep_launcher.py` + suite | Gated launch lifecycle (11-03, hardened 11-08) | ✓ VERIFIED | Untouched by the delta; 4 core pins green this pass (phrase-silent refusal, stage-0 guard, spawn pins, O_EXCL tee) |
+| `tui/services/sweep_monitor.py` + suite | Pure scanner (11-04) | ✓ VERIFIED | Untouched by the delta; standing green per round 2, monitor Pilot pins green this pass |
+| `tui/strings.py` + `tests/tui/test_strings_phase11.py` | Copy contract + tripwire (11-05) | ✓ VERIFIED | Zero-diff this round (zero new strings claim holds); tripwire 10 passed |
+| `tui/screens/run_config.py` | Slot-4 screen + gates (11-06) | ✓ VERIFIED | Touched only by IN-02 (scope tags on worker errors — error hygiene, no gate semantics); 27 of its Pilot tests green this pass across the WR/IN/ruling batches |
+| `tui/screens/monitor.py` | Slot-5 screen (11-07) | ✓ VERIFIED | Untouched; 5 monitor pins green this pass |
+| `tui/app.py` (+ nav/styles) | App wiring, ExitModal/QuitConfirm, ctrl+c intercept (11-06/07 + cdr/klw) | ✓ VERIFIED | The WR trio's target — all three fix sites re-read; exit/ruling batches green (30+ tests) |
+| `tui/screens/selection.py` / `tui/screens/env_check.py` | IN-01/IN-03 hygiene fixes (klw) | ✓ VERIFIED | Fix sites re-read; both named tests green |
+| `pipeline/run_finetune.py` + `tests/test_run_finetune_contracts.py` | 07-CR-01 guarded reads + AST pin (klw Task 3) | ✓ VERIFIED | Guarded `.get` shapes re-read (:1015/:1035); AST contract test green |
+| `tests/tui/__snapshots__/{monitor_empty,monitor_running,run_config}.svg` | Goldens (D-03 k-keycap set) | ✓ VERIFIED | Zero-diff; suite 11 passed |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|----|--------|---------|
-| run_config service | run_sweep planning functions | module-level import, enumerate/build_argv/base_model_name | ✓ WIRED | :115/:907 re-read; 15 service tests green this pass |
-| launch gate | spawner | refusal chain ordered before `_spawn` | ✓ WIRED | :642-712 re-read; spawner-silent phrase + stage-0 pins green this pass |
-| GateSummary.pairs | gate confirm modal pair list | service-derived, screen renders only | ✓ WIRED | `gate_confirm_data` (:446-454) → `_GateConfirmModal(pairs=...)` (:2047); pair-cap pin green this pass |
-| [a] PathInputModal | every monitor reader | attach → expanduser().resolve() | ✓ WIRED | monitor.py:1261-1280 re-read; tilde pin green this pass |
-| FailuresModal [r] | launch_from_failures | request_rerun → derive_rerun_seeds → _run_rerun_launch | ✓ WIRED | pairs × seeds pin green this pass; E2'-class re-run phrase gate re-confirmed |
-| slot-5 [k] | launcher kill channel | KillConfirmModal y → off-loop _run_kill | ✓ WIRED | monitor.py:1493-1580 re-read; y-kills-without-exiting pin green this pass |
-| q / ctrl+q / ctrl+c | QuitConfirmModal / ExitModal → kill/detach per root | action_quit + on_event intercept | ✓ WIRED | app.py:1042-1149 re-read; 13 quit-chain pins green this pass |
-| slot-4 launch success | slot-5 auto-attach (D-13) | app.sweep_launched → MonitorSwitchRequested | ✓ WIRED | happy-path gate pin (green this pass) covers the launch leg; auto-nav asserted in the documented full run |
+| run_config service | run_sweep planning functions | module-level import, enumerate verbatim | ✓ WIRED | :115/:907 re-read; file untouched by delta |
+| launch gate | spawner | refusal chain ordered before `_spawn` | ✓ WIRED | Launcher untouched; 4 refusal/spawn pins green this pass |
+| ExitModal [k] | app exit-kill worker | `action_kill_quit` → `request_kill_and_exit` → `_exit_kill_worker` → `ExitKillsDone` → `exit()` | ✓ WIRED | app.py:261-272 → :1216-1261 re-read; completion + raising-fan-out tests green |
+| action_quit | MULTI ExitModal over mixed roots | `attached_extra` → `combined` tuple → LNC_EXIT_MESSAGE_MULTI | ✓ WIRED | :1131-1144 re-read; both mixed-root tests green |
+| ctrl+c (base screen) | Input copy binding / action_quit | `on_event` delegation guard | ✓ WIRED | :1201-1212 re-read; delegation + both adapted routing pins green |
+| GateWorkerError posting sites | single-scope staleness filter | `scope="stage"/"launch"` tags → one-counter comparison | ✓ WIRED | :1950/:2014/:2042/:2092 → :2151-2169 re-read; scope-split test green |
+| slot-5 [k] | launcher kill channel (off-loop) | KillConfirmModal y → `_run_kill` @work thread | ✓ WIRED | monitor.py:1528-1532 re-read; y-kills-without-exiting pin green |
+| selection live ticks | live dicts | store-below-guard ordering | ✓ WIRED | selection.py:1614-1619 re-read; residue pin green |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|--------------|--------|--------------------|--------|
-| preview line / [p] modal | PreviewResult.cells | run_sweep.enumerate_matrix over the real registries | Yes (imported function verbatim) | ✓ FLOWING |
-| gate confirm pair list | GateSummary.pairs | FRESH preview recompute at gate time | Yes — pair-cap pin asserts the rendered rows | ✓ FLOWING |
-| monitor cell table / entries | cells_view / entries_progress(root) | run_record.json / manifest / checkpoint trainer_state on disk | Yes — incl. the vxr checkpoint-pair ETA (two-newest-checkpoint cadence) | ✓ FLOWING |
-| re-run confirm copy | pairs/seeds/n | FailureRow.seed via derive_rerun_seeds | Yes — pin asserts copy and launch agree | ✓ FLOWING |
-| log tail | read_log_tail(tee_path_for(root)) | XDG logs tee file | Yes — UAT recorded live tqdm/VRAM lines | ✓ FLOWING |
+| preview line / [p] modal | PreviewResult.cells | run_sweep.enumerate_matrix over the real registries | Yes (imported function verbatim; seam untouched) | ✓ FLOWING |
+| gate confirm pair list | GateSummary.pairs | FRESH preview recompute at gate time | Yes (pair-cap pin green) | ✓ FLOWING |
+| monitor cell table / entries | cells_view / entries_progress(root) | run_record.json / manifest / checkpoint trainer_state on disk | Yes (smoke trees re-read on disk this pass) | ✓ FLOWING |
+| ExitModal root list | live_sweeps() + attached_running_counts() | launcher registry + monitor attachment | Yes — now INCLUDING the attached-CLI root (WR-03) | ✓ FLOWING |
+| exit-kill fan-out | kill_sweep(root) per root | launcher process-group kill | Yes (raising-root case logged, fan-out continues) | ✓ FLOWING |
 
-### Behavioral Spot-Checks (run this pass at HEAD `eed1f75`)
+### Behavioral Spot-Checks (run this pass at HEAD `855202e`)
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Strings bidirectional inventory (bilingual registry, all delta names) | pytest tests/tui/test_strings_phase11.py (full file) | 10 passed | ✓ PASS |
-| E2' phrase refusal, spawner-silent (SC2 core) | pytest ::test_launch_spec_e2x_wrong_phrase_refuses_spawner_silent | passed | ✓ PASS |
-| E2'-class from-failures re-run demands phrase | pytest ::test_launch_from_failures_complete_manifest_three_seeds_demands_phrase | passed | ✓ PASS |
-| Single-GPU serialization guard, stage 0 before everything | pytest ::test_single_gpu_busy_refuses_launch_spec_before_every_stage | passed | ✓ PASS |
-| O_EXCL tee same-second collision (WR-04) | pytest ::test_spawn_same_second_same_basename_never_shares_tee_file | passed | ✓ PASS |
-| Spawn pins: LIST argv / session / cwd / env / tee (SC3) | pytest ::test_spawn_pins_list_argv_session_cwd_env_tee | passed | ✓ PASS |
-| Gate happy path through the pair-list Y/N confirm (poa + EHC-2) | pytest ::test_gate_happy_path_confirms_and_launches + ::test_gate_confirm_modal_lists_planned_pairs_capped + ::test_n_cancels_gate_confirm_without_launch | 3 passed | ✓ PASS |
-| Enter-key pin: Inputs never launch | pytest ::test_enter_key_pin_inputs_never_launch | passed | ✓ PASS |
-| Quit-confirm chain: q/ctrl+q routes, below-min-grid, n/esc cancel (v0z) | pytest ::test_q_with_no_live_sweep_opens_quit_confirm + 5 more quit pins | 6 passed | ✓ PASS |
-| ctrl+c any-focus: over focused Input; inert under modals (P9); below-min-grid (cdr) | pytest ::test_ctrlc_no_sweep_opens_quit_confirm_over_focused_input + ::test_ctrlc_live_sweep_routes_to_exit_modal_over_focused_input + ::test_ctrlc_inert_under_modals_never_stacks + ::test_ctrlq_under_exit_modal_never_stacks_second + ::test_ctrlc_below_min_grid_never_exits | 5 passed | ✓ PASS |
-| Multi-root exit kills every live sweep (WR-05) | pytest ::test_exit_modal_multi_root_kills_every_live_sweep | passed | ✓ PASS |
-| Quit/kill confirm keycaps + bold tokens (dnr/cdr) | pytest ::test_quit_confirm_footer_shows_y_n_keycaps + ::test_quit_confirm_message_bolds_y_n_tokens + ::test_kill_confirm_footer_shows_y_n_keycaps + ::test_kill_confirm_message_bolds_y_n_tokens | 4 passed | ✓ PASS |
-| slot-5 [k]: y-only kill via launcher channel, console never exits (vxr) | pytest ::test_k_opens_kill_confirm_y_kills_without_exiting | passed | ✓ PASS |
-| Entry ETA segment or honest dash (vxr) | pytest ::test_running_entry_renders_eta_segment_or_honest_dash | passed | ✓ PASS |
-| ~-spelled attach monitors resolved root (CR-01) | pytest ::test_attach_tilde_spelled_monitors_resolved_root_real_scanner | passed | ✓ PASS |
-| Re-run confirm names pairs × seeds (WR-03) | pytest ::test_rerun_confirm_names_pairs_times_seeds_estimate | passed | ✓ PASS |
-| Scanner + ETA contract (SC4 data layer incl. checkpoint cadence) | pytest test_services_sweep_monitor.py -k "full_scan or cells_view or stats_view or failures_view or read_log_tail or eta or checkpoint" | 35 passed | ✓ PASS |
-| Same-source preview service (SC1 seam) | pytest test_services_run_config.py -k "enumerate or preview or same_source or gpu_stack or resolve" | 15 passed | ✓ PASS |
-| Picker toggle cursor/scroll anchor + marked-row contrast (poa) | pytest ::test_space_toggle_deep_row_keeps_cursor_key_and_scroll_offset + ::test_screen_space_toggle_keeps_cursor_key_and_scroll_offset + ::test_styles_carry_picker_scoped_selected_contrast_rule | 3 passed | ✓ PASS |
-| Selection-custom picker family (poa surface) | pytest tests/tui/test_pilot_selection_custom.py (full file) | 29 passed | ✓ PASS |
-| Goldens (D-03 k-keycap refresh) | pytest tests/tui/test_snapshots.py (full file) | 11 passed | ✓ PASS |
-| CLI headless parity (SC5) | `run_sweep.py` argparse scan | all capability flags present | ✓ PASS |
-| Smoke artifacts on disk (SC5) | read finetuned-smoke/ + smoke-2x2-261014 + PlantHelixSeek trees | manifests + per-cell artifacts + the 10-16 live-run tree present | ✓ PASS |
-| Full suite / lint / typecheck on this exact tree | documented gates (refresh context; NOT re-run per instructions) | 1F/1858P (the 1F = test_storage_overview_defaults_mirror_real_consumers, machine-local, pre-existing, fresh-checkout green); node 26/26; ruff+ty green; CI four lanes green (PR #7) | ✓ PASS (documented) |
+| WR-01 ctrl+c copy delegation (selection-holding Input) | pytest `::test_ctrlc_copies_when_input_holds_a_real_selection` | passed | ✓ PASS |
+| WR-01 adapted CDR-2 corners (empty-selection routing) | pytest `::test_ctrlc_no_sweep_opens_quit_confirm_over_focused_input` + `::test_ctrlc_live_sweep_routes_to_exit_modal_over_focused_input` | 2 passed | ✓ PASS |
+| WR-02 exit lands on completion; every root attempted | pytest `::test_exit_k_kills_every_root_then_exits_on_completion` + `::test_exit_k_raising_kill_still_attempts_every_root_and_exits` | 2 passed | ✓ PASS |
+| WR-02 structural @work-site hardening | pytest `tests/tui/test_work_site_hardening.py` (full file) | passed | ✓ PASS |
+| WR-03 mixed TUI+CLI roots named and acted on | pytest `::test_mixed_roots_exit_names_and_kills_both_tui_and_attached` + `::test_mixed_roots_exit_enter_detaches_both` | 2 passed | ✓ PASS |
+| WR-05 multi-root exit (regression) | pytest `::test_exit_modal_multi_root_kills_every_live_sweep` + `::test_exit_modal_multi_root_enter_detaches_every_live_sweep` | 2 passed | ✓ PASS |
+| IN-01 dataset-tick live-dict residue | pytest `tests/tui/test_pilot_selection_custom.py::test_dataset_kind_tick_stores_no_live_dict_residue` | passed | ✓ PASS |
+| IN-02 scope-split id spaces | pytest `::test_gate_worker_error_scope_tags_split_the_id_spaces` | passed | ✓ PASS |
+| IN-03 synchronous in-flight flag | pytest `tests/tui/test_pilot_env_check.py::test_refresh_sets_in_flight_flag_synchronously` | passed | ✓ PASS |
+| 07-CR-01 guarded reads AST contract | pytest `tests/test_run_finetune_contracts.py::test_minimal_custom_entry_reads_are_guarded` | passed | ✓ PASS |
+| EHC rulings intact: enter-inert, y-only, every-exit-confirms, ctrl+c any-focus, P9 guards, keycaps | pytest 20-test ruling batch (enter-key pin, gate happy path, pair-list cap, n-cancel, q/ctrl+q routing, quit-confirm n/esc, below-min-grid, ctrl+c inert-under-modals, ctrl+q no-second-stack, keycap/bold pins, Q/q typing pins) | 20 passed | ✓ PASS |
+| SC2/SC3 launcher refusal + spawn pins | pytest launcher `-k` selection (phrase-silent, stage-0, spawn pins, O_EXCL) | 4 passed | ✓ PASS |
+| SC4 monitor pins (k-kill off-loop, tilde attach, rerun pairs×seeds, keycaps) | pytest monitor `-k` selection | 5 passed | ✓ PASS |
+| Strings tripwire + goldens | pytest `test_strings_phase11.py` + `test_snapshots.py` (full files) | 21 passed | ✓ PASS |
+| Machine-local 1F member characterized | pytest `::test_storage_overview_defaults_mirror_real_consumers` | failed — asserts `pipeline/logs` absent (fresh-checkout expectation); the dir exists on this GB10 box with live-run logs | ✓ PASS (environment-conditional; matches the documented 1F/1867P baseline membership exactly) |
+| Zero new strings / zero SVG interaction | `git diff ba0c8d6..1cb8512 -- tui/strings.py tests/tui/__snapshots__/` | 0 lines | ✓ PASS |
+| ruff (repo) | `uv run --group dev --group tui ruff check .` | All checks passed | ✓ PASS |
+| ty (tui + pipeline) | `uv run --group dev --group tui ty check tui pipeline` | All checks passed | ✓ PASS |
+| SC5 smoke artifacts on disk | read `finetuned-smoke/` + `pipeline/finetuned/smoke-2x2-261014` | all trees + trainer_state markers present | ✓ PASS |
+| Full suite / node lane | documented gates (NOT re-run per refresh instructions) | 1F/1867P (sole F machine-local, characterized above); node 26/26 | ✓ PASS (documented) |
 
-**Total this pass: ~125 named/selected tests across 12 batches, all green, plus CLI/artifact scans.**
+**Total this pass: 61 named/selected tests across 6 batches, all green, plus both lint/typecheck gates re-run live, git-delta discipline checks, and artifact scans.**
 
 ### Probe Execution
 
-N/A — no phase-declared or conventional probe scripts; this phase's evidence vehicles are the pytest Pilot/tier-1 harness, the executed GB10 UAT (2026-10-13), the 2026-10-16 live PlantHelixSeek run through the new gate, and the demo recordings.
+N/A — no phase-declared or conventional probe scripts; this micro refresh's evidence vehicles are the named pytest Pilot/tier-1 tests above (run in their own process this pass), plus the standing SC5 evidence (executed 2026-10-13 UAT, on-disk smoke trees, 2026-10-16 live run).
 
 ### Requirements Coverage
 
 | Requirement | Source Plans | Status | Evidence |
 |-------------|--------------|--------|----------|
-| CFG-01 | 11-01/02/05/06 | ✓ SATISFIED | SC1 evidence — full param surface re-read + anchor/contrast pins green; REQUIREMENTS.md [x] |
-| CFG-02 | 11-02/06/08 | ✓ SATISFIED | resolve_dirs basis re-read; live-root pre-check on the same basis (:1963) |
-| CFG-03 | 11-02/06 | ✓ SATISFIED | same-source preview re-confirmed (15 service tests green) |
-| LNC-01 | 11-05/06 | ✓ SATISFIED | gate chain re-read + tripwire green (env-block modal, confirm, E2' phrase) |
-| LNC-02 | 11-01/03/06/07/08 | ✓ SATISFIED | spawn pins + multi-root exit + quit-chain pins green this pass |
-| LNC-03 | 11-02/03/06/07 | ✓ SATISFIED — strengthened | E2' phrase refusal green on BOTH paths; the typed-phrase UI re-reads the service verdict per keystroke |
-| MON-01 | 11-04/05/07 | ✓ SATISFIED | scanner contract green (full_scan/cells_view family) |
-| MON-02 | 11-04/05/07/08 | ✓ SATISFIED | tilde attach pin green; entry ETA adds per-entry progress (vxr) |
-| MON-03 | 11-04/05/07/08 | ✓ SATISFIED — strengthened | pairs × seeds pin green; + y-only k kill-confirm channel |
-| MON-04 | 11-03/04/05/07/08 | ✓ SATISFIED | O_EXCL tee + read_log_tail contract green |
-| MON-05 | 11-04/05/07 | ✓ SATISFIED | trainer_state markers on disk (smoke trees re-read) + checkpoint-cadence ETA derives from the same markers |
+| CFG-01 | 11-01/02/05/06 | ✓ SATISFIED | SC1 evidence; service + screen surface untouched by the delta; tripwire green |
+| CFG-02 | 11-02/06/08 | ✓ SATISFIED | resolve_dirs basis outside the delta; standing green |
+| CFG-03 | 11-02/06 | ✓ SATISFIED | same-source seam re-read (:115/:907); untouched |
+| LNC-01 | 11-05/06 | ✓ SATISFIED | gate chain unchanged in semantics; happy-path + env pins green |
+| LNC-02 | 11-01/03/06/07/08 | ✓ SATISFIED — strengthened | spawn pins green; the exit kill is now off-loop and names every live root incl. attached-CLI |
+| LNC-03 | 11-02/03/06/07 | ✓ SATISFIED | phrase-silent refusal green; gate posting sites re-verified (IN-02 touches only error surfacing, not the verdict chain) |
+| MON-01 | 11-04/05/07 | ✓ SATISFIED | scanner untouched; standing green |
+| MON-02 | 11-04/05/07/08 | ✓ SATISFIED | tilde attach pin green; IN-03 improves the env panel's remount freshness |
+| MON-03 | 11-04/05/07/08 | ✓ SATISFIED | rerun pairs×seeds pin green; k-kill channel green |
+| MON-04 | 11-03/04/05/07/08 | ✓ SATISFIED | O_EXCL tee pin green |
+| MON-05 | 11-04/05/07 | ✓ SATISFIED | trainer_state markers re-read on disk (finetuned-smoke trees) |
 
-REQUIREMENTS.md: all 11 phase requirements [x]; traceability rows Complete; zero orphaned requirements (38/38 mapped, 0 unmapped, 0 orphaned — coverage block re-read).
+REQUIREMENTS.md: all 11 phase requirements [x]; traceability rows Complete; coverage block re-read — 0 unmapped, 0 orphaned.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| (none) | — | Zero TBD/FIXME/XXX across all 26 covered implementation files; the TODO/HACK/PLACEHOLDER grep hits are input-hint constants by design (Input placeholder text: SEL_FILTER_PLACEHOLDER, MON_ATTACH_PLACEHOLDER, WIZ_SPLIT_FILE_PLACEHOLDER...) — verified in context this pass; no stub patterns | — | — |
+| (none) | — | Zero TBD/FIXME/XXX/TODO/HACK across the 10 klw-delta files and the phase surface; the `PLACEHOLDER` grep hits are Input placeholder-text constants by design (SEL_FILTER_PLACEHOLDER etc.) — verified in context | — | — |
 
 ### Human Verification Required
 
-None. SC5's human half (the maintainer-run GB10 smoke) was closed by the executed live UAT (2026-10-13, 11-UAT.md `status: passed`), corroborated by the 2026-10-16 live PlantHelixSeek launch through the CURRENT pair-list Y/N gate (tree on disk) and the demo-recorded single-GPU stage-0 refusal. Every behavior-dependent SC claim was exercised this pass by named passing tests or recorded live execution. The visual half of the dnr/cdr prominence work (bold tokens, keycaps) is pinned by Pilot tests asserting the rendered Text/Footer content.
+None. This round's delta (the seven klw fixes) is entirely machine-verified: every fix site re-read at HEAD and every behavior-dependent claim exercised by a named passing test run this pass (delegation routing, completion-gated exit, every-root fan-out, mixed-root naming, store gating, scope-split filtering, synchronous flag, guarded reads). SC5's human half remains closed by the executed live UAT (2026-10-13) and the 2026-10-16 live launch through the current gate — unchanged by this batch.
 
 ### Gaps Summary
 
-None. The round-2 refresh confirms the phase goal holds at HEAD `eed1f75` after the poa/v0z/vxr/cdr/dnr delta: all five SCs re-verified against current code with ~125 named tests green this pass. The maintainer's ruling-driven confirm chains were adjudicated against each SC's intent and every one STRENGTHENS or EXTENDS the original contract (pair-list Y/N gate makes the confirm more explicit; every-path quit confirm closes the previously-direct no-sweep exit; the in-console k kill adds a recovery channel without an exit path). The 11-01/11-03 seams are byte-untouched since the round-1 pass (git-diff-verified), the same-source preview intact, the E2' structural gate refuses spawner-silent on both launch paths, goldens are green under the D-03-approved refresh, and SC5 is grounded by the executed UAT, on-disk artifacts (including the 10-16 live run), and CLI parity. The five advisory items (08-REVIEW WR-01/02/03 disposition-open, the golden-refresh supersession note, WINDOWS #26/#27) are recorded in frontmatter — none breaches an SC.
+None. The round-3 micro refresh confirms the phase goal holds at HEAD `855202e` (code-identical to `1cb8512`) after the quick-261017-klw fix batch: all five SCs re-verified — SC1/SC4/SC5 through their untouched seams (git-diff-verified exclusion from the delta plus re-reads and green pins), SC2/SC3 through the fix-shaped surfaces. The klw changes only STRENGTHEN the SC3/SC2 contracts: the exit kill moved off the event loop behind a completion message with an every-root broad guard, the mixed TUI+CLI live-root case now joins the names-every-root MULTI form, base-screen Inputs regained ctrl+c copy parity with modals, the gate's worker-error staleness filter lost its either-counter collision, and the slot-2/slot-1 hygiene fixes closed three residue/staleness seams. All seven findings were RED-first with tests green this pass; the EHC ruling set (enter-inert, y-only, every-exit-confirms, ctrl+c any-focus, P9 stacking guards) passed unmodified except the two documented CDR-2 adaptations that now pin both selection corners. Zero new strings, zero SVG interaction, ruff+ty green live this pass. The four frontmatter advisories are ledger/maintainer-decision items on other phases' surfaces — none breaches a phase-11 SC.
 
 ---
 
-_Verified: 2026-10-17T05:19:32Z_
+_Verified: 2026-10-17T07:42:47Z_
 _Verifier: Claude (gsd-verifier)_
