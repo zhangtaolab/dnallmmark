@@ -35,7 +35,7 @@ findings:
     severity: info
     disposition: open
     title: "Filter grammar accepts degenerate tokens that render oddly"
-open: 7
+open: 1
 total: 8
 recorded: 2026-10-17T04:43:05.046Z
 ---
