@@ -2623,11 +2623,13 @@ async def test_kill_runs_off_the_event_loop_console_stays_responsive():
 
 
 async def test_monitor_help_lists_the_kill_row():
-    """VXR-2/261017-cdr: the ? help modal over the monitor carries the k
-    row (the BINDINGS projection — the keycap joins after the [r]
-    rescan); the 261016-vxr app-level Q row is RETIRED with its
-    intercept (Q is a plain typing letter again — ctrl+c is the
-    any-focus exit now)."""
+    """VXR-2/261017-cdr/261017-mad: the ? help modal over the monitor
+    carries the k row (the BINDINGS projection — the keycap joins after
+    the [r] rescan); the 261016-vxr app-level Q row is RETIRED with its
+    intercept (Q is a plain typing letter again — F10 is the any-focus
+    exit since the 2026-10-17 16:02 ruling, and no [f10] row starts a
+    screen row here: the f10 help row renders as an app-level manual
+    row, so this screen-scoped assertion set stays true unchanged)."""
     from tui.app import HelpModal
     from tui.strings import APP_HELP_ROW, MON_KILL_KEYCAP
 

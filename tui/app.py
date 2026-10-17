@@ -19,13 +19,17 @@ onto this root.
   confirmation from any screen (261016-v0z: no exit without an explicit
   operator confirm — no live sweep opens the Y/N quit modal, a live
   sweep the kill/detach ExitModal; the inherited ctrl+q default is
-  declared explicitly and routes through the same guard; 261017-cdr:
-  ``ctrl+c`` exits from any BASE-SCREEN focus through the same confirm
-  chain — an ``on_event`` intercept, so it survives the filter-input
-  focus trap while the restored capital Q types as a plain letter
-  again, and action_quit guards against exit-modal stacking);
-  ``?`` opens the help modal listing every active binding with
-  its Chinese label from ``tui/strings.py`` (I18N-01).
+  declared explicitly and routes through the same guard; 261017-mad —
+  the maintainer's 2026-10-17 16:02 exit-key final ruling — ``f10`` is
+  the ANY-FOCUS primary exit: a DECLARED priority binding through the
+  same confirm chain, probe-confirmed to fire over a focused Input and
+  over open modals while action_quit guards against exit-modal
+  stacking; ``ctrl+c`` is NOT an exit key — the 261017-cdr intercept
+  is withdrawn and the key returns to textual's terminal-native
+  semantics (a selection-holding Input copies; every other press hits
+  the inherited notify-only help_quit default); ``?`` opens the help
+  modal listing every active binding with its Chinese label from
+  ``tui/strings.py`` (I18N-01).
 - Min-size guard (08-UI-SPEC Terminal Contract): below 80x24 the app
   renders ONLY the min-size message with the current dimensions — a
   dedicated screen swapped in on mount/resize and popped when the
@@ -73,7 +77,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import Vertical
 from textual.message import Message
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Footer, Input, Static
+from textual.widgets import Footer, Static
 from textual.worker import get_current_worker
 
 from tui import strings as S
@@ -279,13 +283,16 @@ class QuitConfirmModal(ModalScreen):
 
     ``enter`` is STRUCTURALLY inert: the key is bound to a documented
     no-op action (the LaunchConfirmModal EHC-2 idiom — a stray
-    double-enter can never quit). Corrected inertness map (261017-cdr):
-    plain ``q`` stays chain-cut under the modal (Pitfall 11 — the modal
-    binding chain blocks the non-priority app binding), while the
-    priority ``ctrl+q`` DOES fire over the modal and re-enters
-    action_quit, whose exit-family guard (CDR-4) returns immediately —
-    nothing observable happens; ``ctrl+c`` delegates to the modal-cut
-    chain and is likewise inert (CDR-2). The 261017-cdr prominence
+    double-enter can never quit). Corrected inertness map (261017-cdr,
+    ctrl+c leg updated at 261017-mad): plain ``q`` stays chain-cut
+    under the modal (Pitfall 11 — the modal binding chain blocks the
+    non-priority app binding), while the priority ``ctrl+q`` and
+    ``f10`` DO fire over the modal and re-enter action_quit, whose
+    exit-family guard (CDR-4) returns immediately — nothing observable
+    happens; ``ctrl+c`` is natively chain-cut under the modal exactly
+    like every non-priority app binding (the 261017-cdr intercept that
+    owned the key is withdrawn — the key is not an exit key anywhere).
+    The 261017-cdr prominence
     ruling (CDR-3): the message's [Y]/[N] tokens render BOLD via the
     Rich Text API (``Text.highlight_words`` — Text content is never
     markup-parsed, so the literal bracket tokens stay literal; no
@@ -538,11 +545,15 @@ class DnallmMarkTui(App):
     # App-level bindings: q opens the quit confirm from any screen
     # (unhandled keys bubble widget -> screen -> app, so a focused
     # DataTable does not swallow q; 261016-v0z — never a direct exit);
+    # f10 is the any-focus primary exit (261017-mad, the 2026-10-17
+    # 16:02 ruling — its declaration comment sits at the entry below);
     # ? opens the help modal; L toggles the language (EHC-1, 261015-ehc —
     # uppercase L, no screen binds L/l; a focused Input consumes the
-    # keystroke as text, which is the correct k9s behavior). The ClassVar
-    # annotations mirror the App base declarations verbatim (the 08-03
-    # RUF012 resolution) — framework-read class constants.
+    # keystroke as text, which is the correct k9s behavior). ctrl+c is
+    # deliberately NOT bound: the 261017-cdr intercept is withdrawn and
+    # the key keeps textual's terminal-native semantics (261017-mad).
+    # The ClassVar annotations mirror the App base declarations verbatim
+    # (the 08-03 RUF012 resolution) — framework-read class constants.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("q", "quit", S.APP_QUIT_LABEL),
         # 261016-v0z: the DECLARED mirror of the inherited App default
@@ -1090,10 +1101,12 @@ class DnallmMarkTui(App):
     # ===== Actions (app-level) =====
 
     async def action_quit(self) -> None:
-        """The guarded exit (the 261016-v0z contract: q and ctrl+q
-        ALWAYS confirm before exit — no key combination kills the console
-        without an explicit operator confirmation; 261017-cdr adds
-        ctrl+c as the any-focus trigger through the same chain).
+        """The guarded exit (the 261016-v0z contract: q, ctrl+q, and —
+        since 261017-mad — f10 ALWAYS confirm before exit — no key
+        combination kills the console without an explicit operator
+        confirmation; f10 is the any-focus trigger per the maintainer's
+        2026-10-17 16:02 ruling; q/ctrl+q keep their unchanged roles
+        and ctrl+c is no longer an exit key anywhere).
 
         Legs, in order: (0) an exit-family modal already top returns
         IMMEDIATELY (the CDR-4 stacking guard — see below); (1) below
@@ -1170,66 +1183,6 @@ class DnallmMarkTui(App):
                               root=Path(root).name)))
             return
         self.push_screen(QuitConfirmModal(message=S.LNC_EXIT_CONFIRM))
-
-    async def on_event(self, event: events.Event) -> None:
-        """261017-cdr (CDR-2, the maintainer's 2026-10-17 revision):
-        ctrl+c is the ANY-FOCUS primary exit — the intercept replaces
-        the 261016-vxr uppercase-Q one (a capital Q is a plain typing
-        letter again), routing through the v0z confirm chain so the
-        quit works from ANY base-screen focus, including the
-        filter-input focus trap.
-
-        WR-01 (08 review, fix batch 261017-klw) — the copy delegation:
-        when the focused widget is an ``Input`` holding a NON-EMPTY
-        selection, ctrl+c delegates through ``super().on_event`` to
-        textual 8.2.8's own ``ctrl+c,super+c -> copy`` Input binding
-        (``_input.py:139``) — base-screen Inputs get copy parity with
-        modal Inputs (the 08-REVIEW asymmetry: inside modals the key
-        already delegates and copy works; the loss was base-screen
-        only). The delegation fires ONLY for
-        ``isinstance(self.focused, Input)`` with truthy
-        ``selected_text`` while the top screen is non-modal — an empty
-        selection, a non-Input focus, or no focus still routes ctrl+c
-        into the action_quit chain exactly as today, and ctrl+c under
-        modals stays inert (the not-modal guard precedes everything).
-        NOT an exit bypass: a selection-holding Input + ctrl+c is the
-        EHC-ratified explicit operator gesture on selected text.
-
-        Why an ``on_event`` intercept and NOT a declared binding with
-        the priority flag (probe-pinned on textual 8.2.8): a priority
-        ctrl+c would deliver the same focused-Input reach (ctrl combos
-        are never consumed by an Input), but the priority path walks
-        the FULL binding chain, so it would also fire under EVERY open
-        modal (the P9 mechanism) and stack an exit modal over the
-        wizard, the E2' phrase modal, or a picker. The intercept with
-        the explicit ``not is_modal`` guard delivers the same
-        base-screen reach with base-screen-only semantics: under every
-        modal the key delegates to ``super().on_event`` and the
-        modal-cut binding chain, where the inherited ctrl+c help_quit
-        default is non-priority and therefore chain-cut — inert, no
-        notify. On base screens the intercept consumes the key before
-        the machinery, so the inherited default never fires anywhere
-        and no replacement binding is declared (it could never fire:
-        shadowed on base screens, chain-cut under modals — dead code).
-        Below the minimum grid the intercept routes into action_quit,
-        whose first leg returns — the same behavior as q (the guard
-        screen is a plain non-modal Screen). zellij's default config
-        passes ctrl+c through to the pane program. Every other event
-        delegates to the App base unchanged (lowercase q keeps its
-        Input semantics; a capital Q types everywhere again).
-        """
-        if (isinstance(event, events.Key) and event.key == "ctrl+c"
-                and self.screen is not None
-                and not self.screen.is_modal):
-            # WR-01: a selection-holding Input owns the key first —
-            # delegate so the Input's own copy binding fires
-            focused = self.focused
-            if isinstance(focused, Input) and focused.selected_text:
-                await super().on_event(event)
-                return  # delegated: the Input's copy binding owns the key
-            await self.action_quit()
-            return  # consumed: never forwarded, never a notify
-        await super().on_event(event)
 
     # ===== The exit-kill worker (WR-02, 08 review fix batch 261017-klw) =====
 
@@ -1313,9 +1266,13 @@ class DnallmMarkTui(App):
         # the F10 row is FIRST among the manual exit rows — F10 is the
         # any-focus PRIMARY exit since the 2026-10-17 16:02 ruling (the
         # declared priority binding routing through the v0z confirm
-        # chain); q/ctrl+q are same-role alternates behind it; the
-        # 261016-vxr Q row is retired with its intercept — a capital Q
-        # is a plain typing letter again.
+        # chain); q/ctrl+q are same-role alternates behind it. The
+        # ctrl+c row is KEPT as the one-line anti-misreading note
+        # (261017-mad): the intercept is withdrawn and the key keeps
+        # textual's terminal-native semantics — APP_CTRLC_LABEL says
+        # terminal copy/interrupt, NOT quit. The 261016-vxr Q row is
+        # retired with its intercept — a capital Q is a plain typing
+        # letter again.
         rows.append(("f10", S.APP_F10_LABEL))
         rows.append(("ctrl+q", S.APP_CTRLQ_LABEL))
         rows.append(("ctrl+c", S.APP_CTRLC_LABEL))

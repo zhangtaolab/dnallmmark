@@ -1934,21 +1934,26 @@ async def test_exit_modal_multi_root_enter_detaches_every_live_sweep():
 # The 2026-10-17 fix batch (08 review WR-01/02/03) — the exit-channel
 # trio: ctrl+c copy delegation on selection-holding Inputs, the
 # off-loop kill-and-exit, and the mixed live-root modal form
+# (261017-mad: the ctrl+c legs below are the WITHDRAWN-intercept native
+# forms — the delegation branch rode out with the intercept)
 # =====================================================================
 
 
 async def test_ctrlc_copies_when_input_holds_a_real_selection():
-    """WR-01 (08 review, fix batch 261017-klw): on a BASE screen, ctrl+c
-    over a focused Input holding a NON-EMPTY selection delegates through
-    super().on_event to textual 8.2.8's own ctrl+c,super+c -> copy Input
-    binding (_input.py:139) — the selection reaches the clipboard, NO
-    quit surface opens, the screen stays the base screen, nothing exits
-    (copy parity with modal Inputs; the EHC-ratified explicit operator
-    gesture on selected text, never an exit dodge). The selection is
+    """WR-01 (08 review, fix batch 261017-klw) — the 261017-mad native
+    form: the ctrl+c interception is WITHDRAWN, so on a BASE screen a
+    selection-holding focused Input and ctrl+c reach textual 8.2.8's
+    own ``ctrl+c,super+c -> copy`` Input binding (``_input.py:139``)
+    directly — ZERO app seam involved (the retired delegation branch
+    existed only to rescue the copy the intercept was ambushing; the
+    native binding delivers the same clipboard copy). The selection is
     driven by REAL key presses (home, then shift+end) after typing —
-    never a private-attribute poke. The empty-selection contrast lives
-    below (collapse + ctrl+c -> the quit confirm exactly as before)."""
-    from tui.app import QuitConfirmModal
+    never a private-attribute poke. The collapsed-contrast leg
+    (261017-mad): an EMPTY selection + ctrl+c opens NO exit surface
+    either — the inherited notify-only help_quit default fires (the
+    maintainer-ruling acceptance, deliberately not pinned), never the
+    exit confirm the retired intercept used to open."""
+    from tui.app import ExitModal, QuitConfirmModal
 
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
@@ -1977,25 +1982,27 @@ async def test_ctrlc_copies_when_input_holds_a_real_selection():
         await pilot.press("ctrl+c")
         await pilot.pause()
 
-        assert not any(isinstance(screen, QuitConfirmModal)
+        assert not any(isinstance(screen, (ExitModal, QuitConfirmModal))
                        for screen in app.screen_stack), (
-            "ctrl+c over a selection-holding Input must NOT open the quit "
-            "confirm (WR-01: the key delegates to Input's copy binding)"
+            "ctrl+c over a selection-holding Input must NOT open any "
+            "exit surface (the Input's own copy binding owns the key)"
         )
         assert isinstance(app.screen, RunConfigScreen), (
             "the base screen stays top — the key was a copy, not an exit"
         )
         assert not app._exit, "a copy gesture never exits the console"
         assert app.clipboard == "42,43,44hello", (
-            "the selected text reached the app clipboard (the Input's own "
-            "copy binding fired through the delegation)"
+            "the selected text reached the app clipboard (textual's own "
+            "Input copy binding fired — no app seam)"
         )
         assert seeds_input.value == value_before, (
             "copy never mutates the Input (cut would; copy must not)"
         )
 
         # the CONTRAST (the empty-selection case, same Input): collapse
-        # the selection, ctrl+c -> the quit confirm exactly as before
+        # the selection, ctrl+c -> NO exit surface (the inherited
+        # notify-only default; the retired intercept used to open the
+        # quit confirm here — the withdrawal's exact ambush closure)
         await pilot.press("end")
         await pilot.pause()
         assert seeds_input.selected_text == "", (
@@ -2003,11 +2010,44 @@ async def test_ctrlc_copies_when_input_holds_a_real_selection():
         )
         await pilot.press("ctrl+c")
         await pilot.pause()
-        assert isinstance(app.screen, QuitConfirmModal), (
-            "an EMPTY selection keeps today's routing — ctrl+c opens the "
-            "quit confirm (the delegation fires only on selected text)"
+        assert not any(
+            isinstance(screen, (ExitModal, QuitConfirmModal))
+            for screen in app.screen_stack), (
+            "an EMPTY selection must open no exit surface either — the "
+            "terminal copy gesture never meets an exit (MAD-2)"
         )
+        assert isinstance(app.screen, RunConfigScreen)
         assert not app._exit
+
+
+async def test_ctrlc_without_input_focus_ambushes_nothing():
+    """MAD-2 (the ambush scenario pin): a bare ctrl+c on a base screen
+    with NO Input focus opens NO modal anywhere and never exits — the
+    retired 261017-cdr intercept used to route exactly this press into
+    the exit confirm, which is how an unscoped terminal ctrl+shift+c
+    copy passthrough (an indistinguishable 0x03) ambushed the operator
+    with the exit confirm while they tried to copy. Withdrawn: the key
+    now hits textual's inherited notify-only help_quit default (names
+    ctrl+q; no modal, no exit — accepted as harmless per the ruling,
+    deliberately not pinned)."""
+    from tui.app import ExitModal, QuitConfirmModal
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        # no Input focused (the picker/params chrome owns focus)
+        await pilot.press("ctrl+c")
+        await pilot.pause()
+        assert not any(
+            isinstance(screen, (ExitModal, QuitConfirmModal))
+            for screen in app.screen_stack), (
+            "a bare ctrl+c must open no exit surface (the "
+            "terminal-copy passthrough ambush is closed)"
+        )
+        assert isinstance(app.screen, RunConfigScreen), (
+            "the base screen stays top"
+        )
+        assert not app._exit, "a bare ctrl+c never exits"
 
 
 async def test_exit_k_kills_every_root_then_exits_on_completion():
@@ -2140,8 +2180,9 @@ async def test_q_uppercase_is_a_plain_typing_letter_again():
     withdrawn — a capital Q is a PLAIN TYPING LETTER again everywhere.
     Over a focused base-screen Input it TYPES (the select_on_focus
     replace semantics the lowercase-q pin documents), opens no modal
-    anywhere in the stack, and never exits (ctrl+c took over the
-    any-focus exit role per CDR-2)."""
+    anywhere in the stack, and never exits (the any-focus exit role
+    passed to ctrl+c at 261017-cdr and to F10 at 261017-mad — the
+    2026-10-17 16:02 final ruling)."""
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_run_config(pilot, app)
@@ -2162,75 +2203,6 @@ async def test_q_uppercase_is_a_plain_typing_letter_again():
             "no modal anywhere in the stack — Q is not an exit key anymore"
         )
         assert not app._exit, "a capital Q never exits"
-
-
-async def test_ctrlc_no_sweep_opens_quit_confirm_over_focused_input():
-    """CDR-2 (the 2026-10-17 maintainer revision): ctrl+c is the
-    any-focus primary exit — over a focused base-screen Input it opens
-    the QuitConfirmModal through the v0z chain (no live sweep), the
-    Input value is UNCHANGED (ctrl combos never type), and y confirms
-    the quit the ctrl+c opened. The inherited textual 8.2.8 help_quit
-    notify-only default is shadowed on base screens by the intercept."""
-    app = _app()
-    async with app.run_test(size=(120, 40)) as pilot:
-        await _open_run_config(pilot, app)
-        from tui.app import QuitConfirmModal
-
-        seeds_input = app.screen.query_one("#cfg-input-seeds", Input)
-        seeds_input.focus()
-        await pilot.pause()
-        # WR-01 (08 review, fix batch 261017-klw): focus() auto-selects
-        # the whole content (select_on_focus) — collapse it so this test
-        # stays the EMPTY-selection case it was written to pin (a
-        # selection-holding Input now receives the copy delegation, the
-        # test_ctrlc_copies_when_input_holds_a_real_selection pin above)
-        await pilot.press("end")
-        await pilot.pause()
-        value_before = seeds_input.value
-        await pilot.press("ctrl+c")
-        await pilot.pause()
-        assert isinstance(app.screen, QuitConfirmModal), (
-            "ctrl+c must fire the quit chain over a focused Input"
-        )
-        assert not app._exit, "ctrl+c alone never quits — the chain confirms"
-        assert seeds_input.value == value_before, (
-            "the ctrl+c keypress is consumed — never typed into the Input"
-        )
-        await pilot.press("y")
-        await pilot.pause()
-        assert app._exit, "y confirms the quit the ctrl+c opened"
-
-
-async def test_ctrlc_live_sweep_routes_to_exit_modal_over_focused_input():
-    """CDR-2: with a live sweep, ctrl+c from a focused Input routes to
-    the ExitModal (the v0z live leg) — input unchanged, never exited.
-
-    This REWRITES the 261016-v0z ctrl+c audit pin (the deleted
-    ``test_ctrlc_never_exits_or_opens_modal``): the inherited help_quit
-    default is now intercepted on base screens and chain-cut under
-    modals, so its old no-screen/no-exit assertions are false — the
-    no-sweep truth survives inside the primary-leg test above."""
-    launcher = FakeLauncherService(live=("/repo/finetuned",))
-    app = _app(launcher=launcher)
-    async with app.run_test(size=(120, 40)) as pilot:
-        await _open_run_config(pilot, app)
-        from tui.app import ExitModal
-
-        seeds_input = app.screen.query_one("#cfg-input-seeds", Input)
-        seeds_input.focus()
-        await pilot.pause()
-        # WR-01: collapse the select_on_focus auto-selection (this test
-        # pins the EMPTY-selection routing; a real selection copies)
-        await pilot.press("end")
-        await pilot.pause()
-        value_before = seeds_input.value
-        await pilot.press("ctrl+c")
-        await pilot.pause()
-        assert isinstance(app.screen, ExitModal), (
-            "ctrl+c over a focused Input routes through the live-sweep leg"
-        )
-        assert not app._exit
-        assert seeds_input.value == value_before, "ctrl+c never types"
 
 
 async def test_q_lowercase_still_types_into_inputs():
@@ -2255,13 +2227,17 @@ async def test_q_lowercase_still_types_into_inputs():
         )
 
 
-async def test_ctrlc_inert_under_modals_never_stacks():
-    """CDR-2 modal guard: ctrl+c under ANY open modal is inert — the
-    intercept's not-modal guard delegates to the modal-cut binding
-    chain, where the inherited non-priority help_quit default is
-    chain-cut. No exit, no second modal, nothing typed (ctrl combos
-    never type); a capital Q stays typeable inside modal Inputs (the
-    E2' phrase rationale, now true by default and pinned)."""
+async def test_modal_exit_semantics_native_ctrlc_and_f10():
+    """MAD-2/MAD-1 (the 261017-mad withdrawal): under modals ctrl+c is
+    NATIVELY chain-cut — the inherited help_quit default is
+    non-priority, so an open modal's binding chain consumes it (no exit
+    surface, nothing typed, exactly one modal; identical to the retired
+    intercept's modal guard, now free). f10 under a NON-exit
+    Input-bearing modal is a NEW legitimate quit intent (the ctrl+q
+    family semantics): the priority chain fires over the modal, the
+    QuitConfirmModal stacks OVER it, and esc peels back to the modal
+    beneath. A capital Q still types inside modal Inputs (the E2'
+    phrase rationale, pinned)."""
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_run_config(pilot, app)
@@ -2276,15 +2252,17 @@ async def test_ctrlc_inert_under_modals_never_stacks():
         await pilot.pause()
         assert sum(isinstance(screen, QuitConfirmModal)
                    for screen in app.screen_stack) == 1, (
-            "ctrl+c under a modal must never stack a second one"
+            "ctrl+c under a modal is natively chain-cut — never a second"
         )
         assert not app._exit, "ctrl+c under a modal never quits"
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, RunConfigScreen)
 
-        # (c)/(d) an Input-bearing modal top: nothing pushed, nothing
-        # typed — and a capital Q still TYPES there
+        # (c)/(d) an Input-bearing modal top: ctrl+c pushes nothing and
+        # types nothing; f10 stacks the quit confirm OVER it (new
+        # legitimate intent — PathInputModal is deliberately outside the
+        # CDR-4 guard set) and esc peels back; a capital Q still TYPES
         app.push_screen(PathInputModal(
             "title", "placeholder", on_submit=lambda _path: None))
         await pilot.pause()
@@ -2298,6 +2276,25 @@ async def test_ctrlc_inert_under_modals_never_stacks():
         )
         assert not app._exit
         assert path_input.value == value_before, "ctrl+c never types"
+        # f10 over the input modal: the priority chain fires, the quit
+        # confirm stacks OVER the input modal, esc peels back
+        await pilot.press("f10")
+        await pilot.pause()
+        assert isinstance(app.screen, QuitConfirmModal), (
+            "f10 stacks the quit confirm over a non-exit modal"
+        )
+        assert sum(isinstance(screen, PathInputModal)
+                   for screen in app.screen_stack) == 1, (
+            "the input modal stays beneath — one stack, never a replace"
+        )
+        assert not app._exit
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, PathInputModal), (
+            "esc peels back to the input modal beneath"
+        )
+        path_input.focus()
+        await pilot.pause()
         await pilot.press("Q")
         await pilot.pause()
         assert path_input.value == "Q", (
@@ -2371,12 +2368,14 @@ async def test_ctrlq_under_exit_modal_never_stacks_second():
         assert not app._exit, "ctrl+q under the QuitConfirmModal never exits"
 
 
-async def test_ctrlc_below_min_grid_never_exits():
-    """CDR-2: below 80x24, ctrl+c opens nothing and exits nothing — the
-    intercept routes into action_quit whose first leg is the WR-06
-    posture (no chrome over the guard, never an unguarded exit), live
-    sweep included. Regression pin: passes before AND after (today the
-    notify-only help_quit default never opens anything either)."""
+async def test_exit_keys_below_min_grid_never_exit():
+    """MAD-1/MAD-2: below 80x24 BOTH exit candidates — f10 (the
+    priority binding) and ctrl+c (the withdrawn intercept's key) —
+    open nothing and exit nothing: every path routes into action_quit
+    whose first leg is the WR-06 posture (no chrome over the guard,
+    never an unguarded exit), live sweep included. Before AND after
+    pins (while f10 was inert nothing opened either; the intercept's
+    below-grid leg already returned through the same guard)."""
     from tui.app import ExitModal, MinSizeScreen
 
     launcher = FakeLauncherService(live=("/repo/finetuned",))
@@ -2386,15 +2385,25 @@ async def test_ctrlc_below_min_grid_never_exits():
         await pilot.resize_terminal(60, 20)
         await pilot.pause()
         assert isinstance(app.screen, MinSizeScreen)
+        await pilot.press("f10")
+        await pilot.pause()
+        assert not app._exit, "f10 below the min grid must never exit"
+        assert not any(isinstance(screen, ExitModal)
+                       for screen in app.screen_stack), (
+            "no ExitModal may open over the min-size guard (f10)"
+        )
+        assert isinstance(app.screen, MinSizeScreen), (
+            "the guard stays the top screen (f10)"
+        )
         await pilot.press("ctrl+c")
         await pilot.pause()
         assert not app._exit, "ctrl+c below the min grid must never exit"
         assert not any(isinstance(screen, ExitModal)
                        for screen in app.screen_stack), (
-            "no ExitModal may open over the min-size guard"
+            "no ExitModal may open over the min-size guard (ctrl+c)"
         )
         assert isinstance(app.screen, MinSizeScreen), (
-            "the guard stays the top screen"
+            "the guard stays the top screen (ctrl+c)"
         )
 
 
@@ -2513,34 +2522,6 @@ async def test_f10_under_exit_modal_never_stacks_second():
             "f10 under the QuitConfirmModal must never stack a second"
         )
         assert not app._exit, "f10 under the QuitConfirmModal never exits"
-
-
-async def test_f10_below_min_grid_never_exits():
-    """MAD-1: below 80x24, f10 opens nothing and exits nothing — the
-    priority binding routes into action_quit whose first leg is the
-    WR-06 posture (no chrome over the guard, never an unguarded exit),
-    live sweep included. Regression pin: passes before AND after (while
-    f10 is inert nothing opens either — the before-state twin of the
-    CDR-2 below-min-grid pin)."""
-    from tui.app import ExitModal, MinSizeScreen
-
-    launcher = FakeLauncherService(live=("/repo/finetuned",))
-    app = _app(launcher=launcher)
-    async with app.run_test(size=(120, 40)) as pilot:
-        await _open_run_config(pilot, app)
-        await pilot.resize_terminal(60, 20)
-        await pilot.pause()
-        assert isinstance(app.screen, MinSizeScreen)
-        await pilot.press("f10")
-        await pilot.pause()
-        assert not app._exit, "f10 below the min grid must never exit"
-        assert not any(isinstance(screen, ExitModal)
-                       for screen in app.screen_stack), (
-            "no ExitModal may open over the min-size guard"
-        )
-        assert isinstance(app.screen, MinSizeScreen), (
-            "the guard stays the top screen"
-        )
 
 
 async def test_quit_confirm_footer_shows_y_n_keycaps():

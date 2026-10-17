@@ -168,8 +168,20 @@ APP_F10_LABEL = _t(
     "APP_F10_LABEL", "退出（任意焦点）", "Quit (any focus)")
 APP_CTRLQ_LABEL = _t(
     "APP_CTRLQ_LABEL", "退出（同 q）", "Quit (same as q)")
+# 261017-mad (the withdrawal): ctrl+c is NOT an exit key in this console
+# — the 261017-cdr intercept is withdrawn and the key keeps textual
+# 8.2.8's terminal-native semantics (a selection-holding Input copies
+# through the Input's own binding; every other press hits the inherited
+# notify-only help_quit default; modals chain-cut it). The help row is
+# KEPT — reworded, not removed — as the one-line anti-misreading note
+# (the maintainer ruling's stated preference to keep one explanation
+# line: an operator pressing ctrl+c out of terminal-copy habit sees the
+# row say copy/interrupt, never quit). Constant name and the literal
+# ctrl+c key string stay (the three help-row pins import the constant
+# and auto-derive).
 APP_CTRLC_LABEL = _t(
-    "APP_CTRLC_LABEL", "退出（任意焦点生效）", "Quit (works at any focus)")
+    "APP_CTRLC_LABEL", "终端复制/中断（非退出）",
+    "Terminal copy/interrupt (not quit)")
 # Footer label + title for the app-level ? help binding/modal (08-UI-SPEC
 # Keyboard map: "? | app | help modal (all bindings)").
 APP_HELP_LABEL = _t("APP_HELP_LABEL", "帮助", "Help")
