@@ -11,7 +11,7 @@ overwrite them (T-04-11). The Makefile ``data`` target documents the same
 scope.
 
 Runs the re-scoped chain as subprocesses with ``cwd=tmp`` over a
-``shutil.copytree`` copy of the 42 real committed model_performance inputs
+``shutil.copytree`` copy of the 45 real committed model_performance inputs
 PLUS the 47 committed task_performance inputs (the JS generator's source
 tree), plus the JS index generator via the copy-into-fixture-tree trick —
 TWICE inside one pytest tmp tree, then asserts three things:

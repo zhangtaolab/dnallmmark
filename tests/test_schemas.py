@@ -119,11 +119,11 @@ def test_schema_documents_are_wellformed():
 
 
 # Pinned corpus sizes (WR-03): the glob-built buckets parametrize to ZERO
-# pytest items when the data tree is missing or partial, so the 42-file and
+# pytest items when the data tree is missing or partial, so the 45-file and
 # 47-file validation silently vanishes while the suite stays green. The
 # pins fail loudly instead. Update them DELIBERATELY when the corpus grows.
 EXPECTED_BUCKET_SIZES = {
-    "model_performance": 42,
+    "model_performance": 45,
     "task_performance": 47,
     "models_comparison": 4,
     "tasks_index": 1,
@@ -204,7 +204,7 @@ def _observed_dataset_field_values():
 
     Returns:
         dict bucket name -> {field: set of values} over the committed data
-        each schema governs — the dataset blocks of the 42 producer files,
+        each schema governs — the dataset blocks of the 45 producer files,
         the info blocks of the 47 pivot files, and the entries of
         ``tasks.json``.
     """
