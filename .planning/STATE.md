@@ -6,7 +6,7 @@ current_phase: 12
 current_plan: Not started
 status: completed
 stopped_at: Phase 12 complete — all phases complete
-last_updated: "2026-10-16T15:20:00.000Z"
+last_updated: "2026-10-17T02:52:00.000Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 12 complete
 state_head: a640cbea8e13c69fa074fb6a95bbd4d313859bbd
@@ -274,6 +274,7 @@ None yet.
 | 261016-vxr | slot-5 批 — 训练行 ETA（checkpoint 对推算，不可推显 —）+ k 停止确认（Y-only，不退 console）+ 大写 Q 任意焦点退出（on_event 拦截，modal 内惰性） | 2026-10-16 | ef2e365 | [261016-vxr-slot-5-monitor-batch-eta-remaining-time-](./quick/261016-vxr-slot-5-monitor-batch-eta-remaining-time-/) |
 | 261017-cdr | 退出键修订 — ctrl+c 任意焦点主退出（on_event 拦截走 v0z 确认链，modal 内惰性，notify 审计全消），大写 Q 恢复普通字母，P9 退出弹窗堆叠守卫（action_quit 出口族早退），退出确认 [Y]/[N] 加粗 + y/n Footer 键帽 | 2026-10-17 | 0980956 | [261017-cdr-exit-keys-revision-ctrl-c-any-focus-quit](./quick/261017-cdr-exit-keys-revision-ctrl-c-any-focus-quit/) |
 | 261017-dnr | 确认族醒目 Y/N — 启动确认门/重跑/停止确认加粗 [Y]/[N] + y/n 键帽（E2 匹配态仅加粗，键帽按 armed-after-blur 设计保持隐藏），ExitModal enter/k 键帽 + 加粗三键（语义零改），3 新常量 + 2 精确复用，27 弹窗六准则审计表（WizardModal 待裁定） | 2026-10-17 | 8c995da | [261017-dnr-uniform-prominent-y-n-across-all-confirm](./quick/261017-dnr-uniform-prominent-y-n-across-all-confirm/) |
+| 261017-eea | CI 四红车道修复批 — pexpect 入 dev 组（lock 仅增 pexpect+ptyprocess，requirements 重导出字节不变）；helixgen 三文件 schema 修复（info.path 剥离 + dataset.species 规范 22/12/13 + FLOPs anyOf 规范化）；multi-species 杂散删除 + 四 arena 文件与 permutation 重生成（42→45 模型，family 861→990，零 verdict 翻转）双跑幂等；新基线 1F/1859P + node 26/26 | 2026-10-17 | c6b510f | [261017-eea-ci-fix-batch-pexpect-into-dev-lockfile-d](./quick/261017-eea-ci-fix-batch-pexpect-into-dev-lockfile-d/) |
 
 ## Deferred Items
 
@@ -285,8 +286,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T17:12:00.000Z
-Stopped at: Phase 12 complete — all phases complete
+Last session: 2026-10-17T02:52:00.000Z
+Stopped at: Quick task 261017-eea complete — CI fix batch (pexpect dev-group, helixgen schema fixes, data-chain re-sync, baseline 1F/1859P)
 Resume file: None
 
 ## Operator Next Steps
