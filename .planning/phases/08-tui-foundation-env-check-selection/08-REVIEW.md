@@ -1,139 +1,217 @@
 ---
 phase: 08-tui-foundation-env-check-selection
-reviewed: 2026-10-16T00:00:00Z
+reviewed: 2026-10-17T00:00:00Z
 depth: quick
-files_reviewed: 15
+files_reviewed: 12
 files_reviewed_list:
   - tui/__main__.py
   - tui/app.py
-  - tui/screens/about.py
   - tui/screens/data_manager.py
   - tui/screens/env_check.py
-  - tui/screens/matrix.py
   - tui/screens/monitor.py
-  - tui/screens/nav.py
   - tui/screens/run_config.py
   - tui/screens/selection.py
   - tui/screens/wizard.py
   - tui/services/download_queue.py
-  - tui/services/registries.py
-  - tui/services/selection.py
+  - tui/services/run_config.py
+  - tui/services/settings.py
   - tui/services/sweep_launcher.py
 findings:
-  critical: 1
+  critical: 0
   warning: 3
   info: 3
-  total: 7
+  total: 6
 status: issues_found
 ---
 
-# Phase 8 (scoped re-review): Code Review Report
+# Phase 8: Code Review Report (incremental — live-feedback round 601aa51..HEAD)
 
-**Reviewed:** 2026-10-16
-**Depth:** quick (pattern scan + targeted read of all 15 listed files, with the 261015-c4j / 261015-ehc deltas traced cross-module; env_check WR-01..04/IN-01 cluster excluded per instructions — already fixed under 07-REVIEW)
-**Files Reviewed:** 15
+**Reviewed:** 2026-10-17
+**Depth:** quick (pattern scans + per-file read, with targeted deep-dive on the ctrl+c/Q interception seams, kill channel, ETA gates, and i18n registry per the round's scope brief)
+**Files Reviewed:** 12
 **Status:** issues_found
 
 ## Summary
 
-Scoped incremental review of the TUI delta since `2341f1c`: the c4j slot-2 live model-download overlay / slot-3 dataset-only split / slot-5 entries list, and the ehc bilingual strings registry, L live toggle, y-confirm launch gates, single-GPU serialization guard, and download-speed surfaces.
+Scoped incremental review of the maintainer live-feedback commits since `601aa51`
+(hhx i18n re-derivation + registry injectivity + zenodo rollback; poa slot-4
+cursor/scroll anchor + launch-confirmation task list; v0z quit-confirm chain;
+vxr entry ETA + slot-5 kill; cdr ctrl+c any-focus exit + modal-stacking guard;
+dnr Y/N prominence). The on-disk state is current; the diff was the primary
+scope.
 
-The c4j presentation split is implemented cleanly (kind filters on both slot-3 render paths and both app-forwarded handlers; the shared queue mechanism untouched). The ehc y-confirm gates and the EHC-3 single-GPU guard hold on every launch path I could trace — the service-level stage-0 backstop (`sweep_launcher.py:670-674`, `822-826`) catches the confirm-race window the screen pre-checks (`run_config.py:1871-1880`, `monitor.py:1217-1226`) can miss, and the raw `launch_argv` seam is documented-ungated by design.
+No BLOCKER found. The high-risk seams the round touched were verified against
+the installed textual 8.2.8 and came back CORRECT (details below): the
+`on_event` ctrl+c intercept's modal-chain inertness map, the CDR-4 stacking
+guard, the ctrl+q priority mirror, the zenodo persist rollback, the ETA
+validity gates, and the i18n keycap registry. Three warnings and three info
+items survive — all in the cross-module interaction class the round's
+test-first gates would not catch.
 
-The one BLOCKER is in the ehc i18n machinery itself: the L toggle (and a persisted-zh boot) leaves every module-frozen copy value — all DataTable column headers, the three state-cell vocabularies, the monitor's [f]/[t] keycaps, the wizard's step/field/quirk labels, and the run-config dir-field map — in the import-time language while the rest of the console flips. The zh-pinned test conftest imports everything under zh, so the suite and a zh-import visual pass both see a consistent UI and structurally cannot catch this. Two supporting registry collisions make `translate_value`'s documented well-definedness false in the en→zh direction.
-
-## Structural Findings (fallow)
-
-None provided for this review.
-
-## Narrative Findings (AI reviewer)
-
-## Critical Issues
-
-### CR-01: The L language toggle / persisted-zh boot renders a mixed-language UI — module-frozen copy never re-resolves
-
-**File:** `tui/screens/data_manager.py:151-170,188-194`; `tui/screens/selection.py:863-871,893-897`; `tui/screens/monitor.py:108-109,113-126`; `tui/screens/wizard.py:186-265`; `tui/screens/run_config.py:1749-1755`
-**Issue:** `_t()` returns the active-language value exactly once at import; `set_language()` rebinds only the `tui/strings.py` globals. Every copy value captured into a consuming module's module-level tuple/dict/ClassVar at import is frozen forever in the boot language (`DEFAULT_LANGUAGE` = `"en"` in production, since `tui/__main__.py:45-47` imports the whole screen tree before `load_persisted_language()` runs). Affected frozen sites, all verified to carry language-divergent values (`QUEUE_COL_TASK` = `任务`/`Task`, `MON_STATE_RUNNING_SWEEP` = `● 运行中`/`● running`, `QUEUE_STATE_DOWNLOADING` = `⠋ 下载中`/`⠋ downloading`, …):
-
-- `data_manager._QUEUE_COLUMNS` / `_MISSING_COLUMNS` / `_FULL_COLUMNS` (column headers re-added from the frozen tuples in `on_mount` and `_render_missing`) and `_STATE_CELLS` (state-cell words read at render in `_state_cell` / `_render_presence_view`)
-- `selection._MODEL_COLUMNS` (headers re-added in every `_rebuild_rows`) and `_QUEUE_STATE_CELLS` (the C4J-1 live-overlay state words)
-- `monitor._SWEEP_STATE_CELLS` / `_CELL_STATE_CELLS` (discovered-row and entries-row state words) and `_FAILURES_KEYCAP` / `_LOG_KEYCAP` — the latter two are worse: they are `split()`-substrings of registered values (`monitor.py:108-109`), so they are not byte-equal to any registry entry and `translate_value` returns them unchanged; even the nav-style remount re-translation cannot fix them
-- `wizard.QUIRK_FIELDS`, `MODEL_STEPS`/`DATASET_STEPS` (step names via `S.WIZM_STEPS[i]` at module top), and `KINDS` (`S.WIZM_FIELD_LABELS`/`WIZD_FIELD_LABELS` captured as `KindSpec.labels`) — every wizard label and step name stays in the boot language
-- `run_config._DIR_INPUT_FIELDS` (ClassVar; the ctrl+o dir-picker modal title shows the boot-language field label)
-
-`action_toggle_language` (`app.py:1041-1042`) recomposes each screen and re-invokes its `on_mount` via `_rerender_screen` — but those on_mount bodies re-add columns/cells *from the frozen tuples*, so the recompose actively re-renders the stale language. `nav.py:83,178-194` (`_NAV_SLOTS_LANGUAGE` + re-translate at every mount) proves this bug class was known and handled — for the top bar only. With a persisted zh boot the *first* render is already mixed (zh titles/footers/help via remapped BINDINGS, en column headers/state words/keycaps/wizard labels); with an en boot the L toggle produces the same mix. The conftest zh pin makes every test import zh — the suite and a zh-import visual pass both see one consistent language and structurally miss the production en-boot path.
-**Fix:** Re-derive copy at render time (the pattern `env_check.py:427-431` and `matrix.py` already follow — they read `S.*` inside `on_mount`/`compose`), converting the frozen tables to functions, e.g.:
-
-```python
-# data_manager.py — module tuple -> function; call sites unchanged in shape
-def _queue_columns() -> tuple[tuple[str, str, int], ...]:
-    return (
-        ("task", S.QUEUE_COL_TASK, _TASK_W),
-        ("state", S.QUEUE_COL_STATE, _STATE_W),
-        ("progress", S.QUEUE_COL_PROGRESS, _PROGRESS_W),
-        ("reconcile", S.QUEUE_COL_RECONCILE, 0),
-    )
-```
-
-and likewise for `_STATE_CELLS`-style lookups (read `S.QUEUE_STATE_*` inside `_state_cell`), the wizard's `KINDS` label maps, and `run_config._DIR_INPUT_FIELDS`. For the monitor keycaps, register dedicated constants instead of splitting titles:
-
-```python
-MON_FAILURES_KEYCAP = _t("MON_FAILURES_KEYCAP", "失败清单", "Failures")
-MON_LOG_KEYCAP = _t("MON_LOG_KEYCAP", "日志尾随", "Log tail")
-```
-
-(also fixes the width coupling: today the keycap silently changes if the title's `" ("` separator is ever reworded).
+Previously reviewed and fixed in this round (NOT re-derived here): the CR-01
+frozen-copy family, prior WR-01..04 / IN-01..03, the env_smoke cluster.
 
 ## Warnings
 
-### WR-01: `translate_value` en→zh collisions — the documented well-definedness invariant is false in one direction, and the wizard's `b` label is already mistranslated
+### WR-01: The ctrl+c intercept silently kills the focused-Input copy binding on every base screen
 
-**File:** `tui/strings.py:119-140` (collisions at `APP_MODAL_BACK_LABEL`/`WIZ_BACK_LABEL` and `ENV_STATE_PENDING`/`QUEUE_STATE_PENDING`)
-**Issue:** The registry contains two shared-en-value pairs with *different* zh values (verified by scanning `S._REGISTRY`): `"Back"` → `返回` (APP_MODAL_BACK_LABEL) vs `上一步` (WIZ_BACK_LABEL), and `"◌ pending"` → `◌ 待检` (ENV_STATE_PENDING) vs `◌ 待下载` (QUEUE_STATE_PENDING). `translate_value` matches by byte equality and returns the *first* hit, so en→zh is deterministic but wrong for the later-registered constants. `remap_binding_descriptions` (`app.py:346-383`) rebuilds the wizard's `b` Binding description with `返回` (the esc-back wording) instead of `上一步` on every en→zh toggle — currently invisible only because that binding is `show=False`; the docstring's claim ("Well-defined because the registry-consistency tripwire holds: every distinct zh value carried by more than one constant implies ONE en value") covers only the zh→en direction and does not protect this one.
-**Fix:** Make the colliding en values distinct so byte-equality is injective in both directions, e.g. `WIZ_BACK_LABEL = _t("WIZ_BACK_LABEL", "上一步", "Back a step")` and `QUEUE_STATE_PENDING = _t("QUEUE_STATE_PENDING", "◌ 待下载", "◌ queued")` — or extend the registry tripwire test to assert injectivity en→zh too.
+**File:** `tui/app.py:1144-1149`
+**Issue:** The 261017-cdr `on_event` intercept consumes `ctrl+c` at the App
+level whenever the top screen is non-modal — before `super().on_event` forwards
+the key to the focused widget. Textual 8.2.8's `Input` binds
+`ctrl+c,super+c -> copy` (verified: `.venv/.../textual/widgets/_input.py:139`),
+so with a base-screen Input focused (the slot-2 filter, the slot-4 filter /
+params / dir inputs) a ctrl+c with selected text now opens the quit confirm
+instead of copying. The on_event docstring documents the q/Q typing semantics
+and the inherited `help_quit` default but never mentions the Input copy
+binding it shadows. It is also inconsistent by surface: inside modals
+(`E2PhraseModal`'s input, `PathInputModal`, the wizard's inputs) the key
+delegates and copy still works — the loss is base-screen-only, i.e. exactly
+the surfaces where the maintainer asked for any-focus exit, so the feature
+itself is right; the collateral is undocumented and asymmetric.
+**Fix:** Either delegate when the focused widget is an `Input` with a
+non-empty selection (`if isinstance(self.focused, Input) and
+self.focused.selection: await super().on_event(event)` before the intercept
+consumes), or record the deviation in the `on_event` docstring and the
+`APP_CTRLC_LABEL` help copy so the behavior is designed, not accidental.
 
-### WR-02: `enqueue_zenodo` ignores persist failure — the WR-04 rollback/`persist_failed` contract is missing on the bundle lane (pre-delta, verified also at 2341f1c)
+### WR-02: ExitModal `[k]` runs `kill_sweep` serially on the event loop — up to kill_grace × N roots of frozen UI
 
-**File:** `tui/services/download_queue.py:1579`
-**Issue:** `enqueue` (lines 1520-1523) and `enqueue_model` (1650-1653) check `_persist_locked()`, roll back the append, and return `ACTION_PERSIST_FAILED` on an unwritable state rail; `enqueue_zenodo` discards the return value. On a read-only state root / full disk the data-manager screen toasts the bundle as enqueued (`data_manager.py:1280-1286`) while nothing was persisted — a ghost in-memory row that a restart silently drops, and the driver later hits the claim-refusal stall path instead. The screen's else-branch also renders the `already_queued` toast for any non-`enqueued` action, which would mislabel a future `persist_failed` (dead branch today only because the service never returns it). Predates this delta but remains a live correctness gap in a listed file, and this review's WR-04-fail-closed theme makes it squarely relevant.
-**Fix:** Apply the sibling lanes' discipline:
+**File:** `tui/app.py:250-254` (with `tui/services/sweep_launcher.py:900-907`)
+**Issue:** `ExitModal.action_kill_quit` calls `self._launcher.kill_sweep(root)`
+for every live root directly in the modal action — on the event loop. Each
+call SIGTERMs, then polls every 50 ms up to `DEFAULT_KILL_GRACE_SECONDS = 2.0`
+before SIGKILL; with the WR-05 multi-root form the freezes stack serially
+(N live roots that ignore SIGTERM → N × 2 s of an unresponsive console before
+exit). The monitor's own `[k]` channel — added in the same vxr round and
+landing the same launcher call — deliberately enshrines the opposite
+discipline (`monitor.py:1530-1540`: "blocks up to the kill grace polling the
+process group — NEVER on the event loop", dispatched through the exclusive
+`mon-kill` worker). 261017-dnr then makes the `[k]` keycap `show=True`,
+advertising the path more prominently than before. Impact is bounded (the app
+exits immediately after), but it is a frozen frame on the exact surface the
+round made more visible, and it contradicts the kill-channel discipline
+documented ten lines away in the sibling screen.
+**Fix:** Dispatch the kill fan-out through a one-shot thread worker (or
+`asyncio.to_thread`) and call `self.app.exit()` in its completion handler; or
+pass a reduced grace on the exit path (`kill_grace` is already injectable per
+call site via the service seam).
 
+### WR-03: Mixed live-root exit drops the attached CLI-launched sweep from the ExitModal
+
+**File:** `tui/app.py:1097-1109`
+**Issue:** `action_quit` enters the live-sweep branch on `roots or
+attached_running`, but the single-root form selects `root = roots[0] if roots
+else attached_root`. When the launcher holds exactly ONE live TUI-spawned root
+AND the monitor's attached root is a DIFFERENT running sweep (CLI-launched —
+the exact case `attached_running` exists to catch), the attached root is
+silently discarded: the ExitModal names and acts on only the TUI root, so
+`[k] kill & exit` leaves the CLI sweep running with no notice, and `[enter]
+detach & exit` exits while an unnamed sweep keeps occupying the GPU. The
+rewritten v0z/cdr docstring codifies the WR-05 guarantee ("the modal carries
+EVERY live root … no sweep survives a kill-and-quit the operator believed
+terminal"), which this corner violates. The line predates the diff, but this
+round rewrote the legs and the contract text around it, making the gap
+load-bearing.
+**Fix:** In the single-root form, when `attached_running and attached_root not
+in roots`, use the multi-root form (or append the attached root) so the modal
+names and acts on both:
 ```python
-if self._persist_locked() is not None:
-    self._entries.pop()
-    return EnqueueOutcome(action=ACTION_PERSIST_FAILED, key=ZENODO_BUNDLE_KEY)
+if len(roots) > 1 or (attached_running and roots and attached_root not in roots):
+    combined = tuple(roots) + ((attached_root,) if attached_running and attached_root not in roots else ())
+    self.push_screen(ExitModal(roots=combined, ... MULTI-form ...))
 ```
-
-and give the screen a `persist_failed` toast branch (mirror `_toast_enqueue_outcome`).
-
-### WR-03: Pressing L while an env check is in flight restarts the whole kernel run from zero
-
-**File:** `tui/app.py:989-1010,1041-1042`; `tui/screens/env_check.py:441-449`
-**Issue:** `_rerender_screen`'s docstring claims "every base screen's on_mount is population-only over instance state behind exclusive workers (re-running is idempotent)". `EnvCheckScreen.on_mount` is not population-only on its cache-miss path: it consults `cached_results()` and, on a miss, calls `run_full_check()` — so an L toggle pressed while the first check of the day is still running (state file not yet persisted) *cancels* the exclusive worker and re-executes every kernel — including the GPU matmul smoke — from scratch, resetting all rows to pending. The operator asked only for a language change and got unexpected GPU work and a restarted check. (The same-day cache-hit path is fine, which is why this survives casual use.)
-**Fix:** Make the re-mount path population-only: if `self._results` already covers the kernel set (or a run is in flight), re-apply the existing results instead of consulting the cache/kernels — e.g. guard the tail of `on_mount` with `if not self._results and not <run in flight>` before choosing cache-miss → `run_full_check()`, and otherwise re-render rows from `self._results` + the last outcome.
 
 ## Info
 
-### IN-01: `data_manager.apply_queue_progress` stores live percent/speed for KIND_MODEL keys before the ignore check — and `apply_queue_event` never pops them
+### IN-01: `selection.apply_queue_progress` still stores before the kind guard — the asymmetric twin of this round's IN-01 slot-3 fix
 
-**File:** `tui/screens/data_manager.py:799-800` (store) and `771-772` (early return before the pop)
-**Issue:** C4J-1's contract says model ticks are "IGNORED entirely", but `self._live_percents[key] = percent` / `self._live_speeds[key] = speed` execute before the kind check, and `apply_queue_event` returns on `event.kind == KIND_MODEL` *before* the `pop()` calls — so model keys accumulate in both dicts for the session. No render effect today (render paths filter by entry kind; queue keys are unique), but it is contract drift and a latent trap if a future render path reads the dicts unconditionally.
-**Fix:** Move the two stores below the `entry is None or entry.kind == KIND_MODEL or entry.state != "downloading"` guard.
+**File:** `tui/screens/selection.py:1607-1612`
+**Issue:** The same round moved slot-3's live-dict pops/stores around the
+KIND_MODEL ignore guard (`data_manager.py:789-826`, IN-01 quick-261016-hhx),
+but slot-2's twin still does `self._live_percents[key] = percent;
+self._live_speeds[key] = speed` BEFORE the KIND_MODEL/state check, so dataset
+download ticks accumulate dataset keys in the slot-2 dicts (bounded by the
+~60-key registry; values are never read for non-model keys and are popped at
+the next event for the key — hygiene residue, not a render bug).
+**Fix:** Mirror the slot-3 ordering: perform the `_live_model_entries()` /
+state check first and store only for passing (model, downloading) ticks.
 
-### IN-02: The persisted-language filename is duplicated as an inline literal
+### IN-02: `GateWorkerError` staleness filter collides across the `_gate_stage_id` / `_gate_launch_id` number spaces
 
-**File:** `tui/app.py:1032` vs `tui/__main__.py:50`
-**Issue:** `__main__.LANGUAGE_FILE_NAME = "language.json"` is the constant, but `action_toggle_language` writes `settings.state_dir() / "language.json"` with a bare literal. A rename in one place silently breaks the boot read (the toggle would persist a file the boot never loads — falling back to English with no error).
-**Fix:** Import and use the constant in `app.py` (or move it next to `settings.state_dir()`).
+**File:** `tui/screens/run_config.py:2131-2135` (pre-existing handler, unchanged by the diff)
+**Issue:** A gate worker's late error is dropped only when its id differs from
+BOTH counters. A superseded gate-stage error whose id numerically equals the
+CURRENT `_gate_launch_id` (both counters increment independently from 1)
+passes the filter and surfaces a spurious "launch failed" toast right after a
+successful launch, and resets `_gate_active = False` (harmless today — the
+flag is already released pre-modal).
+**Fix:** Tag `GateWorkerError` with which counter it belongs to (or use one
+monotonic id space for the whole pipeline) and compare against that counter
+only.
 
-### IN-03: Slot-3's present-row enqueue toast reuses a slot-2 (SEL_) constant
+### IN-03: env_check remount can transiently render the stale pre-refresh cache outcome
 
-**File:** `tui/screens/data_manager.py:1171`
-**Issue:** `action_enqueue_cursor`'s present-row guard notifies with `S.SEL_ENQUEUE_PRESENT_TOAST` — a selection-screen-prefix constant — for a data-manager interaction. I18N-01's prefix grouping exists so copy lives with its surface; if the SEL copy is later reworded for slot 2's model context, slot 3's dataset wording drifts silently.
-**Fix:** Register a `DL_`-prefixed twin (or a shared neutral name) and consume it here.
+**File:** `tui/screens/env_check.py:477-487` + `env_check.py:523`
+**Issue:** `action_refresh` clears `_results` synchronously but
+`_check_in_flight = True` is set inside the worker body (worker thread). An
+L-toggle remount landing in that window sees `_results` empty and the flag
+still False, consults the same-day cache, and renders the pre-refresh outcome
+until the fresh run's completion overwrites it. Self-healing, no kernel
+restart (the worker's run-id-tagged posts land on the rebuilt rows) — a
+transient stale verdict line only.
+**Fix:** Set `_check_in_flight = True` synchronously in `action_refresh`
+(before dispatching `run_full_check`), mirroring the app's
+`kick_download_queue` busy-flag discipline.
+
+## Verified-correct (adversarial checks that came back clean)
+
+- **Modal-chain inertness map (cdr)** — verified against the installed
+  textual 8.2.8: `Screen._modal_binding_chain`
+  (`.venv/.../textual/screen.py:449-456`) cuts the chain AT the modal, so
+  plain `q` and the inherited non-priority `ctrl+c -> help_quit`
+  (`.venv/.../textual/app.py:463`) are unreachable under every modal; the
+  priority `ctrl+q` path (`App.on_event` → `_check_bindings(priority=True)`
+  over the full `_binding_chain`) does fire over modals, which is exactly
+  what the CDR-4 `isinstance(self.screen, (ExitModal, QuitConfirmModal))`
+  guard absorbs. No stacking path found; `ctrl+c` under modals is inert as
+  documented.
+- **No dead Q paths from the withdrawn vxr intercept** — grep over
+  `tui/` finds only docstring mentions; no `key == "Q"` handling, no
+  `APP_Q_LABEL` remnant.
+- **Zenodo persist rollback (hhx WR-02)** — `enqueue_zenodo`
+  (`download_queue.py:1585-1590`) mirrors the dataset lane exactly: under
+  `self._lock`, `_persist_locked()` returns `str | None` (None = success),
+  `self._entries.pop()` removes the just-appended (last) entry. Correct.
+- **ETA validity gates (vxr VXR-1)** — `_eta_from_checkpoint_pair`
+  (`sweep_monitor.py`): mtime ties (`mtime_new <= mtime_old`), checkpoint
+  step ties (`step_old >= step`), non-positive deltas, and `max_steps <=
+  step` all degrade to None; both mtimes come from the same filesystem (no
+  cross-clock skew source); the two-newest checkpoint tracking handles
+  out-of-order suffixes. The monitor's `_entry_progress_cell` renders
+  `format_eta` output (single leading `≈`) with `.lstrip("≈")` on the
+  stats-line path only — no double-marker shapes.
+- **i18n inventory** — all 350 distinct `S.*` references across the 12
+  in-scope files resolve in `tui/strings.py` (scripted check); the new
+  keycap constants (`LNC_EXIT_DETACH/KILL_KEYCAP`, `MON_KILL_KEYCAP`,
+  `MON_FAILURES/LOG_KEYCAP`, `LNC_EXIT_CONFIRM_YES/NO`,
+  `LNC_GATE_CONFIRM_YES`) are registry entries, so the L-toggle remap and
+  the persisted-zh boot remap translate them; `QuitConfirmModal` is in
+  `_APP_LOCAL_BINDING_SCREENS`; the bolded `[Y]/[N]/[y]/[n]/[enter]/[k]/[esc]`
+  tokens exist in both language forms of every message that highlights them
+  (including `LNC_EXIT_MESSAGE_MULTI` and the lowercase-`[y]`
+  `MON_RERUN_CONFIRM`).
+- **Kill-channel keying** — monitor `k` verifies `str(attached_root)` against
+  `live_sweeps()` (both sides `Path(...).resolve()`-based; `note_launch` and
+  `_spawn` share the `resolve_dirs().output_root_abs` basis), and `kill_sweep`
+  drops the registry entry so a second `k` correctly reads
+  `MON_KILL_UNAVAILABLE`.
+- **Quick-mode pattern scans** — no hardcoded secrets, no
+  eval/exec/shell=True, no debug artifacts, no new silent bare-except blocks
+  beyond the documented blind-except seams; all 12 files byte-compile.
 
 ---
 
-_Reviewed: 2026-10-16_
+_Reviewed: 2026-10-17T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: quick_
