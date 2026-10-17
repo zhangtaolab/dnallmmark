@@ -147,6 +147,7 @@ from tui.services.sweep_launcher import (
 from tui.services.sweep_monitor import (
     CELL_COMPLETED,
     CELL_FAILED,
+    CELL_INTERRUPTED,
     CELL_QUEUED,
     CELL_RUNNING,
     CELL_SKIPPED,
@@ -512,7 +513,14 @@ def _running_monitor_service():
     """The monitor_running golden fixture (delta A's proof golden): the
     discovered pane lists a multi-GPU worker root NEXT TO a default
     root; the attached cell table carries all five glyphs; the stats
-    line carries elapsed + point ETA (all frozen values)."""
+    line carries elapsed + point ETA (all frozen values).
+
+    261017-uwr (Task 4): ONE interrupted pair row joins the fixture —
+    the PlantHelixSeek-style dead pair (WINDOWS #34's residue shape) —
+    so the golden demonstrates the ⏸ glyph, the live-on-top ordering,
+    and the context header's three-segment counts alongside ⏵. The
+    ONLY fixture change: no factory, drive function, or assertion
+    weakens."""
     return _MonitorGoldenService(
         scans=[ScanResult(sweeps=(
             _monitor_summary("finetuned-mgpu-w0", SWEEP_RUNNING,
@@ -530,6 +538,8 @@ def _running_monitor_service():
             _monitor_row("plant-dnabert-6mer", "mouse__DMS",
                          {42: CELL_FAILED, 43: CELL_FAILED,
                           44: CELL_FAILED}),
+            _monitor_row("PlantHelixSeek", "mouse__DMS",
+                         {42: CELL_INTERRUPTED}),
         )},
         stats={"/scans/finetuned-mgpu-w0": _monitor_stats(
             done=3, total=36,
