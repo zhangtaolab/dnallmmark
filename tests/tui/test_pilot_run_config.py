@@ -75,8 +75,10 @@ from tui.strings import (
     CFG_SAVE_DEFAULTS_TOAST,
     CFG_STATUS_LINE,
     CFG_SUBSET_OFF,
+    NAV_LABEL_SELECTION,
     SEL_DISABLED_MARK_WARNING,
     SEL_FILTER_COUNT,
+    SEL_SWITCH_LABEL,
 )
 
 # The i18n grep lock (the test_pilot_env_check.py precedent): the new
@@ -585,7 +587,7 @@ async def test_status_line_renders_selection_counts():
             ))
         # the picker title carries the SAME marked/total counts
         assert _label_text(screen, "#cfg-picker-title") == (
-            CFG_PICKER_MODELS.format(n=1, total=4))
+            CFG_PICKER_MODELS.format(n=1, total=4) + f" · [m] {SEL_SWITCH_LABEL}")
 
 
 async def test_m_flips_picker_kind_and_title():
@@ -595,15 +597,15 @@ async def test_m_flips_picker_kind_and_title():
         await _open_run_config(pilot, app)
         screen = app.screen
         assert _label_text(screen, "#cfg-picker-title") == (
-            CFG_PICKER_MODELS.format(n=0, total=4))
+            CFG_PICKER_MODELS.format(n=0, total=4) + f" · [m] {SEL_SWITCH_LABEL}")
         await pilot.press("m")
         await pilot.pause()
         assert _label_text(screen, "#cfg-picker-title") == (
-            CFG_PICKER_DATASETS.format(n=0, total=2))
+            CFG_PICKER_DATASETS.format(n=0, total=2) + f" · [m] {NAV_LABEL_SELECTION}")
         await pilot.press("m")
         await pilot.pause()
         assert _label_text(screen, "#cfg-picker-title") == (
-            CFG_PICKER_MODELS.format(n=0, total=4))
+            CFG_PICKER_MODELS.format(n=0, total=4) + f" · [m] {SEL_SWITCH_LABEL}")
 
 
 async def test_slash_focuses_filter_and_narrows_rows():
@@ -650,14 +652,14 @@ async def test_space_marks_model_and_persists_roundtrip():
         assert saved.models == ("model-a",), (
             "space marks the cursor's row (the first model)")
         assert _label_text(screen, "#cfg-picker-title") == (
-            CFG_PICKER_MODELS.format(n=1, total=4))
+            CFG_PICKER_MODELS.format(n=1, total=4) + f" · [m] {SEL_SWITCH_LABEL}")
         await pilot.press("m")
         await pilot.pause()
         await pilot.press("space")
         await _settle(pilot, app)
         assert run_service.saved_specs[-1].tasks == ("task-1",)
         assert _label_text(screen, "#cfg-picker-title") == (
-            CFG_PICKER_DATASETS.format(n=1, total=2))
+            CFG_PICKER_DATASETS.format(n=1, total=2) + f" · [m] {NAV_LABEL_SELECTION}")
 
     # the round-trip: a NEW screen over the same service reloads the marks
     app = _app(run_service=run_service)
@@ -1535,7 +1537,7 @@ async def test_gate_console_stays_responsive_while_env_blocked():
         await pilot.press("m")
         await pilot.pause()
         assert _label_text(app.screen, "#cfg-picker-title") == (
-            CFG_PICKER_DATASETS.format(n=1, total=2)), (
+            CFG_PICKER_DATASETS.format(n=1, total=2) + f" · [m] {NAV_LABEL_SELECTION}"), (
             "m must still flip the picker while the env worker blocks")
         release.set()
         await _settle(pilot, app, rounds=4)
@@ -3941,4 +3943,32 @@ async def test_gate_confirm_and_e2_uppercase_twins_match_lowercase():
         _spec, phrase = launcher.launch_calls[0]
         assert phrase == "finetuned", (
             "the uppercase confirm carries the typed phrase"
+        )
+
+
+async def test_picker_title_carries_the_m_switch_hint_in_both_kinds():
+    """261018-08g (SOAK-5): the kind-switch key is DISCOVERABLE at the
+    picker surface — the title carries the [m] affordance naming the
+    kind m switches to, before AND after a switch_kind press (the soak
+    tester pressed 't' three times — slot-2 semantics — and never found
+    tasks; slot-4's key is m and was invisible in the truncated bar)."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        before = _label_text(screen, "#cfg-picker-title")
+        assert "[m]" in before, (
+            "the models-kind title carries the [m] keycap"
+        )
+        assert SEL_SWITCH_LABEL in before, (
+            "the hint names the switch target (Datasets)"
+        )
+        await pilot.press("m")
+        await pilot.pause()
+        after = _label_text(screen, "#cfg-picker-title")
+        assert "[m]" in after, (
+            "the datasets-kind title carries the [m] keycap"
+        )
+        assert NAV_LABEL_SELECTION in after, (
+            "the hint names the switch target (Models)"
         )

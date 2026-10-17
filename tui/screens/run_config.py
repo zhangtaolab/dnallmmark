@@ -1020,6 +1020,21 @@ class DirPickerModal(ModalScreen):
 # =====================================================================
 
 
+def _picker_title_with_hint(title: str, target_label: str) -> str:
+    """The picker title plus the [m] switch affordance (261018-08g,
+    SOAK-5): the kind-switch key was INVISIBLE at the picker surface —
+    the soak tester pressed 't' three times (slot-2 semantics) and never
+    found tasks, because slot-4's switch key is 'm' and the truncated
+    bottom bar never spelled it out. The hint names the kind m switches
+    TO, composed from EXISTING constants only (SEL_SWITCH_LABEL — the
+    Datasets word — on the models kind; NAV_LABEL_SELECTION — the
+    Models word — on the datasets kind; zero new strings). The caller
+    wraps the result in a rich Text so the literal ``[m]`` keycap can
+    never be parsed as console markup (the '/' keycap crash precedent).
+    """
+    return f"{title} · [m] {target_label}"
+
+
 class RunConfigScreen(Screen):
     """The run-config screen: own pickers + params + dirs + preview +
     the launch-confirmation pipeline over the two injected services."""
@@ -1575,15 +1590,19 @@ class RunConfigScreen(Screen):
                 m=len(self._spec.tasks),
                 tasks_total=len(self._entries.dataset_entries)))
         if self._picker_kind == "models":
-            self.query_one("#cfg-picker-title", Label).update(
-                S.CFG_PICKER_MODELS.format(
-                    n=len(self._spec.models),
-                    total=len(self._entries.model_entries)))
+            self.query_one("#cfg-picker-title", Label).update(Text(
+                _picker_title_with_hint(
+                    S.CFG_PICKER_MODELS.format(
+                        n=len(self._spec.models),
+                        total=len(self._entries.model_entries)),
+                    S.SEL_SWITCH_LABEL)))
         else:
-            self.query_one("#cfg-picker-title", Label).update(
-                S.CFG_PICKER_DATASETS.format(
-                    n=len(self._spec.tasks),
-                    total=len(self._entries.dataset_entries)))
+            self.query_one("#cfg-picker-title", Label).update(Text(
+                _picker_title_with_hint(
+                    S.CFG_PICKER_DATASETS.format(
+                        n=len(self._spec.tasks),
+                        total=len(self._entries.dataset_entries)),
+                    S.NAV_LABEL_SELECTION)))
 
     # ===== params pane (CFG-01 exhaustive) =====
 

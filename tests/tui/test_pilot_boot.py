@@ -310,3 +310,88 @@ async def test_constructing_the_app_never_reads_the_language_file(
         )
     finally:
         strings.set_language("zh")
+
+
+async def test_f1_f2_reach_help_and_language_over_a_focused_input(
+        monkeypatch, tmp_path):
+    """261018-08g (SOAK-4/F4, planning-decided option b): f1 opens help
+    and f2 toggles the language from ANY focus — including a focused
+    filter Input holding live typed text. Probe-pinned mechanism (the
+    f10 precedent): printable priority bindings (L, question_mark) are
+    stripped by the consume-key filter over a focused Input — the soak
+    watched L and ? get typed INTO the filter ("Filter: NLL?") — while
+    the NON-PRINTABLE f-keys pass, so the declared priority seam
+    delivers both actions without disturbing the Input."""
+    from textual.widgets import Input
+
+    from tui.app import HelpModal
+    from tui.services import settings
+
+    state = tmp_path / "state"
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state))
+    app = DnallmMarkTui(env_check_service=_CacheHitFake())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        # the selection screen over the real committed registries (the
+        # plan's surface: the filter Input is the focus trap)
+        selection = app.build_selection_screen()
+        app.push_screen(selection)
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        # focus the filter and TYPE — the Input provably holds focus
+        await pilot.press("slash")
+        await pilot.pause()
+        filter_input = selection.query_one("#selection-filter", Input)
+        assert app.focused is filter_input, "the filter Input holds focus"
+        await pilot.press("d")
+        await pilot.pause()
+        assert filter_input.value == "d", (
+            "a letter typed with the Input focused lands in the filter"
+        )
+
+        # f1: help opens OVER the focused Input — and its rows carry
+        # the manual f1/f2 rows (live-language-resolved)
+        await pilot.press("f1")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpModal), (
+            "f1 must open the help modal with a filter Input focused"
+        )
+        rows = app.screen._rows
+        assert ("f1", strings.APP_HELP_LABEL) in rows, (
+            "the help modal carries the f1 row"
+        )
+        assert ("f2", strings.APP_LANGUAGE_TOGGLE_LABEL) in rows, (
+            "the help modal carries the f2 row"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.screen is selection, "esc closes the help modal"
+
+        # f2: the language flips from ANY focus; the typed text is
+        # UNDISTURBED (f2 is not a typing key — the consume-filter
+        # proof), the choice persists under the pinned state root
+        assert strings.language() == "zh"
+        await pilot.press("f2")
+        await pilot.pause()
+        await pilot.pause()
+        assert strings.language() == "en", (
+            "f2 flips the language with the Input focused"
+        )
+        assert filter_input.value == "d", (
+            "the f-key never typed into the Input"
+        )
+        import json as json_module
+
+        persisted = json_module.loads(
+            (state / "language.json").read_text(encoding="utf-8"))
+        assert persisted == {"language": "en"}, (
+            "the f2 toggle persists exactly like L does"
+        )
+
+        # the L key keeps working everywhere else (unchanged ruling)
+        await pilot.press("f2")
+        await pilot.pause()
+        await pilot.pause()
+        assert strings.language() == "zh", "a second f2 returns zh"

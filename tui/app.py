@@ -604,6 +604,23 @@ class DnallmMarkTui(App):
         # ctrl+q idiom; remap_binding_descriptions skips
         # description-less entries by design).
         Binding("f10", "quit", show=False, priority=True, system=True),
+        # 261018-08g (SOAK-4/F4, planning-decided option b): f1/f2 are
+        # the ANY-FOCUS help/language keys — the non-printable twins of
+        # ?/L. Probe-pinned mechanism (the f10 precedent): printable
+        # priority bindings are STRIPPED by the consume-key filter over
+        # a focused Input, so L and question_mark can never be
+        # app-priority (the soak watched them get TYPED INTO the
+        # filter — "Filter: NLL?"); non-printable f-keys PASS the
+        # filter, so the declared priority seam delivers help/language
+        # from ANY focus, Inputs included. L and question_mark keep
+        # their current behavior everywhere else (unchanged ruling).
+        # show=False keeps every Footer/bottom bar byte-identical (the
+        # golden discipline); system=True keeps the key panel clean;
+        # NO description — the help rows are manual in _binding_rows
+        # and therefore live-language-resolved (the f10/ctrl+q idiom).
+        Binding("f1", "help", show=False, priority=True, system=True),
+        Binding("f2", "toggle_language", show=False, priority=True,
+                system=True),
         Binding("question_mark", "help", S.APP_HELP_LABEL, key_display="?"),
         Binding("L", "toggle_language", S.APP_LANGUAGE_TOGGLE_LABEL),
     ]
@@ -1322,6 +1339,12 @@ class DnallmMarkTui(App):
         rows.append(("f10", S.APP_F10_LABEL))
         rows.append(("ctrl+q", S.APP_CTRLQ_LABEL))
         rows.append(("ctrl+c", S.APP_CTRLC_LABEL))
+        # 261018-08g (SOAK-4/F4): the f1/f2 rows ride the same manual
+        # machinery — resolved live from the strings registry so the L
+        # toggle re-derives them (the f10 idiom); the bindings carry no
+        # descriptions, so this row is the ONLY surface that names them.
+        rows.append(("f1", S.APP_HELP_LABEL))
+        rows.append(("f2", S.APP_LANGUAGE_TOGGLE_LABEL))
         rows.extend(row for row
                     in map(binding_row, getattr(self.screen, "BINDINGS", []))
                     if row is not None)

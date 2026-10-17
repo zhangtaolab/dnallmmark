@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 24
+open_count: 26
 waived_count: 0
 fixed_count: 12
-total_count: 36
-last_updated: 2026-10-17T16:49:25.824Z
+total_count: 38
+last_updated: 2026-10-17T16:57:44.998Z
 ---
 
 # Broken Windows Ledger
@@ -51,6 +51,8 @@ last_updated: 2026-10-17T16:49:25.824Z
 | 34 | quick-261017-feedback | unmet-truth | tui/screens/monitor.py |  | Monitor status conflation: interrupted cells (dir + no trainer_state marker + no live process) render the same 运行/running state as genuinely-running cells — maintainer hit it reading finetuned-smoke history (PlantHelixSeek 10-16 kill + dnamamba 10-15 interruption both show ⠋ 运行). Needs a three-state derivation (done / running-with-live-process / interrupted) or at least a distinct interrupted glyph | fixed | 261017-uwr: the three-state derivation landed (live-matrix evidence via argv_matrix/probe + CELL_INTERRUPTED ⏸ glyph + live-on-top ordering + context header); the PlantHelixSeek/dnamamba residue now derives interrupted | 2026-10-17T14:12:12.091Z | 2026-10-17T14:57:36.000Z |
 | 35 | quick-261017-uwr | deviation | tests/tui/__snapshots__/monitor_running.svg |  | monitor_running.svg AND monitor_empty.svg regenerated (context header row + ⏵/⏸ glyphs + live-on-top ordering; the empty golden = the one-row header shift, id-hash + row shift only) via make snapshot-update, deliberately UNCOMMITTED pending the maintainer's D-03 review — the committed tree fails test_snapshots on exactly these two until they land (all 7 non-monitor SVGs sha256-identical) | open |  | 2026-10-17T14:57:36.000Z |  |
 | 36 | quick-261018-08g | deviation | tui/__main__.py |  | Esc-lag disposition (SOAK-2/F3 leg): the soak read lone-ESC modal dismissal as dead (modal up 1.5-4s); execution-time measurement in a clean 40x120 pty shows dismissal in 0.16-0.26s at the DEFAULT ESCDELAY and IDENTICAL at 30ms/10ms — ESCDELAY has no measurable effect, so no env mitigation landed in __main__.py (the plan's measure-first mandate); the soak's lag plausibly rode the same degraded-render family as F1 (now fixed); the pty lane pins esc-dismiss within a generous window, y/n remain the instant keys | open |  | 2026-10-17T16:49:25.824Z |  |
+| 37 | quick-261018-08g | deviation | tui/screens/run_config.py |  | Blank-screen-for-seconds-after-Enter (soak P5, tied to F5): NOT reproduced across two clean-pty planning probes AND the execution-time pty run — ProblemsModal/gate refusal copy renders within ~1.5s in a clean session (now pinned by the permanent pty lane's test_slot4_gate_refusal_is_visible); re-investigate only if it recurs AFTER the F1 fix lands, on the theory it was the same degraded-render family (F1 dominated every soak repro) | open |  | 2026-10-17T16:57:44.895Z |  |
+| 38 | quick-261018-08g | deviation | docs/TUI-DEMO.md |  | Zellij scrollback compounding hypothesis (soak F6/P5): zellij 0.45.1 could not be driven from a bare pexpect pty (DCS handshake flood, 3 configs tried) so the scrollback-pause repro stays unverified in-harness; unchanged by the 261018-08g batch — F1 reproduces the exact reported symptoms in a clean pty and is now fixed; the maintainer's manual PageUp->Esc pass remains the standing note | open |  | 2026-10-17T16:57:44.998Z |  |
 
 ````json
 [
@@ -519,6 +521,32 @@ last_updated: 2026-10-17T16:49:25.824Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-17T16:49:25.824Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
+  },
+  {
+    "id": 37,
+    "kind": "deviation",
+    "phase": "quick-261018-08g",
+    "file": "tui/screens/run_config.py",
+    "line": null,
+    "description": "Blank-screen-for-seconds-after-Enter (soak P5, tied to F5): NOT reproduced across two clean-pty planning probes AND the execution-time pty run — ProblemsModal/gate refusal copy renders within ~1.5s in a clean session (now pinned by the permanent pty lane's test_slot4_gate_refusal_is_visible); re-investigate only if it recurs AFTER the F1 fix lands, on the theory it was the same degraded-render family (F1 dominated every soak repro)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T16:57:44.895Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
+  },
+  {
+    "id": 38,
+    "kind": "deviation",
+    "phase": "quick-261018-08g",
+    "file": "docs/TUI-DEMO.md",
+    "line": null,
+    "description": "Zellij scrollback compounding hypothesis (soak F6/P5): zellij 0.45.1 could not be driven from a bare pexpect pty (DCS handshake flood, 3 configs tried) so the scrollback-pause repro stays unverified in-harness; unchanged by the 261018-08g batch — F1 reproduces the exact reported symptoms in a clean pty and is now fixed; the maintainer's manual PageUp->Esc pass remains the standing note",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T16:57:44.998Z",
     "resolved_at": null,
     "milestone": "v1.2"
   }
