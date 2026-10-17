@@ -926,6 +926,11 @@ async def test_help_modal_lists_bindings_and_esc_closes():
             APP_HELP_ROW.format(key="f10", label=APP_F10_LABEL),
             APP_HELP_ROW.format(key="ctrl+q", label=APP_CTRLQ_LABEL),
             APP_HELP_ROW.format(key="ctrl+c", label=APP_CTRLC_LABEL),
+            # 261018-08g (SOAK-4/F4): the f1/f2 any-focus manual rows
+            # ride after ctrl+c — help/language from ANY focus (Inputs
+            # included; the non-printable f10 consume-filter mechanism)
+            APP_HELP_ROW.format(key="f1", label=APP_HELP_LABEL),
+            APP_HELP_ROW.format(key="f2", label=APP_LANGUAGE_TOGGLE_LABEL),
             APP_HELP_ROW.format(key="r", label=ENV_REFRESH_LABEL),
             APP_HELP_ROW.format(key="enter", label=ENV_DETAIL_LABEL),
         ]

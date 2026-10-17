@@ -1220,6 +1220,9 @@ async def test_help_modal_opens_on_the_selection_screen():
             APP_HELP_ROW.format(key="f10", label=APP_F10_LABEL),
             APP_HELP_ROW.format(key="ctrl+q", label=APP_CTRLQ_LABEL),
             APP_HELP_ROW.format(key="ctrl+c", label=APP_CTRLC_LABEL),
+            # 261018-08g (SOAK-4/F4): the f1/f2 any-focus manual rows
+            APP_HELP_ROW.format(key="f1", label=APP_HELP_LABEL),
+            APP_HELP_ROW.format(key="f2", label=APP_LANGUAGE_TOGGLE_LABEL),
             APP_HELP_ROW.format(key="space", label=SEL_MARK_LABEL),
             APP_HELP_ROW.format(key="t", label=SEL_POOL_TOGGLE_LABEL),
             APP_HELP_ROW.format(key="p", label=SEL_PRESET_LABEL),
