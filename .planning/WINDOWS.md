@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 22
+open_count: 23
 waived_count: 0
 fixed_count: 11
-total_count: 33
-last_updated: 2026-10-17T09:02:07.464Z
+total_count: 34
+last_updated: 2026-10-17T14:12:12.091Z
 ---
 
 # Broken Windows Ledger
@@ -48,6 +48,7 @@ last_updated: 2026-10-17T09:02:07.464Z
 | 31 | quick | deviation | pipeline/run_finetune.py | 849 | run_finetune sibling hard-index sites deliberately unfixed (07-CR-01 batch covered only the model-loop reads): :849 probe-branch row[Model_name], :1077 dataset-loop row[Dataset_name], :1322 row[length] — schema-legal minimal custom entries crash these paths; future maintainer-ruled batch (see 261017-klw-SUMMARY Maintainer Items) | open |  | 2026-10-17T07:36:01.293Z |  |
 | 32 | quick-261017-mad | deviation | tests/tui/test_snapshots.py | 944 | test_monitor_running_golden load-timing flake (pre-existing, observed once at the 261017-mad pre-task baseline): the SVG terminal-id is an adler32 hash over every rendered segment, and one full-suite run under load rendered one differing segment; identical rerun green, module green 11/11 in isolation, all fixture data frozen — root cause a load-dependent refresh artifact at export time, not reproduced by 261017-mad changes | open |  | 2026-10-17T08:50:31.381Z |  |
 | 33 | quick-261017-mad-followup | unmet-truth | tui/services/run_config.py |  | Storage-overview ✗ semantics for lazily-created dirs: the cache_dir row renders the same red ✗ as a missing model/dataset root, but a nonexistent cache dir is the healthy never-written-yet state (HF creates it on first use) — misleading failure signal; consider a neutral glyph or an on-demand note for the cache row | open |  | 2026-10-17T09:02:07.464Z |  |
+| 34 | quick-261017-feedback | unmet-truth | tui/screens/monitor.py |  | Monitor status conflation: interrupted cells (dir + no trainer_state marker + no live process) render the same 运行/running state as genuinely-running cells — maintainer hit it reading finetuned-smoke history (PlantHelixSeek 10-16 kill + dnamamba 10-15 interruption both show ⠋ 运行). Needs a three-state derivation (done / running-with-live-process / interrupted) or at least a distinct interrupted glyph | open |  | 2026-10-17T14:12:12.091Z |  |
 
 ````json
 [
@@ -477,6 +478,19 @@ last_updated: 2026-10-17T09:02:07.464Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-17T09:02:07.464Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
+  },
+  {
+    "id": 34,
+    "kind": "unmet-truth",
+    "phase": "quick-261017-feedback",
+    "file": "tui/screens/monitor.py",
+    "line": null,
+    "description": "Monitor status conflation: interrupted cells (dir + no trainer_state marker + no live process) render the same 运行/running state as genuinely-running cells — maintainer hit it reading finetuned-smoke history (PlantHelixSeek 10-16 kill + dnamamba 10-15 interruption both show ⠋ 运行). Needs a three-state derivation (done / running-with-live-process / interrupted) or at least a distinct interrupted glyph",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T14:12:12.091Z",
     "resolved_at": null,
     "milestone": "v1.2"
   }
