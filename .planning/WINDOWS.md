@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 18
+open_count: 19
 waived_count: 0
 fixed_count: 11
-total_count: 29
-last_updated: 2026-10-16T10:22:00.000Z
+total_count: 30
+last_updated: 2026-10-17T02:55:52.918Z
 ---
 
 # Broken Windows Ledger
@@ -43,7 +43,8 @@ last_updated: 2026-10-16T10:22:00.000Z
 | 26 | quick-261015-pex | unmet-truth | tui/app.py |  | Post-second-launch console input death (pex rehearsals): after a SECOND in-session gated launch the console stops processing navigation while renders continue (the launch toast/auto-switch render late or never); the demo restructured to exactly one on-camera launch and the fast-failure sweep moved to CLI prep | open |  | 2026-10-15T23:59:00.000Z |  |
 | 27 | quick-261015-pex | unmet-truth | tui/screens/monitor.py |  | Monitor stalls ~60s after a TUI launch on this box (around the first cell's completion output burst): the stats cadence stops and keys stop processing; the fold-then-kill demo sequence (seed 42 completes, kill seed 43) is unreachable - the demo kill lands mid-seed-42 | open |  | 2026-10-15T23:59:00.000Z |  |
 | 28 | quick-261015-pex | unmet-truth | tui/screens/run_config.py | 1618 | Typing into the slot-4 filter while the screen is mid-mount crashes the console: on_input_changed -> _render_picker -> query_one('#cfg-picker') raises NoMatches (observed once in pex rehearsal; the demo driver works around it by anchoring the populated picker before typing) | open |  | 2026-10-15T23:59:00.000Z |  |
-| 29 | quick-261016-vxr | deviation | tests/tui/__snapshots__/monitor_running.svg |  | monitor_running.svg AND monitor_empty.svg regenerated (the slot-5 [k] 停止 keycap row) deliberately UNCOMMITTED pending D-03 - committed tree fails test_snapshots on exactly these two until they land | fixed | D-03 review approved 2026-10-17; the three SVGs landed in f2a772a | 2026-10-17T00:00:00.000Z | 2026-10-17T01:34:00.000Z |
+| 29 | quick-261016-vxr | deviation | tests/tui/__snapshots__/monitor_running.svg |  | monitor_running.svg AND monitor_empty.svg regenerated (the slot-5 [k] 停止 keycap row) via make snapshot-update, deliberately UNCOMMITTED pending the maintainer's D-03 review - the committed tree fails test_snapshots on exactly these two until they land (run_config.svg byte-preserved, sha256 afa89e7e...) | fixed | D-03 review approved 2026-10-17; the three SVGs landed in f2a772a | 2026-10-17T00:00:00.000Z | 2026-10-17T01:34:00.000Z |
+| 30 | quick-261017-eea | deviation | schemas/model_performance.json |  | Rule-2 deviation (eea commit 9a83066): the 141 helixgen entries carry FLOPs empty-string where the schema demanded strict number — schema conformed to the sibling anyOf [number, const ''] shape (1 line) after verifying the  documents '' as the missing-value convention, all 13 sibling metrics already use anyOf, summarize is ''-safe, and no test pins FLOPs strictness; fabricating numbers forbidden | open |  | 2026-10-17T02:55:52.918Z |  |
 
 ````json
 [
@@ -403,7 +404,7 @@ last_updated: 2026-10-16T10:22:00.000Z
     "kind": "unmet-truth",
     "phase": "quick-261015-pex",
     "file": "tui/screens/run_config.py",
-    "line": "1618",
+    "line": 1618,
     "description": "Typing into the slot-4 filter while the screen is mid-mount crashes the console: on_input_changed -> _render_picker -> query_one('#cfg-picker') raises NoMatches (observed once in pex rehearsal; the demo driver works around it by anchoring the populated picker before typing)",
     "status": "open",
     "reason": "",
@@ -416,11 +417,25 @@ last_updated: 2026-10-16T10:22:00.000Z
     "kind": "deviation",
     "phase": "quick-261016-vxr",
     "file": "tests/tui/__snapshots__/monitor_running.svg",
+    "line": null,
     "description": "monitor_running.svg AND monitor_empty.svg regenerated (the slot-5 [k] 停止 keycap row) via make snapshot-update, deliberately UNCOMMITTED pending the maintainer's D-03 review - the committed tree fails test_snapshots on exactly these two until they land (run_config.svg byte-preserved, sha256 afa89e7e...)",
     "status": "fixed",
     "reason": "D-03 review approved 2026-10-17; the three SVGs landed in f2a772a",
     "recorded_at": "2026-10-17T00:00:00.000Z",
     "resolved_at": "2026-10-17T01:34:00.000Z",
+    "milestone": "v1.2"
+  },
+  {
+    "id": 30,
+    "kind": "deviation",
+    "phase": "quick-261017-eea",
+    "file": "schemas/model_performance.json",
+    "line": null,
+    "description": "Rule-2 deviation (eea commit 9a83066): the 141 helixgen entries carry FLOPs empty-string where the schema demanded strict number — schema conformed to the sibling anyOf [number, const ''] shape (1 line) after verifying the  documents '' as the missing-value convention, all 13 sibling metrics already use anyOf, summarize is ''-safe, and no test pins FLOPs strictness; fabricating numbers forbidden",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T02:55:52.918Z",
+    "resolved_at": null,
     "milestone": "v1.2"
   }
 ]
