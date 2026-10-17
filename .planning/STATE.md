@@ -272,6 +272,7 @@ None yet.
 | 261016-poa | slot 4 运行配置 UX 修复批 — toggle 光标/滚动锚点、选中行对比度、启动确认术语、入口提示行、任务清单、Y/N 确认 | 2026-10-16 | cf6335c | [261016-poa-slot-4-run-config-ux-fixes-toggle-cursor](./quick/261016-poa-slot-4-run-config-ux-fixes-toggle-cursor/) |
 | 261016-v0z | 退出守卫 — q/ctrl+q 一律先确认（无训练任务 Y/N 确认弹窗，enter 不确认），ctrl+q 显式绑定走守卫，ctrl+c 审计入帮助，金标不动 | 2026-10-16 | a32d74a | [261016-v0z-guard-ctrl-q-exit-route-the-inherited-te](./quick/261016-v0z-guard-ctrl-q-exit-route-the-inherited-te/) |
 | 261016-vxr | slot-5 批 — 训练行 ETA（checkpoint 对推算，不可推显 —）+ k 停止确认（Y-only，不退 console）+ 大写 Q 任意焦点退出（on_event 拦截，modal 内惰性） | 2026-10-16 | ef2e365 | [261016-vxr-slot-5-monitor-batch-eta-remaining-time-](./quick/261016-vxr-slot-5-monitor-batch-eta-remaining-time-/) |
+| 261017-cdr | 退出键修订 — ctrl+c 任意焦点主退出（on_event 拦截走 v0z 确认链，modal 内惰性，notify 审计全消），大写 Q 恢复普通字母，P9 退出弹窗堆叠守卫（action_quit 出口族早退），退出确认 [Y]/[N] 加粗 + y/n Footer 键帽 | 2026-10-17 | 0980956 | [261017-cdr-exit-keys-revision-ctrl-c-any-focus-quit](./quick/261017-cdr-exit-keys-revision-ctrl-c-any-focus-quit/) |
 
 ## Deferred Items
 
