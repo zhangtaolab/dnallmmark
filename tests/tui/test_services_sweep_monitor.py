@@ -1808,3 +1808,81 @@ def test_frontier_scan_threads_live_pairs_states(tmp_path):
     snapshot = sweep_monitor.frontier_scan(root, live_roots=(), now=NOW)
     assert snapshot.cell_states[("model-a", "task-1", 42)] == (
         sweep_monitor.CELL_RUNNING), "live_pairs=None: legacy"
+
+
+def test_full_scan_live_root_with_stale_manifest_classifies_running(
+        tmp_path):
+    """261018-08g (SOAK-3/F2): live evidence WINS over a stale manifest
+    — a re-run at a root that already holds a finished sweep_manifest
+    classifies RUNNING (done from terminal records, total None) for the
+    whole live run. The planning probe pinned the OLD answer (finished
+    2/2 — the live re-run invisible at the sweep level); this test
+    inverts it. Re-run-at-same-root is the default workflow
+    (output_root persists in run_config.json)."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "model-a", "task-1", 42,
+                 make_record("model-a", "task-1", 42))
+    plant_record(root, "model-a", "task-1", 43,
+                 make_record("model-a", "task-1", 43))
+    cells = [
+        manifest_cell("model-a", "task-1", 42, "completed"),
+        manifest_cell("model-a", "task-1", 43, "completed"),
+    ]
+    write_json(root / MANIFEST_NAME, manifest_payload(cells))
+    age_tree(root)
+
+    result = sweep_monitor.full_scan(
+        roots=[root], live_roots=[root], now=NOW)
+
+    row = sweep_row(result, root)
+    assert row.state == "running", (
+        "a live re-run at a manifest-holding root must never read "
+        "finished off the stale manifest (the soak FINDING 2)"
+    )
+    assert row.total is None, "the live re-run's total is unknown"
+    assert row.done == 2, "terminal records carry the done count"
+    # the watermark still records so the churn comparison stays armed
+    assert result.watermarks[str(root.resolve())] == NOW - 7200.0
+
+
+def test_full_scan_non_live_manifest_root_still_finished_verbatim(
+        tmp_path):
+    """The ordering regression's other leg: the SAME manifest-holding
+    root WITHOUT live evidence keeps today's byte-identical finished
+    classification with the manifest's own counts (the live-first rule
+    must not leak into the non-live path)."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "model-a", "task-1", 42,
+                 make_record("model-a", "task-1", 42))
+    cells = [
+        manifest_cell("model-a", "task-1", 42, "completed"),
+        manifest_cell("model-a", "task-1", 43, "planned"),
+    ]
+    write_json(root / MANIFEST_NAME, manifest_payload(cells))
+    age_tree(root)
+
+    result = sweep_monitor.full_scan(roots=[root], now=NOW)
+
+    row = sweep_row(result, root)
+    assert row.state == "finished"
+    assert row.total == 2
+    assert row.done == 1, "planned never counts toward done"
+
+
+def test_full_scan_live_root_with_churn_keeps_running_verdict(
+        tmp_path):
+    """Ordering guard: a live root that ALSO carries fresh churn (mtime
+    within the grace window) keeps the running verdict — the live branch
+    and the churn signal agree, and the hoist must never regress the
+    churn path for live roots."""
+    root = tmp_path / "finetuned"
+    record = plant_record(root, "model-a", "task-1", 42,
+                          make_record("model-a", "task-1", 42))
+    set_mtime(record, NOW)  # churn: fresh mtime
+
+    result = sweep_monitor.full_scan(
+        roots=[root], live_roots=[root], now=NOW)
+
+    row = sweep_row(result, root)
+    assert row.state == "running"
+    assert row.total is None

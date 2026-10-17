@@ -555,16 +555,26 @@ def full_scan(roots=None, live_roots=(), prev_watermarks=None, now=None):
     Roots default to ``DEFAULT_OUTPUT_ROOTS + manual_roots()``; a
     nonexistent/unreadable root is skipped silently (the deleted-mid-
     monitor edge — degrade, never crash). Classification, first match
-    wins: manifest present -> finished (counts from the manifest cells);
-    root in live_roots -> running; newest-mtime watermark advanced vs
+    wins: root in live_roots -> running (LIVE EVIDENCE WINS,
+    261018-08g — see below); manifest present -> finished (counts from
+    the manifest cells); newest-mtime watermark advanced vs
     ``prev_watermarks[root]`` -> running; newest mtime within
     STALE_GRACE_SECONDS of now -> running; else artifacts_only (prior
     standalone-run artifacts — unknown totals, never a running glyph).
 
-    Known edge (accepted, plan-pinned predicate order): a re-run at a
-    root that already holds a finished manifest classifies finished
-    until the new run's own manifest lands — the manifest is written
-    only at sweep end, so the stale file wins over the churn signals.
+    Live evidence wins over a stale manifest (261018-08g, SOAK-3/F2 —
+    supersedes the old accepted-edge predicate order): the live
+    membership check runs BEFORE the manifest-present branch, so a
+    re-run at a root that already holds a finished sweep_manifest.json
+    classifies RUNNING (records-walk terminal count for done, total
+    None) for the whole live run, never "finished" off the stale file.
+    Rationale: the manifest lands only at sweep end, and re-run-at-
+    same-root is the DEFAULT workflow (output_root persists in
+    run_config.json), so before this rule a live re-run was invisible
+    at the sweep level for its entire duration (the 2026-10-18 soak
+    report FINDING 2). Live evidence = the launcher registry plus the
+    /proc CLI probe, threaded by MonitorBackend.full_scan (261017-uwr);
+    non-live roots classify byte-identically to the old order.
 
     Returns ScanResult(sweeps sorted by root, watermarks for the next
     scan's churn comparison).
@@ -581,6 +591,26 @@ def full_scan(roots=None, live_roots=(), prev_watermarks=None, now=None):
     watermarks: dict[str, float] = {}
     for root in roots:
         resolved = Path(root).expanduser().resolve()
+        if resolved in live:
+            # LIVE WINS (261018-08g, SOAK-3): the running branch ahead
+            # of the manifest read — a live re-run at a manifest-holding
+            # root must show running (done from terminal records, total
+            # None, watermark recorded), never the stale manifest's
+            # finished counts.
+            if not _is_dir(resolved):
+                continue  # nonexistent/unreadable: skipped silently
+            newest = _newest_file_mtime(resolved)
+            if newest is not None:
+                watermarks[str(resolved)] = newest
+            _completed, terminal = _completed_and_terminal_counts(resolved)
+            sweeps.append(SweepSummary(
+                root=resolved,
+                state=SWEEP_RUNNING,
+                done=terminal,
+                total=None,
+                newest_mtime=newest,
+            ))
+            continue
         manifest = load_manifest(resolved / MANIFEST_NAME)
         if manifest is not None:
             cells = _manifest_cells(manifest)
