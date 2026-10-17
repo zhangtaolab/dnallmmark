@@ -476,14 +476,30 @@ def test_extract_bundle_archives_ignores_non_zip_and_reports_corrupt(
         tmp_path):
     readme = tmp_path / "README.md"
     readme.write_text("not a zip", encoding="utf-8")
-    # garbage + a LYING end-of-central-directory record (it claims one
-    # entry at an offset that is not there): is_zipfile says yes (the
-    # EOCD signature is present), ZipFile raises BadZipFile — the
-    # corrupt-archive failure edge
-    lying_eocd = struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, 1, 1,
-                             50, 10, 0)
+    # a STRUCTURALLY VALID zip whose member data is corrupt: consistent
+    # local-header/central-directory/EOCD skeleton (is_zipfile accepts it
+    # on every CPython — the old lying-EOCD fixture gambled on
+    # is_zipfile internals and Python 3.14's tightened EOCD validation
+    # reclassified it as non-zip), but the local file header is garbage
+    # so extraction always raises BadZipFile — the corrupt-archive edge
+    name = b"evil.csv"
+    local = (
+        b"PK\x03\x04"
+        + struct.pack(
+            "<5H3I2H", 20, 0, 8, 0, 0, 0, 1, 1, len(name), 0)
+        + name + b"BROKEN-DATA")
+    central = (
+        b"PK\x01\x02"
+        + struct.pack(
+            "<6H3I5H2I",
+            20, 20, 0, 8, 0, 0, 0, 1, 1, len(name), 0, 0, 0, 0, 0,
+            len(local))
+        + name)
+    eocd = (
+        b"PK\x05\x06"
+        + struct.pack("<4H2IH", 0, 0, 1, 1, len(central), len(local), 0))
     corrupt = tmp_path / "corrupt.zip"
-    corrupt.write_bytes(b"garbage-before-eocd" + lying_eocd)
+    corrupt.write_bytes(local + central + eocd)
     datasets_root = tmp_path / "datasets"
 
     extracted, problems = zenodo_bundle.extract_bundle_archives(
