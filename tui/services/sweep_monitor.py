@@ -133,13 +133,17 @@ SWEEP_ARTIFACTS_ONLY = "artifacts_only"
 
 #: Cell states the screen renders: completed -> ``✓``, failed -> ``✗``,
 #: skipped -> ``⊘`` (resume marker — distinct provenance), running ->
-#: ``⠋``, queued -> ``◌``. A record with an unrecognized status renders
-#: that status verbatim (honest, never translated).
+#: ``⏵``, queued -> ``◌``, interrupted -> ``⏸`` (261017-uwr, UWR-1:
+#: no record, no marker, and no live sweep plans the pair — historical
+#: residue shown honestly, never a phantom running glyph). A record
+#: with an unrecognized status renders that status verbatim (honest,
+#: never translated).
 CELL_COMPLETED = "completed"
 CELL_FAILED = "failed"
 CELL_SKIPPED = "skipped"
 CELL_RUNNING = "running"
 CELL_QUEUED = "queued"
+CELL_INTERRUPTED = "interrupted"
 
 #: Record statuses that end a cell's life for THIS sweep — progress
 #: (``done``) and ETA remaining share this set so a failed or resumed
@@ -205,6 +209,12 @@ class CellRow:
     model: str
     task: str
     seeds: tuple[CellSeed, ...]
+    #: The row's newest seed-dir mtime (261017-uwr, UWR-4): the
+    #: live-on-top group-0 sort key (freshest activity first). Filled
+    #: by ``cells_view`` over the discovered seed dirs; the additive
+    #: default (None) keeps every pre-existing constructor unchanged
+    #: (frontier-merged rows carry None until the next full pass).
+    newest_mtime: float | None = None
 
 
 @dataclass(frozen=True)
@@ -215,7 +225,8 @@ class EntryView:
 
     Attributes:
         state: the folded completion state — any seed running ->
-            ``running``; any failed -> ``failed``; all seeds terminal
+            ``running``; any failed -> ``failed``; any interrupted ->
+            ``interrupted`` (261017-uwr); all seeds terminal
             (completed|skipped, non-empty) -> ``completed``; else
             ``queued`` (the ``_fold_frac_states`` semantics at seed
             level).
@@ -619,12 +630,18 @@ def _seed_dir_mtime(seed_dir: Path) -> float | None:
         return None
 
 
-def frontier_scan(root, live_roots=(), now=None):
+def frontier_scan(root, live_roots=(), now=None, live_pairs=None):
     """The light 2s pass (D-09): re-derive ONLY this root's newest
     seed-dir activity + record states — no manifest read, no walk
     beyond {model}/{task}/seed_* and the seed dirs' direct children
     (runs/, checkpoint-*/, frac_*/, records — never a recursive walk
-    into checkpoint contents)."""
+    into checkpoint contents).
+
+    261017-uwr (UWR-1): ``live_pairs`` threads the live-sweep pair
+    evidence into every per-seed state derivation (None = legacy
+    activity semantics, byte-identical; a frozenset = the strict
+    membership gate whose miss derives interrupted). The ROOT-level
+    classification keeps the D-03 three states unchanged."""
     resolved = Path(root).expanduser().resolve()
     now = _now_epoch(now)
     live = {Path(item).expanduser().resolve() for item in live_roots}
@@ -645,8 +662,11 @@ def frontier_scan(root, live_roots=(), now=None):
     cell_states: dict[tuple[str, str, int], str] = {}
     newest_child_mtime: float | None = newest_seed_mtime
     for model, task, seed, seed_dir in seed_dirs:
+        pair_live = (None if live_pairs is None
+                     else (model, task) in live_pairs)
         state, _fraction_states = _seed_state_from_dir(
-            seed_dir, now=now, frontier_newest=(seed_dir == newest_seed_dir))
+            seed_dir, now=now, frontier_newest=(seed_dir == newest_seed_dir),
+            pair_live=pair_live)
         cell_states[(model, task, seed)] = state
         for child in _sorted_children(seed_dir)[:_SCAN_DIR_ENTRY_CAP]:
             try:
@@ -739,12 +759,20 @@ def _dir_shows_activity(directory: Path, now: float) -> bool:
     return mtime is not None and (now - mtime) <= STALE_GRACE_SECONDS
 
 
-def _cell_state_from_dir(cell_dir: Path, now: float) -> str:
+def _cell_state_from_dir(cell_dir: Path, now: float,
+                         pair_live: "bool | None" = None) -> str:
     """First-match state for ONE cell dir (seed or fraction level):
     record status (unrecognized statuses render VERBATIM — honest,
-    never translated) -> resume marker -> activity -> queued (an inert
-    dir never started). Running detection NEVER depends on records
-    (the record lands post-cell — Pitfall 2)."""
+    never translated) -> resume marker -> INTERRUPTED (no live sweep
+    plans the pair — kill-left/stale residue, 261017-uwr UWR-1) ->
+    activity -> queued (an inert dir never started). Running detection
+    NEVER depends on records (the record lands post-cell — Pitfall 2).
+
+    ``pair_live`` semantics: None = NO EVIDENCE DATA (every
+    pre-existing caller and fake — the legacy activity semantics,
+    byte-identical); True = a live sweep plans this (model, task) pair
+    (activity -> running, inert -> queued); False = nothing plans it
+    (residue signals are moot — interrupted before any activity leg)."""
     record = load_record(cell_dir / RECORD_NAME)
     if record is not None:
         status = record.get("status")
@@ -752,6 +780,8 @@ def _cell_state_from_dir(cell_dir: Path, now: float) -> str:
             return status
     if _is_file(cell_dir / RESUME_MARKER):
         return CELL_SKIPPED
+    if pair_live is False:
+        return CELL_INTERRUPTED
     if _dir_shows_activity(cell_dir, now):
         return CELL_RUNNING
     return CELL_QUEUED
@@ -759,13 +789,16 @@ def _cell_state_from_dir(cell_dir: Path, now: float) -> str:
 
 def _fold_frac_states(states) -> str:
     """Fold fraction states into the seed cell's state: any running ->
-    running, any failed -> failed, all terminal -> completed, else
-    queued."""
+    running, any failed -> failed, any interrupted -> interrupted, all
+    terminal -> completed, else queued (261017-uwr: the interrupted
+    leg between failed and completed)."""
     states = list(states)
     if any(state == CELL_RUNNING for state in states):
         return CELL_RUNNING
     if any(state == CELL_FAILED for state in states):
         return CELL_FAILED
+    if any(state == CELL_INTERRUPTED for state in states):
+        return CELL_INTERRUPTED
     if states and all(
             state in (CELL_COMPLETED, CELL_SKIPPED) for state in states):
         return CELL_COMPLETED
@@ -774,18 +807,24 @@ def _fold_frac_states(states) -> str:
 
 def _seed_state_from_dir(
         seed_dir: Path, now: float,
-        frontier_newest: bool = False) -> tuple[str, tuple[tuple[str, str], ...] | None]:
+        frontier_newest: bool = False,
+        pair_live: "bool | None" = None) -> tuple[str, tuple[tuple[str, str], ...] | None]:
     """Derive (state, fraction_states) for one seed dir. Curve cells
     carry one (frac_name, state) pair per fraction and fold; the
     frontier's newest seed dir renders running even before its first
-    artifact lands (the driver mkdirs before the executor runs)."""
+    artifact lands (the driver mkdirs before the executor runs) —
+    UWR-1 gates BOTH frontier legs on the pair evidence: no live pair
+    means the newest dir reads interrupted, not running."""
     fracs = _frac_children(seed_dir)
     if fracs:
         fraction_states = tuple(
-            (frac.name, _cell_state_from_dir(frac, now)) for frac in fracs)
+            (frac.name, _cell_state_from_dir(frac, now, pair_live=pair_live))
+            for frac in fracs)
         state = _fold_frac_states(
             [state for _name, state in fraction_states])
         if frontier_newest and state == CELL_QUEUED:
+            if pair_live is False:
+                return CELL_INTERRUPTED, fraction_states
             return CELL_RUNNING, fraction_states
         return state, fraction_states
     if frontier_newest:
@@ -793,8 +832,10 @@ def _seed_state_from_dir(
         status = (record or {}).get("status")
         if not (isinstance(status, str) and status) and not _is_file(
                 seed_dir / RESUME_MARKER):
+            if pair_live is False:
+                return CELL_INTERRUPTED, None
             return CELL_RUNNING, None
-    return _cell_state_from_dir(seed_dir, now), None
+    return _cell_state_from_dir(seed_dir, now, pair_live=pair_live), None
 
 
 def _collect_records(root: Path) -> list[dict]:
@@ -809,7 +850,7 @@ def _collect_records(root: Path) -> list[dict]:
     return records
 
 
-def cells_view(root, expected_seeds=None) -> tuple[CellRow, ...]:
+def cells_view(root, expected_seeds=None, live_pairs=None) -> tuple[CellRow, ...]:
     """Derive the cell table (MON-01): one row per (model, task)
     discovered from seed dirs and/or manifest cells, per-seed states in
     seed order. ``expected_seeds`` threads the configured seed set —
@@ -819,17 +860,23 @@ def cells_view(root, expected_seeds=None) -> tuple[CellRow, ...]:
     Per-seed state derivation, first match wins: a readable record's
     status (completed/failed/skipped map directly; an unrecognized
     status renders VERBATIM); no record + RESUME_MARKER -> skipped
-    (resumed from a previous run); activity (runs/ or checkpoint-*
-    present, or the seed dir mtime within the stale grace, or the
-    root's newest seed dir) -> running (running detection NEVER depends
-    on records — the record lands post-cell); manifest-known ->
-    queued.
+    (resumed from a previous run); pair NOT live + no marker ->
+    interrupted (261017-uwr, UWR-1: kill-left checkpoint residue, a
+    stale dir, the root's newest dir — historical residue, never a
+    phantom running glyph); activity (runs/ or checkpoint-* present, or
+    the seed dir mtime within the stale grace) -> running (running
+    detection NEVER depends on records — the record lands post-cell);
+    manifest-known -> queued. ``live_pairs`` None = no evidence data =
+    the legacy activity semantics for every pre-existing caller
+    (byte-identical); a frozenset = the strict per-(model, task)
+    membership gate over a live sweep's planned matrix.
 
     Curve nesting: seed cells with frac_* children carry
     ``fraction_states`` per fraction and fold to a seed state (any
-    running -> running, any failed -> failed, all terminal ->
-    completed, else queued). The mtime-grace leg reads the real clock
-    (the screen's cadence owns time); tests pin mtimes relative to it.
+    running -> running, any failed -> failed, any interrupted ->
+    interrupted, all terminal -> completed, else queued). The
+    mtime-grace leg reads the real clock (the screen's cadence owns
+    time); tests pin mtimes relative to it.
     """
     root_path = Path(root)
     now = _utc_now_epoch()
@@ -858,12 +905,21 @@ def cells_view(root, expected_seeds=None) -> tuple[CellRow, ...]:
     rows: list[CellRow] = []
     for model, task in sorted(set(discovered) | set(manifest_cells)):
         seeds: dict[int, CellSeed] = {}
+        row_newest_mtime: float | None = None
         for seed, seed_dir in discovered.get((model, task), {}).items():
+            pair_live = (None if live_pairs is None
+                         else (model, task) in live_pairs)
             state, fraction_states = _seed_state_from_dir(
                 seed_dir, now=now,
-                frontier_newest=(seed_dir == newest_seed_dir))
+                frontier_newest=(seed_dir == newest_seed_dir),
+                pair_live=pair_live)
             seeds[seed] = CellSeed(
                 seed=seed, state=state, fraction_states=fraction_states)
+            seed_mtime = _seed_dir_mtime(seed_dir)
+            if seed_mtime is not None and (
+                    row_newest_mtime is None
+                    or seed_mtime > row_newest_mtime):
+                row_newest_mtime = seed_mtime  # UWR-4: the row's max
         for seed in manifest_cells.get((model, task), set()):
             seeds.setdefault(
                 seed, CellSeed(seed=seed, state=CELL_QUEUED,
@@ -875,7 +931,8 @@ def cells_view(root, expected_seeds=None) -> tuple[CellRow, ...]:
                                    fraction_states=None))
         rows.append(CellRow(
             model=model, task=task,
-            seeds=tuple(seeds[seed] for seed in sorted(seeds))))
+            seeds=tuple(seeds[seed] for seed in sorted(seeds)),
+            newest_mtime=row_newest_mtime))
     return tuple(rows)
 
 
@@ -1028,10 +1085,11 @@ def cell_progress(seed_dir) -> CellProgress:
 def entry_fold(row: CellRow) -> EntryView:
     """Fold one CellRow's per-seed states to the ENTRY state (C4J-3 —
     the ``_fold_frac_states`` semantics at seed level): any running ->
-    running, any failed -> failed, all terminal (completed|skipped,
-    non-empty) -> completed, else queued. ``done`` counts TERMINAL
-    seeds (completed|failed|skipped — the stats-line done convention)
-    over the row's total.
+    running, any failed -> failed, any interrupted -> interrupted
+    (261017-uwr), all terminal (completed|skipped, non-empty) ->
+    completed, else queued. ``done`` counts TERMINAL seeds
+    (completed|failed|skipped — the stats-line done convention;
+    interrupted is NOT terminal) over the row's total.
 
     Args:
         row (CellRow): one (model, task) row.
@@ -1044,6 +1102,8 @@ def entry_fold(row: CellRow) -> EntryView:
         state = CELL_RUNNING
     elif any(state == CELL_FAILED for state in states):
         state = CELL_FAILED
+    elif any(state == CELL_INTERRUPTED for state in states):
+        state = CELL_INTERRUPTED
     elif states and all(
             state in (CELL_COMPLETED, CELL_SKIPPED) for state in states):
         state = CELL_COMPLETED
@@ -1054,19 +1114,24 @@ def entry_fold(row: CellRow) -> EntryView:
     return EntryView(state=state, done=done, total=len(states))
 
 
-def entries_progress(root) -> "dict[tuple[str, str], CellProgress]":
+def entries_progress(root, live_pairs=None) -> "dict[tuple[str, str], CellProgress]":
     """The slot-5 entries list's progress map (C4J-3): walk the seed
     dirs ONCE (the frontier's bounded ``_iter_seed_dirs`` discipline),
     derive each seed's state, and for every (model, task) row whose
     fold is RUNNING parse progress for its running seed(s) — taking the
     MAX-step progress when several run (the serial driver makes this
     rare; mgpu worker roots are separate roots). Non-running rows parse
-    nothing (the 2s cadence stays light, T-c4j-03); a running seed
-    whose checkpoints parse nothing contributes no entry (the screen's
-    honest indeterminate).
+    nothing (the 2s cadence stays light, T-c4j-03) — including
+    INTERRUPTED rows whose checkpoints are perfectly parseable
+    (261017-uwr: a dead pair's residue is never re-parsed per tick); a
+    running seed whose checkpoints parse nothing contributes no entry
+    (the screen's honest indeterminate). ``live_pairs`` threads the
+    live-sweep pair evidence (None = legacy semantics).
 
     Args:
         root: the sweep output root.
+        live_pairs: the live sweep's planned (model, task) pairs, or
+            None for the legacy activity semantics.
 
     Returns:
         dict: ``{(model, task): CellProgress}`` — empty when nothing
@@ -1076,7 +1141,10 @@ def entries_progress(root) -> "dict[tuple[str, str], CellProgress]":
     states: dict[tuple[str, str], dict[int, str]] = {}
     seed_dirs: dict[tuple[str, str, int], Path] = {}
     for model, task, seed, seed_dir in _iter_seed_dirs(Path(root)):
-        state, _fraction_states = _seed_state_from_dir(seed_dir, now=now)
+        pair_live = (None if live_pairs is None
+                     else (model, task) in live_pairs)
+        state, _fraction_states = _seed_state_from_dir(
+            seed_dir, now=now, pair_live=pair_live)
         states.setdefault((model, task), {})[seed] = state
         seed_dirs[(model, task, seed)] = seed_dir
     result: dict[tuple[str, str], CellProgress] = {}

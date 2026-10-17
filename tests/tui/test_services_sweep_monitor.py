@@ -464,6 +464,9 @@ def test_cells_view_mixed_tree_exact_per_seed_states(tmp_path):
 
     rows = sweep_monitor.cells_view(root)
 
+    # 261017-uwr (UWR-4): cells_view fills newest_mtime (the row's max
+    # seed-dir mtime; age_tree pinned every dir to NOW - 7200).
+    aged = NOW - 7200.0
     assert rows == (
         sweep_monitor.CellRow(
             model="model-a", task="task-1",
@@ -471,13 +474,16 @@ def test_cells_view_mixed_tree_exact_per_seed_states(tmp_path):
                 sweep_monitor.CellSeed(42, "completed", None),
                 sweep_monitor.CellSeed(43, "failed", None),
                 sweep_monitor.CellSeed(44, "skipped", None),
-            )),
+            ),
+            newest_mtime=aged),
         sweep_monitor.CellRow(
             model="model-a", task="task-2",
-            seeds=(sweep_monitor.CellSeed(42, "skipped", None),)),
+            seeds=(sweep_monitor.CellSeed(42, "skipped", None),),
+            newest_mtime=aged),
         sweep_monitor.CellRow(
             model="model-b", task="task-1",
-            seeds=(sweep_monitor.CellSeed(42, "running", None),)),
+            seeds=(sweep_monitor.CellSeed(42, "running", None),),
+            newest_mtime=aged),
     )
 
 
@@ -1541,3 +1547,264 @@ def test_entries_progress_carries_the_checkpoint_pair_eta(tmp_path):
     assert progress[("m-a", "t-1")].eta_seconds == 100.0, (
         "the running seed's eta rides the entries passthrough"
     )
+
+
+# =====================================================================
+# 261017-uwr (UWR-1 Task 2): the three-state derivation — CELL_INTERRUPTED
+# + live_pairs threading + CellRow.newest_mtime (closes WINDOWS #34)
+# =====================================================================
+
+
+def test_interrupted_when_pair_not_live_checkpoint_residue(tmp_path):
+    """The #34 pin: kill-left checkpoint residue (no record, no resume
+    marker) derives RUNNING today for as long as the dir stands. With
+    live_pairs MISSING the pair it derives INTERRUPTED; with the pair
+    live it stays RUNNING; with live_pairs None (no evidence data —
+    every pre-existing caller and fake) it stays RUNNING (legacy,
+    byte-identical)."""
+    root = tmp_path / "finetuned"
+    residue = seed_dir(root, "model-a", "task-1", 42)
+    write_checkpoint(residue, 520)  # kill-left checkpoint-*/ residue
+    age_tree(root, now=NOW, age_seconds=7200.0)  # residue is STALE
+
+    pair = ("model-a", "task-1")
+    rows = sweep_monitor.cells_view(root, live_pairs=frozenset())
+    assert rows[0].seeds[0].state == sweep_monitor.CELL_INTERRUPTED, (
+        "no live sweep plans the pair — the residue reads interrupted, "
+        "never a phantom running glyph"
+    )
+
+    rows = sweep_monitor.cells_view(root, live_pairs=frozenset({pair}))
+    assert rows[0].seeds[0].state == sweep_monitor.CELL_RUNNING, (
+        "a live sweep plans the pair — the same residue is honest churn"
+    )
+
+    rows = sweep_monitor.cells_view(root)  # live_pairs=None: legacy
+    assert rows[0].seeds[0].state == sweep_monitor.CELL_RUNNING
+
+
+def test_queued_vs_interrupted_by_pair_live_empty_and_newest_dirs(
+        tmp_path):
+    """Pair live + an inert empty dir -> QUEUED (the sweep will come);
+    pair MISSING + the same dir -> INTERRUPTED; pair MISSING + the
+    root's frontier-NEWEST dir (today's unconditional early-running
+    leg) -> INTERRUPTED too — the newest-dir leg is gated like every
+    other activity signal."""
+    root = tmp_path / "finetuned"
+    inert = seed_dir(root, "model-a", "task-1", 42)
+    inert.mkdir(parents=True)
+    newest = seed_dir(root, "model-a", "task-2", 42)
+    newest.mkdir(parents=True)
+    set_mtime(inert, NOW - 7200)
+    set_mtime(newest, NOW - 5)  # the newest seed dir, fresh mtime
+    pair = ("model-a", "task-1")
+
+    rows = {row.task: row for row in sweep_monitor.cells_view(
+        root, live_pairs=frozenset({pair}))}
+    assert rows["task-1"].seeds[0].state == sweep_monitor.CELL_QUEUED, (
+        "the live sweep plans task-1's pair — its inert dir is queued"
+    )
+    assert rows["task-2"].seeds[0].state == sweep_monitor.CELL_INTERRUPTED, (
+        "task-2's pair is NOT planned — even the freshest dir reads "
+        "interrupted while the evidence matrix misses it"
+    )
+
+    rows = {row.task: row for row in sweep_monitor.cells_view(
+        root, live_pairs=frozenset())}
+    assert rows["task-1"].seeds[0].state == sweep_monitor.CELL_INTERRUPTED
+    assert rows["task-2"].seeds[0].state == sweep_monitor.CELL_INTERRUPTED, (
+        "the frontier-newest early-running leg is gated: no live pair "
+        "means the newest dir reads interrupted, not running"
+    )
+
+    rows = {row.task: row for row in sweep_monitor.cells_view(root)}
+    assert rows["task-1"].seeds[0].state == sweep_monitor.CELL_QUEUED, (
+        "legacy (live_pairs=None): the stale inert dir stays queued"
+    )
+    assert rows["task-2"].seeds[0].state == sweep_monitor.CELL_RUNNING, (
+        "legacy (live_pairs=None): the fresh newest dir stays running"
+    )
+
+
+def test_records_and_markers_win_over_live_pairs_every_combination(
+        tmp_path):
+    """Readable record statuses (verbatim, terminal family) and the
+    RESUME_MARKER skipped leg are UNAFFECTED by live_pairs in every
+    combination — records always win first."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "m-done", "t", 42, make_record("m-done", "t", 42))
+    plant_record(root, "m-fail", "t", 42,
+                 make_record("m-fail", "t", 42, status="failed"))
+    marker = seed_dir(root, "m-skip", "t", 42)
+    marker.mkdir(parents=True)
+    (marker / RESUME_MARKER).write_text("{}", encoding="utf-8")
+    plant_record(root, "m-odd", "t", 42,
+                 make_record("m-odd", "t", 42, status="planned"))
+    age_tree(root, now=NOW)
+
+    states = {row.model: row.seeds[0].state for row in sweep_monitor.cells_view(
+        root, live_pairs=frozenset())}
+    assert states == {
+        "m-done": sweep_monitor.CELL_COMPLETED,
+        "m-fail": sweep_monitor.CELL_FAILED,
+        "m-skip": sweep_monitor.CELL_SKIPPED,
+        "m-odd": "planned",  # unrecognized statuses render VERBATIM
+    }
+    states_none = {row.model: row.seeds[0].state
+                   for row in sweep_monitor.cells_view(root)}
+    assert states == states_none, "records are live-blind"
+
+
+def test_entry_fold_interrupted_leg_precedence():
+    """The fold order gains the interrupted leg: running > failed >
+    interrupted > completed (all completed|skipped, non-empty) >
+    queued."""
+    def fold(states):
+        return sweep_monitor.entry_fold(sweep_monitor.CellRow(
+            model="m", task="t",
+            seeds=tuple(sweep_monitor.CellSeed(
+                seed=42 + index, state=state, fraction_states=None)
+                for index, state in enumerate(states)))).state
+
+    assert fold([sweep_monitor.CELL_INTERRUPTED,
+                 sweep_monitor.CELL_COMPLETED]) == (
+        sweep_monitor.CELL_INTERRUPTED)
+    assert fold([sweep_monitor.CELL_RUNNING,
+                 sweep_monitor.CELL_INTERRUPTED]) == (
+        sweep_monitor.CELL_RUNNING)
+    assert fold([sweep_monitor.CELL_FAILED,
+                 sweep_monitor.CELL_INTERRUPTED]) == (
+        sweep_monitor.CELL_FAILED)
+    assert fold([sweep_monitor.CELL_COMPLETED,
+                 sweep_monitor.CELL_COMPLETED]) == (
+        sweep_monitor.CELL_COMPLETED)
+    assert fold([sweep_monitor.CELL_QUEUED,
+                 sweep_monitor.CELL_QUEUED]) == (
+        sweep_monitor.CELL_QUEUED)
+    assert fold([sweep_monitor.CELL_INTERRUPTED,
+                 sweep_monitor.CELL_QUEUED]) == (
+        sweep_monitor.CELL_INTERRUPTED)
+
+
+def test_fold_frac_states_interrupted_leg():
+    """The fraction fold carries the same interrupted leg (a curve
+    seed's frac_* children fold interrupted when nothing runs/fails)."""
+    assert sweep_monitor._fold_frac_states([
+        sweep_monitor.CELL_COMPLETED, sweep_monitor.CELL_INTERRUPTED,
+    ]) == sweep_monitor.CELL_INTERRUPTED
+    assert sweep_monitor._fold_frac_states([
+        sweep_monitor.CELL_RUNNING, sweep_monitor.CELL_INTERRUPTED,
+    ]) == sweep_monitor.CELL_RUNNING
+    assert sweep_monitor._fold_frac_states([
+        sweep_monitor.CELL_INTERRUPTED]) == sweep_monitor.CELL_INTERRUPTED
+    assert sweep_monitor._fold_frac_states([]) == sweep_monitor.CELL_QUEUED
+
+
+def test_cells_view_maintainer_scenario_three_families(tmp_path):
+    """The maintainer's finetuned-smoke shape over one tmp root: two
+    pairs with completed records, ONE live pair (fresh checkpoint dir
+    + mtime), two dead pairs (stale checkpoint residue) — live_pairs =
+    the one live pair folds the table to 2 completed / 1 running /
+    2 interrupted (the screen's header counts and live-on-top ordering
+    derive from exactly these folds)."""
+    root = tmp_path / "finetuned-smoke"
+    live_pair = ("model-live", "task-live")
+    for model, task in (("model-done-1", "task-a"), ("model-done-2", "task-b")):
+        plant_record(root, model, task, 42, make_record(model, task, 42))
+    live_dir = seed_dir(root, *live_pair, 42)
+    write_checkpoint(live_dir, 100, {"global_step": 80, "max_steps": 200})
+    set_mtime(live_dir, NOW_REAL() - 10)  # fresh churn inside the grace
+    for model in ("model-dead-1", "model-dead-2"):
+        write_checkpoint(seed_dir(root, model, "task-c", 42), 300)
+    age_tree(root, now=NOW_REAL(), skip=(live_dir,), age_seconds=7200.0)
+
+    rows = {row.model: sweep_monitor.entry_fold(row) for row in
+            sweep_monitor.cells_view(root, live_pairs=frozenset({live_pair}))}
+
+    assert rows["model-done-1"].state == sweep_monitor.CELL_COMPLETED
+    assert rows["model-done-2"].state == sweep_monitor.CELL_COMPLETED
+    assert rows["model-live"].state == sweep_monitor.CELL_RUNNING
+    assert rows["model-dead-1"].state == sweep_monitor.CELL_INTERRUPTED
+    assert rows["model-dead-2"].state == sweep_monitor.CELL_INTERRUPTED
+    counts = {state: 0 for state in ("completed", "running", "interrupted")}
+    for fold in rows.values():
+        if fold.state in counts:
+            counts[fold.state] += 1
+    assert counts == {"completed": 2, "running": 1, "interrupted": 2}
+
+
+def test_cellrow_newest_mtime_filled_from_seed_dirs(tmp_path):
+    """CellRow.newest_mtime = the MAX seed-dir mtime over the row's
+    discovered seeds (cells_view fills it — the group-0 sort key);
+    manifest-only/expected-only rows (no discovered seed dirs) default
+    None; the field is additive so every pre-existing fake constructs
+    unchanged."""
+    root = tmp_path / "finetuned"
+    seed_42 = seed_dir(root, "m", "t", 42)
+    seed_43 = seed_dir(root, "m", "t", 43)
+    seed_42.mkdir(parents=True)
+    seed_43.mkdir(parents=True)
+    set_mtime(seed_42, 1000.0)
+    set_mtime(seed_43, 2000.0)
+    write_json(root / MANIFEST_NAME, manifest_payload([
+        manifest_cell("m-plan", "t-plan", 42, "planned")]))
+
+    rows = {row.model: row for row in sweep_monitor.cells_view(root)}
+
+    assert rows["m"].newest_mtime == 2000.0, "max over the row's seeds"
+    assert rows["m-plan"].newest_mtime is None, (
+        "no discovered seed dirs -> the additive default"
+    )
+    # the additive-default contract: pre-change constructions unchanged
+    assert sweep_monitor.CellRow(
+        model="m", task="t", seeds=()).newest_mtime is None
+
+
+def test_entries_progress_parses_only_live_running_seeds(tmp_path):
+    """The 2s cadence stays light under the three-state derivation: a
+    DEAD interrupted pair with parseable checkpoints contributes
+    NOTHING (its state is interrupted, progress parses only for
+    live-running seeds); the live pair's checkpoints parse."""
+    root = tmp_path / "finetuned"
+    live_pair = ("m-live", "t")
+    dead_dir = seed_dir(root, "m-dead", "t", 42)
+    write_checkpoint(dead_dir, 500, {"global_step": 490, "max_steps": 500})
+    live_dir = seed_dir(root, *live_pair, 42)
+    write_checkpoint(live_dir, 5, {"global_step": 50, "max_steps": 500})
+    set_mtime(live_dir, NOW_REAL() - 10)
+    age_tree(root, now=NOW_REAL(), skip=(live_dir,), age_seconds=7200.0)
+
+    progress = sweep_monitor.entries_progress(
+        root, live_pairs=frozenset({live_pair}))
+
+    assert set(progress) == {live_pair}, (
+        "the dead interrupted pair parses nothing even though its "
+        "checkpoints are parseable"
+    )
+    assert progress[live_pair].step == 50
+
+
+def test_frontier_scan_threads_live_pairs_states(tmp_path):
+    """frontier_scan threads live_pairs into the per-seed states (the
+    same three-state derivation on the 2s pass) while its ROOT-level
+    classification keeps the D-03 three states."""
+    root = tmp_path / "finetuned"
+    residue = seed_dir(root, "model-a", "task-1", 42)
+    write_checkpoint(residue, 100)
+    age_tree(root, now=NOW, age_seconds=7200.0)
+
+    snapshot = sweep_monitor.frontier_scan(
+        root, live_roots=(), now=NOW, live_pairs=frozenset())
+    assert snapshot.cell_states[("model-a", "task-1", 42)] == (
+        sweep_monitor.CELL_INTERRUPTED)
+    assert snapshot.state == sweep_monitor.SWEEP_ARTIFACTS_ONLY
+
+    snapshot = sweep_monitor.frontier_scan(
+        root, live_roots=(), now=NOW,
+        live_pairs=frozenset({("model-a", "task-1")}))
+    assert snapshot.cell_states[("model-a", "task-1", 42)] == (
+        sweep_monitor.CELL_RUNNING)
+
+    snapshot = sweep_monitor.frontier_scan(root, live_roots=(), now=NOW)
+    assert snapshot.cell_states[("model-a", "task-1", 42)] == (
+        sweep_monitor.CELL_RUNNING), "live_pairs=None: legacy"
