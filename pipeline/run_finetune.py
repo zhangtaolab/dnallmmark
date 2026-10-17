@@ -1108,8 +1108,17 @@ if __name__ == "__main__":
                 configs["task"].num_labels = row["labels"]
                 configs["task"].label_names = [str(i) for i in range(row["labels"])]
                 configs["task"].task_type = row["type"]
-                if "head_config" in configs['task']:
-                    configs['task'].head_config.task_type = row["type"]
+                # Pydantic membership (`"head_config" in task`) iterates
+                # (field, value) tuples and never matches a string key, so
+                # the old guard was always False and the custom head
+                # (evo2/megaDNA, with_head config) kept task_type="binary"
+                # / num_classes=2, crashing every non-binary dataset at the
+                # first loss (CpG multilabel: CE batch 1 vs 7). Propagate
+                # BOTH the task type and the label count (logits width).
+                head_cfg = getattr(configs["task"], "head_config", None)
+                if head_cfg is not None:
+                    head_cfg.task_type = row["type"]
+                    head_cfg.num_classes = row["labels"]
 
                 # Load model and tokenizer
                 current_time = get_current_time()
