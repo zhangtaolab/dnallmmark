@@ -1559,3 +1559,179 @@ def test_directory_picker_root_empty_value_is_repo_root():
     assert run_config.directory_picker_root("") == run_config.REPO_ROOT
     assert run_config.directory_picker_root("   ") == run_config.REPO_ROOT
     assert run_config.directory_picker_root(None) == run_config.REPO_ROOT
+
+
+# =====================================================================
+# 261017-uwr — argv_matrix: the compose_argv inverse (the live-evidence
+# matrix recovery; UWR-2 Task 1)
+# =====================================================================
+
+
+def _matrix_projection(models=None, tasks=None, seeds=(42,), peft="none",
+                       fractions=None, config_variant="none"):
+    """The same-source pair projection the inverse must reproduce
+    (enumerate_matrix cells -> the (model, task) set)."""
+    cells = run_sweep.enumerate_matrix(
+        list(models) if models else None,
+        list(tasks) if tasks else None,
+        list(seeds),
+        REAL_REGISTRY_DIR,
+        peft=peft,
+        fractions=list(fractions) if fractions else None,
+        config_variant=config_variant,
+    )
+    return frozenset((str(cell[0]), str(cell[1])) for cell in cells)
+
+
+def test_argv_matrix_round_trips_compose_argv_2x2():
+    """The inverse over a committed-registry 2x2 spec: compose_argv ->
+    argv_matrix returns EXACTLY the spec's (model, task) pairs (the
+    same-source enumeration projected, never a naive cross product)."""
+    spec = run_config.RunSpec(
+        models=(PREVIEW_MODELS[0], PREVIEW_MODELS[1]),
+        tasks=(PREVIEW_TASKS[0], PREVIEW_TASKS[2]),
+        seeds=(42, 43), output_root="/tmp/uwr-roundtrip")
+    expected = _matrix_projection(
+        models=spec.models, tasks=spec.tasks, seeds=spec.seeds)
+    assert run_config.argv_matrix(run_config.compose_argv(spec)) == expected
+    assert len(expected) == 4  # 2 models x 2 tasks (seeds collapse)
+
+
+def test_argv_matrix_single_model_spec_with_absent_flag_legs():
+    """A defaults spec (no peft/variant/curve flags in argv — D-12
+    absent parity) still round-trips: only the base matrix legs."""
+    spec = run_config.RunSpec(
+        models=(PREVIEW_MODELS[0],), tasks=(PREVIEW_TASKS[1],),
+        seeds=(42,), output_root="/tmp/uwr-single")
+    argv = run_config.compose_argv(spec)
+    assert "--peft" not in argv and "--config-variant" not in argv
+    assert run_config.argv_matrix(argv) == _matrix_projection(
+        models=spec.models, tasks=spec.tasks)
+
+
+def test_argv_matrix_peft_lora_round_trips_alias_pairs():
+    """A lora spec's matrix carries the ALIAS cell names
+    ("model+lora") — the enumeration output, never the bare filter
+    names (the cell-dir identity CellRow documents)."""
+    spec = run_config.RunSpec(
+        models=(PREVIEW_MODELS[0],), tasks=(PREVIEW_TASKS[0],),
+        seeds=(42,), peft="lora", output_root="/tmp/uwr-lora")
+    matrix = run_config.argv_matrix(run_config.compose_argv(spec))
+    assert matrix == _matrix_projection(
+        models=spec.models, tasks=spec.tasks, peft="lora")
+    assert matrix == frozenset({
+        (f"{PREVIEW_MODELS[0]}+lora", PREVIEW_TASKS[0])})
+
+
+def test_argv_matrix_curve_fractions_round_trip():
+    """The --curve comma list parses through the (0, 1] fraction
+    grammar and threads the fraction expansion (same-source)."""
+    spec = run_config.RunSpec(
+        models=(PREVIEW_MODELS[0],), tasks=(PREVIEW_TASKS[0],),
+        seeds=(42,), config_variant="curve",
+        curve_fractions=(0.25, 0.5), output_root="/tmp/uwr-curve")
+    matrix = run_config.argv_matrix(run_config.compose_argv(spec))
+    assert matrix == frozenset({
+        (f"{PREVIEW_MODELS[0]}+curve", PREVIEW_TASKS[0])})
+
+
+def test_argv_matrix_absent_models_tasks_mean_full_registry_legs():
+    """--models/--tasks ABSENT parse as the None filters — the driver's
+    own default semantics (run_sweep.py:336-349): the full-registry
+    matrix over the argv's seeds."""
+    argv = [
+        sys.executable, str(REAL_REGISTRY_DIR / "run_sweep.py"),
+        "--seeds", "42", "--output-root", "/tmp/uwr-full"]
+    expected = _matrix_projection(seeds=(42,))
+    assert run_config.argv_matrix(argv) == expected
+    assert len(expected) > 100  # the real 59 x 50 registry shape
+
+
+def test_argv_matrix_absent_seeds_or_driver_returns_none():
+    """--seeds is required by the driver (its absence means the child
+    never launched); no run_sweep.py element means the argv is not a
+    sweep — both parse as None (live-but-unknown, never a matrix)."""
+    no_seeds = [
+        sys.executable, str(REAL_REGISTRY_DIR / "run_sweep.py"),
+        "--models", PREVIEW_MODELS[0], "--output-root", "/tmp/uwr"]
+    assert run_config.argv_matrix(no_seeds) is None
+    not_driver = [
+        sys.executable, str(REAL_REGISTRY_DIR / "run_finetune.py"),
+        "--seeds", "42", "--output-root", "/tmp/uwr"]
+    assert run_config.argv_matrix(not_driver) is None
+
+
+def test_argv_matrix_from_failures_pairs_through_load_failure_pairs(
+        tmp_path):
+    """A --from-failures argv parses through the driver's OWN
+    load_failure_pairs (never re-implemented): the failed pairs
+    verbatim for a base re-run."""
+    failures = tmp_path / "sweep_failures.json"
+    failures.write_text(json.dumps([
+        {"model": PREVIEW_MODELS[0], "task": PREVIEW_TASKS[0], "seed": 42},
+    ]), encoding="utf-8")
+    argv = [
+        sys.executable, str(REAL_REGISTRY_DIR / "run_sweep.py"),
+        "--from-failures", str(failures),
+        "--seeds", "42", "--output-root", "/tmp/uwr-rerun"]
+    assert run_config.argv_matrix(argv) == frozenset({
+        (PREVIEW_MODELS[0], PREVIEW_TASKS[0])})
+
+
+def test_argv_matrix_from_failures_unreadable_file_returns_none(
+        tmp_path):
+    """The sweep_launcher._from_failures_refusal idiom: SystemExit /
+    OSError / ValueError are caught, never raised — an unevaluatable
+    manifest maps the root to None (live-but-unknown, legacy
+    rendering, never a false interrupt)."""
+    broken = tmp_path / "not-a-list.json"
+    broken.write_text(json.dumps({"not": "a list"}), encoding="utf-8")
+    argv = [
+        sys.executable, str(REAL_REGISTRY_DIR / "run_sweep.py"),
+        "--from-failures", str(broken),
+        "--seeds", "42", "--output-root", "/tmp/uwr-broken"]
+    assert run_config.argv_matrix(argv) is None
+
+    missing = tmp_path / "absent.json"
+    argv_missing = [
+        sys.executable, str(REAL_REGISTRY_DIR / "run_sweep.py"),
+        "--from-failures", str(missing),
+        "--seeds", "42", "--output-root", "/tmp/uwr-missing"]
+    assert run_config.argv_matrix(argv_missing) is None
+
+
+def test_argv_matrix_from_failures_lora_rerun_aliases_the_pairs(
+        tmp_path):
+    """A --peft lora from-failures re-run re-aliases the pairs through
+    the SAME enumerate+filter the driver runs (run_sweep.py:1878-1896)
+    — the re-run's cell dirs are {model}+lora, so the live matrix must
+    carry the alias identity or its own live cells would read
+    interrupted (the false interrupt UWR-2 forbids)."""
+    failures = tmp_path / "sweep_failures.json"
+    failures.write_text(json.dumps([
+        {"model": PREVIEW_MODELS[0], "task": PREVIEW_TASKS[0], "seed": 42},
+    ]), encoding="utf-8")
+    argv = [
+        sys.executable, str(REAL_REGISTRY_DIR / "run_sweep.py"),
+        "--from-failures", str(failures),
+        "--seeds", "42", "--peft", "lora",
+        "--output-root", "/tmp/uwr-lora-rerun"]
+    assert run_config.argv_matrix(argv) == frozenset({
+        (f"{PREVIEW_MODELS[0]}+lora", PREVIEW_TASKS[0])})
+
+
+def test_argv_matrix_out_of_vocabulary_peft_variant_return_none():
+    """An argv the driver's argparse would have refused (a bogus --peft
+    / --config-variant / non-integer --seeds / out-of-bounds --curve)
+    parses as None — never a fabricated alias matrix."""
+    for bad in (
+        ["--peft", "loRA"],
+        ["--config-variant", "turbo"],
+        ["--seeds", "42,abc"],
+        ["--curve", "1.5"],
+    ):
+        argv = [
+            sys.executable, str(REAL_REGISTRY_DIR / "run_sweep.py"),
+            "--models", PREVIEW_MODELS[0], "--tasks", PREVIEW_TASKS[0],
+            "--output-root", "/tmp/uwr-bad", *bad]
+        assert run_config.argv_matrix(argv) is None, bad

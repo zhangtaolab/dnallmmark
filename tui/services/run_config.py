@@ -1208,6 +1208,138 @@ def compose_from_failures_argv(failures_path, seeds, output_root,
 
 
 # =====================================================================
+# argv_matrix — the compose_argv inverse (261017-uwr, UWR-2 Task 1)
+# =====================================================================
+
+#: The value-carrying run_sweep flags the inverse pair-scan knows (a
+#: recognized flag consumes the NEXT element; everything else is
+#: skipped — ``--dry-run``/``--priority-file`` never change the pair
+#: set). ``--output-root`` is consumed so its VALUE can never be
+#: misread as a flag position.
+_ARGV_VALUE_FLAGS = frozenset({
+    "--models", "--tasks", "--seeds", "--output-root", "--registry-dir",
+    "--peft", "--config-variant", "--curve", "--from-failures",
+    "--subset_file",
+})
+
+
+def _argv_flag_values(argv) -> dict[str, str]:
+    """Pair-scan one argv into ``{flag: value}`` (a recognized flag
+    consumes the next element; later occurrences win, argparse's own
+    behavior). Tolerant by construction: unknown elements are skipped,
+    a trailing flag with no value reads absent."""
+    elements = [str(element) for element in argv]
+    values: dict[str, str] = {}
+    index = 0
+    while index < len(elements):
+        element = elements[index]
+        if element in _ARGV_VALUE_FLAGS and index + 1 < len(elements):
+            values[element] = elements[index + 1]
+            index += 2
+            continue
+        index += 1
+    return values
+
+
+def _comma_filter_names(value: "str | None") -> "tuple[str, ...] | None":
+    """A ``--models``/``--tasks`` comma list -> the name tuple; None
+    when the flag is ABSENT (the driver's full-registry default,
+    run_sweep.py:336-349 — a None filter enumerates every key) or
+    parses to nothing (the driver's own sys.exit shape: a sweep that
+    never launched)."""
+    if value is None:
+        return None
+    names = tuple(token.strip() for token in value.split(",")
+                  if token.strip())
+    return names or None
+
+
+def argv_matrix(argv, registry_dir=None) -> "frozenset[tuple[str, str]] | None":
+    """Recover a sweep argv's PLANNED (model, task) pair matrix — the
+    compose_argv inverse (261017-uwr, UWR-2).
+
+    The liveness-evidence source for the monitor's three-state cell
+    derivation: a discovered cell is RUNNING only when its
+    (model, task) pair is a member of a live sweep's planned matrix.
+    Everything derives through the SAME run_sweep functions execution
+    uses (D-05 — never a naive cross product): the pairs are the
+    ``enumerate_matrix`` cell projection (ALIAS names under
+    peft/config-variant — the cell-dir identity), and a
+    ``--from-failures`` argv threads the driver's own
+    ``load_failure_pairs`` + the enumerate-and-filter the driver runs
+    (run_sweep.py:1878-1896), so an alias-lane re-run's matrix carries
+    the alias identity its cells will actually create (the pairs
+    verbatim for a base re-run).
+
+    Returns None — live-but-unknown, the caller renders that root with
+    LEGACY activity semantics, never a false interrupt — when: no
+    ``run_sweep.py`` element; ``--seeds`` absent (the driver marks it
+    required) or unparseable; a ``--peft``/``--config-variant`` outside
+    the vocabularies or a ``--curve`` outside (0, 1] (argv the driver's
+    argparse would have refused); or the failures manifest unreadable /
+    invalid (``load_failure_pairs``'s SystemExit/OSError/ValueError
+    caught — the ``sweep_launcher._from_failures_refusal`` idiom).
+
+    Documented edge (accepted, over-claim is the safe direction):
+    ``--subset_file`` is not re-filtered — a subset-excluded pair reads
+    live (renders queued, not interrupted) while its sweep runs.
+
+    Args:
+        argv: the launch argv (the registry's ``meta.argv`` or a probed
+            ``/proc`` cmdline — any str sequence).
+        registry_dir: the enumeration registry dir override; None
+            resolves the committed ``pipeline/`` default.
+
+    Returns:
+        frozenset[tuple[str, str]] | None: the planned pair matrix, or
+        None for an unparseable/non-sweep argv.
+    """
+    elements = [str(element) for element in argv]
+    if not any(element.endswith("run_sweep.py") for element in elements):
+        return None
+    values = _argv_flag_values(elements)
+    seeds = _parse_seeds(values["--seeds"]) if "--seeds" in values else None
+    if seeds is None:
+        return None
+    peft = values.get("--peft", "none")
+    if peft not in PEFT_MODES:
+        return None
+    config_variant = values.get("--config-variant", "none")
+    if config_variant not in CONFIG_VARIANTS:
+        return None
+    fractions = None
+    if "--curve" in values:
+        fractions = _parse_fractions(values["--curve"])
+        if fractions is None:
+            return None
+    enumeration_dir = Path(
+        DEFAULT_REGISTRY_DIR if registry_dir is None else registry_dir)
+    if values.get("--registry-dir"):
+        enumeration_dir = Path(values["--registry-dir"])
+    cells = run_sweep.enumerate_matrix(
+        list(_comma_filter_names(values.get("--models")) or ()),
+        list(_comma_filter_names(values.get("--tasks")) or ()),
+        list(seeds),
+        enumeration_dir,
+        peft=peft,
+        fractions=list(fractions) if fractions else None,
+        config_variant=config_variant,
+    )
+    if "--from-failures" in values:
+        try:
+            failure_pairs = run_sweep.load_failure_pairs(
+                values["--from-failures"], enumeration_dir)
+        except (SystemExit, OSError, ValueError):
+            return None
+        cells = [
+            cell for cell in cells
+            if (run_sweep.base_model_name(cell[0], peft, config_variant),
+                cell[1]) in failure_pairs
+        ]
+    return frozenset((str(cell[0]), str(cell[1])) for cell in cells)
+
+
+# =====================================================================
 # The directories.json save seam + the storage overview (261014-f4w)
 # =====================================================================
 

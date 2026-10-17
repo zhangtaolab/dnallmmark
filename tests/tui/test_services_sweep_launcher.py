@@ -44,6 +44,7 @@ import types
 from datetime import UTC, datetime
 from pathlib import Path
 
+import run_sweep  # top-level module (pipeline/ sys.path root) — the 261017-uwr enumerate spy
 from env_smoke import CheckResult  # top-level module (pipeline/ sys.path root)
 
 from tui.services import (
@@ -1400,3 +1401,191 @@ def test_single_gpu_idle_machine_launches_normally(monkeypatch, tmp_path):
 
     assert isinstance(result, sweep_launcher.LaunchOutcome)
     assert result.spawned is True
+
+
+# =====================================================================
+# 261017-uwr — live-sweep matrix evidence (UWR-2 Task 1): the /proc
+# CLI probe + live_sweep_matrices (registry handles UNION probed roots,
+# behind the per-argv matrix cache; the kill face stays registry-only)
+# =====================================================================
+
+
+def _write_cmdline(pid_dir, argv_elements):
+    """One fake /proc/<pid>/cmdline: NUL-separated argv bytes."""
+    pid_dir.mkdir(parents=True, exist_ok=True)
+    (pid_dir / "cmdline").write_bytes(
+        b"\0".join(element.encode("utf-8") for element in argv_elements)
+        + b"\0")
+
+
+def _probe_argv(models="plant-dnabert-6mer", output_root=None,
+               driver=None, extra=()):
+    """One parseable run_sweep argv (the compose_argv shape)."""
+    return [
+        sys.executable,
+        str(driver if driver is not None
+            else REPO_ROOT / "pipeline" / "run_sweep.py"),
+        "--models", models,
+        "--tasks", "GUE__emp_H3",
+        "--seeds", "42",
+        "--output-root",
+        str(output_root if output_root is not None else "/tmp/uwr-probe"),
+        *extra,
+    ]
+
+
+def test_probe_cli_sweeps_maps_run_sweep_processes_to_resolved_roots(
+        tmp_path):
+    """The bounded /proc probe over a FAKE proc root: one run_sweep.py
+    process maps {resolved --output-root: argv}; an unrelated python
+    process is ignored; an unreadable pid dir (a cmdline that cannot be
+    opened) is skipped; an absent proc root reads {} (non-Linux
+    degrades to no CLI evidence — honest)."""
+    proc = tmp_path / "proc"
+    sweep_argv = _probe_argv(output_root=tmp_path / "out" / "sweep-a")
+    _write_cmdline(proc / "1001", sweep_argv)
+    _write_cmdline(proc / "1002", [
+        sys.executable, "-m", "http.server", "8080"])
+    # an unreadable pid: cmdline is a DIRECTORY -> open raises OSError
+    (proc / "1003" / "cmdline").mkdir(parents=True)
+    (proc / "notapid").mkdir()
+
+    probed = sweep_launcher.probe_cli_sweeps(proc)
+
+    assert probed == {
+        str((tmp_path / "out" / "sweep-a").resolve()): tuple(sweep_argv)}
+    assert sweep_launcher.probe_cli_sweeps(tmp_path / "absent-proc") == {}
+
+
+def test_probe_cli_sweeps_relative_root_resolves_against_proc_cwd(
+        tmp_path):
+    """A RELATIVE --output-root resolves against the process's own cwd
+    (os.readlink(<pid>/cwd), best-effort): the CLI hand-run edge —
+    compose_argv threads absolute roots by contract, but a bare
+    ``python run_sweep.py --output-root rel/...`` launched from a shell
+    writes relative to ITS cwd."""
+    proc = tmp_path / "proc"
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    _write_cmdline(proc / "2001", _probe_argv(output_root="rel/out"))
+    (proc / "2001" / "cwd").symlink_to(workdir, target_is_directory=True)
+
+    probed = sweep_launcher.probe_cli_sweeps(proc)
+
+    assert probed == {
+        str((workdir / "rel" / "out").resolve()): tuple(
+            _probe_argv(output_root="rel/out"))}
+
+
+def test_probe_cli_sweeps_sweep_without_output_root_is_ignored(tmp_path):
+    """A run_sweep.py process with no readable --output-root maps
+    nothing (no root key, never a guessed one)."""
+    proc = tmp_path / "proc"
+    argv = [
+        sys.executable, str(REPO_ROOT / "pipeline" / "run_sweep.py"),
+        "--models", "plant-dnabert-6mer", "--seeds", "42"]
+    _write_cmdline(proc / "3001", argv)
+
+    assert sweep_launcher.probe_cli_sweeps(proc) == {}
+
+
+def _register_live_sweep(monkeypatch, tmp_path, argv, root):
+    """One launcher with a LIVE registry entry (a never-dying fake
+    Popen) spawned at ``root`` with ``argv`` — the registry half of the
+    evidence union."""
+    pin_state_dir(monkeypatch, tmp_path)
+    launcher = sweep_launcher.SweepLauncher(
+        spawner=FakeSpawner(popen=FakeSweepPopen(poll_returns=(None,))))
+    outcome = launcher.launch_argv(
+        list(argv), root, spawner=FakeSpawner(
+            popen=FakeSweepPopen(poll_returns=(None,))))
+    assert outcome.spawned is True, outcome.error
+    return launcher
+
+
+def test_live_sweep_matrices_merges_registry_and_probe_behind_cache(
+        monkeypatch, tmp_path):
+    """live_sweep_matrices(): the registry entry's meta.argv matrix
+    UNION the probed CLI roots; an unparseable argv maps its root to
+    None (live-but-unknown — legacy rendering for that root, never a
+    false interrupt); repeated calls with the same argv hit the
+    per-argv matrix cache (enumerate_matrix counted ONCE via a spy)."""
+    registry_argv = _probe_argv(models="plant-dnabert-6mer")
+    launcher = _register_live_sweep(
+        monkeypatch, tmp_path, registry_argv, tmp_path / "reg" / "root")
+
+    probe_argv = _probe_argv(models="plant-dnagpt-BPE")
+    probed_root = tmp_path / "cli" / "root"
+    broken_argv = [
+        sys.executable, str(REPO_ROOT / "pipeline" / "run_sweep.py"),
+        "--models", "plant-dnabert-6mer",
+        "--output-root", str(tmp_path / "cli" / "broken")]
+    monkeypatch.setattr(sweep_launcher, "probe_cli_sweeps", lambda: {
+        str(probed_root.resolve()): tuple(probe_argv),
+        str((tmp_path / "cli" / "broken").resolve()): tuple(broken_argv),
+    })
+
+    real_enumerate = run_sweep.enumerate_matrix
+    calls = []
+
+    def spy(*args, **kwargs):
+        calls.append(1)
+        return real_enumerate(*args, **kwargs)
+
+    monkeypatch.setattr(run_sweep, "enumerate_matrix", spy)
+
+    matrices = launcher.live_sweep_matrices()
+
+    assert set(matrices) == {
+        str((tmp_path / "reg" / "root").resolve()),
+        str(probed_root.resolve()),
+        str((tmp_path / "cli" / "broken").resolve())}
+    assert matrices[str((tmp_path / "reg" / "root").resolve())] == (
+        frozenset({("plant-dnabert-6mer", "GUE__emp_H3")}))
+    assert matrices[str(probed_root.resolve())] == (
+        frozenset({("plant-dnagpt-BPE", "GUE__emp_H3")}))
+    assert matrices[str((tmp_path / "cli" / "broken").resolve())] is None, (
+        "an unparseable argv is live-but-unknown (None), never a matrix")
+
+    assert len(calls) == 2, "two DISTINCT argvs enumerate twice"
+    again = launcher.live_sweep_matrices()
+    assert again == matrices
+    assert len(calls) == 2, "the per-argv cache: no re-enumeration"
+
+
+def test_live_sweep_matrices_probe_root_absent_from_registry_only(
+        monkeypatch, tmp_path):
+    """The merge precedence: a root BOTH sources report keeps the
+    REGISTRY's argv (the exact launch argv is authoritative); the
+    probe's duplicate never overwrites it."""
+    registry_argv = _probe_argv(models="plant-dnabert-6mer")
+    launcher = _register_live_sweep(
+        monkeypatch, tmp_path, registry_argv, tmp_path / "shared" / "root")
+    other_argv = _probe_argv(models="plant-dnagpt-BPE")
+    monkeypatch.setattr(sweep_launcher, "probe_cli_sweeps", lambda: {
+        str((tmp_path / "shared" / "root").resolve()): tuple(other_argv)})
+
+    matrices = launcher.live_sweep_matrices()
+
+    assert matrices[str((tmp_path / "shared" / "root").resolve())] == (
+        frozenset({("plant-dnabert-6mer", "GUE__emp_H3")}))
+
+
+def test_live_sweep_matrices_kill_face_stays_registry_only(
+        monkeypatch, tmp_path):
+    """UWR-2's kill pin: a probed CLI root joins the EVIDENCE (its
+    cells render running) but NEVER the kill face — live_sweeps()
+    lists registry handles only and kill_sweep() on a probe root is the
+    documented noop (a probed sweep has no Popen handle in this
+    process; [k] refuses with MON_KILL_UNAVAILABLE upstream)."""
+    launcher = sweep_launcher.SweepLauncher()
+    probe_argv = _probe_argv()
+    probed_root = str((tmp_path / "cli" / "root").resolve())
+    monkeypatch.setattr(sweep_launcher, "probe_cli_sweeps", lambda: {
+        probed_root: tuple(probe_argv)})
+
+    assert probed_root in launcher.live_sweep_matrices()
+    assert probed_root not in launcher.live_sweeps(), (
+        "the kill face is registry-only — a probe root never enters it")
+    assert launcher.kill_sweep(probed_root) == (
+        sweep_launcher.OUTCOME_NOOP)

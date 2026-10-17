@@ -459,6 +459,86 @@ def gate_confirm_data(spec, run_config_service=None):
 # The launcher service (the registry owner)
 # =====================================================================
 
+#: The sweep driver's script name as it appears in a live process's
+#: argv (the probe's membership test — a Path-name comparison, never a
+#: substring, so ``not_run_sweep.py`` never matches).
+_RUN_SWEEP_SCRIPT_NAME = "run_sweep.py"
+
+
+def probe_cli_sweeps(proc_root="/proc") -> dict:
+    """Discover CLI-launched run_sweep processes by probing ``/proc``
+    (261017-uwr, UWR-2 — the attached/discovered CLI evidence source).
+
+    Bounded, read-only, total: iterate the NUMERIC entries of
+    ``proc_root`` (sorted; non-numeric skipped); read each
+    ``<pid>/cmdline`` as NUL-separated bytes, decode utf-8/replace; a
+    process whose argv holds an element whose Path NAME is exactly
+    ``run_sweep.py`` contributes ``{resolved --output-root: argv}``.
+    Any OSError/ValueError skips the pid (a dying process's cmdline
+    vanishes mid-read — the probe never crashes a cadence). A RELATIVE
+    ``--output-root`` resolves against ``os.readlink(<pid>/cwd)``
+    best-effort (the CLI hand-run edge; compose_argv threads absolute
+    roots by contract), falling back to a plain resolve. An
+    absent/unlistable ``proc_root`` reads ``{}`` (non-Linux degrades to
+    NO CLI evidence — honest), and filesystem reads are ALL this
+    function ever does: no subprocess, no signal, EVER (a live sweep
+    may be running on this box — the probe reads its cmdline and
+    nothing else).
+
+    DISPLAY-ONLY evidence (T-uwr-01): the output feeds glyph/header
+    rendering through ``live_sweep_matrices``; it never gates a launch,
+    a kill, or an exit, and raw argv is never rendered.
+
+    Args:
+        proc_root: the proc filesystem root (tests inject a fake tree).
+
+    Returns:
+        dict[str, tuple[str, ...]]: resolved output root -> the live
+        process's argv (verbatim, never rendered).
+    """
+    probed: dict[str, tuple[str, ...]] = {}
+    try:
+        entries = sorted(Path(proc_root).iterdir())
+    except OSError:
+        return probed
+    for pid_dir in entries:
+        if not pid_dir.name.isdigit():
+            continue
+        try:
+            raw = (pid_dir / "cmdline").read_bytes()
+        except OSError:
+            continue
+        argv = tuple(
+            part.decode("utf-8", "replace")
+            for part in raw.split(b"\0") if part)
+        if not any(Path(element).name == _RUN_SWEEP_SCRIPT_NAME
+                   for element in argv):
+            continue
+        output_root = run_config._argv_flag_values(argv).get("--output-root")
+        if not output_root:
+            continue
+        probed[str(_resolve_probe_root(output_root, pid_dir))] = argv
+    return probed
+
+
+def _resolve_probe_root(value: str, pid_dir: Path) -> Path:
+    """Resolve one probed ``--output-root`` value absolute: a relative
+    value joins the process's OWN cwd (``os.readlink(<pid>/cwd)``,
+    best-effort — the readlink of a dying/sandboxed process may fail,
+    and the fallback is a plain resolve); an absolute value resolves
+    straight through (symlinks normalized, the registry-key basis)."""
+    candidate = Path(value)
+    try:
+        if not candidate.is_absolute():
+            try:
+                cwd = os.readlink(pid_dir / "cwd")
+                return (Path(cwd) / candidate).resolve()
+            except (OSError, ValueError):
+                pass
+        return candidate.resolve()
+    except OSError:
+        return candidate
+
 
 class SweepLauncher:
     """The launch lifecycle owner: spawn-with-tee, the live-sweep
@@ -497,6 +577,10 @@ class SweepLauncher:
         # tee FILE still stands under state/logs; the child owns its
         # own descriptor).
         self._tee_history: dict[str, str] = {}
+        # 261017-uwr (UWR-2): the per-argv pair-matrix cache behind
+        # live_sweep_matrices — keyed by the argv tuple (see
+        # _matrix_for); dead entries' rows persist harmlessly.
+        self._matrix_cache: dict[tuple[str, ...], object] = {}
 
     # ===== The spawn core (D-06/D-10) =====
 
@@ -982,3 +1066,53 @@ class SweepLauncher:
         if entry is not None:
             return entry["meta"].tee_path
         return self._tee_history.get(root_key)
+
+    # ===== The live-matrix evidence (261017-uwr, UWR-2) =====
+
+    def _matrix_for(self, argv) -> "object":
+        """One argv's pair matrix behind the instance cache (a
+        full-matrix argv enumerates its ~8850 cells ONCE per session,
+        not once per 2s tick). Keyed by the argv tuple — dead entries'
+        cache rows are harmless (an argv that returns still maps to the
+        same matrix)."""
+        argv_key = tuple(str(element) for element in argv)
+        if argv_key not in self._matrix_cache:
+            self._matrix_cache[argv_key] = run_config.argv_matrix(
+                list(argv_key))
+        return self._matrix_cache[argv_key]
+
+    def live_sweep_matrices(self) -> dict:
+        """The live-sweep PLANNED pair matrices, per resolved root (the
+        monitor's three-state cell evidence, 261017-uwr UWR-2).
+
+        Two evidence sources merged:
+
+        1. the REGISTRY's live handles (TUI-launched sweeps) — each
+           entry's ``meta.argv`` (the verbatim launch argv) through
+           ``run_config.argv_matrix``;
+        2. ``probe_cli_sweeps()`` — attached/discovered CLI-launched
+           run_sweep processes found in /proc (a root the registry ALSO
+           holds keeps the registry's argv — the exact launch argv is
+           authoritative).
+
+        An unparseable argv maps its root to None — live-but-unknown:
+        that root's cells keep the LEGACY activity semantics, never a
+        false interrupt. DISPLAY-ONLY evidence: the kill face stays
+        REGISTRY-ONLY (a probed CLI sweep has no Popen handle in this
+        process; ``live_sweeps``/``kill_sweep`` are untouched and [k]
+        keeps refusing it with MON_KILL_UNAVAILABLE).
+
+        Returns:
+            dict[str, frozenset[tuple[str, str]] | None]: resolved
+            root -> the planned (model, task) pair matrix (None =
+            live-but-unknown).
+        """
+        matrices: dict[str, object] = {}
+        for root in self.live_sweeps():
+            entry = self._live.get(root)
+            if entry is not None:
+                matrices[root] = self._matrix_for(entry["meta"].argv)
+        for root, argv in probe_cli_sweeps().items():
+            if root not in matrices:
+                matrices[root] = self._matrix_for(argv)
+        return matrices
