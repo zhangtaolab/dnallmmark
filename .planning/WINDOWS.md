@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 21
+open_count: 22
 waived_count: 0
 fixed_count: 11
-total_count: 32
-last_updated: 2026-10-17T08:50:31.381Z
+total_count: 33
+last_updated: 2026-10-17T09:02:07.464Z
 ---
 
 # Broken Windows Ledger
@@ -47,6 +47,7 @@ last_updated: 2026-10-17T08:50:31.381Z
 | 30 | quick-261017-eea | deviation | schemas/model_performance.json |  | Rule-2 deviation (eea commit 9a83066): the 141 helixgen entries carry FLOPs empty-string where the schema demanded strict number — schema conformed to the sibling anyOf [number, const ''] shape (1 line) after verifying the  documents '' as the missing-value convention, all 13 sibling metrics already use anyOf, summarize is ''-safe, and no test pins FLOPs strictness; fabricating numbers forbidden | open |  | 2026-10-17T02:55:52.918Z |  |
 | 31 | quick | deviation | pipeline/run_finetune.py | 849 | run_finetune sibling hard-index sites deliberately unfixed (07-CR-01 batch covered only the model-loop reads): :849 probe-branch row[Model_name], :1077 dataset-loop row[Dataset_name], :1322 row[length] — schema-legal minimal custom entries crash these paths; future maintainer-ruled batch (see 261017-klw-SUMMARY Maintainer Items) | open |  | 2026-10-17T07:36:01.293Z |  |
 | 32 | quick-261017-mad | deviation | tests/tui/test_snapshots.py | 944 | test_monitor_running_golden load-timing flake (pre-existing, observed once at the 261017-mad pre-task baseline): the SVG terminal-id is an adler32 hash over every rendered segment, and one full-suite run under load rendered one differing segment; identical rerun green, module green 11/11 in isolation, all fixture data frozen — root cause a load-dependent refresh artifact at export time, not reproduced by 261017-mad changes | open |  | 2026-10-17T08:50:31.381Z |  |
+| 33 | quick-261017-mad-followup | unmet-truth | tui/services/run_config.py |  | Storage-overview ✗ semantics for lazily-created dirs: the cache_dir row renders the same red ✗ as a missing model/dataset root, but a nonexistent cache dir is the healthy never-written-yet state (HF creates it on first use) — misleading failure signal; consider a neutral glyph or an on-demand note for the cache row | open |  | 2026-10-17T09:02:07.464Z |  |
 
 ````json
 [
@@ -463,6 +464,19 @@ last_updated: 2026-10-17T08:50:31.381Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-17T08:50:31.381Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
+  },
+  {
+    "id": 33,
+    "kind": "unmet-truth",
+    "phase": "quick-261017-mad-followup",
+    "file": "tui/services/run_config.py",
+    "line": null,
+    "description": "Storage-overview ✗ semantics for lazily-created dirs: the cache_dir row renders the same red ✗ as a missing model/dataset root, but a nonexistent cache dir is the healthy never-written-yet state (HF creates it on first use) — misleading failure signal; consider a neutral glyph or an on-demand note for the cache row",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T09:02:07.464Z",
     "resolved_at": null,
     "milestone": "v1.2"
   }
