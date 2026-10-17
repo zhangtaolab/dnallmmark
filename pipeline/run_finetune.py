@@ -152,8 +152,14 @@ def parse_args():
     parser.add_argument(
         "--gpu_memory",
         type=float,
-        default=None,
-        help="Override GPU memory in GB (useful for multi-GPU or incorrect detection)"
+        default=48.0,
+        help=("GPU memory in GB fed to the auto batch-size estimator "
+              "(default 48 — a deliberately optimistic figure that lifts "
+              "micro-batch sizes above the estimator's conservative "
+              "model-overhead floor; CUDA OOM is caught by the --mem_ratio "
+              "auto-fallback. Cards under 24 GB should pass their real "
+              "value, since the 0.50 ratio floor on a 48 GB figure still "
+              "overstates them.)")
     )
 
     parser.add_argument(

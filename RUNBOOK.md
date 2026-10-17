@@ -39,7 +39,7 @@ ls finetuned/DNABERT-2-117M*/                 # 产出目录
 - evo2 系列自动跳过 probe（suite 硬性不支持）
 - 耗时参考（RTX 5090 32G）：DNABERT-2 全程约 3-5 天；PlantHelixSeek 约 30-40 天（慢 10 倍，慎排）
 
-### 2.1 显存策略（2026-10-17 更新，实测验证）
+### 2.1 显存策略（2026-10-17 更新，实测验证；2026-10-18 gpu_memory 默认 48）
 
 `run_finetune.py` 默认 `--mem_ratio` 已从 0.70 **改为 0.95**，并新增 **OOM 自动降级**：
 训练/评估/Trainer 构造中发生 CUDA OOM 时，活动 mem_ratio 自动以 **0.05 步进下降**（下限 0.50），
@@ -51,6 +51,12 @@ ls finetuned/DNABERT-2-117M*/                 # 产出目录
 - mem_ratio 0.80 → batch 7×2，9.4 样本/s
 - mem_ratio 0.95 → batch 11×1，**10.0 样本/s（+47%）**，GPU 利用率 57%，实测显存 28.9/32GB
 - 强制 OOM 测试（`--gpu_memory 40` 谎报显存）：batch16→OOM→0.90→OOM→0.85→OOM→0.80→batch13 训练成功，重试周转秒级
+
+**`--gpu_memory` 默认 48（2026-10-18，用户指令）**：估算器的固定开销模型对大模型（如 evo2 1B）偏保守，
+按真实显存检测会把这些模型压到 micro-batch 1（kernel-launch 瓶颈）。默认 48 让估算器给出更大的 micro-batch，
+实测 evo2_1b_base / GUE__emp_H3（len 502）：真实检测→batch 1（~31 分钟/cell）vs 默认 48→batch 7-9（~10-15 分钟/cell，**~3×**），
+test accuracy 0.806/0.819/0.822 统计等价；OOM 由 mem_ratio 自动降级兜底（48 下限 0.50×48=24G）。
+⚠️ **显存 <24G 的卡**请显式传真实 `--gpu_memory`（默认 48 的降级下限仍会超出物理显存导致触底失败）。
 
 多卡 torchrun 约定（2026-10-17 加固，本机单卡未实测）：
 - error_log 按 rank 分流：rank 0 独占 `{模型}_error_log.txt`（验收产物），非零 rank 写 `{模型}_error_log_rank{N}.txt`
