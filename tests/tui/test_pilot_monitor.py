@@ -2942,3 +2942,41 @@ async def test_sweep_launched_records_via_session_lands_on_fresh_screen():
         assert screen._expected_totals.get("/scans/launched-root") == 5, (
             "the fresh screen reads the expected total from the session"
         )
+
+
+async def test_kill_confirm_uppercase_twins_match_lowercase():
+    """261018-08g (SOAK-2/F3): the kill confirm's copy advertises [Y]/
+    [N] — uppercase Y must fire the kill callback exactly like y (the
+    console never exits), uppercase N must cancel exactly like n. On
+    HEAD the uppercase presses were inert (the soak read the modal as a
+    dead console)."""
+    from tui.screens.monitor import KillConfirmModal
+
+    launcher = FakeMonitorLauncher(live=("/scans/finetuned",))
+    app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        app.screen.attach("/scans/finetuned")
+        await _settle(pilot, app)
+
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal)
+        # uppercase N cancels, nothing signalled
+        await pilot.press("N")
+        await pilot.pause()
+        assert isinstance(app.screen, MonitorScreen), (
+            "uppercase N must cancel the kill confirm (the copy says [N])"
+        )
+        assert launcher.kill_calls == []
+
+        # uppercase Y fires the confirm callback — the console stays up
+        await pilot.press("k")
+        await pilot.pause()
+        assert isinstance(app.screen, KillConfirmModal)
+        await pilot.press("Y")
+        await _settle(pilot, app)
+        assert launcher.kill_calls == ["/scans/finetuned"], (
+            "uppercase Y dispatched the kill exactly like y"
+        )
+        assert not app._exit, "uppercase Y kills the sweep, never the console"

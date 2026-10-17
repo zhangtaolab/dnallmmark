@@ -1258,6 +1258,15 @@ class LaunchConfirmModal(ConfirmModal):
         # inherited enter->no-op are byte-unchanged).
         Binding("y", "confirm_launch", S.LNC_GATE_CONFIRM_YES, show=True),
         Binding("n", "dismiss", S.LNC_EXIT_CONFIRM_NO, show=True),
+        # 261018-08g (SOAK-2/F3): the UPPERCASE twins — the displayed
+        # copy advertises [Y]/[N] keycaps, and uppercase presses were
+        # inert (the soak read the modal as a dead console). Twins
+        # route to the SAME actions as the lowercase originals with
+        # show=False (zero Footer/golden churn); this base serves BOTH
+        # launch surfaces — the slot-4 gate (_GateConfirmModal) and the
+        # monitor's [f] re-run — one edit covers each.
+        Binding("Y", "confirm_launch", show=False),
+        Binding("N", "dismiss", show=False),
     ]
 
     def compose(self) -> ComposeResult:

@@ -694,6 +694,17 @@ class E2PhraseModal(_PickerReturnModal):
         Binding("enter", "confirm_phrase", show=False),
         Binding("y", "confirm_phrase_y", show=False),
         Binding("n", "dismiss", show=False),
+        # 261018-08g (SOAK-2/F3): the UPPERCASE twins — the matched
+        # indicator's armed copy advertises [Y]/[N], and an uppercase
+        # habit press was inert (the soak read the modal as dead). The
+        # armed gate lives INSIDE the action (the ``_matched`` check),
+        # so uppercase confirms exactly when lowercase does — only in
+        # the armed-after-phrase state; the EHC y-only-confirm ruling
+        # is preserved (Y is still the only confirm family). show=False
+        # like their originals — this modal renders no keycap Footer
+        # rows for y/n by design (the 261017-dnr armed-state ruling).
+        Binding("Y", "confirm_phrase_y", show=False),
+        Binding("N", "dismiss", show=False),
         Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 

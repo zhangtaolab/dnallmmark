@@ -618,6 +618,14 @@ class KillConfirmModal(ConfirmModal):
         # ONLY key that stops a training, keys/actions byte-unchanged).
         Binding("y", "confirm_kill", S.MON_KILL_KEYCAP, show=True),
         Binding("n", "dismiss", S.LNC_EXIT_CONFIRM_NO, show=True),
+        # 261018-08g (SOAK-2/F3): the UPPERCASE twins — the displayed
+        # copy advertises [Y]/[N], and uppercase presses were inert
+        # (the soak read the modal as a dead console). Twins route to
+        # the SAME actions as the lowercase originals with show=False
+        # (zero Footer/golden churn); y stays the ONLY family that
+        # stops a training, uppercase included (EHC-2 preserved).
+        Binding("Y", "confirm_kill", show=False),
+        Binding("N", "dismiss", show=False),
         # escape inherited from ConfirmModal
     ]
 

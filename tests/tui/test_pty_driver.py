@@ -56,12 +56,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 _MONITOR_MARKER = "Scan: frontier"        # MON_SCAN_NOTE (title bar)
 _ENV_MARKER = "version pins"             # env-check row 0
 _RUNCONFIG_MARKER = "Run Config"         # slot-4 screen title
+_QUIT_MARKER = "Quit the console?"       # LNC_EXIT_CONFIRM
 _GATE_REFUSAL_MARKER = "preview validation failed"  # CFG_PREVIEW_PROBLEMS
 
 # Bounded windows (generous over the probe-pinned timings: boot ~0.25s,
 # nav repaints 0.05-0.16s, quit exit 0.30s, gate refusal ~1.5s).
 _BOOT_TIMEOUT = 45.0
 _NAV_TIMEOUT = 12.0
+_QUIT_TIMEOUT = 15.0
 _GATE_TIMEOUT = 12.0
 
 
@@ -126,6 +128,45 @@ def test_monitor_renav_renders_every_visit(tmp_path):
         child.expect(_ENV_MARKER, timeout=_NAV_TIMEOUT)
         child.send("5")
         child.expect(_MONITOR_MARKER, timeout=_NAV_TIMEOUT)
+    finally:
+        child.close(force=True)
+
+
+def test_quit_confirm_uppercase_y_exits(tmp_path):
+    """SOAK-2/F3 — the uppercase quit trap: the quit modal advertises
+    [Y] quit / [N] cancel; uppercase Y must exit exactly like lowercase
+    y did (0.30s in the soak). On HEAD the process stayed alive with
+    the modal up — read as a dead console."""
+    child = _spawn_tui(tmp_path)
+    try:
+        _boot(child)
+        child.send("q")
+        child.expect(_QUIT_MARKER, timeout=_NAV_TIMEOUT)
+        child.send("Y")
+        child.expect(pexpect.EOF, timeout=_QUIT_TIMEOUT)
+    finally:
+        child.close(force=True)
+
+
+def test_quit_confirm_esc_dismisses_within_bounded_window(tmp_path):
+    """SOAK-2/F3, the Esc leg — textual 8.2.8's parser holds a lone ESC
+    for ESCDELAY before flushing it as the escape key. Measured at
+    execution time (2026-10-18, clean 40x120 pty, quit modal): dismissal
+    repaint in 0.16-0.26s at the DEFAULT ESCDELAY, IDENTICAL at 30ms and
+    10ms — ESCDELAY has no measurable effect on the dismissal latency in
+    a clean session, so no env mitigation landed (the WINDOWS disposition
+    records the soak's 1.5-4s observation as non-reproducing, plausibly
+    the same degraded-render family as F1). This test pins the honest
+    behavior with a GENEROUS window (the 12s nav bound): a lone ESC
+    dismisses the modal and the screen beneath repaints."""
+    child = _spawn_tui(tmp_path)
+    try:
+        _boot(child)
+        child.send("q")
+        child.expect(_QUIT_MARKER, timeout=_NAV_TIMEOUT)
+        child.send("\x1b")  # a lone ESC
+        # the dismissal repaint: the env screen's rows come back
+        child.expect(_ENV_MARKER, timeout=_NAV_TIMEOUT)
     finally:
         child.close(force=True)
 

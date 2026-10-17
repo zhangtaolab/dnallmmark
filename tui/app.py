@@ -313,6 +313,15 @@ class QuitConfirmModal(ModalScreen):
         # never advertised.
         Binding("y", "confirm_quit", S.LNC_EXIT_CONFIRM_YES, show=True),
         Binding("n", "dismiss", S.LNC_EXIT_CONFIRM_NO, show=True),
+        # 261018-08g (SOAK-2/F3): the UPPERCASE twins — the displayed
+        # copy advertises [Y] quit / [N] cancel, and an operator
+        # following the keycaps letter-for-letter hit inert keys (the
+        # soak: uppercase Y left the process alive with the modal up —
+        # read as a dead console). Twins route to the SAME actions as
+        # the lowercase originals and carry show=False so every
+        # Footer/golden surface stays byte-identical.
+        Binding("Y", "confirm_quit", show=False),
+        Binding("N", "dismiss", show=False),
         Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
         Binding("enter", "enter_inert", show=False),
     ]

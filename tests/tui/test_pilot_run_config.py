@@ -3832,3 +3832,113 @@ async def test_gate_hint_line_renders_below_preview():
                 < ordered.index("cfg-gate-hint")), (
             "the hint sits immediately after the preview line"
         )
+
+
+async def test_quit_confirm_uppercase_twins_match_lowercase():
+    """261018-08g (SOAK-2/F3): the quit modal's copy advertises [Y]/[N]
+    — the UPPERCASE twins must behave exactly like y/n (on HEAD an
+    uppercase press left the process alive with the modal up, read as a
+    dead console). Y quits; N cancels back to the screen."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        from tui.app import QuitConfirmModal
+
+        assert isinstance(app.screen, QuitConfirmModal)
+        # uppercase N dismisses exactly like n
+        await pilot.press("N")
+        await pilot.pause()
+        assert isinstance(app.screen, RunConfigScreen), (
+            "uppercase N must cancel the quit confirm (the copy says [N])"
+        )
+        assert not app._exit, "uppercase N must never quit"
+
+        # uppercase Y confirms exactly like y
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, QuitConfirmModal)
+        await pilot.press("Y")
+        await pilot.pause()
+        assert app._exit, "uppercase Y must confirm the quit (the copy says [Y])"
+
+
+async def test_gate_confirm_and_e2_uppercase_twins_match_lowercase():
+    """261018-08g (SOAK-2/F3): the launch-confirm family's uppercase
+    twins — the gate's Y behaves exactly like y (launches), and the
+    E2PhraseModal's Y behaves exactly like y on BOTH states: inert
+    while the phrase input is un-armed (a mismatch never launches) and
+    confirm-carrying-the-phrase once armed (the armed gate lives inside
+    the action — the EHC y-only-confirm ruling preserved, uppercase
+    included)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=1, tasks=1, seeds=3, cells=3,
+        output_root="./finetuned", is_e2x=False,
+        expected_phrase="finetuned"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")   # the gate
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.selection import ConfirmModal
+
+        assert isinstance(app.screen, ConfirmModal)
+        await pilot.press("Y")   # the UPPERCASE twin of y
+        await _settle(pilot, app, rounds=4)
+        assert len(launcher.launch_calls) == 1, (
+            "uppercase Y confirms the launch exactly like y"
+        )
+        from tui.screens.monitor import MonitorScreen as _MonScreen
+
+        assert isinstance(app.screen, _MonScreen), (
+            "the confirmed launch auto-navigates to the monitor (D-13)"
+        )
+
+    # the E2' leg: unarmed Y is inert; armed Y confirms with the phrase
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=62, tasks=50, seeds=3, cells=9300,
+        output_root="./finetuned", is_e2x=True,
+        expected_phrase="finetuned"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from textual.widgets import Input as TextInput
+
+        from tui.screens.run_config import E2PhraseModal
+
+        assert isinstance(app.screen, E2PhraseModal)
+        # UNARMED (a mismatch phrase): uppercase Y must never launch
+        for char in "wrong":
+            await pilot.press(char)
+        await pilot.pause()
+        await pilot.press("Y")
+        await _settle(pilot, app, rounds=3)
+        assert launcher.launch_calls == [], (
+            "unarmed uppercase Y is inert exactly like unarmed y"
+        )
+        assert isinstance(app.screen, E2PhraseModal)
+        # ARMED: the exact phrase + matched enter blur the input, then
+        # uppercase Y confirms carrying the phrase
+        e2_input = app.screen.query_one("#cfg-e2-input", TextInput)
+        e2_input.value = ""
+        await pilot.pause()
+        for char in "finetuned":
+            await pilot.press(char)
+        await pilot.pause()
+        await pilot.press("enter")   # the advance (blur -> armed)
+        await _settle(pilot, app, rounds=3)
+        assert app.focused is not e2_input, "the armed state is reached"
+        await pilot.press("Y")
+        await _settle(pilot, app, rounds=3)
+        assert len(launcher.launch_calls) == 1, (
+            "armed uppercase Y confirms exactly like armed y"
+        )
+        _spec, phrase = launcher.launch_calls[0]
+        assert phrase == "finetuned", (
+            "the uppercase confirm carries the typed phrase"
+        )

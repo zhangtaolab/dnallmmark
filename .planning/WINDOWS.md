@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 23
+open_count: 24
 waived_count: 0
 fixed_count: 12
-total_count: 35
-last_updated: 2026-10-17T14:57:36.000Z
+total_count: 36
+last_updated: 2026-10-17T16:49:25.824Z
 ---
 
 # Broken Windows Ledger
@@ -50,6 +50,7 @@ last_updated: 2026-10-17T14:57:36.000Z
 | 33 | quick-261017-mad-followup | unmet-truth | tui/services/run_config.py |  | Storage-overview ✗ semantics for lazily-created dirs: the cache_dir row renders the same red ✗ as a missing model/dataset root, but a nonexistent cache dir is the healthy never-written-yet state (HF creates it on first use) — misleading failure signal; consider a neutral glyph or an on-demand note for the cache row | open |  | 2026-10-17T09:02:07.464Z |  |
 | 34 | quick-261017-feedback | unmet-truth | tui/screens/monitor.py |  | Monitor status conflation: interrupted cells (dir + no trainer_state marker + no live process) render the same 运行/running state as genuinely-running cells — maintainer hit it reading finetuned-smoke history (PlantHelixSeek 10-16 kill + dnamamba 10-15 interruption both show ⠋ 运行). Needs a three-state derivation (done / running-with-live-process / interrupted) or at least a distinct interrupted glyph | fixed | 261017-uwr: the three-state derivation landed (live-matrix evidence via argv_matrix/probe + CELL_INTERRUPTED ⏸ glyph + live-on-top ordering + context header); the PlantHelixSeek/dnamamba residue now derives interrupted | 2026-10-17T14:12:12.091Z | 2026-10-17T14:57:36.000Z |
 | 35 | quick-261017-uwr | deviation | tests/tui/__snapshots__/monitor_running.svg |  | monitor_running.svg AND monitor_empty.svg regenerated (context header row + ⏵/⏸ glyphs + live-on-top ordering; the empty golden = the one-row header shift, id-hash + row shift only) via make snapshot-update, deliberately UNCOMMITTED pending the maintainer's D-03 review — the committed tree fails test_snapshots on exactly these two until they land (all 7 non-monitor SVGs sha256-identical) | open |  | 2026-10-17T14:57:36.000Z |  |
+| 36 | quick-261018-08g | deviation | tui/__main__.py |  | Esc-lag disposition (SOAK-2/F3 leg): the soak read lone-ESC modal dismissal as dead (modal up 1.5-4s); execution-time measurement in a clean 40x120 pty shows dismissal in 0.16-0.26s at the DEFAULT ESCDELAY and IDENTICAL at 30ms/10ms — ESCDELAY has no measurable effect, so no env mitigation landed in __main__.py (the plan's measure-first mandate); the soak's lag plausibly rode the same degraded-render family as F1 (now fixed); the pty lane pins esc-dismiss within a generous window, y/n remain the instant keys | open |  | 2026-10-17T16:49:25.824Z |  |
 
 ````json
 [
@@ -505,6 +506,19 @@ last_updated: 2026-10-17T14:57:36.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-17T14:57:36.000Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
+  },
+  {
+    "id": 36,
+    "kind": "deviation",
+    "phase": "quick-261018-08g",
+    "file": "tui/__main__.py",
+    "line": null,
+    "description": "Esc-lag disposition (SOAK-2/F3 leg): the soak read lone-ESC modal dismissal as dead (modal up 1.5-4s); execution-time measurement in a clean 40x120 pty shows dismissal in 0.16-0.26s at the DEFAULT ESCDELAY and IDENTICAL at 30ms/10ms — ESCDELAY has no measurable effect, so no env mitigation landed in __main__.py (the plan's measure-first mandate); the soak's lag plausibly rode the same degraded-render family as F1 (now fixed); the pty lane pins esc-dismiss within a generous window, y/n remain the instant keys",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T16:49:25.824Z",
     "resolved_at": null,
     "milestone": "v1.2"
   }
