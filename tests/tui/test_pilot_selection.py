@@ -1202,12 +1202,13 @@ async def test_help_modal_opens_on_the_selection_screen():
         # (the slot split — slot 2 is models only); the d row is the
         # MODEL download since the same split. The ctrl+q/ctrl+c rows
         # joined at 261016-v0z (after the app bindings: the declared
-        # ctrl+q mirror + the audited notify-only ctrl+c hint); the Q
-        # any-focus exit row joined at 261016-vxr (after ctrl+c).
+        # ctrl+q mirror + the ctrl+c row). 261017-cdr: ctrl+c is now
+        # the any-focus primary exit (the on_event intercept) and the
+        # 261016-vxr Q row is RETIRED with its intercept — Q is a plain
+        # typing letter again.
         from tui.strings import (
             APP_CTRLC_LABEL,
             APP_CTRLQ_LABEL,
-            APP_Q_LABEL,
         )
 
         assert rows == [
@@ -1216,7 +1217,6 @@ async def test_help_modal_opens_on_the_selection_screen():
             APP_HELP_ROW.format(key="L", label=APP_LANGUAGE_TOGGLE_LABEL),
             APP_HELP_ROW.format(key="ctrl+q", label=APP_CTRLQ_LABEL),
             APP_HELP_ROW.format(key="ctrl+c", label=APP_CTRLC_LABEL),
-            APP_HELP_ROW.format(key="Q", label=APP_Q_LABEL),
             APP_HELP_ROW.format(key="space", label=SEL_MARK_LABEL),
             APP_HELP_ROW.format(key="t", label=SEL_POOL_TOGGLE_LABEL),
             APP_HELP_ROW.format(key="p", label=SEL_PRESET_LABEL),

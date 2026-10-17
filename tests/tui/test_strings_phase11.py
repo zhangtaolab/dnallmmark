@@ -79,7 +79,11 @@ EXPECTED_LNC_CONSTANTS = (
     "LNC_EXIT_MESSAGE", "LNC_EXIT_MESSAGE_MULTI",
     # 261016-v0z: the no-sweep quit-confirm row (the [Y]/[N] pair
     # mirrors LNC_GATE_CONFIRM — y the only confirm key, enter inert).
+    # 261017-cdr (CDR-3): the YES/NO Footer-keycap pair beside it —
+    # visible y/n answer keys on the modal (identical registry pairs
+    # already exist, injectivity-safe).
     "LNC_EXIT_CONFIRM",
+    "LNC_EXIT_CONFIRM_YES", "LNC_EXIT_CONFIRM_NO",
 )
 
 #: The complete expected MON_ inventory (screen chrome + cadence note,

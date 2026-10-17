@@ -2535,11 +2535,13 @@ async def test_kill_runs_off_the_event_loop_console_stays_responsive():
 
 
 async def test_monitor_help_lists_the_kill_row():
-    """VXR-2/VXR-3: the ? help modal over the monitor carries the k row
-    (the BINDINGS projection — the keycap joins after the [r] rescan)
-    and the app-level Q row."""
+    """VXR-2/261017-cdr: the ? help modal over the monitor carries the k
+    row (the BINDINGS projection — the keycap joins after the [r]
+    rescan); the 261016-vxr app-level Q row is RETIRED with its
+    intercept (Q is a plain typing letter again — ctrl+c is the
+    any-focus exit now)."""
     from tui.app import HelpModal
-    from tui.strings import APP_HELP_ROW, APP_Q_LABEL, MON_KILL_KEYCAP
+    from tui.strings import APP_HELP_ROW, MON_KILL_KEYCAP
 
     app = _app(monitor=FakeMonitorService(scans=[_three_state_scan()]))
     async with app.run_test(size=(120, 40)) as pilot:
@@ -2551,6 +2553,6 @@ async def test_monitor_help_lists_the_kill_row():
         assert APP_HELP_ROW.format(key="k", label=MON_KILL_KEYCAP) in rows, (
             "the slot-5 kill keycap lists in the monitor help"
         )
-        assert APP_HELP_ROW.format(key="Q", label=APP_Q_LABEL) in rows, (
-            "the any-focus Q exit row lists in the monitor help"
+        assert not any(row.startswith("[Q]") for row in rows), (
+            "the retired any-focus Q row must not list"
         )

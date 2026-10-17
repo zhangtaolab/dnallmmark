@@ -1654,27 +1654,6 @@ async def test_q_and_ctrlq_below_min_grid_never_exit():
         assert isinstance(app.screen, MinSizeScreen)
 
 
-async def test_ctrlc_never_exits_or_opens_modal():
-    """The audit pin (probe P5): ctrl+c is textual 8.2.8's help_quit —
-    it scans active_bindings and NOTIFIES which key quits; it never
-    exits and never opens a screen. Preserved verbatim."""
-    launcher = FakeLauncherService(live=("/repo/finetuned",))
-    app = _app(launcher=launcher)
-    async with app.run_test(size=(120, 40)) as pilot:
-        await _open_run_config(pilot, app)
-        before = app.screen
-        await pilot.press("ctrl+c")
-        await pilot.pause()
-        assert not app._exit, "ctrl+c must never exit the console"
-        assert app.screen is before, "ctrl+c must open no screen"
-        from tui.app import ExitModal
-        from tui.screens.selection import ConfirmModal
-
-        assert not any(isinstance(screen, (ExitModal, ConfirmModal))
-                       for screen in app.screen_stack), (
-            "ctrl+c must never push an exit or confirm modal")
-
-
 async def test_q_with_live_sweep_pushes_exit_modal():
     """A live sweep intercepts q: the ExitModal with the D-06 triple."""
     launcher = FakeLauncherService(live=("/repo/finetuned",))
@@ -1794,12 +1773,42 @@ async def test_exit_modal_multi_root_enter_detaches_every_live_sweep():
         assert app._exit, "detach-then-quit initiates the exit"
 
 
-async def test_q_uppercase_quits_from_focused_input_never_types():
-    """VXR-3 (the maintainer's 2026-10-16 live-session trap): uppercase Q
-    fires the guarded quit chain even while an Input holds focus — and
-    the key is CONSUMED: never typed into the Input (the on_event
-    intercept; a printable priority Binding cannot do this). y then
-    confirms the quit the Q opened."""
+async def test_q_uppercase_is_a_plain_typing_letter_again():
+    """CDR-1 (261017-cdr): the 261016-vxr uppercase-Q intercept is FULLY
+    withdrawn — a capital Q is a PLAIN TYPING LETTER again everywhere.
+    Over a focused base-screen Input it TYPES (the select_on_focus
+    replace semantics the lowercase-q pin documents), opens no modal
+    anywhere in the stack, and never exits (ctrl+c took over the
+    any-focus exit role per CDR-2)."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        seeds_input = app.screen.query_one("#cfg-input-seeds", Input)
+        seeds_input.focus()
+        await pilot.pause()
+        await pilot.press("Q")
+        await pilot.pause()
+        # select_on_focus: the focused Input's content is selected, so
+        # the typed Q REPLACES it — the standard replace-typing shape
+        assert seeds_input.value == "Q", (
+            "a capital Q must TYPE into the focused base-screen Input"
+        )
+        assert isinstance(app.screen, RunConfigScreen), (
+            "a capital Q opens no modal on a base screen"
+        )
+        assert not any(screen.is_modal for screen in app.screen_stack), (
+            "no modal anywhere in the stack — Q is not an exit key anymore"
+        )
+        assert not app._exit, "a capital Q never exits"
+
+
+async def test_ctrlc_no_sweep_opens_quit_confirm_over_focused_input():
+    """CDR-2 (the 2026-10-17 maintainer revision): ctrl+c is the
+    any-focus primary exit — over a focused base-screen Input it opens
+    the QuitConfirmModal through the v0z chain (no live sweep), the
+    Input value is UNCHANGED (ctrl combos never type), and y confirms
+    the quit the ctrl+c opened. The inherited textual 8.2.8 help_quit
+    notify-only default is shadowed on base screens by the intercept."""
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_run_config(pilot, app)
@@ -1809,23 +1818,29 @@ async def test_q_uppercase_quits_from_focused_input_never_types():
         seeds_input.focus()
         await pilot.pause()
         value_before = seeds_input.value
-        await pilot.press("Q")
+        await pilot.press("ctrl+c")
         await pilot.pause()
         assert isinstance(app.screen, QuitConfirmModal), (
-            "Q must fire the quit chain over a focused Input"
+            "ctrl+c must fire the quit chain over a focused Input"
         )
-        assert not app._exit, "Q alone never quits — the chain confirms"
+        assert not app._exit, "ctrl+c alone never quits — the chain confirms"
         assert seeds_input.value == value_before, (
-            "the Q keypress is consumed — never typed into the Input"
+            "the ctrl+c keypress is consumed — never typed into the Input"
         )
         await pilot.press("y")
         await pilot.pause()
-        assert app._exit, "y confirms the quit the Q opened"
+        assert app._exit, "y confirms the quit the ctrl+c opened"
 
 
-async def test_q_uppercase_live_sweep_routes_to_exit_modal():
-    """VXR-3: with a live sweep, Q from a focused Input routes to the
-    ExitModal (the v0z live leg) — input unchanged, never exited."""
+async def test_ctrlc_live_sweep_routes_to_exit_modal_over_focused_input():
+    """CDR-2: with a live sweep, ctrl+c from a focused Input routes to
+    the ExitModal (the v0z live leg) — input unchanged, never exited.
+
+    This REWRITES the 261016-v0z ctrl+c audit pin (the deleted
+    ``test_ctrlc_never_exits_or_opens_modal``): the inherited help_quit
+    default is now intercepted on base screens and chain-cut under
+    modals, so its old no-screen/no-exit assertions are false — the
+    no-sweep truth survives inside the primary-leg test above."""
     launcher = FakeLauncherService(live=("/repo/finetuned",))
     app = _app(launcher=launcher)
     async with app.run_test(size=(120, 40)) as pilot:
@@ -1836,13 +1851,13 @@ async def test_q_uppercase_live_sweep_routes_to_exit_modal():
         seeds_input.focus()
         await pilot.pause()
         value_before = seeds_input.value
-        await pilot.press("Q")
+        await pilot.press("ctrl+c")
         await pilot.pause()
         assert isinstance(app.screen, ExitModal), (
-            "Q over a focused Input routes through the live-sweep leg"
+            "ctrl+c over a focused Input routes through the live-sweep leg"
         )
         assert not app._exit
-        assert seeds_input.value == value_before, "Q never types"
+        assert seeds_input.value == value_before, "ctrl+c never types"
 
 
 async def test_q_lowercase_still_types_into_inputs():
@@ -1867,36 +1882,49 @@ async def test_q_lowercase_still_types_into_inputs():
         )
 
 
-async def test_q_uppercase_inert_under_modals_types_in_modal_inputs():
-    """VXR-3 modal guard: Q under the QuitConfirmModal neither quits nor
-    stacks a second modal; Q under an Input-bearing modal TYPES the
-    character (an E2' phrase or path containing a capital Q stays
-    enterable — modals are exempt from the intercept)."""
+async def test_ctrlc_inert_under_modals_never_stacks():
+    """CDR-2 modal guard: ctrl+c under ANY open modal is inert — the
+    intercept's not-modal guard delegates to the modal-cut binding
+    chain, where the inherited non-priority help_quit default is
+    chain-cut. No exit, no second modal, nothing typed (ctrl combos
+    never type); a capital Q stays typeable inside modal Inputs (the
+    E2' phrase rationale, now true by default and pinned)."""
     app = _app()
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_run_config(pilot, app)
         from tui.app import QuitConfirmModal
         from tui.screens.selection import PathInputModal
 
+        # (a) under the QuitConfirmModal: exactly one, never a second
         await pilot.press("q")   # no live sweep -> the quit confirm
         await pilot.pause()
         assert isinstance(app.screen, QuitConfirmModal)
-        await pilot.press("Q")
+        await pilot.press("ctrl+c")
         await pilot.pause()
         assert sum(isinstance(screen, QuitConfirmModal)
                    for screen in app.screen_stack) == 1, (
-            "Q under a modal must never stack a second one"
+            "ctrl+c under a modal must never stack a second one"
         )
-        assert not app._exit, "Q under a modal never quits"
+        assert not app._exit, "ctrl+c under a modal never quits"
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, RunConfigScreen)
 
-        # an Input-bearing modal top: the Q TYPES, never quits
+        # (c)/(d) an Input-bearing modal top: nothing pushed, nothing
+        # typed — and a capital Q still TYPES there
         app.push_screen(PathInputModal(
             "title", "placeholder", on_submit=lambda _path: None))
         await pilot.pause()
         path_input = app.screen.query_one("#path-input", Input)
+        value_before = path_input.value
+        await pilot.press("ctrl+c")
+        await pilot.pause()
+        assert not any(isinstance(screen, QuitConfirmModal)
+                       for screen in app.screen_stack), (
+            "ctrl+c under an input modal pushes no exit surface"
+        )
+        assert not app._exit
+        assert path_input.value == value_before, "ctrl+c never types"
         await pilot.press("Q")
         await pilot.pause()
         assert path_input.value == "Q", (
@@ -1907,11 +1935,75 @@ async def test_q_uppercase_inert_under_modals_types_in_modal_inputs():
         )
         assert not app._exit
 
+    # (b) the ExitModal twin, with a live sweep: exactly one
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        from tui.app import ExitModal
 
-async def test_q_uppercase_below_min_grid_never_exits():
-    """VXR-3: below 80x24, Q opens nothing and exits nothing — the
-    guarded chain's first leg is the WR-06 posture (no chrome over the
-    guard, never an unguarded exit), live sweep included."""
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, ExitModal)
+        await pilot.press("ctrl+c")
+        await pilot.pause()
+        assert sum(isinstance(screen, ExitModal)
+                   for screen in app.screen_stack) == 1, (
+            "ctrl+c under the ExitModal must never stack a second one"
+        )
+        assert not app._exit, "ctrl+c under the ExitModal never quits"
+
+
+async def test_ctrlq_under_exit_modal_never_stacks_second():
+    """CDR-4 (the P9 stacking defect closed): the priority ctrl+q
+    binding fires over open modals (the full binding-chain walk), so a
+    ctrl+q pressed while an exit-family modal is top re-entered
+    action_quit and stacked a second exit modal. The action_quit guard
+    returns immediately when an ExitModal or QuitConfirmModal is top —
+    no key combination can push a second exit-family modal while one is
+    top (KillConfirmModal/E2PhraseModal deliberately out: quit over
+    them is new legitimate intent)."""
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        from tui.app import ExitModal
+
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, ExitModal)
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        assert sum(isinstance(screen, ExitModal)
+                   for screen in app.screen_stack) == 1, (
+            "ctrl+q under the ExitModal must never stack a second one"
+        )
+        assert not app._exit, "ctrl+q under the ExitModal never exits"
+
+    # the QuitConfirmModal twin: fresh app, no live sweep
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        from tui.app import QuitConfirmModal
+
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, QuitConfirmModal)
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        assert sum(isinstance(screen, QuitConfirmModal)
+                   for screen in app.screen_stack) == 1, (
+            "ctrl+q under the QuitConfirmModal must never stack a second"
+        )
+        assert not app._exit, "ctrl+q under the QuitConfirmModal never exits"
+
+
+async def test_ctrlc_below_min_grid_never_exits():
+    """CDR-2: below 80x24, ctrl+c opens nothing and exits nothing — the
+    intercept routes into action_quit whose first leg is the WR-06
+    posture (no chrome over the guard, never an unguarded exit), live
+    sweep included. Regression pin: passes before AND after (today the
+    notify-only help_quit default never opens anything either)."""
     from tui.app import ExitModal, MinSizeScreen
 
     launcher = FakeLauncherService(live=("/repo/finetuned",))
@@ -1921,9 +2013,9 @@ async def test_q_uppercase_below_min_grid_never_exits():
         await pilot.resize_terminal(60, 20)
         await pilot.pause()
         assert isinstance(app.screen, MinSizeScreen)
-        await pilot.press("Q")
+        await pilot.press("ctrl+c")
         await pilot.pause()
-        assert not app._exit, "Q below the min grid must never exit"
+        assert not app._exit, "ctrl+c below the min grid must never exit"
         assert not any(isinstance(screen, ExitModal)
                        for screen in app.screen_stack), (
             "no ExitModal may open over the min-size guard"
@@ -1931,6 +2023,80 @@ async def test_q_uppercase_below_min_grid_never_exits():
         assert isinstance(app.screen, MinSizeScreen), (
             "the guard stays the top screen"
         )
+
+
+async def test_quit_confirm_footer_shows_y_n_keycaps():
+    """CDR-3: the quit confirm's answer keys are visible at a glance —
+    the y/n bindings carry show=True with the live-language
+    LNC_EXIT_CONFIRM_YES/NO descriptions so the modal's Footer renders
+    the y/n keycaps beside esc; enter stays show=False (the inert
+    no-op is never advertised). QuitConfirmModal is in the L-toggle
+    remap registry, so the keycaps re-derive on language switch."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        from textual.widgets import Footer as FooterWidget
+
+        from tui.app import QuitConfirmModal
+        from tui.strings import LNC_EXIT_CONFIRM_NO, LNC_EXIT_CONFIRM_YES
+
+        assert isinstance(app.screen, QuitConfirmModal)
+        entries = {binding.key: binding
+                   for binding in QuitConfirmModal.BINDINGS}
+        assert entries["y"].show is True, (
+            "the y answer key must render in the Footer"
+        )
+        assert entries["y"].description == LNC_EXIT_CONFIRM_YES
+        assert entries["n"].show is True, (
+            "the n answer key must render in the Footer"
+        )
+        assert entries["n"].description == LNC_EXIT_CONFIRM_NO
+        assert entries["enter"].show is False, (
+            "the inert enter no-op is never advertised"
+        )
+        assert app.screen.query(FooterWidget), (
+            "the modal composes a Footer — the keycaps render"
+        )
+
+
+async def test_quit_confirm_message_bolds_y_n_tokens():
+    """CDR-3: the message's [Y]/[N] tokens are prominent — the message
+    Static's content is a rich Text (the Text API, never markup
+    strings: Text content is never markup-parsed, so the bracket tokens
+    stay literal) with a bold span covering every [Y] and [N]
+    occurrence; the plain value still carries LNC_EXIT_CONFIRM
+    byte-unchanged so every existing content assertion keeps passing."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        from tui.app import QuitConfirmModal
+        from tui.strings import LNC_EXIT_CONFIRM
+
+        assert isinstance(app.screen, QuitConfirmModal)
+        content = app.screen.query(Static)[0].content
+        assert isinstance(content, Text), (
+            "the message composes as a rich Text over the registry "
+            "constant — never a markup string"
+        )
+        plain = content.plain
+        assert LNC_EXIT_CONFIRM in plain, plain
+        for token in ("[Y]", "[N]"):
+            offset = plain.find(token)
+            assert offset != -1, f"the {token} token must be present"
+            while offset != -1:
+                start, end = offset, offset + len(token)
+                covered = any(span.start <= start and span.end >= end
+                              and str(span.style) == "bold"
+                              for span in content.spans)
+                assert covered, (
+                    f"the {token} at offset {offset} must carry a bold "
+                    "span (Text.highlight_words)"
+                )
+                offset = plain.find(token, end)
 
 
 async def test_peft_choice_radioset_flow():

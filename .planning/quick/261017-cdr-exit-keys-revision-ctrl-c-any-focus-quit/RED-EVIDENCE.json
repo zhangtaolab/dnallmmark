@@ -1,0 +1,51 @@
+{
+  "task": "261017-cdr Task 1 RED",
+  "committed_before": "88f4642",
+  "lanes": [
+    "tests/tui/test_pilot_run_config.py",
+    "tests/tui/test_strings_phase11.py",
+    "tests/tui/test_pilot_env_check.py",
+    "tests/tui/test_pilot_nav_shell.py",
+    "tests/tui/test_pilot_selection.py",
+    "tests/tui/test_pilot_monitor.py"
+  ],
+  "result": "12 failed / 213 passed",
+  "red_failures": {
+    "ctrl_c_chain_legs": [
+      "test_ctrlc_no_sweep_opens_quit_confirm_over_focused_input (planned: no modal opens today — the intercept is absent; the screen stays RunConfigScreen, proving the ctrl+c Key event is NOT swallowed by the focused Input, it reaches the app machinery where the inherited help_quit binding consumes it — the on_event seam will see it first)",
+      "test_ctrlc_live_sweep_routes_to_exit_modal_over_focused_input (same mechanism over the live-sweep leg)"
+    ],
+    "q_plain_letter_inversion": [
+      "test_q_uppercase_is_a_plain_typing_letter_again (planned: value stays '42,43,44' — the vxr Q intercept still consumes the key instead of typing)"
+    ],
+    "p9_stack_pins": [
+      "test_ctrlq_under_exit_modal_never_stacks_second (planned: assert 2 == 1 — the P9 stacking defect proven live; ctrl+q re-enters action_quit over the open ExitModal and QuitConfirmModal in both legs)"
+    ],
+    "keycap_and_bold_pins": [
+      "test_quit_confirm_footer_shows_y_n_keycaps (planned: ImportError — LNC_EXIT_CONFIRM_YES/LNC_EXIT_CONFIRM_NO undefined)",
+      "test_quit_confirm_message_bolds_y_n_tokens (planned: message content is a plain str, not a rich Text)"
+    ],
+    "inventory_pair": [
+      "test_cfg_lnc_mon_string_inventory_defined (planned: the two new LNC names missing)",
+      "test_cfg_lnc_mon_inventory_complete_no_unlisted_constants (planned: stale registrations)"
+    ],
+    "help_row_pins": [
+      "test_help_modal_lists_bindings_and_esc_closes (env_check; planned row mismatch — the Q row still lists)",
+      "test_env_help_modal_reflects_the_s_removal (nav_shell; planned row mismatch)",
+      "test_help_modal_opens_on_the_selection_screen (selection; planned row mismatch)",
+      "test_monitor_help_lists_the_kill_row (monitor; planned negative pin — the retired [Q] row still lists)"
+    ]
+  },
+  "green_regression_pins": [
+    "test_ctrlc_inert_under_modals_never_stacks (ctrl+c is already inert under every modal today: the QuitConfirmModal/ExitModal stack counts stay 1, the PathInputModal pushes nothing and never types, and a capital Q still types inside modal Inputs)",
+    "test_ctrlc_below_min_grid_never_exits (the notify-only help_quit default never opens anything below the grid; passes before AND after)",
+    "test_q_lowercase_still_types_into_inputs (byte-untouched)",
+    "every v0z exit test kept: test_q_with_no_live_sweep_opens_quit_confirm, test_quit_confirm_n_and_esc_cancel, test_ctrlq_with_live_sweep_routes_to_exit_modal, test_ctrlq_no_sweep_opens_quit_confirm, test_q_and_ctrlq_below_min_grid_never_exit, test_q_with_live_sweep_pushes_exit_modal, the ExitModal triple, and both multi-root tests",
+    "the deleted test: test_ctrlc_never_exits_or_opens_modal (the v0z audit pin — its no-screen/no-exit assertions are false after the revision; its no-sweep truth is absorbed into test_ctrlc_no_sweep_opens_quit_confirm_over_focused_input)"
+  ],
+  "golden_baseline_sha256_task1_start": {
+    "tests/tui/__snapshots__/monitor_empty.svg": "3bcc4dca3c7ed747fcd73ddd053b566039f88d8feaa50ab3f7e846ce53192473",
+    "tests/tui/__snapshots__/monitor_running.svg": "e4e803e8bbb8b3a2e6524bf8cb05347485765f27ef69303ebda20deb6531eaf1",
+    "tests/tui/__snapshots__/run_config.svg": "afa89e7e5452e15aebd4ac11584d794a9dd29d002ab9bc8d8b1e92d39ced8ef2"
+  }
+}
