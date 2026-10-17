@@ -88,6 +88,10 @@ EXPECTED_LNC_CONSTANTS = (
     # already exist, injectivity-safe).
     "LNC_EXIT_CONFIRM",
     "LNC_EXIT_CONFIRM_YES", "LNC_EXIT_CONFIRM_NO",
+    # 261017-dnr (DNR-4): the ExitModal enter/k Footer keycaps — wording
+    # lifted verbatim from the LNC_EXIT_MESSAGE copy (visibility only;
+    # no identical pairs existed, injectivity-safe).
+    "LNC_EXIT_DETACH_KEYCAP", "LNC_EXIT_KILL_KEYCAP",
 )
 
 #: The complete expected MON_ inventory (screen chrome + cadence note,

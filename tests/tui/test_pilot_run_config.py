@@ -1673,6 +1673,88 @@ async def test_q_with_live_sweep_pushes_exit_modal():
             done="—", total="—", root="finetuned") in message, message
 
 
+async def test_exit_modal_footer_shows_enter_k_keycaps():
+    """DNR-4 (261017-dnr): the ExitModal triple is visible at a glance —
+    enter/k bindings carry show=True with the new keycaps (wording
+    lifted verbatim from the LNC_EXIT_MESSAGE copy) and escape shows;
+    visibility only, enter stays the detach-and-exit default (the
+    Phase-11 design — the behavior tests below run unedited)."""
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        from textual.binding import Binding
+        from textual.widgets import Footer as FooterWidget
+
+        from tui.app import ExitModal
+        from tui.strings import (
+            LNC_EXIT_DETACH_KEYCAP,
+            LNC_EXIT_KILL_KEYCAP,
+        )
+
+        assert isinstance(app.screen, ExitModal)
+        entries = {binding.key: binding
+                   for binding in ExitModal.BINDINGS
+                   if isinstance(binding, Binding)}
+        assert entries["enter"].show is True, (
+            "the enter default must render in the Footer"
+        )
+        assert entries["enter"].description == LNC_EXIT_DETACH_KEYCAP
+        assert entries["enter"].action == "detach_quit", (
+            "visibility only — enter still detaches (Phase-11 default)"
+        )
+        assert entries["k"].show is True, (
+            "the k kill key must render in the Footer"
+        )
+        assert entries["k"].description == LNC_EXIT_KILL_KEYCAP
+        assert entries["k"].action == "kill_quit"
+        assert entries["escape"].show is True
+        assert app.screen.query(FooterWidget), (
+            "the modal composes a Footer — the keycaps render"
+        )
+
+
+async def test_exit_modal_message_bolds_triple_tokens():
+    """DNR-4 (261017-dnr): the exit message's [enter]/[k]/[esc] tokens
+    are prominent — the message Static's content is a rich Text with a
+    bold span over every triple-token occurrence while the plain value
+    still carries the formatted LNC_EXIT_MESSAGE byte-unchanged
+    (span-safe existing assertions)."""
+    launcher = FakeLauncherService(live=("/repo/finetuned",))
+    app = _app(launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("q")
+        await pilot.pause()
+        from tui.app import ExitModal
+        from tui.strings import LNC_EXIT_MESSAGE
+
+        assert isinstance(app.screen, ExitModal)
+        content = app.screen.query(Static)[0].content
+        assert isinstance(content, Text), (
+            "the message composes as a rich Text over the registry "
+            "constant — never a markup string"
+        )
+        plain = content.plain
+        assert LNC_EXIT_MESSAGE.format(
+            done="—", total="—", root="finetuned") in plain, plain
+        for token in ("[enter]", "[k]", "[esc]"):
+            offset = plain.find(token)
+            assert offset != -1, f"the {token} token must be present"
+            while offset != -1:
+                start, end = offset, offset + len(token)
+                covered = any(span.start <= start and span.end >= end
+                              and str(span.style) == "bold"
+                              for span in content.spans)
+                assert covered, (
+                    f"the {token} at offset {offset} must carry a bold "
+                    "span (Text.highlight_words)"
+                )
+                offset = plain.find(token, end)
+
+
 async def test_exit_enter_detaches_then_exits():
     """[enter] the default: detach recorded, exit initiated."""
     launcher = FakeLauncherService(live=("/repo/finetuned",))

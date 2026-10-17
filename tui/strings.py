@@ -1581,6 +1581,17 @@ LNC_EXIT_CONFIRM_YES = _t(
     "LNC_EXIT_CONFIRM_YES", "退出", "Quit")
 LNC_EXIT_CONFIRM_NO = _t(
     "LNC_EXIT_CONFIRM_NO", "取消", "Cancel")
+# 261017-dnr (DNR-4): the ExitModal Footer keycaps for the enter/k
+# action keys — the zh/en wording lifted VERBATIM from the
+# LNC_EXIT_MESSAGE / LNC_EXIT_MESSAGE_MULTI copy so the keycaps say
+# exactly what the message says (terminology already approved in the
+# message constants; visibility only — enter remains the detach-and-exit
+# default, the Phase-11 design). Verified: no identical pairs exist for
+# either (both injectivity tripwires stay green).
+LNC_EXIT_DETACH_KEYCAP = _t(
+    "LNC_EXIT_DETACH_KEYCAP", "分离退出", "detach & exit")
+LNC_EXIT_KILL_KEYCAP = _t(
+    "LNC_EXIT_KILL_KEYCAP", "终止后退出", "kill & exit")
 
 # ===== 任务监控 (MON_, Phase 11) =====
 # The slot-5 monitor screen chrome, the discovered-sweep pane, the cell

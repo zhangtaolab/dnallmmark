@@ -187,11 +187,27 @@ class ExitModal(ModalScreen):
     with the absent marker (the launcher carries no progress; the
     monitor's live counts land in 11-07; the multi-root form drops
     them — per-root counts from one attached root would mix sources).
+
+    The 261017-dnr affordance ruling (DNR-4): the Footer now ADVERTISES
+    the triple the copy names — enter/k render with keycaps lifted
+    verbatim from the message wording, and the message's
+    [enter]/[k]/[esc] tokens render bold (the cdr Rich-Text pattern).
+    Visibility only: enter's default fire is BY DESIGN from Phase 11
+    (detach-and-exit stays the advertised-and-real default; the
+    coordinator's keep-semantics ruling).
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("enter", "detach_quit", show=False),
-        Binding("k", "kill_quit", show=False),
+        # DNR-4 (261017-dnr): the triple is VISIBLE — enter/k carry
+        # show=True with keycaps whose wording is lifted VERBATIM from
+        # the LNC_EXIT_MESSAGE copy (they say exactly what the message
+        # says), so the three-key Footer matches the copy that already
+        # names them. Visibility only: enter remains the detach-and-exit
+        # DEFAULT (the Phase-11 design — the coordinator's keep-
+        # semantics ruling); key/action semantics byte-unchanged.
+        Binding("enter", "detach_quit", S.LNC_EXIT_DETACH_KEYCAP,
+                show=True),
+        Binding("k", "kill_quit", S.LNC_EXIT_KILL_KEYCAP, show=True),
         Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
     ]
 
@@ -204,8 +220,19 @@ class ExitModal(ModalScreen):
         self._message = message
 
     def compose(self) -> ComposeResult:
+        # DNR-4 (261017-dnr): the [enter]/[k]/[esc] tokens render BOLD
+        # via the Rich Text API (the 261017-cdr QuitConfirmModal
+        # pattern — Text content is never markup-parsed, so the literal
+        # bracket tokens stay literal; 'bold' is a Rich core style, no
+        # $token MissingStyle hazard on the Static path). highlight_words
+        # mutates the Text IN PLACE and returns the count (cdr-probed
+        # rich text.py:639 -> int) — never chained, two-step only. BOTH
+        # message forms (LNC_EXIT_MESSAGE / LNC_EXIT_MESSAGE_MULTI)
+        # carry the same triple tokens, so one tuple covers each render.
+        message = Text(self._message)
+        message.highlight_words(("[enter]", "[k]", "[esc]"), style="bold")
         with Vertical(id="exit-modal-box", classes="modal-box"):
-            yield Static(self._message)
+            yield Static(message)
             yield Footer()
 
     def on_mount(self) -> None:
