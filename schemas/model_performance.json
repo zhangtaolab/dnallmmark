@@ -119,7 +119,7 @@
             "spearman_r"
           ],
           "properties": {
-            "FLOPs": { "type": "number" },
+            "FLOPs": { "anyOf": [{ "type": "number" }, { "const": "" }] },
             "accuracy": { "anyOf": [{ "type": "number" }, { "const": "" }] },
             "auprc": { "anyOf": [{ "type": "number" }, { "const": "" }] },
             "auroc": { "anyOf": [{ "type": "number" }, { "const": "" }] },

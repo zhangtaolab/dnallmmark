@@ -10,13 +10,12 @@
         "context_len (bp)": 8192,
         "species": "multi-species",
         "huggingface": "",
-        "modelscope": "",
-        "path": "/root/autodl-tmp/labshare/zt/scratch/helixgen-43-staged"
+        "modelscope": ""
     },
     "performance": {
         "BEND__CpG_methylation": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "multilabel",
                 "labels": 7,
                 "train": 743095,
@@ -55,7 +54,7 @@
         },
         "Deep4mC_datasets__C.elegans_4mC": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 84927,
@@ -94,7 +93,7 @@
         },
         "Deep4mC_datasets__D.melanogaster_4mC": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 126467,
@@ -133,7 +132,7 @@
         },
         "Deep4mC_datasets__E.coli_4mC": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Microbe",
                 "type": "binary",
                 "labels": 2,
                 "train": 8682,
@@ -172,7 +171,7 @@
         },
         "GUE__EPI_GM12878": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Microbe",
                 "type": "binary",
                 "labels": 2,
                 "train": 10000,
@@ -211,7 +210,7 @@
         },
         "GUE__emp_H3": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Microbe",
                 "type": "binary",
                 "labels": 2,
                 "train": 11971,
@@ -250,7 +249,7 @@
         },
         "GUE__emp_H3K14ac": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Microbe",
                 "type": "binary",
                 "labels": 2,
                 "train": 26438,
@@ -289,7 +288,7 @@
         },
         "GUE__emp_H3K36me3": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Microbe",
                 "type": "binary",
                 "labels": 2,
                 "train": 27904,
@@ -328,7 +327,7 @@
         },
         "GUE__emp_H3K4me1": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Microbe",
                 "type": "binary",
                 "labels": 2,
                 "train": 25341,
@@ -367,7 +366,7 @@
         },
         "GUE__emp_H3K79me3": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Microbe",
                 "type": "binary",
                 "labels": 2,
                 "train": 23069,
@@ -406,7 +405,7 @@
         },
         "GUE__emp_H3K9ac": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Microbe",
                 "type": "binary",
                 "labels": 2,
                 "train": 22224,
@@ -445,7 +444,7 @@
         },
         "GUE__emp_H4": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Microbe",
                 "type": "binary",
                 "labels": 2,
                 "train": 11679,
@@ -484,7 +483,7 @@
         },
         "GUE__emp_H4ac": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Microbe",
                 "type": "binary",
                 "labels": 2,
                 "train": 27275,
@@ -523,7 +522,7 @@
         },
         "GUE__fungi_species_20": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "multiclass",
                 "labels": 20,
                 "train": 8000,
@@ -562,7 +561,7 @@
         },
         "GUE__human_tf_0": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 32378,
@@ -601,7 +600,7 @@
         },
         "GUE__mouse_1": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 53952,
@@ -640,7 +639,7 @@
         },
         "GUE__mouse_4": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 15064,
@@ -679,7 +678,7 @@
         },
         "GUE__prom_300_all": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 47356,
@@ -718,7 +717,7 @@
         },
         "GUE__prom_core_all": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 47356,
@@ -757,7 +756,7 @@
         },
         "GUE__virus_covid": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Microbe",
                 "type": "multiclass",
                 "labels": 9,
                 "train": 73335,
@@ -796,7 +795,7 @@
         },
         "GUE__virus_species_40": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Microbe",
                 "type": "multiclass",
                 "labels": 25,
                 "train": 4000,
@@ -835,7 +834,7 @@
         },
         "Genomic_Benchmarks__coding": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 75000,
@@ -874,7 +873,7 @@
         },
         "Genomic_Benchmarks__human_vs_worm": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 75000,
@@ -913,7 +912,7 @@
         },
         "Genomic_Benchmarks__regulatory_region_type": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "multiclass",
                 "labels": 3,
                 "train": 150000,
@@ -952,7 +951,7 @@
         },
         "NT_downstream_tasks__H3K27ac": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 30000,
@@ -991,7 +990,7 @@
         },
         "NT_downstream_tasks__H3K27me3": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 30000,
@@ -1030,7 +1029,7 @@
         },
         "NT_downstream_tasks__H3K4me2": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 30000,
@@ -1069,7 +1068,7 @@
         },
         "NT_downstream_tasks__H3K9me3": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 27438,
@@ -1108,7 +1107,7 @@
         },
         "NT_downstream_tasks__enhancers": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 30000,
@@ -1147,7 +1146,7 @@
         },
         "NT_downstream_tasks__splice_sites_acceptors": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 30000,
@@ -1186,7 +1185,7 @@
         },
         "NT_downstream_tasks__splice_sites_all": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "multiclass",
                 "labels": 3,
                 "train": 30000,
@@ -1225,7 +1224,7 @@
         },
         "NT_downstream_tasks__splice_sites_donors": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 30000,
@@ -1264,7 +1263,7 @@
         },
         "PDLLMs_datasets__plant-multi-species-H3K27ac": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Plants",
                 "type": "binary",
                 "labels": 2,
                 "train": 81920,
@@ -1303,7 +1302,7 @@
         },
         "PDLLMs_datasets__plant-multi-species-H3K27me3": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Plants",
                 "type": "binary",
                 "labels": 2,
                 "train": 79748,
@@ -1342,7 +1341,7 @@
         },
         "PDLLMs_datasets__plant-multi-species-H3K4me3": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Plants",
                 "type": "binary",
                 "labels": 2,
                 "train": 81920,
@@ -1381,7 +1380,7 @@
         },
         "PDLLMs_datasets__plant-multi-species-core-promoters": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Plants",
                 "type": "binary",
                 "labels": 2,
                 "train": 66560,
@@ -1420,7 +1419,7 @@
         },
         "PDLLMs_datasets__plant-multi-species-lncRNAs": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Plants",
                 "type": "binary",
                 "labels": 2,
                 "train": 40248,
@@ -1459,7 +1458,7 @@
         },
         "PDLLMs_datasets__plant-multi-species-open-chromatin": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Plants",
                 "type": "multiclass",
                 "labels": 3,
                 "train": 118800,
@@ -1498,7 +1497,7 @@
         },
         "PDLLMs_datasets__plant-multi-species-sequence-conservation": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Plants",
                 "type": "binary",
                 "labels": 2,
                 "train": 56320,
@@ -1537,7 +1536,7 @@
         },
         "PlantCAD2_fine_tuning_tasks__cross_species_leaf_absolute_translation": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Plants",
                 "type": "regression",
                 "labels": 1,
                 "train": 21894,
@@ -1576,7 +1575,7 @@
         },
         "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Plants",
                 "type": "binary",
                 "labels": 2,
                 "train": 21894,
@@ -1615,7 +1614,7 @@
         },
         "iDNA_ABF_datasets__5mC": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 2344,
@@ -1654,7 +1653,7 @@
         },
         "iDNA_ABF_datasets__6mA": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Animals",
                 "type": "binary",
                 "labels": 2,
                 "train": 18336,
@@ -1693,7 +1692,7 @@
         },
         "iPro-WAEL_datasets__Promoter_R_capsulatus": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Microbe",
                 "type": "binary",
                 "labels": 2,
                 "train": 7407,
@@ -1732,7 +1731,7 @@
         },
         "plant-genomic-benchmark__poly_a.arabidopsis_thaliana": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Plants",
                 "type": "binary",
                 "labels": 2,
                 "train": 170835,
@@ -1771,7 +1770,7 @@
         },
         "plant-genomic-benchmark__promoter_strength.leaf": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Plants",
                 "type": "regression",
                 "labels": 1,
                 "train": 58179,
@@ -1810,7 +1809,7 @@
         },
         "plant-genomic-benchmark__terminator_strength.leaf": {
             "dataset": {
-                "species": "multi-species",
+                "species": "Plants",
                 "type": "regression",
                 "labels": 1,
                 "train": 43294,
