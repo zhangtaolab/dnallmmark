@@ -159,8 +159,21 @@ def parse_args():
     parser.add_argument(
         "--mem_ratio",
         type=float,
-        default=0.70,
-        help="Target GPU memory usage ratio (0.0-1.0, default 0.70 for 70%%)"
+        default=0.95,
+        help=("Target GPU memory usage ratio (0.0-1.0, default 0.95 for 95%%). "
+              "On CUDA OOM the active ratio is auto-lowered by 0.05 per retry "
+              "(floor 0.50) and the dataset is retried from a clean slate.")
+    )
+
+    parser.add_argument(
+        "--category_order",
+        type=str,
+        default=None,
+        help=("Comma-separated categories to run FIRST, e.g. 'Plants' or "
+              "'Plants,Microbe'. Matching datasets keep their registry order "
+              "and are moved to the front; every other dataset still runs "
+              "afterward. (Contrast --category, which runs ONLY the listed "
+              "categories.)")
     )
 
     parser.add_argument(
@@ -669,6 +682,26 @@ def get_current_time():
     return now
 
 
+# OOM auto-fallback floor (user directive 2026-10-17): --mem_ratio defaults
+# to 0.95 and steps DOWN by 0.05 per CUDA-OOM retry; 0.50 is the floor below
+# which a still-OOMing dataset falls through to the normal error-log path.
+OOM_MEM_RATIO_FLOOR = 0.50
+
+
+def _is_cuda_oom(exc: BaseException) -> bool:
+    """torch's typed OOM error, or the allocator/cuBLAS/cuDNN failure text
+    (several raise sites surface as plain RuntimeError)."""
+    if isinstance(exc, torch.cuda.OutOfMemoryError):
+        return True
+    text = str(exc).lower()
+    return (
+        "out of memory" in text
+        or "cudnn_status_alloc_failed" in text
+        or "cublas_status_alloc_failed" in text
+        or "cuda error outofmemory" in text
+    )
+
+
 # base_dir is this script's own directory (auto-inferred, no per-machine hardcoding)
 base_dir = os.path.dirname(os.path.abspath(__file__)) + os.sep
 with open(base_dir + "datasets_info.json", "r", encoding="utf-8") as _registry_file:
@@ -695,6 +728,7 @@ if __name__ == "__main__":
     gpu_memory_override = args.gpu_memory
     gpu_memory_override = args.gpu_memory
     mem_ratio = args.mem_ratio
+    category_order = args.category_order
     effective_batch_size = args.effective_batch_size
     output_dir = args.output_dir
     save_model_name = args.save_model_name
@@ -923,9 +957,19 @@ if __name__ == "__main__":
         tokenizer_type = model_row["Tokenizer"]
         mean_token_len = model_row["Mean_token_length"]
 
-        # Open error log file
+        # Open error log file (DDP-safe, 2026-10-17): only global rank 0
+        # owns the canonical {model}_error_log.txt — under torchrun every
+        # rank used to open the SAME path in "w" mode, truncating and
+        # interleaving each other's writes into the acceptance artifact.
+        # Non-zero ranks now write per-rank side files instead.
         os.makedirs("./logs/", exist_ok=True)
-        with open(f"./logs/{model_name}_error_log.txt", "w") as error_log:
+        _world_rank = int(os.environ.get("RANK", "0"))
+        _world_size = int(os.environ.get("WORLD_SIZE", "1"))
+        if _world_rank == 0:
+            _error_log_path = f"./logs/{model_name}_error_log.txt"
+        else:
+            _error_log_path = f"./logs/{model_name}_error_log_rank{_world_rank}.txt"
+        with open(_error_log_path, "w") as error_log:
 
             # Config-variant reload (SC-6 lanes, 06-05): --config-variant
             # <name> loads the variant's YAML for ANY model at this exact
@@ -967,8 +1011,30 @@ if __name__ == "__main__":
             default_grad_accum = configs["finetune"].gradient_accumulation_steps
 
             # Iterate through datasets
+            # Index-cursor while loop: the top-of-loop increment keeps every
+            # `continue` in the body advancing to the NEXT dataset (the old
+            # for-loop semantics), while the OOM fallback in the train
+            # except steps the cursor BACK to retry the same dataset after
+            # ratcheting mem_ratio down.
             count = 0
-            for idx, row in datasets_info.items():
+            _dataset_rows = list(datasets_info.items())
+            if category_order is not None:
+                _prio = [c.strip() for c in category_order.split(",") if c.strip()]
+                def _category_priority(item):
+                    _cat = str(item[1].get("Category", ""))
+                    return _prio.index(_cat) if _cat in _prio else len(_prio)
+                _dataset_rows.sort(key=_category_priority)
+                _head = [row["Dataset_name"] for _, row in _dataset_rows[:3]]
+                print(
+                    f"[category_order] priority={_prio}; "
+                    f"first datasets now: {_head} ..."
+                )
+            _ds_cursor = -1
+            while True:
+                _ds_cursor += 1
+                if _ds_cursor >= len(_dataset_rows):
+                    break
+                idx, row = _dataset_rows[_ds_cursor]
                 dataset_name = row["Dataset_name"]
                 dataset_path = base_dir + row["Dataset_path"]
 
@@ -1378,7 +1444,7 @@ if __name__ == "__main__":
                     seq_sep = None
 
                 current_time = get_current_time()
-                print(f"[{current_time}] Index: {idx}, Dataset: {dataset_name}")
+                print(f"[{current_time}] Index: {idx}, Dataset: {dataset_name}, mem_ratio={mem_ratio:.2f}")
 
                 """
                 # Sample a small portion for testing
@@ -1451,49 +1517,54 @@ if __name__ == "__main__":
                 if ddp_find_unused_parameters:
                     extra_args["ddp_find_unused_parameters"] = True
                     print("[Info] DDP find_unused_parameters forced True (required for MoE models).")
-                trainer = DNATrainer(
-                    model=model,
-                    config=configs,
-                    datasets=dataset,
-                    extra_args=extra_args or None,
-                    # LoRA enablement is a CONSTRUCTOR KWARG, not a config
-                    # field (dnallm trainer.py:369-376 @ v1.2.1): a pure
-                    # comparison evaluates False under the none default,
-                    # so the peft=none ctor call is identical to today's.
-                    # use_lora=True requires config["lora"] to exist —
-                    # both YAMLs carry the lora: section (06-01).
-                    use_lora=(peft_mode == "lora"),
-                )
-
-                # Trainable-params persistence (SC-6 frontier producer,
-                # 06-02): the suite computes and PRINTS this accounting but
-                # does not persist it (trainer.py:248-288 @ v1.2.1 —
-                # _guard_trainable_ratio returns and discards it), so
-                # run_finetune owns the record value — pure arithmetic over
-                # the constructed (adapter-wrapped under peft) model,
-                # persisted into final_metrics.json for EVERY mode
-                # including none (a full run reports 100.0): the frontier
-                # table needs the value in the record chain.
-                trainable_params = sum(
-                    p.numel() for p in trainer.model.parameters()
-                    if p.requires_grad
-                )
-                total_params = sum(
-                    p.numel() for p in trainer.model.parameters()
-                )
-                trainable_params_pct = round(
-                    100.0 * trainable_params / max(total_params, 1), 6
-                )
-
-                # Start finetuning
-                # --peft_dry_run builds no inner HF Trainer, so guard the
-                # safetensors override against trainer.trainer being None.
-                if model_name in model_not_use_safetensors and getattr(
-                    trainer.trainer, "args", None
-                ) is not None:
-                    trainer.trainer.args.save_safetensors = False
-                local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+                # Start finetuning — the try covers trainer CONSTRUCTION as
+                # well (OOM auto-fallback, 2026-10-17): a ctor OOM gets the
+                # same mem_ratio ratchet as a train OOM; non-OOM ctor
+                # failures re-raise in the except (they previously escaped
+                # this try and killed the process — that is preserved).
+                trainer = None
                 try:
+                    trainer = DNATrainer(
+                        model=model,
+                        config=configs,
+                        datasets=dataset,
+                        extra_args=extra_args or None,
+                        # LoRA enablement is a CONSTRUCTOR KWARG, not a config
+                        # field (dnallm trainer.py:369-376 @ v1.2.1): a pure
+                        # comparison evaluates False under the none default,
+                        # so the peft=none ctor call is identical to today's.
+                        # use_lora=True requires config["lora"] to exist —
+                        # both YAMLs carry the lora: section (06-01).
+                        use_lora=(peft_mode == "lora"),
+                    )
+
+                    # Trainable-params persistence (SC-6 frontier producer,
+                    # 06-02): the suite computes and PRINTS this accounting but
+                    # does not persist it (trainer.py:248-288 @ v1.2.1 —
+                    # _guard_trainable_ratio returns and discards it), so
+                    # run_finetune owns the record value — pure arithmetic over
+                    # the constructed (adapter-wrapped under peft) model,
+                    # persisted into final_metrics.json for EVERY mode
+                    # including none (a full run reports 100.0): the frontier
+                    # table needs the value in the record chain.
+                    trainable_params = sum(
+                        p.numel() for p in trainer.model.parameters()
+                        if p.requires_grad
+                    )
+                    total_params = sum(
+                        p.numel() for p in trainer.model.parameters()
+                    )
+                    trainable_params_pct = round(
+                        100.0 * trainable_params / max(total_params, 1), 6
+                    )
+
+                    # --peft_dry_run builds no inner HF Trainer, so guard the
+                    # safetensors override against trainer.trainer being None.
+                    if model_name in model_not_use_safetensors and getattr(
+                        trainer.trainer, "args", None
+                    ) is not None:
+                        trainer.trainer.args.save_safetensors = False
+                    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
                     metrics = trainer.train()
                     if local_rank == 0:
                         checkpoints = glob(outdir + "checkpoint-*")
@@ -1531,6 +1602,62 @@ if __name__ == "__main__":
                 # multi-day sweep on an unanticipated training failure
                 # (unverifiable without GPU runs).
                 except Exception as e:  # noqa: BLE001
+                    # OOM auto-fallback (user directive 2026-10-17): ratchet
+                    # the active mem_ratio down by 0.05 (floor 0.50) and
+                    # retry the SAME dataset from a clean slate — the loop
+                    # restart reloads the model and re-estimates the batch
+                    # at the reduced ratio. Marker files must be wiped too:
+                    # a test-eval OOM can strike AFTER trainer_state.json
+                    # was copied, which would otherwise make the resume
+                    # check skip this dataset as "complete".
+                    if _is_cuda_oom(e) and _world_size > 1:
+                        # DDP guard: a rank-local batch reduction cannot be
+                        # retried — sibling ranks are blocked inside NCCL
+                        # collectives, and ANY unilateral retry-or-skip
+                        # diverges this rank's dataset cursor from theirs,
+                        # deadlocking the job. Fail fast instead: torchrun
+                        # tears down the group; restarting with a lower
+                        # --mem_ratio resume-skips completed datasets.
+                        raise RuntimeError(
+                            f"CUDA OOM under torchrun (world_size={_world_size}) "
+                            f"on {dataset_name}: the OOM auto-fallback is "
+                            f"single-process only. Restart with a lower "
+                            f"--mem_ratio (active was {mem_ratio:.2f})."
+                        ) from e
+                    if _is_cuda_oom(e) and mem_ratio > OOM_MEM_RATIO_FLOOR:
+                        mem_ratio = round(mem_ratio - 0.05, 2)
+                        current_time = get_current_time()
+                        message = (
+                            f"[{current_time}] [OOM] CUDA OOM on {dataset_name} — "
+                            f"lowering mem_ratio to {mem_ratio:.2f} and retrying "
+                            f"this dataset"
+                        )
+                        print(message)
+                        print(message, file=error_log)
+                        print("--------------------", file=error_log)
+                        trainer = None
+                        model = None
+                        tokenizer = None
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                        for stale_ckpt in glob(outdir + "checkpoint-*"):
+                            shutil.rmtree(stale_ckpt, ignore_errors=True)
+                        for stale_marker in (
+                            "trainer_state.json",
+                            "final_metrics.json",
+                            "test_metrics.json",
+                            "eval_test_result.json",
+                        ):
+                            stale_path = outdir + stale_marker
+                            if os.path.exists(stale_path):
+                                os.remove(stale_path)
+                        _ds_cursor -= 1
+                        continue
+                    if trainer is None:
+                        # Non-OOM ctor-region failure: pre-fallback code let
+                        # it escape and kill the process — re-raise to keep
+                        # those semantics unchanged.
+                        raise
                     current_time = get_current_time()
                     print(f"[{current_time}] Error finetuning dataset {dataset_name} with model {model_name}: {e}")
                     print(f"[{current_time}] Error finetuning dataset {dataset_name} with model {model_name}: {e}",
