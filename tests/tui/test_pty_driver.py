@@ -19,6 +19,19 @@ runs):
 - F5 gate visibility: the slot-4 Enter refusal renders within ~1.5s in
   a clean session (the soak's "blank screen" observation did NOT
   reproduce; this lane pins the honest render).
+- 261018-rze (the cadence flicker): the maintainer's live 2026-10-18
+  19:57 report — clicking a running card flashed repeatedly before the
+  RunCellsModal popped, and the instrumented probe
+  (``/tmp/tui-flicker/events.log``) measured ~3 whole-region repaints
+  (~4.9K chars each) on EVERY 2s frontier tick, ~7.6K x3 per tick
+  beneath an open modal, and 2 full-screen writes (6216 chars, 49ms
+  apart) on the click path. Five verified root causes (unconditional
+  tab Label updates with layout=True, the per-tick scan-note update,
+  the full ListView clear+re-append, the unconditional post-scan
+  ``.focus()``, no modal suppression) are gated in
+  ``tui/screens/monitor.py``; the two pins below hold the
+  terminal-byte contract: byte-silence across 2+ steady ticks and the
+  click -> RunCellsModal landing.
 
 Design (probe-pinned at planning time): each test spawns the REAL
 console (``sys.executable -m tui``) on an OS pty via pexpect —
@@ -34,13 +47,16 @@ run_config.json (T-08g-02). The spawned console defaults to ENGLISH
 (the committed strings default; a fresh tmp state dir carries no
 persisted language file), so every marker below is the en copy.
 
-Runtime budget: three spawns at roughly 8-10s each — acceptable next to
-the slow lane's ~80s member; every read is bounded by an explicit
-timeout and ``close(force=True)`` in a finally so a wedged child can
-never hang ``make test`` (T-08g-01). CI-safe: plain pexpect over a
-pty, no display, no GPU, no dnallm.
+Runtime budget: EIGHT spawns at roughly 8-10s each (the 08g trio, the
+kvj tab pair, and the 261018-rze flicker pair — the byte-silence pin
+alone spends ~9s of bounded windows) — acceptable next to the slow
+lane's ~80s member; every read is bounded by an explicit timeout and
+``close(force=True)`` in a finally so a wedged child can never hang
+``make test`` (T-08g-01). CI-safe: plain pexpect over a pty, no
+display, no GPU, no dnallm.
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -70,6 +86,14 @@ _RUNNING_EMPTY_MARKER = "No running tasks"   # MON_RUNNING_EMPTY (en)
 _ARROW_RIGHT = "\x1b[C"
 _ARROW_LEFT = "\x1b[D"
 
+# 261018-rze markers: the fabricated running root's card name (the
+# card name label paints Path(base).name) and the RunCellsModal's
+# border title — the en copy of MON_RUN_CELLS_TITLE ("cells — {root}",
+# the em dash U+2014 verified verbatim against tui/strings.py) with
+# the fabricated root's name.
+_CARD_NAME_MARKER = "root1"
+_RUN_CELLS_MARKER = "cells — root1"
+
 # Bounded windows (generous over the probe-pinned timings: boot ~0.25s,
 # nav repaints 0.05-0.16s, quit exit 0.30s, gate refusal ~1.5s).
 _BOOT_TIMEOUT = 45.0
@@ -78,18 +102,29 @@ _QUIT_TIMEOUT = 15.0
 _GATE_TIMEOUT = 12.0
 
 
-def _spawn_tui(tmp_path, timeout=_BOOT_TIMEOUT):
+def _spawn_tui(tmp_path, timeout=_BOOT_TIMEOUT, manual_roots=()):
     """Spawn the real console on a fresh pty over per-test tmp roots.
 
     The child runs ``sys.executable -m tui`` (the venv python of the
     running test lane — textual is installed there via --group tui)
     from the repo root; state/config land under the tmp dir so the
     maintainer's real state never receives a write (T-08g-02).
+
+    ``manual_roots`` (261018-rze, the drive.py probe recipe): optional
+    sweep roots registered through the state dir's monitor_roots.json
+    BEFORE the spawn — the spawned console discovers them through the
+    service's own ``manual_roots()`` read (schema_version 1, resolved
+    entries); existing call sites unchanged by the empty default.
     """
     state_dir = tmp_path / "tui-state"
     config_dir = tmp_path / "tui-config"
     state_dir.mkdir()
     config_dir.mkdir()
+    if manual_roots:
+        (state_dir / "monitor_roots.json").write_text(
+            json.dumps({"schema_version": 1,
+                        "roots": [str(root) for root in manual_roots]}),
+            encoding="utf-8")
     env = dict(os.environ)
     env["DNALLMMARK_TUI_STATE_DIR"] = str(state_dir)
     env["DNALLMMARK_TUI_CONFIG_DIR"] = str(config_dir)
@@ -100,6 +135,22 @@ def _spawn_tui(tmp_path, timeout=_BOOT_TIMEOUT):
         encoding="utf-8", codec_errors="replace",
         timeout=timeout,
     )
+
+
+def _fabricate_running_root(tmp_path) -> Path:
+    """One fabricated RUNNING sweep root under the test's tmp_path (the
+    drive.py probe recipe): a model/task/seed/checkpoint tree whose
+    fresh mtimes classify the root running through the no-manifest
+    branch (newest mtime within STALE_GRACE_SECONDS). NO churn thread:
+    the static tree keeps every 2s tick's rendered content identical,
+    so a quiet cadence must be byte-silent."""
+    root = tmp_path / "runs" / "root1"
+    checkpoint = (root / "plant-dnabert-6mer" / "GUE__virus_species_4"
+                  / "seed_9527" / "checkpoint-120")
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "trainer_state.json").write_text(
+        '{"global_step": 120}', encoding="utf-8")
+    return root
 
 
 def _boot(child):
@@ -242,5 +293,57 @@ def test_monitor_running_empty_enter_routes_slot4(tmp_path):
         child.expect(_RUNNING_EMPTY_MARKER, timeout=_NAV_TIMEOUT)
         child.send("\r")
         child.expect(_RUNCONFIG_MARKER, timeout=_NAV_TIMEOUT)
+    finally:
+        child.close(force=True)
+
+
+def test_monitor_quiet_cadence_is_byte_silent(tmp_path):
+    """261018-rze — the flicker pin: over a fabricated running root
+    (fresh mtimes, static tree, no churn thread), a steady frontier
+    cadence writes ZERO terminal bytes. Pre-fix the instrumented probe
+    measured ~3 whole-region repaints (~4.9K chars each) arriving every
+    2s tick (events.log, the maintainer's 2026-10-18 19:57 live
+    report); the assertion window spans 2+ ticks (5.5s over the 2s
+    interval) after a bounded drain of the initial paint.
+
+    pexpect semantics (probe-pinned): ``expect(TIMEOUT)`` reports a
+    CUMULATIVE ``before`` since the last real match — the buffer only
+    resets on a match/EOF — so the window asserts ``before`` is
+    byte-IDENTICAL to the drain's snapshot (any new byte, length or
+    content, is cadence traffic)."""
+    root = _fabricate_running_root(tmp_path)
+    child = _spawn_tui(tmp_path, manual_roots=(root,))
+    try:
+        _boot(child)
+        child.send("5")
+        child.expect(_CARD_NAME_MARKER, timeout=_NAV_TIMEOUT)
+        # drain the initial paint (the mount kick + first scan renders)
+        child.expect(pexpect.TIMEOUT, timeout=3.0)
+        drained = child.before
+        # THE assertion window: 2+ frontier ticks must add ZERO bytes
+        child.expect(pexpect.TIMEOUT, timeout=5.5)
+        assert child.before == drained, (
+            f"the quiet cadence wrote {len(child.before) - len(drained)} "
+            "new bytes across 2+ steady ticks — the flicker is back")
+    finally:
+        child.close(force=True)
+
+
+def test_click_running_card_opens_run_cells_modal(tmp_path):
+    """261018-rze — the click-path pin (the maintainer's live report):
+    a REAL SGR mouse click on the running card — press + release at
+    col 8 row 5 (SGR encodes button;col;row), the probe-calibrated
+    card-name row at 40x120 — opens the RunCellsModal, whose border
+    title names the run (the en MON_RUN_CELLS_TITLE glyph, em dash)."""
+    root = _fabricate_running_root(tmp_path)
+    child = _spawn_tui(tmp_path, manual_roots=(root,))
+    try:
+        _boot(child)
+        child.send("5")
+        child.expect(_CARD_NAME_MARKER, timeout=_NAV_TIMEOUT)
+        child.expect(pexpect.TIMEOUT, timeout=2.0)  # short settle drain
+        child.send("\x1b[<0;8;5M")   # SGR press (button 0, col 8, row 5)
+        child.send("\x1b[<0;8;5m")   # SGR release
+        child.expect(_RUN_CELLS_MARKER, timeout=_NAV_TIMEOUT)
     finally:
         child.close(force=True)
