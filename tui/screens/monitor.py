@@ -81,9 +81,14 @@ Contract (locked decisions that survive the redesign):
   ListItem objects survive every steady tick; (d) ``_focus_active``
   no-ops when the target already holds focus; (e) ``_render_all``
   early-returns while another screen is stacked above (a modal or the
-  min-size guard) — the base surface never repaints beneath it. The
-  gates reset in ``on_mount`` so the L-toggle recompose (fresh empty
-  Labels) fully repaints in the active language.
+  min-size guard) — the base surface never repaints beneath it. A
+  sixth gate of the same family landed at execution time (a recorded
+  deviation): the History rows' rendered-content signature gates the
+  table diff pass, because textual 8.2.8's ``update_cell`` refreshes
+  unconditionally and the hidden table's refreshes repainted the whole
+  card region anyway. The gates reset in ``on_mount`` so the L-toggle
+  recompose (fresh empty Labels) fully repaints in the active
+  language.
 - WR-06: every async modal push checks ``app.below_minimum_grid``.
 - 261018-08g (SOAK-1/F1, PRESERVED EXACTLY): the app builds a FRESH
   MonitorScreen per navigation and injects the shared textual-free
@@ -1387,6 +1392,11 @@ class MonitorScreen(Screen):
         self._tabs_sig: tuple[int, int, str] | None = None
         self._scan_note_shown: bool | None = None
         self._cards_sig: tuple | None = None
+        # 261018-rze deviation gate: the History rows' rendered-content
+        # signature (see _render_history — textual 8.2.8's update_cell
+        # refreshes unconditionally, so the diff pass itself needed a
+        # gate)
+        self._history_sig: tuple | None = None
 
     # ===== the session write-through properties (261018-08g, SOAK-1) =====
     # expected_totals / fallback_starts / ever_discovered live on the
@@ -1448,6 +1458,7 @@ class MonitorScreen(Screen):
         self._tabs_sig = None
         self._scan_note_shown = None
         self._cards_sig = None
+        self._history_sig = None
         for timer in (self._frontier_timer, self._full_timer):
             if timer is not None:
                 timer.stop()
@@ -1976,7 +1987,25 @@ class MonitorScreen(Screen):
     def _render_history(self, rows: "list[tuple[Any, bool]]") -> None:
         """Diff the History table (WR-05: the cursor row identity
         survives every cadence rebuild); empty renders the designed
-        copy row."""
+        copy row.
+
+        261018-rze (the sixth gate — an execution-time deviation from
+        the plan's "update_cell early-returns on equal values" premise,
+        which does NOT hold on textual 8.2.8: ``update_cell`` refreshes
+        UNCONDITIONALLY, so the display-gated table was dirtied 8x per
+        steady tick and the compositor repainted the whole card region
+        anyway): the rendered-rows signature (root, state, badge,
+        done/total, mtime — every input the cells render) gates the
+        diff pass; an unchanged history performs ZERO table work. The
+        on_mount reset keeps the L-toggle recompose's fresh table
+        populated."""
+        sig = tuple(
+            (str(summary.root), summary.state, dual,
+             summary.done, summary.total, summary.newest_mtime)
+            for summary, dual in rows)
+        if sig == self._history_sig:
+            return
+        self._history_sig = sig
         table = self.query_one("#mon-history", DataTable)
         row_map: dict[str, list] = {}
         if not rows:
