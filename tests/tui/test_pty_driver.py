@@ -59,6 +59,17 @@ _RUNCONFIG_MARKER = "Run Config"         # slot-4 screen title
 _QUIT_MARKER = "Quit the console?"       # LNC_EXIT_CONFIRM
 _GATE_REFUSAL_MARKER = "preview validation failed"  # CFG_PREVIEW_PROBLEMS
 
+# 261018-kvj markers (the two-tab monitor): the History tab's ACTIVE
+# content — the designed empty copy when no run ever finished, else the
+# table's output-root column header (only the active tab's content
+# region renders; the tab header always paints both TITLES, so the
+# marker must be content, never the title word) — and the Running
+# tab's actionable empty copy.
+_HISTORY_TAB_MARKERS = ["No past runs yet", "output root"]
+_RUNNING_EMPTY_MARKER = "No running tasks"   # MON_RUNNING_EMPTY (en)
+_ARROW_RIGHT = "\x1b[C"
+_ARROW_LEFT = "\x1b[D"
+
 # Bounded windows (generous over the probe-pinned timings: boot ~0.25s,
 # nav repaints 0.05-0.16s, quit exit 0.30s, gate refusal ~1.5s).
 _BOOT_TIMEOUT = 45.0
@@ -185,5 +196,51 @@ def test_slot4_gate_refusal_is_visible(tmp_path):
         child.send(" ")     # mark the first model (picker is focused)
         child.send("\r")    # enter opens the launch gate
         child.expect(_GATE_REFUSAL_MARKER, timeout=_GATE_TIMEOUT)
+    finally:
+        child.close(force=True)
+
+
+def test_monitor_tab_switch_paints_history(tmp_path):
+    """261018-kvj — the two-tab switching, pinned under the REAL pty:
+    the right arrow flips the monitor to the History tab (its content
+    region paints — the empty copy or the table header, whichever the
+    machine's history holds), the left arrow flips back to the Running
+    tab's own content, and the tab key flips again. The arrows ride
+    the DECLARED priority seam over the focused card list — exactly
+    the render-layer surface the in-process Pilot lane cannot see."""
+    child = _spawn_tui(tmp_path)
+    try:
+        _boot(child)
+        child.send("5")
+        child.expect(_MONITOR_MARKER, timeout=_NAV_TIMEOUT)
+        # the Running tab's content paints first (the default landing):
+        # the actionable empty copy when nothing runs
+        child.expect(_RUNNING_EMPTY_MARKER, timeout=_NAV_TIMEOUT)
+        # right: the History tab's content region replaces it
+        child.send(_ARROW_RIGHT)
+        child.expect(_HISTORY_TAB_MARKERS, timeout=_NAV_TIMEOUT)
+        # left: the Running tab's content paints again
+        child.send(_ARROW_LEFT)
+        child.expect(_RUNNING_EMPTY_MARKER, timeout=_NAV_TIMEOUT)
+        # the tab key flips too (the priority binding owns it over the
+        # focused list)
+        child.send("\t")
+        child.expect(_HISTORY_TAB_MARKERS, timeout=_NAV_TIMEOUT)
+    finally:
+        child.close(force=True)
+
+
+def test_monitor_running_empty_enter_routes_slot4(tmp_path):
+    """261018-kvj — the empty-state route under the REAL pty: with no
+    live run, the Running tab renders the actionable empty copy and a
+    bare enter navigates to slot 4 (the ONLY launch gate — slot 5
+    never duplicates it)."""
+    child = _spawn_tui(tmp_path)
+    try:
+        _boot(child)
+        child.send("5")
+        child.expect(_RUNNING_EMPTY_MARKER, timeout=_NAV_TIMEOUT)
+        child.send("\r")
+        child.expect(_RUNCONFIG_MARKER, timeout=_NAV_TIMEOUT)
     finally:
         child.close(force=True)

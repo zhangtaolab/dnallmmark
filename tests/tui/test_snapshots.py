@@ -800,16 +800,18 @@ async def _drive_run_config(pilot, app):
 
 
 async def _drive_monitor_running(pilot, app):
-    """The multi-GPU proof view: the worker root discovered + attached,
-    all five glyphs in the cell table, stats/ETA line rendered."""
+    """261018-kvj: the multi-GPU proof view on the tabbed surface — the
+    worker root renders as the Running tab's ONE card (name + scale +
+    done/total bar + current-cell line + the resume note), the History
+    tab header carries the finished smoke row + the w0 root's
+    dual-presence count."""
     app.push_screen(app.build_monitor_screen())
-    await _settle(pilot, app)
-    app.screen.attach("/scans/finetuned-mgpu-w0")
     await _settle(pilot, app)
 
 
 async def _drive_monitor_empty(pilot, app):
-    """The zero-sweep boot: both panes render their designed copy."""
+    """The zero-run boot: the Running tab renders its actionable empty
+    copy on the settled (scan-landed, note-cleared) surface."""
     app.push_screen(app.build_monitor_screen())
     await _settle(pilot, app)
 
