@@ -156,6 +156,11 @@ EXPECTED_MON_CONSTANTS = (
     "MON_DELETE_KEYCAP", "MON_DELETE_TITLE", "MON_DELETE_CONFIRM",
     "MON_DELETE_TOAST", "MON_DELETE_FAILED", "MON_DELETE_REFUSED_LIVE",
     "MON_RESUME_KEYCAP",
+    # 261018-toe Task 3: the [e] resume family — the honest confirm
+    # (pairs × seeds with the completed-skip note), the launched toast,
+    # the nothing-to-resume refusal, and the live-root refusal.
+    "MON_RESUME_CONFIRM", "MON_RESUME_TOAST", "MON_RESUME_NOTHING",
+    "MON_RESUME_REFUSED_LIVE",
 )
 
 #: The per-seed cell states in spec order, and their contract glyphs.

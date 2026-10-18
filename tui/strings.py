@@ -1885,6 +1885,23 @@ MON_DELETE_REFUSED_LIVE = _t(
 # The [e] keycap lands with the Task-2 binding (the footer paints both
 # row actions); the remaining MON_RESUME_* family arrives with the flow.
 MON_RESUME_KEYCAP = _t("MON_RESUME_KEYCAP", "续跑", "resume")
+MON_RESUME_CONFIRM = _t(
+    "MON_RESUME_CONFIRM",
+    "续跑 {pairs} 个未完成组合 × 种子 {seeds} = {n} 个训练项（已完成训练项将按标记自动跳过）"
+    "？— [y] 续跑 / Esc 取消",
+    "Resume {pairs} incomplete pairs × seeds {seeds} = {n} cells "
+    "(completed cells skip via their markers)? — [y] resume / Esc cancel")
+MON_RESUME_TOAST = _t(
+    "MON_RESUME_TOAST", "✓ 续跑已启动 — {cells} 训练项 → {root}",
+    "✓ resume launched — {cells} cells → {root}")
+MON_RESUME_NOTHING = _t(
+    "MON_RESUME_NOTHING", "无未完成训练项，无需续跑：{root}",
+    "No incomplete cells to resume: {root}")
+MON_RESUME_REFUSED_LIVE = _t(
+    "MON_RESUME_REFUSED_LIVE",
+    "运行中的任务不可续跑（同根二次启动会冲突）：{root}",
+    "Cannot resume a running task (a second launch at the same root "
+    "would conflict): {root}")
 
 # Cell detail (enter): the title shape and the per-fraction line under
 # --curve (record fields render verbatim — data, never translated).

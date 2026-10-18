@@ -599,6 +599,21 @@ class MonitorBackend:
             failures_path, seeds, output_root,
             peft=peft, config_variant=config_variant, phrase=phrase)
 
+    def launch_from_pairs(self, pairs, seeds, output_root,
+                          peft="none", config_variant="none",
+                          phrase=None) -> Any:
+        """261018-toe: the [e] resume over the materialized-pairs seam
+        — delegate to the injected launcher (the launch_from_failures
+        adapter twin). Reached through the tolerant getattr seam in the
+        resume launch worker (the kill_sweep precedent: deliberately
+        NOT declared in the Protocol so the pre-existing launcher fakes
+        are never ty-flagged)."""
+        if self._launcher is None:
+            return None
+        return self._launcher.launch_from_pairs(
+            pairs, seeds, output_root,
+            peft=peft, config_variant=config_variant, phrase=phrase)
+
     def phrase_matches(self, typed, output_root) -> bool:
         """The exact-match verdict over the REAL service tier (the
         E2' re-prompt's live indicator — run_config owns the check,
@@ -1389,21 +1404,31 @@ class MonitorScreen(Screen):
             super().__init__()
 
     class RerunPreflightDone(Message):
-        """The re-run preflight verdict arrived (worker -> loop)."""
+        """The re-run preflight verdict arrived (worker -> loop).
+        261018-toe: ``resume`` routes the post-preflight launch — False
+        (the default, every existing post site) is the [f]->[r]
+        failures path; True is the [e] resume path."""
 
-        def __init__(self, verdict, root: str, run_id: int) -> None:
+        def __init__(self, verdict, root: str, run_id: int,
+                     resume: bool = False) -> None:
             self.verdict = verdict
             self.root = root
             self.run_id = run_id
+            self.resume = resume
             super().__init__()
 
     class RerunFinished(Message):
-        """The re-run launch outcome arrived (worker -> loop)."""
+        """The re-run launch outcome arrived (worker -> loop).
+        261018-toe: ``resume`` flags the [e] path so the shared outcome
+        handler renders MON_RESUME_TOAST and the E2' phrase re-prompt
+        routes back through the RESUME launch worker."""
 
-        def __init__(self, outcome, root: str, run_id: int) -> None:
+        def __init__(self, outcome, root: str, run_id: int,
+                     resume: bool = False) -> None:
             self.outcome = outcome
             self.root = root
             self.run_id = run_id
+            self.resume = resume
             super().__init__()
 
     class RerunFailed(Message):
@@ -2537,8 +2562,17 @@ class MonitorScreen(Screen):
         self._rerun_stage_id += 1
         self._run_rerun_preflight(root, self._rerun_stage_id)
 
+    def _resume_pipeline(self, root: str) -> None:
+        """The gated resume (261018-toe): the SAME preflight stage as
+        [f]->[r], with the resume=True flag routing the post-preflight
+        dispatch into the resume launch worker."""
+        self._rerun_stage_id += 1
+        self._run_rerun_preflight(
+            root, self._rerun_stage_id, resume=True)
+
     @work(exclusive=True, thread=True, group="mon-rerun")
-    def _run_rerun_preflight(self, root: str, run_id: int) -> None:
+    def _run_rerun_preflight(self, root: str, run_id: int,
+                             resume: bool = False) -> None:
         """The D-08 preflight over the frozen face (worker; WR-03-
         wrapped: an exception surfaces, never a silent post-confirm
         no-op)."""
@@ -2549,7 +2583,20 @@ class MonitorScreen(Screen):
                 str(exc) or repr(exc), root, run_id))
             return
         self.post_message(
-            self.RerunPreflightDone(verdict, root, run_id))
+            self.RerunPreflightDone(verdict, root, run_id, resume=resume))
+
+    def _dispatch_rerun_launch(self, root: str, resume: bool,
+                               run_id: int,
+                               phrase: "str | None" = None) -> None:
+        """Route the post-preflight launch (261018-toe): the [f]->[r]
+        failures path routes to ``_run_rerun_launch`` byte-unchanged
+        (``resume=False``, every existing behavior); the [e] resume
+        path routes to the ``_run_resume_launch`` worker — and the E2'
+        phrase re-prompt threads back through the SAME routing."""
+        if resume:
+            self._run_resume_launch(root, run_id, phrase)
+        else:
+            self._run_rerun_launch(root, run_id, phrase)
 
     def on_monitor_screen_rerun_failed(self, message: RerunFailed) -> None:
         """WR-03: the re-run pipeline's worker raised — surface the
@@ -2573,7 +2620,8 @@ class MonitorScreen(Screen):
                     message.verdict.failed_kernels,
                     message.verdict.reasons))
             return
-        self._run_rerun_launch(message.root, message.run_id)
+        self._dispatch_rerun_launch(
+            message.root, message.resume, message.run_id)
 
     @work(exclusive=True, thread=True, group="mon-rerun")
     def _run_rerun_launch(self, root: str, run_id: int,
@@ -2638,9 +2686,14 @@ class MonitorScreen(Screen):
 
                 def on_phrase(typed_phrase: str) -> None:
                     # a plain closure (not the @work call inline): the
-                    # modal's confirm callback returns None
-                    self._run_rerun_launch(
-                        root, self._rerun_stage_id, typed_phrase)
+                    # modal's confirm callback returns None. 261018-toe:
+                    # the re-prompt routes back through the SAME lane it
+                    # refused on — the resume worker when the refusal
+                    # came from launch_from_pairs, the [f]->[r]
+                    # failures worker otherwise.
+                    self._dispatch_rerun_launch(
+                        root, message.resume,
+                        self._rerun_stage_id, typed_phrase)
 
                 self.app.push_screen(E2PhraseModal(
                     dirname=(outcome.expected
@@ -2667,16 +2720,157 @@ class MonitorScreen(Screen):
             return
         if getattr(outcome, "spawned", False):
             cells = self._expected_totals.get(message.root)
-            self.app.notify(S.MON_RERUN_TOAST.format(
-                cells=(str(cells) if cells is not None
-                       else S.MON_ETA_UNKNOWN),
-                root=Path(message.root).name))
+            cell_count = (str(cells) if cells is not None
+                          else S.MON_ETA_UNKNOWN)
+            # 261018-toe: the [e] resume renders its own success toast;
+            # the [f]->[r] failures path stays byte-unchanged below.
+            if message.resume:
+                self.app.notify(S.MON_RESUME_TOAST.format(
+                    cells=cell_count,
+                    root=Path(message.root).name))
+            else:
+                self.app.notify(S.MON_RERUN_TOAST.format(
+                    cells=cell_count,
+                    root=Path(message.root).name))
             self.note_launch(message.root, 0)
             return
         self.app.notify(
             S.LNC_LAUNCH_FAILED_TOAST.format(
                 error=getattr(outcome, "error", None) or ""),
             severity="error")
+
+    # ===== the [e] resume channel (261018-toe — History-tab scoped) =====
+
+    class ResumeReady(Message):
+        """The [e] derivation arrived (worker thread -> loop;
+        261018-toe): the incomplete pairs, the seed fan-out, and the
+        recovered lane over one off-loop read."""
+
+        def __init__(self, root: str, pairs, seeds, lane) -> None:
+            self.root = root
+            self.pairs = tuple(pairs)
+            self.seeds = tuple(seeds)
+            self.lane = lane
+            super().__init__()
+
+    def action_resume_history(self) -> None:
+        """[e] (History tab only): resume the FOCUSED History row's
+        INCOMPLETE items — the (model, task) pairs whose fold state is
+        failed or interrupted, over the root's own seed set (completed
+        cells skip via the existing trainer_state resume markers).
+        Degradations mirror the [d] family: below the minimum grid
+        nothing opens; off-tab or without a focused row is silent; a
+        LIVE root refuses before any modal (a second launch at the same
+        root would conflict); an empty incomplete set surfaces the
+        nothing-to-resume toast with no modal and no launcher call."""
+        if self.app.below_minimum_grid:
+            return
+        if self._active_tab != "history":
+            return
+        root_key = self._focused_root()
+        if root_key is None:
+            return
+        if self._root_is_live(root_key):
+            self.app.notify(
+                S.MON_RESUME_REFUSED_LIVE.format(root=root_key))
+            return
+        self._derive_resume(root_key)
+
+    @work(exclusive=True, thread=True, group="mon-resume",
+          exit_on_error=False)
+    def _derive_resume(self, root_key: str) -> None:
+        """The [e] derivation off the event loop (the confirm-side
+        estimate): cells_view -> the pure incomplete_pairs_view fold +
+        the ONE shared derive_rerun_seeds over the root's cell rows +
+        the rerun_lane recovery; posts ResumeReady. Tolerant read (a
+        raising derivation drops — [e] is re-pressable)."""
+        try:
+            cells = self._service.cells_view(root_key)
+            rows = {f"{row.model}__{row.task}": row
+                    for row in (cells or ())}
+            pairs = sweep_monitor.incomplete_pairs_view(cells)
+            seeds = derive_rerun_seeds((), rows)
+            lane = self._service.rerun_lane(root_key)
+        except Exception:  # noqa: BLE001 — the tolerant-reader promise
+            return
+        self.post_message(self.ResumeReady(
+            root_key, pairs, seeds, lane))
+
+    def on_monitor_screen_resume_ready(self, message: ResumeReady) -> None:
+        if not message.pairs:
+            self.app.notify(
+                S.MON_RESUME_NOTHING.format(root=message.root))
+            return
+        if self.app.below_minimum_grid:
+            return
+        # EHC-3 (the request_rerun mirror): pre-check the single-GPU
+        # serialization guard BEFORE pushing the confirm — y is never
+        # reached on a busy single-GPU machine
+        blocked_getter = getattr(
+            self._launcher, "single_gpu_launch_blocked", None)
+        blocked = (blocked_getter()
+                   if blocked_getter is not None else None)
+        if blocked:
+            self.app.notify(
+                S.LNC_SINGLE_GPU_BLOCKED.format(
+                    roots=", ".join(blocked)),
+                severity="error")
+            return
+        pairs = len(message.pairs)
+        self.app.push_screen(LaunchConfirmModal(
+            message=S.MON_RESUME_CONFIRM.format(
+                pairs=pairs,
+                seeds=", ".join(str(seed) for seed in message.seeds),
+                n=pairs * len(message.seeds)),
+            on_confirm=lambda: self._resume_pipeline(message.root)))
+
+    @work(exclusive=True, thread=True, group="mon-rerun")
+    def _run_resume_launch(self, root: str, run_id: int,
+                           phrase: "str | None" = None) -> None:
+        """The [e] resume launch (261018-toe): RE-DERIVE the pairs/
+        seeds/lane off the event loop (the WR-02/03 one-shared-
+        derivation discipline — the confirmed GPU spend and the
+        executed GPU spend share the derivation), refuse loudly when
+        nothing is derivable, then launch through the materialized-
+        pairs seam (``launch_from_pairs`` -> the delegated
+        ``launch_from_failures`` pipeline verbatim: single-GPU
+        stage-0, official-keys, the E2' phrase gate over the
+        pairs×seeds effective matrix). The outcome rides the SHARED
+        RerunFinished handler — the E2' phrase re-prompt routes back
+        through THIS worker via the resume=True flag."""
+        try:
+            cells = self._service.cells_view(root)
+            rows = {f"{row.model}__{row.task}": row
+                    for row in (cells or ())}
+            pairs = sweep_monitor.incomplete_pairs_view(cells)
+            if not pairs:
+                self.post_message(self.RerunFailed(
+                    S.MON_RESUME_NOTHING.format(root=root),
+                    root, run_id))
+                return
+            seeds = derive_rerun_seeds((), rows)
+            if not seeds:
+                self.post_message(self.RerunFailed(
+                    S.MON_RERUN_NO_SEEDS, root, run_id))
+                return
+            peft, config_variant = self._service.rerun_lane(root)
+            launch_getter = getattr(
+                self._launcher, "launch_from_pairs", None)
+            if launch_getter is None:
+                self.post_message(self.RerunFailed(
+                    "launch_from_pairs seam unavailable on the "
+                    "launcher", root, run_id))
+                return
+            outcome = launch_getter(
+                pairs, seeds, root,
+                peft=peft, config_variant=config_variant, phrase=phrase)
+        except Exception as exc:  # noqa: BLE001 — WR-03: post-confirm
+            # worker death surfaces, never a silent no-op launch
+            self.post_message(self.RerunFailed(
+                str(exc) or repr(exc), root, run_id))
+            return
+        self.post_message(self.RerunFinished(
+            outcome, root, run_id, resume=True))
 
     # ===== the [k] kill channel (261016-vxr, VXR-2; tab-scoped kvj) =====
 

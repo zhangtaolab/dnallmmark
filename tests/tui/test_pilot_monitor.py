@@ -306,7 +306,8 @@ class FakeMonitorLauncher:
     def __init__(self, preflight=None, live=(), tee=None,
                  rerun_outcomes=None, env_raises=None,
                  single_gpu_blocked=None,
-                 kill_outcomes=None, kill_raises=None):
+                 kill_outcomes=None, kill_raises=None,
+                 resume_outcomes=None):
         self._preflight = (preflight if preflight is not None
                            else EnvPreflight(
                                can_launch=True, reasons=(),
@@ -315,6 +316,10 @@ class FakeMonitorLauncher:
         self._tee = dict(tee or {})
         self._rerun_outcomes = (
             list(rerun_outcomes) if rerun_outcomes else None)
+        # 261018-toe ([e]): the launch_from_pairs scripting — a
+        # per-call outcome list (the rerun_outcomes pattern)
+        self._resume_outcomes = (
+            list(resume_outcomes) if resume_outcomes else None)
         self._env_raises = env_raises
         # EHC-3 (261015-ehc): the single-GPU guard seam (None = the
         # method absent-equivalent — never blocks)
@@ -326,6 +331,7 @@ class FakeMonitorLauncher:
         self._kill_raises = kill_raises
         self.env_calls = 0
         self.rerun_calls = []
+        self.resume_calls = []
         self.kill_calls = []
 
     #: optional kill-blocking gate (VXR-2, the responsiveness proof):
@@ -349,6 +355,21 @@ class FakeMonitorLauncher:
         return LaunchOutcome(
             spawned=True, root=str(output_root),
             tee_path="/state/logs/sweep_rerun.log", error=None)
+
+    def launch_from_pairs(self, pairs, seeds, output_root,
+                          peft="none", config_variant="none",
+                          phrase=None):
+        """The scripted [e] seam (261018-toe): records the derived
+        pairs/seeds/lane + the threaded phrase, optionally pops the
+        next staged outcome (the rerun_outcomes pattern)."""
+        self.resume_calls.append((tuple(pairs), tuple(seeds),
+                                  str(output_root), peft, config_variant,
+                                  phrase))
+        if self._resume_outcomes:
+            return self._resume_outcomes.pop(0)
+        return LaunchOutcome(
+            spawned=True, root=str(output_root),
+            tee_path="/state/logs/sweep_resume.log", error=None)
 
     def phrase_matches(self, typed, output_root):
         return typed == Path(str(output_root)).name
@@ -2929,6 +2950,250 @@ async def test_d_e_footer_keycaps_history_tab_only():
         assert "[d]" not in footer_text() and "[e]" not in footer_text(), (
             "the flip back drops the d/e keycaps again"
         )
+
+
+# =====================================================================
+# 261018-toe — the [e] resume family (History-tab scoped: honest
+# confirm over the derived incomplete pairs, the shared
+# preflight/launch/E2' stages through launch_from_pairs)
+# =====================================================================
+
+
+async def test_e_confirm_names_pairs_times_seeds_and_launches():
+    """261018-toe: e over the FOCUSED History row derives the incomplete
+    set off-loop and the confirm names it HONESTLY — pairs × seeds with
+    the completed-cells-skip note; y reaches launch_from_pairs with the
+    SAME derived pairs/seeds/lane (the worker's re-derivation equals
+    the confirm-side one — WR-02/03), never the [f] failures path."""
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import MON_RESUME_CONFIRM, MON_RESUME_TOAST
+
+    monitor = _history_fixture_monitor()
+    launcher = FakeMonitorLauncher()
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+        await pilot.press("e")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, ConfirmModal), (
+            "the resume always sits behind its own launch confirm"
+        )
+        copy = str(app.screen.query_one(Static).content)
+        assert MON_RESUME_CONFIRM.format(
+            pairs=2, seeds="42, 43", n=4) in copy, copy
+
+        # EHC-2: enter is structurally inert on the launch confirm
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, ConfirmModal)
+        assert launcher.env_calls == 0
+
+        await pilot.press("y")   # confirm (EHC-2: y launches)
+        await _settle(pilot, app)
+        assert launcher.env_calls == 1, "the env preflight re-entered"
+        assert len(launcher.resume_calls) == 1
+        pairs, seeds, root, peft, variant, phrase = launcher.resume_calls[0]
+        assert pairs == (("model-a", "task-1"), ("model-b", "task-2")), (
+            "exactly the failed + interrupted pairs, sorted distinct — "
+            "the worker's re-derivation equals the confirm-side one"
+        )
+        assert seeds == (42, 43), "the root's own seed set fans out"
+        assert root == "/scans/old-run"
+        assert peft == "none" and variant == "none"
+        assert phrase is None, "an ordinary partial resume carries no phrase"
+        assert launcher.rerun_calls == [], (
+            "the resume NEVER routes through the [f] failures path"
+        )
+        assert monitor.rerun_lane_calls == ["/scans/old-run"] * 2, (
+            "the lane is read through the service seam on BOTH sides of "
+            "the confirm (the derive worker + the launch worker)"
+        )
+        assert MON_RESUME_TOAST.format(
+            cells="—", root="old-run") in _toast_messages(app)
+
+
+async def test_e_nothing_to_resume_toast_launcher_untouched():
+    """A root whose cells are all complete: the nothing-to-resume toast
+    lands, NO modal opens, and the launcher is never consulted."""
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import MON_RESUME_NOTHING
+
+    monitor = _history_fixture_monitor(cells=(
+        _row("model-a", "task-1", {42: CELL_COMPLETED,
+                                   43: CELL_SKIPPED}),))
+    launcher = FakeMonitorLauncher()
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+        await pilot.press("e")
+        await _settle(pilot, app)
+        assert MON_RESUME_NOTHING.format(
+            root="/scans/old-run") in _toast_messages(app)
+        assert not isinstance(app.screen, ConfirmModal)
+        assert launcher.env_calls == 0
+        assert launcher.resume_calls == []
+
+
+async def test_e_live_root_refuses_before_any_modal():
+    """A live root (the dual-presence badge row shape) never resumes:
+    the refusal toast fires before any modal and nothing launches."""
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import MON_RESUME_REFUSED_LIVE
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(
+            _summary("rerun-root", SWEEP_RUNNING, done=1, total=2,
+                     mtime=100.0),), watermarks={})],
+        cells={"/scans/rerun-root": (
+            _row("model-a", "task-1", {42: CELL_FAILED}),)},
+        stats={"/scans/rerun-root": _stats(done=1, total=2)},
+    )
+    launcher = FakeMonitorLauncher(live=("/scans/rerun-root",))
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        monitor._resume["/scans/rerun-root"] = 3
+        app.screen._tick_full()
+        await _settle(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+        await pilot.press("e")
+        await _settle(pilot, app)
+        assert MON_RESUME_REFUSED_LIVE.format(
+            root="/scans/rerun-root") in _toast_messages(app)
+        assert not isinstance(app.screen, ConfirmModal)
+        assert launcher.env_calls == 0
+        assert launcher.resume_calls == []
+
+
+async def test_e_single_gpu_busy_refuses_before_the_confirm():
+    """EHC-3 (the request_rerun mirror): the single-GPU guard pre-checks
+    BEFORE the resume confirm — y is never reached on a busy
+    single-GPU machine."""
+    from tui.screens.selection import ConfirmModal
+    from tui.strings import LNC_SINGLE_GPU_BLOCKED
+
+    monitor = _history_fixture_monitor()
+    launcher = FakeMonitorLauncher(
+        single_gpu_blocked=("/scans/somewhere-live",))
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+        await pilot.press("e")
+        await _settle(pilot, app)
+        assert not isinstance(app.screen, ConfirmModal), (
+            "the single-GPU pre-check refuses BEFORE the confirm modal"
+        )
+        assert any(LNC_SINGLE_GPU_BLOCKED.format(
+            roots="/scans/somewhere-live") in message
+            for message in _toast_messages(app)), _toast_messages(app)
+        assert launcher.env_calls == 0
+        assert launcher.resume_calls == []
+
+
+async def test_e_env_block_renders_the_same_modal():
+    """A preflight FAIL renders the SAME env-block modal as slot 4 and
+    [f]->[r] — the resume can never bypass the gate."""
+    from tui.screens.run_config import EnvBlockModal
+
+    monitor = _history_fixture_monitor()
+    launcher = FakeMonitorLauncher(preflight=EnvPreflight(
+        can_launch=False,
+        reasons=("cuda: no device",),
+        failed_kernels=("cuda",)))
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+        await pilot.press("e")
+        await _settle(pilot, app)
+        await pilot.press("y")   # confirm the resume (EHC-2)
+        await _settle(pilot, app)
+        assert isinstance(app.screen, EnvBlockModal), (
+            "a doomed resume never launches — the same env block"
+        )
+        assert launcher.resume_calls == []
+
+
+async def test_e_e2x_phrase_refusal_reprompts_through_the_resume_worker():
+    """CR-01 on the resume lane: a full-matrix incomplete set over 3
+    seeds refuses at the phrase stage (Task 1's service-tier proof
+    surfacing here) — the E2' re-prompt appears, and the typed phrase
+    threads back through the RESUME worker (resume_calls grows, the
+    [f] failures path is NEVER consulted)."""
+    from tui.screens.run_config import E2PhraseModal
+    from tui.screens.selection import ConfirmModal
+
+    cells = tuple(
+        _row(f"model-{index}", "task-1", {seed: CELL_FAILED
+                                          for seed in (42, 43, 44)})
+        for index in range(3))
+    monitor = _history_fixture_monitor(cells=cells)
+    launcher = FakeMonitorLauncher(resume_outcomes=[
+        GateRefusal(stage="phrase", expected="old-run")])
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+        await pilot.press("e")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, ConfirmModal)
+        await pilot.press("y")   # confirm the resume (EHC-2)
+        await _settle(pilot, app)
+        assert isinstance(app.screen, E2PhraseModal), (
+            "the phrase-stage refusal escalates to the typed-phrase "
+            "modal — the E2' boundary holds on the [e] path"
+        )
+        assert launcher.resume_calls[0][5] is None, (
+            "the first attempt carried no phrase (the gate refused)"
+        )
+        for key in "old-run":
+            await pilot.press(key)
+        await pilot.pause()
+        await pilot.press("enter")   # the exact match ADVANCES (EHC-2)
+        await pilot.pause()
+        await pilot.press("y")       # y carries the typed phrase
+        await _settle(pilot, app)
+        assert len(launcher.resume_calls) == 2
+        assert launcher.resume_calls[1][5] == "old-run", (
+            "the re-prompt's typed phrase threads the resume re-launch"
+        )
+        assert launcher.rerun_calls == [], (
+            "the routing pin: the resume re-prompt routes through the "
+            "RESUME worker, never the [f] failures path"
+        )
+
+
+async def test_e_preflight_exception_surfaces_error_toast():
+    """WR-03 through the shared pipeline: a raising preflight after the
+    operator confirmed y surfaces the error toast — never a silent
+    no-op launch."""
+    from tui.strings import LNC_LAUNCH_FAILED_TOAST
+
+    monitor = _history_fixture_monitor()
+    launcher = FakeMonitorLauncher(
+        env_raises=OSError("quick-check kernel spawn failed"))
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+        await pilot.press("e")
+        await _settle(pilot, app)
+        await pilot.press("y")   # confirm the resume (EHC-2)
+        await _settle(pilot, app)
+        assert any(LNC_LAUNCH_FAILED_TOAST.format(
+            error="quick-check kernel spawn failed") in toast
+            for toast in _toast_messages(app)), _toast_messages(app)
+        assert launcher.resume_calls == [], "nothing launched"
 
 # =====================================================================
 # 261017-uwr redirects — the drill ordering/glyphs + the eta segment

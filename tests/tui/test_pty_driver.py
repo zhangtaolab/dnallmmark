@@ -103,6 +103,7 @@ _DELETE_MODAL_MARKER = "Delete run —"
 _DELETED_TOAST_MARKER = "✓ deleted:"
 _RESUME_CONFIRM_MARKER = "incomplete pairs"
 _FINISHED_ROOT_NAME = "done-run"
+_INTERRUPTED_ROOT_NAME = "dead-run"
 
 # Bounded windows (generous over the probe-pinned timings: boot ~0.25s,
 # nav repaints 0.05-0.16s, quit exit 0.30s, gate refusal ~1.5s).
@@ -449,5 +450,35 @@ def test_history_row_delete_flow_end_to_end(tmp_path):
             encoding="utf-8"), (
             "the delete worker's manual-root hygiene unregistered the "
             "root — the next boots never rescan the deleted run")
+    finally:
+        child.close(force=True)
+
+
+def test_history_row_resume_confirm_and_cancel(tmp_path):
+    """261018-toe — the [e] resume confirm under the REAL pty: over a
+    fabricated INTERRUPTED history root (checkpoint residue pushed
+    ~2000s stale, no manifest), ``e`` derives the incomplete pair and
+    opens the honest resume confirm (the en copy's distinctive
+    "incomplete pairs" segment); ``n`` cancels and the history row
+    still paints. NEVER presses y — no lane ever performs a real
+    launch (the standing pty safety rail)."""
+    root = _fabricate_interrupted_root(tmp_path)
+    child = _spawn_tui(tmp_path, manual_roots=(root,))
+    try:
+        _boot(child)
+        child.send("5")
+        child.expect(_MONITOR_MARKER, timeout=_NAV_TIMEOUT)
+        child.expect(_RUNNING_EMPTY_MARKER, timeout=_NAV_TIMEOUT)
+        child.send(_ARROW_RIGHT)
+        child.expect(_INTERRUPTED_ROOT_NAME, timeout=_NAV_TIMEOUT)
+        # e derives off-loop and opens the honest confirm
+        child.send("e")
+        child.expect(_RESUME_CONFIRM_MARKER, timeout=_NAV_TIMEOUT)
+        # n cancels — the row survives, nothing ever launches
+        child.send("n")
+        child.expect(_INTERRUPTED_ROOT_NAME, timeout=_NAV_TIMEOUT)
+        assert root.exists(), (
+            "a cancelled resume touches nothing on disk"
+        )
     finally:
         child.close(force=True)
