@@ -1884,7 +1884,7 @@ MON_DELETE_REFUSED_LIVE = _t(
     "Cannot delete a running task (stop it first): {root}")
 # The [e] keycap lands with the Task-2 binding (the footer paints both
 # row actions); the remaining MON_RESUME_* family arrives with the flow.
-MON_RESUME_KEYCAP = _t("MON_RESUME_KEYCAP", "续跑", "resume")
+MON_RESUME_KEYCAP = _t("MON_RESUME_KEYCAP", "续跑", "Resume")
 MON_RESUME_CONFIRM = _t(
     "MON_RESUME_CONFIRM",
     "续跑 {pairs} 个未完成组合 × 种子 {seeds} = {n} 个训练项（已完成训练项将按标记自动跳过）"

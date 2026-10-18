@@ -432,7 +432,7 @@ def test_history_row_delete_flow_end_to_end(tmp_path):
         child.expect(_FINISHED_ROOT_NAME, timeout=_NAV_TIMEOUT)
         # the per-tab footer: the History row actions' keycaps paint
         child.expect("Delete", timeout=_NAV_TIMEOUT)
-        child.expect("resume", timeout=_NAV_TIMEOUT)
+        child.expect("Resume", timeout=_NAV_TIMEOUT)
         # a REAL keypress opens the strong confirm (non-vacuity pin)
         child.send("d")
         child.expect(_DELETE_MODAL_MARKER, timeout=_NAV_TIMEOUT)
