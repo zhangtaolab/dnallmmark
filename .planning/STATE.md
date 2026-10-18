@@ -6,11 +6,11 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: Not started
 status: planning
-stopped_at: "Quick task 261018-rze complete (slot-5 cadence flicker fix: six render gates)"
-last_updated: "2026-10-18T12:57:35.429Z"
+stopped_at: "Quick task 261018-toe complete (slot-5 History [d] delete + [e] Resume)"
+last_updated: "2026-10-18T14:16:56.972Z"
 last_activity: 2026-10-18
-last_activity_desc: Quick task 261018-rze (monitor cadence flicker fix) complete
-state_head: d43bfa9a1de9eb9246ee91c4b4589561b3b4dfde
+last_activity_desc: Quick task 261018-toe (History row actions) complete
+state_head: 7cb712d25e2517cfd078d62ef6513b1802bc1101
 progress:
   total_phases: 6
   completed_phases: 6
@@ -296,6 +296,7 @@ None yet.
 | 261018-08g | 浸润测试修复批（SOAK-REPORT F1-F5）— F1 dead-5 根治（每次导航重建 MonitorScreen + 无 textual 依赖的 MonitorSession 提升到组合根，attach/D-13 状态跨重建存活；缓存实例设计删除）+ 永久 pty 车道 tests/tui/test_pty_driver.py（纯 pexpect 无新依赖，CI 安全，Pilot 结构性盲区的长期防线）+ F3 大写 Y/N 孪生绑定（四个确认面，show=False 金标零动；Esc 实测 0.16-0.26s 与 ESCDELAY 无关 -> 不缓解，WINDOWS #36）+ F2 full_scan 活证据优先于陈旧 manifest（同根重跑=默认工作流）+ F4 f1/f2 任意焦点帮助/语言键（f10 机制）+ F5 槽4 picker [m] 切换提示（零新字符串）；run_config.svg 因 F5 重生成不提交（WINDOWS #39，#35 先例）；1F/1916P（+15 新）+ node 26/26 + ruff/ty 绿 + 双 monitor 金标 sha 全程不变 | 2026-10-18 | 565b338 | [261018-08g-soak-test-fix-batch-f1-dead-5-cached-mon](./quick/261018-08g-soak-test-fix-batch-f1-dead-5-cached-mon/) |
 | 24 | 261018-kvj \| slot-5 人机逻辑重设计（maintainer 2026-10-18 15:01 批准的双页签契约）— 正在运行/Running（一次运行一张卡片，mgpu-w 兄弟根组内工作行，模型×数据规模+总进度条+当前训练项行）+ 历史/History（倒序，✓/⏸，重跑进行中 dual-presence 徽标，Enter 逐项 drill）+ ←/→/Tab 切换 + 乐观首绘（#41 骨架+扫描中，扫描落地填充）+ 毕业 toast + 空态 Enter → 槽4 唯一启动门 + 机翻词汇清出（发现/sweep 根）+ 服务层零改动；run_config.svg sha 保护（c7e14458…），monitor 双金标重生成不提交（WINDOWS #35 合并 D-03 交接，替代 uwr 对）；#40/#41 关闭、#35 修订；2F/1919P 恰为基线成员（基线漂移记录 deferred-items）+ node 26/26 + ruff/ty 绿 + pty 车道 6/6（F1 renav 字节不变） | 2026-10-18 | 007b385 | 261018-kvj-slot-5-human-logic-redesign-tabbed-runni |
 | 261018-rze | slot-5 monitor cadence flicker fix (six render gates: tabs/note/cards-structure/history-rows/focus/modal suppression) | 2026-10-18 | d43bfa9 | [261018-rze-slot-5-monitor-cadence-flicker-fix-every](./quick/261018-rze-slot-5-monitor-cadence-flicker-fix-every/) |
+| 261018-toe | slot-5 History row actions: [d] delete (strong confirm, worker rm -rf, live refusal) + [e] Resume (incomplete-only relaunch via pairs file) | 2026-10-18 | 7cb712d | [261018-toe-slot-5-history-row-actions-d-delete-rm-r](./quick/261018-toe-slot-5-history-row-actions-d-delete-rm-r/) |
 
 ## Deferred Items
 
