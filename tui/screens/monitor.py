@@ -90,6 +90,19 @@ Contract (locked decisions that survive the redesign):
   recompose (fresh empty Labels) fully repaints in the active
   language.
 - WR-06: every async modal push checks ``app.below_minimum_grid``.
+- 261018-toe (the maintainer's 2026-10-18 21:21 slot-5 ruling): the
+  History tab's row actions — [d] delete (a strong y-only
+  DeleteConfirmModal naming the FULL root path and the training-item
+  count; live roots structurally undeletable via the pre-modal refusal
+  AND the worker-side re-check; the ``rm -rf`` runs in a
+  ``mon-delete`` worker thread over the adapter-tier
+  ``delete_root`` seam, followed by a full rescan) and [e] resume (the
+  incomplete pairs derived off-loop, the honest LaunchConfirmModal, the
+  SAME preflight/launch/E2' stages as [f]->[r] through
+  ``launch_from_pairs``). The d/e footer keycaps render ONLY while the
+  History tab is active (``_footer_pairs`` refreshes on mount + tab
+  switch ONLY, never on the cadence — the Running-tab footer stays
+  byte-identical so the uncommitted D-03 goldens hold).
 - 261018-08g (SOAK-1/F1, PRESERVED EXACTLY): the app builds a FRESH
   MonitorScreen per navigation and injects the shared textual-free
   :class:`MonitorSession` — the fresh-screen-per-nav + session
@@ -101,6 +114,7 @@ roots, model/task keys, record fields, argv, and paths stay data,
 verbatim.
 """
 
+import shutil
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -124,7 +138,7 @@ from textual.widgets import (
 )
 
 from tui import strings as S
-from tui.screens.nav import BottomBar, TopMenuBar
+from tui.screens.nav import BottomBar, TopMenuBar, binding_row
 from tui.screens.selection import (
     ConfirmModal,
     LaunchConfirmModal,
@@ -549,6 +563,26 @@ class MonitorBackend:
     def add_manual_root(self, path) -> bool:
         return sweep_monitor.add_manual_root(path)
 
+    def delete_root(self, root) -> None:
+        """261018-toe: rm -rf the root, tolerant of a missing dir
+        (``ignore_errors``) — the adapter tier owns the mutation so the
+        pure-scanner declaration in ``sweep_monitor`` stands (the plan's
+        tier ruling). Reached through the tolerant getattr seam (the
+        kill_sweep precedent: deliberately NOT declared in the Protocol
+        so the pre-existing nav-shell/run-config monitor fakes are
+        never ty-flagged; the real backend and the tier-2 Pilot fake
+        both carry it)."""
+        shutil.rmtree(Path(root).expanduser().resolve(),
+                      ignore_errors=True)
+
+    def remove_manual_root(self, path) -> bool:
+        """261018-toe: the delete worker's manual-root hygiene leg —
+        delegate to the scanner service's own tolerant removal. Reached
+        through the tolerant getattr seam (the kill_sweep precedent:
+        deliberately NOT declared in the Protocol so no fake is ever
+        ty-flagged; every pre-existing fake simply skips the ride)."""
+        return sweep_monitor.remove_manual_root(path)
+
     # ----- the launcher face (the [r] re-run seam; the real path
     # receives the app-owned shared launcher, whose methods these
     # delegate to — the adapter satisfies BOTH protocols) -----
@@ -764,6 +798,65 @@ class KillConfirmModal(ConfirmModal):
 
     def action_confirm_kill(self) -> None:
         """``y`` — the one key that confirms the kill."""
+        self.dismiss()
+        self._on_confirm()
+
+
+class DeleteConfirmModal(ConfirmModal):
+    """The 261018-toe [d] delete confirm: the KillConfirmModal contract
+    matched EXACTLY — ``y`` (visible keycap) + ``Y`` (hidden twin) are
+    the ONLY keys that confirm the ``rm -rf`` of a dead run's output
+    root, ``n``/``N`` and ``esc`` cancel, and ``enter`` is STRUCTURALLY
+    inert (a stray double-enter can never delete a run's artifacts).
+
+    The message names the FULL root path and the training-item count
+    (the honest scope of the deletion, derived off the event loop); the
+    border title names the root. Live roots never reach this modal
+    (screen-side refusal plus the worker-side re-check).
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        # The KillConfirmModal exact-pair reuse: MON_DELETE_KEYCAP (the
+        # Delete word) is exactly what y does; LNC_EXIT_CONFIRM_NO (the
+        # Cancel pair) is exactly what n does — zero new keycap pairs.
+        # enter stays show=False — the inert no-op is never advertised.
+        Binding("y", "confirm_delete", S.MON_DELETE_KEYCAP, show=True),
+        Binding("n", "dismiss", S.LNC_EXIT_CONFIRM_NO, show=True),
+        # the UPPERCASE twins (the SOAK-2/F3 idiom): same actions,
+        # show=False — y stays the ONLY family that deletes.
+        Binding("Y", "confirm_delete", show=False),
+        Binding("N", "dismiss", show=False),
+        # escape inherited from ConfirmModal
+    ]
+
+    def __init__(self, message: str, root: str,
+                 on_confirm: "Callable[[], None]", **kwargs):
+        super().__init__(message, on_confirm, **kwargs)
+        self._root = root
+
+    def compose(self) -> ComposeResult:
+        # the KillConfirmModal layout mirror: the [Y]/[y]/[N]/[n] tokens
+        # render BOLD via the Rich Text API (the cdr pattern — Text
+        # content is never markup-parsed), same #confirm-box Vertical
+        # with the message Static FIRST (on_mount + the tests query it).
+        message = Text(self._message)
+        message.highlight_words(("[Y]", "[y]", "[N]", "[n]"), style="bold")
+        with Vertical(id="confirm-box", classes="modal-box"):
+            yield Static(message)
+            yield Footer()
+
+    def on_mount(self) -> None:
+        box = self.query_one("#confirm-box", Vertical)
+        box.border_title = S.MON_DELETE_TITLE.format(root=self._root)
+
+    def action_confirm(self) -> None:
+        """Enter is deliberately inert on the delete confirm (EHC-2
+        extended to the delete surface by 261018-toe: only ``y`` deletes;
+        the message copy names the [Y] keycap)."""
+        # documented no-op: the inherited enter binding lands here
+
+    def action_confirm_delete(self) -> None:
+        """``y`` — the one key that confirms the deletion."""
         self.dismiss()
         self._on_confirm()
 
@@ -1219,6 +1312,26 @@ class MonitorScreen(Screen):
         Binding("right", "switch_tab", show=False, priority=True),
         Binding("tab", "switch_tab", S.MON_TAB_SWITCH_KEYCAP,
                 priority=True),
+        # 261018-toe (the maintainer's 2026-10-18 21:21 ruling): the
+        # HISTORY-TAB row actions — [d] delete a dead run's output root
+        # (strong y-only confirm, worker-thread rm -rf, live roots
+        # structurally undeletable) and [e] resume its incomplete items
+        # (the honest confirm + the shared rerun pipeline). Both act on
+        # the FOCUSED History row and stay silent everywhere else; the
+        # footer keycaps render ONLY while the History tab is active
+        # (see _footer_pairs — the Running-tab footer stays
+        # byte-identical so the uncommitted D-03 goldens hold).
+        # DEVIATION from the plan's "after the k row" placement
+        # (recorded in the SUMMARY): the bottom bar's left segment is
+        # 1fr (93 cells at the 120-col grid) and the D-15 clip drops
+        # the LEAST-PRIMARY (trailing) keycaps first, so an
+        # after-[k] declaration clipped exactly [d]/[e] away on the
+        # History tab — contradicting the plan's own keycap-paint
+        # must-have. Declared here (the History surface's primary
+        # actions, ahead of the running-scoped keys) they paint; the
+        # Running projection filters them and stays byte-identical.
+        Binding("d", "delete_history", S.MON_DELETE_KEYCAP),
+        Binding("e", "resume_history", S.MON_RESUME_KEYCAP),
         Binding("f", "show_failures", S.MON_FAILURES_KEYCAP),
         Binding("t", "show_log_tail", S.MON_LOG_KEYCAP),
         Binding("a", "attach_path", S.MON_ATTACH_LABEL),
@@ -1326,6 +1439,38 @@ class MonitorScreen(Screen):
             self.run_id = run_id
             super().__init__()
 
+    class DeleteReady(Message):
+        """The delete confirm's training-item count arrived (worker ->
+        loop; 261018-toe — the LogTailModal read-once precedent: one
+        off-loop cells_view read feeds the modal's honest scope)."""
+
+        def __init__(self, root: str, count: int) -> None:
+            self.root = root
+            self.count = count
+            super().__init__()
+
+    class DeleteFinished(Message):
+        """The deletion outcome arrived (worker thread -> loop;
+        261018-toe). Outcome vocabulary: ``"deleted"`` | ``"refused_live"``
+        — machine strings the handler maps to the toasts."""
+
+        def __init__(self, outcome: str, root: str, run_id: int) -> None:
+            self.outcome = outcome
+            self.root = root
+            self.run_id = run_id
+            super().__init__()
+
+    class DeleteFailed(Message):
+        """The delete worker RAISED (WR-03): surfaced as the
+        MON_DELETE_FAILED error toast — a confirmed delete that dies is
+        never a silent no-op."""
+
+        def __init__(self, error: str, root: str, run_id: int) -> None:
+            self.error = error
+            self.root = root
+            self.run_id = run_id
+            super().__init__()
+
     def __init__(self,
                  monitor_service: "MonitorServiceProtocol | None" = None,
                  launcher_service: "MonitorLauncherProtocol | None" = None,
@@ -1381,6 +1526,9 @@ class MonitorScreen(Screen):
         # 261016-vxr (VXR-2): the kill worker's stage id (the WR-02
         # idiom — a superseded kill's late outcome toast drops)
         self._kill_stage_id = 0
+        # 261018-toe: the delete worker's stage id (the same WR-02
+        # idiom — a superseded delete's late outcome toast drops)
+        self._delete_stage_id = 0
         self._pending_rescan = False
         self._frontier_timer = None
         self._full_timer = None
@@ -1476,6 +1624,13 @@ class MonitorScreen(Screen):
             S.MON_HISTORY_EMPTY)
         self._render_all()
         self._focus_active()
+        # 261018-toe: the per-active-tab footer projection — scheduled
+        # after the refresh so the BottomBar's keycap child is mounted
+        # (the Running-tab filter must land before the first paint is
+        # ever observed; the bar's own on_mount projects the unfiltered
+        # rows and this refresh corrects them). Mount + tab switch ONLY
+        # — never the cadence (the rze byte-silence gates).
+        self.call_after_refresh(self._refresh_footer_keys)
         # the D-09 cadence: every tick dispatches a worker (never an
         # inline scan); the mount kick covers the first full pass so
         # the screen never waits 60s for its first rows
@@ -2077,6 +2232,40 @@ class MonitorScreen(Screen):
 
     # ===== interactions =====
 
+    #: The History-scoped footer keys (261018-toe): the [d]/[e] row
+    #: actions render their keycaps ONLY while the History tab is the
+    #: active tab.
+    _TAB_SCOPED_FOOTER_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"d", "e"})
+
+    def _footer_pairs(self) -> "list[tuple[str, str]]":
+        """The bottom bar's left-segment projection (261018-toe):
+        ``binding_row`` over ``BINDINGS`` with the History-scoped d/e
+        rows dropped unless the History tab is active — the Running-tab
+        footer stays byte-identical to the pre-[d]/[e] render (the
+        uncommitted D-03 monitor goldens must not change)."""
+        pairs: list[tuple[str, str]] = []
+        for binding in self.BINDINGS:
+            row = binding_row(binding)
+            if row is None:
+                continue
+            if (self._active_tab != "history"
+                    and row[0] in self._TAB_SCOPED_FOOTER_KEYS):
+                continue
+            pairs.append(row)
+        return pairs
+
+    def _refresh_footer_keys(self) -> None:
+        """Repaint the bottom bar's left keycaps for the ACTIVE tab
+        (261018-toe). Fires on mount and on tab switch ONLY — never
+        inside ``_render_all`` and never on the 2s cadence (the rze
+        byte-silence gates hold)."""
+        try:
+            bar = self.query_one(BottomBar)
+        except Exception:  # noqa: BLE001 — the bar not mounted yet
+            return  # unreachable through the call_after_refresh scheduling
+        bar.refresh_left_pairs(self._footer_pairs())
+
     def action_switch_tab(self) -> None:
         """left/right/tab: flip the two tabs (either direction — two
         tabs), repaint, and move focus to the active tab's list."""
@@ -2084,6 +2273,8 @@ class MonitorScreen(Screen):
                             else "running")
         self._render_all()
         self._focus_active()
+        # 261018-toe: the per-tab footer projection follows the flip
+        self._refresh_footer_keys()
 
     def _focused_root(self) -> "str | None":
         """The focused tab's selection root: the focused running card's
@@ -2568,6 +2759,137 @@ class MonitorScreen(Screen):
             return
         self.app.notify(
             S.MON_KILL_FAILED.format(error=message.error),
+            severity="error")
+
+    # ===== the [d] delete channel (261018-toe — History-tab scoped) =====
+
+    def _root_is_live(self, root_key: str) -> bool:
+        """The [d]/[e] liveness predicate: the last scan's
+        SWEEP_RUNNING state for the root (covers probed CLI roots and
+        the dual-presence badge rows) OR the launcher registry's live
+        set — a live root is never deleted and never resumed."""
+        summary = self._summaries.get(root_key)
+        if summary is not None and summary.state == SWEEP_RUNNING:
+            return True
+        return root_key in self._launcher.live_sweeps()
+
+    def action_delete_history(self) -> None:
+        """[d] (History tab only): open the strong y-only delete confirm
+        over the FOCUSED History row's root — the message names the FULL
+        root path and the training-item count (derived off the event
+        loop). Degradations: below the minimum grid nothing opens
+        (WR-06); off-tab or without a focused row is silent (the [f]/[t]
+        precedent); a LIVE root refuses BEFORE any modal with
+        MON_DELETE_REFUSED_LIVE — never a confirm whose rm -rf would cut
+        a running sweep's artifacts out from under it."""
+        if self.app.below_minimum_grid:
+            return
+        if self._active_tab != "history":
+            return
+        root_key = self._focused_root()
+        if root_key is None:
+            return
+        if self._root_is_live(root_key):
+            self.app.notify(
+                S.MON_DELETE_REFUSED_LIVE.format(root=root_key))
+            return
+        self._read_delete_count(root_key)
+
+    @work(exclusive=True, thread=True, group="mon-drill",
+          exit_on_error=False)
+    def _read_delete_count(self, root_key: str) -> None:
+        """The confirm's honest training-item count: ONE off-loop
+        cells_view read, the per-row seed counts summed (the read-once
+        drill precedent — the drill family's cells read group)."""
+        try:
+            cells = self._service.cells_view(root_key)
+            count = sum(sweep_monitor.entry_fold(row).total
+                        for row in (cells or ()))
+        except Exception:  # noqa: BLE001 — the tolerant-reader promise
+            return
+        self.post_message(self.DeleteReady(root_key, count))
+
+    def on_monitor_screen_delete_ready(self, message: DeleteReady) -> None:
+        if self.app.below_minimum_grid:
+            return
+        self.app.push_screen(DeleteConfirmModal(
+            message=S.MON_DELETE_CONFIRM.format(
+                root=message.root, n=message.count),
+            root=message.root,
+            on_confirm=lambda: self._delete_confirmed(message.root)))
+
+    def _delete_confirmed(self, root_key: str) -> None:
+        """y landed on the delete confirm: bump the delete stage id (the
+        WR-02 idiom — a superseded delete's late outcome toast drops)
+        and dispatch the off-loop delete worker."""
+        self._delete_stage_id += 1
+        self._run_delete(root_key, self._delete_stage_id)
+
+    @work(exclusive=True, thread=True, group="mon-delete",
+          exit_on_error=False)
+    def _run_delete(self, root_key: str, run_id: int) -> None:
+        """The rm -rf in a WORKER THREAD (never the event loop — the
+        kill-channel discipline): (a) RE-CHECK liveness first (the
+        confirm-to-worker race — a root that went live between y and
+        this worker is refused, nothing deleted); (b) the delete_root
+        seam (adapter-tier ``shutil.rmtree`` tolerant of a missing dir;
+        the tolerant getattr seam — the kill_sweep precedent, so a
+        service face without it is never ty-flagged) plus the
+        best-effort tolerant manual-root hygiene removal; (c) the
+        outcome posted back to the loop (the LogTailModal read-once
+        precedent). WR-03: an exception posts DeleteFailed, never a
+        silent post-confirm no-op."""
+        try:
+            if self._root_is_live(root_key):
+                self.post_message(self.DeleteFinished(
+                    "refused_live", root_key, run_id))
+                return
+            delete_getter = getattr(self._service, "delete_root", None)
+            if delete_getter is None:
+                # a service face without the seam (every pre-existing
+                # nav-shell/run-config fake): nothing was deleted —
+                # surface loudly, never a false success toast
+                self.post_message(self.DeleteFailed(
+                    "delete_root seam unavailable on the monitor service",
+                    root_key, run_id))
+                return
+            delete_getter(root_key)
+            remove_getter = getattr(
+                self._service, "remove_manual_root", None)
+            if remove_getter is not None:
+                # best-effort hygiene: the root itself is already gone;
+                # a failed registry rewrite must never fail the delete
+                try:
+                    remove_getter(root_key)
+                except Exception:  # noqa: BLE001, S110 — swallowed
+                    pass
+        except Exception as exc:  # noqa: BLE001 — WR-03
+            self.post_message(self.DeleteFailed(
+                str(exc) or repr(exc), root_key, run_id))
+            return
+        self.post_message(self.DeleteFinished("deleted", root_key, run_id))
+
+    def on_monitor_screen_delete_finished(
+            self, message: DeleteFinished) -> None:
+        """The delete outcome: the success toast plus an immediate full
+        rescan so the row disappears (the [r] idiom, without the rescan
+        count toast); the refused-live race surfaces its own refusal
+        toast — nothing was deleted."""
+        if message.run_id != self._delete_stage_id:
+            return  # a superseded delete's late post (WR-02)
+        if message.outcome == "refused_live":
+            self.app.notify(
+                S.MON_DELETE_REFUSED_LIVE.format(root=message.root))
+            return
+        self.app.notify(S.MON_DELETE_TOAST.format(root=message.root))
+        self._tick_full()
+
+    def on_monitor_screen_delete_failed(self, message: DeleteFailed) -> None:
+        """WR-03: the delete worker raised — the error toast names it."""
+        if message.run_id != self._delete_stage_id:
+            return
+        self.app.notify(
+            S.MON_DELETE_FAILED.format(error=message.error),
             severity="error")
 
 

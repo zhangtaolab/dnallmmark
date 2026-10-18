@@ -160,7 +160,8 @@ class FakeMonitorService:
                  frontiers=None, failures=None, tails=None,
                  resume_counts=None, scales=None,
                  valid_roots=(), manual_roundtrip=None, records=None,
-                 rerun_lanes=None, progress=None):
+                 rerun_lanes=None, progress=None,
+                 delete_raises=None):
         self._scans = list(scans) if scans else []
         self._cells = dict(cells or {})
         self._stats = dict(stats or {})
@@ -185,6 +186,9 @@ class FakeMonitorService:
             manual_roundtrip if manual_roundtrip is not None else [])
         self._records = dict(records or {})
         self._rerun_lanes = dict(rerun_lanes or {})
+        # 261018-toe ([d]): the delete_root scripting — a raiser for the
+        # WR-03 surface; the recording lists prove the seam call
+        self._delete_raises = delete_raises
         self.full_calls = []
         self.frontier_calls = []
         self.cells_calls = []
@@ -195,6 +199,8 @@ class FakeMonitorService:
         self.record_calls = []
         self.rerun_lane_calls = []
         self.added_roots = []
+        self.delete_calls = []
+        self.removed_manual_roots = []
 
     # ----- the scan surface -----
 
@@ -276,6 +282,21 @@ class FakeMonitorService:
         self.added_roots.append(str(path))
         if self._manual_roundtrip:
             return self._manual_roundtrip.pop(0)
+        return True
+
+    # ----- the [d] delete surface (261018-toe) -----
+
+    def delete_root(self, root):
+        """The scripted delete seam: records the resolved root and
+        optionally raises (the WR-03 surface); the outcome vocabulary is
+        the SCREEN's (the worker computes refused_live itself)."""
+        self.delete_calls.append(str(root))
+        if self._delete_raises is not None:
+            raise self._delete_raises
+
+    def remove_manual_root(self, path):
+        """The best-effort manual-root hygiene recording."""
+        self.removed_manual_roots.append(str(path))
         return True
 
 
@@ -2593,6 +2614,320 @@ async def test_monitor_help_lists_the_kill_row():
         )
         assert not any(row.startswith("[Q]") for row in rows), (
             "the retired any-focus Q row must not list"
+        )
+
+# =====================================================================
+# 261018-toe — the [d] delete family (History-tab scoped, the kill
+# family's mirror: strong y-only confirm, worker-thread rm -rf, live
+# refusal pre-modal AND in-worker, per-tab footer keycaps)
+# =====================================================================
+
+
+def _history_fixture_monitor(cells=None):
+    """The canonical [d]/[e] fixture: one FINISHED History root + its
+    cell rows (2+1 seed counts across a failed, a completed, and an
+    interrupted row)."""
+    if cells is None:
+        cells = (
+            _row("model-a", "task-1", {42: CELL_FAILED,
+                                       43: CELL_COMPLETED}),
+            _row("model-b", "task-2", {42: CELL_INTERRUPTED}),
+        )
+    return FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "old-run", SWEEP_FINISHED, done=3, total=4, mtime=100.0),),
+            watermarks={})],
+        cells={"/scans/old-run": cells},
+    )
+
+
+async def test_d_opens_delete_confirm_y_deletes_and_rescans():
+    """261018-toe: d over the FOCUSED History row opens the strong
+    y-only DeleteConfirmModal naming the FULL root path and the honest
+    training-item count (the summed per-row seed counts); enter is
+    structurally inert; n cancels; y dispatches the off-loop deletion
+    through the delete_root seam + the manual-root hygiene, fires the
+    success toast, and the full rescan follows (the row disappears)."""
+    from tui.screens.monitor import DeleteConfirmModal
+    from tui.strings import MON_DELETE_CONFIRM, MON_DELETE_TOAST
+
+    monitor = _history_fixture_monitor()
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+
+        full_calls_before = len(monitor.full_calls)
+        await pilot.press("d")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, DeleteConfirmModal), (
+            "d over the focused History row opens the delete confirm"
+        )
+        copy = _plain(app.screen.query_one(Static).content)
+        assert MON_DELETE_CONFIRM.format(
+            root="/scans/old-run", n=3) in copy, copy
+        assert "/scans/old-run" in str(
+            app.screen.query_one("#confirm-box").border_title), (
+            "the border title names the root the deletion would remove"
+        )
+
+        # EHC-2: enter is structurally inert on the delete confirm
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, DeleteConfirmModal), (
+            "enter must never confirm a deletion (EHC-2)"
+        )
+        assert monitor.delete_calls == []
+
+        # n cancels back to the monitor, nothing deleted
+        await pilot.press("n")
+        await pilot.pause()
+        assert isinstance(app.screen, MonitorScreen)
+        assert monitor.delete_calls == []
+
+        # reopen with d; y deletes through the seam exactly once
+        await pilot.press("d")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, DeleteConfirmModal)
+        await pilot.press("y")
+        await _settle(pilot, app)
+        assert monitor.delete_calls == ["/scans/old-run"], (
+            "y dispatched the deletion with the RESOLVED focused root"
+        )
+        assert monitor.removed_manual_roots == ["/scans/old-run"], (
+            "the manual-root hygiene rides the delete worker"
+        )
+        assert MON_DELETE_TOAST.format(
+            root="/scans/old-run") in _toast_messages(app)
+        assert len(monitor.full_calls) > full_calls_before, (
+            "the deletion triggers an immediate full rescan"
+        )
+
+
+async def test_d_uppercase_twins_match_lowercase():
+    """SOAK-2/F3 on the delete surface: the displayed copy advertises
+    [Y]/[N] — uppercase Y deletes exactly like y, N cancels like n."""
+    from tui.screens.monitor import DeleteConfirmModal
+    from tui.strings import MON_DELETE_TOAST
+
+    monitor = _history_fixture_monitor()
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+        await pilot.press("d")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, DeleteConfirmModal)
+        await pilot.press("N")   # the uppercase cancel twin
+        await pilot.pause()
+        assert isinstance(app.screen, MonitorScreen)
+        assert monitor.delete_calls == []
+        await pilot.press("d")
+        await _settle(pilot, app)
+        await pilot.press("Y")   # the uppercase confirm twin
+        await _settle(pilot, app)
+        assert monitor.delete_calls == ["/scans/old-run"]
+        assert MON_DELETE_TOAST.format(
+            root="/scans/old-run") in _toast_messages(app)
+
+
+async def test_d_live_root_refuses_before_the_confirm():
+    """The fail-safe pin (NON-VACUOUS): a root whose last scan state is
+    SWEEP_RUNNING — the dual-presence badge row shape — can NEVER open
+    the delete modal: the refusal toast fires first and delete_root is
+    never called."""
+    from tui.screens.monitor import DeleteConfirmModal
+    from tui.strings import MON_DELETE_REFUSED_LIVE
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(
+            _summary("rerun-root", SWEEP_RUNNING, done=1, total=2,
+                     mtime=100.0),), watermarks={})],
+        cells={"/scans/rerun-root": (
+            _row("model-a", "task-1", {42: CELL_COMPLETED}),)},
+        stats={"/scans/rerun-root": _stats(done=1, total=2)},
+    )
+    app = _app(monitor=monitor, launcher=FakeMonitorLauncher(
+        live=("/scans/rerun-root",)))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        # the dual-presence row sits on History (resume markers > 0)
+        monitor._resume["/scans/rerun-root"] = 3
+        screen = app.screen
+        screen._tick_full()
+        await _settle(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+        await pilot.press("d")
+        await _settle(pilot, app)
+        assert MON_DELETE_REFUSED_LIVE.format(
+            root="/scans/rerun-root") in _toast_messages(app)
+        assert not any(isinstance(screen, DeleteConfirmModal)
+                       for screen in app.screen_stack), (
+            "no delete confirm may open over a live root"
+        )
+        assert monitor.delete_calls == []
+
+
+async def test_d_confirm_to_worker_race_refused_live():
+    """The race closer: a root that goes LIVE between the y confirm and
+    the delete worker is refused IN THE WORKER (the re-check) — nothing
+    is deleted and the refusal toast surfaces (never a silent no-op)."""
+    import threading
+
+    from tui.screens.monitor import DeleteConfirmModal
+    from tui.strings import MON_DELETE_REFUSED_LIVE
+
+    class _FlipLiveLauncher(FakeMonitorLauncher):
+        """live_sweeps() reports the flip-set roots once the event is
+        set — the confirm-to-worker race scripting."""
+
+        def __init__(self, live_later):
+            super().__init__()
+            self._live_later = tuple(live_later)
+            self.flip = threading.Event()
+
+        def live_sweeps(self):
+            if self.flip.is_set():
+                return self._live_later
+            return self._live
+
+    monitor = _history_fixture_monitor()
+    launcher = _FlipLiveLauncher(("/scans/old-run",))
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+        await pilot.press("d")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, DeleteConfirmModal), (
+            "the pre-modal check passed while the root was still dead"
+        )
+        launcher.flip.set()   # the root goes live AFTER the confirm
+        await pilot.press("y")
+        await _settle(pilot, app)
+        assert monitor.delete_calls == [], (
+            "the worker-side re-check refused — nothing was deleted"
+        )
+        assert MON_DELETE_REFUSED_LIVE.format(
+            root="/scans/old-run") in _toast_messages(app)
+
+
+async def test_d_off_tab_no_selection_and_below_grid_are_silent():
+    """The [f]/[t] scoping precedent on [d]: on the RUNNING tab with a
+    focused card, with no History selection, and below the minimum
+    grid — d opens nothing, silently (no toast, no modal)."""
+    from tui.app import MinSizeScreen
+    from tui.screens.monitor import DeleteConfirmModal
+
+    # on the Running tab with a focused card: silent
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2, mtime=1.0),),
+            watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(done=1, total=2)},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("d")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, MonitorScreen), (
+            "d on the Running tab opens nothing"
+        )
+        assert _toast_messages(app) == []
+        assert monitor.delete_calls == []
+
+    # no History rows at all: silent on the History tab
+    monitor = FakeMonitorService(scans=[ScanResult(sweeps=(), watermarks={})])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+        await pilot.press("d")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, MonitorScreen)
+        assert _toast_messages(app) == []
+        assert monitor.delete_calls == []
+
+    # below the minimum grid with a focused History row: no chrome
+    app = _app(monitor=_history_fixture_monitor())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+        await pilot.resize_terminal(60, 20)
+        await pilot.pause()
+        assert isinstance(app.screen, MinSizeScreen)
+        await pilot.press("d")
+        await _settle(pilot, app)
+        assert not any(isinstance(screen, DeleteConfirmModal)
+                       for screen in app.screen_stack), (
+            "no delete chrome may open over the min-size guard"
+        )
+
+
+async def test_d_worker_exception_surfaces_error_toast():
+    """WR-03: a raising delete_root after the operator confirmed y
+    surfaces the MON_DELETE_FAILED error toast — never a silent
+    no-op."""
+    from tui.strings import MON_DELETE_FAILED
+
+    monitor = _history_fixture_monitor()
+    monitor._delete_raises = OSError("read-only filesystem")
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        await pilot.press("right")
+        await pilot.pause()
+        await pilot.press("d")
+        await _settle(pilot, app)
+        await pilot.press("y")
+        await _settle(pilot, app)
+        assert MON_DELETE_FAILED.format(
+            error="read-only filesystem") in _toast_messages(app), (
+            "a raising delete surfaces the error toast — never silence"
+        )
+
+
+async def test_d_e_footer_keycaps_history_tab_only():
+    """The per-active-tab footer ruling: the [d]/[e] keycaps render in
+    the bottom bar's left segment ONLY while the History tab is active
+    — the Running tab's footer stays byte-identical to the pre-[d]/[e]
+    projection (the uncommitted monitor goldens hold), and the flip
+    both ways follows the tab switch."""
+    from tui.screens.nav import KeycapsStatic
+    from tui.strings import MON_DELETE_KEYCAP, MON_RESUME_KEYCAP
+
+    monitor = _history_fixture_monitor()
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        await pilot.pause()   # let the mount footer refresh land
+
+        def footer_text() -> str:
+            return str(screen.query_one(
+                "#nav-left-keycaps", KeycapsStatic).content)
+
+        assert "[d]" not in footer_text() and "[e]" not in footer_text(), (
+            "the Running-tab footer carries NO d/e keycaps"
+        )
+        await pilot.press("right")
+        await pilot.pause()
+        copy = footer_text()
+        assert "[d]" in copy and MON_DELETE_KEYCAP in copy, copy
+        assert "[e]" in copy and MON_RESUME_KEYCAP in copy, copy
+        await pilot.press("left")
+        await pilot.pause()
+        assert "[d]" not in footer_text() and "[e]" not in footer_text(), (
+            "the flip back drops the d/e keycaps again"
         )
 
 # =====================================================================

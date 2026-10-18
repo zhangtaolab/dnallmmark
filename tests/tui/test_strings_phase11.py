@@ -149,6 +149,13 @@ EXPECTED_MON_CONSTANTS = (
     # 261017-uwr (UWR-1): the third cell state (the History tab reuses
     # the ✓/⏸ cell vocabulary for its rows — 261018-kvj).
     "MON_STATE_INTERRUPTED",
+    # 261018-toe (the slot-5 History row actions): the [d] delete
+    # family — keycap, modal title/confirm, the success/failed toasts,
+    # the live-root refusal — plus the [e] keycap (the remaining
+    # MON_RESUME_* family lands with the flow itself).
+    "MON_DELETE_KEYCAP", "MON_DELETE_TITLE", "MON_DELETE_CONFIRM",
+    "MON_DELETE_TOAST", "MON_DELETE_FAILED", "MON_DELETE_REFUSED_LIVE",
+    "MON_RESUME_KEYCAP",
 )
 
 #: The per-seed cell states in spec order, and their contract glyphs.

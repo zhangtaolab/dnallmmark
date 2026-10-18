@@ -1857,6 +1857,35 @@ MON_KILL_UNAVAILABLE = _t(
 MON_KILL_FAILED = _t(
     "MON_KILL_FAILED", "✗ 停止失败: {error}", "✗ stop failed: {error}")
 
+# 261018-toe (the maintainer's 2026-10-18 21:21 slot-5 ruling): the
+# History-tab row actions — [d] 删除 (a strong y-only confirm over the
+# rm -rf of a DEAD run's output root; a live root is structurally
+# undeletable, the deletion runs off the event loop, a rescan follows)
+# and [e] 续跑 (the one-click resume of a dead run's incomplete items
+# through the existing failures pipeline). The zh side says 训练项
+# (cell) per the approved table — never 细胞; the [e] label is
+# 续跑 / en resume. Consumers: tui/screens/monitor.py (DeleteConfirmModal
+# + action_delete_history + action_resume_history + the outcome toasts).
+MON_DELETE_KEYCAP = _t("MON_DELETE_KEYCAP", "删除", "Delete")
+MON_DELETE_TITLE = _t(
+    "MON_DELETE_TITLE", "删除运行 — {root}", "Delete run — {root}")
+MON_DELETE_CONFIRM = _t(
+    "MON_DELETE_CONFIRM",
+    "将永久删除结果目录：{root}（{n} 训练项，不可恢复）？— [Y] 删除 / [N] 取消",
+    "Permanently delete the output root: {root} ({n} cells, "
+    "unrecoverable)? — [Y] delete / [N] cancel")
+MON_DELETE_TOAST = _t(
+    "MON_DELETE_TOAST", "✓ 已删除：{root}", "✓ deleted: {root}")
+MON_DELETE_FAILED = _t(
+    "MON_DELETE_FAILED", "✗ 删除失败: {error}", "✗ delete failed: {error}")
+MON_DELETE_REFUSED_LIVE = _t(
+    "MON_DELETE_REFUSED_LIVE",
+    "运行中的任务不可删除（先停止再删除）：{root}",
+    "Cannot delete a running task (stop it first): {root}")
+# The [e] keycap lands with the Task-2 binding (the footer paints both
+# row actions); the remaining MON_RESUME_* family arrives with the flow.
+MON_RESUME_KEYCAP = _t("MON_RESUME_KEYCAP", "续跑", "resume")
+
 # Cell detail (enter): the title shape and the per-fraction line under
 # --curve (record fields render verbatim — data, never translated).
 MON_CELL_DETAIL_TITLE = _t(

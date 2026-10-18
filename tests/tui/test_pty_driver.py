@@ -59,6 +59,7 @@ display, no GPU, no dnallm.
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -93,6 +94,15 @@ _ARROW_LEFT = "\x1b[D"
 # the fabricated root's name.
 _CARD_NAME_MARKER = "root1"
 _RUN_CELLS_MARKER = "cells — root1"
+
+# 261018-toe markers (the slot-5 History row actions, en copies): the
+# delete confirm's border title (MON_DELETE_TITLE), the success toast
+# (MON_DELETE_TOAST), the resume confirm's distinctive substring
+# (MON_RESUME_CONFIRM), and the finished-root History row name.
+_DELETE_MODAL_MARKER = "Delete run —"
+_DELETED_TOAST_MARKER = "✓ deleted:"
+_RESUME_CONFIRM_MARKER = "incomplete pairs"
+_FINISHED_ROOT_NAME = "done-run"
 
 # Bounded windows (generous over the probe-pinned timings: boot ~0.25s,
 # nav repaints 0.05-0.16s, quit exit 0.30s, gate refusal ~1.5s).
@@ -150,6 +160,56 @@ def _fabricate_running_root(tmp_path) -> Path:
     checkpoint.mkdir(parents=True)
     (checkpoint / "trainer_state.json").write_text(
         '{"global_step": 120}', encoding="utf-8")
+    return root
+
+
+def _fabricate_finished_root(tmp_path) -> Path:
+    """One fabricated FINISHED history root (261018-toe): a
+    sweep_manifest.json with two planned cells — one completed, one
+    failed — under the test's tmp_path, registered through the manual
+    roots so the spawned console's History tab lists it (manifest
+    present => finished; the mtimes are irrelevant to that branch)."""
+    root = tmp_path / "runs" / "done-run"
+    root.mkdir(parents=True)
+    cells = []
+    for seed, status in ((9527, "completed"), (9528, "failed")):
+        cells.append({
+            "model": "plant-dnabert-6mer",
+            "task": "GUE__virus_species_4",
+            "seed": seed,
+            "status": status,
+            "output_dir": str(root / "plant-dnabert-6mer"
+                              / "GUE__virus_species_4" / f"seed_{seed}"),
+        })
+    (root / "sweep_manifest.json").write_text(json.dumps({
+        "matrix": {
+            "models": ["plant-dnabert-6mer"],
+            "tasks": ["GUE__virus_species_4"],
+            "seeds": [9527, 9528],
+            "output_root": str(root),
+        },
+        "cells": cells,
+    }), encoding="utf-8")
+    return root
+
+
+def _fabricate_interrupted_root(tmp_path) -> Path:
+    """One fabricated INTERRUPTED history root (261018-toe): checkpoint
+    residue (the kill-left shape) with every mtime pushed ~2000s into
+    the past via os.utime and NO manifest — the scanner classifies it
+    artifacts_only (interrupted) and its cell derives interrupted under
+    the dead-root strict-miss live-pair leg, so [e] has something to
+    resume."""
+    root = tmp_path / "runs" / "dead-run"
+    checkpoint = (root / "plant-dnabert-6mer" / "GUE__virus_species_4"
+                  / "seed_9527" / "checkpoint-120")
+    checkpoint.mkdir(parents=True)
+    trainer_state = checkpoint / "trainer_state.json"
+    trainer_state.write_text('{"global_step": 120}', encoding="utf-8")
+    stale = time.time() - 2000.0
+    for path in sorted(root.rglob("*")):
+        os.utime(path, (stale, stale))
+    os.utime(root, (stale, stale))
     return root
 
 
@@ -345,5 +405,49 @@ def test_click_running_card_opens_run_cells_modal(tmp_path):
         child.send("\x1b[<0;8;5M")   # SGR press (button 0, col 8, row 5)
         child.send("\x1b[<0;8;5m")   # SGR release
         child.expect(_RUN_CELLS_MARKER, timeout=_NAV_TIMEOUT)
+    finally:
+        child.close(force=True)
+
+
+def test_history_row_delete_flow_end_to_end(tmp_path):
+    """261018-toe — the [d] delete flow under the REAL pty, from a real
+    keypress to the row's disappearance: over a fabricated finished
+    history root, switching to the History tab paints the [d]/[e]
+    keycaps in the bottom bar, ``d`` opens the strong confirm naming
+    the run, ``y`` deletes (a DELETE confirm, never a launch — the
+    safety rail's launch-family exclusion does not apply), the success
+    toast lands, and the post-delete rescan repaints the History region
+    WITHOUT the deleted row (the either-marker accepts the designed
+    empty copy on a clean machine OR the table header when the host's
+    real default roots also list — the row's ABSENCE is the pin)."""
+    root = _fabricate_finished_root(tmp_path)
+    child = _spawn_tui(tmp_path, manual_roots=(root,))
+    try:
+        _boot(child)
+        child.send("5")
+        child.expect(_MONITOR_MARKER, timeout=_NAV_TIMEOUT)
+        child.expect(_RUNNING_EMPTY_MARKER, timeout=_NAV_TIMEOUT)
+        child.send(_ARROW_RIGHT)
+        child.expect(_FINISHED_ROOT_NAME, timeout=_NAV_TIMEOUT)
+        # the per-tab footer: the History row actions' keycaps paint
+        child.expect("Delete", timeout=_NAV_TIMEOUT)
+        child.expect("resume", timeout=_NAV_TIMEOUT)
+        # a REAL keypress opens the strong confirm (non-vacuity pin)
+        child.send("d")
+        child.expect(_DELETE_MODAL_MARKER, timeout=_NAV_TIMEOUT)
+        # y confirms the deletion of the tmp run root
+        child.send("y")
+        child.expect(_DELETED_TOAST_MARKER, timeout=_NAV_TIMEOUT)
+        # the immediate rescan repaints the History region (empty copy
+        # on a clean machine, table header when the host's real default
+        # roots also list — the row's disappearance is proven on disk)
+        child.expect(_HISTORY_TAB_MARKERS, timeout=_NAV_TIMEOUT)
+        assert not root.exists(), (
+            "the confirmed y removed the run's output root from disk")
+        manual_roots_file = (tmp_path / "tui-state" / "monitor_roots.json")
+        assert _FINISHED_ROOT_NAME not in manual_roots_file.read_text(
+            encoding="utf-8"), (
+            "the delete worker's manual-root hygiene unregistered the "
+            "root — the next boots never rescan the deleted run")
     finally:
         child.close(force=True)

@@ -199,6 +199,10 @@ class KeycapsStatic(Static):
 
     Re-clips on every resize (the terminal width is the budget); content
     is re-derived from the pairs and styles fixed at construction.
+    261018-toe: ``refresh_pairs`` lets the OWNING screen replace the
+    pairs after mount (the monitor's per-active-tab footer ruling — the
+    History-only [d]/[e] keycaps) without reaching into this widget's
+    children; the initial-mount projection is unchanged.
     """
 
     def __init__(self, pairs, key_style: str = "bold",
@@ -215,6 +219,17 @@ class KeycapsStatic(Static):
             key_style=self._key_style, label_style=self._label_style,
         ))
 
+    def refresh_pairs(self, pairs) -> None:
+        """Replace the keycap pairs and re-render, clipped to the
+        CURRENT width exactly like ``on_resize`` (261018-toe — the
+        per-active-tab footer refresh; presentational only, the pairs
+        stay the caller's ``binding_row`` projection)."""
+        self._pairs = tuple(pairs)
+        self.update(keycaps_text(
+            self._pairs, budget=self.size.width,
+            key_style=self._key_style, label_style=self._label_style,
+        ))
+
 
 class BottomBar(Horizontal):
     """The D-15 bottom submenu bar: left keycaps + constant right pair.
@@ -224,6 +239,10 @@ class BottomBar(Horizontal):
     the right segment is the app-level pair (help first, then quit — the
     D-15 constant ordering). The key style is the live theme's accent,
     resolved once at mount.
+
+    261018-toe: ``refresh_left_pairs`` is the owning screen's per-tab
+    refresh seam (the monitor filters its History-scoped rows); every
+    other screen never calls it and mounts byte-identically.
     """
 
     def on_mount(self) -> None:
@@ -245,3 +264,10 @@ class BottomBar(Horizontal):
         self.mount(Static(
             keycaps_text(right_pairs, key_style=key_style),
             id="nav-right-keycaps"))
+
+    def refresh_left_pairs(self, pairs) -> None:
+        """Refresh the left segment's keycaps (261018-toe): delegate to
+        the ``#nav-left-keycaps`` child's own re-clip; the right segment
+        is constant chrome and never refreshes."""
+        self.query_one("#nav-left-keycaps", KeycapsStatic).refresh_pairs(
+            pairs)
