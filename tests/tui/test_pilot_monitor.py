@@ -26,13 +26,22 @@ interval callbacks plus fake call counters, never by sleeping):
   transitions, the vanished-root degradation, the responsiveness proof
   while a scan blocks, and the 08g session-survival pair (fresh screen
   per nav + the shared MonitorSession).
+- 261018-rze (the cadence render gates, the maintainer's 2026-10-18
+  19:57 flicker report): a steady tick over UNCHANGED data performs
+  ZERO widget writes with the ListItem identity preserved, a changed
+  progress updates the card's Labels IN PLACE, ``_render_all`` is
+  inert under a stacked modal and resumes after dismissal, and
+  ``_focus_active`` no-ops when the target already holds focus (both
+  branches).
 """
 
 import re
 import time
 from pathlib import Path
+from unittest import mock
 
 from rich.text import Text
+from textual.screen import ModalScreen
 from textual.widgets import DataTable, Label, ListView, RichLog, Static
 
 import tui.screens.monitor as monitor_screen_module
@@ -2920,6 +2929,215 @@ async def test_kill_confirm_uppercase_twins_match_lowercase():
             "uppercase Y dispatched the kill exactly like y"
         )
         assert not app._exit, "uppercase Y kills the sweep, never the console"
+
+
+# =====================================================================
+# 261018-rze — the cadence render gates' pins (steady-tick silence)
+# =====================================================================
+
+def _cadence_gate_fake() -> FakeMonitorService:
+    """The render-gate pin fixture: ONE running root (scripted stats +
+    progress — deterministic, zero wall-clock reads inside a render) plus
+    one finished History row, enough surface for every pin (cards, tabs,
+    both focus branches)."""
+    return FakeMonitorService(
+        scans=[ScanResult(sweeps=(
+            _summary("finetuned", SWEEP_RUNNING, done=3, total=10,
+                     mtime=2.0),
+            _summary("older-run", SWEEP_FINISHED, done=2, total=2,
+                     mtime=1.0),
+        ), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("plant-dnamamba-6mer", "GUE__emp_H3",
+                 {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(
+            done=3, total=10,
+            current=_current("plant-dnamamba-6mer", "GUE__emp_H3", 42))},
+        progress={
+            ("plant-dnamamba-6mer", "GUE__emp_H3"): CellProgress(
+                step=300, max_steps=1000, percent=30)},
+    )
+
+
+def _spy(widget, method_name: str):
+    """A counting spy over one widget method (wraps the bound original —
+    the plan's mock.patch.object(wraps=...) idiom; the caller stops the
+    patcher, the mock keeps its count)."""
+    patcher = mock.patch.object(
+        widget, method_name, wraps=getattr(widget, method_name))
+    return patcher, patcher.start()
+
+
+async def test_steady_tick_performs_zero_widget_writes():
+    """261018-rze (the maintainer's 2026-10-18 19:57 flicker report): a
+    steady tick over UNCHANGED data performs ZERO widget writes — no
+    ListView rebuild, no tab Label update, no scan-note update, no card
+    Label update, no focus call — and the ListItem identity survives
+    (the operator's cursor identity never resets)."""
+    app = _app(monitor=_cadence_gate_fake())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        cards_list = screen.query_one("#mon-cards", ListView)
+        item = cards_list.children[0]
+        spies = {
+            "ListView clear": _spy(cards_list, "clear"),
+            "running tab update": _spy(
+                screen.query_one("#mon-tab-running", Label), "update"),
+            "history tab update": _spy(
+                screen.query_one("#mon-tab-history", Label), "update"),
+            "scan-note update": _spy(
+                screen.query_one("#mon-scanning-note", Static), "update"),
+            "cards focus": _spy(cards_list, "focus"),
+        }
+        spies.update({
+            f"card label {index} update": _spy(label, "update")
+            for index, label in enumerate(item.query(Label))})
+        try:
+            # the steady tick: the cadence handlers land in exactly this
+            # pair over unchanged caches
+            screen._render_all()
+            screen._focus_active()
+            for name, (_patcher, mocked) in spies.items():
+                assert mocked.call_count == 0, (
+                    f"a steady tick performed a {name} — the flicker is "
+                    "back")
+        finally:
+            for patcher, _mocked in spies.values():
+                patcher.stop()
+        assert cards_list.children[0] is item, (
+            "the ListItem identity survives every steady tick")
+
+
+async def test_progress_change_updates_card_labels_in_place():
+    """261018-rze (c): a tick with CHANGED progress updates ONLY the
+    affected card's Label content in place — the ListItem objects and
+    the ListView's index are untouched (the clear spy stays at zero:
+    content changed, structure did not). The honest path drives it: the
+    fake's scripted stats advance and one frontier tick propagates them
+    through the worker -> message -> render chain."""
+    monitor = _cadence_gate_fake()
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        cards_list = screen.query_one("#mon-cards", ListView)
+        item = cards_list.children[0]
+        index_before = cards_list.index
+        patcher, clear_mock = _spy(cards_list, "clear")
+        try:
+            monitor._stats["/scans/finetuned"] = _stats(
+                done=4, total=10,
+                current=_current("plant-dnamamba-6mer", "GUE__emp_H3", 42))
+            screen._tick_frontier()
+            await _settle(pilot, app)
+        finally:
+            patcher.stop()
+        total_line = _card_texts(screen, "mon-card-total")[0]
+        assert "4/10" in total_line, (
+            "the changed fraction paints (the in-place update landed)")
+        assert clear_mock.call_count == 0, (
+            "a content-only change must never rebuild the list")
+        assert cards_list.children[0] is item, (
+            "the ListItem object is the same one (updated, not rebuilt)")
+        assert cards_list.index == index_before, (
+            "the operator's cursor index is untouched")
+
+
+async def test_render_all_inert_under_modal_and_resumes_after():
+    """261018-rze (e): while any modal is stacked above the monitor, a
+    cadence render writes NOTHING beneath it (the base surface stays
+    still under the modal); the tick after dismissal refreshes normally
+    (a changed stat lands)."""
+    class _DummyModal(ModalScreen):
+        """The minimal stacked screen — the suppression proof needs any
+        modal above the monitor, content irrelevant."""
+
+        def compose(self):
+            yield Static("dummy")
+
+    app = _app(monitor=_cadence_gate_fake())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        cards_list = screen.query_one("#mon-cards", ListView)
+        item = cards_list.children[0]
+        app.push_screen(_DummyModal())
+        await pilot.pause()
+        assert app.screen is not screen, "the modal is stacked above"
+        spies = {
+            "ListView clear": _spy(cards_list, "clear"),
+            "running tab update": _spy(
+                screen.query_one("#mon-tab-running", Label), "update"),
+            "history tab update": _spy(
+                screen.query_one("#mon-tab-history", Label), "update"),
+        }
+        spies.update({
+            f"card label {index} update": _spy(label, "update")
+            for index, label in enumerate(item.query(Label))})
+        try:
+            screen._render_all()
+            for name, (_patcher, mocked) in spies.items():
+                assert mocked.call_count == 0, (
+                    f"the base pass fired beneath the modal: {name}")
+        finally:
+            for patcher, _mocked in spies.values():
+                patcher.stop()
+        # dismissal: the next tick refreshes — a changed stat lands
+        app.pop_screen()
+        await pilot.pause()
+        screen._root_stats["/scans/finetuned"] = _stats(
+            done=5, total=10,
+            current=_current("plant-dnamamba-6mer", "GUE__emp_H3", 42))
+        screen._render_all()
+        assert "5/10" in _card_texts(screen, "mon-card-total")[0], (
+            "the tick after dismissal refreshes the base surface")
+
+
+async def test_focus_active_noops_when_target_already_focused():
+    """261018-rze (d): _focus_active skips the .focus() call when the
+    intended target already holds focus (a steady tick's steal-back on
+    the focused widget was pure churn) but still re-applies focus after
+    it was lost — BOTH branches (the cards ListView and the History
+    DataTable)."""
+    app = _app(monitor=_cadence_gate_fake())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        cards_list = screen.query_one("#mon-cards", ListView)
+        assert screen.focused is cards_list
+        patcher, focus_mock = _spy(cards_list, "focus")
+        try:
+            screen._focus_active()
+            assert focus_mock.call_count == 0, (
+                "no focus call when the cards list already holds focus")
+            screen.set_focus(None)
+            screen._focus_active()
+            assert focus_mock.call_count == 1, (
+                "focus is re-applied after it was lost (AUTO_FOCUS "
+                "steal-back preserved)")
+            await pilot.pause()   # focus() lands via call_later
+            assert screen.focused is cards_list
+        finally:
+            patcher.stop()
+
+        # the History branch mirrors: switch to the populated tab
+        await pilot.press("right")
+        await pilot.pause()
+        history_table = screen.query_one("#mon-history", DataTable)
+        assert screen.focused is history_table
+        patcher, focus_mock = _spy(history_table, "focus")
+        try:
+            screen._focus_active()
+            assert focus_mock.call_count == 0, (
+                "no focus call when the history table already holds focus")
+            screen.set_focus(None)
+            screen._focus_active()
+            assert focus_mock.call_count == 1
+            await pilot.pause()   # focus() lands via call_later
+            assert screen.focused is history_table
+        finally:
+            patcher.stop()
 
 
 
