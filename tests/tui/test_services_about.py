@@ -300,11 +300,11 @@ def test_derive_about_data_never_raises_into_compose(monkeypatch, tmp_path):
 
 
 def test_derive_about_data_default_root_is_the_repo_pyproject():
-    """No injected root: the repo's own pyproject.toml is read (0.7.1)."""
+    """No injected root: the repo's own pyproject.toml is read (1.2.0)."""
     data = about.derive_about_data()
     repo_pyproject = Path(about.__file__).resolve().parents[2] / "pyproject.toml"
     assert repo_pyproject.is_file()
-    assert data.software_version == "0.7.1"
+    assert data.software_version == "1.2.0"
 
 
 # =====================================================================
