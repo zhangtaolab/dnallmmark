@@ -365,12 +365,11 @@ WizardModal {
     background: $surface;
 }
 
-/* ===== Monitor screen (11-07, slot 5 — D-03/D-09/D-17) =====
- * Two stacked regions (the data-manager precedent): the discovered
- * list fixed-height (title row + header + ~2 visible rows, scrolls),
- * the cell table the flex remainder (scrolls); the full-width rule
- * separates them (borders stay reserved for modals). Theme tokens
- * only. */
+/* ===== Monitor screen (11-07, slot 5 — 261018-kvj two-tab redesign) =====
+ * One one-row tab header under the title bar; ONE content region whose
+ * children toggle display (single focus, single list — only the active
+ * tab's list renders); the scanning note is mount-window chrome.
+ * Theme tokens only (borders stay reserved for modals). */
 
 #mon-title-bar {
     height: 1;      /* row token: one status line */
@@ -388,51 +387,62 @@ WizardModal {
     color: $text-muted;        /* the D-09 cadence note (standing chrome) */
 }
 
-#mon-discovered-region {
-    height: 5;     /* fixed: the title row + header + ~2 visible rows */
+#mon-tab-header {
+    height: 1;      /* row token: the two tab titles + count badges */
+    padding: 0 2;   /* 2-cell status-line exception */
 }
 
-#mon-discovered-title-row {
-    height: 1;     /* row token */
-    padding: 0 1;  /* 1-cell status-line exception */
-}
-
-#mon-discovered-title {
+.mon-tab {
     width: auto;
+    margin: 0 2 0 0;   /* one blank cell between the two tabs */
 }
 
-#mon-discovered {
-    height: 1fr;   /* scrolls below the two visible rows */
-}
-
-#mon-cells-region {
+#mon-content {
     height: 1fr;                /* the flex remainder */
     border-top: solid $border;  /* 1-cell border exception — separator */
 }
 
-#mon-cells-title-row {
-    height: 1;     /* row token: the cells title + the resume note */
-    padding: 0 1;  /* 1-cell status-line exception */
+#mon-scanning-note {
+    height: 1;      /* row token: the #41 optimistic-paint note */
+    padding: 0 2;   /* 2-cell status-line exception */
+    color: $text-muted;
 }
 
-#mon-cells-title {
+#mon-running-empty,
+#mon-history-empty {
+    height: 1;      /* row token: the designed empty copy */
+    padding: 0 2;   /* 2-cell status-line exception */
+    color: $text-muted;
+}
+
+#mon-cards {
+    height: 1fr;    /* scrolls below the visible cards */
+}
+
+.mon-card-name {
+    text-style: bold;          /* Heading role */
     width: auto;
 }
 
-#mon-resume-note {
-    width: 1fr;                /* the right-aligned MON-05 note */
-    text-align: right;
-    color: $text-muted;        /* the ⊘ skipped provenance renders dim */
+.mon-card-scale,
+.mon-card-current,
+.mon-card-resume,
+.mon-card-worker {
+    width: auto;
+    color: $text-muted;        /* Secondary role (the card owns focus) */
 }
 
-#mon-stats-line {
-    height: 1;      /* row token: the MON-02/D-17 stats line */
-    padding: 0 2;   /* 2-cell status-line exception */
-    color: $text-muted;        /* Secondary role (the table owns focus) */
+#mon-history {
+    height: 1fr;    /* scrolls */
 }
 
-#mon-discovered > .datatable--header,
-#mon-cells > .datatable--header {
+#mon-history > .datatable--header {
+    text-style: bold;
+    color: $text-muted;
+    background: $surface;
+}
+
+#mon-runcells-table > .datatable--header {
     text-style: bold;
     color: $text-muted;
     background: $surface;

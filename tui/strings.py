@@ -1629,33 +1629,60 @@ LNC_EXIT_KILL_KEYCAP = _t(
 MON_SCREEN_TITLE = _t("MON_SCREEN_TITLE", "任务监控", "Monitor")
 MON_SCAN_NOTE = _t(
     "MON_SCAN_NOTE", "扫描: 前沿 2s · 全扫 60s", "Scan: frontier 2s · full 60s")
-MON_DISCOVERED_TITLE = _t(
-    "MON_DISCOVERED_TITLE", "自动找到的训练任务 ({n}) — 默认结果目录 + 手动监控",
-    "Discovered sweeps ({n}) — default output root + manual attach")
-MON_DISCOVERED_EMPTY = _t(
-    "MON_DISCOVERED_EMPTY", "未发现训练任务 — 按 [a] 监控结果目录路径",
-    "No sweeps discovered — press [a] to attach an output root path")
+# ===== 261018-kvj (the maintainer's 2026-10-18 15:01 tabbed contract) =====
+# The two-tab vocabulary replaces the discovered/cells master-detail pair
+# (WINDOWS #40 closed BY the redesign): the presentation unit is ONE RUN
+# (一次运行) — a live handle on 正在运行/Running, a terminal or interrupted
+# run on 历史/History. The old MON_DISCOVERED_*/MON_CELLS_* master-detail
+# copy (and its 发现 machine vocabulary) is DELETED, not kept beside the
+# tabs. sweep_failures.json stays verbatim where it appears (a filename —
+# data, never machine vocabulary).
+MON_TAB_RUNNING = _t("MON_TAB_RUNNING", "正在运行", "Running")
+MON_TAB_HISTORY = _t("MON_TAB_HISTORY", "历史", "History")
+# The tab-count badge both tab titles render — data composition.
+MON_TAB_COUNT = _t("MON_TAB_COUNT", "({n})", "({n})")
+# 261018-kvj #41 (optimistic first paint): the standing note that paints
+# at mount BEFORE the first scan lands — skeleton + note only, never a
+# fabricated row; the first scan message clears it.
+MON_SCANNING = _t("MON_SCANNING", "扫描中…", "Scanning…")
+# The Running tab's actionable empty state: enter routes to slot 4 (the
+# ONLY launch gate — slot 5 never duplicates it).
+MON_RUNNING_EMPTY = _t(
+    "MON_RUNNING_EMPTY", "暂无运行中任务 — 回车打开启动确认",
+    "No running tasks — press Enter to open the launch confirm")
+MON_HISTORY_EMPTY = _t(
+    "MON_HISTORY_EMPTY", "暂无历史运行", "No past runs yet")
+# The tab-switch keys (left/right/tab) — one keycap for the footer row.
+MON_TAB_SWITCH_KEYCAP = _t(
+    "MON_TAB_SWITCH_KEYCAP", "切换页签", "switch tab")
 
-# The three discovered-sweep states (glyph+color dual channel; the
-# glyph is the NO_COLOR carrier). MON_STATE_ARTIFACTS_SWEEP is the O2
-# third state — gap-filler (plan-owned, the SEL_PRESENCE_UNKNOWN
-# precedent; the contract words the running/finished pair only): prior
-# artifacts with no sweep markers, ◌ muted, no running semantics; the
-# discovered row renders its unknown total via MON_TOTAL_UNKNOWN.
-MON_STATE_RUNNING_SWEEP = _t(
-    "MON_STATE_RUNNING_SWEEP", "● 运行中", "● running")
-MON_STATE_FINISHED_SWEEP = _t(
-    "MON_STATE_FINISHED_SWEEP", "○ 已结束", "○ finished")
-MON_STATE_ARTIFACTS_SWEEP = _t(
-    "MON_STATE_ARTIFACTS_SWEEP", "◌ 历史产物", "◌ prior artifacts")
+# The running card: the model×task×seed scale line (the manifest read
+# when parseable, else the honest unknown — never a derived guess), the
+# current-cell line (stats.current — the honest absent marker when no
+# cell is running), and the History row's dual-presence badge (a live
+# re-run over a root that carries prior history).
+MON_CARD_SCALE = _t(
+    "MON_CARD_SCALE", "模型×数据: {scale}", "models×tasks: {scale}")
+MON_SCALE_UNKNOWN = _t("MON_SCALE_UNKNOWN", "规模未知", "scale unknown")
+MON_CARD_CURRENT = _t(
+    "MON_CARD_CURRENT", "当前 {model}/{task}/s{seed}",
+    "current {model}/{task}/s{seed}")
+MON_CARD_CURRENT_NONE = _t(
+    "MON_CARD_CURRENT_NONE", "当前 —", "current —")
+MON_HISTORY_RERUN_BADGE = _t(
+    "MON_HISTORY_RERUN_BADGE", "重跑进行中", "re-run in progress")
 
-# Discovered-table column headers at 120 (the 规模 column drops at 80).
-# 261015-ehc terminology: the zh header is 结果目录; en keeps
-# "output root".
-MON_COL_ROOT = _t("MON_COL_ROOT", "结果目录", "output root")
-MON_COL_SCALE = _t("MON_COL_SCALE", "规模", "Scale")
-MON_COL_PROGRESS = _t("MON_COL_PROGRESS", "进度", "Progress")
-MON_COL_ETA = _t("MON_COL_ETA", "ETA", "ETA")
+# 261018-kvj Task 2: the graduation toasts — a run the screen OBSERVED
+# running that reaches a terminal state between two on-screen scans
+# graduates (card leaves Running, a History row appears, the toast names
+# the run). Screen-local by design: a finish while another screen is up
+# graduates silently on the next visit (honest, no stale toast).
+MON_GRADUATED_DONE_TOAST = _t(
+    "MON_GRADUATED_DONE_TOAST", "✓ 运行完成 — 已移入历史：{root}",
+    "✓ run finished — moved to History: {root}")
+MON_GRADUATED_INTERRUPTED_TOAST = _t(
+    "MON_GRADUATED_INTERRUPTED_TOAST", "⏸ 运行中断 — 已移入历史：{root}",
+    "⏸ run interrupted — moved to History: {root}")
 
 # The cell table: title + the resume note riding the same title row
 # (MON-05 standing chrome, never a scrolling toast), the empty state,
@@ -1665,12 +1692,16 @@ MON_COL_ETA = _t("MON_COL_ETA", "ETA", "ETA")
 # the 状态 column carries the folded state word + the done/total seed
 # counts, the 进度 column the training progress (steps + percent + bar
 # on running rows, the honest indeterminate when nothing parses).
-MON_CELLS_TITLE = _t(
-    "MON_CELLS_TITLE", "训练项 状态 — {root}", "Cell states — {root}")
-MON_CELLS_EMPTY = _t(
-    "MON_CELLS_EMPTY", "未监控训练任务 — 在上方列表 Enter 监控, 或 [a] 手动监控",
-    "No sweep attached — press Enter on a row above, or [a] to attach "
-    "manually")
+# The run drill modal (enter on a card or a History row): the snapshot
+# title + the column headers the per-run cells table reuses (model,
+# task, the five per-seed states, progress). 261018-kvj: the always-
+# visible cells table is gone — the drill is a read-once snapshot
+# (the LogTailModal read-once precedent).
+MON_RUN_CELLS_TITLE = _t(
+    "MON_RUN_CELLS_TITLE", "训练项 — {root}", "cells — {root}")
+MON_COL_ROOT = _t("MON_COL_ROOT", "结果目录", "output root")
+MON_COL_PROGRESS = _t("MON_COL_PROGRESS", "进度", "Progress")
+MON_COL_ACTIVITY = _t("MON_COL_ACTIVITY", "最近活动", "latest activity")
 MON_COL_MODEL = _t("MON_COL_MODEL", "模型", "Models")
 MON_COL_TASK = _t("MON_COL_TASK", "任务", "Task")
 MON_COL_SEED = _t("MON_COL_SEED", "s{seed}", "s{seed}")
@@ -1710,42 +1741,12 @@ MON_PROGRESS_INDETERMINATE = _t(
 MON_ENTRY_SEED_COUNTS = _t(
     "MON_ENTRY_SEED_COUNTS", "{done}/{total}", "{done}/{total}")
 
-# 261017-uwr (UWR-3): the one-row context header directly under the
-# monitor title bar — the ATTACHED root only (unattached renders the
-# empty string, the stats-line precedent; every other context line on
-# this screen already binds to the attached root). n = total entry
-# rows; the three counts are the fold-state families running /
-# completed / interrupted (failed and queued rows stay visible in the
-# table with their own glyphs but are not in the three-segment
-# header). zh wording note: the maintainer's ruling sketch said
-# 「输出根 {path} · {n} 对」 but the 2026-10-15 approved terminology
-# table (binding) fixes zh output root = 结果目录 and cell = 训练项 —
-# the ruling's wording is direction, the table governs the copy.
-MON_CONTEXT_HEADER = _t(
-    "MON_CONTEXT_HEADER",
-    "结果目录 {root} · {n} 训练项：⏵{running} 运行 / ✓{done} 完成 / ⏸{interrupted} 中断",
-    "Output root {root} · {n} cells: ⏵{running} running / ✓{done} done / "
-    "⏸{interrupted} interrupted")
-
-# The stats line directly above the bottom bar: the full shape, the
-# 80-col no-当前 shape, the unknown-total degradation, and the ETA
-# value vocabulary (pending / variance range / unknown).
-MON_STATS_LINE = _t(
-    "MON_STATS_LINE",
-    "完成 {done}/{total} · 当前 {model}/{task}/s{seed} · 已用时 {elapsed} · 预估 ≈{eta}",
-    "Done {done}/{total} · current {model}/{task}/s{seed} · elapsed "
-    "{elapsed} · ETA ≈{eta}")
-MON_STATS_LINE_NO_CURRENT = _t(
-    "MON_STATS_LINE_NO_CURRENT",
-    "完成 {done}/{total} · 已用时 {elapsed} · 预估 ≈{eta}",
-    "Done {done}/{total} · elapsed {elapsed} · ETA ≈{eta}")
-MON_STATS_LINE_UNKNOWN_TOTAL = _t(
-    "MON_STATS_LINE_UNKNOWN_TOTAL",
-    "完成 {done} · 总数未知 · 已用时 {elapsed} · 预估 —",
-    "Done {done} · total unknown · elapsed {elapsed} · ETA —")
+# 261018-kvj: the D-17 stats line + the ETA pending/range variants are
+# RETIRED with the master-detail surface — the running card carries the
+# current-cell line (per-cell progress/ETA via the checkpoint-pair
+# grammar) and the done/total bar; MON_TOTAL_UNKNOWN/MON_ETA_UNKNOWN
+# survive as the honest degradations the card/history cells render.
 MON_TOTAL_UNKNOWN = _t("MON_TOTAL_UNKNOWN", "总数未知", "total unknown")
-MON_ETA_PENDING = _t("MON_ETA_PENDING", "估算中…", "estimating...")
-MON_ETA_RANGE = _t("MON_ETA_RANGE", "{lo}–{hi}", "{lo}–{hi}")
 MON_ETA_UNKNOWN = _t("MON_ETA_UNKNOWN", "—", "—")
 
 # The [f] failure list (MON-03/D-11): title, the happy zero, the row
@@ -1818,8 +1819,8 @@ MON_ATTACH_PLACEHOLDER = _t(
     "MON_ATTACH_PLACEHOLDER", "输入结果目录路径…", "Output root path...")
 MON_ATTACH_INVALID_TOAST = _t(
     "MON_ATTACH_INVALID_TOAST",
-    "✗ {path} 不是训练任务结果目录（未发现训练任务产物）",
-    "✗ {path} is not a sweep output root (no sweep artifacts found)")
+    "✗ {path} 不是训练任务结果目录（无训练任务产物）",
+    "✗ {path} is not a sweep output root (no sweep artifacts there)")
 MON_ATTACHED_TOAST = _t(
     "MON_ATTACHED_TOAST", "✓ 已监控: {root}", "✓ attached: {root}")
 

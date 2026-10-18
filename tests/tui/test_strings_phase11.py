@@ -94,23 +94,37 @@ EXPECTED_LNC_CONSTANTS = (
     "LNC_EXIT_DETACH_KEYCAP", "LNC_EXIT_KILL_KEYCAP",
 )
 
-#: The complete expected MON_ inventory (screen chrome + cadence note,
-#: discovered-sweep states/columns incl. the plan-owned artifacts-sweep
-#: gap-filler, cell table + five cell states + resume notes, stats/ETA
-#: variants, failures + gated re-run, log tail, attach flow, rescan,
-#: cell detail) — grouped spec rows expanded to individual constants.
+#: The complete expected MON_ inventory — 261018-kvj restructured to
+#: the two-tab surface: tab titles/badges/scanning/empty states, the
+#: running-card lines, the History columns incl. the dual-presence
+#: badge, the graduation toasts, the run-drill modal, the five cell
+#: states + resume notes, failures + gated re-run, log tail, attach
+#: flow, rescan, cell detail. The retired master-detail family
+#: (MON_DISCOVERED_*, MON_CELLS_TITLE/EMPTY, MON_CONTEXT_HEADER, the
+#: sweep-state trio, the scale/ETA columns, the stats-line/ETA
+#: variants) is DELETED with the surface it worded.
 EXPECTED_MON_CONSTANTS = (
-    "MON_SCREEN_TITLE", "MON_SCAN_NOTE", "MON_DISCOVERED_TITLE",
-    "MON_DISCOVERED_EMPTY", "MON_STATE_RUNNING_SWEEP",
-    "MON_STATE_FINISHED_SWEEP", "MON_STATE_ARTIFACTS_SWEEP",
-    "MON_COL_ROOT", "MON_COL_SCALE", "MON_COL_PROGRESS", "MON_COL_ETA",
-    "MON_CELLS_TITLE", "MON_CELLS_EMPTY", "MON_COL_MODEL", "MON_COL_TASK",
-    "MON_COL_SEED", "MON_STATE_QUEUED", "MON_STATE_RUNNING",
+    "MON_SCREEN_TITLE", "MON_SCAN_NOTE",
+    # 261018-kvj: the two-tab vocabulary + the #41 optimistic-paint
+    # note + both empty states + the tab-switch keycap.
+    "MON_TAB_RUNNING", "MON_TAB_HISTORY", "MON_TAB_COUNT",
+    "MON_SCANNING", "MON_RUNNING_EMPTY", "MON_HISTORY_EMPTY",
+    "MON_TAB_SWITCH_KEYCAP",
+    # the running card + the History row's dual-presence badge + the
+    # graduation toasts (Task 2).
+    "MON_CARD_SCALE", "MON_SCALE_UNKNOWN", "MON_CARD_CURRENT",
+    "MON_CARD_CURRENT_NONE", "MON_HISTORY_RERUN_BADGE",
+    "MON_GRADUATED_DONE_TOAST", "MON_GRADUATED_INTERRUPTED_TOAST",
+    # the History/drill tables' columns (root/progress survive; the
+    # activity column replaces the retired ETA column).
+    "MON_RUN_CELLS_TITLE", "MON_COL_ROOT", "MON_COL_PROGRESS",
+    "MON_COL_ACTIVITY", "MON_COL_MODEL", "MON_COL_TASK",
+    "MON_COL_SEED", "MON_COL_STATE",
+    "MON_STATE_QUEUED", "MON_STATE_RUNNING",
     "MON_STATE_DONE", "MON_STATE_FAILED", "MON_STATE_SKIPPED",
-    "MON_RESUME_NOTE", "MON_RESUME_NOTE_SHORT", "MON_STATS_LINE",
-    "MON_STATS_LINE_NO_CURRENT", "MON_STATS_LINE_UNKNOWN_TOTAL",
-    "MON_TOTAL_UNKNOWN", "MON_ETA_PENDING", "MON_ETA_RANGE",
-    "MON_ETA_UNKNOWN", "MON_FAILURES_TITLE", "MON_FAILURES_EMPTY",
+    "MON_RESUME_NOTE", "MON_RESUME_NOTE_SHORT",
+    "MON_TOTAL_UNKNOWN", "MON_ETA_UNKNOWN", "MON_FAILURES_TITLE",
+    "MON_FAILURES_EMPTY",
     "MON_FAILURE_ROW", "MON_RERUN_LABEL", "MON_RERUN_CONFIRM",
     "MON_RERUN_TOAST", "MON_RERUN_NO_SEEDS", "MON_LOG_TITLE",
     "MON_LOG_TEE_LINE", "MON_LOG_UNAVAILABLE", "MON_ATTACH_LABEL",
@@ -120,7 +134,7 @@ EXPECTED_MON_CONSTANTS = (
     # C4J-3 (261015-c4j): the entries-list columns/cells — the 状态
     # column header, the steps+percent progress format, the honest
     # indeterminate, and the done/total seed-counts segment.
-    "MON_COL_STATE", "MON_PROGRESS_STEPS",
+    "MON_PROGRESS_STEPS",
     "MON_PROGRESS_INDETERMINATE", "MON_ENTRY_SEED_COUNTS",
     # CR-01 (quick-261016-hhx): the [f]/[t] keycap constants —
     # byte-equal registry twins of the old split() title projections so
@@ -132,9 +146,9 @@ EXPECTED_MON_CONSTANTS = (
     "MON_KILL_KEYCAP", "MON_KILL_TITLE", "MON_KILL_CONFIRM",
     "MON_KILL_TOAST", "MON_KILL_TOAST_DEAD", "MON_KILL_UNAVAILABLE",
     "MON_KILL_FAILED",
-    # 261017-uwr (UWR-1/UWR-3): the third cell state + the context
-    # header line (the maintainer's slot-5 ruling).
-    "MON_STATE_INTERRUPTED", "MON_CONTEXT_HEADER",
+    # 261017-uwr (UWR-1): the third cell state (the History tab reuses
+    # the ✓/⏸ cell vocabulary for its rows — 261018-kvj).
+    "MON_STATE_INTERRUPTED",
 )
 
 #: The per-seed cell states in spec order, and their contract glyphs.
@@ -143,25 +157,19 @@ MON_CELL_STATE_CONSTANTS = (
     "MON_STATE_FAILED", "MON_STATE_SKIPPED", "MON_STATE_INTERRUPTED",
 )
 
-#: The discovered-sweep states in spec order (running / finished /
-#: prior-artifacts), and their contract glyphs.
-MON_SWEEP_STATE_CONSTANTS = (
-    "MON_STATE_RUNNING_SWEEP", "MON_STATE_FINISHED_SWEEP",
-    "MON_STATE_ARTIFACTS_SWEEP",
-)
-
-#: Every state-carrying constant (cell states + sweep states + both
-#: resume-note variants) — each must OPEN with its glyph.
+#: Every state-carrying constant (the six cell states + both
+#: resume-note variants — 261018-kvj: the sweep-state trio retired with
+#: the discovered table; the History rows render the cell vocabulary's
+#: ✓/⏸ words) — each must OPEN with its glyph.
 MON_STATEFUL_CONSTANTS = (
     *MON_CELL_STATE_CONSTANTS,
-    *MON_SWEEP_STATE_CONSTANTS,
     "MON_RESUME_NOTE", "MON_RESUME_NOTE_SHORT",
 )
 
-#: The glyph vocabulary these states draw from (the additive Phase-11
-#: amendment: ● ○ ⊘ join the inherited set; 261017-uwr: ⏵ replaces ⠋ in
-#: the MON family and ⏸ joins — no MON stateful constant carries ⠋).
-MON_STATE_GLYPHS = {"◌", "⏵", "✓", "✗", "⊘", "●", "○", "⏸"}
+#: The glyph vocabulary these states draw from (261018-kvj: ● ○ leave
+#: with the sweep-state trio; ⏵ (261017-uwr) and ⏸ remain the
+#: running/interrupted carriers the two tabs render).
+MON_STATE_GLYPHS = {"◌", "⏵", "✓", "✗", "⊘", "⏸"}
 
 
 def test_cfg_lnc_mon_string_inventory_defined():
@@ -218,13 +226,18 @@ def test_mon_cell_state_strings_glyph_first_and_distinct():
 
 
 def test_mon_sweep_state_strings_glyph_first_and_distinct():
-    """The three discovered-sweep states lead ● ○ ◌ (running / finished
-    / prior-artifacts) — pairwise distinct glyphs under NO_COLOR."""
-    state_glyphs = [
-        getattr(tui_strings, name)[0] for name in MON_SWEEP_STATE_CONSTANTS
-    ]
-    assert state_glyphs == ["●", "○", "◌"]
-    assert len(set(state_glyphs)) == 3
+    """261018-kvj REDIRECTED: the sweep-state trio (● ○ ◌) retired with
+    the discovered table — the pin now holds the two-tab surface's
+    glyph discipline over the states the two tabs actually render:
+    the ✓/⏸ cell-vocabulary words the History rows reuse and the ⏵
+    running word the cards' progress cells carry, pairwise distinct
+    under NO_COLOR (the same glyphs, one vocabulary everywhere)."""
+    assert tui_strings.MON_STATE_DONE[0] == "✓"
+    assert tui_strings.MON_STATE_INTERRUPTED[0] == "⏸"
+    assert tui_strings.MON_STATE_RUNNING[0] == "⏵"
+    assert len({tui_strings.MON_STATE_DONE[0],
+                tui_strings.MON_STATE_INTERRUPTED[0],
+                tui_strings.MON_STATE_RUNNING[0]}) == 3
 
 
 def test_mon_state_copy_first_char_is_the_glyph():
@@ -247,25 +260,24 @@ def test_mon_state_copy_first_char_is_the_glyph():
 
 
 def test_mon_context_header_placeholders_and_terminology():
-    """261017-uwr (UWR-3): MON_CONTEXT_HEADER carries the IDENTICAL
-    placeholder set {root, n, running, done, interrupted} in both
-    languages, the zh side uses the approved terminology table's
-    结果目录 / 训练项 (the ruling's 「输出根/对」 wording is direction,
-    the table is binding), and both sides open their three segments
-    with the ruling's ⏵/✓/⏸ glyph triple."""
+    """261018-kvj REDIRECTED: MON_CONTEXT_HEADER retired with the
+    master-detail context line — the pin now holds the redesign's
+    placeholder discipline on the constants that replaced its role:
+    the graduation toasts carry the IDENTICAL {root} placeholder set in
+    both languages, and the zh side keeps the approved terminology
+    (运行 for run) with the retired 输出根 term never returning."""
     import string
 
     def placeholders(value):
         return {field for _literal, field, _spec, _conv
                 in string.Formatter().parse(value) if field}
 
-    zh, en = tui_strings._REGISTRY["MON_CONTEXT_HEADER"]
-    assert placeholders(zh) == placeholders(en) == {
-        "root", "n", "running", "done", "interrupted"}
-    assert "结果目录" in zh and "训练项" in zh
-    assert "输出根" not in zh  # the retired term never returns
-    for value in (zh, en):
-        assert "⏵" in value and "✓" in value and "⏸" in value
+    for name in ("MON_GRADUATED_DONE_TOAST",
+                 "MON_GRADUATED_INTERRUPTED_TOAST"):
+        zh, en = tui_strings._REGISTRY[name]
+        assert placeholders(zh) == placeholders(en) == {"root"}, name
+        assert "输出根" not in zh, name  # the retired term never returns
+        assert "运行" in zh, name
 
 
 def test_mon_running_and_interrupted_glyphs_match_header_triple():

@@ -1,40 +1,77 @@
 """
-monitor — the slot-5 monitor screen (Phase 11, 11-07; menu slot 5).
+monitor — the slot-5 monitor screen (Phase 11, 11-07; menu slot 5; the
+261018-kvj two-tab redesign over the maintainer's 2026-10-18 15:01
+contract).
 
-The operator's monitoring surface over the 11-04 pure scanner: the
-discovered-sweeps pane (three D-03 states, progress + ETA per D-17),
-the model×dataset ENTRIES table (C4J-3, 261015-c4j — one row per
-(model, task) with the folded completion state + done/total seed
-counts and the training-progress cell parsed from the running seed's
-newest checkpoint trainer_state; per-seed/fraction detail stays in the
-enter drill-down), the stats line, the [f] failures modal with the
-gated from-failures re-run (D-11), the [t] tee log tail (D-10/MON-04),
-the [a] manual-root attach, and the [r] immediate rescan.
+The operator's monitoring surface is TWO TABS over the 11-04 scanner
+service (presentation only — the service layer is byte-untouched):
 
-Contract (locked decisions):
+- Running (the default landing, the zh copy names the tab): ONE
+  CARD PER RUN — a run
+  is one live handle (the launcher registry ∪ the /proc probe, threaded
+  through ``full_scan`` as the uwr live-evidence pipeline). The card
+  carries the run name, the manifest scale (model×task×seed, the
+  honest unknown when nothing parses), the done/total 10-cell bar, the
+  current-cell line (stats.current + the per-cell progress/ETA grammar),
+  and — for multi-GPU orchestrator launches — the ``{root}-mgpu-w{i}``
+  sibling worker roots render as WORKER ROWS INSIDE the same card (one
+  launch = one card; the ``run_sweep_shard.worker_root`` naming is the
+  grouping predicate).
+- History (the second tab): completed/interrupted runs, newest
+  activity first,
+  enter drills the run's per-(model, task) cell snapshot; [f] opens
+  that run's failures; the old master-detail dual table is DELETED (the
+  tabs replace it — WINDOWS #40 closed by the redesign itself).
+
+Execution-recorded design choices (probe decisions the plan left open):
+
+- CARDS RENDER IN A ``ListView`` of ``ListItem`` cards (the
+  selection.py template-menu precedent; probed against the
+  VerticalScroll-of-focusable-Verticals alternative on textual 8.2.8):
+  ListView owns cursor + enter (ItemSelected) natively, cards are few
+  (live roots), and the rebuild-per-cadence re-pins the cursor by INDEX
+  (clamped) — the WR-05 spirit for a list whose identity is positional.
+- DUAL PRESENCE (a root that is live AND carries prior history — the
+  same-root re-run workflow) derives from ``resume_count(root) > 0``:
+  resume markers are exactly the on-disk evidence that a prior run's
+  completed work sits under the root (a fresh first run has none; a
+  from-failures re-run or a resume-restart has them). Such a root
+  renders its live card on Running AND a History row carrying the
+  the re-run-in-progress badge — surfaced with a badge rather
+  than deduplicated away (the run-identity ruling).
+- The History state glyphs reuse the CELL-state vocabulary (the
+  done / interrupted glyph-words) — finished = the complete manifest, interrupted = the uwr
+  prior-artifacts leg (the muted channel).
+
+Contract (locked decisions that survive the redesign):
 
 - PRESENTATION ONLY (the ``tui/screens/`` tier contract): the screen
   derives NOTHING from the artifact tree itself — every scan, stat,
   failure list, entry fold, and progress parse goes through the
-  injected ``MonitorServiceProtocol`` (the plan's rendering
-  prohibition). The screen owns only cadence, focus, and rendering.
-- D-09 cadence: ``set_interval(2s)`` dispatches the frontier worker and
-  ``set_interval(60s)`` the full-scan worker — a tick NEVER scans
-  inline; each tick bumps its run id, dispatches an
-  ``@work(exclusive=True, thread=True, group=...)`` worker in its OWN
-  group (the data_manager group-discipline note: exclusivity cancels by
-  (node, group), so the two cadences must never share one), and posts a
+  injected ``MonitorServiceProtocol``. The screen owns only cadence,
+  focus, and rendering.
+- D-09 cadence: ``set_interval(2s)`` dispatches ONE frontier worker
+  that iterates EVERY live root (frontier_scan + stats +
+  entries_progress per root, in the SAME exclusive ``mon-frontier``
+  group) and ``set_interval(60s)`` the full-scan worker (``mon-full``)
+  — a tick NEVER scans inline; each tick bumps its run id and posts a
   run-id-tagged message whose handler drops superseded posts (WR-02).
-  C4J-3: the frontier/full workers additionally refresh the attached
-  root's ``entries_progress`` (inside the SAME exclusive worker, never
-  the event loop; a fake service without the method reads {} — the
-  tolerant getattr seam).
 - Honesty over motion (the phase-10 progress rule): unknown totals,
-  pending ETAs, absent elapsed, the no-tee log state, and a running
-  entry whose checkpoint parses nothing are DESIGNED renderings via
-  the frozen MON_ constants — never fabricated numbers and never
-  errors.
+  absent scales, a running entry whose checkpoint parses nothing, and
+  the no-tee log state are DESIGNED renderings via the frozen MON_
+  constants — never fabricated numbers and never errors. The #41
+  optimistic first paint renders the tab skeleton + the scanning note
+  ONLY (zero fabricated rows) until the first scan message lands.
+- Graduation (261018-kvj Task 2): a root the screen OBSERVED running
+  that reaches a terminal state between two on-screen scans fires the
+  graduation toast and moves Running -> History on the next render.
+  Screen-local by design: a finish while another screen is up
+  graduates silently on the next visit (honest, no stale toast).
 - WR-06: every async modal push checks ``app.below_minimum_grid``.
+- 261018-08g (SOAK-1/F1, PRESERVED EXACTLY): the app builds a FRESH
+  MonitorScreen per navigation and injects the shared textual-free
+  :class:`MonitorSession` — the fresh-screen-per-nav + session
+  survival pair is load-bearing (the pty renav test pins it).
 
 I18N-01: zero Chinese literals in this module — every operator-facing
 string renders through ``tui/strings.py`` constants (grep-enforced);
@@ -54,7 +91,15 @@ from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen, Screen
-from textual.widgets import DataTable, Footer, Label, RichLog, Static
+from textual.widgets import (
+    DataTable,
+    Footer,
+    Label,
+    ListItem,
+    ListView,
+    RichLog,
+    Static,
+)
 
 from tui import strings as S
 from tui.screens.nav import BottomBar, TopMenuBar
@@ -73,14 +118,10 @@ from tui.services.sweep_monitor import (
     CELL_QUEUED,
     CELL_RUNNING,
     CELL_SKIPPED,
-    ETA_PENDING,
-    ETA_POINT,
-    ETA_RANGE,
     SWEEP_ARTIFACTS_ONLY,
     SWEEP_FINISHED,
     SWEEP_RUNNING,
     format_eta,
-    format_hms,
 )
 
 if TYPE_CHECKING:
@@ -88,8 +129,8 @@ if TYPE_CHECKING:
 
     from tui.app import DnallmMarkTui
 
-#: The 80-col width threshold (the UI-SPEC responsive rules: the scale
-#: column drops and the stats line drops the current segment below).
+#: The 80-col width threshold (the UI-SPEC responsive rules: the bars
+#: drop, the state words drop to glyphs).
 _NARROW_WIDTH = 100
 
 #: The cadence intervals (D-09): 2s frontier + 60s full. Injectable so
@@ -107,32 +148,28 @@ _STYLE_SKIPPED = "dim"
 #: word (not operator copy — the data_manager module's _DASH precedent).
 _DASH = "—"
 
-#: Keycap labels for the [f]/[t] bindings (CR-01, quick-261016-hhx — the
-#: 08 review): the dedicated MON_FAILURES_KEYCAP / MON_LOG_KEYCAP
-#: registry constants replace the old ``split()``-substring projections
-#: of the modal-title constants — byte-equal values in BOTH languages,
-#: but now registry entries themselves, so ``remap_binding_descriptions``
-#: can translate them on the L toggle (a split() substring never
-#: byte-matched any registry value and stayed frozen in the boot
-#: language forever).
+#: The multi-GPU sibling-worker marker (``run_sweep_shard.worker_root``
+#: freezes ``{base}-mgpu-w{i}`` — one naming authority, 12-04 --merge).
+_MGPU_MARKER = "-mgpu-w"
 
-def _sweep_state_cells() -> "dict[str, tuple[str, str]]":
-    """The discovered-sweep state cell vocabulary (machine state -> the
-    glyph-first copy + its style channel), re-derived at CALL time
-    (CR-01, quick-261016-hhx — the state words follow the live
-    language)."""
-    return {
-        SWEEP_RUNNING: (S.MON_STATE_RUNNING_SWEEP, _STYLE_RUNNING),
-        SWEEP_FINISHED: (S.MON_STATE_FINISHED_SWEEP, _STYLE_DIM),
-        SWEEP_ARTIFACTS_ONLY: (S.MON_STATE_ARTIFACTS_SWEEP, _STYLE_DIM),
-    }
+
+def _mgpu_base(root: str) -> str:
+    """Strip the ``-mgpu-w{i}`` worker suffix (``finetuned-mgpu-w0`` ->
+    ``finetuned``); a non-worker root passes through verbatim."""
+    marker = root.rfind(_MGPU_MARKER)
+    if marker == -1:
+        return root
+    digits = root[marker + len(_MGPU_MARKER):]
+    if digits.isdigit():
+        return root[:marker]
+    return root
 
 
 def _cell_state_cells() -> "dict[str, tuple[str, str]]":
     """The per-seed cell-state vocabulary (machine state -> copy +
-    style), re-derived at CALL time (CR-01 — same rule). The
-    interrupted leg (261017-uwr, UWR-1) rides the muted channel —
-    honest history, no failure semantics."""
+    style), re-derived at CALL time (CR-01 — the state words follow the
+    live language). The interrupted leg (261017-uwr, UWR-1) rides the
+    muted channel — honest history, no failure semantics."""
     return {
         CELL_COMPLETED: (S.MON_STATE_DONE, _STYLE_DONE),
         CELL_FAILED: (S.MON_STATE_FAILED, _STYLE_FAILED),
@@ -143,83 +180,125 @@ def _cell_state_cells() -> "dict[str, tuple[str, str]]":
     }
 
 
+def _history_state_cells() -> "dict[str, tuple[str, str]]":
+    """The History row state vocabulary (261018-kvj): finished = the ✓
+    word, interrupted (the uwr prior-artifacts leg) = the ⏸ word on the
+    muted channel. A running root is never a plain History row — it is
+    a Running CARD (dual presence adds the badged row, see the module
+    docstring)."""
+    return {
+        SWEEP_FINISHED: (S.MON_STATE_DONE, _STYLE_DONE),
+        SWEEP_ARTIFACTS_ONLY: (S.MON_STATE_INTERRUPTED, _STYLE_DIM),
+    }
+
+
 def _glyph_of(copy: str) -> str:
     """The glyph token of one glyph-first constant (glyph + word)."""
     return copy.split(" ", 1)[0]
 
 
-def _eta_field(eta: Any) -> str:
-    """The stats-line ETA field: the numeric forms render without the
-    leading ≈ (the frozen line constant carries its own ≈); the pending
-    and none degradations render their designed constants (the caller
-    drops the line's stray ≈ for them — never a double marker)."""
-    if eta.mode == ETA_PENDING:
-        return S.MON_ETA_PENDING
-    if eta.mode == ETA_RANGE:
-        return S.MON_ETA_RANGE.format(
-            lo=format_eta(eta.lo_seconds).lstrip("≈"),
-            hi=format_eta(eta.hi_seconds).lstrip("≈"))
-    if eta.mode == ETA_POINT:
-        return format_eta(eta.point_seconds).lstrip("≈")
-    return S.MON_ETA_UNKNOWN
-
-
-def _stats_line(stats: Any, narrow: bool) -> str:
-    """The MON-02/D-17 stats line over one SweepStats (all variants)."""
-    elapsed = (
-        format_hms(stats.elapsed_seconds)
-        if stats.elapsed_seconds is not None else S.MON_ETA_UNKNOWN)
-    if stats.total is None:
-        return S.MON_STATS_LINE_UNKNOWN_TOTAL.format(
-            done=stats.done, elapsed=elapsed)
-    eta_field = _eta_field(stats.eta)
-    if narrow or stats.current is None:
-        line = S.MON_STATS_LINE_NO_CURRENT.format(
-            done=stats.done, total=stats.total,
-            elapsed=elapsed, eta=eta_field)
-    else:
-        line = S.MON_STATS_LINE.format(
-            done=stats.done, total=stats.total,
-            model=stats.current.model, task=stats.current.task,
-            seed=stats.current.seed, elapsed=elapsed, eta=eta_field)
-    if eta_field in (S.MON_ETA_PENDING, S.MON_ETA_UNKNOWN):
-        # the degradation copy never rides the ≈ prefix
-        line = line.replace("≈" + eta_field, eta_field)
-    return line
-
-
-def _progress_cell(summary: Any) -> Text:
-    """The discovered-row progress cell: the phase-10 grammar verbatim
-    (``{done}/{total}`` + the 10-cell bar on running rows; the bar is
-    additive, never fabricated; unknown totals render the designed
-    copy)."""
-    if summary.total is None:
-        return Text(S.MON_TOTAL_UNKNOWN, style=_STYLE_DIM)
-    fraction = Text(f"{summary.done}/{summary.total}")
-    if summary.state != SWEEP_RUNNING:
+def _progress_fraction(done, total, running: bool) -> Text:
+    """The done/total progress grammar (the phase-10 grammar verbatim):
+    ``{done}/{total}`` + the 10-cell bar on running values; the bar is
+    additive, never fabricated; an unknown total renders the designed
+    copy."""
+    if total is None:
+        return Text(S.MON_TOTAL_UNKNOWN, style="dim")
+    fraction = Text(f"{done}/{total}")
+    if not running:
         return fraction
-    filled = max(0, min(10, round(summary.done / summary.total * 10)))
+    filled = max(0, min(10, round(done / total * 10)))
     return Text.assemble(
         fraction, Text(" "), Text("█" * filled),
         Text("·" * (10 - filled), style=_STYLE_RUNNING))
 
 
-def _discovered_eta_cell(summary: Any, stats: Any | None) -> Text:
-    """The discovered-row ETA cell: running rows render the D-17 ETA
-    (point/range/pending); finished and prior-artifacts rows render the
-    absent marker."""
-    if summary.state != SWEEP_RUNNING or stats is None:
-        return Text(S.MON_ETA_UNKNOWN, style=_STYLE_DIM)
-    eta = stats.eta
-    if eta.mode == ETA_PENDING:
-        return Text(S.MON_ETA_PENDING, style=_STYLE_DIM)
-    if eta.mode == ETA_RANGE:
-        return Text("≈" + S.MON_ETA_RANGE.format(
-            lo=format_eta(eta.lo_seconds).lstrip("≈"),
-            hi=format_eta(eta.hi_seconds).lstrip("≈")))
-    if eta.mode == ETA_POINT:
-        return Text(format_eta(eta.point_seconds))
-    return Text(S.MON_ETA_UNKNOWN, style=_STYLE_DIM)
+def _entry_state_cell(fold: Any, narrow: bool) -> Text:
+    """The entry state cell: the folded state's glyph word from the
+    MON_STATE_* vocabulary plus the done/total seed counts as data. The
+    narrow grid drops the word — the glyph + counts carry the meaning
+    (the seed-cell degradation precedent)."""
+    copy, style = _cell_state_cells().get(
+        fold.state, (fold.state, _STYLE_DIM))
+    counts = S.MON_ENTRY_SEED_COUNTS.format(
+        done=fold.done, total=fold.total)
+    if narrow:
+        return Text(f"{_glyph_of(copy)} {counts}", style=style)
+    return Text(f"{copy} {counts}", style=style)
+
+
+def _entry_progress_cell(fold: Any, progress: Any, narrow: bool,
+                         accent: str) -> Text:
+    """The entry progress cell: steps/max + the integer percent + the
+    10-cell bar on RUNNING rows with parseable progress (the
+    data_manager progress grammar — the bar's filled cells carry the
+    live theme accent); the honest indeterminate constant on running
+    rows without progress (never a fabricated number); the dim dash on
+    non-running rows. The narrow grid drops the bar.
+
+    261016-vxr (VXR-1): a derivable checkpoint-pair eta appends the
+    ``format_eta`` segment after the text/bar (data, CJK-free); eta
+    None appends the dim dash — the honest underivable. Zero new
+    operator copy (format_eta is data; _DASH is the existing table
+    symbol)."""
+    if fold.state != CELL_RUNNING:
+        return Text(_DASH, style=_STYLE_SKIPPED)
+    if progress is None or progress.percent is None:
+        return Text(S.MON_PROGRESS_INDETERMINATE, style=_STYLE_RUNNING)
+    text = S.MON_PROGRESS_STEPS.format(
+        step=progress.step, max=progress.max_steps,
+        percent=progress.percent)
+    eta_segment = (
+        Text(format_eta(progress.eta_seconds))
+        if progress.eta_seconds is not None
+        else Text(_DASH, style=_STYLE_SKIPPED))
+    if narrow:
+        # the narrow form keeps the steps text + eta, drops the bar
+        return Text.assemble(
+            Text(text, style=_STYLE_RUNNING),
+            Text(" "),
+            eta_segment,
+        )
+    filled = max(0, min(10, round(progress.percent / 10)))
+    return Text.assemble(
+        Text(text, style=_STYLE_RUNNING),
+        Text(" "),
+        Text("█" * filled, style=accent),
+        Text("·" * (10 - filled), style=_STYLE_RUNNING),
+        Text(" "),
+        eta_segment,
+    )
+
+
+def _current_cell_line(stats: Any, progress_map: "dict | None",
+                       narrow: bool, accent: str) -> Text:
+    """The running card's current-cell line (261018-kvj): stats.current
+    names the (model, task, seed) and the per-cell progress rides the
+    SAME grammar as _entry_progress_cell (steps/percent + bar + the
+    checkpoint-pair eta); no current cell renders the designed absent
+    marker — never a fabricated line."""
+    if stats is None or stats.current is None:
+        # rich-native dim: $token styles crash the Label render path
+        return Text(S.MON_CARD_CURRENT_NONE, style="dim")
+    current = stats.current
+    head = S.MON_CARD_CURRENT.format(
+        model=current.model, task=current.task, seed=current.seed)
+    progress = (progress_map or {}).get((current.model, current.task))
+    if progress is None or progress.percent is None:
+        return Text(f"{head} {S.MON_PROGRESS_INDETERMINATE}",
+                    style=_STYLE_RUNNING)
+    tail = _entry_progress_cell(
+        # a synthetic running fold: the progress cell grammar only reads
+        # fold.state (running) — the counts come from the head line
+        _RunningFold(), progress, narrow, accent)
+    return Text.assemble(Text(head), Text(" "), tail)
+
+
+class _RunningFold:
+    """The synthetic always-running fold _current_cell_line feeds the
+    progress grammar (the grammar reads ``.state`` only)."""
+
+    state = CELL_RUNNING
 
 
 # =====================================================================
@@ -483,7 +562,7 @@ class MonitorBackend:
 
 
 # =====================================================================
-# Modals ([f] failures + drill, [t] log tail, cell detail)
+# Modals ([f] failures + drill, [t] log tail, cell detail, run cells)
 # =====================================================================
 
 
@@ -514,7 +593,7 @@ class FailureDetailModal(ModalScreen):
 
 class FailuresModal(ModalScreen):
     """The [f] failures modal: one row per failure, enter drills the
-    verbatim error, and the destructive re-run sits behind its own
+    verbatim error, and destructive re-run sits behind its own
     confirm (the only destructive key on this screen)."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -788,6 +867,102 @@ class CellDetailModal(ModalScreen):
                 for field_name, value in record.items():
                     log.write(f"  {field_name}: {value}")
 
+class RunCellsModal(ModalScreen):
+    """The 261018-kvj per-run drill (enter on a running card or a
+    History row): ONE read-once snapshot of the run's (model, task)
+    cell rows with the folded state + progress grammar (the
+    LogTailModal read-once precedent — live refresh stays on the
+    running card; the drill is a snapshot). Enter again opens the
+    existing CellDetailModal through the owning screen's record-read
+    worker."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("enter", "drill_cursor", show=False),
+        Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
+    ]
+
+    def __init__(self, root: str, rows: "dict[str, Any]",
+                 progress: "dict | None", monitor: "MonitorScreen",
+                 **kwargs):
+        super().__init__(**kwargs)
+        self._root = root
+        self._rows = dict(rows)
+        self._progress = dict(progress or {})
+        # the owning monitor screen (the FailuresModal parent-pass idiom)
+        self._monitor = monitor
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="mon-runcells-box", classes="modal-box"):
+            yield DataTable(id="mon-runcells-table")
+            yield Footer()
+
+    def on_mount(self) -> None:
+        box = self.query_one("#mon-runcells-box", Vertical)
+        box.border_title = S.MON_RUN_CELLS_TITLE.format(
+            root=Path(self._root).name)
+        table = self.query_one("#mon-runcells-table", DataTable)
+        table.cursor_type = "row"
+        table.zebra_stripes = True
+        narrow = self.app.size.width < _NARROW_WIDTH
+        accent = str(self.app.current_theme.accent)
+        key_width = max(8, self.app.size.width // 3 - 2)
+        columns = [
+            (S.MON_COL_MODEL, "model"), (S.MON_COL_TASK, "task"),
+            (S.MON_COL_STATE, "state"),
+            (S.MON_COL_PROGRESS, "progress")]
+        rows: dict[str, list] = {}
+        for key in _drill_row_order(self._rows):
+            row = self._rows[key]
+            fold = sweep_monitor.entry_fold(row)
+            model_cell = Text(row.model)
+            model_cell.truncate(key_width, overflow="ellipsis", pad=False)
+            task_cell = Text(row.task)
+            task_cell.truncate(key_width, overflow="ellipsis", pad=False)
+            rows[key] = [
+                model_cell, task_cell,
+                _entry_state_cell(fold, narrow),
+                _entry_progress_cell(
+                    fold, self._progress.get((row.model, row.task)),
+                    narrow, accent),
+            ]
+        _set_table_rows(table, columns, rows)
+        table.focus()
+
+    def on_data_table_row_selected(
+            self, event: DataTable.RowSelected) -> None:
+        self.action_drill_cursor()
+
+    def action_drill_cursor(self) -> None:
+        """enter: the selected row's full detail (records verbatim) via
+        the owning screen's off-loop record reader."""
+        table = self.query_one("#mon-runcells-table", DataTable)
+        try:
+            row_key = str(table.coordinate_to_cell_key(
+                table.cursor_coordinate)[0].value)
+        except Exception:  # noqa: BLE001 — an empty table
+            return
+        row = self._rows.get(row_key)
+        if row is None:
+            return
+        self._monitor.open_cell_detail(self._root, row)
+
+
+def _drill_row_order(rows: "dict[str, Any]") -> "list[str]":
+    """The drill table's row order — the UWR-4 live-on-top grouping
+    verbatim: running rows first (freshest ``newest_mtime`` first, a
+    missing mtime last), then unfinished non-running rows (key ASC),
+    completed rows sink."""
+    def _sort_key(key: str) -> tuple:
+        row = rows[key]
+        fold = sweep_monitor.entry_fold(row)
+        if fold.state == CELL_RUNNING:
+            return (0, -(row.newest_mtime or 0.0), key)
+        if fold.state == CELL_COMPLETED:
+            return (2, 0.0, key)
+        return (1, 0.0, key)
+
+    return sorted(rows, key=_sort_key)
+
 
 def _set_table_rows(table: DataTable, columns, rows) -> None:
     """WR-05 (phase-11 review): diff-preserving row update — the
@@ -881,12 +1056,12 @@ def derive_rerun_seeds(failures, cell_rows) -> "tuple[int, ...]":
         failures: the failure rows (``FailureRow`` sequence; the
             ``.seed`` field is authoritative — it names the experiment
             that actually failed).
-        cell_rows: the screen's merged cell rows (``{key: CellRow}``;
-            the fallback when no failure rows carry seeds).
+        cell_rows: the run's merged cell rows (``{key: CellRow}``; the
+            fallback when no failure rows carry seeds).
 
     Returns:
         tuple[int, ...]: the sorted distinct seeds; empty when nothing
-        is derivable.
+            is derivable.
     """
     seeds = {row.seed for row in failures or ()}
     if not seeds:
@@ -922,70 +1097,82 @@ class MonitorSession:
     screen-local: the mount kick rebuilds them, exactly like today's
     first visit after boot.
 
+    261018-kvj: ``attached_root`` is RETIRED — the two-tab design has
+    no attach concept (the tabs list every discovered run; [a] adds a
+    manual root to the scan set). The surviving fields:
+
     Fields:
-        attached_root: the attached sweep root (None = the cells
-            region's empty state), stored EXPANDED and RESOLVED —
-            ``attach()`` owns that path-basis contract (CR-01).
         expected_totals: the D-13 launch injections — the TUI-launched
-            plan's cell count per resolved root key.
+            plan's cell count per resolved root key (the stats seam).
         fallback_starts: the launch moment per resolved root key (the
             11-04 stats seam; superseded by the first record's
             started_at once it lands).
         ever_discovered: every root any scan ever listed (the
-            deleted-mid-monitor degradation predicate).
+            vanished-root degradation memory).
 
-    ``note_launch`` carries the EXACT semantics the screen's own
-    ``note_launch`` had: a truthy ``cells`` sets the expected total, a
-    ``cells == 0`` (the re-run flow, plan unknown) POPS any stale
-    expected total a prior launch at the same root left behind (WR-02),
-    the fallback start stamps now, and the attach fires ONLY when no
-    root is attached yet.
+    ``note_launch`` seeds the stats seams only — the auto-attach-for-
+    display leg is gone with the attach concept (WR-02 pops a stale
+    expected total on a ``cells == 0`` re-run note, exactly as before).
     """
 
     def __init__(self) -> None:
-        self.attached_root: Path | None = None
         self.expected_totals: dict[str, int] = {}
         self.fallback_starts: dict[str, float] = {}
         self.ever_discovered: set[str] = set()
 
     def note_launch(self, root, cells: int) -> None:
         """Record a TUI-launched sweep's plan (see the class docstring —
-        the exact former MonitorScreen.note_launch semantics, screen
-        side-effects excluded: the fresh screen's mount kick rebuilds
-        the derived caches)."""
+        the stats seams only; a fresh screen's mount kick renders it)."""
         # CR-01 note: this pre-resolution is a documented NO-OP for
-        # correctness (attach() owns the expanduser().resolve()
-        # contract) — kept so the key computation stays locally
-        # explicit.
+        # correctness (the service-side path basis owns the
+        # expanduser().resolve() contract) — kept so the key computation
+        # stays locally explicit.
         root_key = str(Path(str(root)).resolve())
         if cells:
             self.expected_totals[root_key] = int(cells)
         else:
             self.expected_totals.pop(root_key, None)
         self.fallback_starts[root_key] = time.time()
-        if self.attached_root is None:
-            self.attach(root_key)
 
-    def attach(self, root) -> None:
-        """Store the root EXPANDED and RESOLVED — the one path-basis
-        contract every reader (cells_view / stats / failures_view /
-        attached_running_counts / the frontier target) shares with the
-        [a] validation layer (CR-01; an already-absolute resolved key
-        passes through as identity)."""
-        self.attached_root = Path(str(root)).expanduser().resolve()
+class _RunCard:
+    """One running card's model (261018-kvj): the base identity plus
+    its live roots (the base itself first when it is live, else the
+    worker roots in w-index order — ``roots[0]`` is the ACTION ROOT
+    every scoped key (k/t/f/enter) acts on)."""
+
+    __slots__ = ("base", "roots")
+
+    def __init__(self, base: str, roots: "list[str]") -> None:
+        self.base = base
+        self.roots = roots
+
+
+class _RootRead:
+    """The full-scan worker's per-live-root payload (off-loop reads,
+    posted once per scan — the message carries plain data)."""
+
+    __slots__ = ("cells", "progress", "resume", "scale", "stats")
+
+    def __init__(self, stats, cells, progress, resume, scale) -> None:
+        self.stats = stats
+        self.cells = cells
+        self.progress = progress
+        self.resume = resume
+        self.scale = scale
 
 
 class MonitorScreen(Screen):
-    """The slot-5 monitor: discovered sweeps + cell table + stats line
-    over the 11-04 scanner, with the D-09 worker cadence.
+    """The slot-5 monitor, redesigned as TWO TABS (261018-kvj, the
+    maintainer's 2026-10-18 15:01 contract):
+    Running (the default landing — one card per live run, worker rows
+    for multi-GPU sibling roots) and History (completed/interrupted runs,
+    newest first, enter drills the per-run cells). The old master-
+    detail dual table is DELETED.
 
     261018-08g (SOAK-1/F1): the screen is built FRESH per navigation
-    (``build_monitor_screen`` — the cached-instance design is deleted);
-    the session state that must survive navigation lives on the
-    injected :class:`MonitorSession` (``session=None`` constructs a
-    private instance — every existing direct-construction use stays
-    source-compatible) and the four fields below are write-through
-    properties over it."""
+    (``build_monitor_screen``); the session state that must survive
+    navigation lives on the injected :class:`MonitorSession` and the
+    write-through properties below."""
 
     # D-13 slot 5 (the top-menu active-slot marker the nav bar reads).
     NAV_SLOT: ClassVar[int] = 5
@@ -995,17 +1182,26 @@ class MonitorScreen(Screen):
         # (the selection-screen idiom — no runtime import of tui.app).
         app = getters.app(DnallmMarkTui)
 
-    # The bottom-bar vocabulary in declaration order (the wireframe
-    # order; the clip policy drops least-primary first). The nav digits
+    # The bottom-bar vocabulary in declaration order. The nav digits
     # are plain per-screen bindings routed to the app's nav action
-    # (never priority, Pattern 2).
+    # (never priority, Pattern 2). 261018-kvj: left/right/tab switch
+    # the tabs from EITHER tab's focused list — the tab/left/right keys
+    # are non-printable, so DECLARED PRIORITY bindings pass the
+    # consume-key filter over a focused widget (the 261017-mad f10
+    # probe); screen-level priority never fires under a modal (the
+    # active screen owns the chain), so the modal Inputs keep native
+    # tab semantics. Only the tab key renders a Footer keycap.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "row_action", S.ENV_DETAIL_LABEL),
+        Binding("left", "switch_tab", show=False, priority=True),
+        Binding("right", "switch_tab", show=False, priority=True),
+        Binding("tab", "switch_tab", S.MON_TAB_SWITCH_KEYCAP,
+                priority=True),
         Binding("f", "show_failures", S.MON_FAILURES_KEYCAP),
         Binding("t", "show_log_tail", S.MON_LOG_KEYCAP),
         Binding("a", "attach_path", S.MON_ATTACH_LABEL),
         Binding("r", "rescan", S.MON_RESCAN_LABEL),
-        # 261016-vxr (VXR-2): stop the attached training through the
+        # 261016-vxr (VXR-2): stop the focused running run through the
         # launcher's kill channel — y-only confirm, console stays up
         Binding("k", "kill_running", S.MON_KILL_KEYCAP),
         Binding("1", "app.nav(1)", S.NAV_LABEL_ENV, show=False),
@@ -1017,31 +1213,26 @@ class MonitorScreen(Screen):
     ]
 
     class FullScanned(Message):
-        """The 60s full scan arrived (worker thread -> loop; WR-02)."""
+        """The 60s full scan arrived (worker thread -> loop; WR-02):
+        the scan result plus each live root's per-root payload."""
 
-        def __init__(self, result: Any, root_stats: dict,
-                     cells: Any, resume: int, run_id: int,
-                     progress: "dict | None" = None) -> None:
+        def __init__(self, result: Any, payload: "dict[str, _RootRead]",
+                     run_id: int) -> None:
             self.result = result
-            self.root_stats = root_stats
-            self.cells = cells
-            self.resume = resume
+            self.payload = payload
             self.run_id = run_id
-            # C4J-3: the attached root's first entries-progress read
-            # (None when nothing was attached)
-            self.progress = progress
             super().__init__()
 
     class FrontierScanned(Message):
-        """The 2s frontier pass arrived (worker thread -> loop; WR-02)."""
+        """The 2s frontier pass over EVERY live root arrived (worker
+        thread -> loop; WR-02) — per-root snapshots/stats/progress."""
 
-        def __init__(self, snapshot: Any, stats: Any,
-                     run_id: int, progress: "dict | None" = None) -> None:
-            self.snapshot = snapshot
+        def __init__(self, snapshots: dict, stats: dict, progress: dict,
+                     run_id: int) -> None:
+            self.snapshots = snapshots
             self.stats = stats
-            self.run_id = run_id
-            # C4J-3: the attached root's refreshed entries progress
             self.progress = progress
+            self.run_id = run_id
             super().__init__()
 
     class FailuresRead(Message):
@@ -1050,6 +1241,16 @@ class MonitorScreen(Screen):
         def __init__(self, root: str, failures) -> None:
             self.root = root
             self.failures = tuple(failures or ())
+            super().__init__()
+
+    class DrillReady(Message):
+        """The run drill's read-once snapshot arrived (worker -> loop;
+        261018-kvj — the LogTailModal read-once precedent)."""
+
+        def __init__(self, root: str, cells: Any, progress: dict) -> None:
+            self.root = root
+            self.cells = cells
+            self.progress = dict(progress or {})
             super().__init__()
 
     class RerunPreflightDone(Message):
@@ -1132,17 +1333,24 @@ class MonitorScreen(Screen):
         # screen-LOCAL by design (the mount kick rebuilds it; the F1
         # fix deletes the cached-instance design, so a fresh screen
         # starts fresh exactly like today's first visit after boot)
+        self._active_tab = "running"
         self._scan: Any = None
+        self._summaries: dict[str, Any] = {}
+        self._live: set[str] = set()
         self._watermarks: dict[str, float] = {}
         self._root_stats: dict[str, Any] = {}
         self._scales: dict[str, tuple[int, int, int] | None] = {}
-        self._cell_rows: dict[str, Any] = {}
-        # C4J-3 (261015-c4j): the attached root's entries progress —
-        # {(model, task): CellProgress} refreshed by the frontier/full
-        # workers; empty when nothing runs or nothing parses
-        self._cell_progress: dict[tuple[str, str], Any] = {}
-        self._resume_count = 0
-        self._last_stats: Any = None
+        self._resumes: dict[str, int] = {}
+        # 261018-kvj: the per-root cell state — {root: {key: CellRow}}
+        # and {root: {(model, task): CellProgress}}
+        self._cell_rows: dict[str, dict[str, Any]] = {}
+        self._cell_progress: dict[str, dict] = {}
+        self._card_order: list[str] = []
+        # the graduation map (261018-kvj Task 2): root -> state as of
+        # the last rendered scan; screen-local by design
+        self._last_states: dict[str, str] = {}
+        # 261018-kvj #41: True from mount until the first scan message
+        self._scanning = True
         # per-worker run ids (WR-02): bumped on every kick so a
         # superseded worker's late post drops
         self._full_run_id = 0
@@ -1157,18 +1365,10 @@ class MonitorScreen(Screen):
         self._narrow = False
 
     # ===== the session write-through properties (261018-08g, SOAK-1) =====
-    # attached_root / expected_totals / fallback_starts / ever_discovered
-    # live on the shared MonitorSession so they survive the rebuild-per-
-    # navigation design; the property pair keeps every existing reader
-    # (and the direct-attribute tests) source-compatible.
-
-    @property
-    def _attached_root(self) -> "Path | None":
-        return self._session.attached_root
-
-    @_attached_root.setter
-    def _attached_root(self, value: "Path | None") -> None:
-        self._session.attached_root = value
+    # expected_totals / fallback_starts / ever_discovered live on the
+    # shared MonitorSession so they survive the rebuild-per-navigation
+    # design (261018-kvj: attached_root is retired with the attach
+    # concept — the stats seams and the vanished-root memory remain).
 
     @property
     def _expected_totals(self) -> "dict[str, int]":
@@ -1185,33 +1385,31 @@ class MonitorScreen(Screen):
     # ===== compose / mount =====
 
     def compose(self) -> ComposeResult:
-        """The screen frame: nav bars, the title bar (the cadence note
-        right-aligned — standing chrome, D-09), the one-row context
-        header (261017-uwr, UWR-3 — the attached root + its fold
-        counts; empty while unattached, the stats-line precedent), the
-        discovered region (fixed height), the cell region (flex, the
-        resume note on its title row), the 1-row stats line, the
-        bottom bar."""
+        """The two-tab frame (#41 optimistic paint): nav bars, the
+        title bar (the cadence note right-aligned — standing chrome,
+        D-09, byte-unchanged for the pty lane's monitor marker), the
+        one-row tab header with (n) count badges, ONE content region
+        whose children toggle display (single focus, single list), and
+        the bottom bar. The scanning note renders at mount BEFORE any
+        scan lands — skeleton + note only, never a fabricated row."""
         yield TopMenuBar()
         with Horizontal(id="mon-title-bar"):
             yield Label(S.MON_SCREEN_TITLE, id="mon-screen-title")
             yield Label(S.MON_SCAN_NOTE, id="mon-scan-note")
-        yield Label("", id="mon-context-header")
-        with Vertical(id="mon-discovered-region"):
-            with Horizontal(id="mon-discovered-title-row"):
-                yield Label(S.MON_DISCOVERED_TITLE.format(n=0),
-                            id="mon-discovered-title")
-            yield DataTable(id="mon-discovered")
-        with Vertical(id="mon-cells-region"):
-            with Horizontal(id="mon-cells-title-row"):
-                yield Label("", id="mon-cells-title")
-                yield Label("", id="mon-resume-note")
-            yield DataTable(id="mon-cells")
-        yield Label("", id="mon-stats-line")
+        with Horizontal(id="mon-tab-header"):
+            yield Label("", id="mon-tab-running", classes="mon-tab")
+            yield Label("", id="mon-tab-history", classes="mon-tab")
+        with Vertical(id="mon-content"):
+            yield Static("", id="mon-scanning-note")
+            yield Static("", id="mon-running-empty")
+            yield ListView(id="mon-cards")
+            yield DataTable(id="mon-history")
+            yield Static("", id="mon-history-empty")
         yield BottomBar()
 
     def on_mount(self) -> None:
-        """Build the tables, focus the discovered list, arm the cadence.
+        """Paint the tab skeleton, focus the active tab's list, arm the
+        cadence.
 
         261015-ehc (EHC-1): the mount body is IDEMPOTENT — the L language
         toggle re-invokes it after a recompose (the app's _rerender_screen
@@ -1225,15 +1423,16 @@ class MonitorScreen(Screen):
                     self._frontier_timer = None
                 else:
                     self._full_timer = None
-        discovered = self.query_one("#mon-discovered", DataTable)
-        discovered.cursor_type = "row"
-        discovered.zebra_stripes = True
-        self._render_discovered()
-        cells = self.query_one("#mon-cells", DataTable)
-        cells.cursor_type = "row"
-        cells.zebra_stripes = True
-        self._render_cells()
-        discovered.focus()
+        self._narrow = self.size.width < _NARROW_WIDTH
+        history = self.query_one("#mon-history", DataTable)
+        history.cursor_type = "row"
+        history.zebra_stripes = True
+        self.query_one("#mon-running-empty", Static).update(
+            S.MON_RUNNING_EMPTY)
+        self.query_one("#mon-history-empty", Static).update(
+            S.MON_HISTORY_EMPTY)
+        self._render_all()
+        self._focus_active()
         # the D-09 cadence: every tick dispatches a worker (never an
         # inline scan); the mount kick covers the first full pass so
         # the screen never waits 60s for its first rows
@@ -1244,13 +1443,11 @@ class MonitorScreen(Screen):
             self._full_interval, self._tick_full)
 
     def on_resize(self) -> None:
-        """Re-derive the width mode (the 80-col column degradation)."""
+        """Re-derive the width mode (the bar/state-word degradation)."""
         narrow = self.size.width < _NARROW_WIDTH
         if narrow != self._narrow:
             self._narrow = narrow
-            self._render_discovered()
-            self._render_cells()
-            self._render_stats_line()
+            self._render_all()
 
     def on_unmount(self) -> None:
         """The cadence stops with the screen (no zombie timers)."""
@@ -1267,8 +1464,8 @@ class MonitorScreen(Screen):
         self._run_full_scan(self._full_run_id)
 
     def _entries_progress_of(self, root: str) -> dict:
-        """The attached root's entries progress through the TOLERANT
-        service seam (C4J-3): a fake without ``entries_progress`` (every
+        """One root's entries progress through the TOLERANT service
+        seam (C4J-3): a fake without ``entries_progress`` (every
         pre-C4J injected service) reads {} — the entries render their
         honest indeterminate, never a crash."""
         progress_getter = getattr(
@@ -1282,30 +1479,36 @@ class MonitorScreen(Screen):
 
     @work(exclusive=True, thread=True, group="mon-full")
     def _run_full_scan(self, run_id: int) -> None:
-        """The full scan + the per-running-root stats + the attached
-        rows — all off the event loop (T-11-07-01/04). C4J-3: the
-        attached root's FIRST entries-progress read rides the same
-        worker (the cadence never scans inline)."""
+        """The full scan + EVERY live root's stats/cells/progress/
+        resume/scale read — all off the event loop (T-11-07-01/04).
+        Per-root tolerant: a root whose read raises is skipped (the
+        per-file skip idiom), the other roots still land."""
         try:
             result = self._service.full_scan(self._watermarks or None)
-            root_stats: dict[str, Any] = {}
-            for summary in result.sweeps:
-                if summary.state == SWEEP_RUNNING:
-                    root_stats[str(summary.root)] = self._stats_of(
-                        str(summary.root))
-            cells: Any = ()
-            resume = 0
-            progress: dict | None = None
-            if self._attached_root is not None:
-                cells = self._service.cells_view(self._attached_root)
-                resume = self._service.resume_count(self._attached_root)
-                progress = self._entries_progress_of(
-                    str(self._attached_root))
         except Exception:  # noqa: BLE001 — the tolerant-reader promise:
             # the previous render stands (last-known-good), never a crash
             return
-        self.post_message(self.FullScanned(
-            result, root_stats, cells, resume, run_id, progress))
+        payload: dict[str, _RootRead] = {}
+        for summary in result.sweeps:
+            if summary.state != SWEEP_RUNNING:
+                continue
+            read = self._read_live_root(str(summary.root))
+            if read is not None:
+                payload[str(summary.root)] = read
+        self.post_message(self.FullScanned(result, payload, run_id))
+
+    def _read_live_root(self, root: str) -> "_RootRead | None":
+        """One live root's worker-side reads; None = the per-root skip
+        (a raising read drops THAT root only — the per-file idiom)."""
+        try:
+            return _RootRead(
+                stats=self._stats_of(root),
+                cells=self._service.cells_view(root),
+                progress=self._entries_progress_of(root),
+                resume=self._service.resume_count(root),
+                scale=self._service.sweep_scale(root))
+        except Exception:  # noqa: BLE001 — the tolerant-reader promise
+            return None
 
     def _stats_of(self, root: str) -> Any:
         """One root's stats with the launch injections threaded."""
@@ -1315,97 +1518,135 @@ class MonitorScreen(Screen):
             fallback_start=self._fallback_starts.get(root))
 
     def _tick_frontier(self) -> None:
-        """The 2s tick: dispatch the frontier scan of the attached root
-        (a no-op pass while nothing is attached — the cadence stays
-        armed, the degradation-sweep contract)."""
-        if self._attached_root is None:
+        """The 2s tick: dispatch ONE frontier worker that iterates
+        EVERY live root (a no-op pass while nothing runs — the cadence
+        stays armed, the degradation-sweep contract)."""
+        if not self._live:
             return
         self._frontier_run_id += 1
-        self._run_frontier(str(self._attached_root),
-                           self._frontier_run_id)
+        self._run_frontier(self._frontier_run_id)
 
-    @work(exclusive=True, thread=True, group="mon-frontier")
-    def _run_frontier(self, root: str, run_id: int) -> None:
-        """The light 2s pass + the stats refresh (elapsed accrues
-        continuously, D-17) + the entries-progress refresh (C4J-3) —
-        all off the event loop."""
-        try:
-            snapshot = self._service.frontier_scan(root)
-            stats = self._stats_of(root)
-            progress = self._entries_progress_of(root)
-        except Exception:  # noqa: BLE001 — same tolerant promise
-            return
+    @work(exclusive=True, thread=True, group="mon-frontier",
+          exit_on_error=False)
+    def _run_frontier(self, run_id: int) -> None:
+        """The light 2s pass over EVERY live root in the SAME exclusive
+        worker (frontier_scan + stats + entries_progress per root; the
+        elapsed accrues continuously, D-17) — all off the event loop,
+        per-root tolerant."""
+        snapshots: dict = {}
+        stats_map: dict = {}
+        progress_map: dict = {}
+        for root in sorted(self._live):
+            read = self._read_frontier_root(root)
+            if read is None:
+                continue
+            snapshot, stats, progress = read
+            snapshots[root] = snapshot
+            stats_map[root] = stats
+            progress_map[root] = progress
         self.post_message(self.FrontierScanned(
-            snapshot, stats, run_id, progress))
+            snapshots, stats_map, progress_map, run_id))
+
+    def _read_frontier_root(
+            self, root: str) -> "tuple | None":
+        """One live root's frontier reads; None = the per-root skip (a
+        raising read drops THAT root only — the per-file idiom)."""
+        try:
+            return (self._service.frontier_scan(root),
+                    self._stats_of(root),
+                    self._entries_progress_of(root))
+        except Exception:  # noqa: BLE001 — the tolerant-reader promise
+            return None
 
     # ===== message handlers (event-loop side: render only) =====
 
     def on_monitor_screen_full_scanned(self, message: FullScanned) -> None:
-        """The discovered pane composes from the scan; the attached
-        bindings rebind (or degrade honestly when the root vanished)."""
+        """Both tabs compose from the scan; the graduation diff fires
+        on observed running->terminal transitions (261018-kvj Task 2);
+        caches for roots that left the live set drop (the vanished-root
+        degradation — no stale cards)."""
         if message.run_id != self._full_run_id:
             return  # a superseded scan's late post (WR-02)
-        self._scan = message.result
-        self._watermarks = dict(message.result.watermarks)
-        self._root_stats.update(message.root_stats)
-        for summary in message.result.sweeps:
-            self._scales[str(summary.root)] = (
-                self._service.sweep_scale(summary.root)
-                if summary.state == SWEEP_FINISHED else None)
-        attached_key = (str(self._attached_root)
-                        if self._attached_root is not None else None)
-        discovered_roots = {
-            str(summary.root) for summary in message.result.sweeps}
+        result = message.result
+        # graduation BEFORE the state map updates: only transitions the
+        # screen OBSERVED fire (a fresh screen's first scan has no
+        # prior — no stale toast, the honest first-paint rule)
+        for summary in result.sweeps:
+            root_key = str(summary.root)
+            previous = self._last_states.get(root_key)
+            if previous == SWEEP_RUNNING:
+                if summary.state == SWEEP_FINISHED:
+                    self.app.notify(S.MON_GRADUATED_DONE_TOAST.format(
+                        root=Path(root_key).name))
+                elif summary.state == SWEEP_ARTIFACTS_ONLY:
+                    self.app.notify(
+                        S.MON_GRADUATED_INTERRUPTED_TOAST.format(
+                            root=Path(root_key).name))
+        self._last_states = {
+            str(summary.root): summary.state for summary in result.sweeps}
+        self._scan = result
+        self._watermarks = dict(result.watermarks or {})
+        self._summaries = {
+            str(summary.root): summary for summary in result.sweeps}
+        live = {str(summary.root) for summary in result.sweeps
+                if summary.state == SWEEP_RUNNING}
+        self._live = live
         # (the property getter returns the session's LIVE set — update
         # mutates it in place; an |= assignment would need a setter)
-        self._ever_discovered.update(discovered_roots)
-        if (attached_key is not None
-                and attached_key in self._ever_discovered
-                and attached_key not in discovered_roots):
-            # the attached root vanished from the scan (deleted mid-
-            # monitor): degrade honestly — no stale marker, no crash.
-            # A root the scan has NEVER listed survives (a just-attached
-            # manual root awaits its first discovery pass).
-            self._attached_root = None
-            self._last_stats = None
-            self._cell_rows = {}
-            self._cell_progress = {}
-            self._resume_count = 0
-            self._ever_discovered.discard(attached_key)
-        elif attached_key is not None:
-            self._cell_rows = self._merge_cell_rows(
-                self._cell_rows, message.cells)
-            self._resume_count = message.resume
-            if message.progress is not None:
-                self._cell_progress = message.progress
-            stats = message.root_stats.get(attached_key)
-            if stats is not None:
-                self._last_stats = stats
-        self._render_discovered()
-        self._render_cells()
-        self._render_stats_line()
+        self._ever_discovered.update(
+            {str(summary.root) for summary in result.sweeps})
+        for root_key, read in message.payload.items():
+            self._root_stats[root_key] = read.stats
+            self._cell_rows[root_key] = {
+                f"{row.model}__{row.task}": row
+                for row in (read.cells or ())}
+            if read.progress is not None:
+                self._cell_progress[root_key] = read.progress
+            self._resumes[root_key] = read.resume
+            self._scales[root_key] = read.scale
+        # vanished-root degradation: every per-root cache for a root
+        # that is no longer live drops (a deleted or finished root's
+        # card leaves; its History row carries the fresh scan state)
+        for cache in (self._root_stats, self._cell_rows,
+                      self._cell_progress, self._resumes, self._scales):
+            for stale in [key for key in cache if key not in live]:
+                del cache[stale]
+        self._scanning = False
+        self._render_all()
+        self._focus_active()
         if self._pending_rescan:
             self._pending_rescan = False
             self.app.notify(S.MON_RESCAN_TOAST.format(
-                n=len(message.result.sweeps)))
+                n=len(result.sweeps)))
 
     def on_monitor_screen_frontier_scanned(
             self, message: FrontierScanned) -> None:
-        """The cell states + stats refresh from the light pass; new
-        (model, task) rows appear live (the driver mkdirs before the
-        executor runs)."""
+        """The live cards' stats/progress/cell-state refresh from the
+        light pass; new (model, task) rows appear live (the driver
+        mkdirs before the executor runs)."""
         if message.run_id != self._frontier_run_id:
             return
-        if self._attached_root is None:
-            return
-        root_key = str(self._attached_root)
-        self._root_stats[root_key] = message.stats
-        self._last_stats = message.stats
-        if message.progress is not None:
-            self._cell_progress = message.progress
-        merged: dict[str, Any] = dict(self._cell_rows)
-        for (model, task, seed), state in (
-                message.snapshot.cell_states.items()):
+        for root_key, snapshot in message.snapshots.items():
+            if root_key not in self._live:
+                continue
+            self._root_stats[root_key] = message.stats[root_key]
+            if message.progress.get(root_key) is not None:
+                self._cell_progress[root_key] = message.progress[root_key]
+            self._cell_rows[root_key] = self._merge_cell_states(
+                self._cell_rows.get(root_key, {}),
+                snapshot.cell_states or {})
+        self._scanning = False
+        self._render_all()
+        self._focus_active()
+
+    @staticmethod
+    def _merge_cell_states(current: dict, cell_states: dict) -> dict:
+        """Fold a frontier snapshot's per-seed states into one root's
+        cell rows (the frontier-merge idiom, per-root since 261018-kvj):
+        known rows take the fresh seed state, unseen (model, task, seed)
+        triples appear live."""
+        merged = dict(current)
+        for (model, task, seed), state in cell_states.items():
             key = f"{model}__{task}"
             row = merged.get(key)
             if row is None:
@@ -1421,94 +1662,496 @@ class MonitorScreen(Screen):
                     seed=seed, state=state, fraction_states=None)
                 merged[key] = sweep_monitor.CellRow(
                     model=row.model, task=row.task,
-                    seeds=tuple(seeds[number]
-                                for number in sorted(seeds)))
-        self._cell_rows = merged
-        self._render_discovered()
-        self._render_cells()
-        self._render_stats_line()
+                    seeds=tuple(seeds[number] for number in sorted(seeds)),
+                    newest_mtime=row.newest_mtime)
+        return merged
+
+    # ===== the derivation + rendering (event-loop side only) =====
+
+    def _cards(self) -> "list[_RunCard]":
+        """The Running tab's card list: live roots grouped by their
+        multi-GPU base (the ``-mgpu-w{i}`` sibling naming), freshest
+        activity first (a missing mtime last), base name as the
+        tiebreak — the live run is always visible at the top."""
+        groups: dict[str, list[str]] = {}
+        for root_key in self._live:
+            groups.setdefault(_mgpu_base(root_key), []).append(root_key)
+        cards = [_RunCard(base, sorted(roots))
+                 for base, roots in groups.items()]
+
+        def _sort_key(card: _RunCard) -> tuple:
+            mtimes = [
+                self._summaries[root_key].newest_mtime
+                for root_key in card.roots
+                if root_key in self._summaries
+                and self._summaries[root_key].newest_mtime is not None]
+            if not mtimes:
+                return (1, 0.0, card.base)
+            return (0, -max(mtimes), card.base)
+
+        cards.sort(key=_sort_key)
+        return cards
+
+    def _history_rows(self) -> "list[tuple[Any, bool]]":
+        """The History tab's rows: every non-running root (✓ finished /
+        ⏸ interrupted) newest-activity first, PLUS the dual-presence
+        rows — a LIVE root that carries prior history (resume markers
+        present: the same-root re-run workflow) keeps its History row
+        with the badge (surfaced, never deduplicated away)."""
+        rows: list[tuple[Any, bool]] = []
+        if self._scan is not None:
+            for summary in self._scan.sweeps:
+                root_key = str(summary.root)
+                if summary.state == SWEEP_RUNNING:
+                    if self._resumes.get(root_key, 0) > 0:
+                        rows.append((summary, True))
+                    continue
+                rows.append((summary, False))
+
+        def _sort_key(item: "tuple[Any, bool]") -> tuple:
+            summary = item[0]
+            mtime = summary.newest_mtime
+            if mtime is None:
+                return (1, 0.0, str(summary.root))
+            return (0, -mtime, str(summary.root))
+
+        rows.sort(key=_sort_key)
+        return rows
+
+    def _render_all(self) -> None:
+        """One full render pass over the tabbed surface (idempotent —
+        every cadence tick and tab switch lands here)."""
+        if not self.is_running:
+            return
+        cards = self._cards()
+        history = self._history_rows()
+        self._render_scan_note()
+        self._render_tabs(len(cards), len(history))
+        self._render_cards(cards)
+        self._render_history(history)
+        self._apply_visibility(bool(cards), len(history))
+
+    def _render_scan_note(self) -> None:
+        """#41: the scanning note paints from mount until the first
+        scan message lands (skeleton + note only — no fabricated rows)."""
+        note = self.query_one("#mon-scanning-note", Static)
+        if self._scanning:
+            note.update(S.MON_SCANNING)
+            note.display = True
+        else:
+            note.display = False
+
+    def _render_tabs(self, running_count: int, history_count: int) -> None:
+        """The one-row tab header: both titles keep their WORDS with
+        (n) count badges; the ACTIVE tab renders on the live theme
+        accent, the inactive one dim (the nav.py slot-marker precedent
+        — the accent resolves at render time, never a hardcoded hex,
+        and rich-native ``dim`` only: $token styles crash the Static
+        render path, the 09-03 probe pin)."""
+        accent = str(self.app.current_theme.accent)
+        running_text = Text.assemble(
+            Text(S.MON_TAB_RUNNING), Text(" "),
+            Text(S.MON_TAB_COUNT.format(n=running_count)))
+        history_text = Text.assemble(
+            Text(S.MON_TAB_HISTORY), Text(" "),
+            Text(S.MON_TAB_COUNT.format(n=history_count)))
+        if self._active_tab == "running":
+            running_text.stylize(accent)
+            history_text.stylize("dim")
+        else:
+            running_text.stylize("dim")
+            history_text.stylize(accent)
+        self.query_one("#mon-tab-running", Label).update(running_text)
+        self.query_one("#mon-tab-history", Label).update(history_text)
+
+    def _card_widget(self, card: _RunCard) -> ListItem:
+        """One running card: run name, the manifest scale (the honest
+        unknown when nothing parses), and — for a PLAIN run — the
+        done/total 10-cell bar + the current-cell line (stats.current +
+        the per-cell progress grammar) + the resume note. A PURE
+        WORKER GROUP (the base root itself not live — the orchestrator
+        runs only at the ``-mgpu-w{i}`` siblings) renders EVERY root as
+        a worker row (no duplicate primary lines); a live base renders
+        its own lines plus its sibling worker rows."""
+        primary = card.roots[0]
+        base_live = card.roots[0] == card.base
+        scale = self._scales.get(primary)
+        children: list = [
+            Label(Text(Path(card.base).name), classes="mon-card-name"),
+            Label(Text(
+                S.MON_CARD_SCALE.format(
+                    scale="×".join(str(part) for part in scale))
+                if scale else S.MON_SCALE_UNKNOWN,
+                style="dim"), classes="mon-card-scale"),
+        ]
+        worker_roots = card.roots[1:]
+        if base_live:
+            summary = self._summaries.get(primary)
+            stats = self._root_stats.get(primary)
+            done = (stats.done if stats is not None
+                    else (summary.done if summary is not None else 0))
+            total = None
+            if stats is not None and stats.total is not None:
+                total = stats.total
+            elif summary is not None:
+                total = summary.total
+            accent = str(self.app.current_theme.accent)
+            children.append(Label(_progress_fraction(done, total, True),
+                                  classes="mon-card-total"))
+            children.append(Label(_current_cell_line(
+                stats, self._cell_progress.get(primary), self._narrow,
+                accent), classes="mon-card-current"))
+            resume = self._resumes.get(primary, 0)
+            if resume > 0:
+                note_copy = (S.MON_RESUME_NOTE_SHORT if self._narrow
+                             else S.MON_RESUME_NOTE)
+                children.append(Label(Text(note_copy.format(n=resume),
+                                           style="dim"),
+                                      classes="mon-card-resume"))
+        else:
+            worker_roots = card.roots
+        for worker_root in worker_roots:
+            worker_summary = self._summaries.get(worker_root)
+            worker_stats = self._root_stats.get(worker_root)
+            worker_done = (worker_stats.done if worker_stats is not None
+                           else (worker_summary.done
+                                 if worker_summary is not None else 0))
+            worker_total = None
+            if worker_stats is not None and worker_stats.total is not None:
+                worker_total = worker_stats.total
+            elif worker_summary is not None:
+                worker_total = worker_summary.total
+            children.append(Label(
+                Text.assemble(
+                    Text(Path(worker_root).name, style="dim"),
+                    Text(" "),
+                    _progress_fraction(worker_done, worker_total, True)),
+                classes="mon-card-worker"))
+        return ListItem(Vertical(*children, classes="mon-card"))
+
+    def _render_cards(self, cards: "list[_RunCard]") -> None:
+        """Rebuild the card list (few items — live roots); the cursor
+        index re-pins clamped so a cadence rebuild never steals the
+        operator's selection (the WR-05 spirit; a list's identity is
+        positional, cards never reorder except on activity changes)."""
+        list_view = self.query_one("#mon-cards", ListView)
+        previous = list_view.index
+        list_view.clear()
+        self._card_order = []
+        for card in cards:
+            list_view.append(self._card_widget(card))
+            self._card_order.append(card.roots[0])
+        if self._card_order:
+            # an unfocused-but-populated list still highlights row 0 (a
+            # bare enter through the screen binding must act on a real
+            # selection); a rebuild never steals the operator's index
+            list_view.index = max(
+                0, min(previous if previous is not None else 0,
+                       len(self._card_order) - 1))
+
+    def _history_columns(self) -> "list[tuple[str, str]]":
+        return [("", "state"), (S.MON_COL_ROOT, "root"),
+                (S.MON_COL_PROGRESS, "progress"),
+                (S.MON_COL_ACTIVITY, "activity")]
 
     @staticmethod
-    def _merge_cell_rows(current: dict, rows: Any) -> dict:
-        """Fold a fresh cells_view into the table state: known rows
-        take the fresh view wholesale; rows only the frontier saw are
-        retained (the union keeps manifest-only queued rows)."""
-        merged = dict(current)
-        for row in rows or ():
-            merged[f"{row.model}__{row.task}"] = row
-        return merged
+    def _activity_cell(mtime: "float | None") -> Text:
+        """The newest-activity cell: local wall-clock data, or the dash
+        when the scan carried no mtime (data, never fabricated)."""
+        if mtime is None:
+            return Text(S.MON_ETA_UNKNOWN, style=_STYLE_DIM)
+        return Text(time.strftime("%m-%d %H:%M", time.localtime(mtime)),
+                    style=_STYLE_DIM)
+
+    def _render_history(self, rows: "list[tuple[Any, bool]]") -> None:
+        """Diff the History table (WR-05: the cursor row identity
+        survives every cadence rebuild); empty renders the designed
+        copy row."""
+        table = self.query_one("#mon-history", DataTable)
+        row_map: dict[str, list] = {}
+        if not rows:
+            row_map["__empty__"] = [
+                S.MON_HISTORY_EMPTY, "", "", ""]
+        else:
+            for summary, dual in rows:
+                root_key = str(summary.root)
+                copy, style = _history_state_cells().get(
+                    summary.state, (summary.state, _STYLE_DIM))
+                state_cell = Text(copy, style=style)
+                name_cell = Text(summary.root.name)
+                if dual:
+                    # the same-root re-run is LIVE: its card sits on the
+                    # Running tab while this row carries the badge
+                    name_cell = Text.assemble(
+                        name_cell,
+                        Text(f" {S.MON_HISTORY_RERUN_BADGE}",
+                             style=_STYLE_RUNNING))
+                row_map[root_key] = [
+                    state_cell, name_cell,
+                    _progress_fraction(summary.done, summary.total, False),
+                    self._activity_cell(summary.newest_mtime)]
+        _set_table_rows(table, self._history_columns(), row_map)
+
+    def _apply_visibility(self, cards_exist: bool,
+                          history_count: int) -> None:
+        """Toggle the content region's children: ONLY the active tab's
+        list renders (single focus, single list); the scanning note is
+        orthogonal (mount-window chrome)."""
+        running_active = self._active_tab == "running"
+        self.query_one("#mon-cards").display = (
+            running_active and cards_exist)
+        self.query_one("#mon-running-empty").display = (
+            running_active and not cards_exist)
+        self.query_one("#mon-history").display = (
+            not running_active and history_count > 0)
+        self.query_one("#mon-history-empty").display = (
+            not running_active and history_count == 0)
+
+    def _focus_active(self) -> None:
+        """Focus the ACTIVE tab's list (the single-focus design); an
+        empty active tab focuses NOTHING (screen-level bindings own the
+        keys — the empty Running tab's enter routes to slot 4). Runs
+        after every scan render too: the app-level AUTO_FOCUS ("*")
+        grabs the first focusable widget on screen push even when the
+        list is hidden+empty, which would otherwise swallow the enter
+        the empty-state copy advertises."""
+        if not self.is_running:
+            return
+        if self._active_tab == "running":
+            if self._card_order:
+                self.query_one("#mon-cards", ListView).focus()
+            elif self.focused is not None:
+                self.set_focus(None)
+        elif self._history_rows():
+            self.query_one("#mon-history", DataTable).focus()
+        elif self.focused is not None:
+            self.set_focus(None)
+
+    # ===== interactions =====
+
+    def action_switch_tab(self) -> None:
+        """left/right/tab: flip the two tabs (either direction — two
+        tabs), repaint, and move focus to the active tab's list."""
+        self._active_tab = ("history" if self._active_tab == "running"
+                            else "running")
+        self._render_all()
+        self._focus_active()
+
+    def _focused_root(self) -> "str | None":
+        """The focused tab's selection root: the focused running card's
+        action root (the group primary), or the focused History row's
+        root — None when the active tab has no selection (the scoped
+        keys' silent-refusal basis)."""
+        if self._active_tab == "running":
+            if not self._card_order:
+                return None
+            index = self.query_one("#mon-cards", ListView).index
+            if index is None or not 0 <= index < len(self._card_order):
+                return None
+            return self._card_order[index]
+        table = self.query_one("#mon-history", DataTable)
+        try:
+            row_key = str(table.coordinate_to_cell_key(
+                table.cursor_coordinate)[0].value)
+        except Exception:  # noqa: BLE001 — an empty table
+            return None
+        if row_key == "__empty__":
+            return None
+        return row_key
+
+    async def action_row_action(self) -> None:
+        """[enter] with no focused list (the complementary chokepoint
+        to the widgets' own select events). The Running tab's EMPTY
+        state routes to slot 4 — the ONLY launch gate (slot 5 never
+        duplicates it); a focused selection drills the run's cells."""
+        if self._active_tab == "running" and not self._card_order:
+            if self.app.below_minimum_grid:
+                return
+            await self.app.action_nav(4)
+            return
+        root_key = self._focused_root()
+        if root_key is not None:
+            self._open_run_drill(root_key)
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """enter on a running card (the ListView's native select — the
+        event carries the selected INDEX directly)."""
+        index = event.index
+        if index is None or not 0 <= index < len(self._card_order):
+            return
+        self._open_run_drill(self._card_order[index])
+
+    def on_data_table_row_selected(
+            self, event: DataTable.RowSelected) -> None:
+        """enter on the History table's native select event (mouse and
+        key share this chokepoint)."""
+        if event.data_table.id != "mon-history":
+            return
+        root_key = self._focused_root()
+        if root_key is not None:
+            self._open_run_drill(root_key)
+
+    def _open_run_drill(self, root_key: str) -> None:
+        """Open the per-run cells drill (either tab): the read-once
+        snapshot worker (WR-06-guarded push lands on the message)."""
+        if self.app.below_minimum_grid:
+            return
+        self._read_run_cells(root_key)
+
+    @work(exclusive=True, thread=True, group="mon-drill",
+          exit_on_error=False)
+    def _read_run_cells(self, root_key: str) -> None:
+        """The drill's ONE read of cells_view + entries_progress, off
+        the event loop (the LogTailModal read-once precedent — live
+        refresh stays on the running card; the drill is a snapshot)."""
+        try:
+            cells = self._service.cells_view(root_key)
+            progress = self._entries_progress_of(root_key)
+        except Exception:  # noqa: BLE001 — the tolerant-reader promise
+            return
+        self.post_message(self.DrillReady(root_key, cells, progress))
+
+    def on_monitor_screen_drill_ready(self, message: DrillReady) -> None:
+        if self.app.below_minimum_grid:
+            return
+        rows = {f"{row.model}__{row.task}": row
+                for row in (message.cells or ())}
+        self.app.push_screen(RunCellsModal(
+            message.root, rows, message.progress, self))
+
+    @work(exclusive=True, thread=True, group="mon-detail",
+          exit_on_error=False)
+    def open_cell_detail(self, root_key: str, row: Any) -> None:
+        """Read the row's run records off the event loop, then push the
+        detail modal (fields verbatim — data, never elided). Called by
+        the RunCellsModal (the FailuresModal parent-pass idiom)."""
+        records: dict[int, dict] = {}
+        for seed in row.seeds:
+            record = self._service.cell_record(
+                root_key, row.model, row.task, seed.seed)
+            if record is not None:
+                records[seed.seed] = record
+        self.post_message(self.DetailReady(row, records))
+
+    class DetailReady(Message):
+        """The cell's records arrived (worker thread -> loop)."""
+
+        def __init__(self, row: Any, records: dict) -> None:
+            self.row = row
+            self.records = records
+            super().__init__()
+
+    def on_monitor_screen_detail_ready(self, message: DetailReady) -> None:
+        if self.app.below_minimum_grid:
+            return
+        self.app.push_screen(CellDetailModal(
+            message.row.model, message.row.task, message.row,
+            records=message.records))
+
+    def action_show_failures(self) -> None:
+        """[f]: the failures modal over the FOCUSED run's root (either
+        tab); no selection is silent."""
+        if self.app.below_minimum_grid:
+            return
+        root_key = self._focused_root()
+        if root_key is None:
+            return
+        self._open_failures(root_key)
+
+    @work(exclusive=True, thread=True, group="mon-failures",
+          exit_on_error=False)
+    def _open_failures(self, root_key: str) -> None:
+        """Read the failure list off the event loop, then push."""
+        failures = self._service.failures_view(root_key)
+        self.post_message(self.FailuresRead(root_key, failures))
+
+    def on_monitor_screen_failures_read(
+            self, message: FailuresRead) -> None:
+        if self.app.below_minimum_grid:
+            return
+        self.app.push_screen(FailuresModal(
+            message.root, message.failures, self))
+
+    def action_show_log_tail(self) -> None:
+        """[t]: the log-tail modal over the FOCUSED run's tee (a
+        History root or a CLI-launched live root has none — the
+        designed unavailable state, never a fabricated empty log)."""
+        if self.app.below_minimum_grid:
+            return
+        root_key = self._focused_root()
+        if root_key is None:
+            return
+        tee = self._launcher.tee_path_for(root_key)
+        self.app.push_screen(LogTailModal(
+            Path(root_key).name, tee,
+            tail_reader=self._service.read_log_tail,
+            interval=self._frontier_interval))
+
+    def action_attach_path(self) -> None:
+        """[a]: the manual-root path modal — validation via the service
+        predicate; an invalid path keeps the modal open with the reason
+        row (never silent, never attached). A valid root joins the
+        scan set on the next pass and lands on ITS tab (the tabs list
+        every discovered run — no attach state remains)."""
+        if self.app.below_minimum_grid:
+            return
+
+        def on_submit(path: str):
+            if self._service.add_manual_root(path):
+                self._pending_rescan = True
+                self._tick_full()
+                if not self.app.below_minimum_grid:
+                    self.app.notify(S.MON_ATTACHED_TOAST.format(
+                        root=Path(path).name))
+                return None
+            return (("path", S.MON_ATTACH_INVALID_TOAST.format(path=path)),)
+
+        self.app.push_screen(PathInputModal(
+            S.MON_ATTACH_TITLE, S.MON_ATTACH_PLACEHOLDER, on_submit))
+
+    def action_rescan(self) -> None:
+        """[r]: an immediate full rescan outside the 60s cadence; the
+        toast (with the count) lands when the scan does."""
+        self._pending_rescan = True
+        self._tick_full()
 
     # ===== the D-13 launch-injection seam =====
 
     def note_launch(self, root: str, cells: int) -> None:
-        """Record a TUI-launched sweep's plan (the 11-04 stats seams):
-        the expected total and the fallback start (the launch moment —
-        superseded by the first record's started_at once it lands).
-
-        WR-02 (phase-11 review): a note with ``cells == 0`` (the re-run
-        flow, whose plan is unknown) CLEARS any stale expected total a
-        prior launch at the same root left behind — the fresh run's own
-        manifest (once it lands) or the honest unknown-total governs,
-        never the prior sweep's number for the whole session."""
-        # CR-01 note: this pre-resolution is now a documented NO-OP for
-        # correctness (attach() owns the expanduser().resolve() contract)
-        # — kept so the key computation stays locally explicit.
-        root_key = str(Path(str(root)).resolve())
-        if cells:
-            self._expected_totals[root_key] = int(cells)
-        else:
-            self._expected_totals.pop(root_key, None)
-        self._fallback_starts[root_key] = time.time()
-        if self._attached_root is None:
-            self.attach(root_key)
-
-    def attach(self, root) -> None:
-        """Attach one sweep root: the ◆ moves, the cell table / stats /
-        failures / log bindings rebind, and the frontier target updates.
-
-        CR-01 (phase-11 stale-refresh review): the root is stored
-        EXPANDED and RESOLVED — ``Path(str(root)).expanduser().resolve()``
-        — the exact semantics the ``[a]`` validation layer
-        (``add_manual_root``) already applied internally, so validation
-        and attach agree on ONE path basis: a ``~`` -spelled operator
-        path that VALIDATES also MONITORS. Every reader — cells_view /
-        stats / failures_view / cell_record via the service, the ◆
-        marker's discovered-table key comparison, attached_running_counts,
-        the frontier target — sees the resolved root, never the literal
-        spelling. An already-absolute resolved key (the discovered
-        table's enter, note_launch) passes through as identity.
-
-        Safe before mount (the D-13 hook may attach while another
-        screen is active): the state lands now, the refresh worker runs
-        on the next mount kick or tick."""
-        self._attached_root = Path(str(root)).expanduser().resolve()
-        self._cell_rows = {}
-        self._cell_progress = {}
-        self._last_stats = None
-        self._resume_count = 0
-        if self.is_running:
-            self._tick_full()
-            self._tick_frontier()
+        """Record a TUI-launched sweep's plan (the 11-04 stats seams) —
+        the session seeds the expected total / the fallback start; the
+        fresh screen's next scan renders the run (WR-02: a
+        ``cells == 0`` re-run note POPS any stale expected total a
+        prior launch at the same root left behind)."""
+        self._session.note_launch(root, cells)
 
     def attached_running_counts(self) -> "tuple[bool, str, str, str]":
-        """The ExitModal seam: the attached root's running verdict and
-        its live done/total (absent markers when unknown — never a
-        fabricated number)."""
-        root = self._attached_root
-        if root is None:
+        """The ExitModal seam (261018-kvj basis change): the FRESHEST
+        running root from the last scan and its live done/total (absent
+        markers when unknown — never a fabricated number). Registry
+        roots merge at the app (launcher.live_sweeps); this read
+        catches the CLI-launched (probed) running roots the registry
+        does not know. No attach state remains — the scan is the truth."""
+        if self._scan is None:
             return (False, "", "", "")
-        summary_state = None
-        if self._scan is not None:
-            for summary in self._scan.sweeps:
-                if str(summary.root) == str(root):
-                    summary_state = summary.state
-        stats = self._last_stats
+        freshest = None
+        for summary in self._scan.sweeps:
+            if summary.state != SWEEP_RUNNING:
+                continue
+            if (freshest is None
+                    or (summary.newest_mtime or 0.0)
+                    > (freshest.newest_mtime or 0.0)):
+                freshest = summary
+        if freshest is None:
+            return (False, "", "", "")
+        root_key = str(freshest.root)
+        stats = self._root_stats.get(root_key)
         done = (str(stats.done) if stats is not None
                 else S.CFG_VALUE_ABSENT)
         total = (str(stats.total)
                  if stats is not None and stats.total is not None
                  else S.CFG_VALUE_ABSENT)
-        return (summary_state == SWEEP_RUNNING, str(root), done, total)
+        return (True, root_key, done, total)
 
     def request_rerun(self, root: str, failures: tuple) -> None:
         """The [f] modal's r path: the independent LaunchConfirmModal
@@ -1539,7 +2182,8 @@ class MonitorScreen(Screen):
                     roots=", ".join(blocked)),
                 severity="error")
             return
-        seeds = derive_rerun_seeds(failures, self._cell_rows)
+        seeds = derive_rerun_seeds(
+            failures, self._cell_rows.get(root, {}))
         pairs = len({(row.model, row.task) for row in failures or ()})
         self.app.push_screen(LaunchConfirmModal(
             message=S.MON_RERUN_CONFIRM.format(
@@ -1550,7 +2194,7 @@ class MonitorScreen(Screen):
 
     def _rerun_pipeline(self, root: str) -> None:
         """The gated re-run: env preflight first (the SAME gate), then
-        the from-failures launch, then the toast + auto-attach."""
+        the from-failures launch, then the toast."""
         self._rerun_stage_id += 1
         self._run_rerun_preflight(root, self._rerun_stage_id)
 
@@ -1607,15 +2251,16 @@ class MonitorScreen(Screen):
         WR-02: the seed fan-out re-derives through the ONE shared
         ``derive_rerun_seeds`` over this worker's OWN
         ``failures_view(root)`` re-read (the authoritative rows, read
-        off the event loop) with the cell rows as fallback — when
-        NOTHING is derivable the pipeline REFUSES LOUDLY
+        off the event loop) with the root's cell rows as fallback —
+        when NOTHING is derivable the pipeline REFUSES LOUDLY
         (``RerunFailed`` -> the error toast; the launcher is never
         consulted) and the silent ``[42]`` default is gone. The E2'
         re-prompt path re-invokes this worker and re-derives
         identically."""
         try:
             failures = self._service.failures_view(root)
-            seeds = derive_rerun_seeds(failures, self._cell_rows)
+            seeds = derive_rerun_seeds(
+                failures, self._cell_rows.get(root, {}))
             if not seeds:
                 self.post_message(self.RerunFailed(
                     S.MON_RERUN_NO_SEEDS, root, run_id))
@@ -1694,24 +2339,24 @@ class MonitorScreen(Screen):
                 error=getattr(outcome, "error", None) or ""),
             severity="error")
 
-    # ===== the [k] kill channel (261016-vxr, VXR-2) =====
+    # ===== the [k] kill channel (261016-vxr, VXR-2; tab-scoped kvj) =====
 
     def action_kill_running(self) -> None:
-        """[k]: stop the attached training through the launcher's kill
-        channel — behind its OWN y-only confirm (enter structurally
-        inert, EHC-2); the console NEVER exits on this path (stopping a
-        training task and quitting the console are distinct operator
-        acts). Degradations: below the minimum grid nothing opens
-        (WR-06); no attached root is silent (the [f]/[t] precedent); an
-        attached root NOT in ``live_sweeps()`` (CLI-launched or already
-        dead) refuses BEFORE the confirm with MON_KILL_UNAVAILABLE —
-        never a confirm the channel cannot execute."""
+        """[k]: stop the FOCUSED running card's run through the
+        launcher's kill channel — behind its OWN y-only confirm (enter
+        structurally inert, EHC-2); the console NEVER exits on this
+        path (stopping a training task and quitting the console are
+        distinct operator acts). Degradations: below the minimum grid
+        nothing opens (WR-06); no focused selection is silent (the
+        [f]/[t] precedent); a focused root NOT in ``live_sweeps()``
+        (a History row, a CLI-launched live root, or already dead)
+        refuses BEFORE the confirm with MON_KILL_UNAVAILABLE — never a
+        confirm the channel cannot execute."""
         if self.app.below_minimum_grid:
             return
-        root = self._attached_root
-        if root is None:
+        root_key = self._focused_root()
+        if root_key is None:
             return
-        root_key = str(root)
         if root_key not in self._launcher.live_sweeps():
             self.app.notify(
                 S.MON_KILL_UNAVAILABLE.format(root=root_key))
@@ -1724,16 +2369,16 @@ class MonitorScreen(Screen):
             root=root_key,
             on_confirm=lambda: self._kill_confirmed(root_key)))
 
-    def _kill_confirmed(self, root: str) -> None:
+    def _kill_confirmed(self, root_key: str) -> None:
         """y landed on the kill confirm: bump the kill stage id (the
         WR-02 idiom — a superseded kill's late outcome toast drops) and
         dispatch the off-loop kill worker."""
         self._kill_stage_id += 1
-        self._run_kill(root, self._kill_stage_id)
+        self._run_kill(root_key, self._kill_stage_id)
 
     @work(exclusive=True, thread=True, group="mon-kill",
           exit_on_error=False)
-    def _run_kill(self, root: str, run_id: int) -> None:
+    def _run_kill(self, root_key: str, run_id: int) -> None:
         """The kill through the TOLERANT getattr seam (261016-vxr): a
         launcher face without ``kill_sweep`` (every pre-existing fake —
         the Protocol deliberately does NOT declare it, so no fake is
@@ -1744,13 +2389,13 @@ class MonitorScreen(Screen):
         KillFailed, never a silent post-confirm no-op."""
         kill_getter = getattr(self._launcher, "kill_sweep", None)
         try:
-            outcome = (kill_getter(root) if kill_getter is not None
+            outcome = (kill_getter(root_key) if kill_getter is not None
                        else sweep_launcher_module.OUTCOME_NOOP)
         except Exception as exc:  # noqa: BLE001 — WR-03
             self.post_message(self.KillFailed(
-                str(exc) or repr(exc), root, run_id))
+                str(exc) or repr(exc), root_key, run_id))
             return
-        self.post_message(self.KillFinished(outcome, root, run_id))
+        self.post_message(self.KillFinished(outcome, root_key, run_id))
 
     def on_monitor_screen_kill_finished(
             self, message: KillFinished) -> None:
@@ -1777,358 +2422,4 @@ class MonitorScreen(Screen):
             S.MON_KILL_FAILED.format(error=message.error),
             severity="error")
 
-    # ===== rendering (event-loop side only) =====
 
-    def _discovered_columns(self) -> "list[tuple[str, str]]":
-        """The discovered (label, key) columns; the scale column drops
-        below the width threshold (the UI-SPEC responsive rule)."""
-        columns = [("", "state"), (S.MON_COL_ROOT, "root")]
-        if not self._narrow:
-            columns.append((S.MON_COL_SCALE, "scale"))
-        columns.append((S.MON_COL_PROGRESS, "progress"))
-        columns.append((S.MON_COL_ETA, "eta"))
-        return columns
-
-    def _render_discovered(self) -> None:
-        """Diff the discovered table to the last scan (WR-05: the
-        cursor row identity survives every cadence rebuild)."""
-        if not self.is_running:
-            return
-        table = self.query_one("#mon-discovered", DataTable)
-        sweeps = self._scan.sweeps if self._scan is not None else ()
-        title = self.query_one("#mon-discovered-title", Label)
-        title.update(S.MON_DISCOVERED_TITLE.format(n=len(sweeps)))
-        rows: dict[str, list] = {}
-        if not sweeps:
-            row: list = [S.MON_DISCOVERED_EMPTY]
-            row.extend([""] * (3 if self._narrow else 4))
-            rows["__empty__"] = row
-        else:
-            attached_key = (str(self._attached_root)
-                            if self._attached_root is not None else None)
-            for summary in sweeps:
-                root_key = str(summary.root)
-                copy, style = _sweep_state_cells().get(
-                    summary.state, (summary.state, _STYLE_DIM))
-                state_cell = Text(copy, style=style)
-                attached = root_key == attached_key
-                if attached and not self._narrow:
-                    # the ◆ accent marker rides the state cell (amend. 13)
-                    state_cell = Text.assemble(Text("◆ "), state_cell)
-                row = [state_cell, Text(summary.root.name)]
-                if not self._narrow:
-                    scale = self._scales.get(root_key)
-                    row.append(Text(
-                        "×".join(str(part) for part in scale)
-                        if scale else S.MON_ETA_UNKNOWN))
-                row.append(_progress_cell(summary))
-                eta_cell = _discovered_eta_cell(
-                    summary, self._root_stats.get(root_key))
-                if attached and self._narrow:
-                    # the 80-col form carries the marker at the row end
-                    eta_cell = Text.assemble(eta_cell, Text(" ◆"))
-                row.append(eta_cell)
-                rows[root_key] = row
-        _set_table_rows(table, self._discovered_columns(), rows)
-
-    def _render_cells(self) -> None:
-        """Diff the ENTRIES table to the merged rows (C4J-3,
-        261015-c4j): one row per (model, task) with the folded state
-        word + the done/total seed counts and the training-progress
-        cell — per-seed/fraction detail stays in the enter drill-down
-        (WR-05: the cursor row identity survives every cadence rebuild).
-
-        261017-uwr (UWR-4): the rows sort by fold GROUP — running rows
-        on top (freshest ``newest_mtime`` first, mtime-None last), then
-        the unfinished non-running rows (failed / interrupted / queued
-        / unrecognized, key ASC), completed rows sink (key ASC) — the
-        live row is always visible at the top of the table, dead
-        history never hides it.
-
-        The screen derives NOTHING: the fold and the progress both come
-        from the service (``sweep_monitor.entry_fold`` /
-        ``entries_progress``) — this composes their outputs only, and
-        the context header's counts reuse the SAME per-row fold results
-        (each row folds exactly once per render pass, no double
-        derivation).
-        """
-        if not self.is_running:
-            return
-        table = self.query_one("#mon-cells", DataTable)
-        self._render_cells_title()
-        rows_map = self._cell_rows
-        if self._attached_root is None or not rows_map:
-            _set_table_rows(
-                table,
-                [(S.MON_COL_MODEL, "model"), (S.MON_COL_TASK, "task"),
-                 (S.MON_COL_STATE, "state"), (S.MON_COL_PROGRESS, "progress")],
-                {"__empty__": [S.MON_CELLS_EMPTY, "", "", ""]})
-            self._render_context_header()
-            return
-        columns = [(S.MON_COL_MODEL, "model"), (S.MON_COL_TASK, "task"),
-                   (S.MON_COL_STATE, "state"),
-                   (S.MON_COL_PROGRESS, "progress")]
-        key_width = max(8, self.size.width // 3 - 2)
-        folds = {key: sweep_monitor.entry_fold(row)
-                 for key, row in rows_map.items()}
-
-        def _row_sort_key(key: str) -> tuple:
-            fold_state = folds[key].state
-            if fold_state == CELL_RUNNING:
-                # freshest activity first; a missing mtime sorts last
-                return (0, -(rows_map[key].newest_mtime or 0.0), key)
-            if fold_state == CELL_COMPLETED:
-                return (2, 0.0, key)
-            return (1, 0.0, key)
-
-        running = done = interrupted = 0
-        rows: dict[str, list] = {}
-        for key in sorted(rows_map, key=_row_sort_key):
-            row = rows_map[key]
-            fold = folds[key]
-            if fold.state == CELL_RUNNING:
-                running += 1
-            elif fold.state == CELL_COMPLETED:
-                done += 1
-            elif fold.state == CELL_INTERRUPTED:
-                interrupted += 1
-            model_cell = Text(row.model)
-            model_cell.truncate(key_width, overflow="ellipsis", pad=False)
-            task_cell = Text(row.task)
-            task_cell.truncate(key_width, overflow="ellipsis", pad=False)
-            rows[key] = [
-                model_cell,
-                task_cell,
-                self._entry_state_cell(fold),
-                self._entry_progress_cell(
-                    fold, self._cell_progress.get((row.model, row.task))),
-            ]
-        _set_table_rows(table, columns, rows)
-        self._render_context_header(running, done, interrupted)
-
-    def _render_context_header(self, running: int = 0, done: int = 0,
-                               interrupted: int = 0) -> None:
-        """The one-row context header (261017-uwr, UWR-3): the ATTACHED
-        root's name, the total entry count, and the three fold-family
-        counts — the single line that answers 「these rows come from
-        WHERE?」at a glance. Unattached renders the empty string (the
-        stats-line precedent); attached-with-zero-rows renders the
-        line with n=0 and zero counts (honest, never blank-when-
-        attached). ``no_wrap`` so a long line can never push the
-        layout. The counts arrive from ``_render_cells``'s single fold
-        pass (render-side composition only — the screen derives
-        nothing from the artifact tree)."""
-        if not self.is_running:
-            return
-        header = self.query_one("#mon-context-header", Label)
-        if self._attached_root is None:
-            header.update("")
-            return
-        header.update(Text(S.MON_CONTEXT_HEADER.format(
-            root=self._attached_root.name,
-            n=len(self._cell_rows),
-            running=running, done=done, interrupted=interrupted),
-            no_wrap=True))
-
-    def _entry_state_cell(self, fold: Any) -> Text:
-        """The entries state cell: the folded state's glyph word from the
-        existing MON_STATE_* vocabulary plus the done/total seed counts
-        as data. The narrow grid drops the word — the glyph + counts
-        carry the meaning (the seed-cell degradation precedent)."""
-        copy, style = _cell_state_cells().get(
-            fold.state, (fold.state, _STYLE_DIM))
-        counts = S.MON_ENTRY_SEED_COUNTS.format(
-            done=fold.done, total=fold.total)
-        if self._narrow:
-            return Text(f"{_glyph_of(copy)} {counts}", style=style)
-        return Text(f"{copy} {counts}", style=style)
-
-    def _entry_progress_cell(self, fold: Any, progress: Any) -> Text:
-        """The entries progress cell: steps/max + the integer percent + the
-        10-cell bar on RUNNING rows with parseable progress (the
-        data_manager progress grammar — the bar's filled cells carry
-        the live theme accent); the honest indeterminate constant on
-        running rows without progress (never a fabricated number); the
-        dim dash on non-running rows. The narrow grid drops the bar.
-
-        261016-vxr (VXR-1): a derivable checkpoint-pair eta appends the
-        ``format_eta`` segment after the text/bar (data, CJK-free);
-        eta None appends the dim dash — the honest underivable. Zero
-        new operator copy (format_eta is data; _DASH is the existing
-        table symbol)."""
-        if fold.state != CELL_RUNNING:
-            return Text(_DASH, style=_STYLE_SKIPPED)
-        if progress is None or progress.percent is None:
-            return Text(S.MON_PROGRESS_INDETERMINATE,
-                        style=_STYLE_RUNNING)
-        text = S.MON_PROGRESS_STEPS.format(
-            step=progress.step, max=progress.max_steps,
-            percent=progress.percent)
-        eta_segment = (
-            Text(format_eta(progress.eta_seconds))
-            if progress.eta_seconds is not None
-            else Text(_DASH, style=_STYLE_SKIPPED))
-        if self._narrow:
-            # the narrow form keeps the steps text + eta, drops the bar
-            return Text.assemble(
-                Text(text, style=_STYLE_RUNNING),
-                Text(" "),
-                eta_segment,
-            )
-        filled = max(0, min(10, round(progress.percent / 10)))
-        accent = str(self.app.current_theme.accent)
-        return Text.assemble(
-            Text(text, style=_STYLE_RUNNING),
-            Text(" "),
-            Text("█" * filled, style=accent),
-            Text("·" * (10 - filled), style=_STYLE_RUNNING),
-            Text(" "),
-            eta_segment,
-        )
-
-    def _render_cells_title(self) -> None:
-        """The cells title + the standing resume note (MON-05)."""
-        if not self.is_running:
-            return
-        title = self.query_one("#mon-cells-title", Label)
-        if self._attached_root is None:
-            title.update("")
-        else:
-            title.update(S.MON_CELLS_TITLE.format(
-                root=self._attached_root.name))
-        note = self.query_one("#mon-resume-note", Label)
-        if self._resume_count > 0:
-            note_copy = (S.MON_RESUME_NOTE_SHORT if self._narrow
-                         else S.MON_RESUME_NOTE)
-            note.update(Text(note_copy.format(n=self._resume_count),
-                             style=_STYLE_SKIPPED))
-        else:
-            note.update("")
-
-    def _render_stats_line(self) -> None:
-        """The MON-02/D-17 stats line (all variants)."""
-        if not self.is_running:
-            return
-        line = self.query_one("#mon-stats-line", Label)
-        if self._attached_root is None or self._last_stats is None:
-            line.update("")
-            return
-        line.update(_stats_line(self._last_stats, self._narrow))
-
-    # ===== interactions =====
-
-    def action_row_action(self) -> None:
-        """[enter] with no focused table (the complementary chokepoint
-        to the DataTable's own select event — the data_manager idiom)."""
-        self._row_action_for_focused()
-
-    def on_data_table_row_selected(
-            self, event: DataTable.RowSelected) -> None:
-        """enter on either table's native select event (mouse and key
-        share this chokepoint)."""
-        self._row_action_for_focused()
-
-    def _row_action_for_focused(self) -> None:
-        """Route enter by the focused table: attach on the discovered
-        list (D-03), cell detail on the cells table."""
-        focused = self.focused
-        if not isinstance(focused, DataTable):
-            return
-        row_key = focused.coordinate_to_cell_key(
-            focused.cursor_coordinate)[0].value
-        if focused.id == "mon-discovered":
-            if str(row_key) == "__empty__":
-                return
-            self.attach(row_key)
-            self.app.notify(S.MON_ATTACHED_TOAST.format(
-                root=Path(str(row_key)).name))
-        elif focused.id == "mon-cells" and str(row_key) != "__empty__":
-            detail_row = self._cell_rows.get(str(row_key))
-            if detail_row is None or self.app.below_minimum_grid:
-                return
-            self._open_cell_detail(detail_row)
-
-    @work(exclusive=True, thread=True, group="mon-detail", exit_on_error=False)
-    def _open_cell_detail(self, row: Any) -> None:
-        """Read the row's run records off the event loop, then push the
-        detail modal (fields verbatim — data, never elided)."""
-        root = str(self._attached_root) if self._attached_root else ""
-        records: dict[int, dict] = {}
-        for seed in row.seeds:
-            record = self._service.cell_record(
-                root, row.model, row.task, seed.seed)
-            if record is not None:
-                records[seed.seed] = record
-        self.post_message(self.DetailReady(row, records))
-
-    class DetailReady(Message):
-        """The cell's records arrived (worker thread -> loop)."""
-
-        def __init__(self, row: Any, records: dict) -> None:
-            self.row = row
-            self.records = records
-            super().__init__()
-
-    def on_monitor_screen_detail_ready(self, message: DetailReady) -> None:
-        if self.app.below_minimum_grid:
-            return
-        self.app.push_screen(CellDetailModal(
-            message.row.model, message.row.task, message.row,
-            records=message.records))
-
-    def action_show_failures(self) -> None:
-        """[f]: the failures modal over the attached root."""
-        if self.app.below_minimum_grid or self._attached_root is None:
-            return
-        self._open_failures(str(self._attached_root))
-
-    @work(exclusive=True, thread=True, group="mon-failures", exit_on_error=False)
-    def _open_failures(self, root: str) -> None:
-        """Read the failure list off the event loop, then push."""
-        failures = self._service.failures_view(root)
-        self.post_message(self.FailuresRead(root, failures))
-
-    def on_monitor_screen_failures_read(
-            self, message: FailuresRead) -> None:
-        if self.app.below_minimum_grid:
-            return
-        self.app.push_screen(FailuresModal(
-            message.root, message.failures, self))
-
-    def action_show_log_tail(self) -> None:
-        """[t]: the log-tail modal over the attached root's tee."""
-        if self.app.below_minimum_grid or self._attached_root is None:
-            return
-        root_key = str(self._attached_root)
-        tee = self._launcher.tee_path_for(root_key)
-        self.app.push_screen(LogTailModal(
-            self._attached_root.name, tee,
-            tail_reader=self._service.read_log_tail,
-            interval=self._frontier_interval))
-
-    def action_attach_path(self) -> None:
-        """[a]: the manual-root path modal — validation via the service
-        predicate; an invalid path keeps the modal open with the reason
-        row (never silent, never attached)."""
-        if self.app.below_minimum_grid:
-            return
-
-        def on_submit(path: str):
-            if self._service.add_manual_root(path):
-                self.attach(path)
-                self._pending_rescan = True
-                self._tick_full()
-                if not self.app.below_minimum_grid:
-                    self.app.notify(S.MON_ATTACHED_TOAST.format(
-                        root=Path(path).name))
-                return None
-            return (("path", S.MON_ATTACH_INVALID_TOAST.format(path=path)),)
-
-        self.app.push_screen(PathInputModal(
-            S.MON_ATTACH_TITLE, S.MON_ATTACH_PLACEHOLDER, on_submit))
-
-    def action_rescan(self) -> None:
-        """[r]: an immediate full rescan outside the 60s cadence; the
-        toast (with the count) lands when the scan does."""
-        self._pending_rescan = True
-        self._tick_full()

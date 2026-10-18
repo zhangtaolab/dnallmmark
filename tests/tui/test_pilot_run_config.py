@@ -2909,8 +2909,8 @@ async def test_launch_success_auto_navigates_to_monitor_attached():
             "a successful launch auto-navigates to the monitor screen"
         )
         screen = app.screen
-        assert screen._attached_root is not None
-        assert screen._attached_root.name == "finetuned"
+        # 261018-kvj: the attach concept retired with the two-tab
+        # redesign — the D-13 survival proof is the session's stats seams
         assert screen._expected_totals.get("/repo/finetuned") == 3, (
             "the launch plan threads the expected total (the 11-04 seam)"
         )
