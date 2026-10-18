@@ -6,11 +6,11 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: Not started
 status: planning
-stopped_at: "Quick task 261018-kvj complete (slot-5 two-tab redesign: Running cards + History)"
-last_updated: "2026-10-18T08:00:25.418Z"
-last_activity: 2026-10-17
-last_activity_desc: Quick task 261017-mad (exit keys final state) complete
-state_head: 007b385b0c446c948bcd3973bc5cc41f1d2c6771
+stopped_at: "Quick task 261018-rze complete (slot-5 cadence flicker fix: six render gates)"
+last_updated: "2026-10-18T12:57:35.429Z"
+last_activity: 2026-10-18
+last_activity_desc: Quick task 261018-rze (monitor cadence flicker fix) complete
+state_head: d43bfa9a1de9eb9246ee91c4b4589561b3b4dfde
 progress:
   total_phases: 6
   completed_phases: 6
@@ -295,6 +295,7 @@ None yet.
 | 261017-uwr | slot-5 监控 UX 修订（maintainer 2026-10-17 22:15 裁定）— 三态推导（⏵ live / ✓ done / ⏸ interrupted，closes WINDOWS #34）：活证据 = launcher 注册表 ∪ /proc 探测 -> argv_matrix 计划矩阵（from-failures 走 driver 自身 enumerate-and-filter，alias 重跑不误判中断）；上下文头部一行（结果目录 {root} · {n} 训练项：⏵/✓/⏸ 计数，approved 术语表）；live 置顶排序（freshest mtime 优先，completed 沉底）+ WR-05 光标身份跨重排；MonitorBackend 补 entries_progress 委托（Rule 2，生产进度列此前死数据）；monitor 双金标 make snapshot-update 重生成不提交（WINDOWS #35 D-03 待审）；1F/1901P（+32 新）+ node 26/26 + 金标 11/11 工作树绿 | 2026-10-17 | f3b42ba | [261017-uwr-slot-5-monitor-ux-overhaul-context-heade](./quick/261017-uwr-slot-5-monitor-ux-overhaul-context-heade/) |
 | 261018-08g | 浸润测试修复批（SOAK-REPORT F1-F5）— F1 dead-5 根治（每次导航重建 MonitorScreen + 无 textual 依赖的 MonitorSession 提升到组合根，attach/D-13 状态跨重建存活；缓存实例设计删除）+ 永久 pty 车道 tests/tui/test_pty_driver.py（纯 pexpect 无新依赖，CI 安全，Pilot 结构性盲区的长期防线）+ F3 大写 Y/N 孪生绑定（四个确认面，show=False 金标零动；Esc 实测 0.16-0.26s 与 ESCDELAY 无关 -> 不缓解，WINDOWS #36）+ F2 full_scan 活证据优先于陈旧 manifest（同根重跑=默认工作流）+ F4 f1/f2 任意焦点帮助/语言键（f10 机制）+ F5 槽4 picker [m] 切换提示（零新字符串）；run_config.svg 因 F5 重生成不提交（WINDOWS #39，#35 先例）；1F/1916P（+15 新）+ node 26/26 + ruff/ty 绿 + 双 monitor 金标 sha 全程不变 | 2026-10-18 | 565b338 | [261018-08g-soak-test-fix-batch-f1-dead-5-cached-mon](./quick/261018-08g-soak-test-fix-batch-f1-dead-5-cached-mon/) |
 | 24 | 261018-kvj \| slot-5 人机逻辑重设计（maintainer 2026-10-18 15:01 批准的双页签契约）— 正在运行/Running（一次运行一张卡片，mgpu-w 兄弟根组内工作行，模型×数据规模+总进度条+当前训练项行）+ 历史/History（倒序，✓/⏸，重跑进行中 dual-presence 徽标，Enter 逐项 drill）+ ←/→/Tab 切换 + 乐观首绘（#41 骨架+扫描中，扫描落地填充）+ 毕业 toast + 空态 Enter → 槽4 唯一启动门 + 机翻词汇清出（发现/sweep 根）+ 服务层零改动；run_config.svg sha 保护（c7e14458…），monitor 双金标重生成不提交（WINDOWS #35 合并 D-03 交接，替代 uwr 对）；#40/#41 关闭、#35 修订；2F/1919P 恰为基线成员（基线漂移记录 deferred-items）+ node 26/26 + ruff/ty 绿 + pty 车道 6/6（F1 renav 字节不变） | 2026-10-18 | 007b385 | 261018-kvj-slot-5-human-logic-redesign-tabbed-runni |
+| 261018-rze | slot-5 monitor cadence flicker fix (six render gates: tabs/note/cards-structure/history-rows/focus/modal suppression) | 2026-10-18 | d43bfa9 | [261018-rze-slot-5-monitor-cadence-flicker-fix-every](./quick/261018-rze-slot-5-monitor-cadence-flicker-fix-every/) |
 
 ## Deferred Items
 
