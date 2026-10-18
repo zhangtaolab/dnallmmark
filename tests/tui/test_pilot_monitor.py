@@ -1989,6 +1989,61 @@ async def test_running_empty_enter_routes_to_slot4():
         )
 
 
+async def test_language_toggle_recompose_keeps_cadence_idempotent():
+    """EHC-1 over the tabbed surface: the L toggle's recompose re-invokes
+    on_mount — the cadence timers stop BEFORE re-arming (no orphaned
+    pair firing forever), the tabs re-render in the ACTIVE language,
+    and the screen state (cards, tab, selection) survives the rebuild."""
+    from tui import strings as strings_module
+
+    monitor = FakeMonitorService(scans=[_three_state_scan()])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        # the ACTIVE language's title renders first (a persisted zh
+        # state file flips the boot language — never assume en)
+        before_lang = strings_module.language()
+        before_index = 0 if before_lang == "zh" else 1
+        after_index = 1 - before_index
+        assert _label_text(screen, "#mon-tab-history").startswith(
+            strings_module._REGISTRY["MON_TAB_HISTORY"][before_index]), (
+            "the mounted tabs render the boot language"
+        )
+        frontier_before = screen._frontier_timer
+        full_before = screen._full_timer
+
+        await pilot.press("L")
+        await _settle(pilot, app)
+        # the OTHER language's titles render (the recompose re-reads
+        # the registry)
+        assert _label_text(screen, "#mon-tab-history").startswith(
+            strings_module._REGISTRY["MON_TAB_HISTORY"][after_index]), (
+            "the recomposed tabs render the ACTIVE language"
+        )
+        assert screen._frontier_timer is not frontier_before, (
+            "the recompose re-armed a FRESH frontier timer"
+        )
+        assert screen._full_timer is not full_before
+        # exactly one live pair: the old timers stopped, the cadence
+        # keeps dispatching (a bare second set_interval would double)
+        before = len(monitor.frontier_calls)
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert len(monitor.frontier_calls) > before
+        mon_frontier_workers = [
+            worker for worker in app.workers
+            if str(getattr(worker, "group", "") or "") == "mon-frontier"]
+        assert len(mon_frontier_workers) <= 1, (
+            "the recomposed cadence never doubles its workers"
+        )
+        # the state survived: the card and the selection are intact
+        assert screen._card_order == ["/scans/finetuned"]
+        await pilot.press("L")   # restore the boot language
+        await _settle(pilot, app)
+        assert strings_module.language() == before_lang
+
+
 # =====================================================================
 # Task 3 — the degradation sweep (T-11-07-02) + responsiveness (04)
 # =====================================================================
