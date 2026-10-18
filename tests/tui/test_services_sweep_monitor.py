@@ -1886,3 +1886,117 @@ def test_full_scan_live_root_with_churn_keeps_running_verdict(
     row = sweep_row(result, root)
     assert row.state == "running"
     assert row.total is None
+
+
+# =====================================================================
+# 261018-toe (slot-5 [e] Task 1): the incomplete-pairs derivation +
+# the rerun_lane alias-dir fallback leg — both pure, both fed by the
+# live-evidence-threaded cells_view output the screen's service seam
+# produces (the presentation-tier contract: the screen never reads the
+# tree itself, so the derivation consumes the ROWS, never the root).
+# =====================================================================
+
+
+def test_incomplete_pairs_view_failed_and_interrupted_only(tmp_path):
+    """The [e] derivation's core pin: over a dead root's folded cells,
+    exactly the FAILED and INTERRUPTED rows contribute their (model,
+    task) pairs — completed, skipped, queued, and running rows
+    contribute nothing — sorted deterministically, distinct."""
+    root = tmp_path / "finetuned"
+    # failed: a readable record
+    plant_record(root, "model-a", "task-1", 42,
+                 make_record("model-a", "task-1", 42, status="failed"))
+    # interrupted: kill-left checkpoint residue (no record, no marker)
+    write_checkpoint(seed_dir(root, "model-b", "task-2", 42), 120)
+    # completed + skipped: never re-run by [e]
+    plant_record(root, "model-c", "task-3", 42,
+                 make_record("model-c", "task-3", 42))
+    marker = seed_dir(root, "model-d", "task-4", 42)
+    marker.mkdir(parents=True)
+    (marker / RESUME_MARKER).write_text("{}", encoding="utf-8")
+    age_tree(root, age_seconds=2000.0)  # the whole tree is STALE
+
+    # the dead-root read: the strict-miss empty live-pair set is what
+    # derives interrupted for the residue (the uwr leg)
+    cells = sweep_monitor.cells_view(root, live_pairs=frozenset())
+    assert sweep_monitor.incomplete_pairs_view(cells) == (
+        ("model-a", "task-1"), ("model-b", "task-2")), (
+        "exactly the failed + interrupted pairs, sorted + distinct"
+    )
+
+    # the LIVE read over the same tree: the residue derives running and
+    # contributes nothing — [e] never enumerates a running pair
+    cells = sweep_monitor.cells_view(
+        root, live_pairs=frozenset({("model-b", "task-2")}))
+    assert sweep_monitor.incomplete_pairs_view(cells) == (
+        ("model-a", "task-1"),), (
+        "a pair a live sweep plans is running, never incomplete"
+    )
+
+    # the legacy read (live_pairs=None — no evidence data): the residue
+    # derives running under the activity semantics; only the failed pair
+    cells = sweep_monitor.cells_view(root)
+    assert sweep_monitor.incomplete_pairs_view(cells) == (
+        ("model-a", "task-1"),)
+
+
+def test_incomplete_pairs_view_alias_names_and_distinct_sorted(tmp_path):
+    """Model identity passes through VERBATIM (alias names included) and
+    the pair set is distinct + sorted even when two seeds of one pair
+    are separately incomplete."""
+    root = tmp_path / "finetuned"
+    plant_record(root, "model-a+lora", "task-1", 42,
+                 make_record("model-a+lora", "task-1", 42, status="failed"))
+    write_checkpoint(seed_dir(root, "model-a+lora", "task-1", 43), 120)
+    write_checkpoint(seed_dir(root, "model-a+lora", "task-0", 43), 120)
+    age_tree(root, age_seconds=2000.0)
+
+    cells = sweep_monitor.cells_view(root, live_pairs=frozenset())
+    assert sweep_monitor.incomplete_pairs_view(cells) == (
+        ("model-a+lora", "task-0"), ("model-a+lora", "task-1")), (
+        "the alias name verbatim; two seeds of one pair fold to ONE pair"
+    )
+
+
+def test_rerun_lane_alias_dir_fallback_for_interrupted_roots(tmp_path):
+    """261018-toe: an INTERRUPTED root has no manifest and no failures
+    file (both land only at sweep end), so the [e] lane recovers peft
+    from the discovered model-dir names' +lora/+ia3 suffixes — the same
+    two-suffix vocabulary run_sweep.load_failure_pairs strips; a plain
+    root keeps the honest none/none."""
+    lora_root = tmp_path / "lora-root"
+    write_checkpoint(seed_dir(lora_root, "model-a+lora", "task-1", 42), 120)
+    assert sweep_monitor.rerun_lane(lora_root) == ("lora", "none"), (
+        "the alias dir name recovers the lane for an interrupted root"
+    )
+
+    ia3_root = tmp_path / "ia3-root"
+    write_checkpoint(seed_dir(ia3_root, "model-b+ia3", "task-1", 42), 120)
+    assert sweep_monitor.rerun_lane(ia3_root) == ("ia3", "none")
+
+    plain_root = tmp_path / "plain-root"
+    write_checkpoint(seed_dir(plain_root, "model-c", "task-1", 42), 120)
+    assert sweep_monitor.rerun_lane(plain_root) == ("none", "none"), (
+        "no suffix anywhere — the honest none lane (head/probe/curve are "
+        "manifest-only, not dir-recoverable)"
+    )
+
+
+def test_rerun_lane_failures_speak_over_the_dir_fallback(tmp_path):
+    """Source order: the failures entries' alias/base pair wins over the
+    discovered dir names — every pre-existing manifest/failures branch
+    stays byte-identical; the dir scan is only the LAST leg for
+    interrupted roots (first match wins inside it)."""
+    root = tmp_path / "finetuned"
+    write_json(root / FAILURES_NAME, [
+        {"model": "model-a+lora", "base_model": "model-a",
+         "task": "task-1", "seed": 42, "output_dir": "/x",
+         "error": "boom"},
+    ])
+    # a DIFFERENT suffix sits in the dir names — the failures spoke lora
+    write_checkpoint(seed_dir(root, "model-a+ia3", "task-1", 42), 120)
+
+    assert sweep_monitor.rerun_lane(root) == ("lora", "none"), (
+        "the failures entry is the authoritative peft source; the dir "
+        "fallback never overrides a branch that already spoke"
+    )

@@ -83,6 +83,7 @@ frozen phase-8 face) / ``run_config`` (the 11-02 verdict + argv
 composition) services.
 """
 
+import json
 import os
 import signal
 import subprocess
@@ -103,6 +104,15 @@ PIPELINE_DIR = REPO_ROOT / "pipeline"
 
 #: The D-10 tee directory name under the XDG state root.
 TEE_DIR_NAME = "logs"
+
+#: 261018-toe (slot-5 [e]): the directory under the XDG state root where
+#: ``launch_from_pairs`` materializes its failures-shaped pairs files
+#: (``resume_pairs_{rootname}.json``) — the monitor_roots/tee precedent:
+#: state-machine files live under the STATE root, NEVER inside a sweep
+#: output root (``sweep_failures.json`` is the driver's own end-of-sweep
+#: artifact; writing there would corrupt rerun_lane and WR-06
+#: stale-manifest semantics).
+RESUME_PAIRS_DIR_NAME = "resume"
 
 #: One file per launch: ``{prefix}{timestamp}_{rootname}{suffix}``.
 #: WR-04 (phase-11 stale-refresh review): the tee opens with mode
@@ -941,6 +951,85 @@ class SweepLauncher:
             peft=peft, config_variant=config_variant)
         return self.launch_argv(
             argv, output_root, spawner=spawner, clock=clock)
+
+    def launch_from_pairs(self, pairs, seeds, output_root,
+                          peft="none", config_variant="none",
+                          phrase=None, run_config_service=None,
+                          spawner=None, clock=None):
+        """The [e] resume launch (261018-toe): materialize the
+        screen-derived incomplete (model, task) pairs as a
+        failures-shaped file, then delegate to ``launch_from_failures``
+        VERBATIM — single-GPU stage-0, official-keys, the E2' phrase
+        gate over the pairs×seeds effective matrix, composition, and
+        spawn are all the delegated path's own, never duplicated here.
+
+        Seam decision (the maintainer's investigate-and-document item,
+        2026-10-18): option (a) — in-memory incomplete pairs MATERIALIZED
+        as a pairs file routed through the existing from-failures
+        machinery. Option (b) (re-launch the original matrix relying on
+        resume-skip) is unimplementable-honestly: an interrupted root
+        has NO manifest (it lands only at sweep end), so the "original
+        matrix" is not recoverable from disk — only the discovered
+        incomplete cells are. Option (a) matches the ruling's
+        incomplete-set definition exactly (failed + interrupted pairs;
+        completed cells inside those pairs skip via the existing
+        trainer_state resume markers). Materializing to a file (not
+        extending run_config to take pairs inline) keeps run_config
+        untouched and reuses the driver's own ``--from-failures``
+        validation in BOTH the gate (``_from_failures_refusal`` re-reads
+        the file via run_sweep.load_failure_pairs) and the child — zero
+        duplicated gate logic.
+
+        The file lands under ``settings.state_dir()/resume/
+        resume_pairs_{rootname}.json`` (NEVER inside the output root),
+        written with ``settings.atomic_write`` BEFORE delegation and
+        NEVER deleted after spawn (the child reads it at startup;
+        per-root naming bounds growth; a same-root re-[e] is blocked by
+        the live-root/single-GPU guards before it could overwrite a
+        file a live child still reads).
+
+        Args:
+            pairs: the incomplete (model, task) pairs — model identity
+                VERBATIM (alias names included); a "+lora"/"+ia3"
+                suffix derives the entry's ``base_model`` the same way
+                ``run_sweep.load_failure_pairs`` strips it.
+            seeds: the resume seed fan-out.
+            output_root: the resume output root (the dead run's own).
+            peft: adapter mode (none = absent from argv).
+            config_variant: variant lane (none = absent).
+            phrase: the operator-typed E2' phrase; None/"" refuse an
+                E2'-class resume (ignored for an ordinary partial one).
+            run_config_service: an injectable seam double; None uses the
+                REAL run_config module.
+            spawner: a per-call seam override; None uses the instance
+                seam.
+            clock: an injectable ``datetime.now``-shaped callable.
+
+        Returns:
+            LaunchOutcome | GateRefusal: the delegated
+            ``launch_from_failures`` outcome, or its refusal (the
+            spawner provably never called).
+        """
+        resume_dir = settings.state_dir() / RESUME_PAIRS_DIR_NAME
+        resume_dir.mkdir(parents=True, exist_ok=True)
+        pairs_path = resume_dir / (
+            f"resume_pairs_{Path(output_root).name}.json")
+        entries = []
+        for model, task in pairs:
+            entry = {"model": model, "task": task}
+            base = model.removesuffix("+lora").removesuffix("+ia3")
+            if base != model:
+                entry["base_model"] = base
+            entries.append(entry)
+        settings.atomic_write(
+            pairs_path,
+            json.dumps(entries, indent=4, ensure_ascii=False,
+                      sort_keys=True))
+        return self.launch_from_failures(
+            pairs_path, seeds, output_root,
+            peft=peft, config_variant=config_variant, phrase=phrase,
+            run_config_service=run_config_service, spawner=spawner,
+            clock=clock)
 
     # ===== The exit triple (D-06) =====
 

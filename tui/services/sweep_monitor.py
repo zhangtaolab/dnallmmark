@@ -19,7 +19,12 @@ functions in this module:
   pinned variance-ratio range, and the honest pending/none degradations;
 - the live failure list (MON-03): records while running, the failures
   file once finished (it lands only at sweep end);
-- bounded seek-from-end log tails (MON-04).
+- bounded seek-from-end log tails (MON-04);
+- the [e] resume derivation (261018-toe): ``incomplete_pairs_view``
+  folds the live-evidence-threaded ``cells_view`` output into the
+  distinct (model, task) pairs whose entry state is failed or
+  interrupted — a PURE read the screen's service seam feeds; deletion
+  deliberately does NOT live here (the adapter tier owns it).
 
 PURE SCANNER declaration (plan prohibition, 11-04): no timers, no
 threads, no subprocesses, zero textual imports. This module READS sweep
@@ -1571,7 +1576,57 @@ def rerun_lane(root) -> tuple[str, str]:
                 break
         if peft != "none":
             break
+    if peft == "none":
+        # 261018-toe (the [e] alias-dir fallback leg): an INTERRUPTED
+        # root has no manifest and no failures file (both land only at
+        # sweep end), so the last peft source is the discovered model-dir
+        # names' "+lora"/"+ia3" suffixes — the same two-suffix vocabulary
+        # run_sweep.load_failure_pairs strips. config_variant stays
+        # manifest-only (head/probe/curve are not dir-recoverable — the
+        # honest "none"). First match wins; every branch above that
+        # already spoke is untouched.
+        for model_dir in _sorted_children(root_path)[:_SCAN_DIR_ENTRY_CAP]:
+            if not _is_dir(model_dir):
+                continue
+            for mode in run_config.PEFT_MODES:
+                if mode == "none":
+                    continue
+                if model_dir.name.endswith(f"+{mode}"):
+                    peft = mode
+                    break
+            if peft != "none":
+                break
     return (peft, config_variant)
+
+
+def incomplete_pairs_view(cells) -> "tuple[tuple[str, str], ...]":
+    """The [e] resume's incomplete set (261018-toe): the distinct,
+    deterministically sorted ``(model, task)`` pairs whose folded entry
+    state is ``failed`` OR ``interrupted`` — completed/skipped/queued/
+    running rows contribute nothing.
+
+    Consumes the ``cells_view`` OUTPUT (rows), never the root: the
+    screen's service seam owns the read and threads the live evidence
+    (a dead root's strict-miss empty live-pair set is exactly what
+    derives ``interrupted`` for its non-terminal cells — the 261017-uwr
+    leg), so this function stays a pure fold over already-derived rows.
+    Model identity passes through VERBATIM — the alias under
+    peft/config-variant, never translated to the base registry name.
+
+    Args:
+        cells: the ``CellRow`` sequence (``cells_view`` output; the
+            screen passes its service seam's rows).
+
+    Returns:
+        tuple[tuple[str, str], ...]: the sorted distinct incomplete
+        (model, task) pairs — empty when nothing is incomplete.
+    """
+    pairs: set[tuple[str, str]] = set()
+    for row in cells or ():
+        fold = entry_fold(row)
+        if fold.state in (CELL_FAILED, CELL_INTERRUPTED):
+            pairs.add((row.model, row.task))
+    return tuple(sorted(pairs))
 
 
 def read_log_tail(path, max_lines=200, max_bytes=65536):

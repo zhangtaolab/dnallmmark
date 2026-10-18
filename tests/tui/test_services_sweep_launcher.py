@@ -1589,3 +1589,112 @@ def test_live_sweep_matrices_kill_face_stays_registry_only(
         "the kill face is registry-only — a probe root never enters it")
     assert launcher.kill_sweep(probed_root) == (
         sweep_launcher.OUTCOME_NOOP)
+
+
+# =====================================================================
+# 261018-toe (slot-5 [e] Task 1): launch_from_pairs — the materialize-
+# and-delegate seam. In-memory incomplete pairs derived by the screen
+# land as a failures-shaped pairs file under the XDG STATE root, then
+# the EXISTING launch_from_failures runs verbatim (single-GPU stage-0,
+# official-keys, the E2' phrase gate over the pairs×seeds effective
+# matrix, composition, spawn — zero duplicated gate logic).
+# =====================================================================
+
+
+def test_launch_from_pairs_materializes_state_dir_file_and_delegates(
+        monkeypatch, tmp_path):
+    """The seam's happy path: the pairs file lands under
+    ``state_dir()/resume/resume_pairs_{rootname}.json`` as the driver's
+    own failures-entry shape (alias verbatim + ``base_model`` with the
+    stripped base only for suffixed names), and the child's
+    ``--from-failures`` argv names THAT file with the threaded lane."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    spawner = FakeSpawner(FakeSweepPopen(poll_returns=(None,)))
+    launcher = sweep_launcher.SweepLauncher(spawner=spawner)
+    out_root = tmp_path / "finetuned"
+
+    outcome = launcher.launch_from_pairs(
+        (("plant-dnabert-6mer+lora", "GUE__emp_H3"),
+         ("DNABERT-2-117M", "BEND__CpG_methylation")),
+        (42,), out_root, peft="lora",
+        spawner=spawner, clock=FixedClock(CLOCK_MOMENT))
+
+    assert outcome.spawned is True
+    pairs_path = state / "resume" / "resume_pairs_finetuned.json"
+    entries = json.loads(pairs_path.read_text(encoding="utf-8"))
+    assert entries == [
+        {"model": "plant-dnabert-6mer+lora", "task": "GUE__emp_H3",
+         "base_model": "plant-dnabert-6mer"},
+        {"model": "DNABERT-2-117M", "task": "BEND__CpG_methylation"},
+    ], ("the driver's own failures-entry shape in the caller's (sorted) "
+        "pair order — base_model only when the name carries a "
+        "+lora/+ia3 suffix")
+    argv, _ = single_call(spawner)
+    assert argv[argv.index("--from-failures") + 1] == str(
+        pairs_path.resolve()), "the child reads the materialized file"
+    assert argv[argv.index("--peft") + 1] == "lora", (
+        "the threaded lane rides the delegation verbatim")
+    assert argv[argv.index("--seeds") + 1] == "42"
+
+
+def test_launch_from_pairs_full_matrix_demands_phrase_spawner_silent(
+        monkeypatch, tmp_path):
+    """A full-matrix incomplete set over >= 3 seeds refuses at the
+    phrase stage exactly like a complete failures manifest — the gate is
+    the DELEGATED launch_from_failures' own (spawner call-count proof),
+    and a same-shape call with the matching phrase spawns with the
+    state-dir file."""
+    pin_state_dir(monkeypatch, tmp_path)
+    official = run_config.official_keys()
+    assert official.diagnostic is None
+    pairs = tuple(
+        (model, task)
+        for model in sorted(official.models)
+        for task in sorted(official.tasks))
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher(spawner=spawner)
+
+    refusal = launcher.launch_from_pairs(
+        pairs, (42, 43, 44), tmp_path / "rerun", spawner=spawner)
+
+    assert isinstance(refusal, sweep_launcher.GateRefusal)
+    assert refusal.stage == sweep_launcher.REFUSAL_STAGE_PHRASE
+    assert refusal.expected == "rerun"
+    assert spawner.calls == [], (
+        "the spawner is provably never called for a refused launch")
+
+    outcome = launcher.launch_from_pairs(
+        pairs, (42, 43, 44), tmp_path / "rerun", phrase="rerun",
+        spawner=spawner, clock=FixedClock(CLOCK_MOMENT))
+    assert outcome.spawned is True, (
+        "the matching phrase passes the same gate")
+    argv, _ = single_call(spawner)
+    assert "resume_pairs_rerun.json" in argv[
+        argv.index("--from-failures") + 1]
+
+
+def test_launch_from_pairs_single_gpu_busy_refuses_first(
+        monkeypatch, tmp_path):
+    """EHC-3 order through the seam: a busy single-GPU machine refuses
+    at stage-0 — the delegated guard runs BEFORE any manifest
+    evaluation or phrase (the launch_from_failures twin)."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    spawner = FakeSpawner()
+    launcher = sweep_launcher.SweepLauncher(
+        spawner=spawner, gpu_count=1)
+    assert launcher.launch_argv(
+        ["py", "run_sweep.py", "--output-root",
+         str(tmp_path / "busy")],
+        tmp_path / "busy", spawner=FakeSpawner(
+            popen=FakeSweepPopen(poll_returns=(None,)))).spawned is True
+
+    refusal = launcher.launch_from_pairs(
+        (("plant-dnabert-6mer", "GUE__emp_H3"),),
+        (42,), tmp_path / "rerun", spawner=spawner)
+
+    assert isinstance(refusal, sweep_launcher.GateRefusal)
+    assert refusal.stage == sweep_launcher.REFUSAL_STAGE_SINGLE_GPU
+    assert spawner.calls == []
+    # the file is written BEFORE delegation (the child reads it at
+    # startup) — it stands even under the stage-0 refusal
+    assert (state / "resume" / "resume_pairs_rerun.json").exists()
