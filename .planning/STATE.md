@@ -6,11 +6,11 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: Not started
 status: planning
-stopped_at: "Quick task 261018-08g complete (soak fix batch: F1 dead-5 + pty lane)"
-last_updated: "2026-10-17T17:14:03.295Z"
+stopped_at: "Quick task 261018-kvj complete (slot-5 two-tab redesign: Running cards + History)"
+last_updated: "2026-10-18T08:00:25.418Z"
 last_activity: 2026-10-17
 last_activity_desc: Quick task 261017-mad (exit keys final state) complete
-state_head: 565b3384b28668dfb406f28e3b08f4ceac460e71
+state_head: 007b385b0c446c948bcd3973bc5cc41f1d2c6771
 progress:
   total_phases: 6
   completed_phases: 6
@@ -110,6 +110,7 @@ Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 
 | Phase quick-261017-mad P01 | 35 min | 3 tasks | 7 files |
 | Phase quick-261017-uwr PP01 | 33 min | 4 tasks | 12 files |
 | Phase quick-261018-08g PPP01 | 44 min | 4 tasks | 14 files |
+| Phase quick-261018-kvj PP01 | 43 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -251,6 +252,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase quick-261018-08g]: 261018-08g F1 dead-5 根治 — textual 8.2.8 switch_screen 在导航离开时 await remove() 缓存实例，重新注册已移除实例只换栈不重绘（真 pty 100% 复现，Pilot 结构性盲区）；修复形态 = 每次导航重建 MonitorScreen + 无 textual 依赖的 MonitorSession 提升到组合根（SEL-01 marks-set 先例）；永久 pty 车道（纯 pexpect、断言新增字节）入 make test
 - [Phase quick-261018-08g]: 261018-08g Esc 裁定 — 干净 pty 实测 ESC 关闭 0.16-0.26s（默认 ESCDELAY），30ms/10ms 完全相同：ESCDELAY 对关闭延迟无可测影响，不落地 __main__.py 缓解（measure-first 授权）；浸润报告的 1.5-4s 疑似 F1 同族降级渲染
 - [Phase quick-261017-uwr]: 261017-uwr: slot-5 three-state derivation — live-pair evidence (launcher registry ∪ /proc probe -> argv_matrix planned pairs) gates the interrupted leg; from-failures matrices thread the driver's enumerate-and-filter so alias re-runs never false-interrupt; header/ordering/glyphs per the maintainer ruling (⏵/✓/⏸); MonitorBackend entries_progress delegation was missing (Rule 2); monitor goldens regenerated uncommitted (WINDOWS #35), #34 closed
+- [Phase quick-261018-kvj]: [quick-261018-kvj]: slot-5 两页签落地 — 卡片用 ListView（selection.py 模板菜单先例，索引钳位重锚）；dual-presence 谓词 = resume_count>0（续跑标记即同根重跑/续跑的在盘证据，徽标呈现不去重）；mgpu 分组 = 剥 -mgpu-w{数字} 后缀（run_sweep_shard 冻结命名），纯 worker 组全部渲染为工作行；←/→/Tab 声明式 priority 绑定（f10 非打印键先例，屏幕级 priority 不穿 modal）
+- [Phase quick-261018-kvj]: [quick-261018-kvj]: attached_root 全链退役（session 字段/属性/attach()），ExitModal 缔合 attached_running_counts 改读最近一次扫描的最新 running 根+其 stats；stats-line 家族（MON_STATS_LINE*/ETA pending/range）随 master-detail 退役，卡片当前训练项行携带逐项进度/ETA；卡片/页签 Label 路径只许 rich 原生 dim（$token 样式在 Static 渲染路径崩 — 09-03 探针再遇）
 
 ### Pending Todos
 
@@ -291,6 +294,7 @@ None yet.
 | 261017-mad | 退出键终态（maintainer 2026-10-17 16:02 裁定）— F10 任意焦点主退出（声明式 priority 绑定走 v0z 确认链，probe 证实非打印键穿透 focused-Input consume-key 过滤；P9 过 modal 由 CDR-4 守卫）；ctrl+c 拦截整体撤回（on_event 全删，WR-01 委托随之删除，终端原生复制/中断语义回归并钉测：选区 Input 原生复制、裸按仅 notify、modal 内链切）；q/ctrl+q 字节不变；帮助弹窗双语同步（APP_F10_LABEL 新增 + APP_CTRLC_LABEL 改写为防误读行，APP_QUIT/CTRLQ 字节不动金标零动）；1F/1869P + node 26/26 + 金标 11/11 | 2026-10-17 | c8f6f44 | [261017-mad-exit-keys-final-f10-any-focus-quit-prima](./quick/261017-mad-exit-keys-final-f10-any-focus-quit-prima/) |
 | 261017-uwr | slot-5 监控 UX 修订（maintainer 2026-10-17 22:15 裁定）— 三态推导（⏵ live / ✓ done / ⏸ interrupted，closes WINDOWS #34）：活证据 = launcher 注册表 ∪ /proc 探测 -> argv_matrix 计划矩阵（from-failures 走 driver 自身 enumerate-and-filter，alias 重跑不误判中断）；上下文头部一行（结果目录 {root} · {n} 训练项：⏵/✓/⏸ 计数，approved 术语表）；live 置顶排序（freshest mtime 优先，completed 沉底）+ WR-05 光标身份跨重排；MonitorBackend 补 entries_progress 委托（Rule 2，生产进度列此前死数据）；monitor 双金标 make snapshot-update 重生成不提交（WINDOWS #35 D-03 待审）；1F/1901P（+32 新）+ node 26/26 + 金标 11/11 工作树绿 | 2026-10-17 | f3b42ba | [261017-uwr-slot-5-monitor-ux-overhaul-context-heade](./quick/261017-uwr-slot-5-monitor-ux-overhaul-context-heade/) |
 | 261018-08g | 浸润测试修复批（SOAK-REPORT F1-F5）— F1 dead-5 根治（每次导航重建 MonitorScreen + 无 textual 依赖的 MonitorSession 提升到组合根，attach/D-13 状态跨重建存活；缓存实例设计删除）+ 永久 pty 车道 tests/tui/test_pty_driver.py（纯 pexpect 无新依赖，CI 安全，Pilot 结构性盲区的长期防线）+ F3 大写 Y/N 孪生绑定（四个确认面，show=False 金标零动；Esc 实测 0.16-0.26s 与 ESCDELAY 无关 -> 不缓解，WINDOWS #36）+ F2 full_scan 活证据优先于陈旧 manifest（同根重跑=默认工作流）+ F4 f1/f2 任意焦点帮助/语言键（f10 机制）+ F5 槽4 picker [m] 切换提示（零新字符串）；run_config.svg 因 F5 重生成不提交（WINDOWS #39，#35 先例）；1F/1916P（+15 新）+ node 26/26 + ruff/ty 绿 + 双 monitor 金标 sha 全程不变 | 2026-10-18 | 565b338 | [261018-08g-soak-test-fix-batch-f1-dead-5-cached-mon](./quick/261018-08g-soak-test-fix-batch-f1-dead-5-cached-mon/) |
+| 24 | 261018-kvj \| slot-5 人机逻辑重设计（maintainer 2026-10-18 15:01 批准的双页签契约）— 正在运行/Running（一次运行一张卡片，mgpu-w 兄弟根组内工作行，模型×数据规模+总进度条+当前训练项行）+ 历史/History（倒序，✓/⏸，重跑进行中 dual-presence 徽标，Enter 逐项 drill）+ ←/→/Tab 切换 + 乐观首绘（#41 骨架+扫描中，扫描落地填充）+ 毕业 toast + 空态 Enter → 槽4 唯一启动门 + 机翻词汇清出（发现/sweep 根）+ 服务层零改动；run_config.svg sha 保护（c7e14458…），monitor 双金标重生成不提交（WINDOWS #35 合并 D-03 交接，替代 uwr 对）；#40/#41 关闭、#35 修订；2F/1919P 恰为基线成员（基线漂移记录 deferred-items）+ node 26/26 + ruff/ty 绿 + pty 车道 6/6（F1 renav 字节不变） | 2026-10-18 | 007b385 | 261018-kvj-slot-5-human-logic-redesign-tabbed-runni |
 
 ## Deferred Items
 
@@ -302,8 +306,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T17:14:02.971Z
-Stopped at: Quick task 261018-08g complete (soak fix batch: F1 dead-5 + pty lane)
+Last session: 2026-10-18T08:00:25.163Z
+Stopped at: Quick task 261018-kvj complete (slot-5 two-tab redesign: Running cards + History)
 Resume file: None
 
 ## Operator Next Steps
