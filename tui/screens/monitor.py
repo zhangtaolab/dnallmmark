@@ -67,6 +67,23 @@ Contract (locked decisions that survive the redesign):
   graduation toast and moves Running -> History on the next render.
   Screen-local by design: a finish while another screen is up
   graduates silently on the next visit (honest, no stale toast).
+- 261018-rze (the five cadence render gates — the maintainer's
+  2026-10-18 19:57 flicker report): a steady 2s tick over UNCHANGED
+  data now performs ZERO widget writes. (a) the tab Labels update only
+  when the (running, history, active-tab) signature changes, with
+  ``layout=False`` (single-line fixed-height labels — the
+  textual-blessed case); (b) the scan note updates only on the
+  scanning state flip; (c) the card list rebuilds only when the
+  STRUCTURE signature changes (roots identity/order, base_live,
+  resume-note presence — never progress text) — a content-only change
+  updates the existing card Labels in place over the ONE shared
+  ``_card_content`` builder, so the operator's cursor identity and the
+  ListItem objects survive every steady tick; (d) ``_focus_active``
+  no-ops when the target already holds focus; (e) ``_render_all``
+  early-returns while another screen is stacked above (a modal or the
+  min-size guard) — the base surface never repaints beneath it. The
+  gates reset in ``on_mount`` so the L-toggle recompose (fresh empty
+  Labels) fully repaints in the active language.
 - WR-06: every async modal push checks ``app.below_minimum_grid``.
 - 261018-08g (SOAK-1/F1, PRESERVED EXACTLY): the app builds a FRESH
   MonitorScreen per navigation and injects the shared textual-free
@@ -1363,6 +1380,13 @@ class MonitorScreen(Screen):
         self._frontier_timer = None
         self._full_timer = None
         self._narrow = False
+        # 261018-rze: the cadence render gates' sentinels — None forces
+        # the first pass through the full structural path, and on_mount
+        # resets them so the L-toggle recompose (fresh empty Labels)
+        # repaints the fresh widget tree in the active language
+        self._tabs_sig: tuple[int, int, str] | None = None
+        self._scan_note_shown: bool | None = None
+        self._cards_sig: tuple | None = None
 
     # ===== the session write-through properties (261018-08g, SOAK-1) =====
     # expected_totals / fallback_starts / ever_discovered live on the
@@ -1416,6 +1440,14 @@ class MonitorScreen(Screen):
         mechanism), so the cadence timers stop BEFORE re-arming (a bare
         second set_interval would orphan the first pair firing forever).
         """
+        # 261018-rze (f, LOAD-BEARING): the recompose rebuilds the
+        # compose tree with FRESH empty Labels — the render gates MUST
+        # reset here or the unchanged sentinels would gate away the
+        # updates and the recomposed tabs/cards would render empty in
+        # the stale language
+        self._tabs_sig = None
+        self._scan_note_shown = None
+        self._cards_sig = None
         for timer in (self._frontier_timer, self._full_timer):
             if timer is not None:
                 timer.stop()
@@ -1720,9 +1752,17 @@ class MonitorScreen(Screen):
 
     def _render_all(self) -> None:
         """One full render pass over the tabbed surface (idempotent —
-        every cadence tick and tab switch lands here)."""
+        every cadence tick and tab switch lands here).
+
+        261018-rze (e): the pass is SUPPRESSED while another screen is
+        stacked above (a modal, the min-size guard) — the base surface
+        never repaints beneath it; the next 2s tick after dismissal
+        refreshes. Graduation and rescan toasts fire in the message
+        handlers BEFORE this pass and are unaffected."""
         if not self.is_running:
             return
+        if self.app.screen is not self:
+            return  # a modal or the min-size guard is stacked above
         cards = self._cards()
         history = self._history_rows()
         self._render_scan_note()
@@ -1733,13 +1773,21 @@ class MonitorScreen(Screen):
 
     def _render_scan_note(self) -> None:
         """#41: the scanning note paints from mount until the first
-        scan message lands (skeleton + note only — no fabricated rows)."""
+        scan message lands (skeleton + note only — no fabricated rows).
+
+        261018-rze (b): the note's update call fires ONLY on the
+        scanning state flip — repeated renders at the same ``_scanning``
+        value perform zero update calls (textual already change-guards
+        the ``.display`` assignments)."""
         note = self.query_one("#mon-scanning-note", Static)
         if self._scanning:
-            note.update(S.MON_SCANNING)
+            if self._scan_note_shown is not True:
+                note.update(S.MON_SCANNING, layout=False)
+                self._scan_note_shown = True
             note.display = True
         else:
             note.display = False
+            self._scan_note_shown = False
 
     def _render_tabs(self, running_count: int, history_count: int) -> None:
         """The one-row tab header: both titles keep their WORDS with
@@ -1747,7 +1795,17 @@ class MonitorScreen(Screen):
         accent, the inactive one dim (the nav.py slot-marker precedent
         — the accent resolves at render time, never a hardcoded hex,
         and rich-native ``dim`` only: $token styles crash the Static
-        render path, the 09-03 probe pin)."""
+        render path, the 09-03 probe pin).
+
+        261018-rze (a): the tab Labels update only when the
+        (running, history, active-tab) signature changes — a steady
+        tick over unchanged counts performs zero tab writes. The
+        ``layout=False`` update is the textual-blessed case for
+        single-line fixed-height labels (the size cannot change)."""
+        sig = (running_count, history_count, self._active_tab)
+        if sig == self._tabs_sig:
+            return  # unchanged counts and tab: nothing to paint
+        self._tabs_sig = sig
         accent = str(self.app.current_theme.accent)
         running_text = Text.assemble(
             Text(S.MON_TAB_RUNNING), Text(" "),
@@ -1761,28 +1819,36 @@ class MonitorScreen(Screen):
         else:
             running_text.stylize("dim")
             history_text.stylize(accent)
-        self.query_one("#mon-tab-running", Label).update(running_text)
-        self.query_one("#mon-tab-history", Label).update(history_text)
+        self.query_one("#mon-tab-running", Label).update(
+            running_text, layout=False)
+        self.query_one("#mon-tab-history", Label).update(
+            history_text, layout=False)
 
-    def _card_widget(self, card: _RunCard) -> ListItem:
-        """One running card: run name, the manifest scale (the honest
-        unknown when nothing parses), and — for a PLAIN run — the
-        done/total 10-cell bar + the current-cell line (stats.current +
-        the per-cell progress grammar) + the resume note. A PURE
-        WORKER GROUP (the base root itself not live — the orchestrator
-        runs only at the ``-mgpu-w{i}`` siblings) renders EVERY root as
-        a worker row (no duplicate primary lines); a live base renders
-        its own lines plus its sibling worker rows."""
+    def _card_content(self, card: _RunCard) -> "list[tuple[str, Text]]":
+        """One running card's CONTENT — the ORDERED (css-classes, Text)
+        pairs the card renders: run name, the manifest scale (the
+        honest unknown when nothing parses), and — for a PLAIN run —
+        the done/total 10-cell bar + the current-cell line (stats.
+        current + the per-cell progress grammar) + the resume note. A
+        PURE WORKER GROUP (the base root itself not live — the
+        orchestrator runs only at the ``-mgpu-w{i}`` siblings) renders
+        EVERY root as a worker row (no duplicate primary lines); a live
+        base renders its own lines plus its sibling worker rows.
+
+        261018-rze (c): the ONE content definition shared by BOTH
+        render paths — the rebuild path (``_card_widget``'s ListItem
+        construction) and the in-place path (the existing Labels'
+        content update) — so the two can never drift."""
         primary = card.roots[0]
         base_live = card.roots[0] == card.base
         scale = self._scales.get(primary)
-        children: list = [
-            Label(Text(Path(card.base).name), classes="mon-card-name"),
-            Label(Text(
+        lines: list[tuple[str, Text]] = [
+            ("mon-card-name", Text(Path(card.base).name)),
+            ("mon-card-scale", Text(
                 S.MON_CARD_SCALE.format(
                     scale="×".join(str(part) for part in scale))
                 if scale else S.MON_SCALE_UNKNOWN,
-                style="dim"), classes="mon-card-scale"),
+                style="dim")),
         ]
         worker_roots = card.roots[1:]
         if base_live:
@@ -1796,18 +1862,18 @@ class MonitorScreen(Screen):
             elif summary is not None:
                 total = summary.total
             accent = str(self.app.current_theme.accent)
-            children.append(Label(_progress_fraction(done, total, True),
-                                  classes="mon-card-total"))
-            children.append(Label(_current_cell_line(
+            lines.append(("mon-card-total",
+                          _progress_fraction(done, total, True)))
+            lines.append(("mon-card-current", _current_cell_line(
                 stats, self._cell_progress.get(primary), self._narrow,
-                accent), classes="mon-card-current"))
+                accent)))
             resume = self._resumes.get(primary, 0)
             if resume > 0:
                 note_copy = (S.MON_RESUME_NOTE_SHORT if self._narrow
                              else S.MON_RESUME_NOTE)
-                children.append(Label(Text(note_copy.format(n=resume),
-                                           style="dim"),
-                                      classes="mon-card-resume"))
+                lines.append(("mon-card-resume",
+                              Text(note_copy.format(n=resume),
+                                   style="dim")))
         else:
             worker_roots = card.roots
         for worker_root in worker_roots:
@@ -1821,19 +1887,62 @@ class MonitorScreen(Screen):
                 worker_total = worker_stats.total
             elif worker_summary is not None:
                 worker_total = worker_summary.total
-            children.append(Label(
-                Text.assemble(
-                    Text(Path(worker_root).name, style="dim"),
-                    Text(" "),
-                    _progress_fraction(worker_done, worker_total, True)),
-                classes="mon-card-worker"))
-        return ListItem(Vertical(*children, classes="mon-card"))
+            lines.append(("mon-card-worker", Text.assemble(
+                Text(Path(worker_root).name, style="dim"),
+                Text(" "),
+                _progress_fraction(worker_done, worker_total, True))))
+        return lines
+
+    def _card_widget(self, card: _RunCard) -> ListItem:
+        """One running card's WIDGET — the thin constructor over the
+        shared ``_card_content`` builder (261018-rze: the rebuild path's
+        widget tree stays byte-identical; see ``_card_content``)."""
+        return ListItem(Vertical(
+            *[Label(text, classes=classes)
+              for classes, text in self._card_content(card)],
+            classes="mon-card"))
+
+    def _refresh_card_labels(self, cards: "list[_RunCard]") -> bool:
+        """The unchanged-sig in-place refresh (261018-rze, c): walk the
+        EXISTING ListItem's Label children in DOM order and update ONLY
+        the labels whose content changed (``layout=False`` — the
+        single-line fixed-height case) — a steady tick with unchanged
+        data performs ZERO widget writes, and the ListItem objects plus
+        the ListView's index are never touched (the operator's cursor
+        identity survives every steady tick).
+
+        Returns False on any count mismatch (a sig bug — the defensive
+        fallback routes to the proven rebuild path, never a crash)."""
+        list_view = self.query_one("#mon-cards", ListView)
+        if len(list_view.children) != len(cards):
+            return False
+        for item, card in zip(list_view.children, cards):
+            content = self._card_content(card)
+            labels = list(item.query(Label))
+            if len(labels) != len(content):
+                return False
+            for label, (_classes, text) in zip(labels, content):
+                if str(label.content) != str(text):
+                    label.update(text, layout=False)
+        return True
 
     def _render_cards(self, cards: "list[_RunCard]") -> None:
-        """Rebuild the card list (few items — live roots); the cursor
-        index re-pins clamped so a cadence rebuild never steals the
-        operator's selection (the WR-05 spirit; a list's identity is
-        positional, cards never reorder except on activity changes)."""
+        """Render the card list (few items — live roots). 261018-rze
+        (c): the STRUCTURE signature (roots identity/order, base_live,
+        resume-note presence — the three things that change a card's
+        LABEL COUNT; NEVER progress/scale text) gates the rebuild; a
+        content-only change refreshes the existing Labels in place. The
+        rebuild path re-pins the cursor index clamped so a structural
+        rebuild never steals the operator's selection (the WR-05
+        spirit; a list's identity is positional, cards never reorder
+        except on activity changes)."""
+        sig = tuple(
+            (tuple(card.roots), card.roots[0] == card.base,
+             self._resumes.get(card.roots[0], 0) > 0)
+            for card in cards)
+        if sig == self._cards_sig and self._refresh_card_labels(cards):
+            self._card_order = [card.roots[0] for card in cards]
+            return
         list_view = self.query_one("#mon-cards", ListView)
         previous = list_view.index
         list_view.clear()
@@ -1848,6 +1957,7 @@ class MonitorScreen(Screen):
             list_view.index = max(
                 0, min(previous if previous is not None else 0,
                        len(self._card_order) - 1))
+        self._cards_sig = sig
 
     def _history_columns(self) -> "list[tuple[str, str]]":
         return [("", "state"), (S.MON_COL_ROOT, "root"),
@@ -1914,16 +2024,25 @@ class MonitorScreen(Screen):
         after every scan render too: the app-level AUTO_FOCUS ("*")
         grabs the first focusable widget on screen push even when the
         list is hidden+empty, which would otherwise swallow the enter
-        the empty-state copy advertises."""
+        the empty-state copy advertises.
+
+        261018-rze (d): a branch whose target ALREADY holds focus skips
+        the ``.focus()`` call — a steady tick's steal-back on the
+        focused widget is pure churn (a focus call repaints the focus
+        ring even when the target is unchanged)."""
         if not self.is_running:
             return
         if self._active_tab == "running":
             if self._card_order:
-                self.query_one("#mon-cards", ListView).focus()
+                cards_list = self.query_one("#mon-cards", ListView)
+                if cards_list is not self.focused:
+                    cards_list.focus()
             elif self.focused is not None:
                 self.set_focus(None)
         elif self._history_rows():
-            self.query_one("#mon-history", DataTable).focus()
+            history_table = self.query_one("#mon-history", DataTable)
+            if history_table is not self.focused:
+                history_table.focus()
         elif self.focused is not None:
             self.set_focus(None)
 
