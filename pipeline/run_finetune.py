@@ -1156,6 +1156,13 @@ if __name__ == "__main__":
                 # unconditional in all load paths — so our side needs NO
                 # per-model attention-implementation or trust quirk list;
                 # eager is the pinned suite behavior for every model here.
+                # Per-cell initialization seed: the process-start set_seed()
+                # only covers the first dataset, and every later dataset
+                # reloads the model here. Resetting makes the fresh head /
+                # adapter weights a deterministic function of the run seed
+                # instead of the previous cell's RNG tail (and a retry's
+                # altered draw count after an OOM ratchet).
+                set_seed(seed)
                 try:
                     model, tokenizer = load_model_and_tokenizer(
                         model_path,
@@ -1604,6 +1611,24 @@ if __name__ == "__main__":
                         checkpoints = glob(outdir + "checkpoint-*")
                         all_steps = [int(ckpt.split("-")[-1]) for ckpt in checkpoints]
                         last_step = max(all_steps)
+                        # The test pass evaluates the best dev-metric
+                        # checkpoint (load_best_model_at_end), not the final
+                        # step; record both so a repeat can identify which
+                        # weights produced the reported metrics.
+                        best_ckpt = getattr(
+                            trainer.trainer.state, "best_model_checkpoint", None
+                        )
+                        best_step = last_step
+                        if best_ckpt:
+                            try:
+                                best_step = int(
+                                    str(best_ckpt).rstrip("/").split("-")[-1]
+                                )
+                            except (ValueError, AttributeError):
+                                best_step = last_step
+                        best_metric = getattr(
+                            trainer.trainer.state, "best_metric", None
+                        )
                         # Write final_metrics.json FIRST and copy the
                         # trainer_state.json resume marker LAST (WR-13):
                         # the marker is the completion signal both this
@@ -1623,6 +1648,37 @@ if __name__ == "__main__":
                                 "trainable_params": trainable_params,
                                 "total_params": total_params,
                                 "trainable_params_pct": trainable_params_pct,
+                                # Per-cell reproducibility record: seed and
+                                # the resolved training shape let the
+                                # multi-seed collector verify that repeats
+                                # differ only by seed (same batch/accum/
+                                # mem_ratio) without unpickling
+                                # training_args.bin.
+                                "seed": seed,
+                                "model": model_name,
+                                "dataset": dataset_name,
+                                "mode": peft_mode if peft_mode != "none"
+                                else (config_variant or "full"),
+                                "per_device_train_batch_size": bs_new,
+                                "gradient_accumulation_steps": grad_accum,
+                                "effective_batch_size": (
+                                    bs_new * grad_accum * num_gpus
+                                ),
+                                "world_size": num_gpus,
+                                "mem_ratio": mem_ratio,
+                                "max_length": max_length,
+                                "num_train_epochs": (
+                                    configs["finetune"].num_train_epochs
+                                ),
+                                "learning_rate": (
+                                    configs["finetune"].learning_rate
+                                ),
+                                "metric_for_best_model": (
+                                    configs["finetune"].metric_for_best_model
+                                ),
+                                "best_checkpoint_step": best_step,
+                                "last_checkpoint_step": last_step,
+                                "best_metric_value": best_metric,
                             })
                             json.dump(metrics, f, indent=4)
                         shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json", outdir)
