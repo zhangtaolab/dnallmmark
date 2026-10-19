@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 10
+open_count: 8
 waived_count: 6
-fixed_count: 26
+fixed_count: 28
 total_count: 42
-last_updated: 2026-10-19T14:22:50.654Z
+last_updated: 2026-10-19T14:56:56.393Z
 ---
 
 # Broken Windows Ledger
@@ -26,7 +26,7 @@ last_updated: 2026-10-19T14:22:50.654Z
 | 9 | 4 | deviation | tests/test_export_runs.py | 466 | D-15 evaluate cross-check covers the scipy-backed evaluate metrics (pearsonr/spearmanr) only — evaluate's accuracy/f1/mcc modules import scikit-learn, which is outside the sanctioned scipy+evaluate dependency pair; extending coverage needs a maintainer-approved scikit-learn addition | fixed |  | 2026-10-10T05:22:49.317Z | 2026-10-19T13:57:22.133Z |
 | 10 | 05 | unrun-verify | .github/workflows/ci.yml |  | First real GitHub-runner execution of ci.yml happens on the maintainer's next push (badge green + <15-min/job + branch-protection setup queued in 05-USER-SETUP.md) | fixed |  | 2026-10-10T10:04:38.260Z | 2026-10-19T13:57:21.876Z |
 | 11 | 05 | unrun-verify | dnallm-mark/js/main.js |  | 05-02 Task 3 human-check (visual localhost confirmation of weighted default view, raw-rank toggle, stamped footer) deferred to the phase-level UAT gate — behavioral seams pinned by tests/js/main-view-toggle.test.js | waived | 05-02 weighted-default visual check confirmed at landing (behavioral seams pinned by js tests) | 2026-10-10T10:52:34.776Z | 2026-10-19T13:57:22.601Z |
-| 12 | 5 | unrun-verify | pipeline/run_finetune.py |  | 05-03: --subset_file seam + pipeline/eval_subsets.json consumption execute only at E2' (GPU, maintainer dual-gated); CPU-side stub/contract tests + real-artifact validation proof pin the behavior — first real GPU consumption pending launch | open |  | 2026-10-10T11:22:28.566Z |  |
+| 12 | 5 | unrun-verify | pipeline/run_finetune.py |  | 05-03: --subset_file seam + pipeline/eval_subsets.json consumption execute only at E2' (GPU, maintainer dual-gated); CPU-side stub/contract tests + real-artifact validation proof pin the behavior — first real GPU consumption pending launch | fixed |  | 2026-10-10T11:22:28.566Z | 2026-10-19T14:56:56.393Z |
 | 13 | 05 | deviation | pipeline/sweep_priorities.json |  | 05-04 Task 4 blocking-human gate (tier-2 arena curation, D-17/OQ4): tier 2 shipped EMPTY at Task 2 awaiting maintainer decision — resolved 2026-10-10, maintainer selected per-arena one representative (animal GENERanno-eukaryote-0.5b-base / plant PlantCAD2-Small-l24-d0768 / microbe Omni-DNA-700M), landed in 6598e45 | fixed |  | 2026-10-10T12:27:48.027Z | 2026-10-10T12:27:53.830Z |
 | 14 | 06 | deviation | pipeline/env_smoke.py |  | matmul expected constant corrected 64.0->512.0 (Rule 1, found by first executed smoke) | fixed |  | 2026-10-10T18:29:17.849Z | 2026-10-19T13:57:21.940Z |
 | 15 | 06 | deviation | dnallm-mark/data/provenance.csv |  | 06-04 Task 4 blocking-human gate (maintainer provenance review, CONTEXT Area 2): execution paused at the gate with the Unspecified-default state committed — resolved 2026-10-11, maintainer selected 'reviewed 接受现状' (accept as-is; 35/7/9 Unspecified rows stand as honest unknowns), landed in c59f5f8 | fixed |  | 2026-10-10T23:55:42.192Z | 2026-10-10T23:55:51.180Z |
@@ -47,7 +47,7 @@ last_updated: 2026-10-19T14:22:50.654Z
 | 30 | quick-261017-eea | deviation | schemas/model_performance.json |  | Rule-2 deviation (eea commit 9a83066): the 141 helixgen entries carry FLOPs empty-string where the schema demanded strict number — schema conformed to the sibling anyOf [number, const ''] shape (1 line) after verifying the  documents '' as the missing-value convention, all 13 sibling metrics already use anyOf, summarize is ''-safe, and no test pins FLOPs strictness; fabricating numbers forbidden | fixed |  | 2026-10-17T02:55:52.918Z | 2026-10-19T13:57:22.196Z |
 | 31 | quick | deviation | pipeline/run_finetune.py | 849 | run_finetune sibling hard-index sites deliberately unfixed (07-CR-01 batch covered only the model-loop reads): :849 probe-branch row[Model_name], :1077 dataset-loop row[Dataset_name], :1322 row[length] — schema-legal minimal custom entries crash these paths; future maintainer-ruled batch (see 261017-klw-SUMMARY Maintainer Items) | fixed |  | 2026-10-17T07:36:01.293Z | 2026-10-19T13:57:22.260Z |
 | 32 | quick-261017-mad | deviation | tests/tui/test_snapshots.py | 944 | test_monitor_running_golden load-timing flake (pre-existing, observed once at the 261017-mad pre-task baseline): the SVG terminal-id is an adler32 hash over every rendered segment, and one full-suite run under load rendered one differing segment; identical rerun green, module green 11/11 in isolation, all fixture data frozen — root cause a load-dependent refresh artifact at export time, not reproduced by 261017-mad changes | fixed |  | 2026-10-17T08:50:31.381Z | 2026-10-19T13:57:22.067Z |
-| 33 | quick-261017-mad-followup | unmet-truth | tui/services/run_config.py |  | Storage-overview ✗ semantics for lazily-created dirs: the cache_dir row renders the same red ✗ as a missing model/dataset root, but a nonexistent cache dir is the healthy never-written-yet state (HF creates it on first use) — misleading failure signal; consider a neutral glyph or an on-demand note for the cache row | open |  | 2026-10-17T09:02:07.464Z |  |
+| 33 | quick-261017-mad-followup | unmet-truth | tui/services/run_config.py |  | Storage-overview ✗ semantics for lazily-created dirs: the cache_dir row renders the same red ✗ as a missing model/dataset root, but a nonexistent cache dir is the healthy never-written-yet state (HF creates it on first use) — misleading failure signal; consider a neutral glyph or an on-demand note for the cache row | fixed |  | 2026-10-17T09:02:07.464Z | 2026-10-19T14:51:26.876Z |
 | 34 | quick-261017-feedback | unmet-truth | tui/screens/monitor.py |  | Monitor status conflation: interrupted cells (dir + no trainer_state marker + no live process) render the same 运行/running state as genuinely-running cells — maintainer hit it reading finetuned-smoke history (PlantHelixSeek 10-16 kill + dnamamba 10-15 interruption both show ⠋ 运行). Needs a three-state derivation (done / running-with-live-process / interrupted) or at least a distinct interrupted glyph | fixed | 261017-uwr: the three-state derivation landed (live-matrix evidence via argv_matrix/probe + CELL_INTERRUPTED ⏸ glyph + live-on-top ordering + context header); the PlantHelixSeek/dnamamba residue now derives interrupted | 2026-10-17T14:12:12.091Z | 2026-10-17T14:57:36.000Z |
 | 35 | quick-261017-uwr | deviation | tests/tui/__snapshots__/monitor_running.svg |  | monitor_running.svg AND monitor_empty.svg regenerated via make snapshot-update, deliberately UNCOMMITTED pending the maintainer's D-03 review (all 7 non-monitor SVGs sha256-identical). AMENDED 261018-kvj: the uwr worktree pair was SUPERSEDED by the two-tab redesign's regeneration — the CURRENT uncommitted bytes are the ONE combined D-03 monitor-golden handoff for both batches (uwr + kvj tabbed surface); run_config.svg's #39 item stays separate on the tree | fixed |  | 2026-10-17T14:57:36.000Z | 2026-10-18T14:54:33.376Z |
 | 36 | quick-261018-08g | deviation | tui/__main__.py |  | Esc-lag disposition (SOAK-2/F3 leg): the soak read lone-ESC modal dismissal as dead (modal up 1.5-4s); execution-time measurement in a clean 40x120 pty shows dismissal in 0.16-0.26s at the DEFAULT ESCDELAY and IDENTICAL at 30ms/10ms — ESCDELAY has no measurable effect, so no env mitigation landed in __main__.py (the plan's measure-first mandate); the soak's lag plausibly rode the same degraded-render family as F1 (now fixed); the pty lane pins esc-dismiss within a generous window, y/n remain the instant keys | waived | lone-ESC dismissal non-reproducing in clean pty (08g measure-first disposition; pty pin holds the window) | 2026-10-17T16:49:25.824Z | 2026-10-19T13:57:22.324Z |
@@ -210,10 +210,10 @@ last_updated: 2026-10-19T14:22:50.654Z
     "file": "pipeline/run_finetune.py",
     "line": null,
     "description": "05-03: --subset_file seam + pipeline/eval_subsets.json consumption execute only at E2' (GPU, maintainer dual-gated); CPU-side stub/contract tests + real-artifact validation proof pin the behavior — first real GPU consumption pending launch",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-10T11:22:28.566Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-19T14:56:56.393Z",
     "milestone": "v0.7.1"
   },
   {
@@ -483,10 +483,10 @@ last_updated: 2026-10-19T14:22:50.654Z
     "file": "tui/services/run_config.py",
     "line": null,
     "description": "Storage-overview ✗ semantics for lazily-created dirs: the cache_dir row renders the same red ✗ as a missing model/dataset root, but a nonexistent cache dir is the healthy never-written-yet state (HF creates it on first use) — misleading failure signal; consider a neutral glyph or an on-demand note for the cache row",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-17T09:02:07.464Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-19T14:51:26.876Z",
     "milestone": "v1.2"
   },
   {

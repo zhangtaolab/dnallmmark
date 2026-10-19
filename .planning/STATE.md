@@ -6,11 +6,11 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: Not started
 status: planning
-stopped_at: "Quick task 261019-pe0 complete (tree mode)"
-last_updated: "2026-10-19T11:45:19.838Z"
+stopped_at: "08-12 micro-refresh complete (5/5 passed); WINDOWS disposition next"
+last_updated: "2026-10-19T11:54:21.465Z"
 last_activity: 2026-10-18
 last_activity_desc: Quick task 261019-pe0 (tree mode) complete
-state_head: 29d5fdab14b7cd009a2506e42628cb12071d4867
+state_head: 797b9109101a61c33d425d5ead6a68d928c4422b
 progress:
   total_phases: 6
   completed_phases: 6
@@ -303,6 +303,7 @@ None yet.
 | 261019-n0w | slot-5 fix batch: click=select (prevent_default), transparent card fill, right pane D bar/step lines | 2026-10-19 | 3da03a6 | [261019-n0w-slot-5-fix-batch-from-maintainer-live-tes](./quick/261019-n0w-slot-5-fix-batch-from-maintainer-live-tes/) |
 | 261019-o8e | slot-5 matrix scope: Running views filter to the live sweep's pair set (residue stays History/drill); verified end-to-end on the live plant-dnabert sweep | 2026-10-19 | 0a3eee5 | [261019-o8e-slot-5-matrix-scope-fix-filter-runni](./quick/261019-o8e-slot-5-matrix-scope-fix-filter-runni/) |
 | 261019-pe0 | slot-5 tree mode: third left-pane state ([w] matrix/tree/wide cycle, auto-fallback on width), locked expand/collapse contract, focus feeds right pane | 2026-10-19 | 29d5fda | [261019-pe0-slot-5-tree-mode-left-pane-third-state](./quick/261019-pe0-slot-5-tree-mode-left-pane-third-state/) |
+| 33 | fix: tree/wide cursor fills + card hover fill removed (no-fill law extended) | 2026-10-19 | 797b910 | — |
 
 ## Deferred Items
 
