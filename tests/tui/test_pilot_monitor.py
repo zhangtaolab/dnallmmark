@@ -81,10 +81,12 @@ from tui.services.sweep_monitor import (
 )
 from tui.strings import (
     MON_ATTACHED_TOAST,
+    MON_COL_SEED,
     MON_FAILURES_EMPTY,
     MON_GRADUATED_DONE_TOAST,
     MON_HISTORY_EMPTY,
     MON_HISTORY_RERUN_BADGE,
+    MON_LOG_TEE_LINE,
     MON_PROGRESS_INDETERMINATE,
     MON_RESUME_NOTE,
     MON_RUNNING_EMPTY,
@@ -93,6 +95,7 @@ from tui.strings import (
     MON_SCREEN_TITLE,
     MON_STATE_DONE,
     MON_STATE_INTERRUPTED,
+    MON_STATE_QUEUED,
     MON_STATE_RUNNING,
     MON_STRIP_ELAPSED,
     MON_STRIP_ETA,
@@ -590,8 +593,8 @@ async def test_screen_composes_tabbed_regions_at_both_grids():
         assert screen.query_one("#mon-left") is not None
         assert screen.query_one("#mon-detail") is not None
         assert screen.query_one("#mon-right-log") is not None
-        assert screen.query_one("#mon-right").display is False, (
-            "the pane stays hidden until Task 2 activates it"
+        assert screen.query_one("#mon-right").display is True, (
+            "wide + Running + cards: the D pane shows beside the matrix"
         )
         # the default landing is the Running tab, its card list focused
         assert screen._active_tab == "running"
@@ -1021,6 +1024,227 @@ async def test_enter_drill_cursor_pins_to_focused_group():
         )
         await pilot.press("escape")
         await pilot.pause()
+
+
+# =====================================================================
+# 261019-f0x Task 2 — the D right pane (focused-group detail + the
+# live tee tail on the frontier cadence)
+# =====================================================================
+
+def _pane_fixture_monitor(tee_path=None, tails=None):
+    """The right-pane fixture: one running root, one running seed with
+    derivable progress (step/max/percent/eta -> a derivable rate), a
+    second group for the focus-move pin."""
+    return FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2, mtime=1.0),),
+            watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING,
+                                       43: CELL_QUEUED}),
+            _row("model-a", "task-2", {42: CELL_COMPLETED}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=2,
+            current=_current("model-a", "task-1", 42))},
+        progress={
+            ("model-a", "task-1"): CellProgress(
+                step=300, max_steps=1000, percent=30, eta_seconds=700.0)},
+        tails=dict(tails or {}),
+    )
+
+
+_PANE_TEE = "/state/logs/sweep_pane.log"
+
+
+def _detail_plain(screen) -> str:
+    return _plain(screen.query_one("#mon-detail", Static).content)
+
+
+def _pane_log_text(screen) -> str:
+    return "\n".join(line.text for line in screen.query_one(
+        "#mon-right-log", RichLog).lines)
+
+
+async def test_right_pane_detail_from_existing_fields_only():
+    """(a)+(b): the pane's detail renders the focused group's header,
+    one line per seed with the state glyph words, and the running
+    seed's steps/percent/eta + the derived rate over the SHARED grammar
+    — and NO loss/lr/epoch token ever renders in the detail (the log
+    region carries them; T-f0x-02 — no underived field is stated)."""
+    from tui.services.sweep_monitor import format_eta
+
+    monitor = _pane_fixture_monitor(tails={
+        _PANE_TEE: ("10:31:36 epoch 2.00  step 300/1000  loss 0.4077",
+                    "10:31:53 epoch 2.02  step 310/1000  loss 0.4051")})
+    launcher = FakeMonitorLauncher(tee={"/scans/finetuned": _PANE_TEE})
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert screen.query_one("#mon-right").display is True, (
+            "wide + Running + cards: the pane shows"
+        )
+        detail = _detail_plain(screen)
+        assert "model-a × task-1" in detail, "the focused group's header"
+        assert MON_COL_SEED.format(seed=42) in detail
+        assert MON_COL_SEED.format(seed=43) in detail, (
+            "one line per seed, sorted"
+        )
+        assert MON_STATE_RUNNING in detail and MON_STATE_QUEUED in detail
+        assert "300/1000 30%" in detail and "███" in detail, (
+            "the shared steps/percent/bar grammar"
+        )
+        assert format_eta(700.0) in detail, "the checkpoint-pair eta"
+        assert MON_STRIP_RATE.format(rate="1.0") in detail, (
+            "the derived rate (1000-300)/700"
+        )
+        # (b) the no-fabrication pin: the log lines mention loss/epoch,
+        # the DETAIL never does
+        for token in ("loss", "epoch", "lr"):
+            assert token not in detail, (
+                f"the detail region must never state {token} — the log "
+                "region carries it"
+            )
+        log_text = _pane_log_text(screen)
+        assert "loss 0.4077" in log_text and "epoch 2.00" in log_text, (
+            "the log region carries the verbatim tee lines"
+        )
+        assert MON_LOG_TEE_LINE.format(path=_PANE_TEE) in log_text, (
+            "the dim tee line names the file"
+        )
+
+
+async def test_right_pane_detail_follows_focus_move():
+    """(c): a focus move (the arrow) repaints the detail immediately —
+    the header swaps to the new group from the caches."""
+    monitor = _pane_fixture_monitor()
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert "model-a × task-1" in _detail_plain(screen)
+        await pilot.press("right")
+        await pilot.pause()
+        detail = _detail_plain(screen)
+        assert "model-a × task-2" in detail, (
+            "the detail header follows the focused group"
+        )
+        assert "model-a × task-1" not in detail
+
+
+async def test_right_pane_tail_sig_gates_and_rewrite():
+    """(d): a steady frontier tick over the SAME tail performs ZERO
+    RichLog writes; a CHANGED scripted tail rewrites in place."""
+    monitor = _pane_fixture_monitor(tails={
+        _PANE_TEE: ("[01:00:05] epoch 1", "[01:00:40] done")})
+    launcher = FakeMonitorLauncher(tee={"/scans/finetuned": _PANE_TEE})
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        log = screen.query_one("#mon-right-log", RichLog)
+        assert "[01:00:05] epoch 1" in _pane_log_text(screen), (
+            "the scripted tail landed"
+        )
+        clear_patcher, clear_mock = _spy(log, "clear")
+        write_patcher, write_mock = _spy(log, "write")
+        try:
+            screen._tick_frontier()
+            await _settle(pilot, app)
+            assert clear_mock.call_count == 0 and write_mock.call_count == 0, (
+                "a steady tick over the SAME tail performs zero RichLog "
+                "writes — the lines signature gates"
+            )
+            monitor._tails[_PANE_TEE] = ("[02:00:05] epoch 2",)
+            screen._tick_frontier()
+            await _settle(pilot, app)
+            assert clear_mock.call_count == 1, "the changed tail rewrites"
+            assert "[02:00:05] epoch 2" in _pane_log_text(screen)
+            assert "[01:00:05] epoch 1" not in _pane_log_text(screen)
+        finally:
+            clear_patcher.stop()
+            write_patcher.stop()
+
+
+async def test_right_pane_no_tee_unavailable_and_no_reads():
+    """(e): a root with no tee renders MON_LOG_UNAVAILABLE once and
+    schedules NO reads (the [t] modal's contract; the fabricated pty
+    root keeps byte-silence by the same shape)."""
+    from tui.strings import MON_LOG_UNAVAILABLE
+
+    monitor = _pane_fixture_monitor()
+    app = _app(monitor=monitor, launcher=FakeMonitorLauncher())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert MON_LOG_UNAVAILABLE in _pane_log_text(screen), (
+            "the CLI-launched state renders the designed copy"
+        )
+        assert monitor.tail_calls == [], (
+            "no tee -> no read was ever scheduled"
+        )
+
+
+async def test_right_pane_hidden_when_narrow_t_still_opens():
+    """(f): below the narrow threshold the whole pane hides and [t]
+    remains the log surface (the modal still opens)."""
+    from tui.screens.monitor import LogTailModal
+
+    monitor = _pane_fixture_monitor()
+    app = _app(monitor=monitor, launcher=FakeMonitorLauncher())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert screen.query_one("#mon-right").display is True
+        await pilot.resize_terminal(80, 24)
+        await pilot.pause()
+        assert screen.query_one("#mon-right").display is False, (
+            "the narrow grid hides the whole pane"
+        )
+        await pilot.press("t")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, LogTailModal), (
+            "[t] remains the log surface in narrow mode"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+
+
+async def test_right_pane_tail_write_suppressed_under_modal():
+    """(g): a stacked modal suppresses the tail WRITE (the read may
+    proceed — the next tick catches up): a changed tail arriving under
+    a modal leaves the pane's content untouched, the tick after
+    dismissal lands it."""
+    class _DummyPaneModal(ModalScreen):
+        def compose(self):
+            yield Static("dummy")
+
+    monitor = _pane_fixture_monitor(tails={
+        _PANE_TEE: ("[01:00:05] epoch 1",)})
+    launcher = FakeMonitorLauncher(tee={"/scans/finetuned": _PANE_TEE})
+    app = _app(monitor=monitor, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert "[01:00:05] epoch 1" in _pane_log_text(screen)
+        app.push_screen(_DummyPaneModal())
+        await pilot.pause()
+        monitor._tails[_PANE_TEE] = ("[03:00:05] epoch 3",)
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert "[01:00:05] epoch 1" in _pane_log_text(screen), (
+            "the write skipped beneath the modal — the pane stays still"
+        )
+        assert "[03:00:05] epoch 3" not in _pane_log_text(screen)
+        app.pop_screen()
+        await pilot.pause()
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert "[03:00:05] epoch 3" in _pane_log_text(screen), (
+            "the tick after dismissal catches up"
+        )
 
 
 async def test_history_tab_lists_runs_newest_first_with_states():

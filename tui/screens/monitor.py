@@ -1668,6 +1668,17 @@ class MonitorScreen(Screen):
             self.run_id = run_id
             super().__init__()
 
+    class RightTailRead(Message):
+        """The D right pane's tail read arrived (worker thread -> loop;
+        261019-f0x — the LogTailModal TailRead precedent): the bounded
+        tee lines plus the mon-tail stage id (a superseded focus's late
+        lines drop, the WR-02 idiom)."""
+
+        def __init__(self, lines: tuple, run_id: int) -> None:
+            self.lines = lines
+            self.run_id = run_id
+            super().__init__()
+
     def __init__(self,
                  monitor_service: "MonitorServiceProtocol | None" = None,
                  launcher_service: "MonitorLauncherProtocol | None" = None,
@@ -1871,11 +1882,14 @@ class MonitorScreen(Screen):
             self._full_interval, self._tick_full)
 
     def on_resize(self) -> None:
-        """Re-derive the width mode (the bar/state-word degradation)."""
+        """Re-derive the width mode (the bar/state-word degradation and
+        the 261019-f0x pane visibility — a width crossing re-kicks the
+        tail after the render)."""
         narrow = self.size.width < _NARROW_WIDTH
         if narrow != self._narrow:
             self._narrow = narrow
             self._render_all()
+            self._kick_right_tail()
 
     def on_unmount(self) -> None:
         """The cadence stops with the screen (no zombie timers)."""
@@ -2042,6 +2056,11 @@ class MonitorScreen(Screen):
         self._scanning = False
         self._render_all()
         self._focus_active()
+        # 261019-f0x: cards landing/leaving flips the pane's visibility —
+        # kick the tail state so the first card's pane paints with the
+        # scan (the no-tee state renders inline, a tee schedules the
+        # mon-tail read)
+        self._kick_right_tail()
         if self._pending_rescan:
             self._pending_rescan = False
             self.app.notify(S.MON_RESCAN_TOAST.format(
@@ -2066,6 +2085,11 @@ class MonitorScreen(Screen):
         self._scanning = False
         self._render_all()
         self._focus_active()
+        # 261019-f0x (b): the pane's tail rides the 2s frontier cadence
+        # while it is visible and a tee exists (the mon-tail worker —
+        # its OWN exclusive group, the LogTailModal mon-logtail
+        # precedent; the frontier worker itself is untouched)
+        self._kick_right_tail()
 
     @staticmethod
     def _merge_cell_states(current: dict, cell_states: dict) -> dict:
@@ -2221,13 +2245,168 @@ class MonitorScreen(Screen):
         (``_refresh_card_labels`` — content comparison, zero ListView
         churn) and the new focus folds into the structure signature so
         the next cadence render is a clean no-op; a count mismatch
-        routes to the proven rebuild path (never a crash). The right
-        pane follows (Task 2)."""
+        routes to the proven rebuild path (never a crash). The D right
+        pane follows immediately: the detail repaints from the caches,
+        the tail re-kicks (within one mon-tail round trip)."""
         cards = self._cards()
         if self._refresh_card_labels(cards):
             self._cards_sig = self._cards_signature(cards)
         else:
             self._render_cards(cards)
+        self._render_right_detail()
+        self._kick_right_tail()
+
+    # ===== the D right pane (261019-f0x Task 2) =====
+
+    def _pane_visible(self) -> bool:
+        """The pane shows iff wide grid + Running tab + cards exist (a
+        display-only region — never focusable, no focus trap)."""
+        return (not self._narrow and self._active_tab == "running"
+                and bool(self._card_order))
+
+    def _right_detail_lines(self) -> "list[Text]":
+        """The focused group's detail lines from EXISTING service data
+        ONLY: the model x task header, one line per seed (the state
+        glyph word, re-derived at call time — CR-01), and — when the
+        group carries a running seed with parseable progress — the
+        steps/percent/eta segment over the SHARED progress grammar plus
+        the derived rate. NO loss/lr/epoch/context/params line ever
+        renders: those live in the log, which the pane SHOWS (T-f0x-02
+        — no underived field is ever stated)."""
+        focused = self._focused_group()
+        if focused is None:
+            return []
+        card, model, task, row = focused
+        width = 40
+        try:
+            width = max(
+                8, self.query_one("#mon-detail", Static).container_size
+                .width or 40)
+        except Exception:  # noqa: BLE001 — pre-layout: the CSS width
+            width = 40
+        header = Text(f"{model} × {task}", style="bold cyan")
+        header.truncate(width, overflow="ellipsis", pad=False)
+        lines = [header]
+        progress = None
+        for root in card.roots:
+            candidate = (self._cell_progress.get(root) or {}).get(
+                (model, task))
+            if candidate is not None and candidate.percent is not None:
+                progress = candidate
+                break
+        accent = str(self.app.current_theme.accent)
+        for cell_seed in sorted(row.seeds, key=lambda s: s.seed):
+            copy, _style = _cell_state_cells().get(
+                cell_seed.state, (cell_seed.state, _STYLE_DIM))
+            line = Text(f"{S.MON_COL_SEED.format(seed=cell_seed.seed)} ",
+                        style="dim")
+            line += Text(copy, style=_MATRIX_GLYPH_STYLES.get(
+                cell_seed.state, "dim"))
+            if (cell_seed.state == CELL_RUNNING
+                    and progress is not None):
+                line += Text(" ")
+                line += _entry_progress_cell(
+                    _SeedStateFold(CELL_RUNNING), progress, False, accent)
+                rate = _rate_of(progress)
+                line += Text(" ")
+                line += (Text(S.MON_STRIP_RATE.format(rate=rate))
+                         if rate is not None
+                         else Text(_DASH, style="dim"))
+            lines.append(line)
+        return lines
+
+    def _render_right_detail(self) -> None:
+        """Paint the detail region — the lines-signature gate (the
+        _history_sig precedent): an unchanged detail performs ZERO
+        writes on the cadence (the #mon-detail CSS height bounds the
+        region; content truncates, never reflows the pane)."""
+        if not self.is_running:
+            return
+        if not self._pane_visible():
+            return
+        lines = self._right_detail_lines()
+        if not lines:
+            return
+        sig = tuple(line.plain for line in lines)
+        if sig == self._right_detail_sig:
+            return
+        self._right_detail_sig = sig
+        detail = self.query_one("#mon-detail", Static)
+        joined = Text()
+        for index, line in enumerate(lines):
+            if index:
+                joined += Text("\n")
+            joined += line
+        detail.update(joined)
+
+    def _tee_for_card(self, card: "_RunCard | None") -> "str | None":
+        """The card's tee — ``tee_path_for`` over the card's roots,
+        first non-None (worker groups resolve their worker tee;
+        CLI-launched roots return None everywhere)."""
+        if card is None:
+            return None
+        for root in card.roots:
+            tee = self._launcher.tee_path_for(root)
+            if tee is not None:
+                return str(tee)
+        return None
+
+    def _kick_right_tail(self) -> None:
+        """One tail kick (the pane-visible gate inside): a card with a
+        tee schedules the mon-tail read (stage-id tagged); no tee
+        renders the designed unavailable state ONCE (sig-gated) and
+        NEVER schedules a read — the [t] modal's contract."""
+        if not self.is_running or not self._pane_visible():
+            return
+        tee = self._tee_for_card(self._focused_card())
+        if tee is None:
+            sig = ("no-tee",)
+            if sig != self._right_tail_sig:
+                self._right_tail_sig = sig
+                log = self.query_one("#mon-right-log", RichLog)
+                log.clear()
+                log.write(Text(S.MON_LOG_UNAVAILABLE, style="dim"))
+            return
+        self._tail_stage_id += 1
+        self._read_right_tail(tee, self._tail_stage_id)
+
+    @work(exclusive=True, thread=True, group="mon-tail",
+          exit_on_error=False)
+    def _read_right_tail(self, tee: str, run_id: int) -> None:
+        """One bounded tail read OFF the event loop (WR-03-wrapped: a
+        raising read posts nothing — the last-good lines stand; the
+        [t] modal's tolerant-refresh precedent)."""
+        try:
+            lines = self._service.read_log_tail(tee, max_lines=30)
+        except Exception:  # noqa: BLE001 — tolerant refresh
+            return
+        self.post_message(self.RightTailRead(tuple(lines or ()), run_id))
+
+    def on_monitor_screen_right_tail_read(
+            self, message: RightTailRead) -> None:
+        """The tail lines arrived: drop superseded stages (WR-02), skip
+        the write beneath a stacked modal (the read already happened —
+        the next tick catches up), gate on the lines signature (the
+        tee + the lines: unchanged content performs ZERO RichLog
+        calls), changed lines clear + rewrite in order (plain dim
+        verbatim log data, markup=False)."""
+        if message.run_id != self._tail_stage_id:
+            return
+        if self.app.screen is not self:
+            return  # modal suppression — the base surface stays still
+        tee = self._tee_for_card(self._focused_card())
+        if tee is None:
+            return
+        sig = (tee, *message.lines)
+        if sig == self._right_tail_sig:
+            return
+        self._right_tail_sig = sig
+        log = self.query_one("#mon-right-log", RichLog)
+        log.clear()
+        log.write(Text(S.MON_LOG_TEE_LINE.format(path=tee),
+                       style="dim"))
+        for line in message.lines:
+            log.write(Text(str(line), style="dim"))
 
     def _move_focus_col(self, delta: int) -> None:
         """←/→ on the matrix: move the focused column within its row,
@@ -2315,6 +2494,7 @@ class MonitorScreen(Screen):
         self._render_tabs(len(cards), len(history))
         self._render_cards(cards)
         self._render_history(history)
+        self._render_right_detail()
         self._apply_visibility(bool(cards), len(history))
 
     def _render_scan_note(self) -> None:
@@ -2780,8 +2960,8 @@ class MonitorScreen(Screen):
         """Toggle the content region's children: ONLY the active tab's
         list renders (single focus, single list); the scanning note is
         orthogonal (mount-window chrome). 261019-f0x: the D right pane
-        stays composed-but-hidden in this task (Task 2 fills and
-        activates it — wide, Running tab, cards present)."""
+        displays iff wide grid + Running tab + cards exist (narrow mode
+        hides the whole pane — [t] remains the log surface there)."""
         running_active = self._active_tab == "running"
         self.query_one("#mon-cards").display = (
             running_active and cards_exist)
@@ -2791,7 +2971,8 @@ class MonitorScreen(Screen):
             not running_active and history_count > 0)
         self.query_one("#mon-history-empty").display = (
             not running_active and history_count == 0)
-        self.query_one("#mon-right").display = False
+        self.query_one("#mon-right").display = (
+            not self._narrow and running_active and cards_exist)
 
     def _focus_active(self) -> None:
         """Focus the ACTIVE tab's list (the single-focus design); an
@@ -2867,6 +3048,9 @@ class MonitorScreen(Screen):
         self._focus_active()
         # 261018-toe: the per-tab footer projection follows the flip
         self._refresh_footer_keys()
+        # 261019-f0x: the pane's visibility followed the flip — the
+        # tail state re-kicks on the way back to the Running tab
+        self._kick_right_tail()
 
     def action_arrow_horizontal(self, delta: int) -> None:
         """←/→ (261019-f0x): on the Running tab's focused card with
