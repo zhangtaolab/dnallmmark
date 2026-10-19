@@ -1238,6 +1238,63 @@ async def test_attach_tilde_spelled_root_validates_and_joins_real_scanner(
         )
 
 
+def test_restart_reattach_probe_evidence_through_real_launcher_wiring(
+        monkeypatch, tmp_path):
+    """The 2026-10-19 reattach gap, pinned at the REAL wiring shape:
+    the app injects MonitorBackend over run_config's LauncherBackend
+    facade — NOT a bare SweepLauncher. After a console restart the
+    launcher REGISTRY is empty and the /proc probe is the ONLY live
+    evidence; the facade must forward ``live_sweep_matrices`` or the
+    tolerant getattr in MonitorBackend._live_evidence degrades to
+    registry-only and a still-running detached sweep falls back to its
+    STALE manifest and classifies finished (the maintainer repro:
+    finetuned-smoke alive in /proc, the Running tab empty)."""
+    import json
+    import sys
+
+    from tui.screens.monitor import MonitorBackend
+    from tui.screens.run_config import LauncherBackend
+    from tui.services import settings, sweep_launcher, sweep_monitor
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state_dir))
+    monkeypatch.setattr(sweep_monitor, "DEFAULT_OUTPUT_ROOTS", ())
+
+    root = tmp_path / "sweeps" / "detached"
+    root.mkdir(parents=True)
+    # the trap: a PREVIOUS run's manifest still sits at the root —
+    # without live evidence the scan reads it and says "finished"
+    (root / "sweep_manifest.json").write_text(json.dumps({
+        "cells": [{"model": "plant-dnabert-6mer",
+                   "task": "GUE__emp_H3", "seed": 42,
+                   "status": "completed"}]}), encoding="utf-8")
+    (state_dir / "monitor_roots.json").write_text(json.dumps({
+        "schema_version": 1, "roots": [str(root)]}), encoding="utf-8")
+
+    argv = [
+        sys.executable,
+        str(Path(__file__).resolve().parents[1] / "pipeline"
+            / "run_sweep.py"),
+        "--models", "plant-dnabert-6mer",
+        "--tasks", "GUE__emp_H3",
+        "--seeds", "42",
+        "--output-root", str(root),
+    ]
+    monkeypatch.setattr(sweep_launcher, "probe_cli_sweeps",
+                        lambda: {str(root.resolve()): tuple(argv)})
+
+    backend = MonitorBackend(launcher=LauncherBackend())
+    result = backend.full_scan()
+    states = {summary.root.name: summary.state
+              for summary in result.sweeps}
+    assert states == {"detached": sweep_monitor.SWEEP_RUNNING}, (
+        "the probed live sweep must classify RUNNING through the app's "
+        "real facade wiring — registry-empty restart is the exact case "
+        "the /proc probe exists for"
+    )
+
+
 async def test_failures_modal_rows_drill_and_empty_state():
     """[f] over the FOCUSED running card: one row per failure, enter
     drills the verbatim error, and the empty list renders the designed

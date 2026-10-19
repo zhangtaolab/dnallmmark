@@ -350,6 +350,14 @@ class LauncherBackend:
     def live_sweeps(self) -> tuple:
         return self._launcher.live_sweeps()
 
+    def live_sweep_matrices(self) -> dict:
+        """The probe-inclusive live matrices (2026-10-19 reattach fix):
+        MonitorBackend._live_evidence getattr's this seam tolerantly —
+        a restart empties the REGISTRY and the /proc probe is then the
+        ONLY live evidence, so without this delegation a detached
+        still-running sweep classified off its stale manifest."""
+        return self._launcher.live_sweep_matrices()
+
     def tee_path_for(self, root: str) -> "str | None":
         return self._launcher.tee_path_for(root)
 
