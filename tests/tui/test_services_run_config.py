@@ -1507,20 +1507,32 @@ def test_storage_overview_defaults_mirror_real_consumers(
     ../../cache default)."""
     pin_state_dir(monkeypatch, tmp_path)
     pin_config_dir(monkeypatch, tmp_path)
+    # 2026-10-19 hermeticity fix (maintainer "fix error" ruling): the
+    # fresh-checkout premise (default log/cache dirs ABSENT) must not
+    # depend on THIS machine's run artifacts (pipeline/logs exists on
+    # any dev box that ever ran the pipeline — the nightly
+    # environmental failure). Re-point the frozen default table at the
+    # tmp root: both truths survive machine-independent — the paths
+    # still MIRROR the very constants the service reads (the patched
+    # dict IS the service's source), and absent-by-default still pins
+    # the honest-glyph derivation.
+    for key, rel in (("model_root", "pipeline"),
+                     ("dataset_root", "pipeline"),
+                     ("log_dir", "pipeline/logs"),
+                     ("cache_dir", "cache")):
+        monkeypatch.setitem(run_config._STORAGE_DEFAULTS, key,
+                            str(tmp_path / rel))
     rows = run_config.storage_overview()
     by_key = {row.key: row for row in rows}
-    assert by_key["model_root"].path == str(
-        run_config.DEFAULT_REGISTRY_DIR)
-    assert by_key["dataset_root"].path == str(
-        run_config.DEFAULT_REGISTRY_DIR)
+    assert by_key["model_root"].path == str(tmp_path / "pipeline")
+    assert by_key["dataset_root"].path == str(tmp_path / "pipeline")
     assert by_key["output_root"].path == str(
         (REPO_ROOT / "finetuned").resolve())
-    assert by_key["log_dir"].path == str(
-        run_config.DEFAULT_REGISTRY_DIR / "logs")
-    assert by_key["cache_dir"].path == str(REPO_ROOT / "cache")
+    assert by_key["log_dir"].path == str(tmp_path / "pipeline" / "logs")
+    assert by_key["cache_dir"].path == str(tmp_path / "cache")
     assert by_key["log_dir"].exists is False, (
-        "pipeline/logs does not exist on a fresh checkout — the honest "
-        "glyph for the default log dir"
+        "the hermetic default log dir is absent (fresh-checkout "
+        "truth, machine-independent) — the honest glyph derivation"
     )
     # 261019-v3g (WINDOWS #33) new-field extensions, appended AFTER the
     # assertions above (this test's on-box environmental failure stays

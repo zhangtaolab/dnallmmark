@@ -1,12 +1,14 @@
 ---
+phase: quick-261018-toe
+plan: 01
 status: complete
 task: 261018-toe
 title: "Slot-5 History row actions — [d] delete (rm -rf behind a strong confirm) + [e] 续跑 (resume-from-history)"
 date: 2026-10-18
 commits:
-  - a4f9df7 "feat(quick-261018-toe): service seams — incomplete_pairs_view, rerun_lane alias-dir fallback, launch_from_pairs"
-  - 351d280 "feat(quick-261018-toe): [d] delete — strong y-only confirm, worker-thread rm -rf, live refusal, per-tab footer keycaps"
-  - 7257f02 "feat(quick-261018-toe): [e] 续跑 — incomplete derivation, honest confirm, shared pipeline stages, E2' re-prompt routing"
+  - "a4f9df7 feat(quick-261018-toe): service seams — incomplete_pairs_view, rerun_lane alias-dir fallback, launch_from_pairs"
+  - "351d280 feat(quick-261018-toe): [d] delete — strong y-only confirm, worker-thread rm -rf, live refusal, per-tab footer keycaps"
+  - "7257f02 feat(quick-261018-toe): [e] 续跑 — incomplete derivation, honest confirm, shared pipeline stages, E2' re-prompt routing"
 duration: ~33 min wall (1982s)
 tests:
   whole_tui_suite: "1244 passed, 1 failed — the documented environment collateral (test_storage_overview_defaults_mirror_real_consumers fails while the maintainer's live run keeps pipeline/logs/ existing; out of scope, untouched)"
@@ -15,6 +17,10 @@ tests:
   services: "145 passed (6 new tier-1 pins)"
   strings_inventory: "11 new MON_ constants mirrored (bidirectional lock green)"
   gates: "ruff clean, ty clean (whole [tool.ty] include set)"
+audit_acknowledged:
+  milestone: v1.2
+  at: 2026-10-19
+  status: complete
 ---
 
 # 261018-toe SUMMARY — Slot-5 History row actions: [d] 删除 / [e] 续跑

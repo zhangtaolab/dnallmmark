@@ -1,5 +1,5 @@
 ---
-status: testing
+status: passed
 phase: 12-multi-gpu-orchestration-console-hardening
 source: [12-VERIFICATION.md]
 started: 2026-10-13T23:12:00+08:00
@@ -23,7 +23,7 @@ awaiting: user response
 
 ### 1. D-03 SVG golden review (8 files)
 expected: Visual faithfulness of the 8 canonical screens vs 12-UI-SPEC corpus table (see Current Test above).
-result: [pending]
+result: [passed] — resolved across the #35/#39/#42 golden rounds; final monitor pair (B+D Running tab) maintainer-approved 2026-10-19 19:57, landed b84afc0; CI green thereafter
 
 ### 2. WINDOWS #21 — other-machine N=2 multi-GPU smoke
 expected: |
@@ -32,15 +32,15 @@ expected: |
   shard launch → per-worker monitoring → detach/re-attach → artifact merge (--merge) →
   consumer equivalence → WINDOWS #21 closed with the run evidence. This is the maintainer's
   run; GB10 is single-GPU dev/test only, so absence here is by design.
-result: [pending]
+result: [blocked-external] — remains WINDOWS #21 (open, other-machine run required); ledger-tracked, /gsd-ship keeps it blocked while open
 
 ## Summary
 
 total: 2
-passed: 0
+passed: 1
 issues: 0
-pending: 2
+pending: 0
 skipped: 0
-blocked: 0
+blocked: 1
 
 ## Gaps
