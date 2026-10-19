@@ -6,11 +6,11 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: Not started
 status: planning
-stopped_at: "Quick task 261019-f0x complete (Running tab B+D redesign; goldens pending review)"
-last_updated: "2026-10-19T04:11:02.089Z"
+stopped_at: "Quick task 261019-n0w complete (click/fill/pane fix batch)"
+last_updated: "2026-10-19T09:26:49.002Z"
 last_activity: 2026-10-18
-last_activity_desc: Quick task 261019-f0x (Running tab redesign) complete
-state_head: f9023af24ed8a23f147b40b015b2e2ff03a32732
+last_activity_desc: Quick task 261019-n0w (slot-5 fix batch) complete
+state_head: 3da03a6b842439eed7b05374d794ed896e16a061
 progress:
   total_phases: 6
   completed_phases: 6
@@ -300,6 +300,7 @@ None yet.
 | 27 | fix: LauncherBackend live_sweep_matrices delegation — restart reattach sees probed sweeps | 2026-10-19 | 62a5c61 | — |
 | 28 | fix: [t] log-tail restart discovery — fresh disk tee fallback | 2026-10-19 | 32be15d | — |
 | 261019-f0x | slot-5 Running tab redesign: B matrix skeleton + D right pane (detail + live tee tail) + [w] wide toggle; goldens regenerated uncommitted (WINDOWS #42) | 2026-10-19 | f9023af | [261019-f0x-slot-5-running-tab-redesign-b-skeleton-s](./quick/261019-f0x-slot-5-running-tab-redesign-b-skeleton-s/) |
+| 261019-n0w | slot-5 fix batch: click=select (prevent_default), transparent card fill, right pane D bar/step lines | 2026-10-19 | 3da03a6 | [261019-n0w-slot-5-fix-batch-from-maintainer-live-tes](./quick/261019-n0w-slot-5-fix-batch-from-maintainer-live-tes/) |
 
 ## Deferred Items
 
