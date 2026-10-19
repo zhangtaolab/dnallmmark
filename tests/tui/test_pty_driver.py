@@ -162,7 +162,16 @@ def _fabricate_running_root(tmp_path) -> Path:
     mtimes too) so the card's matrix carries TWO groups — the
     arrow-precedence pin's fixture. The classification branch is
     unchanged (newest mtime within the grace window); the byte-silence
-    and click members ride the same richer STATIC tree."""
+    and click members ride the same richer STATIC tree.
+
+    261019-o8e: a SECOND RESIDUE MODEL dir joins the tree
+    (plant-dnamamba-6mer, ~2000s-stale mtimes — the maintainer's
+    reused-root shape: previous smoke runs' leftovers beside the live
+    model). Its cells classify interrupted while the FRESH
+    plant-dnabert-6mer checkpoints keep the root RUNNING through the
+    no-manifest grace branch; the name sorts AFTER plant-dnabert-6mer
+    so every existing row position is unchanged, and the tree stays
+    STATIC (byte-silence safe)."""
     root = tmp_path / "runs" / "root1"
     checkpoint = (root / "plant-dnabert-6mer" / "GUE__virus_species_4"
                   / "seed_9527" / "checkpoint-120")
@@ -174,6 +183,18 @@ def _fabricate_running_root(tmp_path) -> Path:
     second.mkdir(parents=True)
     (second / "trainer_state.json").write_text(
         '{"global_step": 121}', encoding="utf-8")
+    # the residue model (261019-o8e): checkpoint residue with every
+    # mtime pushed ~2000s stale (the _fabricate_interrupted_root idiom)
+    residue_model = root / "plant-dnamamba-6mer"
+    residue = (residue_model / "GUE__emp_H3"
+               / "seed_9527" / "checkpoint-118")
+    residue.mkdir(parents=True)
+    (residue / "trainer_state.json").write_text(
+        '{"global_step": 118}', encoding="utf-8")
+    stale = time.time() - 2000.0
+    for path in sorted(residue_model.rglob("*")):
+        os.utime(path, (stale, stale))
+    os.utime(residue_model, (stale, stale))
     return root
 
 
@@ -498,6 +519,41 @@ def test_monitor_matrix_arrows_focus_and_tab_switch(tmp_path):
         child.expect("Progress", timeout=_NAV_TIMEOUT)
         child.send("w")
         child.expect(_CARD_NAME_MARKER, timeout=_NAV_TIMEOUT)
+    finally:
+        child.close(force=True)
+
+
+def test_monitor_matrix_without_live_evidence_shows_residue_too(tmp_path):
+    """261019-o8e — the fallback pin under the REAL pty: the fabricated
+    running root carries a SECOND, ~2000s-stale residue model beside
+    the fresh one (the maintainer's reused-root shape), and the REAL
+    console has NO live evidence for a manual root (no registry handle,
+    no /proc run_sweep) — so the Running tab's matrix must render BOTH
+    models: the root-wide fallback is the HONEST render there, and this
+    member pins it. The FILTERED path is pilot-only by design: the real
+    evidence comes from the launcher registry's argv + the /proc probe
+    (no injection seam exists — verified), and launching a real sweep in
+    the pty lane would break the GPU-free CI law. Both names fit the
+    20-col name column (18/19 chars); the distinct tails disambiguate
+    the shared "plant-dna" prefix."""
+    root = _fabricate_running_root(tmp_path)
+    child = _spawn_tui(tmp_path, manual_roots=(root,))
+    try:
+        _boot(child)
+        child.send("5")
+        child.expect(_CARD_NAME_MARKER, timeout=_NAV_TIMEOUT)
+        # drain the initial paint (the byte-silence idiom) — the
+        # drained bytes carry the whole card: strip + matrix rows
+        child.expect(pexpect.TIMEOUT, timeout=3.0)
+        drained = child.before
+        assert "dnabert-6mer" in drained, (
+            "the fresh model's matrix row renders"
+        )
+        assert "dnamamba-6mer" in drained, (
+            "the residue model's matrix row renders too — without live "
+            "evidence the root-wide fallback shows every discovered "
+            "model (never an empty matrix through an evidence gap)"
+        )
     finally:
         child.close(force=True)
 
