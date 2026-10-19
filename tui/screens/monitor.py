@@ -28,7 +28,8 @@ Execution-recorded design choices (probe decisions the plan left open):
 - CARDS RENDER IN A ``ListView`` of ``ListItem`` cards (the
   selection.py template-menu precedent; probed against the
   VerticalScroll-of-focusable-Verticals alternative on textual 8.2.8):
-  ListView owns cursor + enter (ItemSelected) natively, cards are few
+  ListView owns the cursor natively — click selects/focuses, enter
+  drills (261019-n0w) — cards are few
   (live roots), and the rebuild-per-cadence re-pins the cursor by INDEX
   (clamped) — the WR-05 spirit for a list whose identity is positional.
 - DUAL PRESENCE (a root that is live AND carries prior history — the
@@ -122,6 +123,20 @@ Contract (locked decisions that survive the redesign):
   new sentinel so the L-toggle recompose fully repaints. [w] toggles
   the matrix <-> the A-style dense per-cell table (the k9s precedent,
   droppable per the maintainer's flag).
+- 261019-n0w (the maintainer's live-test fix batch over the landed f0x
+  tab): (1) a mouse CLICK on a running card selects and focuses it and
+  NEVER opens the drill modal — the ``MatrixCardsList`` subclass drops
+  the stock ``_on_list_item__child_clicked`` ``Selected`` post, so
+  Enter (the keyboard ``action_select`` path) stays the ONLY drill
+  trigger; (2) the highlighted card renders as CONTENT, not a
+  block-cursor fill — the app-level ``#mon-cards > ListItem.-highlight``
+  transparent rule outranks both of the ListView DEFAULT_CSS
+  ``-highlight`` variants, and the group reverse glyphs + the right
+  pane's detail header remain the focus affordance; (3) the pane's
+  detail carries the approved D composition's two data lines — the
+  20-cell progress bar (percent + derived rate) and the step/max +
+  point-ETA line — over service-honest fields ONLY (T-f0x-02 held:
+  loss/lr/epoch/context/params still never stated).
 - WR-06: every async modal push checks ``app.below_minimum_grid``.
 - 261018-toe (the maintainer's 2026-10-18 21:21 slot-5 ruling): the
   History tab's row actions — [d] delete (a strong y-only
@@ -475,6 +490,36 @@ class _SeedStateFold:
 
     def __init__(self, state: str) -> None:
         self.state = state
+
+
+class MatrixCardsList(ListView):
+    """The ``#mon-cards`` list — click suppression (261019-n0w, the
+    maintainer's live test): a mouse click on a running card SELECTS
+    and FOCUSES it and NEVER opens the RunCellsModal. Textual 8.2.8's
+    stock ``_on_list_item__child_clicked`` posts ``Selected`` after
+    moving the cursor, and the screen's drill handler treats every
+    ``Selected`` as an enter — the defect. This override is the stock
+    body MINUS the ``Selected`` post; Enter (the keyboard
+    ``action_select`` -> ``Selected`` path) remains the ONLY drill
+    trigger. The subclass IS a ListView, so every
+    ``query_one("#mon-cards", ListView)`` site resolves unchanged.
+
+    Execution note (Rule 1 — the plan assumed a plain override
+    shadows the stock handler; it does NOT): textual's
+    ``_get_dispatch_methods`` walks the FULL MRO and invokes the
+    naming-convention handler from EVERY class, so the stock body ran
+    AFTER this override on the first cut. ``event.prevent_default()``
+    is textual's own suppression for exactly that (it breaks the MRO
+    walk before the base class yields its handler); ``stop()`` alone
+    only stops DOM bubbling. Probe-verified: with both flags the
+    Selected post never fires and Enter still drills."""
+
+    def _on_list_item__child_clicked(
+            self, event: ListItem._ChildClicked) -> None:
+        event.stop()
+        event.prevent_default()
+        self.focus()
+        self.index = self._nodes.index(event.item)
 
 
 # =====================================================================
@@ -1811,7 +1856,7 @@ class MonitorScreen(Screen):
             with Vertical(id="mon-left"):
                 yield Static("", id="mon-scanning-note")
                 yield Static("", id="mon-running-empty")
-                yield ListView(id="mon-cards")
+                yield MatrixCardsList(id="mon-cards")
                 yield DataTable(id="mon-wide")
                 yield DataTable(id="mon-history")
                 yield Static("", id="mon-history-empty")
@@ -2272,13 +2317,16 @@ class MonitorScreen(Screen):
 
     def _right_detail_lines(self) -> "list[Text]":
         """The focused group's detail lines from EXISTING service data
-        ONLY: the model x task header, one line per seed (the state
-        glyph word, re-derived at call time — CR-01), and — when the
-        group carries a running seed with parseable progress — the
-        steps/percent/eta segment over the SHARED progress grammar plus
-        the derived rate. NO loss/lr/epoch/context/params line ever
-        renders: those live in the log, which the pane SHOWS (T-f0x-02
-        — no underived field is ever stated)."""
+        ONLY — the approved D composition: the model x task header,
+        then (when the group's progress parses) the 20-cell progress
+        BAR line (filled/open cells + the integer percent + the derived
+        rate) and the STEP/ETA line (step/max + the point ETA with its
+        wall-clock landing, or the honest dash), then one line per seed
+        (the state glyph word, re-derived at call time — CR-01) with
+        the running seed's steps/percent/eta over the SHARED progress
+        grammar. NO loss/lr/epoch/context/params line ever renders:
+        those live in the log, which the pane SHOWS (T-f0x-02 — no
+        underived field is ever stated)."""
         focused = self._focused_group()
         if focused is None:
             return []
@@ -2301,6 +2349,40 @@ class MonitorScreen(Screen):
                 progress = candidate
                 break
         accent = str(self.app.current_theme.accent)
+        if progress is not None:
+            # (a) the D bar line — 20 cells at the strip's bar width
+            # (the _entry_progress_cell rounding idiom), then the
+            # percent + the derived rate (the variant-D filled/open
+            # shapes)
+            filled = max(0, min(_BAR_WIDTH,
+                                round(progress.percent * _BAR_WIDTH / 100)))
+            bar = Text("█" * filled, style=accent)
+            bar += Text("░" * (_BAR_WIDTH - filled), style="dim")
+            bar += Text("  ")
+            bar += Text(f"{progress.percent}%")
+            bar += Text("  ")
+            rate = _rate_of(progress)
+            bar += (Text(S.MON_STRIP_RATE.format(rate=rate))
+                    if rate is not None else Text(_DASH, style="dim"))
+            lines.append(bar)
+            # (b) the step/ETA line — step/max + the ETA leg mirroring
+            # the strip's point grammar (wall clock over the module
+            # time — golden-freezable, the strip's single-read
+            # convention). The RANGE leg can never occur here: one
+            # CellProgress object resolves, so point or dash only.
+            if progress.step is not None and progress.max_steps is not None:
+                step = Text(S.MON_DETAIL_STEPS.format(
+                    step=progress.step, max=progress.max_steps))
+                step += Text("  ")
+                if progress.eta_seconds is not None:
+                    step += Text(S.MON_STRIP_ETA.format(
+                        eta=format_eta(progress.eta_seconds),
+                        clock=time.strftime(
+                            "%H:%M", time.localtime(
+                                time.time() + progress.eta_seconds))))
+                else:
+                    step += Text(_DASH, style="dim")
+                lines.append(step)
         for cell_seed in sorted(row.seeds, key=lambda s: s.seed):
             copy, _style = _cell_state_cells().get(
                 cell_seed.state, (cell_seed.state, _STYLE_DIM))

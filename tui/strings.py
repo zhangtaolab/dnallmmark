@@ -1679,6 +1679,11 @@ MON_STRIP_ETA = _t(
 MON_STRIP_ETA_RANGE = _t(
     "MON_STRIP_ETA_RANGE", "预计 {lo}–{hi}", "ETA {lo}–{hi}")
 MON_STRIP_RATE = _t("MON_STRIP_RATE", "{rate} it/s", "{rate} it/s")
+# 261019-n0w: the D right pane's step/max line — zh IDENTICAL to en
+# (the data-forward MON_COL_SEED / MON_STRIP_RATE precedent: step and
+# max are checkpoint numbers, no new terminology enters the zh table).
+MON_DETAIL_STEPS = _t(
+    "MON_DETAIL_STEPS", "step {step}/{max}", "step {step}/{max}")
 MON_WIDE_KEYCAP = _t("MON_WIDE_KEYCAP", "宽表", "wide")
 
 # 261018-kvj Task 2: the graduation toasts — a run the screen OBSERVED

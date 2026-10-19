@@ -433,6 +433,21 @@ WizardModal {
     height: 1fr;    /* scrolls below the visible cards */
 }
 
+/* 261019-n0w: the highlighted card renders as CONTENT, not a block
+ * cursor. Textual 8.2.8's ListView DEFAULT_CSS paints
+ * `& > ListItem.-highlight` with the block-cursor colors (a blurred
+ * and a :focus variant), and one card fills the pane — so the whole
+ * left pane rendered as the block-cursor fill. The app-level
+ * stylesheet's ID selector outranks BOTH DEFAULT_CSS variants; the
+ * group reverse glyphs + the right pane's detail header stay the
+ * focus affordance. The DEFAULT_CSS -hovered rule is untouched (the
+ * subtle hover background survives). */
+#mon-cards > ListItem.-highlight {
+    background: transparent;
+    text-style: none;
+    color: $text;
+}
+
 /* 261019-f0x Task 3: the [w] A-style dense per-cell table (display is
  * code-controlled — hidden until the toggle; #mon-cards swaps out). */
 #mon-wide {

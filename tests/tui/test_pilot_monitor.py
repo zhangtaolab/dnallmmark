@@ -37,12 +37,20 @@ interval callbacks plus fake call counters, never by sleeping):
 
 import re
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
 from rich.text import Text
 from textual.screen import ModalScreen
-from textual.widgets import DataTable, Label, ListView, RichLog, Static
+from textual.widgets import (
+    DataTable,
+    Label,
+    ListItem,
+    ListView,
+    RichLog,
+    Static,
+)
 
 import tui.screens.monitor as monitor_screen_module
 from tui.app import DnallmMarkTui
@@ -82,6 +90,7 @@ from tui.services.sweep_monitor import (
 from tui.strings import (
     MON_ATTACHED_TOAST,
     MON_COL_SEED,
+    MON_DETAIL_STEPS,
     MON_FAILURES_EMPTY,
     MON_GRADUATED_DONE_TOAST,
     MON_HISTORY_EMPTY,
@@ -907,6 +916,97 @@ async def test_matrix_arrow_focus_moves_clamps_and_crosses_cards():
         )
 
 
+async def test_click_selects_card_without_drill_then_enter_drills():
+    """261019-n0w (the maintainer's live test): a mouse CLICK on a
+    running card SELECTS and focuses that card and NEVER opens the
+    RunCellsModal (the MatrixCardsList override drops the stock
+    ``Selected`` post textual 8.2.8's click path fires); a following
+    Enter — the keyboard action_select path — still drills.
+    click = select/focus, Enter = drill."""
+    from tui.screens.monitor import MatrixCardsList, RunCellsModal
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(
+            _summary("run-a", SWEEP_RUNNING, done=1, total=8, mtime=2.0),
+            _summary("run-b", SWEEP_RUNNING, done=2, total=8, mtime=1.0),
+        ), watermarks={})],
+        cells={
+            "/scans/run-a": (
+                _row("m1", "t1", {42: CELL_RUNNING}),
+                _row("m1", "t2", {42: CELL_QUEUED}),
+                _row("m2", "t1", {42: CELL_COMPLETED}),
+                _row("m2", "t2", {42: CELL_FAILED}),
+            ),
+            "/scans/run-b": (
+                _row("m3", "t3", {42: CELL_RUNNING}),
+                _row("m4", "t3", {42: CELL_QUEUED}),
+            ),
+        },
+        stats={"/scans/run-a": _stats(done=1, total=8),
+               "/scans/run-b": _stats(done=2, total=8)},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        cards = screen.query_one("#mon-cards", MatrixCardsList)
+        assert cards.index == 0, "the first card holds the cursor"
+        # the plan's sanctioned fallback: the SECOND card sits below the
+        # fold (the first card's ListItem stretches across the visible
+        # list, so a positional pilot click cannot land on it) — post
+        # the exact message the mouse path produces instead. The REAL
+        # SGR mouse path stays pty-pinned in test_pty_driver.py.
+        cards.children[1].post_message(
+            ListItem._ChildClicked(cards.children[1]))
+        await pilot.pause()
+        assert cards.index == 1, "the click moved the card selection"
+        assert screen.focused is cards, "the click focused the list"
+        assert not isinstance(app.screen, RunCellsModal), (
+            "a click NEVER opens the drill modal"
+        )
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, RunCellsModal), (
+            "Enter — the keyboard path — remains the ONLY drill trigger"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+
+
+async def test_highlighted_card_renders_without_block_cursor_fill():
+    """261019-n0w (the all-blue left pane): the highlighted card — the
+    ListItem under #mon-cards carrying the ``-highlight`` class —
+    renders with NO block-cursor fill: the effective background is
+    fully transparent and the text-style applies neither bold nor
+    reverse (the app-level ID rule outranks BOTH of the ListView
+    DEFAULT_CSS ``-highlight`` variants); the left pane reads as
+    content, the group reverse glyphs + the pane's detail header stay
+    the focus affordance."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2, mtime=1.0),),
+            watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(done=1, total=2)},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        cards = screen.query_one("#mon-cards", ListView)
+        assert cards.index == 0
+        item = cards.children[cards.index]
+        assert "-highlight" in item.classes, (
+            "the cursor row carries the highlight class"
+        )
+        assert item.styles.background.a == 0, (
+            "the highlighted card paints NO fill — fully transparent"
+        )
+        assert not item.styles.text_style.bold, "no bold text-style"
+        assert not item.styles.text_style.reverse, "no reverse text-style"
+
+
 async def test_arrow_precedence_focus_vs_tab_switch():
     """261019-f0x binding precedence: with a focused card carrying
     >= 1 group ←/→ move the matrix focus and do NOT switch tabs; with
@@ -1098,6 +1198,31 @@ async def test_right_pane_detail_from_existing_fields_only():
         assert MON_STRIP_RATE.format(rate="1.0") in detail, (
             "the derived rate (1000-300)/700"
         )
+        # 261019-n0w: the D composition's two new lines sit between the
+        # header and the first seed line — (a) the 20-cell bar line
+        # (6 filled + 14 open at 30%), (b) the step/max + point-ETA line
+        detail_lines = detail.split("\n")
+        assert detail_lines[0] == "model-a × task-1", "the header first"
+        bar_line = detail_lines[1]
+        assert "█" * 6 in bar_line and "░" * 14 in bar_line, (
+            "the 20-cell bar: 6 filled + 14 open at 30%"
+        )
+        assert "30%" in bar_line
+        assert MON_STRIP_RATE.format(rate="1.0") in bar_line, (
+            "the bar line carries the derived rate"
+        )
+        step_line = detail_lines[2]
+        assert MON_DETAIL_STEPS.format(step=300, max=1000) in step_line, (
+            "the step/max line (zh == en data-forward)"
+        )
+        # the point ETA + wall clock — parens shaped for either active
+        # language (en "(HH:MM)", zh "（HH:MM）")
+        assert re.search(
+            rf"{re.escape(format_eta(700.0))}\s*[（(]\d{{2}}:\d{{2}}[）)]",
+            step_line), "the point ETA with its wall clock"
+        assert MON_COL_SEED.format(seed=42) in detail_lines[3], (
+            "the per-seed lines follow the two new lines"
+        )
         # (b) the no-fabrication pin: the log lines mention loss/epoch,
         # the DETAIL never does
         for token in ("loss", "epoch", "lr"):
@@ -1116,13 +1241,17 @@ async def test_right_pane_detail_from_existing_fields_only():
 
 async def test_right_pane_detail_follows_focus_move():
     """(c): a focus move (the arrow) repaints the detail immediately —
-    the header swaps to the new group from the caches."""
+    the header swaps to the new group from the caches. 261019-n0w: the
+    two new D lines follow the FOCUSED group — a group with no progress
+    entry renders NEITHER (never the previous group's numbers)."""
     monitor = _pane_fixture_monitor()
     app = _app(monitor=monitor)
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_monitor(pilot, app)
         screen = app.screen
         assert "model-a × task-1" in _detail_plain(screen)
+        assert MON_DETAIL_STEPS.format(step=300, max=1000) in (
+            _detail_plain(screen)), "the focused group carries the lines"
         await pilot.press("right")
         await pilot.pause()
         detail = _detail_plain(screen)
@@ -1130,40 +1259,86 @@ async def test_right_pane_detail_follows_focus_move():
             "the detail header follows the focused group"
         )
         assert "model-a × task-1" not in detail
+        assert MON_DETAIL_STEPS.format(step=300, max=1000) not in detail, (
+            "task-2 has no progress entry — the step line is ABSENT"
+        )
+        assert "█" * 6 not in detail and "30%" not in detail, (
+            "the bar line is ABSENT too — the lines follow the focus"
+        )
+
+
+@contextmanager
+def _frozen_pane_clock():
+    """261019-n0w: the pane's new step line carries the ETA wall clock
+    (the strip's single-read convention over the monitor module's
+    ``time``) — pin it so a minute boundary between the initial render
+    and the steady-tick leg can never flip the lines signature (the
+    golden drives' ``_frozen_mon_clock`` precedent)."""
+    original = monitor_screen_module.time
+
+    class _FrozenTime:
+        @staticmethod
+        def time():
+            return 1_800_000_000.0
+
+        @staticmethod
+        def strftime(fmt, value):
+            return original.strftime(fmt, value)
+
+        @staticmethod
+        def localtime(seconds=None):
+            return original.localtime(
+                1_800_000_000.0 if seconds is None else seconds)
+
+    with mock.patch.object(monitor_screen_module, "time", _FrozenTime):
+        yield
 
 
 async def test_right_pane_tail_sig_gates_and_rewrite():
     """(d): a steady frontier tick over the SAME tail performs ZERO
-    RichLog writes; a CHANGED scripted tail rewrites in place."""
+    RichLog writes; a CHANGED scripted tail rewrites in place.
+    261019-n0w: the steady leg also spies the #mon-detail Static —
+    zero update calls (the lines-signature gate covers the new D
+    bar/step lines; the rze law)."""
     monitor = _pane_fixture_monitor(tails={
         _PANE_TEE: ("[01:00:05] epoch 1", "[01:00:40] done")})
     launcher = FakeMonitorLauncher(tee={"/scans/finetuned": _PANE_TEE})
     app = _app(monitor=monitor, launcher=launcher)
-    async with app.run_test(size=(120, 40)) as pilot:
-        await _open_monitor(pilot, app)
-        screen = app.screen
-        log = screen.query_one("#mon-right-log", RichLog)
-        assert "[01:00:05] epoch 1" in _pane_log_text(screen), (
-            "the scripted tail landed"
-        )
-        clear_patcher, clear_mock = _spy(log, "clear")
-        write_patcher, write_mock = _spy(log, "write")
-        try:
-            screen._tick_frontier()
-            await _settle(pilot, app)
-            assert clear_mock.call_count == 0 and write_mock.call_count == 0, (
-                "a steady tick over the SAME tail performs zero RichLog "
-                "writes — the lines signature gates"
+    with _frozen_pane_clock():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_monitor(pilot, app)
+            screen = app.screen
+            log = screen.query_one("#mon-right-log", RichLog)
+            assert "[01:00:05] epoch 1" in _pane_log_text(screen), (
+                "the scripted tail landed"
             )
-            monitor._tails[_PANE_TEE] = ("[02:00:05] epoch 2",)
-            screen._tick_frontier()
-            await _settle(pilot, app)
-            assert clear_mock.call_count == 1, "the changed tail rewrites"
-            assert "[02:00:05] epoch 2" in _pane_log_text(screen)
-            assert "[01:00:05] epoch 1" not in _pane_log_text(screen)
-        finally:
-            clear_patcher.stop()
-            write_patcher.stop()
+            clear_patcher, clear_mock = _spy(log, "clear")
+            write_patcher, write_mock = _spy(log, "write")
+            detail = screen.query_one("#mon-detail", Static)
+            detail_patcher, detail_mock = _spy(detail, "update")
+            try:
+                screen._tick_frontier()
+                await _settle(pilot, app)
+                assert clear_mock.call_count == 0 and (
+                    write_mock.call_count == 0), (
+                    "a steady tick over the SAME tail performs zero "
+                    "RichLog writes — the lines signature gates"
+                )
+                assert detail_mock.call_count == 0, (
+                    "a steady tick performs zero #mon-detail writes — "
+                    "the lines-signature gate covers the new D bar/step "
+                    "lines (the rze law)"
+                )
+                monitor._tails[_PANE_TEE] = ("[02:00:05] epoch 2",)
+                screen._tick_frontier()
+                await _settle(pilot, app)
+                assert clear_mock.call_count == 1, "the changed tail rewrites"
+                assert "[02:00:05] epoch 2" in _pane_log_text(screen)
+                assert "[01:00:05] epoch 1" not in _pane_log_text(screen)
+            finally:
+                clear_patcher.stop()
+                write_patcher.stop()
+                detail_patcher.stop()
 
 
 async def test_right_pane_no_tee_unavailable_and_no_reads():

@@ -31,7 +31,9 @@ runs):
   ``.focus()``, no modal suppression) are gated in
   ``tui/screens/monitor.py``; the two pins below hold the
   terminal-byte contract: byte-silence across 2+ steady ticks and the
-  click -> RunCellsModal landing.
+  click -> select (NO modal) then Enter -> RunCellsModal landing
+  (261019-n0w — the click member reworked to the click=select
+  contract; the modal's absence over a bounded window is the pin).
 
 Design (probe-pinned at planning time): each test spawns the REAL
 console (``sys.executable -m tui``) on an OS pty via pexpect —
@@ -401,17 +403,23 @@ def test_monitor_quiet_cadence_is_byte_silent(tmp_path):
         child.close(force=True)
 
 
-def test_click_running_card_opens_run_cells_modal(tmp_path):
-    """261018-rze — the click-path pin (the maintainer's live report):
-    a REAL SGR mouse click on the running card — press + release at
-    col 8 row 5 (SGR encodes button;col;row), the probe-calibrated
-    card-name row at 40x120 — opens the RunCellsModal, whose border
-    title names the run (the en MON_RUN_CELLS_TITLE glyph, em dash).
+def test_click_selects_card_enter_still_drills(tmp_path):
+    """261019-n0w — the click-path pin REWORKED to the click=select
+    contract (the maintainer's live test): a REAL SGR mouse click on
+    the running card — press + release at col 8 row 5 (SGR encodes
+    button;col;row), the probe-calibrated card-name row at 40x120 —
+    selects/focuses the card and NEVER opens the RunCellsModal (the
+    bounded 2s window proves the modal title marker never arrived);
+    the following Enter — the keyboard action_select path — still
+    drills, the modal's border title naming the run (the en
+    MON_RUN_CELLS_TITLE glyph, em dash). The window is marker-absence,
+    never byte-identity: the click may legitimately emit hover/repaint
+    bytes; the marker's absence IS the contract.
 
-    261019-f0x recalibration note: the card's FIRST line became the
-    summary strip (same screen row the old name line occupied), so the
-    probe-calibrated row 5 still lands inside the first card — the
-    coordinates stay as calibrated."""
+    261019-f0x recalibration note (carried): the card's FIRST line
+    became the summary strip (same screen row the old name line
+    occupied), so the probe-calibrated row 5 still lands inside the
+    first card — the coordinates stay as calibrated."""
     root = _fabricate_running_root(tmp_path)
     child = _spawn_tui(tmp_path, manual_roots=(root,))
     try:
@@ -421,6 +429,14 @@ def test_click_running_card_opens_run_cells_modal(tmp_path):
         child.expect(pexpect.TIMEOUT, timeout=2.0)  # short settle drain
         child.send("\x1b[<0;8;5M")   # SGR press (button 0, col 8, row 5)
         child.send("\x1b[<0;8;5m")   # SGR release
+        # the bounded no-modal window: the click selected the card, the
+        # drill modal NEVER painted
+        child.expect(pexpect.TIMEOUT, timeout=2.0)
+        assert _RUN_CELLS_MARKER not in child.before, (
+            "a mouse click must NEVER open the RunCellsModal — "
+            "click selects, Enter drills")
+        # Enter — the keyboard action_select path — remains the drill
+        child.send("\r")
         child.expect(_RUN_CELLS_MARKER, timeout=_NAV_TIMEOUT)
     finally:
         child.close(force=True)
