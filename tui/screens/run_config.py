@@ -358,6 +358,15 @@ class LauncherBackend:
         still-running sweep classified off its stale manifest."""
         return self._launcher.live_sweep_matrices()
 
+    def live_sweep_started(self) -> dict:
+        """The live sweeps' process-start epochs (261020-9vh stale-
+        progress guard): the same forward-the-reattach-lesson seam as
+        ``live_sweep_matrices`` — the app injects THIS facade into
+        MonitorBackend (app.py build_monitor_screen), so without the
+        delegation the backend's tolerant getattr reads nothing and
+        the stale-checkpoint guard is dead in production wiring."""
+        return self._launcher.live_sweep_started()
+
     def tee_path_for(self, root: str) -> "str | None":
         return self._launcher.tee_path_for(root)
 

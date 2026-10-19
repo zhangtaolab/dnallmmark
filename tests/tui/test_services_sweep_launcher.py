@@ -1474,6 +1474,26 @@ def _write_cmdline(pid_dir, argv_elements):
         + b"\0")
 
 
+def _write_pid_stat(pid_dir, starttime_ticks):
+    """One fake /proc/<pid>/stat (261020-9vh): the FULL paren shape
+    ``"<pid> (python) S <fields> {ticks} 0"`` so index 19 of the
+    post-paren fields is field 22, starttime (the /proc man page's
+    1-based field numbering against the 0-based split)."""
+    pid_dir.mkdir(parents=True, exist_ok=True)
+    (pid_dir / "stat").write_text(
+        "4001 (python) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 0 "
+        f"{starttime_ticks} 0\n", encoding="utf-8")
+
+
+def _write_proc_btime(proc_root, btime):
+    """One fake /proc/stat carrying the boot-time line (261020-9vh)."""
+    proc_root.mkdir(parents=True, exist_ok=True)
+    (proc_root / "stat").write_text(
+        "cpu  100 0 100 1000 0 0 0 0 0 0\n"
+        f"btime {btime}\n"
+        "cpu0 100 0 100 1000 0 0 0 0 0 0\n", encoding="utf-8")
+
+
 def _probe_argv(models="plant-dnabert-6mer", output_root=None,
                driver=None, extra=()):
     """One parseable run_sweep argv (the compose_argv shape)."""
@@ -1545,18 +1565,91 @@ def test_probe_cli_sweeps_sweep_without_output_root_is_ignored(tmp_path):
     assert sweep_launcher.probe_cli_sweeps(proc) == {}
 
 
-def _register_live_sweep(monkeypatch, tmp_path, argv, root):
+def test_probe_cli_sweep_starts_reads_stat_and_btime(tmp_path):
+    """261020-9vh — the start-time probe over the SAME walk: pid 4001
+    holds a run_sweep.py cmdline plus a stat whose post-paren field 22
+    is 65268188 ticks, and <proc>/stat carries ``btime 1791798278`` ->
+    the resolved root maps to btime + ticks / SC_CLK_TCK (the
+    maintainer's live arithmetic). A run_sweep pid whose stat file is
+    ABSENT contributes nothing (tolerant); a tree without btime reads
+    {} (no start evidence, never a crash — the honest degradation)."""
+    proc = tmp_path / "proc"
+    root_a = tmp_path / "out" / "sweep-a"
+    _write_cmdline(proc / "4001", _probe_argv(output_root=root_a))
+    _write_pid_stat(proc / "4001", 65268188)
+    # a run_sweep pid with NO stat file (a dying process mid-read):
+    # tolerated, contributes no start, never a raise
+    _write_cmdline(proc / "4002", _probe_argv(
+        models="plant-dnagpt-BPE", output_root=tmp_path / "out" / "b"))
+    _write_proc_btime(proc, 1791798278)
+
+    starts = sweep_launcher.probe_cli_sweep_starts(proc)
+
+    ticks = os.sysconf("SC_CLK_TCK")
+    assert starts == {
+        str(root_a.resolve()): 1791798278 + 65268188 / ticks}, (
+        "start = btime + field-22 ticks / SC_CLK_TCK (the verified "
+        "live arithmetic: 1791798278 + 65268188/100)"
+    )
+
+    # no btime line: NO start evidence at all — {} (non-Linux degrades
+    # to the same honest vocabulary as the argv probe)
+    bare = tmp_path / "bare-proc"
+    _write_cmdline(bare / "5001", _probe_argv(output_root=tmp_path / "x"))
+    _write_pid_stat(bare / "5001", 65268188)
+    assert sweep_launcher.probe_cli_sweep_starts(bare) == {}
+
+
+def _register_live_sweep(monkeypatch, tmp_path, argv, root, clock=None):
     """One launcher with a LIVE registry entry (a never-dying fake
     Popen) spawned at ``root`` with ``argv`` — the registry half of the
-    evidence union."""
+    evidence union. ``clock`` (261020-9vh) pins the spawn moment for an
+    exact ``started_at`` epoch; None uses the real clock."""
     pin_state_dir(monkeypatch, tmp_path)
     launcher = sweep_launcher.SweepLauncher(
         spawner=FakeSpawner(popen=FakeSweepPopen(poll_returns=(None,))))
     outcome = launcher.launch_argv(
         list(argv), root, spawner=FakeSpawner(
-            popen=FakeSweepPopen(poll_returns=(None,))))
+            popen=FakeSweepPopen(poll_returns=(None,))),
+        clock=clock)
     assert outcome.spawned is True, outcome.error
     return launcher
+
+
+def test_live_sweep_started_merges_registry_iso_and_probe(
+        monkeypatch, tmp_path):
+    """261020-9vh — the start-evidence merge: a registry entry spawned
+    through launch_argv with the INJECTABLE clock pinned to a fixed
+    tz-aware datetime maps its root to that EXACT epoch (the registry's
+    spawn moment is authoritative — the tz-aware ISO round-trips); a
+    monkeypatched probe_cli_sweep_starts supplies a second (CLI) root
+    AND a duplicate of the registry root with a DIFFERENT value —
+    setdefault keeps the registry's (the live_sweep_matrices
+    precedence). The probe is monkeypatched at the MODULE level so the
+    test never walks the dev box's REAL /proc (the maintainer's live
+    sweep runs there)."""
+    fixed = datetime(2026, 10, 20, 7, 2, 39, tzinfo=UTC)
+    registry_root = tmp_path / "reg" / "root"
+    launcher = _register_live_sweep(
+        monkeypatch, tmp_path, _probe_argv(output_root=registry_root),
+        registry_root, clock=lambda: fixed)
+
+    cli_root = tmp_path / "cli" / "root"
+    monkeypatch.setattr(sweep_launcher, "probe_cli_sweep_starts", lambda: {
+        str(cli_root.resolve()): 1000.0,
+        # the duplicate: the probe's value must LOSE to the registry's
+        str(registry_root.resolve()): 999.0,
+    })
+
+    started = launcher.live_sweep_started()
+
+    assert started == {
+        str(registry_root.resolve()): fixed.timestamp(),
+        str(cli_root.resolve()): 1000.0,
+    }, (
+        "registry started_at is authoritative per root; the probe "
+        "union fills the roots the registry does not hold"
+    )
 
 
 def test_live_sweep_matrices_merges_registry_and_probe_behind_cache(

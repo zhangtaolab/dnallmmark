@@ -1550,6 +1550,102 @@ def test_entries_progress_carries_the_checkpoint_pair_eta(tmp_path):
 
 
 # =====================================================================
+# 261020-9vh — the stale-checkpoint guard: at a REUSED root a running
+# pair's newest checkpoint whose trainer_state.json FILE mtime predates
+# the live process's start belongs to the PREVIOUS run — its numbers
+# are never rendered (the all-None CellProgress drops the pair from
+# entries_progress exactly like an unparseable checkpoint). The param
+# absent keeps today's parse (the C4J-3 tolerant-seam precedent); only
+# the NUMBERS go unknown — the cell's STATE derivation is untouched.
+# =====================================================================
+
+
+def test_cell_progress_stale_before_degrades_all_none(tmp_path):
+    """The guard's four legs, in the maintainer's live shape: a
+    checkpoint-19968-payload (step 19968 / max 49911 -> 40%) whose FILE
+    mtime predates stale_before parses NOTHING; the SAME checkpoint is
+    fresh relative to an earlier start (mtime >= start parses); the
+    param absent keeps today's 40% (the pre-existing-caller contract);
+    the boundary stale_before == mtime PARSES (mtime strictly < start is
+    the only stale predicate)."""
+    running = seed_dir(tmp_path, "m", "t", 42)
+    running.mkdir(parents=True)
+    state = write_checkpoint(
+        running, 50, {"global_step": 19968, "max_steps": 49911})
+    mtime = NOW_REAL() - 3600.0
+    _pin_trainer_state_mtime(state, mtime)
+
+    # STALE vs the live start: all-None — never the previous run's 40%
+    assert sweep_monitor.cell_progress(
+        running, stale_before=NOW_REAL()) == (
+        sweep_monitor.CellProgress(
+            step=None, max_steps=None, percent=None)), (
+        "a checkpoint that predates the live process's start belongs "
+        "to the PREVIOUS run — its numbers never render"
+    )
+
+    # FRESH vs an earlier start: the 40% parses (the checkpoint is the
+    # current run's own)
+    assert sweep_monitor.cell_progress(
+        running, stale_before=mtime - 7200.0).percent == 40, (
+        "a checkpoint newer than the live start parses normally"
+    )
+
+    # the param ABSENT: today's parse for every pre-existing caller
+    assert sweep_monitor.cell_progress(running).percent == 40, (
+        "no stale_before = the legacy C4J-3 parse, byte-identical"
+    )
+
+    # the BOUNDARY: stale_before == mtime parses (strict < is stale)
+    assert sweep_monitor.cell_progress(
+        running, stale_before=mtime).percent == 40, (
+        "mtime == start is NOT stale — the predicate is strictly <"
+    )
+
+
+def test_entries_progress_live_started_guards_stale_checkpoints(tmp_path):
+    """live_started threading: a RUNNING pair whose checkpoint is stale
+    vs the root's live start is ABSENT from the map (exactly like an
+    unparseable checkpoint); a second RUNNING pair with a FRESH
+    checkpoint stays present under BOTH calls (the guard is selective,
+    never a blanket progress outage); live_started=None returns the
+    40% entry (the fallback every pre-existing caller rides)."""
+    stale_seed = seed_dir(tmp_path, "m-a", "t-1", 42)
+    stale_seed.mkdir(parents=True)
+    stale_state = write_checkpoint(
+        stale_seed, 50, {"global_step": 19968, "max_steps": 49911})
+    _pin_trainer_state_mtime(stale_state, NOW_REAL() - 3600.0)
+    fresh_seed = seed_dir(tmp_path, "m-b", "t-2", 42)
+    fresh_seed.mkdir(parents=True)
+    write_checkpoint(fresh_seed, 60, {"global_step": 60, "max_steps": 300})
+    live_pairs = frozenset({("m-a", "t-1"), ("m-b", "t-2")})
+    # the live start sits BETWEEN the two writes: after the stale
+    # checkpoint (a previous run's save) and before the fresh one (the
+    # live run's own save — the reused-root shape, in miniature)
+    live_started = NOW_REAL() - 10.0
+
+    guarded = sweep_monitor.entries_progress(
+        tmp_path, live_pairs=live_pairs, live_started=live_started)
+
+    assert set(guarded) == {("m-b", "t-2")}, (
+        "the stale pair's entry is dropped; the fresh pair survives"
+    )
+    assert guarded[("m-b", "t-2")].percent == 20, (
+        "the fresh pair's parsed percent is untouched by the guard"
+    )
+
+    fallback = sweep_monitor.entries_progress(
+        tmp_path, live_pairs=live_pairs, live_started=None)
+
+    assert set(fallback) == {("m-a", "t-1"), ("m-b", "t-2")}, (
+        "live_started None = today's parse for BOTH running pairs"
+    )
+    assert fallback[("m-a", "t-1")].percent == 40, (
+        "without live-start evidence the 40% entry returns (fallback)"
+    )
+
+
+# =====================================================================
 # 261017-uwr (UWR-1 Task 2): the three-state derivation — CELL_INTERRUPTED
 # + live_pairs threading + CellRow.newest_mtime (closes WINDOWS #34)
 # =====================================================================

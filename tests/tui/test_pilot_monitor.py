@@ -2990,6 +2990,90 @@ def test_restart_reattach_probe_evidence_through_real_launcher_wiring(
     )
 
 
+def test_backend_entries_progress_threads_live_started_guard(
+        monkeypatch, tmp_path):
+    """261020-9vh — the maintainer's live shape through the REAL
+    wiring: a reused root whose RUNNING pair (probe-derived live_pairs
+    membership + the checkpoint child's activity signal) holds a
+    checkpoint ~13h stale, with BOTH probes monkeypatched to the tmp
+    root and a live start of now-60s -> MonitorBackend over the
+    LauncherBackend facade returns NO entry for the pair (the numbers
+    are unknown-until-first-save, never the previous run's 40%). The
+    same fixture with the starts probe reading {} (no start evidence)
+    returns today's 40% entry; a launcher WITHOUT the method (every
+    pre-existing fake) rides the tolerant getattr leg to the same
+    today-behavior."""
+    import json
+    import os
+    import sys
+    import types
+
+    from tui.screens.monitor import MonitorBackend
+    from tui.screens.run_config import LauncherBackend
+    from tui.services import settings, sweep_launcher
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv(settings.STATE_DIR_ENV, str(state_dir))
+
+    root = tmp_path / "sweeps" / "reused"
+    seed = root / "plant-dnabert-6mer" / "GUE__emp_H3" / "seed_42"
+    checkpoint = seed / "checkpoint-19968"
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "trainer_state.json").write_text(json.dumps(
+        {"global_step": 19968, "max_steps": 49911}), encoding="utf-8")
+    stale = time.time() - 13 * 3600.0
+    for path in sorted(seed.rglob("*")):
+        os.utime(path, (stale, stale))
+    os.utime(seed, (stale, stale))
+
+    pair = ("plant-dnabert-6mer", "GUE__emp_H3")
+    argv = (
+        sys.executable,
+        str(Path(__file__).resolve().parents[1] / "pipeline"
+            / "run_sweep.py"),
+        "--models", "plant-dnabert-6mer",
+        "--tasks", "GUE__emp_H3",
+        "--seeds", "42",
+        "--output-root", str(root),
+    )
+    root_key = str(root.resolve())
+    monkeypatch.setattr(sweep_launcher, "probe_cli_sweeps",
+                        lambda: {root_key: argv})
+
+    backend = MonitorBackend(launcher=LauncherBackend())
+
+    # the live-repro shape: a start of now-60s makes the ~13h-stale
+    # checkpoint predate it -> NO entry, never the previous run's 40%
+    monkeypatch.setattr(sweep_launcher, "probe_cli_sweep_starts",
+                        lambda: {root_key: time.time() - 60.0})
+    guarded = backend.entries_progress(root)
+    assert pair not in guarded, (
+        "the stale checkpoint's numbers never render while the live "
+        "run has not saved its own first checkpoint"
+    )
+
+    # no start evidence: today's 40% entry returns (the fallback)
+    monkeypatch.setattr(sweep_launcher, "probe_cli_sweep_starts", dict)
+    fallback = backend.entries_progress(root)
+    assert fallback[pair].percent == 40, (
+        "without live-start evidence the parse keeps today's behavior"
+    )
+
+    # the tolerant getattr leg: a launcher without live_sweep_started
+    # (every pre-existing fake — here the pre-9vh facade shape) reads
+    # None and keeps the same today-behavior
+    bare = MonitorBackend(launcher=types.SimpleNamespace(
+        live_sweeps=lambda: (),
+        live_sweep_matrices=lambda: {root_key: frozenset({pair})},
+    ))
+    today = bare.entries_progress(root)
+    assert today[pair].percent == 40, (
+        "a launcher without the method rides the fallback — never a "
+        "fabricated staleness"
+    )
+
+
 async def test_failures_modal_rows_drill_and_empty_state():
     """[f] over the FOCUSED running card: one row per failure, enter
     drills the verbatim error, and the empty list renders the designed

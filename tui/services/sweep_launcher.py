@@ -367,6 +367,19 @@ def _now_iso(moment):
     return moment.astimezone().isoformat(timespec="seconds")
 
 
+def _iso_to_epoch(value):
+    """One registry ``started_at`` ISO stamp as an epoch float
+    (261020-9vh). The registry stamps TZ-AWARE local ISO
+    (``_now_iso``), so ``fromisoformat`` round-trips it exactly — a
+    naive parse here would mis-place the start by the local offset and
+    fabricate staleness. Unparseable/non-string -> None (an honest no
+    start, never a raise)."""
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 def _exit_message(exc):
     """One caught exception's human-readable message — a ``SystemExit``
     carries its message in ``code`` (``str(SystemExit("m"))`` would
@@ -483,42 +496,28 @@ def gate_confirm_data(spec, run_config_service=None):
 _RUN_SWEEP_SCRIPT_NAME = "run_sweep.py"
 
 
-def probe_cli_sweeps(proc_root="/proc") -> dict:
-    """Discover CLI-launched run_sweep processes by probing ``/proc``
-    (261017-uwr, UWR-2 — the attached/discovered CLI evidence source).
-
-    Bounded, read-only, total: iterate the NUMERIC entries of
-    ``proc_root`` (sorted; non-numeric skipped); read each
-    ``<pid>/cmdline`` as NUL-separated bytes, decode utf-8/replace; a
-    process whose argv holds an element whose Path NAME is exactly
-    ``run_sweep.py`` contributes ``{resolved --output-root: argv}``.
-    Any OSError/ValueError skips the pid (a dying process's cmdline
-    vanishes mid-read — the probe never crashes a cadence). A RELATIVE
-    ``--output-root`` resolves against ``os.readlink(<pid>/cwd)``
-    best-effort (the CLI hand-run edge; compose_argv threads absolute
-    roots by contract), falling back to a plain resolve. An
-    absent/unlistable ``proc_root`` reads ``{}`` (non-Linux degrades to
-    NO CLI evidence — honest), and filesystem reads are ALL this
-    function ever does: no subprocess, no signal, EVER (a live sweep
-    may be running on this box — the probe reads its cmdline and
-    nothing else).
-
-    DISPLAY-ONLY evidence (T-uwr-01): the output feeds glyph/header
-    rendering through ``live_sweep_matrices``; it never gates a launch,
-    a kill, or an exit, and raw argv is never rendered.
-
-    Args:
-        proc_root: the proc filesystem root (tests inject a fake tree).
-
-    Returns:
-        dict[str, tuple[str, ...]]: resolved output root -> the live
-        process's argv (verbatim, never rendered).
+def _iter_cli_sweeps(proc_root="/proc"):
+    """The shared /proc walk behind both CLI probes (261020-9vh — the
+    ``probe_cli_sweeps`` body, extracted byte-identically): iterate the
+    NUMERIC entries of ``proc_root`` (sorted; non-numeric skipped);
+    read each ``<pid>/cmdline`` as NUL-separated bytes, decode
+    utf-8/replace; a process whose argv holds an element whose Path
+    NAME is exactly ``run_sweep.py`` yields ``(resolved --output-root,
+    argv, pid_dir)``. Any OSError/ValueError skips the pid (a dying
+    process's cmdline vanishes mid-read — the probe never crashes a
+    cadence). A RELATIVE ``--output-root`` resolves against
+    ``os.readlink(<pid>/cwd)`` best-effort (the CLI hand-run edge;
+    compose_argv threads absolute roots by contract), falling back to a
+    plain resolve. An absent/unlistable ``proc_root`` yields NOTHING
+    (non-Linux degrades to NO CLI evidence — honest), and filesystem
+    reads are ALL this generator ever does: no subprocess, no signal,
+    EVER (a live sweep may be running on this box — the probes read
+    its cmdline/stat and nothing else).
     """
-    probed: dict[str, tuple[str, ...]] = {}
     try:
         entries = sorted(Path(proc_root).iterdir())
     except OSError:
-        return probed
+        return
     for pid_dir in entries:
         if not pid_dir.name.isdigit():
             continue
@@ -535,8 +534,112 @@ def probe_cli_sweeps(proc_root="/proc") -> dict:
         output_root = run_config._argv_flag_values(argv).get("--output-root")
         if not output_root:
             continue
-        probed[str(_resolve_probe_root(output_root, pid_dir))] = argv
-    return probed
+        yield str(_resolve_probe_root(output_root, pid_dir)), argv, pid_dir
+
+
+def probe_cli_sweeps(proc_root="/proc") -> dict:
+    """Discover CLI-launched run_sweep processes by probing ``/proc``
+    (261017-uwr, UWR-2 — the attached/discovered CLI evidence source).
+
+    Bounded, read-only, total over the shared ``_iter_cli_sweeps``
+    walk (261020-9vh — behavior byte-identical to the pre-extraction
+    body): ``{resolved --output-root: argv}`` per matching process.
+
+    DISPLAY-ONLY evidence (T-uwr-01): the output feeds glyph/header
+    rendering through ``live_sweep_matrices``; it never gates a launch,
+    a kill, or an exit, and raw argv is never rendered.
+
+    Args:
+        proc_root: the proc filesystem root (tests inject a fake tree).
+
+    Returns:
+        dict[str, tuple[str, ...]]: resolved output root -> the live
+        process's argv (verbatim, never rendered).
+    """
+    return {root: argv for root, argv, _pid_dir in _iter_cli_sweeps(proc_root)}
+
+
+def _boot_time(proc_root):
+    """The kernel boot epoch from ``<proc_root>/stat``'s ``btime `` line
+    (261020-9vh — /proc's own clock basis; the man page's field 1 basis
+    for field-22 starttime ticks). Absent/unreadable/garbage -> None —
+    no start evidence, never a crash (the argv probe's non-Linux
+    degradation vocabulary)."""
+    try:
+        raw = (Path(proc_root) / "stat").read_text(
+            encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in raw.splitlines():
+        if line.startswith("btime "):
+            try:
+                return float(line[len("btime "):])
+            except ValueError:
+                return None
+    return None
+
+
+def _clock_ticks():
+    """The kernel's clock-tick rate (``SC_CLK_TCK`` — the divisor that
+    turns field-22 ticks into seconds); a ValueError (name unknown on
+    this platform) -> None — no start evidence."""
+    try:
+        return float(os.sysconf("SC_CLK_TCK"))
+    except ValueError:
+        return None
+
+
+def _proc_start_epoch(pid_dir, btime, ticks):
+    """One pid's process-start epoch: ``<pid>/stat`` field 22
+    (starttime ticks since boot) over the post-paren field split —
+    ``raw.rpartition(")")`` drops the parenthesized comm (it may
+    contain spaces), so index 19 IS field 22 against the /proc man
+    page's 1-based numbering — then ``btime + ticks / SC_CLK_TCK``.
+    Every OSError/ValueError/IndexError (a dying process's vanished
+    stat, a truncated/garbage line) -> None."""
+    try:
+        raw = (Path(pid_dir) / "stat").read_bytes().decode(
+            "utf-8", "replace")
+        fields = raw.rpartition(")")[2].split()
+        return btime + int(fields[19]) / ticks
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def probe_cli_sweep_starts(proc_root="/proc") -> dict:
+    """The CLI-launched run_sweep processes' START epochs by probing
+    ``/proc`` (261020-9vh — the stale-progress guard's evidence leg
+    over the SAME ``_iter_cli_sweeps`` walk ``probe_cli_sweeps`` uses).
+
+    Per matching pid: ``<pid>/stat`` field 22 (starttime ticks) over
+    the kernel's ``btime`` and ``SC_CLK_TCK`` -> the process-start
+    epoch. A pid whose stat cannot be read/parsed contributes nothing
+    (tolerant); a ``proc_root`` without a readable ``btime`` line, or a
+    platform without ``SC_CLK_TCK``, reads ``{}`` — NO start evidence
+    (the honest degradation, never a guessed start and never a raise).
+
+    DISPLAY-ONLY like the argv probe (T-uwr-01 / T-9vh-03): reads
+    cmdline/stat and NOTHING else — a live sweep may be running on
+    this box (it is); the probe never signals it, and the output never
+    gates a launch, a kill, or an exit.
+
+    Args:
+        proc_root: the proc filesystem root (tests inject a fake tree).
+
+    Returns:
+        dict[str, float]: resolved output root -> the live process's
+        start epoch (seconds).
+    """
+    btime = _boot_time(proc_root)
+    ticks = _clock_ticks()
+    if btime is None or ticks is None:
+        return {}
+    starts: dict[str, float] = {}
+    for root, _argv, pid_dir in _iter_cli_sweeps(proc_root):
+        start = _proc_start_epoch(pid_dir, btime, ticks)
+        if start is not None:
+            starts[root] = start
+    return starts
 
 
 def _resolve_probe_root(value: str, pid_dir: Path) -> Path:
@@ -1253,3 +1356,37 @@ class SweepLauncher:
             if root not in matrices:
                 matrices[root] = self._matrix_for(argv)
         return matrices
+
+    def live_sweep_started(self) -> dict:
+        """The live-sweep PROCESS-START epochs per resolved root (the
+        261020-9vh stale-progress guard's evidence source).
+
+        Two evidence sources merged (the ``live_sweep_matrices``
+        precedent): the REGISTRY first — each live entry's
+        ``meta.started_at`` (the launch moment, a tz-aware local ISO)
+        through ``_iso_to_epoch``; then ``probe_cli_sweep_starts()``
+        (attached/discovered CLI-launched run_sweep processes — the
+        maintainer's exact case is CLI-launched) unioned via
+        ``setdefault``: a root BOTH sources hold keeps the REGISTRY's
+        spawn moment (authoritative — it is the launch this TUI
+        performed).
+
+        DISPLAY-ONLY evidence (UWR-2 vocabulary): never gates a
+        launch, a kill, or an exit — the guard that consumes it only
+        withholds a PREVIOUS run's parsed numbers at a reused root.
+
+        Returns:
+            dict[str, float]: resolved root -> the live process's
+            start epoch (seconds); empty when no start evidence holds.
+        """
+        starts: dict[str, float] = {}
+        for root in self.live_sweeps():
+            entry = self._live.get(root)
+            if entry is None:
+                continue
+            epoch = _iso_to_epoch(entry["meta"].started_at)
+            if epoch is not None:
+                starts[root] = epoch
+        for root, start in probe_cli_sweep_starts().items():
+            starts.setdefault(root, start)
+        return starts

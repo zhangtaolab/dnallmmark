@@ -52,6 +52,21 @@ only when max_steps > 0), and ``entries_progress`` parses ONLY the
 running seeds on the same bounded walk the frontier uses (the 2s
 cadence stays light).
 
+261020-9vh (the stale-checkpoint guard): at a REUSED root a running
+pair's newest checkpoint whose ``trainer_state.json`` FILE mtime
+PREDATES the live process's start belongs to the PREVIOUS run — its
+numbers are never rendered. ``cell_progress`` gains the ADDITIVE
+``stale_before`` param (None = today's parse, the C4J-3 tolerant-seam
+precedent; mtime strictly < start degrades to the all-None
+CellProgress), and ``entries_progress`` threads the root's live-start
+epoch as ``live_started`` — the existing progress.step-is-None drop
+then omits the pair, so every consumer renders the existing honest
+indeterminate grammar with ZERO render-tier changes. Only the NUMBERS
+go unknown: the cell's STATE derivation is untouched (checkpoint-*
+presence is the activity signal — the cell IS running), and once the
+live run saves its own first checkpoint (mtime >= start) the real
+numbers return automatically — no state, no flag, no transition code.
+
 261016-vxr (VXR-1) — the checkpoint-pair ETA: ``cell_progress`` also
 derives ``CellProgress.eta_seconds`` from the TWO NEWEST checkpoints
 (rate = Δglobal_step / Δ trainer_state.json FILE mtime; probed:
@@ -1069,7 +1084,7 @@ def _eta_from_checkpoint_pair(
     return (max_steps - step) / rate
 
 
-def cell_progress(seed_dir) -> CellProgress:
+def cell_progress(seed_dir, stale_before=None) -> CellProgress:
     """Parse one seed dir's training progress (C4J-3) — the newest
     ``checkpoint-*/trainer_state.json`` (the LARGEST NUMERIC suffix;
     lexical order is wrong and pinned so), plus the checkpoint-pair
@@ -1082,8 +1097,18 @@ def cell_progress(seed_dir) -> CellProgress:
     clamped 0..100 — a poisoned checkpoint can never crash the cadence
     or fabricate a number. Bounded by the module's per-dir entry cap.
 
+    261020-9vh — ``stale_before`` (the live process's start, epoch
+    seconds; None keeps today's parse): a checkpoint whose
+    ``trainer_state.json`` FILE mtime PREDATES the start belongs to a
+    PREVIOUS run at a reused root and its numbers are never rendered
+    (the all-None return; mtime strictly < start is the ONLY stale
+    predicate — the boundary parses). An unstat-able file (mtime None)
+    degrades to the same all-None parse it would produce anyway.
+
     Args:
         seed_dir: the ``{root}/{model}/{task}/seed_{n}`` dir.
+        stale_before: the live process's start epoch, or None for the
+            legacy C4J-3 semantics (today's parse, byte-identical).
 
     Returns:
         CellProgress: the parsed (or all-None) progress.
@@ -1102,6 +1127,10 @@ def cell_progress(seed_dir) -> CellProgress:
             second = (number, child)
     if best is None:
         return CellProgress(step=None, max_steps=None, percent=None)
+    if stale_before is not None:
+        mtime = _trainer_state_mtime(best[1])
+        if mtime is None or mtime < float(stale_before):
+            return CellProgress(step=None, max_steps=None, percent=None)
     state = artifact_loader.load_json_artifact(best[1] / RESUME_MARKER)
     if not isinstance(state, dict):
         return CellProgress(step=None, max_steps=None, percent=None)
@@ -1149,7 +1178,8 @@ def entry_fold(row: CellRow) -> EntryView:
     return EntryView(state=state, done=done, total=len(states))
 
 
-def entries_progress(root, live_pairs=None) -> "dict[tuple[str, str], CellProgress]":
+def entries_progress(root, live_pairs=None,
+                     live_started=None) -> "dict[tuple[str, str], CellProgress]":
     """The slot-5 entries list's progress map (C4J-3): walk the seed
     dirs ONCE (the frontier's bounded ``_iter_seed_dirs`` discipline),
     derive each seed's state, and for every (model, task) row whose
@@ -1163,10 +1193,23 @@ def entries_progress(root, live_pairs=None) -> "dict[tuple[str, str], CellProgre
     (the screen's honest indeterminate). ``live_pairs`` threads the
     live-sweep pair evidence (None = legacy semantics).
 
+    261020-9vh — ``live_started`` (the root's live-process start,
+    epoch seconds; None = the legacy semantics every pre-existing
+    caller rides) threads into each running seed's ``cell_progress``
+    as ``stale_before``: a running pair whose newest checkpoint
+    predates the live start belongs to the PREVIOUS run at a reused
+    root and the existing progress.step-is-None drop omits it — the
+    numbers are unknown-until-first-save. The running seed's STATE
+    derivation is untouched (the cell IS running — checkpoint presence
+    is the activity signal); once the live run's own first checkpoint
+    lands (mtime >= start) the parse returns automatically.
+
     Args:
         root: the sweep output root.
         live_pairs: the live sweep's planned (model, task) pairs, or
             None for the legacy activity semantics.
+        live_started: the root's live-process start (epoch seconds),
+            or None for the legacy parse semantics.
 
     Returns:
         dict: ``{(model, task): CellProgress}`` — empty when nothing
@@ -1188,7 +1231,9 @@ def entries_progress(root, live_pairs=None) -> "dict[tuple[str, str], CellProgre
         for seed, state in seeds.items():
             if state != CELL_RUNNING:
                 continue
-            progress = cell_progress(seed_dirs[(model, task, seed)])
+            progress = cell_progress(
+                seed_dirs[(model, task, seed)],
+                stale_before=live_started)
             if progress.step is None:
                 continue
             if best is None or progress.step > (best.step or 0):

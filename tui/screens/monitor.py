@@ -783,6 +783,30 @@ class MonitorBackend:
         root_key = str(Path(root).expanduser().resolve())
         return matrices.get(root_key, frozenset())
 
+    def _live_started_for(self, root) -> "float | None":
+        """The root's live-process start epoch (261020-9vh) — the
+        stale-checkpoint guard's evidence leg, read through the SAME
+        tolerant-getter idiom as ``_live_evidence``: a launcher without
+        ``live_sweep_started`` (every pre-existing fake), a raising
+        call, or a non-numeric/non-int-float value reads None — today's
+        parse, never a fabricated staleness. The registry's spawn
+        moment wins per root; the /proc probe covers CLI-launched
+        sweeps (the maintainer's exact case)."""
+        if self._launcher is None:
+            return None
+        getter = getattr(self._launcher, "live_sweep_started", None)
+        if getter is None:
+            return None
+        try:
+            starts = getter() or {}
+            value = starts.get(str(Path(root).expanduser().resolve()))
+        except Exception:  # noqa: BLE001 — the tolerant-reader promise
+            return None
+        if (isinstance(value, (int, float))
+                and not isinstance(value, bool)):
+            return float(value)
+        return None
+
     def full_scan(self, prev_watermarks: "dict | None" = None) -> Any:
         live_roots, _matrices = self._live_evidence()
         return sweep_monitor.full_scan(
@@ -806,10 +830,15 @@ class MonitorBackend:
         adapter had NO entries_progress delegation, so the REAL screen
         read {} through the tolerant getattr seam and the progress
         column was dead in production while every Pilot fake carried
-        it; the delegation lands here with the evidence threading)."""
+        it; the delegation lands here with the evidence threading).
+        261020-9vh: ``live_started`` threads the root's live-process
+        start so a reused root never renders the PREVIOUS run's parsed
+        numbers while the live run has not saved its own first
+        checkpoint (the all-None drop below)."""
         _live_roots, matrices = self._live_evidence()
         return sweep_monitor.entries_progress(
-            root, live_pairs=self._live_pairs_for(root, matrices))
+            root, live_pairs=self._live_pairs_for(root, matrices),
+            live_started=self._live_started_for(root))
 
     def stats(self, root, expected_total: "int | None" = None,
               fallback_start: "float | None" = None) -> Any:
