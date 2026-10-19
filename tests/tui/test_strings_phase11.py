@@ -111,10 +111,17 @@ EXPECTED_MON_CONSTANTS = (
     "MON_SCANNING", "MON_RUNNING_EMPTY", "MON_HISTORY_EMPTY",
     "MON_TAB_SWITCH_KEYCAP",
     # the running card + the History row's dual-presence badge + the
-    # graduation toasts (Task 2).
-    "MON_CARD_SCALE", "MON_SCALE_UNKNOWN", "MON_CARD_CURRENT",
-    "MON_CARD_CURRENT_NONE", "MON_HISTORY_RERUN_BADGE",
+    # graduation toasts (Task 2). 261019-f0x: the four card-line
+    # constants (MON_CARD_SCALE / MON_SCALE_UNKNOWN / MON_CARD_CURRENT /
+    # MON_CARD_CURRENT_NONE) retired with their surface (the strip +
+    # matrix redesign — the kvj retirement precedent).
+    "MON_HISTORY_RERUN_BADGE",
     "MON_GRADUATED_DONE_TOAST", "MON_GRADUATED_INTERRUPTED_TOAST",
+    # 261019-f0x (the B-skeleton + D-right-pane redesign): the summary
+    # strip's elapsed/ETA/rate segments + the [w] wide-toggle keycap —
+    # one block, one tripwire edit (+5/-4 with the retirements above).
+    "MON_STRIP_ELAPSED", "MON_STRIP_ETA", "MON_STRIP_ETA_RANGE",
+    "MON_STRIP_RATE", "MON_WIDE_KEYCAP",
     # the History/drill tables' columns (root/progress survive; the
     # activity column replaces the retired ETA column).
     "MON_RUN_CELLS_TITLE", "MON_COL_ROOT", "MON_COL_PROGRESS",

@@ -89,6 +89,39 @@ Contract (locked decisions that survive the redesign):
   card region anyway. The gates reset in ``on_mount`` so the L-toggle
   recompose (fresh empty Labels) fully repaints in the active
   language.
+- 261019-f0x (the maintainer's 2026-10-18 10:48 redesign — the
+  approved variant-B skeleton plus the variant-D right pane): the
+  Running card is the B SKELETON — one
+  summary strip line (root name + per-category seed counts + the
+  done/total fraction + the 20-cell segmented bar + minute-granularity
+  elapsed + ETA point/range + the derived it/s rate, every number an
+  existing service field or pure arithmetic over them, honest
+  unknowns never fabricated) over a MATRIX of every (model, task)
+  group (rows = models, columns = tasks, per-seed glyphs in the
+  existing state vocabulary), with ←/→/↑/↓ driving the GROUP focus
+  (clamped; ↑/↓ cross to the adjacent card at the edges, the ListView
+  index follows programmatically; the highlight is style-only —
+  ``reverse`` — so in-place updates stay layout-stable) while the
+  arrows keep switching tabs exactly as before on the empty Running
+  tab, with no groups, and on History (the kvj contract; Tab always
+  switches; History ↑/↓ delegate to the focused DataTable's NATIVE
+  cursor actions — probed present on textual 8.2.8). The D RIGHT PANE
+  (~40 cols, hidden below ``_NARROW_WIDTH`` and off the Running tab,
+  never focusable) renders the FOCUSED group's detail from existing
+  service data ONLY — per-seed states, the running seed's steps/
+  percent/eta over the shared progress grammar + the derived rate —
+  NO loss/lr/epoch/context/params line ever renders (those live in
+  the log, which is SHOWN: the root's live tee tail over the EXISTING
+  ``read_log_tail``/``tee_path_for`` seams, its own exclusive
+  ``mon-tail`` worker group on the 2s frontier cadence, bounded like
+  the [t] modal, the designed no-tee state when the launch has no
+  tee). Every NEW widget joins the rze gate family: strip/matrix/
+  detail/tail are content-signature gated (a steady tick writes
+  zero), the tail write skips beneath a stacked modal (the read may
+  proceed — the next tick catches up), and ``on_mount`` resets every
+  new sentinel so the L-toggle recompose fully repaints. [w] toggles
+  the matrix <-> the A-style dense per-cell table (the k9s precedent,
+  droppable per the maintainer's flag).
 - WR-06: every async modal push checks ``app.below_minimum_grid``.
 - 261018-toe (the maintainer's 2026-10-18 21:21 slot-5 ruling): the
   History tab's row actions — [d] delete (a strong y-only
@@ -154,6 +187,7 @@ from tui.services.sweep_monitor import (
     CELL_QUEUED,
     CELL_RUNNING,
     CELL_SKIPPED,
+    ETA_POINT,
     SWEEP_ARTIFACTS_ONLY,
     SWEEP_FINISHED,
     SWEEP_RUNNING,
@@ -306,35 +340,141 @@ def _entry_progress_cell(fold: Any, progress: Any, narrow: bool,
     )
 
 
-def _current_cell_line(stats: Any, progress_map: "dict | None",
-                       narrow: bool, accent: str) -> Text:
-    """The running card's current-cell line (261018-kvj): stats.current
-    names the (model, task, seed) and the per-cell progress rides the
-    SAME grammar as _entry_progress_cell (steps/percent + bar + the
-    checkpoint-pair eta); no current cell renders the designed absent
-    marker — never a fabricated line."""
-    if stats is None or stats.current is None:
-        # rich-native dim: $token styles crash the Label render path
-        return Text(S.MON_CARD_CURRENT_NONE, style="dim")
-    current = stats.current
-    head = S.MON_CARD_CURRENT.format(
-        model=current.model, task=current.task, seed=current.seed)
-    progress = (progress_map or {}).get((current.model, current.task))
-    if progress is None or progress.percent is None:
-        return Text(f"{head} {S.MON_PROGRESS_INDETERMINATE}",
-                    style=_STYLE_RUNNING)
-    tail = _entry_progress_cell(
-        # a synthetic running fold: the progress cell grammar only reads
-        # fold.state (running) — the counts come from the head line
-        _RunningFold(), progress, narrow, accent)
-    return Text.assemble(Text(head), Text(" "), tail)
+# =====================================================================
+# 261019-f0x — the B-skeleton strip/matrix helpers (pure presentation
+# over the existing service seams; every number a service field or
+# arithmetic over them). The 261018-kvj card lines (scale / total /
+# current / worker rows) RETIRED with this block: the current cell's
+# live numbers moved to the D right pane and the [w] wide table, both
+# over the SHARED ``_entry_progress_cell`` grammar.
+# =====================================================================
+
+#: The matrix/strip glyph styles (rich-native names ONLY — $token
+#: styles crash the Static/Label render path, the 09-03 probe pin;
+#: DataTable keeps the $token vocabulary, Labels never do).
+_MATRIX_GLYPH_STYLES: "dict[str, str]" = {
+    CELL_COMPLETED: "green",
+    CELL_RUNNING: "cyan bold",
+    CELL_FAILED: "red bold",
+    CELL_SKIPPED: "dim",
+    CELL_INTERRUPTED: "dim",
+    CELL_QUEUED: "dim",
+}
+
+#: The strip's count-category order (glyphs re-derived from the
+#: glyph-first MON_STATE_* constants; non-zero categories render,
+#: queued always does).
+_STRIP_COUNT_STATES: tuple[str, ...] = (
+    CELL_COMPLETED, CELL_RUNNING, CELL_FAILED,
+    CELL_INTERRUPTED, CELL_SKIPPED, CELL_QUEUED)
+
+#: The per-seed merge priority when the same (model, task) appears
+#: under multiple roots of one card (running wins; first state wins
+#: inside a tier — deterministic).
+_SEED_MERGE_PRIORITY: "dict[str, int]" = {
+    CELL_RUNNING: 0,
+    CELL_FAILED: 1,
+    CELL_INTERRUPTED: 2,
+    CELL_COMPLETED: 3,
+    CELL_SKIPPED: 3,
+    CELL_QUEUED: 4,
+}
+
+#: The matrix's fixed name-column width and the task-column bounds.
+_MATRIX_NAME_WIDTH = 20
+_MATRIX_MIN_COL_WIDTH = 4
+_MATRIX_MAX_COL_WIDTH = 14
+
+#: The strip's segmented-bar geometry.
+_BAR_WIDTH = 20
 
 
-class _RunningFold:
-    """The synthetic always-running fold _current_cell_line feeds the
-    progress grammar (the grammar reads ``.state`` only)."""
+def _state_glyph(state: str) -> str:
+    """One machine state's glyph token (the glyph-first MON_STATE_*
+    constants; an unrecognized state renders verbatim — honest)."""
+    copy, _style = _cell_state_cells().get(state, (state, _STYLE_DIM))
+    return _glyph_of(copy)
 
-    state = CELL_RUNNING
+
+def _matrix_col_width(task_key: str) -> int:
+    """One task column's width: ``max(4, min(len(task)+1, 14))``."""
+    return max(_MATRIX_MIN_COL_WIDTH,
+               min(len(task_key) + 1, _MATRIX_MAX_COL_WIDTH))
+
+
+def _format_elapsed_short(seconds: float) -> str:
+    """The strip's elapsed segment — minute granularity, a PURE function
+    over the stats field (``45m`` / ``2h14m`` / ``3d2h``; the plan's
+    4360.0s fixture renders ``1h13m``)."""
+    total_minutes = max(0, round(seconds / 60))
+    days, remainder = divmod(total_minutes, 1440)
+    hours, minutes = divmod(remainder, 60)
+    if days:
+        return f"{days}d{hours}h"
+    if hours:
+        return f"{hours}h{minutes}m"
+    return f"{minutes}m"
+
+
+def _rate_of(progress: Any) -> "str | None":
+    """The derived it/s rate — PURE arithmetic over the parsed service
+    fields: ``(max_steps - step) / eta_seconds`` when all three are
+    present and the eta is positive. A rate FIELD does not exist in the
+    service tier (never a new service read); None -> the honest dash."""
+    if (progress is None
+            or progress.max_steps is None or progress.step is None
+            or progress.eta_seconds is None
+            or progress.eta_seconds <= 0):
+        return None
+    rate = ((progress.max_steps - progress.step)
+            / progress.eta_seconds)
+    return f"{rate:.1f}"
+
+
+def _strip_bar(counts: "dict[str, int]") -> Text:
+    """The strip's 20-cell segmented bar (261019-f0x): whole-cell FLOOR
+    allocation over the five categories (done/running/failed/
+    interrupted+skipped/queued), leftover cells to the largest
+    remainder with a deterministic category-order tiebreak; the queued
+    remainder renders the ░ dim channel. A zero-seed run renders the
+    all-░ bar — the honest shape, never fabricated progress."""
+    cells = [
+        (counts.get(CELL_COMPLETED, 0), "green", "█"),
+        (counts.get(CELL_RUNNING, 0), "cyan", "█"),
+        (counts.get(CELL_FAILED, 0), "red", "█"),
+        (counts.get(CELL_INTERRUPTED, 0) + counts.get(CELL_SKIPPED, 0),
+         "dim", "█"),
+        (counts.get(CELL_QUEUED, 0), "dim", "░"),
+    ]
+    total = sum(count for count, _style, _char in cells)
+    if total <= 0:
+        return Text("░" * _BAR_WIDTH, style="dim")
+    exact = [count * _BAR_WIDTH / total for count, _style, _char in cells]
+    quotas = [int(value) for value in exact]
+    leftover = _BAR_WIDTH - sum(quotas)
+    # largest remainder first; the category order breaks ties
+    order = sorted(
+        range(len(cells)),
+        key=lambda index: (quotas[index] - exact[index], index))
+    for index in order[:leftover]:
+        quotas[index] += 1
+    bar = Text()
+    for (count, style, char), quota in zip(cells, quotas):
+        if count > 0 and quota > 0:
+            bar += Text(char * quota, style=style)
+    return bar
+
+
+class _SeedStateFold:
+    """The synthetic fold the right pane's progress line and the [w]
+    wide table feed the SHARED ``_entry_progress_cell`` grammar (the
+    grammar reads ``.state`` only — the retired ``_RunningFold``
+    generalised to the seed's own state)."""
+
+    __slots__ = ("state",)
+
+    def __init__(self, state: str) -> None:
+        self.state = state
 
 
 # =====================================================================
@@ -1013,11 +1153,17 @@ class RunCellsModal(ModalScreen):
 
     def __init__(self, root: str, rows: "dict[str, Any]",
                  progress: "dict | None", monitor: "MonitorScreen",
-                 **kwargs):
+                 focus_key: "str | None" = None, **kwargs):
         super().__init__(**kwargs)
         self._root = root
         self._rows = dict(rows)
         self._progress = dict(progress or {})
+        # 261019-f0x: the ADDITIVE focus key — when present the modal's
+        # cursor pins to that group's row after the row diff (the
+        # [enter]-from-the-matrix drill lands on the focused group);
+        # every pre-existing construction site passes nothing and opens
+        # at row 0 exactly as before
+        self._focus_key = focus_key
         # the owning monitor screen (the FailuresModal parent-pass idiom)
         self._monitor = monitor
 
@@ -1056,6 +1202,13 @@ class RunCellsModal(ModalScreen):
                     narrow, accent),
             ]
         _set_table_rows(table, columns, rows)
+        if self._focus_key is not None and self._focus_key in rows:
+            try:
+                table.move_cursor(
+                    row=table.get_row_index(self._focus_key),
+                    animate=False, scroll=False)
+            except Exception:  # noqa: BLE001, S110 — the row vanished:
+                pass  # the cursor simply stays at row 0 (the mid-diff)
         table.focus()
 
     def on_data_table_row_selected(
@@ -1321,10 +1474,21 @@ class MonitorScreen(Screen):
     # probe); screen-level priority never fires under a modal (the
     # active screen owns the chain), so the modal Inputs keep native
     # tab semantics. Only the tab key renders a Footer keycap.
+    # 261019-f0x: left/right became the matrix-focus movers on the
+    # Running tab (action_arrow_horizontal — they still switch tabs on
+    # the empty Running tab, with no groups, and on History; Tab always
+    # switches) and up/down joined the priority family
+    # (action_arrow_vertical — the matrix rows on Running, the focused
+    # DataTable's NATIVE cursor actions everywhere else, probed on
+    # textual 8.2.8). The ListView's own up/down bindings are thereby
+    # superseded: the card selection moves programmatically at the
+    # matrix's card edges.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "row_action", S.ENV_DETAIL_LABEL),
-        Binding("left", "switch_tab", show=False, priority=True),
-        Binding("right", "switch_tab", show=False, priority=True),
+        Binding("left", "arrow_horizontal(-1)", show=False, priority=True),
+        Binding("right", "arrow_horizontal(1)", show=False, priority=True),
+        Binding("up", "arrow_vertical(-1)", show=False, priority=True),
+        Binding("down", "arrow_vertical(1)", show=False, priority=True),
         Binding("tab", "switch_tab", S.MON_TAB_SWITCH_KEYCAP,
                 priority=True),
         # 261018-toe (the maintainer's 2026-10-18 21:21 ruling): the
@@ -1354,6 +1518,11 @@ class MonitorScreen(Screen):
         # 261016-vxr (VXR-2): stop the focused running run through the
         # launcher's kill channel — y-only confirm, console stays up
         Binding("k", "kill_running", S.MON_KILL_KEYCAP),
+        # 261019-f0x: [w] toggles the Running tab's matrix <-> the
+        # A-style dense per-cell table (the k9s narrow/wide precedent);
+        # the keycap renders ONLY while the Running tab is active (the
+        # _footer_pairs projection, the d/e precedent)
+        Binding("w", "toggle_wide", S.MON_WIDE_KEYCAP),
         Binding("1", "app.nav(1)", S.NAV_LABEL_ENV, show=False),
         Binding("2", "app.nav(2)", S.NAV_LABEL_SELECTION, show=False),
         Binding("3", "app.nav(3)", S.NAV_LABEL_DATA, show=False),
@@ -1395,12 +1564,15 @@ class MonitorScreen(Screen):
 
     class DrillReady(Message):
         """The run drill's read-once snapshot arrived (worker -> loop;
-        261018-kvj — the LogTailModal read-once precedent)."""
+        261018-kvj — the LogTailModal read-once precedent). 261019-f0x:
+        ``focus_key`` threads the focused group's row to the modal."""
 
-        def __init__(self, root: str, cells: Any, progress: dict) -> None:
+        def __init__(self, root: str, cells: Any, progress: dict,
+                     focus_key: "str | None" = None) -> None:
             self.root = root
             self.cells = cells
             self.progress = dict(progress or {})
+            self.focus_key = focus_key
             super().__init__()
 
     class RerunPreflightDone(Message):
@@ -1570,6 +1742,21 @@ class MonitorScreen(Screen):
         # refreshes unconditionally, so the diff pass itself needed a
         # gate)
         self._history_sig: tuple | None = None
+        # 261019-f0x: the matrix group focus — (row, col) relative to
+        # the FOCUSED card (the ListView index IS the card focus);
+        # clamped on every render against the merged matrix shape
+        self._focus_pos: tuple[int, int] | None = None
+        # 261019-f0x: the D right pane's content-signature gates (the
+        # _history_sig precedent) + the mon-tail worker's stage id (the
+        # WR-02 idiom — a superseded focus's late lines drop)
+        self._right_detail_sig: tuple | None = None
+        self._right_tail_sig: tuple | None = None
+        self._tail_stage_id = 0
+        # 261019-f0x Task 3: the [w] wide-toggle mode flag (default
+        # matrix; on_mount resets it so the L-toggle recompose lands
+        # matrix-first) + the wide table's rendered-content signature
+        self._wide = False
+        self._wide_sig: tuple | None = None
 
     # ===== the session write-through properties (261018-08g, SOAK-1) =====
     # expected_totals / fallback_starts / ever_discovered live on the
@@ -1595,10 +1782,13 @@ class MonitorScreen(Screen):
         """The two-tab frame (#41 optimistic paint): nav bars, the
         title bar (the cadence note right-aligned — standing chrome,
         D-09, byte-unchanged for the pty lane's monitor marker), the
-        one-row tab header with (n) count badges, ONE content region
-        whose children toggle display (single focus, single list), and
-        the bottom bar. The scanning note renders at mount BEFORE any
-        scan lands — skeleton + note only, never a fabricated row."""
+        one-row tab header with (n) count badges, ONE content region —
+        the 261019-f0x B+D horizontal split: ``#mon-left`` (1fr, the
+        existing children verbatim) beside ``#mon-right`` (40, the D
+        right pane's ``#mon-detail`` + ``#mon-right-log`` placeholders;
+        display toggled in code) — and the bottom bar. The scanning
+        note renders at mount BEFORE any scan lands — skeleton + note
+        only, never a fabricated row."""
         yield TopMenuBar()
         with Horizontal(id="mon-title-bar"):
             yield Label(S.MON_SCREEN_TITLE, id="mon-screen-title")
@@ -1606,12 +1796,17 @@ class MonitorScreen(Screen):
         with Horizontal(id="mon-tab-header"):
             yield Label("", id="mon-tab-running", classes="mon-tab")
             yield Label("", id="mon-tab-history", classes="mon-tab")
-        with Vertical(id="mon-content"):
-            yield Static("", id="mon-scanning-note")
-            yield Static("", id="mon-running-empty")
-            yield ListView(id="mon-cards")
-            yield DataTable(id="mon-history")
-            yield Static("", id="mon-history-empty")
+        with Horizontal(id="mon-content"):
+            with Vertical(id="mon-left"):
+                yield Static("", id="mon-scanning-note")
+                yield Static("", id="mon-running-empty")
+                yield ListView(id="mon-cards")
+                yield DataTable(id="mon-history")
+                yield Static("", id="mon-history-empty")
+            with Vertical(id="mon-right"):
+                yield Static("", id="mon-detail")
+                yield RichLog(id="mon-right-log", max_lines=200,
+                              markup=False, wrap=False)
         yield BottomBar()
 
     def on_mount(self) -> None:
@@ -1627,11 +1822,21 @@ class MonitorScreen(Screen):
         # compose tree with FRESH empty Labels — the render gates MUST
         # reset here or the unchanged sentinels would gate away the
         # updates and the recomposed tabs/cards would render empty in
-        # the stale language
+        # the stale language. 261019-f0x: every NEW sentinel (the
+        # strip/matrix cards sig carries the focus, the right pane's
+        # detail/tail sigs, the wide table's sig) resets with them, and
+        # the recompose lands matrix-first (the [w] flag resets too).
         self._tabs_sig = None
         self._scan_note_shown = None
         self._cards_sig = None
         self._history_sig = None
+        self._right_detail_sig = None
+        self._right_tail_sig = None
+        self._wide_sig = None
+        self._wide = False
+        # the pane's RichLog is display-only (never focusable — every
+        # key stays screen-level, no focus trap)
+        self.query_one("#mon-right-log", RichLog).can_focus = False
         for timer in (self._frontier_timer, self._full_timer):
             if timer is not None:
                 timer.stop()
@@ -1941,6 +2146,156 @@ class MonitorScreen(Screen):
         rows.sort(key=_sort_key)
         return rows
 
+    def _focused_card(self) -> "_RunCard | None":
+        """The FOCUSED card — the ListView index IS the card focus
+        (clamped to the card list; None when no cards)."""
+        cards = self._cards()
+        if not cards:
+            return None
+        index = self.query_one("#mon-cards", ListView).index
+        if index is None:
+            index = 0
+        return cards[max(0, min(index, len(cards) - 1))]
+
+    def _focused_group(self) -> "tuple | None":
+        """The focused card's focused (card, model, task, CellRow)
+        group — ``(row, col)`` resolved through the ListView index and
+        the merged row map, CLAMPED against the matrix shape (a
+        vanished row/col clamps to the last valid position; an empty
+        matrix resolves None)."""
+        card = self._focused_card()
+        if card is None:
+            return None
+        rows = self._card_rows(card)
+        models = sorted({row.model for row in rows.values()})
+        if not models:
+            return None
+        row_index, col_index = self._focus_pos or (0, 0)
+        row_index = max(0, min(row_index, len(models) - 1))
+        model = models[row_index]
+        tasks = sorted({row.task for row in rows.values()
+                        if row.model == model})
+        col_index = max(0, min(col_index, len(tasks) - 1))
+        row = rows.get(f"{model}__{tasks[col_index]}")
+        if row is None:
+            return None
+        return card, model, tasks[col_index], row
+
+    def _normalize_focus(self) -> None:
+        """Write the CLAMPED focus back (the stored position follows
+        the matrix shape — a vanished row/col clamps to the last valid
+        position, an empty matrix clears it)."""
+        focused = self._focused_group()
+        if focused is None:
+            self._focus_pos = None
+            return
+        card, model, task, _row = focused
+        rows = self._card_rows(card)
+        models = sorted({row.model for row in rows.values()})
+        tasks = sorted({row.task for row in rows.values()
+                        if row.model == model})
+        self._focus_pos = (models.index(model), tasks.index(task))
+
+    def _cards_signature(self, cards: "list[_RunCard]") -> tuple:
+        """The STRUCTURE signature (261018-rze c + 261019-f0x): per
+        card the roots identity/order, base_live, the resume-note
+        presence, the narrow mode, and the MERGED MATRIX SHAPE (the
+        models/tasks tuples — everything label-count/order-changing),
+        PLUS the focus tuple and the focused card index (a focus move
+        repaints the highlight — structural for the two affected rows,
+        still zero ListView churn via ``_repaint_focus_move``)."""
+        per_card = []
+        for card in cards:
+            rows = self._card_rows(card)
+            per_card.append((
+                tuple(card.roots), card.roots[0] == card.base,
+                self._resumes.get(card.roots[0], 0) > 0, self._narrow,
+                tuple(sorted({row.model for row in rows.values()})),
+                tuple(sorted({row.task for row in rows.values()}))))
+        index = self.query_one("#mon-cards", ListView).index
+        return (tuple(per_card), index, self._focus_pos)
+
+    def _repaint_focus_move(self) -> None:
+        """A focus-only change (the arrow movers land here): the shared
+        builder repaints the two affected matrix-row Labels IN PLACE
+        (``_refresh_card_labels`` — content comparison, zero ListView
+        churn) and the new focus folds into the structure signature so
+        the next cadence render is a clean no-op; a count mismatch
+        routes to the proven rebuild path (never a crash). The right
+        pane follows (Task 2)."""
+        cards = self._cards()
+        if self._refresh_card_labels(cards):
+            self._cards_sig = self._cards_signature(cards)
+        else:
+            self._render_cards(cards)
+
+    def _move_focus_col(self, delta: int) -> None:
+        """←/→ on the matrix: move the focused column within its row,
+        CLAMPED at the row edges — no tab-switch at the edges (Tab is
+        the switcher)."""
+        focused = self._focused_group()
+        if focused is None:
+            return
+        _card, model, task, _row = focused
+        rows = self._card_rows(focused[0])
+        models = sorted({row.model for row in rows.values()})
+        tasks = sorted({row.task for row in rows.values()
+                        if row.model == model})
+        col_index = max(0, min(
+            tasks.index(task) + delta, len(tasks) - 1))
+        self._focus_pos = (models.index(model), col_index)
+        self._repaint_focus_move()
+
+    def _move_focus_row(self, delta: int) -> None:
+        """↑/↓ on the matrix: move the focused model row; at the
+        card's edge CROSS to the adjacent card (the ListView index
+        follows programmatically, carrying the focus to its first/last
+        row — the column carries). With cards but no groups the arrows
+        stay alive by moving the CARD selection (the ListView's native
+        semantics); with no cards they no-op."""
+        cards = self._cards()
+        if not cards:
+            return
+        focused = self._focused_group()
+        if focused is None:
+            list_view = self.query_one("#mon-cards", ListView)
+            current = list_view.index if list_view.index is not None else 0
+            list_view.index = max(0, min(current + delta,
+                                         len(cards) - 1))
+            return
+        card, model, task, _row = focused
+        rows = self._card_rows(card)
+        models = sorted({row.model for row in rows.values()})
+        tasks = sorted({row.task for row in rows.values()
+                        if row.model == model})
+        row_index = models.index(model)
+        col_index = tasks.index(task)
+        target = row_index + delta
+        if 0 <= target < len(models):
+            self._focus_pos = (target, col_index)
+        else:
+            # the card edge: cross to the adjacent card, first/last row
+            card_index = next(
+                (index for index, candidate in enumerate(cards)
+                 if candidate.roots == card.roots), 0)
+            next_index = card_index + (1 if delta > 0 else -1)
+            if not 0 <= next_index < len(cards):
+                return  # clamped at the outer edge
+            list_view = self.query_one("#mon-cards", ListView)
+            list_view.index = next_index
+            other = cards[next_index]
+            other_rows = self._card_rows(other)
+            other_models = sorted(
+                {row.model for row in other_rows.values()})
+            if not other_models:
+                self._focus_pos = None
+            else:
+                self._focus_pos = (
+                    0 if delta > 0 else len(other_models) - 1, col_index)
+                # the carried column clamps to the crossed card's shape
+                self._normalize_focus()
+        self._repaint_focus_move()
+
     def _render_all(self) -> None:
         """One full render pass over the tabbed surface (idempotent —
         every cadence tick and tab switch lands here).
@@ -2015,73 +2370,273 @@ class MonitorScreen(Screen):
         self.query_one("#mon-tab-history", Label).update(
             history_text, layout=False)
 
+    def _card_rows(self, card: _RunCard) -> "dict[str, Any]":
+        """The card's merged row map (261019-f0x): ``self._cell_rows``
+        over ``card.roots`` keyed ``f"{model}__{task}"``; when the same
+        key appears under multiple roots (not the mgpu sharding case,
+        but honest) the per-seed states merge with the priority
+        running > failed > interrupted > completed/skipped > queued
+        (first state wins inside a tier — deterministic). This ONE map
+        feeds the strip counts, the matrix, the right pane, and the
+        [w] table — never re-derived differently."""
+        merged: dict[str, Any] = {}
+        for root in card.roots:
+            for key, row in (self._cell_rows.get(root) or {}).items():
+                existing = merged.get(key)
+                merged[key] = (
+                    row if existing is None
+                    else self._merge_group_rows(existing, row))
+        return merged
+
+    @staticmethod
+    def _merge_group_rows(first: Any, second: Any) -> Any:
+        """Two roots' rows for one (model, task) key: the per-seed
+        union under ``_SEED_MERGE_PRIORITY`` (min wins; first wins
+        inside a tier), seeds sorted, newest mtime maxed."""
+        seeds = {cell_seed.seed: cell_seed
+                 for cell_seed in first.seeds}
+        for cell_seed in second.seeds:
+            present = seeds.get(cell_seed.seed)
+            if (present is None
+                    or _SEED_MERGE_PRIORITY.get(
+                        cell_seed.state, 99) < _SEED_MERGE_PRIORITY.get(
+                            present.state, 99)):
+                seeds[cell_seed.seed] = cell_seed
+        return sweep_monitor.CellRow(
+            model=first.model, task=first.task,
+            seeds=tuple(seeds[number] for number in sorted(seeds)),
+            newest_mtime=max(first.newest_mtime or 0.0,
+                             second.newest_mtime or 0.0) or None)
+
+    @staticmethod
+    def _card_seed_counts(rows: "dict[str, Any]") -> "dict[str, int]":
+        """The strip/matrix count basis: per-state seed counts over the
+        merged row map (the CELLS' own states — independent of the
+        stats seam's done/total)."""
+        counts: dict[str, int] = {}
+        for row in rows.values():
+            for cell_seed in row.seeds:
+                counts[cell_seed.state] = (
+                    counts.get(cell_seed.state, 0) + 1)
+        return counts
+
+    def _card_done_total(self, card: _RunCard) -> "tuple[int, int | None]":
+        """The strip's done/total fraction — the existing precedence
+        aggregated over the card's roots: per root stats.done/total
+        (falling back to the scan summary), total None-propagating (any
+        unknown root total -> the honest unknown)."""
+        done = 0
+        total: int | None = 0
+        for root in card.roots:
+            stats = self._root_stats.get(root)
+            summary = self._summaries.get(root)
+            done += (stats.done if stats is not None
+                     else (summary.done if summary is not None else 0))
+            root_total = None
+            if stats is not None and stats.total is not None:
+                root_total = stats.total
+            elif summary is not None:
+                root_total = summary.total
+            if root_total is None:
+                total = None
+            elif total is not None:
+                total += root_total
+        return done, total
+
+    def _card_elapsed_seconds(self, card: _RunCard) -> "float | None":
+        """max(elapsed_seconds) over the card's roots — None when no
+        root carries one (the honest dash)."""
+        values = [
+            stats.elapsed_seconds
+            for root in card.roots
+            if (stats := self._root_stats.get(root)) is not None
+            and stats.elapsed_seconds is not None]
+        return max(values) if values else None
+
+    def _card_eta_points(self, card: _RunCard) -> "list[float]":
+        """The card's derivable point-ETA estimates (the ETA_POINT mode
+        only — pending/range/none contribute nothing, the honest dash
+        legs; the multi-root min–max range derives over these)."""
+        points: list[float] = []
+        for root in card.roots:
+            stats = self._root_stats.get(root)
+            if (stats is not None and stats.eta is not None
+                    and stats.eta.mode == ETA_POINT
+                    and stats.eta.point_seconds is not None):
+                points.append(stats.eta.point_seconds)
+        return points
+
+    def _card_rate(self, card: _RunCard) -> "str | None":
+        """The strip's derived it/s: the running CURRENT cell's
+        CellProgress across the card's roots (first derivable in root
+        order — deterministic), pure arithmetic via ``_rate_of``."""
+        for root in card.roots:
+            stats = self._root_stats.get(root)
+            if stats is None or stats.current is None:
+                continue
+            progress = (self._cell_progress.get(root) or {}).get(
+                (stats.current.model, stats.current.task))
+            rate = _rate_of(progress)
+            if rate is not None:
+                return rate
+        return None
+
+    def _card_strip(self, card: _RunCard,
+                    counts: "dict[str, int]") -> Text:
+        """The ONE summary strip line (the approved variant-B shape):
+        root name bold, then glyph+count per category (non-zero
+        categories render, queued always does), the done/total fraction
+        (the stats precedence, the honest unknown when total is None),
+        the 20-cell segmented bar (skipped in narrow), the elapsed
+        segment, the ETA segment (point + wall clock / multi-root
+        min–max range / the dash), and the derived rate (skipped in
+        narrow). Every wall-clock read routes through this module's
+        ``time`` (golden-freezable)."""
+        strip = Text(f" {Path(card.base).name}", style="bold")
+        strip += Text("  ")
+        for state in _STRIP_COUNT_STATES:
+            count = counts.get(state, 0)
+            if count or state == CELL_QUEUED:
+                strip += Text(_state_glyph(state),
+                              style=_MATRIX_GLYPH_STYLES.get(state, "dim"))
+                strip += Text(f"{count} ")
+        strip += Text(" ")
+        done, total = self._card_done_total(card)
+        if total is None:
+            strip += Text(S.MON_TOTAL_UNKNOWN, style="dim")
+        else:
+            strip += Text(f"{done}/{total}", style="bold cyan")
+        if not self._narrow:
+            strip += Text("  ")
+            strip += _strip_bar(counts)
+        strip += Text("  ")
+        elapsed = self._card_elapsed_seconds(card)
+        strip += Text(S.MON_STRIP_ELAPSED.format(
+            t=(_format_elapsed_short(elapsed)
+               if elapsed is not None else _DASH)))
+        strip += Text("  ")
+        points = self._card_eta_points(card)
+        if not points:
+            strip += Text(_DASH, style="dim")
+        elif len(points) == 1:
+            # the point ETA with its wall-clock landing — the ONE
+            # wall-clock read in the strip (module time, freezable)
+            clock = time.strftime(
+                "%H:%M", time.localtime(time.time() + points[0]))
+            strip += Text(S.MON_STRIP_ETA.format(
+                eta=format_eta(points[0]), clock=clock))
+        else:
+            strip += Text(S.MON_STRIP_ETA_RANGE.format(
+                lo=format_eta(min(points)), hi=format_eta(max(points))))
+        if not self._narrow:
+            rate = self._card_rate(card)
+            strip += Text("  ")
+            if rate is not None:
+                strip += Text(S.MON_STRIP_RATE.format(rate=rate))
+            else:
+                strip += Text(_DASH, style="dim")
+        return strip
+
+    def _card_matrix(
+            self, rows: "dict[str, Any]",
+            focused_pair: "tuple[str, str] | None") -> "list[tuple[str, Text]]":
+        """The matrix grid (the approved variant-B shape): EVERY
+        (model, task) group of the run — models and tasks in sorted
+        order, each intersection its seed glyphs in the existing state
+        vocabulary (rich-native styles; the $token-crash probe pin),
+        the FOCUSED group's glyphs additionally styled reverse
+        (style-only — the width never changes, so in-place updates stay
+        layout-stable). Narrow degrades to per-model count rows (no
+        columns, no header)."""
+        models = sorted({row.model for row in rows.values()})
+        if not models:
+            return []
+        tasks = sorted({row.task for row in rows.values()})
+        lines: list[tuple[str, Text]] = []
+        if not self._narrow:
+            head = Text(" " * _MATRIX_NAME_WIDTH, style="dim")
+            for task in tasks:
+                width = _matrix_col_width(task)
+                cell = Text(task, style="dim")
+                cell.truncate(width, overflow="ellipsis", pad=True)
+                head += cell
+            lines.append(("mon-matrix-head", head))
+        for model in models:
+            model_rows = {
+                key: row for key, row in rows.items() if row.model == model}
+            line = Text(model)
+            line.truncate(_MATRIX_NAME_WIDTH, overflow="ellipsis",
+                          pad=True)
+            if self._narrow:
+                counts = self._card_seed_counts(model_rows)
+                for state in _STRIP_COUNT_STATES:
+                    count = counts.get(state, 0)
+                    if count or state == CELL_QUEUED:
+                        line += Text(" ", style="dim")
+                        line += Text(
+                            f"{_state_glyph(state)}{count}",
+                            style=_MATRIX_GLYPH_STYLES.get(state, "dim"))
+                lines.append(("mon-matrix-row", line))
+                continue
+            for task in tasks:
+                width = _matrix_col_width(task)
+                row = model_rows.get(f"{model}__{task}")
+                group = Text()
+                if row is not None:
+                    focused = (focused_pair is not None
+                               and focused_pair == (model, task))
+                    seeds = sorted(row.seeds, key=lambda s: s.seed)
+                    overflow = len(seeds) > width
+                    if overflow:
+                        # the honest backstop: more seeds than the
+                        # column is wide — the leading seeds + the
+                        # ellipsis (never a crash, never a reflow)
+                        seeds = seeds[:width - 1]
+                    for cell_seed in seeds:
+                        style = _MATRIX_GLYPH_STYLES.get(
+                            cell_seed.state, "dim")
+                        if focused:
+                            style = f"{style} reverse"
+                        group += Text(_state_glyph(cell_seed.state),
+                                      style=style)
+                    if overflow:
+                        group += Text("…", style="dim")
+                group += Text(" " * max(0, width - len(group.plain)))
+                line += group
+            lines.append(("mon-matrix-row", line))
+        return lines
+
     def _card_content(self, card: _RunCard) -> "list[tuple[str, Text]]":
         """One running card's CONTENT — the ORDERED (css-classes, Text)
-        pairs the card renders: run name, the manifest scale (the
-        honest unknown when nothing parses), and — for a PLAIN run —
-        the done/total 10-cell bar + the current-cell line (stats.
-        current + the per-cell progress grammar) + the resume note. A
-        PURE WORKER GROUP (the base root itself not live — the
-        orchestrator runs only at the ``-mgpu-w{i}`` siblings) renders
-        EVERY root as a worker row (no duplicate primary lines); a live
-        base renders its own lines plus its sibling worker rows.
+        pairs the card renders: the summary strip FIRST, the resume
+        note (when the primary carries markers), then the matrix head +
+        one row per model. The 261018-kvj card lines (scale / total /
+        current / worker rows) are RETIRED — the merged row map IS the
+        card body now.
 
         261018-rze (c): the ONE content definition shared by BOTH
         render paths — the rebuild path (``_card_widget``'s ListItem
         construction) and the in-place path (the existing Labels'
         content update) — so the two can never drift."""
-        primary = card.roots[0]
-        base_live = card.roots[0] == card.base
-        scale = self._scales.get(primary)
+        rows = self._card_rows(card)
         lines: list[tuple[str, Text]] = [
-            ("mon-card-name", Text(Path(card.base).name)),
-            ("mon-card-scale", Text(
-                S.MON_CARD_SCALE.format(
-                    scale="×".join(str(part) for part in scale))
-                if scale else S.MON_SCALE_UNKNOWN,
-                style="dim")),
-        ]
-        worker_roots = card.roots[1:]
-        if base_live:
-            summary = self._summaries.get(primary)
-            stats = self._root_stats.get(primary)
-            done = (stats.done if stats is not None
-                    else (summary.done if summary is not None else 0))
-            total = None
-            if stats is not None and stats.total is not None:
-                total = stats.total
-            elif summary is not None:
-                total = summary.total
-            accent = str(self.app.current_theme.accent)
-            lines.append(("mon-card-total",
-                          _progress_fraction(done, total, True)))
-            lines.append(("mon-card-current", _current_cell_line(
-                stats, self._cell_progress.get(primary), self._narrow,
-                accent)))
-            resume = self._resumes.get(primary, 0)
-            if resume > 0:
-                note_copy = (S.MON_RESUME_NOTE_SHORT if self._narrow
-                             else S.MON_RESUME_NOTE)
-                lines.append(("mon-card-resume",
-                              Text(note_copy.format(n=resume),
-                                   style="dim")))
-        else:
-            worker_roots = card.roots
-        for worker_root in worker_roots:
-            worker_summary = self._summaries.get(worker_root)
-            worker_stats = self._root_stats.get(worker_root)
-            worker_done = (worker_stats.done if worker_stats is not None
-                           else (worker_summary.done
-                                 if worker_summary is not None else 0))
-            worker_total = None
-            if worker_stats is not None and worker_stats.total is not None:
-                worker_total = worker_stats.total
-            elif worker_summary is not None:
-                worker_total = worker_summary.total
-            lines.append(("mon-card-worker", Text.assemble(
-                Text(Path(worker_root).name, style="dim"),
-                Text(" "),
-                _progress_fraction(worker_done, worker_total, True))))
+            ("mon-card-strip", self._card_strip(
+                card, self._card_seed_counts(rows)))]
+        resume = self._resumes.get(card.roots[0], 0)
+        if resume > 0:
+            note_copy = (S.MON_RESUME_NOTE_SHORT if self._narrow
+                         else S.MON_RESUME_NOTE)
+            lines.append(("mon-card-resume",
+                          Text(note_copy.format(n=resume),
+                               style="dim")))
+        focused_pair = None
+        focused = self._focused_group()
+        # ``_cards()`` builds fresh _RunCard instances per call — the
+        # focused-card test compares the ROOTS identity (the card's
+        # identity), never the wrapper object
+        if focused is not None and focused[0].roots == card.roots:
+            focused_pair = (focused[1], focused[2])
+        lines.extend(self._card_matrix(rows, focused_pair))
         return lines
 
     def _card_widget(self, card: _RunCard) -> ListItem:
@@ -2113,24 +2668,30 @@ class MonitorScreen(Screen):
             if len(labels) != len(content):
                 return False
             for label, (_classes, text) in zip(labels, content):
-                if str(label.content) != str(text):
+                current = label.content
+                # 261019-f0x: the comparison covers the SPANS too — the
+                # focus highlight is a STYLE-ONLY change (reverse over
+                # the same glyphs, same width), invisible to a plain-
+                # text compare but a real repaint the operator sees
+                if (not isinstance(current, Text)
+                        or current.plain != text.plain
+                        or current.spans != text.spans):
                     label.update(text, layout=False)
         return True
 
     def _render_cards(self, cards: "list[_RunCard]") -> None:
         """Render the card list (few items — live roots). 261018-rze
-        (c): the STRUCTURE signature (roots identity/order, base_live,
-        resume-note presence — the three things that change a card's
-        LABEL COUNT; NEVER progress/scale text) gates the rebuild; a
-        content-only change refreshes the existing Labels in place. The
-        rebuild path re-pins the cursor index clamped so a structural
-        rebuild never steals the operator's selection (the WR-05
-        spirit; a list's identity is positional, cards never reorder
-        except on activity changes)."""
-        sig = tuple(
-            (tuple(card.roots), card.roots[0] == card.base,
-             self._resumes.get(card.roots[0], 0) > 0)
-            for card in cards)
+        (c) + 261019-f0x: the STRUCTURE signature (roots identity/
+        order, base_live, resume-note presence, narrow, the merged
+        matrix shape, the focus tuple + focused card index — every
+        label-count/order-changing input; NEVER progress/rate text)
+        gates the rebuild; a content-only change refreshes the existing
+        Labels in place. The rebuild path re-pins the cursor index
+        clamped so a structural rebuild never steals the operator's
+        selection (the WR-05 spirit; a list's identity is positional,
+        cards never reorder except on activity changes)."""
+        self._normalize_focus()
+        sig = self._cards_signature(cards)
         if sig == self._cards_sig and self._refresh_card_labels(cards):
             self._card_order = [card.roots[0] for card in cards]
             return
@@ -2148,7 +2709,10 @@ class MonitorScreen(Screen):
             list_view.index = max(
                 0, min(previous if previous is not None else 0,
                        len(self._card_order) - 1))
-        self._cards_sig = sig
+        # the signature recomputes AFTER the index pin — the assignment
+        # above changes an input the sig carries (261019-f0x), and a
+        # stale sig would rebuild again on the very next tick
+        self._cards_sig = self._cards_signature(cards)
 
     def _history_columns(self) -> "list[tuple[str, str]]":
         return [("", "state"), (S.MON_COL_ROOT, "root"),
@@ -2215,7 +2779,9 @@ class MonitorScreen(Screen):
                           history_count: int) -> None:
         """Toggle the content region's children: ONLY the active tab's
         list renders (single focus, single list); the scanning note is
-        orthogonal (mount-window chrome)."""
+        orthogonal (mount-window chrome). 261019-f0x: the D right pane
+        stays composed-but-hidden in this task (Task 2 fills and
+        activates it — wide, Running tab, cards present)."""
         running_active = self._active_tab == "running"
         self.query_one("#mon-cards").display = (
             running_active and cards_exist)
@@ -2225,6 +2791,7 @@ class MonitorScreen(Screen):
             not running_active and history_count > 0)
         self.query_one("#mon-history-empty").display = (
             not running_active and history_count == 0)
+        self.query_one("#mon-right").display = False
 
     def _focus_active(self) -> None:
         """Focus the ACTIVE tab's list (the single-focus design); an
@@ -2301,6 +2868,36 @@ class MonitorScreen(Screen):
         # 261018-toe: the per-tab footer projection follows the flip
         self._refresh_footer_keys()
 
+    def action_arrow_horizontal(self, delta: int) -> None:
+        """←/→ (261019-f0x): on the Running tab's focused card with
+        >= 1 group they move the matrix focus (clamped — NO tab-switch
+        at the edges; Tab is the switcher); everywhere else (the empty
+        Running tab, no groups, wide mode, History) they switch tabs
+        exactly as before — the kvj tab-switch contract, the pty pin
+        family."""
+        if (self._active_tab == "running" and not self._wide
+                and self._focused_group() is not None):
+            self._move_focus_col(delta)
+            return
+        self.action_switch_tab()
+
+    def action_arrow_vertical(self, delta: int) -> None:
+        """↑/↓ (261019-f0x): on the Running tab in matrix mode they
+        move the focused model row (crossing to the adjacent card at
+        the edges, the ListView index following programmatically);
+        every other surface delegates to the focused DataTable's
+        NATIVE cursor actions (action_cursor_up/action_cursor_down —
+        probed present on textual 8.2.8; one code path, both tables).
+        No key becomes dead and no focus trap is introduced
+        (T-f0x-03)."""
+        if self._active_tab == "running" and not self._wide:
+            self._move_focus_row(delta)
+            return
+        table = self.focused
+        if isinstance(table, DataTable):
+            (table.action_cursor_down if delta > 0
+             else table.action_cursor_up)()
+
     def _focused_root(self) -> "str | None":
         """The focused tab's selection root: the focused running card's
         action root (the group primary), or the focused History row's
@@ -2327,7 +2924,9 @@ class MonitorScreen(Screen):
         """[enter] with no focused list (the complementary chokepoint
         to the widgets' own select events). The Running tab's EMPTY
         state routes to slot 4 — the ONLY launch gate (slot 5 never
-        duplicates it); a focused selection drills the run's cells."""
+        duplicates it); a focused selection drills the run's cells
+        (261019-f0x: the Running tab's drill carries the focused
+        group's key so the modal's cursor pins to its row)."""
         if self._active_tab == "running" and not self._card_order:
             if self.app.below_minimum_grid:
                 return
@@ -2335,7 +2934,18 @@ class MonitorScreen(Screen):
             return
         root_key = self._focused_root()
         if root_key is not None:
-            self._open_run_drill(root_key)
+            self._open_run_drill(root_key, self._drill_focus_key())
+
+    def _drill_focus_key(self) -> "str | None":
+        """The [enter] drill's additive focus key — the focused group's
+        ``model__task`` on the Running tab (None everywhere else: the
+        RunCellsModal opens at its own row 0 exactly as before)."""
+        if self._active_tab != "running":
+            return None
+        focused = self._focused_group()
+        if focused is None:
+            return None
+        return f"{focused[1]}__{focused[2]}"
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """enter on a running card (the ListView's native select — the
@@ -2343,7 +2953,8 @@ class MonitorScreen(Screen):
         index = event.index
         if index is None or not 0 <= index < len(self._card_order):
             return
-        self._open_run_drill(self._card_order[index])
+        self._open_run_drill(self._card_order[index],
+                             self._drill_focus_key())
 
     def on_data_table_row_selected(
             self, event: DataTable.RowSelected) -> None:
@@ -2355,16 +2966,20 @@ class MonitorScreen(Screen):
         if root_key is not None:
             self._open_run_drill(root_key)
 
-    def _open_run_drill(self, root_key: str) -> None:
+    def _open_run_drill(self, root_key: str,
+                        focus_key: "str | None" = None) -> None:
         """Open the per-run cells drill (either tab): the read-once
-        snapshot worker (WR-06-guarded push lands on the message)."""
+        snapshot worker (WR-06-guarded push lands on the message).
+        261019-f0x: ``focus_key`` (ADDITIVE, default None) pins the
+        modal's cursor to the focused group's row when present."""
         if self.app.below_minimum_grid:
             return
-        self._read_run_cells(root_key)
+        self._read_run_cells(root_key, focus_key)
 
     @work(exclusive=True, thread=True, group="mon-drill",
           exit_on_error=False)
-    def _read_run_cells(self, root_key: str) -> None:
+    def _read_run_cells(self, root_key: str,
+                        focus_key: "str | None" = None) -> None:
         """The drill's ONE read of cells_view + entries_progress, off
         the event loop (the LogTailModal read-once precedent — live
         refresh stays on the running card; the drill is a snapshot)."""
@@ -2373,7 +2988,8 @@ class MonitorScreen(Screen):
             progress = self._entries_progress_of(root_key)
         except Exception:  # noqa: BLE001 — the tolerant-reader promise
             return
-        self.post_message(self.DrillReady(root_key, cells, progress))
+        self.post_message(self.DrillReady(root_key, cells, progress,
+                                          focus_key))
 
     def on_monitor_screen_drill_ready(self, message: DrillReady) -> None:
         if self.app.below_minimum_grid:
@@ -2381,7 +2997,8 @@ class MonitorScreen(Screen):
         rows = {f"{row.model}__{row.task}": row
                 for row in (message.cells or ())}
         self.app.push_screen(RunCellsModal(
-            message.root, rows, message.progress, self))
+            message.root, rows, message.progress, self,
+            focus_key=message.focus_key))
 
     @work(exclusive=True, thread=True, group="mon-detail",
           exit_on_error=False)

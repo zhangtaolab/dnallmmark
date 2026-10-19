@@ -81,9 +81,6 @@ from tui.services.sweep_monitor import (
 )
 from tui.strings import (
     MON_ATTACHED_TOAST,
-    MON_CARD_CURRENT,
-    MON_CARD_CURRENT_NONE,
-    MON_CARD_SCALE,
     MON_FAILURES_EMPTY,
     MON_GRADUATED_DONE_TOAST,
     MON_HISTORY_EMPTY,
@@ -91,13 +88,16 @@ from tui.strings import (
     MON_PROGRESS_INDETERMINATE,
     MON_RESUME_NOTE,
     MON_RUNNING_EMPTY,
-    MON_SCALE_UNKNOWN,
     MON_SCAN_NOTE,
     MON_SCANNING,
     MON_SCREEN_TITLE,
     MON_STATE_DONE,
     MON_STATE_INTERRUPTED,
     MON_STATE_RUNNING,
+    MON_STRIP_ELAPSED,
+    MON_STRIP_ETA,
+    MON_STRIP_ETA_RANGE,
+    MON_STRIP_RATE,
     MON_TAB_COUNT,
     MON_TAB_HISTORY,
     MON_TAB_RUNNING,
@@ -567,7 +567,9 @@ def _three_state_scan():
 async def test_screen_composes_tabbed_regions_at_both_grids():
     """The two-tab frame composes at 120x40 AND 80x24 with both bars,
     the title bar (the cadence note BYTE-unchanged — the pty lane's
-    monitor marker depends on it), and the one-row tab header."""
+    monitor marker depends on it), the one-row tab header, and —
+    261019-f0x — the B+D horizontal split (#mon-left 1fr beside the
+    composed-but-hidden #mon-right pane placeholders)."""
     monitor = FakeMonitorService(scans=[_three_state_scan()])
     app = _app(monitor=monitor)
     async with app.run_test(size=(120, 40)) as pilot:
@@ -582,12 +584,27 @@ async def test_screen_composes_tabbed_regions_at_both_grids():
         )
         assert screen.query_one("#mon-tab-header") is not None
         assert screen.query_one("#mon-content") is not None
+        # 261019-f0x: the content region is the B+D split — the left
+        # pane carries every existing child, the right pane's two
+        # placeholder widgets exist (Task 2 activates the pane)
+        assert screen.query_one("#mon-left") is not None
+        assert screen.query_one("#mon-detail") is not None
+        assert screen.query_one("#mon-right-log") is not None
+        assert screen.query_one("#mon-right").display is False, (
+            "the pane stays hidden until Task 2 activates it"
+        )
         # the default landing is the Running tab, its card list focused
         assert screen._active_tab == "running"
         assert screen.focused is not None
         assert screen.focused.id == "mon-cards"
 
-    monitor = FakeMonitorService(scans=[_three_state_scan()])
+    monitor = FakeMonitorService(
+        scans=[_three_state_scan()],
+        cells={"/scans/finetuned": (
+            _row("plant-dnamamba-6mer", "GUE__emp_H3",
+                 {42: CELL_RUNNING, 43: CELL_QUEUED, 44: CELL_QUEUED}),)},
+        stats={"/scans/finetuned": _stats(done=12, total=36)},
+    )
     app = _app(monitor=monitor)
     async with app.run_test(size=(80, 24)) as pilot:
         await _open_monitor(pilot, app)
@@ -595,6 +612,23 @@ async def test_screen_composes_tabbed_regions_at_both_grids():
         assert _label_text(screen, "#mon-screen-title") == MON_SCREEN_TITLE
         cards = screen.query_one("#mon-cards", ListView)
         assert len(cards) == 1, "the 80-col grid still carries the card"
+        # the narrow degradation: the strip drops the bar and the rate,
+        # the matrix drops to per-model count rows (no column header)
+        strip = _card_texts(screen, "mon-card-strip")[0]
+        assert "░" not in strip and "█" not in strip, (
+            "the narrow strip drops the segmented bar"
+        )
+        assert "it/s" not in strip, "the narrow strip drops the rate"
+        assert "12/36" in strip, "the fraction stays (data, not decor)"
+        assert not screen.query(".mon-matrix-head"), (
+            "the narrow matrix renders no column header"
+        )
+        narrow_rows = _card_texts(screen, "mon-matrix-row")
+        assert len(narrow_rows) == 1, "one count row per model"
+        assert narrow_rows[0].startswith("plant-dnamamba-6mer")
+        assert "⏵1" in narrow_rows[0] and "◌2" in narrow_rows[0], (
+            "the narrow row carries the model's glyph counts"
+        )
 
 
 async def test_tab_switch_keys_and_count_badges():
@@ -641,10 +675,14 @@ async def test_tab_switch_keys_and_count_badges():
 
 
 async def test_running_tab_renders_one_card_per_live_run():
-    """The running card: run name, the manifest scale (the honest
-    unknown when nothing parses), the done/total + 10-cell bar, the
-    current-cell line (the per-cell progress grammar), and — a root
-    with resume markers — the resume note."""
+    """261019-f0x (the B skeleton): the running card = ONE summary
+    strip line (name + per-category counts + the done/total fraction +
+    the deterministic 20-cell bar + minute-granularity elapsed + the
+    point-ETA-with-wall-clock + the derived rate or the honest dash)
+    over the matrix (head + one glyph row per model) — every number an
+    existing service field or pure arithmetic over them."""
+    from tui.services.sweep_monitor import format_eta
+
     monitor = FakeMonitorService(
         scans=[ScanResult(sweeps=(_summary(
             "finetuned", SWEEP_RUNNING, done=12, total=36, mtime=1.0),),
@@ -658,8 +696,7 @@ async def test_running_tab_renders_one_card_per_live_run():
             elapsed=4360.0, eta=_eta(ETA_POINT, point=7560.0))},
         progress={
             ("plant-dnamamba-6mer", "GUE__emp_H3"): CellProgress(
-                step=300, max_steps=1000, percent=30)},
-        scales={"/scans/finetuned": (2, 50, 3)},
+                step=300, max_steps=1000, percent=30, eta_seconds=700.0)},
         resume_counts={"/scans/finetuned": 0},
     )
     app = _app(monitor=monitor)
@@ -669,24 +706,47 @@ async def test_running_tab_renders_one_card_per_live_run():
         cards = screen.query_one("#mon-cards", ListView)
         assert len(cards) == 1, "one live run = one card"
         assert screen._card_order == ["/scans/finetuned"]
-        assert _card_texts(screen, "mon-card-name") == ["finetuned"]
-        assert _card_texts(screen, "mon-card-scale") == [
-            MON_CARD_SCALE.format(scale="2×50×3")]
-        total = _card_texts(screen, "mon-card-total")[0]
-        assert "12/36" in total
-        assert total.count("█") == 3, "12/36 rounds to 3 filled of 10"
-        assert "·" in total
-        current = _card_texts(screen, "mon-card-current")[0]
-        assert current.startswith(MON_CARD_CURRENT.format(
-            model="plant-dnamamba-6mer", task="GUE__emp_H3", seed=42))
-        assert "300/1000 30%" in current and "███" in current, (
-            "the per-cell progress grammar rides the current line"
+        strip = _card_texts(screen, "mon-card-strip")[0]
+        assert "finetuned" in strip, "the strip leads with the root name"
+        assert "12/36" in strip, "the stats fraction rides the strip"
+        assert "⏵1" in strip and "◌2" in strip, (
+            "the per-category counts (running 1, queued 2)"
         )
+        assert "✓" not in strip and "✗" not in strip, (
+            "zero-count categories render nothing (queued always does)"
+        )
+        # the 20-cell bar over the seed counts (1 running, 2 queued of
+        # 3): floor 6/13 + the one leftover to running's larger
+        # remainder — deterministic
+        assert strip.count("█") == 7 and strip.count("░") == 13, (
+            "the 20-cell floor+largest-remainder allocation"
+        )
+        assert MON_STRIP_ELAPSED.format(t="1h13m") in strip, (
+            "minute granularity: 4360s -> 1h13m"
+        )
+        clock = time.strftime(
+            "%H:%M", time.localtime(time.time() + 7560.0))
+        assert MON_STRIP_ETA.format(
+            eta=format_eta(7560.0), clock=clock) in strip, (
+            "the point ETA + its wall-clock landing"
+        )
+        assert MON_STRIP_RATE.format(rate="1.0") in strip, (
+            "the derived rate: (1000-300)/700 = 1.0 it/s, pure "
+            "arithmetic over the parsed service fields"
+        )
+        # the matrix: head + one row per model, the group's seed glyphs
+        head = _card_texts(screen, "mon-matrix-head")[0]
+        assert "GUE__emp_H3" in head, "the task key heads its column"
+        rows = _card_texts(screen, "mon-matrix-row")
+        assert len(rows) == 1, "one row per model"
+        assert rows[0].startswith("plant-dnamamba-6mer")
+        assert "⏵◌◌" in rows[0], "the group's seed glyphs, seed order"
         assert not screen.query(".mon-card-resume"), (
             "a first run carries no resume note"
         )
 
-    # the honest unknowns: no scale, no current cell, unknown total
+    # the honest unknowns: no cells, no current cell, unknown total —
+    # the strip renders the designed unknowns, never a fabricated line
     monitor = FakeMonitorService(
         scans=[ScanResult(sweeps=(_summary(
             "cli-sweep", SWEEP_RUNNING, done=2, mtime=1.0),),
@@ -697,12 +757,270 @@ async def test_running_tab_renders_one_card_per_live_run():
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_monitor(pilot, app)
         screen = app.screen
-        assert _card_texts(screen, "mon-card-scale") == [MON_SCALE_UNKNOWN]
-        assert _card_texts(screen, "mon-card-total")[0] == MON_TOTAL_UNKNOWN
-        assert _card_texts(screen, "mon-card-current")[0] == (
-            MON_CARD_CURRENT_NONE)
-        assert MON_PROGRESS_INDETERMINATE not in (
-            _card_texts(screen, "mon-card-current")[0])
+        strip = _card_texts(screen, "mon-card-strip")[0]
+        assert MON_TOTAL_UNKNOWN in strip
+        assert MON_STRIP_ELAPSED.format(t="—") in strip, (
+            "elapsed None renders the dash"
+        )
+        assert "≈" not in strip, "no derivable ETA -> no formatted ETA"
+        assert "it/s" not in strip
+        assert not _card_texts(screen, "mon-matrix-row"), (
+            "no cells -> no matrix rows (never fabricated rows)"
+        )
+
+
+async def test_matrix_glyph_grid_and_style_only_highlight():
+    """261019-f0x: the matrix paints EVERY (model, task) group's seed
+    glyphs in the existing state vocabulary (models/tasks sorted) and
+    the focused group's highlight is STYLE-ONLY — the reverse spans
+    move with the focus while every row's plain WIDTH stays identical
+    (in-place updates stay layout-stable)."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=2, total=6, mtime=1.0),),
+            watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1",
+                 {42: CELL_COMPLETED, 43: CELL_FAILED}),
+            _row("model-a", "task-2", {42: CELL_RUNNING}),
+            _row("model-b", "task-1", {42: CELL_QUEUED}),
+            _row("model-b", "task-2",
+                 {43: CELL_COMPLETED, 44: CELL_COMPLETED}),
+        )},
+        stats={"/scans/finetuned": _stats(done=2, total=6)},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert screen._focus_pos == (0, 0), (
+            "the initial focus is the first card's (0, 0)"
+        )
+        rows = _card_texts(screen, "mon-matrix-row")
+        assert len(rows) == 2, "one row per model (sorted)"
+        assert rows[0].startswith("model-a") and rows[1].startswith(
+            "model-b")
+        # the glyph grid: per (model, task) the group's seed glyphs
+        assert "✓✗" in rows[0], "model-a x task-1: completed + failed"
+        assert "⏵" in rows[0], "model-a x task-2: running"
+        assert "◌" in rows[1], "model-b x task-1: queued"
+        assert "✓✓" in rows[1], "model-b x task-2: two completed"
+
+        labels = list(screen.query(".mon-matrix-row"))
+        widths_before = [len(label.content.plain) for label in labels]
+
+        def reverse_spans(label) -> list:
+            return [span for span in label.content.spans
+                    if "reverse" in str(span.style)]
+
+        assert reverse_spans(labels[0]), (
+            "the focused group's glyph cells carry the reverse style"
+        )
+        assert not reverse_spans(labels[1]), (
+            "unfocused rows carry no reverse span"
+        )
+
+        await pilot.press("right")
+        await pilot.pause()
+        assert screen._focus_pos == (0, 1), "right moves the column"
+        rows_after = _card_texts(screen, "mon-matrix-row")
+        assert [len(text) for text in rows_after] == widths_before, (
+            "the highlight is style-only — every row keeps its width"
+        )
+        assert reverse_spans(labels[0]), (
+            "the moved focus stays highlighted on its new column"
+        )
+        # the style move: the reverse span sits over the task-2 group's
+        # glyph position (the second column), not the first
+        row0_plain = rows_after[0]
+        task2_offset = (row0_plain.find("⏵"))
+        span = reverse_spans(labels[0])[0]
+        assert span.start <= task2_offset < span.end
+
+
+async def test_matrix_arrow_focus_moves_clamps_and_crosses_cards():
+    """261019-f0x: ←/→ move the focused column (clamped at the row
+    edges — no tab-switch); ↑/↓ move the model row and CROSS to the
+    adjacent card at the edges (the ListView index follows
+    programmatically, the focus landing on the adjacent card's
+    first/last row, column carried)."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(
+            _summary("run-a", SWEEP_RUNNING, done=1, total=8, mtime=2.0),
+            _summary("run-b", SWEEP_RUNNING, done=2, total=8, mtime=1.0),
+        ), watermarks={})],
+        cells={
+            "/scans/run-a": (
+                _row("m1", "t1", {42: CELL_RUNNING}),
+                _row("m1", "t2", {42: CELL_QUEUED}),
+                _row("m2", "t1", {42: CELL_COMPLETED}),
+                _row("m2", "t2", {42: CELL_FAILED}),
+            ),
+            "/scans/run-b": (
+                _row("m3", "t3", {42: CELL_RUNNING}),
+                _row("m4", "t3", {42: CELL_QUEUED}),
+            ),
+        },
+        stats={"/scans/run-a": _stats(done=1, total=8),
+               "/scans/run-b": _stats(done=2, total=8)},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        cards = screen.query_one("#mon-cards", ListView)
+        assert cards.index == 0
+        assert screen._focus_pos == (0, 0)
+        await pilot.press("right")
+        await pilot.pause()
+        assert screen._focus_pos == (0, 1), "right: col 0 -> 1"
+        assert screen._active_tab == "running", (
+            "a focus move never switches tabs"
+        )
+        await pilot.press("right")
+        await pilot.pause()
+        assert screen._focus_pos == (0, 1), (
+            "clamped at the row edge — no wrap, no tab-switch"
+        )
+        await pilot.press("down")
+        await pilot.pause()
+        assert screen._focus_pos == (1, 1), "down: row 0 -> 1"
+        await pilot.press("down")
+        await pilot.pause()
+        assert screen._focus_pos == (0, 0), (
+            "the card edge crosses to run-b's FIRST row"
+        )
+        assert cards.index == 1, "the ListView index follows the cross"
+        await pilot.press("up")
+        await pilot.pause()
+        assert screen._focus_pos == (1, 0), (
+            "the card edge back lands on run-a's LAST row, col carried"
+        )
+        assert cards.index == 0
+        await pilot.press("left")
+        await pilot.pause()
+        assert screen._focus_pos == (1, 0), (
+            "left clamps at col 0 of a one-task row (t1 only for m2)"
+        )
+
+
+async def test_arrow_precedence_focus_vs_tab_switch():
+    """261019-f0x binding precedence: with a focused card carrying
+    >= 1 group ←/→ move the matrix focus and do NOT switch tabs; with
+    cards but NO groups, on the empty Running tab, and on History they
+    switch tabs exactly as before (the kvj contract); Tab always
+    switches; History ↑/↓ still move the History table cursor (the
+    delegated native actions)."""
+    # with groups: right moves focus, never flips the tab (the scan
+    # also carries a finished root so the History leg has rows to move
+    # its cursor over — the delegation pin is non-vacuous)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(
+            _summary("finetuned", SWEEP_RUNNING, done=1, total=2,
+                     mtime=2.0),
+            _summary("old-run", SWEEP_FINISHED, done=1, total=1,
+                     mtime=1.0),
+        ), watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),
+            _row("model-a", "task-2", {42: CELL_QUEUED}),)},
+        stats={"/scans/finetuned": _stats(done=1, total=2)},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        await pilot.press("right")
+        await pilot.pause()
+        assert screen._active_tab == "running"
+        assert screen._focus_pos == (0, 1)
+        await pilot.press("tab")
+        await pilot.pause()
+        assert screen._active_tab == "history", (
+            "Tab always switches, even with a focused group"
+        )
+        # History up/down move the table cursor (delegated native)
+        table = screen.query_one("#mon-history", DataTable)
+        assert table.row_count == 1
+        await pilot.press("down")
+        await pilot.pause()
+        assert screen.focused is table, (
+            "the History table keeps the focus — no focus trap"
+        )
+        await pilot.press("left")
+        await pilot.pause()
+        assert screen._active_tab == "running", (
+            "left on History switches back (no groups consulted there)"
+        )
+
+    # cards but NO groups (the kvj fixture shape): the arrows switch
+    monitor = FakeMonitorService(scans=[_three_state_scan()])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert screen._card_order, "the card exists"
+        assert screen._focused_group() is None, (
+            "its fixture scripts no cell rows — no groups"
+        )
+        await pilot.press("right")
+        await pilot.pause()
+        assert screen._active_tab == "history", (
+            "no groups on Running: right switches tabs exactly as before"
+        )
+        await pilot.press("left")
+        await pilot.pause()
+        assert screen._active_tab == "running"
+
+    # the EMPTY Running tab: the arrows switch (the standing kvj pin)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(), watermarks={})])
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        await pilot.press("right")
+        await pilot.pause()
+        assert screen._active_tab == "history"
+        await pilot.press("left")
+        await pilot.pause()
+        assert screen._active_tab == "running"
+
+
+async def test_enter_drill_cursor_pins_to_focused_group():
+    """261019-f0x: [enter] on the focused card opens the RunCellsModal
+    with the modal's cursor PINNED to the focused group's row (the
+    additive focus_key) — moving the matrix focus before the enter
+    drills the SAME run but lands the modal cursor on the new group."""
+    from tui.screens.monitor import RunCellsModal
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2, mtime=1.0),),
+            watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_COMPLETED}),
+            _row("model-a", "task-2", {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(done=1, total=2)},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        await pilot.press("right")   # focus (0, 1) = model-a x task-2
+        await pilot.pause()
+        assert screen._focus_pos == (0, 1)
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, RunCellsModal)
+        table = app.screen.query_one("#mon-runcells-table", DataTable)
+        cursor_key = str(table.coordinate_to_cell_key(
+            table.cursor_coordinate)[0].value)
+        assert cursor_key == "model-a__task-2", (
+            "the modal cursor opens on the focused group's row"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
 
 
 async def test_history_tab_lists_runs_newest_first_with_states():
@@ -785,10 +1103,14 @@ async def test_dual_presence_badge_on_history_row():
 
 
 async def test_mgpu_worker_roots_group_inside_one_card():
-    """261018-kvj over delta A's fixture (12-05): the two frozen
-    ``{root}-mgpu-w{i}`` sibling worker roots render as WORKER ROWS
-    INSIDE one card (one launch = one card), each worker keeping its
-    own fraction; the finished default root stays a History row."""
+    """261018-kvj over delta A's fixture (12-05), re-pinned on the
+    261019-f0x B skeleton: the two frozen ``{root}-mgpu-w{i}`` sibling
+    worker roots render as ONE CARD whose strip names the GROUP and
+    whose matrix carries the merged groups (the worker-row lines are
+    retired with the old card body); the finished default root stays a
+    History row."""
+    from tui.services.sweep_monitor import format_eta
+
     monitor = FakeMonitorService(
         scans=[ScanResult(sweeps=(
             _summary("finetuned-mgpu-w0", SWEEP_RUNNING, done=4,
@@ -803,8 +1125,10 @@ async def test_mgpu_worker_roots_group_inside_one_card():
         stats={
             "/scans/finetuned-mgpu-w0": _stats(
                 done=4, total=10,
-                current=_current("model-a", "task-x", 42)),
-            "/scans/finetuned-mgpu-w1": _stats(done=2, total=20),
+                current=_current("model-a", "task-x", 42),
+                eta=_eta(ETA_POINT, point=3600.0)),
+            "/scans/finetuned-mgpu-w1": _stats(
+                done=2, total=20, eta=_eta(ETA_POINT, point=7200.0)),
         },
     )
     app = _app(monitor=monitor)
@@ -815,15 +1139,25 @@ async def test_mgpu_worker_roots_group_inside_one_card():
         assert len(cards) == 1, (
             "the two worker roots are ONE run card (the mgpu naming)"
         )
-        assert _card_texts(screen, "mon-card-name") == ["finetuned"], (
-            "the card names the GROUP (the stripped base), never w0/w1"
+        strip = _card_texts(screen, "mon-card-strip")[0]
+        assert strip.startswith(" finetuned"), (
+            "the strip names the GROUP (the stripped base), never w0/w1"
         )
-        workers = _card_texts(screen, "mon-card-worker")
-        assert len(workers) == 2, "one worker row per sibling root"
-        assert workers[0].startswith("finetuned-mgpu-w0 ")
-        assert "4/10" in workers[0] and workers[0].count("█") == 4
-        assert "2/20" in workers[1] and workers[1].count("█") == 1
-        assert workers[0] != workers[1], "worker rows never alias"
+        assert "6/30" in strip, (
+            "the fraction aggregates the roots' stats (4/10 + 2/20)"
+        )
+        assert MON_STRIP_ETA_RANGE.format(
+            lo=format_eta(3600.0), hi=format_eta(7200.0)) in strip, (
+            "TWO derivable roots -> the min-max ETA range (never a "
+            "fabricated single point)"
+        )
+        assert not screen.query(".mon-card-worker"), (
+            "the worker-row lines are retired with the old card body"
+        )
+        rows = _card_texts(screen, "mon-matrix-row")
+        assert len(rows) == 1 and rows[0].startswith("model-a"), (
+            "the merged matrix carries w0's groups (w1 scripts none)"
+        )
         # the card's action root is the primary (the base-named group's
         # first live root); enter drills it
         assert screen._card_order == ["/scans/finetuned-mgpu-w0"]
@@ -837,11 +1171,16 @@ async def test_mgpu_worker_roots_group_inside_one_card():
 async def test_enter_drills_run_cells_then_cell_detail():
     """Enter on the focused card opens the per-run cells snapshot
     (RunCellsModal) whose rows render the folded state + progress
-    grammar; enter again opens the existing CellDetailModal path."""
+    grammar; enter again opens the existing CellDetailModal path.
+    261019-f0x re-pin: the modal's cursor opens PINNED to the focused
+    group's row (the sorted-first model, plant-dnabert here), so the
+    second enter drills THAT group — the drill family itself is
+    byte-unchanged; only the opening cursor follows the matrix focus."""
     from tui.screens.monitor import CellDetailModal, RunCellsModal
     from tui.strings import MON_RUN_CELLS_TITLE
 
     record = {"status": "completed", "metrics": {"accuracy": 0.9123}}
+    focused_record = {"status": "skipped", "reason": "resume marker"}
     monitor = FakeMonitorService(
         scans=[ScanResult(sweeps=(_summary(
             "finetuned", SWEEP_RUNNING, done=3, total=36, mtime=1.0),),
@@ -863,6 +1202,9 @@ async def test_enter_drills_run_cells_then_cell_detail():
              43): None,
             ("/scans/finetuned", "plant-dnamamba-6mer", "GUE__emp_H3",
              44): None,
+            # the FOCUSED group's record (the pinned cursor's row)
+            ("/scans/finetuned", "plant-dnabert-6mer", "GUE__emp_H3",
+             42): focused_record,
         },
     )
     app = _app(monitor=monitor)
@@ -883,15 +1225,19 @@ async def test_enter_drills_run_cells_then_cell_detail():
             f"{MON_STATE_DONE} 3/3")
         assert MON_RUN_CELLS_TITLE.format(root="finetuned") in str(
             app.screen.query_one("#mon-runcells-box").border_title)
+        # the pinned cursor: the sorted-first model's row (the focused
+        # group), not the drill's live-on-top row 0
+        assert str(table.coordinate_to_cell_key(
+            table.cursor_coordinate)[0].value) == completed
 
-        await pilot.press("enter")   # the focused row drills the detail
+        await pilot.press("enter")   # the PINNED row drills the detail
         await _settle(pilot, app)
         assert isinstance(app.screen, CellDetailModal)
-        assert "plant-dnamamba-6mer" in str(
+        assert "plant-dnabert-6mer" in str(
             app.screen.query_one("#mon-celldetail-box").border_title)
         joined = "\n".join(line.text for line in app.screen.query_one(
             "#mon-celldetail-log", RichLog).lines)
-        for field_name, value in record.items():
+        for field_name, value in focused_record.items():
             assert f"{field_name}: {value}" in joined, (
                 f"the record field {field_name} renders verbatim")
 
@@ -1223,7 +1569,7 @@ async def test_attach_tilde_spelled_root_validates_and_joins_real_scanner(
             "the scanner discovered the root under the RESOLVED path "
             "(the literal '~' spelling never lands)"
         )
-        assert _card_texts(screen, "mon-card-name") == ["run1"]
+        assert "run1" in _card_texts(screen, "mon-card-strip")[0]
         # enter drills it and the record's row renders over the REAL path
         await pilot.press("enter")
         await _settle(pilot, app)
@@ -1960,8 +2306,19 @@ async def test_long_keys_backstop_cards_and_drill():
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_monitor(pilot, app)
         screen = app.screen
-        assert _card_texts(screen, "mon-card-name") == [
-            "finetuned-a-really-long-root-name-here"]
+        strip = _card_texts(screen, "mon-card-strip")[0]
+        assert "finetuned-a-really-long-root-name-here" in strip, (
+            "the strip carries the full root name (visual overflow clips)"
+        )
+        # the 68-char-key backstop on the matrix: the model column
+        # ellipsis-truncates to the 20-cell name column, never a broken
+        # grid (display-only; the full key rides the detail)
+        rows = _card_texts(screen, "mon-matrix-row")
+        assert len(rows) == 1
+        assert rows[0][:20].endswith("…") and len(rows[0]) > 20, (
+            "the long model name truncates with the ellipsis at the "
+            "20-cell name column boundary"
+        )
         await pilot.press("enter")
         await _settle(pilot, app)
         assert isinstance(app.screen, RunCellsModal)
@@ -2192,8 +2549,8 @@ async def test_degradation_manifest_mid_write_stays_running():
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_monitor(pilot, app)
         screen = app.screen
-        total = _card_texts(screen, "mon-card-total")[0]
-        assert total == MON_TOTAL_UNKNOWN, (
+        strip = _card_texts(screen, "mon-card-strip")[0]
+        assert MON_TOTAL_UNKNOWN in strip, (
             "no manifest means the honest unknown total"
         )
         screen._tick_full()
@@ -2836,7 +3193,9 @@ async def test_d_live_root_refuses_before_the_confirm():
         screen = app.screen
         screen._tick_full()
         await _settle(pilot, app)
-        await pilot.press("right")
+        # the card carries a group -> the arrows move the matrix focus;
+        # TAB always switches (the 261019-f0x precedence)
+        await pilot.press("tab")
         await pilot.pause()
         await pilot.press("d")
         await _settle(pilot, app)
@@ -3116,7 +3475,7 @@ async def test_e_live_root_refuses_before_any_modal():
         monitor._resume["/scans/rerun-root"] = 3
         app.screen._tick_full()
         await _settle(pilot, app)
-        await pilot.press("right")
+        await pilot.press("tab")   # the card has a group: tab switches
         await pilot.pause()
         await pilot.press("e")
         await _settle(pilot, app)
@@ -3690,8 +4049,8 @@ async def test_progress_change_updates_card_labels_in_place():
             await _settle(pilot, app)
         finally:
             patcher.stop()
-        total_line = _card_texts(screen, "mon-card-total")[0]
-        assert "4/10" in total_line, (
+        strip_line = _card_texts(screen, "mon-card-strip")[0]
+        assert "4/10" in strip_line, (
             "the changed fraction paints (the in-place update landed)")
         assert clear_mock.call_count == 0, (
             "a content-only change must never rebuild the list")
@@ -3747,7 +4106,7 @@ async def test_render_all_inert_under_modal_and_resumes_after():
             done=5, total=10,
             current=_current("plant-dnamamba-6mer", "GUE__emp_H3", 42))
         screen._render_all()
-        assert "5/10" in _card_texts(screen, "mon-card-total")[0], (
+        assert "5/10" in _card_texts(screen, "mon-card-strip")[0], (
             "the tick after dismissal refreshes the base surface")
 
 
@@ -3779,7 +4138,8 @@ async def test_focus_active_noops_when_target_already_focused():
             patcher.stop()
 
         # the History branch mirrors: switch to the populated tab
-        await pilot.press("right")
+        # (the card carries a group -> tab, never the arrow)
+        await pilot.press("tab")
         await pilot.pause()
         history_table = screen.query_one("#mon-history", DataTable)
         assert screen.focused is history_table

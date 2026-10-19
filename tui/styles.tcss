@@ -365,11 +365,15 @@ WizardModal {
     background: $surface;
 }
 
-/* ===== Monitor screen (11-07, slot 5 — 261018-kvj two-tab redesign) =====
- * One one-row tab header under the title bar; ONE content region whose
- * children toggle display (single focus, single list — only the active
- * tab's list renders); the scanning note is mount-window chrome.
- * Theme tokens only (borders stay reserved for modals). */
+/* ===== Monitor screen (11-07, slot 5 — 261018-kvj two-tab redesign;
+ * 261019-f0x: #mon-content is the B+D horizontal split) =====
+ * One one-row tab header under the title bar; ONE content region — now
+ * a Horizontal: #mon-left (1fr, the existing children verbatim) beside
+ * #mon-right (40, the D right pane: focused-group detail + the live tee
+ * tail; display toggled in code — hidden below the narrow threshold and
+ * off the Running tab). The scanning note is mount-window chrome.
+ * Theme tokens only (the #mon-right-log border is the pane's round
+ * exception, the modal border family). */
 
 #mon-title-bar {
     height: 1;      /* row token: one status line */
@@ -402,6 +406,16 @@ WizardModal {
     border-top: solid $border;  /* 1-cell border exception — separator */
 }
 
+#mon-left {
+    width: 1fr;     /* the B skeleton: strip + matrix + history */
+    height: 1fr;
+}
+
+#mon-right {
+    width: 40;       /* the D right pane (~40 cols) */
+    height: 1fr;
+}
+
 #mon-scanning-note {
     height: 1;      /* row token: the #41 optimistic-paint note */
     padding: 0 2;   /* 2-cell status-line exception */
@@ -419,17 +433,27 @@ WizardModal {
     height: 1fr;    /* scrolls below the visible cards */
 }
 
-.mon-card-name {
-    text-style: bold;          /* Heading role */
+/* 261019-f0x: the running card = summary strip (the Text carries its
+ * own rich-native glyph/bar styles) + matrix head/rows + resume note. */
+.mon-card-strip {
     width: auto;
 }
 
-.mon-card-scale,
-.mon-card-current,
 .mon-card-resume,
-.mon-card-worker {
+.mon-matrix-head,
+.mon-matrix-row {
     width: auto;
     color: $text-muted;        /* Secondary role (the card owns focus) */
+}
+
+#mon-detail {
+    height: 8;      /* fixed: the focused group's detail truncates,
+                     * never reflows the pane */
+}
+
+#mon-right-log {
+    border: round $panel;  /* the pane's log region (the modal family) */
+    height: 1fr;
 }
 
 #mon-history {

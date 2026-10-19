@@ -1656,21 +1656,30 @@ MON_HISTORY_EMPTY = _t(
 MON_TAB_SWITCH_KEYCAP = _t(
     "MON_TAB_SWITCH_KEYCAP", "切换页签", "switch tab")
 
-# The running card: the model×task×seed scale line (the manifest read
-# when parseable, else the honest unknown — never a derived guess), the
-# current-cell line (stats.current — the honest absent marker when no
-# cell is running), and the History row's dual-presence badge (a live
-# re-run over a root that carries prior history).
-MON_CARD_SCALE = _t(
-    "MON_CARD_SCALE", "模型×数据: {scale}", "models×tasks: {scale}")
-MON_SCALE_UNKNOWN = _t("MON_SCALE_UNKNOWN", "规模未知", "scale unknown")
-MON_CARD_CURRENT = _t(
-    "MON_CARD_CURRENT", "当前 {model}/{task}/s{seed}",
-    "current {model}/{task}/s{seed}")
-MON_CARD_CURRENT_NONE = _t(
-    "MON_CARD_CURRENT_NONE", "当前 —", "current —")
+# The running card's 261019-f0x surface: the summary strip's elapsed/
+# ETA/rate segments + the History row's dual-presence badge (a live
+# re-run over a root that carries prior history). The four retired
+# card-line constants (MON_CARD_SCALE / MON_SCALE_UNKNOWN /
+# MON_CARD_CURRENT / MON_CARD_CURRENT_NONE) left with the surface that
+# worded them (the kvj retirement precedent — the strip + matrix
+# redesign deleted their lines).
 MON_HISTORY_RERUN_BADGE = _t(
     "MON_HISTORY_RERUN_BADGE", "重跑进行中", "re-run in progress")
+
+# 261019-f0x (the maintainer's 2026-10-18 10:48 slot-5 redesign: 方案 B
+# 为骨架 + 方案 D 的右栏): the B-skeleton summary strip's data segments —
+# {t} the minute-granularity elapsed, {eta}+{clock} the point ETA with
+# its wall-clock landing, {lo}/{hi} the multi-root min–max range, and
+# {rate} the derived it/s (pure arithmetic over parsed service fields,
+# never a new service read) — plus the [w] wide-toggle keycap (the k9s
+# narrow/wide precedent). One block, one tripwire edit.
+MON_STRIP_ELAPSED = _t("MON_STRIP_ELAPSED", "耗时 {t}", "elapsed {t}")
+MON_STRIP_ETA = _t(
+    "MON_STRIP_ETA", "预计 {eta}（{clock}）", "ETA {eta} ({clock})")
+MON_STRIP_ETA_RANGE = _t(
+    "MON_STRIP_ETA_RANGE", "预计 {lo}–{hi}", "ETA {lo}–{hi}")
+MON_STRIP_RATE = _t("MON_STRIP_RATE", "{rate} it/s", "{rate} it/s")
+MON_WIDE_KEYCAP = _t("MON_WIDE_KEYCAP", "宽表", "wide")
 
 # 261018-kvj Task 2: the graduation toasts — a run the screen OBSERVED
 # running that reaches a terminal state between two on-screen scans
