@@ -930,6 +930,12 @@ if __name__ == "__main__":
     models_with_limited_length = {
         "prokbert-mini": 1027,
         "plant-dnabert-6mer": 512,
+        # AgroNT ships EsmConfig max_position_embeddings=1026 (README:
+        # context window 1024 tokens, 6-mer => ~6144 bp). Its registry
+        # mean_token_len=6 makes the generic formula ask for 1668 tokens
+        # on the 10 kb datasets (GUE fungi/virus), overrunning the
+        # position table; clamp to the documented 1024-token context.
+        "agro-nucleotide-transformer-1b": 1024,
     }
     # fp32-only models (CR-01, ported from the deprecated pipeline's quirk
     # list): the global finetune_config.yaml sets bf16: True, but these
