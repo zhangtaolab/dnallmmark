@@ -6,11 +6,11 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: Not started
 status: planning
-stopped_at: "Quick task 261019-n0w complete (click/fill/pane fix batch)"
-last_updated: "2026-10-19T09:26:49.002Z"
+stopped_at: "Quick task 261019-o8e complete (matrix live-scope filter)"
+last_updated: "2026-10-19T10:06:40.928Z"
 last_activity: 2026-10-18
-last_activity_desc: Quick task 261019-n0w (slot-5 fix batch) complete
-state_head: 3da03a6b842439eed7b05374d794ed896e16a061
+last_activity_desc: Quick task 261019-o8e (matrix scope) complete
+state_head: 0a3eee546bfe6738841bbb89853e8b8e7f13fc27
 progress:
   total_phases: 6
   completed_phases: 6
@@ -301,6 +301,7 @@ None yet.
 | 28 | fix: [t] log-tail restart discovery — fresh disk tee fallback | 2026-10-19 | 32be15d | — |
 | 261019-f0x | slot-5 Running tab redesign: B matrix skeleton + D right pane (detail + live tee tail) + [w] wide toggle; goldens regenerated uncommitted (WINDOWS #42) | 2026-10-19 | f9023af | [261019-f0x-slot-5-running-tab-redesign-b-skeleton-s](./quick/261019-f0x-slot-5-running-tab-redesign-b-skeleton-s/) |
 | 261019-n0w | slot-5 fix batch: click=select (prevent_default), transparent card fill, right pane D bar/step lines | 2026-10-19 | 3da03a6 | [261019-n0w-slot-5-fix-batch-from-maintainer-live-tes](./quick/261019-n0w-slot-5-fix-batch-from-maintainer-live-tes/) |
+| 261019-o8e | slot-5 matrix scope: Running views filter to the live sweep's pair set (residue stays History/drill); verified end-to-end on the live plant-dnabert sweep | 2026-10-19 | 0a3eee5 | [261019-o8e-slot-5-matrix-scope-fix-filter-runni](./quick/261019-o8e-slot-5-matrix-scope-fix-filter-runni/) |
 
 ## Deferred Items
 
