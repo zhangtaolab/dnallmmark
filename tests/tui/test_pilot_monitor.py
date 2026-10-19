@@ -1467,7 +1467,12 @@ async def test_wide_toggle_dense_table_enter_and_restore():
         await _open_monitor(pilot, app)
         screen = app.screen
         # move the matrix focus to col 0 (already there) and row 0;
-        # toggle wide
+        # toggle wide — 261019-pe0 re-pin: [w] is the THREE-STATE cycle
+        # (matrix -> tree -> wide), so reaching wide takes TWO presses
+        # (the tree pass-through between them preserves the focus)
+        await pilot.press("w")
+        await pilot.pause()
+        assert screen._wide is False, "the first w lands TREE, not wide"
         await pilot.press("w")
         await pilot.pause()
         assert screen._wide is True
@@ -1503,14 +1508,18 @@ async def test_wide_toggle_dense_table_enter_and_restore():
         )
         await pilot.press("escape")
         await pilot.pause()
-        # [w] back: the matrix restores with the pre-toggle focus
+        # [w] back: the matrix restores with the pre-toggle focus (the
+        # return press stays ONE w — wide -> matrix directly on the
+        # 261019-pe0 cycle; the assert proves the focus survived BOTH
+        # the tree pass-through AND the wide round trip)
         await pilot.press("w")
         await pilot.pause()
         assert screen._wide is False
         assert screen.query_one("#mon-cards").display is True
         assert screen.focused.id == "mon-cards"
         assert screen._focus_pos == (0, 0), (
-            "the pre-toggle matrix focus survived the wide round trip"
+            "the pre-toggle matrix focus survived the tree pass-through "
+            "and the wide round trip"
         )
 
 
@@ -1560,6 +1569,10 @@ async def test_wide_mode_arrows_delegate_to_the_table():
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_monitor(pilot, app)
         screen = app.screen
+        # 261019-pe0 re-pin: TWO w presses reach wide (the cycle passes
+        # through tree first — the same truth, one more keypress)
+        await pilot.press("w")
+        await pilot.pause()
         await pilot.press("w")
         await pilot.pause()
         wide = screen.query_one("#mon-wide", DataTable)
@@ -1603,10 +1616,12 @@ _RESIDUE_MODELS = ("nucleotide-transformer-500m",
 _LIVE_PAIR = frozenset({(_LIVE_MODEL, _LIVE_TASK)})
 
 
-def _reused_root_monitor() -> FakeMonitorService:
+def _reused_root_monitor(progress=None) -> FakeMonitorService:
     """The four-model reused-root cells fixture (the sorted model order
     puts the live model FIRST — the clamp pin relies on row 0 being
-    live and row 1 residue)."""
+    live and row 1 residue). 261019-pe0: the optional ``progress`` maps
+    (model, task) -> CellProgress for the tree-state pins (every
+    pre-existing call site passes nothing and stays identical)."""
     return FakeMonitorService(
         scans=[ScanResult(sweeps=(_summary(
             "finetuned", SWEEP_RUNNING, done=9, total=36, mtime=1.0),),
@@ -1622,6 +1637,7 @@ def _reused_root_monitor() -> FakeMonitorService:
                  {42: CELL_INTERRUPTED}),
         )},
         stats={"/scans/finetuned": _stats(done=9, total=36)},
+        progress=progress,
     )
 
 
@@ -1666,7 +1682,12 @@ async def test_live_pair_evidence_scopes_matrix_strip_and_wide():
         assert "⏸" not in strip, (
             "the three residue interrupted seeds never count"
         )
-        # [w]: the wide table carries the filtered pair's three seeds
+        # [w]: the wide table carries the filtered pair's three seeds —
+        # 261019-pe0 re-pin: TWO presses (the cycle passes through tree
+        # first; the tree rows are the same filtered set, pinned in the
+        # dedicated tree test below)
+        await pilot.press("w")
+        await pilot.pause()
         await pilot.press("w")
         await pilot.pause()
         wide = screen.query_one("#mon-wide", DataTable)
@@ -1826,6 +1847,526 @@ async def test_focus_clamps_into_filtered_set_on_evidence_transition():
             assert residue not in detail, (
                 f"the clamped pane never names {residue}"
             )
+
+
+# =====================================================================
+# 261019-pe0 — the TREE state (the left pane's third state: the [w]
+# cycle matrix -> tree -> wide, the auto-fallback when the matrix
+# cannot fit, the locked navigation contract, the click law, and the
+# gate-law extension to the per-card RunCardTree)
+# =====================================================================
+
+#: Eight 20-char task keys — the overflow fixture (the matrix needs
+#: 20 + 8x14 = 132 cells against the ~80-cell left pane at 120 cols,
+#: so the auto default is TREE without any manual press).
+_OVERFLOW_TASKS = tuple(
+    f"GUE__overflow_task_{index:02d}" for index in range(8))
+
+
+def _tree_nodes(tree):
+    """Every model/task node of a card tree, in visible order."""
+    for model_node in tree.root.children:
+        yield model_node
+        yield from model_node.children
+
+
+def _visible_tree_nodes(tree) -> "list[tuple]":
+    """The VISIBLE nodes' data keys, top to bottom (the public
+    line-walk — what the operator's up/down moves through)."""
+    keys: list = []
+    line = 0
+    while True:
+        node = tree.get_node_at_line(line)
+        if node is None:
+            return keys
+        keys.append(node.data)
+        line += 1
+
+
+def _node_labels(tree) -> "list[str]":
+    """Every node's plain label (model + task nodes, tree order)."""
+    return [node.label.plain if isinstance(node.label, Text)
+            else str(node.label) for node in _tree_nodes(tree)]
+
+
+async def test_tree_state_renders_model_and_task_nodes():
+    """261019-pe0 — the tree state renders over the o8e reused-root
+    fixture: ONE model node naming the live model with done/total 0/3
+    over the FILTERED seeds (never the stats seam's 9/36), NO residue
+    model node, its task child carrying the task key + the s42 running
+    glyph + the parsed percent + the derived rate + the s43/s44 queued
+    glyphs; [w] again lands wide, [w] again restores the matrix with
+    the prior focus (the three-state cycle)."""
+    from tui.screens.monitor import RunCardTree
+
+    app = _app(monitor=_reused_root_monitor(progress={
+        (_LIVE_MODEL, _LIVE_TASK): CellProgress(
+            step=300, max_steps=1000, percent=30, eta_seconds=700.0)}),
+        launcher=FakeMonitorLauncher(
+            live_matrices={"/scans/finetuned": _LIVE_PAIR}))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        await pilot.press("w")
+        await pilot.pause()
+        assert screen._left_mode == "tree"
+        tree = screen.query_one(
+            "#mon-cards", ListView).children[0].query_one(RunCardTree)
+        labels = "\n".join(_node_labels(tree))
+        # the model node: the live model + the FILTERED done/total
+        assert _LIVE_MODEL in labels and "0/3" in labels, (
+            "the model node's done/total derives over the FILTERED "
+            "seeds (the o8e basis)"
+        )
+        assert "9/36" not in labels, "never the root-wide stats seam"
+        for residue in _RESIDUE_MODELS:
+            assert residue not in labels, (
+                f"residue model {residue} never gains a tree node"
+            )
+        # the task node: the key + the per-seed cluster with the compact
+        # inline percent + rate on the running seed, glyph-only queued
+        assert _LIVE_TASK in labels
+        assert "s42" in labels and "s43" in labels and "s44" in labels
+        assert "⏵" in labels and "◌" in labels
+        assert "30%" in labels, "the parsed percent rides the task node"
+        assert MON_STRIP_RATE.format(rate="1.0") in labels, (
+            "the derived rate: (1000-300)/700 = 1.0 it/s"
+        )
+        # the cycle continues: wide, then matrix with the prior focus
+        await pilot.press("w")
+        await pilot.pause()
+        assert screen._wide is True
+        await pilot.press("w")
+        await pilot.pause()
+        assert screen._left_mode == "matrix"
+        assert not list(screen.query(RunCardTree)), (
+            "the matrix rebuild carries no tree widget"
+        )
+        assert screen._focus_pos == (0, 0), (
+            "the pre-cycle matrix focus survives the round trip"
+        )
+
+
+async def test_tree_navigation_contract():
+    """261019-pe0 — the LOCKED navigation contract (the maintainer's
+    2026-10-19 18:14-18:16 ruling), driven ONLY with real key presses:
+    up/down move between VISIBLE nodes clamped (NO card crossing in
+    tree state — the matrix card-cross law is matrix-scoped); right
+    expands-or-into-children; left collapses-or-to-parent (the
+    invisible root is never a cursor target); Enter on a MODEL node
+    toggles and NEVER opens a modal; Enter on a TASK node drills with
+    the modal cursor pinned to that group; asterisk toggles
+    expand/collapse-ALL; Tab ALWAYS switches (the kvj law)."""
+    from tui.screens.monitor import RunCardTree, RunCellsModal
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=4, mtime=1.0),),
+            watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),
+            _row("model-a", "task-2", {43: CELL_QUEUED}),
+            _row("model-b", "task-1", {42: CELL_COMPLETED}),
+            _row("model-b", "task-2", {42: CELL_FAILED}),)},
+        stats={"/scans/finetuned": _stats(done=1, total=4)},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        await pilot.press("w")
+        await pilot.pause()
+        cards = screen.query_one("#mon-cards", ListView)
+        tree = cards.children[0].query_one(RunCardTree)
+        # entering tree pins the cursor onto the focused group's task
+        # node (the focus unification)
+        assert tree.cursor_node.data == (
+            "task", "/scans/finetuned", "model-a", "task-1")
+        # down: the next visible node (the second task child)
+        await pilot.press("down")
+        await pilot.pause()
+        assert tree.cursor_node.data == (
+            "task", "/scans/finetuned", "model-a", "task-2")
+        # left on a task node -> the parent model node
+        await pilot.press("left")
+        await pilot.pause()
+        assert tree.cursor_node.data == (
+            "model", "/scans/finetuned", "model-a")
+        assert tree.cursor_node.is_expanded
+        # left on the EXPANDED model node -> collapses (children hidden)
+        await pilot.press("left")
+        await pilot.pause()
+        assert tree.cursor_node.is_collapsed
+        assert ("task", "/scans/finetuned", "model-a", "task-1") \
+            not in _visible_tree_nodes(tree), (
+                "the collapse hid the task children")
+        # left on the collapsed top-level model -> no-op (the invisible
+        # root is NEVER a cursor target)
+        await pilot.press("left")
+        await pilot.pause()
+        assert tree.cursor_node.data == (
+            "model", "/scans/finetuned", "model-a")
+        # right on the COLLAPSED model -> expands WITHOUT moving
+        await pilot.press("right")
+        await pilot.pause()
+        assert tree.cursor_node.data == (
+            "model", "/scans/finetuned", "model-a")
+        assert tree.cursor_node.is_expanded
+        # right on the EXPANDED model -> into the first child
+        await pilot.press("right")
+        await pilot.pause()
+        assert tree.cursor_node.data == (
+            "task", "/scans/finetuned", "model-a", "task-1")
+        # right on a task/leaf node -> no-op
+        await pilot.press("right")
+        await pilot.pause()
+        assert tree.cursor_node.data == (
+            "task", "/scans/finetuned", "model-a", "task-1")
+        # up at the FIRST visible node clamps — NO card crossing (the
+        # maintainer's tree up/down review flag)
+        await pilot.press("up")
+        await pilot.pause()
+        assert tree.cursor_node.data == (
+            "model", "/scans/finetuned", "model-a")
+        await pilot.press("up")
+        await pilot.pause()
+        assert tree.cursor_node.data == (
+            "model", "/scans/finetuned", "model-a")
+        assert cards.index == 0, "the tree arrows never cross cards"
+        # Enter on a MODEL node: toggles expansion, NEVER a modal
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        assert app.screen is screen, (
+            "enter on a model node NEVER opens a modal"
+        )
+        assert tree.cursor_node.is_collapsed, "enter toggled the model"
+        # Enter on a TASK node: drills with the cursor pinned to that
+        # group's row (the _drill_focus_key truth)
+        await pilot.press("right")   # re-expand (no move)
+        await pilot.pause()
+        await pilot.press("right")   # into the first child
+        await pilot.pause()
+        assert tree.cursor_node.data == (
+            "task", "/scans/finetuned", "model-a", "task-1")
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, RunCellsModal)
+        table = app.screen.query_one("#mon-runcells-table", DataTable)
+        assert str(table.coordinate_to_cell_key(
+            table.cursor_coordinate)[0].value) == "model-a__task-1", (
+                "the drill cursor pins to the entered task node's group"
+            )
+        await pilot.press("escape")
+        await pilot.pause()
+        # asterisk from all-expanded: collapse ALL (only model nodes
+        # remain visible)
+        await pilot.press("*")
+        await pilot.pause()
+        for node in tree.root.children:
+            assert node.is_collapsed
+        visible = _visible_tree_nodes(tree)
+        assert visible and all(key[0] == "model" for key in visible), (
+            "no task node is visible after collapse-all"
+        )
+        # asterisk again: expand ALL
+        await pilot.press("*")
+        await pilot.pause()
+        for node in tree.root.children:
+            assert node.is_expanded
+        assert len(_visible_tree_nodes(tree)) == 6
+        # Tab ALWAYS switches Running/History from any tree position
+        await pilot.press("tab")
+        await pilot.pause()
+        assert screen._active_tab == "history"
+
+
+async def test_tree_click_selects_node_without_drill():
+    """261019-pe0 — the CLICK LAW (the n0w precedent extended): a click
+    on a tree node SELECTS and FOCUSES it and NEVER drills — the cursor
+    moved, the ListView index followed to the clicked CARD (the
+    two-card fixture makes this assertable), focus landed on the tree,
+    and NO modal opened; Enter afterwards still drills the focused task
+    node. The click is the synthetic events.Click carrying the exact
+    style meta the REAL SGR path produces (the n0w sanctioned fallback
+    — the second card sits below the fold at this grid); the real SGR
+    path stays pty-pinned in Task 2."""
+    from textual import events
+
+    from tui.screens.monitor import RunCardTree, RunCellsModal
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(
+            _summary("run-a", SWEEP_RUNNING, done=1, total=2, mtime=2.0),
+            _summary("run-b", SWEEP_RUNNING, done=1, total=1, mtime=1.0),
+        ), watermarks={})],
+        cells={
+            "/scans/run-a": (
+                _row("m1", "t1", {42: CELL_RUNNING}),
+                _row("m1", "t2", {43: CELL_QUEUED}),),
+            "/scans/run-b": (
+                _row("m3", "t3", {42: CELL_RUNNING}),),
+        },
+        stats={"/scans/run-a": _stats(done=1, total=2),
+               "/scans/run-b": _stats(done=1, total=1)},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        cards = screen.query_one("#mon-cards", ListView)
+        assert cards.index == 0
+        await pilot.press("w")
+        await pilot.pause()
+        tree_b = cards.children[1].query_one(RunCardTree)
+        target_key = ("task", "/scans/run-b", "m3", "t3")
+        line = _visible_tree_nodes(tree_b).index(target_key)
+
+        class _ClickStyle:
+            def __init__(self, meta):
+                self.meta = meta
+
+        tree_b.post_message(events.Click(
+            widget=tree_b, x=6, y=line, delta_x=0, delta_y=0, button=0,
+            shift=False, meta=False, ctrl=False,
+            style=_ClickStyle({"line": line})))
+        await pilot.pause()
+        await pilot.pause()
+        assert tree_b.cursor_node.data == target_key, (
+            "the click moved the tree cursor onto the clicked node"
+        )
+        assert cards.index == 1, "the click SELECTED the card"
+        assert screen.focused is tree_b, "the click focused the tree"
+        assert not isinstance(app.screen, RunCellsModal), (
+            "a tree click NEVER opens the drill modal"
+        )
+        # Enter — the keyboard path — remains the ONLY drill trigger
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, RunCellsModal)
+
+
+async def test_matrix_overflow_defaults_to_tree_and_manual_holds():
+    """261019-pe0 — the AUTO-FALLBACK: a fixture whose task set exceeds
+    the left pane's matrix budget renders TREE by default at (120, 40)
+    with NO manual press; a manual [w] choice to matrix HOLDS across a
+    steady cadence tick with unchanged structure; a STRUCTURAL change
+    (a new task appears) resets the manual choice and the pane falls
+    back to tree; a narrow-size boot derives honestly (the narrow
+    matrix is per-model count rows — no task columns to overflow)."""
+    from tui.screens.monitor import RunCardTree
+
+    overflow_cells = tuple(
+        _row("model-a", task, {42: CELL_QUEUED})
+        for task in _OVERFLOW_TASKS)
+
+    def _overflow_monitor(cells=overflow_cells):
+        return FakeMonitorService(
+            scans=[ScanResult(sweeps=(_summary(
+                "finetuned", SWEEP_RUNNING, done=0, total=8, mtime=1.0),),
+                watermarks={})],
+            cells={"/scans/finetuned": cells},
+            stats={"/scans/finetuned": _stats(done=0, total=8)})
+
+    app = _app(monitor=_overflow_monitor())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        # the FIRST scan paint derived TREE with no manual press
+        assert screen._left_mode == "tree"
+        assert screen._left_mode_user is None, "auto, not manual"
+        cards = screen.query_one("#mon-cards", ListView)
+        assert cards.children[0].query_one(RunCardTree) is not None
+        assert not _card_texts(screen, "mon-matrix-row")
+        # the manual choice: two w presses reach matrix (tree -> wide ->
+        # matrix on the cycle) and HOLD across a steady frontier tick
+        await pilot.press("w")
+        await pilot.pause()
+        assert screen._left_mode == "wide"
+        await pilot.press("w")
+        await pilot.pause()
+        assert screen._left_mode == "matrix"
+        assert screen._left_mode_user == "matrix"
+        assert _card_texts(screen, "mon-matrix-row"), (
+            "the manual choice renders the matrix"
+        )
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert screen._left_mode == "matrix", (
+            "the manual choice holds across the steady tick"
+        )
+        # a STRUCTURAL change resets the manual choice -> auto (tree)
+        monitor = screen._service
+        monitor._cells["/scans/finetuned"] = overflow_cells + (
+            _row("model-a", "GUE__overflow_task_99", {42: CELL_QUEUED}),)
+        screen._tick_full()
+        await _settle(pilot, app)
+        assert screen._left_mode_user is None, (
+            "the structural change reset the manual choice"
+        )
+        assert screen._left_mode == "tree", (
+            "the pane fell back to the auto default (tree)"
+        )
+        assert screen.query(RunCardTree)
+
+    # the narrow boot derives honestly: at (90, 40) the narrow matrix is
+    # per-model COUNT rows (no task columns — the overflow the tree
+    # solves is a column-count problem), so auto stays matrix
+    app = _app(monitor=_overflow_monitor())
+    async with app.run_test(size=(90, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert screen._narrow is True
+        assert screen._left_mode == "matrix"
+        assert screen._derive_left_mode() == "matrix", (
+            "the narrow count-row matrix never overflows"
+        )
+
+
+async def test_tree_steady_tick_zero_write_and_rebuild_preserves_state():
+    """261019-pe0 — the GATE LAW over the tree (the rze/f0x family
+    extended): after the initial tree paint (model-b collapsed, the
+    cursor parked on a task node), one steady tick over UNCHANGED data
+    performs ZERO tree writes (no clear, no set_label) and zero
+    ListView/Label writes; a node-set change (a new task) rebuilds the
+    tree ONCE with every model's expansion state and the cursor node
+    preserved (identity-equivalent by data key)."""
+    from tui.screens.monitor import RunCardTree
+
+    cells = tuple(
+        _row("model-a", task, {42: CELL_QUEUED})
+        for task in _OVERFLOW_TASKS[:6]) + (
+        _row("model-b", "GUE__steady_task_1", {42: CELL_RUNNING}),)
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=0, total=7, mtime=1.0),),
+            watermarks={})],
+        cells={"/scans/finetuned": cells},
+        stats={"/scans/finetuned": _stats(done=0, total=7)})
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        cards = screen.query_one("#mon-cards", ListView)
+        assert screen._left_mode == "tree", "the overflow default"
+        tree = cards.children[0].query_one(RunCardTree)
+        # arrangement: model-b collapsed, the cursor on model-a's first
+        # task node (the cache-sync messages land on the pauses)
+        model_b = next(node for node in tree.root.children
+                       if node.data[2] == "model-b")
+        model_b.collapse()
+        screen._tree_move(tree, tree.root.children[0].children[0])
+        await pilot.pause()
+        await pilot.pause()
+        cursor_key = tree.cursor_node.data
+        assert cursor_key[0] == "task"
+        # the steady tick over UNCHANGED data: zero writes everywhere
+        spies = {"tree clear": _spy(tree, "clear")}
+        spies.update({
+            f"node set_label {index}": _spy(node, "set_label")
+            for index, node in enumerate(_tree_nodes(tree))})
+        spies.update({
+            f"card label {index} update": _spy(label, "update")
+            for index, label in enumerate(
+                cards.children[0].query(Label))})
+        try:
+            screen._tick_frontier()
+            await _settle(pilot, app)
+            for name, (_patcher, mocked) in spies.items():
+                assert mocked.call_count == 0, (
+                    f"a steady tree tick performed a {name} — the gate "
+                    "law is broken"
+                )
+        finally:
+            for patcher, _mocked in spies.values():
+                patcher.stop()
+        # the node-set change: a NEW task under model-a -> the rebuild
+        monitor._cells["/scans/finetuned"] = cells + (
+            _row("model-a", "GUE__steady_task_9", {42: CELL_QUEUED}),)
+        screen._tick_full()
+        await _settle(pilot, app)
+        new_tree = cards.children[0].query_one(RunCardTree)
+        assert new_tree is not tree, "the structure change rebuilt"
+        new_model_b = next(node for node in new_tree.root.children
+                           if node.data[2] == "model-b")
+        assert new_model_b.is_collapsed, (
+            "the collapsed model stayed collapsed through the rebuild"
+        )
+        assert new_tree.cursor_node.data == cursor_key, (
+            "the cursor node survived the rebuild (same data key)"
+        )
+        assert screen._tree_find(
+            new_tree, "/scans/finetuned", "model-a",
+            "GUE__steady_task_9") is not None, (
+                "the new task node is present after the rebuild"
+            )
+
+
+async def test_tree_focus_unification_feeds_right_pane():
+    """261019-pe0 — the FOCUS UNIFICATION: matrix/tree/wide share the
+    (model, task) coordinate. Entering tree from a matrix focus at
+    (0, 1) lands the tree cursor on that model's SECOND task node with
+    the pane naming it; a tree cursor move to another task node feeds
+    the pane exactly as the matrix focus does; entering wide lands the
+    wide cursor on the focused group's row; leaving wide repaints the
+    matrix reverse highlight on the same group."""
+    from tui.screens.monitor import RunCardTree
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=4, mtime=1.0),),
+            watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),
+            _row("model-a", "task-2", {43: CELL_QUEUED}),
+            _row("model-b", "task-1", {42: CELL_COMPLETED}),
+            _row("model-b", "task-2", {42: CELL_FAILED}),)},
+        stats={"/scans/finetuned": _stats(done=1, total=4)})
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        await pilot.press("right")
+        await pilot.pause()
+        assert screen._focus_pos == (0, 1)
+        # entering tree: the cursor lands the focused group's task node
+        await pilot.press("w")
+        await pilot.pause()
+        tree = screen.query_one(
+            "#mon-cards", ListView).children[0].query_one(RunCardTree)
+        assert tree.cursor_node.data == (
+            "task", "/scans/finetuned", "model-a", "task-2")
+        assert _detail_plain(screen).splitlines()[0] == (
+            "model-a × task-2"), "the pane follows the tree cursor"
+        # a tree cursor move feeds the pane (the exact matrix tail)
+        await pilot.press("down")   # -> model-b (column carried)
+        await pilot.pause()
+        await pilot.press("down")   # -> model-b's first task node
+        await pilot.pause()
+        assert tree.cursor_node.data == (
+            "task", "/scans/finetuned", "model-b", "task-1")
+        assert _detail_plain(screen).splitlines()[0] == (
+            "model-b × task-1")
+        # entering wide: the cursor lands the focused group's row
+        await pilot.press("w")
+        await pilot.pause()
+        assert screen._wide is True
+        wide = screen.query_one("#mon-wide", DataTable)
+        row_key = str(wide.coordinate_to_cell_key(
+            wide.cursor_coordinate)[0].value)
+        assert screen._wide_row_group(row_key) == (
+            "/scans/finetuned", "model-b__task-1"), (
+                "the wide cursor sits on the focused group's row"
+            )
+        # leaving wide: the matrix reverse highlight sits on the same
+        # group
+        await pilot.press("w")
+        await pilot.pause()
+        assert screen._left_mode == "matrix"
+        focused = screen._focused_group()
+        assert (focused[1], focused[2]) == ("model-b", "task-1"), (
+            "the wide cursor's group became the matrix focus"
+        )
 
 
 async def test_history_tab_lists_runs_newest_first_with_states():

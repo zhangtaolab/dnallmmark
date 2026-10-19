@@ -122,8 +122,12 @@ EXPECTED_MON_CONSTANTS = (
     # one block, one tripwire edit (+5/-4 with the retirements above).
     # 261019-n0w: +MON_DETAIL_STEPS (the pane's step/max line, zh == en
     # — the data-forward precedent).
+    # 261019-pe0: +MON_TREE_TOGGLE_KEYCAP (the [*] tree-state
+    # expand/collapse-all keycap beside MON_WIDE_KEYCAP — the +1
+    # precedent, same commit as the constant).
     "MON_STRIP_ELAPSED", "MON_STRIP_ETA", "MON_STRIP_ETA_RANGE",
     "MON_STRIP_RATE", "MON_WIDE_KEYCAP", "MON_DETAIL_STEPS",
+    "MON_TREE_TOGGLE_KEYCAP",
     # the History/drill tables' columns (root/progress survive; the
     # activity column replaces the retired ETA column).
     "MON_RUN_CELLS_TITLE", "MON_COL_ROOT", "MON_COL_PROGRESS",

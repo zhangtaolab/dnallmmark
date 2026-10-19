@@ -1685,6 +1685,12 @@ MON_STRIP_RATE = _t("MON_STRIP_RATE", "{rate} it/s", "{rate} it/s")
 MON_DETAIL_STEPS = _t(
     "MON_DETAIL_STEPS", "step {step}/{max}", "step {step}/{max}")
 MON_WIDE_KEYCAP = _t("MON_WIDE_KEYCAP", "宽表", "wide")
+# 261019-pe0: the [*] tree-state keycap (expand ALL / collapse ALL — the
+# locked nav contract; Running-tab-effective, silent elsewhere — the d/e/w
+# precedent). zh/en data-forward-terse: ± carries expand/collapse, 全部
+# is "all" — no new terminology enters the zh table.
+MON_TREE_TOGGLE_KEYCAP = _t(
+    "MON_TREE_TOGGLE_KEYCAP", "± 全部", "± all")
 
 # 261018-kvj Task 2: the graduation toasts — a run the screen OBSERVED
 # running that reaches a terminal state between two on-screen scans

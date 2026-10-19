@@ -152,6 +152,34 @@ Contract (locked decisions that survive the redesign):
   shape legs and the filtered row map IS the wide sig, so the rze/f0x
   gate law (rebuild-on-shape-change, steady zero-write, focus clamps
   through ``_normalize_focus``) holds by construction.
+- 261019-pe0 (the maintainer's 2026-10-19 18:14-18:16 scalability
+  ruling): the left pane is a THREE-STATE cycle matrix -> tree -> wide
+  over [w] (the keycap stays MON_WIDE_KEYCAP byte-identical — no footer
+  churn beyond the new [*] keycap). TREE = one ``RunCardTree`` per card
+  under the strip (model nodes: name + filtered done/total, the o8e
+  basis; task leaves: the key + the per-seed glyph cluster with the
+  compact inline percent + derived rate on running seeds whose progress
+  parses — glyph only otherwise, never a fabricated number) deriving
+  from the SAME ``_card_rows`` merged map (the o8e filter applies for
+  free). AUTO-FALLBACK (no persisted mode): when any card's matrix
+  width exceeds the pane budget the pane DEFAULTS to tree (a PURE
+  function of the task sets + the width — it cannot flap between ticks
+  with unchanged inputs); a MANUAL [w] choice HOLDS exactly until the
+  next STRUCTURAL change (the per-card structure tuple: card set /
+  model or task set / narrow flip) or a remount (on_mount resets to
+  auto). The NAV CONTRACT is LOCKED and implemented verbatim: up/down
+  move between visible nodes (the tree's native clamped cursor — NO
+  card crossing in tree state; the matrix card-cross law is
+  matrix-scoped); right expands-or-into-children; left
+  collapses-or-to-parent (the invisible root is never a target); Enter
+  on a model node toggles (NEVER a modal), on a task node drills with
+  the cursor pinned; ``*`` toggles expand/collapse-ALL across every
+  card; Tab ALWAYS switches. CLICK selects the node + the CARD and
+  never drills (the n0w law extended). The GATE LAW extends: the
+  per-card tree structure signature gates the rebuild (preserving
+  expansion + cursor through the screen-side caches), label-only
+  changes update via ``set_label`` in place, the cards signature gains
+  the effective-mode leg, and on_mount resets every new sentinel.
 - WR-06: every async modal push checks ``app.below_minimum_grid``.
 - 261018-toe (the maintainer's 2026-10-18 21:21 slot-5 ruling): the
   History tab's row actions — [d] delete (a strong y-only
@@ -184,12 +212,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 from rich.text import Text
-from textual import work
+from textual import events, work
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen, Screen
+from textual.widget import Widget
 from textual.widgets import (
     DataTable,
     Footer,
@@ -198,6 +227,7 @@ from textual.widgets import (
     ListView,
     RichLog,
     Static,
+    Tree,
 )
 
 from tui import strings as S
@@ -535,6 +565,88 @@ class MatrixCardsList(ListView):
         event.prevent_default()
         self.focus()
         self.index = self._nodes.index(event.item)
+
+
+class RunCardTree(Tree):  # type: ignore[type-arg]
+    """The Running card's TREE-state widget (261019-pe0, the maintainer's
+    2026-10-19 18:14 scalability ruling): one tree per card under the
+    card's strip, model nodes at the top level (``show_root=False`` — the
+    invisible root is never a cursor target), task nodes as leaves.
+
+    The construction contract (probed textual 8.2.8): ``Tree.__init__``
+    takes NO ``auto_expand``/``show_root`` kwargs — they are attribute
+    assignments after the super call (``show_root`` is a reactive whose
+    watcher resets the cursor, harmless pre-mount).
+
+    CLICK LAW (the n0w MatrixCardsList precedent EXTENDED): a click on a
+    tree node's label SELECTS and FOCUSES it and NEVER drills — Enter
+    stays the ONLY drill trigger. The stock ``Tree._on_click`` label
+    branch sets the cursor then ``run_action("select_cursor")`` (posting
+    NodeSelected -> the screen's drill/toggle dispatch), which is exactly
+    the misfire this override removes. ``event.stop()`` +
+    ``event.prevent_default()`` (BOTH — the n0w MRO lesson: textual's
+    ``_get_dispatch_methods`` walks the full MRO and would run the stock
+    body after this override; ``prevent_default`` breaks that walk —
+    probe-verified in the 261019-pe0 pilot lane). The toggle-ICON branch
+    (``meta["toggle"]``) keeps the native behavior (toggle expand only,
+    posts nothing). The CardPicked message is the one thing posted: the
+    owning screen selects the CARD (the ListView index follows — the one
+    card-focus authority). ``auto_expand=False`` neutralizes the stock
+    ``_expand_node_on_select`` so ALL expand/collapse flows through the
+    screen's explicit calls — one code path for the locked Enter rule.
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__("", **kwargs)
+        self.auto_expand = False
+        self.show_root = False
+
+    def on_mount(self) -> None:
+        """Notify the owning screen the tree is live (261019-pe0): the
+        mode-switch render appends the card ListItems asynchronously
+        (textual defers the mount — a same-pass ``query_one`` on the
+        fresh item finds nothing, probed), so the screen's post-switch
+        FOCUS move cannot resolve the tree synchronously. The mount
+        notification is the deterministic hook: the screen focuses the
+        FOCUSED card's tree when it lands."""
+        self.post_message(self.TreeMounted(self))
+
+    class TreeMounted(Message):
+        """The tree's mount completed — the screen may now focus it."""
+
+        def __init__(self, tree: "RunCardTree") -> None:
+            self.tree = tree
+            super().__init__()
+
+    class CardPicked(Message):
+        """A label-region click landed on a node: the owning screen
+        selects the CARD (the ListView index follows). Never a drill —
+        click selects, Enter drills (the locked contract)."""
+
+        def __init__(self, tree: "RunCardTree") -> None:
+            self.tree = tree
+            super().__init__()
+
+    async def _on_click(self, event: events.Click) -> None:
+        meta = event.style.meta
+        if "line" not in meta:
+            return  # the stock no-op region (no node under the click)
+        event.stop()
+        event.prevent_default()  # the n0w MRO-walk lesson — BOTH flags
+        node = self.get_node_at_line(meta["line"])
+        if meta.get("toggle", False):
+            # the toggle icon: native behavior ONLY (expand/collapse,
+            # posts nothing)
+            if node is not None:
+                self._toggle_node(node)
+            return
+        self.focus()
+        # CardPicked BEFORE the cursor write: the card select must land
+        # ahead of the NodeHighlighted the cursor move posts, so the
+        # screen's highlight sync resolves against the CLICKED card (the
+        # index is the card-focus authority)
+        self.post_message(self.CardPicked(self))
+        self.cursor_line = meta["line"]
 
 
 # =====================================================================
@@ -1578,11 +1690,22 @@ class MonitorScreen(Screen):
         # 261016-vxr (VXR-2): stop the focused running run through the
         # launcher's kill channel — y-only confirm, console stays up
         Binding("k", "kill_running", S.MON_KILL_KEYCAP),
-        # 261019-f0x: [w] toggles the Running tab's matrix <-> the
-        # A-style dense per-cell table (the k9s narrow/wide precedent);
-        # the keycap renders ONLY while the Running tab is active (the
-        # _footer_pairs projection, the d/e precedent)
-        Binding("w", "toggle_wide", S.MON_WIDE_KEYCAP),
+        # 261019-f0x: [w] toggled the matrix <-> the wide table; 261019-pe0
+        # made it the THREE-STATE cycle over the Running tab's left pane
+        # (matrix -> tree -> wide -> matrix — the maintainer's scalability
+        # ruling: the f0x matrix cannot hold a real 62x50 sweep). The
+        # keycap label stays MON_WIDE_KEYCAP byte-identical (no footer
+        # churn); the keycap renders ONLY while the Running tab is active
+        # (the _footer_pairs projection, the d/e precedent); on History
+        # the key is a silent no-op.
+        Binding("w", "cycle_left", S.MON_WIDE_KEYCAP),
+        # 261019-pe0 (the locked tree nav contract): [*] toggles
+        # expand-ALL / collapse-ALL across EVERY card's tree (any
+        # collapsed model -> all expand; else all collapse; a
+        # collapsed-away cursor node moves to its model node).
+        # Running-tab-effective in TREE mode, silent elsewhere (the
+        # d/e/w precedent).
+        Binding("*", "tree_toggle_all", S.MON_TREE_TOGGLE_KEYCAP),
         Binding("1", "app.nav(1)", S.NAV_LABEL_ENV, show=False),
         Binding("2", "app.nav(2)", S.NAV_LABEL_SELECTION, show=False),
         Binding("3", "app.nav(3)", S.NAV_LABEL_DATA, show=False),
@@ -1837,10 +1960,25 @@ class MonitorScreen(Screen):
         self._right_detail_sig: tuple | None = None
         self._right_tail_sig: tuple | None = None
         self._tail_stage_id = 0
-        # 261019-f0x Task 3: the [w] wide-toggle mode flag (default
-        # matrix; on_mount resets it so the L-toggle recompose lands
-        # matrix-first) + the wide table's rendered-content signature
-        self._wide = False
+        # 261019-f0x Task 3 + 261019-pe0: the left pane's MODE MACHINE —
+        # [w] cycles matrix -> tree -> wide -> matrix (the effective mode
+        # always valid; "wide" is reachable ONLY through a manual cycle —
+        # auto derives matrix/tree alone). The manual hold window:
+        # ``_left_mode_user`` (None = auto) holds until the per-card
+        # STRUCTURE tuple changes (card set / model or task set / narrow
+        # flip) or a remount — ``_left_mode_struct_sig`` detects the
+        # change and resets the choice to auto. ``_tree_sigs`` /
+        # ``_tree_expand`` / ``_tree_cursor`` are the per-action-root
+        # tree gate-law caches (structure sig / expansion map / cursor
+        # node key — they survive the ListItem rebuilds that destroy the
+        # widget state, preserving the operator's tree exactly).
+        self._left_mode = "matrix"
+        self._left_mode_user: str | None = None
+        self._left_mode_struct_sig: tuple | None = None
+        self._tree_sigs: dict[str, tuple] = {}
+        self._tree_expand: dict[str, dict[str, bool]] = {}
+        self._tree_cursor: dict[str, tuple] = {}
+        # the wide table's rendered-content signature
         self._wide_sig: tuple | None = None
 
     # ===== the session write-through properties (261018-08g, SOAK-1) =====
@@ -1860,6 +1998,15 @@ class MonitorScreen(Screen):
     @property
     def _ever_discovered(self) -> "set[str]":
         return self._session.ever_discovered
+
+    @property
+    def _wide(self) -> bool:
+        """The [w] cycle's wide leg (261019-pe0): a READ-ONLY projection
+        over the mode machine — every pre-existing ``_wide`` read site
+        (the wide render/visibility/focus/arrow branches + the pilot
+        asserts) stays byte-unchanged; writes go through the mode
+        machine (``_left_mode``), never here."""
+        return self._left_mode == "wide"
 
     # ===== compose / mount =====
 
@@ -1910,8 +2057,11 @@ class MonitorScreen(Screen):
         # updates and the recomposed tabs/cards would render empty in
         # the stale language. 261019-f0x: every NEW sentinel (the
         # strip/matrix cards sig carries the focus, the right pane's
-        # detail/tail sigs, the wide table's sig) resets with them, and
-        # the recompose lands matrix-first (the [w] flag resets too).
+        # detail/tail sigs, the wide table's sig) resets with them.
+        # 261019-pe0: the mode machine's sentinels reset too — the
+        # L-toggle recompose lands AUTO-MODE (the manual choice dies
+        # with the remount) and the tree gate-law caches clear so the
+        # fresh widgets rebuild from scratch.
         self._tabs_sig = None
         self._scan_note_shown = None
         self._cards_sig = None
@@ -1919,7 +2069,12 @@ class MonitorScreen(Screen):
         self._right_detail_sig = None
         self._right_tail_sig = None
         self._wide_sig = None
-        self._wide = False
+        self._left_mode = "matrix"
+        self._left_mode_user = None
+        self._left_mode_struct_sig = None
+        self._tree_sigs = {}
+        self._tree_expand = {}
+        self._tree_cursor = {}
         # the pane's RichLog is display-only (never focusable — every
         # key stays screen-level, no focus trap)
         self.query_one("#mon-right-log", RichLog).can_focus = False
@@ -2334,14 +2489,12 @@ class MonitorScreen(Screen):
                         if row.model == model})
         self._focus_pos = (models.index(model), tasks.index(task))
 
-    def _cards_signature(self, cards: "list[_RunCard]") -> tuple:
-        """The STRUCTURE signature (261018-rze c + 261019-f0x): per
-        card the roots identity/order, base_live, the resume-note
-        presence, the narrow mode, and the MERGED MATRIX SHAPE (the
-        models/tasks tuples — everything label-count/order-changing),
-        PLUS the focus tuple and the focused card index (a focus move
-        repaints the highlight — structural for the two affected rows,
-        still zero ListView churn via ``_repaint_focus_move``)."""
+    def _cards_struct_legs(self, cards: "list[_RunCard]") -> tuple:
+        """The per-card STRUCTURE legs (261019-pe0): the ``_cards_signature``
+        loop body WITHOUT the index/focus/mode legs — the exact tuple the
+        mode machine's hold-check watches (a change here resets the manual
+        [w] choice to auto: card set / model or task set / narrow flip /
+        resume-note presence / base_live)."""
         per_card = []
         for card in cards:
             rows = self._card_rows(card)
@@ -2350,8 +2503,75 @@ class MonitorScreen(Screen):
                 self._resumes.get(card.roots[0], 0) > 0, self._narrow,
                 tuple(sorted({row.model for row in rows.values()})),
                 tuple(sorted({row.task for row in rows.values()}))))
+        return tuple(per_card)
+
+    def _cards_signature(self, cards: "list[_RunCard]") -> tuple:
+        """The STRUCTURE signature (261018-rze c + 261019-f0x): per
+        card the roots identity/order, base_live, the resume-note
+        presence, the narrow mode, and the MERGED MATRIX SHAPE (the
+        models/tasks tuples — everything label-count/order-changing),
+        PLUS the focus tuple and the focused card index (a focus move
+        repaints the highlight — structural for the two affected rows,
+        still zero ListView churn via ``_repaint_focus_move``).
+        261019-pe0: the EFFECTIVE MODE joins as the final leg — a mode
+        switch flips the card's widget shape (strip+resume+matrix Labels
+        vs strip+resume+RunCardTree) and MUST force the rebuild."""
         index = self.query_one("#mon-cards", ListView).index
-        return (tuple(per_card), index, self._focus_pos)
+        return (self._cards_struct_legs(cards), index, self._focus_pos,
+                self._left_mode)
+
+    def _matrix_width_budget(self) -> int:
+        """The left pane's matrix width budget (261019-pe0): the DOM read
+        (``#mon-left``'s container width) capped by the screen-width
+        arithmetic (``width - 40`` on the wide grid where ``#mon-right``
+        holds its 40-col allocation, the full width when narrow —
+        tui/styles.tcss). The cap is LOAD-BEARING (probe-pinned): at the
+        FIRST scan paint the pane's display flip has not re-laid-out yet,
+        so the DOM read still reflects the pane-hidden stretch (~120
+        cells at the wide grid) and would admit a matrix that overflows
+        the moment the layout catches up — the cap projects the budget
+        the pane WILL claim. A failed/non-positive DOM read (the
+        pre-layout on_mount window) takes the arithmetic alone."""
+        cap = max(0, self.size.width - (0 if self._narrow else 40))
+        try:
+            width = self.query_one("#mon-left").container_size.width
+            if width and width > 0:
+                return min(width, cap)
+        except Exception:  # noqa: BLE001, S110 — pre-layout: the
+            # arithmetic cap below covers the window
+            pass
+        return cap
+
+    def _card_matrix_overflows(self, card: _RunCard) -> bool:
+        """261019-pe0: does the card's f0x matrix exceed the pane's width
+        budget? ``needed = the name column + every task column`` over the
+        SAME merged row map the matrix renders (the o8e filter applies
+        for free). NARROW never overflows — the narrow matrix is
+        per-model COUNT rows (no task columns at all; the tree solves a
+        column-count problem), and the narrow leg of the structure
+        signature already resets the manual mode on the flip."""
+        if self._narrow:
+            return False
+        rows = self._card_rows(card)
+        tasks = sorted({row.task for row in rows.values()})
+        if not tasks:
+            return False
+        needed = _MATRIX_NAME_WIDTH + sum(
+            _matrix_col_width(task) for task in tasks)
+        return needed > self._matrix_width_budget()
+
+    def _derive_left_mode(self) -> str:
+        """The EFFECTIVE left-pane mode (261019-pe0): the manual [w]
+        choice when one holds, else the AUTO default — tree iff ANY
+        card's matrix overflows the pane budget, matrix otherwise. A
+        PURE function of (the task sets, the width): unchanged inputs
+        can never flip the mode between ticks (T-pe0-02), and "wide" is
+        reachable only through the manual cycle, never auto."""
+        if self._left_mode_user is not None:
+            return self._left_mode_user
+        cards = self._cards()
+        return ("tree" if any(self._card_matrix_overflows(card)
+                              for card in cards) else "matrix")
 
     def _repaint_focus_move(self) -> None:
         """A focus-only change (the arrow movers land here): the shared
@@ -2404,13 +2624,9 @@ class MonitorScreen(Screen):
         header = Text(f"{model} × {task}", style="bold cyan")
         header.truncate(width, overflow="ellipsis", pad=False)
         lines = [header]
-        progress = None
-        for root in card.roots:
-            candidate = (self._cell_progress.get(root) or {}).get(
-                (model, task))
-            if candidate is not None and candidate.percent is not None:
-                progress = candidate
-                break
+        # 261019-pe0: the group progress resolution lives in
+        # ``_group_progress`` (shared with the tree's task labels)
+        progress = self._group_progress(card, model, task)
         accent = str(self.app.current_theme.accent)
         if progress is not None:
             # (a) the D bar line — 20 cells at the strip's bar width
@@ -3007,7 +3223,13 @@ class MonitorScreen(Screen):
         261019-o8e: rows + counts compute ONCE; the strip's done/total
         derives over the FILTERED counts when the live-sweep scoping is
         active for the card (the glyph counts and the fraction share
-        the one basis), else today's stats-seam precedence."""
+        the one basis), else today's stats-seam precedence.
+
+        261019-pe0: in TREE mode this builder returns ONLY the strip +
+        resume-note lines — the per-card ``RunCardTree`` carries the
+        body (a non-Label widget, so ``_refresh_card_labels``'
+        ``query(Label)`` walk matches; the mode leg in ``_cards_sig``
+        forces the ListItem rebuild on every switch)."""
         rows = self._card_rows(card)
         counts = self._card_seed_counts(rows)
         if self._card_filter_active(card):
@@ -3024,6 +3246,8 @@ class MonitorScreen(Screen):
             lines.append(("mon-card-resume",
                           Text(note_copy.format(n=resume),
                                style="dim")))
+        if self._left_mode == "tree":
+            return lines  # the tree under the strip is the card's body
         focused_pair = None
         focused = self._focused_group()
         # ``_cards()`` builds fresh _RunCard instances per call — the
@@ -3037,11 +3261,246 @@ class MonitorScreen(Screen):
     def _card_widget(self, card: _RunCard) -> ListItem:
         """One running card's WIDGET — the thin constructor over the
         shared ``_card_content`` builder (261018-rze: the rebuild path's
-        widget tree stays byte-identical; see ``_card_content``)."""
-        return ListItem(Vertical(
-            *[Label(text, classes=classes)
-              for classes, text in self._card_content(card)],
-            classes="mon-card"))
+        widget tree stays byte-identical; see ``_card_content``).
+        261019-pe0: in TREE mode a POPULATED ``RunCardTree`` joins after
+        the Labels — populated AT CONSTRUCTION (textual defers the
+        mount, so a same-pass ``query_one`` cannot fill it — probed);
+        ``_build_card_tree`` is the one build path shared with the
+        in-place structure change."""
+        children: list = [
+            Label(text, classes=classes)
+            for classes, text in self._card_content(card)]
+        if self._left_mode == "tree":
+            tree = RunCardTree(classes="mon-card-tree")
+            self._build_card_tree(tree, card)
+            children.append(tree)
+        return ListItem(Vertical(*children, classes="mon-card"))
+
+    # ===== the TREE state's per-card body (261019-pe0) =====
+
+    def _group_progress(self, card: _RunCard, model: str, task: str):
+        """One group's PARSED progress — the ``_right_detail_lines``
+        resolution (first root of the card whose progress carries a
+        percent), shared with the tree's task labels since 261019-pe0 so
+        the pane and the tree can never disagree. None when nothing
+        parses (the honest glyph-only rendering)."""
+        for root in card.roots:
+            candidate = (self._cell_progress.get(root) or {}).get(
+                (model, task))
+            if candidate is not None and candidate.percent is not None:
+                return candidate
+        return None
+
+    def _tree_model_label(self, model: str,
+                          rows: "dict[str, Any]") -> Text:
+        """A model node's label: the name bold + the filtered done/total
+        dim — done/total over THAT MODEL's rows of the ONE merged map
+        with the o8e basis (terminal = completed+failed+skipped over all
+        its filtered seeds; the ``_card_filtered_done_total``
+        arithmetic, never a stats-seam read)."""
+        model_rows = {key: row for key, row in rows.items()
+                      if row.model == model}
+        counts = self._card_seed_counts(model_rows)
+        done, total = self._card_filtered_done_total(counts)
+        label = Text(model, style="bold")
+        label += Text(f"  {done}/{total}", style="dim")
+        return label
+
+    def _tree_task_label(self, card: _RunCard, model: str, task: str,
+                         rows: "dict[str, Any]") -> Text:
+        """A task node's label: the task key + the per-seed cluster in
+        the pane's seed-line grammar — per sorted seed the ``s{n}``
+        token (dim) + the state glyph (the matrix glyph styles); a
+        RUNNING seed whose group progress parses carries the COMPACT
+        inline form (the integer percent cyan-bold + the derived rate);
+        a running seed without parsed progress renders the glyph ONLY —
+        honest, never a fabricated number, no steps/bar grammar (the
+        maintainer's example shape). A narrow tree stays full: the
+        labels are data, width-tolerant."""
+        label = Text(task)
+        label += Text("  ")
+        row = rows.get(f"{model}__{task}")
+        if row is None:
+            return label
+        progress = self._group_progress(card, model, task)
+        for cell_seed in sorted(row.seeds, key=lambda s: s.seed):
+            label += Text(f"{S.MON_COL_SEED.format(seed=cell_seed.seed)} ",
+                          style="dim")
+            label += Text(_state_glyph(cell_seed.state),
+                          style=_MATRIX_GLYPH_STYLES.get(
+                              cell_seed.state, "dim"))
+            if (cell_seed.state == CELL_RUNNING
+                    and progress is not None):
+                label += Text(" ")
+                label += Text(f"{progress.percent}%", style="cyan bold")
+                rate = _rate_of(progress)
+                label += Text(" ")
+                label += (Text(S.MON_STRIP_RATE.format(rate=rate))
+                          if rate is not None
+                          else Text(_DASH, style="dim"))
+        return label
+
+    def _tree_move(self, tree: RunCardTree, node) -> None:
+        """Move the tree cursor to a node SAFELY: touch the line map
+        first (``move_cursor`` reads the node's CACHED line index, set
+        only during textual 8.2.8's ``_tree_lines`` build — a freshly
+        built or structurally changed tree must rebuild it first,
+        probe-pinned) and refuse the move onto a hidden node (a task
+        under a collapsed parent — the caller falls back to the model
+        node)."""
+        tree.get_node_at_line(0)  # forces the line-map build
+        if node._line < 0:
+            return
+        tree.move_cursor(node)
+
+    def _tree_find(self, tree: RunCardTree, action_root: str,
+                   model: str, task: "str | None" = None):
+        """The tree's node for a (model, task) group — task node when
+        ``task`` is given, else the model node; None when absent."""
+        model_key = ("model", action_root, model)
+        for node in tree.root.children:
+            if node.data == model_key:
+                if task is None:
+                    return node
+                task_key = ("task", action_root, model, task)
+                for child in node.children:
+                    if child.data == task_key:
+                        return child
+                return None
+        return None
+
+    def _build_card_tree(self, tree: RunCardTree, card: _RunCard) -> None:
+        """Build one card's tree content — THE one build path shared by
+        the construction leg (``_card_widget``: a fresh widget pre-mount)
+        and the in-place structure change (``_render_card_tree``: the
+        per-card tree sig moved — e.g. a task moving between models, a
+        change the cards sig cannot see). Node data tuples are the node
+        identity: ``("model", action_root, model)`` /
+        ``("task", action_root, model, task)``.
+
+        The GATE LAW's preservation: expansion states come from the
+        screen-side ``_tree_expand`` cache (a FRESH tree defaults every
+        model EXPANDED — the maintainer's example shows task children
+        inline), the cursor re-pins by key lookup through
+        ``_tree_cursor`` — the captured key when it still exists, else
+        the focused group's task node, else the first node. Both caches
+        survive the ListItem rebuilds that destroy the widget state and
+        are kept fresh by the NodeExpanded/NodeCollapsed/NodeHighlighted
+        handlers."""
+        rows = self._card_rows(card)
+        action_root = card.roots[0]
+        tasks_of = {
+            model: sorted({row.task for row in rows.values()
+                           if row.model == model})
+            for model in sorted({row.model for row in rows.values()})}
+        struct = tuple((model, tuple(tasks_of[model]))
+                       for model in tasks_of)
+        expanded = self._tree_expand.get(action_root) or {}
+        tree.reset("")
+        tree.root.expand()
+        node_map: dict[tuple, Any] = {}
+        for model, model_tasks in tasks_of.items():
+            model_node = tree.root.add(
+                self._tree_model_label(model, rows),
+                data=("model", action_root, model),
+                allow_expand=True,
+                expand=expanded.get(model, True))
+            node_map[("model", action_root, model)] = model_node
+            for task in model_tasks:
+                node_map[("task", action_root, model, task)] = (
+                    model_node.add_leaf(
+                        self._tree_task_label(card, model, task, rows),
+                        data=("task", action_root, model, task)))
+        self._tree_sigs[action_root] = struct
+        # the cursor re-pin: capture key > focused group > first node; a
+        # captured task node hidden under a collapsed model falls back
+        # to its model node (the visible ancestor)
+        node = node_map.get(self._tree_cursor.get(action_root) or ())
+        if node is None:
+            focused = self._focused_group()
+            if (focused is not None and card.roots[0] == action_root
+                    and focused[0].roots == card.roots):
+                node = node_map.get(
+                    ("task", action_root, focused[1], focused[2]))
+                if node is None:
+                    node = node_map.get(("model", action_root, focused[1]))
+        if node is None and node_map:
+            node = next(iter(node_map.values()))
+        if node is not None:
+            tree.get_node_at_line(0)  # the line map: fresh for _line
+            if node._line < 0 and node.parent is not None:
+                node = node.parent
+            if node._line >= 0:
+                tree.move_cursor(node)
+
+    def _render_card_tree(self, card: _RunCard, item: Widget) -> None:
+        """The tree-state per-card render (the rze/f0x gate law's tree
+        leg): an UNCHANGED per-card structure signature performs the
+        label pass ONLY — ``TreeNode.set_label`` where the rendered Text
+        differs (plain + spans compare, the f0x in-place precedent); a
+        CHANGED signature rebuilds through ``_build_card_tree`` (the
+        caches preserve expansion + cursor). A just-rebuilt ListItem
+        resolves no tree (textual defers the mount — probed): the
+        construction path already built its content, so the pass is a
+        no-op there."""
+        try:
+            tree = item.query_one(RunCardTree)
+        except Exception:  # noqa: BLE001 — the fresh-construction pass
+            return
+        rows = self._card_rows(card)
+        action_root = card.roots[0]
+        tasks_of = {
+            model: sorted({row.task for row in rows.values()
+                           if row.model == model})
+            for model in sorted({row.model for row in rows.values()})}
+        struct = tuple((model, tuple(tasks_of[model]))
+                       for model in tasks_of)
+        if struct != self._tree_sigs.get(action_root):
+            self._build_card_tree(tree, card)
+            return
+        for model_node in tree.root.children:
+            data = model_node.data
+            if not (isinstance(data, tuple) and data
+                    and data[0] == "model"):
+                continue
+            model = data[2]
+            label = self._tree_model_label(model, rows)
+            current = model_node.label
+            if (not isinstance(current, Text)
+                    or current.plain != label.plain
+                    or current.spans != label.spans):
+                model_node.set_label(label)
+            for task_node in model_node.children:
+                task_data = task_node.data
+                if not (isinstance(task_data, tuple)
+                        and task_data[0] == "task"):
+                    continue
+                task_label = self._tree_task_label(
+                    card, model, task_data[3], rows)
+                task_current = task_node.label
+                if (not isinstance(task_current, Text)
+                        or task_current.plain != task_label.plain
+                        or task_current.spans != task_label.spans):
+                    task_node.set_label(task_label)
+
+    def _focused_card_tree(self) -> "RunCardTree | None":
+        """The FOCUSED card's tree (the tree-state navigation target):
+        resolved through the ListView index (the one card-focus
+        authority), clamped, None-guarded — INDEPENDENT of which widget
+        holds focus (the screen's priority arrows own the keys either
+        way)."""
+        list_view = self.query_one("#mon-cards", ListView)
+        children = list_view.children
+        if not children:
+            return None
+        index = list_view.index
+        if index is None:
+            index = 0
+        index = max(0, min(index, len(children) - 1))
+        try:
+            return children[index].query_one(RunCardTree)
+        except Exception:  # noqa: BLE001 — matrix-mode items carry none
+            return None
 
     def _refresh_card_labels(self, cards: "list[_RunCard]") -> bool:
         """The unchanged-sig in-place refresh (261018-rze, c): walk the
@@ -3084,30 +3543,50 @@ class MonitorScreen(Screen):
         Labels in place. The rebuild path re-pins the cursor index
         clamped so a structural rebuild never steals the operator's
         selection (the WR-05 spirit; a list's identity is positional,
-        cards never reorder except on activity changes)."""
+        cards never reorder except on activity changes).
+
+        261019-pe0 mode plumbing (TOP of the pass, before
+        ``_normalize_focus``): (a) the STRUCTURAL hold-check — a change
+        in the per-card structure tuple resets the manual [w] choice to
+        auto; (b) the effective mode re-derives (user or auto). The
+        manual hold window is EXACTLY "until the per-card structure
+        tuple changes (card set / model or task set / narrow flip) or a
+        remount". In TREE mode the per-card tree pass runs at the END
+        (both the in-place and the rebuild path — a steady tick updates
+        the tree labels in place exactly as the card Labels)."""
+        struct = self._cards_struct_legs(cards)
+        if struct != self._left_mode_struct_sig:
+            self._left_mode_user = None
+            self._left_mode_struct_sig = struct
+        self._left_mode = self._derive_left_mode()
         self._normalize_focus()
         sig = self._cards_signature(cards)
         if sig == self._cards_sig and self._refresh_card_labels(cards):
             self._card_order = [card.roots[0] for card in cards]
-            return
-        list_view = self.query_one("#mon-cards", ListView)
-        previous = list_view.index
-        list_view.clear()
-        self._card_order = []
-        for card in cards:
-            list_view.append(self._card_widget(card))
-            self._card_order.append(card.roots[0])
-        if self._card_order:
-            # an unfocused-but-populated list still highlights row 0 (a
-            # bare enter through the screen binding must act on a real
-            # selection); a rebuild never steals the operator's index
-            list_view.index = max(
-                0, min(previous if previous is not None else 0,
-                       len(self._card_order) - 1))
-        # the signature recomputes AFTER the index pin — the assignment
-        # above changes an input the sig carries (261019-f0x), and a
-        # stale sig would rebuild again on the very next tick
-        self._cards_sig = self._cards_signature(cards)
+        else:
+            list_view = self.query_one("#mon-cards", ListView)
+            previous = list_view.index
+            list_view.clear()
+            self._card_order = []
+            for card in cards:
+                list_view.append(self._card_widget(card))
+                self._card_order.append(card.roots[0])
+            if self._card_order:
+                # an unfocused-but-populated list still highlights row 0
+                # (a bare enter through the screen binding must act on a
+                # real selection); a rebuild never steals the index
+                list_view.index = max(
+                    0, min(previous if previous is not None else 0,
+                           len(self._card_order) - 1))
+            # the signature recomputes AFTER the index pin — the
+            # assignment above changes an input the sig carries
+            # (261019-f0x), and a stale sig would rebuild again on the
+            # very next tick
+            self._cards_sig = self._cards_signature(cards)
+        if self._left_mode == "tree":
+            list_view = self.query_one("#mon-cards", ListView)
+            for item, card in zip(list_view.children, cards):
+                self._render_card_tree(card, item)
 
     def _history_columns(self) -> "list[tuple[str, str]]":
         return [("", "state"), (S.MON_COL_ROOT, "root"),
@@ -3170,20 +3649,172 @@ class MonitorScreen(Screen):
                     self._activity_cell(summary.newest_mtime)]
         _set_table_rows(table, self._history_columns(), row_map)
 
-    # ===== the [w] wide toggle (261019-f0x Task 3, droppable) =====
+    # ===== the [w] three-state cycle (261019-f0x Task 3 -> 261019-pe0) =====
 
-    def action_toggle_wide(self) -> None:
-        """[w]: flip the Running tab's surface between the B matrix and
-        the A-style dense per-cell table (the k9s narrow/wide
-        precedent). History tab: silent no-op (the [d]/[e] off-tab
-        precedent). The toggle re-renders and moves focus to the
-        visible surface through ``_focus_active``; the pre-toggle
-        matrix focus is never cleared, so [w] back restores it."""
+    def action_cycle_left(self) -> None:
+        """[w]: cycle the Running tab's left pane matrix -> tree -> wide
+        -> matrix (261019-pe0, the maintainer's scalability ruling — the
+        f0x matrix cannot hold a real 62x50 sweep). History tab: silent
+        no-op (the [d]/[e] off-tab precedent). The CHOICE is stored into
+        both the manual hold (``_left_mode_user``) and the effective
+        mode — effective immediately; the hold-check in
+        ``_render_cards`` keeps it until the next structural change.
+
+        FOCUS UNIFICATION around the switch (the o8e ``_normalize_focus``
+        precedent — matrix/tree/wide share the ``(model, task)``
+        coordinate): LEAVING wide derives ``_focus_pos`` from the wide
+        cursor row FIRST (the rows still hold the pre-switch state);
+        ENTERING tree pins the tree cursor onto the focused group's task
+        node (after the render — the widget must exist); ENTERING wide
+        moves the wide cursor to the focused group's first row (after
+        the render — the rows must exist). The pre-switch focus is never
+        cleared, so every pass-through restores it."""
         if self._active_tab != "running":
             return
-        self._wide = not self._wide
+        order = ("matrix", "tree", "wide")
+        current = self._left_mode if self._left_mode in order else "matrix"
+        target = order[(order.index(current) + 1) % len(order)]
+        if current == "wide":
+            self._leave_wide_derive_focus()
+        self._left_mode_user = target
+        self._left_mode = target
         self._render_all()
         self._focus_active()
+        # entering TREE needs no further call here: the fresh-appended
+        # trees mount asynchronously (probed), so the FOCUS move rides
+        # the tree's OWN mount notification (RunCardTree.TreeMounted ->
+        # the screen focuses the focused card's tree — the enter
+        # routing contract); the CURSOR pin already landed at the
+        # construction build. Entering WIDE pins below (the widget is
+        # composed at mount; only its rows changed).
+        if target == "wide":
+            self._enter_wide_pin()
+        self._kick_right_tail()
+
+    def _leave_wide_derive_focus(self) -> None:
+        """Leaving wide (wide -> matrix): derive ``_focus_pos`` from the
+        wide table's CURRENT cursor row — the ``_wide_row_group``
+        reverse lookup, the row's ``model__task`` resolved over the
+        owning card's merged row map, then ``_normalize_focus``. The
+        ListView index follows the row's card (the coordinate is
+        card-relative — the honest unification; the matrix cross-card
+        move precedent). Called BEFORE the mode flips (the read needs
+        the live cursor)."""
+        try:
+            wide = self.query_one("#mon-wide", DataTable)
+            row_key = str(wide.coordinate_to_cell_key(
+                wide.cursor_coordinate)[0].value)
+        except Exception:  # noqa: BLE001 — an empty table
+            return
+        group = self._wide_row_group(row_key)
+        if group is None:
+            return
+        root, key = group
+        cards = self._cards()
+        for index, card in enumerate(cards):
+            if root not in card.roots:
+                continue
+            row = self._card_rows(card).get(key)
+            if row is not None:
+                rows = self._card_rows(card)
+                models = sorted({r.model for r in rows.values()})
+                tasks = sorted({r.task for r in rows.values()
+                                if r.model == row.model})
+                self._focus_pos = (models.index(row.model),
+                                   tasks.index(row.task))
+            self.query_one("#mon-cards", ListView).index = index
+            self._normalize_focus()
+            return
+
+    def _enter_wide_pin(self) -> None:
+        """Entering wide: move the wide cursor onto the FOCUSED group's
+        first row (the ``root::model__task::`` key prefix among the
+        rendered rows — only when a focused group exists; the WR-05
+        no-animation re-pin idiom)."""
+        focused = self._focused_group()
+        if focused is None:
+            return
+        card, model, task, _row = focused
+        wide = self.query_one("#mon-wide", DataTable)
+        for root in card.roots:
+            prefix = f"{root}::{model}__{task}::"
+            for row_key in wide.rows:
+                key = str(row_key.value)
+                if key.startswith(prefix):
+                    try:
+                        wide.move_cursor(
+                            row=wide.get_row_index(key),
+                            animate=False, scroll=False)
+                    except Exception:  # noqa: BLE001, S110 — mid-diff:
+                        pass  # the cursor stays where the diff left it
+                    return
+
+    def _pin_tree_cursor_to_focus(self) -> None:
+        """Entering tree: pin the FOCUSED card's tree cursor onto the
+        focused group's TASK node (the key-lookup helper); a task node
+        hidden under a collapsed model falls back to its model node
+        (``_tree_move`` refuses hidden nodes). After ``_render_all`` +
+        ``_focus_active`` — the widget must exist."""
+        tree = self._focused_card_tree()
+        card = self._focused_card()
+        focused = self._focused_group()
+        if tree is None or card is None:
+            return
+        action_root = card.roots[0]
+        tree.get_node_at_line(0)  # the line map: fresh for the checks
+        node = None
+        if focused is not None and focused[0].roots == card.roots:
+            node = self._tree_find(
+                tree, action_root, focused[1], focused[2])
+            if node is None or node._line < 0:
+                node = self._tree_find(
+                    tree, action_root, focused[1])
+        if node is not None:
+            tree.move_cursor(node)
+
+    def action_tree_toggle_all(self) -> None:
+        """[*] (261019-pe0, the locked contract): expand-ALL /
+        collapse-ALL across EVERY card's tree — any collapsed model ->
+        all expand; else all collapse (a collapsed-away cursor node
+        moves to its model node, salvaged through the parent chain
+        BEFORE the collapse and re-pinned after the structural refresh).
+        Running-tab-effective in TREE mode only, silent elsewhere (the
+        [w] precedent)."""
+        if self._active_tab != "running" or self._left_mode != "tree":
+            return
+        list_view = self.query_one("#mon-cards", ListView)
+        trees: list[RunCardTree] = []
+        should_expand = False
+        for item in list_view.children:
+            try:
+                tree = item.query_one(RunCardTree)
+            except Exception:  # noqa: BLE001, S112 — matrix-mode items
+                continue
+            trees.append(tree)
+            if any(node.is_collapsed for node in tree.root.children
+                   if node.allow_expand):
+                should_expand = True
+        if not trees:
+            return
+        for tree in trees:
+            salvage = None
+            if not should_expand:
+                # a cursor under a model that is about to collapse moves
+                # to ITS model node — salvage the parent BEFORE hiding
+                cursor = tree.cursor_node
+                if (cursor is not None
+                        and isinstance(cursor.data, tuple)
+                        and cursor.data and cursor.data[0] == "task"
+                        and cursor.parent is not None):
+                    salvage = cursor.parent
+            for node in tree.root.children:
+                if node.allow_expand:
+                    if should_expand:
+                        node.expand()
+                    else:
+                        node.collapse()
+            if salvage is not None:
+                self._tree_move(tree, salvage)
 
     def _wide_row_group(self, row_key: str) -> "tuple[str, str] | None":
         """One wide-table row key's (root, ``model__task``) pair — the
@@ -3304,10 +3935,19 @@ class MonitorScreen(Screen):
             return
         if self._active_tab == "running":
             if self._card_order:
-                target = (
-                    self.query_one("#mon-wide", DataTable)
-                    if self._wide
-                    else self.query_one("#mon-cards", ListView))
+                if self._left_mode == "wide":
+                    target = self.query_one("#mon-wide", DataTable)
+                elif self._left_mode == "tree":
+                    # 261019-pe0: the tree (inside the focused card's
+                    # ListItem — can_focus_children, probed) holds focus
+                    # so its OWN enter binding consumes Enter (the
+                    # NodeSelected routing); resolved through the
+                    # ListView index, clamped, None-guarded
+                    target = self._focused_card_tree()
+                    if target is None:
+                        return
+                else:
+                    target = self.query_one("#mon-cards", ListView)
                 if target is not self.focused:
                     target.focus()
             elif self.focused is not None:
@@ -3329,9 +3969,10 @@ class MonitorScreen(Screen):
 
     #: The Running-scoped footer keys (261019-f0x): the [w] toggle's
     #: keycap renders ONLY while the Running tab is active (the d/e
-    #: precedent, mirrored).
+    #: precedent, mirrored). 261019-pe0: [*] joins (the tree-state
+    #: expand/collapse-all — same projection).
     _RUNNING_SCOPED_FOOTER_KEYS: ClassVar[frozenset[str]] = frozenset(
-        {"w"})
+        {"w", "*"})
 
     def _footer_pairs(self) -> "list[tuple[str, str]]":
         """The bottom bar's left-segment projection (261018-toe):
@@ -3385,12 +4026,50 @@ class MonitorScreen(Screen):
         at the edges; Tab is the switcher); everywhere else (the empty
         Running tab, no groups, wide mode, History) they switch tabs
         exactly as before — the kvj tab-switch contract, the pty pin
-        family."""
+        family.
+
+        261019-pe0 TREE branch (the LOCKED nav contract, BEFORE the
+        matrix branch): → on a COLLAPSED model node expands it (cursor
+        stays), on an EXPANDED model node moves into the first child,
+        on a task node no-ops; ← on an EXPANDED model node collapses it,
+        on a task node (or a top-level collapsed model — the invisible
+        root is NEVER a cursor target) moves to the parent. With cards
+        on the Running tab in tree mode the arrows NEVER switch tabs
+        (no-op at the contract's edges); with no cards they keep the
+        switch."""
+        if (self._active_tab == "running"
+                and self._left_mode == "tree" and self._card_order):
+            tree = self._focused_card_tree()
+            if tree is not None:
+                self._tree_arrow_horizontal(tree, delta)
+            return
         if (self._active_tab == "running" and not self._wide
                 and self._focused_group() is not None):
             self._move_focus_col(delta)
             return
         self.action_switch_tab()
+
+    def _tree_arrow_horizontal(self, tree: RunCardTree,
+                               delta: int) -> None:
+        """The tree state's ←/→ rules over one card's tree (the locked
+        contract — see ``action_arrow_horizontal``)."""
+        node = tree.cursor_node
+        if node is None or not (isinstance(node.data, tuple) and node.data):
+            return
+        if delta > 0:
+            if node.data[0] != "model":
+                return  # a task/leaf node: no-op
+            if not node.is_expanded:
+                node.expand()
+            elif node.children:
+                self._tree_move(tree, node.children[0])
+            return
+        if node.data[0] == "model" and node.is_expanded:
+            node.collapse()
+            return
+        parent = node.parent
+        if parent is not None and not parent.is_root:
+            self._tree_move(tree, parent)
 
     def action_arrow_vertical(self, delta: int) -> None:
         """↑/↓ (261019-f0x): on the Running tab in matrix mode they
@@ -3400,10 +4079,23 @@ class MonitorScreen(Screen):
         NATIVE cursor actions (action_cursor_up/action_cursor_down —
         probed present on textual 8.2.8; one code path, both tables).
         No key becomes dead and no focus trap is introduced
-        (T-f0x-03)."""
-        if self._active_tab == "running" and not self._wide:
-            self._move_focus_row(delta)
-            return
+        (T-f0x-03).
+
+        261019-pe0 TREE branch: the arrows delegate to the focused
+        card's tree's NATIVE cursor actions — movement between VISIBLE
+        lines, CLAMPED at the edges; NO card crossing in tree state
+        (the matrix card-cross law is matrix-scoped — the maintainer's
+        locked contract)."""
+        if self._active_tab == "running":
+            if self._left_mode == "tree":
+                tree = self._focused_card_tree()
+                if tree is not None:
+                    (tree.action_cursor_down if delta > 0
+                     else tree.action_cursor_up)()
+                return
+            if not self._wide:
+                self._move_focus_row(delta)
+                return
         table = self.focused
         if isinstance(table, DataTable):
             (table.action_cursor_down if delta > 0
@@ -3469,6 +4161,116 @@ class MonitorScreen(Screen):
             return
         self._open_run_drill(self._card_order[index],
                              self._drill_focus_key())
+
+    # ===== the tree-state message handlers (261019-pe0) =====
+
+    def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:  # type: ignore[type-arg]
+        """Enter on a tree node (the focused tree's OWN enter binding
+        consumes the key before the screen's row_action — the routing
+        contract): a MODEL node toggles expansion and NEVER opens a
+        modal (the locked rule; ``auto_expand=False`` makes the stock
+        ``_expand_node_on_select`` a no-op, so THIS is the one toggle
+        path); a TASK node drills the RunCellsModal with the cursor
+        pinned to that group (the ``_drill_focus_key`` path; the WR-06
+        guard lives inside ``_open_run_drill``)."""
+        if not isinstance(event.control, RunCardTree):
+            return  # no other Tree exists on this screen (the guard)
+        data = event.node.data
+        if not (isinstance(data, tuple) and data):
+            return
+        if data[0] == "model":
+            event.node.toggle()
+        elif data[0] == "task":
+            self._open_run_drill(data[1], f"{data[2]}__{data[3]}")
+
+    def on_tree_node_highlighted(
+            self, event: Tree.NodeHighlighted) -> None:  # type: ignore[type-arg]
+        """A tree cursor move (the pane-feed seam): write the shared
+        ``(model, task)`` focus coordinate from the node's data tuple —
+        a task node pins its (row, col); a model node carries the column
+        and clamps through ``_normalize_focus`` (the o8e idiom) — then
+        the EXACT ``_repaint_focus_move`` tail: the right pane (detail +
+        tail) follows the focused task node exactly as the matrix focus
+        does. Highlights from a card OTHER than the focused one are
+        ignored (a rebuild's build-pin — the card focus is the ListView
+        index; the operator's cross-card moves go through CardPicked)."""
+        if not isinstance(event.control, RunCardTree):
+            return
+        data = event.node.data
+        if not (isinstance(data, tuple) and data
+                and data[0] in ("model", "task")):
+            return
+        action_root = data[1]
+        focused_card = self._focused_card()
+        if (focused_card is None
+                or focused_card.roots[0] != action_root):
+            return
+        self._tree_cursor[action_root] = data
+        rows = self._card_rows(focused_card)
+        models = sorted({row.model for row in rows.values()})
+        if data[2] not in models:
+            return
+        row_index = models.index(data[2])
+        if data[0] == "task":
+            tasks = sorted({row.task for row in rows.values()
+                            if row.model == data[2]})
+            if data[3] in tasks:
+                self._focus_pos = (row_index, tasks.index(data[3]))
+        else:
+            _row, carried = self._focus_pos or (0, 0)
+            self._focus_pos = (row_index, carried)
+            self._normalize_focus()
+        self._render_right_detail()
+        self._kick_right_tail()
+
+    def on_run_card_tree_tree_mounted(
+            self, message: RunCardTree.TreeMounted) -> None:
+        """A card tree finished mounting (the mode-switch render's
+        asynchronous append): focus the FOCUSED card's tree — the enter
+        routing contract needs the tree (not the ListView) holding
+        focus in tree state, and the post-switch ``_focus_active`` call
+        ran before the mount landed. Idempotent by the rze (d) law (a
+        tree that already holds focus is skipped)."""
+        if (self._active_tab != "running"
+                or self._left_mode != "tree"):
+            return
+        tree = self._focused_card_tree()
+        if tree is message.tree and self.focused is not message.tree:
+            message.tree.focus()
+
+    def on_run_card_tree_card_picked(
+            self, message: RunCardTree.CardPicked) -> None:
+        """A label-region tree click's card select: resolve the tree's
+        ancestor ListItem position in the ListView children and set the
+        index (the ONE card-focus authority — the click law). The
+        highlight/sync flow runs idempotently behind it (CardPicked is
+        posted BEFORE the cursor write in ``_on_click``)."""
+        list_view = self.query_one("#mon-cards", ListView)
+        for index, item in enumerate(list_view.children):
+            try:
+                if item.query_one(RunCardTree) is message.tree:
+                    list_view.index = index
+                    return
+            except Exception:  # noqa: BLE001, S112 — matrix-mode items
+                continue
+
+    def on_tree_node_expanded(self, event: Tree.NodeExpanded) -> None:  # type: ignore[type-arg]
+        """The tree gate-law cache sync: a model node's expansion change
+        lands in ``_tree_expand`` so the next rebuild (widget or
+        in-place) preserves the operator's tree."""
+        self._sync_tree_expand(event, True)
+
+    def on_tree_node_collapsed(self, event: Tree.NodeCollapsed) -> None:  # type: ignore[type-arg]
+        """The collapsed twin of the expansion cache sync."""
+        self._sync_tree_expand(event, False)
+
+    def _sync_tree_expand(self, event: "Tree.NodeExpanded | Tree.NodeCollapsed",  # type: ignore[type-arg]
+                          expanded: bool) -> None:
+        if not isinstance(event.control, RunCardTree):
+            return
+        data = event.node.data
+        if isinstance(data, tuple) and data and data[0] == "model":
+            self._tree_expand.setdefault(data[1], {})[data[2]] = expanded
 
     def on_data_table_row_selected(
             self, event: DataTable.RowSelected) -> None:

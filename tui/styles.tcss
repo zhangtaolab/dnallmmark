@@ -467,6 +467,15 @@ WizardModal {
     color: $text-muted;        /* Secondary role (the card owns focus) */
 }
 
+/* 261019-pe0: the tree-state card body — one RunCardTree per card under
+ * the strip. height auto sizes the tree to its CONTENT (probe-verified
+ * on textual 8.2.8: the tree grows one row per visible node inside the
+ * ListItem, the ListView scrolls) — without it the ScrollView stretches
+ * to the ListItem's full height and one card fills the pane. */
+.mon-card-tree {
+    height: auto;
+}
+
 #mon-detail {
     height: 8;      /* fixed: the focused group's detail truncates,
                      * never reflows the pane */
