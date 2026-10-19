@@ -1484,6 +1484,18 @@ def test_storage_overview_full_spec_rows(monkeypatch, tmp_path):
     assert by_key["cache_dir"].exists is False
     assert by_key["output_root"].path == str(
         (REPO_ROOT / "sweeps" / "f4w").resolve())
+    # 261019-v3g (WINDOWS #33) new-field extensions — zero existing
+    # assertions above touched: the cache row is on_demand by KEY (the
+    # HF cache is lazily created at first use) and, being ABSENT here,
+    # is never writability-probed; every non-cache row — even one that
+    # EXISTS (model_root) — carries on_demand False / writable None.
+    assert by_key["cache_dir"].on_demand is True
+    assert by_key["cache_dir"].writable is None
+    assert by_key["model_root"].on_demand is False
+    assert by_key["model_root"].writable is None
+    for key in ("dataset_root", "log_dir", "output_root"):
+        assert by_key[key].on_demand is False, key
+        assert by_key[key].writable is None, key
 
 
 def test_storage_overview_defaults_mirror_real_consumers(
@@ -1510,6 +1522,17 @@ def test_storage_overview_defaults_mirror_real_consumers(
         "pipeline/logs does not exist on a fresh checkout — the honest "
         "glyph for the default log dir"
     )
+    # 261019-v3g (WINDOWS #33) new-field extensions, appended AFTER the
+    # assertions above (this test's on-box environmental failure stays
+    # byte-identical): the default cache row (REPO_ROOT/cache — absent
+    # on a fresh checkout) is on_demand by KEY, so it renders the
+    # neutral on-demand state, never the missing-root ✗; the four
+    # non-cache rows never claim on-demand.
+    assert by_key["cache_dir"].exists is False
+    assert by_key["cache_dir"].on_demand is True
+    assert by_key["cache_dir"].writable is None
+    for key in ("model_root", "dataset_root", "output_root", "log_dir"):
+        assert by_key[key].on_demand is False, key
 
 
 def test_storage_overview_seeded_over_load_state(monkeypatch, tmp_path):
@@ -1525,6 +1548,44 @@ def test_storage_overview_seeded_over_load_state(monkeypatch, tmp_path):
     by_key = {row.key: row for row in rows}
     assert by_key["model_root"].path == str(file_root)
     assert by_key["model_root"].exists is True
+
+
+def test_storage_overview_present_cache_writability_probe(
+        monkeypatch, tmp_path):
+    """261019-v3g (WINDOWS #33): a PRESENT cache row carries the
+    writability probe answer — a real writable tmp cache dir yields
+    writable True, a monkeypatched probe returning False yields
+    writable False (the DETERMINISTIC unwritable pin: no chmod
+    simulation, no uid dependence) — while non-cache rows keep
+    writable None even when they exist (the probe is cache-only)."""
+    pin_state_dir(monkeypatch, tmp_path)
+    pin_config_dir(monkeypatch, tmp_path)
+    cache = tmp_path / "hf-cache"
+    cache.mkdir()
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",), cache_dir=str(cache))
+
+    rows = run_config.storage_overview(spec)
+    by_key = {row.key: row for row in rows}
+    assert by_key["cache_dir"].exists is True
+    assert by_key["cache_dir"].on_demand is True
+    assert by_key["cache_dir"].writable is True, (
+        "a real writable tmp cache dir the test itself created"
+    )
+
+    monkeypatch.setattr(run_config, "_cache_writable", lambda path: False)
+    rows = run_config.storage_overview(spec)
+    by_key = {row.key: row for row in rows}
+    assert by_key["cache_dir"].writable is False, (
+        "the module-level probe seam is the unwritable answer's source"
+    )
+
+    # the probe is cache-only: an EXISTING non-cache row (model_root
+    # defaults to the committed pipeline dir, which exists) is never
+    # probed and never claims on-demand.
+    assert by_key["model_root"].exists is True
+    assert by_key["model_root"].writable is None
+    assert by_key["model_root"].on_demand is False
 
 
 # =====================================================================

@@ -106,9 +106,10 @@ Dependencies: stdlib + ``run_sweep`` (same-source) + the sibling
 """
 
 import json
+import os
 import re
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import directories_config  # top-level module (pipeline/ sys.path root, the F4W startup config — stdlib-only, import-purity holds)
@@ -1414,11 +1415,45 @@ class StorageRow:
         path: the EFFECTIVE absolute path for the key (spec projection
             or the documented display default).
         exists: a plain ``Path.exists()`` stat over the path.
+        on_demand: True only for the cache row — lazily-created-on-
+            first-use is a fact of the KEY (HF mkdirs it at training),
+            so an absent cache is a neutral on-demand state, never a
+            missing-dir error (261019-v3g, WINDOWS #33).
+        writable: the writability probe answer, set ONLY for a PRESENT
+            cache row (``_cache_writable``); None for every non-cache
+            row and every absent cache row — present-but-unwritable is
+            the real failure, absent-and-on-demand is not.
+
+    The two 261019-v3g fields are ``repr=False`` deliberately: the row
+    repr stays byte-stable for the diagnostics that already print it
+    (the environmental defaults-test failure text on a live-pipeline
+    box), while the fields remain first-class data for tests and the
+    screen render.
     """
 
     key: str
     path: str
     exists: bool
+    on_demand: bool = field(default=False, repr=False)
+    writable: "bool | None" = field(default=None, repr=False)
+
+
+def _cache_writable(path: str) -> bool:
+    """The cache-row writability probe (261019-v3g, WINDOWS #33).
+
+    A thin module-level ``os.access(path, os.W_OK)`` seam — advisory
+    display data only, never a launch gate — and monkeypatchable in
+    tests (the DETERMINISTIC unwritable pin: no chmod simulation, no
+    uid dependence).
+
+    Args:
+        path: the EFFECTIVE cache path, already known to exist (the
+            caller probes only present cache rows).
+
+    Returns:
+        bool: whether the current process may write into the dir.
+    """
+    return os.access(path, os.W_OK)
 
 
 #: The unset display defaults, mirroring the REAL consumers (a launch
@@ -1442,7 +1477,10 @@ def storage_overview(spec=None):
     ``*_abs`` projection (``log_dir`` resolved against REPO_ROOT the
     same way), with the ``_STORAGE_DEFAULTS`` display defaults filling
     the unset keys and ``output_root`` always resolving (the str-typed
-    field). ``exists`` is a plain ``Path.exists()`` stat. The display
+    field). ``exists`` is a plain ``Path.exists()`` stat. Since
+    261019-v3g (WINDOWS #33) the cache row additionally carries
+    ``on_demand`` True (a fact of the key) and, only when it EXISTS,
+    the ``_cache_writable`` probe answer in ``writable`` — the display
     mirrors WHERE artifacts land for a launch composed from the current
     session state — the same seam the env kernels check roots through;
     presentation lives in the screen.
@@ -1466,8 +1504,19 @@ def storage_overview(spec=None):
     rows = []
     for key in directories_config.DIRECTORY_KEYS:
         path = projections[key] or _STORAGE_DEFAULTS[key]
+        exists = Path(path).exists()
+        # 261019-v3g (WINDOWS #33): the cache dir is lazily created on
+        # first use — a fact of the KEY, not the filesystem — so its
+        # row is on_demand always, and writability is probed ONLY when
+        # it exists (present-but-unwritable is the real failure; an
+        # absent on-demand dir is never probed). Non-cache rows keep
+        # both fields at their defaults: zero behavioral change to
+        # paths or exists.
+        on_demand = key == "cache_dir"
+        writable = _cache_writable(path) if on_demand and exists else None
         rows.append(StorageRow(
-            key=key, path=path, exists=Path(path).exists()))
+            key=key, path=path, exists=exists,
+            on_demand=on_demand, writable=writable))
     return tuple(rows)
 
 

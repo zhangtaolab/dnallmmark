@@ -80,8 +80,10 @@ from tui.strings import (
     ENV_ROUTE_MISSING_MODELS,
     ENV_STATE_CHECKING,
     ENV_STATE_FAIL,
+    ENV_STATE_ON_DEMAND,
     ENV_STATE_PASS,
     ENV_STATE_PENDING,
+    ENV_STORAGE_CACHE_ON_DEMAND,
     ENV_STORAGE_LABELS,
     ENV_STORAGE_NOTE,
     ENV_STORAGE_TITLE,
@@ -1074,6 +1076,13 @@ def _storage_row_texts(screen):
     ]
 
 
+def _storage_widget(screen, index):
+    """The index-th rendered storage-row Static (its ``content`` is the
+    row's rich Text — span styles inspectable; the untyped-``screen``
+    seam of ``_storage_row_texts``)."""
+    return screen.query("#env-storage .env-storage-row")[index]
+
+
 async def test_storage_section_renders_all_five_rows():
     """F4W-04: the section renders the title, all five rows (label +
     absolute path verbatim + the ✓/✗ existence glyph over the frozen
@@ -1157,6 +1166,123 @@ async def test_storage_wrong_key_rows_never_crash_the_render():
         rows = _storage_row_texts(screen)
         assert len(rows) == 1
         assert "future_key" in rows[0] and "/future/path" in rows[0]
+
+
+async def test_storage_absent_cache_row_renders_on_demand_not_fail():
+    """261019-v3g (WINDOWS #33): an ABSENT on-demand cache row renders
+    the neutral ◌ glyph (dim — the kernel-pending treatment) plus the
+    training-scoped on-demand note appended after the path, never the
+    missing-root ✗; a sibling ABSENT model_root row (not on-demand)
+    keeps its ENV_STATE_FAIL with no note."""
+    from tui.services.run_config import StorageRow
+
+    class _OnDemandCacheFake(FakeEnvCheckService):
+        """The golden fixture with the cache ABSENT (on-demand by key)
+        and the model root ABSENT (a genuinely missing dir)."""
+
+        def storage_rows(self):
+            return (
+                StorageRow("model_root", "/golden/models", False),
+                StorageRow("dataset_root", "/golden/datasets", False),
+                StorageRow("output_root", "/golden/finetuned", True),
+                StorageRow("log_dir", "/golden/logs", False),
+                StorageRow("cache_dir", "/golden/cache", False,
+                           on_demand=True),
+            )
+
+    fake = _OnDemandCacheFake(cached=None, results=_mixed_results())
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _wait_for_check(pilot, app)
+        screen = app.screen
+        rows = _storage_row_texts(screen)
+        cache_text = rows[4]
+        assert cache_text.startswith(ENV_STATE_ON_DEMAND), (
+            f"the absent cache leads with the neutral glyph: {cache_text!r}"
+        )
+        assert ENV_STORAGE_CACHE_ON_DEMAND in cache_text
+        assert "/golden/cache" in cache_text
+        assert rows[0].startswith(ENV_STATE_FAIL), (
+            "an absent non-on-demand row keeps the ✗"
+        )
+        assert ENV_STORAGE_CACHE_ON_DEMAND not in rows[0], (
+            "the on-demand note rides only the on-demand row"
+        )
+        # the dim styling on the Static render path: both the glyph
+        # span and the note span render rich-native dim (the
+        # footer-note treatment — $token styles cannot ride Static's
+        # rich spans, the 8.2.8 probe pin).
+        cache_widget = _storage_widget(screen, 4)
+        span_styles = [span.style for span in cache_widget.content.spans]
+        assert span_styles[0] == "dim"
+        assert span_styles[-1] == "dim"
+
+
+async def test_storage_present_unwritable_cache_keeps_fail_glyph():
+    """261019-v3g (WINDOWS #33) failure semantics preserved: a cache
+    dir that EXISTS but is NOT writable keeps ENV_STATE_FAIL with the
+    error color — the ✗ is reserved for a genuinely broken dir, not
+    the never-created-yet one."""
+    from tui.services.run_config import StorageRow
+
+    class _UnwritableCacheFake(FakeEnvCheckService):
+        """The golden fixture with a PRESENT-but-unwritable cache."""
+
+        def storage_rows(self):
+            return (
+                StorageRow("model_root", "/golden/models", True),
+                StorageRow("dataset_root", "/golden/datasets", False),
+                StorageRow("output_root", "/golden/finetuned", True),
+                StorageRow("log_dir", "/golden/logs", False),
+                StorageRow("cache_dir", "/golden/cache", True,
+                           on_demand=True, writable=False),
+            )
+
+    fake = _UnwritableCacheFake(cached=None, results=_mixed_results())
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _wait_for_check(pilot, app)
+        screen = app.screen
+        rows = _storage_row_texts(screen)
+        assert rows[4].startswith(ENV_STATE_FAIL), (
+            f"present-but-unwritable stays the failure: {rows[4]!r}"
+        )
+        assert ENV_STORAGE_CACHE_ON_DEMAND not in rows[4]
+        cache_widget = _storage_widget(screen, 4)
+        assert cache_widget.content.spans[0].style == (
+            f"bold {app.current_theme.error}")
+
+
+async def test_storage_present_writable_cache_renders_pass_as_today():
+    """261019-v3g (WINDOWS #33): a PRESENT writable cache renders
+    ENV_STATE_PASS exactly as before (the pre-change branch, no note) —
+    the on-demand state belongs only to the never-created-yet dir."""
+    from tui.services.run_config import StorageRow
+
+    class _WritableCacheFake(FakeEnvCheckService):
+        """The golden fixture with the cache PRESENT and writable."""
+
+        def storage_rows(self):
+            return (
+                StorageRow("model_root", "/golden/models", True),
+                StorageRow("dataset_root", "/golden/datasets", False),
+                StorageRow("output_root", "/golden/finetuned", True),
+                StorageRow("log_dir", "/golden/logs", False),
+                StorageRow("cache_dir", "/golden/cache", True,
+                           on_demand=True, writable=True),
+            )
+
+    fake = _WritableCacheFake(cached=None, results=_mixed_results())
+    app = DnallmMarkTui(env_check_service=fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _wait_for_check(pilot, app)
+        screen = app.screen
+        rows = _storage_row_texts(screen)
+        assert rows[4].startswith(ENV_STATE_PASS)
+        assert ENV_STORAGE_CACHE_ON_DEMAND not in rows[4]
+        cache_widget = _storage_widget(screen, 4)
+        assert cache_widget.content.spans[0].style == (
+            f"bold {app.current_theme.success}")
 
 
 # =====================================================================

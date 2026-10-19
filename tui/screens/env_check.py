@@ -722,16 +722,21 @@ class EnvCheckScreen(Screen):
     def _render_storage(self) -> None:
         """The slot-1 storage overview (F4W-04, 261014-f4w): five
         read-only rows — the ENV_STORAGE_LABELS label, the absolute
-        path verbatim (data), and the ✓/✗ existence glyph over the
-        $success/$error styles (the glyph-is-the-meaning-carrier rule)
-        — plus the footer note routing edits to slot 4. Derived
-        entirely from the injected service's ``storage_rows()`` (the
-        same seeded load_state seam the directory kernels read roots
-        through); a wrong-key row renders its key verbatim, never
-        crashes (forward tolerance, the _apply_result_to_table
-        precedent). Rendered at mount and re-rendered by [r]: a
-        slot-4 dir change reflects after a refresh or a console
-        restart — the staleness boundary.
+        path verbatim (data), and the state glyph over the
+        $success/$error/$text-muted styles (the glyph-is-the-meaning-
+        carrier rule) — plus the footer note routing edits to slot 4.
+        261019-v3g (WINDOWS #33) four-way glyph rule over the row's
+        service-carried data: present-but-unwritable → ✗ (a genuinely
+        broken dir), present → ✓ (the pre-change path), absent-and-
+        on-demand (the cache key — HF creates it at training) → the
+        neutral ◌ dim plus the on-demand note after the path, absent
+        otherwise → ✗ (the pre-change path). Derived entirely from the
+        injected service's ``storage_rows()`` (the same seeded
+        load_state seam the directory kernels read roots through); a
+        wrong-key row renders its key verbatim, never crashes (forward
+        tolerance, the _apply_result_to_table precedent). Rendered at
+        mount and re-rendered by [r]: a slot-4 dir change reflects
+        after a refresh or a console restart — the staleness boundary.
         """
         box = self.query_one("#env-storage", Vertical)
         box.remove_children()
@@ -740,19 +745,36 @@ class EnvCheckScreen(Screen):
         # Static render path (probe-pinned on 8.2.8, the nav.py
         # precedent): resolve the live theme's success/error at render —
         # the theme's own values, never a hardcoded hex — and render the
-        # footer note rich-native dim (the migrated-label treatment).
+        # footer note (and the on-demand row) rich-native dim (the
+        # migrated-label treatment).
         ok_color = self.app.current_theme.success
         bad_color = self.app.current_theme.error
         for row in self._service.storage_rows():
             label = S.ENV_STORAGE_LABELS.get(row.key, row.key)
             exists = bool(row.exists)
-            glyph = S.ENV_STATE_PASS if exists else S.ENV_STATE_FAIL
-            color = ok_color if exists else bad_color
-            box.mount(Static(Text.assemble(
-                Text(f"{glyph} ", style=f"bold {color}"),
-                Text(f"{label}  "),
-                Text(str(row.path)),
-            ), classes="env-storage-row"))
+            tail = [Text(f"{label}  "), Text(str(row.path))]
+            # Non-cache rows carry writable None / on_demand False (the
+            # service tier's contract), so they can only hit the two
+            # legacy branches — byte-identical to the pre-#33 render.
+            if exists and row.writable is False:
+                head = Text(f"{S.ENV_STATE_FAIL} ",
+                            style=f"bold {bad_color}")
+            elif exists:
+                head = Text(f"{S.ENV_STATE_PASS} ",
+                            style=f"bold {ok_color}")
+            elif row.on_demand:
+                # rich-native dim (the footer-note treatment): the
+                # $text-muted token cannot ride a Static's rich spans
+                # (the 8.2.8 probe pin above) — the subdued dim carries
+                # the neutral state on this render path.
+                head = Text(f"{S.ENV_STATE_ON_DEMAND} ", style="dim")
+                tail.append(Text(
+                    f"  {S.ENV_STORAGE_CACHE_ON_DEMAND}", style="dim"))
+            else:
+                head = Text(f"{S.ENV_STATE_FAIL} ",
+                            style=f"bold {bad_color}")
+            box.mount(Static(Text.assemble(head, *tail),
+                             classes="env-storage-row"))
         box.mount(Static(Text(S.ENV_STORAGE_NOTE, style="dim"),
                          classes="env-storage-note"))
 

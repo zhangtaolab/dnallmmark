@@ -387,6 +387,17 @@ ENV_STORAGE_LABELS = _t(
 ENV_STORAGE_NOTE = _t(
     "ENV_STORAGE_NOTE", "修改目录请到 4 运行配置",
     "Edit dirs in 4 Run Config")
+# 261019-v3g (WINDOWS #33): the cache row's honest ABSENT state. The
+# glyph is language-neutral — ◌ registered twice (the established
+# indeterminate glyph from the monitor strip vocabulary); the note is
+# training-scoped zh copy within the approved terminology table: an
+# absent HF cache is created on demand at training, never a missing-dir
+# error, while a PRESENT-but-unwritable cache keeps the ✗.
+ENV_STATE_ON_DEMAND = _t("ENV_STATE_ON_DEMAND", "◌", "◌")
+ENV_STORAGE_CACHE_ON_DEMAND = _t(
+    "ENV_STORAGE_CACHE_ON_DEMAND",
+    "未创建 — 训练时自动生成",
+    "not created — created on demand at training")
 
 # ===== 选择 (SEL-01..04, 08-07) =====
 # Screen titles (08-UI-SPEC Screen 2 title bar). Since the 2026-10-14
