@@ -2,21 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: TUI任务
-current_phase: 12
-current_phase_name: Multi-GPU Orchestration & Console Hardening
-current_plan: Not started
-status: planning
-stopped_at: "08-12 micro-refresh complete (5/5 passed); WINDOWS disposition next"
-last_updated: "2026-10-19T11:54:21.465Z"
-last_activity: 2026-10-18
-last_activity_desc: Quick task 261019-pe0 (tree mode) complete
-state_head: 797b9109101a61c33d425d5ead6a68d928c4422b
+status: Awaiting next milestone
+stopped_at: 08-12 micro-refresh complete (5/5 passed); WINDOWS disposition next
+last_updated: "2026-10-19T15:56:32.957Z"
+last_activity: 2026-10-19
+last_activity_desc: Milestone v1.2 completed and archived
+state_head: 46cb37fa495da7c58dc1a37ba43718f0bc28ca7e
 progress:
   total_phases: 6
   completed_phases: 6
   total_plans: 41
   completed_plans: 41
   percent: 100
+current_phase: 12
+current_phase_name: Multi-GPU Orchestration & Console Hardening
 ---
 
 # Project State
@@ -30,13 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 
 ## Current Position
 
-Phase: 12 — Multi-GPU Orchestration & Console Hardening
-Current Plan: Not started
-Total Plans in Phase: 5
-Status: Ready to plan
-Last activity: 2026-10-17 — Phase 08 complete, transitioned to Phase 12
-
-Progress (v1.2): [████████░░] 83% (5/6 phase records; 37/37 plans executed — all 38 requirements Complete)
+Phase: Milestone v1.2 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-10-19 — Milestone v1.2 completed and archived
 
 ## Performance Metrics
 
@@ -321,4 +317,4 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Phase 8 execution is COMPLETE (all 7/7 plans, 2026-10-11): run the phase close-out — verification / `/gsd-progress` to transition toward Phase 9 (Custom Model & Dataset Onboarding)
+- Start the next milestone with /gsd-new-milestone

@@ -3,6 +3,9 @@ title: Declare direct imports pyyaml + rich in dependency groups (post-v1.2)
 created: 2026-10-13T21:23:00+08:00
 source: dependency-completeness audit during phase-12 execution (session 2026-10-13)
 milestone_scope: v1.2 (post-milestone; blocked by phase-12 zero-pyproject/lock constraint)
+audit_acknowledged:
+  milestone: v1.2
+  at: 2026-10-19
 ---
 
 # Declare pyyaml + rich as direct dependencies

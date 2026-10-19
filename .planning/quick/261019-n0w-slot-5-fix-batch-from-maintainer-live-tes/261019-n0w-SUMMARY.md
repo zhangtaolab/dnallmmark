@@ -1,3 +1,10 @@
+---
+status: complete
+task: 261019-n0w
+title: "slot-5 fix batch: click=select, transparent card fill, D pane lines"
+date: 2026-10-19
+---
+
 # quick-261019-n0w: slot-5 fix batch from the maintainer's live test — summary
 
 The maintainer's three live-test defects on the just-landed f0x Running

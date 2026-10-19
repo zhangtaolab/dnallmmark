@@ -1,41 +1,37 @@
----
-version: "1.0"
-timestamp: "2026-10-18T11:43:02.363Z",
-"phase": "milestone-closeout",
-"phase_name": "v1.2 closeout (post-execution)",
-"phase_dir": ".planning",
-"status": "paused",
-"completed_tasks": [
-  {"id": 1, "name": "07-12 verification chain round 1+2+3 (all passed at their HEADs)", "status": "done"},
-  {"id": 2, "name": "17-batch live-feedback quick series (a4f..kvj: exit keys F10, launch confirm+pair list, monitor 3-state + tabbed redesign, dead-5 render fix + pty lane, CI/data-chain re-sync, version 1.2.0)", "status": "done"},
-  {"id": 3, "name": "D-03 golden set round 1 landed (3 SVGs, f2a772a)", "status": "done"}
-],
-"remaining_tasks": [
-  {"id": 4, "name": "D-03 golden review round 2: monitor_running + monitor_empty (uwr+kvj combined) + run_config.svg ([m] hint) — UNCOMMITTED in worktree, await maintainer approval, then commit", "status": "blocked_on_human"},
-  {"id": 5, "name": "Maintainer live verification: dead-5 fix (5->leave->5 x8), slot-5 tabbed redesign, F10 exit, uppercase Y confirms", "status": "blocked_on_human"},
-  {"id": 6, "name": "Phase micro-refresh 08-12 (all stale after uwr/08g/kvj tui changes)", "status": "not_started"},
-  {"id": 7, "name": "WINDOWS disposition (27 open: #21 multi-GPU machine designation, #26-28 console bugs, v0.7.1 stubs waive-or-fix, security enforcement ruling)", "status": "not_started"},
-  {"id": 8, "name": "Reviewer response report (F1-F10/G1-G7, gitignored reviewer-response/)", "status": "not_started"},
-  {"id": 9, "name": "/gsd-complete-milestone v1.2 archive", "status": "not_started"}
-],
-"blockers": [
-  {"description": "D-03 golden approval (3 SVGs in worktree) — committed tree fails exactly 2 monitor goldens until landed", "type": "human_action", "workaround": "none — maintainer visual review is the designed gate"},
-  {"description": "Maintainer live verification of the fix batch UX", "type": "human_action", "workaround": "none"}
-],
-"human_actions_pending": [
-  {"action": "Review git diff tests/tui/__snapshots__/ and say 'approved' (or name the wrong screens)", "context": "monitor pair = uwr 3-state + kvj tabbed redesign combined; run_config = 08g [m] picker hint", "blocking": true},
-  {"action": "Restart TUI and verify: 5->leave->5 renders every time; tabbed Running/History; F10 any-focus quit; uppercase Y confirms", "context": "dead-5 was the 3-session freeze root cause; pty lane pins it", "blocking": false}
-],
-"async_jobs": [],
-"decisions": [
-  {"decision": "F10 any-focus exit primary; ctrl+c withdrawn to terminal-native; Q plain letter", "rationale": "byte-level 0x03 collision between ctrl+c and terminal copy; zellij intercepts ctrl+q; Q steals typing", "phase": "feedback"},
-  {"decision": "slot-5 redesigned to tabbed Running/History (human-logic) replacing master-detail tables", "rationale": "maintainer ruling: machine-logic layout incomprehensible; approved 2026-10-18", "phase": "feedback"},
-  {"decision": "models_comparison_multi-species.json deleted; helixgen integrated canonically (42->45 models)", "rationale": "planner forensic: AutoDL-server stale twin, zero consumers, non-reproducible; git-recoverable at 9e803ca", "phase": "eea"},
-  {"decision": "Test baseline reset 7F->1F", "rationale": "six of the seven were real drift manifestations (data-chain + schema) normalized as 'known'; CI exposed them", "phase": "eea"},
-  {"decision": "Version 1.2.0 (corrected from mistyped 1.3.0)", "rationale": "maintainer correction 2026-10-18", "phase": "release"},
-  {"decision": "Exit-family confirms: enter inert, y-only, case-insensitive; every quit path confirms", "rationale": "maintainer rulings across cdr/dnr/08g", "phase": "feedback"}
-],
-"uncommitted_files": [" M tests/tui/__snapshots__/monitor_empty.svg", " M tests/tui/__snapshots__/monitor_running.svg", " M tests/tui/__snapshots__/run_config.svg", "?? .planning/.gsd-allow-shrink", "?? .planning/quick/261018-08g-soak-test-fix-batch-f1-dead-5-cached-mon/PLANNER-CONTRIBUTIONS.md", "?? .planning/quick/261018-kvj-slot-5-human-logic-redesign-tabbed-runni/261018-kvj-PLAN.md", "?? .planning/quick/261018-kvj-slot-5-human-logic-redesign-tabbed-runni/PLANNER-CONTRIBUTIONS.md"],
-"next_action": "Ask the maintainer for the D-03 verdict on the three uncommitted SVGs; on approval commit them + close WINDOWS #35/#39, then run the 08-12 micro-refresh verifiers, then WINDOWS disposition, reviewer report, complete-milestone",
-"context_notes": "Session ran the full feedback loop: maintainer live-tested the console, 17 quick batches landed same-day, the soak tester (subagent simulating a human) found the dead-5 render bug the test suite structurally could not see (Pilot in-process never reproduces it; the permanent pty lane now guards it). All pushes plain, no coauthor trailers (standing rule). CI green on PR #7 (4 lanes)."
+{
+  "version": "1.0",
+  "timestamp": "2026-10-20T00:00:30+08:00",
+  "phase": "milestone-closeout",
+  "phase_name": "v1.2 archive (MID-ARCHIVE — CLI step done, AI steps remain)",
+  "phase_dir": ".planning",
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "08-12 stale refresh: 5 verifiers all passed (f890acc) + 07's standing pass", "status": "done"},
+    {"id": 2, "name": "WINDOWS disposition: A-group 7 fixed / B-group 5 waived / C-group #26+#27 fixed-by-redesign (repro-tested), #28 waived (structurally closed) / ledger now 8 open / 6 waived / 28 fixed (72f460a, 4d8a5e4)", "status": "done"},
+    {"id": 3, "name": "261019-v3g: #33 honest cache glyph + #12 subset seam verify-and-pin (premise was STALE — threading landed in 07-03; one cross-file pin added) — d7a574a/c30ac91/282a916", "status": "done"},
+    {"id": 4, "name": "Reviewer response report written (gitignored reviewer-response/REPORT.md, 254 lines, F 8-fixed/2-waived, G 6/7)", "status": "done"},
+    {"id": 5, "name": "Audit R-fixes: junk quick-dir x removed, 12-UAT scenarios resolved (D-03 passed; N=2 blocked-external=#21), toe SUMMARY YAML fixed, deferred rows marked acknowledged (direct file edit)", "status": "done"},
+    {"id": 6, "name": "Storage-overview defaults test made hermetic — full suite GREEN 1987/1987-class (tui 1280/1280), ruff+ty clean (46cb37f)", "status": "done"},
+    {"id": 7, "name": "milestone.complete CLI EXECUTED (--confirm, no --archive-quick): milestones/v1.2-{ROADMAP,REQUIREMENTS}.md written, phases moved to milestones/v1.2-phases/ (git shows D), MILESTONES.md + STATE.md rewritten by the tool", "status": "done-UNCOMMITTED"}
+  ],
+  "remaining_tasks": [
+    {"id": 8, "name": "ROADMAP.md reorganize: arm .planning/.gsd-allow-shrink sentinel (printf the roadmap abs path), Write the milestone-grouping template (v0.7.1 ✅ + v1.2 ✅ 2026-10-19, collapsed <details>), re-append Backlog section (999.1 stays in .planning/phases/!)", "status": "not_started"},
+    {"id": 9, "name": "PROJECT.md evolution review: What This Is +v1.2 line, Active→Validated moves (7 TUI reqs), Context refresh, Key Decisions additions (F10 exit family, B+D tab, tree mode, 训练项 terminology), footer 'after v1.2'", "status": "not_started"},
+    {"id": 10, "name": "RETROSPECTIVE.md v1.2 section (template ~/.claude/gsd-core/templates/retrospective.md)", "status": "not_started"},
+    {"id": 11, "name": "Override disclosure: STATE.md ## Deferred Items rows (15 acknowledged items) + MILESTONES.md 'Known verification overrides: 15 newly acknowledged' + closeout_type=override_closeout note (v3g+hermetic-fix post-dated the 20:1x refresh; gates green 23:50)", "status": "not_started"},
+    {"id": 12, "name": "git rm .planning/REQUIREMENTS.md; safety commit archives+ROADMAP first; final commit; tag -a v1.2; push (tags too)", "status": "not_started"},
+    {"id": 13, "name": "Post-close: .planning/quick/ left in place (archive-quick NOT chosen); HANDOFF.json delete after resume", "status": "not_started"}
+  ],
+  "blockers": [],
+  "human_actions_pending": [],
+  "async_jobs": [],
+  "decisions": [
+    {"decision": "override_closeout (maintainer 继续 23:56): 6th verification round skipped; basis = gates fully green (pytest/ruff/ty) + v3g delta self-evidenced", "phase": "closeout"},
+    {"decision": "deferred-items acknowledged by DIRECT FILE EDIT (Status open→acknowledged): the audit-open acknowledge CLI's text-matcher cannot match legacy table rows — tool-known limitation, elaboration.md sanctions direct edit", "phase": "closeout"},
+    {"decision": "no --archive-quick: .planning/quick/ (32 dirs) stays in place", "phase": "closeout"},
+    {"decision": "storage-overview environmental test class CLOSED by hermetic monkeypatch.setitem(_STORAGE_DEFAULTS) fix (46cb37f)", "phase": "closeout"}
+  ],
+  "uncommitted_files_hint": "MILESTONES.md/STATE.md modified, phases/* deleted (moved to milestones/v1.2-phases/), archives created — the mid-archive state is exactly milestone.complete's output, not yet committed",
+  "next_action": "Resume at remaining_tasks[8]: sentinel→ROADMAP Write→PROJECT→retrospective→disclosures→git rm REQUIREMENTS→commit+tag v1.2→push",
+  "context_notes": "Verification-staleness cascade is MECHANICAL (digest over covered files); do NOT re-trigger verifiers mid-archive. The .gsd-allow-shrink file at .planning/ is the v0.7.1 leftover sentinel — overwrite it fresh (must name the roadmap path, consumed on use). WINDOWS ledger: 8 open = #21 other-machine N=2 + #2-8 model-card metadata (external); if hand-editing the ledger EVER, re-render via broken-windows.cjs renderLedger (python-extract entries JSON → node rewrite) — the canonical form is the module's renderer, hand-written table rows mismatch."
 }
