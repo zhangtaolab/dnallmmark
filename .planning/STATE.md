@@ -6,11 +6,11 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: Not started
 status: planning
-stopped_at: "Fast fix: restart reattach probe delegation landed"
-last_updated: "2026-10-19T02:27:24.465Z"
+stopped_at: "Quick task 261019-f0x complete (Running tab B+D redesign; goldens pending review)"
+last_updated: "2026-10-19T04:11:02.089Z"
 last_activity: 2026-10-18
-last_activity_desc: Fast fix (TUI restart reattach) complete
-state_head: 62a5c61b6ee5537638039c87d79a25dc55e7e260
+last_activity_desc: Quick task 261019-f0x (Running tab redesign) complete
+state_head: f9023af24ed8a23f147b40b015b2e2ff03a32732
 progress:
   total_phases: 6
   completed_phases: 6
@@ -298,6 +298,8 @@ None yet.
 | 261018-rze | slot-5 monitor cadence flicker fix (six render gates: tabs/note/cards-structure/history-rows/focus/modal suppression) | 2026-10-18 | d43bfa9 | [261018-rze-slot-5-monitor-cadence-flicker-fix-every](./quick/261018-rze-slot-5-monitor-cadence-flicker-fix-every/) |
 | 261018-toe | slot-5 History row actions: [d] delete (strong confirm, worker rm -rf, live refusal) + [e] Resume (incomplete-only relaunch via pairs file) | 2026-10-18 | 7cb712d | [261018-toe-slot-5-history-row-actions-d-delete-rm-r](./quick/261018-toe-slot-5-history-row-actions-d-delete-rm-r/) |
 | 27 | fix: LauncherBackend live_sweep_matrices delegation — restart reattach sees probed sweeps | 2026-10-19 | 62a5c61 | — |
+| 28 | fix: [t] log-tail restart discovery — fresh disk tee fallback | 2026-10-19 | 32be15d | — |
+| 261019-f0x | slot-5 Running tab redesign: B matrix skeleton + D right pane (detail + live tee tail) + [w] wide toggle; goldens regenerated uncommitted (WINDOWS #42) | 2026-10-19 | f9023af | [261019-f0x-slot-5-running-tab-redesign-b-skeleton-s](./quick/261019-f0x-slot-5-running-tab-redesign-b-skeleton-s/) |
 
 ## Deferred Items
 
