@@ -977,10 +977,20 @@ if __name__ == "__main__":
         os.makedirs("./logs/", exist_ok=True)
         _world_rank = int(os.environ.get("RANK", "0"))
         _world_size = int(os.environ.get("WORLD_SIZE", "1"))
+        # DNALLM_ERROR_LOG_TAG (2026-10-18, dual-GPU lane split): running two
+        # single-process sweeps of the SAME model concurrently (one per GPU,
+        # e.g. full@GPU0 + lora@GPU1) would have both rank-0 processes open
+        # the canonical {model}_error_log.txt in "w" mode — the second open
+        # truncates the first's log mid-run and interleaved handle offsets
+        # corrupt the acceptance artifact. An explicit tag suffixes the
+        # filename per lane; unset (default) keeps the byte-identical path.
+        _log_tag = os.environ.get("DNALLM_ERROR_LOG_TAG", "")
         if _world_rank == 0:
-            _error_log_path = f"./logs/{model_name}_error_log.txt"
+            _error_log_path = f"./logs/{model_name}{_log_tag}_error_log.txt"
         else:
-            _error_log_path = f"./logs/{model_name}_error_log_rank{_world_rank}.txt"
+            _error_log_path = (
+                f"./logs/{model_name}{_log_tag}_error_log_rank{_world_rank}.txt"
+            )
         # Line-buffered: RUNBOOK monitoring greps the canonical file live,
         # but default block buffering kept a logged failure invisible for
         # the whole multi-day process (only flushed at exit/8KB).
