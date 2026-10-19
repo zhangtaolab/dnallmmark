@@ -60,6 +60,7 @@ display, no GPU, no dnallm.
 
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -118,6 +119,15 @@ _DELETED_TOAST_MARKER = "✓ deleted:"
 _RESUME_CONFIRM_MARKER = "incomplete pairs"
 _FINISHED_ROOT_NAME = "done-run"
 _INTERRUPTED_ROOT_NAME = "dead-run"
+
+# 261020-9vh markers (the stale-progress guard): the PREVIOUS run's
+# step count (19968 — must NEVER render once the guard holds), the
+# fresh pair's parsed percent (60/300 -> 20%), and the honest
+# indeterminate progress constant (MON_PROGRESS_INDETERMINATE, en —
+# the full glyph form, never the bare state glyph the strip shares).
+_STALE_STEPS_MARKER = "19968"
+_FRESH_PERCENT_MARKER = "20%"
+_INDETERMINATE_MARKER = "⏵ …"
 
 # Bounded windows (generous over the probe-pinned timings: boot ~0.25s,
 # nav repaints 0.05-0.16s, quit exit 0.30s, gate refusal ~1.5s).
@@ -258,6 +268,46 @@ def _fabricate_interrupted_root(tmp_path) -> Path:
         os.utime(path, (stale, stale))
     os.utime(root, (stale, stale))
     return root
+
+
+def _fabricate_stale_progress_root(tmp_path) -> "tuple[Path, Path]":
+    """One fabricated REUSED-root live-repro shape (261020-9vh, the
+    maintainer's exact case in miniature): one model, TWO planned-task
+    seed dirs — the GUE__emp_H3 pair carries a previous run's
+    checkpoint-120 with the FULL payload {"global_step": 19968,
+    "max_steps": 49911} (percent 40) whose whole subtree is pushed
+    ~1h stale (it predates any process started within the hour), and
+    the GUE__prom_300_all pair carries a FRESH checkpoint-121
+    {"global_step": 60, "max_steps": 300} (percent 20 — the selective
+    control). BOTH task keys are committed-registry members so the
+    probed argv's planned matrix covers both pairs (the live-pair
+    evidence the running derivation needs). Returns (root, the fresh
+    checkpoint's trainer_state.json path) — the member re-pins the
+    fresh file's mtime AFTER the sleeper spawn so it postdates the
+    live start (a fixture-time mtime would predate the fork and the
+    guard would take the fresh pair too). The shared
+    ``_fabricate_running_root`` is NOT touched: its payload-less
+    ``{"global_step": 120}`` shapes are load-bearing for the prior
+    members' byte-stability."""
+    root = tmp_path / "runs" / "root1"
+    stale_seed = (root / "plant-dnabert-6mer" / "GUE__emp_H3"
+                  / "seed_9527")
+    stale_checkpoint = stale_seed / "checkpoint-120"
+    stale_checkpoint.mkdir(parents=True)
+    (stale_checkpoint / "trainer_state.json").write_text(json.dumps(
+        {"global_step": 19968, "max_steps": 49911}), encoding="utf-8")
+    fresh_seed = (root / "plant-dnabert-6mer" / "GUE__prom_300_all"
+                  / "seed_9527")
+    fresh_checkpoint = fresh_seed / "checkpoint-121"
+    fresh_checkpoint.mkdir(parents=True)
+    fresh_state = fresh_checkpoint / "trainer_state.json"
+    fresh_state.write_text(json.dumps(
+        {"global_step": 60, "max_steps": 300}), encoding="utf-8")
+    stale = time.time() - 3600.0
+    for path in sorted(stale_seed.rglob("*")):
+        os.utime(path, (stale, stale))
+    os.utime(stale_seed, (stale, stale))
+    return root, fresh_state
 
 
 def _boot(child):
@@ -643,6 +693,90 @@ def test_monitor_matrix_without_live_evidence_shows_residue_too(tmp_path):
         )
     finally:
         child.close(force=True)
+
+
+def test_monitor_stale_progress_guard_with_probed_live_process(tmp_path):
+    """261020-9vh — the stale-progress guard through the REAL
+    production path (the probe-fake trick): a fabricated reused root
+    whose GUE__emp_H3 pair carries the PREVIOUS run's 19968-step
+    checkpoint ~1h stale beside a FRESH 60/300 pair, and a REAL
+    sleeper process whose argv (``python -c 'import time;
+    time.sleep(120)' run_sweep.py --models … --output-root <root>``)
+    the REAL /proc probe maps to the tmp root — so the REAL console's
+    REAL MonitorBackend derives live evidence (matrices + start)
+    through the REAL facade and the guard fires end-to-end: the stale
+    pair renders the honest indeterminate (state RUNNING, numbers
+    unknown-until-first-save) and NEVER the previous run's steps text,
+    while the fresh pair's parsed percent renders untouched.
+
+    WHY the pty lane: the production path — real probe, real facade,
+    real backend, real guard — is only reachable here; the pilot
+    lane's fake service seam sits ABOVE the derivation this fix
+    changes. The sleeper is a plain CPU sleep (zero GPU, zero
+    run_sweep code executed); the probe also sees the maintainer's
+    real sweep under a DIFFERENT root key (harmless dict noise, never
+    looked up — and never signaled: the probe only reads)."""
+    root, fresh_state = _fabricate_stale_progress_root(tmp_path)
+    sleeper = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(120)",
+         "run_sweep.py",
+         "--models", "plant-dnabert-6mer",
+         "--tasks", "GUE__emp_H3,GUE__prom_300_all",
+         "--seeds", "9527",
+         "--output-root", str(root)],
+        cwd=str(tmp_path))
+    child = None
+    try:
+        # the fresh control must POSTDATE the sleeper's fork or the
+        # guard would take it too (its fixture-time mtime predates it)
+        moment = time.time()
+        os.utime(fresh_state, (moment, moment))
+        child = _spawn_tui(tmp_path, manual_roots=(root,))
+        _boot(child)
+        child.send("5")
+        child.expect(_CARD_NAME_MARKER, timeout=_NAV_TIMEOUT)
+        # drain the initial paint (the mount kick + first scan renders)
+        child.expect(pexpect.TIMEOUT, timeout=3.0)
+        drained = child.before
+        assert "⏵" in drained, (
+            "the stale pair's cell still renders RUNNING (the guard "
+            "takes the NUMBERS, never the state — checkpoint presence "
+            "is the activity signal)"
+        )
+        assert _STALE_STEPS_MARKER not in drained, (
+            "the previous run's step count must NEVER render at a "
+            "reused root while the live run has not saved its own "
+            "first checkpoint"
+        )
+        # w twice — the three-state cycle's pass-through (tree, then
+        # the wide table): the tree's "0/2" (2 running tasks, done 0)
+        # then the wide table's full-width progress grammar, the ONE
+        # surface at 120 cols that renders the shared
+        # _entry_progress_cell form for BOTH pairs side by side (the
+        # drill modal's progress column falls off its ~60-col edge)
+        child.send("w")
+        child.expect(_TREE_LIVE_MODEL_MARKER, timeout=_NAV_TIMEOUT)
+        child.send("w")
+        child.expect("Progress", timeout=_NAV_TIMEOUT)
+        child.expect(pexpect.TIMEOUT, timeout=2.0)
+        wide = child.before
+        assert _FRESH_PERCENT_MARKER in wide, (
+            "the fresh pair's parsed percent renders (the guard is "
+            "selective, never a blanket progress outage)"
+        )
+        assert _INDETERMINATE_MARKER in wide, (
+            "the stale pair renders the honest indeterminate progress "
+            "constant — never a fabricated number"
+        )
+        assert _STALE_STEPS_MARKER not in wide, (
+            "the wide table's progress column must never dress the "
+            "previous run's 19968/49911 as the current run's numbers"
+        )
+    finally:
+        if child is not None:
+            child.close(force=True)
+        sleeper.terminate()
+        sleeper.wait()
 
 
 def test_history_row_delete_flow_end_to_end(tmp_path):
