@@ -946,6 +946,11 @@ if __name__ == "__main__":
         "CrossDNA_8.1M",
         "CrossDNA_71.6M",
         "CrossDNA_519M",
+        # GENERanno's residual stream reaches ~3.7e8 by layer 12 and stays
+        # there until the final norm; bf16 autocast + LoRA then produces
+        # non-finite gradients/losses intermittently (observed 2/3 runs),
+        # while the same batches are finite in fp32.
+        "GENERanno-eukaryote-0.5b-base",
     ]
 
     # Iteratively finetune across different models and datasets
@@ -984,7 +989,12 @@ if __name__ == "__main__":
         # truncates the first's log mid-run and interleaved handle offsets
         # corrupt the acceptance artifact. An explicit tag suffixes the
         # filename per lane; unset (default) keeps the byte-identical path.
-        _log_tag = os.environ.get("DNALLM_ERROR_LOG_TAG", "")
+        # DNALLM_ERROR_LOG_SUFFIX is the legacy alias still emitted by the
+        # in-flight per-cell driver; it maps onto the same tag.
+        _log_tag = os.environ.get(
+            "DNALLM_ERROR_LOG_TAG",
+            os.environ.get("DNALLM_ERROR_LOG_SUFFIX", ""),
+        )
         if _world_rank == 0:
             _error_log_path = f"./logs/{model_name}{_log_tag}_error_log.txt"
         else:
