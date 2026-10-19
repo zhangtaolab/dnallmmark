@@ -1005,6 +1005,16 @@ if __name__ == "__main__":
                 configs = load_config("./finetune_config_with_head.yaml")
                 configs['task'].head_config.head = model_name.lower().split("_")[0]
 
+            # Propagate the run seed into the ACTIVE config: the YAMLs pin
+            # finetune.seed=42, and TrainingArguments is built from this
+            # config (suite trainer.py: training_args =
+            # train_config.model_dump()), so without this every --seed
+            # 43/44 process would silently re-seed the HF Trainer to 42 —
+            # collapsing data order/dropout to the seed-42 trajectory and
+            # leaving a 3-seed matrix in name only. Placed after the
+            # variant/custom-head reloads so it wins over any YAML value.
+            configs["finetune"].seed = seed
+
             # Bounded-smoke epochs override (06-02, plan-check blocker fix
             # 2026-10-11): --num_train_epochs (default None) OVERRIDES the
             # loaded config's finetune num_train_epochs — the knob this
