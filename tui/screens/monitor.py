@@ -137,6 +137,21 @@ Contract (locked decisions that survive the redesign):
   20-cell progress bar (percent + derived rate) and the step/max +
   point-ETA line — over service-honest fields ONLY (T-f0x-02 held:
   loss/lr/epoch/context/params still never stated).
+- 261019-o8e (the maintainer's 2026-10-19 17:23 reused-root report): the
+  Running tab's current-sweep views — the matrix row set, the strip's
+  glyph counts + done/total, and the [w] wide table — scope to the LIVE
+  sweep's planned pair set (the launcher's ``live_sweep_matrices``
+  evidence: registry argv + /proc probe, threaded worker-side into BOTH
+  cadence messages and stored BEFORE the render that consumes it) per
+  root of a card before the merge, so same-root historical residue
+  (previous smoke runs) leaves the Running view while the RunCellsModal
+  drill and the History tab keep the full-root truth. Every evidence
+  gap — no method, absent root, None (unparseable argv), empty set, a
+  raising call — falls back root-wide (a live card never renders an
+  empty matrix); the filtered models/tasks tuples ARE the cards sig's
+  shape legs and the filtered row map IS the wide sig, so the rze/f0x
+  gate law (rebuild-on-shape-change, steady zero-write, focus clamps
+  through ``_normalize_focus``) holds by construction.
 - WR-06: every async modal push checks ``app.below_minimum_grid``.
 - 261018-toe (the maintainer's 2026-10-18 21:21 slot-5 ruling): the
   History tab's row actions — [d] delete (a strong y-only
@@ -1578,25 +1593,33 @@ class MonitorScreen(Screen):
 
     class FullScanned(Message):
         """The 60s full scan arrived (worker thread -> loop; WR-02):
-        the scan result plus each live root's per-root payload."""
+        the scan result plus each live root's per-root payload.
+        261019-o8e: ``matrices`` threads the launcher's live-sweep
+        planned-pair evidence (None = no fresh read — the previous
+        screen cache stands; the mount-kick scan is what first lands
+        evidence for a fresh screen)."""
 
         def __init__(self, result: Any, payload: "dict[str, _RootRead]",
-                     run_id: int) -> None:
+                     run_id: int, matrices: "dict | None" = None) -> None:
             self.result = result
             self.payload = payload
             self.run_id = run_id
+            self.matrices = matrices
             super().__init__()
 
     class FrontierScanned(Message):
         """The 2s frontier pass over EVERY live root arrived (worker
-        thread -> loop; WR-02) — per-root snapshots/stats/progress."""
+        thread -> loop; WR-02) — per-root snapshots/stats/progress.
+        261019-o8e: ``matrices`` threads the same live-sweep evidence
+        (None = no fresh read — the previous screen cache stands)."""
 
         def __init__(self, snapshots: dict, stats: dict, progress: dict,
-                     run_id: int) -> None:
+                     run_id: int, matrices: "dict | None" = None) -> None:
             self.snapshots = snapshots
             self.stats = stats
             self.progress = progress
             self.run_id = run_id
+            self.matrices = matrices
             super().__init__()
 
     class FailuresRead(Message):
@@ -1765,6 +1788,12 @@ class MonitorScreen(Screen):
         # and {root: {(model, task): CellProgress}}
         self._cell_rows: dict[str, dict[str, Any]] = {}
         self._cell_progress: dict[str, dict] = {}
+        # 261019-o8e: the LIVE-SWEEP planned-pair evidence — the
+        # launcher's live_sweep_matrices() read (resolved root ->
+        # frozenset of (model, task) | None), stored by BOTH cadence
+        # handlers BEFORE the render pass that consumes it (see the
+        # handler comments); {} = fresh-but-empty evidence (fallback)
+        self._live_matrices: dict = {}
         self._card_order: list[str] = []
         # the graduation map (261018-kvj Task 2): root -> state as of
         # the last rendered scan; screen-local by design
@@ -1970,12 +1999,33 @@ class MonitorScreen(Screen):
         except Exception:  # noqa: BLE001 — the tolerant-reader promise
             return {}
 
+    def _read_live_matrices(self) -> "dict | None":
+        """The launcher's live-sweep planned-pair evidence, read
+        WORKER-side (off the event loop; the ``_entries_progress_of``
+        getattr precedent): a launcher without ``live_sweep_matrices``
+        (every pilot fake) reads None, a RAISING call reads None (the
+        tolerant-reader promise — the previous render stands), anything
+        else reads a fresh dict copy. None means "no fresh evidence,
+        keep the previous screen cache"; a dict — even {} — IS fresh
+        evidence (an empty dict scopes nothing: every root falls back
+        root-wide)."""
+        getter = getattr(self._launcher, "live_sweep_matrices", None)
+        if getter is None:
+            return None
+        try:
+            return dict(getter() or {})
+        except Exception:  # noqa: BLE001 — the tolerant-reader promise
+            return None
+
     @work(exclusive=True, thread=True, group="mon-full")
     def _run_full_scan(self, run_id: int) -> None:
         """The full scan + EVERY live root's stats/cells/progress/
         resume/scale read — all off the event loop (T-11-07-01/04).
         Per-root tolerant: a root whose read raises is skipped (the
-        per-file skip idiom), the other roots still land."""
+        per-file skip idiom), the other roots still land.
+        261019-o8e: the live-matrices read sits BEFORE the try (it
+        never raises) so an evidence failure can never mask a scan."""
+        matrices = self._read_live_matrices()
         try:
             result = self._service.full_scan(self._watermarks or None)
         except Exception:  # noqa: BLE001 — the tolerant-reader promise:
@@ -1988,7 +2038,8 @@ class MonitorScreen(Screen):
             read = self._read_live_root(str(summary.root))
             if read is not None:
                 payload[str(summary.root)] = read
-        self.post_message(self.FullScanned(result, payload, run_id))
+        self.post_message(self.FullScanned(result, payload, run_id,
+                                           matrices))
 
     def _read_live_root(self, root: str) -> "_RootRead | None":
         """One live root's worker-side reads; None = the per-root skip
@@ -2025,7 +2076,9 @@ class MonitorScreen(Screen):
         """The light 2s pass over EVERY live root in the SAME exclusive
         worker (frontier_scan + stats + entries_progress per root; the
         elapsed accrues continuously, D-17) — all off the event loop,
-        per-root tolerant."""
+        per-root tolerant. 261019-o8e: the live-matrices read rides the
+        same pass (once, at the top — never raises)."""
+        matrices = self._read_live_matrices()
         snapshots: dict = {}
         stats_map: dict = {}
         progress_map: dict = {}
@@ -2038,7 +2091,7 @@ class MonitorScreen(Screen):
             stats_map[root] = stats
             progress_map[root] = progress
         self.post_message(self.FrontierScanned(
-            snapshots, stats_map, progress_map, run_id))
+            snapshots, stats_map, progress_map, run_id, matrices))
 
     def _read_frontier_root(
             self, root: str) -> "tuple | None":
@@ -2060,6 +2113,12 @@ class MonitorScreen(Screen):
         degradation — no stale cards)."""
         if message.run_id != self._full_run_id:
             return  # a superseded scan's late post (WR-02)
+        # 261019-o8e: the evidence lands BEFORE any state mutation or
+        # render — the render pass and its structure signature must
+        # read the SAME evidence dict (a store-after-render would flap
+        # one tick: the sig computed root-wide, the paint filtered)
+        if message.matrices is not None:
+            self._live_matrices = message.matrices
         result = message.result
         # graduation BEFORE the state map updates: only transitions the
         # screen OBSERVED fire (a fresh screen's first scan has no
@@ -2124,6 +2183,10 @@ class MonitorScreen(Screen):
         mkdirs before the executor runs)."""
         if message.run_id != self._frontier_run_id:
             return
+        # 261019-o8e: same load-bearing ordering as the full-scan
+        # handler — the evidence stores BEFORE the render that reads it
+        if message.matrices is not None:
+            self._live_matrices = message.matrices
         for root_key, snapshot in message.snapshots.items():
             if root_key not in self._live:
                 continue
@@ -2639,6 +2702,22 @@ class MonitorScreen(Screen):
         self.query_one("#mon-tab-history", Label).update(
             history_text, layout=False)
 
+    def _root_live_pairs(self, root) -> "frozenset | None":
+        """One root's live-sweep planned-pair set for PRESENTATION
+        scoping (261019-o8e): the launcher's evidence keys RESOLVED
+        roots (the ``MonitorBackend._live_pairs_for`` idiom). The None
+        vocabulary is the DELIBERATE divergence from that service
+        helper — ``_live_pairs_for`` returns the EMPTY set on a strict
+        miss because the service derives per-seed STATES (a dead root:
+        every non-terminal cell derives interrupted), while THIS
+        screen-side None means "scope nothing, render root-wide": an
+        absent root, a None entry (live-but-unknown argv), or an empty
+        set (degenerate parse) all fall back — a live card NEVER
+        renders an empty matrix through an evidence gap."""
+        pairs = self._live_matrices.get(
+            str(Path(root).expanduser().resolve()))
+        return pairs if isinstance(pairs, frozenset) and pairs else None
+
     def _card_rows(self, card: _RunCard) -> "dict[str, Any]":
         """The card's merged row map (261019-f0x): ``self._cell_rows``
         over ``card.roots`` keyed ``f"{model}__{task}"``; when the same
@@ -2647,10 +2726,24 @@ class MonitorScreen(Screen):
         running > failed > interrupted > completed/skipped > queued
         (first state wins inside a tier — deterministic). This ONE map
         feeds the strip counts, the matrix, the right pane, and the
-        [w] table — never re-derived differently."""
+        [w] table — never re-derived differently.
+
+        261019-o8e: the map is the LIVE-SWEEP-SCOPED view when the
+        launcher's evidence holds a planned pair set for a root (rows
+        of THAT root outside the set — same-root historical residue —
+        drop BEFORE the merge, per root, so an mgpu card keeps pairs
+        live in ANY of its worker roots); a root without evidence
+        contributes all its rows (the root-wide fallback). An
+        honestly-empty filtered map (all rows residue, the planned
+        rows not yet discovered) renders strip + no matrix rows —
+        ``_card_matrix`` already returns [] safely; the 2s cadence
+        resolves it when the manifest/first cell lands."""
         merged: dict[str, Any] = {}
         for root in card.roots:
+            pairs = self._root_live_pairs(root)
             for key, row in (self._cell_rows.get(root) or {}).items():
+                if pairs is not None and (row.model, row.task) not in pairs:
+                    continue
                 existing = merged.get(key)
                 merged[key] = (
                     row if existing is None
@@ -2688,6 +2781,28 @@ class MonitorScreen(Screen):
                 counts[cell_seed.state] = (
                     counts.get(cell_seed.state, 0) + 1)
         return counts
+
+    def _card_filter_active(self, card: _RunCard) -> bool:
+        """261019-o8e: the live-sweep scoping is ACTIVE for the card
+        when ANY of its roots carries a non-None planned-pair set —
+        the done/total basis switches to the FILTERED seed counts for
+        exactly those cards (the strip's glyph counts and fraction can
+        never disagree about the filter)."""
+        return any(self._root_live_pairs(root) is not None
+                   for root in card.roots)
+
+    @staticmethod
+    def _card_filtered_done_total(
+            counts: "dict[str, int]") -> "tuple[int, int]":
+        """The strip's done/total over the FILTERED seed counts
+        (261019-o8e): done = the terminal states (completed+failed+
+        skipped — the stats-line done convention), total = every
+        filtered seed. Elapsed/ETA/rate stay stats-seam-scope (the
+        locked fix names glyph counts + done/total only)."""
+        done = (counts.get(CELL_COMPLETED, 0)
+                + counts.get(CELL_FAILED, 0)
+                + counts.get(CELL_SKIPPED, 0))
+        return done, sum(counts.values())
 
     def _card_done_total(self, card: _RunCard) -> "tuple[int, int | None]":
         """The strip's done/total fraction — the existing precedence
@@ -2750,12 +2865,14 @@ class MonitorScreen(Screen):
                 return rate
         return None
 
-    def _card_strip(self, card: _RunCard,
-                    counts: "dict[str, int]") -> Text:
+    def _card_strip(self, card: _RunCard, counts: "dict[str, int]",
+                    done: int, total: "int | None") -> Text:
         """The ONE summary strip line (the approved variant-B shape):
         root name bold, then glyph+count per category (non-zero
         categories render, queued always does), the done/total fraction
-        (the stats precedence, the honest unknown when total is None),
+        (261019-o8e: the CALLER-threaded pair — the filtered seed
+        counts' basis when the live-sweep scoping is active, the stats
+        precedence otherwise; the honest unknown when total is None),
         the 20-cell segmented bar (skipped in narrow), the elapsed
         segment, the ETA segment (point + wall clock / multi-root
         min–max range / the dash), and the derived rate (skipped in
@@ -2770,7 +2887,6 @@ class MonitorScreen(Screen):
                               style=_MATRIX_GLYPH_STYLES.get(state, "dim"))
                 strip += Text(f"{count} ")
         strip += Text(" ")
-        done, total = self._card_done_total(card)
         if total is None:
             strip += Text(S.MON_TOTAL_UNKNOWN, style="dim")
         else:
@@ -2886,11 +3002,21 @@ class MonitorScreen(Screen):
         261018-rze (c): the ONE content definition shared by BOTH
         render paths — the rebuild path (``_card_widget``'s ListItem
         construction) and the in-place path (the existing Labels'
-        content update) — so the two can never drift."""
+        content update) — so the two can never drift.
+
+        261019-o8e: rows + counts compute ONCE; the strip's done/total
+        derives over the FILTERED counts when the live-sweep scoping is
+        active for the card (the glyph counts and the fraction share
+        the one basis), else today's stats-seam precedence."""
         rows = self._card_rows(card)
+        counts = self._card_seed_counts(rows)
+        if self._card_filter_active(card):
+            done, total = self._card_filtered_done_total(counts)
+        else:
+            done, total = self._card_done_total(card)
         lines: list[tuple[str, Text]] = [
             ("mon-card-strip", self._card_strip(
-                card, self._card_seed_counts(rows)))]
+                card, counts, done, total))]
         resume = self._resumes.get(card.roots[0], 0)
         if resume > 0:
             note_copy = (S.MON_RESUME_NOTE_SHORT if self._narrow
@@ -3093,10 +3219,18 @@ class MonitorScreen(Screen):
         row_map: dict[str, list] = {}
         for card in cards:
             for root in card.roots:
+                # 261019-o8e: the wide table is the SAME current-sweep
+                # view as the matrix — the per-root live-pair skip
+                # applies (the wide content sig derives from this
+                # row_map, so the filtered re-diff is automatic)
+                pairs = self._root_live_pairs(root)
                 progress_map = self._cell_progress.get(root) or {}
                 rows = self._cell_rows.get(root) or {}
                 for key in sorted(rows):
                     row = rows[key]
+                    if (pairs is not None
+                            and (row.model, row.task) not in pairs):
+                        continue
                     progress = progress_map.get((row.model, row.task))
                     for cell_seed in sorted(row.seeds,
                                             key=lambda s: s.seed):
@@ -3316,7 +3450,10 @@ class MonitorScreen(Screen):
     def _drill_focus_key(self) -> "str | None":
         """The [enter] drill's additive focus key — the focused group's
         ``model__task`` on the Running tab (None everywhere else: the
-        RunCellsModal opens at its own row 0 exactly as before)."""
+        RunCellsModal opens at its own row 0 exactly as before).
+        261019-o8e: the focused pair is filtered-scoped but ALWAYS
+        exists among the modal's root-wide rows (the drill reads the
+        unfiltered cells_view — see _read_run_cells)."""
         if self._active_tab != "running":
             return None
         focused = self._focused_group()
@@ -3373,7 +3510,11 @@ class MonitorScreen(Screen):
                         focus_key: "str | None" = None) -> None:
         """The drill's ONE read of cells_view + entries_progress, off
         the event loop (the LogTailModal read-once precedent — live
-        refresh stays on the running card; the drill is a snapshot)."""
+        refresh stays on the running card; the drill is a snapshot).
+        261019-o8e: the FULL-ROOT-SNAPSHOT contract — the drill stays
+        ROOT-WIDE by design (same-root residue stays visible and
+        drillable here and on the History side; the Running tab's
+        scoping is presentation-only, never a deletion)."""
         try:
             cells = self._service.cells_view(root_key)
             progress = self._entries_progress_of(root_key)

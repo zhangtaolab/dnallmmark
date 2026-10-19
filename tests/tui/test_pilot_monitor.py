@@ -319,7 +319,7 @@ class FakeMonitorLauncher:
                  rerun_outcomes=None, env_raises=None,
                  single_gpu_blocked=None,
                  kill_outcomes=None, kill_raises=None,
-                 resume_outcomes=None):
+                 resume_outcomes=None, live_matrices=None):
         self._preflight = (preflight if preflight is not None
                            else EnvPreflight(
                                can_launch=True, reasons=(),
@@ -341,6 +341,20 @@ class FakeMonitorLauncher:
         # raiser for the WR-03 surface, and the recording list
         self._kill_outcomes = list(kill_outcomes) if kill_outcomes else None
         self._kill_raises = kill_raises
+        # 261019-o8e: the live_sweep_matrices fake — None (the default)
+        # keeps the method UNDEFINED (pin-by-omission, the
+        # entries_progress precedent: every pre-existing fake keeps
+        # exercising the root-wide fallback); a dict value is the sticky
+        # return; a callable is invoked per read (arbitrary scripting:
+        # the mutation legs read a mutable holder, the raising leg
+        # raises).
+        if live_matrices is not None:
+            if callable(live_matrices):
+                self.live_sweep_matrices = live_matrices
+            else:
+                def _sticky_matrices():
+                    return live_matrices
+                self.live_sweep_matrices = _sticky_matrices
         self.env_calls = 0
         self.rerun_calls = []
         self.resume_calls = []
@@ -1567,6 +1581,251 @@ async def test_wide_mode_arrows_delegate_to_the_table():
         await pilot.press("left")
         await pilot.pause()
         assert screen._active_tab == "running"
+
+
+# =====================================================================
+# 261019-o8e — the live-pair scoping (the Running tab's current-sweep
+# views scope to the LIVE sweep's planned pair set; every evidence gap
+# falls back root-wide)
+# =====================================================================
+
+#: the maintainer's 2026-10-19 17:23 reused-root fixture: the ONE
+#: live-planned pair (its seeds 42 running + 43/44 queued) beside THREE
+#: residue models from previous smoke runs (classified interrupted)
+#: under the SAME root; the stats seam is scripted ROOT-WIDE
+#: (done=9 total=36 — deliberately different from the filtered truth
+#: 0/3, so a fallback leak is unmissable).
+_LIVE_MODEL = "hyenadna-large-1m-seqlen-hf"
+_LIVE_TASK = "GUE__emp_H3"
+_RESIDUE_MODELS = ("nucleotide-transformer-500m",
+                   "plant-dnabert-6mer",
+                   "plant-dnamamba-6mer")
+_LIVE_PAIR = frozenset({(_LIVE_MODEL, _LIVE_TASK)})
+
+
+def _reused_root_monitor() -> FakeMonitorService:
+    """The four-model reused-root cells fixture (the sorted model order
+    puts the live model FIRST — the clamp pin relies on row 0 being
+    live and row 1 residue)."""
+    return FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=9, total=36, mtime=1.0),),
+            watermarks={})],
+        cells={"/scans/finetuned": (
+            _row(_LIVE_MODEL, _LIVE_TASK,
+                 {42: CELL_RUNNING, 43: CELL_QUEUED, 44: CELL_QUEUED}),
+            _row("nucleotide-transformer-500m", "GUE__emp_H3",
+                 {42: CELL_INTERRUPTED}),
+            _row("plant-dnabert-6mer", "GUE__emp_H3",
+                 {42: CELL_INTERRUPTED, 43: CELL_INTERRUPTED}),
+            _row("plant-dnamamba-6mer", "GUE__virus_species_4",
+                 {42: CELL_INTERRUPTED}),
+        )},
+        stats={"/scans/finetuned": _stats(done=9, total=36)},
+    )
+
+
+async def test_live_pair_evidence_scopes_matrix_strip_and_wide():
+    """261019-o8e — the maintainer's case (2026-10-19 17:23): ONE
+    launched model at a REUSED root renders exactly ONE matrix row with
+    its own seeds; the same-root residue (previous smoke runs,
+    classified interrupted) appears NOWHERE in the card, the strip's
+    glyph counts, the done/total (0/3 over the FILTERED seeds — not the
+    root-wide stats seam's 9/36), or the [w] wide table — and the drill
+    modal stays ROOT-WIDE (all four models) with its cursor pinned to
+    the focused (filtered) group."""
+    from tui.screens.monitor import RunCellsModal
+
+    app = _app(monitor=_reused_root_monitor(),
+               launcher=FakeMonitorLauncher(
+                   live_matrices={"/scans/finetuned": _LIVE_PAIR}))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        rows = _card_texts(screen, "mon-matrix-row")
+        assert len(rows) == 1, "exactly ONE model row — the launched one"
+        # the 20-cell name column truncates the 27-char model name; the
+        # "hyenadna" prefix is unique among the four fixture models
+        assert rows[0].startswith("hyenadna"), (
+            "the surviving row is the live-planned model"
+        )
+        strip = _card_texts(screen, "mon-card-strip")[0]
+        card = strip + "\n" + "\n".join(rows)
+        for residue in _RESIDUE_MODELS:
+            assert residue not in card, (
+                f"residue model {residue} leaked into the Running card"
+            )
+        assert "0/3" in strip and "9/36" not in strip, (
+            "the done/total derives over the FILTERED seeds (0/3), "
+            "never the root-wide stats seam (9/36)"
+        )
+        assert "⏵1" in strip and "◌2" in strip, (
+            "the glyph counts are the filtered seeds only: 1 running + "
+            "2 queued"
+        )
+        assert "⏸" not in strip, (
+            "the three residue interrupted seeds never count"
+        )
+        # [w]: the wide table carries the filtered pair's three seeds
+        await pilot.press("w")
+        await pilot.pause()
+        wide = screen.query_one("#mon-wide", DataTable)
+        assert wide.row_count == 3, "one row per FILTERED seed"
+        for row_key in wide.rows:
+            assert _table_text(wide, row_key.value, "model") == (
+                _LIVE_MODEL), "every wide row names the live model only"
+        # [w] back, then the drill: ROOT-WIDE by design (the full-root
+        # snapshot — residue stays drillable there), cursor pinned to
+        # the focused (filtered) group's row
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, RunCellsModal)
+        table = app.screen.query_one("#mon-runcells-table", DataTable)
+        assert table.row_count == 4, (
+            "the drill modal keeps the FULL-ROOT truth (four models)"
+        )
+        assert str(table.coordinate_to_cell_key(
+            table.cursor_coordinate)[0].value) == (
+            f"{_LIVE_MODEL}__{_LIVE_TASK}"), (
+            "the modal cursor still pins to the focused (filtered) group"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+
+
+async def test_live_evidence_fallbacks_never_scope():
+    """261019-o8e — the fallback honesty: a launcher WITHOUT the
+    method (every pre-existing fake), a root mapped to None
+    (live-but-unknown argv), an EMPTY pair set (degenerate parse), and
+    a RAISING live_sweep_matrices call ALL keep today's root-wide row
+    set — a live card never renders an empty matrix through an
+    evidence gap."""
+    def _raising():
+        raise RuntimeError("evidence unavailable")
+
+    legs = (
+        ("no method", None),
+        ("root mapped to None", {"/scans/finetuned": None}),
+        ("empty pair set", {"/scans/finetuned": frozenset()}),
+        ("raising call", _raising),
+    )
+    for label, scripted in legs:
+        app = _app(monitor=_reused_root_monitor(),
+                   launcher=FakeMonitorLauncher(
+                       live_matrices=scripted))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_monitor(pilot, app)
+            screen = app.screen
+            rows = _card_texts(screen, "mon-matrix-row")
+            assert len(rows) == 4, (
+                f"fallback leg ({label}): ALL FOUR models render — "
+                "today's root-wide behavior, never empty"
+            )
+            strip = _card_texts(screen, "mon-card-strip")[0]
+            assert "9/36" in strip, (
+                f"fallback leg ({label}): the stats-seam done/total "
+                "precedence stands"
+            )
+
+
+async def test_live_pair_set_change_rebuilds_then_steady_tick_silent():
+    """261019-o8e — the gate law over the filter transition: evidence
+    first arrives root-wide-scoped (the root ABSENT from a fresh empty
+    dict -> four rows), then the scripted pair set narrows it -> the
+    ListView REBUILDS once (ListItem identity changes; the filtered
+    models/tasks tuples ARE the cards sig's shape legs), and one more
+    tick over the SAME evidence performs ZERO widget writes with the
+    ListItem identity surviving (the rze zero-write idiom)."""
+    holder: dict = {}
+    app = _app(monitor=_reused_root_monitor(),
+               launcher=FakeMonitorLauncher(
+                   live_matrices=lambda: holder))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        cards = screen.query_one("#mon-cards", ListView)
+        root_wide_item = cards.children[0]
+        assert len(_card_texts(screen, "mon-matrix-row")) == 4, (
+            "the root is absent from the (fresh, empty) evidence dict: "
+            "the root-wide first paint"
+        )
+        holder["/scans/finetuned"] = _LIVE_PAIR
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert cards.children[0] is not root_wide_item, (
+            "the live-pair-set change REBUILT through the existing "
+            "structure signature"
+        )
+        rows = _card_texts(screen, "mon-matrix-row")
+        assert len(rows) == 1 and rows[0].startswith("hyenadna")
+        rebuilt_item = cards.children[0]
+        clear_patcher, clear_mock = _spy(cards, "clear")
+        label_spies = [_spy(label, "update")
+                       for label in rebuilt_item.query(Label)]
+        try:
+            screen._tick_frontier()
+            await _settle(pilot, app)
+            assert clear_mock.call_count == 0, (
+                "a steady tick over the SAME evidence never rebuilds"
+            )
+            for patcher, mocked in label_spies:
+                assert mocked.call_count == 0, (
+                    "a steady tick over the SAME evidence performs zero "
+                    "card Label writes (the rze law)"
+                )
+        finally:
+            clear_patcher.stop()
+            for patcher, _mocked in label_spies:
+                patcher.stop()
+        assert cards.children[0] is rebuilt_item, (
+            "the ListItem identity survives the steady tick"
+        )
+
+
+async def test_focus_clamps_into_filtered_set_on_evidence_transition():
+    """261019-o8e — the focus clamp: with the focus sitting on a
+    RESIDUE model's group (the root-wide phase), the arriving pair set
+    narrows the shape and ``_normalize_focus`` clamps the stored
+    position into the filtered set on the SAME render pass — the right
+    pane's header names the clamped (live) group, never an empty pane,
+    never a dangling residue focus."""
+    holder: dict = {}
+    app = _app(monitor=_reused_root_monitor(),
+               launcher=FakeMonitorLauncher(
+                   live_matrices=lambda: holder))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert screen._focus_pos == (0, 0)
+        # real key presses (the suite's rule): down lands the focus on
+        # row 1 — the first RESIDUE model in the sorted root-wide shape
+        await pilot.press("down")
+        await pilot.pause()
+        assert screen._focus_pos == (1, 0)
+        assert screen._focused_group()[1] in _RESIDUE_MODELS, (
+            "the pre-transition focus sits on a residue group"
+        )
+        holder["/scans/finetuned"] = _LIVE_PAIR
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert screen._focus_pos == (0, 0), (
+            "the residue focus clamped into the filtered shape"
+        )
+        assert screen._focused_group()[1] == _LIVE_MODEL, (
+            "the focused group is the clamped (live) model"
+        )
+        detail = _detail_plain(screen)
+        assert detail, "the pane never renders empty at the transition"
+        assert detail.splitlines()[0].startswith(_LIVE_MODEL), (
+            "the pane header names the clamped group (the 40-col pane "
+            "truncates the 41-char header — the prefix is the pin)"
+        )
+        for residue in _RESIDUE_MODELS:
+            assert residue not in detail, (
+                f"the clamped pane never names {residue}"
+            )
 
 
 async def test_history_tab_lists_runs_newest_first_with_states():
