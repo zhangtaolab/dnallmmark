@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 13
-waived_count: 5
-fixed_count: 24
+open_count: 10
+waived_count: 6
+fixed_count: 26
 total_count: 42
-last_updated: 2026-10-19T13:57:22.601Z
+last_updated: 2026-10-19T14:22:50.654Z
 ---
 
 # Broken Windows Ledger
@@ -40,9 +40,9 @@ last_updated: 2026-10-19T13:57:22.601Z
 | 23 | quick-261014-dcl | deviation | tests/tui/__snapshots__/wizard.svg |  | wizard.svg golden collateral drift: the wizard golden pins env-screen pixels at its left edge, so the 261014-dcl eighth env row drifted it (committed with the change per D-03; the plan pinned exactly four SVG diffs) | fixed | absorbed by the D-03-approved full golden refresh (d5cb44b, 2026-10-15): wizard.svg regenerated with the other 8 goldens and committed under maintainer review | 2026-10-14T03:38:33.288Z | 2026-10-15T06:45:36.321Z |
 | 24 | quick-261014-f4w | deviation | tests/tui/__snapshots__/wizard.svg |  | wizard.svg golden collateral drift again during make snapshot-update (render-state flake documented in dcl deferred-items, ~2/17 loads, pre-existing at base): committed with the change per D-03 alongside the plan-pinned run_config.svg + env_check.svg | fixed | absorbed by the D-03-approved full golden refresh (d5cb44b, 2026-10-15); the render-state flake itself stays documented in dcl deferred-items | 2026-10-14T05:14:07.356Z | 2026-10-15T06:45:36.243Z |
 | 25 | quick-261014-mlc | deviation | tests/tui/test_snapshots.py |  | All 9 SVG goldens strict-xfail pending maintainer make snapshot-update + D-03 review (slot-2/3 rework + locked nav rename) | fixed | maintainer D-03 review approved 2026-10-15; all 9 goldens regenerated via make snapshot-update (zh pin) and committed in d5cb44b with the strict-xfail markers retired; suite at the 7F baseline with the 9 goldens passing | 2026-10-14T10:25:24.246Z | 2026-10-15T06:45:17.867Z |
-| 26 | quick-261015-pex | unmet-truth | tui/app.py |  | Post-second-launch console input death (pex rehearsals): after a SECOND in-session gated launch the console stops processing navigation while renders continue (the launch toast/auto-switch render late or never); the demo restructured to exactly one on-camera launch and the fast-failure sweep moved to CLI prep | open |  | 2026-10-15T23:59:00.000Z |  |
-| 27 | quick-261015-pex | unmet-truth | tui/screens/monitor.py |  | Monitor stalls ~60s after a TUI launch on this box (around the first cell's completion output burst): the stats cadence stops and keys stop processing; the fold-then-kill demo sequence (seed 42 completes, kill seed 43) is unreachable - the demo kill lands mid-seed-42 | open |  | 2026-10-15T23:59:00.000Z |  |
-| 28 | quick-261015-pex | unmet-truth | tui/screens/run_config.py | 1618 | Typing into the slot-4 filter while the screen is mid-mount crashes the console: on_input_changed -> _render_picker -> query_one('#cfg-picker') raises NoMatches (observed once in pex rehearsal; the demo driver works around it by anchoring the populated picker before typing) | open |  | 2026-10-15T23:59:00.000Z |  |
+| 26 | quick-261015-pex | unmet-truth | tui/app.py |  | Post-second-launch console input death (pex rehearsals): after a SECOND in-session gated launch the console stops processing navigation while renders continue (the launch toast/auto-switch render late or never); the demo restructured to exactly one on-camera launch and the fast-failure sweep moved to CLI prep | fixed |  | 2026-10-15T23:59:00.000Z | 2026-10-19T14:22:50.525Z |
+| 27 | quick-261015-pex | unmet-truth | tui/screens/monitor.py |  | Monitor stalls ~60s after a TUI launch on this box (around the first cell's completion output burst): the stats cadence stops and keys stop processing; the fold-then-kill demo sequence (seed 42 completes, kill seed 43) is unreachable - the demo kill lands mid-seed-42 | fixed |  | 2026-10-15T23:59:00.000Z | 2026-10-19T14:22:50.589Z |
+| 28 | quick-261015-pex | unmet-truth | tui/screens/run_config.py | 1618 | Typing into the slot-4 filter while the screen is mid-mount crashes the console: on_input_changed -> _render_picker -> query_one('#cfg-picker') raises NoMatches (observed once in pex rehearsal; the demo driver works around it by anchoring the populated picker before typing) | waived | not reproducible in 12 aggressive tries (2026-10-19); structural closure verified: entries-empty guard before _render_picker, fresh RunConfigScreen per navigation, digits cannot navigate while filter focused. Latent unguarded query_one family in run_config.py event handlers noted — real fix only if entries ever load synchronously or screens get cached | 2026-10-15T23:59:00.000Z | 2026-10-19T14:22:50.654Z |
 | 29 | quick-261016-vxr | deviation | tests/tui/__snapshots__/monitor_running.svg |  | monitor_running.svg AND monitor_empty.svg regenerated (the slot-5 [k] 停止 keycap row) via make snapshot-update, deliberately UNCOMMITTED pending the maintainer's D-03 review - the committed tree fails test_snapshots on exactly these two until they land (run_config.svg byte-preserved, sha256 afa89e7e...) | fixed | D-03 review approved 2026-10-17; the three SVGs landed in f2a772a | 2026-10-17T00:00:00.000Z | 2026-10-17T01:34:00.000Z |
 | 30 | quick-261017-eea | deviation | schemas/model_performance.json |  | Rule-2 deviation (eea commit 9a83066): the 141 helixgen entries carry FLOPs empty-string where the schema demanded strict number — schema conformed to the sibling anyOf [number, const ''] shape (1 line) after verifying the  documents '' as the missing-value convention, all 13 sibling metrics already use anyOf, summarize is ''-safe, and no test pins FLOPs strictness; fabricating numbers forbidden | fixed |  | 2026-10-17T02:55:52.918Z | 2026-10-19T13:57:22.196Z |
 | 31 | quick | deviation | pipeline/run_finetune.py | 849 | run_finetune sibling hard-index sites deliberately unfixed (07-CR-01 batch covered only the model-loop reads): :849 probe-branch row[Model_name], :1077 dataset-loop row[Dataset_name], :1322 row[length] — schema-legal minimal custom entries crash these paths; future maintainer-ruled batch (see 261017-klw-SUMMARY Maintainer Items) | fixed |  | 2026-10-17T07:36:01.293Z | 2026-10-19T13:57:22.260Z |
@@ -392,10 +392,10 @@ last_updated: 2026-10-19T13:57:22.601Z
     "file": "tui/app.py",
     "line": null,
     "description": "Post-second-launch console input death (pex rehearsals): after a SECOND in-session gated launch the console stops processing navigation while renders continue (the launch toast/auto-switch render late or never); the demo restructured to exactly one on-camera launch and the fast-failure sweep moved to CLI prep",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-15T23:59:00.000Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-19T14:22:50.525Z",
     "milestone": "v1.2"
   },
   {
@@ -405,10 +405,10 @@ last_updated: 2026-10-19T13:57:22.601Z
     "file": "tui/screens/monitor.py",
     "line": null,
     "description": "Monitor stalls ~60s after a TUI launch on this box (around the first cell's completion output burst): the stats cadence stops and keys stop processing; the fold-then-kill demo sequence (seed 42 completes, kill seed 43) is unreachable - the demo kill lands mid-seed-42",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-15T23:59:00.000Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-19T14:22:50.589Z",
     "milestone": "v1.2"
   },
   {
@@ -418,10 +418,10 @@ last_updated: 2026-10-19T13:57:22.601Z
     "file": "tui/screens/run_config.py",
     "line": 1618,
     "description": "Typing into the slot-4 filter while the screen is mid-mount crashes the console: on_input_changed -> _render_picker -> query_one('#cfg-picker') raises NoMatches (observed once in pex rehearsal; the demo driver works around it by anchoring the populated picker before typing)",
-    "status": "open",
-    "reason": "",
+    "status": "waived",
+    "reason": "not reproducible in 12 aggressive tries (2026-10-19); structural closure verified: entries-empty guard before _render_picker, fresh RunConfigScreen per navigation, digits cannot navigate while filter focused. Latent unguarded query_one family in run_config.py event handlers noted — real fix only if entries ever load synchronously or screens get cached",
     "recorded_at": "2026-10-15T23:59:00.000Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-19T14:22:50.654Z",
     "milestone": "v1.2"
   },
   {
