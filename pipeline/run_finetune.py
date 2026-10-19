@@ -1771,6 +1771,14 @@ if __name__ == "__main__":
                                 os.remove(stale_path)
                         _ds_cursor -= 1
                         continue
+                    # Floor reached: this dataset is skipped below. Restore the
+                    # configured ratio for the NEXT dataset — the ratchet is a
+                    # per-dataset retry knob, and leaving it at the 0.50 floor
+                    # would pin every later dataset in this multi-day process
+                    # to batch 1 (short sequences lose the 7-9x estimator gain)
+                    # merely because one oversized dataset could not fit.
+                    if _is_cuda_oom(e) and mem_ratio <= OOM_MEM_RATIO_FLOOR:
+                        mem_ratio = args.mem_ratio
                     if trainer is None:
                         # Non-OOM ctor-region failure: pre-fallback code let
                         # it escape and kill the process — re-raise to keep
