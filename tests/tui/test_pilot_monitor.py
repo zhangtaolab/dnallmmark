@@ -1247,6 +1247,153 @@ async def test_right_pane_tail_write_suppressed_under_modal():
         )
 
 
+# =====================================================================
+# 261019-f0x Task 3 — the [w] wide toggle (matrix <-> the A-style dense
+# per-cell table, the k9s narrow/wide precedent)
+# =====================================================================
+
+async def test_wide_toggle_dense_table_enter_and_restore():
+    """[w]: the toggle paints the dense per-cell table (one row per
+    seed — the state WORDS, the progress grammar on the running seed);
+    enter drills the row's OWN root with the cursor at its group; [w]
+    again restores the matrix with the prior focus preserved."""
+    from tui.screens.monitor import RunCellsModal
+
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2, mtime=1.0),),
+            watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING,
+                                       43: CELL_QUEUED}),)},
+        stats={"/scans/finetuned": _stats(
+            done=1, total=2,
+            current=_current("model-a", "task-1", 42))},
+        progress={
+            ("model-a", "task-1"): CellProgress(
+                step=300, max_steps=1000, percent=30, eta_seconds=700.0)},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        # move the matrix focus to col 0 (already there) and row 0;
+        # toggle wide
+        await pilot.press("w")
+        await pilot.pause()
+        assert screen._wide is True
+        assert screen.focused.id == "mon-wide", (
+            "the wide surface takes the focus"
+        )
+        wide = screen.query_one("#mon-wide", DataTable)
+        assert wide.display is True and screen.query_one(
+            "#mon-cards").display is False
+        assert wide.row_count == 2, "one row per SEED (per-cell, not fold)"
+        running_key = "/scans/finetuned::model-a__task-1::42"
+        assert _table_text(wide, running_key, "state") == MON_STATE_RUNNING
+        assert _table_text(wide, running_key, "seed") == "s42"
+        assert _table_text(wide, running_key, "model") == "model-a"
+        assert _table_text(wide, running_key, "task") == "task-1"
+        assert "300/1000 30%" in _table_text(wide, running_key, "progress")
+        assert _table_text(wide, running_key, "rate") == (
+            MON_STRIP_RATE.format(rate="1.0"))
+        queued_key = "/scans/finetuned::model-a__task-1::43"
+        assert _table_text(wide, queued_key, "state") == MON_STATE_QUEUED
+        assert _table_text(wide, queued_key, "progress") == "—", (
+            "non-running seeds carry the dim dash"
+        )
+        # enter on the wide table drills the row's root with the
+        # cursor pinned to its group
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, RunCellsModal)
+        drill = app.screen.query_one("#mon-runcells-table", DataTable)
+        assert str(drill.coordinate_to_cell_key(
+            drill.cursor_coordinate)[0].value) == "model-a__task-1", (
+            "the wide row's group pins the drill cursor"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+        # [w] back: the matrix restores with the pre-toggle focus
+        await pilot.press("w")
+        await pilot.pause()
+        assert screen._wide is False
+        assert screen.query_one("#mon-cards").display is True
+        assert screen.focused.id == "mon-cards"
+        assert screen._focus_pos == (0, 0), (
+            "the pre-toggle matrix focus survived the wide round trip"
+        )
+
+
+async def test_wide_keycap_running_tab_only():
+    """The [w] keycap renders on the Running tab's footer ONLY (the
+    d/e precedent mirrored)."""
+    from tui.screens.nav import KeycapsStatic
+    from tui.strings import MON_WIDE_KEYCAP
+
+    monitor = _pane_fixture_monitor()
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        await pilot.pause()
+
+        def footer_text() -> str:
+            return str(screen.query_one(
+                "#nav-left-keycaps", KeycapsStatic).content)
+
+        assert "[w]" in footer_text() and MON_WIDE_KEYCAP in footer_text()
+        await pilot.press("tab")
+        await pilot.pause()
+        assert "[w]" not in footer_text(), (
+            "the History-tab footer drops the [w] keycap"
+        )
+        assert "[d]" in footer_text(), "the d/e projection stands"
+        await pilot.press("tab")
+        await pilot.pause()
+        assert "[w]" in footer_text()
+
+
+async def test_wide_mode_arrows_delegate_to_the_table():
+    """Wide-mode arrows: ←/→ flip tabs (no matrix focus in wide mode)
+    and ↑/↓ move the wide table's cursor through the delegated native
+    actions (one code path, both tables)."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=2, mtime=1.0),),
+            watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("model-a", "task-1", {42: CELL_RUNNING}),
+            _row("model-a", "task-2", {43: CELL_QUEUED}),)},
+        stats={"/scans/finetuned": _stats(done=1, total=2)},
+    )
+    app = _app(monitor=monitor)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        await pilot.press("w")
+        await pilot.pause()
+        wide = screen.query_one("#mon-wide", DataTable)
+        assert wide.row_count == 2
+        before = wide.cursor_row
+        await pilot.press("down")
+        await pilot.pause()
+        assert wide.cursor_row == before + 1, (
+            "down moved the wide cursor (the delegated native action)"
+        )
+        await pilot.press("up")
+        await pilot.pause()
+        assert wide.cursor_row == before, "up moved it back"
+        await pilot.press("right")
+        await pilot.pause()
+        assert screen._active_tab == "history", (
+            "wide mode: the arrows switch tabs (no matrix focus)"
+        )
+        await pilot.press("left")
+        await pilot.pause()
+        assert screen._active_tab == "running"
+
+
 async def test_history_tab_lists_runs_newest_first_with_states():
     """The History tab: finished runs carry the ✓ word, interrupted
     (prior-artifacts) runs the muted ⏸ word, rows sort newest activity

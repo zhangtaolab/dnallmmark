@@ -433,6 +433,12 @@ WizardModal {
     height: 1fr;    /* scrolls below the visible cards */
 }
 
+/* 261019-f0x Task 3: the [w] A-style dense per-cell table (display is
+ * code-controlled — hidden until the toggle; #mon-cards swaps out). */
+#mon-wide {
+    height: 1fr;    /* scrolls */
+}
+
 /* 261019-f0x: the running card = summary strip (the Text carries its
  * own rich-native glyph/bar styles) + matrix head/rows + resume note. */
 .mon-card-strip {

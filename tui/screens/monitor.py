@@ -1812,6 +1812,7 @@ class MonitorScreen(Screen):
                 yield Static("", id="mon-scanning-note")
                 yield Static("", id="mon-running-empty")
                 yield ListView(id="mon-cards")
+                yield DataTable(id="mon-wide")
                 yield DataTable(id="mon-history")
                 yield Static("", id="mon-history-empty")
             with Vertical(id="mon-right"):
@@ -1859,6 +1860,11 @@ class MonitorScreen(Screen):
         history = self.query_one("#mon-history", DataTable)
         history.cursor_type = "row"
         history.zebra_stripes = True
+        # 261019-f0x Task 3: the [w] wide table's setup (display stays
+        # code-controlled — hidden until the toggle)
+        wide = self.query_one("#mon-wide", DataTable)
+        wide.cursor_type = "row"
+        wide.zebra_stripes = True
         self.query_one("#mon-running-empty", Static).update(
             S.MON_RUNNING_EMPTY)
         self.query_one("#mon-history-empty", Static).update(
@@ -2493,6 +2499,7 @@ class MonitorScreen(Screen):
         self._render_scan_note()
         self._render_tabs(len(cards), len(history))
         self._render_cards(cards)
+        self._render_wide()
         self._render_history(history)
         self._render_right_detail()
         self._apply_visibility(bool(cards), len(history))
@@ -2955,16 +2962,106 @@ class MonitorScreen(Screen):
                     self._activity_cell(summary.newest_mtime)]
         _set_table_rows(table, self._history_columns(), row_map)
 
+    # ===== the [w] wide toggle (261019-f0x Task 3, droppable) =====
+
+    def action_toggle_wide(self) -> None:
+        """[w]: flip the Running tab's surface between the B matrix and
+        the A-style dense per-cell table (the k9s narrow/wide
+        precedent). History tab: silent no-op (the [d]/[e] off-tab
+        precedent). The toggle re-renders and moves focus to the
+        visible surface through ``_focus_active``; the pre-toggle
+        matrix focus is never cleared, so [w] back restores it."""
+        if self._active_tab != "running":
+            return
+        self._wide = not self._wide
+        self._render_all()
+        self._focus_active()
+
+    def _wide_row_group(self, row_key: str) -> "tuple[str, str] | None":
+        """One wide-table row key's (root, ``model__task``) pair — the
+        reverse lookup over the live cell-row caches (never a string
+        parse of data-bearing keys)."""
+        for card in self._cards():
+            for root in card.roots:
+                for key in (self._cell_rows.get(root) or {}):
+                    if row_key.startswith(f"{root}::{key}::"):
+                        return root, key
+        return None
+
+    def _render_wide(self) -> None:
+        """The A-style dense per-cell table: one row per (root, model,
+        task, seed) across ALL live cards, diffed via the EXISTING
+        ``_set_table_rows`` (WR-05 cursor identity) and gated by the
+        rendered-content signature (the ``_history_sig`` precedent —
+        textual 8.2.8's ``update_cell`` refreshes unconditionally).
+        Columns: the per-seed state word (NOT the fold — wide is
+        per-CELL), model, task, seed, the shared progress grammar on
+        running seeds, the derived rate; the root column renders ONLY
+        on multi-card sweeps (the 120-col budget — single-card sweeps
+        keep the compact grid)."""
+        if not self._wide:
+            return
+        cards = self._cards()
+        multi_card = len(cards) > 1
+        accent = str(self.app.current_theme.accent)
+        columns = ([(S.MON_COL_ROOT, "root")] if multi_card else []) + [
+            (S.MON_COL_STATE, "state"), (S.MON_COL_MODEL, "model"),
+            (S.MON_COL_TASK, "task"), (S.MON_COL_SEED, "seed"),
+            (S.MON_COL_PROGRESS, "progress"), ("", "rate")]
+        row_map: dict[str, list] = {}
+        for card in cards:
+            for root in card.roots:
+                progress_map = self._cell_progress.get(root) or {}
+                rows = self._cell_rows.get(root) or {}
+                for key in sorted(rows):
+                    row = rows[key]
+                    progress = progress_map.get((row.model, row.task))
+                    for cell_seed in sorted(row.seeds,
+                                            key=lambda s: s.seed):
+                        copy, style = _cell_state_cells().get(
+                            cell_seed.state,
+                            (cell_seed.state, _STYLE_DIM))
+                        cells: list = []
+                        if multi_card:
+                            cells.append(Text(Path(root).name,
+                                              style="dim"))
+                        cells.append(Text(copy, style=style))
+                        cells.append(Text(row.model))
+                        cells.append(Text(row.task))
+                        cells.append(Text(S.MON_COL_SEED.format(
+                            seed=cell_seed.seed)))
+                        cells.append(_entry_progress_cell(
+                            _SeedStateFold(cell_seed.state), progress,
+                            self._narrow, accent))
+                        rate = _rate_of(progress)
+                        cells.append(
+                            Text(S.MON_STRIP_RATE.format(rate=rate))
+                            if (rate is not None
+                                and cell_seed.state == CELL_RUNNING)
+                            else Text(_DASH, style="dim"))
+                        row_map[f"{root}::{key}::{cell_seed.seed}"] = cells
+        sig = (multi_card, self._narrow,
+               tuple((key, *(str(cell) for cell in cells))
+                     for key, cells in row_map.items()))
+        if sig == self._wide_sig:
+            return
+        self._wide_sig = sig
+        _set_table_rows(self.query_one("#mon-wide", DataTable),
+                        columns, row_map)
+
     def _apply_visibility(self, cards_exist: bool,
                           history_count: int) -> None:
         """Toggle the content region's children: ONLY the active tab's
         list renders (single focus, single list); the scanning note is
-        orthogonal (mount-window chrome). 261019-f0x: the D right pane
+        orthogonal (mount-window chrome). 261019-f0x: [w] toggles
+        #mon-cards/#mon-wide on the Running tab; the D right pane
         displays iff wide grid + Running tab + cards exist (narrow mode
         hides the whole pane — [t] remains the log surface there)."""
         running_active = self._active_tab == "running"
         self.query_one("#mon-cards").display = (
-            running_active and cards_exist)
+            running_active and cards_exist and not self._wide)
+        self.query_one("#mon-wide").display = (
+            running_active and cards_exist and self._wide)
         self.query_one("#mon-running-empty").display = (
             running_active and not cards_exist)
         self.query_one("#mon-history").display = (
@@ -2991,9 +3088,12 @@ class MonitorScreen(Screen):
             return
         if self._active_tab == "running":
             if self._card_order:
-                cards_list = self.query_one("#mon-cards", ListView)
-                if cards_list is not self.focused:
-                    cards_list.focus()
+                target = (
+                    self.query_one("#mon-wide", DataTable)
+                    if self._wide
+                    else self.query_one("#mon-cards", ListView))
+                if target is not self.focused:
+                    target.focus()
             elif self.focused is not None:
                 self.set_focus(None)
         elif self._history_rows():
@@ -3011,12 +3111,20 @@ class MonitorScreen(Screen):
     _TAB_SCOPED_FOOTER_KEYS: ClassVar[frozenset[str]] = frozenset(
         {"d", "e"})
 
+    #: The Running-scoped footer keys (261019-f0x): the [w] toggle's
+    #: keycap renders ONLY while the Running tab is active (the d/e
+    #: precedent, mirrored).
+    _RUNNING_SCOPED_FOOTER_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"w"})
+
     def _footer_pairs(self) -> "list[tuple[str, str]]":
         """The bottom bar's left-segment projection (261018-toe):
         ``binding_row`` over ``BINDINGS`` with the History-scoped d/e
         rows dropped unless the History tab is active — the Running-tab
         footer stays byte-identical to the pre-[d]/[e] render (the
-        uncommitted D-03 monitor goldens must not change)."""
+        uncommitted D-03 monitor goldens must not change). 261019-f0x:
+        the [w] keycap drops everywhere EXCEPT the Running tab (the
+        mirrored projection)."""
         pairs: list[tuple[str, str]] = []
         for binding in self.BINDINGS:
             row = binding_row(binding)
@@ -3024,6 +3132,9 @@ class MonitorScreen(Screen):
                 continue
             if (self._active_tab != "history"
                     and row[0] in self._TAB_SCOPED_FOOTER_KEYS):
+                continue
+            if (self._active_tab != "running"
+                    and row[0] in self._RUNNING_SCOPED_FOOTER_KEYS):
                 continue
             pairs.append(row)
         return pairs
@@ -3142,13 +3253,27 @@ class MonitorScreen(Screen):
 
     def on_data_table_row_selected(
             self, event: DataTable.RowSelected) -> None:
-        """enter on the History table's native select event (mouse and
-        key share this chokepoint)."""
-        if event.data_table.id != "mon-history":
+        """enter on a table's native select event (mouse and key share
+        this chokepoint): the History table drills the focused row's
+        run; the wide table (261019-f0x) drills the row's OWN root with
+        the cursor pinned to its group (the reverse lookup — never a
+        string parse of data-bearing keys)."""
+        if event.data_table.id == "mon-history":
+            root_key = self._focused_root()
+            if root_key is not None:
+                self._open_run_drill(root_key)
             return
-        root_key = self._focused_root()
-        if root_key is not None:
-            self._open_run_drill(root_key)
+        if event.data_table.id != "mon-wide":
+            return
+        try:
+            row_key = str(event.data_table.coordinate_to_cell_key(
+                event.data_table.cursor_coordinate)[0].value)
+        except Exception:  # noqa: BLE001 — an empty table
+            return
+        group = self._wide_row_group(row_key)
+        if group is None:
+            return
+        self._open_run_drill(group[0], group[1])
 
     def _open_run_drill(self, root_key: str,
                         focus_key: "str | None" = None) -> None:
