@@ -6,11 +6,11 @@ current_phase: 12
 current_phase_name: Multi-GPU Orchestration & Console Hardening
 current_plan: Not started
 status: planning
-stopped_at: "Quick task 261018-toe complete (slot-5 History [d] delete + [e] Resume)"
-last_updated: "2026-10-18T14:16:56.972Z"
+stopped_at: "Fast fix: restart reattach probe delegation landed"
+last_updated: "2026-10-19T02:27:24.465Z"
 last_activity: 2026-10-18
-last_activity_desc: Quick task 261018-toe (History row actions) complete
-state_head: 7cb712d25e2517cfd078d62ef6513b1802bc1101
+last_activity_desc: Fast fix (TUI restart reattach) complete
+state_head: 62a5c61b6ee5537638039c87d79a25dc55e7e260
 progress:
   total_phases: 6
   completed_phases: 6
@@ -297,6 +297,7 @@ None yet.
 | 24 | 261018-kvj \| slot-5 人机逻辑重设计（maintainer 2026-10-18 15:01 批准的双页签契约）— 正在运行/Running（一次运行一张卡片，mgpu-w 兄弟根组内工作行，模型×数据规模+总进度条+当前训练项行）+ 历史/History（倒序，✓/⏸，重跑进行中 dual-presence 徽标，Enter 逐项 drill）+ ←/→/Tab 切换 + 乐观首绘（#41 骨架+扫描中，扫描落地填充）+ 毕业 toast + 空态 Enter → 槽4 唯一启动门 + 机翻词汇清出（发现/sweep 根）+ 服务层零改动；run_config.svg sha 保护（c7e14458…），monitor 双金标重生成不提交（WINDOWS #35 合并 D-03 交接，替代 uwr 对）；#40/#41 关闭、#35 修订；2F/1919P 恰为基线成员（基线漂移记录 deferred-items）+ node 26/26 + ruff/ty 绿 + pty 车道 6/6（F1 renav 字节不变） | 2026-10-18 | 007b385 | 261018-kvj-slot-5-human-logic-redesign-tabbed-runni |
 | 261018-rze | slot-5 monitor cadence flicker fix (six render gates: tabs/note/cards-structure/history-rows/focus/modal suppression) | 2026-10-18 | d43bfa9 | [261018-rze-slot-5-monitor-cadence-flicker-fix-every](./quick/261018-rze-slot-5-monitor-cadence-flicker-fix-every/) |
 | 261018-toe | slot-5 History row actions: [d] delete (strong confirm, worker rm -rf, live refusal) + [e] Resume (incomplete-only relaunch via pairs file) | 2026-10-18 | 7cb712d | [261018-toe-slot-5-history-row-actions-d-delete-rm-r](./quick/261018-toe-slot-5-history-row-actions-d-delete-rm-r/) |
+| 27 | fix: LauncherBackend live_sweep_matrices delegation — restart reattach sees probed sweeps | 2026-10-19 | 62a5c61 | — |
 
 ## Deferred Items
 
