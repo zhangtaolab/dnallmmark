@@ -2057,6 +2057,65 @@ def test_build_argv_absent_flags_add_zero_elements():
         )
 
 
+def extract_finetune_parse_args():
+    """Exec-extract run_finetune's ``parse_args`` from the source text
+    (the read-source-never-import pattern, the
+    test_run_finetune_contracts.py extraction idiom — the module
+    imports torch at top and must never be imported by a test; the
+    function is pure argparse ending right before
+    ``validate_subset_file``)."""
+    import argparse
+
+    run_finetune_src = Path(run_sweep.__file__).with_name(
+        "run_finetune.py")
+    src = run_finetune_src.read_text(encoding="utf-8")
+    match = re.search(
+        r"def parse_args\(\):.*?\n(?=def validate_subset_file)",
+        src, re.DOTALL)
+    assert match is not None, (
+        "run_finetune.parse_args not found by the extraction — the "
+        "seam test must be re-pointed at the new function boundary"
+    )
+    namespace = {"argparse": argparse, "Path": Path}
+    exec(match.group(0), namespace)  # noqa: S102 - pure extracted fn
+    return namespace["parse_args"]
+
+
+def test_build_argv_subset_tail_parses_as_run_finetune_argv(
+        monkeypatch, tmp_path):
+    """261019-v3g (WINDOWS #12): the FULL sweep→child seam in ONE pin —
+    build_argv's tail (element 2 onward) for a subset_file cell is
+    accepted by run_finetune's OWN parse_args (exec-extracted from the
+    source text) with the threaded ABSOLUTE value intact, and a
+    subset-less build parses to subset_file None (D-12 absent parity).
+    The teeth: a renamed/unrecognized flag on either side makes argparse
+    SystemExit here — a --subset_file naming drift between the two
+    files now fails CI, where each side's own suite could never catch
+    it (the previously-uncovered cross-file link)."""
+    parse_finetune_args = extract_finetune_parse_args()
+
+    subset_path = tmp_path / "subsets.json"
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root",
+        subset_file=str(subset_path))
+    monkeypatch.setattr(sys, "argv", ["run_finetune.py", *argv[2:]])
+    args = parse_finetune_args()
+    assert str(args.subset_file) == str(subset_path), (
+        "the threaded absolute subset path arrives intact at the child's "
+        "own parser (run_finetune's flag is type=Path)"
+    )
+    assert args.target_model == "model-a"
+    assert args.target_dataset == "task-x"
+    assert args.seed == 42
+
+    plain = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
+    monkeypatch.setattr(sys, "argv", ["run_finetune.py", *plain[2:]])
+    assert parse_finetune_args().subset_file is None, (
+        "an absent --subset_file parses to None — zero elements "
+        "contributed, the byte-identical-when-absent contract"
+    )
+
+
 def test_build_argv_threads_storage_roots_as_list_elements():
     """261014-c2l: each PRESENT storage-root flag appends exactly two
     LIST elements — flag then str(value) — and --model_root precedes

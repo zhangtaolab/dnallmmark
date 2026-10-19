@@ -1122,6 +1122,30 @@ def test_subset_file_validated_fail_fast_with_error_exit():
     )
 
 
+def test_committed_eval_subsets_validate_against_current_registry():
+    """261019-v3g (WINDOWS #12): the REAL committed artifacts — the
+    pipeline/eval_subsets.json map validated by the exec-extracted
+    ``validate_subset_file`` (the 05-03 read-source-never-import recipe;
+    run_finetune is never imported) against the CURRENT
+    pipeline/datasets_info.json registry (grown since 05-03 with
+    phase-9/999.1 custom entries) — yield ZERO problems: every key
+    present, coincident with its Dataset_name row, and every ID within
+    its task's Test bound. A registry divergence (a renamed/removed
+    task key) fails HERE at CI instead of at first E2' launch; the GPU
+    consumption itself stays E2'-gated by design."""
+    validate, _apply = extract_subset_fns()
+    subsets_path = REPO_ROOT / "pipeline" / "eval_subsets.json"
+    datasets_info = json.loads(
+        (REPO_ROOT / "pipeline" / "datasets_info.json").read_text(
+            encoding="utf-8"))
+    _subsets, problems = validate(subsets_path, datasets_info)
+    assert problems == [], (
+        "the committed eval_subsets.json diverged from the current "
+        "datasets registry — the map needs regeneration before any "
+        "E2' launch: " + "; ".join(problems)
+    )
+
+
 # =====================================================================
 # dnallm v1.2.1 adaptation (06-01) — re-pinned suite citations
 # =====================================================================
