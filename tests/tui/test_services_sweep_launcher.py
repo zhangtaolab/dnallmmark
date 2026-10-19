@@ -442,6 +442,62 @@ def test_tee_path_history_newest_launch_wins(monkeypatch, tmp_path):
     assert launcher.tee_path_for(out_root) == second.tee_path
 
 
+def test_tee_path_restart_discovery_finds_fresh_disk_tee(
+        monkeypatch, tmp_path):
+    """2026-10-19 restart-reattach: after a console restart the
+    registry AND the in-memory history are empty, but the surviving
+    detached child keeps appending its inherited tee descriptor under
+    state/logs — tee_path_for discovers the root's NEWEST tee file on
+    disk when its mtime sits inside the fresh-append grace (the
+    STALE_GRACE_SECONDS quiet-phase precedent), so [t] tails the live
+    run's own log instead of the false unavailable copy."""
+    import os
+
+    pin_state_dir(monkeypatch, tmp_path)
+    logs_dir = (
+        tmp_path / "state" / sweep_launcher.TEE_DIR_NAME)
+    logs_dir.mkdir(parents=True)
+    root = tmp_path / "sweeps" / "detached"
+    stale = logs_dir / "sweep_20261017_120000_detached.log"
+    fresh = logs_dir / "sweep_20261019_100936_detached.log"
+    import time
+    stale.write_text("old run\n", encoding="utf-8")
+    fresh.write_text("live run\n", encoding="utf-8")
+    now = time.time()
+    os.utime(stale, (now - 7200.0, now - 7200.0))  # 2h: long stale
+    os.utime(fresh, (now - 30.0, now - 30.0))      # 30s: fresh append
+
+    launcher = sweep_launcher.SweepLauncher()
+
+    assert launcher.tee_path_for(root) == str(fresh), (
+        "the registry-empty restart still resolves the LIVE launch's "
+        "tee from disk (newest fresh file wins over the stale one)"
+    )
+
+
+def test_tee_path_restart_discovery_stale_only_stays_none(
+        monkeypatch, tmp_path):
+    """The honest-unavailable guard: a root whose only tee files are
+    OLD (nothing has appended within the grace window) reads None —
+    an old run's log must never dress as the live tail."""
+    import os
+    import time
+
+    pin_state_dir(monkeypatch, tmp_path)
+    logs_dir = (
+        tmp_path / "state" / sweep_launcher.TEE_DIR_NAME)
+    logs_dir.mkdir(parents=True)
+    root = tmp_path / "sweeps" / "finished-long-ago"
+    tee = logs_dir / "sweep_20261017_120000_finished-long-ago.log"
+    tee.write_text("done\n", encoding="utf-8")
+    now = time.time()
+    os.utime(tee, (now - 86400.0, now - 86400.0))
+
+    launcher = sweep_launcher.SweepLauncher()
+
+    assert launcher.tee_path_for(root) is None
+
+
 def test_live_sweeps_prunes_exited_process_and_closes_tee(
         monkeypatch, tmp_path):
     """WR-04: a registered sweep whose Popen exited (OOM-kill, external

@@ -128,6 +128,14 @@ TEE_FILENAME_FORMAT = "sweep_{ts}_{rootname}.log"
 #: branch (nothing launched leaves no log).
 TEE_COLLISION_SUFFIX_CAP = 99
 
+#: 2026-10-19 restart-reattach: a tee file discovered on disk counts as
+#: the LIVE run's own log only while its mtime sits inside this grace
+#: (the surviving child keeps appending its inherited descriptor; a
+#: quiet model-load phase can stall writes for minutes). The
+#: sweep_monitor.STALE_GRACE_SECONDS (600s) quiet-phase precedent, kept
+#: as a local twin to avoid a services cross-import.
+TEE_FRESH_GRACE_SECONDS = 600.0
+
 #: The kill path's poll-with-short-grace budget (seconds) before the
 #: SIGKILL escalation, and the poll cadence inside it.
 DEFAULT_KILL_GRACE_SECONDS = 2.0
@@ -1154,7 +1162,47 @@ class SweepLauncher:
         entry = self._live.get(root_key)
         if entry is not None:
             return entry["meta"].tee_path
-        return self._tee_history.get(root_key)
+        history = self._tee_history.get(root_key)
+        if history is not None:
+            return history
+        return self._discover_fresh_tee(root_key)
+
+    def _discover_fresh_tee(self, root_key):
+        """The 2026-10-19 restart-reattach leg: after a console restart
+        the registry AND the in-memory history are empty, but a
+        detached child this console LAUNCHED keeps appending its
+        inherited tee descriptor under ``state/logs`` — so the root's
+        NEWEST on-disk tee whose mtime sits inside the fresh-append
+        grace is that live run's own log. Read-only filesystem work,
+        tolerant at every seam (an absent/unreadable logs dir reads
+        None); a stale-only history reads None — an old run's log must
+        never dress as the live tail. A root this TUI never launched
+        (bare CLI, no tee at all) simply matches nothing here.
+        """
+        name = Path(root_key).name
+        try:
+            logs_dir = settings.state_dir() / TEE_DIR_NAME
+            candidates = sorted(
+                (candidate for candidate in logs_dir.iterdir()
+                 if candidate.is_file()
+                 and candidate.name.startswith("sweep_")
+                 and candidate.name.endswith(".log")
+                 and (candidate.name.endswith(f"_{name}.log")
+                      or f"_{name}_" in candidate.name)),
+                key=lambda candidate: candidate.stat().st_mtime,
+                reverse=True)
+        except OSError:
+            return None
+        now = time.time()
+        for candidate in candidates:
+            try:
+                age = now - candidate.stat().st_mtime
+            except OSError:
+                continue
+            if age <= TEE_FRESH_GRACE_SECONDS:
+                return str(candidate)
+            return None  # the newest is stale: nothing fresh exists
+        return None
 
     # ===== The live-matrix evidence (261017-uwr, UWR-2) =====
 
