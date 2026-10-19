@@ -154,13 +154,24 @@ def _fabricate_running_root(tmp_path) -> Path:
     fresh mtimes classify the root running through the no-manifest
     branch (newest mtime within STALE_GRACE_SECONDS). NO churn thread:
     the static tree keeps every 2s tick's rendered content identical,
-    so a quiet cadence must be byte-silent."""
+    so a quiet cadence must be byte-silent.
+
+    261019-f0x: a SECOND task's checkpoint joins the tree (fresh
+    mtimes too) so the card's matrix carries TWO groups — the
+    arrow-precedence pin's fixture. The classification branch is
+    unchanged (newest mtime within the grace window); the byte-silence
+    and click members ride the same richer STATIC tree."""
     root = tmp_path / "runs" / "root1"
     checkpoint = (root / "plant-dnabert-6mer" / "GUE__virus_species_4"
                   / "seed_9527" / "checkpoint-120")
     checkpoint.mkdir(parents=True)
     (checkpoint / "trainer_state.json").write_text(
         '{"global_step": 120}', encoding="utf-8")
+    second = (root / "plant-dnabert-6mer" / "GUE__emp_H3"
+              / "seed_9527" / "checkpoint-121")
+    second.mkdir(parents=True)
+    (second / "trainer_state.json").write_text(
+        '{"global_step": 121}', encoding="utf-8")
     return root
 
 
@@ -395,7 +406,12 @@ def test_click_running_card_opens_run_cells_modal(tmp_path):
     a REAL SGR mouse click on the running card — press + release at
     col 8 row 5 (SGR encodes button;col;row), the probe-calibrated
     card-name row at 40x120 — opens the RunCellsModal, whose border
-    title names the run (the en MON_RUN_CELLS_TITLE glyph, em dash)."""
+    title names the run (the en MON_RUN_CELLS_TITLE glyph, em dash).
+
+    261019-f0x recalibration note: the card's FIRST line became the
+    summary strip (same screen row the old name line occupied), so the
+    probe-calibrated row 5 still lands inside the first card — the
+    coordinates stay as calibrated."""
     root = _fabricate_running_root(tmp_path)
     child = _spawn_tui(tmp_path, manual_roots=(root,))
     try:
@@ -406,6 +422,66 @@ def test_click_running_card_opens_run_cells_modal(tmp_path):
         child.send("\x1b[<0;8;5M")   # SGR press (button 0, col 8, row 5)
         child.send("\x1b[<0;8;5m")   # SGR release
         child.expect(_RUN_CELLS_MARKER, timeout=_NAV_TIMEOUT)
+    finally:
+        child.close(force=True)
+
+
+def test_monitor_matrix_arrows_focus_and_tab_switch(tmp_path):
+    """261019-f0x — the arrow-precedence pin under the REAL pty, over a
+    fabricated running root with TWO tasks (two matrix groups): RIGHT
+    moves the focused column (the right pane's detail header repaints
+    with the second task's key — the strong observable; the highlight
+    itself is style-only) and does NOT switch tabs; TAB switches with
+    cards present; LEFT on History switches back; LEFT again on Running
+    WITH groups moves the focus (col 1 -> 0) and MUST NOT switch (the
+    bounded drain proves the History markers never arrived). With the
+    landed [w]: w paints the wide table's header cells, w again
+    restores the matrix. ONE spawn, ~12s budget."""
+    root = _fabricate_running_root(tmp_path)
+    child = _spawn_tui(tmp_path, manual_roots=(root,))
+    try:
+        _boot(child)
+        child.send("5")
+        child.expect(_CARD_NAME_MARKER, timeout=_NAV_TIMEOUT)
+        # drain the initial paint (the mount kick + first scan renders)
+        child.expect(pexpect.TIMEOUT, timeout=3.0)
+        # RIGHT: the focused column moves 0 -> 1 — the pane's detail
+        # header repaints with the SECOND task's key (the pane-width
+        # truncated form "× GUE__virus_species…"; the matrix head
+        # truncates the key to its narrow column, so the ×-prefixed
+        # pane form is the unique fresh-bytes observable)
+        child.send(_ARROW_RIGHT)
+        child.expect("× GUE__virus_species…", timeout=_NAV_TIMEOUT)
+        # TAB still switches with cards present
+        child.send("\t")
+        child.expect(_HISTORY_TAB_MARKERS, timeout=_NAV_TIMEOUT)
+        # LEFT on History switches back — the card strip repaints
+        child.send(_ARROW_LEFT)
+        child.expect(_CARD_NAME_MARKER, timeout=_NAV_TIMEOUT)
+        # LEFT once more on Running WITH groups: col 1 -> 0, and the
+        # tab MUST NOT switch — a bounded drain with the History
+        # markers ABSENT from the arriving bytes
+        child.send(_ARROW_LEFT)
+        child.expect(pexpect.TIMEOUT, timeout=3.0)
+        drained = child.before
+        for marker in _HISTORY_TAB_MARKERS:
+            assert marker not in drained, (
+                "left on a grouped Running card moved the matrix focus — "
+                "the tab-switch bytes must never arrive"
+            )
+        # TAB -> the History markers return (the switch itself works)
+        child.send("\t")
+        child.expect(_HISTORY_TAB_MARKERS, timeout=_NAV_TIMEOUT)
+        # back to Running, then the [w] round trip: the wide table's
+        # header cells paint, and w again restores the matrix strip
+        child.send("\t")
+        child.expect(_CARD_NAME_MARKER, timeout=_NAV_TIMEOUT)
+        child.expect(pexpect.TIMEOUT, timeout=2.0)  # short settle drain
+        child.send("w")
+        child.expect("State", timeout=_NAV_TIMEOUT)
+        child.expect("Progress", timeout=_NAV_TIMEOUT)
+        child.send("w")
+        child.expect(_CARD_NAME_MARKER, timeout=_NAV_TIMEOUT)
     finally:
         child.close(force=True)
 

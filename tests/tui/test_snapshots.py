@@ -710,6 +710,44 @@ def _frozen_dm_clock():
         setattr(module, "datetime", original)  # noqa: B010
 
 
+#: The frozen monitor clock moment (261019-f0x): the summary strip's
+#: ETA wall-clock landing reads ``time.time()`` through the monitor
+#: module's own ``time`` — pin it for the export window (the
+#: _frozen_dm_clock precedent; without the freeze the minute boundary
+#: breaks test_golden_export_is_deterministic_across_instances).
+_MON_FROZEN_EPOCH = 1791321600.0  # 2026-10-07 12:00:00 UTC
+
+
+@contextlib.contextmanager
+def _frozen_mon_clock():
+    """261019-f0x fixture freeze: every wall-clock read the monitor
+    screen renders (the strip's ETA "(HH:MM)" landing, the detail's
+    local-time segments) routes through ``tui.screens.monitor``'s
+    module-level ``time`` — pin it for the export window."""
+    module = sys.modules["tui.screens.monitor"]
+    original = module.time
+
+    class _FrozenTime:
+        @staticmethod
+        def time():
+            return _MON_FROZEN_EPOCH
+
+        @staticmethod
+        def strftime(fmt, value):
+            return original.strftime(fmt, value)
+
+        @staticmethod
+        def localtime(seconds=None):
+            return original.localtime(
+                _MON_FROZEN_EPOCH if seconds is None else seconds)
+
+    setattr(module, "time", _FrozenTime)  # noqa: B010
+    try:
+        yield
+    finally:
+        setattr(module, "time", original)  # noqa: B010
+
+
 def _golden_app(selection=None, run_config=None, monitor=None):
     """The real app with EVERY seam faked (no real service ever runs)."""
     return DnallmMarkTui(
@@ -800,20 +838,29 @@ async def _drive_run_config(pilot, app):
 
 
 async def _drive_monitor_running(pilot, app):
-    """261018-kvj: the multi-GPU proof view on the tabbed surface — the
-    worker root renders as the Running tab's ONE card (name + scale +
-    done/total bar + current-cell line + the resume note), the History
-    tab header carries the finished smoke row + the w0 root's
-    dual-presence count."""
-    app.push_screen(app.build_monitor_screen())
-    await _settle(pilot, app)
+    """261019-f0x (the B-skeleton + D-right-pane proof view): the
+    multi-GPU worker root renders as the Running tab's ONE card — the
+    summary strip (the w0 root's stats fraction, elapsed + the
+    point-ETA wall clock over the frozen clock, the rate dash — no
+    progress scripted) over the matrix of every (model, task) group
+    with the focused group's style-only highlight; the right pane
+    carries the focused group's detail (per-seed states, the honest
+    indeterminate) and the designed no-tee state (the launcher fake's
+    tee is None — the pane's log region renders MON_LOG_UNAVAILABLE,
+    never a fabricated empty log); the History tab header carries the
+    finished smoke row."""
+    with _frozen_mon_clock():
+        app.push_screen(app.build_monitor_screen())
+        await _settle(pilot, app)
 
 
 async def _drive_monitor_empty(pilot, app):
     """The zero-run boot: the Running tab renders its actionable empty
-    copy on the settled (scan-landed, note-cleared) surface."""
-    app.push_screen(app.build_monitor_screen())
-    await _settle(pilot, app)
+    copy on the settled (scan-landed, note-cleared) surface — the
+    right pane hidden (no cards), the same frozen monitor clock."""
+    with _frozen_mon_clock():
+        app.push_screen(app.build_monitor_screen())
+        await _settle(pilot, app)
 
 
 async def _drive_wizard(pilot, app):
