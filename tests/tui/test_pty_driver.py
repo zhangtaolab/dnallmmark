@@ -88,6 +88,8 @@ _HISTORY_TAB_MARKERS = ["No past runs yet", "output root"]
 _RUNNING_EMPTY_MARKER = "No running tasks"   # MON_RUNNING_EMPTY (en)
 _ARROW_RIGHT = "\x1b[C"
 _ARROW_LEFT = "\x1b[D"
+_ARROW_UP = "\x1b[A"
+_ARROW_DOWN = "\x1b[B"
 
 # 261018-rze markers: the fabricated running root's card name (the
 # card name label paints Path(base).name) and the RunCellsModal's
@@ -96,6 +98,16 @@ _ARROW_LEFT = "\x1b[D"
 # the fabricated root's name.
 _CARD_NAME_MARKER = "root1"
 _RUN_CELLS_MARKER = "cells — root1"
+
+# 261019-pe0 markers (the tree state): the live model's tree node
+# done/total "0/2" (its two planned tasks each carry one running seed)
+# and the residue model's "0/1" (its one INTERRUPTED seed counts in the
+# total but not the done basis — the o8e arithmetic: done = completed +
+# failed + skipped) — strings unique to the tree render (the matrix row
+# and the strip never state a per-model fraction; the honest root-wide
+# fallback: the pty console has no live evidence for a manual root).
+_TREE_LIVE_MODEL_MARKER = "0/2"
+_TREE_RESIDUE_MARKER = "0/1"
 
 # 261018-toe markers (the slot-5 History row actions, en copies): the
 # delete confirm's border title (MON_DELETE_TITLE), the success toast
@@ -473,7 +485,15 @@ def test_monitor_matrix_arrows_focus_and_tab_switch(tmp_path):
     WITH groups moves the focus (col 1 -> 0) and MUST NOT switch (the
     bounded drain proves the History markers never arrived). With the
     landed [w]: w paints the wide table's header cells, w again
-    restores the matrix. ONE spawn, ~12s budget."""
+    restores the matrix. ONE spawn, ~12s budget.
+
+    261019-pe0 re-pin (one comment line, the truths unchanged): [w] is
+    the THREE-STATE cycle — the round trip now takes THREE presses
+    (tree -> wide -> matrix). The tree pass-through's fresh bytes carry
+    the live model's node done/total "0/2" (a string unique to the
+    tree render — the matrix and strip never state a per-model
+    fraction); the fixture's 2 tasks fit the 120-col budget, so the
+    member starts in AUTO matrix state exactly as before."""
     root = _fabricate_running_root(tmp_path)
     child = _spawn_tui(tmp_path, manual_roots=(root,))
     try:
@@ -509,16 +529,83 @@ def test_monitor_matrix_arrows_focus_and_tab_switch(tmp_path):
         # TAB -> the History markers return (the switch itself works)
         child.send("\t")
         child.expect(_HISTORY_TAB_MARKERS, timeout=_NAV_TIMEOUT)
-        # back to Running, then the [w] round trip: the wide table's
-        # header cells paint, and w again restores the matrix strip
+        # back to Running, then the [w] round trip (261019-pe0: THREE
+        # presses — tree first, then the wide table's header cells, then
+        # the matrix strip restores)
         child.send("\t")
         child.expect(_CARD_NAME_MARKER, timeout=_NAV_TIMEOUT)
         child.expect(pexpect.TIMEOUT, timeout=2.0)  # short settle drain
+        child.send("w")
+        child.expect(_TREE_LIVE_MODEL_MARKER, timeout=_NAV_TIMEOUT)
         child.send("w")
         child.expect("State", timeout=_NAV_TIMEOUT)
         child.expect("Progress", timeout=_NAV_TIMEOUT)
         child.send("w")
         child.expect(_CARD_NAME_MARKER, timeout=_NAV_TIMEOUT)
+    finally:
+        child.close(force=True)
+
+
+def test_monitor_tree_state_navigates_and_drills(tmp_path):
+    """261019-pe0 — the TREE state under the REAL pty, ONE spawn over
+    the enriched running-root fixture (the tree shows BOTH models — the
+    honest root-wide fallback: the pty console carries no live evidence
+    for a manual root). The locked-contract legs this pins, ordered so
+    every marker-absence window runs BEFORE any modal byte enters the
+    pexpect buffer (the drain-consume semantics): [*] collapse-all (the
+    cursor salvages onto its model node), enter on a MODEL node toggles
+    and NEVER drills (a bounded 2s absence), a REAL SGR mouse click on
+    a tree node row selects without drilling (another bounded absence),
+    then down into the task child and enter DRILLS — Enter remains the
+    ONLY drill trigger. The fixture's 2 tasks fit the 120-col budget,
+    so auto mode is matrix and the member enters tree state EXPLICITLY
+    via w (the manual choice holds over the static fixture — no
+    structural change can reset it mid-member). Budget ~15s."""
+    root = _fabricate_running_root(tmp_path)
+    child = _spawn_tui(tmp_path, manual_roots=(root,))
+    try:
+        _boot(child)
+        child.send("5")
+        child.expect(_CARD_NAME_MARKER, timeout=_NAV_TIMEOUT)
+        # drain the initial paint (the byte-silence idiom)
+        child.expect(pexpect.TIMEOUT, timeout=3.0)
+        # w: the tree paints — the live model's node reads 0/2 (the
+        # fresh-bytes tree marker) and the residue model's reads 0/1
+        # (the interrupted seed counts in the total, not the done basis
+        # — the o8e arithmetic); consuming both leaves the buffer free
+        # of modal bytes for the absence windows below
+        child.send("w")
+        child.expect(_TREE_LIVE_MODEL_MARKER, timeout=_NAV_TIMEOUT)
+        child.expect(_TREE_RESIDUE_MARKER, timeout=_NAV_TIMEOUT)
+        child.expect(pexpect.TIMEOUT, timeout=1.0)
+        # [*]: collapse-ALL — the collapsed-away cursor node salvages
+        # onto its MODEL node (the locked contract)
+        child.send("*")
+        child.expect(pexpect.TIMEOUT, timeout=1.5)
+        # enter on the salvaged MODEL node: expands (toggle), and a
+        # bounded 2s window proves the drill marker NEVER arrived
+        child.send("\r")
+        child.expect(pexpect.TIMEOUT, timeout=2.0)
+        assert _RUN_CELLS_MARKER not in child.before, (
+            "enter on a MODEL node toggles expansion — it must NEVER "
+            "open the drill modal"
+        )
+        # a REAL SGR mouse click on a tree node row (the click member's
+        # calibration: the card's first line at row 5 is the strip, so
+        # the first model node renders at row 6): selects, never drills
+        child.send("\x1b[<0;8;6M")   # SGR press (button 0, col 8, row 6)
+        child.send("\x1b[<0;8;6m")   # SGR release
+        child.expect(pexpect.TIMEOUT, timeout=2.0)
+        assert _RUN_CELLS_MARKER not in child.before, (
+            "a tree click must NEVER open the drill modal — click "
+            "selects, Enter drills"
+        )
+        # down into the expanded model's first TASK child, then enter:
+        # the drill opens — Enter remains the only drill trigger
+        child.send(_ARROW_DOWN)
+        child.expect(pexpect.TIMEOUT, timeout=1.0)
+        child.send("\r")
+        child.expect(_RUN_CELLS_MARKER, timeout=_NAV_TIMEOUT)
     finally:
         child.close(force=True)
 

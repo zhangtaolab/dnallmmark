@@ -39,6 +39,7 @@ import re
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from typing import cast
 from unittest import mock
 
 from rich.text import Text
@@ -2121,15 +2122,17 @@ async def test_tree_click_selects_node_without_drill():
         tree_b = cards.children[1].query_one(RunCardTree)
         target_key = ("task", "/scans/run-b", "m3", "t3")
         line = _visible_tree_nodes(tree_b).index(target_key)
+        import rich.style
+        from textual.style import Style
 
-        class _ClickStyle:
-            def __init__(self, meta):
-                self.meta = meta
-
+        # the cast: textual's Style (the runtime carrier of the meta
+        # dict) duck-types rich's — the events.py annotation names the
+        # rich class while the real event stream passes textual's
         tree_b.post_message(events.Click(
             widget=tree_b, x=6, y=line, delta_x=0, delta_y=0, button=0,
             shift=False, meta=False, ctrl=False,
-            style=_ClickStyle({"line": line})))
+            style=cast(rich.style.Style,
+                       Style.from_meta({"line": line}))))
         await pilot.pause()
         await pilot.pause()
         assert tree_b.cursor_node.data == target_key, (
