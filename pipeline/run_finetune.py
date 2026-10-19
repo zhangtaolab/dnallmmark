@@ -1357,8 +1357,16 @@ if __name__ == "__main__":
                 # WR-04 length-tier rounding: the resolved sequence length
                 # caps the configured batch size by the legacy tier table
                 # BEFORE any VRAM estimator runs — the estimators may
-                # reduce below this cap but never raise past it.
-                tier_batch_cap = determine_batch_size(max_length, batch_size)
+                # reduce below this cap but never raise past it. When the
+                # global effective batch is pinned, the tier table must
+                # scale THAT protocol batch, not the auto-estimated optimum
+                # (which mutates `batch_size` at count==0 and would keep
+                # long-sequence batches 4x too large: 1668 tokens then
+                # stays at 16 and OOMs through every mem_ratio step).
+                tier_batch_base = batch_size
+                if effective_batch_size is not None:
+                    tier_batch_base = min(tier_batch_base, effective_batch_size)
+                tier_batch_cap = determine_batch_size(max_length, tier_batch_base)
 
                 # Auto batch size adjustment based on model params and sequence length
                 if auto_batch_size and count == 0:
@@ -1400,6 +1408,16 @@ if __name__ == "__main__":
                 # may RAISE the estimate for a shorter dataset — never past
                 # the tier cap for this sequence length.
                 bs_new = min(bs_new, tier_batch_cap)
+                # Protocol guarantee (global effective batch): the per-device
+                # batch may never exceed --effective_batch_size. The auto
+                # estimator runs only on the first dataset and mutates
+                # `batch_size` (e.g. 64 at short lengths); carrying that into
+                # later datasets would silently quadruple the effective batch
+                # (64 x grad_accum 1) even though the CLI target is 16. Cap
+                # here so every cell trains at the same effective batch and
+                # grad_accum compensates for longer sequences instead.
+                if effective_batch_size is not None:
+                    bs_new = min(bs_new, effective_batch_size)
                 configs["finetune"].per_device_train_batch_size = bs_new
                 configs["finetune"].per_device_eval_batch_size = bs_new
                 # log and evaluate n times during training
