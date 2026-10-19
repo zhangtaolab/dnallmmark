@@ -818,3 +818,26 @@ DirPickerModal {
     height: 16;   /* scroll bound (not a spacing token) — the tree scrolls its own viewport */
     border: round $border;       /* the tree's viewport edge */
 }
+
+/* 261019 followup (the n0w no-fill law): the tree/wide cursor lines carry
+ * textual's default block-cursor BACKGROUND — kill the fill, keep the
+ * cursor visible as bold text (the reverse-glyph group marker + the right
+ * pane remain the focus affordances; a full-line fill never returns). */
+#mon-cards > ListItem.-hovered {
+    background: transparent;
+}
+#mon-cards Tree > .tree--cursor {
+    background: transparent;
+    color: $text;
+    text-style: bold;
+}
+#mon-cards Tree:focus > .tree--cursor {
+    background: transparent;
+    color: $text;
+    text-style: bold;
+}
+#mon-wide:focus > .datatable--cursor {
+    background: transparent;
+    color: $text;
+    text-style: bold;
+}
