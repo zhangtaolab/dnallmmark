@@ -180,6 +180,20 @@ Contract (locked decisions that survive the redesign):
   expansion + cursor through the screen-side caches), label-only
   changes update via ``set_label`` in place, the cards signature gains
   the effective-mode leg, and on_mount resets every new sentinel.
+- 261020-asm (the maintainer's 2026-10-20 07:12 ruling, tree-variant E):
+  the slot-5 tree ENTERS with every MODEL node EXPANDED — every task
+  row visible on mount, on a structural (gate-law) rebuild, and on
+  every card that appears mid-session. The default lives in ONE site
+  (``_TREE_DEFAULT_EXPANDED``, read by ``_build_card_tree`` — the one
+  build path the construction and the rebuild legs share); the
+  ``_tree_expand`` cache holds only the OPERATOR's own collapse
+  choices, so every untouched model (and every fresh card) takes the
+  expanded default while an operator collapse persists across
+  structural rebuilds and SURVIVES the 2s cadence steady ticks (the
+  gate law: a steady tick performs zero tree writes). The locked pe0
+  nav contract is UNCHANGED — ``*`` reads the LIVE tree state (from
+  the all-open entry it collapses everything, the collapsed-away
+  cursor salvaging onto its model node), never this default.
 - WR-06: every async modal push checks ``app.below_minimum_grid``.
 - 261018-toe (the maintainer's 2026-10-18 21:21 slot-5 ruling): the
   History tab's row actions — [d] delete (a strong y-only
@@ -3307,6 +3321,16 @@ class MonitorScreen(Screen):
 
     # ===== the TREE state's per-card body (261019-pe0) =====
 
+    #: 261020-asm (the maintainer's tree-variant E ruling, 2026-10-20
+    #: 07:12): a fresh ``RunCardTree`` build enters with EVERY model
+    #: node EXPANDED — the operator sees every task row on mount, on a
+    #: structural rebuild, and on every card that appears mid-session.
+    #: The ``_tree_expand`` cache holds only the operator's OWN collapse
+    #: choices; a model absent from the cache (and every fresh card)
+    #: takes this default. ``*`` reads the live tree state, never this
+    #: default — from the all-open entry it collapses everything.
+    _TREE_DEFAULT_EXPANDED = True
+
     def _group_progress(self, card: _RunCard, model: str, task: str):
         """One group's PARSED progress — the ``_right_detail_lines``
         resolution (first root of the card whose progress carries a
@@ -3409,7 +3433,8 @@ class MonitorScreen(Screen):
 
         The GATE LAW's preservation: expansion states come from the
         screen-side ``_tree_expand`` cache (a FRESH tree defaults every
-        model EXPANDED — the maintainer's example shows task children
+        model EXPANDED — ``_TREE_DEFAULT_EXPANDED``, the 261020-asm
+        variant-E ruling; the maintainer's example shows task children
         inline), the cursor re-pins by key lookup through
         ``_tree_cursor`` — the captured key when it still exists, else
         the focused group's task node, else the first node. Both caches
@@ -3433,7 +3458,7 @@ class MonitorScreen(Screen):
                 self._tree_model_label(model, rows),
                 data=("model", action_root, model),
                 allow_expand=True,
-                expand=expanded.get(model, True))
+                expand=expanded.get(model, self._TREE_DEFAULT_EXPANDED))
             node_map[("model", action_root, model)] = model_node
             for task in model_tasks:
                 node_map[("task", action_root, model, task)] = (
