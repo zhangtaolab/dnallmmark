@@ -18,7 +18,12 @@
 
 **Goal**: The orchestrator dispatches (model×dataset×seed) cells as a work queue over per-GPU workers with worker-independent cell outputs, an exactly-once claim ledger, and resume semantics proven under mid-cell kill — legacy static sharding coexists behind explicit mode declaration
 **Requirements**: MGPU-01, MGPU-02, MGPU-06
-**Plans**: 0
+**Plans**: 2 plans
+
+Plans:
+- [ ] 13-01-PLAN.md — Dispatch tracer: --mode routing + engine (queue, O_EXCL ledger/lock, worker loops) + SC2 kill-proven resume (MGPU-01, MGPU-02)
+- [ ] 13-02-PLAN.md — Dry-run plan artifact + SC1 goldens, evidence-based merge refusal, static byte-identity pins, Makefile lint line, full gates (MGPU-01, MGPU-06)
+
 **Success criteria**:
 1. Dry-run enumeration is deterministic and byte-identical across runs; the planned cell set matches static-mode enumeration for identical inputs
 2. Fake-children kill test: a worker killed mid-cell, orchestrator relaunched → every cell completes exactly once (no duplicates, no orphans) — the P1 acceptance test
