@@ -7,7 +7,7 @@ set -u
 GPU="${1:?用法: bash run_benchmark_gpu.sh <gpu_id> <mode:seed> [...]}"
 shift
 MODEL="${MODEL:-GENERanno-eukaryote-0.5b-base}"
-GPU_MEMORY="${GPU_MEMORY:-24}"
+GPU_MEMORY="${GPU_MEMORY:-48}"
 
 source /root/miniconda3/etc/profile.d/conda.sh
 conda activate dnallm
