@@ -38,7 +38,7 @@ Plans:
 
 **Goal**: Running multi-GPU sweeps are observable (terminal table + machine-readable state file) and recoverable (cross-worker failure re-run with lane context; post-merge verify + confirm-gated cleanup)
 **Requirements**: MGPU-03, MGPU-04, MGPU-05
-**Plans**: 3 plans
+**Plans**: 3/3 plans complete
 
 Plans:
 **Wave 1**
