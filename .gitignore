@@ -126,6 +126,12 @@ finetuned-smoke*/
 # output + subset registry — isolated from official AND custom registries
 pipeline/datasets-smoke/
 pipeline/registry-smoke/
+# Small real sweep root (15-03, D15-09/D15-10): own dispatch root separate
+# from the smoke roots — the identical cell key plant-dnabert-6mer/
+# iDNA_ABF_datasets__5mC/seed_42 exists in BOTH runs (full-data smoke vs
+# subset sweep); a shared root would skip sweep cells on the smoke's
+# trainer_state markers (adjacency edge, pinned by skipped == 0)
+pipeline/finetuned-sweep/
 # TUI demo meta sidecars (quick-261015-pex): per-recording driver state,
 # consumed by record.sh's exit gate — never committed.
 docs/demo/.meta-*.json
