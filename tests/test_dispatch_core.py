@@ -1876,6 +1876,26 @@ def _worker_state_writes_always_fail(monkeypatch):
     monkeypatch.setattr(dispatch_core, "_write_state", patched)
 
 
+def _publish_fails_on_call(monkeypatch, fail_on):
+    """Patch ``dispatch_core._publish_state`` to raise ENOSPC on launch
+    call number ``fail_on`` (1-based) — the launch-time state-publish
+    failure class the WR-01 guard exists for (main-thread, BEFORE the
+    drain's try/finally). The guard calls the module global, so the
+    patch intercepts it; every call before the scripted one writes for
+    real so the launch progresses to the targeted publish site."""
+    real = dispatch_core._publish_state
+    calls = [0]
+
+    def patched(context):
+        calls[0] += 1
+        if calls[0] == fail_on:
+            raise OSError(28, "No space left on device")
+        real(context)
+
+    monkeypatch.setattr(dispatch_core, "_publish_state", patched)
+    return calls
+
+
 def test_worker_finalize_failure_fails_cell_not_run(
         tmp_path, monkeypatch):
     """CR-04 pin (containment): an exception from a worker thread
@@ -1970,6 +1990,52 @@ def test_worker_state_write_failure_keeps_truthful_claims(
         assert claim["error"] is None, (
             "no dispatcher-side failure is fabricated onto the claim"
         )
+
+
+@pytest.mark.parametrize("fail_on,drained", [
+    (1, False),  # the mode-evidence write (every launch path, first)
+    (2, False),  # the post-skip-filter write (the ordinary path)
+    (3, True),   # the nothing-to-do branch's terminal "done" write
+])
+def test_launch_state_publish_failure_releases_lock_exits_cleanly(
+        tmp_path, monkeypatch, fail_on, drained):
+    """WR-01 pin: an OSError from ANY of the three launch-time state
+    publishes — the writes that run AFTER ``acquire_dispatcher_lock``
+    but BEFORE the drain's try/finally guarantees the release —
+    releases the lock and exits with the designed diagnostic (the
+    tee-open refusal's shape: the error named, "no children spawned",
+    "the dispatcher lock is released"), never a raw traceback that
+    leaks ``dispatcher.lock`` on disk naming the dead run. No child is
+    ever spawned from the failed launch."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    if drained:
+        # A fully-drained root: the single cell carries the marker, so
+        # the launch reaches the nothing-to-do branch (publish 1: mode
+        # evidence; publish 2: post-skip-filter; publish 3: the
+        # terminal "done" write) without spawning anything.
+        _write_marker(base, ("model-a", "task-x", 42))
+    _publish_fails_on_call(monkeypatch, fail_on)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "writing dispatch state failed" in message
+    assert "No space left on device" in message, (
+        "the underlying OSError is named"
+    )
+    assert "no children spawned" in message
+    assert "the dispatcher lock is released" in message
+    assert calls == [], "the failure precedes any spawn"
+    assert not (dispatch_core.ledger_dir_for(base)
+                / dispatch_core.DISPATCHER_LOCK_NAME).exists(), (
+        "the guard released the lock — never leaked on disk"
+    )
 
 
 @pytest.mark.filterwarnings(

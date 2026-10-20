@@ -883,6 +883,38 @@ def _publish_state(context):
     _write_state(context["state_path"], state)
 
 
+def _publish_state_pre_drain(context, lock_path):
+    """Publish state while the lock's release is NOT yet guaranteed.
+
+    WR-01 (phase-14 review): the pre-drain publishes inside
+    ``_launch_and_drain`` run AFTER ``acquire_dispatcher_lock`` but
+    BEFORE the drain's ``try/finally`` guarantees the release — an I/O
+    failure there (ENOSPC/EACCES on the root, the same failure class
+    the CR-04 worker containment was built for) must not leak
+    ``dispatcher.lock`` on disk naming this run behind a raw traceback.
+    Mirror the tee-open refusal discipline (the sibling failure path):
+    release the lock, then exit with the designed diagnostic — no
+    children were spawned, so nothing else needs containment.
+
+    Args:
+        context (dict): the dispatcher's shared context (single-threaded
+            here — the drain has not started, no ``state_lock`` needed).
+        lock_path (Path): the acquired lock file to release on failure.
+
+    Raises:
+        SystemExit: the state write failed with an ``OSError`` — the
+            lock is released first and the message names the cause.
+    """
+    try:
+        _publish_state(context)
+    except OSError as exc:
+        release_dispatcher_lock(lock_path)
+        sys.exit(
+            f"[Error] writing dispatch state failed: {exc} — no "
+            "children spawned; the dispatcher lock is released"
+        )
+
+
 def _spawn_worker(index, gpu, tee, context):
     """One per-GPU worker loop: claim -> spawn -> wait -> record -> next.
 
@@ -1606,7 +1638,13 @@ def _launch_and_drain(output_root, cells, pending, skipped, lane_values,
         "log_dir": lane_values.get("log_dir"),
         "lane": dict(lane_values),
     }
-    _publish_state(context)  # BEFORE any claim (mode evidence)
+    # WR-01 (phase-14 review): this write and the two below run AFTER
+    # the lock is acquired but BEFORE the drain's try/finally guarantees
+    # its release — route them through the guard that releases + exits
+    # with the designed diagnostic on an I/O failure (never a raw
+    # traceback leaking dispatcher.lock on disk).
+    # BEFORE any claim (mode evidence).
+    _publish_state_pre_drain(context, lock_path)
 
     if pending is None:
         # Relaunch skip filter (the module docstring's step 4): skip iff
@@ -1620,7 +1658,8 @@ def _launch_and_drain(output_root, cells, pending, skipped, lane_values,
                 counts["skipped"] += 1
             else:
                 context["pending"].append((cell, decision))
-        _publish_state(context)  # still BEFORE any claim/spawn
+        # Still BEFORE any claim/spawn.
+        _publish_state_pre_drain(context, lock_path)
 
     now = datetime.now if clock is None else clock
     launch_stamp = now().strftime(
@@ -1631,7 +1670,7 @@ def _launch_and_drain(output_root, cells, pending, skipped, lane_values,
         # MGPU-02/empty): a fully drained root is an explicit
         # nothing-to-do verdict and exit 0 — never a re-spawn storm.
         state["status"] = "done"
-        _publish_state(context)
+        _publish_state_pre_drain(context, lock_path)
         release_dispatcher_lock(lock_path)
         print(
             f"[Dispatch] nothing to do — all {len(cells)} enumerated "
