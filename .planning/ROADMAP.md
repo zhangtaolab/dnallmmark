@@ -58,7 +58,7 @@ Plans:
 
 **Goal**: The dispatch orchestrator is proven on the local 2× RTX 5090 — the docs/multi-gpu.md N=2 smoke passes (WINDOWS #21 closed, D-05 revised) and a small real sweep over pre-materialized 5% stratified subsets runs both GPUs end-to-end through merge and the data chain
 **Requirements**: VAL-01, VAL-02, VAL-03
-**Plans**: 4 plans
+**Plans**: 5 plans
 
 Plans:
 **Wave 1**
@@ -67,7 +67,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1: smoke must pass per D15-04; generator + test file from 15-02)*
 - [x] 15-04-PLAN.md — GAP CLOSURE, executes immediately (no deps, before the 15-01 continuation and 15-03): dispatch_core writes run_record.json at claim finalize — run_sweep `_new_record` shape parity, WR-12 no-overwrite refusal, failed-cell/WR-11 records, CR-04 failure routing, export dry-run consumer visibility + 15-03 false-premise corrections (supersedes Phase 13 A3 at its deferred handoff; unblocks the 15-01 D15-02 consumption criterion) (VAL-01)
-- [ ] 15-03-PLAN.md — Real subset generation (105/11/117 + 598/74/74) + 12-cell dual-GPU dispatch sweep (2 models × 2 subset tasks × 3 seeds, one shared root, 0 skipped) + zero-modification export→summarize consumption proof with archived phase artifacts + D15-15 real-artifact pytest checks (VAL-03)
+- [ ] 15-05-PLAN.md — GAP CLOSURE (option A ruling 2026-10-21, WINDOWS #45): run_finetune captures trainer.evaluate() and merges it flat-additive into final_metrics.json (exact export-read eval_* spellings; D-05/WR-13 ordering preserved; argv untouched) + tier-1 pin update-not-weaken + 15-03 archive-list correction (animal/microbe) — producer side only; the sweep re-run is owned by the 15-03 continuation on the fresh root pipeline/finetuned-sweep-r2 (VAL-03)
+- [ ] 15-03-PLAN.md — Real subset generation (105/11/117 + 598/74/74) + 12-cell dual-GPU dispatch sweep (2 models × 2 subset tasks × 3 seeds, one shared root, 0 skipped) + zero-modification export→summarize consumption proof with archived phase artifacts + D15-15 real-artifact pytest checks (VAL-03) — Tasks 1-2 green; halted at Task 3 consumption (WINDOWS #45); the Task-3 continuation (sweep re-run on finetuned-sweep-r2 + consumption + archive + VAL-03 marks) executes after 15-05
 
 **Success criteria**:
 1. N=2 smoke procedure completes successfully on the local box; WINDOWS #21 closed; D-05 machine-role revision recorded (maintainer-authorized GPU run)
