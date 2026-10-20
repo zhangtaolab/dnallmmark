@@ -1817,8 +1817,10 @@ def test_worker_finalize_failure_fails_cell_not_run(
         if path.name != dispatch_core.DISPATCHER_LOCK_NAME
         and json.loads(path.read_text(encoding="utf-8"))["state"]
         == dispatch_core.CLAIM_STATE_FAILED]
-    assert failed_errors == ["dispatcher-side failure: "
-                             "OSError: [Errno 28] No space left on device"], (
+    expected_error = (
+        "dispatcher-side failure: OSError: [Errno 28] No space left "
+        "on device")
+    assert failed_errors == [expected_error], (
         "the claim records the dispatcher-side failure by name"
     )
 
