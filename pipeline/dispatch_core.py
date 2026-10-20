@@ -44,6 +44,11 @@ research; every step's guard depends on the ones before it):
    ``workers[]`` row per ``--workers`` index (gpu + in-flight cell +
    counters), and the run's ``failures`` view — frozen in
    ``schemas/dispatch_state.json`` and validated by the consumer test.
+   Every state write (mode evidence, skip filter, claim — a dedicated
+   claim-time write inside the worker loop — finalize, containment,
+   terminal statuses) also RENDERS the frozen payload as a plain-line
+   terminal table via ``_render_state`` (D14-02/D14-03: ``flush=True``
+   prints under the state lock; no timer loop, no TUI library).
 4. **SKIP FILTER** — on relaunch, a cell is skipped iff its child-side
    ``trainer_state.json`` marker exists (the authoritative completion
    guard, D-06) OR its ledger claim already says ``completed``; a stale
@@ -644,13 +649,68 @@ def _now_iso():
 
 
 def _write_state(state_path, state):
-    """Atomically write ``dispatch_state.json`` (single writer, P10).
+    """Atomically write ``dispatch_state.json`` and render it (P10, D14-02).
+
+    The single choke point for every state transition: the atomic
+    write lands FIRST, then ``_render_state`` prints the exact frozen
+    payload just written — the renderer must never observe anything the
+    on-disk consumer cannot (the side-channel anti-pattern). Runs
+    under the caller's ``state_lock``, so renders never interleave.
 
     Args:
         state_path (Path): ``{root}/dispatch_state.json``.
         state (dict): the full state payload.
     """
     _atomic_write_json(state_path, state)
+    _render_state(state)
+
+
+def _render_state(state):
+    """Render the frozen state payload as plain stdout lines (D14-02).
+
+    One header line naming status / queue depth / done / failed /
+    skipped, then one row per ``workers[]`` entry showing the worker's
+    in-flight cell (``model/task/seed_N`` plus ``/frac_F`` for curve
+    cells) or ``-``. Plain prints with ``flush=True`` — the block-
+    buffering pitfall: a piped/pty consumer must see each table the
+    moment it is written, not in an end-of-run burst. Called ONLY from
+    ``_write_state`` after the atomic write (no timer loop, no TUI
+    library, no second file — D14-02/D14-01).
+
+    Output failures are swallowed best-effort (T-14-01): a dying
+    consumer view (closed pipe, unencodable stream) must NEVER fail a
+    cell via the CR-04 containment, kill a worker thread, or abort the
+    drain.
+
+    Args:
+        state (dict): the frozen payload just written to disk.
+    """
+    try:
+        counts = state["counts"]
+        print(
+            f"[Dispatch] status={state['status']} "
+            f"queue={state['queue_depth']} "
+            f"done={counts['completed']}/{counts['total']} "
+            f"failed={counts['failed']} skipped={counts['skipped']}",
+            flush=True)
+        for worker in state["workers"]:
+            cell = worker["in_flight"]
+            if cell is None:
+                detail = "-"
+            else:
+                detail = (
+                    f"{cell['model']}/{cell['task']}/seed_{cell['seed']}")
+                if cell["fraction"] is not None:
+                    detail += f"/frac_{cell['fraction']}"
+            print(
+                f"  w{worker['index']} gpu={worker['gpu']}: {detail}",
+                flush=True)
+    except (BrokenPipeError, OSError, ValueError):
+        # BrokenPipeError/OSError: the consumer view died (closed pipe,
+        # fd error). ValueError covers UnicodeEncodeError — an
+        # unencodable stream is still a view failure, never a cell
+        # failure. Swallow and keep draining.
+        pass
 
 
 def _publish_state(context):
@@ -772,13 +832,24 @@ def _spawn_worker(index, gpu, tee, context):
                                 context["counts"])
                         continue
                 stats["cells"] += 1
-                # In-flight slot (D14-01): a plain assignment after the
-                # successful claim — snapshotted into every state write
-                # by ``_publish_state`` under the state lock. The cell
-                # is out of the pending list and not yet accounted, so
-                # the slot is what keeps the derived queue_depth's
-                # snapshot invariant truthful while the child trains.
-                context["in_flight"][index] = _cell_key(cell)
+                # Claim-time state write (D14-03 — the 8th call site):
+                # set this worker's in-flight slot and publish BEFORE
+                # the spawn, so the live table shows the cell WHILE the
+                # child trains and the derived queue_depth keeps the
+                # snapshot invariant across the pop-to-claim window.
+                # The publication is best-effort BY DESIGN (T-14-01):
+                # the ledger claim — the truth — is already on disk, so
+                # a state-file I/O failure here must not fail the cell
+                # through the CR-04 containment (the finalize and
+                # end-of-run writes remain the accounting guarantees).
+                # The slot is set regardless so the next successful
+                # write snapshots it.
+                with state_lock:
+                    context["in_flight"][index] = _cell_key(cell)
+                    try:
+                        _publish_state(context)
+                    except OSError:
+                        pass
                 argv = run_sweep.build_argv(
                     model, task, seed, str(context["root"]),
                     peft=context["peft"],

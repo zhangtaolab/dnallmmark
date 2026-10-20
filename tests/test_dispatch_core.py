@@ -83,6 +83,7 @@ See also:
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -2364,3 +2365,345 @@ def test_dispatch_state_worker_rows_match_gpus_and_sum_to_counts(
     assert sum(worker["completed"] for worker in workers) == (
         counts["completed"])
     assert sum(worker["failed"] for worker in workers) == counts["failed"]
+
+
+# ===== 14-01 Task 2: the plain-line renderer at the _write_state
+# choke point + the claim-time write (D14-02/D14-03) =====
+
+
+def _rendered_lines(out):
+    """Project captured stdout to the renderer's own lines (headers +
+    worker rows) — the D14-13 assertion vocabulary.
+
+    The row pattern ``  w{index} gpu=`` is matched by regex so the
+    end-of-run VERDICT table (``  worker 0: cells=... failed=...
+    gpu=... log=...`` — same two-space indent, also contains ``gpu=``)
+    is never mistaken for a rendered row.
+    """
+    return [
+        line for line in out.splitlines()
+        if line.startswith("[Dispatch] status=")
+        or re.match(r"  w\d+ gpu=", line)]
+
+
+def test_renderer_renders_every_step_of_a_healthy_run(
+        tmp_path, monkeypatch, capsys):
+    """D14-13 step-by-step pin (workers=1, 2 cells — the deterministic
+    single-worker interleaving): EVERY state write renders one header
+    naming status/queue/done/failed/skipped plus one row per worker, in
+    the exact event order — initial running table with queue == total,
+    the post-skip-filter write, the claim-time row showing the claimed
+    cell (queue loses it, counts still 0), the finalize header (done
+    advances, the row returns to '-'), and the terminal status=done
+    table with an empty queue."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a,model-b", "--tasks", "task-x",
+        "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 2
+    assert _rendered_lines(capsys.readouterr().out) == [
+        # launch: mode evidence — the full queue, no cell in flight
+        "[Dispatch] status=running queue=2 done=0/2 failed=0 skipped=0",
+        "  w0 gpu=0: -",
+        # post-skip-filter write (no skips on a fresh root — identical)
+        "[Dispatch] status=running queue=2 done=0/2 failed=0 skipped=0",
+        "  w0 gpu=0: -",
+        # claim cell 1: the row shows the cell, the queue loses it
+        "[Dispatch] status=running queue=1 done=0/2 failed=0 skipped=0",
+        "  w0 gpu=0: model-a/task-x/seed_42",
+        # finalize cell 1: done advances, the row clears
+        "[Dispatch] status=running queue=1 done=1/2 failed=0 skipped=0",
+        "  w0 gpu=0: -",
+        # claim cell 2
+        "[Dispatch] status=running queue=0 done=1/2 failed=0 skipped=0",
+        "  w0 gpu=0: model-b/task-x/seed_42",
+        # finalize cell 2
+        "[Dispatch] status=running queue=0 done=2/2 failed=0 skipped=0",
+        "  w0 gpu=0: -",
+        # terminal table
+        "[Dispatch] status=done queue=0 done=2/2 failed=0 skipped=0",
+        "  w0 gpu=0: -",
+    ]
+
+
+def test_claim_time_row_visible_while_child_runs(
+        tmp_path, monkeypatch, capsys):
+    """D14-03 claim-time pin: a GATED fake child reads the state file
+    and the rendered stdout from inside wait() — i.e. while it is still
+    'training' — and observes the claiming worker's row showing the
+    exact claimed cell with counts.completed still unchanged (the row
+    appears at CLAIM time, before the child process exits)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    observed = []
+
+    def gated_spawner(argv, **kwargs):
+        root = Path(flag_value(argv, "--output_dir"))
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell = (save, flag_value(argv, "--target_dataset"),
+                int(flag_value(argv, "--seed")))
+
+        class GatedProc(FakeProc):
+            def wait(self, timeout=None):
+                # mid-"training": the child has NOT exited — capture the
+                # frozen payload and the rendered table NOW
+                state = json.loads(
+                    (root / dispatch_core.DISPATCH_STATE_NAME).read_text(
+                        encoding="utf-8"))
+                observed.append((state, capsys.readouterr().out))
+                return super().wait(timeout=timeout)
+
+        # the make_child_spawner artifact discipline (a missing
+        # final_metrics.json would fail the cell through CR-02)
+        cell_dir = root / save / cell[1] / f"seed_{cell[2]}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / run_sweep.METRICS_NAME).write_text(
+            json.dumps({"eval_loss": 0.5}), encoding="utf-8")
+        (cell_dir / run_sweep.RESUME_MARKER).write_text(
+            '{"global_step": 1}', encoding="utf-8")
+        return GatedProc(0)
+
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=gated_spawner)
+    assert len(observed) == 1, "the gated child observed its own run"
+    state, out = observed[0]
+    assert state["counts"]["completed"] == 0, (
+        "the child has not exited — nothing is completed yet"
+    )
+    assert state["workers"][0]["in_flight"] == {
+        "model": "model-a", "task": "task-x", "seed": 42,
+        "fraction": None}, (
+        "the state file carries the in-flight cell at claim time"
+    )
+    assert "  w0 gpu=0: model-a/task-x/seed_42" in out, (
+        "the rendered row shows the claimed cell WHILE the child runs"
+    )
+
+
+def test_renderer_failed_finalize_header_and_state(
+        tmp_path, monkeypatch, capsys):
+    """A scripted exit_for failure renders failed=1 in the header of the
+    post-failure table and lands the cell in the failures-driven state
+    (the Task 1 field) — the failed finalize is visible in BOTH views."""
+    failed_cell = ("model-b", "task-x", 43)
+    base, _calls = _run_two_worker_dispatch_with_one_failure(
+        tmp_path, monkeypatch, failed_cell)
+    headers = [
+        line for line in _rendered_lines(capsys.readouterr().out)
+        if line.startswith("[Dispatch] status=")]
+    assert any(
+        "failed=1" in header and "status=running" in header
+        for header in headers), (
+        "the failed finalize renders failed=1 while the drain continues"
+    )
+    assert headers[-1] == (
+        "[Dispatch] status=done queue=0 done=3/4 failed=1 skipped=0"), (
+        "the terminal table carries the honest failed count"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["failures"][0]["model"] == "model-b"
+    assert state["failures"][0]["seed"] == 43
+
+
+def test_queue_depth_identity_holds_at_every_state_write(
+        tmp_path, monkeypatch):
+    """The Pitfall 3 snapshot invariant, pinned over a MIXED scripted
+    run (one pre-completed skip via marker, one scripted failure, two
+    healthy cells): every state payload that ever reached disk —
+    captured through the ENOSPC-style _write_state hook — satisfies
+    completed + failed + skipped + queue_depth + in_flight_count ==
+    total, including the claim/finalize boundary writes."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    _write_marker(base, ("model-a", "task-x", 42))  # -> skipped
+    observed = []
+    real_write = dispatch_core._write_state
+
+    def recording_write(state_path, state):
+        observed.append(json.loads(json.dumps(state)))  # frozen snapshot
+        real_write(state_path, state)
+
+    monkeypatch.setattr(dispatch_core, "_write_state", recording_write)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "2",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42,43",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(
+            calls, exit_for={("model-b", "task-x", 43): 2}))
+    assert excinfo.value.code == 1
+    assert len(calls) == 3, "the marker cell never spawns"
+    assert len(observed) >= 8, "every transition published state"
+    for payload in observed:
+        counts = payload["counts"]
+        active = sum(1 for worker in payload["workers"]
+                     if worker["in_flight"] is not None)
+        assert counts["completed"] + counts["failed"] + \
+            counts["skipped"] + payload["queue_depth"] + active == \
+            counts["total"], (
+                f"snapshot invariant broken at status="
+                f"{payload['status']}: {counts} queue="
+                f"{payload['queue_depth']} active={active}")
+    final = observed[-1]
+    assert final["status"] == "done"
+    assert final["counts"] == {
+        "total": 4, "completed": 2, "failed": 1, "skipped": 1}
+    assert final["queue_depth"] == 0
+
+
+class _ClosedPipeStdout:
+    """A stdout whose consumer died: every write/flush raises."""
+
+    def write(self, data):
+        raise BrokenPipeError("consumer closed the pipe")
+
+    def flush(self):
+        raise BrokenPipeError("consumer closed the pipe")
+
+    def fileno(self):
+        raise OSError("no real fd on this test double")
+
+
+def test_render_state_swallows_output_errors(monkeypatch):
+    """T-14-01 unit pin: _render_state itself never raises on a failing
+    stdout — BrokenPipeError (the closed consumer), a plain OSError,
+    and UnicodeEncodeError (a ValueError — an unencodable stream) are
+    all swallowed best-effort, so a dying view can never fail a cell
+    through the CR-04 containment."""
+    sample = {
+        "status": "running",
+        "queue_depth": 1,
+        "counts": {"total": 2, "completed": 0, "failed": 0, "skipped": 1},
+        "workers": [
+            {"index": 0, "gpu": "0",
+             "in_flight": {"model": "m", "task": "t", "seed": 1,
+                           "fraction": None},
+             "cells": 0, "completed": 0, "failed": 0}],
+    }
+
+    def _raising(error_factory):
+        class _Raising:
+            def write(self, data):
+                raise error_factory()
+
+            def flush(self):
+                raise error_factory()
+
+        return _Raising()
+
+    # UnicodeEncodeError (a ValueError subclass) carries a 5-arg C-level
+    # constructor — the unencodable-stream view failure
+    cases = (
+        lambda: BrokenPipeError("consumer closed the pipe"),
+        lambda: OSError("view fd died"),
+        lambda: UnicodeEncodeError("utf-8", "x", 0, 1, "view died"),
+    )
+    for error_factory in cases:
+        monkeypatch.setattr(sys, "stdout", _raising(error_factory))
+        dispatch_core._render_state(sample)  # must not raise
+    monkeypatch.setattr(sys, "stdout", _ClosedPipeStdout())
+    dispatch_core._render_state(sample)  # must not raise
+
+
+def test_renderer_broken_pipe_never_fails_cells(tmp_path, monkeypatch):
+    """T-14-01 integration pin (Task 2 behavior Test 5): with stdout
+    raising BrokenPipeError on every WORKER-thread render (the
+    consumer view died mid-run), the run still completes — every cell
+    drains, the claims complete, the state ends done, and the run
+    exits 0. A dying view must never fail a cell, kill a worker
+    thread, or abort the drain."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    real_stdout = sys.stdout
+
+    class _WorkerOnlyBrokenPipe:
+        """Broken for worker-thread writes only — the main thread's
+        end-of-run prints stay honest so the run can finish."""
+
+        def write(self, data):
+            if threading.current_thread() is not threading.main_thread():
+                raise BrokenPipeError("consumer closed the pipe")
+            return real_stdout.write(data)
+
+        def flush(self):
+            if threading.current_thread() is not threading.main_thread():
+                raise BrokenPipeError("consumer closed the pipe")
+            real_stdout.flush()
+
+        def __getattr__(self, name):
+            return getattr(real_stdout, name)
+
+    monkeypatch.setattr(sys, "stdout", _WorkerOnlyBrokenPipe())
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "2",
+        "--models", "model-a,model-b", "--tasks", "task-x",
+        "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 2, "every cell still drains past the dead view"
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["status"] == "done"
+    assert state["counts"] == {
+        "total": 2, "completed": 2, "failed": 0, "skipped": 0}
+    claims = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in dispatch_core.ledger_dir_for(base).glob("*.json")
+        if path.name != dispatch_core.DISPATCHER_LOCK_NAME]
+    assert all(claim["state"] == dispatch_core.CLAIM_STATE_COMPLETED
+               for claim in claims), (
+        "the broken view never leaked into a cell's claim"
+    )
+
+
+@pytest.mark.filterwarnings(
+    "ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_renderer_renders_incomplete_status(tmp_path, monkeypatch, capsys):
+    """The containment/incomplete terminal path renders its status too:
+    when a worker dies despite containment (the existing death fixture
+    — finalize always fails AND every worker state write fails), the
+    post-join accounting refusal still publishes (main thread) and the
+    table honestly reads status=incomplete with the un-drained queue."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    _flaky_finalize(monkeypatch, fail_first_n=10**9)
+    _worker_state_writes_always_fail(monkeypatch)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42,43",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    assert "accounting mismatch" in str(excinfo.value)
+    headers = [
+        line for line in _rendered_lines(capsys.readouterr().out)
+        if line.startswith("[Dispatch] status=")]
+    assert headers[-1] == (
+        "[Dispatch] status=incomplete queue=3 done=0/4 failed=1 "
+        "skipped=0"), (
+        "the refused drain renders its honest incomplete table"
+    )
