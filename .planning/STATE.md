@@ -5,16 +5,16 @@ milestone_name: 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
 current_phase: 15
 current_phase_name: 双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)
 status: executing
-stopped_at: "HALTED 15-01-PLAN.md at Task 2 verification (D15-04): dispatch run green 2/2 on both GPUs but run_record.json absent on dispatch roots — consumption criterion unmeetable; Task 3 docs closure halted; remediation decision pending"
-last_updated: "2026-10-20T14:08:49.324Z"
+stopped_at: "Completed 15-04-PLAN.md (run_record gap closure; 2/2 tasks, suites 305+135 green) — next: 15-01 continuation fresh 2-cell smoke for D15-02 criterion 3, then 15-03"
+last_updated: "2026-10-20T15:15:02.948Z"
 last_activity: 2026-10-20
 last_activity_desc: Phase 15 execution started
-state_head: 2626010e8dfcfa610606b740dc23b20e8704c986
+state_head: 8c5e8b9f0759f5c3f0de0487c621d3bf22c4c9ec
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 8
-  completed_plans: 6
+  total_plans: 9
+  completed_plans: 7
   percent: 17
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 ## Current Position
 
 Phase: 15 (双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 15
+Plan: 2 of 4
+Status: Ready to execute
 Last activity: 2026-10-20 — Phase 15 execution started
 
 ## Performance Metrics
@@ -112,6 +112,7 @@ Last activity: 2026-10-20 — Phase 15 execution started
 | Phase 14 P01 | 24 min | 3 tasks | 3 files |
 | Phase 14 P02 | 37 min | 2 tasks | 4 files |
 | Phase 14 P03 | 18 min | 2 tasks | 3 files |
+| Phase 15 P15-04 | 51 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -275,6 +276,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 14]: 14-03: rerun genealogy = Option C — archive_superseded_claim O_EXCL-copies the original failed claim VERBATIM under dispatch_ledger/archive/{stem}--run-{run_id[:8]}.json (injective across attempts, EEXIST refuses — audit history append-only), then tmp+os.replace lands the fresh claim in the canonical slot carrying rerun_of {archive, run_id, claimed_at}
 - [Phase 14]: 14-03: lane homogeneity compares over the UNION of lane keys with absent == None projection (a Phase-13 five-key lane beside a Phase-14 nine-key lane with equal values is ONE lane — Pitfall 4 absent-parity extended to the comparison); refusal names each differing flag PER CELL in the run_merge shape (D14-08)
 - [Phase 14]: 14-03: --rerun-failed is orchestrator-owned shard vocabulary implying dispatch mode (routes BEFORE the --models/--seeds requirements; only --registry-dir accepted in the passthrough); archive collisions pre-checked BY NAME before any spawn with the worker O_EXCL as structural backstop; --rerun-failed x --cleanup joined the A6 combo family
+- [Phase 15]: [15-04] A3 supersession: dispatch_core writes run_record at claim finalize (15-01 Option 1 ruling) — run_sweep._new_record reuse, WR-12 no-overwrite, CR-04-routed failures; supersedes Phase 13 A3 at its deferred handoff point
+- [Phase 15]: [15-04] Cell-dir mkdir parity in the record writer: a child dying before mkdir still gets its failed record without CR-04 clobbering the cell's own CR-02 verdict; only records that PARSE completed are refusal-protected (unprovable provenance is replaceable)
 
 ### Pending Todos
 
@@ -287,7 +290,7 @@ None yet.
 - ModelScope CLI flag/progress-parsing specifics are MEDIUM confidence — confirm during Phase 10 (narrow in-phase item, not a research phase)
 - Custom-registry storage location (`~/.config/dnallmmark/` vs repo-local ignored dir) and the exact overlay read seam are Phase 7/9 discuss items — the user-owned-file principle itself is fixed
 - v0.7.1 carryover registry questions (space/SPACE merge decision; 7 models without locatable public cards) remain maintainer-owned — outside v1.2 scope unless registries are touched
-- 15-01 HALTED (D15-04/Rule 4): dispatch roots carry no run_record.json (Phase 13 A3 ruling; dispatch children are run_finetune.py directly, dispatch_core.py:1942) — D15-02 consumption criterion ('[Dry-run] 2 run record(s)') fails with 0 records. Smoke itself GREEN on both GPUs (dispatch_state done 2/2, evidence preserved). Remediation decision required: teach dispatch_core to write run_record at finalize (recommended, unblocks 15-01+15-03) — via debug/fix flow, not in-phase. WINDOWS #21 stays open; PROJECT.md D-05 stays Pending.
+- 15-01 remediation LANDED (15-04 complete, 2026-10-20): dispatch_core now writes run_record.json at claim finalize (run_sweep _new_record parity, WR-12 no-overwrite, CR-04-routed failures; supersedes Phase 13 A3) — the D15-02 consumption criterion is meetable by a fresh 2-cell smoke re-run. REMAINING: the 15-01 continuation (fresh 2-cell smoke → criterion 3 evidence → docs/multi-gpu.md rewrite, WINDOWS #21, PROJECT.md D-05) still pending; WINDOWS #21 open; PROJECT.md D-05 Pending.
 
 ### Quick Tasks Completed
 
@@ -346,9 +349,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T14:08:49.171Z
-Stopped at: HALTED 15-01-PLAN.md at Task 2 verification (D15-04): dispatch run green 2/2 on both GPUs but run_record.json absent on dispatch roots — consumption criterion unmeetable; Task 3 docs closure halted; remediation decision pending
-Resume file: .planning/phases/15-dual-gpu-validation-subsets/15-01-SUMMARY.md
+Last session: 2026-10-20T15:15:02.729Z
+Stopped at: Completed 15-04-PLAN.md (run_record gap closure; 2/2 tasks, suites 305+135 green) — next: 15-01 continuation fresh 2-cell smoke for D15-02 criterion 3, then 15-03
+Resume file: None
 
 ## Operator Next Steps
 
