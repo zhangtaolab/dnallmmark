@@ -84,6 +84,7 @@ import hashlib
 import json
 import os
 import re
+import selectors
 import subprocess
 import sys
 import threading
@@ -2707,3 +2708,224 @@ def test_renderer_renders_incomplete_status(tmp_path, monkeypatch, capsys):
         "skipped=0"), (
         "the refused drain renders its honest incomplete table"
     )
+
+
+# ===== 14-01 Task 3: pty flush lane + gen_progress keep-parsing =====
+# (D14-04/D14-13/D14-16 — verification legs; no production changes)
+
+_PTY_DRIVER_SOURCE = '''
+"""Pty-lane driver (research A6 shape): a REAL subprocess running a
+REAL dispatch drain over fake children whose FIRST cell holds open for
+{hold}s — long enough that a live-rendered first table MUST arrive
+while the process is still mid-drain."""
+import json
+import sys
+import time
+from pathlib import Path
+
+repo, root, registry = (Path(arg) for arg in sys.argv[1:4])
+sys.path.insert(0, str(repo / "pipeline"))
+
+import dispatch_core  # noqa: E402
+import run_sweep_shard  # noqa: E402
+
+HELD = {{"first": True}}
+
+
+def spawn(argv, **kwargs):
+    def flag(name):
+        return argv[argv.index(name) + 1]
+
+    out_root = Path(flag("--output_dir"))
+    save = (flag("--save_model_name") if "--save_model_name" in argv
+            else flag("--target_model"))
+    task = flag("--target_dataset")
+    seed = int(flag("--seed"))
+    cell_dir = out_root / save / task / ("seed_%d" % seed)
+    if "--train_fraction" in argv:
+        cell_dir = cell_dir / ("frac_%s" % flag("--train_fraction"))
+    cell_dir.mkdir(parents=True, exist_ok=True)
+    (cell_dir / "final_metrics.json").write_text(
+        json.dumps({{"eval_loss": 0.5}}), encoding="utf-8")
+    (cell_dir / "trainer_state.json").write_text(
+        '{{"global_step": 1}}', encoding="utf-8")
+
+    class Proc:
+        pid = 4242
+
+        def wait(self, timeout=None):
+            if HELD["first"]:
+                HELD["first"] = False
+                time.sleep({hold})
+            return 0
+
+    return Proc()
+
+
+sys.argv = [
+    "run_sweep_shard.py",
+    "--mode", "dispatch", "--workers", "2", "--gpus", "0,1",
+    "--models", "model-a", "--tasks", "task-x", "--seeds", "42,43",
+    "--output-root", str(root),
+    "--registry-dir", str(registry),
+]
+args, passthrough = run_sweep_shard.parse_args()
+dispatch_core.run_dispatch(args, passthrough, spawner=spawn)
+print("[PtyDriver] drain complete", flush=True)
+'''
+
+
+def _write_dispatch_driver(path, hold):
+    """Materialize the pty-lane driver script under ``path``."""
+    path.write_text(
+        _PTY_DRIVER_SOURCE.format(hold=hold), encoding="utf-8")
+    return path
+
+
+def _driver_env(tmp_path):
+    """The spawned driver's env: the machine-independence pins (a fresh
+    empty overlay + XDG dir) and NO PYTHONUNBUFFERED — the pipe leg
+    proves ``flush=True`` works without it (a preset unbuffered env
+    would pass the proof trivially)."""
+    env = dict(os.environ)
+    pinned = tmp_path / "driver-env-pin"
+    pinned.mkdir(exist_ok=True)
+    env["DNALLMMARK_CUSTOM_REGISTRY_DIR"] = str(pinned)
+    env["XDG_CONFIG_HOME"] = str(pinned)
+    env.pop("PYTHONUNBUFFERED", None)
+    return env
+
+
+def test_first_dispatch_row_arrives_live_under_a_real_pty(tmp_path):
+    """Pty lane (D14-13, research A6): the REAL dispatch drain running
+    as a REAL subprocess on a real pty renders its first ``[Dispatch]``
+    table WHILE the drain is still in flight — the running header, the
+    both-cells-claimed claim-time view (queue=0 done=0/2), then the
+    terminal done table and exit 0, with the final state file validating
+    against the frozen v2 schema."""
+    pexpect = pytest.importorskip("pexpect")
+    pytest.importorskip("pty", reason="no OS pty support on this platform")
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    driver = _write_dispatch_driver(tmp_path / "pty_driver.py", hold=5.0)
+    child = pexpect.spawn(
+        sys.executable,
+        [str(driver), str(REPO_ROOT), str(base), str(registry_dir)],
+        cwd=str(REPO_ROOT), env=_driver_env(tmp_path),
+        encoding="utf-8", codec_errors="replace", timeout=60.0)
+    try:
+        # THE liveness proof: the first running table must arrive within
+        # 3s — the drain holds its first cell for 5s, so the row can
+        # only have been rendered LIVE (a buffered stream would deliver
+        # nothing until exit).
+        child.expect(r"\[Dispatch\] status=running queue=2",
+                     timeout=3.0)
+        assert child.isalive(), (
+            "the first table arrived while the drain is still running"
+        )
+        # the claim-time view: both cells claimed, none finished — the
+        # in-flight table under a real terminal driver
+        child.expect(r"queue=0 done=0/2", timeout=3.0)
+        assert child.isalive()
+        # the terminal table + clean exit
+        child.expect(r"status=done queue=0 done=2/2", timeout=60.0)
+        child.expect(pexpect.EOF, timeout=30.0)
+        # expect(EOF) only observes the closed stream — the child status
+        # is reaped by close() (the pexpect contract: exitstatus stays
+        # None until the waitpid happens), so the asserted exit code
+        # below is the drain's real verdict, verified standalone as 0.
+        child.close()
+        assert child.exitstatus == 0, (
+            "the drain completed cleanly under the pty"
+        )
+    finally:
+        child.close(force=True)
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    jsonschema.validate(
+        instance=state, schema=_load_dispatch_state_schema())
+    assert state["counts"] == {
+        "total": 2, "completed": 2, "failed": 0, "skipped": 0}
+
+
+def test_first_dispatch_row_arrives_live_through_a_pipe(tmp_path):
+    """The block-buffering pitfall leg (the ``| tee`` case): stdout is a
+    PIPE — under Python's default block buffering for non-tty streams,
+    a print without ``flush=True`` would sit in the 4-8KB buffer until
+    process EXIT (the whole drain emits well under 1KB, so nothing
+    would ever flush early). The first header must arrive over the pipe
+    within 3s while the drain still holds its first cell (5s hold)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned-pipe").resolve()
+    driver = _write_dispatch_driver(tmp_path / "pty_driver.py", hold=5.0)
+    proc = subprocess.Popen(
+        [sys.executable, str(driver), str(REPO_ROOT), str(base),
+         str(registry_dir)],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        cwd=str(REPO_ROOT), env=_driver_env(tmp_path))
+    assert proc.stdout is not None, "PIPE was requested"
+    try:
+        selector = selectors.DefaultSelector()
+        selector.register(proc.stdout, selectors.EVENT_READ)
+        deadline = time.monotonic() + 3.0
+        header = None
+        while header is None and time.monotonic() < deadline:
+            if not selector.select(timeout=0.2):
+                continue
+            line = proc.stdout.readline()
+            if "[Dispatch] status=running" in line:
+                header = line
+        assert header is not None, (
+            "no bytes within 3s over the pipe — stdout is block-buffered; "
+            "the renderer must print with flush=True"
+        )
+        assert "queue=2" in header
+        assert proc.poll() is None, (
+            "the header arrived while the drain still holds its cell"
+        )
+    finally:
+        proc.terminate()
+        proc.wait(timeout=30.0)
+
+
+def test_gen_progress_still_parses_over_a_v2_dispatch_root(
+        tmp_path, monkeypatch, capsys):
+    """D14-04 keep-parsing obligation: over a fixture tree that includes
+    a completed dispatch root (a real fake-run root carrying the v2
+    dispatch_state.json + ledger + cell artifacts) BESIDE a static
+    manifest root, gen_progress's generation completes (exit 0) and its
+    emitted JSON parses — the v2 state file's presence does not disturb
+    the generator (gen_progress serializes the tui scanner, which never
+    reads dispatch_state.json)."""
+    gen_progress = pytest.importorskip(
+        "gen_progress", reason="the tui scanner chain is not installed")
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "2",
+        "--models", "model-a,model-b", "--tasks", "task-x",
+        "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 2
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    # the fixture root genuinely carries a v2 state file (not v1)
+    jsonschema.validate(
+        instance=state, schema=_load_dispatch_state_schema())
+    assert state["schema_version"] == 2
+    static_root = _write_static_worker(
+        run_sweep_shard.worker_root(base, 0), "model-a")
+    output = tmp_path / "progress" / "sweep.json"
+    code = gen_progress.main(
+        [str(base), str(static_root), "--output", str(output)],
+        now=time.time() + 60.0)
+    capsys.readouterr()  # tolerance lines are the generator's own
+    assert code == 0, "the generator completed over the mixed tree"
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["version"] == 1
+    assert isinstance(payload["sweeps"], list)
