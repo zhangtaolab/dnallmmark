@@ -935,7 +935,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--small-n-ci", choices=list(SMALL_N_CI_CHOICES),
                         default="t-interval",
                         help="small-n (3<=n<10) interval policy (default: %(default)s)")
+    parser.add_argument("--dry-run", action="store_true", default=False,
+                        help="walk the run-record tree via the SAME "
+                             "load_run_records authority the export uses, "
+                             "print the record/model/task counts, and "
+                             "write NOTHING (D14-10, 14-02 — the post-merge "
+                             "verification seam; a missing or malformed "
+                             "root still aborts loudly, and that non-zero "
+                             "exit is the caller's refusal signal)")
     args = parser.parse_args(argv)
+    if args.dry_run:
+        # D14-10 read-only mode: short-circuit BEFORE any write (the
+        # flag gates only this path — the export below is untouched).
+        # run_sweep_shard.py --cleanup reaches this branch ONLY through a
+        # sys.executable subprocess: this module imports numpy/yaml/scipy
+        # at module top, so the stdlib-headless orchestrator must never
+        # import it in-process (14-02 key-link contract).
+        tree = load_run_records(args.input_root)
+        records = sum(
+            len(seeds)
+            for per_model in tree.values()
+            for seeds in per_model.values())
+        tasks = sorted(
+            {task for per_model in tree.values() for task in per_model})
+        print(
+            f"[Dry-run] {records} run record(s) across {len(tree)} "
+            f"model(s) / {len(tasks)} task(s) under {args.input_root}")
+        return 0
     model_output_dir = (
         args.model_output_dir
         if args.model_output_dir is not None
