@@ -487,7 +487,17 @@ for path in sorted(ledger_dir.glob("*.json")):
 | A7 | Zero-failed-cells re-run should exit 0 with an explicit verdict (drained-root precedent) rather than the non-zero zero-cell refusal (clean-manifest precedent) | Pitfall 7 | Low — planner picks; both precedents exist in-repo |
 | A8 | `model_root`/`dataset_root`/`log_dir` MAY join the claim lane beyond D14-06's six-flag list (discretion; they affect re-run fidelity but are storage-location, not experiment, flags) | S2 | Low — additive; merge lane vocabulary records them when present |
 
-## Open Questions
+## Open Questions (RESOLVED — rulings embedded in the plans; see pointers)
+
+
+> **Planner rulings (2026-10-20), all embedded in executable plan content:**
+> - Q1 genealogy → **Option C**: archive-copy under `dispatch_ledger/archive/` + atomic replace of canonical slot with `rerun_of` links — 14-03 Task 1(B)
+> - Q2 failures shape → **list** of compact `{model, task, seed, fraction, finished_at}` entries — 14-01 Task 1
+> - Q3 re-run flag → **new `--rerun-failed`** on the shard parser (implies dispatch); passthrough accepts only `--registry-dir` — 14-03 (C)/(D)
+> - Q4 gate mechanics → typed phrase = resolved `--output-root` string; `--yes PHRASE` non-interactive — 14-02 step 6
+> - Q5 logs → `--cleanup` removes worker roots **and** per-launch logs — 14-02 step 5
+> - Q6 renderer home → inside `dispatch_core.py` (zero Makefile change) — 14-01 Task 2
+
 
 1. **Re-run claim genealogy (the D14-07 knot)** — options in Pitfall 1: (A) retire-rename superseded claims, (B) generation-suffixed filenames, (C) archive-copy + atomic replace of the canonical slot. Option C is closest to existing mechanics (canonical name keeps its O(1) meaning; the archive create can be the literal "FRESH O_EXCL" of D14-07; `rerun_of` points at the archive). Recommendation: C, with the skip-filter and ledger-glob tests updated in the same task. Needs planner ruling.
 2. **`failures` in the frozen state: count vs. list** — a list gives Phase 16 a ready feed but rewrites O(failures) bytes per event on big sweeps; a count + ledger pointer keeps writes O(1). Recommendation: list of compact cell keys + timestamps (bounded by real sweep scales here), schema documents the growth bound. Planner decides.
