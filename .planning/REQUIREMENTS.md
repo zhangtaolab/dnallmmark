@@ -10,7 +10,7 @@ Requirements for milestone v1.3. Each maps to roadmap phases (Traceability below
 ### MGPU — 动态调度与编排
 
 - [ ] **MGPU-01**: Orchestrator dispatches (model×dataset×seed) cells as a work queue — idle GPU workers pull the next cell; each cell runs entirely on exactly one GPU (never split across GPUs); enumeration is deterministic and dry-run-provable
-- [ ] **MGPU-02**: Cell output paths are worker-independent (one root, ordinary cell subpaths) with an exactly-once O_EXCL claim ledger; killing a worker mid-cell and relaunching re-dispatches that cell to exactly-once completion (test-pinned)
+- [x] **MGPU-02**: Cell output paths are worker-independent (one root, ordinary cell subpaths) with an exactly-once O_EXCL claim ledger; killing a worker mid-cell and relaunching re-dispatches that cell to exactly-once completion (test-pinned)
 - [ ] **MGPU-03**: Live orchestrator run view — a terminal progress table AND a single-writer atomic `dispatch_state.json` (queue depth, per-worker in-flight cell, failures, timestamps) consumable by the TUI and `gen_progress.py`
 - [ ] **MGPU-04**: Cross-worker failure re-run — one command re-runs the union of failed cells across workers with full lane context (peft/variant/epochs) recorded at claim time, fixing the v1.2 lane-blindness limitation
 - [ ] **MGPU-05**: Post-merge verify + cleanup helper — verifies the merged root (export dry-run + manifest count check), then removes worker roots behind an explicit confirmation gate (replaces the manual `rm -rf` recipe)
@@ -72,8 +72,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MGPU-01 | Phase 13 | Pending |
-| MGPU-02 | Phase 13 | Pending |
+| MGPU-01 | Phase 13 | In Progress (13-01 done: work-queue dispatch, per-GPU workers, deterministic enumeration; 13-02 owns the dry-run-provability clause) |
+| MGPU-02 | Phase 13 | Complete (13-01, 2026-10-20) |
 | MGPU-06 | Phase 13 | Pending |
 | MGPU-03 | Phase 14 | Pending |
 | MGPU-04 | Phase 14 | Pending |

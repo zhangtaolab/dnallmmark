@@ -4,18 +4,18 @@ milestone: v1.3
 milestone_name: 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
 current_phase: 13
 current_phase_name: 动态调度核心
-status: planning
-stopped_at: "Session resumed from pause; proceeding to continue v1.3 milestone init (new-milestone Step 8: research decision → requirements → roadmap)"
-last_updated: "2026-10-20T04:04:49.014Z"
+status: executing
+stopped_at: "Completed 13-01-PLAN.md (dispatch core: --mode routing, engine, O_EXCL ledger/lock, SC2 kill-proven resume)"
+last_updated: "2026-10-20T04:35:00.000Z"
 last_activity: 2026-10-20
-last_activity_desc: v1.3 roadmap created (6 phases incl. docs phase, 20 requirements mapped; version bumped to 1.3.0)
-state_head: ac692858850fc3d235333e571787116ba5a16bd2
+last_activity_desc: Phase 13 plan 13-01 complete (2/2 tasks, 78 tests green)
+state_head: e5ff38216fc86cea3a78d3389ae106aa949b381d
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 2
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 50
 ---
 
 # Project State
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-11)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 13 — 动态调度核心 (v1.3 多 GPU 编排与验证)
+**Current focus:** Phase 13 — 动态调度核心
 
 ## Current Position
 
-Phase: 13 (动态调度核心) — READY TO EXECUTE
-Plan: —
-Status: Roadmap created, ready to plan
-Last activity: 2026-10-20 — v1.3 roadmap created (6 phases incl. docs phase, 20 requirements mapped; version bumped to 1.3.0)
+Phase: 13 (动态调度核心) — EXECUTING
+Plan: 2 of 2
+Status: Executing Phase 13 (13-01 complete)
+Last activity: 2026-10-20 — 13-01 dispatch core landed (tracer + resume semantics)
 
 ## Performance Metrics
 
@@ -107,6 +107,7 @@ Last activity: 2026-10-20 — v1.3 roadmap created (6 phases incl. docs phase, 2
 | Phase quick-261017-uwr PP01 | 33 min | 4 tasks | 12 files |
 | Phase quick-261018-08g PPP01 | 44 min | 4 tasks | 14 files |
 | Phase quick-261018-kvj PP01 | 43 min | 3 tasks | 10 files |
+| Phase 13 P01 | 17 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -250,6 +251,11 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase quick-261017-uwr]: 261017-uwr: slot-5 three-state derivation — live-pair evidence (launcher registry ∪ /proc probe -> argv_matrix planned pairs) gates the interrupted leg; from-failures matrices thread the driver's enumerate-and-filter so alias re-runs never false-interrupt; header/ordering/glyphs per the maintainer ruling (⏵/✓/⏸); MonitorBackend entries_progress delegation was missing (Rule 2); monitor goldens regenerated uncommitted (WINDOWS #35), #34 closed
 - [Phase quick-261018-kvj]: [quick-261018-kvj]: slot-5 两页签落地 — 卡片用 ListView（selection.py 模板菜单先例，索引钳位重锚）；dual-presence 谓词 = resume_count>0（续跑标记即同根重跑/续跑的在盘证据，徽标呈现不去重）；mgpu 分组 = 剥 -mgpu-w{数字} 后缀（run_sweep_shard 冻结命名），纯 worker 组全部渲染为工作行；←/→/Tab 声明式 priority 绑定（f10 非打印键先例，屏幕级 priority 不穿 modal）
 - [Phase quick-261018-kvj]: [quick-261018-kvj]: attached_root 全链退役（session 字段/属性/attach()），ExitModal 缔合 attached_running_counts 改读最近一次扫描的最新 running 根+其 stats；stats-line 家族（MON_STATS_LINE*/ETA pending/range）随 master-detail 退役，卡片当前训练项行携带逐项进度/ETA；卡片/页签 Label 路径只许 rich 原生 dim（$token 样式在 Static 渲染路径崩 — 09-03 探针再遇）
+- [Phase 13]: 13-01 dispatch core landed as NEW sibling pipeline/dispatch_core.py (run_sweep_shard gains ONLY --mode {static,dispatch} + routing + dispatch×merge A6 refusal; static path byte-identical — the 49-test shard suite is the tripwire); run_sweep.py/run_finetune.py byte-untouched, zero CI/Makefile changes
+- [Phase 13]: 13-01 protocol order frozen in the module docstring: ENUMERATE (zero-cell refusal BEFORE lock) → LOCK → dispatch_state.json mode evidence BEFORE any claim → skip filter → CLAIM BEFORE SPAWN (O_EXCL) → FINALIZE AFTER the CR-02 artifact check; failed cells never requeue in-run (A2 — Phase 14 MGPU-04 owns re-run)
+- [Phase 13]: 13-01 claim naming frozen: percent-encoded (safe='') model/task/seed{n}[/frac{f}] joined '--' + '-' + sha256(canonical tuple JSON)[:12] + '.json' — digest suffix guarantees injectivity (+ aliases, __ keys, float fractions, '--'-containing names); full tuple also stored inside the claim JSON with lane flags at claim time (the Phase 14 re-run feed)
+- [Phase 13]: 13-01 stale-lock reclaim = pid-liveness only (A5): live pid/PermissionError → loud refusal naming pid+run_id+lock path; ProcessLookupError or malformed lock → atomic-overwrite reclaim; orphan-children kill-before-relaunch caveat DOCUMENTED in the docstring, not protocol-gated
+- [Phase 13]: 13-01 resume = pure per-cell relaunch_decision (skip iff trainer_state.json marker OR completed claim with agreeing cell key; malformed/claimed/failed claims requeue via atomic claim replacement) — skip sets order-independent by construction; SC2 kill test proves exactly-once from on-disk evidence (78 tests green)
 
 ### Pending Todos
 
@@ -320,9 +326,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T02:07:14.004Z
-Stopped at: Session resumed from pause; proceeding to continue v1.3 milestone init (new-milestone Step 8: research decision → requirements → roadmap)
-Resume file: .planning/.continue-here.md (consumed; HANDOFF.json deleted — resumption complete)
+Last session: 2026-10-20T04:35:00.000Z
+Stopped at: Completed 13-01-PLAN.md — dispatch core (engine + resume semantics) landed, 78 tests green; next: 13-02 (dry-run artifact, merge evidence, Makefile lint line)
+Resume file: None
 
 ## Operator Next Steps
 

@@ -22,7 +22,7 @@
 
 Plans:
 **Wave 1**
-- [ ] 13-01-PLAN.md — Dispatch tracer: --mode routing + engine (queue, O_EXCL ledger/lock, worker loops) + SC2 kill-proven resume (MGPU-01, MGPU-02)
+- [x] 13-01-PLAN.md — Dispatch tracer: --mode routing + engine (queue, O_EXCL ledger/lock, worker loops) + SC2 kill-proven resume (MGPU-01, MGPU-02) — complete 2026-10-20 (78 tests: 29 dispatch + 49 static tripwire; lint/typecheck green)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 13-02-PLAN.md — Dry-run plan artifact + SC1 goldens, evidence-based merge refusal, static byte-identity pins, Makefile lint line, full gates (MGPU-01, MGPU-06)
