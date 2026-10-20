@@ -407,6 +407,94 @@ def test_child_pid_durable_on_disk_while_child_runs(tmp_path, monkeypatch):
         )
 
 
+def test_exit_zero_without_metrics_fails_cell(tmp_path, monkeypatch):
+    """CR-02 pin (the Phase 13 verifier's sole mechanical evidence gap):
+    a child that exits 0 while leaving NO artifacts in its cell dir —
+    run_finetune.py's designed swallow-a-training-failure signal — must
+    finalize its claim FAILED with the missing-metrics error, never
+    completed: the claim keeps the child's real ``exit_code`` 0, every
+    other cell completes, the state counts account the cell as failed
+    and NOT completed, and the run exits 1 on the failed count. Every
+    existing fake-child helper writes the success artifact pair on
+    exit 0, so nothing drove the branch — deleting it left all 101
+    tests green; this test is the tripwire that goes red."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    silent = ("model-b", "task-z", 43)
+    calls = []
+
+    def swallowed_failure_spawner(argv, **kwargs):
+        # The make_child_spawner discipline (per-cell identity derived
+        # from the argv flags) for every cell EXCEPT the targeted one,
+        # whose child exits 0 writing NOTHING — the exit-0-without-
+        # metrics shape no existing helper can express (spy_spawner's
+        # comment names the artifact discipline this violates).
+        root = Path(flag_value(argv, "--output_dir"))
+        calls.append({"argv": list(argv), "kwargs": kwargs})
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell = (save, flag_value(argv, "--target_dataset"),
+                int(flag_value(argv, "--seed")))
+        if cell != silent:
+            cell_dir = root / save / cell[1] / f"seed_{cell[2]}"
+            cell_dir.mkdir(parents=True, exist_ok=True)
+            (cell_dir / run_sweep.METRICS_NAME).write_text(
+                json.dumps({"eval_loss": 0.5, "eval_accuracy": 0.9}),
+                encoding="utf-8")
+            (cell_dir / run_sweep.RESUME_MARKER).write_text(
+                '{"global_step": 1}', encoding="utf-8")
+        return FakeProc(0)
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            *DISPATCH_ARGV,
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=swallowed_failure_spawner)
+    assert excinfo.value.code == 1, (
+        "the swallowed failure drives the exit-1 verdict path"
+    )
+    assert len(calls) == 12, "every cell still drains"
+    # the branch fired on real on-disk evidence: the targeted cell holds
+    # NEITHER artifact while its child exited 0
+    silent_dir = run_sweep.cell_dir_for(base, *silent)
+    assert not (silent_dir / run_sweep.METRICS_NAME).is_file()
+    assert not (silent_dir / run_sweep.RESUME_MARKER).is_file()
+    # the claim ends FAILED naming the missing metrics, never completed
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(silent)).read_text(
+            encoding="utf-8"))
+    assert claim["state"] == dispatch_core.CLAIM_STATE_FAILED, (
+        "exit 0 without final_metrics.json is a FAILED cell"
+    )
+    assert claim["exit_code"] == 0, "the child's real exit code is kept"
+    assert claim["error"] == (
+        "child exited 0 but final_metrics.json is missing "
+        "(run_finetune.py swallowed a training failure)"), (
+        "the claim names the CR-02 missing-metrics error verbatim"
+    )
+    # honest accounting: the silent cell is failed, NOT completed
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 12, "completed": 11, "failed": 1, "skipped": 0}, (
+        "the swallowed failure is accounted failed — never completed"
+    )
+    failed_claims = [
+        path.name
+        for path in dispatch_core.ledger_dir_for(base).glob("*.json")
+        if path.name != dispatch_core.DISPATCHER_LOCK_NAME
+        and json.loads(path.read_text(encoding="utf-8"))["state"]
+        == dispatch_core.CLAIM_STATE_FAILED]
+    assert failed_claims == [dispatch_core.claim_filename(silent)], (
+        "exactly the silent cell failed; every other claim completed"
+    )
+
+
 def test_dispatch_state_file_exists_before_any_spawn(tmp_path, monkeypatch):
     """Pitfall 8 write-order pin: every spawn observes
     dispatch_state.json ALREADY on disk — the mode evidence precedes any
