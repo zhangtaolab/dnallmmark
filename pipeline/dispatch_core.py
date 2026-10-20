@@ -88,6 +88,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -120,6 +121,16 @@ CLAIM_STATE_FAILED = "failed"
 
 #: ``dispatch_state.json`` schema version (Phase 13 minimal shape).
 DISPATCH_STATE_SCHEMA_VERSION = 1
+
+#: The create-to-write grace window (CR-02, phase-13 review): the lock's
+#: ``O_EXCL`` create is atomic but its payload write happens afterwards,
+#: so a lock that exists yet parses to NO holder may be an IN-FLIGHT
+#: writer inside that window. A second dispatcher reading in the window
+#: must NOT reclaim (the reclaim would overwrite the first dispatcher's
+#: lock and put two dispatchers on one root); only a file older than
+#: this window is a provably dead writer (crashed mid-write) and
+#: reclaimable.
+_LOCK_WRITE_GRACE_SECONDS = 5.0
 
 # The relaunch skip-filter verdicts (pure per-cell decisions).
 _DECISION_SKIP = "skip"
@@ -455,12 +466,20 @@ def acquire_dispatcher_lock(ledger_dir, run_id, started_at):
     the recorded pid is probed with ``os.kill(pid, 0)`` — a LIVE pid
     (or a PermissionError, i.e. a live dispatcher under another user)
     refuses loudly naming the pid, run_id, and lock path; a
-    ``ProcessLookupError`` (provably dead) or a malformed/unreadable
-    lock is RECLAIMED by atomic overwrite. Reclaim-on-provable-death
-    only is the safe direction for pid reuse (T-13-03: a reused live
-    pid refuses); singleton-dispatcher semantics make the overwrite
-    sound — a second dispatcher structurally cannot exist while the
-    first lives.
+    ``ProcessLookupError`` (provably dead) or a lock that parses but
+    carries no usable pid is RECLAIMED by atomic overwrite.
+    Reclaim-on-provable-death only is the safe direction for pid reuse
+    (T-13-03: a reused live pid refuses); singleton-dispatcher semantics
+    make the overwrite sound — a second dispatcher structurally cannot
+    exist while the first lives.
+
+    Create-to-write window (CR-02, phase-13 review): an UNREADABLE or
+    EMPTY lock may be an in-flight writer between its atomic ``O_EXCL``
+    create and its payload write — reclaiming it immediately would
+    atomically overwrite the first dispatcher's lock and put TWO
+    dispatchers on one root. Such a lock is reclaimed only when older
+    than ``_LOCK_WRITE_GRACE_SECONDS`` (a provably dead writer); a
+    fresh one refuses loudly as a possible in-flight writer.
 
     Args:
         ledger_dir (Path): the ledger directory (exists).
@@ -473,7 +492,9 @@ def acquire_dispatcher_lock(ledger_dir, run_id, started_at):
 
     Raises:
         SystemExit: the lock names a LIVE holder — refused loudly naming
-        the pid, run_id, and lock path.
+        the pid, run_id, and lock path; or the lock is unreadable and
+        younger than the create-to-write grace window (a possible
+        in-flight writer).
     """
     lock_path = Path(ledger_dir) / DISPATCHER_LOCK_NAME
     payload = {
@@ -486,7 +507,22 @@ def acquire_dispatcher_lock(ledger_dir, run_id, started_at):
                      0o644)
     except FileExistsError:
         holder = _read_lock_holder(lock_path)
-        if holder is not None and isinstance(holder.get("pid"), int):
+        if holder is None:
+            # CR-02: an empty/unreadable lock with a FRESH mtime may be
+            # an in-flight writer inside the create-to-write window —
+            # refuse; the singleton guarantee must hold in that window
+            # too. Only a file older than the grace window is a provably
+            # dead writer (crashed mid-write) and reclaimable. An
+            # unstatable file also refuses (the safe direction).
+            try:
+                age = time.time() - lock_path.stat().st_mtime
+            except OSError:
+                age = 0.0
+            if age < _LOCK_WRITE_GRACE_SECONDS:
+                sys.exit(_unwritten_lock_refusal(lock_path))
+            _atomic_write_json(lock_path, payload)  # provably stale
+            return lock_path
+        if isinstance(holder.get("pid"), int):
             holder_pid = holder["pid"]
             holder_run = holder.get("run_id")
             try:
@@ -502,7 +538,7 @@ def acquire_dispatcher_lock(ledger_dir, run_id, started_at):
             else:
                 sys.exit(_live_holder_refusal(
                     lock_path, holder_pid, holder_run))
-        # Malformed/unreadable lock, no usable pid, or a provably dead
+        # A parseable lock with no usable pid, or a provably dead
         # holder: reclaim by atomic overwrite (decision A5).
         _atomic_write_json(lock_path, payload)
         return lock_path
@@ -519,6 +555,18 @@ def _live_holder_refusal(lock_path, holder_pid, holder_run):
         "ONE dispatcher may run per output root (MGPU-02); stop the "
         "running dispatcher before relaunching (if the pid is stale, the "
         "holder is dead and the next launch reclaims automatically)"
+    )
+
+
+def _unwritten_lock_refusal(lock_path):
+    """Build the in-flight-writer refusal (CR-02, phase-13 review)."""
+    return (
+        f"[Error] dispatcher lock at {lock_path} exists but names no "
+        "holder and was created moments ago — another dispatcher may be "
+        "between its lock create and its payload write; retry in a few "
+        "seconds (a lock left unwritten by a crashed writer is reclaimed "
+        f"automatically once older than "
+        f"{_LOCK_WRITE_GRACE_SECONDS:.0f}s)"
     )
 
 

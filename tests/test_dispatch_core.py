@@ -85,6 +85,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote
@@ -1423,13 +1424,19 @@ def test_lock_dead_pid_is_reclaimed(tmp_path, monkeypatch):
 
 def test_lock_malformed_content_is_reclaimed(tmp_path, monkeypatch):
     """A5: a malformed/unreadable lock cannot name a live holder — the
-    run reclaims it by atomic overwrite and proceeds."""
+    run reclaims it by atomic overwrite and proceeds. The lock's mtime
+    is BACKDATED past the create-to-write grace window (CR-02): a
+    malformed lock from a dead run is old by definition, while a FRESH
+    unwritten lock is an in-flight writer and refuses (see below)."""
     registry_dir = make_registry(tmp_path)
     base = (tmp_path / "finetuned").resolve()
     ledger_dir = dispatch_core.ledger_dir_for(base)
     ledger_dir.mkdir(parents=True)
-    (ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME).write_text(
-        "not json at all {", encoding="utf-8")
+    lock_path = ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME
+    lock_path.write_text("not json at all {", encoding="utf-8")
+    stale = time.time() - (
+        dispatch_core._LOCK_WRITE_GRACE_SECONDS + 60.0)
+    os.utime(lock_path, (stale, stale))
     calls = []
     run_cli(monkeypatch, [
         "--mode", "dispatch", "--workers", "1",
@@ -1438,6 +1445,59 @@ def test_lock_malformed_content_is_reclaimed(tmp_path, monkeypatch):
         "--registry-dir", str(registry_dir),
     ], spawner=make_child_spawner(calls))
     assert len(calls) == 1
+
+
+def test_lock_empty_fresh_window_refuses_inflight_writer(
+        tmp_path, monkeypatch):
+    """CR-02 pin: an EMPTY lock file with a FRESH mtime is treated as an
+    in-flight writer inside the create-to-write window — the launch
+    refuses loudly instead of reclaiming (reclaiming there would put TWO
+    dispatchers on one root, defeating the singleton guarantee)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    lock_path = ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME
+    lock_path.write_text("", encoding="utf-8")  # fresh mtime: just written
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    message = str(excinfo.value)
+    assert str(lock_path) in message
+    assert "no holder" in message
+    assert "retry" in message, "the refusal tells the operator to retry"
+    assert not calls, "no child spawns while the window is unresolved"
+    assert lock_path.read_text(encoding="utf-8") == "", (
+        "the possibly-in-flight lock is left untouched (never reclaimed)"
+    )
+
+
+def test_lock_empty_stale_window_is_reclaimed(tmp_path, monkeypatch):
+    """CR-02 pin: an EMPTY lock older than the grace window is a provably
+    dead writer (crashed between create and write) — reclaimed and the
+    run proceeds."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    lock_path = ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME
+    lock_path.write_text("", encoding="utf-8")
+    stale = time.time() - (
+        dispatch_core._LOCK_WRITE_GRACE_SECONDS + 60.0)
+    os.utime(lock_path, (stale, stale))
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the expired empty lock is reclaimed"
 
 
 def test_skip_set_is_order_independent(tmp_path):
