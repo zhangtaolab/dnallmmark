@@ -5,11 +5,11 @@ milestone_name: 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
 current_phase: 15
 current_phase_name: 双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)
 status: executing
-stopped_at: "Completed 15-02-PLAN.md (subset generator + 21-pin suite, all CPU gates green) — next: 15-03 real materialization + small real sweep"
-last_updated: "2026-10-20T15:46:41.527Z"
+stopped_at: "15-03 HALTED at Task 3 consumption criterion (eval-metrics seam gap, WINDOWS #45) — Tasks 1-2 green, D15-15 checks landed; remediation ruling required"
+last_updated: "2026-10-20T16:09:36.803Z"
 last_activity: 2026-10-20
 last_activity_desc: Phase 15 execution started
-state_head: 86f44515e78e3d10b67ae9c4a8ca16b64999ccba
+state_head: fa04cb6b0d19d3fe09ecc320a9abd349fa3e0a5b
 progress:
   total_phases: 6
   completed_phases: 1
@@ -115,6 +115,7 @@ Last activity: 2026-10-20 — 15-01 complete (resumed after 15-04: fresh 2-cell 
 | Phase 15 P15-04 | 51 min | 2 tasks | 3 files |
 | Phase 15 P15-01 | 47 min | 3 tasks | 6 files |
 | Phase 15 P15-02 | 8 min | 2 tasks | 7 files |
+| Phase 15 P15-03 | 20 min | 2 of 3 (Task 3 D15-15 leg landed; consumption criterion blocked) tasks | 3 files |
 
 ## Accumulated Context
 
@@ -284,6 +285,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 15]: 15-01 fresh-root discipline: halt evidence root preserved; re-runs use suffixed roots (finetuned-smoke*/ gitignore family) so trainer_state marker-skip can never mask a regression
 - [Phase 15]: 15-02: D15-06 pinned as k = max(1, int(n*fraction)) capped at n with actual_fraction=k/n per split; largest-remainder allocation in integer arithmetic, remainder ties give the extra row to the EARLIEST sorted label (5mC pins 53/52, 6/5, 59/58)
 - [Phase 15]: 15-02: emp_H3 test split is 37/37 not the plan bullet's 36/38 — the research table's allocation column is internally inconsistent; quotas 36.68/37.32 give label 0 the extra row (verified against real probe CSVs); partial-success registry policy: write registries with successful tasks only, zero successes = no registry write
+- [Phase 15]: 15-03 HALT: eval metrics never persist to final_metrics (run_finetune:1706 bare trainer.evaluate() discard since the port) — real sweep exports empty score slots, summarize emits {} and skips all species files; WINDOWS #45; remediation ruling required (options A/B/C)
+- [Phase 15]: 15-03 arena premise error: comparison files group by DATASET Category (5mC=Animals-resolved, emp_H3=Microbe), not model species — models_comparison_plant.json unproducible from this dataset pair; archive list needs replan
 
 ### Pending Todos
 
@@ -297,6 +300,7 @@ None yet.
 - Custom-registry storage location (`~/.config/dnallmmark/` vs repo-local ignored dir) and the exact overlay read seam are Phase 7/9 discuss items — the user-owned-file principle itself is fixed
 - v0.7.1 carryover registry questions (space/SPACE merge decision; 7 models without locatable public cards) remain maintainer-owned — outside v1.2 scope unless registries are touched
 - 15-01 remediation LANDED (15-04 complete, 2026-10-20): dispatch_core now writes run_record.json at claim finalize (run_sweep _new_record parity, WR-12 no-overwrite, CR-04-routed failures; supersedes Phase 13 A3) — RESOLVED 2026-10-20: the 15-01 continuation re-ran the fresh 2-cell smoke (finetuned-smoke-r2) green on ALL D15-02 criteria incl. "[Dry-run] 2 run record(s)"; docs/multi-gpu.md dispatch-mode rewrite landed, WINDOWS #21/#44 closed, PROJECT.md D-05 done, VAL-01 complete.
+- 15-03 Task 3 blocked (WINDOWS #45): producer->consumer eval-metrics seam gap — run_finetune discards trainer.evaluate() results (eval scores only in trainer_state log_history), export_runs reads final_metrics verbatim, so the 12-cell sweep's consumption chain emits empty scores and no species comparison file; plus the plan's plant-arena artifact is unproducible (datasets group Animals/Microbe). Maintainer remediation ruling required (15-01->15-04 precedent); Tasks 1-2 green (sweep done 12/12 skipped 0), D15-15 checks landed.
 
 ### Quick Tasks Completed
 
@@ -355,8 +359,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T15:46:41.279Z
-Stopped at: Completed 15-02-PLAN.md (subset generator + 21-pin suite, all CPU gates green) — next: 15-03 real materialization + small real sweep
+Last session: 2026-10-20T16:09:36.603Z
+Stopped at: 15-03 HALTED at Task 3 consumption criterion (eval-metrics seam gap, WINDOWS #45) — Tasks 1-2 green, D15-15 checks landed; remediation ruling required
 Resume file: None
 
 ## Operator Next Steps
