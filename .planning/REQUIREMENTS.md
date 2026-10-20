@@ -19,7 +19,7 @@ Requirements for milestone v1.3. Each maps to roadmap phases (Traceability below
 ### VAL — 双卡验证（本机 2×5090）
 
 - [x] **VAL-01**: The `docs/multi-gpu.md` N=2 smoke procedure executes successfully on the local 2× RTX 5090 box (WINDOWS #21 closed); the D-05 machine-role decision is revised in-doc (本机 = 双卡验证机)
-- [ ] **VAL-02**: 5% sub-datasets are pre-materialized as first-class dataset directories — deterministic seed-governed STRATIFIED sampling per split, measured row counts carried in a dedicated subset registry/config file, separate output roots; subset runs and real runs never share a registry, config, or output root
+- [x] **VAL-02**: 5% sub-datasets are pre-materialized as first-class dataset directories — deterministic seed-governed STRATIFIED sampling per split, measured row counts carried in a dedicated subset registry/config file, separate output roots; subset runs and real runs never share a registry, config, or output root
 - [ ] **VAL-03**: A small real sweep (≈2-4 models × 2-3 datasets × 3 seeds, 1 epoch, 5% subsets) completes on both GPUs through dynamic dispatch → merge/data-chain consumption end-to-end with real training
 
 ### DOCS — 文档撰写
@@ -79,7 +79,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MGPU-04 | Phase 14 | Complete |
 | MGPU-05 | Phase 14 | Complete |
 | VAL-01 | Phase 15 | Complete (15-01, 2026-10-20: dispatch N=2 smoke executed on both 5090s — dispatch_state done 2/2, both GPUs produced cells, consumption dry-run "[Dry-run] 2 run record(s)" after the 15-04 run_record fix; docs/multi-gpu.md rewritten as the executed procedure, D-05 revised 本机=双卡验证机, WINDOWS #21 closed) |
-| VAL-02 | Phase 15 | Pending |
+| VAL-02 | Phase 15 | Complete |
 | VAL-03 | Phase 15 | Pending |
 | TUI-01 | Phase 16 | Pending |
 | TUI-02 | Phase 16 | Pending |

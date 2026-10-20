@@ -5,16 +5,16 @@ milestone_name: 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
 current_phase: 15
 current_phase_name: 双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)
 status: executing
-stopped_at: "Completed 15-01-PLAN.md (resumed after 15-04: fresh 2-cell smoke green incl. consumption dry-run; docs/WINDOWS/D-05/VAL-01 closed) — next: 15-02 subset generator, then 15-03"
-last_updated: "2026-10-20T15:31:03.734Z"
+stopped_at: "Completed 15-02-PLAN.md (subset generator + 21-pin suite, all CPU gates green) — next: 15-03 real materialization + small real sweep"
+last_updated: "2026-10-20T15:46:41.527Z"
 last_activity: 2026-10-20
 last_activity_desc: Phase 15 execution started
-state_head: 5295cbd364488be0f8195b3878717d6292a72b84
+state_head: 86f44515e78e3d10b67ae9c4a8ca16b64999ccba
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
   percent: 17
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 ## Current Position
 
 Phase: 15 (双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-10-20 — 15-01 complete (resumed after 15-04: fresh 2-cell smoke green on all D15-02 criteria; docs/multi-gpu.md dispatch rewrite, WINDOWS #21/#44 closed, D-05 done, VAL-01 complete) — next 15-02
 
@@ -114,6 +114,7 @@ Last activity: 2026-10-20 — 15-01 complete (resumed after 15-04: fresh 2-cell 
 | Phase 14 P03 | 18 min | 2 tasks | 3 files |
 | Phase 15 P15-04 | 51 min | 2 tasks | 3 files |
 | Phase 15 P15-01 | 47 min | 3 tasks | 6 files |
+| Phase 15 P15-02 | 8 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -281,6 +282,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 15]: [15-04] Cell-dir mkdir parity in the record writer: a child dying before mkdir still gets its failed record without CR-04 clobbering the cell's own CR-02 verdict; only records that PARSE completed are refusal-protected (unprovable provenance is replaceable)
 - [Phase 15]: 15-01 complete: dispatch N=2 smoke ALL D15-02 criteria green on fresh-root re-run (finetuned-smoke-r2, 155s, both GPUs, [Dry-run] 2 run records) after 15-04's run_record fix; docs/multi-gpu.md rewritten as executed procedure, D-05 revised 本机=双卡验证机, WINDOWS #21/#44 closed, VAL-01 done
 - [Phase 15]: 15-01 fresh-root discipline: halt evidence root preserved; re-runs use suffixed roots (finetuned-smoke*/ gitignore family) so trainer_state marker-skip can never mask a regression
+- [Phase 15]: 15-02: D15-06 pinned as k = max(1, int(n*fraction)) capped at n with actual_fraction=k/n per split; largest-remainder allocation in integer arithmetic, remainder ties give the extra row to the EARLIEST sorted label (5mC pins 53/52, 6/5, 59/58)
+- [Phase 15]: 15-02: emp_H3 test split is 37/37 not the plan bullet's 36/38 — the research table's allocation column is internally inconsistent; quotas 36.68/37.32 give label 0 the extra row (verified against real probe CSVs); partial-success registry policy: write registries with successful tasks only, zero successes = no registry write
 
 ### Pending Todos
 
@@ -352,8 +355,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T15:31:03.499Z
-Stopped at: Completed 15-01-PLAN.md (resumed after 15-04: fresh 2-cell smoke green incl. consumption dry-run; docs/WINDOWS/D-05/VAL-01 closed) — next: 15-02 subset generator, then 15-03
+Last session: 2026-10-20T15:46:41.279Z
+Stopped at: Completed 15-02-PLAN.md (subset generator + 21-pin suite, all CPU gates green) — next: 15-03 real materialization + small real sweep
 Resume file: None
 
 ## Operator Next Steps
