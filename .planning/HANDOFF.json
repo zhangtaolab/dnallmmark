@@ -1,68 +1,46 @@
 {
   "version": "1.0",
-  "timestamp": "2026-10-20T10:30:00+08:00",
-  "phase": "milestone-closeout",
-  "phase_name": "v1.2 archive COMPLETE (steps 1-13 done; tagged v1.2; pushed)",
-  "phase_dir": ".planning",
-  "status": "complete",
+  "timestamp": "2026-10-20T02:07:14.004Z",
+  "phase": null,
+  "phase_name": null,
+  "phase_dir": null,
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
+  "status": "paused",
+  "workflow": "gsd-new-milestone v1.3 — paused at Step 8 (research decision), before REQUIREMENTS.md/ROADMAP.md",
   "completed_tasks": [
-    {
-      "id": 1,
-      "name": "261020-9vh stale-progress guard: rerun at reused root never shows the killed run's old checkpoint numbers (live-start evidence; real-/proc pty pin)",
-      "status": "done (4997239/b15be8d)"
-    },
-    {
-      "id": 2,
-      "name": "261020-asm tree all-expanded default made explicit + dual-lane mutation-verified pins (E ruling)",
-      "status": "done (f3716e5/4064b38)"
-    },
-    {
-      "id": 3,
-      "name": "261020-blt planned-cell union: live evidence carries --seeds; row set = discovered UNION planned (queued synthesized rows) — the twice-reported 'only one model shows' bug ROOT-CAUSED (driver mkdirs cell dirs only on reach) and FIXED; real-scenario verified both models + 0/12",
-      "status": "done (7e90a0b/68a74fb)"
-    },
-    {
-      "id": 4,
-      "name": "all pushed through edb2817; tree clean; CI green lineage",
-      "status": "done"
-    },
-    {
-      "id": 5,
-      "name": "v1.2 archive steps 8-13: ROADMAP collapse (sentinel), PROJECT evolution (+Linux-only platform rule), RETROSPECTIVE, override disclosures, git rm REQUIREMENTS, tag v1.2 + push",
-      "status": "done"
-    }
+    {"id": 1, "name": "Load context + parse milestone arg (v1.3 需要完成多 GPU 的开发和测试)", "status": "done"},
+    {"id": 2, "name": "Questioning: scope confirmed via 3 AskUserQuestion rounds (granularity, extras, sweep scale, web error bars)", "status": "done"},
+    {"id": 3, "name": "Milestone summary confirmed by user (7 target features)", "status": "done"},
+    {"id": 4, "name": "PROJECT.md updated (Current Milestone v1.3 section, 4 new Key Decisions, Active pointer, footer)", "status": "done"},
+    {"id": 5, "name": "STATE.md switched to v1.3 多 GPU 编排与验证 / planning via state.milestone-switch", "status": "done"},
+    {"id": 6, "name": "phases.clear (no-op, 0 cleared) + milestone-start commit", "status": "done", "commit": "000f86c"}
   ],
   "remaining_tasks": [
-    {
-      "id": 6,
-      "name": "Post-archive: /gsd-new-milestone when the maintainer is ready (TUI selection-matrix milestone per memory, or their next call)",
-      "status": "blocked_on_human"
-    }
+    {"id": 7, "name": "new-milestone Step 7: resolve agent skills (gsd_run query agent-skills gsd-project-researcher/gsd-research-synthesizer/gsd-roadmapper)", "status": "not_started"},
+    {"id": 8, "name": "new-milestone Step 8: research decision AskUserQuestion (research_enabled=true in config; DO NOT persist choice)", "status": "not_started"},
+    {"id": 9, "name": "new-milestone Step 9: define REQUIREMENTS.md with REQ-IDs from the 7 confirmed target features", "status": "not_started"},
+    {"id": 10, "name": "new-milestone Step 10: spawn gsd-roadmapper — phases continue at 13 (v1.2 ended at 12; no --reset-phase-numbers)", "status": "not_started"},
+    {"id": 11, "name": "new-milestone Step 10.5: link pending todos (only todos/pending/declare-pyyaml-rich-direct-deps.md exists — likely unrelated to multi-GPU, do not over-match)", "status": "not_started"},
+    {"id": 12, "name": "new-milestone Step 11: done block → /gsd-discuss-phase 13", "status": "not_started"}
   ],
   "blockers": [],
-  "human_actions_pending": [
-    {
-      "action": "Restart TUI to pick up 9vh+asm+blt (stale progress guard, all-expanded tree, planned-cell union); launch a multi-model run to see the full tree",
-      "context": "the one-model bug is fixed; verify live at their leisure",
-      "blocking": false
-    }
-  ],
   "async_jobs": [],
+  "human_actions_pending": [],
   "decisions": [
-    {
-      "decision": "Tree variant E selected (2026-10-20 07:12) with the locked expand contract (per-branch arrows + asterisk all-toggle)",
-      "phase": "ux"
-    },
-    {
-      "decision": "Multi-GPU display: G (GPU lanes) deferred — revisit when multi-GPU work resumes; nvidia-smi read-only probe noted as the prerequisite",
-      "phase": "ux"
-    },
-    {
-      "decision": "planned-cell union is PRESENTATION-scoped: synthesized queued rows never leak into History/drill/[e] (service stays root-wide truth)",
-      "phase": "design"
-    }
+    {"decision": "Multi-GPU mode = cell-level dynamic dispatch (work queue): (model×dataset×seed) cells enqueued, idle GPU pulls next; size-(M) static LPT sharding retired as primary mode", "rationale": "Maintainer 2026-10-20: 每个任务分配一块显卡、不要用一个任务在多块卡上跑 — natural load balancing without cost estimation", "phase": "v1.3-init"},
+    {"decision": "No DDP (不做 DDP)", "rationale": "Re-affirms v1.2 D-04; run_finetune.py WORLD_SIZE/LOCAL_RANK seam stays documented-only", "phase": "v1.3-init"},
+    {"decision": "Orchestrator-level live run view (per-worker progress/failure aggregation; terminal table or state file for TUI/web mirror)", "rationale": "Selected by maintainer in extras round", "phase": "v1.3-init"},
+    {"decision": "Failure recovery & cleanup: cross-worker failure re-run (overturns v1.2's deliberate no-convenience-flag decision) + post-merge verify/cleanup helper", "rationale": "Selected by maintainer in extras round", "phase": "v1.3-init"},
+    {"decision": "TUI multi-GPU surface: slot-4 multi-GPU launch (workers/gpus; single-GPU serial gate from 261015-ehc revised), monitor integration, G GPU-lanes display (nvidia-smi read-only probe, v1.2 deferred item)", "rationale": "Selected by maintainer; G-lanes deferral was explicitly 'until multi-GPU work resumes'", "phase": "v1.3-init"},
+    {"decision": "N=2 bounded smoke runs on THIS 2× RTX 5090 box per docs/multi-gpu.md, closing WINDOWS #21; D-05 machine-role decision (开发本机/验证他机) revised — local box is now the validation machine", "rationale": "D-05 was set when local was single-GPU; AutoDL box now has 2× 5090", "phase": "v1.3-init"},
+    {"decision": "Small real sweep uses PRE-MATERIALIZED 5% sub-datasets (deterministic subsets of real datasets, own directory tree) with a SEPARATE config file from real runs", "rationale": "Maintainer 2026-10-20: 小数据集需要提前生产，与真实数据使用不同的配置文件 — subset runs and real runs never mix (NOT runtime --train_fraction)", "phase": "v1.3-init"},
+    {"decision": "Sweep test depth = N=2 bounded smoke + small-scale REAL sweep at 1 epoch (小规模 1-epoch), through both GPUs → --merge → data chain", "rationale": "Hours-scale GPU budget; validates the full chain", "phase": "v1.3-init"},
+    {"decision": "Results must reach the final web pages WITH multi-seed error bars (mean±std/CI on scatter/bar charts); aggregation scripts + Chart.js frontend, no-build constraint unchanged", "rationale": "Maintainer addition 2026-10-20: 结果需要适配最后的 web 页面，多种子的需要有 error bar 等", "phase": "v1.3-init"},
+    {"decision": "Open design question deferred to plan-phase: output-root/resume-marker ownership under dynamic dispatch (today each worker owns a frozen {root}-mgpu-w{i} root; a cell pulled by worker B must not be blocked by worker A's marker)", "rationale": "Recognized during questioning; recorded as plan-time item, not a user decision", "phase": "v1.3-init"}
   ],
-  "uncommitted_files_hint": "only .planning/.gsd-allow-shrink untracked (tooling sentinel, never committed)",
-  "next_action": "/gsd-new-milestone when the maintainer is ready",
-  "context_notes": "Fake-probe repro recipe (proven twice): .venv/bin/python -c 'import time; time.sleep(N)' run_sweep.py --models a,b --tasks t1,t2 --seeds 42,43,44 --output-root <root> — argv carries run_sweep.py so probe_cli_sweeps matches; kill by pid after. Windows ledger now 8 open / 6 waived / 28 fixed (8 = #21 other-machine N=2 + #2-8 model-card metadata, all external)."
+  "uncommitted_files": [" M .planning/state.json", "?? .planning/.gsd-ws-arg"],
+  "next_action": "Resume the gsd-new-milestone workflow from Step 8: run the research-decision AskUserQuestion (research_enabled=true), then define REQUIREMENTS.md from the 7 confirmed target features in PROJECT.md ## Current Milestone, then spawn gsd-roadmapper with phases starting at 13. Do NOT re-run state.milestone-switch or re-do questioning — v1.3 is already committed as the current milestone (000f86c).",
+  "context_notes": "User-facing communication in Chinese (user typed milestone arg and all answers in Chinese; response_language config empty). The 7-feature scope and all maintainer quotes are recorded in PROJECT.md ## Current Milestone + Key Decisions and in this file's decisions[] — a fresh session can write REQUIREMENTS.md from these without re-questioning. .planning/.gsd-ws-arg is an empty transient file the new-milestone workflow deletes at its Step 10 commit. constraints: CI stays N>1-free; E2' gates not relaxed for TUI multi-GPU launch."
 }
