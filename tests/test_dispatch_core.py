@@ -1825,6 +1825,57 @@ def test_worker_finalize_failure_fails_cell_not_run(
     )
 
 
+def test_worker_state_write_failure_keeps_truthful_claims(
+        tmp_path, monkeypatch):
+    """WR-03 pin (ledger truth): a worker-thread-ONLY state-write
+    failure (here: ENOSPC on ``dispatch_state.json`` while the ledger
+    dir stays writable — ``finalize_claim`` untouched) strikes AFTER the
+    cell was already finalized and accounted. The containment must NOT
+    re-finalize the claim: every on-disk claim keeps its truthful
+    terminal state (completed, the child's real ``exit_code`` 0) while
+    the run's counts, end-of-run state write, and exit code stay
+    honest."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    _worker_state_writes_always_fail(monkeypatch)
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a,model-b", "--tasks", "task-x",
+        "--seeds", "42,43",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 4, (
+        "every cell still drains — the accounted-case swallow continues"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["status"] == "done", (
+        "nothing actually failed — the run is honestly done"
+    )
+    assert state["counts"] == {
+        "total": 4, "completed": 4, "failed": 0, "skipped": 0}, (
+        "honest counts from the end-of-run main-thread state write"
+    )
+    claims = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in dispatch_core.ledger_dir_for(base).glob("*.json")
+        if path.name != dispatch_core.DISPATCHER_LOCK_NAME]
+    assert len(claims) == 4
+    for claim in claims:
+        assert claim["state"] == dispatch_core.CLAIM_STATE_COMPLETED, (
+            "an already-truthful claim is never flipped to failed"
+        )
+        assert claim["exit_code"] == 0, (
+            "the child's real exit code is never clobbered to null"
+        )
+        assert claim["error"] is None, (
+            "no dispatcher-side failure is fabricated onto the claim"
+        )
+
+
 @pytest.mark.filterwarnings(
     "ignore::pytest.PytestUnhandledThreadExceptionWarning")
 def test_worker_death_drains_loudly_incomplete(tmp_path, monkeypatch):

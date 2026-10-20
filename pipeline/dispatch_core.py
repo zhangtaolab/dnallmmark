@@ -791,26 +791,35 @@ def _spawn_worker(index, gpu, tee, context):
                 # error path. If this handler itself dies (a systemic
                 # write failure), the post-join accounting assertion in
                 # run_dispatch refuses loudly instead.
-                if claim_path is not None and payload is not None:
-                    payload["exit_code"] = None
-                    payload["error"] = (
-                        f"dispatcher-side failure: "
-                        f"{type(exc).__name__}: {exc}")
-                    payload["finished_at"] = _now_iso()
-                    payload["state"] = CLAIM_STATE_FAILED
-                    try:
-                        finalize_claim(claim_path, payload)
-                    except OSError:
-                        pass  # best-effort: the failed count + exit 1
-                        # below remain the hard guarantee
                 if not accounted:
+                    # WR-03 (phase-13 review): the claim rewrite is gated
+                    # on the SAME flag as the count. accounted=True means
+                    # finalize_claim ALREADY persisted this cell's
+                    # truthful terminal state and the count was already
+                    # incremented — the only operation after that point
+                    # is the state write, so an exception there must NOT
+                    # overwrite a completed claim with
+                    # failed/dispatcher-side failure/exit_code null (the
+                    # ledger is Phase 14 MGPU-04's designed re-run feed;
+                    # a lying claim re-runs completed cells). The
+                    # end-of-run final write persists the truthful
+                    # counts — swallow and continue.
+                    if claim_path is not None and payload is not None:
+                        payload["exit_code"] = None
+                        payload["error"] = (
+                            f"dispatcher-side failure: "
+                            f"{type(exc).__name__}: {exc}")
+                        payload["finished_at"] = _now_iso()
+                        payload["state"] = CLAIM_STATE_FAILED
+                        try:
+                            finalize_claim(claim_path, payload)
+                        except OSError:
+                            pass  # best-effort: the failed count + exit 1
+                            # below remain the hard guarantee
                     # Counted here ONLY if the normal path never reached
                     # its increment (double-counting a cell that already
                     # incremented completed/failed would corrupt the
-                    # accounting assertion in run_dispatch). When the
-                    # cell was already counted and only the state WRITE
-                    # failed, the end-of-run final write persists the
-                    # truthful counts — swallow and continue.
+                    # accounting assertion in run_dispatch).
                     with state_lock:
                         context["counts"]["failed"] += 1
                         stats["failed"] += 1
