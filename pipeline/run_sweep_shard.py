@@ -370,6 +370,19 @@ def parse_args(argv=None):
              "subprocess, no cell dirs (the CPU-side disjointness proof)"
     )
     parser.add_argument(
+        "--mode",
+        type=str,
+        default="static",
+        choices=["static", "dispatch"],
+        help="Orchestration mode (13-01, MGPU-06): 'static' (default) = "
+             "legacy LPT model-sharded run_sweep.py workers under frozen "
+             "{root}-mgpu-w{i} sibling roots; 'dispatch' = ONE dispatcher "
+             "process feeding idle per-GPU workers from a deterministic "
+             "(model x task x seed) cell queue under ONE shared root "
+             "guarded by an O_EXCL claim ledger and a singleton "
+             "dispatcher lock (dispatch roots need no merge)"
+    )
+    parser.add_argument(
         "--merge",
         action="store_true",
         default=False,
@@ -1065,8 +1078,29 @@ def main(spawner=None, clock=None):
             never truncates the prior launch's crash log).
     """
     args, passthrough = parse_args()
+    # A6 (locked): --mode dispatch + --merge on one command line is
+    # refused BEFORE either mode runs — dispatch writes ONE shared root
+    # with ordinary per-cell subpaths, so dispatch roots need no merge
+    # (MGPU-06); mode combination is deterministic, never order-dependent.
+    if args.merge and args.mode == "dispatch":
+        sys.exit(
+            "[Error] --mode dispatch cannot combine with --merge: "
+            "dispatch mode writes ONE shared root with ordinary "
+            "per-cell subpaths ({root}/{model}/{task}/seed_{seed}/), so "
+            "dispatch roots need no merge (MGPU-06) — run the modes "
+            "separately"
+        )
     if args.merge:
         return run_merge(args, passthrough)
+    if args.mode == "dispatch":
+        # Lazy import (the 09-06 WizardModal cycle-breaking precedent):
+        # dispatch_core imports THIS module at its top (it reuses
+        # _parse_gpus and the log-stamp format), so a module-top import
+        # here would be circular.
+        import dispatch_core
+
+        return dispatch_core.run_dispatch(
+            args, passthrough, spawner=spawner, clock=clock)
     problems = []
 
     # --models is launch-mode-required at the validation layer (argparse
