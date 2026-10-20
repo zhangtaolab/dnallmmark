@@ -22,10 +22,10 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-11)
+See: .planning/PROJECT.md (updated 2026-10-20)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 13 — 动态调度核心
+**Current focus:** Phase 14 — 编排运行视图与失败恢复
 
 ## Current Position
 
@@ -116,6 +116,9 @@ Last activity: 2026-10-20 — Phase 13 complete, transitioned to Phase 14
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
 
+- [Phase 13]: dispatch ledger rulings locked — no in-run failure requeue (Phase 14 MGPU-04 owns re-run over the failure ledger); no sweep_manifest/run_record on real dispatch roots (dry-run plan artifact is the only manifest); stale-lock reclaim = pid-liveness with loud live-pid refusal (A5)
+- [Phase 13]: dispatch engine = new sibling `pipeline/dispatch_core.py` (lazy-imported by run_sweep_shard.main behind `--mode {static,dispatch}`, default static); claim naming = percent-encoded fields + sha256[:12]; ledger `{root}/dispatch_ledger/`, lock `dispatcher.lock`, state `{root}/dispatch_state.json`; all paths derive from run_sweep.cell_dir_for (seed_{seed} layout)
+- [Phase 13]: code-review hardening landed with mutation-proven pins — CR-01 --from-failures honored in dispatch mode, CR-02 lock create-to-write 5s grace window, CR-03 child pid persisted before wait(), CR-04 per-cell containment + post-join accounting assertion, WR-01 subset-file mirror, WR-02 out-of-range pid reclaim, WR-03 accounted claims never re-finalized; 5 info-severity items tracked open in 13-REVIEW-DISPOSITION.md (IN-05 defers to run_sweep.py owner)
 - Roadmap v1.2 revision (maintainer, 2026-10-11): custom entries split along the maintainer-drawn seam — the pipeline-side registry overlay (CUST-05) joined Phase 7 (same run_sweep/run_finetune files, same byte-identical-when-absent discipline as argv parity, must precede wizard consumption); the wizard surface (CUST-01..04, CUST-06) is a dedicated Phase 9 directly after the selection foundation it marks; downstream phases renumbered 9→10, 10→11, 11→12 (free — zero plans existed)
 - Custom/official registry separation is binding (maintainer refinement: 自定义不与官方放在一起，免得冲突): wizards write only user-owned `~/.config/dnallmmark/custom_{models,datasets}.json`; official `pipeline/{models,datasets}_info.json` never written by custom flows; overlay fails fast on custom-key collision with official; absent custom files = byte-identical behavior, existing tests untouched — recorded as binding constraint 11 in ROADMAP.md
 - Roadmap v1.2 (pre-revision): pipeline enablement → TUI foundation → data manager → config/launch/monitor (single-GPU) → multi-GPU + extras; Phase 12 hard-gated on Phase 11 validation (maintainer sequencing 单卡→多卡); requirement count corrected 28 → 32 → 38 (CUST category added by revision)

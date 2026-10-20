@@ -94,7 +94,8 @@ Every number on the public leaderboard is correct and reproducible from code tha
 | Custom/official registry separation is absolute (user-owned `~/.config/dnallmmark/custom_*.json`, collision fail-fast, byte-identical when absent) | Maintainer refinement 2026-10-11: 自定义的不与官方放在一起，免得冲突 | ✓ Landed (Phase 7 seam + Phase 9 wizards) |
 | Multi-GPU = static model sharding × CUDA_VISIBLE_DEVICES over DDP (documented applicability matrix) | Single-large-model acceleration vs multi-model throughput are different problems; sharding fits the 62-model benchmark shape | ✓ Landed (Phase 12, `docs/multi-gpu.md`) |
 | v1.2 closeout = override_closeout; verify-staleness cascade acknowledged, verifiers not re-dispatched during archive | Covered-file digests re-stale phases on every later commit; gates were green 2026-10-19 23:50 — re-dispatching verifiers mid-archive would loop | ✓ Recorded (MILESTONES.md disclosures, 2026-10-19) |
-| v1.3 multi-GPU mode = cell-level dynamic dispatch (work queue); one cell = one GPU, never split | Maintainer 2026-10-20: 每个任务分配一块显卡、不要用一个任务在多块卡上跑 — natural load balancing without cost estimation; supersedes static LPT size-(M) sharding as the primary mode | — Pending |
+| v1.3 multi-GPU mode = cell-level dynamic dispatch (work queue); one cell = one GPU, never split | Maintainer 2026-10-20: 每个任务分配一块显卡、不要用一个任务在多块卡上跑 — natural load balancing without cost estimation; supersedes static LPT size-(M) sharding as the primary mode | ✓ Landed (Phase 13, 2026-10-20; static mode coexists behind `--mode`)
+| Phase 13 dispatch ledger rulings: no in-run failure requeue (A2); no sweep_manifest on real dispatch roots (A3); stale-lock reclaim = pid-liveness with live-pid loud refusal (A5) | Research planner-gated decisions resolved in 13-01; Phase 14 MGPU-04 owns failure re-run over the ledger feed | ✓ Landed (Phase 13; code-review CR-01..04/WR-01..03 fixed with mutation-proven pins) |
 | v1.3: DDP remains not implemented | Maintainer 2026-10-20: 不做 DDP — re-affirms v1.2 D-04; the `WORLD_SIZE`/`LOCAL_RANK` seam stays documented-only | — Pending |
 | D-05 machine-role revision: the local 2×5090 box is now the N=2 validation machine | D-05 was set when local was single-GPU (开发本机/验证他机); the AutoDL box now carries 2× RTX 5090 — smoke runs here (WINDOWS #21) | — Pending |
 | v1.3 small-sweep datasets: 5% subsets pre-materialized as real dataset directories under a separate config | Maintainer 2026-10-20: 小数据集需要提前生产，与真实数据使用不同的配置文件 — subset runs and real runs never share a registry/config | — Pending |
@@ -117,4 +118,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-20 after v1.3 milestone start (多 GPU 编排与验证)*
+*Last updated: 2026-10-20 after Phase 13 (动态调度核心 complete)*
