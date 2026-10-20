@@ -626,7 +626,24 @@ def test_monitor_tree_state_navigates_and_drills(tmp_path):
         # of modal bytes for the absence windows below
         child.send("w")
         child.expect(_TREE_LIVE_MODEL_MARKER, timeout=_NAV_TIMEOUT)
+        # 261020-asm (the variant-E ruling): the tree enters with EVERY
+        # model node expanded — BOTH models' TASK rows are visible in
+        # the pane (the maintainer's live observation, pty lane). The
+        # guide forms are the probe-pinned raw bytes: `├── `/`└── `
+        # render inside single SGR runs and exist ONLY as task-child
+        # rows (model headers carry `▼ `/`▶ `), so the ordered sequence
+        # — the live model's two task rows between its 0/2 marker and
+        # the residue model's 0/1, then the residue's own task row —
+        # proves each model node expanded with its children rendered
+        # (a collapsed entry paints model headers only and times out).
+        # The expects run in PAINT ORDER (pexpect consumes the stream).
+        child.expect("├── ", timeout=_NAV_TIMEOUT)
+        child.expect("GUE__emp_H3", timeout=_NAV_TIMEOUT)
+        child.expect("└── ", timeout=_NAV_TIMEOUT)
+        child.expect("GUE__virus_species_4", timeout=_NAV_TIMEOUT)
         child.expect(_TREE_RESIDUE_MARKER, timeout=_NAV_TIMEOUT)
+        child.expect("└── ", timeout=_NAV_TIMEOUT)
+        child.expect("GUE__emp_H3", timeout=_NAV_TIMEOUT)
         child.expect(pexpect.TIMEOUT, timeout=1.0)
         # [*]: collapse-ALL — the collapsed-away cursor node salvages
         # onto its MODEL node (the locked contract)

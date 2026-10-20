@@ -1983,6 +1983,21 @@ async def test_tree_navigation_contract():
         # node (the focus unification)
         assert tree.cursor_node.data == (
             "task", "/scans/finetuned", "model-a", "task-1")
+        # 261020-asm (the variant-E ruling): the tree ENTERS with every
+        # MODEL node expanded — the MULTI-MODEL card renders both
+        # models' task children inline (the maintainer's live
+        # observation: only one model's tasks ever visible was the
+        # reported defect; a collapsed entry renders model headers only)
+        for node in tree.root.children:
+            assert node.is_expanded, (
+                "a fresh tree enters with every MODEL node expanded "
+                "(the 261020-asm variant-E default)"
+            )
+        entry_visible = _visible_tree_nodes(tree)
+        assert len(entry_visible) == 6, (
+            "all-expanded entry: both models plus all four task nodes "
+            "are visible (2 model headers + 4 task rows)"
+        )
         # down: the next visible node (the second task child)
         await pilot.press("down")
         await pilot.pause()
@@ -2069,6 +2084,22 @@ async def test_tree_navigation_contract():
         visible = _visible_tree_nodes(tree)
         assert visible and all(key[0] == "model" for key in visible), (
             "no task node is visible after collapse-all"
+        )
+        # 261020-asm: the operator's collapse choice SURVIVES the 2s
+        # cadence — a steady frontier tick never rebuilds the tree (the
+        # gate law's per-card structure signature), so the collapse
+        # holds and no task row reappears
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        for node in tree.root.children:
+            assert node.is_collapsed, (
+                "a steady frontier tick preserves the operator's "
+                "collapse (expansion state only resets on a genuine "
+                "structural rebuild)"
+            )
+        assert all(key[0] == "model"
+                   for key in _visible_tree_nodes(tree)), (
+            "no task node reappears on the cadence tick"
         )
         # asterisk again: expand ALL
         await pilot.press("*")
