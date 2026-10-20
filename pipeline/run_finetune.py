@@ -1648,7 +1648,11 @@ if __name__ == "__main__":
                         # successful cell. Copying it first opens a kill
                         # window (OOM killer / SIGKILL / power loss) in
                         # which the cell is permanently "done" with no
-                        # metrics and is never retrained.
+                        # metrics and is never retrained. After the
+                        # all-rank evaluate below, rank 0 re-writes
+                        # final_metrics.json with the merged eval
+                        # results and copies the marker as the FINAL
+                        # write of all (WINDOWS #45).
                         with open(outdir + "final_metrics.json", 'w') as f:
                             # Merge the post-ctor parameter accounting into
                             # the payload (06-02): the sweep copies
@@ -1702,8 +1706,37 @@ if __name__ == "__main__":
                                 gpu_device, train_time, max_mem_gb
                             ),
                         )
+                    # All ranks evaluate (the call stays OUTSIDE the rank
+                    # guard — DDP semantics); rank 0 then persists the
+                    # result (WINDOWS #45).
+                    eval_results = trainer.evaluate()
+                    if local_rank == 0:
+                        # WINDOWS #45 producer fix (maintainer option A
+                        # ruling, 2026-10-21): merge the evaluate dict
+                        # FLAT and VERBATIM into final_metrics.json — no
+                        # renaming, no nesting, additive-only with the
+                        # training keys winning collisions ({**eval_results,
+                        # **metrics}: 'epoch' keeps its training value;
+                        # trainable_params_pct survives unchanged). The
+                        # export/summarize chain reads these exact
+                        # spellings from run_record.metrics, which copies
+                        # final_metrics verbatim (run_sweep :1446 +
+                        # dispatch_core's write_cell_run_record):
+                        # eval_f1/eval_accuracy/... via export_runs's
+                        # _SUITE_ALIASES, eval_loss via PIPELINE_KEYS;
+                        # bookkeeping like eval_runtime is harmlessly
+                        # additive (resolve_metric_key skips it).
+                        merged = {**eval_results, **metrics}
+                        with open(outdir + "final_metrics.json", 'w') as f:
+                            json.dump(merged, f, indent=4)
+                        # The marker copy is the cell's FINAL write (WR-13,
+                        # stronger than the pre-fix code): it now also
+                        # promises the eval-merged metrics — a kill
+                        # anywhere before the copy leaves no marker so the
+                        # cell re-runs on resume, and a failed evaluate
+                        # hits the D-08 except-continue with no marker
+                        # (also a re-run, never a falsely-done cell).
                         shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json", outdir)
-                    trainer.evaluate()
                 # Blind except is the designed isolation (D-08 sanctioned):
                 # a dataset-train failure logs and CONTINUEs to the next
                 # dataset; narrowing the exception type risks aborting a

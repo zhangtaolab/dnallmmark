@@ -108,6 +108,18 @@ files). The contracts asserted here are textual/structural:
   but does not PERSIST this accounting, trainer.py:248-288 @ v1.2.1) and
   merged into the final_metrics.json payload for EVERY mode including
   none (a full run reports 100.0) — the frontier table's producer.
+- **evaluate-result merge into final_metrics (WINDOWS #45, option A
+  ruling 2026-10-21)** — ``trainer.evaluate()`` is captured as
+  ``eval_results = trainer.evaluate()`` (outside the rank guard, so all
+  ranks evaluate — DDP semantics) and merged FLAT-ADDITIVE into
+  final_metrics.json by a second rank-0 re-write, pinned in the strict
+  order flops write < evaluate < merged re-write < trainer_state marker
+  copy: the D-05 hardware reads stay before evaluate (training-peak
+  memory scoping) and the WR-13 marker stays the final write. The merge
+  is the literal ``merged = {**eval_results, **metrics}`` — training
+  keys win collisions, evaluate keys (verbatim ``eval_*`` spellings —
+  the keys export_runs._SUITE_ALIASES/PIPELINE_KEYS resolve from
+  run_record.metrics) fill absences, never an overwrite.
 - **--config-variant mechanism + frozen probe (SC-6/REV-05 F4, 06-05)** —
   ``--config-variant {head,probe,curve}`` (default None) loads its YAML
   via the module-level VARIANT_CONFIGS mapping at the exact in-loop slot
@@ -2661,14 +2673,99 @@ def test_flops_report_write_rank_guarded():
     # the write precedes trainer.evaluate() — the statement that follows
     # the success block — so the write is part of the guarded block, not
     # the post-block flow (statement_index: line-anchored, so the write's
-    # own comments naming trainer.evaluate() never satisfy this)
-    evaluate_idx = statement_index(src, "trainer.evaluate()")
-    assert evaluate_idx != -1, "no trainer.evaluate() call found"
+    # own comments naming trainer.evaluate() never satisfy this; the call
+    # is captured since WINDOWS #45 — eval_results = trainer.evaluate())
+    evaluate_idx = statement_index(src, "eval_results = trainer.evaluate()")
+    assert evaluate_idx != -1, "no eval_results = trainer.evaluate() call found"
     assert flops_idx < evaluate_idx, (
         "the flops_report write must precede trainer.evaluate() (write "
         f"at {flops_idx}, evaluate at {evaluate_idx}) — it belongs to "
         "the success block, and reading the peak-memory counter before "
         "evaluate() is what scopes max_mem_gb to the training peak"
+    )
+
+
+def test_eval_results_merged_additively_into_final_metrics():
+    """WINDOWS #45 producer fix (maintainer option A ruling, 2026-10-21):
+    the ``trainer.evaluate()`` result is CAPTURED —
+    ``eval_results = trainer.evaluate()``, outside the rank guard so all
+    ranks evaluate (DDP semantics) — and merged FLAT-ADDITIVE into
+    final_metrics.json by a second rank-0 re-write, pinned in the strict
+    order flops write < evaluate < merged re-write < trainer_state marker
+    copy: the D-05 hardware reads stay before evaluate (max_mem_gb
+    measures the training peak) and WR-13's marker stays the FINAL write
+    — now also promising the eval-merged metrics. The merge order is the
+    literal ``merged = {**eval_results, **metrics}`` (existing training
+    keys win every collision — 'epoch' keeps its training value,
+    trainable_params_pct survives; evaluate keys fill absences), FLAT and
+    verbatim with the evaluate-dict spellings: run_sweep (:1446) and
+    dispatch_core's write_cell_run_record copy final_metrics verbatim
+    into run_record.metrics, and export_runs resolves exactly these keys
+    — eval_f1 via _SUITE_ALIASES to metric_block 'f1', eval_loss via
+    PIPELINE_KEYS to the loss slot — while summarize_comparison reads
+    performance['f1'] into raw_score. For the two 15-03 sweep tasks (both
+    declare metric 'f1' in datasets_info.json) the load-bearing merged
+    key is eval_f1; without this merge every completed cell exports empty
+    score slots and aggregate_models returns {} (the WINDOWS #45 halt)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    evaluate_idx = statement_index(src, "eval_results = trainer.evaluate()")
+    assert evaluate_idx != -1, (
+        "no eval_results = trainer.evaluate() call found — the bare "
+        "discarded evaluate() call is the WINDOWS #45 producer gap"
+    )
+    flops_idx = src.find("flops_counter.save_to_json(")
+    assert flops_idx != -1, "no flops_counter.save_to_json call found"
+    copy_idx = src.find(
+        'shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json"'
+    )
+    assert copy_idx != -1, (
+        "no trainer_state.json resume-marker copy found — without the "
+        "marker, resume would retrain every cell"
+    )
+    assert flops_idx < evaluate_idx < copy_idx, (
+        "the evaluate call must sit strictly between the flops write and "
+        f"the marker copy (flops at {flops_idx}, evaluate at "
+        f"{evaluate_idx}, copy at {copy_idx}) — flops-first preserves the "
+        "D-05 training-peak memory scoping (hardware reads before "
+        "evaluate), evaluate-before-marker preserves WR-13 (the marker "
+        "promises the complete artifact set INCLUDING the eval-merged "
+        "metrics)"
+    )
+    # the additive-only merge order: eval_results spread FIRST so the
+    # training keys (already carrying the trainable-params update) win
+    # every collision; evaluate keys fill absences — never an overwrite
+    merge_idx = statement_index(src, "merged = {**eval_results, **metrics}")
+    assert merge_idx != -1, (
+        "no merged = {**eval_results, **metrics} statement found — the "
+        "additive-only merge order is the T-15-09 tamper pin (a "
+        "{**metrics, **eval_results} spread would let evaluate overwrite "
+        "training keys)"
+    )
+    assert evaluate_idx < merge_idx < copy_idx, (
+        "the merge must sit between the evaluate call and the marker copy "
+        f"(evaluate at {evaluate_idx}, merge at {merge_idx}, copy at "
+        f"{copy_idx})"
+    )
+    # a SECOND final_metrics write after the merge (the first is WR-13's
+    # v1 write), also preceding the marker copy, dumping the merged payload
+    second_write_idx = src.find('open(outdir + "final_metrics.json"', merge_idx)
+    assert second_write_idx != -1, (
+        "no second final_metrics.json write found after the merge — the "
+        "eval results never persist without it (WINDOWS #45)"
+    )
+    assert second_write_idx < copy_idx, (
+        "the merged final_metrics re-write must precede the marker copy "
+        f"(write at {second_write_idx}, copy at {copy_idx}) — WR-13"
+    )
+    dump_idx = src.find("json.dump(merged", merge_idx)
+    assert dump_idx != -1, (
+        "the second final_metrics write must dump the merged payload "
+        "(json.dump(merged, ...)) — dumping `metrics` alone would drop "
+        "the evaluate results it exists to persist"
+    )
+    assert dump_idx < copy_idx, (
+        "the merged dump must precede the marker copy (dump at "
+        f"{dump_idx}, copy at {copy_idx})"
     )
 
 
