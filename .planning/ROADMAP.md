@@ -43,7 +43,7 @@ Plans:
 Plans:
 **Wave 1**
 - [x] 14-01-PLAN.md — Frozen dispatch-state v2 consumer schema (schemas/dispatch_state.json) + live plain-line terminal table at the _write_state choke point (MGPU-03) — complete 2026-10-20 (66 dispatch tests: 13 new over the 53 baseline; 115 combined with the static tripwire; lint/typecheck green; ci.yml hash-pinned; pty+pipe flush lanes live-proven)
-- [ ] 14-02-PLAN.md — export_runs.py --dry-run seam + `--cleanup` sibling mode: dual verification then typed-phrase-gated worker-root removal (MGPU-05)
+- [x] 14-02-PLAN.md — export_runs.py --dry-run seam + `--cleanup` sibling mode: dual verification then typed-phrase-gated worker-root removal (MGPU-05) — complete 2026-10-20
 
 **Wave 2** *(blocked on Wave 1 file overlap: dispatch_core.py + run_sweep_shard.py)*
 - [ ] 14-03-PLAN.md — Ledger-driven cross-worker failure re-run: `--rerun-failed` with claim-time lane replay, archive+rerun_of genealogy, heterogeneous-lane refusal (MGPU-04)

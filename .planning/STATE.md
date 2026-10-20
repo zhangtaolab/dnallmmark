@@ -5,16 +5,16 @@ milestone_name: 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
 current_phase: 14
 current_phase_name: 编排运行视图与失败恢复
 status: executing
-stopped_at: Completed 14-01-PLAN.md
-last_updated: "2026-10-20T08:15:16.493Z"
+stopped_at: Completed 14-02-PLAN.md
+last_updated: "2026-10-20T08:56:35.453Z"
 last_activity: 2026-10-20
 last_activity_desc: Phase 14 execution started
-state_head: 7fb7424b96ff02c2dca26f267ff34b5762134f47
+state_head: 0e88452b2fe6b2ae37b0f8f4a5e6889e02faa76e
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
   percent: 17
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 ## Current Position
 
 Phase: 14 (编排运行视图与失败恢复) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-10-20 — Phase 14 execution started
 
@@ -110,6 +110,7 @@ Last activity: 2026-10-20 — Phase 14 execution started
 | Phase 13 P01 | 17 min | 2 tasks | 3 files |
 | Phase 13 P02 | 46min | 2 tasks | 4 files |
 | Phase 14 P01 | 24 min | 3 tasks | 3 files |
+| Phase 14 P02 | 37 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -267,6 +268,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 14]: 14-01: dispatch_state.json frozen at schema v2 (D14-01) — queue_depth DERIVED at publish under state_lock (total - completed - failed - skipped - in_flight_count, the Pitfall 3 consistent-snapshot ruling; identity pinned at every write), workers[] per --workers index with in_flight set at claim/cleared at finalize, failures bounded list of compact {model,task,seed,fraction,finished_at}; schemas/dispatch_state.json committed same-change (draft 2020-12, strict, D14-04)
 - [Phase 14]: 14-01: renderer lives INSIDE dispatch_core.py (Q6) hooked at _write_state after the atomic write under state_lock, printing the exact frozen payload with flush=True; output errors swallowed (T-14-01) so a dying view never fails a cell; claim-time write is the 8th call site (D14-03) — zero Makefile change, ci.yml byte-identical
 - [Phase 14]: 14-01: flush proven on real lanes — pty test reads the first [Dispatch] header within 3s while a 5s-holding fake cell keeps the drain alive; pipe leg strips PYTHONUNBUFFERED so block buffering cannot pass trivially; pexpect exitstatus must be reaped via close() after expect(EOF) (the reaping contract, fixed on resume)
+- [Phase 14]: 14-02: cleanup removal scope = exactly worker_root()-named roots plus {base}-mgpu-w{i}-*.log per-launch logs (Q5 ruling, the full manual recipe); the merged root is structurally never a target (T-14-03)
+- [Phase 14]: 14-02: typed gate phrase = the RESOLVED --output-root string, exact equality (Q4); --yes PHRASE non-interactive, injected confirm_input drives tests, EOF/mismatch/non-interactive-without---yes all refuse with nothing removed
+- [Phase 14]: 14-02: export_runs reached ONLY via [sys.executable, script/export_runs.py, --dry-run, --input-root=<R>] subprocess (equals-form arg, T-14-05) through the injectable runner seam — never an import (stdlib-headless held, D14-16)
 
 ### Pending Todos
 
@@ -337,8 +341,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T08:15:16.368Z
-Stopped at: Completed 14-01-PLAN.md
+Last session: 2026-10-20T08:56:35.325Z
+Stopped at: Completed 14-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
