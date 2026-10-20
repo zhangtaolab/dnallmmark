@@ -5,11 +5,11 @@ milestone_name: 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
 current_phase: 15
 current_phase_name: 双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)
 status: executing
-stopped_at: "Completed 15-04-PLAN.md (run_record gap closure; 2/2 tasks, suites 305+135 green) — next: 15-01 continuation fresh 2-cell smoke for D15-02 criterion 3, then 15-03"
-last_updated: "2026-10-20T15:15:02.948Z"
+stopped_at: "Completed 15-01-PLAN.md (resumed after 15-04: fresh 2-cell smoke green incl. consumption dry-run; docs/WINDOWS/D-05/VAL-01 closed) — next: 15-02 subset generator, then 15-03"
+last_updated: "2026-10-20T15:31:03.734Z"
 last_activity: 2026-10-20
 last_activity_desc: Phase 15 execution started
-state_head: 8c5e8b9f0759f5c3f0de0487c621d3bf22c4c9ec
+state_head: 5295cbd364488be0f8195b3878717d6292a72b84
 progress:
   total_phases: 6
   completed_phases: 1
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 Phase: 15 (双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)) — EXECUTING
 Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-10-20 — Phase 15 execution started
+Last activity: 2026-10-20 — 15-01 complete (resumed after 15-04: fresh 2-cell smoke green on all D15-02 criteria; docs/multi-gpu.md dispatch rewrite, WINDOWS #21/#44 closed, D-05 done, VAL-01 complete) — next 15-02
 
 ## Performance Metrics
 
@@ -113,6 +113,7 @@ Last activity: 2026-10-20 — Phase 15 execution started
 | Phase 14 P02 | 37 min | 2 tasks | 4 files |
 | Phase 14 P03 | 18 min | 2 tasks | 3 files |
 | Phase 15 P15-04 | 51 min | 2 tasks | 3 files |
+| Phase 15 P15-01 | 47 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -278,6 +279,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 14]: 14-03: --rerun-failed is orchestrator-owned shard vocabulary implying dispatch mode (routes BEFORE the --models/--seeds requirements; only --registry-dir accepted in the passthrough); archive collisions pre-checked BY NAME before any spawn with the worker O_EXCL as structural backstop; --rerun-failed x --cleanup joined the A6 combo family
 - [Phase 15]: [15-04] A3 supersession: dispatch_core writes run_record at claim finalize (15-01 Option 1 ruling) — run_sweep._new_record reuse, WR-12 no-overwrite, CR-04-routed failures; supersedes Phase 13 A3 at its deferred handoff point
 - [Phase 15]: [15-04] Cell-dir mkdir parity in the record writer: a child dying before mkdir still gets its failed record without CR-04 clobbering the cell's own CR-02 verdict; only records that PARSE completed are refusal-protected (unprovable provenance is replaceable)
+- [Phase 15]: 15-01 complete: dispatch N=2 smoke ALL D15-02 criteria green on fresh-root re-run (finetuned-smoke-r2, 155s, both GPUs, [Dry-run] 2 run records) after 15-04's run_record fix; docs/multi-gpu.md rewritten as executed procedure, D-05 revised 本机=双卡验证机, WINDOWS #21/#44 closed, VAL-01 done
+- [Phase 15]: 15-01 fresh-root discipline: halt evidence root preserved; re-runs use suffixed roots (finetuned-smoke*/ gitignore family) so trainer_state marker-skip can never mask a regression
 
 ### Pending Todos
 
@@ -290,7 +293,7 @@ None yet.
 - ModelScope CLI flag/progress-parsing specifics are MEDIUM confidence — confirm during Phase 10 (narrow in-phase item, not a research phase)
 - Custom-registry storage location (`~/.config/dnallmmark/` vs repo-local ignored dir) and the exact overlay read seam are Phase 7/9 discuss items — the user-owned-file principle itself is fixed
 - v0.7.1 carryover registry questions (space/SPACE merge decision; 7 models without locatable public cards) remain maintainer-owned — outside v1.2 scope unless registries are touched
-- 15-01 remediation LANDED (15-04 complete, 2026-10-20): dispatch_core now writes run_record.json at claim finalize (run_sweep _new_record parity, WR-12 no-overwrite, CR-04-routed failures; supersedes Phase 13 A3) — the D15-02 consumption criterion is meetable by a fresh 2-cell smoke re-run. REMAINING: the 15-01 continuation (fresh 2-cell smoke → criterion 3 evidence → docs/multi-gpu.md rewrite, WINDOWS #21, PROJECT.md D-05) still pending; WINDOWS #21 open; PROJECT.md D-05 Pending.
+- 15-01 remediation LANDED (15-04 complete, 2026-10-20): dispatch_core now writes run_record.json at claim finalize (run_sweep _new_record parity, WR-12 no-overwrite, CR-04-routed failures; supersedes Phase 13 A3) — RESOLVED 2026-10-20: the 15-01 continuation re-ran the fresh 2-cell smoke (finetuned-smoke-r2) green on ALL D15-02 criteria incl. "[Dry-run] 2 run record(s)"; docs/multi-gpu.md dispatch-mode rewrite landed, WINDOWS #21/#44 closed, PROJECT.md D-05 done, VAL-01 complete.
 
 ### Quick Tasks Completed
 
@@ -349,8 +352,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T15:15:02.729Z
-Stopped at: Completed 15-04-PLAN.md (run_record gap closure; 2/2 tasks, suites 305+135 green) — next: 15-01 continuation fresh 2-cell smoke for D15-02 criterion 3, then 15-03
+Last session: 2026-10-20T15:31:03.499Z
+Stopped at: Completed 15-01-PLAN.md (resumed after 15-04: fresh 2-cell smoke green incl. consumption dry-run; docs/WINDOWS/D-05/VAL-01 closed) — next: 15-02 subset generator, then 15-03
 Resume file: None
 
 ## Operator Next Steps
