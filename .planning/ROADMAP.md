@@ -58,7 +58,7 @@ Plans:
 
 **Goal**: The dispatch orchestrator is proven on the local 2× RTX 5090 — the docs/multi-gpu.md N=2 smoke passes (WINDOWS #21 closed, D-05 revised) and a small real sweep over pre-materialized 5% stratified subsets runs both GPUs end-to-end through merge and the data chain
 **Requirements**: VAL-01, VAL-02, VAL-03
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 **Wave 1**
@@ -66,6 +66,7 @@ Plans:
 - [ ] 15-02-PLAN.md — Subset generator `script/make_subset_datasets.py` (stdlib-only, stratified 5%, floor-of-1 small-split rule, subset registry with measured counts) + tests/test_subset_datasets.py byte-identity/isolation/fail-fast pins + .gitignore/Makefile entries (VAL-02)
 
 **Wave 2** *(blocked on Wave 1: smoke must pass per D15-04; generator + test file from 15-02)*
+- [ ] 15-04-PLAN.md — GAP CLOSURE, executes immediately (no deps, before the 15-01 continuation and 15-03): dispatch_core writes run_record.json at claim finalize — run_sweep `_new_record` shape parity, WR-12 no-overwrite refusal, failed-cell/WR-11 records, CR-04 failure routing, export dry-run consumer visibility + 15-03 false-premise corrections (supersedes Phase 13 A3 at its deferred handoff; unblocks the 15-01 D15-02 consumption criterion) (VAL-01)
 - [ ] 15-03-PLAN.md — Real subset generation (105/11/117 + 598/74/74) + 12-cell dual-GPU dispatch sweep (2 models × 2 subset tasks × 3 seeds, one shared root, 0 skipped) + zero-modification export→summarize consumption proof with archived phase artifacts + D15-15 real-artifact pytest checks (VAL-03)
 
 **Success criteria**:
