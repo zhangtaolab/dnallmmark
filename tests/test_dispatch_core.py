@@ -30,6 +30,16 @@ Coverage named by the plan (SC ids are the phase acceptance tests):
   enumerate under the ALIAS names and each argv carries
   ``--target_model <base>`` + ``--save_model_name <alias>`` +
   ``--peft lora`` (the run_sweep alias semantics, composed verbatim).
+- **SC1 dry-run goldens (13-02)** — ``--mode dispatch --dry-run``
+  writes ONLY ``{root}/sweep_manifest.json`` (no lock, no state file,
+  no claims, no children) with every cell ``status: "planned"`` and the
+  ``orchestrator_mode: "dispatch"`` marker; two consecutive runs are
+  byte-identical; the planned identity set equals the UNION of
+  static-mode per-worker dry-run manifests for identical inputs
+  (identity projection only — output_dirs differ by root by design);
+  ``--priority-file`` reorders the planned cells without changing the
+  set; peft rides alias identities while config_variant joins every
+  cell via the sweep_flags merge.
 - **Validation mirror refusals** — the variant x peft remainder
   combination refuses by name; a missing ``--seeds`` exits with
   argparse's code 2 (Pitfall 9, pinned); an empty ``--models`` value
@@ -61,6 +71,7 @@ See also:
     stays byte-identical (the mode-isolation tripwire).
 """
 
+import hashlib
 import json
 import os
 import subprocess
@@ -531,6 +542,241 @@ def test_dispatch_peft_lane_enumerates_and_spawns_under_alias(
         "model": "model-a+lora", "task": "task-x", "seed": 42,
         "fraction": None}
     assert claim["lane"]["peft"] == "lora"
+
+
+# ===== 13-02 Task 1: the dry-run plan artifact (SC1 goldens) =====
+
+
+def _read_manifest(root):
+    """Parse ``{root}/sweep_manifest.json`` (planned or executed)."""
+    return json.loads(
+        (Path(root) / run_sweep.MANIFEST_NAME).read_text(encoding="utf-8"))
+
+
+def _manifest_identities(root):
+    """Project a manifest's cells to (model, task, seed) identity tuples.
+
+    The SC1 comparison vocabulary: identities ONLY, never absolute
+    output_dir paths (worker roots and the dispatch shared root differ
+    by design — only the cell identities must agree).
+    """
+    return {
+        (cell["model"], cell["task"], cell["seed"])
+        for cell in _read_manifest(root)["cells"]
+    }
+
+
+def test_dispatch_dry_run_writes_only_plan_manifest(tmp_path, monkeypatch):
+    """SC1/MGPU-01: a dispatch dry-run leaves the root with EXACTLY
+    sweep_manifest.json — no ledger dir, no state file, no
+    trainer_state.json anywhere, no dispatch/mgpu worker logs or roots,
+    and the injected spawner is NEVER called. The manifest carries the
+    static dry-run projection (matrix with sorted unions + the resolved
+    root, cells with status 'planned' at cell_dir_for paths) plus the
+    orchestrator_mode marker merged into every cell."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        *DISPATCH_ARGV, "--dry-run",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert calls == [], "the dry-run never spawns a child"
+    assert sorted(path.name for path in base.iterdir()) == [
+        run_sweep.MANIFEST_NAME], (
+        "the dry-run's ONLY output is the plan manifest"
+    )
+    assert not dispatch_core.ledger_dir_for(base).exists(), (
+        "no ledger — the dry-run branch runs before the lock section"
+    )
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists()
+    assert not list(base.rglob(run_sweep.RESUME_MARKER))
+    assert not list(base.parent.glob(f"{base.name}-dispatch-w*.log"))
+    assert not list(base.parent.glob(f"{base.name}-mgpu-w*")), (
+        "no static worker sibling roots either"
+    )
+    manifest = _read_manifest(base)
+    assert manifest["matrix"] == {
+        "models": ["model-a", "model-b", "model-c"],
+        "tasks": ["task-x", "task-z"],
+        "seeds": [42, 43],
+        "output_root": str(base),
+    }
+    expected = run_sweep.enumerate_matrix(
+        ["model-a", "model-b", "model-c"], ["task-x", "task-z"],
+        [42, 43], registry_dir)
+    assert len(manifest["cells"]) == len(expected) == 12
+    for cell, expected_cell in zip(manifest["cells"], expected):
+        assert cell["model"] == expected_cell[0]
+        assert cell["task"] == expected_cell[1]
+        assert cell["seed"] == expected_cell[2]
+        assert cell["status"] == "planned"
+        assert cell["output_dir"] == str(run_sweep.cell_dir_for(
+            base, expected_cell[0], expected_cell[1], expected_cell[2]))
+        assert cell["orchestrator_mode"] == "dispatch"
+
+
+def test_dispatch_dry_run_is_byte_identical_across_runs(
+        tmp_path, monkeypatch):
+    """SC1 golden: two consecutive dry-runs over the identical
+    registry/filters/seeds write byte-identical manifests (the
+    _write_json indent=4 / ensure_ascii=False / sort_keys discipline) —
+    the first bytes are copied aside so the second run's overwrite is
+    compared, not assumed."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    common = [
+        *DISPATCH_ARGV, "--dry-run",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ]
+    run_cli(monkeypatch, list(common), spawner=make_child_spawner([]))
+    manifest_path = base / run_sweep.MANIFEST_NAME
+    aside = tmp_path / "first-manifest.json"
+    aside.write_bytes(manifest_path.read_bytes())
+    run_cli(monkeypatch, list(common), spawner=make_child_spawner([]))
+    assert hashlib.sha256(
+        aside.read_bytes()).hexdigest() == hashlib.sha256(
+        manifest_path.read_bytes()).hexdigest(), (
+        "consecutive dry-runs serialize byte-identically"
+    )
+
+
+def test_dispatch_dry_run_identity_set_equals_static_union(
+        tmp_path, monkeypatch):
+    """SC1 union equality (the disjointness-test comparison idiom): the
+    dispatch dry-run's identity set over --models A,B,C / --tasks /
+    --seeds equals the UNION of two static per-worker dry-run manifests
+    over the same axes (LPT shards) — compared over identity tuples
+    ONLY; output_dir sets are never compared (worker roots vs the ONE
+    shared root differ by design)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    run_cli(monkeypatch, [
+        *DISPATCH_ARGV, "--dry-run",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner([]))
+    dispatch_identities = _manifest_identities(base)
+
+    sizes = {"model-a": 100, "model-b": 50, "model-c": 10}
+    shards = run_sweep_shard.lpt_shard(
+        ["model-a", "model-b", "model-c"], 2, sizes)
+    assert shards == [["model-a"], ["model-b", "model-c"]]
+    static_union = set()
+    for i, shard in enumerate(shards):
+        root = run_sweep_shard.worker_root(base, i)
+        run_sweep_cli(monkeypatch, [
+            "--dry-run",
+            "--models", ",".join(shard),
+            "--tasks", "task-x,task-z",
+            "--seeds", "42,43",
+            "--output-root", str(root),
+            "--registry-dir", str(registry_dir),
+        ])
+        static_union |= _manifest_identities(root)
+    assert dispatch_identities == static_union, (
+        "dispatch enumeration equals static-mode enumeration for "
+        "identical inputs (identity projection only)"
+    )
+    assert len(dispatch_identities) == 12
+
+
+def test_dispatch_dry_run_priority_reorders_planned_cells(
+        tmp_path, monkeypatch):
+    """A --priority-file reorders the planned cells into the queue order
+    (the manifest's cell LIST order carries it) while the identity SET
+    is unchanged; a second dry-run without the file plans the same SET
+    in the sorted() base order."""
+    registry_dir = make_registry(tmp_path)
+    priorities = tmp_path / "priorities.json"
+    priorities.write_text(
+        json.dumps([[{"model": "model-c", "task": "task-x"}]]),
+        encoding="utf-8")
+    with_prio = (tmp_path / "with-prio").resolve()
+    without_prio = (tmp_path / "without-prio").resolve()
+    common = [
+        "--mode", "dispatch", "--workers", "2",
+        "--models", "model-a,model-b,model-c",
+        "--tasks", "task-x,task-z", "--seeds", "42,43",
+        "--dry-run",
+        "--registry-dir", str(registry_dir),
+    ]
+    run_cli(monkeypatch, [
+        *common, "--priority-file", str(priorities),
+        "--output-root", str(with_prio),
+    ], spawner=make_child_spawner([]))
+    run_cli(monkeypatch, [
+        *common, "--output-root", str(without_prio),
+    ], spawner=make_child_spawner([]))
+
+    def cell_order(root):
+        return [
+            (cell["model"], cell["task"], cell["seed"])
+            for cell in _read_manifest(root)["cells"]]
+
+    prioritized = cell_order(with_prio)
+    plain = cell_order(without_prio)
+    assert prioritized[0] == ("model-c", "task-x", 42), (
+        "the tier entry's cells plan first (apply_priority_order)"
+    )
+    assert sorted(prioritized) == sorted(plain), (
+        "the priority reorder permutes the queue WITHOUT changing the set"
+    )
+    assert plain == sorted(plain), (
+        "the no-file dry-run plans in the sorted() base order"
+    )
+    assert set(plain) == {
+        tuple(cell) for cell in run_sweep.enumerate_matrix(
+            ["model-a", "model-b", "model-c"], ["task-x", "task-z"],
+            [42, 43], registry_dir)}
+
+
+def test_dispatch_dry_run_peft_alias_and_variant_flag_shapes(
+        tmp_path, monkeypatch):
+    """Lane flags on the plan artifact: a --peft lora dry-run plans
+    cells under the ALIAS model names with 'peft' NOT a manifest key
+    (peft rides the identities, mirroring run_sweep); a
+        --config-variant probe dry-run plans under {model}+probe names
+    and carries config_variant in every cell via the sweep_flags merge
+    (the only lane axis that joins)."""
+    registry_dir = make_registry(tmp_path)
+
+    lora_root = (tmp_path / "lora").resolve()
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--peft", "lora", "--dry-run",
+        "--output-root", str(lora_root),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner([]))
+    lora_manifest = _read_manifest(lora_root)
+    assert lora_manifest["matrix"]["models"] == ["model-a+lora"]
+    assert len(lora_manifest["cells"]) == 1
+    lora_cell = lora_manifest["cells"][0]
+    assert lora_cell["model"] == "model-a+lora"
+    assert "peft" not in lora_cell, (
+        "peft rides the alias identities, never a manifest key"
+    )
+    assert lora_cell["orchestrator_mode"] == "dispatch"
+
+    probe_root = (tmp_path / "probe").resolve()
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--config-variant", "probe", "--dry-run",
+        "--output-root", str(probe_root),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner([]))
+    probe_manifest = _read_manifest(probe_root)
+    assert len(probe_manifest["cells"]) == 1
+    probe_cell = probe_manifest["cells"][0]
+    assert probe_cell["model"] == "model-a+probe"
+    assert probe_cell["config_variant"] == "probe", (
+        "a present variant joins every cell via the sweep_flags merge"
+    )
+    assert probe_cell["orchestrator_mode"] == "dispatch"
 
 
 # ===== validation mirror refusals (collect-all, named) =====

@@ -53,6 +53,16 @@ research; every step's guard depends on the ones before it):
    Failed cells are recorded and NEVER requeued within the live run
    (decision A2 — Phase 14's MGPU-04 owns re-run).
 
+Dry-run (13-02, SC1): ``--dry-run`` branches AFTER enumeration/priority
+(and after the zero-cell refusal — an empty enumeration refuses
+identically dry or real) and BEFORE the lock. It mirrors the static
+dry-run projection exactly (matrix + ``status: "planned"`` records
+through ``run_sweep._manifest_payload`` / ``_write_json``) with ONE
+extra ``"orchestrator_mode": "dispatch"`` sweep-flags marker, writes
+ONLY ``{root}/sweep_manifest.json``, and returns: no lock, no state
+file, no claims, no tees, no children — byte-identical across runs and
+equal to static-mode enumeration for identical inputs.
+
 Orphan-children relaunch caveat (decision A5): children spawn with
 ``start_new_session=True``, so a SIGKILLed dispatcher leaves its children
 RUNNING (they are resume-safe via the marker — by design). Before
@@ -711,7 +721,8 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
     """The dispatch engine entry (routed from ``run_sweep_shard.main``).
 
     Protocol (the module docstring's strict order): validate + enumerate
-    (zero-cell refusal BEFORE the lock) -> mkdir ledger -> singleton lock
+    (zero-cell refusal BEFORE the lock) -> [``--dry-run``: write ONLY the
+    plan manifest and return] -> mkdir ledger -> singleton lock
     -> ``dispatch_state.json`` mode evidence -> pending queue -> one
     worker thread per ``--workers`` entry (permanently bound to
     ``gpus[i]``) -> join -> per-worker verdict table -> final state ->
@@ -773,12 +784,6 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
                 f"--models {args.models!r} produced no model names after "
                 "stripping empty elements"
             )
-    if args.dry_run:
-        problems.append(
-            "--dry-run dispatch planning lands with Plan 13-02 — refusing "
-            "rather than spawning real children under a dry-run expectation"
-        )
-
     # Remainder re-parse: run_sweep stays the single flag owner (D-07).
     # A dispatch launch without --seeds dies HERE with argparse's usage
     # exit (code 2) — the pinned Pitfall 9 shape.
@@ -920,6 +925,78 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
             "launch an empty dispatch run; an empty filter intersection "
             "never falls back to the full registry"
         )
+
+    if args.dry_run:
+        # The dry-run plan artifact (13-02, SC1 / MGPU-01's dry-run-
+        # provable enumeration): mirror the static dry-run projection
+        # EXACTLY (run_sweep.py:1909-1946) so ONE manifest shape spans
+        # both modes — planned cells carry status "planned" (never
+        # terminal in the 11-04 scanner semantics: planned never counts
+        # as done, T-13-07) and output_dir at the cell_dir_for path
+        # under the ONE shared root. The sweep_flags dict mirrors
+        # run_sweep.main's present-keys-only construction verbatim
+        # (subset_file / effective_batch_size / num_train_epochs /
+        # cache_dir / model_root / dataset_root / log_dir /
+        # config_variant; peft does NOT join — it rides the ALIAS
+        # identities, only config_variant joins among the two lane
+        # axes) PLUS one extra "orchestrator_mode": "dispatch" marker —
+        # the A7 dry-run-root evidence the merge refusal reads (real
+        # runs carry dispatch_state.json instead). The branch sits
+        # AFTER the zero-cell refusal, so an empty enumeration refuses
+        # identically dry or real, and BEFORE the lock: NO lock, NO
+        # state file, NO claims, NO tees, NO spawns (the run_sweep
+        # dry-run contract, mirrored — the root gains ONLY
+        # sweep_manifest.json).
+        sweep_flags = {}
+        if subset_file_abs is not None:
+            sweep_flags["subset_file"] = subset_file_abs
+        if sweep_args.effective_batch_size is not None:
+            sweep_flags["effective_batch_size"] = (
+                sweep_args.effective_batch_size)
+        if sweep_args.num_train_epochs is not None:
+            sweep_flags["num_train_epochs"] = sweep_args.num_train_epochs
+        if cache_dir_abs is not None:
+            sweep_flags["cache_dir"] = cache_dir_abs
+        if model_root_abs is not None:
+            sweep_flags["model_root"] = model_root_abs
+        if dataset_root_abs is not None:
+            sweep_flags["dataset_root"] = dataset_root_abs
+        if log_dir_abs is not None:
+            sweep_flags["log_dir"] = log_dir_abs
+        if sweep_args.config_variant is not None:
+            sweep_flags["config_variant"] = sweep_args.config_variant
+        sweep_flags["orchestrator_mode"] = "dispatch"
+        matrix = {
+            "models": sorted({cell[0] for cell in cells}),
+            "tasks": sorted({cell[1] for cell in cells}),
+            "seeds": sorted({cell[2] for cell in cells}),
+            "output_root": str(output_root),
+        }
+        planned_records = [
+            {
+                "model": cell[0],
+                "task": cell[1],
+                "seed": cell[2],
+                "status": "planned",
+                "output_dir": str(run_sweep.cell_dir_for(
+                    output_root, cell[0], cell[1], cell[2],
+                    cell[3] if len(cell) > 3 else None)),
+            }
+            for cell in cells
+        ]
+        output_root.mkdir(parents=True, exist_ok=True)
+        run_sweep._write_json(
+            output_root / run_sweep.MANIFEST_NAME,
+            run_sweep._manifest_payload(
+                matrix, planned_records, sweep_flags),
+        )
+        print(
+            f"[Dry-run] [Dispatch] {len(cells)} planned cell(s) over "
+            f"{len(matrix['models'])} model(s) x {len(matrix['tasks'])} "
+            f"task(s) x {len(matrix['seeds'])} seed(s); manifest: "
+            f"{output_root / run_sweep.MANIFEST_NAME}"
+        )
+        return
 
     # LOCK -> MODE EVIDENCE -> QUEUE (the module docstring's protocol)
     ledger_dir = ledger_dir_for(output_root)
