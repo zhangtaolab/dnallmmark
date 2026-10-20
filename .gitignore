@@ -119,7 +119,9 @@ worktrees/
 
 # Reviewer response report (maintainer-only, never committed)
 reviewer-response/
-finetuned-smoke/
+# Smoke output roots, fresh per launch (15-01 continuation: the halted
+# first smoke's root is preserved as evidence; re-runs use suffixed roots)
+finetuned-smoke*/
 # TUI demo meta sidecars (quick-261015-pex): per-recording driver state,
 # consumed by record.sh's exit gate — never committed.
 docs/demo/.meta-*.json
