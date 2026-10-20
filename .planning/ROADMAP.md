@@ -4,8 +4,81 @@
 
 - ✅ **v0.7.1 Release Hardening** - Phases 1-6 (shipped 2026-10-11)
 - ✅ **v1.2 TUI任务** - Phases 7-12 (shipped 2026-10-19)
+- ⏳ **v1.3 多 GPU 编排与验证** - Phases 13-18 (started 2026-10-20)
 
 ## Phases
+
+### ⏳ v1.3 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
+
+**Defined:** 2026-10-20 · **Requirements:** 20 (`.planning/REQUIREMENTS.md`) · **Research:** `.planning/research/SUMMARY.md` · **Core:** cell-level dynamic dispatch, one cell = one GPU, no DDP
+
+**Binding constraints (carried + new):** E2' full sweep stays maintainer dual-gated; every GPU execution (smoke, sweep) is maintainer-authorized, code-first; CI stays GPU/dnallm-free AND N>1-free (fake-children + injected seams only); DNALLM suite repo read-only — upstream defects get upstream issues, never local patches; TUI orchestrates, never computes; Linux-only platform; surgical fixes; leaderboard numbers move only through zero-drift-proven additive changes; legacy static-shard mode coexists (2026-10-20 ruling); 5% subsets pre-materialized with a dedicated config, never mixed with real runs.
+
+#### Phase 13: 动态调度核心
+
+**Goal**: The orchestrator dispatches (model×dataset×seed) cells as a work queue over per-GPU workers with worker-independent cell outputs, an exactly-once claim ledger, and resume semantics proven under mid-cell kill — legacy static sharding coexists behind explicit mode declaration
+**Requirements**: MGPU-01, MGPU-02, MGPU-06
+**Plans**: 0
+**Success criteria**:
+1. Dry-run enumeration is deterministic and byte-identical across runs; the planned cell set matches static-mode enumeration for identical inputs
+2. Fake-children kill test: a worker killed mid-cell, orchestrator relaunched → every cell completes exactly once (no duplicates, no orphans) — the P1 acceptance test
+3. Cell artifacts land at worker-independent paths; double-claim is structurally refused (O_EXCL ledger)
+4. Legacy static-shard launch behaves byte-identically behind its declared mode; `--merge` refuses mixed-mode roots with a named error
+5. Full CPU gates green (pytest/ruff/ty, node lanes); zero CI changes; zero N>1 assumptions in any test
+
+#### Phase 14: 编排运行视图与失败恢复
+
+**Goal**: Running multi-GPU sweeps are observable (terminal table + machine-readable state file) and recoverable (cross-worker failure re-run with lane context; post-merge verify + confirm-gated cleanup)
+**Requirements**: MGPU-03, MGPU-04, MGPU-05
+**Plans**: 0
+**Success criteria**:
+1. `dispatch_state.json` (single-writer, atomic) carries queue depth, per-worker in-flight cells, failures, timestamps; schema frozen and parseable by a consumer test
+2. The terminal progress table renders live per-worker state during a fake-children run (pty-lane assertable)
+3. Injected failures across two workers → ONE re-run command re-runs exactly the failed cells with the original lane flags (peft lane preserved — 12-04 lane-blindness fixed, fixture-proven)
+4. Verify+cleanup helper: verifies the merged root (export dry-run + manifest counts) before offering worker-root removal behind an explicit confirmation; refusal paths tested
+
+#### Phase 15: 双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)
+
+**Goal**: The dispatch orchestrator is proven on the local 2× RTX 5090 — the docs/multi-gpu.md N=2 smoke passes (WINDOWS #21 closed, D-05 revised) and a small real sweep over pre-materialized 5% stratified subsets runs both GPUs end-to-end through merge and the data chain
+**Requirements**: VAL-01, VAL-02, VAL-03
+**Plans**: 0
+**Success criteria**:
+1. N=2 smoke procedure completes successfully on the local box; WINDOWS #21 closed; D-05 machine-role revision recorded (maintainer-authorized GPU run)
+2. Subset generator: deterministic stratified 5% subsets with measured row counts in a dedicated subset registry/config; run-twice byte-identity; official/custom registries untouched
+3. Small real sweep (≈2-4 models × 2-3 datasets × 3 seeds, 1 epoch) completes on both GPUs via dynamic dispatch; merged output consumed by the export/data chain without modification
+4. Subset and real runs provably never share registry/config/output roots (asserted in the executed procedure)
+
+#### Phase 16: TUI 多 GPU 界面
+
+**Goal**: The operator console launches and watches multi-GPU runs natively — slot-4 multi-GPU launch through the unchanged gate chain, slot-5 consumption of dispatch state, and the deferred G GPU-lanes display over a read-only nvidia-smi probe
+**Requirements**: TUI-01, TUI-02, TUI-03, TUI-04
+**Plans**: 0
+**Success criteria**:
+1. `gpu_probe` service: csv-mode subprocess probe → frozen dataclass rows, textual-free, honest 未安装 degradation; unit-tested via injected seam (no GPU in CI)
+2. G GPU-lanes panel renders per-GPU utilization/memory/temperature on the monitor cadence; absent binary never crashes the console (worker guard discipline)
+3. Slot-4 multi-GPU launch (workers/gpus + dispatch preview) passes through env gate → problems → confirm → E2' typed-phrase unchanged; single-GPU serial gate replaced by multi-GPU-aware semantics; gate-order tests extended, none weakened
+4. Slot-5 renders queue depth/in-flight cells from `dispatch_state.json`; changed-screen snapshot goldens regenerated uncommitted for D-03 review
+
+#### Phase 17: Web 多种子 Error Bar
+
+**Goal**: Multi-seed results display with error bars on the public pages — additive mean/std/n_seeds through the data chain, scatter whiskers via a vendored inline Chart.js plugin, floating-bar task charts — with zero drift in existing numbers
+**Requirements**: WEB-01, WEB-02, WEB-03
+**Plans**: 0
+**Success criteria**:
+1. Aggregation emits additive-optional `mean`/`std`/`n_seeds`; with the fields suppressed, output is byte-identical to pre-v1.3 (zero-drift gate extended and green); METHODOLOGY.md documents display-only semantics + std definition
+2. Scatter (FLOPs vs rank) renders whiskers via the vendored `afterDatasetsDraw` plugin (zero new CDN scripts); task bar chart uses floating bars; tooltips gain ±std — verified against real sweep-derived artifacts
+3. Node-lane tests cover plugin value→pixel math as a pure function and additive schema fields via generated fixtures
+
+#### Phase 18: 文档撰写
+
+**Goal**: v1.3's multi-GPU workflow is fully documented for operators and external reviewers — the dispatch-mode runbook, README/ONBOARDING multi-GPU + subset sections, TUI multi-GPU usage doc, and version-consistent v1.3.0 release documentation (TUI-DEMO.md / docs-trio precedents)
+**Requirements**: DOCS-01, DOCS-02, DOCS-03, DOCS-04
+**Plans**: 0
+**Success criteria**:
+1. `docs/multi-gpu.md` fully rewritten for dispatch mode — every command copy-pasteable, the N=2 smoke procedure matching the executed Phase 15 reality, D-05 revision recorded, legacy static-shard mode documented as coexisting
+2. README + ONBOARDING/GETTING-STARTED carry the multi-GPU dispatch section and the 5% subset workflow (generate → configure → run → merge), with no stale static-sharding-only instructions anywhere
+3. TUI multi-GPU usage documentation (launch, monitoring, G lanes) in the TUI-DEMO.md precedent shape, verified against the shipped screens
+4. Version surfaces consistent at 1.3.0 (pyproject, uv.lock, TUI about screen) and the milestone-stage row describes the delivered v1.3 scope (rewritten from the in-development wording at ship time)
 
 <details>
 <summary>✅ v0.7.1 Release Hardening (Phases 1-6) — SHIPPED 2026-10-11</summary>

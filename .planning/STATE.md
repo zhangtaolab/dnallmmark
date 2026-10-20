@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-10-20T01:57:41.590Z"
 last_activity: 2026-10-20
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-11)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 12 — Multi-GPU Orchestration Console Hardening
+**Current focus:** Phase 13 — 动态调度核心 (v1.3 多 GPU 编排与验证)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 13 — 动态调度核心 (awaiting planning)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-10-20 — Milestone v1.3 started
+Status: Roadmap created, ready to plan
+Last activity: 2026-10-20 — v1.3 roadmap created (6 phases incl. docs phase, 20 requirements mapped; version bumped to 1.3.0)
 
 ## Performance Metrics
 

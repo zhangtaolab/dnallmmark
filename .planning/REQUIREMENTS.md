@@ -1,6 +1,6 @@
 # Requirements: DNALLM-Mark v1.3 多 GPU 编排与验证
 
-**Defined:** 2026-10-20
+**Defined:** 2026-10-20 (20 requirements incl. dedicated docs phase — maintainer additions: version 1.3.0 bump, docs phase)
 **Core Value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.3 extension: multi-GPU throughput without sacrificing one-cell-one-GPU honesty or a single published number.)
 
 ## v1.3 Requirements
@@ -21,7 +21,13 @@ Requirements for milestone v1.3. Each maps to roadmap phases (Traceability below
 - [ ] **VAL-01**: The `docs/multi-gpu.md` N=2 smoke procedure executes successfully on the local 2× RTX 5090 box (WINDOWS #21 closed); the D-05 machine-role decision is revised in-doc (本机 = 双卡验证机)
 - [ ] **VAL-02**: 5% sub-datasets are pre-materialized as first-class dataset directories — deterministic seed-governed STRATIFIED sampling per split, measured row counts carried in a dedicated subset registry/config file, separate output roots; subset runs and real runs never share a registry, config, or output root
 - [ ] **VAL-03**: A small real sweep (≈2-4 models × 2-3 datasets × 3 seeds, 1 epoch, 5% subsets) completes on both GPUs through dynamic dispatch → merge/data-chain consumption end-to-end with real training
-- [ ] **VAL-04**: `docs/multi-gpu.md` and related runbooks are updated to dispatch mode with every command copy-pasteable (including the subset-generation step)
+
+### DOCS — 文档撰写
+
+- [ ] **DOCS-01**: `docs/multi-gpu.md` and related runbooks are rewritten for dispatch mode with every command copy-pasteable (including subset generation); the N=2 smoke procedure matches the executed Phase 15 reality; legacy static-shard mode documented as coexisting
+- [ ] **DOCS-02**: README + ONBOARDING/GETTING-STARTED gain the multi-GPU dispatch section and the 5% subset workflow (generate → configure → run → merge); no stale static-sharding-only instructions remain
+- [ ] **DOCS-03**: TUI multi-GPU usage documentation (multi-GPU launch, monitoring, G lanes) in the TUI-DEMO.md precedent shape, verified against shipped screens
+- [ ] **DOCS-04**: Version surfaces consistent at 1.3.0 (pyproject, uv.lock, TUI about screen); the milestone-stage row rewritten to the delivered v1.3 scope at ship time
 
 ### TUI — 控制台多 GPU 界面
 
@@ -66,28 +72,31 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MGPU-01 | TBD | Pending |
-| MGPU-02 | TBD | Pending |
-| MGPU-03 | TBD | Pending |
-| MGPU-04 | TBD | Pending |
-| MGPU-05 | TBD | Pending |
-| MGPU-06 | TBD | Pending |
-| VAL-01 | TBD | Pending |
-| VAL-02 | TBD | Pending |
-| VAL-03 | TBD | Pending |
-| VAL-04 | TBD | Pending |
-| TUI-01 | TBD | Pending |
-| TUI-02 | TBD | Pending |
-| TUI-03 | TBD | Pending |
-| TUI-04 | TBD | Pending |
-| WEB-01 | TBD | Pending |
-| WEB-02 | TBD | Pending |
-| WEB-03 | TBD | Pending |
+| MGPU-01 | Phase 13 | Pending |
+| MGPU-02 | Phase 13 | Pending |
+| MGPU-06 | Phase 13 | Pending |
+| MGPU-03 | Phase 14 | Pending |
+| MGPU-04 | Phase 14 | Pending |
+| MGPU-05 | Phase 14 | Pending |
+| VAL-01 | Phase 15 | Pending |
+| VAL-02 | Phase 15 | Pending |
+| VAL-03 | Phase 15 | Pending |
+| TUI-01 | Phase 16 | Pending |
+| TUI-02 | Phase 16 | Pending |
+| TUI-03 | Phase 16 | Pending |
+| TUI-04 | Phase 16 | Pending |
+| WEB-01 | Phase 17 | Pending |
+| WEB-02 | Phase 17 | Pending |
+| WEB-03 | Phase 17 | Pending |
+| DOCS-01 | Phase 18 | Pending |
+| DOCS-02 | Phase 18 | Pending |
+| DOCS-03 | Phase 18 | Pending |
+| DOCS-04 | Phase 18 | Pending |
 
 **Coverage:**
-- v1.3 requirements: 17 total
-- Mapped to phases: 0
-- Unmapped: 17 ⚠️ (filled by roadmap creation, next step)
+- v1.3 requirements: 20 total
+- Mapped to phases: 20
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-10-20*
