@@ -426,6 +426,25 @@ def overwrite_claim(ledger_dir, cell, payload):
     return path
 
 
+def _archive_filename(cell, original_run):
+    """The frozen archive filename for one superseded attempt.
+
+    ``{claim stem}--run-{run_id prefix}.json`` — keyed by the ORIGINAL
+    attempt's ``run_id`` so the name is injective across attempts (a
+    second-level re-run of a re-run archives under the re-run's own
+    ``run_id``).
+
+    Args:
+        cell (tuple): the cell identity.
+        original_run (str): the original attempt's run id.
+
+    Returns:
+        str: the archive filename (no directory component).
+    """
+    stem = claim_filename(cell)[:-len(".json")]
+    return f"{stem}--run-{original_run[:8]}.json"
+
+
 def archive_superseded_claim(ledger_dir, cell, original_payload):
     """Archive one superseded claim ``O_EXCL`` under ``archive/`` (D14-07).
 
@@ -466,8 +485,7 @@ def archive_superseded_claim(ledger_dir, cell, original_payload):
         )
     archive_dir = Path(ledger_dir) / ARCHIVE_DIR_NAME
     archive_dir.mkdir(parents=True, exist_ok=True)
-    stem = claim_filename(cell)[:-len(".json")]
-    filename = f"{stem}--run-{original_run[:8]}.json"
+    filename = _archive_filename(cell, original_run)
     path = archive_dir / filename
     try:
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
@@ -1294,27 +1312,28 @@ def _scan_failed_claims(ledger_dir):
     return qualified
 
 
-def _rerun_lane_refusal(qualified):
+def _rerun_lane_refusal(qualified, union_keys):
     """Build the heterogeneous-lane refusal (D14-08, the run_merge shape).
 
     A flag differs when more than one distinct canonical value appears
-    across the failed claims' lanes (the per-cell ``train_fraction`` is
-    cell identity, not lane, and is excluded). The refusal names, PER
-    CELL, each differing flag and that cell's value — the collect-all
-    discipline over every differing flag.
+    across the failed claims' lanes (compared over the UNION key set —
+    an absent key reads as None, matching its replay semantics; the
+    per-cell ``train_fraction`` is cell identity, not lane, and is
+    excluded). The refusal names, PER CELL, each differing flag and
+    that cell's value — the collect-all discipline over every differing
+    flag.
 
     Args:
         qualified (list[tuple]): the ``(cell, payload)`` scan result.
+        union_keys (list[str]): the sorted union of lane keys across
+            the qualified claims (minus ``train_fraction``).
 
     Returns:
         str: the ``[Error] ...`` message for ``sys.exit``.
     """
     lanes = [(cell, _claim_lane(payload)) for cell, payload in qualified]
-    all_flags = sorted(
-        {key for _cell, lane in lanes for key in lane}
-        - {"train_fraction"})
     problems = []
-    for flag in all_flags:
+    for flag in union_keys:
         values = {
             run_sweep_shard._canonical_lane_value(lane.get(flag))
             for _cell, lane in lanes}
@@ -1397,20 +1416,53 @@ def _run_rerun_failed(args, passthrough, spawner, clock, workers, gpus):
         registry_dir)
 
     # Lane homogeneity (D14-08): the replay set must share ONE lane
-    # signature — the claim lane minus the per-cell train_fraction —
-    # canonicalized with the run_merge discipline (deterministic
-    # sorted-JSON, never set-iteration order).
+    # signature — canonicalized with the run_merge discipline
+    # (deterministic sorted-JSON, never set-iteration order). The
+    # comparison universe is the UNION of lane keys across the failed
+    # claims (minus the per-cell train_fraction), with every lane
+    # projected onto that key set: an ABSENT key and a key recorded as
+    # None replay identically (zero argv elements, the Pitfall 4
+    # absent-parity discipline), so they must COMPARE identically too —
+    # a Phase-13 five-key lane beside a Phase-14 nine-key lane with
+    # equal values is ONE lane, never a refusal.
+    union_keys = sorted(
+        {key for _cell, payload in qualified
+         for key in _claim_lane(payload)} - {"train_fraction"})
     signature_groups = {}
     for cell, payload in qualified:
-        lane = {
-            key: value for key, value in _claim_lane(payload).items()
-            if key != "train_fraction"}
+        lane = _claim_lane(payload)
+        signature = {key: lane.get(key) for key in union_keys}
         signature_groups.setdefault(
-            run_sweep_shard._canonical_lane_value(lane),
+            run_sweep_shard._canonical_lane_value(signature),
             (lane, []))[1].append(cell)
     if len(signature_groups) > 1:
-        sys.exit(_rerun_lane_refusal(qualified))
+        sys.exit(_rerun_lane_refusal(qualified, union_keys))
     agreed_lane = next(iter(signature_groups.values()))[0]
+
+    # Archive-collision adjacency (D14-07): the archive for an original
+    # attempt is O_EXCL and append-only — one already existing while
+    # the canonical slot still names the SAME run_id (a crash between
+    # the archive create and the canonical overwrite, or manual
+    # tampering) refuses loudly BEFORE any spawn, by name. The
+    # worker's own O_EXCL create remains the structural backstop
+    # (T-14-06) for anything the pre-check cannot see.
+    collisions = []
+    for cell, payload in qualified:
+        original_run = payload.get("run_id")
+        if not isinstance(original_run, str) or not original_run:
+            continue  # the worker's genealogy step refuses this loudly
+        expected = (
+            Path(ledger_dir) / ARCHIVE_DIR_NAME
+            / _archive_filename(cell, original_run))
+        if expected.is_file():
+            collisions.append(
+                f"archive for cell {_cell_str(cell)} (run "
+                f"{original_run[:8]}) already exists at {expected} — "
+                "the ledger's audit history is append-only and never "
+                "overwritten (D14-07); refusing the re-run"
+            )
+    if collisions:
+        sys.exit(f"[Error] {'; '.join(collisions)}")
 
     # The launch lane from the ONE agreed signature — tolerant reads
     # (Pitfall 4): a pre-Phase-14 claim lacking cache_dir (or any later

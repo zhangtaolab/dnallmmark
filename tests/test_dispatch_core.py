@@ -3150,3 +3150,307 @@ def test_rerun_failed_d14_15_two_worker_fixture(tmp_path, monkeypatch):
         "the singleton lock is released after the re-run drain"
     )
     assert not list(base.rglob("*.tmp")), "no atomic-write tmp residue"
+
+
+# ===== 14-03 Task 2: refusal matrix + stale-claim tolerance + gates =====
+
+
+def _write_failed_claim(ledger_dir, cell, lane, run_id="hand-run-1"):
+    """Hand-write one FAILED ledger claim with an EXPLICIT lane dict
+    (the refusal-fixture primitive; ``_write_hand_claim`` hardcodes the
+    empty lane)."""
+    payload = dispatch_core._claim_payload(
+        cell, lane, "7", run_id, "2026-10-20T00:00:00+00:00")
+    payload["state"] = dispatch_core.CLAIM_STATE_FAILED
+    path = ledger_dir / dispatch_core.claim_filename(cell)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path, payload
+
+
+def _rerun_argv(base, registry_dir, extra=()):
+    """The ONE re-run command shape: no --models, no --seeds."""
+    return [
+        "--rerun-failed", "--workers", "2", "--gpus", "0,1",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+        *extra,
+    ]
+
+
+def test_rerun_refuses_heterogeneous_lanes_naming_flag_and_cells(
+        tmp_path, monkeypatch):
+    """D14-08: two failed claims whose lanes differ in peft (lora vs
+    none) refuse the re-run naming the flag, its value PER CELL, and
+    the D14-08 rationale — and NO child is ever spawned."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    lane_lora = {"peft": "lora", "config_variant": "none",
+                 "subset_file": None, "effective_batch_size": None,
+                 "num_train_epochs": None}
+    lane_none = {**lane_lora, "peft": "none"}
+    _write_failed_claim(
+        ledger_dir, ("model-a+lora", "task-x", 42), lane_lora)
+    _write_failed_claim(
+        ledger_dir, ("model-b", "task-z", 43), lane_none)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "'peft'" in message, "the differing flag is named"
+    assert "model-a+lora/task-x/seed_42 = 'lora'" in message
+    assert "model-b/task-z/seed_43 = 'none'" in message
+    assert "D14-08" in message
+    assert calls == [], "no child spawned from a refused re-run"
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists(), (
+        "the refusal fires before any launch machinery"
+    )
+
+
+@pytest.mark.parametrize("tokens,expected", [
+    (["--from-failures", "f.json"],
+     ["refuses the scoping token '--from-failures'", "D14-05, MGPU-04"]),
+    (["--seeds", "42"],
+     ["refuses the scoping token '--seeds'", "D14-05, MGPU-04"]),
+    (["--tasks", "GUE__emp_H3"],
+     ["refuses the scoping token '--tasks'", "D14-05, MGPU-04"]),
+    (["--peft", "ia3"], ["refuses the lane token '--peft'", "D14-06"]),
+    (["--config-variant", "head"],
+     ["refuses the lane token '--config-variant'", "D14-06"]),
+    (["--subset_file", "f"],
+     ["refuses the lane token '--subset_file'", "D14-06"]),
+    (["--effective_batch_size", "8"],
+     ["refuses the lane token '--effective_batch_size'", "D14-06"]),
+    (["--num_train_epochs", "2"],
+     ["refuses the lane token '--num_train_epochs'", "D14-06"]),
+    (["--cache_dir", "x"], ["refuses the lane token '--cache_dir'", "D14-06"]),
+    (["--model_root", "r"], ["refuses the lane token '--model_root'", "D14-06"]),
+    (["--dataset_root", "r"],
+     ["refuses the lane token '--dataset_root'", "D14-06"]),
+    (["--log_dir", "r"], ["refuses the lane token '--log_dir'", "D14-06"]),
+    (["--bogus"], ["accepts no passthrough token '--bogus'"]),
+    (["--registry-dir"], ["--registry-dir requires a value"]),
+])
+def test_rerun_refuses_every_forbidden_passthrough_token(
+        tmp_path, monkeypatch, tokens, expected):
+    """T-14-08 (the Pitfall 5 closure): every passthrough token except
+    --registry-dir refuses with its NAMED message class — scoping
+    tokens get the D14-05 double-scope wording, lane tokens the D14-06
+    lane-replay wording, unknown tokens refuse generically."""
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, tmp_path, extra=tokens),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    for needle in expected:
+        assert needle in message
+    assert calls == []
+
+
+@pytest.mark.parametrize("combo,needle", [
+    (["--merge"], "--rerun-failed cannot combine with --merge"),
+    (["--mode", "static"],
+     "--rerun-failed cannot combine with --mode static"),
+    (["--dry-run"], "--rerun-failed cannot combine with --dry-run"),
+    (["--models", "model-a"], "--rerun-failed takes no --models"),
+    (["--cleanup"], "--rerun-failed cannot combine with --cleanup"),
+])
+def test_rerun_combo_refusals_fire_before_any_ledger_work(
+        tmp_path, monkeypatch, combo, needle):
+    """The A6-shape combination refusals each exit with their named
+    error BEFORE any ledger work (no ledger dir, no state file, no
+    spawn). The explicit --mode static refusal needs the raw-token scan
+    (static is also the parser default)."""
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, tmp_path, extra=combo),
+                spawner=make_fake_spawner(calls))
+    assert needle in str(excinfo.value)
+    assert calls == []
+    assert not (base / dispatch_core.LEDGER_DIR_NAME).exists()
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists()
+
+
+def test_rerun_zero_failed_verdict_with_registry_dir_accepted(
+        tmp_path, monkeypatch, capsys):
+    """A root with NO ledger prints the explicit no-failed-cells
+    verdict and exits 0 (the A7 drained-root precedent) — and the one
+    accepted passthrough token, --registry-dir, rides along cleanly."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_fake_spawner(calls))
+    assert "no failed cells to re-run" in capsys.readouterr().out
+    assert calls == []
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists(), (
+        "the zero-failed verdict touches nothing"
+    )
+
+
+def test_rerun_skips_failed_cell_that_gained_the_marker(
+        tmp_path, monkeypatch, capsys):
+    """The Phase 13 D-06 adjacency: a failed claim whose cell later
+    gained the trainer_state.json marker is SKIPPED — the marker stays
+    authoritative — counted in counts.skipped, nothing spawned,
+    exit 0."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    cell = ("model-a", "task-x", 42)
+    _write_failed_claim(ledger_dir, cell, {})
+    _write_marker(base, cell)
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_fake_spawner(calls))
+    assert calls == [], "the marker stays authoritative — never re-run"
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 1, "completed": 0, "failed": 0, "skipped": 1}
+    assert "nothing to do" in capsys.readouterr().out
+
+
+def test_rerun_stale_pre_phase14_claim_replays_absent_parity(
+        tmp_path, monkeypatch):
+    """Pitfall 4: a Phase-13-shape failed claim whose lane lacks
+    cache_dir (and the storage roots) replays with the flag ABSENT —
+    zero cache_dir argv elements, never a KeyError, never a refusal —
+    and the argv equals build_argv output for the same cell with
+    cache_dir=None (the absent-parity discipline); the genealogy still
+    archives the original verbatim."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    cell = ("model-a", "task-x", 42)
+    stale_lane = {"peft": "none", "config_variant": "none",
+                  "subset_file": None, "effective_batch_size": None,
+                  "num_train_epochs": None}
+    path, _payload = _write_failed_claim(
+        ledger_dir, cell, stale_lane, run_id="phase13run")
+    original_text = path.read_text(encoding="utf-8")
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the stale claim re-runs (never refused)"
+    argv = calls[0]["argv"]
+    for absent_flag in ("--cache_dir", "--model_root",
+                        "--dataset_root", "--log_dir"):
+        assert absent_flag not in argv, (
+            f"{absent_flag} absent from the claim lane = zero argv "
+            "elements (absent parity)"
+        )
+    assert argv == run_sweep.build_argv(
+        "model-a", "task-x", 42, str(base), peft="none",
+        train_fraction=None, subset_file=None,
+        effective_batch_size=None, num_train_epochs=None,
+        cache_dir=None, config_variant="none", model_root=None,
+        dataset_root=None, log_dir=None)
+    archive_dir = ledger_dir / "archive"
+    archived = list(archive_dir.glob("*.json"))
+    assert len(archived) == 1
+    assert archived[0].name == (
+        f"{dispatch_core.claim_filename(cell)[:-len('.json')]}"
+        "--run-phase13r.json"), (  # run_id[:8] of "phase13run"
+        "the archive is keyed by the ORIGINAL attempt's run_id"
+    )
+    # content-verbatim: the archive preserves the original payload
+    # exactly (a hand fixture's compact serialization re-canonicalizes
+    # through the ledger writer; run-produced claims archive
+    # byte-identical — pinned by the D14-15 e2e)
+    assert json.loads(archived[0].read_text(encoding="utf-8")) == (
+        json.loads(original_text))
+    fresh = json.loads(
+        (ledger_dir / dispatch_core.claim_filename(cell)).read_text(
+            encoding="utf-8"))
+    assert fresh["state"] == dispatch_core.CLAIM_STATE_COMPLETED
+    assert fresh["rerun_of"]["run_id"] == "phase13run"
+
+
+def test_rerun_old_and_new_lane_shapes_with_equal_values_are_one_lane(
+        tmp_path, monkeypatch):
+    """Absent == None replay parity extends to the HOMOGENEITY
+    comparison: a Phase-13 five-key lane and a Phase-14 nine-key lane
+    carrying the same effective values (the newer keys recorded as
+    None) are ONE lane signature — both cells re-run, never an empty or
+    false heterogeneous-lane refusal."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    old_lane = {"peft": "lora", "config_variant": "none",
+                "subset_file": None, "effective_batch_size": None,
+                "num_train_epochs": None}
+    new_lane = {**old_lane, "cache_dir": None, "model_root": None,
+                "dataset_root": None, "log_dir": None}
+    _write_failed_claim(
+        ledger_dir, ("model-a+lora", "task-x", 42), old_lane,
+        run_id="oldrun-1")
+    _write_failed_claim(
+        ledger_dir, ("model-b+lora", "task-z", 43), new_lane,
+        run_id="newrun-1")
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 2, "both failed cells re-run as ONE lane"
+    for call in calls:
+        assert flag_value(call["argv"], "--peft") == "lora"
+        assert "--cache_dir" not in call["argv"]
+
+
+def test_rerun_refuses_unknown_registry_model_loudly(
+        tmp_path, monkeypatch):
+    """T-14-07 registry join: a hand claim naming a model absent from
+    the registry refuses loudly naming the model — fail-safe, never a
+    silent spawn."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    _write_failed_claim(ledger_dir, ("model-z", "task-x", 42), {})
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "model-z" in message
+    assert "not in registry" in message
+    assert calls == []
+
+
+def test_rerun_archive_collision_refuses_loudly(
+        tmp_path, monkeypatch, capsys):
+    """Archiving the same original attempt twice is refused — audit
+    history can never be overwritten (D14-07). A pre-materialized
+    archive file for the original attempt makes the re-run refuse with
+    a NAMED error before any spawn; nothing on disk changes."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    cell = ("model-a", "task-x", 42)
+    path, _payload = _write_failed_claim(
+        ledger_dir, cell, {}, run_id="origrun1")
+    archive_dir = ledger_dir / dispatch_core.ARCHIVE_DIR_NAME
+    archive_dir.mkdir()
+    stem = dispatch_core.claim_filename(cell)[:-len(".json")]
+    preexisting = archive_dir / f"{stem}--run-origrun1.json"
+    preexisting.write_text('{"planted": true}', encoding="utf-8")
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "already exists" in message
+    assert "D14-07" in message
+    assert "audit history" in message
+    assert calls == [], "the collision refuses before any spawn"
+    # audit history protected: the planted file and the original claim
+    # are both untouched
+    assert preexisting.read_text(encoding="utf-8") == '{"planted": true}'
+    assert json.loads(path.read_text(encoding="utf-8"))["run_id"] == (
+        "origrun1")
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists()
