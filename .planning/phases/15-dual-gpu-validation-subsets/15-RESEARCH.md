@@ -559,7 +559,9 @@ the dispatcher's stdout IS the live view (plain-line table, flush=True per write
 | A6 | modelscope model downloads remain reachable at execution time (200s today) | Downloads | Retry/resume is built into the CLI; worst case re-run the download task |
 | A7 | The export's per-model view over 2 models feeds summarize cleanly in a tmp tree with only those files present (summarize reads any ≥1 `*_performance.json` dir; not executed end-to-end this session because no run records exist yet) | Consumption | Low — test_determinism proves the chain over arbitrary trees; flag toggles exist |
 
-## Open Questions
+## Open Questions (RESOLVED — rulings embedded in the plans)
+
+> **Planner rulings (2026-10-20):** Q1 floor-1-row + actual_fraction recorded — 15-02 Task 1; Q2 smoke on FULL 5mC — 15-01 Task 2; Q3 no multiclass in sweep (committed 3-class fixture covers it) — 15-02 Task 2; Q4 subset provenance object added — 15-02 Task 1.
 
 1. **Exact D15-06 small-split rule** — see A4. Recommendation: `k = max(1, int(n * 0.05))`
    capped at n, `actual_fraction` recorded per split in the subset registry. Needs a
