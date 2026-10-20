@@ -86,6 +86,7 @@ DNALLM-Mark is a centralized evaluation system designed to assess and compare th
 
 ### Prerequisites
 
+- **Linux** (x86_64/aarch64) — the benchmark runs on Linux only: the fine-tuning pipeline and the TUI console target Linux CUDA machines (GB10/AutoDL-class workstations); Windows and macOS are not supported execution environments. The static web leaderboard itself is viewable in any browser on any OS
 - Python 3.13+ (data toolchain — see `.python-version`; the GPU pipeline has its own requirements)
 - Node.js 18+ (only for the task-index generator `scripts/generate-tasks-index.js` and the optional `npx http-server` fallback — the web interface itself is static and needs no Node)
 - Git
