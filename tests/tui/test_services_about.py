@@ -300,11 +300,19 @@ def test_derive_about_data_never_raises_into_compose(monkeypatch, tmp_path):
 
 
 def test_derive_about_data_default_root_is_the_repo_pyproject():
-    """No injected root: the repo's own pyproject.toml is read (1.2.0)."""
+    """No injected root: the repo's own pyproject.toml is read.
+
+    The expected version is DERIVED from pyproject.toml (tomllib), never
+    re-pinned — a hard-coded pin went stale at the 1.3.0 bump and red CI.
+    """
     data = about.derive_about_data()
     repo_pyproject = Path(about.__file__).resolve().parents[2] / "pyproject.toml"
     assert repo_pyproject.is_file()
-    assert data.software_version == "1.2.0"
+    import tomllib
+
+    with repo_pyproject.open("rb") as fh:
+        expected = tomllib.load(fh)["project"]["version"]
+    assert data.software_version == expected
 
 
 # =====================================================================
