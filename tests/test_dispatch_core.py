@@ -513,6 +513,101 @@ def test_dispatch_queue_order_is_deterministic(tmp_path, monkeypatch):
     )
 
 
+# ===== --from-failures scoping (CR-01, phase-13 review) =====
+
+
+def test_dispatch_from_failures_scopes_enumeration_to_failed_pairs(
+        tmp_path, monkeypatch):
+    """CR-01 pin: a dispatch launch scoped by --from-failures enumerates
+    EXACTLY the manifest's failed (model, task) pairs across the requested
+    seeds — never the full --models x --tasks filter matrix (the silent
+    full-matrix fallback the zero-cell refusal family exists to prevent)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    failures = tmp_path / "sweep_failures.json"
+    failures.write_text(
+        json.dumps([{"model": "model-b", "task": "task-z"}]),
+        encoding="utf-8")
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "2",
+        "--models", "model-a,model-b,model-c",
+        "--tasks", "task-x,task-z", "--seeds", "42,43",
+        "--from-failures", str(failures),
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert sorted(spawn_identities(calls)) == [
+        ("model-b", "task-z", 42), ("model-b", "task-z", 43)], (
+        "exactly the failed pair's cells across the requested seeds"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 2, "completed": 2, "failed": 0, "skipped": 0}
+
+
+def test_dispatch_from_failures_malformed_manifest_refuses_loudly(
+        tmp_path, monkeypatch):
+    """CR-01 pin: a --from-failures manifest with an unknown model name
+    refuses through run_sweep.load_failure_pairs' collect-all validation
+    BEFORE anything touches the root — the same loud refusal every
+    run_sweep.main launch performs, never a silent no-op."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    failures = tmp_path / "sweep_failures.json"
+    failures.write_text(
+        json.dumps([{"model": "model-zz", "task": "task-x"}]),
+        encoding="utf-8")
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--from-failures", str(failures),
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    message = str(excinfo.value)
+    assert "--from-failures" in message
+    assert "not in registry" in message
+    assert not calls
+    assert not base.exists(), "refused before the root was touched"
+
+
+def test_dispatch_from_failures_clean_manifest_never_full_sweep(
+        tmp_path, monkeypatch, capsys):
+    """CR-01 pin: a CLEAN manifest (0 failed pairs) is an explicit
+    zero-cell run — the mirrored message prints, the dispatch zero-cell
+    refusal fires by name, and NOT ONE cell of the wide filter matrix
+    spawns (a clean manifest must never silently become a full sweep)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    failures = tmp_path / "sweep_failures.json"
+    failures.write_text("[]", encoding="utf-8")
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42,43",
+            "--from-failures", str(failures),
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    assert "0 cell" in str(excinfo.value), (
+        "the zero-cell refusal catches the filtered-to-empty matrix"
+    )
+    out = capsys.readouterr().out
+    assert "is clean (0 failed pairs)" in out, (
+        "the mirrored explicit-zero-cell message prints first"
+    )
+    assert "NOT a full sweep" in out
+    assert not calls
+    assert not base.exists()
+
+
 # ===== lane threading =====
 
 

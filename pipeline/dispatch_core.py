@@ -914,6 +914,43 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
         tiers = run_sweep.load_priority_tiers(
             sweep_args.priority_file, registry_dir)
         cells = run_sweep.apply_priority_order(cells, tiers)
+    # CR-01 (phase-13 review): --from-failures is HONORED, never
+    # accept-and-ignored. The remainder re-parse accepts the flag, so a
+    # silent no-op here meant a typo'd manifest never validated AND a
+    # dispatch scoped by a failures manifest silently ran the FULL filter
+    # matrix (the exact WR-07 hazard the zero-cell refusal below exists
+    # to prevent). Mirrors run_sweep.main verbatim: the manifest
+    # validates loudly through run_sweep.load_failure_pairs (the same
+    # collect-all refusal every run_sweep launch performs), then the
+    # filter joins on BASE model names across the requested seeds. A
+    # clean manifest filters to zero cells and the zero-cell refusal
+    # below catches it BY NAME — an explicit zero-cell run, never a
+    # silent full sweep.
+    failure_pairs = None
+    if sweep_args.from_failures is not None:
+        failure_pairs = run_sweep.load_failure_pairs(
+            sweep_args.from_failures, registry_dir)
+    if failure_pairs is not None:
+        if failure_pairs:
+            print(
+                f"[From-failures] {len(failure_pairs)} failed (model, "
+                f"task) pair(s) in {sweep_args.from_failures}; enumerating "
+                "their cells across the requested seeds"
+            )
+        else:
+            # A clean manifest is a legitimate outcome (the sweep
+            # completed) — mirrored message: explicit zero-cell run, NOT
+            # a full sweep.
+            print(
+                f"[From-failures] {sweep_args.from_failures} is clean (0 "
+                "failed pairs) — explicit zero-cell run, NOT a full sweep"
+            )
+        cells = [
+            cell for cell in cells
+            if (run_sweep.base_model_name(
+                    cell[0], sweep_args.peft, config_variant), cell[1])
+            in failure_pairs
+        ]
     if not cells:
         # Zero-enumeration refusal BEFORE the lock (EDGE MGPU-01/empty):
         # an empty registry/filter intersection refuses by name — never
