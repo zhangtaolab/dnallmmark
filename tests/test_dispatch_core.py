@@ -92,11 +92,17 @@ from pathlib import Path
 from urllib.parse import unquote
 
 import dispatch_core
+import jsonschema
 import pytest
 import run_sweep  # conftest puts pipeline/ on sys.path
 import run_sweep_shard
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+#: The frozen v2 consumer contract (D14-01/D14-04, MGPU-03) — committed
+#: beside the writer, loaded by repo-relative path in the consumer tests
+#: (D14-14).
+DISPATCH_STATE_SCHEMA_PATH = REPO_ROOT / "schemas" / "dispatch_state.json"
 
 # ===== machine-independence pin (the test_sweep_shard.py idiom) =====
 #
@@ -2231,3 +2237,130 @@ def test_merge_happy_path_control_without_evidence(tmp_path, monkeypatch):
         cell_dir = run_sweep.cell_dir_for(base, model, "task-x", 42)
         assert (cell_dir / run_sweep.METRICS_NAME).is_file()
         assert (cell_dir / run_sweep.RESUME_MARKER).is_file()
+
+
+# ===== 14-01 Task 1: the frozen v2 state consumer contract (MGPU-03) =====
+
+
+def _load_dispatch_state_schema():
+    """Load the frozen v2 consumer schema (D14-14, repo-relative path)."""
+    return json.loads(
+        DISPATCH_STATE_SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
+def _run_two_worker_dispatch_with_one_failure(
+        tmp_path, monkeypatch, failed_cell):
+    """Drive the 2-model x 1-task x 2-seed dispatch fixture with ONE
+    scripted child failure on ``failed_cell`` (exit code 3, no artifacts
+    — the CR-02 failed-cell shape) over ``--workers 2 --gpus 5,7``.
+
+    Returns ``(base, calls)``; the run exits 1 on the failed count (the
+    caller-asserted SystemExit shape every failed-cell test already
+    uses), so the FINAL state file is the post-drain done payload with
+    honest counts — exactly what a consumer parses off a real root."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "2", "--gpus", "5,7",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42,43",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls, exit_for={failed_cell: 3}))
+    assert excinfo.value.code == 1, "the injected failure exits 1"
+    assert len(calls) == 4, "every enumerated cell drained"
+    return base, calls
+
+
+def test_dispatch_state_validates_against_frozen_v2_schema(
+        tmp_path, monkeypatch):
+    """D14-14 consumer pin: a completed two-worker fake run's final
+    dispatch_state.json validates against the committed
+    schemas/dispatch_state.json and reports schema_version 2 with the
+    full v2 additive surface — a drained queue and every in-flight slot
+    null at rest (the TUI/Phase-16 parse contract, frozen BEFORE any
+    consumer touches it)."""
+    failed_cell = ("model-b", "task-x", 43)
+    base, _calls = _run_two_worker_dispatch_with_one_failure(
+        tmp_path, monkeypatch, failed_cell)
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    jsonschema.validate(
+        instance=state, schema=_load_dispatch_state_schema())
+    assert state["schema_version"] == 2, (
+        "DISPATCH_STATE_SCHEMA_VERSION bumped to 2 (D14-01)"
+    )
+    assert state["status"] == "done", (
+        "a drained run is honestly done even with a failed cell "
+        "(exit 1 carries the failure; the status carries the drain)"
+    )
+    assert state["counts"] == {
+        "total": 4, "completed": 3, "failed": 1, "skipped": 0}
+    assert len(state["workers"]) == 2, (
+        "one workers[] row per --workers entry"
+    )
+    assert state["queue_depth"] == 0, (
+        "a fully drained run leaves an empty queue"
+    )
+    assert all(worker["in_flight"] is None
+               for worker in state["workers"]), (
+        "no cell is in flight after the join"
+    )
+
+
+def test_dispatch_state_failures_view_names_failed_cells(
+        tmp_path, monkeypatch):
+    """D14-01 failures view: the failed cell appears in state.failures
+    with its model/task/seed/fraction identity and a finished_at
+    timestamp; the healthy cells never appear, and the list length
+    equals counts.failed (the view consumers render against)."""
+    failed_cell = ("model-b", "task-x", 43)
+    base, _calls = _run_two_worker_dispatch_with_one_failure(
+        tmp_path, monkeypatch, failed_cell)
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert len(state["failures"]) == state["counts"]["failed"] == 1
+    entry = state["failures"][0]
+    assert entry["model"] == "model-b"
+    assert entry["task"] == "task-x"
+    assert entry["seed"] == 43
+    assert entry["fraction"] is None, (
+        "a plain (non-curve) cell carries a null fraction"
+    )
+    assert entry["finished_at"], "the failure carries its finish stamp"
+    # the healthy cells are absent: the one entry names ONLY the failed
+    # cell (model-a's two cells and model-b's healthy cell never appear)
+    assert {item["model"] for item in state["failures"]} == {"model-b"}
+    assert {item["seed"] for item in state["failures"]} == {43}
+
+
+def test_dispatch_state_worker_rows_match_gpus_and_sum_to_counts(
+        tmp_path, monkeypatch):
+    """D14-01 worker rows: workers[] carries one row per --workers index
+    with the gpu token in argv order, and the per-worker counters sum to
+    the run counts (cells == completed + failed; no double counting, no
+    dropped cells — the same accounting discipline counts already
+    enforce, projected per worker)."""
+    failed_cell = ("model-b", "task-x", 43)
+    base, _calls = _run_two_worker_dispatch_with_one_failure(
+        tmp_path, monkeypatch, failed_cell)
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    workers = state["workers"]
+    assert [worker["index"] for worker in workers] == [0, 1]
+    assert [worker["gpu"] for worker in workers] == ["5", "7"], (
+        "the operator-owned --gpus tokens forward in argv order"
+    )
+    counts = state["counts"]
+    assert sum(worker["cells"] for worker in workers) == (
+        counts["completed"] + counts["failed"]), (
+        "every spawned cell is accounted by exactly one worker"
+    )
+    assert sum(worker["completed"] for worker in workers) == (
+        counts["completed"])
+    assert sum(worker["failed"] for worker in workers) == counts["failed"]

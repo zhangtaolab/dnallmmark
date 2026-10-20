@@ -38,6 +38,12 @@ research; every step's guard depends on the ones before it):
    without leases sound (D13-11).
 3. **MODE EVIDENCE** — ``dispatch_state.json`` is written at the root
    BEFORE any claim or spawn (atomic tmp+``os.replace``, single writer).
+   Since Phase 14 (D14-01) the payload is schema v2: the Phase 13
+   minimal shape EXTENDED additively with the frozen MGPU-03 consumer
+   fields — ``queue_depth`` (derived, see ``_publish_state``), one
+   ``workers[]`` row per ``--workers`` index (gpu + in-flight cell +
+   counters), and the run's ``failures`` view — frozen in
+   ``schemas/dispatch_state.json`` and validated by the consumer test.
 4. **SKIP FILTER** — on relaunch, a cell is skipped iff its child-side
    ``trainer_state.json`` marker exists (the authoritative completion
    guard, D-06) OR its ledger claim already says ``completed``; a stale
@@ -119,8 +125,14 @@ CLAIM_STATE_CLAIMED = "claimed"
 CLAIM_STATE_COMPLETED = "completed"
 CLAIM_STATE_FAILED = "failed"
 
-#: ``dispatch_state.json`` schema version (Phase 13 minimal shape).
-DISPATCH_STATE_SCHEMA_VERSION = 1
+#: ``dispatch_state.json`` schema version. v2 (Phase 14, D14-01/D14-04):
+#: the Phase 13 minimal shape EXTENDED additively with the frozen
+#: MGPU-03 consumer fields — ``queue_depth``, per-worker ``workers``
+#: rows (gpu + in-flight cell + counters), and the run's ``failures``
+#: view — validated by the consumer test against the committed
+#: ``schemas/dispatch_state.json`` (the frozen contract; later changes
+#: are additive-only under the D14-04 same-commit discipline).
+DISPATCH_STATE_SCHEMA_VERSION = 2
 
 #: The create-to-write grace window (CR-02, phase-13 review): the lock's
 #: ``O_EXCL`` create is atomic but its payload write happens afterwards,
@@ -641,6 +653,56 @@ def _write_state(state_path, state):
     _atomic_write_json(state_path, state)
 
 
+def _publish_state(context):
+    """Refresh the v2 consumer fields and write ``dispatch_state.json``.
+
+    The ONE state-publication idiom (D14-01): every state transition
+    calls this under ``context["state_lock"]``, which recomputes the
+    additive consumer fields from the context's ground truth and hands
+    the frozen payload to ``_write_state`` — so the written file and the
+    rendered table observe exactly the same payload, never side-channel
+    state (the anti-pattern).
+
+    Snapshot invariant (the Pitfall 3 decision, frozen in
+    ``schemas/dispatch_state.json``): at EVERY write,
+
+    ``counts.completed + counts.failed + counts.skipped + queue_depth
+    + (workers whose in_flight is non-null) == counts.total``.
+
+    ``queue_depth`` is DERIVED (``total - completed - failed - skipped
+    - active workers``), never ``len(pending)``: the two locks are
+    never held together, a cell popped-but-not-yet-claimed transiently
+    counts in the derived depth, and the claim-time write moves it into
+    its worker's ``in_flight`` slot — the identity holds at every
+    observed write by construction, transient window included.
+
+    Args:
+        context (dict): the dispatcher's shared context. The caller
+            MUST hold ``context["state_lock"]`` (single writer, P10).
+    """
+    state = context["state"]
+    counts = context["counts"]
+    in_flight = context["in_flight"]
+    active = sum(1 for slot in in_flight.values() if slot is not None)
+    state["counts"] = dict(counts)
+    state["queue_depth"] = (
+        counts["total"] - counts["completed"] - counts["failed"]
+        - counts["skipped"] - active)
+    state["workers"] = [
+        {
+            "index": index,
+            "gpu": context["gpus"][index],
+            "in_flight": in_flight.get(index),
+            "cells": entry["cells"],
+            "completed": entry["completed"],
+            "failed": entry["failed"],
+        }
+        for index, entry in sorted(context["worker_stats"].items())
+    ]
+    state["updated_at"] = _now_iso()
+    _write_state(context["state_path"], state)
+
+
 def _spawn_worker(index, gpu, tee, context):
     """One per-GPU worker loop: claim -> spawn -> wait -> record -> next.
 
@@ -651,6 +713,13 @@ def _spawn_worker(index, gpu, tee, context):
     CLAIMS (O_EXCL) BEFORE spawning, waits, applies the CR-02 artifact
     check, finalizes the claim, and updates the state counts under the
     state lock. Failed cells are recorded and NOT requeued (decision A2).
+
+    Phase 14 view maintenance (D14-01): the worker's ``in_flight`` slot
+    (``context["in_flight"][index]``) is set to the claimed cell key
+    after a successful claim and cleared inside the finalize critical
+    section before its state write; a failed finalize also appends the
+    compact failure entry to the state's ``failures`` view, so
+    ``len(failures) == counts.failed`` at rest.
 
     Args:
         index (int): the worker index (diagnostics + tee log naming).
@@ -703,6 +772,13 @@ def _spawn_worker(index, gpu, tee, context):
                                 context["counts"])
                         continue
                 stats["cells"] += 1
+                # In-flight slot (D14-01): a plain assignment after the
+                # successful claim — snapshotted into every state write
+                # by ``_publish_state`` under the state lock. The cell
+                # is out of the pending list and not yet accounted, so
+                # the slot is what keeps the derived queue_depth's
+                # snapshot invariant truthful while the child trains.
+                context["in_flight"][index] = _cell_key(cell)
                 argv = run_sweep.build_argv(
                     model, task, seed, str(context["root"]),
                     peft=context["peft"],
@@ -769,16 +845,26 @@ def _spawn_worker(index, gpu, tee, context):
                     else CLAIM_STATE_FAILED)
                 finalize_claim(claim_path, payload)
                 with state_lock:
+                    # Clear the in-flight slot BEFORE the count lands so
+                    # the write's derived queue_depth keeps the snapshot
+                    # invariant (the cell moves from in-flight to its
+                    # terminal count atomically under this lock).
+                    context["in_flight"][index] = None
                     if error is None:
                         context["counts"]["completed"] += 1
                         stats["completed"] += 1
                     else:
                         context["counts"]["failed"] += 1
                         stats["failed"] += 1
+                        context["state"]["failures"].append({
+                            "model": model,
+                            "task": task,
+                            "seed": seed,
+                            "fraction": fraction,
+                            "finished_at": payload["finished_at"],
+                        })
                     accounted = True
-                    context["state"]["counts"] = dict(context["counts"])
-                    context["state"]["updated_at"] = _now_iso()
-                    _write_state(context["state_path"], context["state"])
+                    _publish_state(context)
             except Exception as exc:  # noqa: BLE001 — containment boundary
                 # CR-04 (phase-13 review): any dispatcher-side failure
                 # OUTSIDE the spawn seam (claim create/overwrite,
@@ -821,13 +907,17 @@ def _spawn_worker(index, gpu, tee, context):
                     # incremented completed/failed would corrupt the
                     # accounting assertion in run_dispatch).
                     with state_lock:
+                        context["in_flight"][index] = None
                         context["counts"]["failed"] += 1
                         stats["failed"] += 1
-                        context["state"]["counts"] = dict(
-                            context["counts"])
-                        context["state"]["updated_at"] = _now_iso()
-                        _write_state(
-                            context["state_path"], context["state"])
+                        context["state"]["failures"].append({
+                            "model": model,
+                            "task": task,
+                            "seed": seed,
+                            "fraction": fraction,
+                            "finished_at": _now_iso(),
+                        })
+                        _publish_state(context)
     finally:
         try:
             tee.close()
@@ -1175,12 +1265,20 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
     lock_path = acquire_dispatcher_lock(ledger_dir, run_id, started_at)
     seam = subprocess.Popen if spawner is None else spawner
     state_path = output_root / DISPATCH_STATE_NAME
+    # Default GPU assignment (operator-owned strings; no probing, D-05)
+    # resolves BEFORE the state build: the v2 consumer payload names one
+    # gpu per worker row from the very first write on.
+    if gpus is None:
+        gpus = [str(i) for i in range(workers)]
     counts = {
         "total": len(cells),
         "completed": 0,
         "failed": 0,
         "skipped": 0,
     }
+    worker_stats = {
+        i: {"cells": 0, "completed": 0, "failed": 0}
+        for i in range(workers)}
     state = {
         "schema_version": DISPATCH_STATE_SCHEMA_VERSION,
         "mode": "dispatch",
@@ -1189,30 +1287,23 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
         "started_at": started_at,
         "updated_at": started_at,
         "counts": dict(counts),
+        # ---- Phase 14 additive consumer fields (D14-01, schema v2;
+        #      frozen in schemas/dispatch_state.json — every v1 key is
+        #      present unchanged) ----
+        "queue_depth": counts["total"],
+        "workers": [
+            {
+                "index": i,
+                "gpu": gpus[i],
+                "in_flight": None,
+                "cells": 0,
+                "completed": 0,
+                "failed": 0,
+            }
+            for i in range(workers)
+        ],
+        "failures": [],
     }
-    _write_state(state_path, state)  # BEFORE any claim (mode evidence)
-
-    # Relaunch skip filter (the module docstring's step 4): skip iff the
-    # marker exists (authoritative, D-06) OR the ledger says completed;
-    # a stale claim (claimed/failed from a dead run) requeues. Purely
-    # per-cell, so the skip set is order-independent by construction.
-    pending = []  # (cell, tag) — tag: fresh | requeue
-    for cell in cells:
-        decision = relaunch_decision(output_root, ledger_dir, cell)
-        if decision == _DECISION_SKIP:
-            counts["skipped"] += 1
-        else:
-            pending.append((cell, decision))
-    state["counts"] = dict(counts)
-    state["updated_at"] = _now_iso()
-    _write_state(state_path, state)  # still BEFORE any claim/spawn
-
-    now = datetime.now if clock is None else clock
-    launch_stamp = now().strftime(
-        run_sweep_shard.WORKER_LOG_TIMESTAMP_FORMAT)
-    worker_stats = {
-        i: {"cells": 0, "completed": 0, "failed": 0}
-        for i in range(workers)}
     context = {
         "root": output_root,
         "ledger_dir": ledger_dir,
@@ -1220,10 +1311,12 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
         "state_path": state_path,
         "state": state,
         "counts": counts,
-        "pending": pending,
+        "pending": [],  # filled by the skip filter below
         "queue_lock": threading.Lock(),
         "state_lock": threading.Lock(),
         "worker_stats": worker_stats,
+        "in_flight": {i: None for i in range(workers)},
+        "gpus": gpus,
         "spawner": seam,
         "peft": sweep_args.peft,
         "config_variant": config_variant,
@@ -1242,14 +1335,30 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
             "num_train_epochs": sweep_args.num_train_epochs,
         },
     }
+    _publish_state(context)  # BEFORE any claim (mode evidence)
 
-    if not pending:
+    # Relaunch skip filter (the module docstring's step 4): skip iff the
+    # marker exists (authoritative, D-06) OR the ledger says completed;
+    # a stale claim (claimed/failed from a dead run) requeues. Purely
+    # per-cell, so the skip set is order-independent by construction.
+    for cell in cells:
+        decision = relaunch_decision(output_root, ledger_dir, cell)
+        if decision == _DECISION_SKIP:
+            counts["skipped"] += 1
+        else:
+            context["pending"].append((cell, decision))
+    _publish_state(context)  # still BEFORE any claim/spawn
+
+    now = datetime.now if clock is None else clock
+    launch_stamp = now().strftime(
+        run_sweep_shard.WORKER_LOG_TIMESTAMP_FORMAT)
+
+    if not context["pending"]:
         # The relaunch half of the zero-cell decision (EDGE
         # MGPU-02/empty): a fully drained root is an explicit
         # nothing-to-do verdict and exit 0 — never a re-spawn storm.
         state["status"] = "done"
-        state["updated_at"] = _now_iso()
-        _write_state(state_path, state)
+        _publish_state(context)
         release_dispatcher_lock(lock_path)
         print(
             f"[Dispatch] nothing to do — all {len(cells)} enumerated "
@@ -1257,10 +1366,6 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
             "spawned"
         )
         return
-
-    # Default GPU assignment (operator-owned strings; no probing, D-05)
-    if gpus is None:
-        gpus = [str(i) for i in range(workers)]
 
     tees = []
     try:
@@ -1312,8 +1417,7 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
         counts["completed"] + counts["failed"] + counts["skipped"])
     if drained != counts["total"]:
         state["status"] = "incomplete"
-        state["updated_at"] = _now_iso()
-        _write_state(state_path, state)
+        _publish_state(context)
         sys.exit(
             f"[Error] dispatch accounting mismatch: {drained}/"
             f"{counts['total']} cells accounted for — a worker died "
@@ -1330,8 +1434,7 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
             f"log={dispatch_worker_log_path(output_root, i, launch_stamp)}"
         )
     state["status"] = "done"
-    state["updated_at"] = _now_iso()
-    _write_state(state_path, state)
+    _publish_state(context)
     print(
         f"[Dispatch] {counts['completed']}/{counts['total']} cell(s) "
         f"completed, {counts['failed']} failed, {counts['skipped']} "
