@@ -323,10 +323,11 @@ def parse_args(argv=None):
 
     The orchestrator owns the five launch flags (``--workers``,
     ``--gpus``, ``--models``, ``--output-root``, ``--dry-run``) plus the
-    two merge-mode flags (``--merge``, ``--include-checkpoints`` — 12-04)
-    and the two cleanup-mode flags (``--cleanup``, ``--yes`` — 14-02);
-    every UNRECOGNIZED token from the command line lands in the returned
-    remainder. In LAUNCH mode the remainder is appended VERBATIM to every
+    two merge-mode flags (``--merge``, ``--include-checkpoints`` — 12-04),
+    the two cleanup-mode flags (``--cleanup``, ``--yes`` — 14-02), and
+    the rerun-mode flag (``--rerun-failed`` — 14-03; implies dispatch
+    mode); every UNRECOGNIZED token from the command line lands in the
+    returned remainder. In LAUNCH mode the remainder is appended VERBATIM to every
     worker argv (run_sweep stays the single owner of sweep-flag
     validation and help — the D-07 argv-surface-minimization answer); in
     MERGE and CLEANUP modes it must be EMPTY (neither takes sweep
@@ -456,6 +457,26 @@ def parse_args(argv=None):
              "the RESOLVED --output-root string EXACTLY. Without --yes, "
              "an interactive terminal prompts once; EOF, a mismatch, or "
              "a non-interactive launch refuses with nothing removed"
+    )
+    parser.add_argument(
+        "--rerun-failed",
+        action="store_true",
+        default=False,
+        help="RERUN MODE (14-03, MGPU-04, D14-05..D14-08): re-run the "
+             "union of FAILED cells recorded in the dispatch ledger "
+             "(state:failed claims across ALL prior runs on "
+             "--output-root) through the dispatch engine — implies "
+             "--mode dispatch and needs NEITHER --models NOR --seeds "
+             "(the ledger defines both). Lane flags (peft/variant/"
+             "epochs/subset/ebs/cache_dir/storage roots) replay "
+             "VERBATIM from the claim-time lane records (D14-06); "
+             "unequal lanes among the failed cells refuse loudly "
+             "(D14-08); the original failed claims are preserved "
+             "verbatim under dispatch_ledger/archive/ with rerun_of "
+             "links on the fresh claims (D14-07). Orchestrator-owned "
+             "vocabulary (this parser, never the passthrough — no "
+             "collision with run_sweep's --from-failures); only "
+             "--registry-dir may accompany it"
     )
     return parser.parse_known_args(argv)
 
@@ -1508,6 +1529,56 @@ def main(spawner=None, clock=None):
             "dispatch roots need no merge (MGPU-06) — run the modes "
             "separately"
         )
+    if args.rerun_failed:
+        # 14-03 (MGPU-04, D14-05, the Q3 ruling): --rerun-failed is
+        # ORCHESTRATOR-OWNED vocabulary (a shard parser flag can never
+        # collide with run_sweep's passthrough --from-failures, Pitfall
+        # 5) and IMPLIES dispatch mode — it routes into the engine's
+        # re-run branch BEFORE the --models/--seeds requirements (the
+        # ledger defines both). Combination refusals fire in the A6
+        # shape BEFORE any ledger work; the explicit --mode static
+        # refusal needs the raw-token scan because "static" is also the
+        # parser DEFAULT (an implicit static must not refuse).
+        if args.merge:
+            sys.exit(
+                "[Error] --rerun-failed cannot combine with --merge: "
+                "dispatch roots are ONE shared root that needs no "
+                "merge (MGPU-06) — run the modes separately"
+            )
+        if args.mode == "static" and any(
+                token == "--mode" or token.startswith("--mode=")
+                for token in sys.argv[1:]):
+            sys.exit(
+                "[Error] --rerun-failed cannot combine with --mode "
+                "static: --rerun-failed implies --mode dispatch (the "
+                "re-run replays through the dispatch engine's worker "
+                "loops)"
+            )
+        if args.dry_run:
+            sys.exit(
+                "[Error] --rerun-failed cannot combine with --dry-run: "
+                "the re-run set IS the plan (the ledger's failed "
+                "claims) — there is nothing left to enumerate dry"
+            )
+        if args.models is not None:
+            sys.exit(
+                "[Error] --rerun-failed takes no --models (D14-05): "
+                "the re-run scope is the ledger's failed claims, never "
+                "a command-line filter"
+            )
+        if args.cleanup:
+            sys.exit(
+                "[Error] --rerun-failed cannot combine with --cleanup: "
+                "cleanup verifies and removes STATIC worker roots after "
+                "a merge — a re-run launches dispatch children; run the "
+                "modes separately"
+            )
+        # Lazy import (the cycle-breaking precedent below): the shard
+        # parser owns the flag; the engine owns the re-run branch.
+        import dispatch_core
+
+        return dispatch_core.run_dispatch(
+            args, passthrough, spawner=spawner, clock=clock)
     if args.cleanup:
         # 14-02 (D14-09..D14-12, the A6 refusal shape): cleanup is the
         # fourth sibling mode — verify the merged root, then offer

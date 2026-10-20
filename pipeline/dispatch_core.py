@@ -74,6 +74,23 @@ ONLY ``{root}/sweep_manifest.json``, and returns: no lock, no state
 file, no claims, no tees, no children — byte-identical across runs and
 equal to static-mode enumeration for identical inputs.
 
+Failure re-run (14-03, MGPU-04, D14-05..D14-08): ``--rerun-failed``
+(the shard parser's orchestrator-owned flag; implies dispatch mode)
+re-runs the UNION of failed cells recorded in the claim ledger —
+``state: failed`` claims across ALL prior runs on the root — with the
+claim-time lane flags replayed VERBATIM through ``build_argv`` (the
+12-04 lane-blindness fix, D14-06). The branch sits BEFORE the
+``--models`` requirement and never re-parses the remainder (the ledger
+defines models AND seeds); the ONLY accepted passthrough token is
+``--registry-dir``. Unequal lane signatures among the failed cells
+refuse loudly naming each differing flag per cell (D14-08); a failed
+cell whose child-side ``trainer_state.json`` marker appeared since the
+failure is SKIPPED (the marker stays authoritative, D-06). Original
+failed claims are never mutated: each is copied VERBATIM ``O_EXCL``
+under ``dispatch_ledger/archive/`` and the canonical slot receives the
+fresh claim carrying a ``rerun_of`` link (Option C, the Q1 ruling) —
+the audit trail is append-only.
+
 Orphan-children relaunch caveat (decision A5): children spawn with
 ``start_new_session=True``, so a SIGKILLed dispatcher leaves its children
 RUNNING (they are resume-safe via the marker — by design). Before
@@ -124,6 +141,14 @@ DISPATCH_STATE_NAME = "dispatch_state.json"
 #: after the ledger dir exists, so the lock's presence implies the dir).
 DISPATCHER_LOCK_NAME = "dispatcher.lock"
 
+#: The claim-genealogy archive directory INSIDE the ledger dir (14-03,
+#: D14-07 Option C): superseded original claims are copied VERBATIM here
+#: (``O_EXCL``, append-only) before the canonical slot receives the
+#: fresh re-run claim. A SUBDIRECTORY by design — the ledger scans glob
+#: ``*.json`` NON-recursively, so the canonical slot keeps its O(1)
+#: ``read_claim`` meaning and archive files never mix into the scan.
+ARCHIVE_DIR_NAME = "archive"
+
 #: Claim state vocabulary: ``claimed`` at claim time, finalized to
 #: ``completed`` only after the CR-02 artifact check, else ``failed``.
 CLAIM_STATE_CLAIMED = "claimed"
@@ -153,6 +178,23 @@ _LOCK_WRITE_GRACE_SECONDS = 5.0
 _DECISION_SKIP = "skip"
 _DECISION_FRESH = "fresh"
 _DECISION_REQUEUE = "requeue"
+
+# The pending-queue tag marking an MGPU-04 re-run entry: the worker's
+# claim step performs the D14-07 genealogy (archive + fresh claim with
+# rerun_of) instead of the SC3 silent skip when the canonical failed
+# claim EEXISTs (the Pitfall 1 collision knot).
+_TAG_RERUN = "rerun"
+
+# Passthrough tokens a --rerun-failed launch refuses (T-14-08, Pitfall
+# 5): scoping tokens would double-scope the ledger-driven re-run;
+# lane tokens would blend command-line lanes with claim-time lanes
+# (D14-06 replay is verbatim, never blended).
+_RERUN_SCOPING_TOKENS = ("--from-failures", "--tasks", "--seeds")
+_RERUN_LANE_TOKENS = (
+    "--peft", "--config-variant", "--subset_file",
+    "--effective_batch_size", "--num_train_epochs", "--cache_dir",
+    "--model_root", "--dataset_root", "--log_dir",
+)
 
 
 def parse_sweep_remainder(passthrough):
@@ -384,6 +426,62 @@ def overwrite_claim(ledger_dir, cell, payload):
     return path
 
 
+def archive_superseded_claim(ledger_dir, cell, original_payload):
+    """Archive one superseded claim ``O_EXCL`` under ``archive/`` (D14-07).
+
+    Option C (the planner's Q1 ruling): a re-run NEVER mutates or
+    destroys the original failed claim — the ORIGINAL payload is copied
+    VERBATIM to ``dispatch_ledger/archive/{claim stem}--run-{run_id
+    prefix}.json`` created with ``O_CREAT | O_EXCL`` (the ``claim_cell``
+    no-follow guarantee — a planted symlink can neither be followed nor
+    silently overwritten, T-14-06). The archive name is keyed by the
+    ORIGINAL attempt's ``run_id``, so it is injective across attempts:
+    a second-level re-run of a re-run archives under the re-run's own
+    ``run_id``. ``EEXIST`` refuses loudly — the audit history is
+    append-only and can never be overwritten.
+
+    Args:
+        ledger_dir (Path): the ledger directory.
+        cell (tuple): the cell identity (names the canonical claim the
+            archive filename derives from).
+        original_payload (dict): the original failed claim JSON, used
+            VERBATIM (must carry a non-empty string ``run_id``).
+
+    Returns:
+        str: the archive FILENAME (relative to the archive dir) — the
+        value the fresh claim's ``rerun_of`` link records.
+
+    Raises:
+        ValueError: the original payload carries no usable ``run_id``
+            (the caller — the worker's re-run claim step — turns this
+            into a loud per-cell failure, never a silent skip).
+        FileExistsError: the archive file already exists (audit
+            history protected; the re-run refuses).
+    """
+    original_run = original_payload.get("run_id")
+    if not isinstance(original_run, str) or not original_run:
+        raise ValueError(
+            f"cannot archive the claim for cell {cell}: the original "
+            "payload carries no usable run_id"
+        )
+    archive_dir = Path(ledger_dir) / ARCHIVE_DIR_NAME
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    stem = claim_filename(cell)[:-len(".json")]
+    filename = f"{stem}--run-{original_run[:8]}.json"
+    path = archive_dir / filename
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError as exc:
+        raise FileExistsError(
+            f"archive file {path} already exists — the ledger's audit "
+            "history is append-only and never overwritten (D14-07); "
+            "refusing the re-run"
+        ) from exc
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        _dump_json_handle(handle, original_payload)
+    return filename
+
+
 def _atomic_write_json(path, payload):
     """Atomic JSON write: tmp file + ``os.replace`` (P10 prevention).
 
@@ -420,9 +518,13 @@ def _claim_payload(cell, lane, gpu, run_id, claimed_at):
     """Build the ``claimed``-state claim JSON for one cell.
 
     The lane flags (peft, config_variant, subset_file,
-    effective_batch_size, num_train_epochs, and the cell's curve
-    fraction) are the Phase 14 MGPU-04 failure re-run feed — recorded at
-    claim time so a re-run can reconstruct the exact experiment.
+    effective_batch_size, num_train_epochs, cache_dir, the three
+    storage roots model_root/dataset_root/log_dir — all additive,
+    14-03 — and the cell's curve fraction) are the Phase 14 MGPU-04
+    failure re-run feed — recorded at claim time so a re-run can
+    reconstruct the exact experiment (D14-06; replay reads tolerantly,
+    so pre-Phase-14 claims lacking the newer keys replay with the flag
+    absent — zero argv elements, never a refusal).
 
     Args:
         cell (tuple): the cell identity.
@@ -811,7 +913,41 @@ def _spawn_worker(index, gpu, tee, context):
                 payload = _claim_payload(
                     cell, context["lane"], gpu, context["run_id"],
                     _now_iso())
-                if tag == _DECISION_REQUEUE:
+                if tag == _TAG_RERUN:
+                    # MGPU-04 re-run claim step (14-03, D14-07 Option C —
+                    # the Pitfall 1 collision knot): the canonical slot
+                    # still holds the ORIGINAL failed claim the scan read,
+                    # so the fresh O_EXCL create EEXISTs by design. On
+                    # EEXIST: archive the original VERBATIM (O_EXCL under
+                    # archive/ — append-only audit history), then write
+                    # the fresh claim over the canonical slot carrying the
+                    # rerun_of link. The SC3 silent skip must NEVER fire
+                    # for a rerun-tagged cell — an EEXIST whose original
+                    # read yields nothing usable refuses loudly instead
+                    # (the CR-04 containment fails the cell; exit 1).
+                    claim_path = claim_cell(
+                        context["ledger_dir"], cell, payload)
+                    if claim_path is None:
+                        original = read_claim(
+                            context["ledger_dir"], cell)
+                        if not isinstance(original, dict) or not (
+                                isinstance(original.get("run_id"), str)
+                                and original.get("run_id")):
+                            raise RuntimeError(
+                                f"re-run of cell {cell}: the canonical "
+                                "claim exists but is unusable for "
+                                "genealogy (no run_id) — refusing "
+                                "loudly, never a silent skip"
+                            )
+                        payload["rerun_of"] = {
+                            "archive": archive_superseded_claim(
+                                context["ledger_dir"], cell, original),
+                            "run_id": original["run_id"],
+                            "claimed_at": original.get("claimed_at"),
+                        }
+                        claim_path = overwrite_claim(
+                            context["ledger_dir"], cell, payload)
+                elif tag == _DECISION_REQUEUE:
                     # Stale claim from a dead run: atomically REPLACED with
                     # this run's payload (new run_id/gpu/timestamps). Sound
                     # because the singleton lock guarantees no second
@@ -996,6 +1132,544 @@ def _spawn_worker(index, gpu, tee, context):
             pass
 
 
+def _claim_lane(payload):
+    """Tolerantly project one claim's ``lane`` dict.
+
+    A missing, non-object, or corrupt lane degrades to ``{}`` — the
+    tolerant-read contract (never crash-or-trust): the re-run replays
+    what IS recorded and treats absent keys as absent flags.
+
+    Args:
+        payload (dict): a parsed claim payload.
+
+    Returns:
+        dict: the claim's lane dict, or ``{}`` when unusable.
+    """
+    lane = payload.get("lane")
+    return lane if isinstance(lane, dict) else {}
+
+
+def _cell_from_key(cell_key):
+    """Rebuild a cell tuple from a claim's JSON cell key.
+
+    Args:
+        cell_key: the claim's ``cell`` value (any shape; non-conforming
+            shapes return None — the scan never trusts them).
+
+    Returns:
+        tuple | None: ``(model, task, seed)`` or ``(model, task, seed,
+        fraction)``, or None when the key is not a usable cell identity.
+    """
+    if not isinstance(cell_key, dict):
+        return None
+    model = cell_key.get("model")
+    task = cell_key.get("task")
+    seed = cell_key.get("seed")
+    fraction = cell_key.get("fraction")
+    if not isinstance(model, str) or not model:
+        return None
+    if not isinstance(task, str) or not task:
+        return None
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        return None
+    if fraction is None:
+        return (model, task, seed)
+    if isinstance(fraction, bool) or not isinstance(
+            fraction, (int, float)):
+        return None
+    return (model, task, seed, fraction)
+
+
+def _cell_str(cell):
+    """Render one cell tuple for diagnostics (``model/task/seed_N``)."""
+    text = f"{cell[0]}/{cell[1]}/seed_{cell[2]}"
+    if len(cell) > 3:
+        text += f"/frac_{cell[3]}"
+    return text
+
+
+def _validate_rerun_passthrough(passthrough):
+    """Validate the raw passthrough tokens of a ``--rerun-failed`` launch.
+
+    The re-run is LEDGER-DRIVEN (D14-05): its scope comes from the
+    failed claims and its lane from the claim-time records, so the
+    command line may contribute NEITHER. The ONLY accepted token is
+    ``--registry-dir`` (space or equals form) — every other token
+    refuses with a named message scoping the refusal (T-14-08, the
+    Pitfall 5 closure): scoping tokens get the double-scope wording
+    (D14-05/MGPU-04), lane tokens the lane-replay wording (D14-06),
+    anything else refuses generically.
+
+    Args:
+        passthrough (list[str]): the verbatim ``parse_known_args``
+            remainder.
+
+    Returns:
+        str | None: the ``--registry-dir`` value when given, else None.
+
+    Raises:
+        SystemExit: any token other than ``--registry-dir`` (collect-all
+        over every offending token).
+    """
+    problems = []
+    registry_dir = None
+    tokens = list(passthrough)
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--registry-dir":
+            if index + 1 < len(tokens):
+                registry_dir = tokens[index + 1]
+                index += 2
+                continue
+            problems.append(
+                "--rerun-failed: --registry-dir requires a value"
+            )
+            index += 1
+            continue
+        if token.startswith("--registry-dir="):
+            registry_dir = token.split("=", 1)[1]
+            index += 1
+            continue
+        if token in _RERUN_SCOPING_TOKENS:
+            problems.append(
+                f"--rerun-failed refuses the scoping token {token!r} "
+                "(D14-05, MGPU-04): the re-run scope is the ledger's "
+                "failed claims across ALL prior runs on the root — "
+                "never blend two scoping mechanisms on one command"
+            )
+        elif token in _RERUN_LANE_TOKENS:
+            problems.append(
+                f"--rerun-failed refuses the lane token {token!r} "
+                "(D14-06): lane flags replay VERBATIM from the "
+                "claim-time lane records — pass lane flags on the "
+                "ORIGINAL launch, never the re-run"
+            )
+        else:
+            problems.append(
+                f"--rerun-failed accepts no passthrough token {token!r} "
+                "(only --registry-dir may accompany a re-run)"
+            )
+        index += 1
+    if problems:
+        sys.exit(f"[Error] {'; '.join(problems)}")
+    return registry_dir
+
+
+def _scan_failed_claims(ledger_dir):
+    """Scan the ledger for failed claims (the MGPU-04 re-run feed).
+
+    Sorted, tolerant, and integrity-checked: corrupt/unreadable claims
+    contribute nothing and are never trusted (the ``read_claim``
+    contract); a claim qualifies iff its payload ``state`` is
+    ``failed`` AND its cell key rebuilds and MATCHES the claim filename
+    tuple (``claim_filename``) — a claim whose stored identity
+    disagrees with its name is not a runnable cell.
+
+    Args:
+        ledger_dir (Path): the ledger directory (a missing dir scans to
+            an empty list).
+
+    Returns:
+        list[tuple]: ``(cell, payload)`` pairs, sorted by filename.
+    """
+    qualified = []
+    if not ledger_dir.is_dir():
+        return qualified
+    for path in sorted(ledger_dir.glob("*.json")):
+        if path.name == DISPATCHER_LOCK_NAME:
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("state") != CLAIM_STATE_FAILED:
+            continue
+        cell = _cell_from_key(payload.get("cell"))
+        if cell is None or claim_filename(cell) != path.name:
+            continue
+        qualified.append((cell, payload))
+    return qualified
+
+
+def _rerun_lane_refusal(qualified):
+    """Build the heterogeneous-lane refusal (D14-08, the run_merge shape).
+
+    A flag differs when more than one distinct canonical value appears
+    across the failed claims' lanes (the per-cell ``train_fraction`` is
+    cell identity, not lane, and is excluded). The refusal names, PER
+    CELL, each differing flag and that cell's value — the collect-all
+    discipline over every differing flag.
+
+    Args:
+        qualified (list[tuple]): the ``(cell, payload)`` scan result.
+
+    Returns:
+        str: the ``[Error] ...`` message for ``sys.exit``.
+    """
+    lanes = [(cell, _claim_lane(payload)) for cell, payload in qualified]
+    all_flags = sorted(
+        {key for _cell, lane in lanes for key in lane}
+        - {"train_fraction"})
+    problems = []
+    for flag in all_flags:
+        values = {
+            run_sweep_shard._canonical_lane_value(lane.get(flag))
+            for _cell, lane in lanes}
+        if len(values) > 1:
+            listed = "; ".join(
+                f"{_cell_str(cell)} = "
+                f"{'<absent>' if lane.get(flag) is None else lane.get(flag)!r}"
+                for cell, lane in lanes)
+            problems.append(
+                f"lane flag '{flag}' differs across the failed cells — "
+                f"{listed} (unequal lanes are different experiments, "
+                "D14-08; re-run one lane at a time or fix the ledger)"
+            )
+    return f"[Error] {'; '.join(problems)}"
+
+
+def _run_rerun_failed(args, passthrough, spawner, clock, workers, gpus):
+    """The MGPU-04 ledger-driven failure re-run (14-03, D14-05..D14-08).
+
+    Reached from ``run_dispatch`` BEFORE the ``--models`` requirement
+    and WITHOUT ``parse_sweep_remainder`` (Pitfall 7: the failed claims
+    define models AND seeds — a re-run launch needs neither flag and
+    must not die the argparse-code-2 ``--seeds`` death). Protocol:
+    validate the raw passthrough (only ``--registry-dir`` accepted)
+    -> scan the ledger for failed claims (a ZERO-failed root prints the
+    explicit no-failed-cells verdict and returns exit 0 — the
+    drained-root precedent, A7) -> registry-join every failed cell's
+    BASE model name (fail-safe, T-14-07) -> refuse heterogeneous lane
+    signatures (D14-08) -> marker-vs-failed precedence per cell (the
+    Phase 13 D-06 adjacency: a failed cell that later gained the
+    ``trainer_state.json`` marker is SKIPPED, never re-run) -> replay
+    through the ordinary launch machinery with the claim-time lane.
+
+    Args:
+        args (argparse.Namespace): the parsed SHARD flags (output_root,
+            rerun_failed).
+        passthrough (list[str]): the verbatim remainder (only
+            ``--registry-dir`` accepted).
+        spawner: injectable spawner seam (None uses ``Popen``).
+        clock: injectable ``datetime.now``-shaped seam.
+        workers (int): the validated ``--workers`` count.
+        gpus (list[str] | None): the parsed ``--gpus`` tokens.
+
+    Returns:
+        None: via ``_launch_and_drain`` (exits 1 on failed cells).
+
+    Raises:
+        SystemExit: passthrough refusals, registry-join refusals, the
+        heterogeneous-lane refusal, and the launch machinery's own.
+    """
+    output_root = Path(args.output_root).resolve()
+    registry_arg = _validate_rerun_passthrough(passthrough)
+    registry_dir = (
+        Path(registry_arg).resolve() if registry_arg
+        else run_sweep.PIPELINE_DIR)
+    ledger_dir = ledger_dir_for(output_root)
+
+    qualified = _scan_failed_claims(ledger_dir)
+    if not qualified:
+        # A7 ruling (Pitfall 7): the drained-root precedent — an
+        # explicit verdict and exit 0, never a fall-through into
+        # full-matrix enumeration.
+        print(
+            f"[Dispatch] no failed cells to re-run on {output_root} — "
+            "the ledger holds no failed claims; nothing spawned"
+        )
+        return
+
+    # Registry join (fail-safe, T-14-07): a forged or renamed claim
+    # cannot widen scope silently — every failed cell's model resolves
+    # to its BASE registry name through the claim's OWN lane (the CR-01
+    # ``base_model_name`` join discipline, not the manifest reader).
+    run_sweep._validate_filters(
+        sorted({
+            run_sweep.base_model_name(
+                cell[0], _claim_lane(payload).get("peft") or "none",
+                _claim_lane(payload).get("config_variant") or "none")
+            for cell, payload in qualified}),
+        sorted({cell[1] for cell, _payload in qualified}),
+        registry_dir)
+
+    # Lane homogeneity (D14-08): the replay set must share ONE lane
+    # signature — the claim lane minus the per-cell train_fraction —
+    # canonicalized with the run_merge discipline (deterministic
+    # sorted-JSON, never set-iteration order).
+    signature_groups = {}
+    for cell, payload in qualified:
+        lane = {
+            key: value for key, value in _claim_lane(payload).items()
+            if key != "train_fraction"}
+        signature_groups.setdefault(
+            run_sweep_shard._canonical_lane_value(lane),
+            (lane, []))[1].append(cell)
+    if len(signature_groups) > 1:
+        sys.exit(_rerun_lane_refusal(qualified))
+    agreed_lane = next(iter(signature_groups.values()))[0]
+
+    # The launch lane from the ONE agreed signature — tolerant reads
+    # (Pitfall 4): a pre-Phase-14 claim lacking cache_dir (or any later
+    # lane key) replays with the flag ABSENT — zero argv elements, the
+    # build_argv absent-parity discipline, never a KeyError, never a
+    # refusal.
+    lane_values = {
+        "peft": agreed_lane.get("peft") or "none",
+        "config_variant": agreed_lane.get("config_variant") or "none",
+        "subset_file": agreed_lane.get("subset_file"),
+        "effective_batch_size": agreed_lane.get("effective_batch_size"),
+        "num_train_epochs": agreed_lane.get("num_train_epochs"),
+        "cache_dir": agreed_lane.get("cache_dir"),
+        "model_root": agreed_lane.get("model_root"),
+        "dataset_root": agreed_lane.get("dataset_root"),
+        "log_dir": agreed_lane.get("log_dir"),
+    }
+
+    # Marker-vs-failed precedence per qualified cell: the scan already
+    # proved the claim says failed; ``relaunch_decision`` adds the
+    # marker layer (a failure whose cell completed since — e.g. a plain
+    # relaunch finished it — is SKIPPED, the marker stays authoritative
+    # and is never re-run).
+    pending = []
+    skipped = 0
+    for cell, _payload in qualified:
+        if relaunch_decision(
+                output_root, ledger_dir, cell) == _DECISION_SKIP:
+            skipped += 1
+        else:
+            pending.append((cell, _TAG_RERUN))
+    return _launch_and_drain(
+        output_root, [cell for cell, _payload in qualified], pending,
+        skipped, lane_values, workers, gpus, spawner, clock)
+
+
+def _launch_and_drain(output_root, cells, pending, skipped, lane_values,
+                      workers, gpus, spawner, clock):
+    """LOCK -> MODE EVIDENCE -> skip filter -> drain -> verdicts.
+
+    The shared post-validation launch machinery for BOTH dispatch entry
+    paths: the ordinary enumerated run (``pending=None`` — the relaunch
+    skip filter runs HERE, after the mode-evidence write, preserving the
+    render progression the 14-01 pins observe) and the MGPU-04 re-run
+    (``pending`` precomputed by ``_run_rerun_failed`` with
+    ``_TAG_RERUN`` tags and the marker-skips already counted).
+
+    Args:
+        output_root (Path): the RESOLVED shared output root.
+        cells (list[tuple]): every cell in this launch's scope (the
+            ``counts.total`` ground truth).
+        pending (list | None): precomputed ``(cell, tag)`` entries, or
+            None to derive them here via the relaunch skip filter.
+        skipped (int): the precomputed ``counts.skipped`` seed (0 for
+            the ordinary path — its filter counts its own).
+        lane_values (dict): the launch lane flags — the keys of the
+            claim-time lane dict (peft, config_variant, subset_file,
+            effective_batch_size, num_train_epochs, cache_dir,
+            model_root, dataset_root, log_dir); recorded verbatim into
+            every claim and replayed into ``build_argv``.
+        workers (int): the validated ``--workers`` count.
+        gpus (list[str] | None): the parsed ``--gpus`` tokens (None
+            defaults to one index-string per worker).
+        spawner: injectable spawner seam (None uses ``Popen``).
+        clock: injectable ``datetime.now``-shaped seam (ONE call names
+            every worker tee log stamp, WR-02).
+
+    Raises:
+        SystemExit: the singleton-lock refusal, the tee-open refusal,
+        the post-join accounting refusal, or exit 1 on failed cells.
+    """
+    # LOCK -> MODE EVIDENCE -> QUEUE (the module docstring's protocol)
+    ledger_dir = ledger_dir_for(output_root)
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    run_id = uuid.uuid4().hex
+    started_at = _now_iso()
+    lock_path = acquire_dispatcher_lock(ledger_dir, run_id, started_at)
+    seam = subprocess.Popen if spawner is None else spawner
+    state_path = output_root / DISPATCH_STATE_NAME
+    # Default GPU assignment (operator-owned strings; no probing, D-05)
+    # resolves BEFORE the state build: the v2 consumer payload names one
+    # gpu per worker row from the very first write on.
+    if gpus is None:
+        gpus = [str(i) for i in range(workers)]
+    counts = {
+        "total": len(cells),
+        "completed": 0,
+        "failed": 0,
+        "skipped": skipped,
+    }
+    worker_stats = {
+        i: {"cells": 0, "completed": 0, "failed": 0}
+        for i in range(workers)}
+    state = {
+        "schema_version": DISPATCH_STATE_SCHEMA_VERSION,
+        "mode": "dispatch",
+        "run_id": run_id,
+        "status": "running",
+        "started_at": started_at,
+        "updated_at": started_at,
+        "counts": dict(counts),
+        # ---- Phase 14 additive consumer fields (D14-01, schema v2;
+        #      frozen in schemas/dispatch_state.json — every v1 key is
+        #      present unchanged) ----
+        "queue_depth": counts["total"],
+        "workers": [
+            {
+                "index": i,
+                "gpu": gpus[i],
+                "in_flight": None,
+                "cells": 0,
+                "completed": 0,
+                "failed": 0,
+            }
+            for i in range(workers)
+        ],
+        "failures": [],
+    }
+    context = {
+        "root": output_root,
+        "ledger_dir": ledger_dir,
+        "run_id": run_id,
+        "state_path": state_path,
+        "state": state,
+        "counts": counts,
+        "pending": pending if pending is not None else [],
+        "queue_lock": threading.Lock(),
+        "state_lock": threading.Lock(),
+        "worker_stats": worker_stats,
+        "in_flight": {i: None for i in range(workers)},
+        "gpus": gpus,
+        "spawner": seam,
+        "peft": lane_values.get("peft") or "none",
+        "config_variant": lane_values.get("config_variant") or "none",
+        "subset_file": lane_values.get("subset_file"),
+        "effective_batch_size": lane_values.get("effective_batch_size"),
+        "num_train_epochs": lane_values.get("num_train_epochs"),
+        "cache_dir": lane_values.get("cache_dir"),
+        "model_root": lane_values.get("model_root"),
+        "dataset_root": lane_values.get("dataset_root"),
+        "log_dir": lane_values.get("log_dir"),
+        "lane": dict(lane_values),
+    }
+    _publish_state(context)  # BEFORE any claim (mode evidence)
+
+    if pending is None:
+        # Relaunch skip filter (the module docstring's step 4): skip iff
+        # the marker exists (authoritative, D-06) OR the ledger says
+        # completed; a stale claim (claimed/failed from a dead run)
+        # requeues. Purely per-cell, so the skip set is
+        # order-independent by construction.
+        for cell in cells:
+            decision = relaunch_decision(output_root, ledger_dir, cell)
+            if decision == _DECISION_SKIP:
+                counts["skipped"] += 1
+            else:
+                context["pending"].append((cell, decision))
+        _publish_state(context)  # still BEFORE any claim/spawn
+
+    now = datetime.now if clock is None else clock
+    launch_stamp = now().strftime(
+        run_sweep_shard.WORKER_LOG_TIMESTAMP_FORMAT)
+
+    if not context["pending"]:
+        # The relaunch half of the zero-cell decision (EDGE
+        # MGPU-02/empty): a fully drained root is an explicit
+        # nothing-to-do verdict and exit 0 — never a re-spawn storm.
+        state["status"] = "done"
+        _publish_state(context)
+        release_dispatcher_lock(lock_path)
+        print(
+            f"[Dispatch] nothing to do — all {len(cells)} enumerated "
+            f"cell(s) are already complete on {output_root}; no workers "
+            "spawned"
+        )
+        return
+
+    tees = []
+    try:
+        try:
+            for i in range(workers):
+                log_i = dispatch_worker_log_path(output_root, i,
+                                                 launch_stamp)
+                log_i.parent.mkdir(parents=True, exist_ok=True)
+                # Deliberately NOT a context manager (SIM115, the
+                # launcher's rationale): the tee must stay open for the
+                # whole drain — every child of this worker writes into
+                # it. Held here, closed by the worker loop's finally.
+                tees.append(open(  # noqa: SIM115
+                    log_i, "w", encoding="utf-8"))
+        except OSError as exc:
+            sys.exit(
+                f"[Error] opening dispatch worker tee failed: {exc} — "
+                "no children spawned; the dispatcher lock is released"
+            )
+        threads = []
+        for i in range(workers):
+            thread = threading.Thread(
+                target=_spawn_worker,
+                args=(i, gpus[i], tees[i], context),
+                name=f"dispatch-w{i}",
+            )
+            threads.append(thread)
+            thread.start()
+        for thread in threads:
+            thread.join()
+    finally:
+        for tee in tees:
+            try:
+                tee.close()
+            except OSError:
+                pass
+        release_dispatcher_lock(lock_path)
+
+    # CR-04 (phase-13 review): post-join accounting assertion — every
+    # enumerated cell must be accounted for (completed + failed + skipped
+    # == total) BEFORE any success path. A worker thread that dies
+    # despite the per-cell containment in _spawn_worker (e.g. the
+    # containment's own state write hitting ENOSPC) leaves cells
+    # popped-but-unaccounted; printing the verdict table, writing
+    # status "done", and exiting 0 there would be a false success on
+    # the orchestrator's error path (automation sees success and never
+    # relaunches). Refuse loudly with an honest "incomplete" status.
+    drained = (
+        counts["completed"] + counts["failed"] + counts["skipped"])
+    if drained != counts["total"]:
+        state["status"] = "incomplete"
+        _publish_state(context)
+        sys.exit(
+            f"[Error] dispatch accounting mismatch: {drained}/"
+            f"{counts['total']} cells accounted for — a worker died "
+            "unexpectedly; unrun cells remain queued in the ledger"
+        )
+
+    print("Dispatch verdicts:")
+    for i in range(workers):
+        entry = worker_stats[i]
+        print(
+            f"  worker {i}: cells={entry['cells']} "
+            f"completed={entry['completed']} "
+            f"failed={entry['failed']} gpu={gpus[i]} "
+            f"log={dispatch_worker_log_path(output_root, i, launch_stamp)}"
+        )
+    state["status"] = "done"
+    _publish_state(context)
+    print(
+        f"[Dispatch] {counts['completed']}/{counts['total']} cell(s) "
+        f"completed, {counts['failed']} failed, {counts['skipped']} "
+        f"skipped; state: {state_path}"
+    )
+    if counts["failed"]:
+        print(
+            "[Dispatch] failed cells are recorded in the ledger for "
+            "re-run (Phase 14 MGPU-04) — failed cells are NOT requeued "
+            "within a live run"
+        )
+        sys.exit(1)
+
+
 def run_dispatch(args, passthrough, spawner=None, clock=None):
     """The dispatch engine entry (routed from ``run_sweep_shard.main``).
 
@@ -1018,9 +1692,17 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
     / log_dir) apply flag > file key > default exactly as
     ``run_sweep.main`` does — they ride the remainder.
 
+    Re-run branch (14-03, MGPU-04): when ``args.rerun_failed`` is set
+    the engine routes into ``_run_rerun_failed`` AFTER the
+    ``--workers``/``--gpus`` validation but BEFORE the ``--models``
+    requirement and WITHOUT re-parsing the remainder — the ledger's
+    failed claims define the scope (models AND seeds), the claim-time
+    lane replays verbatim, and the original claims are archived (see
+    the module docstring's failure-re-run paragraph).
+
     Args:
         args (argparse.Namespace): the parsed SHARD flags (workers, gpus,
-            models, output_root, mode).
+            models, output_root, mode, rerun_failed).
         passthrough (list[str]): the verbatim ``parse_known_args``
             remainder (the sweep-flag family, re-parsed through
             run_sweep's own parser).
@@ -1045,6 +1727,18 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
             f"--gpus arity mismatch: {len(gpus)} GPU id(s) for "
             f"--workers {workers} (one id per worker)"
         )
+    if getattr(args, "rerun_failed", False):
+        # 14-03 (MGPU-04, D14-05): the ledger-driven re-run branch —
+        # BEFORE the --models requirement refusal below and WITHOUT
+        # parse_sweep_remainder (Pitfall 7): the failed claims define
+        # models AND seeds, so a re-run launch needs NEITHER flag and
+        # must not die the argparse-code-2 --seeds death. The
+        # --workers/--gpus validation above applies unchanged.
+        if problems:
+            sys.exit(f"[Error] {'; '.join(problems)}")
+        return _run_rerun_failed(
+            args, passthrough, spawner=spawner, clock=clock,
+            workers=workers, gpus=gpus)
     # --models is dispatch-mode-required (the WR-07 closure: a
     # full-registry dispatch must be an explicit run_sweep-side omission,
     # never an orchestrator default)
@@ -1328,67 +2022,13 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
         )
         return
 
-    # LOCK -> MODE EVIDENCE -> QUEUE (the module docstring's protocol)
-    ledger_dir = ledger_dir_for(output_root)
-    ledger_dir.mkdir(parents=True, exist_ok=True)
-    run_id = uuid.uuid4().hex
-    started_at = _now_iso()
-    lock_path = acquire_dispatcher_lock(ledger_dir, run_id, started_at)
-    seam = subprocess.Popen if spawner is None else spawner
-    state_path = output_root / DISPATCH_STATE_NAME
-    # Default GPU assignment (operator-owned strings; no probing, D-05)
-    # resolves BEFORE the state build: the v2 consumer payload names one
-    # gpu per worker row from the very first write on.
-    if gpus is None:
-        gpus = [str(i) for i in range(workers)]
-    counts = {
-        "total": len(cells),
-        "completed": 0,
-        "failed": 0,
-        "skipped": 0,
-    }
-    worker_stats = {
-        i: {"cells": 0, "completed": 0, "failed": 0}
-        for i in range(workers)}
-    state = {
-        "schema_version": DISPATCH_STATE_SCHEMA_VERSION,
-        "mode": "dispatch",
-        "run_id": run_id,
-        "status": "running",
-        "started_at": started_at,
-        "updated_at": started_at,
-        "counts": dict(counts),
-        # ---- Phase 14 additive consumer fields (D14-01, schema v2;
-        #      frozen in schemas/dispatch_state.json — every v1 key is
-        #      present unchanged) ----
-        "queue_depth": counts["total"],
-        "workers": [
-            {
-                "index": i,
-                "gpu": gpus[i],
-                "in_flight": None,
-                "cells": 0,
-                "completed": 0,
-                "failed": 0,
-            }
-            for i in range(workers)
-        ],
-        "failures": [],
-    }
-    context = {
-        "root": output_root,
-        "ledger_dir": ledger_dir,
-        "run_id": run_id,
-        "state_path": state_path,
-        "state": state,
-        "counts": counts,
-        "pending": [],  # filled by the skip filter below
-        "queue_lock": threading.Lock(),
-        "state_lock": threading.Lock(),
-        "worker_stats": worker_stats,
-        "in_flight": {i: None for i in range(workers)},
-        "gpus": gpus,
-        "spawner": seam,
+    # LOCK -> MODE EVIDENCE -> QUEUE -> drain, through the shared
+    # launch machinery (the 14-03 extraction — the MGPU-04 re-run
+    # replays through the identical worker loops). The claim-time lane
+    # dict now carries cache_dir (the D14-06 gap) plus the three
+    # storage roots (the A8 ruling) — additive keys, recorded for
+    # replay fidelity and replayed tolerantly.
+    lane_values = {
         "peft": sweep_args.peft,
         "config_variant": config_variant,
         "subset_file": subset_file_abs,
@@ -1398,123 +2038,7 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
         "model_root": model_root_abs,
         "dataset_root": dataset_root_abs,
         "log_dir": log_dir_abs,
-        "lane": {
-            "peft": sweep_args.peft,
-            "config_variant": config_variant,
-            "subset_file": subset_file_abs,
-            "effective_batch_size": sweep_args.effective_batch_size,
-            "num_train_epochs": sweep_args.num_train_epochs,
-        },
     }
-    _publish_state(context)  # BEFORE any claim (mode evidence)
-
-    # Relaunch skip filter (the module docstring's step 4): skip iff the
-    # marker exists (authoritative, D-06) OR the ledger says completed;
-    # a stale claim (claimed/failed from a dead run) requeues. Purely
-    # per-cell, so the skip set is order-independent by construction.
-    for cell in cells:
-        decision = relaunch_decision(output_root, ledger_dir, cell)
-        if decision == _DECISION_SKIP:
-            counts["skipped"] += 1
-        else:
-            context["pending"].append((cell, decision))
-    _publish_state(context)  # still BEFORE any claim/spawn
-
-    now = datetime.now if clock is None else clock
-    launch_stamp = now().strftime(
-        run_sweep_shard.WORKER_LOG_TIMESTAMP_FORMAT)
-
-    if not context["pending"]:
-        # The relaunch half of the zero-cell decision (EDGE
-        # MGPU-02/empty): a fully drained root is an explicit
-        # nothing-to-do verdict and exit 0 — never a re-spawn storm.
-        state["status"] = "done"
-        _publish_state(context)
-        release_dispatcher_lock(lock_path)
-        print(
-            f"[Dispatch] nothing to do — all {len(cells)} enumerated "
-            f"cell(s) are already complete on {output_root}; no workers "
-            "spawned"
-        )
-        return
-
-    tees = []
-    try:
-        try:
-            for i in range(workers):
-                log_i = dispatch_worker_log_path(output_root, i,
-                                                 launch_stamp)
-                log_i.parent.mkdir(parents=True, exist_ok=True)
-                # Deliberately NOT a context manager (SIM115, the
-                # launcher's rationale): the tee must stay open for the
-                # whole drain — every child of this worker writes into
-                # it. Held here, closed by the worker loop's finally.
-                tees.append(open(  # noqa: SIM115
-                    log_i, "w", encoding="utf-8"))
-        except OSError as exc:
-            sys.exit(
-                f"[Error] opening dispatch worker tee failed: {exc} — "
-                "no children spawned; the dispatcher lock is released"
-            )
-        threads = []
-        for i in range(workers):
-            thread = threading.Thread(
-                target=_spawn_worker,
-                args=(i, gpus[i], tees[i], context),
-                name=f"dispatch-w{i}",
-            )
-            threads.append(thread)
-            thread.start()
-        for thread in threads:
-            thread.join()
-    finally:
-        for tee in tees:
-            try:
-                tee.close()
-            except OSError:
-                pass
-        release_dispatcher_lock(lock_path)
-
-    # CR-04 (phase-13 review): post-join accounting assertion — every
-    # enumerated cell must be accounted for (completed + failed + skipped
-    # == total) BEFORE any success path. A worker thread that dies
-    # despite the per-cell containment in _spawn_worker (e.g. the
-    # containment's own state write hitting ENOSPC) leaves cells
-    # popped-but-unaccounted; printing the verdict table, writing
-    # status "done", and exiting 0 there would be a false success on
-    # the orchestrator's error path (automation sees success and never
-    # relaunches). Refuse loudly with an honest "incomplete" status.
-    drained = (
-        counts["completed"] + counts["failed"] + counts["skipped"])
-    if drained != counts["total"]:
-        state["status"] = "incomplete"
-        _publish_state(context)
-        sys.exit(
-            f"[Error] dispatch accounting mismatch: {drained}/"
-            f"{counts['total']} cells accounted for — a worker died "
-            "unexpectedly; unrun cells remain queued in the ledger"
-        )
-
-    print("Dispatch verdicts:")
-    for i in range(workers):
-        entry = worker_stats[i]
-        print(
-            f"  worker {i}: cells={entry['cells']} "
-            f"completed={entry['completed']} "
-            f"failed={entry['failed']} gpu={gpus[i]} "
-            f"log={dispatch_worker_log_path(output_root, i, launch_stamp)}"
-        )
-    state["status"] = "done"
-    _publish_state(context)
-    print(
-        f"[Dispatch] {counts['completed']}/{counts['total']} cell(s) "
-        f"completed, {counts['failed']} failed, {counts['skipped']} "
-        f"skipped; state: {state_path}"
-    )
-    if counts["failed"]:
-        print(
-            "[Dispatch] failed cells are recorded in the ledger for "
-            "re-run (Phase 14 MGPU-04) — failed cells are NOT requeued "
-            "within a live run"
-        )
-        sys.exit(1)
+    return _launch_and_drain(
+        output_root, cells, None, 0, lane_values, workers, gpus,
+        spawner, clock)

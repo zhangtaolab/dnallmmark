@@ -3091,16 +3091,20 @@ def test_rerun_failed_d14_15_two_worker_fixture(tmp_path, monkeypatch):
     # Genealogy (D14-07): the originals sit VERBATIM under archive/;
     # the canonical slots hold fresh completed claims with rerun_of
     archive_dir = ledger_dir / "archive"
-    archived_by_run = {}
+    archived_by_cell = {}
     for path in sorted(archive_dir.glob("*.json")):
         payload = json.loads(path.read_text(encoding="utf-8"))
         assert payload["state"] == dispatch_core.CLAIM_STATE_FAILED
-        archived_by_run[payload["run_id"]] = path
-    assert set(archived_by_run) == {
-        original[cell]["run_id"] for cell in original}
+        key = payload["cell"]
+        archived_by_cell[(
+            key["model"], key["task"], key["seed"])] = path
+    assert set(archived_by_cell) == set(original), (
+        "one archive file per failed cell (keyed by cell identity + the "
+        "original run_id prefix, injective across attempts)"
+    )
     for cell, text in original_text.items():
         payload = original[cell]
-        archive_path = archived_by_run[payload["run_id"]]
+        archive_path = archived_by_cell[cell]
         assert archive_path.read_text(encoding="utf-8") == text, (
             "the original failed claim is preserved VERBATIM"
         )
