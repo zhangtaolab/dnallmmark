@@ -527,8 +527,14 @@ def acquire_dispatcher_lock(ledger_dir, run_id, started_at):
             holder_run = holder.get("run_id")
             try:
                 os.kill(holder_pid, 0)
-            except ProcessLookupError:
-                pass  # provably dead — fall through to the reclaim
+            except (ProcessLookupError, OverflowError):
+                # ProcessLookupError: provably dead. OverflowError (WR-02,
+                # phase-13 review): a pid too large to signal (e.g. 2**63
+                # in a corrupt-but-parseable lock) cannot be a live
+                # holder — both fall through to the reclaim, never an
+                # unhandled crash on the recovery path (the designed
+                # tolerant-read contract: a malformed lock is RECLAIMED).
+                pass
             except PermissionError:
                 # A live dispatcher under ANOTHER user — same loud
                 # refusal (only the superuser may signal it; the safe

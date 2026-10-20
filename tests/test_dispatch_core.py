@@ -1602,6 +1602,36 @@ def test_lock_empty_stale_window_is_reclaimed(tmp_path, monkeypatch):
     assert len(calls) == 1, "the expired empty lock is reclaimed"
 
 
+def test_lock_out_of_range_pid_reclaimed_not_crashed(
+        tmp_path, monkeypatch):
+    """WR-02 pin: a parseable lock whose pid is out of signal range
+    (2**63) is reclaimed — never an unhandled OverflowError traceback on
+    the recovery path (an impossible pid is provably not a live holder)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    (ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME).write_text(
+        json.dumps({"pid": 2**63, "run_id": "corrupt-run",
+                    "started_at": "2026-10-20T00:00:00+00:00"}),
+        encoding="utf-8")
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1, (
+        "the impossible pid reclaims (no OverflowError crash) and the "
+        "run proceeds"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"]["completed"] == 1
+
+
 def test_skip_set_is_order_independent(tmp_path):
     """EDGE MGPU-02/ordering: the relaunch skip set is a pure function
     of per-cell (marker presence, claim state) — the SAME ledger/marker
