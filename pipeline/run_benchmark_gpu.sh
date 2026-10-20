@@ -7,6 +7,7 @@ set -u
 GPU="${1:?用法: bash run_benchmark_gpu.sh <gpu_id> <mode:seed> [...]}"
 shift
 MODEL="${MODEL:-GENERanno-eukaryote-0.5b-base}"
+GPU_MEMORY="${GPU_MEMORY:-24}"
 
 source /root/miniconda3/etc/profile.d/conda.sh
 conda activate dnallm
@@ -34,7 +35,7 @@ for cell in "$@"; do
     --batch_size 16 \
     --auto_batch_size \
     --effective_batch_size 16 \
-    --gpu_memory 24 \
+    --gpu_memory "$GPU_MEMORY" \
     --remove_pt \
     --remove_checkpoints \
     --subset_file eval_subsets.json \
