@@ -1,37 +1,31 @@
 {
   "version": "1.0",
-  "timestamp": "2026-10-20T00:00:30+08:00",
+  "timestamp": "2026-10-20T09:20:30+08:00",
   "phase": "milestone-closeout",
-  "phase_name": "v1.2 archive (MID-ARCHIVE — CLI step done, AI steps remain)",
+  "phase_name": "v1.2 archive (steps 1-7 done yesterday; steps 8-13 remain) + morning fix batches landed",
   "phase_dir": ".planning",
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "08-12 stale refresh: 5 verifiers all passed (f890acc) + 07's standing pass", "status": "done"},
-    {"id": 2, "name": "WINDOWS disposition: A-group 7 fixed / B-group 5 waived / C-group #26+#27 fixed-by-redesign (repro-tested), #28 waived (structurally closed) / ledger now 8 open / 6 waived / 28 fixed (72f460a, 4d8a5e4)", "status": "done"},
-    {"id": 3, "name": "261019-v3g: #33 honest cache glyph + #12 subset seam verify-and-pin (premise was STALE — threading landed in 07-03; one cross-file pin added) — d7a574a/c30ac91/282a916", "status": "done"},
-    {"id": 4, "name": "Reviewer response report written (gitignored reviewer-response/REPORT.md, 254 lines, F 8-fixed/2-waived, G 6/7)", "status": "done"},
-    {"id": 5, "name": "Audit R-fixes: junk quick-dir x removed, 12-UAT scenarios resolved (D-03 passed; N=2 blocked-external=#21), toe SUMMARY YAML fixed, deferred rows marked acknowledged (direct file edit)", "status": "done"},
-    {"id": 6, "name": "Storage-overview defaults test made hermetic — full suite GREEN 1987/1987-class (tui 1280/1280), ruff+ty clean (46cb37f)", "status": "done"},
-    {"id": 7, "name": "milestone.complete CLI EXECUTED (--confirm, no --archive-quick): milestones/v1.2-{ROADMAP,REQUIREMENTS}.md written, phases moved to milestones/v1.2-phases/ (git shows D), MILESTONES.md + STATE.md rewritten by the tool", "status": "done-UNCOMMITTED"}
+    {"id": 1, "name": "261020-9vh stale-progress guard: rerun at reused root never shows the killed run's old checkpoint numbers (live-start evidence; real-/proc pty pin)", "status": "done (4997239/b15be8d)"},
+    {"id": 2, "name": "261020-asm tree all-expanded default made explicit + dual-lane mutation-verified pins (E ruling)", "status": "done (f3716e5/4064b38)"},
+    {"id": 3, "name": "261020-blt planned-cell union: live evidence carries --seeds; row set = discovered UNION planned (queued synthesized rows) — the twice-reported 'only one model shows' bug ROOT-CAUSED (driver mkdirs cell dirs only on reach) and FIXED; real-scenario verified both models + 0/12", "status": "done (7e90a0b/68a74fb)"},
+    {"id": 4, "name": "all pushed through edb2817; tree clean; CI green lineage", "status": "done"}
   ],
   "remaining_tasks": [
-    {"id": 8, "name": "ROADMAP.md reorganize: arm .planning/.gsd-allow-shrink sentinel (printf the roadmap abs path), Write the milestone-grouping template (v0.7.1 ✅ + v1.2 ✅ 2026-10-19, collapsed <details>), re-append Backlog section (999.1 stays in .planning/phases/!)", "status": "not_started"},
-    {"id": 9, "name": "PROJECT.md evolution review: What This Is +v1.2 line, Active→Validated moves (7 TUI reqs), Context refresh, Key Decisions additions (F10 exit family, B+D tab, tree mode, 训练项 terminology), footer 'after v1.2'", "status": "not_started"},
-    {"id": 10, "name": "RETROSPECTIVE.md v1.2 section (template ~/.claude/gsd-core/templates/retrospective.md)", "status": "not_started"},
-    {"id": 11, "name": "Override disclosure: STATE.md ## Deferred Items rows (15 acknowledged items) + MILESTONES.md 'Known verification overrides: 15 newly acknowledged' + closeout_type=override_closeout note (v3g+hermetic-fix post-dated the 20:1x refresh; gates green 23:50)", "status": "not_started"},
-    {"id": 12, "name": "git rm .planning/REQUIREMENTS.md; safety commit archives+ROADMAP first; final commit; tag -a v1.2; push (tags too)", "status": "not_started"},
-    {"id": 13, "name": "Post-close: .planning/quick/ left in place (archive-quick NOT chosen); HANDOFF.json delete after resume", "status": "not_started"}
+    {"id": 5, "name": "v1.2 archive steps 8-13 (see yesterday's HANDOFF + .continue-here): ROADMAP collapse (sentinel), PROJECT evolution, RETROSPECTIVE, override disclosures, git rm REQUIREMENTS, tag v1.2 + push", "status": "not_started"},
+    {"id": 6, "name": "Post-archive: /gsd-new-milestone when the maintainer is ready (TUI selection-matrix milestone per memory, or their next call)", "status": "blocked_on_human"}
   ],
   "blockers": [],
-  "human_actions_pending": [],
+  "human_actions_pending": [
+    {"action": "Restart TUI to pick up 9vh+asm+blt (stale progress guard, all-expanded tree, planned-cell union); launch a multi-model run to see the full tree", "context": "the one-model bug is fixed; verify live at their leisure", "blocking": false}
+  ],
   "async_jobs": [],
   "decisions": [
-    {"decision": "override_closeout (maintainer 继续 23:56): 6th verification round skipped; basis = gates fully green (pytest/ruff/ty) + v3g delta self-evidenced", "phase": "closeout"},
-    {"decision": "deferred-items acknowledged by DIRECT FILE EDIT (Status open→acknowledged): the audit-open acknowledge CLI's text-matcher cannot match legacy table rows — tool-known limitation, elaboration.md sanctions direct edit", "phase": "closeout"},
-    {"decision": "no --archive-quick: .planning/quick/ (32 dirs) stays in place", "phase": "closeout"},
-    {"decision": "storage-overview environmental test class CLOSED by hermetic monkeypatch.setitem(_STORAGE_DEFAULTS) fix (46cb37f)", "phase": "closeout"}
+    {"decision": "Tree variant E selected (2026-10-20 07:12) with the locked expand contract (per-branch arrows + asterisk all-toggle)", "phase": "ux"},
+    {"decision": "Multi-GPU display: G (GPU lanes) deferred — revisit when multi-GPU work resumes; nvidia-smi read-only probe noted as the prerequisite", "phase": "ux"},
+    {"decision": "planned-cell union is PRESENTATION-scoped: synthesized queued rows never leak into History/drill/[e] (service stays root-wide truth)", "phase": "design"}
   ],
-  "uncommitted_files_hint": "MILESTONES.md/STATE.md modified, phases/* deleted (moved to milestones/v1.2-phases/), archives created — the mid-archive state is exactly milestone.complete's output, not yet committed",
-  "next_action": "Resume at remaining_tasks[8]: sentinel→ROADMAP Write→PROJECT→retrospective→disclosures→git rm REQUIREMENTS→commit+tag v1.2→push",
-  "context_notes": "Verification-staleness cascade is MECHANICAL (digest over covered files); do NOT re-trigger verifiers mid-archive. The .gsd-allow-shrink file at .planning/ is the v0.7.1 leftover sentinel — overwrite it fresh (must name the roadmap path, consumed on use). WINDOWS ledger: 8 open = #21 other-machine N=2 + #2-8 model-card metadata (external); if hand-editing the ledger EVER, re-render via broken-windows.cjs renderLedger (python-extract entries JSON → node rewrite) — the canonical form is the module's renderer, hand-written table rows mismatch."
+  "uncommitted_files_hint": "only .planning/.gsd-allow-shrink untracked (tooling sentinel, never committed)",
+  "next_action": "Resume the v1.2 archive at steps 8-13 per .planning/.continue-here.md (the mid-archive constraints block there is still authoritative)",
+  "context_notes": "Fake-probe repro recipe (proven twice): .venv/bin/python -c 'import time; time.sleep(N)' run_sweep.py --models a,b --tasks t1,t2 --seeds 42,43,44 --output-root <root> — argv carries run_sweep.py so probe_cli_sweeps matches; kill by pid after. Windows ledger now 8 open / 6 waived / 28 fixed (8 = #21 other-machine N=2 + #2-8 model-card metadata, all external)."
 }
