@@ -310,6 +310,27 @@ def _fabricate_stale_progress_root(tmp_path) -> "tuple[Path, Path]":
     return root, fresh_state
 
 
+def _fabricate_partial_matrix_root(tmp_path) -> Path:
+    """One fabricated PARTIAL-matrix running root (261020-blt, the
+    maintainer's twice-reported case in miniature): ONLY
+    plant-dnabert-6mer/GUE__emp_H3/seed_42 carries a checkpoint (fresh
+    mtime — the no-manifest grace classifies the root RUNNING, exactly
+    ``_fabricate_running_root``'s branch). NOTHING else exists under
+    the root: seeds 43/44 have no dirs and plant-dnamamba-6mer has NO
+    dirs at all — the sweep driver mkdirs a cell only when it REACHES
+    it, so a 2-model plan killed in model-1's first cell leaves
+    model-2 undiscoverable (the bug: the Running tab rendered ONE
+    model). The shared ``_fabricate_running_root`` is NOT touched (its
+    shapes are load-bearing for the prior members' byte-stability)."""
+    root = tmp_path / "runs" / "root1"
+    checkpoint = (root / "plant-dnabert-6mer" / "GUE__emp_H3"
+                  / "seed_42" / "checkpoint-120")
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "trainer_state.json").write_text(
+        '{"global_step": 120}', encoding="utf-8")
+    return root
+
+
 def _boot(child):
     """Wait for the env-check shell's first paint (the soak probe's
     boot marker — the table header arrives within ~0.25s locally; the
@@ -788,6 +809,76 @@ def test_monitor_stale_progress_guard_with_probed_live_process(tmp_path):
         assert _STALE_STEPS_MARKER not in wide, (
             "the wide table's progress column must never dress the "
             "previous run's 19968/49911 as the current run's numbers"
+        )
+    finally:
+        if child is not None:
+            child.close(force=True)
+        sleeper.terminate()
+        sleeper.wait()
+
+
+def test_monitor_planned_but_unstarted_cells_render_queued(tmp_path):
+    """261020-blt — the maintainer's twice-reported "only one model
+    shows" case (2026-10-20 07:08/08:17 live) through the REAL
+    production path: a partial-matrix root (ONLY model-1's first cell
+    has a dir; the plan covers 2 models x 2 tasks x 3 seeds) plus a
+    REAL sleeper whose argv the REAL /proc probe maps to the tmp root
+    — so the REAL console's REAL evidence chain (probe ->
+    live_sweep_plans -> the LauncherBackend facade forward -> the
+    screen union) derives the plan end-to-end and the drained Running
+    paint shows BOTH model rows (the maintainer's exact complaint —
+    previously the second name was absent) and the strip total 0/12
+    (4 pairs x 3 planned seeds, the union basis).
+
+    WHY the pty lane: the production path — real probe, real facade,
+    real screen — is only reachable here; the pilot lane's fake
+    launcher seam sits ABOVE the production wiring (the missing facade
+    forward would fail this member with model-2 absent, which is the
+    point). The task keys GUE__emp_H3 + GUE__prom_300_all are the two
+    committed-registry keys that enumerate for BOTH models (verified:
+    exactly 4 pairs; GUE__virus_species_4 does NOT enumerate for
+    plant-dnamamba-6mer and would silently shrink the plan to 2 pairs,
+    voiding the 12-cell assertion). The sleeper is a plain CPU sleep
+    (zero GPU, zero run_sweep code executed); pid-scoped terminate+
+    wait in the outermost finally — the probe only ever READS /proc
+    (the maintainer's real live sweeps map to different root keys as
+    harmless dict noise, never looked up, never signaled)."""
+    root = _fabricate_partial_matrix_root(tmp_path)
+    sleeper = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(120)",
+         "run_sweep.py",
+         "--models", "plant-dnabert-6mer,plant-dnamamba-6mer",
+         "--tasks", "GUE__emp_H3,GUE__prom_300_all",
+         "--seeds", "42,43,44",
+         "--output-root", str(root)],
+        cwd=str(tmp_path))
+    child = None
+    try:
+        child = _spawn_tui(tmp_path, manual_roots=(root,))
+        _boot(child)
+        child.send("5")
+        child.expect(_CARD_NAME_MARKER, timeout=_NAV_TIMEOUT)
+        # drain the initial paint (the rze idiom, one frontier tick
+        # past the mount kick so the plan evidence has landed and the
+        # rebuild rendered); the drained bytes carry the whole card
+        child.expect(pexpect.TIMEOUT, timeout=3.0)
+        drained = child.before
+        assert "dnabert-6mer" in drained, (
+            "the discovered model's matrix row renders"
+        )
+        assert "dnamamba-6mer" in drained, (
+            "the planned-but-undiscovered model's row renders too — "
+            "the WHOLE plan shows (the maintainer's exact complaint: "
+            "only one model showed before the union)"
+        )
+        assert "0/12" in drained, (
+            "the strip's done/total derives over the union — "
+            "4 pairs x 3 planned seeds = 0/12, never the "
+            "discovered-only basis"
+        )
+        assert "⏵" in drained, (
+            "the one discovered cell still renders its RUNNING glyph "
+            "(the union adds queued rows, never replaces the truth)"
         )
     finally:
         if child is not None:
