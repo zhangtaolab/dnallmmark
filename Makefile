@@ -188,7 +188,7 @@ QUICK_L6H_SCRIPTS := $(foreach s,script/audit_dnallm_compat.py,$(if $(wildcard $
 # fixed-findings list — same existence-guard idiom as QUICK_L6H_SCRIPTS.
 QUICK_PEX_DEMO := $(foreach s,scripts/demo/record_tui_demo.py,$(if $(wildcard $(s)),$(s)))
 lint:
-	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py $(PHASE6_SCRIPTS) $(PHASE7_MODULES) $(PHASE8_TUI) $(PHASE12_MODULES) $(PHASE13_MODULES) $(QUICK_L6H_SCRIPTS) $(QUICK_PEX_DEMO)
+	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/make_subset_datasets.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py $(PHASE6_SCRIPTS) $(PHASE7_MODULES) $(PHASE8_TUI) $(PHASE12_MODULES) $(PHASE13_MODULES) $(QUICK_L6H_SCRIPTS) $(QUICK_PEX_DEMO)
 
 # Type check (ty, maintainer directive 2026-10-09): zero-diagnostics baseline
 # verified empirically at research time. [tool.ty] in pyproject.toml carries

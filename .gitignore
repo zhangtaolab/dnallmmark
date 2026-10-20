@@ -122,6 +122,10 @@ reviewer-response/
 # Smoke output roots, fresh per launch (15-01 continuation: the halted
 # first smoke's root is preserved as evidence; re-runs use suffixed roots)
 finetuned-smoke*/
+# Subset smoke roots (15-02, D15-07 third registry class): generator
+# output + subset registry — isolated from official AND custom registries
+pipeline/datasets-smoke/
+pipeline/registry-smoke/
 # TUI demo meta sidecars (quick-261015-pex): per-recording driver state,
 # consumed by record.sh's exit gate — never committed.
 docs/demo/.meta-*.json
