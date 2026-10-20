@@ -28,28 +28,28 @@ Phase 14; GPU validation is Phase 15.
 ## Implementation Decisions
 
 ### Worker Process Shape
-- Thin per-GPU worker loop owned by the dispatcher: claim cell → spawn one child per cell → wait → record → claim next (research Shape 1; run_sweep stays the single-sweep authority, run_finetune argv surface untouched)
-- Child argv built by importing `run_sweep.build_argv()` verbatim — orchestrator composes, never re-implements (D-07 discipline)
-- Cell enumeration via `run_sweep.enumerate_matrix` unchanged; priority tiers reapplied for queue order
-- Single dispatcher owns an in-memory queue; idle workers pull the next cell (no cost-prediction — explicitly out of scope)
+- **D13-01:** Thin per-GPU worker loop owned by the dispatcher: claim cell → spawn one child per cell → wait → record → claim next (research Shape 1; run_sweep stays the single-sweep authority, run_finetune argv surface untouched)
+- **D13-02:** Child argv built by importing `run_sweep.build_argv()` verbatim — orchestrator composes, never re-implements (D-07 discipline)
+- **D13-03:** Cell enumeration via `run_sweep.enumerate_matrix` unchanged; priority tiers reapplied for queue order
+- **D13-04:** Single dispatcher owns an in-memory queue; idle workers pull the next cell (no cost-prediction — explicitly out of scope)
 
 ### Mode Declaration & CLI Grammar (MGPU-06)
-- Explicit `--mode {static,dispatch}` on `run_sweep_shard.py`, default `static`; legacy static launch stays byte-identical (test-pinned)
-- Dispatch mode writes ONE shared root with ordinary per-cell subpaths (`{root}/{model}/{task}/seed{k}`) — worker-independent; `--merge` refuses dispatch-mode roots with a named "dispatch roots need no merge" error; static merge untouched
-- Mode is recorded by the run (dispatch state / manifest marker) so refusal is evidence-based, never inferred from directory shape
-- Help text in English, matching the run_sweep/run_sweep_shard CLI convention (D-10)
+- **D13-05:** Explicit `--mode {static,dispatch}` on `run_sweep_shard.py`, default `static`; legacy static launch stays byte-identical (test-pinned)
+- **D13-06:** Dispatch mode writes ONE shared root with ordinary per-cell subpaths (`{root}/{model}/{task}/seed{k}`) — worker-independent; `--merge` refuses dispatch-mode roots with a named "dispatch roots need no merge" error; static merge untouched
+- **D13-07:** Mode is recorded by the run (dispatch state / manifest marker) so refusal is evidence-based, never inferred from directory shape
+- **D13-08:** Help text in English, matching the run_sweep/run_sweep_shard CLI convention (D-10)
 
 ### Claim Ledger & Resume (MGPU-02)
-- Per-cell claim file via `os.open(O_CREAT|O_EXCL)` in a dispatch ledger dir inside the shared root (tee O_EXCL precedent); JSON content: cell key, lane flags, gpu, pid, run_id, timestamps
-- Child `trainer_state.json` marker stays the authoritative completion guard; the dispatcher additionally skips ledger-completed cells on relaunch (D-06 two-layer guard extended)
-- Singleton dispatcher lock per root (O_EXCL): a second orchestrator on the same root is refused loudly; stale claims from a dead run are reclaimable precisely because no second dispatcher can exist — no lease/timeout protocol
-- Worker death mid-cell ⇒ claim is unfinished ⇒ relaunch requeues it; exactly-once (no duplicates, no orphans) is proven by the fake-children kill test (SC2 — the P1 acceptance test)
+- **D13-09:** Per-cell claim file via `os.open(O_CREAT|O_EXCL)` in a dispatch ledger dir inside the shared root (tee O_EXCL precedent); JSON content: cell key, lane flags, gpu, pid, run_id, timestamps
+- **D13-10:** Child `trainer_state.json` marker stays the authoritative completion guard; the dispatcher additionally skips ledger-completed cells on relaunch (D-06 two-layer guard extended)
+- **D13-11:** Singleton dispatcher lock per root (O_EXCL): a second orchestrator on the same root is refused loudly; stale claims from a dead run are reclaimable precisely because no second dispatcher can exist — no lease/timeout protocol
+- **D13-12:** Worker death mid-cell ⇒ claim is unfinished ⇒ relaunch requeues it; exactly-once (no duplicates, no orphans) is proven by the fake-children kill test (SC2 — the P1 acceptance test)
 
 ### Testing & CI Shape (SC1/SC2/SC5)
-- Kill-test harness uses fake children through the existing `main(spawner=...)` seam: scripted exits incl. SIGKILL mid-cell; assertions read the ledger + artifact counts
-- Dry-run enumeration committed as a golden: byte-identical across runs AND equal to static-mode enumeration for identical inputs
-- CI stays CPU-only: no GPU, no dnallm, no N>1 device assumptions anywhere; fake children + injected seams only
-- Full CPU gates stay green (pytest/ruff/ty + node lanes); zero CI changes; new code keeps the stdlib-headless contract
+- **D13-13:** Kill-test harness uses fake children through the existing `main(spawner=...)` seam: scripted exits incl. SIGKILL mid-cell; assertions read the ledger + artifact counts
+- **D13-14:** Dry-run enumeration committed as a golden: byte-identical across runs AND equal to static-mode enumeration for identical inputs
+- **D13-15:** CI stays CPU-only: no GPU, no dnallm, no N>1 device assumptions anywhere; fake children + injected seams only
+- **D13-16:** Full CPU gates stay green (pytest/ruff/ty + node lanes); zero CI changes; new code keeps the stdlib-headless contract
 
 ### Claude's Discretion
 - Internal module split inside `run_sweep_shard.py` vs a new sibling module (e.g. `dispatch_core.py`) — follow the existing compose-as-sibling-modules pattern and file-size ergonomics
