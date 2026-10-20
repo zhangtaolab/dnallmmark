@@ -4,10 +4,10 @@ milestone: v1.2
 milestone_name: TUI任务
 status: Awaiting next milestone
 stopped_at: 08-12 micro-refresh complete (5/5 passed); WINDOWS disposition next
-last_updated: "2026-10-19T15:56:32.957Z"
+last_updated: "2026-10-20T00:10:49.470Z"
 last_activity: 2026-10-19
-last_activity_desc: Milestone v1.2 completed and archived
-state_head: 46cb37fa495da7c58dc1a37ba43718f0bc28ca7e
+stopped_at: "Quick 261020-9vh+asm complete (stale-progress guard + tree all-expanded pins); v1.2 archive steps 8-13 still pending"
+state_head: 4064b38eeefd735680b5ae546ab189051b70fe91
 progress:
   total_phases: 6
   completed_phases: 6
@@ -300,6 +300,8 @@ None yet.
 | 261019-o8e | slot-5 matrix scope: Running views filter to the live sweep's pair set (residue stays History/drill); verified end-to-end on the live plant-dnabert sweep | 2026-10-19 | 0a3eee5 | [261019-o8e-slot-5-matrix-scope-fix-filter-runni](./quick/261019-o8e-slot-5-matrix-scope-fix-filter-runni/) |
 | 261019-pe0 | slot-5 tree mode: third left-pane state ([w] matrix/tree/wide cycle, auto-fallback on width), locked expand/collapse contract, focus feeds right pane | 2026-10-19 | 29d5fda | [261019-pe0-slot-5-tree-mode-left-pane-third-state](./quick/261019-pe0-slot-5-tree-mode-left-pane-third-state/) |
 | 33 | fix: tree/wide cursor fills + card hover fill removed (no-fill law extended) | 2026-10-19 | 797b910 | — |
+| 261020-9vh | slot-5 stale-progress guard: checkpoint mtime predating live process start renders indeterminate, never the old run's numbers (real-/proc pty pin) | 2026-10-20 | 4064b38 | [261020-9vh-slot-5-stale-progress-guard-live-proces](./quick/261020-9vh-slot-5-stale-progress-guard-live-proces/) |
+| 261020-asm | slot-5 tree all-expanded entry default made explicit + dual-lane mutation-verified pins (variant E ruling) | 2026-10-20 | 4064b38 | [261020-asm-slot-5-tree-default-expansion-per-mainta](./quick/261020-asm-slot-5-tree-default-expansion-per-mainta/) |
 
 ## Deferred Items
 
