@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.3
 milestone_name: 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
-current_phase: 13
-current_phase_name: 动态调度核心
-status: verifying
-stopped_at: Completed 13-02-PLAN.md (dispatch dry-run artifact, evidence-based merge refusal, PHASE13 lint slot — phase 13 complete)
-last_updated: "2026-10-20T05:25:12.385Z"
+current_phase: 14
+current_phase_name: 编排运行视图与失败恢复
+status: planning
+stopped_at: Phase 13 complete, ready to plan Phase 14
+last_updated: "2026-10-20T06:50:30.927Z"
 last_activity: 2026-10-20
-last_activity_desc: Phase 13 complete (13-01 + 13-02; 90 dispatch/shard tests green, full gates recorded)
-state_head: e8dfb24796265f4747fa3f47fffed50404b0e3ee
+last_activity_desc: Phase 13 complete, transitioned to Phase 14
+state_head: bbfc027cdcccb84934ee78f8cd0cdabc0bab099e
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
   completed_plans: 2
-  percent: 100
+  percent: 17
 ---
 
 # Project State
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 
 ## Current Position
 
-Phase: 13 (动态调度核心) — EXECUTING
-Plan: 2 of 2
-Status: Phase complete — ready for verification
-Last activity: 2026-10-20 — 13-02 landed (dispatch dry-run artifact, evidence-based merge refusal, PHASE13 lint slot)
+Phase: 14 — 编排运行视图与失败恢复
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-20 — Phase 13 complete, transitioned to Phase 14
 
 ## Performance Metrics
 
@@ -331,7 +331,7 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-20T05:25:12.339Z
-Stopped at: Completed 13-02-PLAN.md (dispatch dry-run artifact, evidence-based merge refusal, PHASE13 lint slot — phase 13 complete)
+Stopped at: Phase 13 complete, ready to plan Phase 14
 Resume file: None
 
 ## Operator Next Steps
