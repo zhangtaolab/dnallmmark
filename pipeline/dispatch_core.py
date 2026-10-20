@@ -1001,6 +1001,20 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
         if log_dir_arg is not None else None)
     output_root = Path(args.output_root).resolve()
 
+    # WR-01 (phase-13 review): pre-validate the subset map ONCE at
+    # dispatch start — the D-14 collect-all mirror run_sweep.main
+    # performs (run_sweep.py:1860-1869) — against the same
+    # overlay-merged registry view the matrix enumeration joins on. A
+    # bad map (unreadable, non-object, unknown task keys, non-integer
+    # IDs) refuses HERE by name, before anything touches the root —
+    # never one burned child launch per cell recorded as N cell
+    # failures. The child's validate_subset_file re-check per cell
+    # stays authoritative (defense-in-depth, not a shared import).
+    if subset_file_abs is not None:
+        run_sweep._validate_subset_file(
+            subset_file_abs,
+            registry_loader.load_datasets_registry(registry_dir))
+
     # Enumeration + priority order (run_sweep verbatim, D-07): the
     # queue's base order is enumerate_matrix's sorted() order, permuted
     # by apply_priority_order's stable reorder when --priority-file is

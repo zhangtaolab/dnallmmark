@@ -1039,6 +1039,49 @@ def test_dispatch_zero_enumeration_refuses_before_lock(
     )
 
 
+def test_dispatch_subset_file_validated_at_startup(tmp_path, monkeypatch):
+    """WR-01 pin: a bad --subset_file map (here: an unknown task key)
+    refuses at dispatch STARTUP through run_sweep._validate_subset_file's
+    collect-all problem list — before any spawn and before the root is
+    touched — never one burned child launch per cell recorded as N cell
+    failures. A VALID map is the control: it threads through and the
+    run proceeds."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    bad_subset = tmp_path / "subset-bad.json"
+    bad_subset.write_text(
+        json.dumps({"no-such-task": [1, 2]}), encoding="utf-8")
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--subset_file", str(bad_subset),
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    message = str(excinfo.value)
+    assert "--subset_file" in message
+    assert "not in datasets registry" in message
+    assert not calls
+    assert not base.exists(), "refused before the root was touched"
+
+    good_subset = tmp_path / "subset-good.json"
+    good_subset.write_text(
+        json.dumps({"task-x": [1, 2]}), encoding="utf-8")
+    good_base = (tmp_path / "finetuned-good").resolve()
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--subset_file", str(good_subset),
+        "--output-root", str(good_base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "a valid map threads through to the child"
+    assert flag_value(calls[0]["argv"], "--subset_file") == str(
+        good_subset), "the resolved absolute path rides the child argv"
+
+
 # ===== the singleton lock + mode isolation =====
 
 
