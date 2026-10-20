@@ -1314,34 +1314,48 @@ def _scan_failed_claims(ledger_dir):
     contract); a claim qualifies iff its payload ``state`` is
     ``failed`` AND its cell key rebuilds and MATCHES the claim filename
     tuple (``claim_filename``) — a claim whose stored identity
-    disagrees with its name is not a runnable cell.
+    disagrees with its name is not a runnable cell. Every exclusion is
+    NAMED (WR-02, phase-14 review): the recovery tool whose job is
+    completeness over the failed set says what it dropped — the
+    relaunch path's "never a silent skip" discipline — while the trust
+    direction stays fail-safe (an unusable claim is never re-queued,
+    never trusted).
 
     Args:
         ledger_dir (Path): the ledger directory (a missing dir scans to
-            an empty list).
+            empty lists).
 
     Returns:
-        list[tuple]: ``(cell, payload)`` pairs, sorted by filename.
+        tuple[list, list[str]]: ``(qualified, excluded)`` — the
+        ``(cell, payload)`` pairs sorted by filename, plus one
+        ``"{name} ({reason})"`` diagnostic per dropped file in scan
+        order.
     """
     qualified = []
+    excluded = []
     if not ledger_dir.is_dir():
-        return qualified
+        return qualified, excluded
     for path in sorted(ledger_dir.glob("*.json")):
         if path.name == DISPATCHER_LOCK_NAME:
             continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            excluded.append(f"{path.name} (unreadable/unparseable)")
             continue
         if not isinstance(payload, dict):
+            excluded.append(f"{path.name} (payload is not an object)")
             continue
         if payload.get("state") != CLAIM_STATE_FAILED:
             continue
         cell = _cell_from_key(payload.get("cell"))
         if cell is None or claim_filename(cell) != path.name:
+            excluded.append(
+                f"{path.name} (state failed but the stored cell key "
+                "is unusable or disagrees with the filename)")
             continue
         qualified.append((cell, payload))
-    return qualified
+    return qualified, excluded
 
 
 def _rerun_lane_refusal(qualified, union_keys):
@@ -1392,8 +1406,10 @@ def _run_rerun_failed(args, passthrough, spawner, clock, workers, gpus):
     validate the raw passthrough (only ``--registry-dir`` accepted)
     -> scan the ledger for failed claims (a ZERO-failed root prints the
     explicit no-failed-cells verdict and returns exit 0 — the
-    drained-root precedent, A7) -> registry-join every failed cell's
-    BASE model name (fail-safe, T-14-07) -> refuse heterogeneous lane
+    drained-root precedent, A7; unusable claims are excluded BY NAME,
+    never silently — WR-02, phase-14 review) -> registry-join every
+    failed cell's BASE model name (fail-safe, T-14-07) -> refuse
+    heterogeneous lane
     signatures (D14-08) -> marker-vs-failed precedence per cell (the
     Phase 13 D-06 adjacency: a failed cell that later gained the
     ``trainer_state.json`` marker is SKIPPED, never re-run) -> replay
@@ -1423,15 +1439,35 @@ def _run_rerun_failed(args, passthrough, spawner, clock, workers, gpus):
         else run_sweep.PIPELINE_DIR)
     ledger_dir = ledger_dir_for(output_root)
 
-    qualified = _scan_failed_claims(ledger_dir)
+    qualified, excluded = _scan_failed_claims(ledger_dir)
+    if excluded:
+        # WR-02 (phase-14 review): name every dropped claim — a failed
+        # cell whose claim is corrupt (disk fault, hand tampering) must
+        # not vanish from the re-run feed without a trace, the relaunch
+        # counterpart's "never a silent skip" discipline (still never
+        # re-queued: the trust direction stays fail-safe).
+        print(
+            f"[Rerun] [Skip] {len(excluded)} unusable claim(s) excluded "
+            f"from the re-run feed: {'; '.join(excluded)}"
+        )
     if not qualified:
         # A7 ruling (Pitfall 7): the drained-root precedent — an
         # explicit verdict and exit 0, never a fall-through into
-        # full-matrix enumeration.
-        print(
-            f"[Dispatch] no failed cells to re-run on {output_root} — "
-            "the ledger holds no failed claims; nothing spawned"
-        )
+        # full-matrix enumeration. With exclusions the verdict names the
+        # distinction (WR-02): "no failed claims" and "only unusable
+        # claims" are different operator realities.
+        if excluded:
+            print(
+                f"[Dispatch] no failed cells to re-run on {output_root} "
+                "— the ledger holds 0 usable failed claim(s) "
+                f"({len(excluded)} excluded as unusable, named above); "
+                "nothing spawned"
+            )
+        else:
+            print(
+                f"[Dispatch] no failed cells to re-run on {output_root} — "
+                "the ledger holds no failed claims; nothing spawned"
+            )
         return
 
     # Registry join (fail-safe, T-14-07): a forged or renamed claim

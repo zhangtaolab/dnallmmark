@@ -3520,3 +3520,86 @@ def test_rerun_archive_collision_refuses_loudly(
     assert json.loads(path.read_text(encoding="utf-8"))["run_id"] == (
         "origrun1")
     assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists()
+
+
+def test_rerun_names_excluded_unusable_claims_never_silently_drops(
+        tmp_path, monkeypatch, capsys):
+    """WR-02 pin: the failed-claim scan NAMES every claim it excludes —
+    unreadable/unparseable, non-object payload, and the state-failed
+    cell-key/filename integrity mismatch — the relaunch counterpart's
+    "never a silent skip" discipline, while the trust direction stays
+    fail-safe (excluded claims are never re-queued, never re-run). A
+    usable failed claim in the same ledger still re-runs; a ledger
+    holding ONLY unusable claims gets the DISTINGUISHED verdict (never
+    the plain "holds no failed claims" wording) and stays exit 0."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+
+    # The one usable failed claim — it must still re-run.
+    usable_cell = ("model-a", "task-x", 42)
+    _write_failed_claim(ledger_dir, usable_cell, {})
+
+    # Exclusion class 1: an unparseable claim under a REAL claim name.
+    corrupt = ledger_dir / dispatch_core.claim_filename(
+        ("model-b", "task-x", 42))
+    corrupt.write_text("{not json", encoding="utf-8")
+
+    # Exclusion class 2: a parseable but non-object payload.
+    non_object = ledger_dir / dispatch_core.claim_filename(
+        ("model-c", "task-x", 42))
+    non_object.write_text("[1, 2, 3]", encoding="utf-8")
+
+    # Exclusion class 3: state failed but the stored cell key disagrees
+    # with the filename tuple (integrity mismatch).
+    mismatch_payload = dispatch_core._claim_payload(
+        ("model-b", "task-x", 42), {}, "7", "ghost-run",
+        "2026-10-20T00:00:00+00:00")
+    mismatch_payload["state"] = dispatch_core.CLAIM_STATE_FAILED
+    mismatched = ledger_dir / dispatch_core.claim_filename(
+        ("model-a", "task-z", 43))
+    mismatched.write_text(json.dumps(mismatch_payload), encoding="utf-8")
+
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    out = capsys.readouterr().out
+    assert "[Skip]" in out and "3 unusable claim(s)" in out, (
+        "every exclusion is named, never silent"
+    )
+    assert corrupt.name in out and "(unreadable/unparseable)" in out
+    assert non_object.name in out and "not an object" in out
+    assert mismatched.name in out and "disagrees with the filename" in out
+    assert len(calls) == 1, "exactly the usable failed cell re-runs"
+    assert spawn_identities(calls) == [usable_cell]
+    # fail-safe direction: only the USABLE cell's genealogy is touched
+    archive_dir = ledger_dir / dispatch_core.ARCHIVE_DIR_NAME
+    assert len(list(archive_dir.glob("*.json"))) == 1, (
+        "excluded claims are never re-queued, never archived-as-rerun"
+    )
+
+    # ===== a ledger holding ONLY unusable claims: the DISTINGUISHED
+    # verdict (the WR-02 minimum) — never the plain "holds no failed
+    # claims" wording — still exit 0, nothing spawned.
+    base2 = (tmp_path / "finetuned-only-unusable").resolve()
+    ledger2 = dispatch_core.ledger_dir_for(base2)
+    ledger2.mkdir(parents=True)
+    only_corrupt = ledger2 / dispatch_core.claim_filename(usable_cell)
+    only_corrupt.write_text("{not json", encoding="utf-8")
+    calls2 = []
+    run_cli(monkeypatch, _rerun_argv(base2, registry_dir),
+            spawner=make_fake_spawner(calls2))
+    out2 = capsys.readouterr().out
+    assert "no failed cells to re-run" in out2
+    assert "0 usable failed claim" in out2, (
+        "the verdict says the ledger holds only unusable claims"
+    )
+    assert "excluded as unusable" in out2
+    assert "the ledger holds no failed claims" not in out2, (
+        "the plain no-failed-claims wording must not mask exclusions"
+    )
+    assert calls2 == []
+    assert not (base2 / dispatch_core.DISPATCH_STATE_NAME).exists(), (
+        "the zero-usable verdict touches nothing"
+    )
