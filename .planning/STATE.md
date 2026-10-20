@@ -25,7 +25,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-20)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 14 — 编排运行视图与失败恢复
+**Current focus:** Phase 15 — 双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)
 
 ## Current Position
 
