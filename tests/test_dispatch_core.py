@@ -4069,3 +4069,42 @@ def test_dispatch_skipped_cell_gains_no_record(tmp_path, monkeypatch):
             encoding="utf-8"))
     assert state["counts"] == {
         "total": 2, "completed": 1, "failed": 0, "skipped": 1}
+
+
+def test_dispatch_root_export_dry_run_visibility(tmp_path, monkeypatch):
+    """Consumer visibility (the unmet 15-01 Task 3 gate): a
+    fake-children dispatch root is CONSUMABLE — export_runs.py --dry-run
+    over the root reports its run records. The subprocess form is
+    mandatory (D14-10: the exporter imports numpy/yaml/scipy at module
+    top, so this stdlib+jsonschema-pure suite must never import it
+    in-process). The '3 model(s)' count IS the no-phantom-model
+    assertion: dispatch_ledger/ and logs/ sit at the root yet contribute
+    no model key (load_run_records only creates model keys where a
+    record was found — pinned by the count, not by absence-of-path
+    checks)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        *DISPATCH_ARGV,
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 12
+    # The real-root shape (the 15-01 smoke): dispatch_ledger/ and logs/
+    # directories sit at the root beside the model trees.
+    assert (base / dispatch_core.LEDGER_DIR_NAME).is_dir()
+    logs = base / "logs"
+    logs.mkdir()
+    (logs / "w0-child.log").write_text("child log\n", encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "script" / "export_runs.py"),
+         "--dry-run", "--input-root", str(base)],
+        capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert ("[Dry-run] 12 run record(s) across 3 model(s) / 2 task(s)"
+            in result.stdout), (
+        "the dispatch root exports its 12 records over the 3 REAL "
+        "models — dispatch_ledger/ and logs/ contribute no phantom "
+        "model key"
+    )
