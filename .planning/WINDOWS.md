@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 10
+open_count: 8
 waived_count: 6
-fixed_count: 28
+fixed_count: 30
 total_count: 44
-last_updated: 2026-10-20T14:09:05.410Z
+last_updated: 2026-10-20T15:28:04.258Z
 ---
 
 # Broken Windows Ledger
@@ -35,7 +35,7 @@ last_updated: 2026-10-20T14:09:05.410Z
 | 18 | 9 | stub | tui/screens/wizard.py | 470 | f binding routes to the on_import seam with no view behind it — the file-import view is 09-05's deliverable (planned functionality gap, D-11) | fixed | 09-05 Task 2: f routes to the import path prompt + per-entry sequential gauntlet with entry-level rollback (D-11 view behind the seam) | 2026-10-12T04:54:57.893Z | 2026-10-12T05:55:00.000Z |
 | 19 | 9 | stub | tui/screens/wizard.py | 475 | o binding routes to the on_export seam with no view behind it — the registry-export view is 09-05's deliverable (planned functionality gap, D-11) | fixed | 09-05 Task 2: o routes to the empty-state-checked export path prompt + the verbatim registry copy (D-11 view behind the seam) | 2026-10-12T04:54:57.963Z | 2026-10-12T05:55:00.000Z |
 | 20 | 11 | deviation | .planning/phases/11-run-config-launch-gates-single-gpu-monitoring/11-07-SUMMARY.md |  | GB10 smoke (SC5 execution half) pending maintainer run — procedure in 11-07-SUMMARY, not executor-executable (D-15) | fixed | executed live 2026-10-13 (11-UAT.md status passed 2/2, maintainer-authorized bounded smoke incl. the E2'-blocks proof); artifacts re-read on disk by the 2026-10-16 refresh verifiers (finetuned-smoke/ both cells + trainer_state markers) — ledger row left open by bookkeeping oversight, closed 2026-10-16 | 2026-10-13T06:06:35.033Z | 2026-10-13T00:00:00.000Z |
-| 21 | 12 | unrun-verify | .planning/phases/12-multi-gpu-orchestration-console-hardening/12-05-SUMMARY.md |  | N=2 multi-GPU smoke (MGPU validation half) pending maintainer run on the OTHER machine — 9-step procedure in docs/multi-gpu.md + 12-05-SUMMARY, not executor-executable (D-05: this machine is dev/test only, single GPU) | open |  | 2026-10-13T13:38:34.565Z |  |
+| 21 | 12 | unrun-verify | .planning/phases/12-multi-gpu-orchestration-console-hardening/12-05-SUMMARY.md |  | N=2 multi-GPU smoke (MGPU validation half) pending maintainer run on the OTHER machine — 9-step procedure in docs/multi-gpu.md + 12-05-SUMMARY, not executor-executable (D-05: this machine is dev/test only, single GPU) | fixed | executed 2026-10-20 on the local 2× RTX 5090 (D-05 revised 本机=双卡验证机, D15-03): dispatch-mode N=2 smoke, 2 cells (plant-dnabert-6mer × iDNA_ABF_datasets__5mC, seeds 42,43, 1 epoch, 155 s), BOTH GPUs produced cells, dispatch_state done 2/2, consumption dry-run "[Dry-run] 2 run record(s)" (fresh re-run after 15-04's run_record fix; the first attempt's engine legs were green but halted on the missing-run_record gap, WINDOWS #44); docs/multi-gpu.md rewritten as the executed dispatch procedure (D15-02 procedure/doc identity); evidence: .planning/phases/15-dual-gpu-validation-subsets/15-01-SUMMARY.md + preserved pipeline/finetuned-smoke-r2/dispatch_state.json + /root/autodl-tmp/phase15-evidence/smoke-dispatch-r2.log | 2026-10-13T13:38:34.565Z | 2026-10-20T15:26:43.584Z |
 | 22 | quick-261014-c2l | unmet-truth | tests/test_schemas.py |  | Full make-test gate blocked by 10 PRE-EXISTING base failures (5 schema/determinism pins stale after data commit 9e803ca, 5 root-user chmod persist-failure sims) — verified failing identically at base 8f3af3c; this task's own lanes + lint + typecheck + node(26) green (see deferred-items.md) | fixed |  | 2026-10-14T01:21:59.202Z | 2026-10-19T13:57:22.004Z |
 | 23 | quick-261014-dcl | deviation | tests/tui/__snapshots__/wizard.svg |  | wizard.svg golden collateral drift: the wizard golden pins env-screen pixels at its left edge, so the 261014-dcl eighth env row drifted it (committed with the change per D-03; the plan pinned exactly four SVG diffs) | fixed | absorbed by the D-03-approved full golden refresh (d5cb44b, 2026-10-15): wizard.svg regenerated with the other 8 goldens and committed under maintainer review | 2026-10-14T03:38:33.288Z | 2026-10-15T06:45:36.321Z |
 | 24 | quick-261014-f4w | deviation | tests/tui/__snapshots__/wizard.svg |  | wizard.svg golden collateral drift again during make snapshot-update (render-state flake documented in dcl deferred-items, ~2/17 loads, pre-existing at base): committed with the change per D-03 alongside the plan-pinned run_config.svg + env_check.svg | fixed | absorbed by the D-03-approved full golden refresh (d5cb44b, 2026-10-15); the render-state flake itself stays documented in dcl deferred-items | 2026-10-14T05:14:07.356Z | 2026-10-15T06:45:36.243Z |
@@ -58,7 +58,7 @@ last_updated: 2026-10-20T14:09:05.410Z
 | 41 | quick-261018-feedback | unmet-truth | tui/screens/monitor.py |  | #40 optimistic first paint: slot-5 entry with a live sweep waits ~3.5s for the scan worker before content (screen blank-but-responsive meanwhile) — render a skeleton + scanning header immediately, fill on worker completion | fixed | 261018-kvj: the mount composes the tab-header skeleton + the scanning note IMMEDIATELY (zero scan round-trips, zero fabricated rows); the first scan message clears the note and fills the tabs — Pilot-pinned (gated fake) and pty-pinned | 2026-10-18T02:41:55.929Z | 2026-10-18T07:53:29.992Z |
 | 42 | quick-261019-f0x | deviation | tests/tui/__snapshots__/monitor_running.svg |  | monitor_running.svg AND monitor_empty.svg regenerated via make snapshot-update for the slot-5 B-skeleton + D-right-pane redesign (the summary strip + matrix + the ~40-col right pane changed the Running tab's render; the frozen-clock context manager _frozen_mon_clock pins the ETA wall clock for the export window), deliberately UNCOMMITTED pending the maintainer's D-03 review — the WINDOWS #35/#39 precedent; the committed tree fails test_monitor_running_golden + test_monitor_empty_golden on exactly these two files until the review lands; the other 7 goldens regenerated byte-identical | fixed |  | 2026-10-19T00:00:00.000Z | 2026-10-19T19:57:00+08:00 |
 | 43 | 13 | deviation | .planning/phases/13-dynamic-dispatch-core/deferred-items.md |  | make test full gate: 7 pre-existing/environmental failures (6 root-user chmod artifacts + stale v1.2.0 about-version pin predating 13-02 base) — all outside 13-02 blast radius, maintainer-owned, see 13-02-SUMMARY Verification Evidence | open |  | 2026-10-20T05:27:28.328Z |  |
-| 44 | 15 | deviation | pipeline/dispatch_core.py | 1942 | 15-01 D15-04 halt: dispatch roots carry no run_record.json (Phase 13 A3 handoff never landed; children are run_finetune.py directly) so export_runs counts 0 records over a dispatch shared root — smoke itself green 2/2 on both GPUs; remediation (dispatch writes run_record at finalize) is an architectural decision routed to the maintainer, 15-03 inherits the same false premise | open |  | 2026-10-20T14:09:05.410Z |  |
+| 44 | 15 | deviation | pipeline/dispatch_core.py | 1942 | 15-01 D15-04 halt: dispatch roots carry no run_record.json (Phase 13 A3 handoff never landed; children are run_finetune.py directly) so export_runs counts 0 records over a dispatch shared root — smoke itself green 2/2 on both GPUs; remediation (dispatch writes run_record at finalize) is an architectural decision routed to the maintainer, 15-03 inherits the same false premise | fixed | resolved by 15-04 (maintainer Option 1 ruling 2026-10-20; commits 9c22787/8c5e8b9): dispatch_core now writes run_record.json at claim finalize composed via run_sweep's _new_record (WR-12 no-overwrite, CR-04-routed failures) — supersedes Phase 13 A3 at its deferred handoff point; criterion 3 green on the 2026-10-20 fresh 2-cell smoke re-run ([Dry-run] 2 run record(s) across 1 model(s) / 1 task(s)); 15-03's false premise corrected in-plan by 15-04 Task 2 | 2026-10-20T14:09:05.410Z | 2026-10-20T15:28:04.258Z |
 
 ````json
 [
@@ -329,10 +329,10 @@ last_updated: 2026-10-20T14:09:05.410Z
     "file": ".planning/phases/12-multi-gpu-orchestration-console-hardening/12-05-SUMMARY.md",
     "line": null,
     "description": "N=2 multi-GPU smoke (MGPU validation half) pending maintainer run on the OTHER machine — 9-step procedure in docs/multi-gpu.md + 12-05-SUMMARY, not executor-executable (D-05: this machine is dev/test only, single GPU)",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "executed 2026-10-20 on the local 2× RTX 5090 (D-05 revised 本机=双卡验证机, D15-03): dispatch-mode N=2 smoke, 2 cells (plant-dnabert-6mer × iDNA_ABF_datasets__5mC, seeds 42,43, 1 epoch, 155 s), BOTH GPUs produced cells, dispatch_state done 2/2, consumption dry-run \"[Dry-run] 2 run record(s)\" (fresh re-run after 15-04's run_record fix; the first attempt's engine legs were green but halted on the missing-run_record gap, WINDOWS #44); docs/multi-gpu.md rewritten as the executed dispatch procedure (D15-02 procedure/doc identity); evidence: .planning/phases/15-dual-gpu-validation-subsets/15-01-SUMMARY.md + preserved pipeline/finetuned-smoke-r2/dispatch_state.json + /root/autodl-tmp/phase15-evidence/smoke-dispatch-r2.log",
     "recorded_at": "2026-10-13T13:38:34.565Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-20T15:26:43.584Z",
     "milestone": "v1.2"
   },
   {
@@ -628,10 +628,10 @@ last_updated: 2026-10-20T14:09:05.410Z
     "file": "pipeline/dispatch_core.py",
     "line": 1942,
     "description": "15-01 D15-04 halt: dispatch roots carry no run_record.json (Phase 13 A3 handoff never landed; children are run_finetune.py directly) so export_runs counts 0 records over a dispatch shared root — smoke itself green 2/2 on both GPUs; remediation (dispatch writes run_record at finalize) is an architectural decision routed to the maintainer, 15-03 inherits the same false premise",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "resolved by 15-04 (maintainer Option 1 ruling 2026-10-20; commits 9c22787/8c5e8b9): dispatch_core now writes run_record.json at claim finalize composed via run_sweep's _new_record (WR-12 no-overwrite, CR-04-routed failures) — supersedes Phase 13 A3 at its deferred handoff point; criterion 3 green on the 2026-10-20 fresh 2-cell smoke re-run ([Dry-run] 2 run record(s) across 1 model(s) / 1 task(s)); 15-03's false premise corrected in-plan by 15-04 Task 2",
     "recorded_at": "2026-10-20T14:09:05.410Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-20T15:28:04.258Z",
     "milestone": "v1.3"
   }
 ]

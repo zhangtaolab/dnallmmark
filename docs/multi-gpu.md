@@ -154,10 +154,21 @@ python pipeline/run_sweep_shard.py --merge --workers 2 \
   workers' lane flags differ (a lora worker merged with a base worker is
   a different experiment than either).
 - **Never mutates a worker root and never deletes anything.** Cleanup is
-  an explicit maintainer step: after verifying the merged root (export a
-  model from it, check the manifest), delete the worker roots and their
-  per-launch logs: `rm -rf pipeline/finetuned-mgpu-w{0,1}`
-  `rm -f pipeline/finetuned-mgpu-w{0,1}-*.log`
+  an explicit, verified maintainer step — since Phase 14 (MGPU-05) the
+  `--cleanup` command replaces the old manual `rm -rf` recipe: it
+  re-verifies the merged root first (an `export_runs.py --dry-run`
+  subprocess AND manifest cell-set equality against the worker
+  manifests), then removes exactly the frozen worker roots
+  `{output-root}-mgpu-w{0..N-1}` and their per-launch logs, behind an
+  exact typed phrase (the resolved `--output-root` string, D14-11):
+  ```bash
+  python pipeline/run_sweep_shard.py --cleanup --workers 2 \
+      --output-root ./pipeline/finetuned \
+      --yes /abs/resolved/pipeline/finetuned
+  ```
+  **Dispatch roots need neither `--merge` nor `--cleanup`** — dispatch
+  mode writes ONE shared root (MGPU-06); both commands refuse with a
+  named error before touching anything (A6, D14-11/D14-12).
 
 ### 6. Web mirror (offline regeneration, never both roots)
 
@@ -176,15 +187,21 @@ uv run --group tui --group dev python script/gen_progress.py \
 **Never pass worker roots AND their merged root together** — every cell
 would appear twice (double-counted sweeps in the selector view).
 
-## Machine roles (D-05, verbatim)
+## Machine roles (D-05, revised 2026-10-20: 本机 = 双卡验证机)
 
-> 机器分工：多 GPU 开发在本机、**验证在他机**——MGPU 冒烟写成他机执行程序文档（E2' 同模式）；本机仅 fake-executor/干跑枚举不相交性/单卡 CUDA_VISIBLE_DEVICES 语义证明；CI 与 GB10 不假设 N>1 设备。
+> 机器分工（修订，D15-03）：**本机 = 双卡验证机**——AutoDL 2× RTX 5090
+> 直接执行 N=2 调度冒烟与小规模真实 sweep；旧「开发本机 / 验证交给另一台
+> 机器」的两机分工就此退役（该分工定于本机单卡时期）。CI 永远不假设 N>1
+> 设备：多 GPU 证据来自本机实跑工件，CI 只对 fixture 生成的工件做断言
+> （D15-15）。
 
-Multi-GPU *development* happens on the local dev machine (CPU-side test
-suites, dry-run disjointness proofs, single-GPU `CUDA_VISIBLE_DEVICES`
-semantics). Multi-GPU *validation* runs on the other machine, as the
-procedure below documents. CI and the local GB10 assume nothing about
-N>1 devices — there is no multi-GPU CI lane and there will not be one.
+Multi-GPU *development* and *validation* both happen on the local box
+(CPU-side test suites plus real dispatch runs on the two 5090s — the
+smoke procedure below was executed on this machine 2026-10-20; evidence
+in `.planning/phases/15-dual-gpu-validation-subsets/15-01-SUMMARY.md`).
+CI stays zero-GPU: there is no multi-GPU CI lane and there will not be
+one — GPU-outcome assertions read real produced artifacts on this box
+and fixture-generated artifacts in CI (D15-15).
 
 ## The E2' trust boundary, stated honestly (Pitfall 7)
 
@@ -197,53 +214,95 @@ trusted the same way an operator typing `git push` is. Do not project
 E2' expectations onto the CLI, and do not add gate code to it; the
 bounded smoke procedure below uses small explicit combos anyway.
 
-## The 9-step N=2 multi-GPU smoke procedure
+## The dispatch-mode N=2 smoke procedure (executed on this machine)
 
-**Maintainer-executed, on the OTHER machine (D-05). Bounded: 2 models ×
-1 task × 1 seed × 1 epoch ≈ minutes. Never CI, never GB10.** Record all
-output in the phase VERIFICATION/UAT artifact.
+**Executor-executed on the local 2× RTX 5090 box (D-05 revised: 本机=双卡验证机).
+Bounded: 1 model × 1 task × 2 seeds × 1 epoch ≈ 2.5 min wall. Never CI.**
+This section is written FROM the executed commands (D15-02
+procedure/doc identity): every argv and output line below is a
+copy-paste of the 2026-10-20 run. Dispatch mode (`--mode dispatch`,
+Phase 13) is the primary multi-GPU mode; the static-shard runbook above
+stays valid for the coexisting `--mode static` (the full dispatch-first
+docs pass is Phase 18, DOCS-01).
 
-He机多 GPU 冒烟（maintainer-executed，N=2，有界：2 模型 × 1 任务 × 1 种子 × 1 epoch；非 CI）：
+为什么是 2 个 cell（种子 42,43）：D15-02 要求两块卡**各自**产出 cell
+工件——1 模型 × 1 任务 × 1 种子 = 1 cell 会让 worker 1 拿到空队列直接退出，
+"both GPUs produced cell artifacts" 不可判定（Pitfall 2）。组合选 registry
+里最小且 Phase 11 有界冒烟已证明的配对：plant-dnabert-6mer ×
+iDNA_ABF_datasets__5mC（全量 2110/234/2344 行——冒烟不依赖任何子集机制）。
 
-```text
- 0. 前置：目标机已装 dnallm/torch/cuda（uv run --group tui --group gpu 可启动）；数据集已就位
-    （与 11 的 D-04 冒烟挑选同一最小组合：iDNA_ABF_datasets__5mC，2110/234/2344 行）。
- 1. 干跑枚举不相交性（无 GPU）：
-      python pipeline/run_sweep_shard.py --dry-run --workers 2 \
-        --models plant-dnabert-6mer,<second-smallest-local-model> \
-        --tasks iDNA_ABF_datasets__5mC --seeds 42 --num_train_epochs 1 \
-        --output-root ./pipeline/finetuned-smoke
-    → 检查两个 worker manifest（pipeline/finetuned-smoke-mgpu-w0/-w1）：
-      模型集不相交、并集 == 请求集。（已知边界：dry-run 写入的 planned manifest 会让
-      scanner 先 classify 该根 finished——真实启动后同根复写即正常。）
- 2. 启动：同一命令去掉 --dry-run → 2 个 run_sweep 进程，CUDA_VISIBLE_DEVICES=0/1，
-    每个 worker 1 个模型；tee 日志 {root}-mgpu-w{0,1}-{launch-stamp}.log（每次
-    启动新文件，WR-02：重跑不截断上次崩溃日志）。
- 3. TUI 视图：make tui → 槽 5 [a] 附加两个 worker 根（各一次，持久化）→ 发现列表 2 行
-    （finetuned-smoke-mgpu-w0/-w1），Enter 切换视图，进度/ETA 独立（D-01/SC2 操作面证明）。
- 4. 隔离证明：等待或促使一个 worker 的 cell 失败（或直接观察两 worker 完成时间差）→
-    确认另一 worker 不受影响继续；orchestrator 退出码聚合表列出两 worker verdict。
- 5. 失败重跑（仅 w1 根被写；w0 根 mtime 不变——touch 前后比对）：
-      python pipeline/run_sweep.py \
-        --from-failures pipeline/finetuned-smoke-mgpu-w1/sweep_failures.json \
-        --output-root pipeline/finetuned-smoke-mgpu-w1 \
-        --seeds 42 --num_train_epochs 1
-    → marker-skip：已完成的 cell 显示 skipped，不重训（lane 与原 launch 一致）。
- 6. 合并（数据工件复制 + SHA256 校验输出；合并 manifest cells = 两 worker 之和）：
-      python pipeline/run_sweep_shard.py --merge --workers 2 \
-        --output-root ./pipeline/finetuned-smoke
- 7. 镜像（先两 worker 根看 2 sweeps，再合并根单独再生一次对比 1 sweep；绝不同时传两类根）：
-      uv run --group tui --group dev python script/gen_progress.py \
-        pipeline/finetuned-smoke-mgpu-w0 pipeline/finetuned-smoke-mgpu-w1 \
-        --output dnallm-mark/data/progress/sweep.json
-    → 本地静态服务（dnallm-mark/ 下 python3 -m http.server 8080）查看 progress.html。
- 8. 数据链冒烟（合并根可导出，与 worker 分别导出的并集一致）：
-      uv run --group data python script/export_runs.py \
-        --input-root pipeline/finetuned-smoke ...
- 9. 清理：确认合并根校验通过后删除 worker 根与日志
-    （rm -rf pipeline/finetuned-smoke-mgpu-w{0,1} &&
-     rm -f pipeline/finetuned-smoke-mgpu-w{0,1}-*.log）；记录全部输出到相位 VERIFICATION。
+**0. 前置（D15-14）：** dnallm editable 在位（`.venv/bin/python -m pip show
+dnallm` 必须给出 `Editable project location: /root/autodl-tmp/Github/DNALLM`）；
+`nvidia-smi` 两卡 0% 利用率；模型/数据集已就位（modelscope 官方通道下载，
+`config.json` 直接落在模型目录、train/dev/test 行数与 registry 逐行核对
+2110/234/2344——T-15-01）。
+
+**1. 启动（ONE shared root；显式绝对 `--output-root`/`--log_dir`）：**
+子进程 cwd 钉在 `pipeline/`，裸相对 root 会在 sweep 层与 child 层解析到不同
+位置；显式 root 同时防止 `directories.json` 把真实 output_root/log_dir 播种
+进冒烟（Pitfall 4）。本机 HF 不可达——资产全部本地，离线变量防止加载时
+网络请求挂死：
+
+```bash
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+.venv/bin/python pipeline/run_sweep_shard.py --mode dispatch --workers 2 --gpus 0,1 \
+    --models plant-dnabert-6mer --tasks iDNA_ABF_datasets__5mC --seeds 42,43 \
+    --num_train_epochs 1 \
+    --output-root "$(pwd)/pipeline/finetuned-smoke-r2" \
+    --log_dir "$(pwd)/pipeline/finetuned-smoke-r2/logs"
 ```
 
-Every numbered step is a human-check with expected output; a step whose
-output does not match is a finding, not a rerun-and-hope.
+实跑关键输出（155 s wall，exit 0；dispatcher stdout 就是 live view，
+status vocabulary running/done/incomplete——D15-10；日志路径缩写为 `...`）：
+
+```text
+[Dispatch] status=running queue=0 done=0/2 failed=0 skipped=0
+  w0 gpu=0: plant-dnabert-6mer/iDNA_ABF_datasets__5mC/seed_42
+  w1 gpu=1: plant-dnabert-6mer/iDNA_ABF_datasets__5mC/seed_43
+...
+Dispatch verdicts:
+  worker 0: cells=1 completed=1 failed=0 gpu=0 log=.../finetuned-smoke-r2-dispatch-w0-20261020_232000.log
+  worker 1: cells=1 completed=1 failed=0 gpu=1 log=.../finetuned-smoke-r2-dispatch-w1-20261020_232000.log
+[Dispatch] status=done queue=0 done=2/2 failed=0 skipped=0
+[Dispatch] 2/2 cell(s) completed, 0 failed, 0 skipped; state: .../finetuned-smoke-r2/dispatch_state.json
+```
+
+`w0 gpu=0: .../seed_42` 与 `w1 gpu=1: .../seed_43` 两行就是 D15-02
+"both GPUs produced cell artifacts" 的 live 证据（ledger 里两个 claim 各自
+记录 gpu token 0/1）。
+
+**2. 终态判定：** `dispatch_state.json` 必须 `status == "done"` 且
+`counts.completed == counts.total == 2`；两个 cell 目录各含 4 件工件
+（`run_record.json` 由 dispatch_core 在 claim finalize 时写入——15-04 起，
+run_sweep 记录形状、WR-12 不覆写）：
+
+```bash
+.venv/bin/python -c "import json; s = json.load(open('pipeline/finetuned-smoke-r2/dispatch_state.json')); assert s['status'] == 'done', s['status']; assert s['counts']['completed'] == s['counts']['total'] == 2, s['counts']"
+
+for c in 42 43; do for f in final_metrics.json flops_report.json trainer_state.json run_record.json; do
+  test -f "pipeline/finetuned-smoke-r2/plant-dnabert-6mer/iDNA_ABF_datasets__5mC/seed_${c}/${f}" || echo "MISSING seed_${c}/${f}"; done; done
+```
+
+**3. 消费 dry-run（D15-02 merged-root 判定的 dispatch 形态——shared root
+即 merged root，无需 merge，MGPU-06）：**
+
+```bash
+.venv/bin/python script/export_runs.py --dry-run --input-root pipeline/finetuned-smoke-r2
+# → [Dry-run] 2 run record(s) across 1 model(s) / 1 task(s) under pipeline/finetuned-smoke-r2
+```
+
+**4. Dispatch-root 边界（A6/MGPU-06）：** 不要传 `--merge` 或 `--cleanup`——
+dispatch 模式只写一个共享根，两者都按设计拒绝（named error）。失败 cell 的
+重跑走 `--rerun-failed`（Phase 14，账本 feed + archive genealogy）。复跑全量
+冒烟请换一个新 root——已有 cell 的 `trainer_state.json` 标记会让 dispatch 按
+恢复语义跳过它们（本节命令的 `-r2` 后缀正是这个原因；`finetuned-smoke*/`
+整族已 gitignore）。
+
+**5. 隔离断言（T-15-02）：** 冒烟 root 必须区别于 `directories.json` 的
+`output_root`（真实根 `/root/autodl-tmp/dnallmmark-data/finetuned` ≠ 冒烟根
+`pipeline/finetuned-smoke-r2`）；显式 `--output-root`/`--log_dir` 已在命令里
+强制成立，committed `dnallm-mark/data/` 永远不是冒烟目标。
+
+每一步的期望输出都是判定标准：输出不匹配就是 finding，不是
+rerun-and-hope（D15-04：失败即停，保留 `dispatch_state.json` 与 tee 日志
+作为相位工件，转入正常修复流程）。
