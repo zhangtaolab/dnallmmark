@@ -25,7 +25,7 @@ Plans:
 - [x] 13-01-PLAN.md — Dispatch tracer: --mode routing + engine (queue, O_EXCL ledger/lock, worker loops) + SC2 kill-proven resume (MGPU-01, MGPU-02) — complete 2026-10-20 (78 tests: 29 dispatch + 49 static tripwire; lint/typecheck green)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 13-02-PLAN.md — Dry-run plan artifact + SC1 goldens, evidence-based merge refusal, static byte-identity pins, Makefile lint line, full gates (MGPU-01, MGPU-06)
+- [x] 13-02-PLAN.md — Dry-run plan artifact + SC1 goldens, evidence-based merge refusal, static byte-identity pins, Makefile lint line, full gates (MGPU-01, MGPU-06) — complete 2026-10-20 (90 tests: 12 new + 78 tripwire; lint/typecheck green; node 26/26; ci.yml hash-pinned; full-gate pre-existing failures logged in deferred-items.md)
 
 **Success criteria**:
 1. Dry-run enumeration is deterministic and byte-identical across runs; the planned cell set matches static-mode enumeration for identical inputs

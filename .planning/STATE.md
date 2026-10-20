@@ -4,18 +4,18 @@ milestone: v1.3
 milestone_name: 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
 current_phase: 13
 current_phase_name: 动态调度核心
-status: executing
-stopped_at: "Completed 13-01-PLAN.md (dispatch core: --mode routing, engine, O_EXCL ledger/lock, SC2 kill-proven resume)"
-last_updated: "2026-10-20T04:35:00.000Z"
+status: verifying
+stopped_at: Completed 13-02-PLAN.md (dispatch dry-run artifact, evidence-based merge refusal, PHASE13 lint slot — phase 13 complete)
+last_updated: "2026-10-20T05:25:12.385Z"
 last_activity: 2026-10-20
-last_activity_desc: Phase 13 plan 13-01 complete (2/2 tasks, 78 tests green)
-state_head: e5ff38216fc86cea3a78d3389ae106aa949b381d
+last_activity_desc: Phase 13 complete (13-01 + 13-02; 90 dispatch/shard tests green, full gates recorded)
+state_head: e8dfb24796265f4747fa3f47fffed50404b0e3ee
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 2
-  completed_plans: 1
-  percent: 50
+  completed_plans: 2
+  percent: 100
 ---
 
 # Project State
@@ -31,8 +31,8 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 
 Phase: 13 (动态调度核心) — EXECUTING
 Plan: 2 of 2
-Status: Executing Phase 13 (13-01 complete)
-Last activity: 2026-10-20 — 13-01 dispatch core landed (tracer + resume semantics)
+Status: Phase complete — ready for verification
+Last activity: 2026-10-20 — 13-02 landed (dispatch dry-run artifact, evidence-based merge refusal, PHASE13 lint slot)
 
 ## Performance Metrics
 
@@ -108,6 +108,7 @@ Last activity: 2026-10-20 — 13-01 dispatch core landed (tracer + resume semant
 | Phase quick-261018-08g PPP01 | 44 min | 4 tasks | 14 files |
 | Phase quick-261018-kvj PP01 | 43 min | 3 tasks | 10 files |
 | Phase 13 P01 | 17 min | 2 tasks | 3 files |
+| Phase 13 P02 | 46min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -256,6 +257,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 13]: 13-01 claim naming frozen: percent-encoded (safe='') model/task/seed{n}[/frac{f}] joined '--' + '-' + sha256(canonical tuple JSON)[:12] + '.json' — digest suffix guarantees injectivity (+ aliases, __ keys, float fractions, '--'-containing names); full tuple also stored inside the claim JSON with lane flags at claim time (the Phase 14 re-run feed)
 - [Phase 13]: 13-01 stale-lock reclaim = pid-liveness only (A5): live pid/PermissionError → loud refusal naming pid+run_id+lock path; ProcessLookupError or malformed lock → atomic-overwrite reclaim; orphan-children kill-before-relaunch caveat DOCUMENTED in the docstring, not protocol-gated
 - [Phase 13]: 13-01 resume = pure per-cell relaunch_decision (skip iff trainer_state.json marker OR completed claim with agreeing cell key; malformed/claimed/failed claims requeue via atomic claim replacement) — skip sets order-independent by construction; SC2 kill test proves exactly-once from on-disk evidence (78 tests green)
+- [Phase 13]: 13-02: dispatch dry-run = the static dry-run projection verbatim (run_sweep._manifest_payload/_write_json, status 'planned', cell_dir_for output_dirs) + ONE orchestrator_mode:'dispatch' sweep-flags marker; branch sits after the zero-cell refusal and before the lock — root gains ONLY sweep_manifest.json; 13-01's named dry-run refusal superseded as staged
+- [Phase 13]: 13-02: merge refusal is evidence-based (D13-07): _root_has_dispatch_evidence reads dispatch_state.json / dispatch_ledger dir / the manifest orchestrator_mode cell marker ONLY (never directory shape); the named 'dispatch root {path} needs no merge — dispatch mode writes ONE shared root (MGPU-06)' fires in run_merge's collect-all for the base root and any existing worker root BEFORE any copy
+- [Phase 13]: 13-02: dispatch_core.py joins lint via Makefile PHASE13_MODULES existence-guard (Makefile-only, ci.yml blob hash pinned 33d2252e; scratch-run F401 probe proved the slot gates the module); static mode pinned byte-identical with/without --mode static at argv/worker-root/tee-log level (tee-log names root-normalized — the log embeds the base name by design)
 
 ### Pending Todos
 
@@ -326,8 +330,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T04:35:00.000Z
-Stopped at: Completed 13-01-PLAN.md — dispatch core (engine + resume semantics) landed, 78 tests green; next: 13-02 (dry-run artifact, merge evidence, Makefile lint line)
+Last session: 2026-10-20T05:25:12.339Z
+Stopped at: Completed 13-02-PLAN.md (dispatch dry-run artifact, evidence-based merge refusal, PHASE13 lint slot — phase 13 complete)
 Resume file: None
 
 ## Operator Next Steps
