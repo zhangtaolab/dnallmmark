@@ -38,7 +38,16 @@ Plans:
 
 **Goal**: Running multi-GPU sweeps are observable (terminal table + machine-readable state file) and recoverable (cross-worker failure re-run with lane context; post-merge verify + confirm-gated cleanup)
 **Requirements**: MGPU-03, MGPU-04, MGPU-05
-**Plans**: 0
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+- [ ] 14-01-PLAN.md — Frozen dispatch-state v2 consumer schema (schemas/dispatch_state.json) + live plain-line terminal table at the _write_state choke point (MGPU-03)
+- [ ] 14-02-PLAN.md — export_runs.py --dry-run seam + `--cleanup` sibling mode: dual verification then typed-phrase-gated worker-root removal (MGPU-05)
+
+**Wave 2** *(blocked on Wave 1 file overlap: dispatch_core.py + run_sweep_shard.py)*
+- [ ] 14-03-PLAN.md — Ledger-driven cross-worker failure re-run: `--rerun-failed` with claim-time lane replay, archive+rerun_of genealogy, heterogeneous-lane refusal (MGPU-04)
+
 **Success criteria**:
 1. `dispatch_state.json` (single-writer, atomic) carries queue depth, per-worker in-flight cells, failures, timestamps; schema frozen and parseable by a consumer test
 2. The terminal progress table renders live per-worker state during a fake-children run (pty-lane assertable)
