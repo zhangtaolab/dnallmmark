@@ -1,6 +1,6 @@
 ---
 phase: 14-orchestration-view-recovery
-reviewed: 2026-10-20T12:15:25Z
+reviewed: 2026-10-20T12:51:03Z
 depth: standard
 files_reviewed: 8
 files_reviewed_list:
@@ -14,231 +14,213 @@ files_reviewed_list:
   - tests/tui/test_services_about.py
 findings:
   critical: 0
-  warning: 3
-  info: 3
-  total: 6
+  warning: 0
+  info: 4
+  total: 4
 status: issues_found
 ---
 
-# Phase 14: Code Review Report
+# Phase 14: Code Review Report (Re-review, iteration 2)
 
-**Reviewed:** 2026-10-20T12:15:25Z
+**Reviewed:** 2026-10-20T12:51:03Z
 **Depth:** standard
 **Files Reviewed:** 8
-**Status:** issues_found
+**Status:** issues_found (0 Critical, 0 Warning; 3 carried Info + 1 new Info)
 
 ## Summary
 
-Reviewed the Phase 14 surface (MGPU-03/04/05): the `dispatch_state.json` v2
-consumer contract + renderer (`dispatch_core.py`, `schemas/dispatch_state.json`),
-the cleanup mode with its dual verification legs and typed-phrase gate
-(`run_sweep_shard.py`, `export_runs.py --dry-run`), the ledger-driven
-`--rerun-failed` with claim genealogy (`dispatch_core.py`), and the four test
-files.
+Post-fix re-review of the Phase 14 surface (MGPU-03/04/05) at standard depth.
+All three iteration-1 Warnings were re-traced against their fix commits
+(1a984b4, 528a165, 1680ae2): **all three fixes hold**, and the fixes
+introduced **no new Critical or Warning issues**. The three known Info items
+(IN-01/IN-02/IN-03, recorded as skipped in REVIEW-FIX.md) are still present
+and carried as Info per instruction; one new minor Info (IN-04) is recorded.
 
-**Verified sound** (adversarially probed, no defects found):
+Test evidence (executed in this review, `.venv`):
 
-- **Frozen contracts untouched** — `git diff d1713b2..HEAD` over
-  `pipeline/run_sweep.py` / `pipeline/run_finetune.py` is empty; static-mode
-  argv/kwargs remain byte-identical (pinned by
-  `test_mode_static_explicit_matches_default` and
-  `test_static_mode_explicit_pins_argv_roots_and_logs`).
-- **Stdlib-headless** — neither `dispatch_core.py` nor `run_sweep_shard.py`
-  imports numpy/yaml/scipy/torch at module top; `export_runs.py` is reached
-  only via `sys.executable` subprocess (`_EXPORT_RUNS_SCRIPT` +
-  `run_cleanup` leg A); `export_runs.main` gates `--dry-run` before any write.
-- **Schema/writer agreement** — every key the writer emits
-  (`_launch_and_drain`/`_publish_state`/`_spawn_worker`) satisfies
-  `schemas/dispatch_state.json` (`additionalProperties: false` at all three
-  levels, the `oneOf` null/object `cellKey`, `status` enum); the snapshot
-  invariant holds at every write because `queue_depth` is derived and every
-  mutating transition publishes under `state_lock` (the SC3-skip path mutates
-  counts without publishing, but every *written* payload satisfies the
-  identity and the terminal write corrects the counts).
-- **Deletion gate** — removal is offered only after BOTH legs (export
-  subprocess returncode + manifest cell-set equality), the target list is
-  exactly `{root}-mgpu-w{i}` roots plus their `*.log` siblings (glob-escaped,
-  never the merged root; symlinked dirs make `rmtree` refuse loudly), and the
-  phrase is the *resolved* root string with EOF/mismatch/non-interactive all
-  refusing. Dispatch roots refuse before any verification.
-- **Genealogy discipline** — `archive_superseded_claim` is `O_EXCL`
-  (double-archive refuses loudly, pre-check + structural backstop); the
-  canonical-slot replace is `tmp`+`os.replace` (the `.json.tmp` name never
-  matches the ledger's `*.json` glob); `rerun_of` integrity is test-pinned
-  (`test_rerun_failed_d14_15_two_worker_fixture`); heterogeneous lanes,
-  forged registry models, and stale-claim replay parity all refuse or replay
-  by design.
-- **Composition** — `build_argv`/`cell_dir_for`/`base_model_name`/
-  `_validate_filters` signatures and semantics in `dispatch_core` match
-  `run_sweep` exactly; the flag-problems mirror (ebs/epochs/empty-path flags/
-  variant×peft) is faithful to `run_sweep.main`'s collect-all.
+- `tests/test_dispatch_core.py` — 98 passed
+- `tests/test_sweep_shard.py` — 62 passed
+- `tests/tui/test_services_about.py` — 21 passed
+- `tests/test_export_runs.py` — 28 passed, 1 deselected
+  (`test_d15_evaluate_cross_validates_suite_mapped_metric_conventions` —
+  network-gated on `evaluate.load()`; unchanged from before the diff base,
+  outside the changed hunks; blocked in this sandbox, not a code signal)
 
-No Critical findings. Three Warnings (robustness/observability gaps, each
-with a concrete fix) and three Infos follow.
+## Fix Verification (iteration 1 → iteration 2)
 
-## Warnings
+### WR-01 — pre-drain state publishes guarded; lock release guaranteed — VERIFIED FIXED
 
-### WR-01: Launch-time state-publish failures leak the dispatcher lock and crash with a raw traceback
+**Fix:** `_publish_state_pre_drain` (`pipeline/dispatch_core.py:886-915`)
+catches `OSError`, calls `release_dispatcher_lock`, then `sys.exit`s with the
+tee-shaped diagnostic ("no children spawned; the dispatcher lock is
+released").
 
-**File:** `pipeline/dispatch_core.py:1609-1635`
-**Issue:** Inside `_launch_and_drain`, three `_publish_state(context)` calls
-execute AFTER `acquire_dispatcher_lock` but BEFORE the `try/finally` that
-guarantees `release_dispatcher_lock` (the mode-evidence write at line 1609,
-the post-skip-filter write at line 1623, and the nothing-to-do path at lines
-1633-1635 where the publish precedes the explicit release). An OSError from
-any of them (ENOSPC/EACCES on the root — the same failure class the CR-04
-containment was built for in workers) propagates as an unhandled traceback,
-and `dispatcher.lock` is left on disk naming this run.
+**Exception-window trace (every path between `acquire_dispatcher_lock`
+(:1632) and the drain's `try/finally` (:1741-1775)):**
 
-Contrast the sibling failure path: the tee-open refusal
-(`run_sweep_shard`-style, lines 1656-1660) converts to a clean `sys.exit`
-whose message explicitly states "the dispatcher lock is released", and the
-`finally` (1672-1678) actually releases it. The launch-time publishes have no
-such handling — an asymmetry inside the same function.
+1. Lock acquire → mode-evidence publish (:1705): pure dict/Path building;
+   `gpus[i]` indexing (:1664) is arity-validated pre-lock
+   (`run_dispatch` :1874-1878 / `_run_rerun_failed` :1887). No I/O.
+2. Mode-evidence publish: **guarded**.
+3. Publish #1 → post-skip-filter publish (:1720): the `relaunch_decision`
+   loop is read-only and tolerant (`marker.exists()` never raises;
+   `read_claim` catches `OSError/JSONDecodeError/UnicodeDecodeError`). No
+   writes.
+4. Post-skip-filter publish: **guarded**.
+5. Nothing-to-do branch (:1726-1738): guarded terminal "done" publish, then
+   the explicit release. On failure the guard releases and exits (the
+   explicit release is never reached — no double-release concern; release is
+   idempotent regardless, tolerating a missing file).
+6. Tee opens (`mkdir` + `open`) inside the inner `try/except OSError` →
+   `sys.exit` (:1754) → unwinds through the OUTER `finally` (:1769-1775):
+   opened tees closed, lock released. The message's "lock is released" claim
+   is accurate.
+7. Residual (pre-existing, by design, NOT a leak introduced here):
+   `acquire_dispatcher_lock`'s own create-to-write window (:688) — a failed
+   payload write after a successful `O_EXCL` create leaves a fresh empty
+   lock; the CR-02 grace window (:175, :648-660) refuses reclaim for 5s then
+   self-heals. Documented contract.
 
-Self-healing exists (the crashed process dies, so the next launch reclaims
-via the dead-pid probe; a pid-reuse false refusal is the safe direction), so
-this is robustness, not data loss — but the module's own discipline is that
-lock release is guaranteed on every exit path after acquisition.
+Guard-scope check: `_publish_state` raises `OSError` only in practice —
+`_atomic_write_json` failures are `OSError`; `_render_state` swallows its own
+output failures (`BrokenPipeError/OSError/ValueError`, :828-833); the dict
+keys it reads are writer-set. `_publish_state_pre_drain` catching `OSError`
+therefore covers the guard's stated failure class.
 
-**Fix:** Wrap the pre-drain publishes so an I/O failure releases the lock and
-exits with the designed diagnostic:
+Test pin: `test_launch_state_publish_failure_releases_lock_exits_cleanly`
+(parametrized over publish sites 1/2/3, drained and not) — passes; asserts
+lock gone, zero children, designed message.
 
-```python
-try:
-    _publish_state(context)  # BEFORE any claim (mode evidence)
-except OSError as exc:
-    release_dispatcher_lock(lock_path)
-    sys.exit(
-        f"[Error] writing dispatch state failed: {exc} — no children "
-        "spawned; the dispatcher lock is released"
-    )
-```
+### WR-02 — excluded unusable claims named; never re-queued, never silently dropped — VERIFIED FIXED
 
-Apply the same guard to the line-1623 write and to the nothing-to-do publish
-(moving the release into a `finally` around that block also works).
+**Fix:** `_scan_failed_claims` (`pipeline/dispatch_core.py:1309-1358`)
+returns `(qualified, excluded)`; every exclusion class appends a
+`"{name} ({reason})"` diagnostic (unreadable/unparseable; payload not an
+object; state-failed with unusable/identity-disagreeing cell key).
 
-### WR-02: `--rerun-failed` silently drops corrupt / integrity-failing failed claims from the re-run feed
+**Trace:**
 
-**File:** `pipeline/dispatch_core.py:1297-1311` (`_scan_failed_claims`)
-**Issue:** The scan `continue`s without any diagnostic for: an unparseable
-claim (1302-1303), a non-object payload (1304-1305), and — its own
-integrity check — a claim whose stored cell key disagrees with its filename
-(1309-1310). A failed cell whose claim is corrupt (disk fault, hand
-tampering) therefore vanishes from the re-run set entirely: when it is the
-only failed claim, `--rerun-failed` prints "no failed cells to re-run …
-nothing spawned" and exits 0 — a green verdict that masks a never-re-run
-failed cell, with nothing in the output naming the excluded file.
+- **Never re-queued:** `pending` is built solely from `qualified`
+  (:1579-1586); excluded files never enter the feed, and the worker's
+  genealogy step never touches them — the e2e test pins the archive holds
+  exactly one file (the usable cell's original) when three unusable claims
+  sit in the same ledger.
+- **Never silently dropped:** `[Rerun] [Skip] N unusable claim(s) excluded
+  from the re-run feed: …` prints at :1453-1456 with every name+reason; the
+  zero-qualified verdict distinguishes "the ledger holds 0 usable failed
+  claim(s) (N excluded as unusable, named above)" from "the ledger holds no
+  failed claims" (:1462-1474), both exit 0.
+- The marker-skip of a qualified cell (D-06 adjacency) is accounted, not
+  silent: it lands in `counts.skipped` in the run's state file and verdict.
+- Sole call site updated (return-shape change); no other callers (verified by
+  grep; the scan is engine-internal).
 
-The tolerant-read contract ("corrupt claims contribute nothing and are never
-trusted") is the right fail-safe direction, but silently. The relaunch path's
-counterpart is test-pinned as "never a silent skip"
-(`test_malformed_claims_requeue_never_crash_never_skip` — malformed claims
-REQUEUE there), and the repo's own per-file convention is a named `[Skip]`
-message (CLAUDE.md, `script/get_task_performance.py`). The recovery tool
-whose entire job is completeness over the failed set should say what it
-excluded.
+Test pin: `test_rerun_names_excluded_unusable_claims_never_silently_drops`
+(all three exclusion classes + only-unusable ledger verdict) — passes.
 
-**Fix:** Collect excluded files and name them (never re-queue them — trust
-direction stays fail-safe):
+### WR-03 — replayed-lane startup validation before any child spawns — VERIFIED FIXED
 
-```python
-skipped = []
-...
-except (OSError, json.JSONDecodeError, UnicodeDecodeError):
-    skipped.append(f"{path.name} (unreadable/unparseable)")
-    continue
-...
-if skipped:
-    print(f"[Rerun] [Skip] {len(skipped)} unusable claim(s) excluded from "
-          f"the re-run feed: {'; '.join(sorted(skipped))}")
-return qualified, skipped  # or print inside _scan_failed_claims
-```
+**Fix:** `pipeline/dispatch_core.py:1514-1530` — after the heterogeneous-lane
+refusal and BEFORE the archive-collision pre-check, the pending build, and
+`_launch_and_drain`: `_validate_subset_file(replayed_subset,
+registry_loader.load_datasets_registry(registry_dir))` when the agreed lane
+carries a `subset_file`, plus `_validate_dataset_name_alignment` over the
+same view.
 
-At minimum, when `qualified` is empty but exclusions occurred, the
-"no failed cells to re-run" verdict should distinguish "ledger holds no
-failed claims" from "ledger holds only unusable claims".
+**Trace:**
 
-### WR-03: The re-run branch skips the startup validation family — a stale replayed lane burns one child per cell
+- **Ordering:** `_launch_and_drain` is the only child-spawning machinery
+  (lock, state file, tees, worker threads all live inside it, :1627+). The
+  validation precedes it — and therefore precedes lock acquisition, the
+  `dispatch_state.json` write, and every spawn. Tests assert `calls == []`
+  and `not (base / DISPATCH_STATE_NAME).exists()`.
+- **Lane-uniformity:** the preceding D14-08 homogeneity check projects every
+  qualified claim's lane onto the union key set, so `agreed_lane.get(
+  "subset_file")` is uniform across the replay set; `is not None` preserves
+  the Pitfall-4 absent-parity (a lane lacking the key, or recording `None`,
+  replays with zero argv elements and skips the map validation — correct).
+- **View consistency:** the same `registry_dir` view the T-14-07 registry
+  join used — consistency, not a fidelity break (documented in-code).
+- Refusal loudness confirmed against the validators: a deleted map exits
+  `"[Error] cannot read --subset_file file …"`; a diverged `Dataset_name`
+  row exits naming the rows (both re-verified in `run_sweep.py:666-748,
+  794-826`).
 
-**File:** `pipeline/dispatch_core.py:1387-1416` (`_run_rerun_failed`)
-**Issue:** The ordinary dispatch path pre-validates the subset map ONCE at
-startup (`run_sweep._validate_subset_file`, lines 1935-1938, citing WR-01:
-"never one burned child launch per cell recorded as N cell failures") and
-runs `_validate_dataset_name_alignment`. The re-run branch replays
-`subset_file` (and the storage roots) verbatim from claim-time lanes but
-performs neither check — it joins the registry (`_validate_filters`) and
-proceeds straight to launch. If the subset map has been deleted or moved
-since the original run, every re-run cell spawns a `run_finetune.py` child
-that dies at its own per-cell validation, recording N failed claims and exit
-1 — reintroducing exactly the burned-children hazard WR-01 was written to
-prevent, on the recovery path where the operator is already chasing failures
-(and re-running `--rerun-failed` repeats the burn loop, since the claims stay
-failed).
+Test pin: `test_rerun_validates_startup_family_before_any_launch` (legs A:
+deleted map / B: valid-map control threads to argv / C: divergent registry) —
+passes.
 
-The registry view is already the current one for the re-run (T-14-07 joins
-failed cells' models against the current registry), so validating the
-replayed subset map against the same view is consistent, not a fidelity
-break.
+### No new Critical/Warning from the fixes
 
-**Fix:** In `_run_rerun_failed`, after resolving the agreed lane and before
-`_launch_and_drain`, mirror the ordinary path:
-
-```python
-agreed = next(iter(signature_groups.values()))[0]
-subset = agreed.get("subset_file")
-if subset is not None:
-    run_sweep._validate_subset_file(
-        subset, registry_loader.load_datasets_registry(registry_dir))
-run_sweep._validate_dataset_name_alignment(
-    registry_loader.load_datasets_registry(registry_dir))
-```
+- WR-01 diff: adds one helper + rewrites three call sites; no behavior change
+  on the success path; no new call graph edges.
+- WR-02 diff: return-shape change with the single call site updated; the
+  exclusion strings are static non-empty diagnostics.
+- WR-03 diff: two validator calls inserted between existing refusals; both
+  are stdlib, read-only, and already exercised on the ordinary path.
+- Full phase suites re-run green (counts above); the frozen-contract,
+  stdlib-headless, O_EXCL/genealogy, deletion-gate, and static-mode
+  byte-identity invariants from iteration 1 were spot-re-verified unchanged
+  (`_root_has_dispatch_evidence` markers, `run_cleanup` leg structure,
+  `_canonical_lane_value`, MERGE_ALLOWLIST, spawn kwargs).
 
 ## Info
 
-### IN-01: Archive-filename "injective" claim is probabilistic (8-hex-char run_id prefix)
+### IN-01: Archive-filename "injective" claim is probabilistic (8-hex-char run_id prefix) — CARRIED
 
 **File:** `pipeline/dispatch_core.py:429-445` (`_archive_filename`)
-**Issue:** The name is keyed by `original_run[:8]` — 32 bits of a uuid4 hex.
-Two attempts of the same cell whose run_ids collide on the first 8 hex chars
-(~2^-32 for the dispatcher's uuid4 ids; higher for hand-authored short
-run_ids like the tests' `"phase13run"`) map to one archive name. The failure
-mode is safe — the `O_EXCL` create raises `FileExistsError` and the re-run
-refuses loudly, never an overwrite — but the docstring's "the name is
-injective across attempts" is overstated; it is injective with overwhelming
-probability. Fix: either soften the docstring ("injective except for a
-~2^-32 run_id prefix collision, which refuses loudly") or key the archive on
-the full run_id (the filename length is the only cost).
+**Issue:** Still present, unchanged. The name keys on `original_run[:8]`
+(32 bits of a uuid4 hex); a prefix collision between two attempts of the
+same cell maps to one archive name. The failure mode is safe (`O_EXCL`
+refuses loudly — append-only protected, never an overwrite), but the
+docstring's "injective across attempts" is overstated. **Fix:** soften the
+docstring or key on the full run_id. (Known item; recorded as skipped in
+REVIEW-FIX.md.)
 
-### IN-02: Re-run genealogy silently degrades if the canonical claim vanishes between scan and claim
+### IN-02: Re-run genealogy silently degrades if the canonical claim vanishes between scan and claim — CARRIED
 
-**File:** `pipeline/dispatch_core.py:946-967` (`_spawn_worker`, `_TAG_RERUN` branch)
-**Issue:** The genealogy step triggers only on `claim_cell` returning None
-(EEXIST). If the canonical failed-claim file is deleted between
-`_scan_failed_claims` and the worker's claim step (external mutation of the
-ledger mid-run — out of the single-writer contract, but the scan/claim gap
-is real wall-clock time), `claim_cell` succeeds and the cell runs as a fresh
-claim with NO `rerun_of` link and no archive — the append-only audit trail
-silently loses the attempt instead of refusing. The EEXIST branch's unusable
-original raises loudly; the no-EEXIST branch has no equivalent guard. Fix:
-in the `_TAG_RERUN` branch, when `claim_cell` SUCCEEDS (no collision), fail
-the cell loudly ("the canonical failed claim disappeared mid-run — ledger
-mutated under the dispatcher; refusing") or at minimum emit a diagnostic
-naming the genealogy loss.
+**File:** `pipeline/dispatch_core.py:966-999` (`_spawn_worker`, `_TAG_RERUN`
+branch)
+**Issue:** Still present, unchanged. Genealogy (archive + `rerun_of`) fires
+only on the `claim_cell` EEXIST; if the canonical failed-claim file is
+deleted between `_scan_failed_claims` and the worker's claim step, the
+re-run proceeds as a fresh claim with no link and no archive — the audit
+trail loses the attempt without a diagnostic (the EEXIST-with-unusable-
+original path refuses loudly; this path has no equivalent). **Fix:** when
+`claim_cell` succeeds for a `_TAG_RERUN` cell, fail the cell loudly or emit
+a genealogy-loss diagnostic. (Known item; recorded as skipped in
+REVIEW-FIX.md.)
 
-### IN-03: Cleanup echoes only the last stdout line of the export dry-run
+### IN-03: Cleanup echoes only the last stdout line of the export dry-run — CARRIED
 
 **File:** `pipeline/run_sweep_shard.py:1371-1373` (`run_cleanup`, leg A)
-**Issue:** `dry_lines[-1]` surfaces only the final line of the export
-subprocess's stdout. Today the dry-run prints exactly one line so this is
-fine, but any future multi-line output (warnings, per-model counts) is
-dropped from the operator echo — the full output is only ever visible on
-FAILURE (via the captured tail). Cosmetic/forward-compatibility: echo the
-full captured stdout (it is already in hand) or at least keep the last-line
-behavior behind a comment pinning the one-line contract.
+**Issue:** Still present, unchanged. `dry_lines[-1]` surfaces only the final
+stdout line; multi-line future output would be dropped from the operator
+echo (full output is only visible on failure via the captured tail).
+**Fix:** echo the full captured stdout or pin the one-line contract behind a
+comment. (Known item; recorded as skipped in REVIEW-FIX.md.)
+
+### IN-04: `_validate_rerun_passthrough` accepts a flag-shaped `--registry-dir` value where the mirrored argparse path refuses — NEW (minor)
+
+**File:** `pipeline/dispatch_core.py:1268-1283` (`_validate_rerun_passthrough`)
+**Issue:** For a remainder like `["--registry-dir", "--bogus"]`, the scanner
+consumes `"--bogus"` as the registry-dir VALUE and appends no problem —
+diverging from the argparse semantics the module otherwise mirrors
+(`parse_sweep_remainder` over the same tokens exits 2 with "expected one
+argument"). The failure stays loud downstream (the bogus dir has no official
+registry, so `_load_registry`'s uncaught `OSError` tracebacks — the same
+shape the ordinary path produces for any nonexistent registry dir), so this
+is a strictness/consistency gap in a validator whose purpose is collect-all
+refusals, not an incorrect-accept of a runnable configuration. Note
+orchestrator-owned flags (`--workers`, `--merge`, …) are consumed by the
+shard parser before the remainder forms, so the shape requires an
+UNRECOGNIZED flag-shaped token after `--registry-dir`.
+**Fix:** treat a next token starting with `--` as a missing value (append
+the "requires a value" problem) instead of consuming it.
 
 ---
 
-_Reviewed: 2026-10-20T12:15:25Z_
+_Reviewed: 2026-10-20T12:51:03Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Iteration: 2 (post-fix re-review of WR-01/WR-02/WR-03; all verified fixed)_
