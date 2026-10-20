@@ -2929,3 +2929,220 @@ def test_gen_progress_still_parses_over_a_v2_dispatch_root(
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["version"] == 1
     assert isinstance(payload["sweeps"], list)
+
+
+# ===== 14-03 Task 1: the MGPU-04 failure re-run (D14-15 fixture) =====
+
+
+def _make_first_failure_per_gpu_spawner(calls, code_for_gpu):
+    """Per-GPU scripted fake child: the FIRST cell each worker (GPU
+    token) handles fails with that worker's code and writes NO
+    artifacts (the CR-02 failed-cell shape); every later cell succeeds
+    with the artifact pair.
+
+    This is the deterministic "one failure on EACH worker" primitive
+    the D14-15 fixture needs: ``make_child_spawner``'s cell-keyed
+    ``exit_for`` cannot express it, because which worker pops which
+    cell races with thread scheduling — keying on the worker's permanent
+    GPU token makes the per-worker failure structural, not scheduled.
+    Records every spawn like ``make_child_spawner`` (argv + kwargs)."""
+
+    failed_first = set()
+
+    def spawn(argv, **kwargs):
+        root = Path(flag_value(argv, "--output_dir"))
+        record = {
+            "argv": list(argv),
+            "kwargs": kwargs,
+            "state_existed": (
+                root / dispatch_core.DISPATCH_STATE_NAME).is_file(),
+        }
+        calls.append(record)
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        task = flag_value(argv, "--target_dataset")
+        seed = int(flag_value(argv, "--seed"))
+        cell_dir = root / save / task / f"seed_{seed}"
+        if "--train_fraction" in argv:
+            cell_dir = cell_dir / (
+                f"frac_{flag_value(argv, '--train_fraction')}")
+        gpu = kwargs["env"]["CUDA_VISIBLE_DEVICES"]
+        code = 0
+        if gpu in code_for_gpu and gpu not in failed_first:
+            failed_first.add(gpu)
+            code = code_for_gpu[gpu]
+        if code == 0:
+            cell_dir.mkdir(parents=True, exist_ok=True)
+            (cell_dir / run_sweep.METRICS_NAME).write_text(
+                json.dumps({"eval_loss": 0.5, "eval_accuracy": 0.9}),
+                encoding="utf-8")
+            (cell_dir / run_sweep.RESUME_MARKER).write_text(
+                '{"global_step": 1}', encoding="utf-8")
+        return FakeProc(code)
+
+    return spawn
+
+
+def test_rerun_failed_d14_15_two_worker_fixture(tmp_path, monkeypatch):
+    """D14-15 (the MGPU-04 acceptance fixture, roadmap criterion 3): a
+    two-worker dispatch launch with lane flags on the command line
+    (--peft lora, --num_train_epochs 1, --cache_dir) fails ONE cell on
+    EACH worker; ONE ``--rerun-failed`` command (no --models, no
+    --seeds) with healthy children re-runs EXACTLY the two failed
+    cells, replays the claim-time lane flags VERBATIM (byte-identical
+    child argv), never re-spawns a healthy cell, archives the original
+    failed claims verbatim under dispatch_ledger/archive/ with rerun_of
+    links on the fresh claims, and lands a schema-valid final state
+    with counts.total == 2."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    cache_dir = (tmp_path / "hf-cache").resolve()
+    calls1 = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "2", "--gpus", "0,1",
+            "--models", "model-a,model-b", "--tasks", "task-x,task-z",
+            "--seeds", "42,43",
+            "--peft", "lora",
+            "--num_train_epochs", "1",
+            "--cache_dir", str(cache_dir),
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=_make_first_failure_per_gpu_spawner(
+            calls1, {"0": 3, "1": 4}),
+            clock=lambda: datetime(2026, 10, 20, 5, 0, 0, tzinfo=UTC))
+    assert excinfo.value.code == 1, "a run with failed cells exits 1"
+    assert len(calls1) == 8, "2 models x 2 tasks x 2 seeds drained"
+
+    # The failed set comes FROM THE LEDGER (the re-run's own feed):
+    # exactly two state:failed claims, one per worker.
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    original_text = {}   # cell tuple -> verbatim claim file text
+    original = {}        # cell tuple -> parsed payload
+    for path in sorted(ledger_dir.glob("*.json")):
+        if path.name == dispatch_core.DISPATCHER_LOCK_NAME:
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("state") == dispatch_core.CLAIM_STATE_FAILED:
+            key = payload["cell"]
+            cell = (key["model"], key["task"], key["seed"])
+            original_text[cell] = path.read_text(encoding="utf-8")
+            original[cell] = payload
+    assert len(original) == 2, "exactly one failure per worker (2 workers)"
+    state1 = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state1["counts"] == {
+        "total": 8, "completed": 6, "failed": 2, "skipped": 0}
+    run1_id = state1["run_id"]
+    assert {original[cell]["run_id"] for cell in original} == {run1_id}
+    argv1_by_cell = {}
+    for call in calls1:
+        argv = call["argv"]
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        argv1_by_cell[(
+            save, flag_value(argv, "--target_dataset"),
+            int(flag_value(argv, "--seed")))] = argv
+
+    # ===== the ONE re-run command: no --models, no --seeds =====
+    calls2 = []
+    run_cli(monkeypatch, [
+        "--rerun-failed",
+        "--workers", "2", "--gpus", "0,1",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls2),
+        clock=lambda: datetime(2026, 10, 20, 6, 0, 0, tzinfo=UTC))
+
+    # Exactly the failed cells re-run; healthy cells NEVER re-spawned
+    assert len(calls2) == 2, "one spawn per failed cell"
+    identities2 = spawn_identities(calls2)
+    failed_identities = {
+        (model.removesuffix("+lora"), task, seed)
+        for model, task, seed in original}
+    assert set(identities2) == failed_identities, (
+        "the re-run set is exactly the ledger's failed cells"
+    )
+    assert len(set(identities2)) == 2
+
+    # Lane replay (D14-06): each re-run child argv replays the ORIGINAL
+    # launch's lane flags VERBATIM — byte-identical argv per cell
+    for call in calls2:
+        argv = call["argv"]
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell = (save, flag_value(argv, "--target_dataset"),
+                int(flag_value(argv, "--seed")))
+        assert argv == argv1_by_cell[cell], (
+            "the re-run child argv is byte-identical to the original "
+            "launch's argv for the same cell (claim-time lane replay)"
+        )
+        assert flag_value(argv, "--peft") == "lora"
+        assert flag_value(argv, "--num_train_epochs") == "1"
+        assert flag_value(argv, "--cache_dir") == str(cache_dir)
+
+    # Genealogy (D14-07): the originals sit VERBATIM under archive/;
+    # the canonical slots hold fresh completed claims with rerun_of
+    archive_dir = ledger_dir / "archive"
+    archived_by_run = {}
+    for path in sorted(archive_dir.glob("*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        assert payload["state"] == dispatch_core.CLAIM_STATE_FAILED
+        archived_by_run[payload["run_id"]] = path
+    assert set(archived_by_run) == {
+        original[cell]["run_id"] for cell in original}
+    for cell, text in original_text.items():
+        payload = original[cell]
+        archive_path = archived_by_run[payload["run_id"]]
+        assert archive_path.read_text(encoding="utf-8") == text, (
+            "the original failed claim is preserved VERBATIM"
+        )
+        stem = dispatch_core.claim_filename(cell)[:-len(".json")]
+        assert archive_path.name == (
+            f"{stem}--run-{payload['run_id'][:8]}.json"), (
+            "the archive filename is keyed by the ORIGINAL run_id")
+        fresh = json.loads(
+            (ledger_dir / dispatch_core.claim_filename(cell)).read_text(
+                encoding="utf-8"))
+        assert fresh["state"] == dispatch_core.CLAIM_STATE_COMPLETED
+        link = fresh["rerun_of"]
+        assert link["run_id"] == payload["run_id"]
+        assert link["claimed_at"] == payload["claimed_at"]
+        assert link["archive"] == archive_path.name
+        assert (archive_dir / link["archive"]).is_file()
+
+    # Healthy cells untouched: their claims still carry run-1's run_id
+    for path in sorted(ledger_dir.glob("*.json")):
+        if path.name == dispatch_core.DISPATCHER_LOCK_NAME:
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        key = payload["cell"]
+        cell = (key["model"], key["task"], key["seed"])
+        if cell not in original:
+            assert payload["state"] == dispatch_core.CLAIM_STATE_COMPLETED
+            assert payload["run_id"] == run1_id, (
+                "a healthy cell's claim is never re-written by the re-run"
+            )
+
+    # The re-run's final state: schema-valid v2, counts.total == the
+    # re-run set, zero skips (the SC3 path never fires for re-run cells)
+    state2 = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    jsonschema.validate(
+        instance=state2, schema=_load_dispatch_state_schema())
+    assert state2["counts"] == {
+        "total": 2, "completed": 2, "failed": 0, "skipped": 0}
+    assert state2["status"] == "done"
+    assert state2["run_id"] != run1_id
+    assert not (ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME).exists(), (
+        "the singleton lock is released after the re-run drain"
+    )
+    assert not list(base.rglob("*.tmp")), "no atomic-write tmp residue"
