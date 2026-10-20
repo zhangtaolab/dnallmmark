@@ -28,6 +28,9 @@
 - `--merge` in `pipeline/run_sweep_shard.py` unions N frozen worker roots into one SHA256-verified consumer root the existing data chain reads unchanged (allowlist copy, lane-equality refusal, output_dir rewrite, consumer-equivalence-proven), plus `docs/multi-gpu.md` — the D-04 sharding-vs-DDP decision matrix, the full CLI runbook, and the 9-step other-machine smoke procedure — with the README one-liner
 - The three zero/near-zero-code claims test-pinned (delta A's N-root monitor rendering over an untouched renderer, D-08's isolated `--from-failures` re-run with mtime-proof sibling isolation, the N=1 degenerate real-subprocess chain) plus the SC1-5 goal-backward ledger and WINDOWS #21 — Phase 12 and milestone v1.2 close audit-ready
 
+**Closeout type:** override_closeout (maintainer 2026-10-19) — verify-staleness cascade acknowledged: covered-file digests re-stale phases on every later commit, so verifiers were not re-dispatched during archive (the 08-12 five-phase stale refresh had ALL PASSED at f890acc before the quick-task tail re-staled them); gates green 2026-10-19 23:50.
+**Known verification overrides:** 7 items newly disclosed, 0 carried forward (see `STATE.md ## Deferred Items`): staleness-cascade acknowledgment, WINDOWS 8 open (#21 other-machine N=2 smoke + #2-8 external model-card metadata), WINDOWS 6 waived (maintainer ruling A关/B豁免/C先测/D留), monitor goldens #35/#39/#42 uncommitted pending D-03 review, test-baseline drift 2F/1919P, GPU-lanes display deferral, WizardModal keycap ruling.
+
 ---
 
 ## v0.7.1 v0.7.1 (Shipped: 2026-10-11)

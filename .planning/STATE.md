@@ -310,7 +310,13 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 | Category | Item | Status | Deferred At | Milestone |
 |----------|------|--------|-------------|-----------|
-| *(none)* | | | | |
+| verification | Verify-staleness cascade — 08-12 phases re-staled by covered-file digests after the quick-task tail; the five-phase refresh had ALL PASSED at f890acc before re-staling | acknowledged (override_closeout, maintainer 2026-10-19) | 2026-10-19 | v1.2 |
+| windows-ledger | WINDOWS 8 open — #21 other-machine N=2 multi-GPU smoke; #2-8 external model-card metadata | open (external) | 2026-10-19 | v1.2 |
+| windows-ledger | WINDOWS 6 waived — maintainer ruling A关/B豁免/C先测/D留 (#28 waived-structural; #26/#27 fixed-by-redesign) | waived | 2026-10-19 | v1.2 |
+| review-gate | Monitor goldens regenerated-uncommitted (WINDOWS #35/#39/#42) awaiting maintainer D-03 review | pending review | 2026-10-19 | v1.2 |
+| baseline | Test baseline drift 2F/1919P at 261018-kvj — both failures are baseline members, deliberately not re-baselined | recorded | 2026-10-18 | v1.2 |
+| ux | G (GPU lanes) display deferred until multi-GPU work resumes; nvidia-smi read-only probe noted as prerequisite | deferred | 2026-10-20 | v1.2 |
+| ux | WizardModal keycap (键帽) ruling awaiting maintainer (from 261017-klw/dnr audit table) | pending ruling | 2026-10-17 | v1.2 |
 
 ## Session Continuity
 
