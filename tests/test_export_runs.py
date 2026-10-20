@@ -1007,3 +1007,83 @@ def test_seed_result_present_export_is_deterministic(tmp_path):
                 assert p1.read_bytes() == p2.read_bytes(), (
                     f"{name} not byte-stable with seed_result present"
                 )
+
+
+# =====================================================================
+# --dry-run CLI mode (14-02, MGPU-05 / D14-10 — the cleanup seam)
+# =====================================================================
+
+def test_dry_run_walks_counts_prints_and_writes_nothing(
+        tmp_path, capsys):
+    """--dry-run walks the run-record tree via the SAME load_run_records
+    authority export_runs_tree uses, prints exactly ONE summary line
+    carrying the record / model / task counts, and writes NOTHING —
+    neither --output-dir nor --stats-dir nor the derived model_performance
+    dir is created (D14-10: this read-only mode is the run_sweep_shard
+    --cleanup verification leg; a write here would corrupt the very root
+    being verified)."""
+    root = tmp_path / "finetuned"
+    for model in ("FakeModel-A", "FakeModel-B"):
+        for task in ("FakeDS__t1", "FakeDS__t2"):
+            for seed in (42, 43):
+                _write_run_record(
+                    root, model, task, seed, _suite_native_metrics(0.9))
+    out = tmp_path / "out"
+    stats = tmp_path / "stats"
+
+    code = export_runs.main([
+        "--dry-run", "--input-root", str(root),
+        "--output-dir", str(out), "--stats-dir", str(stats),
+    ])
+
+    assert code == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == 1, (
+        "--dry-run prints one summary line and nothing else"
+    )
+    assert "8 run record(s)" in lines[0]
+    assert "2 model(s)" in lines[0]
+    assert "2 task(s)" in lines[0]
+    assert str(root) in lines[0]
+    # zero writes: the flag gates before any output path is touched
+    assert not out.exists()
+    assert not stats.exists()
+    assert not (root / "model_performance").exists()
+
+
+def test_dry_run_missing_input_root_raises_filenotfound(tmp_path):
+    """A missing --input-root keeps load_run_records' loud
+    FileNotFoundError (non-zero under the CLI) — that non-zero exit is the
+    --cleanup mode's verification-leg refusal signal, never a
+    zero-records green."""
+    missing = tmp_path / "does-not-exist"
+    with pytest.raises(FileNotFoundError):
+        export_runs.main([
+            "--dry-run", "--input-root", str(missing),
+            "--output-dir", str(tmp_path / "out"),
+            "--stats-dir", str(tmp_path / "stats"),
+        ])
+
+
+def test_cli_export_without_dry_run_still_writes(tmp_path):
+    """Existing-behavior control: without --dry-run the SAME main() still
+    performs the full export (task file + stats artifact + per-model
+    file) — the flag provably gates ONLY the dry path."""
+    root, models_path, datasets_path, config_path = _build_fixture_tree(
+        tmp_path)
+    out = tmp_path / "out"
+    stats = tmp_path / "stats"
+
+    code = export_runs.main([
+        "--input-root", str(root),
+        "--models-info", str(models_path),
+        "--datasets-info", str(datasets_path),
+        "--config", str(config_path),
+        "--output-dir", str(out), "--stats-dir", str(stats),
+    ])
+
+    assert code == 0
+    assert (out / "FakeDS__task_task_performance.json").is_file()
+    assert (stats / "FakeDS__task_seed_stats.json").is_file()
+    assert (root / "model_performance"
+            / "FakeModel-A_performance.json").is_file()
