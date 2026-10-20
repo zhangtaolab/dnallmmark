@@ -1,21 +1,16 @@
 ---
 gsd_state_version: "1.0"
-milestone: v1.2
-milestone_name: TUI任务
-status: Awaiting next milestone
-stopped_at: Quick 261020-9vh+asm complete (stale-progress guard + tree all-expanded pins); v1.2 archive steps 8-13 still pending
-last_updated: "2026-10-20T01:06:40.460Z"
-last_activity: 2026-10-19
-stopped_at: "Quick 261020-blt complete (planned-cell union; one-model bug fixed)"
-state_head: 68a74fb54cdadc174a1047afd794ec3f8ac9d778
+milestone: v1.3
+milestone_name: 多 GPU 编排与验证
+status: planning
+last_updated: "2026-10-20T01:57:41.590Z"
+last_activity: 2026-10-20
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 41
-  completed_plans: 41
-  percent: 100
-current_phase: 12
-current_phase_name: Multi-GPU Orchestration & Console Hardening
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -29,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-10-11)
 
 ## Current Position
 
-Phase: Milestone v1.2 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-10-19 — Milestone v1.2 completed and archived
+Status: Defining requirements
+Last activity: 2026-10-20 — Milestone v1.3 started
 
 ## Performance Metrics
 

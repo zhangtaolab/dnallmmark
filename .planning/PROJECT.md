@@ -8,6 +8,19 @@ DNALLM-Mark is a DNA language-model benchmark platform: a PyTorch fine-tuning pi
 
 Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust.
 
+## Current Milestone: v1.3 多 GPU 编排与验证
+
+**Goal:** Upgrade multi-GPU orchestration from static model sharding to cell-level dynamic dispatch (each training cell owns exactly one GPU, never split), with orchestrator live views, failure recovery/cleanup, and a TUI multi-GPU surface — validated on the local 2× RTX 5090 box by an N=2 bounded smoke (closes WINDOWS #21) and a small real sweep over pre-materialized 5% sub-datasets whose results flow through the data chain into the web pages with multi-seed error bars.
+
+**Target features:**
+- Cell-level dynamic dispatch — `run_sweep_shard.py` reworked as a work queue: (model×dataset×seed) cells enqueued, idle GPU workers pull the next cell; load balances naturally (size-(M) static weighting retired); a cell never spans GPUs
+- Orchestrator-level run view — live per-worker progress/failure aggregation (terminal table or state file consumable by TUI/web mirror)
+- Failure recovery & cleanup — cross-worker failure re-run + post-merge verification/cleanup helper
+- TUI multi-GPU surface — slot-4 multi-GPU launch (workers/gpus; single-GPU serial gate revised), monitor integration, G GPU-lanes display (nvidia-smi read-only probe — v1.2 deferred item)
+- N=2 bounded smoke on this box per `docs/multi-gpu.md` (closes WINDOWS #21; revises D-05 machine-role decision)
+- Small real sweep over pre-materialized 5% sub-datasets (deterministic subsets of the real datasets, own directory tree, separate config file from real runs — subset runs never mix with real runs), through both GPUs → `--merge` → data chain
+- Results adapted to the web pages with multi-seed error bars (mean±std/CI on scatter/bar charts; aggregation scripts + Chart.js frontend, no-build constraint unchanged)
+
 ## Requirements
 
 ### Validated
@@ -28,7 +41,7 @@ Every number on the public leaderboard is correct and reproducible from code tha
 
 ### Active
 
-*(None — v1.2 requirements all validated; next milestone defined via `/gsd-new-milestone`. Backlog candidate: Phase 999.1 custom-entry fool-proofing, see `.planning/ROADMAP.md`.)*
+*(v1.3 多 GPU 编排与验证 — seven target features in `## Current Milestone` above; REQ-IDs defined in REQUIREMENTS.md at milestone start. Backlog candidate: Phase 999.1 custom-entry fool-proofing, see `.planning/ROADMAP.md`.)*
 
 ### Out of Scope
 
@@ -81,6 +94,10 @@ Every number on the public leaderboard is correct and reproducible from code tha
 | Custom/official registry separation is absolute (user-owned `~/.config/dnallmmark/custom_*.json`, collision fail-fast, byte-identical when absent) | Maintainer refinement 2026-10-11: 自定义的不与官方放在一起，免得冲突 | ✓ Landed (Phase 7 seam + Phase 9 wizards) |
 | Multi-GPU = static model sharding × CUDA_VISIBLE_DEVICES over DDP (documented applicability matrix) | Single-large-model acceleration vs multi-model throughput are different problems; sharding fits the 62-model benchmark shape | ✓ Landed (Phase 12, `docs/multi-gpu.md`) |
 | v1.2 closeout = override_closeout; verify-staleness cascade acknowledged, verifiers not re-dispatched during archive | Covered-file digests re-stale phases on every later commit; gates were green 2026-10-19 23:50 — re-dispatching verifiers mid-archive would loop | ✓ Recorded (MILESTONES.md disclosures, 2026-10-19) |
+| v1.3 multi-GPU mode = cell-level dynamic dispatch (work queue); one cell = one GPU, never split | Maintainer 2026-10-20: 每个任务分配一块显卡、不要用一个任务在多块卡上跑 — natural load balancing without cost estimation; supersedes static LPT size-(M) sharding as the primary mode | — Pending |
+| v1.3: DDP remains not implemented | Maintainer 2026-10-20: 不做 DDP — re-affirms v1.2 D-04; the `WORLD_SIZE`/`LOCAL_RANK` seam stays documented-only | — Pending |
+| D-05 machine-role revision: the local 2×5090 box is now the N=2 validation machine | D-05 was set when local was single-GPU (开发本机/验证他机); the AutoDL box now carries 2× RTX 5090 — smoke runs here (WINDOWS #21) | — Pending |
+| v1.3 small-sweep datasets: 5% subsets pre-materialized as real dataset directories under a separate config | Maintainer 2026-10-20: 小数据集需要提前生产，与真实数据使用不同的配置文件 — subset runs and real runs never share a registry/config | — Pending |
 
 ## Evolution
 
@@ -100,4 +117,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-20 after v1.2 TUI任务 milestone*
+*Last updated: 2026-10-20 after v1.3 milestone start (多 GPU 编排与验证)*
