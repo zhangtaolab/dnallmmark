@@ -320,7 +320,8 @@ class FakeMonitorLauncher:
                  rerun_outcomes=None, env_raises=None,
                  single_gpu_blocked=None,
                  kill_outcomes=None, kill_raises=None,
-                 resume_outcomes=None, live_matrices=None):
+                 resume_outcomes=None, live_matrices=None,
+                 live_plans=None):
         self._preflight = (preflight if preflight is not None
                            else EnvPreflight(
                                can_launch=True, reasons=(),
@@ -356,6 +357,19 @@ class FakeMonitorLauncher:
                 def _sticky_matrices():
                     return live_matrices
                 self.live_sweep_matrices = _sticky_matrices
+        # 261020-blt: the live_sweep_plans fake — the live_matrices
+        # pattern verbatim (None = the method stays UNDEFINED so the
+        # o8e ADAPTER leg keeps every pairs-only fake exercising it; a
+        # dict = the sticky return; a callable = per-read scripting).
+        # The live_matrices param STAYS: the o8e pins keep exercising
+        # the adapter precedence, this one the plans reader.
+        if live_plans is not None:
+            if callable(live_plans):
+                self.live_sweep_plans = live_plans
+            else:
+                def _sticky_plans():
+                    return live_plans
+                self.live_sweep_plans = _sticky_plans
         self.env_calls = 0
         self.rerun_calls = []
         self.resume_calls = []
@@ -1848,6 +1862,242 @@ async def test_focus_clamps_into_filtered_set_on_evidence_transition():
             assert residue not in detail, (
                 f"the clamped pane never names {residue}"
             )
+
+
+# =====================================================================
+# 261020-blt — the planned-cell union (planned-but-unstarted cells
+# render QUEUED: the Running views render discovered ∪ planned; counts
+# count the union; the drill/History/[e] stay discovered-only)
+# =====================================================================
+
+#: the maintainer's 2026-10-20 exact plan (07:08/08:17 live reports):
+#: two models x two committed-registry task keys x three seeds — 12
+#: planned cells. BOTH task keys enumerate for BOTH models over the
+#: committed registry (verified: exactly 4 pairs; GUE__virus_species_4
+#: does NOT enumerate for plant-dnamamba-6mer and would silently shrink
+#: the plan to 2 pairs, voiding every 12-cell assertion).
+_UNION_MODELS = ("plant-dnabert-6mer", "plant-dnamamba-6mer")
+_UNION_TASKS = ("GUE__emp_H3", "GUE__prom_300_all")
+_UNION_PAIRS = frozenset(
+    (model, task) for model in _UNION_MODELS for task in _UNION_TASKS)
+_UNION_SEEDS = (42, 43, 44)
+
+
+def _partial_matrix_monitor() -> FakeMonitorService:
+    """The driver-killed-mid-first-cell shape (the maintainer's exact
+    case): the ONLY discovered row is plant-dnabert-6mer x GUE__emp_H3
+    with seed 42 RUNNING — seeds 43/44 have no dirs and model-2 has NO
+    dirs at all (the sweep driver mkdirs a cell only when it REACHES
+    it). The stats seam is scripted root-wide done=1 total=36,
+    deliberately unlike the union's 0/12, so a stats fallback leak is
+    unmissable."""
+    return FakeMonitorService(
+        scans=[ScanResult(sweeps=(_summary(
+            "finetuned", SWEEP_RUNNING, done=1, total=36, mtime=1.0),),
+            watermarks={})],
+        cells={"/scans/finetuned": (
+            _row("plant-dnabert-6mer", "GUE__emp_H3",
+                 {42: CELL_RUNNING}),)},
+        stats={"/scans/finetuned": _stats(done=1, total=36)},
+    )
+
+
+async def test_planned_cells_union_renders_queued_rows_and_counts():
+    """261020-blt — the maintainer's twice-reported 只显示一个模型 case:
+    a 2-model plan killed in model-1's first cell (model-2 has NO dirs)
+    renders the WHOLE plan — FOUR matrix rows (both models x both
+    tasks), the strip counts over the UNION (⏵1 + ◌11, done/total
+    0/12 = 4 pairs x 3 planned seeds — NEVER the stats seam's 1/36),
+    the discovered intersection's cluster carrying the running seed
+    followed by its two planned-but-unstarted seeds as queued, the [w]
+    wide table carrying all 12 per-cell rows (model-2 included) — and
+    the drill from a focused SYNTHESIZED group opens the RunCellsModal
+    with the DISCOVERED rows only (model-2 absent, cursor row 0 — the
+    scope law: a synthesized row never reaches the drill)."""
+    from tui.screens.monitor import RunCellsModal
+
+    app = _app(monitor=_partial_matrix_monitor(),
+               launcher=FakeMonitorLauncher(
+                   live_plans={"/scans/finetuned": (
+                       _UNION_PAIRS, _UNION_SEEDS)}))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        rows = _card_texts(screen, "mon-matrix-row")
+        assert len(rows) == 2, (
+            "one row per MODEL — BOTH models render (the matrix "
+            "grammar's per-model rows x per-task columns; the plan's "
+            "whole 2x2 shape is visible in the clusters below)"
+        )
+        card_text = "\n".join(rows)
+        assert "dnabert-6mer" in card_text and "dnamamba-6mer" in (
+            card_text), "the maintainer's exact complaint: BOTH models"
+        # the discovered intersection: seed 42 running THEN its two
+        # planned-but-unstarted seeds as queued (the 20-col name column
+        # sorts plant-dnabert-6mer first; its second task column is the
+        # all-synthesized ◌◌◌)
+        assert "⏵◌◌" in rows[0] and "◌◌◌" in rows[0], (
+            "the discovered pair completes its planned seeds as queued "
+            "beside the fully-planned second task"
+        )
+        assert rows[1].startswith("plant-dnamamba-6mer") and (
+            "⏵" not in rows[1]), (
+            "model-2's row is entirely synthesized queued clusters"
+        )
+        strip = _card_texts(screen, "mon-card-strip")[0]
+        assert "⏵1" in strip and "◌11" in strip, (
+            "the glyph counts derive over the UNION: 1 running + 11 "
+            "planned-but-unstarted queued"
+        )
+        assert "0/12" in strip and "1/36" not in strip, (
+            "done/total = Σ pairs x planned seeds (4 x 3 = 12), never "
+            "the root-wide stats seam (1/36)"
+        )
+        # [w] x2 (the cycle passes through tree): the wide table
+        # carries the synthesized per-cell rows — 12 rows over the plan
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        wide = screen.query_one("#mon-wide", DataTable)
+        assert wide.row_count == 12, "one row per planned cell (4 x 3)"
+        model_2_rows = [
+            row_key for row_key in wide.rows
+            if _table_text(wide, row_key.value, "model")
+            == "plant-dnamamba-6mer"]
+        assert len(model_2_rows) == 6, (
+            "model-2's two tasks x three planned seeds render as wide "
+            "rows (queued cells included)"
+        )
+        # [w] back to the matrix, focus model-2's SYNTHESIZED group,
+        # enter: the drill opens listing ONLY the discovered model —
+        # the scope law (the service cells_view, never the union)
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("down")
+        await pilot.pause()
+        assert screen._focused_group()[1] == "plant-dnamamba-6mer", (
+            "the focus sits on model-2's synthesized group"
+        )
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert isinstance(app.screen, RunCellsModal)
+        table = app.screen.query_one("#mon-runcells-table", DataTable)
+        assert table.row_count == 1, (
+            "the drill modal keeps the DISCOVERED truth (one row)"
+        )
+        assert str(table.coordinate_to_cell_key(
+            table.cursor_coordinate)[0].value) == (
+            "plant-dnabert-6mer__GUE__emp_H3"), (
+            "the synthesized focus key is absent from the modal's rows: "
+            "the cursor stays at row 0 through the in-rows guard"
+        )
+        for row_key in table.rows:
+            assert _table_text(
+                table, row_key.value, "model") == "plant-dnabert-6mer", (
+                "model-2 appears NOWHERE in the drill (the scope law)"
+            )
+        await pilot.press("escape")
+        await pilot.pause()
+
+
+async def test_planned_union_pairs_only_adapter_never_fabricates_seeds():
+    """261020-blt — the pairs-only degenerate (the o8e adapter leg):
+    the same driver-killed fixture with the plan arriving as a BARE
+    pairs frozenset through live_matrices (the o8e fake shape) unions
+    the PAIRS exactly as o8e did but NEVER fabricates seed counts —
+    the discovered row renders its OWN single seed verbatim (one
+    running glyph, never the 3-seed fan-out), and the three missing
+    pairs render rows whose seeds BORROW the root's discovered seed
+    set (seed 42 -> one queued glyph each). The four pre-existing o8e
+    pins stay green unedited through this same adapter."""
+    app = _app(monitor=_partial_matrix_monitor(),
+               launcher=FakeMonitorLauncher(
+                   live_matrices={"/scans/finetuned": _UNION_PAIRS}))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        rows = _card_texts(screen, "mon-matrix-row")
+        assert len(rows) == 2, (
+            "the pairs-only adapter still unions the PAIRS (the o8e "
+            "filter shape + the planned-row synthesis — both models "
+            "render)"
+        )
+        assert "⏵" in rows[0] and "⏵◌◌" not in rows[0], (
+            "the discovered row renders its OWN seed verbatim — one "
+            "glyph, never the fabricated fan-out"
+        )
+        assert rows[1].startswith("plant-dnamamba-6mer"), (
+            "the planned-but-undiscovered model renders (borrowed-seed "
+            "queued rows)"
+        )
+        strip = _card_texts(screen, "mon-card-strip")[0]
+        assert "⏵1" in strip and "◌3" in strip, (
+            "counts over the union's honest basis: 1 running seed + 3 "
+            "borrowed queued seeds (one per missing pair)"
+        )
+        assert "0/4" in strip, "done/total over the borrowed basis"
+        assert "0/12" not in strip and "1/36" not in strip, (
+            "a seeds-unknown plan never fabricates the 12-cell fan-out "
+            "and never leaks the root-wide stats seam"
+        )
+
+
+async def test_planned_union_joins_structure_signature_steady_silent():
+    """261020-blt — the gate law over the union transition: the plan
+    evidence first arrives EMPTY (root-wide render, ONE model — only
+    the discovered row), then the scripted plan lands -> the union's
+    models/tasks tuples change the cards signature's shape legs -> the
+    ListView REBUILDS once (ListItem identity changed, TWO models),
+    and one more tick over the SAME plan performs ZERO widget writes
+    with the ListItem identity surviving (the rze zero-write idiom)."""
+    holder: dict = {}
+    app = _app(monitor=_partial_matrix_monitor(),
+               launcher=FakeMonitorLauncher(
+                   live_plans=lambda: holder))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        cards = screen.query_one("#mon-cards", ListView)
+        root_wide_item = cards.children[0]
+        assert len(_card_texts(screen, "mon-matrix-row")) == 1, (
+            "the plan evidence is empty: the root-wide render — ONE "
+            "model (the discovered row only)"
+        )
+        holder["/scans/finetuned"] = (_UNION_PAIRS, _UNION_SEEDS)
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert cards.children[0] is not root_wide_item, (
+            "the plan landing REBUILT through the existing structure "
+            "signature (the union joins the models/tasks shape legs)"
+        )
+        rows = _card_texts(screen, "mon-matrix-row")
+        assert len(rows) == 2 and "dnamamba-6mer" in "\n".join(rows), (
+            "TWO models render after the plan lands"
+        )
+        rebuilt_item = cards.children[0]
+        clear_patcher, clear_mock = _spy(cards, "clear")
+        label_spies = [_spy(label, "update")
+                       for label in rebuilt_item.query(Label)]
+        try:
+            screen._tick_frontier()
+            await _settle(pilot, app)
+            assert clear_mock.call_count == 0, (
+                "a steady tick over the SAME plan never rebuilds"
+            )
+            for patcher, mocked in label_spies:
+                assert mocked.call_count == 0, (
+                    "a steady tick over the SAME plan performs zero "
+                    "card Label writes (the union is a pure function of "
+                    "(plan, discovered rows))"
+                )
+        finally:
+            clear_patcher.stop()
+            for patcher, _mocked in label_spies:
+                patcher.stop()
+        assert cards.children[0] is rebuilt_item, (
+            "the ListItem identity survives the steady tick"
+        )
 
 
 # =====================================================================

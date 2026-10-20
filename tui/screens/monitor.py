@@ -152,6 +152,25 @@ Contract (locked decisions that survive the redesign):
   shape legs and the filtered row map IS the wide sig, so the rze/f0x
   gate law (rebuild-on-shape-change, steady zero-write, focus clamps
   through ``_normalize_focus``) holds by construction.
+- 261020-blt (the maintainer's twice-reported "only one model shows"
+  case, 2026-10-20 07:08/08:17): the Running views render the union of
+  the
+  DISCOVERED cells and the live sweep's PLANNED cells — the
+  ``live_sweep_plans`` evidence ((pairs, seeds) per root: the
+  registry's argv authoritative, the /proc probe filling; pairs-only
+  evidence adapts with seeds UNKNOWN, never fabricated) — through the
+  ONE per-root seam ``_root_scoped_rows``: planned-but-undiscovered
+  pairs synthesize QUEUED rows via the existing grammar, discovered
+  rows complete their planned-but-unstarted seeds as queued, and
+  off-plan residue seeds drop from the Running views ONLY when the
+  seeds are known (the o8e law at seed level). Counts (the strip's
+  glyphs + done/total, the tree's labels, the [w] wide table) derive
+  over the union — total = Σ pairs × planned seeds — and the union is
+  a pure function of (plan, discovered rows), so the models/tasks
+  shape legs carry it into the gate law (a plan landing mid-session
+  rebuilds once, steady ticks write zero). The drill, History, and [e]
+  read the SERVICE ``cells_view`` (root-wide discovered truth) — a
+  synthesized row never reaches them, by construction not by filter.
 - 261019-pe0 (the maintainer's 2026-10-19 18:14-18:16 scalability
   ruling): the left pane is a THREE-STATE cycle matrix -> tree -> wide
   over [w] (the keycap stays MON_WIDE_KEYCAP byte-identical — no footer
@@ -1760,32 +1779,33 @@ class MonitorScreen(Screen):
     class FullScanned(Message):
         """The 60s full scan arrived (worker thread -> loop; WR-02):
         the scan result plus each live root's per-root payload.
-        261019-o8e: ``matrices`` threads the launcher's live-sweep
-        planned-pair evidence (None = no fresh read — the previous
-        screen cache stands; the mount-kick scan is what first lands
-        evidence for a fresh screen)."""
+        261019-o8e/261020-blt: ``plans`` threads the launcher's
+        live-sweep planned-CELLS evidence (None = no fresh read — the
+        previous screen cache stands; the mount-kick scan is what first
+        lands evidence for a fresh screen)."""
 
         def __init__(self, result: Any, payload: "dict[str, _RootRead]",
-                     run_id: int, matrices: "dict | None" = None) -> None:
+                     run_id: int, plans: "dict | None" = None) -> None:
             self.result = result
             self.payload = payload
             self.run_id = run_id
-            self.matrices = matrices
+            self.plans = plans
             super().__init__()
 
     class FrontierScanned(Message):
         """The 2s frontier pass over EVERY live root arrived (worker
         thread -> loop; WR-02) — per-root snapshots/stats/progress.
-        261019-o8e: ``matrices`` threads the same live-sweep evidence
-        (None = no fresh read — the previous screen cache stands)."""
+        261019-o8e/261020-blt: ``plans`` threads the same live-sweep
+        planned-CELLS evidence (None = no fresh read — the previous
+        screen cache stands)."""
 
         def __init__(self, snapshots: dict, stats: dict, progress: dict,
-                     run_id: int, matrices: "dict | None" = None) -> None:
+                     run_id: int, plans: "dict | None" = None) -> None:
             self.snapshots = snapshots
             self.stats = stats
             self.progress = progress
             self.run_id = run_id
-            self.matrices = matrices
+            self.plans = plans
             super().__init__()
 
     class FailuresRead(Message):
@@ -1954,12 +1974,13 @@ class MonitorScreen(Screen):
         # and {root: {(model, task): CellProgress}}
         self._cell_rows: dict[str, dict[str, Any]] = {}
         self._cell_progress: dict[str, dict] = {}
-        # 261019-o8e: the LIVE-SWEEP planned-pair evidence — the
-        # launcher's live_sweep_matrices() read (resolved root ->
-        # frozenset of (model, task) | None), stored by BOTH cadence
-        # handlers BEFORE the render pass that consumes it (see the
-        # handler comments); {} = fresh-but-empty evidence (fallback)
-        self._live_matrices: dict = {}
+        # 261019-o8e + 261020-blt: the LIVE-SWEEP planned-CELLS evidence
+        # — the launcher's live_sweep_plans() read (resolved root ->
+        # (pairs frozenset, seeds tuple | None) | None), stored by BOTH
+        # cadence handlers BEFORE the render pass that consumes it (see
+        # the handler comments); {} = fresh-but-empty evidence
+        # (fallback); a root's None entry = live-but-unknown
+        self._live_plans: dict = {}
         self._card_order: list[str] = []
         # the graduation map (261018-kvj Task 2): root -> state as of
         # the last rendered scan; screen-local by design
@@ -2197,21 +2218,36 @@ class MonitorScreen(Screen):
         except Exception:  # noqa: BLE001 — the tolerant-reader promise
             return {}
 
-    def _read_live_matrices(self) -> "dict | None":
-        """The launcher's live-sweep planned-pair evidence, read
+    def _read_live_plans(self) -> "dict | None":
+        """The launcher's live-sweep planned-CELLS evidence — resolved
+        root -> (pairs frozenset, seeds tuple | None) | None — read
         WORKER-side (off the event loop; the ``_entries_progress_of``
-        getattr precedent): a launcher without ``live_sweep_matrices``
-        (every pilot fake) reads None, a RAISING call reads None (the
-        tolerant-reader promise — the previous render stands), anything
-        else reads a fresh dict copy. None means "no fresh evidence,
-        keep the previous screen cache"; a dict — even {} — IS fresh
-        evidence (an empty dict scopes nothing: every root falls back
-        root-wide)."""
-        getter = getattr(self._launcher, "live_sweep_matrices", None)
-        if getter is None:
+        getattr precedent). Reader PRECEDENCE (261020-blt):
+        ``live_sweep_plans`` first; a launcher without it (every o8e
+        fake and every pre-blt double) falls back to the o8e ADAPTER
+        over ``live_sweep_matrices`` — a bare frozenset value becomes
+        the seeds-UNKNOWN plan ``(value, None)`` (the pairs-only filter
+        applies with NO seed completion: the o8e render byte-identical,
+        which is why the o8e pins stay green), and None / non-frozenset
+        garbage stays None. No method at all, or any RAISING call,
+        reads None = "no fresh evidence, keep the previous screen
+        cache" (the tolerant-reader promise); a dict — even {} — IS
+        fresh evidence (an empty dict scopes nothing: every root falls
+        back root-wide)."""
+        plans_getter = getattr(self._launcher, "live_sweep_plans", None)
+        if plans_getter is not None:
+            try:
+                return dict(plans_getter() or {})
+            except Exception:  # noqa: BLE001 — the tolerant-reader promise
+                return None
+        legacy = getattr(self._launcher, "live_sweep_matrices", None)
+        if legacy is None:
             return None
         try:
-            return dict(getter() or {})
+            return {
+                root: ((value, None)
+                       if isinstance(value, frozenset) else None)
+                for root, value in dict(legacy() or {}).items()}
         except Exception:  # noqa: BLE001 — the tolerant-reader promise
             return None
 
@@ -2221,9 +2257,9 @@ class MonitorScreen(Screen):
         resume/scale read — all off the event loop (T-11-07-01/04).
         Per-root tolerant: a root whose read raises is skipped (the
         per-file skip idiom), the other roots still land.
-        261019-o8e: the live-matrices read sits BEFORE the try (it
-        never raises) so an evidence failure can never mask a scan."""
-        matrices = self._read_live_matrices()
+        261019-o8e: the live-plans read sits BEFORE the try (it never
+        raises) so an evidence failure can never mask a scan."""
+        plans = self._read_live_plans()
         try:
             result = self._service.full_scan(self._watermarks or None)
         except Exception:  # noqa: BLE001 — the tolerant-reader promise:
@@ -2237,7 +2273,7 @@ class MonitorScreen(Screen):
             if read is not None:
                 payload[str(summary.root)] = read
         self.post_message(self.FullScanned(result, payload, run_id,
-                                           matrices))
+                                           plans))
 
     def _read_live_root(self, root: str) -> "_RootRead | None":
         """One live root's worker-side reads; None = the per-root skip
@@ -2274,9 +2310,9 @@ class MonitorScreen(Screen):
         """The light 2s pass over EVERY live root in the SAME exclusive
         worker (frontier_scan + stats + entries_progress per root; the
         elapsed accrues continuously, D-17) — all off the event loop,
-        per-root tolerant. 261019-o8e: the live-matrices read rides the
+        per-root tolerant. 261019-o8e: the live-plans read rides the
         same pass (once, at the top — never raises)."""
-        matrices = self._read_live_matrices()
+        plans = self._read_live_plans()
         snapshots: dict = {}
         stats_map: dict = {}
         progress_map: dict = {}
@@ -2289,7 +2325,7 @@ class MonitorScreen(Screen):
             stats_map[root] = stats
             progress_map[root] = progress
         self.post_message(self.FrontierScanned(
-            snapshots, stats_map, progress_map, run_id, matrices))
+            snapshots, stats_map, progress_map, run_id, plans))
 
     def _read_frontier_root(
             self, root: str) -> "tuple | None":
@@ -2315,8 +2351,8 @@ class MonitorScreen(Screen):
         # render — the render pass and its structure signature must
         # read the SAME evidence dict (a store-after-render would flap
         # one tick: the sig computed root-wide, the paint filtered)
-        if message.matrices is not None:
-            self._live_matrices = message.matrices
+        if message.plans is not None:
+            self._live_plans = message.plans
         result = message.result
         # graduation BEFORE the state map updates: only transitions the
         # screen OBSERVED fire (a fresh screen's first scan has no
@@ -2383,8 +2419,8 @@ class MonitorScreen(Screen):
             return
         # 261019-o8e: same load-bearing ordering as the full-scan
         # handler — the evidence stores BEFORE the render that reads it
-        if message.matrices is not None:
-            self._live_matrices = message.matrices
+        if message.plans is not None:
+            self._live_plans = message.plans
         for root_key, snapshot in message.snapshots.items():
             if root_key not in self._live:
                 continue
@@ -2961,48 +2997,144 @@ class MonitorScreen(Screen):
         self.query_one("#mon-tab-history", Label).update(
             history_text, layout=False)
 
+    def _root_live_plan(self, root) -> "tuple | None":
+        """One root's live-sweep PLAN — the (pairs frozenset, seeds
+        tuple | None) evidence pair (261020-blt) — read from the
+        screen's ``_live_plans`` cache keyed by RESOLVED root (the
+        ``MonitorBackend._live_pairs_for`` idiom). Returns the tuple
+        ONLY when leg 0 is a non-empty frozenset; a miss, a None entry
+        (live-but-unknown argv), or a degenerate empty set all read
+        None — no plan, never a scope."""
+        entry = self._live_plans.get(
+            str(Path(root).expanduser().resolve()))
+        if (isinstance(entry, tuple) and isinstance(entry[0], frozenset)
+                and entry[0]):
+            return entry
+        return None
+
     def _root_live_pairs(self, root) -> "frozenset | None":
         """One root's live-sweep planned-pair set for PRESENTATION
-        scoping (261019-o8e): the launcher's evidence keys RESOLVED
-        roots (the ``MonitorBackend._live_pairs_for`` idiom). The None
-        vocabulary is the DELIBERATE divergence from that service
-        helper — ``_live_pairs_for`` returns the EMPTY set on a strict
-        miss because the service derives per-seed STATES (a dead root:
-        every non-terminal cell derives interrupted), while THIS
-        screen-side None means "scope nothing, render root-wide": an
-        absent root, a None entry (live-but-unknown argv), or an empty
-        set (degenerate parse) all fall back — a live card NEVER
+        scoping (261019-o8e): the PAIRS leg of the root's plan
+        (261020-blt — ``_root_live_plan`` leg 0). The None vocabulary
+        is the DELIBERATE divergence from the service helper —
+        ``MonitorBackend._live_pairs_for`` returns the EMPTY set on a
+        strict miss because the service derives per-seed STATES (a
+        dead root: every non-terminal cell derives interrupted), while
+        THIS screen-side None means "scope nothing, render root-wide":
+        an absent root, a None entry (live-but-unknown argv), or an
+        empty set (degenerate parse) all fall back — a live card NEVER
         renders an empty matrix through an evidence gap."""
-        pairs = self._live_matrices.get(
-            str(Path(root).expanduser().resolve()))
-        return pairs if isinstance(pairs, frozenset) and pairs else None
+        plan = self._root_live_plan(root)
+        return plan[0] if plan is not None else None
+
+    def _root_scoped_rows(self, root) -> "dict[str, Any]":
+        """One root's RUNNING-VIEW row map — discovered ∪ planned
+        (261020-blt), THE one per-root seam every current-sweep view
+        reads (the merged card map, the tree, the strip counts — and
+        ``_render_wide`` directly). Three legs over the o8e drop:
+
+        1. NO plan (every evidence gap): the discovered rows verbatim —
+           today's root-wide render, never an empty map.
+        2. A plan HOLDS: rows outside ``plan[0]`` drop (the o8e
+           same-root residue law), then the union — every planned pair
+           without a discovered row SYNTHESIZES an all-queued CellRow
+           through the existing grammar; a discovered row with a KNOWN
+           seed basis (the plan's own leg 1, non-empty) rebuilds to
+           EXACTLY the planned seeds — per planned seed the discovered
+           CellSeed verbatim (states + fraction_states) when the seed
+           numbers match, else a queued CellSeed, and discovered seeds
+           OUTSIDE the plan drop (the residue law at seed level);
+           a discovered row with a BORROWED basis (the pairs-only
+           adapter — seeds unknown) stays verbatim: seeds are NEVER
+           fabricated, so the o8e render is byte-identical.
+        3. The basis' degenerate legs: a KNOWN-empty leg 1 borrows the
+           root's discovered seed set (the o8e adapter's synthesized
+           rows carry one queued glyph per borrowed seed); an empty
+           borrow too synthesizes NAME-ONLY rows (``seeds=()``) — a
+           fabricated seed NUMBER is never constructed.
+
+        SCOPE LAW: consumed by the Running views ONLY — the drill,
+        History, and [e] read the SERVICE ``cells_view`` (the
+        root-wide discovered truth), so a synthesized row never reaches
+        them (by construction, not by filter). DISPLAY-ONLY data: the
+        synthesized rows never gate a launch, kill, or exit."""
+        discovered = dict(self._cell_rows.get(root) or {})
+        plan = self._root_live_plan(root)
+        if plan is None:
+            return discovered
+        pairs, planned_seeds = plan
+        scoped = {key: row for key, row in discovered.items()
+                  if (row.model, row.task) in pairs}
+        known_basis = tuple(planned_seeds or ())
+        borrowed = not known_basis
+        seed_basis = known_basis or tuple(sorted({
+            cell_seed.seed for row in scoped.values()
+            for cell_seed in row.seeds}))
+        rows: dict[str, Any] = {}
+        for model, task in sorted(pairs):
+            key = f"{model}__{task}"
+            row = scoped.get(key)
+            if row is None:
+                # the planned-but-undiscovered pair (the driver mkdirs a
+                # cell only when it REACHES it): the all-queued row
+                rows[key] = sweep_monitor.CellRow(
+                    model=model, task=task,
+                    seeds=tuple(sweep_monitor.CellSeed(
+                        seed=seed, state=CELL_QUEUED,
+                        fraction_states=None)
+                        for seed in seed_basis),
+                    newest_mtime=None)
+            elif borrowed:
+                rows[key] = row  # seeds unknown: verbatim, never guessed
+            else:
+                # the discovered row completed to EXACTLY the planned
+                # seeds (missing ones queued, off-plan residue dropped)
+                by_seed = {cell_seed.seed: cell_seed
+                           for cell_seed in row.seeds}
+                rows[key] = sweep_monitor.CellRow(
+                    model=model, task=task,
+                    seeds=tuple(
+                        by_seed[seed] if seed in by_seed
+                        else sweep_monitor.CellSeed(
+                            seed=seed, state=CELL_QUEUED,
+                            fraction_states=None)
+                        for seed in known_basis),
+                    newest_mtime=row.newest_mtime)
+        return rows
 
     def _card_rows(self, card: _RunCard) -> "dict[str, Any]":
-        """The card's merged row map (261019-f0x): ``self._cell_rows``
-        over ``card.roots`` keyed ``f"{model}__{task}"``; when the same
-        key appears under multiple roots (not the mgpu sharding case,
-        but honest) the per-seed states merge with the priority
-        running > failed > interrupted > completed/skipped > queued
-        (first state wins inside a tier — deterministic). This ONE map
-        feeds the strip counts, the matrix, the right pane, and the
-        [w] table — never re-derived differently.
+        """The card's merged row map (261019-f0x): the per-root
+        ``_root_scoped_rows`` seam over ``card.roots`` keyed
+        ``f"{model}__{task}"``; when the same key appears under
+        multiple roots (not the mgpu sharding case, but honest) the
+        per-seed states merge with the priority running > failed >
+        interrupted > completed/skipped > queued (first state wins
+        inside a tier — deterministic). This ONE map feeds the strip
+        counts, the matrix, the right pane, and the [w] table — never
+        re-derived differently.
 
         261019-o8e: the map is the LIVE-SWEEP-SCOPED view when the
         launcher's evidence holds a planned pair set for a root (rows
         of THAT root outside the set — same-root historical residue —
         drop BEFORE the merge, per root, so an mgpu card keeps pairs
         live in ANY of its worker roots); a root without evidence
-        contributes all its rows (the root-wide fallback). An
-        honestly-empty filtered map (all rows residue, the planned
-        rows not yet discovered) renders strip + no matrix rows —
-        ``_card_matrix`` already returns [] safely; the 2s cadence
-        resolves it when the manifest/first cell lands."""
+        contributes all its rows (the root-wide fallback).
+
+        261020-blt: the rows are the DISCOVERED-∪-PLANNED cells —
+        ``_root_scoped_rows`` synthesizes queued rows for the plan's
+        not-yet-mkdir'd pairs (the driver reaches a cell only when it
+        runs it), so the map's shape legs carry the union into the
+        cards signature: a plan landing mid-session rebuilds ONCE, and
+        a steady tick derives identical rows (the union is a pure
+        function of (plan, discovered rows)) -> zero widget writes.
+        The merge is unchanged — a synthesized row's queued seeds
+        (priority 4) lose to every discovered state, so the moment a
+        planned cell's dir lands its discovered truth replaces the
+        synthesized seeds automatically."""
         merged: dict[str, Any] = {}
         for root in card.roots:
-            pairs = self._root_live_pairs(root)
-            for key, row in (self._cell_rows.get(root) or {}).items():
-                if pairs is not None and (row.model, row.task) not in pairs:
-                    continue
+            scoped = self._root_scoped_rows(root)
+            for key, row in scoped.items():
                 existing = merged.get(key)
                 merged[key] = (
                     row if existing is None
@@ -3904,18 +4036,18 @@ class MonitorScreen(Screen):
         row_map: dict[str, list] = {}
         for card in cards:
             for root in card.roots:
-                # 261019-o8e: the wide table is the SAME current-sweep
-                # view as the matrix — the per-root live-pair skip
-                # applies (the wide content sig derives from this
-                # row_map, so the filtered re-diff is automatic)
-                pairs = self._root_live_pairs(root)
+                # 261020-blt: the wide table reads the SAME per-root
+                # union seam as the matrix — the synthesized queued
+                # cells render through the existing per-seed grammar
+                # (the queued state word + the dash progress, exactly a
+                # discovered queued cell today); the wide content sig
+                # derives from this row_map, so the union's re-diff is
+                # automatic (261019-o8e's filter note superseded by the
+                # seam)
                 progress_map = self._cell_progress.get(root) or {}
-                rows = self._cell_rows.get(root) or {}
+                rows = self._root_scoped_rows(root)
                 for key in sorted(rows):
                     row = rows[key]
-                    if (pairs is not None
-                            and (row.model, row.task) not in pairs):
-                        continue
                     progress = progress_map.get((row.model, row.task))
                     for cell_seed in sorted(row.seeds,
                                             key=lambda s: s.seed):
@@ -4370,7 +4502,10 @@ class MonitorScreen(Screen):
         261019-o8e: the FULL-ROOT-SNAPSHOT contract — the drill stays
         ROOT-WIDE by design (same-root residue stays visible and
         drillable here and on the History side; the Running tab's
-        scoping is presentation-only, never a deletion)."""
+        scoping is presentation-only, never a deletion).
+        261020-blt: the SCOPE LAW — this reads the SERVICE cells_view,
+        so the screen's planned-cell union (synthesized queued rows)
+        can NEVER reach the drill, by construction not by filter."""
         try:
             cells = self._service.cells_view(root_key)
             progress = self._entries_progress_of(root_key)
@@ -4842,7 +4977,12 @@ class MonitorScreen(Screen):
         stage-0, official-keys, the E2' phrase gate over the
         pairs×seeds effective matrix). The outcome rides the SHARED
         RerunFinished handler — the E2' phrase re-prompt routes back
-        through THIS worker via the resume=True flag."""
+        through THIS worker via the resume=True flag).
+
+        261020-blt: the SCOPE LAW — this derivation reads the SERVICE
+        cells_view (the root-wide discovered truth), so the screen's
+        planned-cell union never leaks a synthesized row into the
+        confirmed/executed GPU spend."""
         try:
             cells = self._service.cells_view(root)
             rows = {f"{row.model}__{row.task}": row

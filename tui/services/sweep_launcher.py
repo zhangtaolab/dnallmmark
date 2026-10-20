@@ -698,10 +698,11 @@ class SweepLauncher:
         # tee FILE still stands under state/logs; the child owns its
         # own descriptor).
         self._tee_history: dict[str, str] = {}
-        # 261017-uwr (UWR-2): the per-argv pair-matrix cache behind
-        # live_sweep_matrices — keyed by the argv tuple (see
-        # _matrix_for); dead entries' rows persist harmlessly.
-        self._matrix_cache: dict[tuple[str, ...], object] = {}
+        # 261017-uwr (UWR-2) + 261020-blt: the per-argv planned-cells
+        # cache behind live_sweep_plans (the pairs projection
+        # live_sweep_matrices reads) — keyed by the argv tuple (see
+        # _plan_for); dead entries' rows persist harmlessly.
+        self._plan_cache: dict[tuple[str, ...], object] = {}
 
     # ===== The spawn core (D-06/D-10) =====
 
@@ -1307,19 +1308,57 @@ class SweepLauncher:
             return None  # the newest is stale: nothing fresh exists
         return None
 
-    # ===== The live-matrix evidence (261017-uwr, UWR-2) =====
+    # ===== The live-plan evidence (261017-uwr UWR-2 + 261020-blt) =====
 
-    def _matrix_for(self, argv) -> "object":
-        """One argv's pair matrix behind the instance cache (a
-        full-matrix argv enumerates its ~8850 cells ONCE per session,
-        not once per 2s tick). Keyed by the argv tuple — dead entries'
-        cache rows are harmless (an argv that returns still maps to the
-        same matrix)."""
+    def _plan_for(self, argv) -> "object":
+        """One argv's planned cells — (pairs frozenset, seeds tuple) —
+        behind the instance cache (a full-matrix argv enumerates its
+        ~8850 cells ONCE per session, not once per 2s tick). Keyed by
+        the argv tuple — dead entries' cache rows are harmless (an argv
+        that returns still maps to the same plan)."""
         argv_key = tuple(str(element) for element in argv)
-        if argv_key not in self._matrix_cache:
-            self._matrix_cache[argv_key] = run_config.argv_matrix(
+        if argv_key not in self._plan_cache:
+            self._plan_cache[argv_key] = run_config.argv_plan(
                 list(argv_key))
-        return self._matrix_cache[argv_key]
+        return self._plan_cache[argv_key]
+
+    def live_sweep_plans(self) -> dict:
+        """The live-sweep PLANNED CELLS per resolved root — (pairs
+        frozenset, seeds tuple) — the 261020-blt planned-cell union's
+        evidence source (the monitor's Running views synthesize QUEUED
+        rows for planned-but-undiscovered pairs and complete discovered
+        rows' planned-but-unstarted seeds off this map).
+
+        Two evidence sources merged (the ``live_sweep_matrices``
+        precedent):
+
+        1. the REGISTRY's live handles (TUI-launched sweeps) — each
+           entry's ``meta.argv`` (the verbatim launch argv) through
+           ``run_config.argv_plan``;
+        2. ``probe_cli_sweeps()`` — attached/discovered CLI-launched
+           run_sweep processes found in /proc (a root the registry ALSO
+           holds keeps the registry's argv — the exact launch argv is
+           authoritative).
+
+        An unparseable argv maps its root to None — live-but-unknown:
+        that root keeps today's root-wide render, never a false queue.
+        DISPLAY-ONLY evidence (the UWR-2 vocabulary): never gates a
+        launch, a kill, or an exit.
+
+        Returns:
+            dict[str, tuple[frozenset[tuple[str, str]], tuple[int, ...]]
+            | None]: resolved root -> the planned (pairs, seeds); None
+            = live-but-unknown.
+        """
+        plans: dict[str, object] = {}
+        for root in self.live_sweeps():
+            entry = self._live.get(root)
+            if entry is not None:
+                plans[root] = self._plan_for(entry["meta"].argv)
+        for root, argv in probe_cli_sweeps().items():
+            if root not in plans:
+                plans[root] = self._plan_for(argv)
+        return plans
 
     def live_sweep_matrices(self) -> dict:
         """The live-sweep PLANNED pair matrices, per resolved root (the
@@ -1342,20 +1381,17 @@ class SweepLauncher:
         process; ``live_sweeps``/``kill_sweep`` are untouched and [k]
         keeps refusing it with MON_KILL_UNAVAILABLE).
 
+        261020-blt: the leg-0 PROJECTION over ``live_sweep_plans``
+        (the one parse + cache live there; this reader stays
+        byte-compatible by construction).
+
         Returns:
             dict[str, frozenset[tuple[str, str]] | None]: resolved
             root -> the planned (model, task) pair matrix (None =
             live-but-unknown).
         """
-        matrices: dict[str, object] = {}
-        for root in self.live_sweeps():
-            entry = self._live.get(root)
-            if entry is not None:
-                matrices[root] = self._matrix_for(entry["meta"].argv)
-        for root, argv in probe_cli_sweeps().items():
-            if root not in matrices:
-                matrices[root] = self._matrix_for(argv)
-        return matrices
+        return {root: (plan[0] if plan is not None else None)
+                for root, plan in self.live_sweep_plans().items()}
 
     def live_sweep_started(self) -> dict:
         """The live-sweep PROCESS-START epochs per resolved root (the

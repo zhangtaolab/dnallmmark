@@ -1808,3 +1808,42 @@ def test_argv_matrix_out_of_vocabulary_peft_variant_return_none():
             "--models", PREVIEW_MODELS[0], "--tasks", PREVIEW_TASKS[0],
             "--output-root", "/tmp/uwr-bad", *bad]
         assert run_config.argv_matrix(argv) is None, bad
+
+
+def test_argv_plan_returns_pairs_and_seeds():
+    """261020-blt — the planned-CELLS reader: the verified 2x2 argv (two
+    models x two committed-registry task keys, --seeds 42,43,44 — both
+    task keys enumerate for BOTH models; GUE__virus_species_4 does NOT
+    enumerate for plant-dnamamba-6mer and would silently shrink the
+    plan) parses to EXACTLY the 4 (model, task) pairs AND the seeds
+    tuple (the planned-cell union's two legs through ONE parse); an
+    argv without --seeds reads None (live-but-unknown); argv_matrix
+    over the SAME argvs returns the pairs / None through the blt
+    delegation (byte-compatible by construction)."""
+    argv = [
+        sys.executable, str(REAL_REGISTRY_DIR / "run_sweep.py"),
+        "--models", "plant-dnabert-6mer,plant-dnamamba-6mer",
+        "--tasks", "GUE__emp_H3,GUE__prom_300_all",
+        "--seeds", "42,43,44",
+        "--output-root", "/tmp/blt-plan",
+    ]
+    plan = run_config.argv_plan(argv)
+    assert plan == (
+        frozenset({
+            ("plant-dnabert-6mer", "GUE__emp_H3"),
+            ("plant-dnabert-6mer", "GUE__prom_300_all"),
+            ("plant-dnamamba-6mer", "GUE__emp_H3"),
+            ("plant-dnamamba-6mer", "GUE__prom_300_all"),
+        }),
+        (42, 43, 44),
+    ), "the reader couples the pairs and the seed fan-out in one parse"
+    assert run_config.argv_matrix(argv) == plan[0], (
+        "argv_matrix projects the SAME parse (the blt delegation)"
+    )
+    no_seeds = [
+        sys.executable, str(REAL_REGISTRY_DIR / "run_sweep.py"),
+        "--models", "plant-dnabert-6mer,plant-dnamamba-6mer",
+        "--output-root", "/tmp/blt-no-seeds",
+    ]
+    assert run_config.argv_plan(no_seeds) is None
+    assert run_config.argv_matrix(no_seeds) is None

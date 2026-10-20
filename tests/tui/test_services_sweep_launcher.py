@@ -1495,15 +1495,17 @@ def _write_proc_btime(proc_root, btime):
 
 
 def _probe_argv(models="plant-dnabert-6mer", output_root=None,
-               driver=None, extra=()):
-    """One parseable run_sweep argv (the compose_argv shape)."""
+               driver=None, extra=(), tasks="GUE__emp_H3", seeds="42"):
+    """One parseable run_sweep argv (the compose_argv shape). 261020-blt:
+    ``tasks``/``seeds`` join ADDITIVELY (defaults keep every existing
+    call site's argv byte-identical)."""
     return [
         sys.executable,
         str(driver if driver is not None
             else REPO_ROOT / "pipeline" / "run_sweep.py"),
         "--models", models,
-        "--tasks", "GUE__emp_H3",
-        "--seeds", "42",
+        "--tasks", tasks,
+        "--seeds", seeds,
         "--output-root",
         str(output_root if output_root is not None else "/tmp/uwr-probe"),
         *extra,
@@ -1700,6 +1702,78 @@ def test_live_sweep_matrices_merges_registry_and_probe_behind_cache(
     again = launcher.live_sweep_matrices()
     assert again == matrices
     assert len(calls) == 2, "the per-argv cache: no re-enumeration"
+
+
+def test_live_sweep_plans_carries_pairs_and_seeds(monkeypatch, tmp_path):
+    """261020-blt — live_sweep_plans(): the planned CELLS per root — a
+    registry entry spawned with the multi-model 2x2 argv maps its root
+    to (the 4-pair frozenset, (42, 43, 44)); a monkeypatched probe root
+    joins behind the shared per-argv cache; a broken (no---seeds) argv
+    maps None (live-but-unknown — that root keeps the legacy render,
+    never a false queue). live_sweep_matrices over the SAME launcher
+    returns exactly the leg-0 projection / None (the delegation proof),
+    and the enumerate_matrix spy counts ONCE per distinct argv across
+    BOTH methods (the per-argv plan cache)."""
+    registry_argv = _probe_argv(
+        models="plant-dnabert-6mer,plant-dnamamba-6mer",
+        tasks="GUE__emp_H3,GUE__prom_300_all", seeds="42,43,44")
+    launcher = _register_live_sweep(
+        monkeypatch, tmp_path, registry_argv, tmp_path / "reg" / "root")
+
+    probed_root = tmp_path / "cli" / "root"
+    broken_argv = [
+        sys.executable, str(REPO_ROOT / "pipeline" / "run_sweep.py"),
+        "--models", "plant-dnabert-6mer",
+        "--output-root", str(tmp_path / "cli" / "broken")]
+    monkeypatch.setattr(sweep_launcher, "probe_cli_sweeps", lambda: {
+        str(probed_root.resolve()): tuple(
+            _probe_argv(models="plant-dnagpt-BPE", output_root=probed_root)),
+        str((tmp_path / "cli" / "broken").resolve()): tuple(broken_argv),
+    })
+
+    real_enumerate = run_sweep.enumerate_matrix
+    calls = []
+
+    def spy(*args, **kwargs):
+        calls.append(1)
+        return real_enumerate(*args, **kwargs)
+
+    monkeypatch.setattr(run_sweep, "enumerate_matrix", spy)
+
+    plans = launcher.live_sweep_plans()
+
+    registry_root = str((tmp_path / "reg" / "root").resolve())
+    four_pairs = frozenset({
+        ("plant-dnabert-6mer", "GUE__emp_H3"),
+        ("plant-dnabert-6mer", "GUE__prom_300_all"),
+        ("plant-dnamamba-6mer", "GUE__emp_H3"),
+        ("plant-dnamamba-6mer", "GUE__prom_300_all"),
+    })
+    assert plans[registry_root] == (four_pairs, (42, 43, 44)), (
+        "the registry's exact launch argv carries the 4-pair plan AND "
+        "the seed fan-out"
+    )
+    assert plans[str(probed_root.resolve())] == (
+        frozenset({("plant-dnagpt-BPE", "GUE__emp_H3")}), (42,))
+    assert plans[str((tmp_path / "cli" / "broken").resolve())] is None, (
+        "an unparseable argv is live-but-unknown (None), never a plan"
+    )
+
+    # the delegation proof: the matrices projection over the SAME
+    # launcher reads leg 0 / None (the registry argv authoritative)
+    matrices = launcher.live_sweep_matrices()
+    assert matrices[registry_root] == four_pairs
+    assert matrices[str(probed_root.resolve())] == frozenset(
+        {("plant-dnagpt-BPE", "GUE__emp_H3")})
+    assert matrices[str((tmp_path / "cli" / "broken").resolve())] is None
+
+    # the per-argv cache is shared across BOTH methods: two parseable
+    # argvs enumerated exactly twice (the broken argv never enumerates),
+    # and the repeat calls re-read the cache
+    assert len(calls) == 2, "two DISTINCT parseable argvs enumerate twice"
+    assert launcher.live_sweep_plans() == plans
+    assert launcher.live_sweep_matrices() == matrices
+    assert len(calls) == 2, "the shared per-argv plan cache: no re-enumeration"
 
 
 def test_live_sweep_matrices_probe_root_absent_from_registry_only(

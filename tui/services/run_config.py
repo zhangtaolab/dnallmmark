@@ -1285,6 +1285,10 @@ def argv_matrix(argv, registry_dir=None) -> "frozenset[tuple[str, str]] | None":
     ``--subset_file`` is not re-filtered — a subset-excluded pair reads
     live (renders queued, not interrupted) while its sweep runs.
 
+    261020-blt: this is the leg-0 PROJECTION over ``argv_plan`` (the
+    one parse body lives there; the pairs/seeds coupling keeps this
+    reader byte-compatible by construction).
+
     Args:
         argv: the launch argv (the registry's ``meta.argv`` or a probed
             ``/proc`` cmdline — any str sequence).
@@ -1294,6 +1298,42 @@ def argv_matrix(argv, registry_dir=None) -> "frozenset[tuple[str, str]] | None":
     Returns:
         frozenset[tuple[str, str]] | None: the planned pair matrix, or
         None for an unparseable/non-sweep argv.
+    """
+    plan = argv_plan(argv, registry_dir)
+    return plan[0] if plan is not None else None
+
+
+def argv_plan(
+        argv, registry_dir=None
+) -> "tuple[frozenset[tuple[str, str]], tuple[int, ...]] | None":
+    """Recover a sweep argv's PLANNED CELLS — the (model, task) pair
+    matrix PLUS the seed fan-out, the compose_argv inverse's full plan
+    (261020-blt).
+
+    The planned-cell-union evidence source for the monitor's Running
+    views: a sweep's plan renders even where the driver has not yet
+    mkdir'd a cell (it reaches a cell only when it runs it), so the
+    screen synthesizes QUEUED rows for planned-but-undiscovered pairs
+    and completes discovered rows' planned-but-unstarted seeds. The
+    parse is ``argv_matrix``'s own body (ONE parse, not a parallel
+    reimplementation — a wrong plan would fabricate rows/counts); every
+    underivable shape (no ``run_sweep.py`` element, a seedless or
+    unparseable argv, a ``--peft``/``--config-variant``/``--curve``
+    outside the vocabularies, an unreadable ``--from-failures``
+    manifest) reads None — live-but-unknown, that root keeps today's
+    render, never a guessed pair or seed. Through this reader pairs
+    non-None IMPLIES seeds non-empty (the seedless argv refuses above).
+
+    Args:
+        argv: the launch argv (the registry's ``meta.argv`` or a probed
+            ``/proc`` cmdline — any str sequence).
+        registry_dir: the enumeration registry dir override; None
+            resolves the committed ``pipeline/`` default.
+
+    Returns:
+        tuple[frozenset[tuple[str, str]], tuple[int, ...]] | None: the
+        planned (model, task) pairs and the planned seeds, or None for
+        an unparseable/non-sweep argv.
     """
     elements = [str(element) for element in argv]
     if not any(element.endswith("run_sweep.py") for element in elements):
@@ -1337,7 +1377,7 @@ def argv_matrix(argv, registry_dir=None) -> "frozenset[tuple[str, str]] | None":
             if (run_sweep.base_model_name(cell[0], peft, config_variant),
                 cell[1]) in failure_pairs
         ]
-    return frozenset((str(cell[0]), str(cell[1])) for cell in cells)
+    return frozenset((str(cell[0]), str(cell[1])) for cell in cells), seeds
 
 
 # =====================================================================

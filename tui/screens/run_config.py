@@ -367,6 +367,16 @@ class LauncherBackend:
         the stale-checkpoint guard is dead in production wiring."""
         return self._launcher.live_sweep_started()
 
+    def live_sweep_plans(self) -> dict:
+        """The live sweeps' planned CELLS — (pairs frozenset, seeds
+        tuple) per resolved root (261020-blt planned-cell union): the
+        facade lesson again — app.py build_monitor_screen passes THIS
+        facade as the monitor SCREEN's launcher_service, so without the
+        forward the screen's tolerant getattr reads nothing and the
+        union is dead in production wiring (pinned end-to-end by the
+        pty lane's probed-sleeper member)."""
+        return self._launcher.live_sweep_plans()
+
     def tee_path_for(self, root: str) -> "str | None":
         return self._launcher.tee_path_for(root)
 
