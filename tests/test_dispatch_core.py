@@ -54,6 +54,15 @@ Coverage named by the plan (SC ids are the phase acceptance tests):
   float fractions, a deliberately ``--``-containing name pair), each
   claim JSON's cell key agrees with its filename's encoded fields, and
   the worker tee log naming is frozen.
+- **Mode coexistence (13-02 Task 2, MGPU-06)** — ``--merge`` refuses
+  ANY root set carrying run-recorded dispatch evidence
+  (``dispatch_state.json``, the ``dispatch_ledger`` dir, or a manifest
+  ``orchestrator_mode: "dispatch"`` cell marker) with the named
+  "needs no merge" problem BEFORE any copy; a static-only root set
+  merges exactly as before (the control); an explicit ``--mode static``
+  launch is pinned byte-identical to the default at the argv /
+  worker-root / tee-log level; the dispatch x merge combination
+  refusal is re-asserted adjacent to the merge suites.
 
 Fake children derive the cell dir EXACTLY the way the real child does —
 root + SAVE-NAME model + task + ``seed_{--seed}`` (under ``--peft`` /
@@ -1448,3 +1457,234 @@ def test_malformed_claims_requeue_never_crash_never_skip(
             encoding="utf-8"))
     assert state["counts"] == {
         "total": 3, "completed": 3, "failed": 0, "skipped": 0}
+
+
+# ===== 13-02 Task 2: mode coexistence — merge refusal + static pins =====
+
+
+def _write_static_worker(root, model, task="task-x", seed=42):
+    """One static-style worker root fixture: a manifest + failures file
+    in the run_sweep payload shape plus one cell's allowlisted
+    artifacts (the merge-happy-path/control idiom, local copy)."""
+    root.mkdir(parents=True, exist_ok=True)
+    cell_dir = run_sweep.cell_dir_for(root, model, task, seed)
+    cell_dir.mkdir(parents=True, exist_ok=True)
+    (cell_dir / run_sweep.METRICS_NAME).write_text(
+        json.dumps({"eval_loss": 0.5}), encoding="utf-8")
+    (cell_dir / run_sweep.RESUME_MARKER).write_text(
+        '{"global_step": 1}', encoding="utf-8")
+    payload = {
+        "matrix": {
+            "models": [model], "tasks": [task], "seeds": [seed],
+            "output_root": str(root),
+        },
+        "cells": [{
+            "model": model, "task": task, "seed": seed,
+            "status": "completed", "output_dir": str(cell_dir),
+        }],
+    }
+    (root / run_sweep.MANIFEST_NAME).write_text(
+        json.dumps(payload), encoding="utf-8")
+    (root / run_sweep.FAILURES_NAME).write_text("[]", encoding="utf-8")
+    return root
+
+
+def test_root_has_dispatch_evidence_marker_matrix(tmp_path):
+    """The evidence helper reads ONLY the three run-recorded markers:
+    each alone triggers; a bare static root (manifest without the
+    marker, no manifest at all, an absent root, or an unreadable
+    manifest) carries no evidence — that absence IS the static world
+    (MGPU-06 / D13-07, never directory-shape inference)."""
+    helper = run_sweep_shard._root_has_dispatch_evidence
+
+    static_root = _write_static_worker(tmp_path / "static", "model-a")
+    assert helper(static_root) is False
+
+    empty_root = tmp_path / "empty"
+    empty_root.mkdir()
+    assert helper(empty_root) is False
+    assert helper(tmp_path / "absent") is False
+
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    (state_root / dispatch_core.DISPATCH_STATE_NAME).write_text(
+        "{}", encoding="utf-8")
+    assert helper(state_root) is True
+
+    ledger_root = tmp_path / "ledger-only"
+    dispatch_core.ledger_dir_for(ledger_root).mkdir(parents=True)
+    assert helper(ledger_root) is True
+
+    marker_root = _write_static_worker(tmp_path / "marker", "model-a")
+    manifest = json.loads(
+        (marker_root / run_sweep.MANIFEST_NAME).read_text(
+            encoding="utf-8"))
+    manifest["cells"][0]["orchestrator_mode"] = "dispatch"
+    (marker_root / run_sweep.MANIFEST_NAME).write_text(
+        json.dumps(manifest), encoding="utf-8")
+    assert helper(marker_root) is True
+
+    corrupt_root = tmp_path / "corrupt"
+    corrupt_root.mkdir()
+    (corrupt_root / run_sweep.MANIFEST_NAME).write_text(
+        "{ torn", encoding="utf-8")
+    assert helper(corrupt_root) is False, (
+        "an unreadable manifest carries no marker"
+    )
+
+
+def test_merge_refuses_dispatch_state_evidence_at_base(
+        tmp_path, monkeypatch):
+    """MGPU-06 mixed-mode refusal: a static-style worker pair with
+    dispatch_state.json planted at the BASE root refuses with the named
+    problem and NO file is copied (the base still holds only the
+    evidence file — the refusal lands before the copy pass)."""
+    base = (tmp_path / "finetuned").resolve()
+    _write_static_worker(run_sweep_shard.worker_root(base, 0), "model-a")
+    _write_static_worker(run_sweep_shard.worker_root(base, 1), "model-b")
+    base.mkdir(parents=True, exist_ok=True)
+    (base / dispatch_core.DISPATCH_STATE_NAME).write_text(
+        "{}", encoding="utf-8")
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--merge", "--workers", "2", "--output-root", str(base)])
+    message = str(excinfo.value)
+    assert f"dispatch root {base} needs no merge" in message
+    assert "ONE shared root" in message
+    assert sorted(path.name for path in base.iterdir()) == [
+        dispatch_core.DISPATCH_STATE_NAME], (
+        "refused BEFORE any copy — no merged manifest, no cell files"
+    )
+
+
+def test_merge_refuses_worker_root_ledger_evidence(tmp_path, monkeypatch):
+    """The refusal fires for evidence on a DISCOVERED WORKER ROOT too
+    (the dispatch_ledger dir marker): the merge names that root and
+    never creates the merged root."""
+    base = (tmp_path / "finetuned").resolve()
+    _write_static_worker(run_sweep_shard.worker_root(base, 0), "model-a")
+    w1 = _write_static_worker(
+        run_sweep_shard.worker_root(base, 1), "model-b")
+    dispatch_core.ledger_dir_for(w1).mkdir()  # evidence on the worker
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--merge", "--workers", "2", "--output-root", str(base)])
+    assert f"dispatch root {w1} needs no merge" in str(excinfo.value)
+    assert not base.exists(), "the merged root is never created"
+
+
+def test_merge_refuses_dry_run_marker_only_evidence(tmp_path, monkeypatch):
+    """A root whose ONLY evidence is the manifest orchestrator_mode
+    marker (exactly what a dispatch dry-run root carries) refuses the
+    same named way — the plan artifact is dispatch evidence."""
+    base = (tmp_path / "finetuned").resolve()
+    w0 = _write_static_worker(run_sweep_shard.worker_root(base, 0),
+                              "model-a")
+    _write_static_worker(run_sweep_shard.worker_root(base, 1), "model-b")
+    manifest = json.loads(
+        (w0 / run_sweep.MANIFEST_NAME).read_text(encoding="utf-8"))
+    manifest["cells"][0]["orchestrator_mode"] = "dispatch"
+    (w0 / run_sweep.MANIFEST_NAME).write_text(
+        json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--merge", "--workers", "2", "--output-root", str(base)])
+    assert f"dispatch root {w0} needs no merge" in str(excinfo.value)
+    assert not base.exists()
+
+
+def test_static_mode_explicit_pins_argv_roots_and_logs(
+        tmp_path, monkeypatch):
+    """EDGE MGPU-06/empty full pin: an explicit --mode static launch
+    produces the identical captured argv list (worker roots included),
+    identical spawn kwargs, and identical tee log file names as the
+    same launch without --mode; the base root is never written either
+    way (static writes ONLY frozen sibling roots)."""
+    registry_dir = make_registry(tmp_path)
+    clock = lambda: datetime(2026, 10, 20, 6, 0, 0, tzinfo=UTC)
+    stamp = "20261020_060000"
+    captured = {}
+    for label, extra in (("default", []), ("explicit",
+                                           ["--mode", "static"])):
+        base = (tmp_path / f"finetuned-{label}").resolve()
+        calls = []
+        run_cli(monkeypatch, [
+            *extra,
+            "--workers", "2", "--models", "model-a,model-b",
+            "--tasks", "task-x", "--seeds", "42",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_fake_spawner(calls), clock=clock)
+        captured[label] = (base, calls)
+
+    def normalized(call, root):
+        argv = [element.replace(root, "ROOT") for element in call["argv"]]
+        kwargs = dict(call["kwargs"])
+        kwargs["stdout"] = Path(
+            kwargs["stdout"].name.replace(root, "ROOT"))
+        return {"argv": argv, "kwargs": kwargs}
+
+    base_default, calls_default = captured["default"]
+    base_explicit, calls_explicit = captured["explicit"]
+    assert [normalized(c, str(base_default)) for c in calls_default] == [
+        normalized(c, str(base_explicit)) for c in calls_explicit], (
+        "explicit --mode static is byte-identical to the default launch"
+    )
+    for i in (0, 1):
+        argv_root = flag_value(calls_default[i]["argv"], "--output-root")
+        assert argv_root == str(
+            run_sweep_shard.worker_root(base_default, i)), (
+            "the worker ROOT rides the argv via the frozen naming"
+        )
+        log_default = run_sweep_shard.worker_log_path(
+            base_default, i, stamp)
+        log_explicit = run_sweep_shard.worker_log_path(
+            base_explicit, i, stamp)
+        assert log_default.is_file() and log_explicit.is_file(), (
+            "both launches tee their worker logs (WR-02)"
+        )
+        assert log_default.name.replace(
+            base_default.name, "ROOT") == log_explicit.name.replace(
+            base_explicit.name, "ROOT"), (
+            "identical tee log names modulo the launch dir (the log is "
+            "a SIBLING of the base root, so its name embeds it by design)"
+        )
+    assert not base_default.exists() and not base_explicit.exists(), (
+        "static mode never writes the base root (either spelling)"
+    )
+
+
+def test_dispatch_merge_combo_refusal_reasserted(tmp_path, monkeypatch):
+    """EDGE MGPU-06/ordering adjacency: --mode dispatch combined with
+    --merge on one command line refuses with the 13-01 named problem
+    BEFORE any root is written."""
+    base = (tmp_path / "finetuned").resolve()
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--merge", "--workers", "1",
+            "--output-root", str(base),
+        ])
+    message = str(excinfo.value)
+    assert "--mode dispatch cannot combine with --merge" in message
+    assert "need no merge" in message
+    assert not base.exists()
+
+
+def test_merge_happy_path_control_without_evidence(tmp_path, monkeypatch):
+    """Control: a static-only root set (zero dispatch evidence) merges
+    exactly as before — the merged manifest lands with the union cells
+    and both cells' allowlisted files copy under the merged root (the
+    no-evidence behavior is untouched)."""
+    base = (tmp_path / "finetuned").resolve()
+    _write_static_worker(run_sweep_shard.worker_root(base, 0), "model-a")
+    _write_static_worker(run_sweep_shard.worker_root(base, 1), "model-b")
+    run_cli(monkeypatch, [
+        "--merge", "--workers", "2", "--output-root", str(base)])
+    manifest = json.loads(
+        (base / run_sweep.MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert sorted(cell["model"] for cell in manifest["cells"]) == [
+        "model-a", "model-b"]
+    for model in ("model-a", "model-b"):
+        cell_dir = run_sweep.cell_dir_for(base, model, "task-x", 42)
+        assert (cell_dir / run_sweep.METRICS_NAME).is_file()
+        assert (cell_dir / run_sweep.RESUME_MARKER).is_file()

@@ -725,6 +725,66 @@ def _resolve_cell_rel(output_dir, wroot, index, problems):
         return None
 
 
+def _root_has_dispatch_evidence(path):
+    """True when ``path`` carries run-recorded dispatch-mode evidence.
+
+    Reads ONLY the three markers a dispatch run itself writes (13-02,
+    MGPU-06 / D13-07 — evidence-based, NEVER directory-shape inference):
+    ``dispatch_state.json`` at the root (written before any claim),
+    the ``dispatch_ledger`` dir (claims + the singleton lock), or a
+    ``sweep_manifest.json`` whose cells carry the
+    ``orchestrator_mode: "dispatch"`` marker (the 13-02 dry-run plan
+    artifact — the one evidence a dry-run root ever carries). A root
+    with NONE of the three is the static world: no evidence, and the
+    merge proceeds exactly as before. An absent or unreadable manifest
+    carries no marker (fail-open only in the absence of EVERY marker,
+    which IS the static world — T-13-08).
+
+    Args:
+        path (Path | str): the root to inspect (need not exist).
+
+    Returns:
+        bool: True iff any run-recorded dispatch marker is present.
+    """
+    # Lazy import (the 09-06 cycle-breaking precedent, as in main()):
+    # dispatch_core imports THIS module at its top (it reuses
+    # _parse_gpus and the log-stamp format), so a module-top import
+    # here would be circular.
+    import dispatch_core
+
+    root = Path(path)
+    if (root / dispatch_core.DISPATCH_STATE_NAME).is_file():
+        return True
+    if (root / dispatch_core.LEDGER_DIR_NAME).is_dir():
+        return True
+    manifest_path = root / run_sweep.MANIFEST_NAME
+    if not manifest_path.is_file():
+        return False
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return False  # an unreadable manifest carries no marker
+    if not isinstance(payload, dict):
+        return False
+    cells = payload.get("cells")
+    if not isinstance(cells, list):
+        return False
+    return any(
+        isinstance(cell, dict)
+        and cell.get("orchestrator_mode") == "dispatch"
+        for cell in cells)
+
+
+def _dispatch_merge_refusal(path):
+    """Build the named dispatch-root merge refusal (MGPU-06, T-13-06)."""
+    return (
+        f"dispatch root {path} needs no merge — dispatch mode writes "
+        "ONE shared root (MGPU-06); refusing before any copy (merging "
+        "dispatch evidence would double-count its cells into the "
+        "consumer root)"
+    )
+
+
 def run_merge(args, passthrough):
     """Merge N frozen-named worker roots into one verified consumer root.
 
@@ -732,7 +792,10 @@ def run_merge(args, passthrough):
     discipline): ``--workers < 1``, a non-empty passthrough (merge takes
     no sweep flags), a provided ``--models`` (WR-06: the worker
     manifests are the merge's source of truth — never silently
-    ignored), ``--dry-run`` combined with ``--merge``, a missing
+    ignored), ``--dry-run`` combined with ``--merge``, ANY root in the
+    merge's set carrying run-recorded dispatch evidence (13-02, MGPU-06
+    — dispatch roots need no merge; evidence-based, never directory-shape
+    inference), a missing
     worker root, a worker root without its sweep_manifest.json, an
     unreadable/non-object manifest or failures file, a manifest whose
     matrix/cells are the wrong shape, a cell whose output_dir does not
@@ -801,6 +864,24 @@ def run_merge(args, passthrough):
 
     base_root = Path(args.output_root).resolve()
     worker_roots = [worker_root(base_root, i) for i in range(workers)]
+
+    # Dispatch-evidence refusal (13-02, MGPU-06 / T-13-06): ANY root in
+    # the merge's set carrying run-recorded dispatch evidence — the
+    # merged-target base root OR an existing worker root — refuses by
+    # name BEFORE any copy. Dispatch mode writes ONE shared root with
+    # ordinary per-cell subpaths, so its roots need no merge and merging
+    # one would double-count its cells into the consumer root (the
+    # gen_progress/export hazard). Reads ONLY the run-recorded markers
+    # (dispatch_state.json / dispatch_ledger / the manifest
+    # orchestrator_mode marker — D13-07), never directory shape;
+    # MERGE_ALLOWLIST, the copy pass, and every no-evidence static
+    # behavior below stay untouched.
+    if _root_has_dispatch_evidence(base_root):
+        problems.append(_dispatch_merge_refusal(base_root))
+    for wroot in worker_roots:
+        if wroot != base_root and wroot.is_dir() and \
+                _root_has_dispatch_evidence(wroot):
+            problems.append(_dispatch_merge_refusal(wroot))
 
     manifests = {}
     failures = {}
