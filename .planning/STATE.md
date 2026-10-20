@@ -5,16 +5,16 @@ milestone_name: 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
 current_phase: 14
 current_phase_name: 编排运行视图与失败恢复
 status: executing
-stopped_at: Phase 13 complete, ready to plan Phase 14
-last_updated: "2026-10-20T07:35:33.455Z"
+stopped_at: Completed 14-01-PLAN.md
+last_updated: "2026-10-20T08:15:16.493Z"
 last_activity: 2026-10-20
-last_activity_desc: Phase 13 complete, transitioned to Phase 14
-state_head: 152fe297bb64dac6ad0acf052b03e41f49359f81
+last_activity_desc: Phase 14 execution started
+state_head: 7fb7424b96ff02c2dca26f267ff34b5762134f47
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 5
-  completed_plans: 2
+  completed_plans: 3
   percent: 17
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 
 ## Current Position
 
-Phase: 14 (编排运行视图与失败恢复) — READY TO EXECUTE
-Plan: Not started
+Phase: 14 (编排运行视图与失败恢复) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-10-20 — Phase 13 complete, transitioned to Phase 14
+Last activity: 2026-10-20 — Phase 14 execution started
 
 ## Performance Metrics
 
@@ -109,6 +109,7 @@ Last activity: 2026-10-20 — Phase 13 complete, transitioned to Phase 14
 | Phase quick-261018-kvj PP01 | 43 min | 3 tasks | 10 files |
 | Phase 13 P01 | 17 min | 2 tasks | 3 files |
 | Phase 13 P02 | 46min | 2 tasks | 4 files |
+| Phase 14 P01 | 24 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -263,6 +264,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 13]: 13-02: dispatch dry-run = the static dry-run projection verbatim (run_sweep._manifest_payload/_write_json, status 'planned', cell_dir_for output_dirs) + ONE orchestrator_mode:'dispatch' sweep-flags marker; branch sits after the zero-cell refusal and before the lock — root gains ONLY sweep_manifest.json; 13-01's named dry-run refusal superseded as staged
 - [Phase 13]: 13-02: merge refusal is evidence-based (D13-07): _root_has_dispatch_evidence reads dispatch_state.json / dispatch_ledger dir / the manifest orchestrator_mode cell marker ONLY (never directory shape); the named 'dispatch root {path} needs no merge — dispatch mode writes ONE shared root (MGPU-06)' fires in run_merge's collect-all for the base root and any existing worker root BEFORE any copy
 - [Phase 13]: 13-02: dispatch_core.py joins lint via Makefile PHASE13_MODULES existence-guard (Makefile-only, ci.yml blob hash pinned 33d2252e; scratch-run F401 probe proved the slot gates the module); static mode pinned byte-identical with/without --mode static at argv/worker-root/tee-log level (tee-log names root-normalized — the log embeds the base name by design)
+- [Phase 14]: 14-01: dispatch_state.json frozen at schema v2 (D14-01) — queue_depth DERIVED at publish under state_lock (total - completed - failed - skipped - in_flight_count, the Pitfall 3 consistent-snapshot ruling; identity pinned at every write), workers[] per --workers index with in_flight set at claim/cleared at finalize, failures bounded list of compact {model,task,seed,fraction,finished_at}; schemas/dispatch_state.json committed same-change (draft 2020-12, strict, D14-04)
+- [Phase 14]: 14-01: renderer lives INSIDE dispatch_core.py (Q6) hooked at _write_state after the atomic write under state_lock, printing the exact frozen payload with flush=True; output errors swallowed (T-14-01) so a dying view never fails a cell; claim-time write is the 8th call site (D14-03) — zero Makefile change, ci.yml byte-identical
+- [Phase 14]: 14-01: flush proven on real lanes — pty test reads the first [Dispatch] header within 3s while a 5s-holding fake cell keeps the drain alive; pipe leg strips PYTHONUNBUFFERED so block buffering cannot pass trivially; pexpect exitstatus must be reaped via close() after expect(EOF) (the reaping contract, fixed on resume)
 
 ### Pending Todos
 
@@ -333,8 +337,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T05:25:12.339Z
-Stopped at: Phase 13 complete, ready to plan Phase 14
+Last session: 2026-10-20T08:15:16.368Z
+Stopped at: Completed 14-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
