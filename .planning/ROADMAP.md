@@ -58,7 +58,16 @@ Plans:
 
 **Goal**: The dispatch orchestrator is proven on the local 2× RTX 5090 — the docs/multi-gpu.md N=2 smoke passes (WINDOWS #21 closed, D-05 revised) and a small real sweep over pre-materialized 5% stratified subsets runs both GPUs end-to-end through merge and the data chain
 **Requirements**: VAL-01, VAL-02, VAL-03
-**Plans**: 0
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+- [ ] 15-01-PLAN.md — N=2 dispatch smoke on the local 2×5090 (smoke-pair acquisition via modelscope, 2-cell real dispatch run, D15-02 pass criteria + consumption dry-run) + docs/multi-gpu.md dispatch-mode rewrite, WINDOWS #21 closure, PROJECT.md D-05 row (VAL-01)
+- [ ] 15-02-PLAN.md — Subset generator `script/make_subset_datasets.py` (stdlib-only, stratified 5%, floor-of-1 small-split rule, subset registry with measured counts) + tests/test_subset_datasets.py byte-identity/isolation/fail-fast pins + .gitignore/Makefile entries (VAL-02)
+
+**Wave 2** *(blocked on Wave 1: smoke must pass per D15-04; generator + test file from 15-02)*
+- [ ] 15-03-PLAN.md — Real subset generation (105/11/117 + 598/74/74) + 12-cell dual-GPU dispatch sweep (2 models × 2 subset tasks × 3 seeds, one shared root, 0 skipped) + zero-modification export→summarize consumption proof with archived phase artifacts + D15-15 real-artifact pytest checks (VAL-03)
+
 **Success criteria**:
 1. N=2 smoke procedure completes successfully on the local box; WINDOWS #21 closed; D-05 machine-role revision recorded (maintainer-authorized GPU run)
 2. Subset generator: deterministic stratified 5% subsets with measured row counts in a dedicated subset registry/config; run-twice byte-identity; official/custom registries untouched
