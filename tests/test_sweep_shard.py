@@ -1660,3 +1660,419 @@ def test_n1_degenerate_real_subprocess_smoke(tmp_path, monkeypatch):
         "the launch mode writes ONLY frozen sibling roots — never the "
         "base root itself (shared roots are FORBIDDEN, Pitfall 1)"
     )
+
+
+# ===== cleanup mode (14-02, MGPU-05 / D14-09..D14-12 — verify, then
+# gate, then remove; replaces the manual rm -rf runbook step) =====
+
+
+def make_fake_runner(calls, returncode=0, stdout="", stderr=""):
+    """Injectable export-dry-run runner seam: captures (argv, kwargs) per
+    call and returns a CompletedProcess (run_cleanup's default seam is
+    subprocess.run with capture_output=True, text=True — D14-10 leg A)."""
+
+    def runner(argv, **kwargs):
+        calls.append({"argv": list(argv), "kwargs": kwargs})
+        return subprocess.CompletedProcess(
+            argv, returncode=returncode, stdout=stdout, stderr=stderr)
+
+    return runner
+
+
+def run_cleanup_direct(argv, runner=None, confirm_input=None):
+    """Invoke run_cleanup directly with injected seams over parsed argv
+    (main() routes --cleanup to it with the defaults; the injections are
+    the test seams — runner for the export subprocess, confirm_input for
+    the typed-phrase gate reader)."""
+    args, passthrough = run_sweep_shard.parse_args(argv)
+    run_sweep_shard.run_cleanup(
+        args, passthrough, runner=runner, confirm_input=confirm_input)
+
+
+def cleanup_phrase(base):
+    """The exact typed phrase the gate requires: the RESOLVED output-root
+    string (Q4 ruling — you type what gets cleaned around)."""
+    return str(Path(str(base)).resolve())
+
+
+def write_worker_logs(base, workers=2):
+    """Materialize per-launch tee logs ({base}-mgpu-w{i}-{stamp}.log)
+    beside the worker roots — two launches per worker (the WR-02
+    relaunch shape)."""
+    logs = []
+    for i in range(workers):
+        for stamp in ("20261020_080000", "20261020_090000"):
+            log = run_sweep_shard.worker_log_path(base, i, stamp)
+            log.write_text(f"w{i} launch {stamp}\n", encoding="utf-8")
+            logs.append(log)
+    return logs
+
+
+def merged_fixture(tmp_path, monkeypatch):
+    """The two-worker pair MERGED into one consumer root (the cleanup
+    precondition), with per-launch logs materialized beside the roots."""
+    base, roots = make_worker_pair(tmp_path)
+    run_merge_cli(monkeypatch, base)
+    logs = write_worker_logs(base)
+    return base, roots, logs
+
+
+def _cleanup_argv(base, workers=2, yes=None):
+    """The plain cleanup command line (phrase appended when given)."""
+    argv = ["--cleanup", "--workers", str(workers),
+            "--output-root", str(base)]
+    if yes is not None:
+        argv += ["--yes", yes]
+    return argv
+
+
+def test_cleanup_happy_path_removes_roots_and_logs_keeps_merged(
+        tmp_path, monkeypatch, capsys):
+    """The happy path: both verification legs green (fake export dry-run
+    rc 0 + merged manifest cell set == union of worker sets) -> the
+    removal plan lists every path by name -> the exact typed phrase
+    authorizes removal of the worker ROOTS and their per-launch LOGS
+    (Q5) while the merged root stays INTACT and logs of workers outside
+    the set stay untouched (scope discipline, T-14-03)."""
+    base, roots, logs = merged_fixture(tmp_path, monkeypatch)
+    stranger_log = Path(f"{base}-mgpu-w2-20261020_080000.log")
+    stranger_log.write_text("worker 2 is not in this cleanup\n",
+                            encoding="utf-8")
+    calls = []
+
+    run_cleanup_direct(
+        _cleanup_argv(base, yes=cleanup_phrase(base)),
+        runner=make_fake_runner(
+            calls,
+            stdout=("[Dry-run] 4 run record(s) across 2 model(s) / "
+                    "2 task(s)\n")))
+
+    # leg A: exactly ONE export dry-run subprocess, equals-form root arg
+    assert len(calls) == 1, "exactly one export dry-run verification call"
+    argv = calls[0]["argv"]
+    assert argv[0] == sys.executable, "the seam uses the same interpreter"
+    assert Path(argv[1]).name == "export_runs.py"
+    assert "--dry-run" in argv
+    assert f"--input-root={cleanup_phrase(base)}" in argv, (
+        "equals-form argument — a leading-dash root path can never "
+        "re-parse as a flag (T-14-05)"
+    )
+    assert calls[0]["kwargs"].get("capture_output") is True
+    # the removal plan listed every path BEFORE anything was touched
+    out = capsys.readouterr().out
+    assert "[Dry-run] 4 run record(s)" in out, (
+        "the export counts line is echoed (leg A observable)"
+    )
+    for path in [*roots, *logs]:
+        assert str(path) in out, f"removed path not listed first: {path}"
+    for root in roots:
+        assert not root.exists(), f"worker root must be gone: {root}"
+    for log in logs:
+        assert not log.exists(), f"per-launch log must be gone: {log}"
+    # the merged root is NEVER a removal target
+    assert (base / run_sweep.MANIFEST_NAME).is_file()
+    assert (base / "model-a" / "task-x" / "seed_42"
+            / "run_record.json").is_file()
+    # logs of workers outside the --workers set stay (frozen scope)
+    assert stranger_log.is_file()
+
+
+def test_cleanup_refuses_when_export_leg_fails(tmp_path, monkeypatch):
+    """A non-zero export dry-run returncode refuses naming the code AND
+    the captured output tail; every worker root stays byte- and
+    mtime-identical (the subprocess's non-zero exit IS the refusal
+    signal — D14-10)."""
+    base, roots, _logs = merged_fixture(tmp_path, monkeypatch)
+    before = {root: _snapshot_tree(root) for root in roots}
+    calls = []
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_cleanup_direct(
+            _cleanup_argv(base, yes=cleanup_phrase(base)),
+            runner=make_fake_runner(calls, returncode=1,
+                                    stderr="ValueError: boom-tail"))
+
+    message = str(excinfo.value)
+    assert "exited 1" in message
+    assert "boom-tail" in message, "the captured output tail is named"
+    assert "nothing removed" in message
+    for root in roots:
+        assert _snapshot_tree(root) == before[root], (
+            f"a refused cleanup must leave {root} untouched"
+        )
+
+
+def test_cleanup_refuses_on_manifest_cell_mismatch(
+        tmp_path, monkeypatch):
+    """Leg B: the merged manifest's (model, task, seed) cell set must
+    EQUAL the union of the worker manifest sets — a hand-dropped merged
+    cell refuses naming the cell with a sorted, deterministic diagnostic;
+    worker roots untouched (Pitfall 6 false-green: manifest and tree are
+    two different truths, both legs must hold)."""
+    base, roots, _logs = merged_fixture(tmp_path, monkeypatch)
+    manifest_path = base / run_sweep.MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    dropped = next(
+        cell for cell in manifest["cells"]
+        if (cell["model"], cell["task"], cell["seed"])
+        == ("model-b", "task-x", 42))
+    manifest["cells"].remove(dropped)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    before = {root: _snapshot_tree(root) for root in roots}
+    calls = []
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_cleanup_direct(
+            _cleanup_argv(base, yes=cleanup_phrase(base)),
+            runner=make_fake_runner(calls))
+
+    message = str(excinfo.value)
+    assert "model-b/task-x/seed_42" in message, (
+        "the refusal names the discrepant cell"
+    )
+    assert "nothing removed" in message
+    for root in roots:
+        assert _snapshot_tree(root) == before[root]
+
+
+def test_cleanup_wrong_yes_phrase_refuses(tmp_path, monkeypatch):
+    """Gate (D14-11): a --yes that is not EXACTLY the resolved root
+    string refuses naming the required phrase; nothing removed."""
+    base, roots, _logs = merged_fixture(tmp_path, monkeypatch)
+    before = {root: _snapshot_tree(root) for root in roots}
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_cleanup_direct(
+            _cleanup_argv(base, yes="definitely-not-the-root"),
+            runner=make_fake_runner([]))
+
+    assert cleanup_phrase(base) in str(excinfo.value), (
+        "the refusal names the phrase requirement"
+    )
+    for root in roots:
+        assert _snapshot_tree(root) == before[root]
+
+
+def test_cleanup_eof_at_prompt_refuses(tmp_path, monkeypatch):
+    """Gate: an interactive prompt that hits EOF refuses; nothing
+    removed."""
+    base, roots, _logs = merged_fixture(tmp_path, monkeypatch)
+    before = {root: _snapshot_tree(root) for root in roots}
+
+    def eof_reader(_prompt):
+        raise EOFError
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_cleanup_direct(
+            _cleanup_argv(base),
+            runner=make_fake_runner([]),
+            confirm_input=eof_reader)
+
+    assert cleanup_phrase(base) in str(excinfo.value)
+    for root in roots:
+        assert _snapshot_tree(root) == before[root]
+
+
+def test_cleanup_mismatched_typed_line_refuses(tmp_path, monkeypatch):
+    """Gate: a typed line that does not exactly equal the resolved root
+    refuses even though both verification legs were green."""
+    base, roots, _logs = merged_fixture(tmp_path, monkeypatch)
+    before = {root: _snapshot_tree(root) for root in roots}
+    prompts = []
+
+    def mismatched_reader(prompt):
+        prompts.append(prompt)
+        return cleanup_phrase(base) + "X"  # close but wrong
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_cleanup_direct(
+            _cleanup_argv(base),
+            runner=make_fake_runner([]),
+            confirm_input=mismatched_reader)
+
+    assert prompts, "the gate prompted exactly once before refusing"
+    assert cleanup_phrase(base) in prompts[0], (
+        "the prompt itself names the required phrase"
+    )
+    assert "nothing removed" in str(excinfo.value)
+    for root in roots:
+        assert _snapshot_tree(root) == before[root]
+
+
+def test_cleanup_noninteractive_without_yes_refuses(
+        tmp_path, monkeypatch):
+    """Gate: a non-interactive launch (pytest's stdin is never a tty)
+    without --yes refuses outright — automation must carry the phrase
+    explicitly, never a silent prompt-and-deny hang."""
+    base, roots, _logs = merged_fixture(tmp_path, monkeypatch)
+    before = {root: _snapshot_tree(root) for root in roots}
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_cleanup_direct(
+            _cleanup_argv(base),
+            runner=make_fake_runner([]))
+
+    assert cleanup_phrase(base) in str(excinfo.value)
+    for root in roots:
+        assert _snapshot_tree(root) == before[root]
+
+
+def test_cleanup_refuses_dispatch_roots_before_any_verification(
+        tmp_path, monkeypatch):
+    """Dispatch-evidence refusal (D14-11, D14-12): a root carrying any
+    run-recorded dispatch marker — the base root OR any worker root
+    (defense-in-depth, the run_merge precedent) — refuses with the named
+    needs-no-cleanup error BEFORE the export subprocess runs (the runner
+    is never invoked; dispatch roots are one root by construction)."""
+    base, roots, _logs = merged_fixture(tmp_path, monkeypatch)
+    calls = []
+
+    # 1. dispatch evidence on the BASE (merged) root
+    (base / "dispatch_state.json").write_text(
+        '{"schema_version": 2}', encoding="utf-8")
+    with pytest.raises(SystemExit) as excinfo:
+        run_cleanup_direct(
+            _cleanup_argv(base, yes=cleanup_phrase(base)),
+            runner=make_fake_runner(calls))
+    assert "needs no cleanup" in str(excinfo.value)
+    assert not calls, "the refusal fires BEFORE any verification call"
+
+    # 2. dispatch evidence on a WORKER root refuses by name too
+    (base / "dispatch_state.json").unlink()
+    (roots[1] / "dispatch_ledger").mkdir()
+    with pytest.raises(SystemExit) as excinfo2:
+        run_cleanup_direct(
+            _cleanup_argv(base, yes=cleanup_phrase(base)),
+            runner=make_fake_runner(calls))
+    message = str(excinfo2.value)
+    assert "needs no cleanup" in message
+    assert str(roots[1]) in message
+    assert not calls, "still zero verification subprocess calls"
+
+
+def test_cleanup_combo_refusals(tmp_path, monkeypatch):
+    """main() routing refusals (the A6 shape): --cleanup combined with
+    --merge, --mode dispatch, --dry-run, --models, or a non-empty
+    passthrough each refuses with a named [Error] before run_cleanup
+    runs (cleanup takes no sweep flags — the merge precedent)."""
+    combos = [
+        (["--merge"], "--merge"),
+        (["--mode", "dispatch"], "--mode dispatch"),
+        (["--dry-run"], "--dry-run"),
+        (["--models", "model-a"], "--models"),
+        (["--seeds", "42"], "sweep flags"),
+    ]
+    for extra, expected in combos:
+        with pytest.raises(SystemExit) as excinfo:
+            run_cli(monkeypatch, [
+                "--cleanup", "--workers", "2",
+                "--output-root", str(tmp_path / "finetuned"), *extra])
+        assert expected in str(excinfo.value), (
+            f"combo {extra} must refuse naming {expected!r}"
+        )
+
+
+def test_cleanup_real_subprocess_seam_verifies_and_removes(
+        tmp_path, monkeypatch, capsys):
+    """The ONE real-subprocess test (D14-10 leg A end-to-end): main()
+    routes --cleanup to run_cleanup with the DEFAULT subprocess.run
+    seam, the real export_runs.py --dry-run child (numpy/yaml/scipy ride
+    the data group) walks the merged fixture root and its counts line is
+    echoed; with the exact phrase the worker roots and logs are removed
+    and the merged root stays."""
+    base, roots, logs = merged_fixture(tmp_path, monkeypatch)
+
+    run_cli(monkeypatch, [
+        "--cleanup", "--workers", "2", "--output-root", str(base),
+        "--yes", cleanup_phrase(base),
+    ])
+
+    out = capsys.readouterr().out
+    assert "[Dry-run] 4 run record(s)" in out, (
+        "the real export dry-run subprocess ran over the merged root and "
+        "its counts line was echoed — the seam works outside the fakes"
+    )
+    for root in roots:
+        assert not root.exists()
+    for log in logs:
+        assert not log.exists()
+    assert (base / run_sweep.MANIFEST_NAME).is_file()
+
+
+def test_cleanup_empty_but_equal_manifests_pass_both_legs(
+        tmp_path, monkeypatch):
+    """EDGE empty: a merged root and worker roots whose manifests all
+    carry ZERO cells — 0 == 0 set equality passes both legs and the
+    EMPTY worker roots are removed (nothing to verify is only the
+    missing-MANIFEST case, never the zero-cell case)."""
+    base = (tmp_path / "finetuned").resolve()
+    base.mkdir()
+    write_manifest(base, cells=[], models=[], tasks=[], seeds=[])
+    roots = []
+    for index in range(2):
+        wroot = run_sweep_shard.worker_root(base, index)
+        wroot.mkdir(parents=True)
+        write_manifest(wroot, cells=[], models=[], tasks=[], seeds=[])
+        roots.append(wroot)
+
+    run_cleanup_direct(
+        _cleanup_argv(base, yes=cleanup_phrase(base)),
+        runner=make_fake_runner(
+            [], stdout=("[Dry-run] 0 run record(s) across 0 model(s) / "
+                        "0 task(s)\n")))
+
+    for wroot in roots:
+        assert not wroot.exists(), (
+            f"the empty worker root is removed: {wroot}"
+        )
+    assert (base / run_sweep.MANIFEST_NAME).is_file(), (
+        "the merged root is never a removal target"
+    )
+
+
+def test_cleanup_refuses_merged_root_without_manifest(
+        tmp_path, monkeypatch):
+    """EDGE empty's twin: a merged root with NO sweep_manifest.json
+    refuses (nothing verified) — a missing manifest is never treated as
+    an empty cell set."""
+    base = (tmp_path / "finetuned").resolve()
+    base.mkdir()
+    calls = []
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_cleanup_direct(
+            _cleanup_argv(base, yes=cleanup_phrase(base)),
+            runner=make_fake_runner(calls))
+
+    assert run_sweep.MANIFEST_NAME in str(excinfo.value)
+    assert not calls, "leg B refuses before any removal could proceed"
+
+
+def test_cleanup_worker_root_absent_at_removal_is_skipped_not_crash(
+        tmp_path, monkeypatch, capsys):
+    """EDGE boundary: a listed worker root that vanishes between the
+    removal plan and the removal loop (simulated race) is skipped WITH A
+    NOTE, never a crash, and the post-check still ends green."""
+    import shutil as shutil_module
+
+    base, roots, logs = merged_fixture(tmp_path, monkeypatch)
+    real_rmtree = shutil_module.rmtree
+
+    def racing_rmtree(path, *args, **kwargs):
+        # when removing w0, a concurrent janitor deletes w1 — the loop
+        # later finds w1 already absent
+        if str(path) == str(roots[0]):
+            real_rmtree(roots[1], ignore_errors=True)
+        real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(run_sweep_shard.shutil, "rmtree", racing_rmtree)
+    run_cleanup_direct(
+        _cleanup_argv(base, yes=cleanup_phrase(base)),
+        runner=make_fake_runner([]))
+
+    out = capsys.readouterr().out
+    assert "already absent" in out, (
+        "the vanished root is noted, never a crash"
+    )
+    for path in [*roots, *logs]:
+        assert not path.exists()
