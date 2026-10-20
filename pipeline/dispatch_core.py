@@ -1100,6 +1100,15 @@ def _spawn_worker(index, gpu, tee, context):
                 payload["state"] = (
                     CLAIM_STATE_COMPLETED if error is None
                     else CLAIM_STATE_FAILED)
+                # run_record write (15-04, the A3 supersession): AFTER
+                # the CR-02 artifact check, BEFORE finalize_claim — the
+                # record lands while the claim is still in-memory
+                # terminal, so any refusal/failure here flows through
+                # the CR-04 containment with accounted=False (the claim
+                # is rewritten failed dispatcher-side, counts.failed,
+                # exit 1 — never a silently record-less green run).
+                write_cell_run_record(
+                    cell, cell_dir, payload, context["git_commit"])
                 finalize_claim(claim_path, payload)
                 with state_lock:
                     # Clear the in-flight slot BEFORE the count lands so
@@ -1197,6 +1206,137 @@ def _claim_lane(payload):
     """
     lane = payload.get("lane")
     return lane if isinstance(lane, dict) else {}
+
+
+def write_cell_run_record(cell, cell_dir, payload, git_commit):
+    """Compose and write one cell's ``run_record.json`` at claim
+    finalize (15-04 — the Phase 13 A3 supersession).
+
+    Phase 13 decision A3 (13-01-PLAN.md:121-124) locked dispatch roots
+    as record-less and deferred a producer to a "documented Phase
+    14/15 handoff" that never landed; the 15-01 smoke then proved the
+    gap (``export_runs.py`` walks
+    ``{root}/{model}/{task}/seed_{n}/run_record.json`` and skips every
+    cell without one — a green dispatch root exported ZERO records),
+    and the maintainer's Option 1 ruling (15-01-SUMMARY, 2026-10-20)
+    puts the writer HERE, at exactly the handoff point A3 deferred.
+    ``run_sweep.py`` stays untouched (the schema authority frozen): the
+    skeleton is REUSED through ``run_sweep._new_record`` — the exact
+    call ``run_matrix`` makes for the same cell — so the
+    cell-identity fields (model/task/seed/peft/config_variant/
+    train_fraction/output_dir) are identical by construction, never
+    re-implemented (D-07).
+
+    Ordering (pinned by the 15-04 contract tests): the CHILD writes
+    ``trainer_state.json`` last (WR-13); the WORKER composes and writes
+    this record AFTER the CR-02 artifact check and BEFORE
+    ``finalize_claim`` — so every failure mode below flows through the
+    existing CR-04 containment with ``accounted=False``: the claim is
+    rewritten failed with the dispatcher-side error, ``counts.failed``
+    increments, the run exits 1, and a finalized completed claim can
+    never be rewritten (the WR-03 invariant holds — after
+    ``accounted=True`` only the state write follows).
+
+    Composition (trust boundary — the record is attestation): built
+    ONLY from what THIS cell produced and THIS dispatcher claimed.
+    Metrics are ``json.load``-ed VERBATIM from the cell's own
+    ``final_metrics.json`` (completed claims only); the lane is read
+    tolerantly from the claim payload through ``_claim_lane`` (the
+    claim-time record is the D14-06 replay authority, so the record's
+    lane IS the lane the child ran); ``started_at`` is the claim's
+    ``claimed_at`` and ``finished_at`` the claim's ``finished_at`` (the
+    dispatch runtime observations of this attempt); ``vram_probe``
+    stays the skeleton's four nulls (dispatch children never run the
+    probe); ``git_commit`` is the run's ONE observation (the
+    run_matrix parity — never per cell).
+
+    Failure semantics (run_matrix parity for the same on-disk input):
+    a corrupt/unparseable ``final_metrics.json`` on a completed claim
+    flips the RECORD to failed with run_sweep's WR-11 error text while
+    the CLAIM stays completed (engine semantics untouched — the record
+    never lies about unusable metrics); a failed claim yields a failed
+    record carrying the claim's own error text with metrics null —
+    failed cells are never invisible again.
+
+    Write predicate (WR-12 adapted to dispatch, the run_sweep.py:1614
+    parity): an existing record that parses with status ``completed``
+    is NEVER overwritten — a named ``FileExistsError`` refusal raises
+    (failing the cell through CR-04) so prior provenance survives;
+    any other existing record (a prior attempt's FAILED record, or an
+    unparseable file whose provenance is unprovable) is replaced
+    atomically — the relaunch/--rerun-failed recovery contract.
+    Skipped cells never reach this function (the documented, deliberate
+    divergence from run_sweep's synthesized skipped records: no record
+    is synthesized; ``dispatch_state`` counts report the skip).
+
+    Args:
+        cell (tuple): the cell identity (model, task, seed[, fraction]).
+        cell_dir (Path | str): the cell's ``cell_dir_for`` directory.
+        payload (dict): the FINALIZED-IN-MEMORY claim payload (terminal
+            state already assigned; ``finalize_claim`` rewrites the
+            claim file right after this call).
+        git_commit (str | None): the run's one git-commit observation
+            (``context["git_commit"]``, computed once per dispatch run).
+
+    Raises:
+        FileExistsError: the record path exists and parses with status
+            ``completed`` — completed provenance is never overwritten.
+    """
+    model, task, seed = cell[0], cell[1], cell[2]
+    lane = _claim_lane(payload)
+    cell_dir = Path(cell_dir)
+    record = run_sweep._new_record(
+        model, task, seed, cell_dir, git_commit,
+        lane.get("peft") or "none",
+        train_fraction=lane.get("train_fraction"),
+        config_variant=lane.get("config_variant") or "none",
+    )
+    if payload.get("state") == CLAIM_STATE_COMPLETED:
+        try:
+            with open(cell_dir / run_sweep.METRICS_NAME, "r",
+                      encoding="utf-8") as handle:
+                record["metrics"] = json.load(handle)
+            record["status"] = "completed"
+        except json.JSONDecodeError as exc:
+            # WR-11 (the run_sweep.py:1570-1591 parity): the child left
+            # a partial file while still exiting 0, so the claim
+            # completed on the existence-only CR-02 check — the RECORD
+            # reports the honest failure; metrics stay null.
+            record["status"] = "failed"
+            record["error"] = (
+                "final_metrics.json is corrupt/unreadable "
+                f"({exc}); the child left a partial file")
+    else:
+        # Failed cells get records too (run_matrix parity): the claim's
+        # own error text, metrics null.
+        record["status"] = "failed"
+        record["error"] = payload.get("error")
+    record["started_at"] = payload.get("claimed_at")
+    record["finished_at"] = payload.get("finished_at")
+    # run_matrix always has the cell dir on disk (it mkdirs BEFORE the
+    # executor runs); a dispatch child that dies before creating
+    # anything — the CR-02 swallow shape — leaves no dir, yet its
+    # failed record must still land (mkdir parity, never a second
+    # failure mode stacked on the cell's own verdict).
+    cell_dir.mkdir(parents=True, exist_ok=True)
+    record_path = cell_dir / run_sweep.RECORD_NAME
+    if record_path.exists():
+        try:
+            existing = json.loads(
+                record_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            # Unprovable provenance (not a parseable COMPLETED record)
+            # — replaceable; the atomic write below surfaces any real
+            # I/O failure loudly through CR-04.
+            existing = None
+        if isinstance(existing, dict) and existing.get(
+                "status") == "completed":
+            raise FileExistsError(
+                f"run_record {record_path} already exists with status "
+                "completed — completed provenance is never overwritten "
+                "(WR-12, the run_sweep.py:1614 parity); refusing the cell"
+            )
+    _atomic_write_json(record_path, record)
 
 
 def _cell_from_key(cell_key):
@@ -1629,6 +1769,11 @@ def _launch_and_drain(output_root, cells, pending, skipped, lane_values,
     ledger_dir.mkdir(parents=True, exist_ok=True)
     run_id = uuid.uuid4().hex
     started_at = _now_iso()
+    # ONE git-commit observation per dispatch run (the run_matrix
+    # parity: run_sweep.run_matrix calls _git_commit() once per run,
+    # never per cell) — every run_record this run writes carries the
+    # same commit (15-04).
+    git_commit = run_sweep._git_commit()
     lock_path = acquire_dispatcher_lock(ledger_dir, run_id, started_at)
     seam = subprocess.Popen if spawner is None else spawner
     state_path = output_root / DISPATCH_STATE_NAME
@@ -1675,6 +1820,7 @@ def _launch_and_drain(output_root, cells, pending, skipped, lane_values,
         "root": output_root,
         "ledger_dir": ledger_dir,
         "run_id": run_id,
+        "git_commit": git_commit,
         "state_path": state_path,
         "state": state,
         "counts": counts,

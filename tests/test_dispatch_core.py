@@ -63,6 +63,21 @@ Coverage named by the plan (SC ids are the phase acceptance tests):
   launch is pinned byte-identical to the default at the argv /
   worker-root / tee-log level; the dispatch x merge combination
   refusal is re-asserted adjacent to the merge suites.
+- **run_record contract (15-04, the A3 supersession)** — every cell a
+  worker RUNS leaves ``run_record.json`` at the ``cell_dir_for`` path
+  with ``run_sweep.run_matrix`` shape parity (asserted against a REAL
+  ``run_matrix`` run over the same root, never hand-written field
+  lists); failed cells get failed records (the child-exited / CR-02
+  error text, metrics null); a corrupt ``final_metrics.json`` (WR-11)
+  keeps the claim completed while the RECORD reports failed; an on-disk
+  COMPLETED record is refusal-protected (a named ``FileExistsError``
+  through the CR-04 containment) while a stale FAILED record is
+  replaced by the new attempt's terminal record; the record's lane
+  fields equal the claim's lane; skipped cells never gain a record (the
+  documented divergence from run_sweep's synthesized skip records); a
+  fake-children dispatch root is visible to ``export_runs.py
+  --dry-run`` through a sys.executable subprocess (D14-10 — the
+  exporter's numpy/yaml/scipy module top never enters this suite).
 
 Fake children derive the cell dir EXACTLY the way the real child does —
 root + SAVE-NAME model + task + ``seed_{--seed}`` (under ``--peft`` /
@@ -85,6 +100,7 @@ import json
 import os
 import re
 import selectors
+import shutil
 import subprocess
 import sys
 import threading
@@ -3674,3 +3690,382 @@ def test_rerun_validates_startup_family_before_any_launch(
                 spawner=make_fake_spawner(calls_div))
     assert "Dataset_name diverges" in str(excinfo_div.value)
     assert calls_div == [], "refused before any launch"
+
+
+# ===== 15-04: run_record at claim finalize (run_sweep parity, the
+# Phase 13 A3 supersession at exactly the handoff point A3 deferred —
+# 13-01-PLAN.md:121-124, per the 15-01-SUMMARY Option 1 ruling) =====
+
+
+def test_dispatch_writes_run_record_with_run_sweep_shape_parity(
+        tmp_path, monkeypatch):
+    """Every cell a dispatch worker RUNS leaves run_record.json at the
+    cell_dir_for path with run_sweep.run_matrix shape parity. The parity
+    authority is a REAL run_matrix run over the SAME root writing the
+    SAME final_metrics — cell-identity fields (model/task/seed/peft/
+    config_variant/train_fraction/output_dir), status, verbatim metrics,
+    the all-null vram_probe skeleton, and error compare field by field;
+    started_at/finished_at are non-empty runtime observations; ONE
+    git_commit observation covers the whole dispatch run."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    cells = run_sweep.enumerate_matrix(
+        ["model-a", "model-b", "model-c"], ["task-x", "task-z"],
+        [42, 43], registry_dir)
+    assert len(cells) == 12
+
+    # Parity pass: run_matrix over the SAME root, its fake executor
+    # writing the exact final_metrics the dispatch fake child writes —
+    # output_dir therefore compares as an identical string (same root,
+    # same cell, both derived through cell_dir_for).
+    def parity_executor(model, task, seed, output_root,
+                        train_fraction=None):
+        cell_dir = run_sweep.cell_dir_for(
+            output_root, model, task, seed, train_fraction)
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / run_sweep.METRICS_NAME).write_text(
+            json.dumps({"eval_loss": 0.5, "eval_accuracy": 0.9}),
+            encoding="utf-8")
+
+    parity_records = run_sweep.run_matrix(
+        cells, base, executor=parity_executor)
+    assert len(parity_records) == 12
+    parity_by_cell = {
+        (record["model"], record["task"], record["seed"]): record
+        for record in parity_records}
+
+    # Clean slate: run_matrix's own markers would otherwise skip every
+    # dispatch cell — the dispatch run must enumerate FRESH.
+    shutil.rmtree(base)
+
+    calls = []
+    run_cli(monkeypatch, [
+        *DISPATCH_ARGV,
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 12, "one child per cell still drains"
+
+    dispatch_commits = set()
+    for cell in cells:
+        record_path = (run_sweep.cell_dir_for(base, *cell)
+                       / run_sweep.RECORD_NAME)
+        assert record_path.is_file(), (
+            f"every RUN cell leaves a run_record at {record_path}")
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        parity = parity_by_cell[tuple(cell)]
+        for field in ("model", "task", "seed", "peft", "config_variant",
+                      "train_fraction", "output_dir", "status", "metrics",
+                      "vram_probe", "error"):
+            assert record[field] == parity[field], (
+                f"cell {cell} field {field!r} diverges from run_matrix "
+                f"parity: {record[field]!r} != {parity[field]!r}")
+        assert record["started_at"], (
+            "started_at is the claim's claimed_at (non-empty)")
+        assert record["finished_at"], (
+            "finished_at is the claim's finished_at (non-empty)")
+        dispatch_commits.add(record["git_commit"])
+    assert len(dispatch_commits) == 1, (
+        "ONE git_commit observation per dispatch run, never per cell"
+    )
+    assert dispatch_commits == {parity_records[0]["git_commit"]}, (
+        "the dispatch observation is the same repo-HEAD commit "
+        "run_matrix observed for the same root"
+    )
+
+
+def test_dispatch_failed_cells_get_failed_records(tmp_path, monkeypatch):
+    """Failed cells get records too (run_sweep parity): a child exiting
+    1 yields status failed with the child-exited error and metrics
+    null; a child exiting 0 WITHOUT final_metrics.json (CR-02) yields a
+    failed record carrying the claim's CR-02 error text — the
+    child-phrased twin of run_matrix's executor-phrased message — never
+    a silent record-less cell (15-01's invisible-root gap)."""
+    registry_dir = make_registry(tmp_path)
+
+    # (a) the child exits 1: the failed cell and its sibling both get
+    # records, failed/completed respectively.
+    base = (tmp_path / "exit-nonzero").resolve()
+    killed = ("model-b", "task-z", 43)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a,model-b", "--tasks", "task-z",
+            "--seeds", "42,43",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls, exit_for={killed: 1}))
+    assert excinfo.value.code == 1, "a run with a failed cell exits 1"
+    failed_record = json.loads(
+        (run_sweep.cell_dir_for(base, *killed)
+         / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert failed_record["status"] == "failed"
+    assert failed_record["error"] == "child exited 1"
+    assert failed_record["metrics"] is None
+    ok_record = json.loads(
+        (run_sweep.cell_dir_for(base, "model-a", "task-z", 42)
+         / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert ok_record["status"] == "completed", (
+        "the sibling cell's record is unaffected"
+    )
+
+    # (b) exit 0 without final_metrics (CR-02): the single cell's child
+    # writes NOTHING and exits 0.
+    base2 = (tmp_path / "exit-silent").resolve()
+    silent = ("model-a", "task-x", 42)
+    with pytest.raises(SystemExit) as excinfo2:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--output-root", str(base2),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_fake_spawner([]))
+    assert excinfo2.value.code == 1
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base2)
+         / dispatch_core.claim_filename(silent)).read_text(
+            encoding="utf-8"))
+    record = json.loads(
+        (run_sweep.cell_dir_for(base2, *silent)
+         / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert record["status"] == "failed", (
+        "exit 0 without metrics is a FAILED record, never completed"
+    )
+    assert record["error"] == claim["error"], (
+        "the record carries the claim's CR-02 error text verbatim"
+    )
+    assert record["error"] == (
+        "child exited 0 but final_metrics.json is missing "
+        "(run_finetune.py swallowed a training failure)")
+    assert record["metrics"] is None
+
+
+def test_dispatch_corrupt_metrics_record_failed_claim_completed(
+        tmp_path, monkeypatch):
+    """WR-11 parity: a child that writes a CORRUPT final_metrics.json
+    and exits 0 keeps its claim completed (engine semantics untouched —
+    the CR-02 check is existence-only) while the RECORD reports failed
+    with run_sweep's corrupt-metrics error text and metrics null: the
+    record never lies about unusable metrics."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "corrupt").resolve()
+
+    def corrupt_spawner(argv, **kwargs):
+        # The make_child_spawner identity discipline, writing a
+        # TRUNCATED final_metrics.json (the mid-write-death shape, the
+        # child still exiting 0).
+        root = Path(flag_value(argv, "--output_dir"))
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell_dir = (root / save / flag_value(argv, "--target_dataset")
+                    / f"seed_{flag_value(argv, '--seed')}")
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / run_sweep.METRICS_NAME).write_text(
+            '{"eval_loss": 0.5, "eval_acc', encoding="utf-8")
+        return FakeProc(0)
+
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=corrupt_spawner)
+    cell = ("model-a", "task-x", 42)
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(cell)).read_text(
+            encoding="utf-8"))
+    assert claim["state"] == dispatch_core.CLAIM_STATE_COMPLETED, (
+        "engine semantics untouched: CR-02 checks existence only, so "
+        "the claim still completes"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 1, "completed": 1, "failed": 0, "skipped": 0}, (
+        "the dispatch accounting stays on the claim semantics"
+    )
+    record = json.loads(
+        (run_sweep.cell_dir_for(base, *cell) / run_sweep.RECORD_NAME)
+        .read_text(encoding="utf-8"))
+    assert record["status"] == "failed", (
+        "the record never lies about unusable metrics"
+    )
+    assert record["metrics"] is None
+    assert record["error"].startswith("final_metrics.json is corrupt/")
+    assert "the child left a partial file" in record["error"], (
+        "the WR-11 error text string-parities run_matrix's"
+    )
+
+
+def test_dispatch_refuses_to_overwrite_completed_record(
+        tmp_path, monkeypatch):
+    """WR-12 no-overwrite: an exist-check collision with an on-disk
+    COMPLETED run_record.json is a NAMED FileExistsError refusal that
+    fails THAT cell through the existing CR-04 containment — claim
+    rewritten failed naming the dispatcher-side refusal, counts.failed,
+    exit 1 — while the pre-existing record stays byte-unchanged and
+    sibling cells complete normally (never silent, never destructive)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "occupied").resolve()
+    guarded = ("model-a", "task-x", 42)
+    guarded_dir = run_sweep.cell_dir_for(base, *guarded)
+    guarded_dir.mkdir(parents=True)  # marker-less, record-occupied
+    pre_existing = guarded_dir / run_sweep.RECORD_NAME
+    pre_existing.write_text(
+        json.dumps({"model": "model-a", "task": "task-x", "seed": 42,
+                    "status": "completed",
+                    "provenance": "hand-written prior run"}),
+        encoding="utf-8")
+    before = pre_existing.read_bytes()
+
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    assert excinfo.value.code == 1, "the refusal drives the exit-1 path"
+    assert len(calls) == 2, "the sibling cell still drains"
+    assert pre_existing.read_bytes() == before, (
+        "the COMPLETED record is refusal-protected, byte-unchanged"
+    )
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(guarded)).read_text(
+            encoding="utf-8"))
+    assert claim["state"] == dispatch_core.CLAIM_STATE_FAILED
+    assert "FileExistsError" in claim["error"], (
+        "the claim names the dispatcher-side refusal by exception type"
+    )
+    assert str(pre_existing) in claim["error"], (
+        "the refusal names the existing record path"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 2, "completed": 1, "failed": 1, "skipped": 0}, (
+        "honest accounting: the refused cell is failed, the sibling "
+        "completed"
+    )
+    sibling_record = json.loads(
+        (run_sweep.cell_dir_for(base, "model-b", "task-x", 42)
+         / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert sibling_record["status"] == "completed", (
+        "sibling cells are unaffected by the refusal"
+    )
+
+
+def test_dispatch_replaces_stale_failed_record(tmp_path, monkeypatch):
+    """A stale FAILED record (a prior attempt's terminal record) is
+    atomically replaced by the new attempt's terminal record — the
+    relaunch/--rerun-failed recovery contract, the run_sweep.py:1614
+    write-predicate parity."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "stale-failed").resolve()
+    cell = ("model-a", "task-x", 42)
+    cell_dir = run_sweep.cell_dir_for(base, *cell)
+    cell_dir.mkdir(parents=True)
+    (cell_dir / run_sweep.RECORD_NAME).write_text(
+        json.dumps({"model": "model-a", "task": "task-x", "seed": 42,
+                    "status": "failed", "error": "child exited 1"}),
+        encoding="utf-8")
+
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the marker-less cell runs despite the record"
+    record = json.loads(
+        (cell_dir / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert record["status"] == "completed", (
+        "the new attempt's terminal record REPLACES the stale failed one"
+    )
+    assert record["metrics"] == {
+        "eval_loss": 0.5, "eval_accuracy": 0.9}
+
+
+def test_dispatch_record_lane_fidelity(tmp_path, monkeypatch):
+    """Lane fidelity: launched with lane flags (--peft lora plus
+    --num_train_epochs, --cache_dir, --dataset_root), the record's
+    peft/config_variant/train_fraction equal the claim's lane values —
+    the record is composed from the claim-time lane, never re-derived
+    from the command line."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "lane").resolve()
+    cache_dir = (tmp_path / "hf-cache").resolve()
+    dataset_root = (tmp_path / "datasets").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--peft", "lora",
+        "--num_train_epochs", "1",
+        "--cache_dir", str(cache_dir),
+        "--dataset_root", str(dataset_root),
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    cell = ("model-a+lora", "task-x", 42)
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(cell)).read_text(
+            encoding="utf-8"))
+    record = json.loads(
+        (run_sweep.cell_dir_for(base, *cell) / run_sweep.RECORD_NAME)
+        .read_text(encoding="utf-8"))
+    assert record["model"] == "model-a+lora", (
+        "the record keys by the ALIAS identity like the claim/cell dir"
+    )
+    assert record["peft"] == claim["lane"]["peft"] == "lora"
+    assert record["config_variant"] == "none", (
+        "an absent variant lane records the run_sweep 'none' default"
+    )
+    assert record["train_fraction"] is None
+    assert claim["lane"]["train_fraction"] is None
+    assert record["status"] == "completed"
+
+
+def test_dispatch_skipped_cell_gains_no_record(tmp_path, monkeypatch):
+    """Skip divergence pin: a marker-only cell (no record) is skipped
+    pre-drain and NEVER gains a run_record.json — the documented,
+    deliberate divergence from run_sweep's synthesized skipped records;
+    the dispatch_state counts report the skip."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "skip").resolve()
+    done_cell = ("model-b", "task-x", 42)
+    _write_marker(base, done_cell)  # marker-only: no run_record on disk
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a,model-b", "--tasks", "task-x",
+        "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "only the fresh cell runs"
+    assert not (run_sweep.cell_dir_for(base, *done_cell)
+                / run_sweep.RECORD_NAME).is_file(), (
+        "a marker-only cell stays record-less (the documented dispatch "
+        "divergence — dispatch_state counts report the skip)"
+    )
+    assert (run_sweep.cell_dir_for(base, "model-a", "task-x", 42)
+            / run_sweep.RECORD_NAME).is_file(), (
+        "the fresh cell's record IS written"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 2, "completed": 1, "failed": 0, "skipped": 1}
