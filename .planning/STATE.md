@@ -5,16 +5,16 @@ milestone_name: 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
 current_phase: 15
 current_phase_name: 双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)
 status: executing
-stopped_at: Phase 14 complete, ready to plan Phase 15
-last_updated: "2026-10-20T13:54:14.536Z"
+stopped_at: "HALTED 15-01-PLAN.md at Task 2 verification (D15-04): dispatch run green 2/2 on both GPUs but run_record.json absent on dispatch roots — consumption criterion unmeetable; Task 3 docs closure halted; remediation decision pending"
+last_updated: "2026-10-20T14:08:49.324Z"
 last_activity: 2026-10-20
-last_activity_desc: Phase 14 complete, transitioned to Phase 15
-state_head: 8988bfd009cfb87efd1eddea841404198ff8fec2
+last_activity_desc: Phase 15 execution started
+state_head: 2626010e8dfcfa610606b740dc23b20e8704c986
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 6
   percent: 17
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 
 ## Current Position
 
-Phase: 15 (双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-10-20 — Phase 14 complete, transitioned to Phase 15
+Phase: 15 (双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 15
+Last activity: 2026-10-20 — Phase 15 execution started
 
 ## Performance Metrics
 
@@ -287,6 +287,7 @@ None yet.
 - ModelScope CLI flag/progress-parsing specifics are MEDIUM confidence — confirm during Phase 10 (narrow in-phase item, not a research phase)
 - Custom-registry storage location (`~/.config/dnallmmark/` vs repo-local ignored dir) and the exact overlay read seam are Phase 7/9 discuss items — the user-owned-file principle itself is fixed
 - v0.7.1 carryover registry questions (space/SPACE merge decision; 7 models without locatable public cards) remain maintainer-owned — outside v1.2 scope unless registries are touched
+- 15-01 HALTED (D15-04/Rule 4): dispatch roots carry no run_record.json (Phase 13 A3 ruling; dispatch children are run_finetune.py directly, dispatch_core.py:1942) — D15-02 consumption criterion ('[Dry-run] 2 run record(s)') fails with 0 records. Smoke itself GREEN on both GPUs (dispatch_state done 2/2, evidence preserved). Remediation decision required: teach dispatch_core to write run_record at finalize (recommended, unblocks 15-01+15-03) — via debug/fix flow, not in-phase. WINDOWS #21 stays open; PROJECT.md D-05 stays Pending.
 
 ### Quick Tasks Completed
 
@@ -345,9 +346,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T11:48:08.746Z
-Stopped at: Phase 14 complete, ready to plan Phase 15
-Resume file: None
+Last session: 2026-10-20T14:08:49.171Z
+Stopped at: HALTED 15-01-PLAN.md at Task 2 verification (D15-04): dispatch run green 2/2 on both GPUs but run_record.json absent on dispatch roots — consumption criterion unmeetable; Task 3 docs closure halted; remediation decision pending
+Resume file: .planning/phases/15-dual-gpu-validation-subsets/15-01-SUMMARY.md
 
 ## Operator Next Steps
 
