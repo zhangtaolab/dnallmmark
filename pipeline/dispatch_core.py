@@ -665,108 +665,154 @@ def _spawn_worker(index, gpu, tee, context):
                 if not pending:
                     return
                 cell, tag = pending.pop(0)
-            model, task, seed = cell[0], cell[1], cell[2]
-            fraction = cell[3] if len(cell) > 3 else None
-            cell_dir = run_sweep.cell_dir_for(
-                context["root"], model, task, seed, fraction)
-            payload = _claim_payload(
-                cell, context["lane"], gpu, context["run_id"], _now_iso())
-            if tag == _DECISION_REQUEUE:
-                # Stale claim from a dead run: atomically REPLACED with
-                # this run's payload (new run_id/gpu/timestamps). Sound
-                # because the singleton lock guarantees no second
-                # dispatcher (D13-11 — no lease, no timeout).
-                claim_path = overwrite_claim(
-                    context["ledger_dir"], cell, payload)
-            else:
-                claim_path = claim_cell(
-                    context["ledger_dir"], cell, payload)
-                if claim_path is None:
-                    # SC3 structural refusal — defense-in-depth under
-                    # the single in-memory queue: the cell is already
-                    # claimed (a file the skip filter could not see).
-                    # Skip it; never spawn a second child for one cell.
+            claim_path = None
+            payload = None
+            accounted = False  # set atomically with the count increment
+            try:
+                model, task, seed = cell[0], cell[1], cell[2]
+                fraction = cell[3] if len(cell) > 3 else None
+                cell_dir = run_sweep.cell_dir_for(
+                    context["root"], model, task, seed, fraction)
+                payload = _claim_payload(
+                    cell, context["lane"], gpu, context["run_id"],
+                    _now_iso())
+                if tag == _DECISION_REQUEUE:
+                    # Stale claim from a dead run: atomically REPLACED with
+                    # this run's payload (new run_id/gpu/timestamps). Sound
+                    # because the singleton lock guarantees no second
+                    # dispatcher (D13-11 — no lease, no timeout).
+                    claim_path = overwrite_claim(
+                        context["ledger_dir"], cell, payload)
+                else:
+                    claim_path = claim_cell(
+                        context["ledger_dir"], cell, payload)
+                    if claim_path is None:
+                        # SC3 structural refusal — defense-in-depth under
+                        # the single in-memory queue: the cell is already
+                        # claimed (a file the skip filter could not see).
+                        # Skip it; never spawn a second child for one cell.
+                        with state_lock:
+                            context["counts"]["skipped"] += 1
+                            context["state"]["counts"] = dict(
+                                context["counts"])
+                        continue
+                stats["cells"] += 1
+                argv = run_sweep.build_argv(
+                    model, task, seed, str(context["root"]),
+                    peft=context["peft"],
+                    train_fraction=fraction,
+                    subset_file=context["subset_file"],
+                    effective_batch_size=context["effective_batch_size"],
+                    num_train_epochs=context["num_train_epochs"],
+                    cache_dir=context["cache_dir"],
+                    config_variant=context["config_variant"],
+                    model_root=context["model_root"],
+                    dataset_root=context["dataset_root"],
+                    log_dir=context["log_dir"],
+                )
+                error = None
+                code = None
+                try:
+                    # The verbatim static spawn discipline
+                    # (run_sweep_shard.py:1201-1212) minus worker-root
+                    # naming: argv LIST, own session, cwd pinned to
+                    # pipeline/, env copy + PYTHONUNBUFFERED + the ONE
+                    # CUDA_VISIBLE_DEVICES token, stderr onto stdout's tee.
+                    proc = context["spawner"](
+                        list(argv),
+                        start_new_session=True,
+                        cwd=str(run_sweep.PIPELINE_DIR),
+                        env={
+                            **os.environ,
+                            "PYTHONUNBUFFERED": "1",
+                            "CUDA_VISIBLE_DEVICES": gpu,
+                        },
+                        stdout=tee,
+                        stderr=subprocess.STDOUT,
+                    )
+                    payload["child_pid"] = getattr(proc, "pid", None)
+                    # CR-03 (phase-13 review): persist the pid IMMEDIATELY,
+                    # before wait() — the on-disk claim must name the child
+                    # for the child's ENTIRE lifetime (the documented
+                    # orphan-recovery procedure reads child pids from the
+                    # claim JSON; leaving the write to finalize_claim kept
+                    # the claim at "child_pid": null for the whole training
+                    # run, exactly the window in which a dispatcher kill
+                    # leaves orphans).
+                    _atomic_write_json(claim_path, payload)
+                    code = proc.wait()
+                except (subprocess.SubprocessError, OSError) as exc:
+                    # The run_matrix failure boundary mirrored: launch-seam
+                    # failures fail the cell, never the dispatcher.
+                    error = f"{type(exc).__name__}: {exc}"
+                if error is None and code != 0:
+                    error = f"child exited {code}"
+                elif error is None and not (
+                        cell_dir / run_sweep.METRICS_NAME).is_file():
+                    # CR-02: exit 0 without final_metrics.json is the
+                    # child's designed training-failure signal.
+                    error = (
+                        "child exited 0 but final_metrics.json is missing "
+                        "(run_finetune.py swallowed a training failure)"
+                    )
+                payload["exit_code"] = code
+                payload["error"] = error
+                payload["finished_at"] = _now_iso()
+                payload["state"] = (
+                    CLAIM_STATE_COMPLETED if error is None
+                    else CLAIM_STATE_FAILED)
+                finalize_claim(claim_path, payload)
+                with state_lock:
+                    if error is None:
+                        context["counts"]["completed"] += 1
+                        stats["completed"] += 1
+                    else:
+                        context["counts"]["failed"] += 1
+                        stats["failed"] += 1
+                    accounted = True
+                    context["state"]["counts"] = dict(context["counts"])
+                    context["state"]["updated_at"] = _now_iso()
+                    _write_state(context["state_path"], context["state"])
+            except Exception as exc:  # noqa: BLE001 — containment boundary
+                # CR-04 (phase-13 review): any dispatcher-side failure
+                # OUTSIDE the spawn seam (claim create/overwrite,
+                # finalize, the state write — e.g. ENOSPC/EACCES) fails
+                # THIS cell loudly and the drain CONTINUES; the failed
+                # count drives the exit-1 path. Without this boundary the
+                # exception killed the worker THREAD, silently dropped
+                # the remaining queue, and the run reported status "done"
+                # with exit 0 — a false success on the orchestrator's
+                # error path. If this handler itself dies (a systemic
+                # write failure), the post-join accounting assertion in
+                # run_dispatch refuses loudly instead.
+                if claim_path is not None and payload is not None:
+                    payload["exit_code"] = None
+                    payload["error"] = (
+                        f"dispatcher-side failure: "
+                        f"{type(exc).__name__}: {exc}")
+                    payload["finished_at"] = _now_iso()
+                    payload["state"] = CLAIM_STATE_FAILED
+                    try:
+                        finalize_claim(claim_path, payload)
+                    except OSError:
+                        pass  # best-effort: the failed count + exit 1
+                        # below remain the hard guarantee
+                if not accounted:
+                    # Counted here ONLY if the normal path never reached
+                    # its increment (double-counting a cell that already
+                    # incremented completed/failed would corrupt the
+                    # accounting assertion in run_dispatch). When the
+                    # cell was already counted and only the state WRITE
+                    # failed, the end-of-run final write persists the
+                    # truthful counts — swallow and continue.
                     with state_lock:
-                        context["counts"]["skipped"] += 1
+                        context["counts"]["failed"] += 1
+                        stats["failed"] += 1
                         context["state"]["counts"] = dict(
                             context["counts"])
-                    continue
-            stats["cells"] += 1
-            argv = run_sweep.build_argv(
-                model, task, seed, str(context["root"]),
-                peft=context["peft"],
-                train_fraction=fraction,
-                subset_file=context["subset_file"],
-                effective_batch_size=context["effective_batch_size"],
-                num_train_epochs=context["num_train_epochs"],
-                cache_dir=context["cache_dir"],
-                config_variant=context["config_variant"],
-                model_root=context["model_root"],
-                dataset_root=context["dataset_root"],
-                log_dir=context["log_dir"],
-            )
-            error = None
-            code = None
-            try:
-                # The verbatim static spawn discipline
-                # (run_sweep_shard.py:1201-1212) minus worker-root
-                # naming: argv LIST, own session, cwd pinned to
-                # pipeline/, env copy + PYTHONUNBUFFERED + the ONE
-                # CUDA_VISIBLE_DEVICES token, stderr onto stdout's tee.
-                proc = context["spawner"](
-                    list(argv),
-                    start_new_session=True,
-                    cwd=str(run_sweep.PIPELINE_DIR),
-                    env={
-                        **os.environ,
-                        "PYTHONUNBUFFERED": "1",
-                        "CUDA_VISIBLE_DEVICES": gpu,
-                    },
-                    stdout=tee,
-                    stderr=subprocess.STDOUT,
-                )
-                payload["child_pid"] = getattr(proc, "pid", None)
-                # CR-03 (phase-13 review): persist the pid IMMEDIATELY,
-                # before wait() — the on-disk claim must name the child
-                # for the child's ENTIRE lifetime (the documented
-                # orphan-recovery procedure reads child pids from the
-                # claim JSON; leaving the write to finalize_claim kept
-                # the claim at "child_pid": null for the whole training
-                # run, exactly the window in which a dispatcher kill
-                # leaves orphans).
-                _atomic_write_json(claim_path, payload)
-                code = proc.wait()
-            except (subprocess.SubprocessError, OSError) as exc:
-                # The run_matrix failure boundary mirrored: launch-seam
-                # failures fail the cell, never the dispatcher.
-                error = f"{type(exc).__name__}: {exc}"
-            if error is None and code != 0:
-                error = f"child exited {code}"
-            elif error is None and not (
-                    cell_dir / run_sweep.METRICS_NAME).is_file():
-                # CR-02: exit 0 without final_metrics.json is the
-                # child's designed training-failure signal.
-                error = (
-                    "child exited 0 but final_metrics.json is missing "
-                    "(run_finetune.py swallowed a training failure)"
-                )
-            payload["exit_code"] = code
-            payload["error"] = error
-            payload["finished_at"] = _now_iso()
-            payload["state"] = (
-                CLAIM_STATE_COMPLETED if error is None
-                else CLAIM_STATE_FAILED)
-            finalize_claim(claim_path, payload)
-            with state_lock:
-                if error is None:
-                    context["counts"]["completed"] += 1
-                    stats["completed"] += 1
-                else:
-                    context["counts"]["failed"] += 1
-                    stats["failed"] += 1
-                context["state"]["counts"] = dict(context["counts"])
-                context["state"]["updated_at"] = _now_iso()
-                _write_state(context["state_path"], context["state"])
+                        context["state"]["updated_at"] = _now_iso()
+                        _write_state(
+                            context["state_path"], context["state"])
     finally:
         try:
             tee.close()
@@ -1223,6 +1269,27 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
             except OSError:
                 pass
         release_dispatcher_lock(lock_path)
+
+    # CR-04 (phase-13 review): post-join accounting assertion — every
+    # enumerated cell must be accounted for (completed + failed + skipped
+    # == total) BEFORE any success path. A worker thread that dies
+    # despite the per-cell containment in _spawn_worker (e.g. the
+    # containment's own state write hitting ENOSPC) leaves cells
+    # popped-but-unaccounted; printing the verdict table, writing
+    # status "done", and exiting 0 there would be a false success on
+    # the orchestrator's error path (automation sees success and never
+    # relaunches). Refuse loudly with an honest "incomplete" status.
+    drained = (
+        counts["completed"] + counts["failed"] + counts["skipped"])
+    if drained != counts["total"]:
+        state["status"] = "incomplete"
+        state["updated_at"] = _now_iso()
+        _write_state(state_path, state)
+        sys.exit(
+            f"[Error] dispatch accounting mismatch: {drained}/"
+            f"{counts['total']} cells accounted for — a worker died "
+            "unexpectedly; unrun cells remain queued in the ledger"
+        )
 
     print("Dispatch verdicts:")
     for i in range(workers):

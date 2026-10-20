@@ -85,6 +85,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1670,6 +1671,121 @@ def test_malformed_claims_requeue_never_crash_never_skip(
             encoding="utf-8"))
     assert state["counts"] == {
         "total": 3, "completed": 3, "failed": 0, "skipped": 0}
+
+
+# ===== worker-thread containment + honest accounting (CR-04) =====
+
+
+def _flaky_finalize(monkeypatch, fail_first_n):
+    """Patch ``dispatch_core.finalize_claim`` to raise ENOSPC on the
+    first ``fail_first_n`` calls — an exception from a worker thread
+    OUTSIDE the spawn seam, exactly the failure class the CR-04
+    containment boundary exists for."""
+    real = dispatch_core.finalize_claim
+    calls = [0]
+
+    def patched(claim_path, payload):
+        calls[0] += 1
+        if calls[0] <= fail_first_n:
+            raise OSError(28, "No space left on device")
+        real(claim_path, payload)
+
+    monkeypatch.setattr(dispatch_core, "finalize_claim", patched)
+
+
+def _worker_state_writes_always_fail(monkeypatch):
+    """Patch ``dispatch_core._write_state`` to raise ENOSPC on every
+    WORKER-thread call (main-thread writes succeed, so the accounting
+    write itself lands and its honesty is assertable)."""
+    real = dispatch_core._write_state
+
+    def patched(state_path, state):
+        if threading.current_thread() is not threading.main_thread():
+            raise OSError(28, "No space left on device")
+        real(state_path, state)
+
+    monkeypatch.setattr(dispatch_core, "_write_state", patched)
+
+
+def test_worker_finalize_failure_fails_cell_not_run(
+        tmp_path, monkeypatch):
+    """CR-04 pin (containment): an exception from a worker thread
+    OUTSIDE the spawn seam (here: ENOSPC on the first finalize) fails
+    THAT cell and the drain CONTINUES — all 4 cells still spawn, the
+    stricken cell is recorded with a dispatcher-side failure, and the
+    run exits 1 on the failed count. Never a silent queue drop behind a
+    false success."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    _flaky_finalize(monkeypatch, fail_first_n=1)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42,43",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    assert excinfo.value.code == 1, "the failed cell drives the exit-1 path"
+    assert len(calls) == 4, (
+        "every cell still spawns — the drain continues past the failure"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 4, "completed": 3, "failed": 1, "skipped": 0}, (
+        "honest accounting: the stricken cell is FAILED, not dropped"
+    )
+    failed_errors = [
+        json.loads(path.read_text(encoding="utf-8"))["error"]
+        for path in dispatch_core.ledger_dir_for(base).glob("*.json")
+        if path.name != dispatch_core.DISPATCHER_LOCK_NAME
+        and json.loads(path.read_text(encoding="utf-8"))["state"]
+        == dispatch_core.CLAIM_STATE_FAILED]
+    assert failed_errors == ["dispatcher-side failure: "
+                             "OSError: [Errno 28] No space left on device"], (
+        "the claim records the dispatcher-side failure by name"
+    )
+
+
+@pytest.mark.filterwarnings(
+    "ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_worker_death_drains_loudly_incomplete(tmp_path, monkeypatch):
+    """CR-04 pin (accounting assertion): when the containment boundary
+    ITSELF dies (here: finalize always fails AND every worker state
+    write fails, so the containment's own accounting write raises), the
+    run NEVER reports done/exit 0 — the post-join assertion writes an
+    honest status 'incomplete' and refuses by name with the
+    drained/total counts."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    _flaky_finalize(monkeypatch, fail_first_n=10**9)  # always fail
+    _worker_state_writes_always_fail(monkeypatch)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42,43",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    message = str(excinfo.value)
+    assert "accounting mismatch" in message
+    assert "1/4" in message, "the refusal names the drained/total counts"
+    assert len(calls) == 1, "only the first cell spawned before the death"
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["status"] == "incomplete", (
+        "never 'done' — the state tells the truth about the drain"
+    )
+    assert not (dispatch_core.ledger_dir_for(base)
+                / dispatch_core.DISPATCHER_LOCK_NAME).exists(), (
+        "the lock is still released on the refused drain"
+    )
 
 
 # ===== 13-02 Task 2: mode coexistence — merge refusal + static pins =====
