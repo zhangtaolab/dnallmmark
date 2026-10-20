@@ -498,3 +498,85 @@ def test_no_writes_outside_explicit_roots(five_mc_tree, tmp_path):
         assert relative.parts[0] in {"sub", "reg"}, (
             f"generator wrote outside its explicit roots: {path}"
         )
+
+
+# ===== D15-15 real-artifact checks (15-03, skip-if-artifacts-absent) =====
+#
+# GPU-outcome assertions over the REAL produced artifacts of the 15-01
+# smoke and the 15-03 12-cell subset sweep. The roots are gitignored
+# runtime state (D15-12): present on the validation box, absent in CI —
+# every check is ``skipif`` on artifact existence so the zero-GPU CI lane
+# skips cleanly (D15-15) while the box asserts the real terminal states
+# and the measured subset row counts.
+
+SMOKE_ROOTS = (
+    REPO_ROOT / "pipeline" / "finetuned-smoke",
+    REPO_ROOT / "pipeline" / "finetuned-smoke-r2",
+)
+SWEEP_ROOT = REPO_ROOT / "pipeline" / "finetuned-sweep"
+SUBSET_ROOT = REPO_ROOT / "pipeline" / "datasets-smoke"
+SUBSET_REGISTRY = REPO_ROOT / "pipeline" / "registry-smoke" / "datasets_info.json"
+# The two sweep tasks' measured subset counts (15-03 Task 1), as
+# (task key, official-relative dataset dir, train/dev/test rows) triples.
+SUBSET_EXPECT = (
+    ("iDNA_ABF_datasets__5mC", "iDNA_ABF_datasets/5mC", (105, 11, 117)),
+    ("GUE__emp_H3", "GUE/emp_H3", (598, 74, 74)),
+)
+
+
+@pytest.mark.parametrize(
+    "smoke_root", SMOKE_ROOTS,
+    ids=["finetuned-smoke", "finetuned-smoke-r2"])
+def test_real_smoke_dispatch_terminal_state(smoke_root):
+    """The 15-01 smoke root's dispatch_state is terminal ``done`` with
+    2/2 completed (both GPUs produced cell artifacts, D15-02)."""
+    state_path = smoke_root / "dispatch_state.json"
+    if not state_path.is_file():
+        pytest.skip(f"smoke runtime root absent (zero-GPU env): {smoke_root}")
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["status"] == "done", state["status"]
+    counts = state["counts"]
+    assert counts["completed"] == counts["total"] == 2, counts
+    assert counts["skipped"] == 0, counts
+
+
+def test_real_sweep_dispatch_terminal_state():
+    """The 15-03 12-cell subset sweep's dispatch_state is terminal
+    ``done`` with 12/12 completed and ZERO skipped — the adjacency edge:
+    the identical cell key ``plant-dnabert-6mer/
+    iDNA_ABF_datasets__5mC/seed_42`` exists in BOTH the smoke root (full
+    data) and the sweep root (subsets); a shared root would have skipped
+    the sweep's cells on the smoke's trainer_state markers."""
+    state_path = SWEEP_ROOT / "dispatch_state.json"
+    if not state_path.is_file():
+        pytest.skip(f"sweep runtime root absent (zero-GPU env): {SWEEP_ROOT}")
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["status"] == "done", state["status"]
+    counts = state["counts"]
+    assert counts["completed"] == counts["total"] == 12, counts
+    assert counts["skipped"] == 0, counts
+
+
+@pytest.mark.parametrize("task_key, rel, splits", SUBSET_EXPECT)
+def test_real_subset_rows_match_registry(task_key, rel, splits):
+    """The on-disk subset CSV rows equal the pinned measured counts AND
+    the subset registry's Train/Dev/Test (declared == measured, the
+    T-15-04 discipline over the REAL generated subsets)."""
+    base = SUBSET_ROOT / "datasets" / rel
+    registry = SUBSET_REGISTRY
+    if not base.is_dir() or not registry.is_file():
+        pytest.skip(
+            "subset runtime roots absent (zero-GPU env): "
+            f"{base}, {registry}"
+        )
+    measured = {}
+    for split, expected_n in zip(("train", "dev", "test"), splits):
+        with open(base / f"{split}.csv", encoding="utf-8") as fh:
+            rows = list(csv.reader(fh))[1:]
+        measured[split] = len(rows)
+        assert len(rows) == expected_n, (task_key, split, len(rows))
+    reg = json.loads(registry.read_text(encoding="utf-8"))
+    entry = reg[task_key]
+    assert (entry["Train"], entry["Dev"], entry["Test"]) == (
+        measured["train"], measured["dev"], measured["test"]
+    ), (task_key, entry)
