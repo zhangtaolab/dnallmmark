@@ -3,11 +3,11 @@ gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: TUI任务
 status: Awaiting next milestone
-stopped_at: 08-12 micro-refresh complete (5/5 passed); WINDOWS disposition next
-last_updated: "2026-10-20T00:10:49.470Z"
+stopped_at: Quick 261020-9vh+asm complete (stale-progress guard + tree all-expanded pins); v1.2 archive steps 8-13 still pending
+last_updated: "2026-10-20T01:06:40.460Z"
 last_activity: 2026-10-19
-stopped_at: "Quick 261020-9vh+asm complete (stale-progress guard + tree all-expanded pins); v1.2 archive steps 8-13 still pending"
-state_head: 4064b38eeefd735680b5ae546ab189051b70fe91
+stopped_at: "Quick 261020-blt complete (planned-cell union; one-model bug fixed)"
+state_head: 68a74fb54cdadc174a1047afd794ec3f8ac9d778
 progress:
   total_phases: 6
   completed_phases: 6
@@ -302,6 +302,7 @@ None yet.
 | 33 | fix: tree/wide cursor fills + card hover fill removed (no-fill law extended) | 2026-10-19 | 797b910 | — |
 | 261020-9vh | slot-5 stale-progress guard: checkpoint mtime predating live process start renders indeterminate, never the old run's numbers (real-/proc pty pin) | 2026-10-20 | 4064b38 | [261020-9vh-slot-5-stale-progress-guard-live-proces](./quick/261020-9vh-slot-5-stale-progress-guard-live-proces/) |
 | 261020-asm | slot-5 tree all-expanded entry default made explicit + dual-lane mutation-verified pins (variant E ruling) | 2026-10-20 | 4064b38 | [261020-asm-slot-5-tree-default-expansion-per-mainta](./quick/261020-asm-slot-5-tree-default-expansion-per-mainta/) |
+| 261020-blt | slot-5 planned-cell union: live evidence carries seeds; row set = discovered UNION planned (queued synthesized rows) — both models render from plan alone, counts 0/12 (maintainer's twice-reported one-model bug, root-caused to driver mkdir-on-reach) | 2026-10-20 | 68a74fb | [261020-blt-slot-5-planned-but-unstarted-cells-rende](./quick/261020-blt-slot-5-planned-but-unstarted-cells-rende/) |
 
 ## Deferred Items
 
