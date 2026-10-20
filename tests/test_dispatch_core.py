@@ -348,6 +348,64 @@ def test_dispatch_happy_path_end_to_end(tmp_path, monkeypatch):
     assert not list(base.rglob("*.tmp")), "no atomic-write tmp residue"
 
 
+def test_child_pid_durable_on_disk_while_child_runs(tmp_path, monkeypatch):
+    """CR-03 pin: for the child's ENTIRE lifetime the on-disk claim names
+    its pid — a spy child reads its own claim during wait() (i.e. while
+    it "runs") and observes state 'claimed' with a NON-null child_pid.
+    The documented orphan-recovery procedure (kill the orphans named by
+    the claims before relaunch) depends on this; the pid used to reach
+    disk only at finalize, i.e. after the child had already exited."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    observed = []
+
+    def spy_spawner(argv, **kwargs):
+        root = Path(flag_value(argv, "--output_dir"))
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell = (save, flag_value(argv, "--target_dataset"),
+                int(flag_value(argv, "--seed")))
+
+        class SpyProc(FakeProc):
+            def wait(self, timeout=None):
+                # The dispatcher already spawned us and (CR-03) already
+                # persisted our pid — read the claim NOW, mid-"training".
+                claim_path = (
+                    dispatch_core.ledger_dir_for(root)
+                    / dispatch_core.claim_filename(cell))
+                observed.append(
+                    json.loads(claim_path.read_text(encoding="utf-8")))
+                return super().wait(timeout=timeout)
+
+        # Success artifacts, exactly the make_child_spawner discipline:
+        # without final_metrics.json the CR-02 artifact check fails the
+        # cell and the run's exit-1 SystemExit escapes the test.
+        cell_dir = root / save / cell[1] / f"seed_{cell[2]}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / run_sweep.METRICS_NAME).write_text(
+            json.dumps({"eval_loss": 0.5}), encoding="utf-8")
+        (cell_dir / run_sweep.RESUME_MARKER).write_text(
+            '{"global_step": 1}', encoding="utf-8")
+        return SpyProc(0)
+
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42,43",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=spy_spawner)
+    assert len(observed) == 2, "each child observed its own claim"
+    for claim in observed:
+        assert claim["state"] == dispatch_core.CLAIM_STATE_CLAIMED, (
+            "the mid-run claim is still in the claimed state"
+        )
+        assert claim["child_pid"] == 4242, (
+            "the child pid is durable on disk WHILE the child runs"
+        )
+
+
 def test_dispatch_state_file_exists_before_any_spawn(tmp_path, monkeypatch):
     """Pitfall 8 write-order pin: every spawn observes
     dispatch_state.json ALREADY on disk — the mode evidence precedes any

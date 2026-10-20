@@ -726,6 +726,15 @@ def _spawn_worker(index, gpu, tee, context):
                     stderr=subprocess.STDOUT,
                 )
                 payload["child_pid"] = getattr(proc, "pid", None)
+                # CR-03 (phase-13 review): persist the pid IMMEDIATELY,
+                # before wait() — the on-disk claim must name the child
+                # for the child's ENTIRE lifetime (the documented
+                # orphan-recovery procedure reads child pids from the
+                # claim JSON; leaving the write to finalize_claim kept
+                # the claim at "child_pid": null for the whole training
+                # run, exactly the window in which a dispatcher kill
+                # leaves orphans).
+                _atomic_write_json(claim_path, payload)
                 code = proc.wait()
             except (subprocess.SubprocessError, OSError) as exc:
                 # The run_matrix failure boundary mirrored: launch-seam
