@@ -2045,7 +2045,10 @@ def test_cleanup_refuses_merged_root_without_manifest(
             runner=make_fake_runner(calls))
 
     assert run_sweep.MANIFEST_NAME in str(excinfo.value)
-    assert not calls, "leg B refuses before any removal could proceed"
+    assert len(calls) == 1, (
+        "leg A ran (its own truth), then leg B refused on the missing "
+        "merged manifest — removal never became possible"
+    )
 
 
 def test_cleanup_worker_root_absent_at_removal_is_skipped_not_crash(
@@ -2058,12 +2061,13 @@ def test_cleanup_worker_root_absent_at_removal_is_skipped_not_crash(
     base, roots, logs = merged_fixture(tmp_path, monkeypatch)
     real_rmtree = shutil_module.rmtree
 
-    def racing_rmtree(path, *args, **kwargs):
+    def racing_rmtree(path):
         # when removing w0, a concurrent janitor deletes w1 — the loop
-        # later finds w1 already absent
+        # later finds w1 already absent (run_cleanup calls rmtree with
+        # exactly one positional path)
         if str(path) == str(roots[0]):
             real_rmtree(roots[1], ignore_errors=True)
-        real_rmtree(path, *args, **kwargs)
+        real_rmtree(path)
 
     monkeypatch.setattr(run_sweep_shard.shutil, "rmtree", racing_rmtree)
     run_cleanup_direct(

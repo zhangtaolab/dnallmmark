@@ -59,6 +59,29 @@ pass worker roots AND their merged root together — every cell would
 appear twice; worker roots for the live view, the merged root alone for
 the post-run view.
 
+CLEANUP MODE (14-02, MGPU-05, D14-09..D14-12) — after the merge is
+verified, remove the worker roots safely (replacing the manual
+``rm -rf`` runbook step, docs/multi-gpu.md)::
+
+    python pipeline/run_sweep_shard.py --cleanup --workers 2 \
+        --output-root ./finetuned --yes /abs/resolved/finetuned
+
+Semantics: verify, then offer removal behind an exact typed phrase.
+Leg A runs ``script/export_runs.py --dry-run`` as a SUBPROCESS over the
+merged root (never an import — export_runs pulls numpy/yaml/scipy at
+module top; this orchestrator stays stdlib-headless); leg B requires
+the merged manifest's ``(model, task, seed)`` cell set to EQUAL the
+union of the worker manifests' (both truths must hold: a manifest can
+lie about a tree the exporter walks, and a tree can hide cells the
+manifest omits — Pitfall 6's false-green). Only then is the removal
+plan printed — every existing ``worker_root()`` sibling root plus its
+``{base}-mgpu-w{i}-*.log`` per-launch logs (the Q5 ruling: the full
+manual recipe, roots AND logs) — and only the exact typed phrase (the
+resolved ``--output-root`` string) authorizes removal of exactly those
+listed paths. The merged root is NEVER a removal target; dispatch
+roots refuse with a named needs-no-cleanup error before any
+verification. ``--gpus`` is meaningless in cleanup mode and ignored.
+
 Every token the orchestrator does not own (``--tasks``, ``--seeds``,
 ``--peft``, ``--num_train_epochs``, ``--registry-dir``, ...) is passed
 through VERBATIM to every worker after the orchestrator's own flags —
@@ -169,6 +192,7 @@ See also:
 """
 
 import argparse
+import glob
 import hashlib
 import json
 import os
@@ -299,12 +323,14 @@ def parse_args(argv=None):
 
     The orchestrator owns the five launch flags (``--workers``,
     ``--gpus``, ``--models``, ``--output-root``, ``--dry-run``) plus the
-    two merge-mode flags (``--merge``, ``--include-checkpoints`` — 12-04);
+    two merge-mode flags (``--merge``, ``--include-checkpoints`` — 12-04)
+    and the two cleanup-mode flags (``--cleanup``, ``--yes`` — 14-02);
     every UNRECOGNIZED token from the command line lands in the returned
     remainder. In LAUNCH mode the remainder is appended VERBATIM to every
     worker argv (run_sweep stays the single owner of sweep-flag
     validation and help — the D-07 argv-surface-minimization answer); in
-    MERGE mode it must be EMPTY (a merge takes no sweep flags).
+    MERGE and CLEANUP modes it must be EMPTY (neither takes sweep
+    flags).
     ``--registry-dir`` stays a passthrough token but is READ for this
     module's own validation join so the orchestrator and the workers see
     the same registry view.
@@ -405,6 +431,31 @@ def parse_args(argv=None):
              "checkpoints are worker resume state and nobody re-runs the "
              "merged root; only the MERGE_ALLOWLIST data artifacts merge "
              "by default"
+    )
+    parser.add_argument(
+        "--cleanup",
+        action="store_true",
+        default=False,
+        help="CLEANUP MODE (14-02, MGPU-05, D14-09..D14-12): verify the "
+             "merged --output-root (an export_runs.py --dry-run "
+             "subprocess + manifest cell-set equality vs the worker "
+             "manifests), then — only if BOTH legs pass — remove the "
+             "frozen worker roots {output-root}-mgpu-w{0..N-1} and "
+             "their {base}-mgpu-w{i}-*.log per-launch logs behind an "
+             "exact typed confirmation (--yes PHRASE; PHRASE = the "
+             "resolved --output-root string, D14-11). The merged root "
+             "is NEVER removed; dispatch roots refuse (they need no "
+             "cleanup)"
+    )
+    parser.add_argument(
+        "--yes",
+        type=str,
+        default=None,
+        metavar="PHRASE",
+        help="Cleanup gate phrase (non-interactive, D14-11): must equal "
+             "the RESOLVED --output-root string EXACTLY. Without --yes, "
+             "an interactive terminal prompts once; EOF, a mismatch, or "
+             "a non-interactive launch refuses with nothing removed"
     )
     return parser.parse_known_args(argv)
 
@@ -1133,6 +1184,292 @@ def run_merge(args, passthrough):
           "gen_progress together (double-counted sweeps)")
 
 
+# ===== cleanup mode (14-02, MGPU-05 / D14-09..D14-12) =====
+#
+# The runbook's post-merge step — delete the worker roots and their
+# per-launch logs once the merged root is verified — becomes an
+# evidence-gated, tested command. NEVER a bare rm -rf: removal is
+# OFFERED only after BOTH verification legs hold (the export dry-run
+# subprocess walks the FILE tree while the manifest check compares
+# PLANNED sets — Pitfall 6's two different truths), and EXECUTES only
+# behind an exact typed phrase (the resolved --output-root string, the
+# Q4 ruling).
+
+#: The export dry-run verification script (D14-10 leg A), derived from
+#: the same repo-root constant the worker script uses — never a
+#: CWD-relative guess. Reached ONLY through a ``sys.executable``
+#: subprocess: export_runs imports numpy/yaml/scipy at its module top,
+#: and this module must stay stdlib-headless (the 14-02 key-link
+#: contract).
+_EXPORT_RUNS_SCRIPT = (
+    run_sweep.PIPELINE_DIR.parent / "script" / "export_runs.py")
+
+#: The injectable export-subprocess seam (the ``_DEFAULT_SPAWNER``
+#: idiom): tests inject a fake returning a CompletedProcess; the real
+#: path is ``subprocess.run`` with captured output.
+_DEFAULT_RUNNER = subprocess.run
+
+
+def _dispatch_cleanup_refusal(path):
+    """Build the named dispatch-root cleanup refusal (D14-11, D14-12)."""
+    return (
+        f"dispatch root {path} needs no cleanup — dispatch mode writes "
+        "ONE shared root (MGPU-06) with no per-worker roots to remove; "
+        "refusing before any verification or removal"
+    )
+
+
+def _cell_id_text(cell_id):
+    """Deterministic display form of a ``(model, task, seed)`` cell id.
+
+    Args:
+        cell_id (tuple): the identity triple (elements may be ``None``
+            in a malformed manifest — the text form sorts regardless).
+
+    Returns:
+        str: ``{model}/{task}/seed_{seed}``.
+    """
+    model, task, seed = cell_id
+    return f"{model}/{task}/seed_{seed}"
+
+
+def _manifest_cell_identities(manifest, path, what, problems):
+    """Extract the set of ``(model, task, seed)`` identity tuples from a
+    manifest's ``cells`` list — the ``_IDENTITY_CELL_KEYS`` projection
+    minus ``status``/``output_dir`` (set-based, never order-sensitive).
+
+    Args:
+        manifest (dict): a parsed ``sweep_manifest.json`` object.
+        path (Path): the manifest's path (diagnostics).
+        what (str): a human label for the diagnostic.
+        problems (list[str]): the collect-all problems list.
+
+    Returns:
+        set | None: the identity set, or ``None`` (a problem was
+        appended).
+    """
+    cells = manifest.get("cells")
+    if not isinstance(cells, list):
+        problems.append(f"{what} at {path}: 'cells' is not a list")
+        return None
+    identities = set()
+    for cell in cells:
+        if not isinstance(cell, dict):
+            continue
+        identities.add(
+            (cell.get("model"), cell.get("task"), cell.get("seed")))
+    return identities
+
+
+def run_cleanup(args, passthrough, runner=None, confirm_input=None):
+    """Verify the merged root, then remove worker roots behind a typed gate.
+
+    Replaces the manual ``rm -rf`` runbook step with an evidence-gated,
+    operator-confirmed command (14-02, MGPU-05, D14-09..D14-12). Each
+    stage gates the next:
+
+    1. ``--workers >= 1``; the base root resolves absolute exactly as
+       the launch path resolves it.
+    2. Dispatch-evidence refusal (D14-11/D14-12): the base root OR any
+       ``worker_root()`` sibling carrying run-recorded dispatch evidence
+       refuses with the named needs-no-cleanup error BEFORE any
+       verification — dispatch mode is one root by construction.
+    3. Leg A (D14-10): ``script/export_runs.py --dry-run`` over the
+       merged root through the injectable ``runner`` seam — a SUBPROCESS,
+       never an import (stdlib-headless; the equals-form argument means
+       a leading-dash root path can never re-parse as a flag, T-14-05).
+       A non-zero exit refuses naming the returncode and the captured
+       output tail.
+    4. Leg B: the merged manifest's ``(model, task, seed)`` cell SET
+       must EQUAL the union of the worker manifest sets (a missing
+       MERGED manifest refuses — nothing has been verified; a missing
+       worker manifest refuses naming the worker root); a discrepancy
+       refuses listing the sorted missing/extra cells — never
+       order-sensitive.
+    5. Both legs green: print the removal plan — every EXISTING
+       ``worker_root()`` path and every ``{base}-mgpu-w{i}-*.log``
+       per-launch log (the Q5 ruling: the full manual recipe, roots AND
+       logs), each listed by path before anything is touched.
+    6. Gate (D14-11, the Q4 ruling): the required phrase is the resolved
+       root string ``str(root)``. ``--yes PHRASE`` compares
+       non-interactively; otherwise an interactive stdin prompts ONCE
+       via the injectable ``confirm_input`` seam (default ``input``).
+       EOF, a mismatch, or a non-interactive launch without ``--yes``
+       refuses naming the phrase requirement — nothing removed.
+    7. Removal: ``shutil.rmtree`` each listed root that still exists
+       (an already-absent root is noted and skipped — never a crash),
+       unlink each listed log, then post-check every listed path is
+       gone. The merged root is NEVER a removal target.
+
+    Args:
+        args (argparse.Namespace): the parsed orchestrator flags.
+        passthrough (list[str]): the parse_known_args remainder (main()
+            already refused a non-empty one for ``--cleanup``).
+        runner: injectable export-subprocess seam; ``None`` uses
+            ``subprocess.run`` (the ``_DEFAULT_SPAWNER`` idiom).
+        confirm_input: injectable gate reader; ``None`` uses ``input``.
+    """
+    problems = []
+    workers = args.workers
+    if workers < 1:
+        problems.append(f"--workers must be >= 1, got {workers}")
+    if problems:
+        sys.exit(f"[Error] {'; '.join(problems)}")
+
+    root = Path(args.output_root).resolve()
+    worker_roots = [worker_root(root, i) for i in range(workers)]
+
+    # (2) dispatch-evidence refusal — BEFORE any verification (the
+    # runner is never invoked for a dispatch root; run_merge's
+    # defense-in-depth shape: base root AND every worker root)
+    if _root_has_dispatch_evidence(root):
+        problems.append(_dispatch_cleanup_refusal(root))
+    for wroot in worker_roots:
+        if wroot != root and _root_has_dispatch_evidence(wroot):
+            problems.append(_dispatch_cleanup_refusal(wroot))
+    if problems:
+        sys.exit(f"[Error] {'; '.join(problems)}")
+
+    # (3) leg A: export dry-run SUBPROCESS over the merged root
+    seam = _DEFAULT_RUNNER if runner is None else runner
+    proc = seam(
+        [sys.executable, str(_EXPORT_RUNS_SCRIPT), "--dry-run",
+         f"--input-root={root}"],
+        capture_output=True, text=True)
+    stdout = getattr(proc, "stdout", None) or ""
+    stderr = getattr(proc, "stderr", None) or ""
+    captured = f"{stdout}{stderr}".strip()
+    if proc.returncode != 0:
+        tail = (f" — captured output tail: {captured[-400:]}"
+                if captured else "")
+        sys.exit(
+            f"[Error] cleanup verification refused: export dry-run over "
+            f"{root} exited {proc.returncode}{tail}; nothing removed, "
+            "worker roots untouched"
+        )
+    dry_lines = [line for line in stdout.strip().splitlines() if line]
+    print(f"[Cleanup] export dry-run: "
+          f"{dry_lines[-1] if dry_lines else ''}")
+
+    # (4) leg B: merged manifest cell set == union of worker sets
+    merged_path = root / run_sweep.MANIFEST_NAME
+    if not merged_path.is_file():
+        sys.exit(
+            f"[Error] cleanup verification refused: no "
+            f"{run_sweep.MANIFEST_NAME} at the merged root {root} — "
+            "nothing has been verified (merge first); nothing removed"
+        )
+    merged_manifest = _load_json_object(
+        merged_path, problems, "merged manifest")
+    if merged_manifest is None:
+        sys.exit(f"[Error] {'; '.join(problems)}")
+    merged_ids = _manifest_cell_identities(
+        merged_manifest, merged_path, "merged manifest", problems)
+    if merged_ids is None:
+        sys.exit(f"[Error] {'; '.join(problems)}")
+    worker_ids = set()
+    for index, wroot in enumerate(worker_roots):
+        manifest_path = wroot / run_sweep.MANIFEST_NAME
+        if not manifest_path.is_file():
+            problems.append(
+                f"worker root {wroot} has no {run_sweep.MANIFEST_NAME} "
+                "(nothing verified)"
+            )
+            continue
+        manifest = _load_json_object(
+            manifest_path, problems, f"worker {index} manifest")
+        if manifest is None:
+            continue
+        ids = _manifest_cell_identities(
+            manifest, manifest_path, f"worker {index} manifest", problems)
+        if ids is not None:
+            worker_ids |= ids
+    if problems:
+        sys.exit(f"[Error] {'; '.join(problems)}")
+    if merged_ids != worker_ids:
+        parts = []
+        missing = sorted(worker_ids - merged_ids, key=_cell_id_text)
+        extra = sorted(merged_ids - worker_ids, key=_cell_id_text)
+        if missing:
+            parts.append(
+                "cell(s) in the worker manifests but MISSING from the "
+                f"merged manifest: {[_cell_id_text(c) for c in missing]}")
+        if extra:
+            parts.append(
+                "cell(s) in the merged manifest that NO worker claims: "
+                f"{[_cell_id_text(c) for c in extra]}")
+        sys.exit(
+            f"[Error] cleanup verification refused: merged manifest cell "
+            f"set ({len(merged_ids)}) != union of worker manifest cell "
+            f"sets ({len(worker_ids)}) — {'; '.join(parts)}; nothing "
+            "removed, worker roots untouched"
+        )
+
+    # (5) the removal plan: every path listed BEFORE anything is touched
+    removal_targets = []
+    for wroot in worker_roots:
+        if wroot.exists():
+            print(f"[Cleanup] remove worker root: {wroot}")
+            removal_targets.append(wroot)
+        else:
+            print(f"[Cleanup] worker root already absent (skip): {wroot}")
+        for log in sorted(Path(match) for match in glob.glob(
+                glob.escape(f"{wroot}-") + "*.log")):
+            print(f"[Cleanup] remove worker log: {log}")
+            removal_targets.append(log)
+
+    # (6) the typed-phrase gate
+    phrase = str(root)
+    typed = None
+    if args.yes is not None:
+        typed = args.yes
+    elif confirm_input is not None or sys.stdin.isatty():
+        reader = input if confirm_input is None else confirm_input
+        try:
+            typed = reader(
+                f"[Cleanup] type '{phrase}' to remove the listed worker "
+                "roots and logs: ")
+        except EOFError:
+            typed = None
+    if typed != phrase:
+        sys.exit(
+            f"[Error] cleanup refused: the confirmation phrase does not "
+            f"match — type the resolved output root '{phrase}' exactly "
+            "(--yes PHRASE, or the interactive prompt); nothing removed, "
+            "worker roots untouched"
+        )
+
+    # (7) removal + post-check (the merged root is never a target)
+    removed = []
+    removal_problems = []
+    for path in removal_targets:
+        if not path.exists():
+            print(f"[Cleanup] already absent at removal time (skip): "
+                  f"{path}")
+            continue
+        try:
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        except OSError as exc:
+            removal_problems.append(f"{path}: {exc}")
+            continue
+        removed.append(path)
+    survivors = [p for p in removal_targets if p.exists()]
+    if removal_problems or survivors:
+        sys.exit(
+            "[Error] cleanup removal incomplete — "
+            + (f"failed: {'; '.join(removal_problems)}"
+               + ("; " if survivors else ""))
+            + (f"still present: {survivors}" if survivors else "")
+        )
+    for path in removed:
+        print(f"[Cleanup] removed {path}")
+    print(f"[Cleanup] removed {len(removed)} path(s); merged root "
+          f"{root} left INTACT")
+
+
 def main(spawner=None, clock=None):
     """Validate, shard, spawn, wait, and report the aggregated verdict.
 
@@ -1171,6 +1508,41 @@ def main(spawner=None, clock=None):
             "dispatch roots need no merge (MGPU-06) — run the modes "
             "separately"
         )
+    if args.cleanup:
+        # 14-02 (D14-09..D14-12, the A6 refusal shape): cleanup is the
+        # fourth sibling mode — verify the merged root, then offer
+        # worker-root removal behind the typed gate. It takes no other
+        # mode's flags; each combination refuses by name BEFORE any mode
+        # runs (deterministic, never order-dependent).
+        if args.merge:
+            sys.exit(
+                "[Error] --cleanup cannot combine with --merge: cleanup "
+                "verifies the ALREADY-merged root and removes the "
+                "worker roots — run --merge first, then --cleanup"
+            )
+        if args.mode == "dispatch":
+            sys.exit(
+                "[Error] --cleanup cannot combine with --mode dispatch: "
+                "dispatch mode writes ONE shared root (MGPU-06) with no "
+                "per-worker roots to clean up"
+            )
+        if args.dry_run:
+            sys.exit(
+                "[Error] --cleanup cannot combine with --dry-run: "
+                "cleanup verifies and gates BEFORE anything is removed — "
+                "there is nothing to dry-run"
+            )
+        if args.models is not None:
+            sys.exit(
+                "[Error] --cleanup takes no --models (the merged "
+                "manifest is the cleanup's source of truth)"
+            )
+        if passthrough:
+            sys.exit(
+                "[Error] --cleanup takes no sweep flags; unrecognized "
+                f"token(s): {passthrough}"
+            )
+        return run_cleanup(args, passthrough)
     if args.merge:
         return run_merge(args, passthrough)
     if args.mode == "dispatch":
