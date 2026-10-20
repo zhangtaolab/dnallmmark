@@ -1045,11 +1045,11 @@ ABOUT_DEP_ABSENT = _t("ABOUT_DEP_ABSENT", "未安装", "not installed")
 # milestone metadata, not a machine probe; updated per milestone).
 ABOUT_MILESTONE_STAGE = _t(
     "ABOUT_MILESTONE_STAGE",
-    "v1.2.0 — TUI 操作台全量交付（Phase 7-12）：环境检查/选择/自定义接入/"
-    "数据管理/启动监控/多卡分片 + 演示文档",
-    "v1.2.0 — full TUI console delivery (Phases 7-12): env check / "
-    "selection / custom onboarding / data manager / launch+monitor / "
-    "multi-GPU sharding + the demo doc")
+    "v1.3.0 开发中 — 多 GPU 编排与验证（Phase 13-18）：动态调度/运行视图/"
+    "失败恢复/双卡验证/TUI 多卡界面/error bar/文档",
+    "v1.3.0 in development — multi-GPU orchestration & validation "
+    "(Phases 13-18): dynamic dispatch / run view / failure recovery / "
+    "dual-GPU validation / TUI multi-GPU surface / error bars / docs")
 
 # ===== 数据管理屏 (DL_, Phase 10, 10-03; D-12/D-13 + I18N-01) =====
 # The data-manager screen chrome + Zenodo 整包 entry copy (10-UI-SPEC
