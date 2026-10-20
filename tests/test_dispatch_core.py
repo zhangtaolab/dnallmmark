@@ -8,8 +8,13 @@ Coverage named by the plan (SC ids are the phase acceptance tests):
   live-claimed cell returns None (the O_EXCL ``EEXIST``), the original
   claim is untouched, and within one run no second child is ever spawned
   for one cell.
-- **SC2 (kill-proven resume)** — landed with Task 2 (the skip filter +
-  the two-run kill test over one shared root).
+- **SC2 (kill-proven resume)** — the skip filter (marker OR
+  ledger-completed skip; stale-claim requeue with atomic claim
+  replacement), the dead-pid lock reclaim (A5) with the live-pid loud
+  refusal, skip-set order purity, and the two-run kill test over ONE
+  shared root: run 1 kills one cell mid-flight (fake child returning
+  SIGKILL), the relaunch re-dispatches EXACTLY that cell, and every
+  cell ends with exactly one artifact set (no duplicates, no orphans).
 - **Happy path** — 3 models x 2 tasks x 2 seeds over ``--workers 2``
   with per-cell fake children: exactly 12 spawns, every artifact set at
   ``run_sweep.cell_dir_for`` paths under the ONE shared root, zero
@@ -57,6 +62,7 @@ See also:
 """
 
 import json
+import os
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -626,16 +632,19 @@ def test_dispatch_zero_enumeration_refuses_before_lock(
 # ===== the singleton lock + mode isolation =====
 
 
-def test_dispatch_lock_held_refuses_loudly(tmp_path, monkeypatch):
-    """A pre-existing dispatcher lock refuses the launch loudly naming
-    the lock path (T-13-02): exactly ONE dispatcher per root, ever."""
+def test_dispatch_lock_live_pid_refuses_naming_holder(
+        tmp_path, monkeypatch):
+    """A pre-existing dispatcher lock naming a LIVE pid (this test
+    process's own pid) refuses the launch loudly naming the pid, the
+    recorded run_id, AND the lock path (T-13-02/T-13-03): exactly ONE
+    dispatcher per root, ever."""
     registry_dir = make_registry(tmp_path)
     base = (tmp_path / "finetuned").resolve()
     ledger_dir = dispatch_core.ledger_dir_for(base)
     ledger_dir.mkdir(parents=True)
     lock_path = ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME
     lock_path.write_text(
-        json.dumps({"pid": 999999, "run_id": "other-run",
+        json.dumps({"pid": os.getpid(), "run_id": "alive-run",
                     "started_at": "2026-10-20T00:00:00+00:00"}),
         encoding="utf-8")
     calls = []
@@ -646,7 +655,10 @@ def test_dispatch_lock_held_refuses_loudly(tmp_path, monkeypatch):
             "--output-root", str(base),
             "--registry-dir", str(registry_dir),
         ], spawner=make_child_spawner(calls))
-    assert str(lock_path) in str(excinfo.value)
+    message = str(excinfo.value)
+    assert str(os.getpid()) in message, "the refusal names the live pid"
+    assert "alive-run" in message, "the refusal names the holder run_id"
+    assert str(lock_path) in message
     assert not calls
 
 
@@ -836,3 +848,357 @@ def test_claim_cell_double_claim_structurally_refused(tmp_path):
     assert second is None, "the live claim structurally refuses (SC3)"
     payload = json.loads(first.read_text(encoding="utf-8"))
     assert payload["run_id"] == "run-1", "the original claim is intact"
+
+
+# ===== Task 2: resume semantics — skip filter, requeue, lock reclaim =====
+
+
+def _write_hand_claim(ledger_dir, cell, state, run_id="hand-run"):
+    """Hand-write one ledger claim fixture in the given state."""
+    payload = dispatch_core._claim_payload(
+        cell, {}, "7", run_id, "2026-10-20T00:00:00+00:00")
+    payload["state"] = state
+    path = ledger_dir / dispatch_core.claim_filename(cell)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _write_marker(base, cell):
+    """Hand-write the trainer_state.json resume marker for one cell."""
+    fraction = cell[3] if len(cell) > 3 else None
+    cell_dir = run_sweep.cell_dir_for(
+        base, cell[0], cell[1], cell[2], fraction)
+    cell_dir.mkdir(parents=True, exist_ok=True)
+    (cell_dir / run_sweep.RESUME_MARKER).write_text(
+        '{"global_step": 9}', encoding="utf-8")
+    return cell_dir
+
+
+def test_sc2_kill_test_resume_exactly_once(tmp_path, monkeypatch):
+    """SC2 (the P1 acceptance test): run 1 with one SIGKILLed cell (the
+    fake child returns -9 and writes NO artifacts) drains with that cell
+    failed and all others completed; the relaunch over the SAME root
+    (killed cell now succeeding) spawns ONLY the killed cell; final
+    state — every cell has exactly one final_metrics.json +
+    trainer_state.json set, every claim completed, per-cell spawn counts
+    are 1 for skip-cells and 2 for the killed cell (no duplicates, no
+    orphans). Exactly-once is proven from evidence ON DISK (ledger +
+    artifact counts + captured argvs), never from return codes alone."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    killed = ("model-b", "task-z", 43)
+    argv = [
+        "--mode", "dispatch", "--workers", "2",
+        "--models", "model-a,model-b,model-c",
+        "--tasks", "task-x,task-z", "--seeds", "42,43",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ]
+    # run 1: the targeted cell's child dies by SIGKILL mid-cell
+    calls1 = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, argv, spawner=make_child_spawner(
+            calls1, exit_for={killed: -9}))
+    assert excinfo.value.code == 1, "a run with a failed cell exits 1"
+    assert len(calls1) == 12
+    assert len(set(spawn_identities(calls1))) == 12, (
+        "every cell spawned exactly once in run 1"
+    )
+    state1 = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state1["counts"] == {
+        "total": 12, "completed": 11, "failed": 1, "skipped": 0}
+    killed_claim = (dispatch_core.ledger_dir_for(base)
+                    / dispatch_core.claim_filename(killed))
+    assert json.loads(
+        killed_claim.read_text(encoding="utf-8"))["state"] == "failed"
+    assert not (dispatch_core.ledger_dir_for(base)
+                / dispatch_core.DISPATCHER_LOCK_NAME).exists(), (
+        "the lock is released even on the failed-exit drain"
+    )
+    run1_run_id = state1["run_id"]
+
+    # run 2 (relaunch, same root): the killed cell now succeeds — the
+    # marker/ledger skip set covers every completed cell, and ONLY the
+    # killed cell (stale failed claim -> requeue) re-dispatches
+    calls2 = []
+    run_cli(monkeypatch, argv, spawner=make_child_spawner(calls2))
+    assert spawn_identities(calls2) == [killed], (
+        "the relaunch re-dispatches EXACTLY the killed cell"
+    )
+    state2 = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state2["counts"] == {
+        "total": 12, "completed": 1, "failed": 0, "skipped": 11}
+    assert state2["run_id"] != run1_run_id, "a fresh run id per launch"
+
+    # exactly-once evidence on disk: every cell has EXACTLY one artifact
+    # set under its cell_dir_for path
+    expected = run_sweep.enumerate_matrix(
+        ["model-a", "model-b", "model-c"], ["task-x", "task-z"],
+        [42, 43], registry_dir)
+    for model, task, seed in expected:
+        cell_dir = run_sweep.cell_dir_for(base, model, task, seed)
+        assert (cell_dir / run_sweep.METRICS_NAME).is_file()
+        assert (cell_dir / run_sweep.RESUME_MARKER).is_file()
+    assert len(list(base.rglob(run_sweep.METRICS_NAME))) == 12, (
+        "no duplicate artifact sets anywhere in the root"
+    )
+    # every claim completed, ONE claim file per cell (no orphans)
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    claims = sorted(
+        path for path in ledger_dir.glob("*.json")
+        if path.name != dispatch_core.DISPATCHER_LOCK_NAME)
+    assert len(claims) == 12
+    for claim_path in claims:
+        payload = json.loads(claim_path.read_text(encoding="utf-8"))
+        assert payload["state"] == "completed"
+    # the requeued claim carries the NEW run's identity
+    revived = json.loads(killed_claim.read_text(encoding="utf-8"))
+    assert revived["run_id"] == state2["run_id"]
+    assert not list(ledger_dir.glob("*.tmp")), "no atomic-write residue"
+
+    # per-cell spawn counts: 1 everywhere except the killed cell (2)
+    all_identities = spawn_identities(calls1) + spawn_identities(calls2)
+    for cell in expected:
+        expected_count = 2 if tuple(cell) == killed else 1
+        assert all_identities.count(tuple(cell)) == expected_count, (
+            f"cell {cell} spawned exactly {expected_count} time(s)"
+        )
+
+
+def test_skip_filter_marker_and_claim_layers(tmp_path, monkeypatch):
+    """The two-layer skip: a cell with trainer_state.json in its cell dir
+    is skipped (marker AUTHORITATIVE, D-06) even with no claim; a cell
+    whose claim state is completed is skipped even with no marker; a
+    failed claim requeues (MGPU-02 resume semantics)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    _write_marker(base, ("model-a", "task-x", 42))  # marker, no claim
+    _write_hand_claim(  # completed claim, no marker
+        ledger_dir, ("model-a", "task-x", 43),
+        dispatch_core.CLAIM_STATE_COMPLETED)
+    _write_hand_claim(  # failed claim -> requeue
+        ledger_dir, ("model-a", "task-x", 44),
+        dispatch_core.CLAIM_STATE_FAILED)
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42,43,44",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert spawn_identities(calls) == [("model-a", "task-x", 44)], (
+        "only the failed-claim cell requeues; both skip layers hold"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 3, "completed": 1, "failed": 0, "skipped": 2}
+
+
+def test_requeued_claim_atomically_replaced_with_new_identity(
+        tmp_path, monkeypatch):
+    """A requeued cell's stale claim is atomically REPLACED at re-claim,
+    carrying the new run_id / gpu / timestamps; fresh cells keep the
+    strict O_EXCL path; no tmp residue lands in the ledger."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    cell = ("model-a", "task-x", 42)
+    stale = _write_hand_claim(
+        ledger_dir, cell, dispatch_core.CLAIM_STATE_CLAIMED,
+        run_id="dead-run")
+    assert json.loads(stale.read_text(encoding="utf-8"))["run_id"] == (
+        "dead-run")
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1", "--gpus", "5",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    revived = json.loads(stale.read_text(encoding="utf-8"))
+    assert revived["run_id"] == state["run_id"], (
+        "the replaced claim carries THIS run's id"
+    )
+    assert revived["gpu"] == "5"
+    assert revived["claimed_at"]
+    assert revived["state"] == "completed"
+    assert not list(ledger_dir.glob("*.tmp")), (
+        "the replace left no tmp residue (atomic tmp + os.replace)"
+    )
+
+
+def test_lock_dead_pid_is_reclaimed(tmp_path, monkeypatch):
+    """A5: a lock naming a provably DEAD pid (a reaped real subprocess)
+    is reclaimed — run_dispatch proceeds and the lock file then carries
+    the new run's identity."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()  # reaped: the pid is provably dead
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    lock_path = ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME
+    lock_path.write_text(
+        json.dumps({"pid": dead.pid, "run_id": "dead-run",
+                    "started_at": "2026-10-20T00:00:00+00:00"}),
+        encoding="utf-8")
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the dead-pid lock is reclaimed, run proceeds"
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"]["completed"] == 1
+    assert not lock_path.exists(), "released after the drain"
+
+
+def test_lock_malformed_content_is_reclaimed(tmp_path, monkeypatch):
+    """A5: a malformed/unreadable lock cannot name a live holder — the
+    run reclaims it by atomic overwrite and proceeds."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    (ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME).write_text(
+        "not json at all {", encoding="utf-8")
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1
+
+
+def test_skip_set_is_order_independent(tmp_path):
+    """EDGE MGPU-02/ordering: the relaunch skip set is a pure function
+    of per-cell (marker presence, claim state) — the SAME ledger/marker
+    state built in two DIFFERENT creation orders yields the identical
+    skip/requeue decision set."""
+    cells = [
+        ("model-a", "task-x", 42),
+        ("model-a", "task-x", 43),
+        ("model-b", "task-x", 42),
+        ("model-b", "task-x", 43),
+        ("model-c", "task-x", 42),
+    ]
+
+    def build(root_name, reversed_order):
+        root = (tmp_path / root_name).resolve()
+        ledger_dir = dispatch_core.ledger_dir_for(root)
+        writes = [
+            lambda: _write_marker(root, ("model-a", "task-x", 42)),
+            lambda: _write_hand_claim(
+                ledger_dir, ("model-a", "task-x", 42),
+                dispatch_core.CLAIM_STATE_COMPLETED),
+            lambda: _write_hand_claim(
+                ledger_dir, ("model-a", "task-x", 43),
+                dispatch_core.CLAIM_STATE_FAILED),
+            lambda: _write_hand_claim(
+                ledger_dir, ("model-b", "task-x", 43),
+                dispatch_core.CLAIM_STATE_CLAIMED),
+            lambda: _write_marker(root, ("model-c", "task-x", 42)),
+        ]
+        if reversed_order:
+            writes.reverse()  # same final state, opposite creation order
+        for write in writes:
+            write()
+        return [
+            dispatch_core.relaunch_decision(root, ledger_dir, cell)
+            for cell in cells]
+
+    forward = build("r-order-1", reversed_order=False)
+    backward = build("r-order-2", reversed_order=True)
+    assert forward == backward, (
+        "the same ledger state in any creation order yields the "
+        "identical per-cell skip/requeue decisions"
+    )
+    assert forward == [
+        "skip", "requeue", "fresh", "requeue", "skip"]
+
+
+def test_drained_root_relaunch_is_nothing_to_do(
+        tmp_path, monkeypatch, capsys):
+    """EDGE MGPU-02/empty: a relaunch over a fully completed root queues
+    ZERO cells, prints the explicit nothing-to-do verdict, spawns
+    nothing, and exits 0."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    argv = [
+        "--mode", "dispatch", "--workers", "2",
+        "--models", "model-a,model-b",
+        "--tasks", "task-x", "--seeds", "42,43",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ]
+    calls1 = []
+    run_cli(monkeypatch, argv, spawner=make_child_spawner(calls1))
+    assert len(calls1) == 4
+    calls2 = []
+    run_cli(monkeypatch, argv, spawner=make_child_spawner(calls2))
+    assert calls2 == [], "a fully drained root spawns nothing"
+    out = capsys.readouterr().out
+    assert "nothing to do" in out
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["status"] == "done"
+    assert state["counts"] == {
+        "total": 4, "completed": 0, "failed": 0, "skipped": 4}
+
+
+def test_malformed_claims_requeue_never_crash_never_skip(
+        tmp_path, monkeypatch):
+    """Malformed-claim tolerance: a claim whose JSON does not parse, and
+        one whose cell key disagrees with the pending cell, are both
+        treated as STALE claims (requeue) — never a crash, never a
+        silent skip."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    broken = ledger_dir / dispatch_core.claim_filename(
+        ("model-a", "task-x", 42))
+    broken.write_text("{ torn json", encoding="utf-8")
+    disagreeing = dispatch_core._claim_payload(
+        ("OTHER-model", "task-x", 42), {}, "0", "other-run", "t")
+    (ledger_dir / dispatch_core.claim_filename(
+        ("model-a", "task-x", 43))).write_text(
+        json.dumps(disagreeing), encoding="utf-8")
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42,43,44",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert sorted(spawn_identities(calls)) == [
+        ("model-a", "task-x", 42),
+        ("model-a", "task-x", 43),
+        ("model-a", "task-x", 44),
+    ], "malformed and cell-key-disagreeing claims both requeue"
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 3, "completed": 3, "failed": 0, "skipped": 0}

@@ -322,6 +322,30 @@ def read_claim(ledger_dir, cell):
     return payload
 
 
+def overwrite_claim(ledger_dir, cell, payload):
+    """Atomically REPLACE one stale claim (the requeue path, Task 2).
+
+    A requeued cell's claim file already exists (state ``claimed`` or
+    ``failed`` from a dead run) — the singleton lock guarantees no
+    second dispatcher lives, so replacing it is sound (D13-11: stale
+    claims are reclaimable precisely BECAUSE no second dispatcher can
+    exist; no lease, no timeout). The replace is atomic (tmp +
+    ``os.replace``): a crash mid-reclaim leaves either the old stale
+    claim or the new one, never a torn file.
+
+    Args:
+        ledger_dir (Path): the ledger directory.
+        cell (tuple): the cell identity (names the file).
+        payload (dict): the fresh claim content.
+
+    Returns:
+        Path: the claim file path (now owned by this run).
+    """
+    path = Path(ledger_dir) / claim_filename(cell)
+    _atomic_write_json(path, payload)
+    return path
+
+
 def _atomic_write_json(path, payload):
     """Atomic JSON write: tmp file + ``os.replace`` (P10 prevention).
 
@@ -390,6 +414,24 @@ def _claim_payload(cell, lane, gpu, run_id, claimed_at):
     return payload
 
 
+def _read_lock_holder(lock_path):
+    """Tolerantly read the lock JSON for the reclaim decision.
+
+    Args:
+        lock_path (Path): the lock file.
+
+    Returns:
+        dict | None: the parsed lock object, or None when unreadable,
+        malformed, or not an object (each maps to the reclaim branch —
+        an unusable lock cannot name a live holder).
+    """
+    try:
+        payload = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def acquire_dispatcher_lock(ledger_dir, run_id, started_at):
     """Acquire the singleton dispatcher lock for one root.
 
@@ -398,6 +440,17 @@ def acquire_dispatcher_lock(ledger_dir, run_id, started_at):
     to exactly one winner (T-13-02). The lock JSON records the pid,
     run_id, and started timestamp for the refusal diagnostic and the
     audit trail (T-13-03).
+
+    Stale-lock reclaim (decision A5, pid-liveness): on an existing lock
+    the recorded pid is probed with ``os.kill(pid, 0)`` — a LIVE pid
+    (or a PermissionError, i.e. a live dispatcher under another user)
+    refuses loudly naming the pid, run_id, and lock path; a
+    ``ProcessLookupError`` (provably dead) or a malformed/unreadable
+    lock is RECLAIMED by atomic overwrite. Reclaim-on-provable-death
+    only is the safe direction for pid reuse (T-13-03: a reused live
+    pid refuses); singleton-dispatcher semantics make the overwrite
+    sound — a second dispatcher structurally cannot exist while the
+    first lives.
 
     Args:
         ledger_dir (Path): the ledger directory (exists).
@@ -409,8 +462,8 @@ def acquire_dispatcher_lock(ledger_dir, run_id, started_at):
         ``release_dispatcher_lock``).
 
     Raises:
-        SystemExit: the lock file already exists — a second dispatcher
-        on the same root is refused loudly naming the lock path.
+        SystemExit: the lock names a LIVE holder — refused loudly naming
+        the pid, run_id, and lock path.
     """
     lock_path = Path(ledger_dir) / DISPATCHER_LOCK_NAME
     payload = {
@@ -422,14 +475,41 @@ def acquire_dispatcher_lock(ledger_dir, run_id, started_at):
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY,
                      0o644)
     except FileExistsError:
-        sys.exit(
-            f"[Error] dispatcher lock already held at {lock_path} — "
-            "exactly ONE dispatcher may run per output root (MGPU-02); "
-            "stop the running dispatcher before relaunching"
-        )
+        holder = _read_lock_holder(lock_path)
+        if holder is not None and isinstance(holder.get("pid"), int):
+            holder_pid = holder["pid"]
+            holder_run = holder.get("run_id")
+            try:
+                os.kill(holder_pid, 0)
+            except ProcessLookupError:
+                pass  # provably dead — fall through to the reclaim
+            except PermissionError:
+                # A live dispatcher under ANOTHER user — same loud
+                # refusal (only the superuser may signal it; the safe
+                # direction is to treat it as alive)
+                sys.exit(_live_holder_refusal(
+                    lock_path, holder_pid, holder_run))
+            else:
+                sys.exit(_live_holder_refusal(
+                    lock_path, holder_pid, holder_run))
+        # Malformed/unreadable lock, no usable pid, or a provably dead
+        # holder: reclaim by atomic overwrite (decision A5).
+        _atomic_write_json(lock_path, payload)
+        return lock_path
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         _dump_json_handle(handle, payload)
     return lock_path
+
+
+def _live_holder_refusal(lock_path, holder_pid, holder_run):
+    """Build the live-holder refusal message (names pid + run_id)."""
+    return (
+        f"[Error] dispatcher lock at {lock_path} is held by a LIVE "
+        f"dispatcher (pid {holder_pid}, run_id {holder_run!r}) — exactly "
+        "ONE dispatcher may run per output root (MGPU-02); stop the "
+        "running dispatcher before relaunching (if the pid is stale, the "
+        "holder is dead and the next launch reclaims automatically)"
+    )
 
 
 def release_dispatcher_lock(lock_path):
@@ -526,22 +606,33 @@ def _spawn_worker(index, gpu, tee, context):
             with queue_lock:
                 if not pending:
                     return
-                cell = pending.pop(0)
+                cell, tag = pending.pop(0)
             model, task, seed = cell[0], cell[1], cell[2]
             fraction = cell[3] if len(cell) > 3 else None
             cell_dir = run_sweep.cell_dir_for(
                 context["root"], model, task, seed, fraction)
             payload = _claim_payload(
                 cell, context["lane"], gpu, context["run_id"], _now_iso())
-            claim_path = claim_cell(context["ledger_dir"], cell, payload)
-            if claim_path is None:
-                # SC3 structural refusal — defense-in-depth under the
-                # single in-memory queue: the cell is already claimed
-                # (a stale file the skip filter could not see). Skip it;
-                # never spawn a second child for one cell.
-                with state_lock:
-                    context["counts"]["skipped"] += 1
-                continue
+            if tag == _DECISION_REQUEUE:
+                # Stale claim from a dead run: atomically REPLACED with
+                # this run's payload (new run_id/gpu/timestamps). Sound
+                # because the singleton lock guarantees no second
+                # dispatcher (D13-11 — no lease, no timeout).
+                claim_path = overwrite_claim(
+                    context["ledger_dir"], cell, payload)
+            else:
+                claim_path = claim_cell(
+                    context["ledger_dir"], cell, payload)
+                if claim_path is None:
+                    # SC3 structural refusal — defense-in-depth under
+                    # the single in-memory queue: the cell is already
+                    # claimed (a file the skip filter could not see).
+                    # Skip it; never spawn a second child for one cell.
+                    with state_lock:
+                        context["counts"]["skipped"] += 1
+                        context["state"]["counts"] = dict(
+                            context["counts"])
+                    continue
             stats["cells"] += 1
             argv = run_sweep.build_argv(
                 model, task, seed, str(context["root"]),
@@ -855,9 +946,20 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
     }
     _write_state(state_path, state)  # BEFORE any claim (mode evidence)
 
-    # Pending queue — every enumerated cell on a fresh root; the
-    # relaunch skip filter (Task 2) reuses relaunch_decision here.
-    pending = list(cells)
+    # Relaunch skip filter (the module docstring's step 4): skip iff the
+    # marker exists (authoritative, D-06) OR the ledger says completed;
+    # a stale claim (claimed/failed from a dead run) requeues. Purely
+    # per-cell, so the skip set is order-independent by construction.
+    pending = []  # (cell, tag) — tag: fresh | requeue
+    for cell in cells:
+        decision = relaunch_decision(output_root, ledger_dir, cell)
+        if decision == _DECISION_SKIP:
+            counts["skipped"] += 1
+        else:
+            pending.append((cell, decision))
+    state["counts"] = dict(counts)
+    state["updated_at"] = _now_iso()
+    _write_state(state_path, state)  # still BEFORE any claim/spawn
 
     now = datetime.now if clock is None else clock
     launch_stamp = now().strftime(
@@ -899,8 +1001,6 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
         # The relaunch half of the zero-cell decision (EDGE
         # MGPU-02/empty): a fully drained root is an explicit
         # nothing-to-do verdict and exit 0 — never a re-spawn storm.
-        counts["skipped"] = len(cells)
-        state["counts"] = dict(counts)
         state["status"] = "done"
         state["updated_at"] = _now_iso()
         _write_state(state_path, state)
