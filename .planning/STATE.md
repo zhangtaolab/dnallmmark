@@ -5,11 +5,11 @@ milestone_name: 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
 current_phase: 14
 current_phase_name: 编排运行视图与失败恢复
 status: executing
-stopped_at: Completed 14-02-PLAN.md
-last_updated: "2026-10-20T08:56:35.453Z"
+stopped_at: Completed 14-03-PLAN.md
+last_updated: "2026-10-20T11:48:08.869Z"
 last_activity: 2026-10-20
 last_activity_desc: Phase 14 execution started
-state_head: 0e88452b2fe6b2ae37b0f8f4a5e6889e02faa76e
+state_head: 5815797a236b85408bce0c5a6d9466677561945b
 progress:
   total_phases: 6
   completed_phases: 1
@@ -111,6 +111,7 @@ Last activity: 2026-10-20 — Phase 14 execution started
 | Phase 13 P02 | 46min | 2 tasks | 4 files |
 | Phase 14 P01 | 24 min | 3 tasks | 3 files |
 | Phase 14 P02 | 37 min | 2 tasks | 4 files |
+| Phase 14 P03 | 18 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -271,6 +272,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 14]: 14-02: cleanup removal scope = exactly worker_root()-named roots plus {base}-mgpu-w{i}-*.log per-launch logs (Q5 ruling, the full manual recipe); the merged root is structurally never a target (T-14-03)
 - [Phase 14]: 14-02: typed gate phrase = the RESOLVED --output-root string, exact equality (Q4); --yes PHRASE non-interactive, injected confirm_input drives tests, EOF/mismatch/non-interactive-without---yes all refuse with nothing removed
 - [Phase 14]: 14-02: export_runs reached ONLY via [sys.executable, script/export_runs.py, --dry-run, --input-root=<R>] subprocess (equals-form arg, T-14-05) through the injectable runner seam — never an import (stdlib-headless held, D14-16)
+- [Phase 14]: 14-03: rerun genealogy = Option C — archive_superseded_claim O_EXCL-copies the original failed claim VERBATIM under dispatch_ledger/archive/{stem}--run-{run_id[:8]}.json (injective across attempts, EEXIST refuses — audit history append-only), then tmp+os.replace lands the fresh claim in the canonical slot carrying rerun_of {archive, run_id, claimed_at}
+- [Phase 14]: 14-03: lane homogeneity compares over the UNION of lane keys with absent == None projection (a Phase-13 five-key lane beside a Phase-14 nine-key lane with equal values is ONE lane — Pitfall 4 absent-parity extended to the comparison); refusal names each differing flag PER CELL in the run_merge shape (D14-08)
+- [Phase 14]: 14-03: --rerun-failed is orchestrator-owned shard vocabulary implying dispatch mode (routes BEFORE the --models/--seeds requirements; only --registry-dir accepted in the passthrough); archive collisions pre-checked BY NAME before any spawn with the worker O_EXCL as structural backstop; --rerun-failed x --cleanup joined the A6 combo family
 
 ### Pending Todos
 
@@ -341,8 +345,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T08:56:35.325Z
-Stopped at: Completed 14-02-PLAN.md
+Last session: 2026-10-20T11:48:08.746Z
+Stopped at: Completed 14-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

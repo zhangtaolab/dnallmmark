@@ -46,7 +46,7 @@ Plans:
 - [x] 14-02-PLAN.md — export_runs.py --dry-run seam + `--cleanup` sibling mode: dual verification then typed-phrase-gated worker-root removal (MGPU-05) — complete 2026-10-20
 
 **Wave 2** *(blocked on Wave 1 file overlap: dispatch_core.py + run_sweep_shard.py)*
-- [ ] 14-03-PLAN.md — Ledger-driven cross-worker failure re-run: `--rerun-failed` with claim-time lane replay, archive+rerun_of genealogy, heterogeneous-lane refusal (MGPU-04)
+- [x] 14-03-PLAN.md — Ledger-driven cross-worker failure re-run: `--rerun-failed` with claim-time lane replay, archive+rerun_of genealogy, heterogeneous-lane refusal (MGPU-04) — complete 2026-10-20 (93 dispatch tests: 27 new over the 66 baseline; D14-15 e2e proves one command re-runs exactly the failed cells with byte-identical lane argv; 155 dispatch+shard combined; lint/typecheck/node green; ci.yml hash-pinned)
 
 **Success criteria**:
 1. `dispatch_state.json` (single-writer, atomic) carries queue depth, per-worker in-flight cells, failures, timestamps; schema frozen and parseable by a consumer test

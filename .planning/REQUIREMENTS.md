@@ -12,7 +12,7 @@ Requirements for milestone v1.3. Each maps to roadmap phases (Traceability below
 - [x] **MGPU-01**: Orchestrator dispatches (model×dataset×seed) cells as a work queue — idle GPU workers pull the next cell; each cell runs entirely on exactly one GPU (never split across GPUs); enumeration is deterministic and dry-run-provable
 - [x] **MGPU-02**: Cell output paths are worker-independent (one root, ordinary cell subpaths) with an exactly-once O_EXCL claim ledger; killing a worker mid-cell and relaunching re-dispatches that cell to exactly-once completion (test-pinned)
 - [x] **MGPU-03**: Live orchestrator run view — a terminal progress table AND a single-writer atomic `dispatch_state.json` (queue depth, per-worker in-flight cell, failures, timestamps) consumable by the TUI and `gen_progress.py`
-- [ ] **MGPU-04**: Cross-worker failure re-run — one command re-runs the union of failed cells across workers with full lane context (peft/variant/epochs) recorded at claim time, fixing the v1.2 lane-blindness limitation
+- [x] **MGPU-04**: Cross-worker failure re-run — one command re-runs the union of failed cells across workers with full lane context (peft/variant/epochs) recorded at claim time, fixing the v1.2 lane-blindness limitation
 - [x] **MGPU-05**: Post-merge verify + cleanup helper — verifies the merged root (export dry-run + manifest count check), then removes worker roots behind an explicit confirmation gate (replaces the manual `rm -rf` recipe)
 - [x] **MGPU-06**: Legacy static model-sharding mode coexists behind the same CLI with explicit mode declaration; `--merge` refuses mixed-mode roots loudly; dispatch-mode roots need no merge (documented)
 
@@ -76,7 +76,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MGPU-02 | Phase 13 | Complete (13-01, 2026-10-20) |
 | MGPU-06 | Phase 13 | Complete (13-02, 2026-10-20) |
 | MGPU-03 | Phase 14 | Complete |
-| MGPU-04 | Phase 14 | Pending |
+| MGPU-04 | Phase 14 | Complete |
 | MGPU-05 | Phase 14 | Complete |
 | VAL-01 | Phase 15 | Pending |
 | VAL-02 | Phase 15 | Pending |
