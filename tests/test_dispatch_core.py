@@ -3603,3 +3603,74 @@ def test_rerun_names_excluded_unusable_claims_never_silently_drops(
     assert not (base2 / dispatch_core.DISPATCH_STATE_NAME).exists(), (
         "the zero-usable verdict touches nothing"
     )
+
+
+def test_rerun_validates_startup_family_before_any_launch(
+        tmp_path, monkeypatch):
+    """WR-03 pin: the re-run mirrors the ordinary path's startup
+    validation family over the REPLAYED lane — a subset map deleted
+    since the original run refuses loudly BEFORE any spawn (never one
+    burned child per cell recorded as N failed claims), a registry
+    whose Dataset_name rows diverged since refuses the same way, and a
+    VALID replayed map threads through to the child argv verbatim."""
+    registry_dir = make_registry(tmp_path)
+
+    # ===== A: the replayed subset map no longer exists — the loud
+    # startup refusal, never a burned child per cell.
+    base = (tmp_path / "finetuned-deleted-subset").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    ghost_subset = (tmp_path / "subset-gone.json").resolve()
+    _write_failed_claim(
+        ledger_dir, ("model-a", "task-x", 42),
+        {"subset_file": str(ghost_subset)})
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "--subset_file" in message
+    assert "cannot read" in message
+    assert str(ghost_subset) in message
+    assert calls == [], "refused before any launch — no burned children"
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists()
+
+    # ===== B (control): a VALID replayed map threads through — one
+    # spawn, the map riding the child argv verbatim.
+    base_ok = (tmp_path / "finetuned-valid-subset").resolve()
+    ledger_ok = dispatch_core.ledger_dir_for(base_ok)
+    ledger_ok.mkdir(parents=True)
+    good_subset = tmp_path / "subset-good.json"
+    good_subset.write_text(
+        json.dumps({"task-x": [1, 2]}), encoding="utf-8")
+    good_subset_abs = str(good_subset.resolve())
+    _write_failed_claim(
+        ledger_ok, ("model-a", "task-x", 42),
+        {"subset_file": good_subset_abs})
+    calls_ok = []
+    run_cli(monkeypatch, _rerun_argv(base_ok, registry_dir),
+            spawner=make_child_spawner(calls_ok))
+    assert len(calls_ok) == 1, "a valid replayed map threads through"
+    assert flag_value(calls_ok[0]["argv"], "--subset_file") == (
+        good_subset_abs), "the map replays onto the child argv verbatim"
+
+    # ===== C: a registry whose Dataset_name diverged from its key
+    # since the original run refuses the re-run the same way.
+    divergent_dir = tmp_path / "registry-divergent"
+    divergent_dir.mkdir()
+    write_registry(
+        divergent_dir,
+        models={"model-a": {"Model_name": "model-a",
+                            "Model_path": "models/a", "size (M)": 100}},
+        datasets={"task-x": {"Dataset_name": "task-x-renamed",
+                             "Train": 100, "Dev": 10}})
+    base_div = (tmp_path / "finetuned-divergent").resolve()
+    ledger_div = dispatch_core.ledger_dir_for(base_div)
+    ledger_div.mkdir(parents=True)
+    _write_failed_claim(ledger_div, ("model-a", "task-x", 42), {})
+    calls_div = []
+    with pytest.raises(SystemExit) as excinfo_div:
+        run_cli(monkeypatch, _rerun_argv(base_div, divergent_dir),
+                spawner=make_fake_spawner(calls_div))
+    assert "Dataset_name diverges" in str(excinfo_div.value)
+    assert calls_div == [], "refused before any launch"

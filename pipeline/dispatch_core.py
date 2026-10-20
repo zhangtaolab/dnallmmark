@@ -1410,7 +1410,10 @@ def _run_rerun_failed(args, passthrough, spawner, clock, workers, gpus):
     never silently — WR-02, phase-14 review) -> registry-join every
     failed cell's BASE model name (fail-safe, T-14-07) -> refuse
     heterogeneous lane
-    signatures (D14-08) -> marker-vs-failed precedence per cell (the
+    signatures (D14-08) -> mirror the ordinary startup validation
+    family over the replayed lane (WR-03, phase-14 review: the subset
+    map and the registry-name alignment, BEFORE any launch — never one
+    burned child per cell) -> marker-vs-failed precedence per cell (the
     Phase 13 D-06 adjacency: a failed cell that later gained the
     ``trainer_state.json`` marker is SKIPPED, never re-run) -> replay
     through the ordinary launch machinery with the claim-time lane.
@@ -1430,7 +1433,8 @@ def _run_rerun_failed(args, passthrough, spawner, clock, workers, gpus):
 
     Raises:
         SystemExit: passthrough refusals, registry-join refusals, the
-        heterogeneous-lane refusal, and the launch machinery's own.
+        heterogeneous-lane refusal, the startup-validation refusals
+        (WR-03), and the launch machinery's own.
     """
     output_root = Path(args.output_root).resolve()
     registry_arg = _validate_rerun_passthrough(passthrough)
@@ -1506,6 +1510,24 @@ def _run_rerun_failed(args, passthrough, spawner, clock, workers, gpus):
     if len(signature_groups) > 1:
         sys.exit(_rerun_lane_refusal(qualified, union_keys))
     agreed_lane = next(iter(signature_groups.values()))[0]
+
+    # WR-03 (phase-14 review): mirror the ordinary path's startup
+    # validation family over the REPLAYED lane before any launch. The
+    # re-run previously joined the registry and proceeded straight to
+    # ``_launch_and_drain``, so a subset map deleted since the original
+    # run (or a registry whose Dataset_name rows diverged since) burned
+    # one child per cell at the child's own per-cell validation,
+    # recording N failed claims — the exact phase-13 WR-01
+    # burned-children hazard, on the recovery path, repeatable by
+    # re-running ``--rerun-failed`` (the claims stay failed). The view
+    # is the CURRENT registry — the same one the join above used
+    # (T-14-07) — so validating the replayed map against it is
+    # consistency, not a fidelity break.
+    registry_view = registry_loader.load_datasets_registry(registry_dir)
+    replayed_subset = agreed_lane.get("subset_file")
+    if replayed_subset is not None:
+        run_sweep._validate_subset_file(replayed_subset, registry_view)
+    run_sweep._validate_dataset_name_alignment(registry_view)
 
     # Archive-collision adjacency (D14-07): the archive for an original
     # attempt is O_EXCL and append-only — one already existing while
