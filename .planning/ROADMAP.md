@@ -107,7 +107,11 @@ Plans:
 
 **Goal**: Multi-seed results display with error bars on the public pages — additive mean/std/n_seeds through the data chain, scatter whiskers via a vendored inline Chart.js plugin, floating-bar task charts — with zero drift in existing numbers
 **Requirements**: WEB-01, WEB-02, WEB-03
-**Plans**: 0
+**Plans**: 3 plans
+Plans:
+- [ ] 17-01-PLAN.md — data-chain additive trio (schemas + export emission + summarize propagation + zero-drift gate split + METHODOLOGY appendix)
+- [ ] 17-02-PLAN.md — browser leg (vendored error-bars plugin + scatter whiskers + floating bars + ±std tooltips)
+- [ ] 17-03-PLAN.md — node-lane r2-derived fixtures + geometry/schema tests + phase-close gates
 **Success criteria**:
 1. Aggregation emits additive-optional `mean`/`std`/`n_seeds`; with the fields suppressed, output is byte-identical to pre-v1.3 (zero-drift gate extended and green); METHODOLOGY.md documents display-only semantics + std definition
 2. Scatter (FLOPs vs rank) renders whiskers via the vendored `afterDatasetsDraw` plugin (zero new CDN scripts); task bar chart uses floating bars; tooltips gain ±std — verified against real sweep-derived artifacts
