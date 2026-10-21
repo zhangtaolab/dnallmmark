@@ -2865,15 +2865,18 @@ class MonitorScreen(Screen):
     def _dispatch_structure_legs(
             view: "dispatch_state.DispatchStateView | None") -> tuple:
         """The dispatch block's STRUCTURE legs (16-02, Pitfall 6): the
-        block's presence, the worker-row count, and the stale/malformed
-        row's presence — the LABEL-COUNT-changing inputs ONLY. A
-        value-only change (counts moving, a worker flipping busy to
-        idle) is deliberately absent so it rides the in-place label
-        refresh and the ListItem/cursor identity survives."""
+        block's presence, the worker-row count, and the WARNING-ROW
+        COUNT (stale + malformed render as SEPARATE rows, WR-04 — a
+        one-bool leg could not distinguish one warning row from two,
+        and a flag flipping without a rebuild would strand the row
+        count) — the LABEL-COUNT-changing inputs ONLY. A value-only
+        change (counts moving, a worker flipping busy to idle) is
+        deliberately absent so it rides the in-place label refresh and
+        the ListItem/cursor identity survives."""
         if view is None:
-            return (False, 0, False)
+            return (False, 0, 0)
         return (True, len(view.workers),
-                bool(view.stale or view.malformed))
+                int(view.stale) + int(view.malformed))
 
     def _cards_signature(self, cards: "list[_RunCard]") -> tuple:
         """The STRUCTURE signature (261018-rze c + 261019-f0x): per
@@ -3740,13 +3743,21 @@ class MonitorScreen(Screen):
             self, view: "dispatch_state.DispatchStateView"
     ) -> "list[tuple[str, Text]]":
         """The dispatch block's (classes, Text) pairs (16-02, UI-SPEC
-        Surface B rules 2-4): the stale/malformed warning row ABOVE the
-        dispatch line, then one worker row per ``workers[]`` entry IN
-        ARRAY ORDER — all ``mon-card-resume`` family (the dim secondary
+        Surface B rules 2-4): the warning rows ABOVE the dispatch
+        line, then one worker row per ``workers[]`` entry IN ARRAY
+        ORDER — all ``mon-card-resume`` family (the dim secondary
         role; rich-native styles ONLY — $token styles crash the Label
-        render path, the 09-03 probe pin; the warning row carries the
+        render path, the 09-03 probe pin; the warning rows carry the
         strip's rich-native color-channel family in ``yellow``, the
         $warning analog).
+
+        WR-04 (phase-16 review): staleness and malformation are
+        SEPARATE honesty flags with SEPARATE copy — ``view.stale``
+        renders ``MON_DISPATCH_STALE`` (an age + grace statement),
+        ``view.malformed`` renders ``MON_DISPATCH_MALFORMED`` (an
+        invariant violation — never the staleness copy, which would
+        assert a false age claim about a fresh file); both flags
+        render BOTH rows, stale first.
 
         Every value rides the view VERBATIM (the status passthrough
         rule; queue depth is NEVER recomputed — TUI orchestrates,
@@ -3754,12 +3765,15 @@ class MonitorScreen(Screen):
         (``_DASH`` — data, never a fabricated number).
         """
         lines: list[tuple[str, Text]] = []
-        if view.stale or view.malformed:
+        if view.stale:
             lines.append(("mon-card-resume", Text(
                 S.MON_DISPATCH_STALE.format(
                     age=view.stale_age_s,
                     grace=int(dispatch_state.DISPATCH_STALE_SECONDS)),
                 style="yellow")))
+        if view.malformed:
+            lines.append(("mon-card-resume", Text(
+                S.MON_DISPATCH_MALFORMED, style="yellow")))
         counts = view.counts
         done = (counts.completed if counts is not None
                 and counts.completed is not None else _DASH)

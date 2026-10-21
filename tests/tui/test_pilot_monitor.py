@@ -104,6 +104,7 @@ from tui.strings import (
     MON_COL_SEED,
     MON_DETAIL_STEPS,
     MON_DISPATCH_LINE,
+    MON_DISPATCH_MALFORMED,
     MON_DISPATCH_STALE,
     MON_DISPATCH_WORKER_BUSY,
     MON_DISPATCH_WORKER_IDLE,
@@ -6325,18 +6326,25 @@ async def test_root_without_dispatch_state_renders_no_block():
 
 
 async def test_stale_and_malformed_views_render_warning_row_above():
-    """16-02 Test 3 (D16-08 + UI-SPEC B rules 4/6): a stale view (mtime
-    beyond the cell-scale grace, WR-02) AND a malformed view
-    (snapshot-invariant violation) each render the MON_DISPATCH_STALE
-    warning row ABOVE the dispatch line while the rows still render
-    (last-known-good retained) — the counts ride verbatim, never
-    reconciled."""
-    for bad_view in (
-            _fabricated_dispatch_view(stale=True, stale_age_s=120),
-            _fabricated_dispatch_view(
-                malformed=True, stale_age_s=120,
-                counts=DispatchCounts(
-                    total=12, completed=8, failed=1, skipped=1))):
+    """16-02 Test 3 (D16-08 + UI-SPEC B rules 4/6, WR-04): a stale view
+    renders the MON_DISPATCH_STALE row and a malformed view renders the
+    DISTINCT MON_DISPATCH_MALFORMED row — never the wrong copy — each
+    ABOVE the dispatch line while the rows stay (last-known-good); the
+    counts ride verbatim, never reconciled. The malformed fixture
+    deliberately carries a FRESH age (the reviewer's fixture gap: the
+    pre-WR-04 suite exercised the malformed flag only at
+    stale_age_s=120, so a malformation-borrows-the-staleness-copy
+    regression was invisible — at age 5 the stale copy's own age claim
+    is self-contradictory)."""
+    stale_only = _fabricated_dispatch_view(stale=True, stale_age_s=120)
+    malformed_fresh = _fabricated_dispatch_view(
+        malformed=True, stale_age_s=5,
+        counts=DispatchCounts(
+            total=12, completed=8, failed=1, skipped=1))
+    for bad_view, warning in (
+            (stale_only, MON_DISPATCH_STALE.format(
+                age=120, grace=int(DISPATCH_STALE_SECONDS))),
+            (malformed_fresh, MON_DISPATCH_MALFORMED)):
         app = _app(monitor=_live_root_monitor(),
                    dispatch=lambda root, _v=bad_view: _v)
         async with app.run_test(size=(120, 40)) as pilot:
@@ -6345,9 +6353,11 @@ async def test_stale_and_malformed_views_render_warning_row_above():
             screen._tick_frontier()
             await _settle(pilot, app)
             lines = _card_texts(screen, "mon-card-resume")
-            assert lines[0] == MON_DISPATCH_STALE.format(
-                age=120, grace=int(DISPATCH_STALE_SECONDS)), (
-                "the warning row renders ABOVE the dispatch line")
+            assert lines[0] == warning, (
+                "the CORRECT warning copy renders ABOVE the dispatch "
+                "line (WR-04: an invariant violation never borrows "
+                "the staleness copy)"
+            )
             assert lines[1] == MON_DISPATCH_LINE.format(
                 status=bad_view.status,
                 done=bad_view.counts.completed,
@@ -6357,6 +6367,33 @@ async def test_stale_and_malformed_views_render_warning_row_above():
                 "the counts VERBATIM (the malformed leg renders 8/12, "
                 "never a reconciled 9/12)")
             assert len(lines) == 4, "the worker rows are retained"
+
+
+async def test_stale_and_malformed_together_render_both_warning_rows():
+    """WR-04 (phase-16 review): a view carrying BOTH flags renders BOTH
+    warning rows — stale first, malformed second — above the dispatch
+    line (the block's structure leg counts warning ROWS, so the 1 -> 2
+    row flip forces the rebuild the single-bool leg could not express)."""
+    both = _fabricated_dispatch_view(
+        stale=True, stale_age_s=120, malformed=True,
+        counts=DispatchCounts(
+            total=12, completed=8, failed=1, skipped=1))
+    app = _app(monitor=_live_root_monitor(),
+               dispatch=lambda root: both)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        lines = _card_texts(screen, "mon-card-resume")
+        assert lines[0] == MON_DISPATCH_STALE.format(
+            age=120, grace=int(DISPATCH_STALE_SECONDS))
+        assert lines[1] == MON_DISPATCH_MALFORMED
+        assert lines[2] == MON_DISPATCH_LINE.format(
+            status="running", done=8, total=12, queue=0)
+        assert len(lines) == 5, (
+            "both warnings + the dispatch line + two worker rows"
+        )
 
 
 async def test_fresh_read_clears_the_stale_row():

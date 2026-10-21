@@ -2041,6 +2041,11 @@ MON_GPU_NONE = _t("MON_GPU_NONE", "◌ 未检测到 GPU", "◌ no GPUs detected"
 # reuses ⏵ — no new glyph. MON_DISPATCH_STALE is the D16-08 marker:
 # the ⚠ glyph leads (NO_COLOR legibility) and the row renders ABOVE
 # the dispatch line while the rows stay (last-known-good).
+# MON_DISPATCH_MALFORMED (WR-04, phase-16 review) is the DISTINCT
+# honesty marker for a malformed-only view — a parseable snapshot
+# violating the schema's SNAPSHOT INVARIANT is an invariant violation,
+# NOT outdated data, so it never borrows the staleness copy (the two
+# rows render independently; both lead with the same ⚠ glyph).
 MON_DISPATCH_LINE = _t(
     "MON_DISPATCH_LINE", "调度 {status} · 完成 {done}/{total} · 队列 {queue}",
     "dispatch {status} · {done}/{total} done · queue {queue}")
@@ -2055,3 +2060,8 @@ MON_DISPATCH_STALE = _t(
     "MON_DISPATCH_STALE",
     "⚠ 调度状态过期（{age}s ≥ {grace}s）— 数据可能不是最新",
     "⚠ dispatch state stale ({age}s >= {grace}s) — data may be outdated")
+MON_DISPATCH_MALFORMED = _t(
+    "MON_DISPATCH_MALFORMED",
+    "⚠ 调度计数不一致（快照不变量被违反）— 数值按原样显示",
+    "⚠ dispatch counts inconsistent (snapshot invariant violated) — "
+    "values shown verbatim")

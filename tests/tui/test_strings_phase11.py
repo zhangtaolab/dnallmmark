@@ -196,10 +196,13 @@ EXPECTED_MON_CONSTANTS = (
     # Phase 16 (16-02, TUI-03): the dispatch rows on the Running card —
     # the dispatch line (schema 1:1, status verbatim), the busy worker
     # row (data-forward, identical both languages, the fraction segment
-    # appends in code), the idle worker row, and the D16-08 stale
-    # marker rendered above the line with last-known-good retained.
+    # appends in code), the idle worker row, the D16-08 stale marker
+    # rendered above the line with last-known-good retained, and the
+    # DISTINCT malformed-only marker (WR-04, phase-16 review: an
+    # invariant violation never borrows the staleness copy).
     "MON_DISPATCH_LINE", "MON_DISPATCH_WORKER_BUSY",
     "MON_DISPATCH_WORKER_IDLE", "MON_DISPATCH_STALE",
+    "MON_DISPATCH_MALFORMED",
 )
 
 #: The per-seed cell states in spec order, and their contract glyphs.
