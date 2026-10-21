@@ -125,6 +125,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: ALWAYS a run_sweep.py subprocess — never in-process).
 RUN_SWEEP_SCRIPT = REPO_ROOT / "pipeline" / "run_sweep.py"
 
+#: The multi-GPU shard orchestrator the DISPATCH composer targets
+#: (16-03, D16-09: every slot-4 launch composes
+#: ``run_sweep_shard.py --mode dispatch`` — the frozen sibling pipeline
+#: module, resolved the same REPO_ROOT-basis way as RUN_SWEEP_SCRIPT).
+RUN_SWEEP_SHARD_SCRIPT = REPO_ROOT / "pipeline" / "run_sweep_shard.py"
+
 #: The default registry dir for preview/official-key loads (the
 #: committed official registries).
 DEFAULT_REGISTRY_DIR = REPO_ROOT / "pipeline"
@@ -168,6 +174,14 @@ PROBLEM_EBS_INVALID = "ebs_invalid"
 #: filesystem root (an empty basename — and an empty E2' expected
 #: phrase, which must never satisfy the typed gate).
 PROBLEM_OUTPUT_ROOT_INVALID = "output_root_invalid"
+#: 16-03 (TUI-02, D16-09): the multi-GPU dispatch mirrors — cheap
+#: collect-all pre-filters over the frozen shard CLI's own bounds
+#: (the shard CLI stays the validation authority, Pattern 7). The
+#: detail for ``workers_exceeds_gpus`` is the structured pair
+#: ``(workers, gpu_count)`` — data for the 16-04 screen copy.
+PROBLEM_WORKERS_INVALID = "workers_invalid"
+PROBLEM_GPUS_INVALID = "gpus_invalid"
+PROBLEM_WORKERS_EXCEED_GPUS = "workers_exceeds_gpus"
 
 #: The screen's field-dict keys (the run_sweep flag vocabulary; the
 #: params pane fields carry these names).
@@ -175,6 +189,8 @@ PARAM_SEEDS = "seeds"
 PARAM_CURVE = "curve"
 PARAM_EPOCHS = "num_train_epochs"
 PARAM_EBS = "effective_batch_size"
+PARAM_WORKERS = "workers"
+PARAM_GPUS = "gpus"
 
 # =====================================================================
 # The run-spec model (CFG-01)
@@ -220,6 +236,15 @@ class RunSpec:
             own ``./logs`` default governs).
         cache_dir: HF cache override (None = the child's env/default
             resolution governs).
+        workers: multi-GPU dispatch worker count (16-03, D16-09;
+            default 1) — threads ``--workers`` ALWAYS explicitly in the
+            dispatch composer (the field carries a live value, A2).
+        gpus: multi-GPU GPU ids (comma indices) — None = all detected,
+            resolved at LAUNCH time and NEVER persisted as a
+            resolved/guessed list (Pitfall 8); normalizes to a sorted
+            deduped tuple (the house discipline); threads ``--gpus``
+            PRESENT-ONLY (D-12 parity — a defaults spec contributes
+            zero ``--gpus`` elements).
     """
 
     models: tuple[str, ...]
@@ -236,6 +261,8 @@ class RunSpec:
     model_root: str | None = None
     log_dir: str | None = None
     cache_dir: str | None = None
+    workers: int = 1
+    gpus: "tuple[str, ...] | None" = None
 
     def __post_init__(self):
         object.__setattr__(
@@ -247,6 +274,9 @@ class RunSpec:
         object.__setattr__(
             self, "curve_fractions",
             tuple(sorted(set(self.curve_fractions))))
+        if self.gpus is not None:
+            object.__setattr__(
+                self, "gpus", tuple(sorted(set(self.gpus))))
 
 
 #: The tolerant-load fallback: the defaults spec with an EMPTY
@@ -326,6 +356,39 @@ def _parse_positive_int(value):
     return number
 
 
+def _parse_gpu_indices(value):
+    """Parse a comma-separated non-negative-INTEGER GPU index list
+    (16-03, D16-09) — sorted, deduped (the house discipline).
+
+    Deliberately NARROWER than the shard CLI's ``--gpus`` grammar
+    (Pitfall 7, the documented asymmetry): the CLI accepts "a decimal
+    index, a GPU UUID, or a MIG instance id" verbatim; this TUI mirror
+    accepts decimal indices ONLY — a UUID typed into the field is
+    refused here though the CLI would accept it. The mirror is a cheap
+    pre-filter; the CLI stays the validation authority (Pattern 7).
+
+    Returns:
+        tuple[str, ...] | None: the sorted deduped index strings, or
+        None when any token is empty, non-integer, or negative.
+    """
+    tokens = value.split(",")
+    indices: list[str] = []
+    for part in tokens:
+        token = part.strip()
+        if not token:
+            return None
+        try:
+            number = int(token)
+        except ValueError:
+            return None
+        if number < 0:
+            return None
+        indices.append(token)
+    if not indices:
+        return None
+    return tuple(sorted(set(indices)))
+
+
 def parse_params(raw):
     """Parse the screen's field dict of strings into RunSpec partials.
 
@@ -340,14 +403,16 @@ def parse_params(raw):
     Args:
         raw (dict): the params pane's field values, keyed by the
             ``PARAM_*`` vocabulary (``seeds``, ``curve``,
-            ``num_train_epochs``, ``effective_batch_size``); values
+            ``num_train_epochs``, ``effective_batch_size``,
+            ``workers``, ``gpus`` — the 16-03 multi-GPU pair); values
             are strings (None = field cleared).
 
     Returns:
         tuple[dict, tuple[tuple[str, object], ...]]: ``(partials,
         problems)`` — partials is a dict of valid parsed kwargs
         (``seeds`` / ``curve_fractions`` / ``num_train_epochs`` /
-        ``effective_batch_size``), problems the collect-all list.
+        ``effective_batch_size`` / ``workers`` / ``gpus``), problems
+        the collect-all list.
     """
     partials: dict = {}
     problems: list[tuple[str, object]] = []
@@ -383,6 +448,38 @@ def parse_params(raw):
             problems.append((PROBLEM_EBS_INVALID, raw.get(PARAM_EBS)))
         else:
             partials["effective_batch_size"] = ebs
+
+    # 16-03 (TUI-02, D16-09): the multi-GPU dispatch mirrors — the
+    # frozen shard CLI's --workers >= 1 / indices-only --gpus bounds
+    # mirrored collect-all (the CLI re-validates — defense in depth).
+    # NO workers-vs-models mirror exists: that shard refusal is
+    # STATIC-mode-only (it sits after the dispatch return in
+    # run_sweep_shard) and does not apply to a dispatch launch.
+    raw_workers = _clean_str(raw.get(PARAM_WORKERS))
+    if raw_workers is not None:
+        workers = _parse_positive_int(raw_workers)
+        if workers is None:
+            problems.append((PROBLEM_WORKERS_INVALID, raw.get(PARAM_WORKERS)))
+        else:
+            partials["workers"] = workers
+
+    raw_gpus = _clean_str(raw.get(PARAM_GPUS))
+    if raw_gpus is not None:
+        gpus = _parse_gpu_indices(raw_gpus)
+        if gpus is None:
+            problems.append((PROBLEM_GPUS_INVALID, raw.get(PARAM_GPUS)))
+        else:
+            partials["gpus"] = gpus
+
+    # The short-side arity mirror only (a typed GPU list shorter than
+    # workers; a longer list stays CLI-authoritative — its own arity
+    # refusal). Evaluated ONLY when both legs parsed clean — an invalid
+    # leg already carries its own problem.
+    if ("workers" in partials and "gpus" in partials
+            and len(partials["gpus"]) < partials["workers"]):
+        problems.append((
+            PROBLEM_WORKERS_EXCEED_GPUS,
+            (partials["workers"], len(partials["gpus"]))))
 
     return partials, tuple(problems)
 
@@ -453,7 +550,10 @@ def _state_path(state_path=None):
 def _persist_payload(spec):
     """The persisted document: schema envelope + selection + params +
     dirs (the exact field set — nothing outside it may appear; six dirs
-    keys counting output_root, log_dir joined 261014-f4w)."""
+    keys counting output_root, log_dir joined 261014-f4w; the 16-03
+    workers/gpus pair rides params — gpus None persists as None,
+    NEVER a resolved/guessed list, Pitfall 8: resolution happens at
+    LAUNCH time only)."""
     return {
         "schema_version": SCHEMA_VERSION,
         "models": list(spec.models),
@@ -466,6 +566,8 @@ def _persist_payload(spec):
             "subset_file": spec.subset_file,
             "num_train_epochs": spec.num_train_epochs,
             "effective_batch_size": spec.effective_batch_size,
+            "workers": spec.workers,
+            "gpus": (list(spec.gpus) if spec.gpus is not None else None),
         },
         "dirs": {
             "output_root": spec.output_root,
@@ -587,6 +689,26 @@ def _spec_from_doc(doc):
     ok_subset, subset = _optional_str(params.get("subset_file"))
     if not (ok_epochs and ok_ebs and ok_subset):
         return None
+    # 16-03 (D16-09): the multi-GPU pair rides the ABSENT-KEY path —
+    # a pre-Phase-16 document (no workers/gpus keys) loads as the
+    # defaults 1/None (byte-identical launches from old state files);
+    # a PRESENT-but-drifted value is whole-default-policy drift.
+    workers_doc = params.get("workers")
+    if workers_doc is None:
+        workers = 1
+    elif (isinstance(workers_doc, int)
+            and not isinstance(workers_doc, bool) and workers_doc >= 1):
+        workers = workers_doc
+    else:
+        return None
+    gpus_doc = params.get("gpus")
+    if gpus_doc is None:
+        gpus = None
+    elif (isinstance(gpus_doc, list) and gpus_doc
+          and all(isinstance(item, str) and item for item in gpus_doc)):
+        gpus = tuple(sorted(set(gpus_doc)))
+    else:
+        return None
 
     output_root = dirs.get("output_root")
     if not isinstance(output_root, str) or not output_root:
@@ -621,6 +743,8 @@ def _spec_from_doc(doc):
         model_root=model_root,
         log_dir=log_dir,
         cache_dir=cache_dir,
+        workers=workers,
+        gpus=gpus,
     )
 
 
@@ -1136,6 +1260,88 @@ def compose_argv(spec):
         "--tasks", ",".join(spec.tasks),
         "--seeds", ",".join(str(seed) for seed in spec.seeds),
         "--output-root", _abs_against_repo_root(spec.output_root),
+    ]
+    if spec.peft != "none":
+        argv += ["--peft", spec.peft]
+    if spec.config_variant != "none":
+        argv += ["--config-variant", spec.config_variant]
+    if spec.curve_fractions:
+        argv += ["--curve",
+                 ",".join(str(f) for f in spec.curve_fractions)]
+    if spec.subset_file:
+        argv += ["--subset_file",
+                 _abs_against_repo_root(spec.subset_file)]
+    if spec.num_train_epochs is not None:
+        argv += ["--num_train_epochs", str(spec.num_train_epochs)]
+    if spec.effective_batch_size is not None:
+        argv += ["--effective_batch_size",
+                 str(spec.effective_batch_size)]
+    if spec.cache_dir:
+        argv += ["--cache_dir", _abs_against_repo_root(spec.cache_dir)]
+    if spec.model_root:
+        argv += ["--model_root", _abs_against_repo_root(spec.model_root)]
+    if spec.dataset_root:
+        argv += ["--dataset_root",
+                 _abs_against_repo_root(spec.dataset_root)]
+    if spec.log_dir:
+        argv += ["--log_dir", _abs_against_repo_root(spec.log_dir)]
+    return argv
+
+
+def compose_dispatch_argv(spec):
+    """Compose the ``run_sweep_shard.py --mode dispatch`` argv for a
+    validated spec (16-03, D16-09 — UI-SPEC auto-default #9: EVERY
+    slot-4 launch is a dispatch launch; the legacy static mode stays
+    CLI-only).
+
+    A LIST of str (the D-06 discipline): the interpreter, the frozen
+    shard orchestrator, ``--mode dispatch``, ``--workers`` ALWAYS
+    explicit (the A2 pin — the field carries a live value, even at 1),
+    ``--gpus`` PRESENT-ONLY when ``spec.gpus`` is not None (D-12
+    parity — a defaults spec contributes ZERO ``--gpus`` elements;
+    None means all-detected and resolves at LAUNCH time inside the
+    child, never here, Pitfall 8), ``--models``, the ABSOLUTE
+    ``--output-root`` (D-14), then the passthrough ``--tasks`` /
+    ``--seeds`` and the SAME pinned present-only sweep-flag tail
+    ``compose_argv`` threads (element-for-element the run_sweep
+    passthrough vocabulary — peft, config-variant, curve, subset_file,
+    num_train_epochs, effective_batch_size, cache_dir, model_root,
+    dataset_root, log_dir).
+
+    The frozen shard CLI surface is the validation authority
+    (``--workers`` >= 1, ``--gpus`` arity == ``--workers`` in dispatch
+    mode, ``--models`` required); the parse-time mirrors are cheap
+    pre-filters. The [p] modal and the 11-03 launcher consume this
+    argv verbatim; the element order is pinned by the tier-1 suite.
+
+    Args:
+        spec (RunSpec): the composed spec.
+
+    Returns:
+        list[str]: the dispatch launch argv.
+
+    Raises:
+        ValueError: models or tasks is empty (the defensive backstop —
+            validation refuses it before composition ever runs).
+    """
+    if not spec.models or not spec.tasks:
+        raise ValueError(
+            "compose_dispatch_argv refuses an empty selection — the "
+            "preview/launch confirmation owns refusing it; this is the "
+            "defensive backstop")
+    argv = [
+        sys.executable,
+        str(RUN_SWEEP_SHARD_SCRIPT),
+        "--mode", "dispatch",
+        "--workers", str(spec.workers),
+    ]
+    if spec.gpus is not None:
+        argv += ["--gpus", ",".join(spec.gpus)]
+    argv += [
+        "--models", ",".join(spec.models),
+        "--output-root", _abs_against_repo_root(spec.output_root),
+        "--tasks", ",".join(spec.tasks),
+        "--seeds", ",".join(str(seed) for seed in spec.seeds),
     ]
     if spec.peft != "none":
         argv += ["--peft", spec.peft]

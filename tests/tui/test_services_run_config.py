@@ -1220,6 +1220,226 @@ def test_compose_from_failures_argv_defaults_eight_elements():
 
 
 # =====================================================================
+# 16-03 (TUI-02, D16-09) — the dispatch composer + workers/gpus spec
+# fields + the three collect-all mirrors. The frozen shard CLI
+# (run_sweep_shard.py, either mode) stays the single validation
+# authority; these mirrors are cheap pre-filters (Pattern 7).
+# =====================================================================
+
+
+def test_dispatch_spec_defaults_workers_one_gpus_none_no_gpus_element():
+    """A spec constructed without workers/gpus carries the defaults
+    (workers 1, gpus None — all-detected, resolved at LAUNCH time,
+    Pitfall 8) and the composer threads NO --gpus element (D-12
+    present-only parity: a defaults spec contributes zero --gpus
+    elements) while --workers renders EXPLICITLY (the A2 pin — the
+    field carries a live value)."""
+    spec = run_config.RunSpec(models=("m",), tasks=("t",))
+    assert spec.workers == 1
+    assert spec.gpus is None
+    argv = run_config.compose_dispatch_argv(spec)
+    assert "--gpus" not in argv
+    assert flag_value(argv, "--workers") == "1", (
+        "--workers is ALWAYS explicit (the A2 pin)"
+    )
+    assert flag_value(argv, "--mode") == "dispatch"
+
+
+def test_compose_dispatch_argv_shape_workers_two_gpus_pinned():
+    """The dispatch argv pinned ELEMENT-FOR-ELEMENT over the frozen
+    shard CLI surface: --mode dispatch, --workers ALWAYS explicit,
+    --gpus present-only when typed, --models, the ABSOLUTE
+    --output-root, then the passthrough --tasks/--seeds and the SAME
+    pinned present-only sweep-flag tail compose_argv threads."""
+    spec = run_config.RunSpec(
+        models=("m1", "m2"), tasks=("t1",), seeds=(42, 43),
+        workers=2, gpus=("0", "1"),
+        output_root="./sweeps/dispatch-x",
+        peft="lora", config_variant="probe",
+        curve_fractions=(0.25, 0.5),
+        subset_file="./subs/fairness.json",
+        num_train_epochs=1, effective_batch_size=16,
+        cache_dir="./hf-cache", model_root="./m-root",
+        dataset_root="./d-root", log_dir="./run-logs",
+    )
+    argv = run_config.compose_dispatch_argv(spec)
+    assert argv == [
+        sys.executable,
+        str(REAL_REGISTRY_DIR / "run_sweep_shard.py"),
+        "--mode", "dispatch",
+        "--workers", "2",
+        "--gpus", "0,1",
+        "--models", "m1,m2",
+        "--output-root", str((REPO_ROOT / "sweeps" / "dispatch-x").resolve()),
+        "--tasks", "t1",
+        "--seeds", "42,43",
+        "--peft", "lora",
+        "--config-variant", "probe",
+        "--curve", "0.25,0.5",
+        "--subset_file", str((REPO_ROOT / "subs" / "fairness.json").resolve()),
+        "--num_train_epochs", "1",
+        "--effective_batch_size", "16",
+        "--cache_dir", str((REPO_ROOT / "hf-cache").resolve()),
+        "--model_root", str((REPO_ROOT / "m-root").resolve()),
+        "--dataset_root", str((REPO_ROOT / "d-root").resolve()),
+        "--log_dir", str((REPO_ROOT / "run-logs").resolve()),
+    ]
+
+
+def test_compose_dispatch_argv_output_root_absolute_against_repo_root():
+    """D-14 discipline inherited: a relative output root resolves
+    ABSOLUTE against REPO_ROOT in the composed dispatch argv (the same
+    basis compose_argv threads — the subprocess's own CWD resolution
+    can never diverge)."""
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",), output_root="./finetuned")
+    argv = run_config.compose_dispatch_argv(spec)
+    assert flag_value(argv, "--output-root") == str(
+        (REPO_ROOT / "finetuned").resolve())
+
+
+def test_compose_dispatch_argv_defaults_fourteen_base_elements():
+    """A defaults spec (no optional flags, no gpus) composes EXACTLY
+    the 14 base elements — absent sweep flags and an unset gpus
+    contribute ZERO elements (the compose_argv D-12 parity over the
+    dispatch base)."""
+    spec = run_config.RunSpec(models=("m",), tasks=("t",))
+    argv = run_config.compose_dispatch_argv(spec)
+    assert len(argv) == 14
+    assert all(isinstance(element, str) for element in argv)
+
+
+@pytest.mark.parametrize("raw_workers", ["abc", "0", "-1", "1.5"])
+def test_parse_params_workers_invalid_mirrors(raw_workers):
+    """workers must parse as an integer >= 1 (the run_sweep_shard
+    --workers bound mirrored WITHOUT its sys.exit)."""
+    partials, problems = run_config.parse_params(
+        {"workers": raw_workers})
+    assert (run_config.PROBLEM_WORKERS_INVALID, raw_workers) in problems
+    assert "workers" not in partials
+
+
+@pytest.mark.parametrize("raw_gpus", ["0,x", "uuid-gpu", "1,,0", "-1,0"])
+def test_parse_params_gpus_invalid_mirrors(raw_gpus):
+    """gpus must be comma-separated non-negative INDICES — deliberately
+    NARROWER than the shard CLI's UUID/MIG grammar (the documented
+    asymmetry, Pitfall 7: a UUID typed into the TUI is refused by the
+    mirror though the CLI would accept it). An EMPTY field is ABSENT
+    (the all-detected default), never invalid — the epochs idiom."""
+    partials, problems = run_config.parse_params({"gpus": raw_gpus})
+    assert (run_config.PROBLEM_GPUS_INVALID, raw_gpus) in problems
+    assert "gpus" not in partials
+
+
+def test_parse_params_workers_exceeds_gpus_mirror():
+    """A TYPED GPU list shorter than workers raises
+    workers_exceeds_gpus (the CLI's own --gpus arity refusal mirrored
+    on the short side only; a longer list stays CLI-authoritative).
+    The detail is structured data — (workers, gpu_count) — for the
+    16-04 screen copy, never pre-worded text."""
+    partials, problems = run_config.parse_params(
+        {"workers": "2", "gpus": "0"})
+    assert "workers" in partials and partials["workers"] == 2
+    assert "gpus" in partials and partials["gpus"] == ("0",)
+    assert ((run_config.PROBLEM_WORKERS_EXCEED_GPUS, (2, 1))
+            in problems), problems
+
+
+def test_parse_params_workers_gpus_valid_pair_clean():
+    partials, problems = run_config.parse_params(
+        {"workers": "2", "gpus": "1,0"})
+    assert problems == ()
+    assert partials["workers"] == 2
+    assert partials["gpus"] == ("0", "1")
+
+
+def test_parse_params_workers_gpus_absent_mean_defaults():
+    """Absent/cleared workers/gpus fields contribute NO partial — the
+    RunSpec constructor defaults govern (the seeds/epochs idiom)."""
+    partials, problems = run_config.parse_params(
+        {"seeds": "42", "workers": "", "gpus": ""})
+    assert problems == ()
+    assert "workers" not in partials
+    assert "gpus" not in partials
+
+
+def test_no_workers_vs_models_problem_code_exists():
+    """The shard CLI's 'workers exceeds model count' refusal is
+    STATIC-mode-only (it sits after the dispatch return in
+    run_sweep_shard) — the dispatch path mirrors NO such problem code
+    (the plan's Test 5 grep-level pin)."""
+    codes = [value for name, value in vars(run_config).items()
+             if name.startswith("PROBLEM_")]
+    assert codes, "the problem registry is non-vacuous"
+    offenders = [code for code in codes
+                 if "model" in str(code)]
+    assert offenders == [], (
+        f"no workers-vs-models mirror may exist: {offenders}"
+    )
+
+
+def test_persistence_round_trip_workers_gpus(monkeypatch, tmp_path):
+    """workers/gpus persist and load back identically; gpus None
+    NEVER persists as a resolved/guessed list (Pitfall 8 — resolution
+    happens at LAUNCH time only)."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",), workers=3, gpus=("0", "1", "2"))
+    run_config.save_state(spec)
+    assert run_config.load_state() == spec
+    doc = json.loads((state / "run_config.json").read_text(encoding="utf-8"))
+    assert doc["params"]["workers"] == 3
+    assert doc["params"]["gpus"] == ["0", "1", "2"]
+    # gpus None persists as None — never a resolved list (Pitfall 8)
+    run_config.save_state(run_config.RunSpec(models=("m",), tasks=("t",)))
+    doc = json.loads((state / "run_config.json").read_text(encoding="utf-8"))
+    assert doc["params"]["gpus"] is None
+    assert doc["params"]["workers"] == 1
+
+
+def test_pre_phase16_state_document_loads_workers_gpus_defaults(
+        monkeypatch, tmp_path):
+    """The backward-compat edge: a pre-Phase-16 state document (no
+    workers/gpus keys anywhere) loads through the absent-key path as
+    workers 1 / gpus None — byte-identical launches from old files."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    state.mkdir(parents=True)
+    doc = {
+        "schema_version": 1,
+        "models": ["m"],
+        "tasks": ["t"],
+        "params": {
+            "seeds": [42],            "peft": "none",
+            "config_variant": "none",
+            "curve_fractions": [],
+            "subset_file": None,
+            "num_train_epochs": None,
+            "effective_batch_size": None,
+        },
+        "dirs": {
+            "output_root": "./finetuned",
+            "dataset_root": None,
+            "model_root": None,
+            "log_dir": None,
+            "cache_dir": None,
+        },
+    }
+    (state / "run_config.json").write_text(
+        json.dumps(doc), encoding="utf-8")
+    loaded = run_config.load_state()
+    assert loaded.workers == 1
+    assert loaded.gpus is None
+
+
+def test_runspec_gpus_normalizes_sorted_deduped():
+    """gpus normalizes to a sorted deduped tuple in __post_init__ (the
+    house discipline — deterministic argv and persistence)."""
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",), gpus=("1", "0", "1"))
+    assert spec.gpus == ("0", "1")
+
+
+# =====================================================================
 # 261014-f4w — file-default seeding + the atomic save seam + the
 # storage overview (Task 2)
 # =====================================================================
