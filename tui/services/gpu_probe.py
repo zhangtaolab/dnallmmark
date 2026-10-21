@@ -22,7 +22,12 @@ Contract (locked decisions):
   degrades the WHOLE probe (the deps-tolerance per-package rule):
   never partial rows from a partial parse, never an exception.
 - D16-03: the per-call timeout (~2s) bounds the call so a hung
-  nvidia-smi can never block the panel's worker.
+  nvidia-smi can never block the panel's worker. WR-05 (phase-16
+  review) closes the residual gap: the POST-KILL reap carries the SAME
+  finite budget — an un-reapable D-state child degrades to the absent
+  outcome with one logged warning instead of blocking the exclusive
+  worker forever (a rare zombie until the driver recovers is the
+  accepted trade-off).
 - D16-04: rows sort by index ascending; a successful probe with zero
   GPUs returns the EMPTY tuple (the explicit empty state, distinct
   from the absent outcome).
@@ -35,10 +40,12 @@ tests inject canned outcomes without any nvidia-smi subprocess
 
 ZERO textual imports (the services-tier invariant,
 ``tests/tui/test_import_lock.py`` — the glob covers this module
-automatically). Dependencies: stdlib ``subprocess``/``dataclasses``
-only.
+automatically). Dependencies: stdlib ``subprocess``/``dataclasses``/
+``logging`` only (the logger is the tier's first and only diagnostic;
+every NORMAL path stays silent).
 """
 
+import logging
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -67,6 +74,14 @@ Runner = Callable[..., "tuple[int, str]"]
 #: temperature) — a line carrying any other count is malformed.
 _FIELD_COUNT = 5
 
+#: The module logger (WR-05): the services tier is silent on every
+#: NORMAL path; the ONE diagnostic — an un-reapable post-SIGKILL child
+#: (a wedged nvidia-smi in D state) — warns here so a wedged driver is
+#: diagnosable from a configured log sink without ever blocking (no
+#: handler is installed; an unconfigured run keeps the absent-outcome
+#: degradation as the only user-visible signal).
+_LOG = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class GpuRow:
@@ -91,23 +106,55 @@ def _default_runner(argv: "tuple[str, ...]", timeout: float) -> "tuple[int, str]
     timeout and return ``(returncode, stdout)`` TOGETHER so the probe's
     degradation matrix never needs a second channel.
 
+    WR-05 (phase-16 review): the post-kill reap is BOUNDED by the SAME
+    budget as the call — ``communicate(timeout=...)``, then on
+    TimeoutExpired ``kill()`` + ``wait(timeout=timeout)``. CPython's
+    ``subprocess.run`` timeout path kills and then waits WITHOUT a
+    timeout, and SIGKILL cannot interrupt a process in uninterruptible
+    (D) state — a wedged NVIDIA driver holding nvidia-smi in an ioctl
+    would block the panel's exclusive worker FOREVER (one stuck thread
+    + one zombie nvidia-smi per 2s tick). A SECOND TimeoutExpired
+    treats the child as the absent outcome (the caller's degradation)
+    and leaks the ALREADY-KILLED handle — a rare zombie until the
+    driver recovers is strictly better than a stuck worker — with one
+    warning on the module logger.
+
     Args:
         argv: the literal argv (always :data:`PROBE_ARGV` at runtime —
             no caller-supplied element ever reaches the process).
-        timeout: the per-call timeout in seconds (D16-03).
+        timeout: the per-call timeout in seconds (D16-03) — also the
+            post-kill reap budget.
 
     Returns:
         ``(returncode, stdout)`` — the captured stdout as text.
 
     Raises:
         FileNotFoundError / TimeoutExpired / SubprocessError: the three
-        runner-side failure modes; :func:`probe` degrades them all to
-        the absent outcome (never raises onward).
+        runner-side failure modes (a timeout whose child also survives
+        its bounded reap re-raises the ORIGINAL TimeoutExpired after
+        the warning); :func:`probe` degrades them all to the absent
+        outcome (never raises onward).
     """
-    completed = subprocess.run(
-        list(argv), capture_output=True, text=True,
-        timeout=timeout, check=False)
-    return completed.returncode, completed.stdout
+    process = subprocess.Popen(
+        list(argv), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True)
+    try:
+        stdout, _stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        try:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            # the child is un-reapable even after SIGKILL (a D-state
+            # driver wedge): degrade + warn once + leak the killed
+            # handle — never block the exclusive worker on the reap
+            _LOG.warning(
+                "nvidia-smi (pid %s) un-reapable %ss after SIGKILL — "
+                "driver wedge suspected; leaking the killed handle, "
+                "probe degrades to the absent outcome",
+                process.pid, timeout)
+        raise
+    return process.returncode, stdout
 
 
 def probe(runner: "Runner | None" = None,

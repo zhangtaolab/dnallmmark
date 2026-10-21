@@ -19,6 +19,9 @@ See also:
     services glob covers gpu_probe.py automatically).
 """
 
+import logging
+import subprocess
+import sys
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from subprocess import TimeoutExpired
@@ -206,3 +209,104 @@ def test_module_is_covered_by_the_services_import_lock_glob():
                for path in services_dir.glob("*.py")), (
         "gpu_probe.py must stay under tui/services/ (the lock's glob)"
     )
+
+
+# ===== WR-05 (phase-16 review): the BOUNDED post-kill reap =====
+
+
+class _WedgedPopen:
+    """A Popen-shaped double whose kill-path WEDGES (the D-state
+    nvidia-smi shape): ``communicate`` always times out, ``kill()``
+    lands, and ``wait`` reaps ONLY when handed a FINITE timeout — an
+    unbounded ``wait()`` (the pre-WR-05 ``subprocess.run`` shape)
+    trips the sentinel instead of hanging the test thread."""
+
+    def __init__(self, argv, reap=False, **kwargs):
+        self.pid = 4242
+        self.argv = [str(element) for element in argv]
+        self.kwargs = kwargs
+        self.reap = reap
+        self.killed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def communicate(self, timeout=None):
+        raise TimeoutExpired(cmd=self.argv, timeout=timeout or 0.0)
+
+    def kill(self):
+        self.killed = True
+
+    def wait(self, timeout=None):
+        if timeout is None:
+            raise AssertionError(
+                "unbounded post-kill wait — the WR-05 regression")
+        if self.reap:
+            return 0
+        raise TimeoutExpired(cmd=self.argv, timeout=timeout)
+
+
+def test_default_runner_never_waits_unbounded_after_kill(
+        monkeypatch, caplog):
+    """WR-05 regression, the wedge shape: a nvidia-smi stuck in D state
+    (SIGKILL lands, the child never reaps) must not hang the panel's
+    exclusive worker — the post-kill wait carries the SAME finite
+    budget, the second timeout degrades the probe to the ONE absent
+    outcome with ONE logged warning, and the killed handle leaks (the
+    documented trade-off: a rare zombie beats a stuck worker per 2s
+    tick)."""
+    spawned: list[_WedgedPopen] = []
+
+    def _popen_factory(argv, **kwargs):
+        proc = _WedgedPopen(argv, **kwargs)
+        spawned.append(proc)
+        return proc
+
+    monkeypatch.setattr(gpu_probe.subprocess, "Popen", _popen_factory)
+
+    with caplog.at_level(logging.WARNING,
+                         logger="tui.services.gpu_probe"):
+        assert gpu_probe.probe() is None, (
+            "the wedged probe degrades to the absent outcome, "
+            "never a raise and never a hang")
+
+    (proc,) = spawned
+    assert proc.killed, "SIGKILL was sent before the bounded reap"
+    assert proc.kwargs["stdout"] == subprocess.PIPE, (
+        "the runner still wires the capture pipes (the happy-path "
+        "shape is unchanged)"
+    )
+    assert any(
+        "un-reapable" in record.getMessage()
+        for record in caplog.records), (
+        "the wedge leaves its one-line diagnostic on the module logger"
+    )
+
+
+def test_default_runner_timeout_with_clean_reap_still_degrades(
+        monkeypatch):
+    """WR-05 companion: a timeout whose child DOES reap after SIGKILL
+    still degrades to the absent outcome — the original
+    TimeoutExpired re-raises after the bounded wait, so the
+    reap-bounding can never rescue a timed-out probe into fabricated
+    data."""
+    monkeypatch.setattr(
+        gpu_probe.subprocess, "Popen",
+        lambda argv, **kwargs: _WedgedPopen(argv, reap=True, **kwargs))
+
+    assert gpu_probe.probe() is None
+
+
+def test_default_runner_happy_path_returns_code_and_stdout():
+    """The WR-05 rewrite keeps the seam's happy-path contract over a
+    REAL subprocess (the test_services_download_queue._default_runner
+    precedent — sys.executable, never nvidia-smi): a clean exit returns
+    ``(returncode, stdout)`` with the captured text verbatim."""
+    code, stdout = gpu_probe._default_runner(
+        (sys.executable, "-c", "print('0, 0, 2, 32607, 29')"), 10.0)
+
+    assert code == 0
+    assert stdout == "0, 0, 2, 32607, 29\n"
