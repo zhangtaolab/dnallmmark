@@ -54,16 +54,24 @@ import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
 #: precisely so this reader imports ZERO dispatch_core (D16-07).
 DISPATCH_STATE_FILE_NAME = "dispatch_state.json"
 
-#: D16-08 pin — dispatch-state staleness threshold in SECONDS. The
-#: dispatcher rewrites ``dispatch_state.json`` at EVERY state
-#: transition (claim, finalize, containment, terminal), so a live
-#: orchestrator refreshes the file continuously; an mtime this old on
-#: a ``running`` status honestly signals a stalled dispatcher (the
-#: MON_DISPATCH_STALE marker renders while the rows stay —
-#: last-known-good). MAINTAINER-TUNABLE (the STALE_GRACE_SECONDS =
-#: 600.0 precedent, tui/services/sweep_monitor.py): raise it for slow
-#: quiescent phases, never below the longest expected transition gap.
-DISPATCH_STALE_SECONDS = 60.0
+#: D16-08 pin — dispatch-state staleness grace in SECONDS, tuned to
+#: CELL SCALE (WR-02, phase-16 review). The writer
+#: (``dispatch_core._publish_state``) rewrites ``dispatch_state.json``
+#: ONLY at state transitions — pre-drain, claim, finalize/failure,
+#: containment, terminal — with NO heartbeat/timer loop, so a healthy
+#: run's longest quiet window is ONE FULL FINE-TUNING CELL
+#: (claim -> finalize: minutes to hours). A grace below cell scale
+#: false-positives the MON_DISPATCH_STALE marker onto every healthy
+#: run (the original 60.0 shipped exactly that defect — a near-
+#: permanent warning destroys the signal it was built for); 3600.0
+#: sits at the cell scale the writer actually writes at. A TERMINAL
+#: file (done/incomplete) is never rewritten — its age grows by design
+#: and eventually crosses the grace; the marker on a long-finished
+#: run is cosmetic (the last-known-good rows stay verbatim).
+#: MAINTAINER-TUNABLE (the STALE_GRACE_SECONDS = 600.0 precedent,
+#: tui/services/sweep_monitor.py): raise it for slower cell mixes,
+#: never below the longest expected claim-to-finalize window.
+DISPATCH_STALE_SECONDS = 3600.0
 
 #: The now seam's shape: ``() -> float`` (epoch seconds — time.time's
 #: contract). Injectable so tests pin the freshness projection without

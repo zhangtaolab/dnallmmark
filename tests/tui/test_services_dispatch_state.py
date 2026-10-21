@@ -204,7 +204,7 @@ def test_missing_optional_keys_parse_with_none_defaults(tmp_path):
 
 
 # =====================================================================
-# 5 — staleness (D16-08, the pinned 60s threshold)
+# 5 — staleness (D16-08, the pinned cell-scale grace — WR-02)
 # =====================================================================
 
 
@@ -212,18 +212,26 @@ def test_stale_mtime_is_flagged_by_the_injectable_now(tmp_path):
     """A file mtime older than DISPATCH_STALE_SECONDS flags stale, with
     the integer age riding the view; a fresh mtime does not — the
     freshness projection derives from the INJECTABLE now, never from a
-    mutated wall clock."""
+    mutated wall clock. WR-02 (phase-16 review): the grace is pinned at
+    CELL SCALE (3600s) because the writer publishes only at state
+    transitions — one claim-to-finalize cell (minutes to hours) is the
+    longest quiet window a HEALTHY run shows, and the original 60s
+    false-positived the marker onto every healthy run (ages inside one
+    cell therefore stay fresh)."""
     mtime = 1790000000.0
     root = _write_root(tmp_path, _FRESH_SNAPSHOT, mtime=mtime)
-    stale_view = read_dispatch_state(root, now=lambda: mtime + 120.0)
+    stale_view = read_dispatch_state(root, now=lambda: mtime + 3700.0)
     assert stale_view is not None
     assert stale_view.stale is True
-    assert stale_view.stale_age_s == 120
-    fresh_view = read_dispatch_state(root, now=lambda: mtime + 10.0)
+    assert stale_view.stale_age_s == 3700
+    fresh_view = read_dispatch_state(root, now=lambda: mtime + 120.0)
     assert fresh_view is not None
-    assert fresh_view.stale is False
-    # the pinned constant is the single threshold home (D16-08)
-    assert DISPATCH_STALE_SECONDS == 60.0
+    assert fresh_view.stale is False, (
+        "120s sits INSIDE one healthy cell window — never stale at "
+        "cell-scale grace (the WR-02 false-positive, pinned fresh)"
+    )
+    # the pinned constant is the single threshold home (D16-08/WR-02)
+    assert DISPATCH_STALE_SECONDS == 3600.0
 
 
 # =====================================================================

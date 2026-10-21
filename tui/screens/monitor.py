@@ -597,10 +597,10 @@ def _default_dispatch_state_reader(root: str
     """The REAL tolerant frozen-v2 read (the injectable default — the
     16-01 gpu-probe provider shape): one ``{root}/dispatch_state.json``
     read through the service (the artifact_loader None sentinel covers
-    absent/damaged; the 60s stale projection rides the view, D16-08).
-    The Pilot lanes fabricate frozen :class:`DispatchStateView`
-    dataclasses here; 16-05's goldens thread fixture views the same
-    way."""
+    absent/damaged; the cell-scale stale projection rides the view,
+    D16-08/WR-02). The Pilot lanes fabricate frozen
+    :class:`DispatchStateView` dataclasses here; 16-05's goldens
+    thread fixture views the same way."""
     return dispatch_state.read_dispatch_state(root)
 
 
@@ -3756,7 +3756,9 @@ class MonitorScreen(Screen):
         lines: list[tuple[str, Text]] = []
         if view.stale or view.malformed:
             lines.append(("mon-card-resume", Text(
-                S.MON_DISPATCH_STALE.format(age=view.stale_age_s),
+                S.MON_DISPATCH_STALE.format(
+                    age=view.stale_age_s,
+                    grace=int(dispatch_state.DISPATCH_STALE_SECONDS)),
                 style="yellow")))
         counts = view.counts
         done = (counts.completed if counts is not None

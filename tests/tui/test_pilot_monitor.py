@@ -61,6 +61,7 @@ from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.selection import PresetMenu, SelectionData
 from tui.services import registries as registries_service
 from tui.services.dispatch_state import (
+    DISPATCH_STALE_SECONDS,
     DispatchCellKey,
     DispatchCounts,
     DispatchStateView,
@@ -6325,10 +6326,11 @@ async def test_root_without_dispatch_state_renders_no_block():
 
 async def test_stale_and_malformed_views_render_warning_row_above():
     """16-02 Test 3 (D16-08 + UI-SPEC B rules 4/6): a stale view (mtime
-    beyond the 60s pin) AND a malformed view (snapshot-invariant
-    violation) each render the MON_DISPATCH_STALE warning row ABOVE the
-    dispatch line while the rows still render (last-known-good
-    retained) — the counts ride verbatim, never reconciled."""
+    beyond the cell-scale grace, WR-02) AND a malformed view
+    (snapshot-invariant violation) each render the MON_DISPATCH_STALE
+    warning row ABOVE the dispatch line while the rows still render
+    (last-known-good retained) — the counts ride verbatim, never
+    reconciled."""
     for bad_view in (
             _fabricated_dispatch_view(stale=True, stale_age_s=120),
             _fabricated_dispatch_view(
@@ -6343,7 +6345,8 @@ async def test_stale_and_malformed_views_render_warning_row_above():
             screen._tick_frontier()
             await _settle(pilot, app)
             lines = _card_texts(screen, "mon-card-resume")
-            assert lines[0] == MON_DISPATCH_STALE.format(age=120), (
+            assert lines[0] == MON_DISPATCH_STALE.format(
+                age=120, grace=int(DISPATCH_STALE_SECONDS)), (
                 "the warning row renders ABOVE the dispatch line")
             assert lines[1] == MON_DISPATCH_LINE.format(
                 status=bad_view.status,
@@ -6371,7 +6374,8 @@ async def test_fresh_read_clears_the_stale_row():
         screen._tick_frontier()
         await _settle(pilot, app)
         assert _card_texts(screen, "mon-card-resume")[0] == (
-            MON_DISPATCH_STALE.format(age=120))
+            MON_DISPATCH_STALE.format(
+                age=120, grace=int(DISPATCH_STALE_SECONDS)))
         state["view"] = _fabricated_dispatch_view()
         screen._tick_frontier()
         await _settle(pilot, app)

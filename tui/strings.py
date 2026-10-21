@@ -2048,5 +2048,5 @@ MON_DISPATCH_WORKER_IDLE = _t(
     "worker {i} · GPU {gpu} · ◌ idle")
 MON_DISPATCH_STALE = _t(
     "MON_DISPATCH_STALE",
-    "⚠ 调度状态过期（{age}s ≥ 60s）— 数据可能不是最新",
-    "⚠ dispatch state stale ({age}s >= 60s) — data may be outdated")
+    "⚠ 调度状态过期（{age}s ≥ {grace}s）— 数据可能不是最新",
+    "⚠ dispatch state stale ({age}s >= {grace}s) — data may be outdated")
