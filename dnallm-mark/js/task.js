@@ -3,6 +3,7 @@
    ======================================== */
 
 import DataAPI from './data.js';
+import errorBarsPlugin, { barDatum } from './error-bars.js';
 import { renderNavbar } from './navbar.js';
 
 /**
@@ -93,6 +94,21 @@ class LoadingController {
 
 // Create global instance
 window.loadingController = new LoadingController();
+
+// Case-variant → performance-key map (AUD-20): info.metric carries the
+// dataset's declared primary metric, which may be cased (AUPRC, AUROC,
+// F1, MCC, R2) while the performance keys are lowercase. Module-scope so
+// the dropdown default AND extractModels's primary-metric std gating
+// resolve the SAME key from ONE definition (the single-map rule).
+const METRIC_MAP = {
+  pearsonr: 'pearson_r',
+  spearmanr: 'spearman_r',
+  AUPRC: 'auprc',
+  AUROC: 'auroc',
+  F1: 'f1',
+  MCC: 'mcc',
+  R2: 'r2',
+};
 
 class TaskBenchmark {
   constructor() {
@@ -203,19 +219,10 @@ class TaskBenchmark {
     // Determine default metric. info.metric carries the dataset's declared
     // primary metric, which may be cased (AUPRC, AUROC, F1, MCC, R2) while
     // the performance keys are lowercase — map every cased variant to its
-    // key so the default view selects the matching option (AUD-20).
-    const metricMap = {
-      pearsonr: 'pearson_r',
-      spearmanr: 'spearman_r',
-      AUPRC: 'auprc',
-      AUROC: 'auroc',
-      F1: 'f1',
-      MCC: 'mcc',
-      R2: 'r2',
-    };
-
+    // key so the default view selects the matching option (AUD-20, the
+    // module-scope METRIC_MAP).
     const rawMetric = taskData.info?.metric || 'accuracy';
-    const defaultMetric = metricMap[rawMetric] || rawMetric;
+    const defaultMetric = METRIC_MAP[rawMetric] || rawMetric;
 
     // Build metric options with sort direction indicators (FIX-04 bounded
     // escaping: metric keys/labels are interpolated into innerHTML here).
@@ -275,6 +282,13 @@ class TaskBenchmark {
       }
     }
 
+    // The dataset's declared primary metric, resolved through the same
+    // AUD-20 map: the entry-level std/n_seeds trio belongs to the PRIMARY
+    // metric only (17-RESEARCH A3) — dropdown metrics away from the
+    // primary get honest absence.
+    const primaryMetric = taskData.info?.metric;
+    const primaryKey = METRIC_MAP[primaryMetric] || primaryMetric;
+
     for (const [modelName, modelData] of Object.entries(taskData.performance)) {
       const perf = modelData.performance;
       const model = modelData.model;
@@ -287,7 +301,7 @@ class TaskBenchmark {
         continue;
       }
 
-      models.push({
+      const entry = {
         key: modelName,
         name: model?.name || modelName,
         size: model?.['size (M)'] || 0,
@@ -296,7 +310,19 @@ class TaskBenchmark {
         runtime: perf.runtime !== '' ? perf.runtime.toFixed(2) : 'N/A',
         color: DataAPI.getColorForModel(modelName, models.length),
         icon: modelName.charAt(0).toUpperCase()
-      });
+      };
+
+      // Multi-seed display fields (D17-06): attach std/nSeeds only when
+      // the selected metric IS the dataset's declared primary and std is
+      // a number — metricValue stays the parseFloat scalar end-to-end,
+      // never an array (Pitfall 4); the array form is born only in
+      // renderBarChart via barDatum.
+      if (actualMetricKey === primaryKey && typeof modelData.std === 'number') {
+        entry.std = modelData.std;
+        entry.nSeeds = modelData.n_seeds;
+      }
+
+      models.push(entry);
     }
 
     return models;
@@ -361,7 +387,11 @@ class TaskBenchmark {
       labels: displayModels.map(m => m.name),
       datasets: [{
         label: metricName,
-        data: displayModels.map(m => m.metricValue),
+        // barDatum is the ONLY place the floating-bar array form is born
+        // (D17-06): [mean-std, mean+std] for std-carrying models, scalar
+        // otherwise — mixed scalar/array data is first-party in Chart.js
+        // 4.4.0, so honest absence rides the same dataset.
+        data: displayModels.map(m => barDatum(m.metricValue, m.std)),
         backgroundColor: displayModels.map(m => m.color + '99'),
         borderColor: displayModels.map(m => m.color),
         borderWidth: 1
@@ -370,6 +400,10 @@ class TaskBenchmark {
 
     const config = {
       type: 'bar',
+      // Inline per-chart plugin registration (D17-06): the plugin draws
+      // whisker caps over the floating bars — never globally registered,
+      // never a new CDN script.
+      plugins: [errorBarsPlugin],
       data: datasets,
       options: {
         indexAxis: 'y',
@@ -378,6 +412,10 @@ class TaskBenchmark {
         barPercentage: 0.8,
         categoryPercentage: 0.8,
         plugins: {
+          errorbars: {
+            // Caps only — the floating bar itself is the range.
+            drawStem: false
+          },
           legend: {
             display: false
           },
@@ -392,8 +430,18 @@ class TaskBenchmark {
             callbacks: {
               title: (context) => context[0].label,
               label: (context) => {
-                const value = context.raw;
-                return `${metricName}: ${typeof value === 'number' ? value.toFixed(4) : value}`;
+                // Closure read (Pitfall 4): on floating bars context.raw
+                // is the [lo, hi] array (would print "0.5,0.69") and
+                // context.parsed.x is barEnd, not reliably hi — the
+                // display model carries the scalar mean and the std.
+                const m = displayModels[context.dataIndex];
+                const value = m?.metricValue;
+                const valueLine = `${metricName}: ${typeof value === 'number' ? value.toFixed(4) : value}`;
+                if (typeof m?.std !== 'number') return valueLine;
+                return [
+                  valueLine,
+                  `Seed spread: ±${m.std.toFixed(4)}${typeof m.nSeeds === 'number' ? ' (n=' + m.nSeeds + ')' : ''}`
+                ];
               }
             }
           }
