@@ -80,7 +80,7 @@ Plans:
 
 **Goal**: The operator console launches and watches multi-GPU runs natively — slot-4 multi-GPU launch through the unchanged gate chain, slot-5 consumption of dispatch state, and the deferred G GPU-lanes display over a read-only nvidia-smi probe
 **Requirements**: TUI-01, TUI-02, TUI-03, TUI-04
-**Plans**: 5/5 plans
+**Plans**: 5/5 plans complete
 
 Plans:
 **Wave 1**
@@ -96,7 +96,7 @@ Plans:
 - [x] 16-04-PLAN.md — Slot-4 screen tier: 多 GPU 调度 params section + capacity-stage rendering + dispatch-plan preview line on both confirm faces (GateSummary service-side numbers); gate-order tests extended, zero weakening (TUI-02)
 
 **Wave 5** *(blocked on Wave 4: goldens regenerate after all screen changes settle)*
-- [ ] 16-05-PLAN.md — Goldens: 3 regenerated + run_config_confirm NEW via make snapshot-update, fabricated constructor-injected fixtures, UNCOMMITTED pending D-03 review + WINDOWS deviation row + phase-close full gates (TUI-04)
+- [x] 16-05-PLAN.md — Goldens: 3 regenerated + run_config_confirm NEW via make snapshot-update, fabricated constructor-injected fixtures, UNCOMMITTED pending D-03 review + WINDOWS deviation row + phase-close full gates (TUI-04)
 **Success criteria**:
 1. `gpu_probe` service: csv-mode subprocess probe → frozen dataclass rows, textual-free, honest 未安装 degradation; unit-tested via injected seam (no GPU in CI)
 2. G GPU-lanes panel renders per-GPU utilization/memory/temperature on the monitor cadence; absent binary never crashes the console (worker guard discipline)

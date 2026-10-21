@@ -34,7 +34,7 @@ Requirements for milestone v1.3. Each maps to roadmap phases (Traceability below
 - [x] **TUI-01**: A textual-free nvidia-smi read-only probe service (CSV query mode, frozen dataclass rows, honest 未安装 degradation when absent) feeds a G GPU-lanes display on the monitor cadence
 - [x] **TUI-02**: Slot-4 run config launches multi-GPU runs (workers/gpus params, dispatch-plan preview) through the UNCHANGED gate chain (env gate → problems → confirm → E2' typed-phrase when full-scope); the single-GPU serial gate is revised to multi-GPU-aware semantics, never bypassed
 - [x] **TUI-03**: Slot-5 monitor consumes `dispatch_state.json` (queue depth, in-flight cells) alongside existing scanner sources; multi-GPU runs render natively
-- [ ] **TUI-04**: Snapshot goldens for changed screens regenerate under the D-03 maintainer-review discipline (uncommitted until reviewed)
+- [x] **TUI-04**: Snapshot goldens for changed screens regenerate under the D-03 maintainer-review discipline (uncommitted until reviewed)
 
 ### WEB — 多种子 Error Bar
 
@@ -84,7 +84,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TUI-01 | Phase 16 | Complete |
 | TUI-02 | Phase 16 | Complete |
 | TUI-03 | Phase 16 | Complete |
-| TUI-04 | Phase 16 | Pending |
+| TUI-04 | Phase 16 | Complete |
 | WEB-01 | Phase 17 | Pending |
 | WEB-02 | Phase 17 | Pending |
 | WEB-03 | Phase 17 | Pending |

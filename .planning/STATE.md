@@ -31,8 +31,8 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 
 Phase: 16 (TUI 多 GPU 界面) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
-Last activity: 2026-10-21 — 16-01 complete (TUI-01 tracer landed)
+Status: Phase complete — ready for verification
+Last activity: 2026-10-21 — 16-05 complete (TUI-04 goldens: 3 regenerated + run_config_confirm NEW, uncommitted pending D-03 review WINDOWS #50; TUI-01..04 all delivered)
 
 ## Performance Metrics
 
@@ -122,6 +122,7 @@ Last activity: 2026-10-21 — 16-01 complete (TUI-01 tracer landed)
 | Phase 16 P2 | 31 min | 2 tasks | 7 files |
 | Phase 16 P3 | 37 min | 2 tasks | 9 files |
 | Phase 16 P16-04 | 45 min | 2 tasks | 8 files |
+| Phase 16 P5 | 26 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -308,6 +309,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 16]: 16-03: LNC_SINGLE_GPU_BLOCKED amended IN PLACE (name unchanged) adding {workers}/{n}; ALL 7 HEAD format sites (4 code + 3 test — the plan prose's 5+3 arithmetic corrected against the verified census) lockstep in one commit, grep-gated at zero workers=-less sites; the refusal detail is the structured block, screens format only
 - [Phase 16]: 16-04: two en-side registry rewords forced by injectivity (MON_GPU_TITLE owns en 'GPUs') — CFG_FIELD_GPUS en 'gpus' (the flag's own spelling, seeds precedent) and CFG_MGPU_TITLE_SHORT en 'Multi-GPU'; zh sides stay UI-SPEC verbatim
 - [Phase 16]: 16-04: the dispatch-plan line rides GateSummary (workers/gpus_display computed in gate_confirm_data; all(n) = effective_gpu_count at preview time, never persisted); both confirm faces render the tuple, the monitor's E2' re-prompt passes none (Pitfall 3); cleared-field semantics stay last-valid-governs (Phase-11 semantics unchanged; the Pitfall-8 pin holds at the defaults spec)
+- [Phase 16]: 16-05: golden drives fire the frontier tick deterministically (explicit _tick_frontier + settle, the Pilot precedent) — the 2s wall timer never fires inside an export window
+- [Phase 16]: 16-05: _golden_app threads both monitor constructor seams absent-by-default — the WHOLE golden corpus renders machine-independent bytes (Pitfall 10), not just the monitor entries
+- [Phase 16]: 16-05: Rule-1 wrap-clip fix — the confirm face's dispatch line is its own Static above the scroll-bounded log (the E2' face placement); a must-stay-visible line never rides an auto-scrolled RichLog at its bound
+- [Phase 16]: 16-05: WINDOWS #50 opens the Phase-16 D-03 batch (the plan's #46 numbering was stale — #46-#49 existed; #46/#48 closed as resolved-by-regen, #49 deduped)
 
 ### Pending Todos
 
@@ -380,8 +385,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T05:48:15.153Z
-Stopped at: Completed 16-04-PLAN.md (TUI-02 slot-4 screen: mgpu params section + dispatch-plan line on both confirm faces, both tasks + gates green)
+Last session: 2026-10-21T06:24:30.925Z
+Stopped at: Completed 16-05-PLAN.md (TUI-04 goldens: 3 regen + run_config_confirm NEW uncommitted D-03 WINDOWS #50; Phase 16 complete)
 Resume file: None
 
 ## Operator Next Steps
