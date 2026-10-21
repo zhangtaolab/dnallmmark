@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-20)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 15 — 双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)
+**Current focus:** Phase 16 — TUI 多 GPU 界面
 
 ## Current Position
 
-Phase: 15 (双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)) — EXECUTING
-Plan: 5 of 5 COMPLETE (15-01/02/03/04/05 all landed)
-Status: 15-03 complete — phase 15 execution done (all 5 plans); WINDOWS #45 closed, VAL-03 complete
-Last activity: 2026-10-21 — 15-03 continuation complete: fresh-root 12-cell sweep on pipeline/finetuned-sweep-r2 (272 s, done 12/12, 0 skipped, both GPUs) with eval_f1 in ALL 12 final_metrics + run_records (the 15-05 producer fix proven live); zero-modification export→summarize chain emitted non-empty models_comparison + _animal (5mC Multiple→Animals) + _microbe (emp_H3); five JSONs archived under 15-03 artifacts/; D15-15 pins repointed to r2 + new eval-key pin (suite 27); lint/typecheck/node 26/ci-hash green; WINDOWS #45 closed (open 8/fixed 31); VAL-03 + PROJECT small-sweep row done — phase 15 fully landed
+Phase: 16 — TUI 多 GPU 界面
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-21 — Phase 15 complete, transitioned to Phase 16
 
 ## Performance Metrics
 
@@ -366,7 +366,7 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-21T00:25:13.826Z
-Stopped at: Completed 15-03-PLAN.md (VAL-03 complete — halt + 15-05 option-A fix + fresh-root r2 resume)
+Stopped at: Phase 15 complete, ready to plan Phase 16
 Resume file: None
 
 ## Operator Next Steps

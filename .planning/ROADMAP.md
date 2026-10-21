@@ -58,7 +58,7 @@ Plans:
 
 **Goal**: The dispatch orchestrator is proven on the local 2× RTX 5090 — the docs/multi-gpu.md N=2 smoke passes (WINDOWS #21 closed, D-05 revised) and a small real sweep over pre-materialized 5% stratified subsets runs both GPUs end-to-end through merge and the data chain
 **Requirements**: VAL-01, VAL-02, VAL-03
-**Plans**: 5 plans
+**Plans**: 5/5 plans complete
 
 Plans:
 **Wave 1**
