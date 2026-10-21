@@ -34,7 +34,10 @@ snapshots keyed by POSIX-relative path):
    independent) — is unchanged across EVERY generator run in this module
    (autouse fixture); the generator refuses a ``--registry-dir`` that
    equals or contains the official registry dir or resolves to the
-   custom registry dir, with zero writes.
+   custom registry dir, with zero writes, and refuses (CR-01) a
+   ``--output-root`` that resolves to the ``--dataset-root`` — equal
+   roots would overwrite the REAL dataset CSVs — leaving the real tree
+   byte-unchanged.
 8. fail-fast (V5): header-only split, declared≠measured counts,
    malformed rows, and non-integer (multilabel/regression) labels each
    refuse the task loudly with zero output writes and a non-zero exit.
@@ -408,6 +411,55 @@ def test_registry_dir_refusals(five_mc_tree, tmp_path):
     assert proc.returncode != 0, _fail_msg(proc)
     assert "custom registry dir" in proc.stdout + proc.stderr
     assert not out_root.exists()
+
+
+def test_output_root_eq_dataset_root_refusal(tmp_path):
+    """CR-01: a ``--output-root`` that resolves to the ``--dataset-root``
+    directory is refused BEFORE any file is opened — equal roots would
+    make every subset write land on the REAL split-CSV path (the
+    dataset-tree twin of the D15-07 registry guard). The refusal names
+    both resolved paths, and the real tree is byte-unchanged afterwards
+    (the sentinel snapshot pins created AND modified files)."""
+    root = _variant_tree(tmp_path, "guard", _binary_rows(2110))
+    reg_dir = tmp_path / "reg"
+
+    # Sentinel files at the tree root and inside the dataset dir: the
+    # full-tree byte snapshot over them + the real CSVs proves the
+    # refused run created nothing and modified nothing.
+    (root / "SENTINEL-root").write_text("do not touch\n", encoding="utf-8")
+    base = root / "datasets" / "iDNA_ABF_datasets" / "5mC"
+    (base / "SENTINEL-ds").write_text("do not touch either\n",
+                                      encoding="utf-8")
+    before = _tree_snapshot(root)
+
+    # Direct equality: output root IS the dataset root.
+    proc = _run_generator(root, root, reg_dir, cwd=tmp_path)
+    assert proc.returncode != 0, _fail_msg(proc)
+    combined = proc.stdout + proc.stderr
+    resolved = str(root.expanduser().resolve())
+    assert resolved in combined, (
+        "the refusal names the resolved root path(s)"
+    )
+    assert "--output-root" in combined and "--dataset-root" in combined, (
+        "the refusal names both flags"
+    )
+    assert _tree_snapshot(root) == before, (
+        "the refused run created or modified a file in the REAL tree"
+    )
+    assert not reg_dir.exists() or not any(reg_dir.rglob("*")), (
+        f"the refused run still wrote a registry under {reg_dir}"
+    )
+
+    # A symlink alias of the output root resolves to the dataset root —
+    # same refusal (resolve() collapses the alias before the compare).
+    alias = tmp_path / "alias-to-root"
+    alias.symlink_to(root)
+    proc = _run_generator(root, alias, reg_dir, cwd=tmp_path)
+    assert proc.returncode != 0, _fail_msg(proc)
+    assert resolved in proc.stdout + proc.stderr
+    assert _tree_snapshot(root) == before, (
+        "the alias-refused run created or modified a file in the REAL tree"
+    )
 
 
 # ===== Behavior 8: fail-fast refusals (V5) =====

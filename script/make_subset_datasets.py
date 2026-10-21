@@ -73,9 +73,15 @@ registry files for writing. It refuses to run when the resolved
 (``pipeline/``) or resolves to the custom registry dir (resolved
 read-only exactly like ``pipeline/registry_loader.custom_registry_dir``:
 ``DNALLMMARK_CUSTOM_REGISTRY_DIR`` > ``XDG_CONFIG_HOME``/dnallmmark >
-``~/.config/dnallmmark``). Subset registries/config/output roots never
-share a root with real runs (e.g. output under ``pipeline/datasets-smoke/``
-+ ``pipeline/registry-smoke/``, both gitignored).
+``~/.config/dnallmmark``). It likewise refuses to run when the resolved
+``--output-root`` equals the resolved ``--dataset-root`` — the subset
+writes land at ``{output-root}/Dataset_path/{split}.csv``, so equal
+roots would silently overwrite the REAL dataset CSVs with their subsets
+(``resolve()`` covers symlink aliases; equality is the exact collision
+condition since both sides join the same ``Dataset_path``). Subset
+registries/config/output roots never share a root with real runs (e.g.
+output under ``pipeline/datasets-smoke/`` +
+``pipeline/registry-smoke/``, both gitignored).
 
 Usage (from repo root)::
 
@@ -236,6 +242,36 @@ def ensure_registry_isolation(registry_dir):
             "and must never overwrite custom files (D15-07)"
         )
     return resolved
+
+
+def ensure_output_isolation(dataset_root, output_root):
+    """Refuse a subset output root that IS the real dataset root (D15-07).
+
+    ``generate_subset_task`` writes subset CSVs to
+    ``{output_root}/Dataset_path/{train,dev,test}.csv`` — when the output
+    root resolves to the same directory as the real dataset root, that
+    path IS the real dataset path and every real split CSV is silently
+    replaced by its subset (the dataset-tree twin of the registry
+    collision D15-07 closed). ``resolve()`` also covers symlink aliases;
+    equality is the exact collision condition since both sides join the
+    same ``Dataset_path``.
+
+    Args:
+        dataset_root (str): The ``--dataset-root`` CLI value.
+        output_root (str): The ``--output-root`` CLI value.
+
+    Raises:
+        SystemExit: When the two roots resolve to the same directory —
+            before any file is opened (read or write).
+    """
+    resolved_out = Path(output_root).expanduser().resolve()
+    resolved_in = Path(dataset_root).expanduser().resolve()
+    if resolved_out == resolved_in:
+        raise SystemExit(
+            f"[Error] --output-root {resolved_out} equals --dataset-root "
+            f"{resolved_in} — the subset would overwrite the REAL dataset "
+            "CSVs; subsets must land under a dedicated root (D15-07)"
+        )
 
 
 def subset_size(n, fraction):
@@ -521,6 +557,11 @@ def main():
     non-zero."""
     args = parse_args()
     registry_dir = ensure_registry_isolation(args.registry_dir)
+    # CR-01 (the D15-07 dataset-tree twin of the registry guard above):
+    # refuse equal roots BEFORE any file is opened — all per-task reads
+    # complete before the writes within a task, so nothing downstream
+    # could catch the collision.
+    ensure_output_isolation(args.dataset_root, args.output_root)
 
     # The OFFICIAL registries are always the read source (third-registry-
     # class discipline — never a writable view).
