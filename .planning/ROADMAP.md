@@ -87,7 +87,7 @@ Plans:
 - [x] 16-01-PLAN.md — Tracer: gpu_probe service + G GPU-lanes panel end-to-end (textual-free CSV probe, honest 未安装 degradation, mon-gpu cadence worker, render-gate byte-silence discipline) (TUI-01)
 
 **Wave 2** *(blocked on Wave 1: monitor.py + strings.py file overlap)*
-- [ ] 16-02-PLAN.md — dispatch_state.json tolerant reader (frozen v2, None sentinel, 60s stale constant, invariant honesty) + slot-5 Running-card dispatch rows via the one _card_content builder (TUI-03)
+- [x] 16-02-PLAN.md — dispatch_state.json tolerant reader (frozen v2, None sentinel, 60s stale constant, invariant honesty) + slot-5 Running-card dispatch rows via the one _card_content builder (TUI-03)
 
 **Wave 3** *(blocked on Wave 2: monitor.py + strings.py file overlap)*
 - [ ] 16-03-PLAN.md — Slot-4 service tier: RunSpec workers/gpus + mirror problems + compose_dispatch_argv; EHC-3 predicate replaced by multi-GPU capacity arithmetic (GpuCapacityBlock, registry-only demand) + LNC_SINGLE_GPU_BLOCKED lockstep amendment across all 8 format sites (TUI-02)

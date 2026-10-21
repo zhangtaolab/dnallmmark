@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 ## Current Position
 
 Phase: 16 (TUI 多 GPU 界面) — EXECUTING
-Plan: 2 of 5
-Status: Executing Phase 16 (16-01 complete)
+Plan: 3 of 5
+Status: Ready to execute
 Last activity: 2026-10-21 — 16-01 complete (TUI-01 tracer landed)
 
 ## Performance Metrics
@@ -119,6 +119,7 @@ Last activity: 2026-10-21 — 16-01 complete (TUI-01 tracer landed)
 | Phase 15 P15-05 | 22 min | 2 tasks | 3 files |
 | Phase 15 P15-03 | 40 min | 3 tasks | 11 files |
 | Phase 16 P1 | 32 min | 2 tasks | 8 files |
+| Phase 16 P2 | 31 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -297,6 +298,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 16]: 16-01: gpu probe rides the existing frontier timer via a dedicated _tick_gpu dispatch BEFORE the live-root guard — no second timer, idle machines still probe (Pitfall 1)
 - [Phase 16]: 16-01: G-panel render gate writes each region only on its own signature leg's change — a lane value change never re-writes a healthy note (per-region gating inside one rze gate)
 - [Phase 16]: 16-01: pilot _app() defaults to an absent gpu-probe fake — the whole pilot suite stays nvidia-smi-free; only the pty lane drives the real probe (byte-silence pin green on the 2x5090 box)
+- [Phase 16]: 16-02: dispatch staleness = (now - mtime) >= 60.0 with the integer age riding the view — the >= boundary keeps the MON_DISPATCH_STALE copy ({age}s >= 60s) and behavior agreeing at exactly 60s; the now seam is a per-read callable, never a mutated clock
+- [Phase 16]: 16-02: the invariant honesty check returns False (not malformed) when a leg is MISSING — tolerance and provable violation stay orthogonal; a malformed-but-fresh snapshot renders the SAME stale marker at its true age while the counts ride VERBATIM (8/12 renders, never a reconciled 9/12)
+- [Phase 16]: 16-02: the dispatch read rides the EXISTING mon-frontier pass via an optional FrontierScanned.dispatch dict param (the plans precedent — existing constructors stay source-compatible); the dispatch legs (has-block, worker count, stale flag) join _cards_struct_legs so value-only flips (busy->idle) ride the in-place label refresh with cursor identity preserved (Pitfall 6)
 
 ### Pending Todos
 
@@ -369,8 +373,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T03:29:44.975Z
-Stopped at: Completed 16-01-PLAN.md (TUI-01 tracer: gpu_probe service + standing G panel, both tasks + gates green)
+Last session: 2026-10-21T04:09:51.604Z
+Stopped at: Completed 16-02-PLAN.md (TUI-03 dispatch rows: tolerant frozen-v2 reader + monitor block, both tasks + gates green)
 Resume file: None
 
 ## Operator Next Steps
