@@ -132,6 +132,11 @@ pipeline/registry-smoke/
 # subset sweep); a shared root would skip sweep cells on the smoke's
 # trainer_state markers (adjacency edge, pinned by skipped == 0)
 pipeline/finetuned-sweep/
+# Fresh re-run sweep root (15-03 continuation after 15-05's WINDOWS #45
+# producer fix): the original finetuned-sweep root is preserved superseded
+# evidence (eval-less final_metrics) — its trainer_state markers would
+# resume-skip all 12 cells, so the eval-carrying re-run needs its own root
+pipeline/finetuned-sweep-r2/
 # TUI demo meta sidecars (quick-261015-pex): per-recording driver state,
 # consumed by record.sh's exit gate — never committed.
 docs/demo/.meta-*.json
