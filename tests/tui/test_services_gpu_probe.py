@@ -20,6 +20,8 @@ See also:
 """
 
 from dataclasses import FrozenInstanceError
+from pathlib import Path
+from subprocess import TimeoutExpired
 
 import pytest
 
@@ -128,3 +130,79 @@ def test_gpu_rows_are_frozen():
     # ty-vs-intent precedent; the noqa covers ruff's inverse B010.
     with pytest.raises(FrozenInstanceError):
         setattr(row, "utilization_pct", 100)  # noqa: B010
+
+
+# ===== the degradation matrix (16-01 Task 2 — D16-02: ONE absent
+# outcome for EVERY failure mode; identity of shape, not just falsiness)
+
+
+def test_missing_binary_degrades_to_the_absent_outcome():
+    """Failure mode 1 — the binary is not installed (CI's designed
+    state): FileNotFoundError degrades to the absent outcome, the SAME
+    object every other failure mode yields."""
+    def runner(argv, timeout):
+        raise FileNotFoundError("nvidia-smi")
+
+    assert gpu_probe.probe(runner=runner) is None
+
+
+def test_nonzero_exit_degrades_to_the_absent_outcome():
+    """Failure mode 2 — a non-zero exit (driver error): degrades to the
+    absent outcome EVEN when stdout carries parseable lines (the exit
+    check precedes the parse; a failed probe's stdout is not data)."""
+    runner, _calls = _recording_runner(returncode=1, stdout=_LIVE_STDOUT)
+    assert gpu_probe.probe(runner=runner) is None
+
+
+def test_timeout_degrades_to_the_absent_outcome():
+    """Failure mode 3 — the probe exceeds the per-call timeout (D16-03):
+    TimeoutExpired degrades to the absent outcome, never a raise (the
+    UI can never block on a hung nvidia-smi)."""
+    def runner(argv, timeout):
+        raise TimeoutExpired(cmd=list(argv), timeout=timeout)
+
+    assert gpu_probe.probe(runner=runner) is None
+
+
+def test_one_malformed_line_degrades_the_whole_probe_to_absent():
+    """Failure mode 4 — one unparseable CSV line among good ones: the
+    WHOLE probe degrades (D16-02's letter — never partial rows from a
+    partial parse; the good line's data never leaks)."""
+    runner, _calls = _recording_runner(
+        stdout="0, 0, 2, 32607, 29\n1, oops, 2, 32607, 28\n")
+    assert gpu_probe.probe(runner=runner) is None
+
+
+def test_every_failure_mode_yields_the_identical_absent_outcome():
+    """The matrix's identity pin: all four failure modes yield the
+    exact SAME absent outcome object (None) — the panel renders ONE
+    degradation shape, whichever failure fired (D16-02)."""
+    def missing(argv, timeout):
+        raise FileNotFoundError("nvidia-smi")
+
+    nonzero, _calls = _recording_runner(returncode=1, stdout="")
+
+    def timed_out(argv, timeout):
+        raise TimeoutExpired(cmd=list(argv), timeout=timeout)
+
+    malformed, _calls2 = _recording_runner(stdout="0, x, 2, 3, 4\n")
+    outcomes = {
+        gpu_probe.probe(runner=missing),
+        gpu_probe.probe(runner=nonzero),
+        gpu_probe.probe(runner=timed_out),
+        gpu_probe.probe(runner=malformed),
+    }
+    assert outcomes == {None}
+
+
+def test_module_is_covered_by_the_services_import_lock_glob():
+    """D16-07: the import lock's glob (tests/tui/test_import_lock.py —
+    ``SERVICES_DIR.glob('*.py')``) collects gpu_probe automatically;
+    pinned here so a rename or move cannot silently drop the
+    textual-free guarantee."""
+    services_dir = Path(__file__).resolve().parents[2] / "tui" / "services"
+    assert services_dir.is_dir()
+    assert any(path.name == "gpu_probe.py"
+               for path in services_dir.glob("*.py")), (
+        "gpu_probe.py must stay under tui/services/ (the lock's glob)"
+    )

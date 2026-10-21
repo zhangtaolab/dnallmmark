@@ -2619,11 +2619,20 @@ class MonitorScreen(Screen):
         else:
             note = ""
             lanes = tuple(_gpu_lane_text(row) for row in rows)
-        sig = (note, tuple(lane.plain for lane in lanes))
-        if sig == self._gpu_sig:
+        previous = self._gpu_sig
+        lane_texts = tuple(lane.plain for lane in lanes)
+        sig = (note, lane_texts)
+        if sig == previous:
             return  # unchanged readings: nothing to paint (Pitfall 5)
         self._gpu_sig = sig
-        self.query_one("#mon-gpu-note", Label).update(note, layout=False)
+        # each region writes ONLY on its own leg's change — a value
+        # change re-renders the lanes but never touches a healthy note;
+        # a pending -> absent flip updates the note alone (16-01 Task 4)
+        if previous is None or previous[0] != note:
+            self.query_one("#mon-gpu-note", Label).update(
+                note, layout=False)
+        if previous is not None and previous[1] == lane_texts:
+            return  # only the note changed — the lane region stands
         region = self.query_one("#mon-gpu-lanes", VerticalScroll)
         region.remove_children()
         if lanes:

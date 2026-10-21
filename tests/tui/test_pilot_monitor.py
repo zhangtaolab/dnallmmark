@@ -43,6 +43,7 @@ from typing import cast
 from unittest import mock
 
 from rich.text import Text
+from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import (
     DataTable,
@@ -95,6 +96,7 @@ from tui.strings import (
     MON_DETAIL_STEPS,
     MON_FAILURES_EMPTY,
     MON_GPU_ABSENT,
+    MON_GPU_NONE,
     MON_GPU_TITLE,
     MON_GRADUATED_DONE_TOAST,
     MON_HISTORY_EMPTY,
@@ -5967,6 +5969,172 @@ async def test_gpu_panel_absent_provider_renders_note_zero_lanes():
         assert _gpu_lane_texts(screen) == [], (
             "never fabricated lanes under the absent outcome")
         assert app.is_running, "no crash into the console"
+
+
+async def test_gpu_panel_zero_gpus_renders_exactly_one_none_row():
+    """16-01 Task 2 (D16-04): a probe succeeding with ZERO GPUs (the
+    empty tuple — distinct from the absent outcome) renders EXACTLY ONE
+    MON_GPU_NONE lane row: the explicit empty state, never fabricated
+    lanes, never a blank region."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(), watermarks={})])
+    app = _app(monitor=monitor, gpu=lambda timeout: ())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert _gpu_lane_texts(screen) == [MON_GPU_NONE]
+        assert _label_text(screen, "#mon-gpu-note") == "", (
+            "a successful empty probe is not a degradation — no note"
+        )
+
+
+async def test_gpu_panel_first_paint_is_header_row_only():
+    """16-01 Task 2 (the #41 optimistic-paint law): before ANY probe
+    message lands, the panel renders the header row ONLY — the title
+    present, the probe-state note BLANK, zero lane rows; never a
+    guessed lane."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(), watermarks={})])
+    # a provider that would answer — but no frontier tick ever fires:
+    # the first-paint state is what mounts, not a probe
+    app = _app(monitor=monitor, gpu=lambda timeout: _fabricated_gpu_rows())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert screen._gpu_run_id == 0, "no probe dispatch has fired yet"
+        assert _label_text(screen, "#mon-gpu-title") == MON_GPU_TITLE
+        assert _label_text(screen, "#mon-gpu-note") == ""
+        assert _gpu_lane_texts(screen) == []
+
+
+async def test_gpu_panel_renders_probe_while_history_tab_active():
+    """16-01 Task 2 (D16-05): the probe pass renders with the HISTORY
+    tab active — machine-level state reaches the operator whichever
+    tab holds focus (the panel rides the shared pass, not the tab)."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(), watermarks={})])
+    app = _app(monitor=monitor,
+               gpu=lambda timeout: _fabricated_gpu_rows())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        await pilot.press("tab")
+        await pilot.pause()
+        assert screen._active_tab == "history"
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        lanes = _gpu_lane_texts(screen)
+        assert len(lanes) == 2 and "GPU 0" in lanes[0], (
+            "the G panel renders under the History tab too"
+        )
+
+
+async def test_gpu_panel_steady_tick_performs_zero_widget_writes():
+    """16-01 Task 2 (the rze law / Pitfall 5): two consecutive frontier
+    passes delivering IDENTICAL readings perform ZERO widget writes on
+    the G panel — no note update, no lane rebuild, the sentinel holds,
+    the lane widget identity survives (what keeps the pty byte-silence
+    pin green over real hardware). A value change then writes EXACTLY
+    the changed region: the lanes re-render, the note does not."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(), watermarks={})])
+    state = {"rows": _fabricated_gpu_rows()}
+
+    def provider(timeout):
+        return state["rows"]
+
+    app = _app(monitor=monitor, gpu=provider)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        lanes_before = list(screen.query("#mon-gpu-lanes .mon-gpu-lane"))
+        assert len(lanes_before) == 2
+        sig_before = screen._gpu_sig
+        note = screen.query_one("#mon-gpu-note", Label)
+        region = screen.query_one("#mon-gpu-lanes", VerticalScroll)
+        note_patcher, note_update = _spy(note, "update")
+        region_patcher, region_remove = _spy(region, "remove_children")
+        try:
+            # THE steady pass: identical readings, zero writes
+            screen._tick_frontier()
+            await _settle(pilot, app)
+            assert note_update.call_count == 0, (
+                "the steady tick touched the probe-state note"
+            )
+            assert region_remove.call_count == 0, (
+                "the steady tick rebuilt the lane region"
+            )
+            assert screen._gpu_sig == sig_before, (
+                "the signature sentinel must hold over identical readings"
+            )
+            assert list(
+                screen.query("#mon-gpu-lanes .mon-gpu-lane")
+            ) == lanes_before, "the lane widget identity survives"
+        finally:
+            note_patcher.stop()
+            region_patcher.stop()
+        # the value change: ONE GpuRow's utilization differs — the
+        # lanes re-render with the new reading, the note never fires
+        changed = tuple(
+            (row if row.index != 0 else
+             GpuRow(index=0, utilization_pct=90,
+                    memory_used_mib=row.memory_used_mib,
+                    memory_total_mib=row.memory_total_mib,
+                    temperature_c=row.temperature_c))
+            for row in state["rows"])
+        state["rows"] = changed
+        note_patcher, note_update = _spy(note, "update")
+        try:
+            screen._tick_frontier()
+            await _settle(pilot, app)
+            assert note_update.call_count == 0, (
+                "a healthy value change never writes the note region"
+            )
+            lanes_after = _gpu_lane_texts(screen)
+            assert len(lanes_after) == 2
+            assert "90%" in lanes_after[0], (
+                "the changed region carries the new reading"
+            )
+            assert "12%" in lanes_after[1], (
+                "the unchanged lane keeps its reading")
+            assert screen._gpu_sig != sig_before
+        finally:
+            note_patcher.stop()
+
+
+async def test_gpu_panel_sentinel_reset_rerenders_on_remount():
+    """16-01 Task 2 (the on_mount reset — the L-toggle recompose path):
+    a re-mount rebuilds the compose tree with FRESH empty Labels; the
+    sentinel reset forces the panel to repaint from the LAST-KNOWN rows
+    through the shared pass, without waiting for a new probe message
+    (the unchanged provider's data is already on the screen state)."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(), watermarks={})])
+    app = _app(monitor=monitor,
+               gpu=lambda timeout: _fabricated_gpu_rows())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        before = _gpu_lane_texts(screen)
+        assert len(before) == 2
+        # the recompose mechanism the L toggle drives (recompose +
+        # on_mount re-invocation on the SAME instance — the #41/#35
+        # probe-pinned app mechanism)
+        await app._rerender_screen(screen)
+        await pilot.pause()
+        after = _gpu_lane_texts(screen)
+        assert after == before, (
+            "the remounted panel repaints from the last-known rows — "
+            "an unchanged sentinel would have gated the fresh empty "
+            "Labels away"
+        )
+        assert screen._gpu_sig is not None
 
 
 
