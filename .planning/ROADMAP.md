@@ -80,7 +80,23 @@ Plans:
 
 **Goal**: The operator console launches and watches multi-GPU runs natively — slot-4 multi-GPU launch through the unchanged gate chain, slot-5 consumption of dispatch state, and the deferred G GPU-lanes display over a read-only nvidia-smi probe
 **Requirements**: TUI-01, TUI-02, TUI-03, TUI-04
-**Plans**: 0
+**Plans**: 5/5 plans
+
+Plans:
+**Wave 1**
+- [ ] 16-01-PLAN.md — Tracer: gpu_probe service + G GPU-lanes panel end-to-end (textual-free CSV probe, honest 未安装 degradation, mon-gpu cadence worker, render-gate byte-silence discipline) (TUI-01)
+
+**Wave 2** *(blocked on Wave 1: monitor.py + strings.py file overlap)*
+- [ ] 16-02-PLAN.md — dispatch_state.json tolerant reader (frozen v2, None sentinel, 60s stale constant, invariant honesty) + slot-5 Running-card dispatch rows via the one _card_content builder (TUI-03)
+
+**Wave 3** *(blocked on Wave 2: monitor.py + strings.py file overlap)*
+- [ ] 16-03-PLAN.md — Slot-4 service tier: RunSpec workers/gpus + mirror problems + compose_dispatch_argv; EHC-3 predicate replaced by multi-GPU capacity arithmetic (GpuCapacityBlock, registry-only demand) + LNC_SINGLE_GPU_BLOCKED lockstep amendment across all 8 format sites (TUI-02)
+
+**Wave 4** *(blocked on Wave 3: run_config screen + spec fields)*
+- [ ] 16-04-PLAN.md — Slot-4 screen tier: 多 GPU 调度 params section + capacity-stage rendering + dispatch-plan preview line on both confirm faces (GateSummary service-side numbers); gate-order tests extended, zero weakening (TUI-02)
+
+**Wave 5** *(blocked on Wave 4: goldens regenerate after all screen changes settle)*
+- [ ] 16-05-PLAN.md — Goldens: 3 regenerated + run_config_confirm NEW via make snapshot-update, fabricated constructor-injected fixtures, UNCOMMITTED pending D-03 review + WINDOWS deviation row + phase-close full gates (TUI-04)
 **Success criteria**:
 1. `gpu_probe` service: csv-mode subprocess probe → frozen dataclass rows, textual-free, honest 未安装 degradation; unit-tested via injected seam (no GPU in CI)
 2. G GPU-lanes panel renders per-GPU utilization/memory/temperature on the monitor cadence; absent binary never crashes the console (worker guard discipline)
