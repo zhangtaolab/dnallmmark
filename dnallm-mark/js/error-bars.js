@@ -23,7 +23,8 @@
  * vertical whiskers (scatter), the x scale for horizontal ones (bars).
  *
  * @param {number} anchor - Anchor PIXEL on the constant axis (el.x for a
- *   scatter point, el.y for a horizontal floating bar).
+ *   scatter point or a vertical floating bar, el.y for a horizontal
+ *   floating bar).
  * @param {number} loValue - Lower whisker VALUE (mean - std, or the
  *   floating bar's raw[0]).
  * @param {number} hiValue - Upper whisker VALUE (mean + std, or raw[1]).
@@ -71,8 +72,8 @@ export function barDatum(metricValue, std) {
  * still renders toward the boundary instead of drawing over labels or
  * off-canvas (the axis-overflow edge in the must_haves).
  * @param {number} pixel - Endpoint pixel from whiskerGeometry.
- * @param {number} floor - chartArea boundary (top for point mode, left
- *   for bar mode).
+ * @param {number} floor - chartArea boundary (top for point mode and
+ *   vertical bars, left for horizontal bars).
  * @param {number} ceil - Opposite chartArea boundary (bottom / right).
  * @returns {number} The clamped pixel.
  */
@@ -85,9 +86,10 @@ function clampPixel(pixel, floor, ceil) {
  * config `plugins: [errorBarsPlugin]` array (inline plugins are per-chart
  * and cannot be globally registered — the 4.4.0 documented convention);
  * its id is lowercase per the documented npm-name rule. Draw dispatch:
- *   - Array raw → bar-cap mode over the VALUE axis (x when indexAxis 'y'):
- *     caps always, stem only when options.drawStem (task.js passes false —
- *     the floating bar itself is the range).
+ *   - Array raw → bar-cap mode over the VALUE axis (x when indexAxis 'y',
+ *     y for vertical bars): caps always span the constant axis (el.y
+ *     horizontal / el.x vertical), stem only when options.drawStem
+ *     (task.js passes false — the floating bar itself is the range).
  *   - Object raw carrying a finite std > 0 → point mode over chart.scales.y
  *     ONLY (the log-scale FLOPs x axis is structurally out of reach).
  * Everything else is honest absence: nothing is drawn (D17-08), so
@@ -119,21 +121,42 @@ const errorBarsPlugin = {
           const horizontal = chart.options.indexAxis === 'y';
           const valueScale = horizontal ? chart.scales.x : chart.scales.y;
           if (!valueScale) return;
-          const g = whiskerGeometry(el.y, raw[0], raw[1], valueScale, options.capWidth);
+          // The constant-axis anchor is el.y on a horizontal bar but el.x on
+          // a vertical one (el.y of a vertical bar lies on the VALUE axis);
+          // caps always span the constant axis, stems run along the value
+          // axis, and each orientation clamps into its own chartArea pair.
+          const g = whiskerGeometry(
+            horizontal ? el.y : el.x, raw[0], raw[1], valueScale, options.capWidth
+          );
           if (!isFinite(g.lo) || !isFinite(g.hi)) return;
-          const lo = clampPixel(g.lo, chartArea.left, chartArea.right);
-          const hi = clampPixel(g.hi, chartArea.left, chartArea.right);
 
-          ctx.beginPath();
-          if (options.drawStem) {
-            ctx.moveTo(lo, g.anchor);
-            ctx.lineTo(hi, g.anchor);
+          if (horizontal) {
+            const lo = clampPixel(g.lo, chartArea.left, chartArea.right);
+            const hi = clampPixel(g.hi, chartArea.left, chartArea.right);
+            ctx.beginPath();
+            if (options.drawStem) {
+              ctx.moveTo(lo, g.anchor);
+              ctx.lineTo(hi, g.anchor);
+            }
+            ctx.moveTo(lo, g.anchor - g.capHalf);
+            ctx.lineTo(lo, g.anchor + g.capHalf);
+            ctx.moveTo(hi, g.anchor - g.capHalf);
+            ctx.lineTo(hi, g.anchor + g.capHalf);
+            ctx.stroke();
+          } else {
+            const lo = clampPixel(g.lo, chartArea.top, chartArea.bottom);
+            const hi = clampPixel(g.hi, chartArea.top, chartArea.bottom);
+            ctx.beginPath();
+            if (options.drawStem) {
+              ctx.moveTo(g.anchor, lo);
+              ctx.lineTo(g.anchor, hi);
+            }
+            ctx.moveTo(g.anchor - g.capHalf, lo);
+            ctx.lineTo(g.anchor + g.capHalf, lo);
+            ctx.moveTo(g.anchor - g.capHalf, hi);
+            ctx.lineTo(g.anchor + g.capHalf, hi);
+            ctx.stroke();
           }
-          ctx.moveTo(lo, g.anchor - g.capHalf);
-          ctx.lineTo(lo, g.anchor + g.capHalf);
-          ctx.moveTo(hi, g.anchor - g.capHalf);
-          ctx.lineTo(hi, g.anchor + g.capHalf);
-          ctx.stroke();
         } else if (
           raw && typeof raw === 'object' &&
           typeof raw.y === 'number' &&

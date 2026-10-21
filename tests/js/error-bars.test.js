@@ -18,6 +18,11 @@
  *     lowercase id, carrying defaults and afterDatasetsDraw, and the module
  *     namespace exposes exactly the expected exports (no Chart/canvas/DOM
  *     reference — the purity seam WEB-03 tests through).
+ *  3b. DRAW DISPATCH — afterDatasetsDraw executed against mock bar charts
+ *      (recording ctx fake): a VERTICAL bar (indexAxis 'x') anchors on
+ *      el.x, strokes vertically, and clamps into [chartArea.top,
+ *      chartArea.bottom]; a HORIZONTAL bar (indexAxis 'y') keeps the el.y
+ *      anchor and horizontal strokes (the WR-01 orientation pair).
  *  4. HONEST ABSENCE — barDatum returns the scalar for std 0 / undefined /
  *     null / NaN / negative and the [lo, hi] floating-bar pair only for a
  *     finite std > 0 (D17-08: never a zero-width fake whisker).
@@ -144,6 +149,96 @@ test('module source references no DOM/canvas access primitive', () => {
   assert.doesNotMatch(source, /window\./, 'no window access');
   assert.doesNotMatch(source, /document\./, 'no document access');
   assert.doesNotMatch(source, /getContext/, 'no canvas context acquisition');
+});
+
+// ===== 3b. DRAW DISPATCH: orientation-correct bar-cap strokes (WR-01) =====
+
+/** Recording 2D-context fake — captures the plugin's path commands in
+ * call order so the ORIENTATION of every stroke (which coordinate pair
+ * it spans) can be asserted exactly. */
+function fakeCtx(calls) {
+  return {
+    save() { calls.push(['save']); },
+    restore() { calls.push(['restore']); },
+    beginPath() { calls.push(['beginPath']); },
+    moveTo(x, y) { calls.push(['moveTo', x, y]); },
+    lineTo(x, y) { calls.push(['lineTo', x, y]); },
+    stroke() { calls.push(['stroke']); }
+  };
+}
+
+/** Minimal bar-chart double: one visible dataset, one element, a linear
+ * value scale mapping value*200 to pixels (0.25 -> 50, 0.75 -> 150), and
+ * chartArea bounds chosen so the two clamp axis pairs are DISTINGUISHABLE
+ * (left 10 / right 390 vs top 0 / bottom 300). */
+function mockBarChart(ctx, indexAxis, valueScale, el) {
+  return {
+    ctx,
+    chartArea: { left: 10, top: 0, right: 390, bottom: 300 },
+    options: { indexAxis },
+    scales: { [indexAxis === 'y' ? 'x' : 'y']: valueScale },
+    data: { datasets: [{ data: [[0.25, 0.75]] }] },
+    getDatasetMeta: () => ({ hidden: false, data: [el] })
+  };
+}
+
+const DRAW_OPTIONS = { color: '#595F6E', lineWidth: 1, capWidth: 8, drawStem: true };
+
+test('afterDatasetsDraw: vertical bars anchor on el.x and stroke vertically (WR-01 regression)', () => {
+  const calls = [];
+  const chart = mockBarChart(
+    fakeCtx(calls), 'x', { getPixelForValue: (v) => v * 200 }, { x: 100, y: 90 }
+  );
+  plugin.afterDatasetsDraw(chart, {}, DRAW_OPTIONS);
+  // The whisker is a VERTICAL stem at the bar's x with caps spanning the
+  // category axis — never horizontal strokes anchored on el.y (the
+  // pre-fix geometry the reviewer reproduced).
+  assert.deepStrictEqual(calls, [
+    ['save'],
+    ['beginPath'],
+    ['moveTo', 100, 50], ['lineTo', 100, 150],
+    ['moveTo', 96, 50], ['lineTo', 104, 50],
+    ['moveTo', 96, 150], ['lineTo', 104, 150],
+    ['stroke'],
+    ['restore']
+  ]);
+});
+
+test('afterDatasetsDraw: vertical bars clamp endpoints into [chartArea.top, chartArea.bottom]', () => {
+  const calls = [];
+  const chart = mockBarChart(
+    fakeCtx(calls), 'x', { getPixelForValue: (v) => v * 200 }, { x: 100, y: 90 }
+  );
+  // 2.0 maps to pixel 400 — beyond bottom (300); the pre-fix hardcoded
+  // [chartArea.left, chartArea.right] pair would clamp to 390 instead.
+  chart.data.datasets[0].data = [[0.25, 2.0]];
+  plugin.afterDatasetsDraw(chart, {}, DRAW_OPTIONS);
+  assert.deepStrictEqual(calls, [
+    ['save'],
+    ['beginPath'],
+    ['moveTo', 100, 50], ['lineTo', 100, 300],
+    ['moveTo', 96, 50], ['lineTo', 104, 50],
+    ['moveTo', 96, 300], ['lineTo', 104, 300],
+    ['stroke'],
+    ['restore']
+  ]);
+});
+
+test('afterDatasetsDraw: horizontal bars keep the el.y anchor and horizontal strokes', () => {
+  const calls = [];
+  const chart = mockBarChart(
+    fakeCtx(calls), 'y', { getPixelForValue: (v) => v * 200 }, { x: 90, y: 100 }
+  );
+  plugin.afterDatasetsDraw(chart, {}, DRAW_OPTIONS);
+  assert.deepStrictEqual(calls, [
+    ['save'],
+    ['beginPath'],
+    ['moveTo', 50, 100], ['lineTo', 150, 100],
+    ['moveTo', 50, 96], ['lineTo', 50, 104],
+    ['moveTo', 150, 96], ['lineTo', 150, 104],
+    ['stroke'],
+    ['restore']
+  ]);
 });
 
 // ===== 4. HONEST ABSENCE: barDatum scalar/array mapping (D17-08) =====
