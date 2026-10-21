@@ -60,6 +60,14 @@ map -> join -> aggregate -> emit:
             gate (the D-18 discipline: data moves only in inventoried,
             changelogged commits).
 
+Phase 17 (D17-01/D17-03, display error bars): a multi-seed cell (>= 2
+completed seeds on the dataset's declared primary metric) additionally
+carries the OPTIONAL entry-level trio ``mean``/``std``/``n_seeds`` in BOTH
+views, where ``std`` is POPULATION std (ddof=0, the ``population_std``
+helper beside — never inside — the vendored section): a deliberately
+different number from the vendored reviewer-side ``sd`` (ddof=1).
+Single-seed/absent cells emit nothing (D17-02 — never a zero std).
+
 Trainer-emitted bookkeeping keys that are neither pipeline-produced
 (``eval_loss``/``train_runtime``/``total_flos``) nor resolvable through the
 suite metric-registry rules (e.g. ``train_loss``, ``epoch``, ``eval_runtime``,
@@ -224,6 +232,28 @@ def aggregate_seeds(
     return out
 
 # ===== END vendored section @483a35c =====
+
+
+def population_std(values: Sequence[float]) -> float:
+    """Population standard deviation (ddof=0) — the DISPLAY-side sibling
+    of the vendored ``aggregate_seeds`` ``sd`` (ddof=1).
+
+    Phase 17 (D17-01): chart whiskers display population std over the
+    completed per-seed values, while the reviewer-facing ``seed_stats``
+    artifacts keep the vendored sample std. The two are DELIBERATELY
+    different numbers on the same seed set (seeds {0.0, 0.4, 0.2}:
+    sd = 0.2 vs std ≈ 0.16330) — never compute one from the other
+    (``sd / sqrt(n)`` is a standard error, a third quantity). This
+    helper lives OUTSIDE the vendored banner (nothing inside it is ever
+    edited) and never feeds it.
+
+    Args:
+        values: Per-seed metric values (one per completed seed run).
+
+    Returns:
+        The ddof=0 standard deviation as ``float``.
+    """
+    return float(np.asarray(values, dtype=float).std(ddof=0))
 
 
 # =====================================================================
@@ -808,6 +838,11 @@ def export_runs_tree(
     model_view: dict[str, dict[str, dict[str, Any]]] = {}
     for task in tasks:
         dataset_row = datasets_info[task]  # KeyError: unregistered dataset — hard fail
+        # Phase 17 (D17-01): the dataset's declared primary metric resolved
+        # ONCE per task through the IN-03 single authority — the slot the
+        # optional display trio gates on (an unresolvable declaration simply
+        # never matches a metricBlock key, so nothing is emitted).
+        primary_slot = resolve_dataset_metric(dataset_row["metric"])
         performance: dict[str, dict[str, Any]] = {}
         stats_doc: dict[str, dict[str, Any]] = {}
         for model in sorted(tree):
@@ -831,28 +866,53 @@ def export_runs_tree(
                 config_path,
             )
             metric_block: dict[str, Any] = {}
+            # Phase 17 (D17-01/D17-02): the optional display trio, captured
+            # ONLY when the primary-metric slot carries >= 2 completed seeds
+            # (Q2 threshold — population std is well-defined at n=2 and the
+            # count is disclosed via n_seeds). mean is the IDENTICAL
+            # float(np.mean(ordered)) expression the metric slot uses, so
+            # the two are bit-equal; std is POPULATION std (ddof=0) via the
+            # sibling population_std helper — never the vendored sd (ddof=1)
+            # and never sd/sqrt(n). Absent or single-seed values attach
+            # nothing (never a zero std).
+            trio: dict[str, Any] | None = None
             for key in sorted(EXPORT_METRIC_KEYS):
                 values = per_metric.get(key)
                 if values:
                     ordered = [values[seed] for seed in sorted(values)]
                     metric_block[key] = float(np.mean(ordered))
+                    if key == primary_slot and len(ordered) >= 2:
+                        trio = {
+                            "mean": float(np.mean(ordered)),
+                            "std": population_std(ordered),
+                            "n_seeds": len(ordered),
+                        }
                 elif key == "FLOPs":
                     raise RuntimeError(  # pragma: no cover — guarded in _collect_cell_values
                         f"FLOPs missing for {model}/{task}"
                     )
                 else:
                     metric_block[key] = ""
-            performance[model] = {
+            task_entry: dict[str, Any] = {
                 "model": _model_card(model_row),
                 "parameters": parameters,
                 "performance": metric_block,
             }
-            model_cards[model] = performance[model]["model"]
-            model_view.setdefault(model, {})[task] = {
+            model_entry: dict[str, Any] = {
                 "dataset": _dataset_info_block(dataset_row),
                 "parameters": parameters,
                 "performance": metric_block,
             }
+            if trio is not None:
+                # ENTRY-level siblings of parameters/performance (never
+                # inside metricBlock, where metric keys live) — one
+                # emission covers BOTH views (D-16: the two keyings share
+                # the same joined payload).
+                task_entry.update(trio)
+                model_entry.update(trio)
+            performance[model] = task_entry
+            model_cards[model] = task_entry["model"]
+            model_view.setdefault(model, {})[task] = model_entry
             stats_doc[model] = {
                 key: {
                     "per_seed": {

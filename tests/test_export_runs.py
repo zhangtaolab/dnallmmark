@@ -40,6 +40,11 @@ Covers, in order:
 - D-15: HuggingFace evaluate cross-validates the metric conventions on
   golden vectors (evaluate's standard implementations vs independently
   derived expected values, tolerance-asserted).
+- Phase 17 (D17-01/D17-02, display error bars): multi-seed cells (>= 2
+  completed seeds on the declared primary metric) carry the entry-level
+  trio mean/std/n_seeds in BOTH views — std = POPULATION std (ddof=0),
+  pinned distinct from the vendored sd (ddof=1); 1-seed and absent-value
+  cells emit NONE of the three keys.
 
 The exporter input contract (run_record.json) is pinned with fixtures that
 reuse the SUITE_NATIVE_METRICS convention from tests/test_sweep.py; the
@@ -53,6 +58,7 @@ See also:
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 
@@ -636,6 +642,14 @@ def test_one_seed_cell_emits_degenerate_statistics(tmp_path):
     import shutil
     shutil.rmtree(root / "FakeModel-B" / "FakeDS__task" / "seed_8")
     shutil.rmtree(root / "FakeModel-B" / "FakeDS__task" / "seed_9")
+    # Phase 17 (D17-02, the export-layer absent case): FakeModel-B's one
+    # remaining seed carries a value on the DECLARED primary metric
+    # ("AUPRC" -> the auprc slot), so the n >= 2 EMISSION GATE itself —
+    # not key absence — is what must attach nothing.
+    record_path = root / "FakeModel-B" / "FakeDS__task" / "seed_7" / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["metrics"]["eval_AUPRC"] = 0.71
+    record_path.write_text(json.dumps(record), encoding="utf-8")
     out = tmp_path / "out"
     stats_dir = tmp_path / "stats"
     export_runs.export_runs_tree(
@@ -645,11 +659,91 @@ def test_one_seed_cell_emits_degenerate_statistics(tmp_path):
     doc = json.loads((out / "FakeDS__task_task_performance.json").read_text(encoding="utf-8"))
     jsonschema.validate(instance=doc, schema=SCHEMA)
     assert doc["performance"]["FakeModel-B"]["performance"]["auroc"] == pytest.approx(0.70)
+    assert doc["performance"]["FakeModel-B"]["performance"]["auprc"] == pytest.approx(0.71)
+    # Phase 17 absent-case: the 1-seed entry carries NONE of the trio keys
+    # in the task view — and FakeModel-A (no auprc values at all on this
+    # fixture: the absent-values case) carries none either. Never a zero
+    # std, never a fabricated n_seeds.
+    for alias in ("FakeModel-A", "FakeModel-B"):
+        assert not ({"mean", "std", "n_seeds"} & set(doc["performance"][alias])), alias
+    # ...and in the per-model view (both views share one joined payload —
+    # the default model_output_dir derives as {input_root}/model_performance).
+    for alias in ("FakeModel-A", "FakeModel-B"):
+        model_doc = json.loads(
+            (root / "model_performance" / f"{alias}_performance.json")
+            .read_text(encoding="utf-8")
+        )
+        assert not (
+            {"mean", "std", "n_seeds"} & set(model_doc["performance"]["FakeDS__task"])
+        ), alias
     stats = json.loads((stats_dir / "FakeDS__task_seed_stats.json").read_text(encoding="utf-8"))
     block = stats["FakeModel-B"]["auroc"]["stats"]
     assert block == {
         "n_seeds": 1, "mean": 0.70, "sd": None, "ci95": None, "method": "none",
     }
+
+
+def test_multi_seed_cell_emits_population_std_trio(tmp_path):
+    """Phase 17 (D17-01): a multi-seed cell (>= 2 completed seeds on the
+    declared primary metric) carries the entry-level display trio in BOTH
+    views — mean BIT-EQUAL to the primary-metric slot, std = POPULATION std
+    (ddof=0), n_seeds the completed-seed count. std != sd is the conflation
+    guard (the vendored sd, ddof=1, is a deliberately different number —
+    Pitfall 1), and the failed sibling seed contributes nothing.
+
+    The fixture's declared metric is switched to "AUROC" (resolving to the
+    auroc slot its metrics actually carry): the committed enum surface has
+    no AUROC dataset, and SCHEMA-VALIDATED trio emission is separately
+    proven over e2_replay (tests/test_ci_replay.py — enum-legit "AUPRC"
+    declaration paired with eval_AUPRC values, validated against the
+    updated schemas).
+    """
+    root, models_path, datasets_path, config_path = _build_fixture_tree(tmp_path)
+    datasets = json.loads(datasets_path.read_text(encoding="utf-8"))
+    datasets["FakeDS__task"]["metric"] = "AUROC"
+    datasets_path.write_text(json.dumps(datasets), encoding="utf-8")
+    out = tmp_path / "out"
+    stats_dir = tmp_path / "stats"
+    models_out = tmp_path / "model_performance"
+    export_runs.export_runs_tree(
+        root, models_path, datasets_path, config_path, out, stats_dir, models_out,
+        n_bootstrap=2000, bootstrap_seed=42, small_n_ci="t-interval",
+    )
+    doc = json.loads((out / "FakeDS__task_task_performance.json").read_text(encoding="utf-8"))
+    entry = doc["performance"]["FakeModel-A"]
+    # mean: BIT-EQUAL to the metric slot — the identical expression over
+    # the same ordered per-seed list (Pitfall 3, byte-equality).
+    assert entry["mean"] == entry["performance"]["auroc"]
+    assert entry["mean"] == pytest.approx((0.91 + 0.93 + 0.95) / 3)
+    assert entry["n_seeds"] == 3
+    # std: POPULATION std (ddof=0) over the completed seeds.
+    expected_std = math.sqrt(
+        ((0.91 - 0.93) ** 2 + (0.93 - 0.93) ** 2 + (0.95 - 0.93) ** 2) / 3
+    )
+    assert entry["std"] == pytest.approx(expected_std)
+    # The conflation guard: the vendored sd (ddof=1 == 0.02 on this seed
+    # set) is a DIFFERENT number — std is never sd and never sd/sqrt(n).
+    stats = json.loads((stats_dir / "FakeDS__task_seed_stats.json").read_text(encoding="utf-8"))
+    sd = stats["FakeModel-A"]["auroc"]["stats"]["sd"]
+    assert sd == pytest.approx(0.02)
+    assert entry["std"] != pytest.approx(sd)
+    assert entry["std"] != pytest.approx(sd / math.sqrt(3))
+    # The failed seed 99 contributes nothing: FakeModel-B's trio covers its
+    # 3 completed seeds only (0.70/0.80/0.90 — the failed 0.0 excluded).
+    b = doc["performance"]["FakeModel-B"]
+    assert b["n_seeds"] == 3
+    assert b["mean"] == pytest.approx((0.70 + 0.80 + 0.90) / 3)
+    # ...and the per-model view carries the SAME trio (one emission covers
+    # both views — the D-16 shared-payload guarantee).
+    model_doc = json.loads(
+        (models_out / "FakeModel-A_performance.json").read_text(encoding="utf-8")
+    )
+    model_entry = model_doc["performance"]["FakeDS__task"]
+    assert set(model_entry) == {"dataset", "parameters", "performance",
+                                "mean", "std", "n_seeds"}
+    assert model_entry["mean"] == entry["mean"]
+    assert model_entry["std"] == entry["std"]
+    assert model_entry["n_seeds"] == entry["n_seeds"]
 
 
 def test_export_is_byte_stable_across_runs(tmp_path):
