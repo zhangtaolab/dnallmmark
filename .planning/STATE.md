@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 ## Current Position
 
 Phase: 16 (TUI 多 GPU 界面) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-10-21 — 16-01 complete (TUI-01 tracer landed)
 
@@ -121,6 +121,7 @@ Last activity: 2026-10-21 — 16-01 complete (TUI-01 tracer landed)
 | Phase 16 P1 | 32 min | 2 tasks | 8 files |
 | Phase 16 P2 | 31 min | 2 tasks | 7 files |
 | Phase 16 P3 | 37 min | 2 tasks | 9 files |
+| Phase 16 P16-04 | 45 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -305,6 +306,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 16]: 16-03: EHC-3 stage-0 replaced in place by multi-GPU capacity arithmetic (Open Q1 resolution (a)) — single_gpu_launch_blocked keeps name + zero-arg signature, returns frozen GpuCapacityBlock(roots, requested_workers, gpu_count); count-0 admits; refuse iff registry demand + requested > count; demand = parsed --workers for run_sweep_shard argv (either mode, default 1 fail-safe) else 1; registry-only, /proc pinned out (T-16-06)
 - [Phase 16]: 16-03: every slot-4 launch composes run_sweep_shard --mode dispatch (UI-SPEC auto-default #9) — launch_spec's _spawn routes rc.compose_dispatch_argv with --workers ALWAYS explicit (A2) and --gpus present-only (D-12); compose_argv byte-untouched beside it; the spawn key still rides resolve_dirs().output_root_abs (WR-01)
 - [Phase 16]: 16-03: LNC_SINGLE_GPU_BLOCKED amended IN PLACE (name unchanged) adding {workers}/{n}; ALL 7 HEAD format sites (4 code + 3 test — the plan prose's 5+3 arithmetic corrected against the verified census) lockstep in one commit, grep-gated at zero workers=-less sites; the refusal detail is the structured block, screens format only
+- [Phase 16]: 16-04: two en-side registry rewords forced by injectivity (MON_GPU_TITLE owns en 'GPUs') — CFG_FIELD_GPUS en 'gpus' (the flag's own spelling, seeds precedent) and CFG_MGPU_TITLE_SHORT en 'Multi-GPU'; zh sides stay UI-SPEC verbatim
+- [Phase 16]: 16-04: the dispatch-plan line rides GateSummary (workers/gpus_display computed in gate_confirm_data; all(n) = effective_gpu_count at preview time, never persisted); both confirm faces render the tuple, the monitor's E2' re-prompt passes none (Pitfall 3); cleared-field semantics stay last-valid-governs (Phase-11 semantics unchanged; the Pitfall-8 pin holds at the defaults spec)
 
 ### Pending Todos
 
@@ -377,8 +380,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T04:58:22.375Z
-Stopped at: Completed 16-03-PLAN.md (TUI-02 service tier: RunSpec workers/gpus + dispatch composer + capacity predicate, both tasks + gates green)
+Last session: 2026-10-21T05:48:15.153Z
+Stopped at: Completed 16-04-PLAN.md (TUI-02 slot-4 screen: mgpu params section + dispatch-plan line on both confirm faces, both tasks + gates green)
 Resume file: None
 
 ## Operator Next Steps
