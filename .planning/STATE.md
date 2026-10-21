@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 ## Current Position
 
 Phase: 17 (Web 多种子 Error Bar) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-10-21 — Phase 17 execution started
 
@@ -124,6 +124,7 @@ Last activity: 2026-10-21 — Phase 17 execution started
 | Phase 16 P16-04 | 45 min | 2 tasks | 8 files |
 | Phase 16 P5 | 26 min | 2 tasks | 8 files |
 | Phase 17 P1 | 16 min | 3 tasks | 10 files |
+| Phase 17 P2 | 7 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -318,6 +319,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 17]: [Phase 17 / 17-01]: trio emission gate = n_seeds >= 2 on the dataset's DECLARED primary metric (resolve_dataset_metric, resolved once per task); mean reuses the identical float(np.mean(ordered)) expression so it is bit-equal to the metric slot; 1-seed/absent cells emit NOTHING in both views (D17-02)
 - [Phase 17]: [Phase 17 / 17-01]: per-model propagation (Q1 ruling) = std mean of per-task population stds + n_seeds min, emitted INSIDE aggregate_models in the include_weighted conditional shape (all four arena files inherit; ranking math untouched); load_model_inputs returns a 5-tuple with presence-gated dataset_seed_stats (a genuine 0.0 std IS recorded, only absence is absent)
 - [Phase 17]: [Phase 17 / 17-01]: zero-drift gate split proven — absent case = tests/test_determinism.py + synthetic golden green UNMODIFIED over trio-less committed inputs; additive case = new trio-stripped equivalence test (pre-existing keys byte-equal, only std/n_seeds differ); committed dnallm-mark/data/ tree never regenerated this phase
+- [Phase 17]: 17-02: plugin point-mode whiskers read chart.scales.y ONLY (log-FLOPs x axis structurally out of reach); endpoint pixels clamped into chartArea so pinned-axis overflow renders toward the boundary
+- [Phase 17]: 17-02: barDatum is the single birthplace of the floating-bar array form — extractModels keeps metricValue scalar and gates std/nSeeds on the declared primary metric (METRIC_MAP hoisted to module scope, one definition for dropdown default + gating; A3 honest absence on non-primary metrics)
+- [Phase 17]: 17-02: tooltips read the model closure (displayModels[context.dataIndex]) — never context.raw typed-checks on floating bars (would print 'lo,hi') and never context.parsed.x (barEnd unreliable); CDN pins byte-untouched, zero new dependencies
 
 ### Pending Todos
 
@@ -390,8 +394,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T09:44:10.915Z
-Stopped at: Completed 17-01-PLAN.md (WEB-01 data-chain tracer: trio emission both views + per-model propagation + zero-drift gate split + METHODOLOGY appendix, all gates green)
+Last session: 2026-10-21T09:56:45.377Z
+Stopped at: Completed 17-02-PLAN.md (WEB-02 browser error bars: vendored inline plugin + scatter whiskers + floating-bar caps, all gates green)
 Resume file: None
 
 ## Operator Next Steps

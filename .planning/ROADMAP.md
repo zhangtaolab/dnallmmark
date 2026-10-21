@@ -112,7 +112,7 @@ Plans:
 Plans:
 **Wave 1**
 - [x] 17-01-PLAN.md — data-chain additive trio (schemas + export emission + summarize propagation + zero-drift gate split + METHODOLOGY appendix)
-- [ ] 17-02-PLAN.md — browser leg (vendored error-bars plugin + scatter whiskers + floating bars + ±std tooltips)
+- [x] 17-02-PLAN.md — browser leg (vendored error-bars plugin + scatter whiskers + floating bars + ±std tooltips)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 17-03-PLAN.md — node-lane r2-derived fixtures + geometry/schema tests + phase-close gates
