@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-20)
 
 **Core value:** Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust. (v1.2 extension: operators drive the platform confidently from one terminal console without losing CLI parity.)
-**Current focus:** Phase 16 — TUI 多 GPU 界面
+**Current focus:** Phase 17 — Web 多种子 Error Bar
 
 ## Current Position
 
-Phase: 16 (TUI 多 GPU 界面) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-10-21 — 16-05 complete (TUI-04 goldens: 3 regenerated + run_config_confirm NEW, uncommitted pending D-03 review WINDOWS #50; TUI-01..04 all delivered)
+Phase: 17 — Web 多种子 Error Bar
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-21 — Phase 16 complete, transitioned to Phase 17
 
 ## Performance Metrics
 
@@ -386,7 +386,7 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-21T06:24:30.925Z
-Stopped at: Completed 16-05-PLAN.md (TUI-04 goldens: 3 regen + run_config_confirm NEW uncommitted D-03 WINDOWS #50; Phase 16 complete)
+Stopped at: Phase 16 complete, ready to plan Phase 17
 Resume file: None
 
 ## Operator Next Steps
