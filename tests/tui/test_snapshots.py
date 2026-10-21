@@ -23,7 +23,7 @@ committed SVG files. The comparison is honestly an SVG-text diff —
 "pixel compare" at SVG fidelity; rasterizing (cairosvg) is NOT
 sanctioned and no syrupy/jinja2 is ever imported.
 
-The corpus (the frozen 9 — 12-UI-SPEC table + DCL-03)
+The corpus (the frozen 10 — 12-UI-SPEC table + DCL-03 + 16-05 A5)
 -----------------------------------------------------
 =========================  =====================================
 Golden id                  Screen state
@@ -36,9 +36,19 @@ data_manager               mixed missing rows + queue states
 data_manager_presence      the v-toggled full presence view
 run_config                 marks + params + live preview line + the
                            log-dir row, save hint, and the two new
-                           bottom-bar labels (261014-f4w)
-monitor_running            worker root + all five glyphs + ETA
-monitor_empty              no sweeps discovered (empty copy)
+                           bottom-bar labels (261014-f4w); the 多 GPU
+                           调度 params section (16-04/16-05)
+run_config_confirm         the gate's Y/N confirm face over a
+                           deterministic multi-GPU spec: the
+                           dispatch-plan line above the capped
+                           15-pair list (16-05, D16-11/D16-13)
+monitor_running            worker root + all five glyphs + ETA; the
+                           fabricated 2-lane G panel + the card's
+                           dispatch block (one busy + one idle
+                           worker) — 16-01/16-02/16-05
+monitor_empty              no sweeps discovered (empty copy); the
+                           ABSENT probe shape (MON_GPU_ABSENT, the
+                           CI-honest degradation) — 16-01/16-05
 wizard                     populated step-1 with advisories
 =========================  =====================================
 
@@ -125,6 +135,12 @@ from tui.screens.wizard import WizardModal
 from tui.services import registries as registries_service
 from tui.services import run_config as run_config_service
 from tui.services import selection as selection_service
+from tui.services.dispatch_state import (
+    DispatchCellKey,
+    DispatchCounts,
+    DispatchStateView,
+    DispatchWorker,
+)
 from tui.services.download_queue import (
     EnqueueOutcome,
     MissingInfo,
@@ -133,6 +149,7 @@ from tui.services.download_queue import (
     ReauditOutcome,
     merge_presence,
 )
+from tui.services.gpu_probe import GpuRow
 from tui.services.registries import (
     PRESENCE_MISSING,
     PRESENCE_PRESENT,
@@ -438,6 +455,23 @@ class _LauncherFake:
         return None
 
 
+class _ConfirmGateLauncherFake(_LauncherFake):
+    """The run_config_confirm fixture's launcher (16-05): the gate's
+    confirm data carries the dispatch-plan tuple over the 15-pair
+    capped list — the 16-04 Pilot fixture shape, frozen (the modal
+    renders the tuple, never computes; 15 pairs pin the cap + the
+    LNC_GATE_PAIRS_MORE line, 1 + 12 + 1 == the 14-row bound)."""
+
+    def gate_confirm_data(self, spec):
+        return GateSummary(
+            models=2, tasks=1, seeds=3, cells=6,
+            output_root="./finetuned", is_e2x=False,
+            expected_phrase="finetuned",
+            pairs=tuple((f"model-{index:02d}", f"task-{index:02d}")
+                        for index in range(15)),
+            workers=2, gpus_display="0,1")
+
+
 def _monitor_summary(root, state, done=0, total=None):
     """One SweepSummary (newest_mtime frozen None — no clock in goldens)."""
     return SweepSummary(root=Path(f"/scans/{root}"), state=state,
@@ -555,6 +589,73 @@ def _running_monitor_service():
             elapsed=4360.0,
             eta=EtaEstimate(ETA_POINT, 7560.0, None, None))},
         resume_counts={"/scans/finetuned-mgpu-w0": 1},
+    )
+
+
+# ===== Phase 16 (16-05, D16-13/Pitfall 10): fabricated monitor seams =====
+# The 16-01/16-02 constructor-injection seams threaded through
+# _golden_app — zero nvidia-smi, zero dispatch_state.json reads, zero
+# hardware: the rendered bytes are identical on a GPU box and a
+# GPU-less CI runner (plain frozen dataclasses; the Pilot suite's
+# fabrication grammar, mirrored).
+
+def _absent_gpu_probe(timeout):
+    """The absent provider (None — the ONE outcome every probe failure
+    mode shares, D16-02): monitor_empty pins the MON_GPU_ABSENT note
+    with zero lane rows, the designed CI-honest degradation."""
+    return None  # noqa: RET501 — None IS the payload (the absent outcome)
+
+
+def _absent_dispatch_reader(root):
+    """The None-returning dispatch reader: no root carries
+    dispatch_state.json — NO block renders (the honest-absent rule),
+    cards byte-identical to a static/CLI sweep root."""
+    return None  # noqa: RET501 — None IS the payload (no block)
+
+
+def _two_lane_gpu_probe(timeout):
+    """monitor_running's fabricated 2-lane provider — the UI-SPEC
+    Surface A wireframe values (the 2x5090 validation machine's shape,
+    frozen data, never a live read)."""
+    return (
+        GpuRow(index=0, utilization_pct=47, memory_used_mib=15340,
+               memory_total_mib=32607, temperature_c=61),
+        GpuRow(index=1, utilization_pct=12, memory_used_mib=958,
+               memory_total_mib=32607, temperature_c=33),
+    )
+
+
+def _golden_dispatch_view():
+    """monitor_running's fabricated frozen DispatchStateView (the
+    Pilot _fabricated_dispatch_view grammar): one busy + one idle
+    worker; the snapshot invariant HOLDS by construction (12 + 1 + 1 +
+    21 + 1 active == 36 — the strip's done/total), the stale/malformed
+    flags frozen False (the reader owns the projection; the fake
+    carries it, zero clock reads)."""
+    return DispatchStateView(
+        run_id="run-golden",
+        status="running",
+        started_at="2026-10-21T09:00:00+00:00",
+        updated_at="2026-10-21T09:21:10+00:00",
+        counts=DispatchCounts(total=36, completed=12, failed=1,
+                              skipped=1),
+        queue_depth=21,
+        workers=(
+            DispatchWorker(
+                index=0, gpu="0",
+                in_flight=DispatchCellKey(
+                    model="plant-dnamamba-6mer",
+                    task="GUE__emp_H3", seed=42, fraction=None),
+                cells=3, completed=2, failed=1),
+            DispatchWorker(
+                index=1, gpu="1", in_flight=None,
+                cells=3, completed=2, failed=0),
+        ),
+        failures=(),
+        state_mtime=1791321600.0,
+        stale=False,
+        malformed=False,
+        stale_age_s=5,
     )
 
 
@@ -755,8 +856,16 @@ def _frozen_mon_clock():
         setattr(module, "time", original)  # noqa: B010
 
 
-def _golden_app(selection=None, run_config=None, monitor=None):
-    """The real app with EVERY seam faked (no real service ever runs)."""
+def _golden_app(selection=None, run_config=None, monitor=None,
+                launcher=None, gpu=None, dispatch=None):
+    """The real app with EVERY seam faked (no real service ever runs).
+
+    16-05 (D16-13/Pitfall 10): the 16-01/16-02 monitor seams default
+    to the ABSENT fakes so the whole corpus stays machine-independent
+    — zero nvidia-smi, zero dispatch_state reads on ANY lane, the
+    Pilot _app() precedent; the monitor entries thread fabricated
+    GpuRow lanes / DispatchStateView fixtures through the same
+    constructor-injection shape."""
     return DnallmMarkTui(
         env_check_service=_EnvCacheHitFake(),
         selection_service=(selection if selection is not None
@@ -764,10 +873,15 @@ def _golden_app(selection=None, run_config=None, monitor=None):
         download_queue_service=_QueueInertFake(),
         run_config_service=(run_config if run_config is not None
                             else _RunConfigGoldenService()),
-        launcher_service=_LauncherFake(),
+        launcher_service=(launcher if launcher is not None
+                          else _LauncherFake()),
         monitor_service=(monitor if monitor is not None
                          else _MonitorGoldenService()),
         monitor_launcher=_LauncherFake(),
+        gpu_probe_provider=(gpu if gpu is not None
+                            else _absent_gpu_probe),
+        dispatch_state_reader=(dispatch if dispatch is not None
+                               else _absent_dispatch_reader),
     )
 
 
@@ -839,9 +953,30 @@ async def _drive_data_manager_presence(pilot, app):
 
 async def _drive_run_config(pilot, app):
     """The post-delta-B slot-4 screen: 2 model marks + params + the
-    live preview line (2 x 1 x 3 = 6)."""
+    live preview line (2 x 1 x 3 = 6). 16-04/16-05: the params pane
+    now carries the 多 GPU 调度 section (workers VALUE 1, the GPUs
+    placeholder — the spec fixture's defaults); the gate stays
+    closed, so no dispatch line renders here."""
     app.push_screen(app.build_run_config_screen())
     await _settle(pilot, app)
+
+
+async def _drive_run_config_confirm(pilot, app):
+    """16-05 (A5, D16-13): the gate's Y/N confirm face over a
+    deterministic multi-GPU spec (workers=2, GPUs 0,1). [enter] walks
+    the chain — fresh enumeration -> no problems -> capacity pass (a
+    seam-less fake never blocks) -> green env preflight -> confirm
+    data — landing on _GateConfirmModal, whose log carries
+    LNC_GATE_DISPATCH_LINE above the capped 15-pair list (1 + 12 + 1
+    == the 14-row #cfg-gate-log bound, the UX-5 composition check)."""
+    app.push_screen(app.build_run_config_screen())
+    await _settle(pilot, app)
+    await pilot.press("enter")  # the picker holds focus: the gate
+    await _settle(pilot, app, rounds=4)
+    from tui.screens.run_config import _GateConfirmModal
+
+    assert isinstance(app.screen, _GateConfirmModal), (
+        "the drive must land on the Y/N confirm face (is_e2x=False)")
 
 
 async def _drive_monitor_running(pilot, app):
@@ -855,18 +990,32 @@ async def _drive_monitor_running(pilot, app):
     indeterminate) and the designed no-tee state (the launcher fake's
     tee is None — the pane's log region renders MON_LOG_UNAVAILABLE,
     never a fabricated empty log); the History tab header carries the
-    finished smoke row."""
+    finished smoke row.
+
+    16-05: the frontier tick — fired DETERMINISTICALLY (the Pilot
+    G-panel precedent; never the 2s wall timer inside an export
+    window) — lands both Phase-16 surfaces: the fabricated 2-lane G
+    panel (Pitfall 10) and the card's dispatch block over the
+    fabricated DispatchStateView (one busy + one idle worker)."""
     with _frozen_mon_clock():
         app.push_screen(app.build_monitor_screen())
+        await _settle(pilot, app)
+        app.screen._tick_frontier()
         await _settle(pilot, app)
 
 
 async def _drive_monitor_empty(pilot, app):
     """The zero-run boot: the Running tab renders its actionable empty
     copy on the settled (scan-landed, note-cleared) surface — the
-    right pane hidden (no cards), the same frozen monitor clock."""
+    right pane hidden (no cards), the same frozen monitor clock.
+    16-05: the frontier tick lands the ABSENT probe shape — the
+    MON_GPU_ABSENT header note with zero lane rows (the CI-honest
+    degradation, D16-02), fired deterministically like
+    _drive_monitor_running."""
     with _frozen_mon_clock():
         app.push_screen(app.build_monitor_screen())
+        await _settle(pilot, app)
+        app.screen._tick_frontier()
         await _settle(pilot, app)
 
 
@@ -922,11 +1071,22 @@ GOLDENS = {
             spec=RunSpec(models=("model-a", "model-b"),
                          tasks=("task-1",)))),
         _drive_run_config),
+    "run_config_confirm": (
+        lambda: _golden_app(
+            run_config=_RunConfigGoldenService(spec=RunSpec(
+                models=("model-a", "model-b"), tasks=("task-1",),
+                workers=2, gpus=("0", "1"))),
+            launcher=_ConfirmGateLauncherFake()),
+        _drive_run_config_confirm),
     "monitor_running": (
-        lambda: _golden_app(monitor=_running_monitor_service()),
+        lambda: _golden_app(
+            monitor=_running_monitor_service(),
+            gpu=_two_lane_gpu_probe,
+            dispatch=lambda root: _golden_dispatch_view()),
         _drive_monitor_running),
     "monitor_empty": (
-        lambda: _golden_app(), _drive_monitor_empty),
+        lambda: _golden_app(gpu=_absent_gpu_probe),
+        _drive_monitor_empty),
     "wizard": (
         lambda: _golden_app(), _drive_wizard),
 }
@@ -946,8 +1106,11 @@ async def _export_golden(golden_id: str) -> str:
         await pilot.pause()
         # D-11: the Input cursor blink is wall-clock phase — kill it on
         # every Input before the export (fix the fixture, never the
-        # compare).
-        for input_widget in app.screen.query(Input):
+        # compare). 16-05: the query widened screen->app — the confirm
+        # golden stacks its modal OVER the params screen, whose Inputs
+        # are no longer reachable through app.screen (the D-11 letter:
+        # EVERY Input, including modal-covered ones).
+        for input_widget in app.query(Input):
             input_widget.cursor_blink = False
         await pilot.pause()
         return app.export_screenshot()
@@ -1005,6 +1168,14 @@ def test_run_config_golden():
     """Slot 4 post-delta-B: marks + params + the live preview line."""
     assert asyncio.run(_export_golden("run_config")) == _golden(
         "run_config")
+
+
+def test_run_config_confirm_golden():
+    """16-05 (A5): the gate's Y/N confirm face — the dispatch-plan
+    preview line above the capped 15-pair list over a deterministic
+    multi-GPU spec."""
+    assert asyncio.run(_export_golden("run_config_confirm")) == _golden(
+        "run_config_confirm")
 
 
 def test_monitor_running_golden():
