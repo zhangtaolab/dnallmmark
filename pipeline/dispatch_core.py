@@ -1251,20 +1251,28 @@ def write_cell_run_record(cell, cell_dir, payload, git_commit):
     run_matrix parity — never per cell).
 
     Failure semantics (run_matrix parity for the same on-disk input):
-    a corrupt/unparseable ``final_metrics.json`` on a completed claim
-    flips the RECORD to failed with run_sweep's WR-11 error text while
-    the CLAIM stays completed (engine semantics untouched — the record
-    never lies about unusable metrics); a failed claim yields a failed
-    record carrying the claim's own error text with metrics null —
-    failed cells are never invisible again.
+    a corrupt/unparseable ``final_metrics.json`` on a completed claim —
+    a truncated JSON body OR non-UTF-8/unreadable bytes (both flavors;
+    the tolerance set of the existing-record check below) — flips the
+    RECORD to failed with run_sweep's WR-11 error text while the CLAIM
+    stays completed (engine semantics untouched — the record never lies
+    about unusable metrics); a failed claim yields a failed record
+    carrying the claim's own error text with metrics null — failed
+    cells are never invisible again.
 
-    Write predicate (WR-12 adapted to dispatch, the run_sweep.py:1614
-    parity): an existing record that parses with status ``completed``
-    is NEVER overwritten — a named ``FileExistsError`` refusal raises
-    (failing the cell through CR-04) so prior provenance survives;
-    any other existing record (a prior attempt's FAILED record, or an
-    unparseable file whose provenance is unprovable) is replaced
-    atomically — the relaunch/--rerun-failed recovery contract.
+    Write predicate (WR-12 adapted to dispatch — deliberately STRICTER
+    than run_sweep.py:1614, whose ``status != "skipped" or not exists``
+    test overwrites ANY existing record, a completed one included, for
+    every cell it actually re-runs): an existing record that parses
+    with status ``completed`` is NEVER overwritten — a named
+    ``FileExistsError`` refusal raises (failing the cell through CR-04)
+    so prior provenance survives; any other existing record (a prior
+    attempt's FAILED record, or an unparseable file whose provenance is
+    unprovable) is replaced atomically — the relaunch/--rerun-failed
+    recovery contract. Forcing a retrain of a completed cell therefore
+    takes deleting BOTH ``trainer_state.json`` (the resume marker) AND
+    ``run_record.json`` by hand — the marker-delete-alone flow that
+    suffices under run_matrix meets a loud, tested refusal here.
     Skipped cells never reach this function (the documented, deliberate
     divergence from run_sweep's synthesized skipped records: no record
     is synthesized; ``dispatch_state`` counts report the skip).
@@ -1297,11 +1305,15 @@ def write_cell_run_record(cell, cell_dir, payload, git_commit):
                       encoding="utf-8") as handle:
                 record["metrics"] = json.load(handle)
             record["status"] = "completed"
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             # WR-11 (the run_sweep.py:1570-1591 parity): the child left
             # a partial file while still exiting 0, so the claim
             # completed on the existence-only CR-02 check — the RECORD
-            # reports the honest failure; metrics stay null.
+            # reports the honest failure; metrics stay null. The
+            # tolerance set matches the existing-record check below:
+            # non-UTF-8 bytes raise UnicodeDecodeError (a ValueError,
+            # NOT a json.JSONDecodeError) and must land in this branch
+            # too — never escape into the CR-04 containment (WR-01).
             record["status"] = "failed"
             record["error"] = (
                 "final_metrics.json is corrupt/unreadable "
@@ -1334,7 +1346,9 @@ def write_cell_run_record(cell, cell_dir, payload, git_commit):
             raise FileExistsError(
                 f"run_record {record_path} already exists with status "
                 "completed — completed provenance is never overwritten "
-                "(WR-12, the run_sweep.py:1614 parity); refusing the cell"
+                "(WR-12; deliberately stricter than run_sweep.py:1614, "
+                "which overwrites records of retrained cells); refusing "
+                "the cell"
             )
     _atomic_write_json(record_path, record)
 

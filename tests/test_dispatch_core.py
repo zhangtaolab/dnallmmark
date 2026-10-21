@@ -68,8 +68,9 @@ Coverage named by the plan (SC ids are the phase acceptance tests):
   with ``run_sweep.run_matrix`` shape parity (asserted against a REAL
   ``run_matrix`` run over the same root, never hand-written field
   lists); failed cells get failed records (the child-exited / CR-02
-  error text, metrics null); a corrupt ``final_metrics.json`` (WR-11)
-  keeps the claim completed while the RECORD reports failed; an on-disk
+  error text, metrics null); a corrupt ``final_metrics.json`` (WR-11 —
+  truncated JSON AND the non-UTF-8 flavor, WR-01) keeps the claim
+  completed while the RECORD reports failed; an on-disk
   COMPLETED record is refusal-protected (a named ``FileExistsError``
   through the CR-04 containment) while a stale FAILED record is
   replaced by the new attempt's terminal record; the record's lane
@@ -3899,6 +3900,78 @@ def test_dispatch_corrupt_metrics_record_failed_claim_completed(
     assert record["error"].startswith("final_metrics.json is corrupt/")
     assert "the child left a partial file" in record["error"], (
         "the WR-11 error text string-parities run_matrix's"
+    )
+
+
+def test_dispatch_non_utf8_metrics_record_failed_claim_completed(
+        tmp_path, monkeypatch):
+    """WR-01 regression: a final_metrics.json with INVALID UTF-8 bytes on
+    a completed cell lands in the SAME WR-11 branch as truncated JSON —
+    json.load on a UTF-8 text handle raises UnicodeDecodeError (a
+    ValueError, NOT a json.JSONDecodeError), which previously escaped
+    the handler into the CR-04 containment (claim rewritten failed, NO
+    run_record.json). The record must report failed honestly with the
+    corrupt/unreadable error text while the claim STAYS completed and
+    the dispatch accounting shows the completed semantics."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "corrupt-utf8").resolve()
+
+    def non_utf8_spawner(argv, **kwargs):
+        # The make_child_spawner identity discipline, writing bytes that
+        # can never decode as UTF-8 (invalid continuation bytes — the
+        # external-writer/FS-corruption shape run_finetune's own
+        # ensure_ascii=True dumps cannot produce).
+        root = Path(flag_value(argv, "--output_dir"))
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell_dir = (root / save / flag_value(argv, "--target_dataset")
+                    / f"seed_{flag_value(argv, '--seed')}")
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / run_sweep.METRICS_NAME).write_bytes(
+            b'{"eval_loss": 0.5, "eval_acc\xff\xfe}')
+        return FakeProc(0)
+
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=non_utf8_spawner)
+    cell = ("model-a", "task-x", 42)
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(cell)).read_text(
+            encoding="utf-8"))
+    assert claim["state"] == dispatch_core.CLAIM_STATE_COMPLETED, (
+        "the claim STAYS completed — the decode failure never reaches "
+        "the CR-04 containment"
+    )
+    assert "FileExistsError" not in str(claim.get("error")), (
+        "no dispatcher-side containment rewrite of the claim"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 1, "completed": 1, "failed": 0, "skipped": 0}, (
+        "the dispatch accounting stays on the claim semantics"
+    )
+    record_path = (run_sweep.cell_dir_for(base, *cell)
+                   / run_sweep.RECORD_NAME)
+    assert record_path.is_file(), (
+        "the record LANDS — never the record-less-cell shape 15-04 "
+        "exists to eliminate"
+    )
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert record["status"] == "failed", (
+        "the record never lies about unusable metrics"
+    )
+    assert record["metrics"] is None
+    assert record["error"].startswith("final_metrics.json is corrupt/")
+    assert "the child left a partial file" in record["error"], (
+        "the non-UTF-8 flavor carries the same WR-11 error text"
     )
 
 
