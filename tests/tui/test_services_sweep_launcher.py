@@ -853,6 +853,75 @@ def test_gate_confirm_data_pairs_curve_fractions_4tuples(tmp_path):
     ]
 
 
+def test_gate_confirm_data_dispatch_fields_typed_list(tmp_path):
+    """16-04 (D16-11): the confirm summary carries the dispatch-plan
+    fields SERVICE-SIDE — workers from the spec, gpus_display the
+    comma-joined TYPED list when spec.gpus is not None (the modal
+    renders, never computes)."""
+    spec = run_config.RunSpec(
+        models=("plant-dnabert-6mer",), tasks=("GUE__emp_H3",),
+        seeds=(42,), workers=2, gpus=("0", "1"),
+        output_root=str(tmp_path / "out"))
+
+    summary = sweep_launcher.gate_confirm_data(spec)
+
+    assert summary.workers == 2
+    assert summary.gpus_display == "0,1"
+
+
+def test_gate_confirm_data_dispatch_fields_all_detected(
+        monkeypatch, tmp_path):
+    """Auto-default #8: a DEFAULTS spec (gpus None — all-detected,
+    resolved at LAUNCH) renders the all(n) form with n the DETECTED
+    count at preview time — the resolution rule named with the live
+    count, never a guess in place of data (``effective_gpu_count`` is
+    the injected seam; count-0 renders all(0), equally honest since
+    count-0 machines admit unconditionally)."""
+    monkeypatch.setattr(
+        sweep_launcher, "effective_gpu_count", lambda: 2)
+    spec = run_config.RunSpec(
+        models=("plant-dnabert-6mer",), tasks=("GUE__emp_H3",),
+        seeds=(42,), output_root=str(tmp_path / "out"))
+
+    summary = sweep_launcher.gate_confirm_data(spec)
+
+    assert summary.workers == 1
+    assert summary.gpus_display == "all(2)"
+
+    monkeypatch.setattr(
+        sweep_launcher, "effective_gpu_count", lambda: 0)
+    summary0 = sweep_launcher.gate_confirm_data(spec)
+    assert summary0.gpus_display == "all(0)"
+
+
+def test_gate_confirm_data_dispatch_fields_fresh_recompute(
+        monkeypatch, tmp_path):
+    """The dispatch fields derive from the SAME fresh preview call the
+    rest of GateSummary uses (the counting-spy proof style): one
+    preview call, the line's cells == that fresh enumeration's
+    cells_count — never a cached screen value, never a subprocess
+    (auto-default #7)."""
+    monkeypatch.setattr(
+        sweep_launcher, "effective_gpu_count", lambda: 2)
+    double = RunConfigDouble(preview_result=run_config.PreviewResult(
+        models_count=2, tasks_count=2, seeds_count=3,
+        fractions_count=None, cells_count=12,
+        cells=(("m1", "t1", 42), ("m2", "t2", 43)), problems=()))
+    spec = run_config.RunSpec(
+        models=("m1", "m2"), tasks=("t1", "t2"), workers=2,
+        output_root=str(tmp_path / "out"))
+
+    summary = sweep_launcher.gate_confirm_data(spec, double)
+
+    assert double.preview_calls == 1, "FRESH — the same single call"
+    assert summary.cells == 12, (
+        "the dispatch line's cells ride the fresh enumeration"
+    )
+    assert summary.workers == 2
+    assert summary.gpus_display == "all(2)"
+    assert list(summary.pairs) == [("m1", "t1"), ("m2", "t2")]
+
+
 # ===== launch_spec (the structural gate — D-07 / LNC-03) =====
 
 

@@ -318,6 +318,17 @@ class GateSummary:
             ordered first-occurrence dedupe (seeds stay collapsed in
             the counts formula, never per-row); defaulted so pre-UX-5
             fakes construct unchanged. The UI renders, never computes.
+        workers: the dispatch-plan worker count (16-04, D16-11) — from
+            the spec; rides the confirm faces' dispatch-plan preview
+            line. Defaulted so pre-16-04 fakes construct unchanged.
+        gpus_display: the dispatch-plan GPU segment (16-04) — the
+            comma-joined TYPED list when ``spec.gpus`` is not None,
+            else the ``all(n)`` resolution rule with n the DETECTED
+            count at preview time (auto-default #8 — the default
+            resolves at LAUNCH, the preview names the rule + live
+            count; count-0 renders ``all(0)``, equally honest since
+            count-0 machines admit unconditionally). The modal renders
+            it verbatim, never computes.
     """
 
     models: int
@@ -328,6 +339,8 @@ class GateSummary:
     is_e2x: bool
     expected_phrase: str
     pairs: tuple[tuple[str, str], ...] = ()
+    workers: int = 1
+    gpus_display: str = ""
 
 
 @dataclass(frozen=True)
@@ -498,6 +511,18 @@ def gate_confirm_data(spec, run_config_service=None):
         if pair not in seen_pairs:
             seen_pairs.add(pair)
             pairs.append(pair)
+    # 16-04 (D16-11): the dispatch-plan fields — workers from the spec
+    # (the tolerant getattr idiom, the launch_spec stage-0 precedent);
+    # the GPUs segment is the typed list or the all(n) resolution rule
+    # with the DETECTED count at preview time (auto-default #8). The
+    # all(n) count is deliberately NOT persisted anywhere — it names
+    # what will be detected, never a guess in place of data (Pitfall 8).
+    workers = getattr(spec, "workers", 1)
+    typed_gpus = getattr(spec, "gpus", None)
+    if typed_gpus is not None:
+        gpus_display = ",".join(typed_gpus)
+    else:
+        gpus_display = f"all({effective_gpu_count()})"
     return GateSummary(
         models=preview_result.models_count,
         tasks=preview_result.tasks_count,
@@ -507,6 +532,8 @@ def gate_confirm_data(spec, run_config_service=None):
         is_e2x=rc.is_full_e2x(spec, official),
         expected_phrase=rc.expected_phrase(spec.output_root),
         pairs=tuple(pairs),
+        workers=workers,
+        gpus_display=gpus_display,
     )
 
 

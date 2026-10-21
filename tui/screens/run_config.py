@@ -774,15 +774,26 @@ class E2PhraseModal(_PickerReturnModal):
 
     def __init__(self, dirname: str,
                  matches: "Callable[[str], bool]",
-                 on_confirm: "Callable[[str], None]", **kwargs):
+                 on_confirm: "Callable[[str], None]",
+                 dispatch: "tuple[int, str, int] | None" = None,
+                 **kwargs):
         super().__init__(**kwargs)
         self._dirname = dirname
         self._matches = matches
         self._on_confirm = on_confirm
+        # 16-04 (D16-11, auto-default #12): the dispatch-plan preview
+        # tuple from GateSummary — additive copy above the warning
+        # block; None (the monitor's re-prompt seam) keeps the face
+        # byte-unchanged. The phrase mechanics NEVER touch this.
+        self._dispatch = dispatch
         self._matched = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="cfg-e2-box", classes="modal-box"):
+            if self._dispatch is not None:
+                workers, gpus_display, cells = self._dispatch
+                yield Static(S.LNC_GATE_DISPATCH_LINE.format(
+                    workers=workers, gpus=gpus_display, cells=cells))
             yield Static(S.LNC_E2_WARNING, classes="cfg-e2-warning")
             yield Static(S.LNC_E2_AUTH_NOTE, classes="cfg-e2-warning")
             yield Static(S.LNC_E2_TYPE_PROMPT.format(dirname=self._dirname))
@@ -895,6 +906,20 @@ class ChoiceModal(_PickerReturnModal):
 _GATE_PAIR_CAP = 12
 
 
+def _dispatch_line_data(
+        summary: "GateSummary | None") -> "tuple[int, str, int] | None":
+    """Project a GateSummary onto the confirm faces' dispatch-plan
+    line tuple ``(workers, gpus_display, cells)`` (16-04, D16-11).
+
+    Pure projection — the numbers stay service-computed (the
+    modal-renders-service-computes law); None keeps a legacy/absent
+    summary line-free (the monitor's re-prompt seam passes none, so
+    its E2' face is byte-unchanged — Pitfall 3)."""
+    if summary is None:
+        return None
+    return (summary.workers, summary.gpus_display, summary.cells)
+
+
 class _GateConfirmModal(_PickerReturnModal, LaunchConfirmModal):
     """The launch confirmation's confirm over the shared slot-4 base
     (delta B, B4's one-shared-helper ruling; UX-5, 261016-poa): the
@@ -912,9 +937,14 @@ class _GateConfirmModal(_PickerReturnModal, LaunchConfirmModal):
     """
 
     def __init__(self, pairs: "tuple[tuple[str, str], ...] | None" = None,
+                 dispatch: "tuple[int, str, int] | None" = None,
                  **kwargs) -> None:
         super().__init__(**kwargs)
         self._pairs = tuple(pairs) if pairs is not None else ()
+        # 16-04 (D16-11): the dispatch-plan preview tuple from
+        # GateSummary — the FIRST log line, directly above the pair
+        # list; the modal renders it, never computes its own counts.
+        self._dispatch = dispatch
 
     def compose(self) -> ComposeResult:
         # DNR-1 (261017-dnr): the confirm line's [Y]/[y]/[N]/[n] tokens
@@ -937,6 +967,14 @@ class _GateConfirmModal(_PickerReturnModal, LaunchConfirmModal):
         self.query_one("#cfg-gate-box", Vertical).border_title = (
             S.LNC_GATE_TITLE)
         log = self.query_one("#cfg-gate-log", RichLog)
+        if self._dispatch is not None:
+            # 16-04 (UI-SPEC C.5): the dispatch-plan line directly
+            # ABOVE the pair list — 1 + 12 + 1 = 14 lines still inside
+            # the #cfg-gate-log bound at the design grid (the UX-5
+            # composition check re-verified).
+            workers, gpus_display, cells = self._dispatch
+            log.write(S.LNC_GATE_DISPATCH_LINE.format(
+                workers=workers, gpus=gpus_display, cells=cells))
         for model, task in self._pairs[:_GATE_PAIR_CAP]:
             log.write(S.LNC_GATE_PAIR_LINE.format(model=model, task=task))
         if len(self._pairs) > _GATE_PAIR_CAP:
@@ -2203,10 +2241,12 @@ class RunConfigScreen(Screen):
                 matches=lambda typed: self._run_service.phrase_matches(
                     typed, spec.output_root),
                 on_confirm=lambda phrase: self._launch(phrase),
+                dispatch=_dispatch_line_data(summary),
             ))
         else:
             self.app.push_screen(_GateConfirmModal(
                 pairs=summary.pairs,
+                dispatch=_dispatch_line_data(summary),
                 message=(S.LNC_GATE_SUMMARY.format(
                     models=summary.models, tasks=summary.tasks,
                     seeds=summary.seeds, cells=summary.cells,
@@ -2260,6 +2300,7 @@ class RunConfigScreen(Screen):
                             self._run_service.phrase_matches(
                                 typed, spec.output_root)),
                         on_confirm=lambda phrase_: self._launch(phrase_),
+                        dispatch=_dispatch_line_data(summary),
                     ))
                 return
             if not self.app.below_minimum_grid:

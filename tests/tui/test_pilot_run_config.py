@@ -1470,6 +1470,250 @@ async def test_preview_modal_dispatch_argv_defaults_shape():
         assert "--gpus0,1" in flat
 
 
+# =====================================================================
+# Phase 16 (16-04, Task 2) — the dispatch-plan preview line on both
+# confirm faces + the gate-order extension
+# =====================================================================
+
+
+class _StageOrderLauncher(FakeLauncherService):
+    """16-04 gate-order evidence: records the stage seams in fire order
+    (capacity -> env -> confirm-data) beside the FakeLauncherService
+    outcomes."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.stage_events: list[str] = []
+
+    def single_gpu_launch_blocked(self, requested_workers=1):
+        self.stage_events.append("capacity")
+        return self._single_gpu_blocked
+
+    def env_preflight(self, kernels=None):
+        self.stage_events.append("env")
+        return super().env_preflight(kernels)
+
+    def gate_confirm_data(self, spec):
+        self.stage_events.append("confirm")
+        return super().gate_confirm_data(spec)
+
+
+async def test_confirm_face_renders_dispatch_plan_line():
+    """UI-SPEC C.5 (16-04): _GateConfirmModal renders
+    LNC_GATE_DISPATCH_LINE DIRECTLY above the pair list with workers/
+    GPUs/cells filled from GateSummary (the modal renders, never
+    computes); the #cfg-gate-log bound still holds at the design grid
+    (the UX-5 composition check: 1 dispatch + 12 capped pairs + 1
+    total line = exactly the 14-row scroll bound)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=1, tasks=1, seeds=3, cells=3, output_root="./finetuned",
+        is_e2x=False, expected_phrase="finetuned",
+        pairs=tuple((f"model-{index:02d}", f"task-{index:02d}")
+                    for index in range(15)),
+        workers=2, gpus_display="0,1"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from textual.widgets import RichLog
+
+        from tui.screens.run_config import _GateConfirmModal
+        from tui.strings import (
+            LNC_GATE_DISPATCH_LINE,
+            LNC_GATE_PAIRS_MORE,
+        )
+
+        assert isinstance(app.screen, _GateConfirmModal)
+        log = app.screen.query_one("#cfg-gate-log", RichLog)
+        lines = [line.text for line in log.lines]
+        expected = LNC_GATE_DISPATCH_LINE.format(
+            workers=2, gpus="0,1", cells=3)
+        assert lines[0] == expected, (
+            "the dispatch line renders directly above the pair list, "
+            "its numbers from GateSummary"
+        )
+        assert any("model-00" in line for line in lines[1:]), (
+            "the pair list still renders below the line"
+        )
+        assert lines[-1] == LNC_GATE_PAIRS_MORE.format(pairs=15)
+        assert len(lines) == 14, (
+            "the UX-5 bound holds with the added line: 1 dispatch + "
+            "12 capped pairs + 1 total == the 14-row scroll bound"
+        )
+
+
+async def test_dispatch_line_cells_equal_summary_line_cells():
+    """Auto-default #7: the dispatch line's {cells} is the SAME fresh
+    same-source enumeration the summary line shows — one value, two
+    renders; the copy carries the honest-preview framing marker."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=1, tasks=1, seeds=3, cells=3, output_root="./finetuned",
+        is_e2x=False, expected_phrase="finetuned",
+        workers=1, gpus_display="all(2)"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from textual.widgets import RichLog
+
+        from tui.screens.run_config import _GateConfirmModal
+        from tui.strings import (
+            LNC_GATE_DISPATCH_LINE,
+            LNC_GATE_SUMMARY,
+        )
+
+        assert isinstance(app.screen, _GateConfirmModal)
+        message = str(app.screen._message)
+        assert LNC_GATE_SUMMARY.format(
+            models=1, tasks=1, seeds=3, cells=3,
+            output_root="./finetuned") in message
+        log = app.screen.query_one("#cfg-gate-log", RichLog)
+        line = log.lines[0].text
+        assert line == LNC_GATE_DISPATCH_LINE.format(
+            workers=1, gpus="all(2)", cells=3), (
+            "both lines carry the SAME GateSummary cells"
+        )
+        assert "（预览）" in line, (
+            "the honest-preview framing marker rides the line"
+        )
+
+
+async def test_e2x_face_renders_dispatch_line_phrase_mechanics_unchanged():
+    """D16-11/D16-12 (16-04): E2PhraseModal renders the SAME dispatch
+    line DIRECTLY above the warning block; the phrase input, the
+    expected-phrase copy, and the match mechanics are byte-unchanged
+    (the line is additive copy, never a gate alteration)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    launcher = FakeLauncherService(summary=GateSummary(
+        models=62, tasks=50, seeds=3, cells=9300,
+        output_root="./finetuned", is_e2x=True,
+        expected_phrase="finetuned",
+        workers=2, gpus_display="all(2)"))
+    app = _app(run_service=run_service, launcher=launcher)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.run_config import E2PhraseModal
+        from tui.strings import (
+            LNC_E2_MATCH_OK,
+            LNC_E2_MISMATCH,
+            LNC_E2_WARNING,
+            LNC_GATE_DISPATCH_LINE,
+        )
+
+        assert isinstance(app.screen, E2PhraseModal)
+        texts = [_plain(static.content)
+                 for static in app.screen.query(Static)]
+        expected = LNC_GATE_DISPATCH_LINE.format(
+            workers=2, gpus="all(2)", cells=9300)
+        assert expected in texts, (
+            "the dispatch line renders on the E2' face too"
+        )
+        assert texts.index(expected) + 1 == texts.index(LNC_E2_WARNING), (
+            "the line sits DIRECTLY above the warning block"
+        )
+        # the phrase mechanics are byte-unchanged: mismatch -> match ->
+        # matched-enter advance -> y launches with the typed phrase
+        indicator = app.screen.query_one("#cfg-e2-indicator", Static)
+        assert _plain(indicator.content) == LNC_E2_MISMATCH.format(
+            dirname="finetuned")
+        e2_input = app.screen.query_one("#cfg-e2-input", Input)
+        e2_input.value = "wrong"
+        await pilot.pause()
+        assert _plain(indicator.content) == LNC_E2_MISMATCH.format(
+            dirname="finetuned")
+        e2_input.value = "finetuned"
+        await pilot.pause()
+        assert _plain(indicator.content) == LNC_E2_MATCH_OK
+        await pilot.press("enter")     # the matched advance (never launch)
+        await _settle(pilot, app, rounds=2)
+        assert launcher.launch_calls == []
+        await pilot.press("y")
+        await _settle(pilot, app, rounds=3)
+        assert len(launcher.launch_calls) == 1
+        _spec, phrase = launcher.launch_calls[0]
+        assert phrase == "finetuned"
+
+
+async def test_gate_chain_multi_gpu_walk_dispatch_line_on_faces():
+    """The extended gate-order walk (D16-14, zero weakening): a
+    full-scope multi-GPU spec (workers 2 typed) walks problems ->
+    capacity -> env -> confirm-data -> the E2' typed phrase IN ORDER
+    (the stage-sequence evidence) with the dispatch line present on
+    the reached face; a subset-scope spec walks to the Y/N confirm
+    with the line present; the launched spec carries workers 2."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+
+    # leg 1 — full scope: the E2' typed-phrase face
+    full = _StageOrderLauncher(summary=GateSummary(
+        models=62, tasks=50, seeds=3, cells=9300,
+        output_root="./finetuned", is_e2x=True,
+        expected_phrase="finetuned",
+        workers=2, gpus_display="0,1"))
+    app = _app(run_service=run_service, launcher=full)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        app.screen.query_one("#cfg-input-workers", Input).value = "2"
+        await _settle(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.run_config import E2PhraseModal
+        from tui.strings import LNC_GATE_DISPATCH_LINE
+
+        assert isinstance(app.screen, E2PhraseModal)
+        assert full.stage_events == ["capacity", "env", "confirm"], (
+            "the chain order holds: problems (clean) -> capacity -> "
+            "env -> confirm-data -> the E2' face"
+        )
+        texts = [_plain(static.content)
+                 for static in app.screen.query(Static)]
+        assert LNC_GATE_DISPATCH_LINE.format(
+            workers=2, gpus="0,1", cells=9300) in texts
+        # the walk completes: y launches the multi-GPU spec
+        e2_input = app.screen.query_one("#cfg-e2-input", Input)
+        e2_input.value = "finetuned"
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.press("y")
+        await _settle(pilot, app, rounds=3)
+        assert len(full.launch_calls) == 1
+        spec, _phrase = full.launch_calls[0]
+        assert spec.workers == 2, (
+            "the typed multi-GPU spec reaches the launch"
+        )
+
+    # leg 2 — subset scope: the Y/N confirm face with the line
+    subset = _StageOrderLauncher(summary=GateSummary(
+        models=1, tasks=1, seeds=3, cells=3, output_root="./finetuned",
+        is_e2x=False, expected_phrase="finetuned",
+        workers=2, gpus_display="0,1"))
+    app = _app(run_service=run_service, launcher=subset)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        app.screen.query_one("#cfg-input-workers", Input).value = "2"
+        await _settle(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from textual.widgets import RichLog
+
+        from tui.screens.run_config import _GateConfirmModal
+
+        assert isinstance(app.screen, _GateConfirmModal)
+        assert subset.stage_events == ["capacity", "env", "confirm"]
+        log = app.screen.query_one("#cfg-gate-log", RichLog)
+        assert log.lines[0].text == LNC_GATE_DISPATCH_LINE.format(
+            workers=2, gpus="0,1", cells=3)
+
+
 async def test_gate_env_block_renders_reasons_verbatim():
     """Env preflight FAIL: the failing kernel names, the reasons
     VERBATIM, and the [1] route hint — launch never called."""
