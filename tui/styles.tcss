@@ -841,3 +841,41 @@ DirPickerModal {
     color: $text;
     text-style: bold;
 }
+
+/* ===== Phase 16 (16-01, TUI-01): the G GPU-lanes panel =====
+ * A standing full-width section under #mon-content (BOTH tabs — GPU
+ * state is machine-level): the border-top separator (the
+ * #dl-queue-region precedent), height-1 row tokens, the 2-cell
+ * status-line padding exception, and the lane region's scroll BOUND
+ * (the #env-detail-log precedent — a bound, not a spacing token;
+ * 8-way boxes scroll their own viewport). Theme tokens only; the
+ * panel adds no glyph, keybinding, or color value (UI-SPEC Surface A). */
+#mon-gpu {
+    border-top: solid $border;   /* 1-cell border exception — separator */
+    padding: 0 2;                /* 2-cell status-line exception */
+    height: auto;
+}
+
+#mon-gpu-header {
+    height: 1;      /* row token: the title + the probe-state note */
+}
+
+#mon-gpu-title {
+    text-style: bold;            /* Heading role */
+    width: auto;
+}
+
+#mon-gpu-note {
+    width: 1fr;                  /* right edge of the same status line */
+    text-align: right;
+    color: $text-muted;          /* Secondary role */
+}
+
+#mon-gpu-lanes {
+    height: auto;
+    max-height: 8;   /* scroll bound (not a spacing token) */
+}
+
+.mon-gpu-lane {
+    height: 1;        /* row token: one lane per GPU */
+}

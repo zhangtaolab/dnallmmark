@@ -60,6 +60,7 @@ from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.selection import PresetMenu, SelectionData
 from tui.services import registries as registries_service
 from tui.services.download_queue import merge_presence
+from tui.services.gpu_probe import GpuRow
 from tui.services.sweep_launcher import (
     EnvPreflight,
     GateRefusal,
@@ -93,6 +94,8 @@ from tui.strings import (
     MON_COL_SEED,
     MON_DETAIL_STEPS,
     MON_FAILURES_EMPTY,
+    MON_GPU_ABSENT,
+    MON_GPU_TITLE,
     MON_GRADUATED_DONE_TOAST,
     MON_HISTORY_EMPTY,
     MON_HISTORY_RERUN_BADGE,
@@ -537,8 +540,19 @@ class _QueueDriverFake:
         raise AssertionError("the monitor tests never run queue tasks")
 
 
-def _app(monitor=None, launcher=None):
-    """The real app over the fake services (constructor injection)."""
+def _absent_gpu_probe(timeout: float):
+    """The default GPU-probe fake (16-01): the absent outcome — every
+    pre-16-01 pilot test renders the deterministic absent shape, ZERO
+    nvidia-smi subprocess in any test lane (CI zero-GPU, D16-14)."""
+    return None  # noqa: RET501 — None IS the payload (the absent outcome)
+
+
+def _app(monitor=None, launcher=None, gpu=None):
+    """The real app over the fake services (constructor injection).
+
+    16-01: the gpu seam defaults to the absent fake so the whole
+    existing suite stays subprocess-free and cross-machine
+    deterministic; the G-panel tests inject fabricated GpuRow tuples."""
     return DnallmMarkTui(
         env_check_service=_EnvCacheHitFake(),
         selection_service=_SelectionFake(),
@@ -547,6 +561,7 @@ def _app(monitor=None, launcher=None):
                          else FakeMonitorService()),
         monitor_launcher=(launcher if launcher is not None
                           else FakeMonitorLauncher()),
+        gpu_probe_provider=(gpu if gpu is not None else _absent_gpu_probe),
     )
 
 
@@ -5869,6 +5884,89 @@ async def test_focus_active_noops_when_target_already_focused():
             assert screen.focused is history_table
         finally:
             patcher.stop()
+
+
+# =====================================================================
+# Phase 16 (16-01, TUI-01) — the G GPU-lanes panel
+# =====================================================================
+
+
+def _fabricated_gpu_rows():
+    """Two fabricated GpuRow tuples (the UI-SPEC Surface A wireframe
+    values) — the constructor-injected provider's payload (frozen
+    dataclasses, zero nvidia-smi in any test lane, D16-14)."""
+    return (
+        GpuRow(index=0, utilization_pct=47, memory_used_mib=15340,
+               memory_total_mib=32607, temperature_c=61),
+        GpuRow(index=1, utilization_pct=12, memory_used_mib=958,
+               memory_total_mib=32607, temperature_c=33),
+    )
+
+
+def _gpu_lane_texts(screen):
+    """The G panel's rendered lane texts, in lane order."""
+    return [
+        _plain(widget.content)
+        for widget in screen.query("#mon-gpu-lanes .mon-gpu-lane")]
+
+
+async def test_gpu_panel_renders_fabricated_rows_on_both_tabs():
+    """16-01 (TUI-01, Pitfall 1): the probe dispatch fires from the TOP
+    of _tick_frontier — BEFORE the live-root guard — so an IDLE machine
+    (zero live roots) still probes and renders the fabricated rows as
+    lane rows; the panel is standing chrome visible on BOTH tabs
+    (D16-05 — machine-level state never leaves the History flip)."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(), watermarks={})])
+    app = _app(monitor=monitor,
+               gpu=lambda timeout: _fabricated_gpu_rows())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        assert not screen._live, "the idle-machine premise (no live roots)"
+        assert _label_text(screen, "#mon-gpu-title") == MON_GPU_TITLE
+        # first paint: the optimistic-paint law — header row only, note
+        # blank, zero lanes (the probe message has not landed yet)
+        assert _label_text(screen, "#mon-gpu-note") == ""
+        assert _gpu_lane_texts(screen) == []
+        # the frontier tick: the gpu dispatch fires BEFORE the guard
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        lanes = _gpu_lane_texts(screen)
+        assert len(lanes) == 2, "one lane row per GPU (D16-04)"
+        assert "GPU 0" in lanes[0] and "47%" in lanes[0]
+        assert "15340/32607 MiB" in lanes[0] and "61°C" in lanes[0]
+        assert "GPU 1" in lanes[1] and "12%" in lanes[1]
+        assert "958/32607 MiB" in lanes[1] and "33°C" in lanes[1]
+        # the 10-cell segmented bar (the _strip_bar grammar, floor
+        # allocation): 47% -> 4 filled cyan cells, 12% -> 1
+        assert "████░░░░░░" in lanes[0]
+        assert "█░░░░░░░░░" in lanes[1]
+        # D16-05: the panel survives the History flip — GPU state is
+        # machine-level, visible on BOTH tabs
+        await pilot.press("tab")
+        await pilot.pause()
+        assert screen._active_tab == "history"
+        after_flip = _gpu_lane_texts(screen)
+        assert after_flip == lanes, "the standing panel is tab-independent"
+
+
+async def test_gpu_panel_absent_provider_renders_note_zero_lanes():
+    """16-01 (D16-02): the absent provider (None — the ONE outcome every
+    probe failure mode shares) renders the MON_GPU_ABSENT header note
+    with ZERO lane rows, and the console never crashes."""
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(), watermarks={})])
+    app = _app(monitor=monitor, gpu=lambda timeout: None)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert _label_text(screen, "#mon-gpu-note") == MON_GPU_ABSENT
+        assert _gpu_lane_texts(screen) == [], (
+            "never fabricated lanes under the absent outcome")
+        assert app.is_running, "no crash into the console"
 
 
 

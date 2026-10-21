@@ -1941,3 +1941,20 @@ MON_CELL_DETAIL_TITLE = _t(
     "{model} × {task} × seed_{seed}")
 MON_FRACTION_LINE = _t(
     "MON_FRACTION_LINE", "frac_{fraction}: {state}", "frac_{fraction}: {state}")
+
+# Phase 16 (16-01, TUI-01, D16-15): the G GPU-lanes panel — a standing
+# section on the slot-5 monitor (both tabs, D16-05). The lane row is
+# DATA-FORWARD: the identical value registers for both languages (the
+# MON_CELL_DETAIL_TITLE precedent — GPU/%/MiB/°C stay verbatim) and the
+# 10-cell utilization bar composes in CODE over it (UI-SPEC Surface A
+# rule 3). MON_GPU_ABSENT is the ONE degradation shape every probe
+# failure mode shares (D16-02, the ABOUT_DEP_ABSENT 未安装 word);
+# MON_GPU_NONE is the explicit zero-GPU empty state (D16-04). Both
+# carry the ◌ glyph first (NO_COLOR legibility).
+MON_GPU_TITLE = _t("MON_GPU_TITLE", "GPU 状态", "GPUs")
+MON_GPU_ROW = _t(
+    "MON_GPU_ROW", "GPU {i}  {util}%  {used}/{total} MiB  {temp}°C",
+    "GPU {i}  {util}%  {used}/{total} MiB  {temp}°C")
+MON_GPU_ABSENT = _t(
+    "MON_GPU_ABSENT", "◌ nvidia-smi 未安装", "◌ nvidia-smi not installed")
+MON_GPU_NONE = _t("MON_GPU_NONE", "◌ 未检测到 GPU", "◌ no GPUs detected")

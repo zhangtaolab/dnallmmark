@@ -248,7 +248,7 @@ from rich.text import Text
 from textual import events, work
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.screen import ModalScreen, Screen
 from textual.widget import Widget
@@ -270,9 +270,9 @@ from tui.screens.selection import (
     LaunchConfirmModal,
     PathInputModal,
 )
+from tui.services import gpu_probe, sweep_monitor
 from tui.services import run_config as run_config_svc
 from tui.services import sweep_launcher as sweep_launcher_module
-from tui.services import sweep_monitor
 from tui.services.sweep_monitor import (
     CELL_COMPLETED,
     CELL_FAILED,
@@ -556,6 +556,63 @@ def _strip_bar(counts: "dict[str, int]") -> Text:
         if count > 0 and quota > 0:
             bar += Text(char * quota, style=style)
     return bar
+
+
+# ===== Phase 16 (16-01, TUI-01): the G GPU-lanes panel helpers =====
+
+#: The provider seam's shape: ``provider(timeout)`` returns the frozen
+#: rows tuple (sorted by index), the EMPTY tuple (zero GPUs — the
+#: explicit empty state), or None (the ONE absent outcome every probe
+#: failure mode shares, D16-02).
+GpuProbeProvider = Callable[[float], "tuple[gpu_probe.GpuRow, ...] | None"]
+
+#: The lane row's bar width (UI-SPEC Surface A rule 3 — 10 cells, safe
+#: at the 80-column floor with the widest 6-digit MiB values).
+_GPU_BAR_WIDTH = 10
+
+#: The pre-first-probe state (the #41 optimistic-paint law, 16-01): the
+#: panel renders the header row ONLY — note blank, zero lane rows —
+#: until the first probe message lands; never a guessed lane.
+_GPU_PENDING = object()
+
+
+def _default_gpu_probe_provider(timeout: float) -> "tuple[gpu_probe.GpuRow, ...] | None":
+    """The REAL probe through the service seam (D16-01/D16-03) — the
+    fixed-argv nvidia-smi CSV call under the ~2s per-call timeout; the
+    injectable default the Pilot/golden lanes replace with fabricated
+    :class:`gpu_probe.GpuRow` tuples (CI zero-GPU, D16-14)."""
+    return gpu_probe.probe(timeout=timeout)
+
+
+def _gpu_util_bar(utilization_pct: int) -> Text:
+    """The lane row's 10-cell segmented utilization bar (16-01): whole-
+    cell FLOOR allocation (the ``_strip_bar`` grammar) — filled cells
+    the cyan running channel, the remainder the dim ``░`` open channel;
+    activity semantics with NO per-threshold recoloring (a fabricated
+    warning threshold is a number the probe never provided — UI-SPEC
+    Surface A rule 3)."""
+    filled = max(0, min(_GPU_BAR_WIDTH,
+                        int(utilization_pct * _GPU_BAR_WIDTH / 100)))
+    bar = Text()
+    if filled:
+        bar += Text("█" * filled, style="cyan")
+    if filled < _GPU_BAR_WIDTH:
+        bar += Text("░" * (_GPU_BAR_WIDTH - filled), style="dim")
+    return bar
+
+
+def _gpu_lane_text(row: "gpu_probe.GpuRow") -> Text:
+    """One lane row's content (16-01): the ``MON_GPU_ROW`` data text
+    with the utilization bar spliced after the ``GPU {i}`` head (UI-SPEC
+    Surface A rule 3 — the constant registers the data-forward wording
+    VERBATIM; the bar composes in code over it)."""
+    data = S.MON_GPU_ROW.format(
+        i=row.index, util=row.utilization_pct, used=row.memory_used_mib,
+        total=row.memory_total_mib, temp=row.temperature_c)
+    head = f"GPU {row.index}"
+    tail = data[len(head):] if data.startswith(head) else f"  {data}"
+    return Text.assemble(
+        head, "  [", _gpu_util_bar(row.utilization_pct), "]", tail)
 
 
 class _SeedStateFold:
@@ -1808,6 +1865,19 @@ class MonitorScreen(Screen):
             self.plans = plans
             super().__init__()
 
+    class GpuProbed(Message):
+        """The GPU probe pass arrived (worker thread -> loop; 16-01 +
+        the WR-02 run tag): the frozen rows tuple sorted by index
+        (D16-04), ``()`` = zero GPUs (the explicit empty state), or
+        ``None`` = the ONE absent outcome every failure mode shares
+        (D16-02 — the panel renders the honest note, never a crash)."""
+
+        def __init__(self, rows: "tuple[gpu_probe.GpuRow, ...] | None",
+                     run_id: int) -> None:
+            self.rows = rows
+            self.run_id = run_id
+            super().__init__()
+
     class FailuresRead(Message):
         """The failure list arrived (worker thread -> loop)."""
 
@@ -1939,6 +2009,7 @@ class MonitorScreen(Screen):
                  frontier_interval: float = FRONTIER_INTERVAL_SECONDS,
                  full_interval: float = FULL_INTERVAL_SECONDS,
                  session: "MonitorSession | None" = None,
+                 gpu_probe_provider: "GpuProbeProvider | None" = None,
                  **kwargs):
         super().__init__(**kwargs)
         self._service: MonitorServiceProtocol = (
@@ -1958,6 +2029,17 @@ class MonitorScreen(Screen):
         # source-compatible.
         self._session: MonitorSession = (
             session if session is not None else MonitorSession())
+        # 16-01 (TUI-01): the GPU probe provider — constructor-
+        # injectable so the Pilot/golden lanes fabricate frozen GpuRow
+        # dataclasses (CI zero-GPU, D16-14 — the _golden_app
+        # constructor-injection shape); None means the REAL nvidia-smi
+        # probe (D16-01). The composition root threads it through
+        # build_monitor_screen (the 261018-08g rebuild-per-navigation
+        # discipline: the seam lives on the screen constructor, the app
+        # supplies it).
+        self._gpu_probe_provider: GpuProbeProvider = (
+            gpu_probe_provider if gpu_probe_provider is not None
+            else _default_gpu_probe_provider)
         # the scan state (event-loop side only; workers post into it) —
         # screen-LOCAL by design (the mount kick rebuilds it; the F1
         # fix deletes the cached-instance design, so a fresh screen
@@ -2044,6 +2126,16 @@ class MonitorScreen(Screen):
         self._tree_cursor: dict[str, tuple] = {}
         # the wide table's rendered-content signature
         self._wide_sig: tuple | None = None
+        # 16-01: the G panel's probe state + render gate — ``_gpu_rows``
+        # holds the LAST probe outcome (_GPU_PENDING before the first
+        # probe message lands; None = absent; () = zero GPUs; otherwise
+        # the sorted frozen rows), ``_gpu_sig`` is the rze-law sentinel
+        # over (probe-state note, row count, the FULL formatted per-row
+        # values — Pitfall 5), and ``_gpu_run_id`` tags the probe posts
+        # (the WR-02 idiom — a superseded worker's late post drops).
+        self._gpu_rows: Any = _GPU_PENDING
+        self._gpu_sig: tuple | None = None
+        self._gpu_run_id = 0
 
     # ===== the session write-through properties (261018-08g, SOAK-1) =====
     # expected_totals / fallback_starts / ever_discovered live on the
@@ -2104,6 +2196,19 @@ class MonitorScreen(Screen):
                 yield Static("", id="mon-detail")
                 yield RichLog(id="mon-right-log", max_lines=200,
                               markup=False, wrap=False)
+        # 16-01 (TUI-01, D16-05): the standing G GPU-lanes panel — a
+        # full-width section under the tab content, visible on BOTH
+        # tabs (GPU state is machine-level, never run-level), above the
+        # bottom bar. The header row paints at mount (title + BLANK
+        # note); the lanes land with the first probe message (the #41
+        # optimistic-paint law — never a guessed lane). Display-only
+        # chrome: the lane region's can_focus clears in on_mount (the
+        # #mon-right-log precedent) and no keybinding exists.
+        with Vertical(id="mon-gpu"):
+            with Horizontal(id="mon-gpu-header"):
+                yield Label(S.MON_GPU_TITLE, id="mon-gpu-title")
+                yield Label("", id="mon-gpu-note")
+            yield VerticalScroll(id="mon-gpu-lanes")
         yield BottomBar()
 
     def on_mount(self) -> None:
@@ -2133,6 +2238,10 @@ class MonitorScreen(Screen):
         self._right_detail_sig = None
         self._right_tail_sig = None
         self._wide_sig = None
+        # 16-01: the G panel's sentinel resets with them — the
+        # recomposed panel (fresh empty Labels) repaints from the
+        # last-known probe rows in the fresh language, never gates away
+        self._gpu_sig = None
         self._left_mode = "matrix"
         self._left_mode_user = None
         self._left_mode_struct_sig = None
@@ -2142,6 +2251,9 @@ class MonitorScreen(Screen):
         # the pane's RichLog is display-only (never focusable — every
         # key stays screen-level, no focus trap)
         self.query_one("#mon-right-log", RichLog).can_focus = False
+        # 16-01: the G panel is display-only standing chrome (the same
+        # precedent — the panel never joins the focus chain)
+        self.query_one("#mon-gpu-lanes", VerticalScroll).can_focus = False
         for timer in (self._frontier_timer, self._full_timer):
             if timer is not None:
                 timer.stop()
@@ -2298,11 +2410,38 @@ class MonitorScreen(Screen):
     def _tick_frontier(self) -> None:
         """The 2s tick: dispatch ONE frontier worker that iterates
         EVERY live root (a no-op pass while nothing runs — the cadence
-        stays armed, the degradation-sweep contract)."""
+        stays armed, the degradation-sweep contract).
+
+        16-01 (16-RESEARCH Pitfall 1): the GPU probe dispatch fires
+        BEFORE the live-root guard — GPU state is MACHINE-level, so the
+        G panel probes on an idle machine too (its own exclusive
+        worker group, never inside the live-root pass)."""
+        self._tick_gpu()
         if not self._live:
             return
         self._frontier_run_id += 1
         self._run_frontier(self._frontier_run_id)
+
+    def _tick_gpu(self) -> None:
+        """Dispatch the G panel's probe worker (16-01, D16-03): its OWN
+        exclusive ``mon-gpu`` group (the 10-04 per-group lesson — a
+        shared group would cancel the frontier pass), one worker per
+        frontier tick, never an inline probe."""
+        self._gpu_run_id += 1
+        self._run_gpu_probe(self._gpu_run_id)
+
+    @work(exclusive=True, thread=True, group="mon-gpu", exit_on_error=False)
+    def _run_gpu_probe(self, run_id: int) -> None:
+        """The probe pass (worker thread -> loop): call the provider
+        under the ~2s per-call timeout and post the run-tagged outcome
+        (WR-02). The service never raises and neither does the worker
+        (the worker-guard discipline — an absent render, never a
+        crash)."""
+        try:
+            rows = self._gpu_probe_provider(gpu_probe.PROBE_TIMEOUT_SECONDS)
+        except Exception:  # noqa: BLE001 — the tolerant-provider promise
+            rows = None
+        self.post_message(self.GpuProbed(rows, run_id))
 
     @work(exclusive=True, thread=True, group="mon-frontier",
           exit_on_error=False)
@@ -2438,6 +2577,58 @@ class MonitorScreen(Screen):
         # its OWN exclusive group, the LogTailModal mon-logtail
         # precedent; the frontier worker itself is untouched)
         self._kick_right_tail()
+
+    def on_monitor_screen_gpu_probed(self, message: GpuProbed) -> None:
+        """Store the probe outcome and render the G panel (a run-id
+        mismatch drops the superseded post — WR-02; the panel itself is
+        content-signature gated inside the render)."""
+        if message.run_id != self._gpu_run_id:
+            return
+        self._gpu_rows = message.rows
+        self._render_gpu_panel()
+
+    def _render_gpu_panel(self) -> None:
+        """The G GPU-lanes panel render (16-01, the rze law): the pass
+        is content-signature gated over (probe-state note, row count,
+        the FULL formatted per-row values — 16-RESEARCH Pitfall 5) so a
+        steady tick over unchanged readings performs ZERO widget writes
+        (the pty byte-silence pin), suppressed while a modal is stacked
+        (the ``_render_all`` early-return); ``on_mount`` resets the
+        sentinel so the L-toggle recompose repaints.
+
+        States (UI-SPEC Surface A rule 5, all explicit): pending ->
+        header row only (note blank, zero lanes); absent -> the
+        ``MON_GPU_ABSENT`` note with ZERO lanes (never fabricated
+        lanes, never a crash); zero GPUs -> exactly ONE
+        ``MON_GPU_NONE`` lane row; otherwise one lane row per GPU
+        (already sorted by index — D16-04)."""
+        if not self.is_running:
+            return
+        if self.app.screen is not self:
+            return  # a modal or the min-size guard is stacked above
+        rows = self._gpu_rows
+        if rows is _GPU_PENDING:
+            note = ""
+            lanes: tuple[Text, ...] = ()
+        elif rows is None:
+            note = S.MON_GPU_ABSENT
+            lanes = ()
+        elif not rows:
+            note = ""
+            lanes = (Text(S.MON_GPU_NONE),)
+        else:
+            note = ""
+            lanes = tuple(_gpu_lane_text(row) for row in rows)
+        sig = (note, tuple(lane.plain for lane in lanes))
+        if sig == self._gpu_sig:
+            return  # unchanged readings: nothing to paint (Pitfall 5)
+        self._gpu_sig = sig
+        self.query_one("#mon-gpu-note", Label).update(note, layout=False)
+        region = self.query_one("#mon-gpu-lanes", VerticalScroll)
+        region.remove_children()
+        if lanes:
+            region.mount(*[
+                Label(lane, classes="mon-gpu-lane") for lane in lanes])
 
     @staticmethod
     def _merge_cell_states(current: dict, cell_states: dict) -> dict:
@@ -2942,6 +3133,10 @@ class MonitorScreen(Screen):
         self._render_wide()
         self._render_history(history)
         self._render_right_detail()
+        # 16-01: the G panel rides the shared pass (its own signature
+        # gate keeps a steady tick at zero writes; the recompose path
+        # repaints from the last-known rows through the on_mount reset)
+        self._render_gpu_panel()
         self._apply_visibility(bool(cards), len(history))
 
     def _render_scan_note(self) -> None:

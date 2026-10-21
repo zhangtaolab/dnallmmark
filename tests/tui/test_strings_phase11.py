@@ -174,6 +174,11 @@ EXPECTED_MON_CONSTANTS = (
     # the nothing-to-resume refusal, and the live-root refusal.
     "MON_RESUME_CONFIRM", "MON_RESUME_TOAST", "MON_RESUME_NOTHING",
     "MON_RESUME_REFUSED_LIVE",
+    # Phase 16 (16-01, TUI-01): the G GPU-lanes panel — the title, the
+    # data-forward lane row (identical in both languages, the bar
+    # composed in code), the ONE absent shape every probe failure mode
+    # shares (D16-02), and the explicit zero-GPU empty state (D16-04).
+    "MON_GPU_TITLE", "MON_GPU_ROW", "MON_GPU_ABSENT", "MON_GPU_NONE",
 )
 
 #: The per-seed cell states in spec order, and their contract glyphs.

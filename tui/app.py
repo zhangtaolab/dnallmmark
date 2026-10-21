@@ -85,6 +85,7 @@ from tui.screens.about import AboutScreen
 from tui.screens.data_manager import DataManagerBackend, DataManagerScreen
 from tui.screens.env_check import EnvCheckScreen, EnvCheckServiceProtocol
 from tui.screens.monitor import (
+    GpuProbeProvider,
     MonitorBackend,
     MonitorLauncherProtocol,
     MonitorScreen,
@@ -648,7 +649,8 @@ class DnallmMarkTui(App):
                  run_config_service: RunConfigServiceProtocol | None = None,
                  launcher_service: LauncherServiceProtocol | None = None,
                  monitor_service: MonitorServiceProtocol | None = None,
-                 monitor_launcher: MonitorLauncherProtocol | None = None):
+                 monitor_launcher: MonitorLauncherProtocol | None = None,
+                 gpu_probe_provider: GpuProbeProvider | None = None):
         """Compose the console with injectable services.
 
         Args:
@@ -679,6 +681,13 @@ class DnallmMarkTui(App):
             monitor_launcher: optional override for the monitor screen's
                 re-run launcher seam (the 11-07 Pilot seam; None passes
                 the shared launcher instance).
+            gpu_probe_provider: optional override for the monitor
+                screen's GPU probe provider (the 16-01 seam — the Pilot
+                and golden lanes fabricate frozen GpuRow tuples so CI
+                never spawns nvidia-smi, D16-14). None means the real
+                probe (D16-01); the value threads through EVERY
+                ``build_monitor_screen`` call (the 261018-08g
+                rebuild-per-navigation discipline).
         """
         super().__init__()
         self._env_check_service = env_check_service
@@ -698,6 +707,9 @@ class DnallmMarkTui(App):
         # launcher face (both default to the shared registry).
         self._monitor_service = monitor_service
         self._monitor_launcher = monitor_launcher
+        # The 16-01 GPU probe seam (None = the real nvidia-smi probe —
+        # threaded into every monitor build below).
+        self._gpu_probe_provider = gpu_probe_provider
         # 261018-08g (SOAK-1/F1): the monitor's SESSION state — ONE
         # shared MonitorSession constructed here and injected into
         # every MonitorScreen build, so attach state and the D-13
@@ -817,6 +829,7 @@ class DnallmMarkTui(App):
                               if self._monitor_launcher is not None
                               else self._launcher),
             session=self._monitor_session,
+            gpu_probe_provider=self._gpu_probe_provider,
         )
         return self._monitor_screen
 
