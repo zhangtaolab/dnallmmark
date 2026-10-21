@@ -6179,6 +6179,76 @@ async def test_gpu_panel_sentinel_reset_rerenders_on_remount():
         assert screen._gpu_sig is not None
 
 
+async def test_g_panel_no_color_pass(monkeypatch):
+    """16-VERIFICATION human item 2 — the ONE abstained backstop truth
+    (16-01 truth 9): a Pilot launch under ``NO_COLOR=1`` keeps the G
+    panel glyph-first legible. Every lane value rides a glyph/text
+    channel (GPU index, the 10-cell utilization bar, %, MiB, °C), so
+    stripping the color channel loses NOTHING (the glyph+color
+    redundancy rule, UI-SPEC Surface A); the degenerate states lead
+    with the ◌ glyph — the absent note and the zero-GPU row stay
+    legible word-first, never color-first.
+
+    Textual consumes NO_COLOR at App construction (8.2.8 app.py:
+    ``environ.pop("NO_COLOR")`` -> the Monochrome output filter), so
+    the injection PRECEDES ``_app()`` — the suite's env-injection
+    idiom (monkeypatch.setenv before construction, the [a]-modal
+    HOME/STATE_DIR precedent); ``app.no_color`` proves the launch env
+    reached textual's own plumbing, not just os.environ."""
+    monkeypatch.setenv("NO_COLOR", "1")
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(), watermarks={})])
+    app = _app(monitor=monitor,
+               gpu=lambda timeout: _fabricated_gpu_rows())
+    async with app.run_test(size=(120, 40)) as pilot:
+        assert app.no_color, (
+            "the NO_COLOR=1 launch env reached textual (the app runs "
+            "with its color output stripped)"
+        )
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        lanes = _gpu_lane_texts(screen)
+        assert len(lanes) == 2, "both lanes render under NO_COLOR"
+        # the FULL text payload survives the strip: index, percent,
+        # MiB, °C — the values are text, never color channels
+        assert "GPU 0" in lanes[0] and "47%" in lanes[0]
+        assert "15340/32607 MiB" in lanes[0] and "61°C" in lanes[0]
+        assert "GPU 1" in lanes[1] and "12%" in lanes[1]
+        assert "958/32607 MiB" in lanes[1] and "33°C" in lanes[1]
+        # the glyph-first channels: the 10-cell bar is GLYPHS, not
+        # color (47% -> 4 filled cells, 12% -> 1 — floor allocation)
+        assert "████░░░░░░" in lanes[0]
+        assert "█░░░░░░░░░" in lanes[1]
+    # the abstained truth's degenerate states: the ◌ glyph leads both
+    # the absent note and the zero-GPU row — glyph-first under the
+    # SAME stripped launch (each provider outcome over its own app,
+    # the two existing color-lane pins re-read under NO_COLOR)
+    for provider, expect_note, expect_lanes in (
+            (lambda timeout: None, MON_GPU_ABSENT, ()),
+            (lambda timeout: (), "", (MON_GPU_NONE,)),
+    ):
+        app = _app(
+            monitor=FakeMonitorService(
+                scans=[ScanResult(sweeps=(), watermarks={})]),
+            gpu=provider)
+        async with app.run_test(size=(120, 40)) as pilot:
+            assert app.no_color
+            await _open_monitor(pilot, app)
+            screen = app.screen
+            screen._tick_frontier()
+            await _settle(pilot, app)
+            assert _label_text(screen, "#mon-gpu-note") == expect_note
+            assert _gpu_lane_texts(screen) == list(expect_lanes)
+    assert MON_GPU_ABSENT.startswith("◌"), (
+        "the absent note leads with the ◌ glyph (glyph-first law)"
+    )
+    assert MON_GPU_NONE.startswith("◌"), (
+        "the zero-GPU row leads with the ◌ glyph (glyph-first law)"
+    )
+
+
 # =====================================================================
 # Phase 16 (16-02, TUI-03): the dispatch rows on the Running card
 # =====================================================================
