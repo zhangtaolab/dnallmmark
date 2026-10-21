@@ -1709,7 +1709,26 @@ if __name__ == "__main__":
                     # All ranks evaluate (the call stays OUTSIDE the rank
                     # guard — DDP semantics); rank 0 then persists the
                     # result (WINDOWS #45).
-                    eval_results = trainer.evaluate()
+                    # WR-02: evaluate() is the most OOM-prone step of the
+                    # success block and runs AFTER rank 0 wrote the v1
+                    # (training-keys-only) final_metrics.json above. On
+                    # failure, rank 0 deletes that stale v1 file BEFORE
+                    # re-raising into the D-08 handler below — without
+                    # the delete the child exits 0 with a metrics file
+                    # and no marker, and dispatch's CR-02 existence-only
+                    # completion check finalizes a falsely-completed,
+                    # score-less cell that relaunch skip-locks (completed
+                    # claim) and --rerun-failed ignores (not FAILED).
+                    # With the delete, a cell dir with no
+                    # final_metrics.json is the designed CR-02 failure
+                    # signal: the claim records failed and recovery owns
+                    # the cell.
+                    try:
+                        eval_results = trainer.evaluate()
+                    except Exception:
+                        if local_rank == 0:
+                            os.remove(outdir + "final_metrics.json")
+                        raise
                     if local_rank == 0:
                         # WINDOWS #45 producer fix (maintainer option A
                         # ruling, 2026-10-21): merge the evaluate dict
@@ -1733,9 +1752,14 @@ if __name__ == "__main__":
                         # stronger than the pre-fix code): it now also
                         # promises the eval-merged metrics — a kill
                         # anywhere before the copy leaves no marker so the
-                        # cell re-runs on resume, and a failed evaluate
-                        # hits the D-08 except-continue with no marker
-                        # (also a re-run, never a falsely-done cell).
+                        # cell re-runs on resume. A failed evaluate never
+                        # reaches this copy: its handler deletes the v1
+                        # metrics file before re-raising (WR-02), so the
+                        # D-08 except-continue leaves the cell with NO
+                        # metrics and NO marker — dispatch's CR-02
+                        # existence check records the claim failed
+                        # (recoverable by relaunch/--rerun-failed), never
+                        # a falsely-done cell.
                         shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json", outdir)
                 # Blind except is the designed isolation (D-08 sanctioned):
                 # a dataset-train failure logs and CONTINUEs to the next

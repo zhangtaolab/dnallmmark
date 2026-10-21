@@ -3842,6 +3842,102 @@ def test_dispatch_failed_cells_get_failed_records(tmp_path, monkeypatch):
     assert record["metrics"] is None
 
 
+def test_dispatch_eval_failure_deletes_metrics_claim_failed_requeue(
+        tmp_path, monkeypatch):
+    """WR-02 regression: a child that wrote the v1 (training-keys-only)
+    final_metrics.json, then hit an evaluate failure — the producer's
+    WR-02 handler deletes the stale v1 file BEFORE re-raising into the
+    D-08 except-continue, so the child still EXITS 0 (the evaluate
+    exception never escapes run_finetune; that is exactly why the delete
+    is load-bearing) — leaves the cell dir with NO metrics and NO
+    marker. Dispatch's CR-02 existence-only check must fail the claim
+    (never a falsely-completed, score-less cell), the record reports
+    failed with the CR-02 error text and metrics null, and a RELAUNCH
+    over the same root re-dispatches the cell (the failed claim
+    requeues) and its new attempt completes — the pre-fix completed
+    claim was skip-locked forever (relaunch skips it, --rerun-failed
+    only re-runs FAILED claims)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "eval-failure").resolve()
+    cell = ("model-a", "task-x", 42)
+
+    def eval_failure_spawner(argv, **kwargs):
+        # The make_child_spawner identity discipline, modeling the
+        # post-WR-02 producer shape of an evaluate exception: rank 0
+        # wrote the v1 metrics + flops report, evaluate() raised, the
+        # handler deleted final_metrics.json, and the D-08
+        # except-continue swallowed the rest — exit 0, no marker, the
+        # flops report orphaned in the cell dir (harmless: CR-02 reads
+        # final_metrics.json existence only).
+        root = Path(flag_value(argv, "--output_dir"))
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell_dir = (root / save / flag_value(argv, "--target_dataset")
+                    / f"seed_{flag_value(argv, '--seed')}")
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / run_sweep.METRICS_NAME).write_text(
+            json.dumps({"train_runtime": 10.0}), encoding="utf-8")
+        (cell_dir / "flops_report.json").write_text("{}", encoding="utf-8")
+        (cell_dir / run_sweep.METRICS_NAME).unlink()  # the WR-02 delete
+        return FakeProc(0)
+
+    argv = [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ]
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, argv, spawner=eval_failure_spawner)
+    assert excinfo.value.code == 1, "a run with a failed cell exits 1"
+    cell_dir = run_sweep.cell_dir_for(base, *cell)
+    assert not (cell_dir / run_sweep.METRICS_NAME).is_file(), (
+        "the WR-02 delete leaves no final_metrics.json in the cell dir"
+    )
+    assert not (cell_dir / run_sweep.RESUME_MARKER).is_file(), (
+        "the evaluate failure never reaches the marker copy"
+    )
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(cell)).read_text(
+            encoding="utf-8"))
+    assert claim["state"] == dispatch_core.CLAIM_STATE_FAILED, (
+        "exit 0 without final_metrics FAILS the claim (CR-02) — never "
+        "the falsely-completed, score-less cell of the pre-fix window"
+    )
+    assert claim["error"] == (
+        "child exited 0 but final_metrics.json is missing "
+        "(run_finetune.py swallowed a training failure)")
+    record = json.loads(
+        (cell_dir / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert record["status"] == "failed"
+    assert record["metrics"] is None
+
+    # relaunch (same root): the FAILED claim requeues — the cell is
+    # re-dispatched and now completes (a pre-fix COMPLETED claim would
+    # have skip-locked the cell forever).
+    calls2 = []
+    run_cli(monkeypatch, argv, spawner=make_child_spawner(calls2))
+    assert spawn_identities(calls2) == [cell], (
+        "the relaunch re-dispatches EXACTLY the eval-failed cell"
+    )
+    assert (cell_dir / run_sweep.METRICS_NAME).is_file()
+    assert (cell_dir / run_sweep.RESUME_MARKER).is_file()
+    revived = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(cell)).read_text(
+            encoding="utf-8"))
+    assert revived["state"] == dispatch_core.CLAIM_STATE_COMPLETED
+    record2 = json.loads(
+        (cell_dir / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert record2["status"] == "completed", (
+        "the stale FAILED record is replaced by the new attempt's "
+        "terminal record"
+    )
+
+
 def test_dispatch_corrupt_metrics_record_failed_claim_completed(
         tmp_path, monkeypatch):
     """WR-11 parity: a child that writes a CORRUPT final_metrics.json

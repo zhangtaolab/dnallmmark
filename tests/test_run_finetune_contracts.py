@@ -2769,6 +2769,78 @@ def test_eval_results_merged_additively_into_final_metrics():
     )
 
 
+def test_evaluate_failure_deletes_v1_metrics_before_reraise():
+    """WR-02: ``trainer.evaluate()`` sits in its own try/except whose
+    handler has rank 0 DELETE the already-written v1 final_metrics.json
+    BEFORE the bare re-raise into the D-08 except-continue — without
+    the delete, the child exits 0 with a training-keys-only metrics
+    file and no trainer_state marker, and dispatch's CR-02
+    existence-only completion check finalizes the claim COMPLETED: a
+    permanently green, score-less cell that relaunch skip-locks
+    (completed claim) and --rerun-failed ignores (not FAILED). With the
+    delete, "no final_metrics.json" is the designed CR-02 failure
+    signal — pinned in the strict source order v1 write < evaluate <
+    except < rank-0 delete < bare raise < marker copy, all inside the
+    D-08 try (the re-raise must reach the dataset-loop handler, not
+    escape the process: exit-0-without-metrics is the signal CR-02
+    reads)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    v1_write_idx = src.find('open(outdir + "final_metrics.json"')
+    assert v1_write_idx != -1, (
+        "no final_metrics.json write found — the v1 write is what the "
+        "WR-02 delete removes on an evaluate failure"
+    )
+    evaluate_idx = statement_index(src, "eval_results = trainer.evaluate()")
+    assert evaluate_idx != -1, (
+        "no eval_results = trainer.evaluate() call found"
+    )
+    # the handler's clause is the bare "except Exception:" — the three
+    # D-08 sites are "except Exception as e:" and never match this
+    except_idx = statement_index(src, "except Exception:")
+    assert except_idx != -1, (
+        "no 'except Exception:' clause found — the evaluate call needs "
+        "its own handler so the delete runs before the D-08 propagation"
+    )
+    remove_idx = statement_index(
+        src, 'os.remove(outdir + "final_metrics.json")')
+    assert remove_idx != -1, (
+        "no os.remove of final_metrics.json found — without the delete "
+        "the stale v1 metrics file outlives the failed evaluate and "
+        "CR-02 completes the claim on it"
+    )
+    bare_raise = re.search(
+        r"^[^\S\n]*raise\s*$", src[remove_idx:], re.MULTILINE)
+    assert bare_raise is not None, (
+        "no bare re-raise after the delete — the evaluate exception "
+        "must flow on into the D-08 handler (never swallowed here, "
+        "never replaced by a different exception)"
+    )
+    raise_idx = remove_idx + bare_raise.start()
+    copy_idx = src.find(
+        'shutil.copy(outdir + f"checkpoint-{last_step}/trainer_state.json"'
+    )
+    assert copy_idx != -1, (
+        "no trainer_state.json resume-marker copy found — without the "
+        "marker, resume would retrain every cell"
+    )
+    assert v1_write_idx < evaluate_idx < except_idx < remove_idx, (
+        "the evaluate guard wraps the call with the delete in its "
+        f"handler (v1 write at {v1_write_idx}, evaluate at "
+        f"{evaluate_idx}, except at {except_idx}, delete at "
+        f"{remove_idx})"
+    )
+    assert raise_idx < copy_idx, (
+        "the delete-then-reraise must precede the marker copy — the "
+        "failed cell ends with neither metrics nor marker"
+    )
+    # the delete is rank-0 guarded: only rank 0 wrote the v1 file, so
+    # the other ranks never touch it (the evaluate call itself stays
+    # outside the guard — DDP semantics, pinned above)
+    assert "if local_rank == 0:" in src[except_idx:remove_idx], (
+        "the delete must sit inside the handler's local_rank == 0 guard"
+    )
+
+
 # =====================================================================
 # --model_root / --dataset_root storage-root overrides (261014-c2l)
 # =====================================================================
