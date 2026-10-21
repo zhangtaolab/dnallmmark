@@ -270,7 +270,7 @@ from tui.screens.selection import (
     LaunchConfirmModal,
     PathInputModal,
 )
-from tui.services import gpu_probe, sweep_monitor
+from tui.services import dispatch_state, gpu_probe, sweep_monitor
 from tui.services import run_config as run_config_svc
 from tui.services import sweep_launcher as sweep_launcher_module
 from tui.services.sweep_monitor import (
@@ -582,6 +582,26 @@ def _default_gpu_probe_provider(timeout: float) -> "tuple[gpu_probe.GpuRow, ...]
     injectable default the Pilot/golden lanes replace with fabricated
     :class:`gpu_probe.GpuRow` tuples (CI zero-GPU, D16-14)."""
     return gpu_probe.probe(timeout=timeout)
+
+
+#: 16-02 (TUI-03, D16-06): the dispatch-state reader seam's shape —
+#: ``(root) -> DispatchStateView | None``; None means NO block (an
+#: absent or damaged ``dispatch_state.json`` — the static/CLI sweep
+#: root and the ``-mgpu-w*`` worker root, byte-identical to today).
+DispatchStateReader = Callable[
+    [str], "dispatch_state.DispatchStateView | None"]
+
+
+def _default_dispatch_state_reader(root: str
+                                   ) -> "dispatch_state.DispatchStateView | None":
+    """The REAL tolerant frozen-v2 read (the injectable default — the
+    16-01 gpu-probe provider shape): one ``{root}/dispatch_state.json``
+    read through the service (the artifact_loader None sentinel covers
+    absent/damaged; the 60s stale projection rides the view, D16-08).
+    The Pilot lanes fabricate frozen :class:`DispatchStateView`
+    dataclasses here; 16-05's goldens thread fixture views the same
+    way."""
+    return dispatch_state.read_dispatch_state(root)
 
 
 def _gpu_util_bar(utilization_pct: int) -> Text:
@@ -1854,15 +1874,19 @@ class MonitorScreen(Screen):
         thread -> loop; WR-02) — per-root snapshots/stats/progress.
         261019-o8e/261020-blt: ``plans`` threads the same live-sweep
         planned-CELLS evidence (None = no fresh read — the previous
-        screen cache stands)."""
+        screen cache stands). 16-02: ``dispatch`` threads the per-root
+        dispatch-state views the SAME way (None = no fresh read — the
+        previous ``_dispatch_views`` cache stands)."""
 
         def __init__(self, snapshots: dict, stats: dict, progress: dict,
-                     run_id: int, plans: "dict | None" = None) -> None:
+                     run_id: int, plans: "dict | None" = None,
+                     dispatch: "dict | None" = None) -> None:
             self.snapshots = snapshots
             self.stats = stats
             self.progress = progress
             self.run_id = run_id
             self.plans = plans
+            self.dispatch = dispatch
             super().__init__()
 
     class GpuProbed(Message):
@@ -2010,6 +2034,7 @@ class MonitorScreen(Screen):
                  full_interval: float = FULL_INTERVAL_SECONDS,
                  session: "MonitorSession | None" = None,
                  gpu_probe_provider: "GpuProbeProvider | None" = None,
+                 dispatch_state_reader: "DispatchStateReader | None" = None,
                  **kwargs):
         super().__init__(**kwargs)
         self._service: MonitorServiceProtocol = (
@@ -2040,6 +2065,20 @@ class MonitorScreen(Screen):
         self._gpu_probe_provider: GpuProbeProvider = (
             gpu_probe_provider if gpu_probe_provider is not None
             else _default_gpu_probe_provider)
+        # 16-02 (TUI-03, D16-06): the dispatch-state reader — the SAME
+        # constructor-injection shape (the 16-01 gpu-probe provider
+        # seam): None means the REAL tolerant frozen-v2 read of
+        # ``{root}/dispatch_state.json``; the Pilot lanes fabricate
+        # frozen DispatchStateView dataclasses and 16-05's goldens
+        # thread fixture views through the composition root.
+        self._dispatch_state_reader: DispatchStateReader = (
+            dispatch_state_reader if dispatch_state_reader is not None
+            else _default_dispatch_state_reader)
+        # the per-root dispatch views ({root: DispatchStateView | None})
+        # — stored by the frontier pass BEFORE the render that reads it
+        # (the o8e evidence-first ordering); a None entry = NO block;
+        # the vanished-root degradation drops entries with the others
+        self._dispatch_views: dict = {}
         # the scan state (event-loop side only; workers post into it) —
         # screen-LOCAL by design (the mount kick rebuilds it; the F1
         # fix deletes the cached-instance design, so a fresh screen
@@ -2450,12 +2489,17 @@ class MonitorScreen(Screen):
         worker (frontier_scan + stats + entries_progress per root; the
         elapsed accrues continuously, D-17) — all off the event loop,
         per-root tolerant. 261019-o8e: the live-plans read rides the
-        same pass (once, at the top — never raises)."""
+        same pass (once, at the top — never raises). 16-02 (UI-SPEC B
+        rule 7): the dispatch-state read rides the SAME pass too — ONE
+        additional service read per live root, no new timer, no new
+        worker group."""
         plans = self._read_live_plans()
         snapshots: dict = {}
         stats_map: dict = {}
         progress_map: dict = {}
+        dispatch_map: dict = {}
         for root in sorted(self._live):
+            dispatch_map[root] = self._read_dispatch_state(root)
             read = self._read_frontier_root(root)
             if read is None:
                 continue
@@ -2464,7 +2508,19 @@ class MonitorScreen(Screen):
             stats_map[root] = stats
             progress_map[root] = progress
         self.post_message(self.FrontierScanned(
-            snapshots, stats_map, progress_map, run_id, plans))
+            snapshots, stats_map, progress_map, run_id, plans,
+            dispatch_map))
+
+    def _read_dispatch_state(
+            self, root: str) -> "dispatch_state.DispatchStateView | None":
+        """One live root's dispatch-state view (16-02): the tolerant
+        read through the injectable seam; ANY failure (absent file,
+        damaged JSON, a raising reader) reads None — NO block, never a
+        crash (the worker-guard discipline)."""
+        try:
+            return self._dispatch_state_reader(root)
+        except Exception:  # noqa: BLE001 — the tolerant-reader promise
+            return None
 
     def _read_frontier_root(
             self, root: str) -> "tuple | None":
@@ -2531,9 +2587,11 @@ class MonitorScreen(Screen):
             self._scales[root_key] = read.scale
         # vanished-root degradation: every per-root cache for a root
         # that is no longer live drops (a deleted or finished root's
-        # card leaves; its History row carries the fresh scan state)
+        # card leaves; its History row carries the fresh scan state;
+        # 16-02: the dispatch views drop with them)
         for cache in (self._root_stats, self._cell_rows,
-                      self._cell_progress, self._resumes, self._scales):
+                      self._cell_progress, self._resumes, self._scales,
+                      self._dispatch_views):
             for stale in [key for key in cache if key not in live]:
                 del cache[stale]
         self._scanning = False
@@ -2560,6 +2618,11 @@ class MonitorScreen(Screen):
         # handler — the evidence stores BEFORE the render that reads it
         if message.plans is not None:
             self._live_plans = message.plans
+        # 16-02: the dispatch views land the same evidence-first way
+        # (the structure signature's dispatch legs and the painted
+        # block must read the SAME dict — the o8e flap rule)
+        if message.dispatch is not None:
+            self._dispatch_views = message.dispatch
         for root_key, snapshot in message.snapshots.items():
             if root_key not in self._live:
                 continue
@@ -2773,7 +2836,10 @@ class MonitorScreen(Screen):
         loop body WITHOUT the index/focus/mode legs — the exact tuple the
         mode machine's hold-check watches (a change here resets the manual
         [w] choice to auto: card set / model or task set / narrow flip /
-        resume-note presence / base_live)."""
+        resume-note presence / base_live). 16-02: the dispatch legs
+        (has-block, worker count, stale flag — Pitfall 6) join so a
+        dispatch card's label-count changes rebuild while value-only
+        changes ride the in-place refresh."""
         per_card = []
         for card in cards:
             rows = self._card_rows(card)
@@ -2781,8 +2847,33 @@ class MonitorScreen(Screen):
                 tuple(card.roots), card.roots[0] == card.base,
                 self._resumes.get(card.roots[0], 0) > 0, self._narrow,
                 tuple(sorted({row.model for row in rows.values()})),
-                tuple(sorted({row.task for row in rows.values()}))))
+                tuple(sorted({row.task for row in rows.values()})),
+                self._dispatch_structure_legs(self._card_dispatch(card))))
         return tuple(per_card)
+
+    def _card_dispatch(self, card: "_RunCard"
+                       ) -> "dispatch_state.DispatchStateView | None":
+        """The card's dispatch-state view (16-02): the PRIMARY root's
+        read — a dispatch run writes ONE shared root (its card is
+        single-root by the ``-mgpu-w{i}`` grouping); static/CLI sweep
+        roots and worker roots carry no ``dispatch_state.json`` so
+        their cards read None and render NO block (byte-identical to
+        today — UI-SPEC B rule 5)."""
+        return self._dispatch_views.get(card.roots[0])
+
+    @staticmethod
+    def _dispatch_structure_legs(
+            view: "dispatch_state.DispatchStateView | None") -> tuple:
+        """The dispatch block's STRUCTURE legs (16-02, Pitfall 6): the
+        block's presence, the worker-row count, and the stale/malformed
+        row's presence — the LABEL-COUNT-changing inputs ONLY. A
+        value-only change (counts moving, a worker flipping busy to
+        idle) is deliberately absent so it rides the in-place label
+        refresh and the ListItem/cursor identity survives."""
+        if view is None:
+            return (False, 0, False)
+        return (True, len(view.workers),
+                bool(view.stale or view.malformed))
 
     def _cards_signature(self, cards: "list[_RunCard]") -> tuple:
         """The STRUCTURE signature (261018-rze c + 261019-f0x): per
@@ -3625,6 +3716,14 @@ class MonitorScreen(Screen):
             lines.append(("mon-card-resume",
                           Text(note_copy.format(n=resume),
                                style="dim")))
+        # 16-02 (TUI-03, UI-SPEC Surface B rule 1 + the A4 interleave):
+        # the dispatch block — under the summary strip / resume note,
+        # above the matrix/tree body, all ``mon-card-resume`` family;
+        # NO view (absent/damaged file) renders NO block at all, so
+        # static/worker cards stay byte-identical (rule 5)
+        dispatch_view = self._card_dispatch(card)
+        if dispatch_view is not None:
+            lines.extend(self._dispatch_block_lines(dispatch_view))
         if self._left_mode == "tree":
             return lines  # the tree under the strip is the card's body
         focused_pair = None
@@ -3635,6 +3734,59 @@ class MonitorScreen(Screen):
         if focused is not None and focused[0].roots == card.roots:
             focused_pair = (focused[1], focused[2])
         lines.extend(self._card_matrix(rows, focused_pair))
+        return lines
+
+    def _dispatch_block_lines(
+            self, view: "dispatch_state.DispatchStateView"
+    ) -> "list[tuple[str, Text]]":
+        """The dispatch block's (classes, Text) pairs (16-02, UI-SPEC
+        Surface B rules 2-4): the stale/malformed warning row ABOVE the
+        dispatch line, then one worker row per ``workers[]`` entry IN
+        ARRAY ORDER — all ``mon-card-resume`` family (the dim secondary
+        role; rich-native styles ONLY — $token styles crash the Label
+        render path, the 09-03 probe pin; the warning row carries the
+        strip's rich-native color-channel family in ``yellow``, the
+        $warning analog).
+
+        Every value rides the view VERBATIM (the status passthrough
+        rule; queue depth is NEVER recomputed — TUI orchestrates,
+        never computes); a missing value renders the honest dash
+        (``_DASH`` — data, never a fabricated number).
+        """
+        lines: list[tuple[str, Text]] = []
+        if view.stale or view.malformed:
+            lines.append(("mon-card-resume", Text(
+                S.MON_DISPATCH_STALE.format(age=view.stale_age_s),
+                style="yellow")))
+        counts = view.counts
+        done = (counts.completed if counts is not None
+                and counts.completed is not None else _DASH)
+        total = (counts.total if counts is not None
+                 and counts.total is not None else _DASH)
+        status = view.status if view.status is not None else _DASH
+        queue = (view.queue_depth if view.queue_depth is not None
+                 else _DASH)
+        lines.append(("mon-card-resume", Text(
+            S.MON_DISPATCH_LINE.format(
+                status=status, done=done, total=total, queue=queue),
+            style="dim")))
+        for worker in view.workers:
+            index = worker.index if worker.index is not None else _DASH
+            gpu = worker.gpu if worker.gpu is not None else _DASH
+            if worker.in_flight is None:
+                lines.append(("mon-card-resume", Text(
+                    S.MON_DISPATCH_WORKER_IDLE.format(i=index, gpu=gpu),
+                    style="dim")))
+                continue
+            cell = worker.in_flight
+            row_text = S.MON_DISPATCH_WORKER_BUSY.format(
+                i=index, gpu=gpu,
+                model=(cell.model if cell.model is not None else _DASH),
+                task=(cell.task if cell.task is not None else _DASH),
+                seed=(cell.seed if cell.seed is not None else _DASH))
+            if cell.fraction is not None:
+                row_text += f" × frac_{cell.fraction}"
+            lines.append(("mon-card-resume", Text(row_text, style="dim")))
         return lines
 
     def _card_widget(self, card: _RunCard) -> ListItem:

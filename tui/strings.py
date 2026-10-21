@@ -1958,3 +1958,30 @@ MON_GPU_ROW = _t(
 MON_GPU_ABSENT = _t(
     "MON_GPU_ABSENT", "◌ nvidia-smi 未安装", "◌ nvidia-smi not installed")
 MON_GPU_NONE = _t("MON_GPU_NONE", "◌ 未检测到 GPU", "◌ no GPUs detected")
+# Phase 16 (16-02, TUI-03, D16-15): the dispatch rows on the Running
+# card (UI-SPEC Surface B) — consumed from tui/services/dispatch_state
+# .py (the tolerant frozen-v2 reader). MON_DISPATCH_LINE maps 1:1 to
+# the schema: status renders VERBATIM including unrecognized values
+# (the passthrough rule), done = counts.completed, total =
+# counts.total, queue = queue_depth. MON_DISPATCH_WORKER_BUSY is
+# DATA-FORWARD: the identical value registers for both languages (the
+# MON_GPU_ROW precedent — worker/GPU/⏵/seed_ stay verbatim); the
+# ` × frac_{fraction}` segment appends in CODE when non-null.
+# MON_DISPATCH_WORKER_IDLE reuses the ◌ queued glyph; the busy row
+# reuses ⏵ — no new glyph. MON_DISPATCH_STALE is the D16-08 marker:
+# the ⚠ glyph leads (NO_COLOR legibility) and the row renders ABOVE
+# the dispatch line while the rows stay (last-known-good).
+MON_DISPATCH_LINE = _t(
+    "MON_DISPATCH_LINE", "调度 {status} · 完成 {done}/{total} · 队列 {queue}",
+    "dispatch {status} · {done}/{total} done · queue {queue}")
+MON_DISPATCH_WORKER_BUSY = _t(
+    "MON_DISPATCH_WORKER_BUSY",
+    "worker {i} · GPU {gpu} · ⏵ {model} × {task} × seed_{seed}",
+    "worker {i} · GPU {gpu} · ⏵ {model} × {task} × seed_{seed}")
+MON_DISPATCH_WORKER_IDLE = _t(
+    "MON_DISPATCH_WORKER_IDLE", "worker {i} · GPU {gpu} · ◌ 空闲",
+    "worker {i} · GPU {gpu} · ◌ idle")
+MON_DISPATCH_STALE = _t(
+    "MON_DISPATCH_STALE",
+    "⚠ 调度状态过期（{age}s ≥ 60s）— 数据可能不是最新",
+    "⚠ dispatch state stale ({age}s >= 60s) — data may be outdated")

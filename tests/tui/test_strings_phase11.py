@@ -179,6 +179,13 @@ EXPECTED_MON_CONSTANTS = (
     # composed in code), the ONE absent shape every probe failure mode
     # shares (D16-02), and the explicit zero-GPU empty state (D16-04).
     "MON_GPU_TITLE", "MON_GPU_ROW", "MON_GPU_ABSENT", "MON_GPU_NONE",
+    # Phase 16 (16-02, TUI-03): the dispatch rows on the Running card —
+    # the dispatch line (schema 1:1, status verbatim), the busy worker
+    # row (data-forward, identical both languages, the fraction segment
+    # appends in code), the idle worker row, and the D16-08 stale
+    # marker rendered above the line with last-known-good retained.
+    "MON_DISPATCH_LINE", "MON_DISPATCH_WORKER_BUSY",
+    "MON_DISPATCH_WORKER_IDLE", "MON_DISPATCH_STALE",
 )
 
 #: The per-seed cell states in spec order, and their contract glyphs.

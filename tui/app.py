@@ -85,6 +85,7 @@ from tui.screens.about import AboutScreen
 from tui.screens.data_manager import DataManagerBackend, DataManagerScreen
 from tui.screens.env_check import EnvCheckScreen, EnvCheckServiceProtocol
 from tui.screens.monitor import (
+    DispatchStateReader,
     GpuProbeProvider,
     MonitorBackend,
     MonitorLauncherProtocol,
@@ -650,7 +651,8 @@ class DnallmMarkTui(App):
                  launcher_service: LauncherServiceProtocol | None = None,
                  monitor_service: MonitorServiceProtocol | None = None,
                  monitor_launcher: MonitorLauncherProtocol | None = None,
-                 gpu_probe_provider: GpuProbeProvider | None = None):
+                 gpu_probe_provider: GpuProbeProvider | None = None,
+                 dispatch_state_reader: DispatchStateReader | None = None):
         """Compose the console with injectable services.
 
         Args:
@@ -688,6 +690,14 @@ class DnallmMarkTui(App):
                 probe (D16-01); the value threads through EVERY
                 ``build_monitor_screen`` call (the 261018-08g
                 rebuild-per-navigation discipline).
+            dispatch_state_reader: optional override for the monitor
+                screen's dispatch-state reader (the 16-02 seam — the
+                Pilot lanes fabricate frozen DispatchStateView
+                dataclasses and 16-05's goldens thread fixture views).
+                None means the real tolerant frozen-v2 read of
+                ``{root}/dispatch_state.json`` (D16-06); threaded
+                through every ``build_monitor_screen`` call like the
+                probe seam.
         """
         super().__init__()
         self._env_check_service = env_check_service
@@ -710,6 +720,9 @@ class DnallmMarkTui(App):
         # The 16-01 GPU probe seam (None = the real nvidia-smi probe —
         # threaded into every monitor build below).
         self._gpu_probe_provider = gpu_probe_provider
+        # The 16-02 dispatch-state reader seam (None = the real
+        # tolerant frozen-v2 read — the same threading discipline).
+        self._dispatch_state_reader = dispatch_state_reader
         # 261018-08g (SOAK-1/F1): the monitor's SESSION state — ONE
         # shared MonitorSession constructed here and injected into
         # every MonitorScreen build, so attach state and the D-13
@@ -830,6 +843,7 @@ class DnallmMarkTui(App):
                               else self._launcher),
             session=self._monitor_session,
             gpu_probe_provider=self._gpu_probe_provider,
+            dispatch_state_reader=self._dispatch_state_reader,
         )
         return self._monitor_screen
 

@@ -60,6 +60,13 @@ from tui.screens.monitor import MonitorScreen
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.selection import PresetMenu, SelectionData
 from tui.services import registries as registries_service
+from tui.services.dispatch_state import (
+    DispatchCellKey,
+    DispatchCounts,
+    DispatchStateView,
+    DispatchWorker,
+    read_dispatch_state,
+)
 from tui.services.download_queue import merge_presence
 from tui.services.gpu_probe import GpuRow
 from tui.services.sweep_launcher import (
@@ -94,6 +101,10 @@ from tui.strings import (
     MON_ATTACHED_TOAST,
     MON_COL_SEED,
     MON_DETAIL_STEPS,
+    MON_DISPATCH_LINE,
+    MON_DISPATCH_STALE,
+    MON_DISPATCH_WORKER_BUSY,
+    MON_DISPATCH_WORKER_IDLE,
     MON_FAILURES_EMPTY,
     MON_GPU_ABSENT,
     MON_GPU_NONE,
@@ -549,12 +560,23 @@ def _absent_gpu_probe(timeout: float):
     return None  # noqa: RET501 — None IS the payload (the absent outcome)
 
 
-def _app(monitor=None, launcher=None, gpu=None):
+def _absent_dispatch_reader(root: str):
+    """The default dispatch-state fake (16-02): every root reads None —
+    no block renders, so every pre-16-02 pilot card stays
+    byte-identical (UI-SPEC B rule 5, the static/worker-root shape)."""
+    return None  # noqa: RET501 — None IS the payload (no block)
+
+
+def _app(monitor=None, launcher=None, gpu=None, dispatch=None):
     """The real app over the fake services (constructor injection).
 
     16-01: the gpu seam defaults to the absent fake so the whole
     existing suite stays subprocess-free and cross-machine
-    deterministic; the G-panel tests inject fabricated GpuRow tuples."""
+    deterministic; the G-panel tests inject fabricated GpuRow tuples.
+    16-02: the dispatch seam defaults to the None-returning fake (no
+    root carries dispatch_state.json — byte-identical cards); the
+    dispatch-rows tests inject fabricated DispatchStateView dataclasses
+    or the REAL reader over a tmp_path fixture root."""
     return DnallmMarkTui(
         env_check_service=_EnvCacheHitFake(),
         selection_service=_SelectionFake(),
@@ -564,6 +586,8 @@ def _app(monitor=None, launcher=None, gpu=None):
         monitor_launcher=(launcher if launcher is not None
                           else FakeMonitorLauncher()),
         gpu_probe_provider=(gpu if gpu is not None else _absent_gpu_probe),
+        dispatch_state_reader=(dispatch if dispatch is not None
+                               else _absent_dispatch_reader),
     )
 
 
@@ -6137,5 +6161,343 @@ async def test_gpu_panel_sentinel_reset_rerenders_on_remount():
         assert screen._gpu_sig is not None
 
 
+# =====================================================================
+# Phase 16 (16-02, TUI-03): the dispatch rows on the Running card
+# =====================================================================
 
 
+def _fabricated_dispatch_view(**overrides):
+    """One fabricated frozen DispatchStateView (UI-SPEC Goldens: plain
+    frozen dataclasses are trivially fakeable) — the running 2-worker
+    wireframe: 9/12 done, queue 0, worker 0 busy on the 5mC cell,
+    worker 1 idle. The invariant HOLDS by construction (9+1+1+0+1)."""
+    view = DispatchStateView(
+        run_id="run-x",
+        status="running",
+        started_at="2026-10-20T15:20:00+00:00",
+        updated_at="2026-10-20T15:21:10+00:00",
+        counts=DispatchCounts(total=12, completed=9, failed=1, skipped=1),
+        queue_depth=0,
+        workers=(
+            DispatchWorker(
+                index=0, gpu="0",
+                in_flight=DispatchCellKey(
+                    model="plant-dnabert-6mer",
+                    task="iDNA_ABF_datasets__5mC",
+                    seed=42, fraction=None),
+                cells=3, completed=2, failed=1),
+            DispatchWorker(
+                index=1, gpu="1", in_flight=None,
+                cells=3, completed=2, failed=0),
+        ),
+        failures=(),
+        state_mtime=1790000000.0,
+        stale=False,
+        malformed=False,
+        stale_age_s=5,
+    )
+    # the per-test override tail (typed kwargs in, dataclasses.replace
+    # out — the frozen-dataclass fabrication idiom)
+    from dataclasses import replace as _replace
+    return _replace(view, **overrides) if overrides else view
+
+
+def _live_root_monitor(root="/scans/finetuned"):
+    """One live-root fake monitor (the dispatch read target) — carrying
+    one cell row so the matrix body renders AFTER the dispatch block
+    (the A4 position pin needs a real body to sit above)."""
+    return FakeMonitorService(
+        scans=[ScanResult(sweeps=(
+            SweepSummary(root=Path(root), state=SWEEP_RUNNING,
+                         done=12, total=36, newest_mtime=3000.0),
+        ), watermarks={})],
+        stats={root: _stats(done=12, total=36)},
+        cells={root: (
+            _row("plant-dnabert-6mer", "iDNA_ABF_datasets__5mC",
+                 {42: CELL_RUNNING, 43: CELL_QUEUED}),)},
+    )
+
+
+async def test_dispatch_block_renders_line_and_worker_rows():
+    """16-02 Test 1 (UI-SPEC Surface B rules 2-3): a live root whose
+    frontier read returns a view renders the dispatch line (status
+    VERBATIM, done/total from counts, queue from queue_depth) plus one
+    busy and one idle worker row — through the frontier chain, under
+    the summary strip and above the matrix region (the A4 interleave:
+    strip, resume note, then dispatch block)."""
+    app = _app(monitor=_live_root_monitor(),
+               dispatch=lambda root: _fabricated_dispatch_view())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        lines = _card_texts(screen, "mon-card-resume")
+        assert MON_DISPATCH_LINE.format(
+            status="running", done=9, total=12, queue=0) in lines
+        assert MON_DISPATCH_WORKER_BUSY.format(
+            i=0, gpu="0", model="plant-dnabert-6mer",
+            task="iDNA_ABF_datasets__5mC", seed=42) in lines
+        assert MON_DISPATCH_WORKER_IDLE.format(i=1, gpu="1") in lines
+        assert len(lines) == 3, (
+            "no stale row (fresh view), no resume note (0 markers)")
+        # position: the card's Labels in DOM order — strip first, then
+        # the dispatch block, then the matrix body
+        card_labels = [
+            _plain(label.content) for label in
+            screen.query_one("#mon-cards", ListView).children[0]
+            .query(Label)]
+        assert card_labels[1] == MON_DISPATCH_LINE.format(
+            status="running", done=9, total=12, queue=0), (
+            "the dispatch line sits directly under the strip")
+        assert card_labels[4] != MON_DISPATCH_WORKER_IDLE.format(
+            i=1, gpu="1"), "the block ends before the matrix body"
+
+
+async def test_dispatch_worker_busy_row_appends_fraction_when_present():
+    """The busy row's fraction segment (UI-SPEC B rule 3): a non-null
+    fraction appends ` × frac_{fraction}` to the wording in code — the
+    curve-cell shape."""
+    view = _fabricated_dispatch_view(
+        workers=(
+            DispatchWorker(
+                index=0, gpu="0",
+                in_flight=DispatchCellKey(
+                    model="plant-dnabert-6mer",
+                    task="iDNA_ABF_datasets__5mC",
+                    seed=42, fraction=0.25),
+                cells=3, completed=2, failed=1),
+            _fabricated_dispatch_view().workers[1],
+        ))
+    app = _app(monitor=_live_root_monitor(),
+               dispatch=lambda root: view)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        lines = _card_texts(screen, "mon-card-resume")
+        assert (MON_DISPATCH_WORKER_BUSY.format(
+            i=0, gpu="0", model="plant-dnabert-6mer",
+            task="iDNA_ABF_datasets__5mC", seed=42)
+            + " × frac_0.25") in lines
+
+
+async def test_root_without_dispatch_state_renders_no_block():
+    """16-02 Test 2 (UI-SPEC B rule 5): a root whose read returns None
+    (no dispatch_state.json — the static/CLI sweep root and the
+    -mgpu-w* worker root) renders NO block and NO placeholder — the
+    card stays byte-identical to the pre-16-02 shape; the read itself
+    fired once for the live root (the frontier pass owns it)."""
+    calls = []
+
+    def reader(root):
+        calls.append(root)
+
+    app = _app(monitor=_live_root_monitor(), dispatch=reader)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert calls == ["/scans/finetuned"], (
+            "ONE read per live root per frontier pass — riding the "
+            "EXISTING mon-frontier worker, no new timer/group")
+        assert not screen.query(".mon-card-resume"), (
+            "absence renders no dispatch placeholder at all")
+
+
+async def test_stale_and_malformed_views_render_warning_row_above():
+    """16-02 Test 3 (D16-08 + UI-SPEC B rules 4/6): a stale view (mtime
+    beyond the 60s pin) AND a malformed view (snapshot-invariant
+    violation) each render the MON_DISPATCH_STALE warning row ABOVE the
+    dispatch line while the rows still render (last-known-good
+    retained) — the counts ride verbatim, never reconciled."""
+    for bad_view in (
+            _fabricated_dispatch_view(stale=True, stale_age_s=120),
+            _fabricated_dispatch_view(
+                malformed=True, stale_age_s=120,
+                counts=DispatchCounts(
+                    total=12, completed=8, failed=1, skipped=1))):
+        app = _app(monitor=_live_root_monitor(),
+                   dispatch=lambda root, _v=bad_view: _v)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_monitor(pilot, app)
+            screen = app.screen
+            screen._tick_frontier()
+            await _settle(pilot, app)
+            lines = _card_texts(screen, "mon-card-resume")
+            assert lines[0] == MON_DISPATCH_STALE.format(age=120), (
+                "the warning row renders ABOVE the dispatch line")
+            assert lines[1] == MON_DISPATCH_LINE.format(
+                status=bad_view.status,
+                done=bad_view.counts.completed,
+                total=bad_view.counts.total,
+                queue=bad_view.queue_depth), (
+                "the dispatch line still renders — last-known-good, "
+                "the counts VERBATIM (the malformed leg renders 8/12, "
+                "never a reconciled 9/12)")
+            assert len(lines) == 4, "the worker rows are retained"
+
+
+async def test_fresh_read_clears_the_stale_row():
+    """16-02 Test 4 (D16-08): the marker clears on the next fresh read
+    — the same root's next frontier pass carries a fresh view and the
+    warning row disappears while the dispatch line + worker rows
+    stay."""
+    state = {"view": _fabricated_dispatch_view(
+        stale=True, stale_age_s=120)}
+    app = _app(monitor=_live_root_monitor(),
+               dispatch=lambda root: state["view"])
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert _card_texts(screen, "mon-card-resume")[0] == (
+            MON_DISPATCH_STALE.format(age=120))
+        state["view"] = _fabricated_dispatch_view()
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        lines = _card_texts(screen, "mon-card-resume")
+        assert len(lines) == 3, "the stale row is gone on the fresh read"
+        assert MON_DISPATCH_LINE.format(
+            status="running", done=9, total=12, queue=0) in lines
+
+
+async def test_unrecognized_status_renders_verbatim():
+    """16-02 Test 5 (the passthrough rule): a status string outside the
+    schema enum renders RAW in the dispatch line — never translated to
+    a vocabulary word, never dropped."""
+    app = _app(monitor=_live_root_monitor(),
+               dispatch=lambda root: _fabricated_dispatch_view(
+                   status="pausing"))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        lines = _card_texts(screen, "mon-card-resume")
+        assert MON_DISPATCH_LINE.format(
+            status="pausing", done=9, total=12, queue=0) in lines
+
+
+async def test_worker_flip_keeps_cursor_identity_count_change_rebuilds():
+    """16-02 Test 6 (Pitfall 6, the f0x law): a dispatch card updating
+    VALUE-ONLY (a worker flipping busy to idle, counts moving — the
+    worker COUNT, has-block, and stale legs unchanged) refreshes the
+    existing Labels in place: the ListItem identity survives and the
+    ListView is never cleared. A worker-COUNT change rebuilds (the
+    structure signature's dispatch legs)."""
+    state = {"view": _fabricated_dispatch_view()}
+    app = _app(monitor=_live_root_monitor(),
+               dispatch=lambda root: state["view"])
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        cards_list = screen.query_one("#mon-cards", ListView)
+        item = cards_list.children[0]
+        busy_row = MON_DISPATCH_WORKER_BUSY.format(
+            i=0, gpu="0", model="plant-dnabert-6mer",
+            task="iDNA_ABF_datasets__5mC", seed=42)
+        assert busy_row in _card_texts(screen, "mon-card-resume")
+        clear_patcher, clear_spy = _spy(cards_list, "clear")
+        try:
+            # the value-only change: worker 0 goes idle, counts move
+            state["view"] = _fabricated_dispatch_view(
+                counts=DispatchCounts(
+                    total=12, completed=10, failed=1, skipped=1),
+                workers=(
+                    DispatchWorker(
+                        index=0, gpu="0", in_flight=None,
+                        cells=3, completed=3, failed=0),
+                    _fabricated_dispatch_view().workers[1],
+                ))
+            screen._tick_frontier()
+            await _settle(pilot, app)
+            assert clear_spy.call_count == 0, (
+                "a value-only dispatch change rides the in-place label "
+                "refresh — zero ListView churn")
+            assert cards_list.children[0] is item, (
+                "the ListItem identity survives the busy->idle flip")
+            lines = _card_texts(screen, "mon-card-resume")
+            assert busy_row not in lines, "the busy row became idle"
+            assert MON_DISPATCH_LINE.format(
+                status="running", done=10, total=12, queue=0) in lines
+        finally:
+            clear_patcher.stop()
+        # the STRUCTURE change: the worker count itself changes — the
+        # dispatch legs flip the structure signature and the rebuild
+        # path runs (a NEW ListItem under the same clamped index)
+        state["view"] = _fabricated_dispatch_view(
+            workers=(_fabricated_dispatch_view().workers[0],))
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        assert cards_list.children[0] is not item, (
+            "a worker-count change rebuilds the ListItem")
+        assert len([
+            line for line in _card_texts(screen, "mon-card-resume")
+            if line.startswith("worker")]) == 1, (
+            "one worker row renders for the one-worker view")
+
+
+async def test_dispatch_block_real_read_path_over_fixture_file(tmp_path):
+    """The REAL reader over a fixture file (the plan's real-read path):
+    the default service seam reads {root}/dispatch_state.json from
+    disk — a live root pointed at a tmp_path carrying a fresh v2
+    snapshot renders the dispatch block through the real tolerant read
+    (machine-independent: the fixture writes inline JSON, never a
+    machine path)."""
+    import json as _json
+
+    root = tmp_path / "finetuned-dispatch"
+    root.mkdir()
+    snapshot = {
+        "schema_version": 2,
+        "mode": "dispatch",
+        "run_id": "run-real",
+        "status": "running",
+        "started_at": "2026-10-20T15:20:00+00:00",
+        "updated_at": "2026-10-20T15:21:10+00:00",
+        "counts": {"total": 12, "completed": 9, "failed": 1,
+                   "skipped": 1},
+        "queue_depth": 0,
+        "workers": [
+            {"index": 0, "gpu": "0",
+             "in_flight": {"model": "plant-dnabert-6mer",
+                           "task": "iDNA_ABF_datasets__5mC",
+                           "seed": 42, "fraction": None},
+             "cells": 3, "completed": 2, "failed": 1},
+            {"index": 1, "gpu": "1", "in_flight": None,
+             "cells": 3, "completed": 2, "failed": 0},
+        ],
+        "failures": [],
+    }
+    (root / "dispatch_state.json").write_text(
+        _json.dumps(snapshot, indent=4), encoding="utf-8")
+    # the reader under test is the REAL service read (now defaults to
+    # the wall clock — the just-written fixture is fresh by mtime)
+    assert read_dispatch_state(root) is not None
+    monitor = FakeMonitorService(
+        scans=[ScanResult(sweeps=(
+            SweepSummary(root=root, state=SWEEP_RUNNING,
+                         done=12, total=36, newest_mtime=3000.0),
+        ), watermarks={})],
+        stats={str(root): _stats(done=12, total=36)},
+    )
+    app = _app(
+        monitor=monitor,
+        dispatch=monitor_screen_module._default_dispatch_state_reader)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_monitor(pilot, app)
+        screen = app.screen
+        screen._tick_frontier()
+        await _settle(pilot, app)
+        lines = _card_texts(screen, "mon-card-resume")
+        assert MON_DISPATCH_LINE.format(
+            status="running", done=9, total=12, queue=0) in lines
+        assert MON_DISPATCH_WORKER_BUSY.format(
+            i=0, gpu="0", model="plant-dnabert-6mer",
+            task="iDNA_ABF_datasets__5mC", seed=42) in lines
