@@ -5026,20 +5026,23 @@ class MonitorScreen(Screen):
         misfire-proof key the slot-4 gate carries)."""
         if self.app.below_minimum_grid:
             return
-        # EHC-3 (261015-ehc ruling 3): pre-check the single-GPU
-        # serialization guard BEFORE pushing the confirm (the tolerant
+        # The capacity pre-check (261015-ehc EHC-3, replaced in place
+        # by 16-03 D16-10) BEFORE pushing the confirm (the tolerant
         # getattr seam — a fake without the method never blocks, the
         # 11-03 precedent; the service's own stage-0 guard is the
-        # structural backstop) — y is never reached on a busy
-        # single-GPU machine.
+        # structural backstop; a ZERO-ARG read — a re-run is a
+        # one-worker plain launch, Pitfall 3) — y is never reached on
+        # a refused machine.
         blocked_getter = getattr(
             self._launcher, "single_gpu_launch_blocked", None)
         blocked = (blocked_getter()
                    if blocked_getter is not None else None)
         if blocked:
+            roots = ", ".join(blocked.roots)
+            workers = blocked.requested_workers
             self.app.notify(
-                S.LNC_SINGLE_GPU_BLOCKED.format(
-                    roots=", ".join(blocked)),
+                S.LNC_SINGLE_GPU_BLOCKED.format(roots=roots, workers=workers,
+                                                n=blocked.gpu_count),
                 severity="error")
             return
         seeds = derive_rerun_seeds(
@@ -5201,11 +5204,17 @@ class MonitorScreen(Screen):
                 return
             if any(code == sweep_launcher_module.PROBLEM_SINGLE_GPU
                    for code, _value in outcome.problems):
-                roots = "; ".join(
-                    str(value) for code, value in outcome.problems
+                # 16-03 (D16-10): the detail is the structured
+                # GpuCapacityBlock — format the amended copy from its
+                # fields, never compute.
+                block = next(
+                    value for code, value in outcome.problems
                     if code == sweep_launcher_module.PROBLEM_SINGLE_GPU)
+                roots = "; ".join(block.roots)
+                workers = block.requested_workers
                 self.app.notify(
-                    S.LNC_SINGLE_GPU_BLOCKED.format(roots=roots),
+                    S.LNC_SINGLE_GPU_BLOCKED.format(roots=roots, workers=workers,
+                                                    n=block.gpu_count),
                     severity="error")
                 return
             detail = "; ".join(
@@ -5299,17 +5308,21 @@ class MonitorScreen(Screen):
             return
         if self.app.below_minimum_grid:
             return
-        # EHC-3 (the request_rerun mirror): pre-check the single-GPU
-        # serialization guard BEFORE pushing the confirm — y is never
-        # reached on a busy single-GPU machine
+        # The capacity pre-check (the request_rerun mirror; 261015-ehc
+        # EHC-3 replaced in place by 16-03 D16-10) BEFORE pushing the
+        # confirm — y is never reached on a refused machine (a
+        # ZERO-ARG read, Pitfall 3 — a resume is a one-worker plain
+        # launch)
         blocked_getter = getattr(
             self._launcher, "single_gpu_launch_blocked", None)
         blocked = (blocked_getter()
                    if blocked_getter is not None else None)
         if blocked:
+            roots = ", ".join(blocked.roots)
+            workers = blocked.requested_workers
             self.app.notify(
-                S.LNC_SINGLE_GPU_BLOCKED.format(
-                    roots=", ".join(blocked)),
+                S.LNC_SINGLE_GPU_BLOCKED.format(roots=roots, workers=workers,
+                                                n=blocked.gpu_count),
                 severity="error")
             return
         pairs = len(message.pairs)

@@ -54,6 +54,7 @@ from tui.services.run_config import PreviewResult, RunSpec
 from tui.services.sweep_launcher import (
     EnvPreflight,
     GateSummary,
+    GpuCapacityBlock,
     LaunchOutcome,
 )
 from tui.strings import (
@@ -319,7 +320,10 @@ class FakeLauncherService:
     def tee_path_for(self, root):
         return None
 
-    def single_gpu_launch_blocked(self):
+    def single_gpu_launch_blocked(self, requested_workers=1):
+        """16-03 (D16-10): the multi-GPU capacity seam — the requested
+        workers ride the slot-4 gate's threading (default 1 keeps the
+        zero-arg monitor reads valid, Pitfall 3)."""
         return self._single_gpu_blocked
 
 
@@ -1013,14 +1017,17 @@ async def test_gate_happy_path_confirms_and_launches():
 
 
 async def test_gate_single_gpu_busy_refuses_naming_the_running_root():
-    """EHC-3 (261015-ehc ruling 3): with the single-GPU guard seam
-    reporting live roots, the gate refuses at the problems stage naming
-    the running root (the bilingual copy) — BEFORE the env preflight,
-    any confirm, or the launch; the y key is never even reachable."""
+    """The capacity stage (16-03, D16-10 — the EHC-3 stage replaced in
+    place): with the capacity seam reporting a structured block, the
+    gate refuses at the problems stage rendering the AMENDED bilingual
+    copy naming the running root AND the counts (workers + gpu count)
+    — BEFORE the env preflight, any confirm, or the launch; the y key
+    is never even reachable."""
     run_service = FakeRunConfigService(spec=RunSpec(
         models=("model-a",), tasks=("task-1",)))
-    launcher = FakeLauncherService(
-        single_gpu_blocked=("/repo/finetuned-live",))
+    launcher = FakeLauncherService(single_gpu_blocked=GpuCapacityBlock(
+        roots=("/repo/finetuned-live",), requested_workers=1,
+        gpu_count=1))
     app = _app(run_service=run_service, launcher=launcher)
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_run_config(pilot, app)
@@ -1029,15 +1036,18 @@ async def test_gate_single_gpu_busy_refuses_naming_the_running_root():
         from tui.screens.run_config import ProblemsModal
 
         assert isinstance(app.screen, ProblemsModal), (
-            "the single-GPU pre-check blocks before any confirm"
+            "the capacity pre-check blocks before any confirm"
         )
         log = app.screen.query_one("#cfg-problems-log")
         joined = "\n".join(line.text for line in log.lines)
         from tui.strings import LNC_SINGLE_GPU_BLOCKED
 
-        assert LNC_SINGLE_GPU_BLOCKED.format(
-            roots="/repo/finetuned-live") in joined.replace("\n", ""), (
-            "the refusal renders the bilingual copy naming the root"
+        assert LNC_SINGLE_GPU_BLOCKED.format(workers=1,
+                                             roots="/repo/finetuned-live",
+                                             n=1) in (
+            joined.replace("\n", "")), (
+            "the refusal renders the amended bilingual copy naming the "
+            "root AND the counts"
         )
         assert launcher.env_calls == 0, "blocked before the env preflight"
         assert launcher.confirm_calls == [], "blocked before the confirm"

@@ -45,7 +45,7 @@ registry keys, argv, reasons, and paths stay data, verbatim.
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
 
 from rich.text import Text
 from textual import work
@@ -89,6 +89,7 @@ from tui.services.sweep_launcher import (
     EnvPreflight,
     GateRefusal,
     GateSummary,
+    GpuCapacityBlock,
     LaunchOutcome,
 )
 
@@ -380,14 +381,18 @@ class LauncherBackend:
     def tee_path_for(self, root: str) -> "str | None":
         return self._launcher.tee_path_for(root)
 
-    def single_gpu_launch_blocked(self) -> "tuple[str, ...] | None":
-        """The EHC-3 pre-check seam over the shared launcher (the
+    def single_gpu_launch_blocked(
+            self, requested_workers: int = 1) -> "object | None":
+        """The capacity pre-check seam over the shared launcher (the
         tolerant getattr both directions: the wrapped launcher may
         predate the method — a fake or older double reads as never
-        blocked, the 11-03 precedent)."""
-        blocked = getattr(
+        blocked, the 11-03 precedent). 16-03 (D16-10): threads the
+        spec's requested workers (default 1 keeps the zero-arg
+        monitor-shaped reads valid, Pitfall 3)."""
+        blocked_getter = getattr(
             self._launcher, "single_gpu_launch_blocked", None)
-        return blocked() if blocked is not None else None
+        return (blocked_getter(requested_workers)
+                if blocked_getter is not None else None)
 
 
 def _problem_line(code: str, detail: object) -> str:
@@ -410,8 +415,14 @@ def _problem_line(code: str, detail: object) -> str:
     if code == "output_root_invalid":
         return S.CFG_OUTPUT_ROOT_PROBLEM.format(value=detail)
     if code == "single_gpu_busy":
-        # EHC-3 (261015-ehc): {roots} carries the joined live roots
-        return S.LNC_SINGLE_GPU_BLOCKED.format(roots=detail)
+        # 16-03 (D16-10): the detail is the structured GpuCapacityBlock
+        # — the screen formats the amended copy from its fields (roots
+        # + requested workers + gpu count), never computes.
+        block = cast(GpuCapacityBlock, detail)
+        roots = ", ".join(block.roots)
+        workers = block.requested_workers
+        return S.LNC_SINGLE_GPU_BLOCKED.format(roots=roots, workers=workers,
+                                               n=block.gpu_count)
     return f"{code}: {detail}"
 
 
@@ -2039,22 +2050,22 @@ class RunConfigScreen(Screen):
                 self.app.push_screen(ProblemsModal(
                     (("live_root", root_key),)))
             return
-        # EHC-3 (261015-ehc ruling 3): the single-GPU serialization
-        # pre-check — beside the CR-02 live-root stage, BEFORE any env
-        # preflight or confirm: on an effective-GPU-count == 1 machine
-        # with a live sweep registered, the gate refuses naming the
-        # running root(s) (the tolerant getattr seam — a fake without
-        # the method never blocks, the 11-03 precedent; the service's
-        # own stage-0 guard is the structural backstop).
+        # The capacity stage (261015-ehc EHC-3, replaced in place by
+        # 16-03 D16-10): beside the CR-02 live-root stage, BEFORE any
+        # env preflight or confirm — multi-GPU capacity arithmetic
+        # over the composed spec's requested workers refuses naming
+        # the live root(s) AND the counts (the tolerant getattr seam —
+        # a fake without the method never blocks, the 11-03 precedent;
+        # the service's own stage-0 guard is the structural backstop).
         blocked_getter = getattr(
             self._launcher, "single_gpu_launch_blocked", None)
-        blocked = (blocked_getter()
+        blocked = (blocked_getter(requested_workers=spec.workers)
                    if blocked_getter is not None else None)
         if blocked:
             self._gate_active = False
             if not self.app.below_minimum_grid:
                 self.app.push_screen(ProblemsModal(
-                    (("single_gpu_busy", ", ".join(blocked)),)))
+                    (("single_gpu_busy", blocked),)))
             return
         self._gate_stage_id += 1
         self._run_env_preflight(self._gate_stage_id)

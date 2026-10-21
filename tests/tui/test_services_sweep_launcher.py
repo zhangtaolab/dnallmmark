@@ -621,7 +621,7 @@ class RunConfigDouble:
     """
 
     def __init__(self, preview_result=None, official=None, full_e2x=False,
-                 argv=None):
+                 argv=None, dispatch_argv=None):
         self.preview_result = (
             preview_result if preview_result is not None
             else run_config.PreviewResult(
@@ -634,10 +634,14 @@ class RunConfigDouble:
                 frozenset({"m"}), frozenset({"t"}), None))
         self.full_e2x = full_e2x
         self.argv = argv if argv is not None else ["py", "run_sweep.py"]
+        # 16-03: the dispatch composer seam — every launch_spec spawn
+        # routes here now (UI-SPEC auto-default #9); None reuses argv.
+        self.dispatch_argv = dispatch_argv
         self.preview_calls = 0
         self.official_calls = 0
         self.e2x_calls = 0
         self.compose_calls = 0
+        self.dispatch_compose_calls = 0
 
     def preview(self, spec, registry_dir=None):
         self.preview_calls += 1
@@ -666,6 +670,11 @@ class RunConfigDouble:
     def compose_argv(self, spec):
         self.compose_calls += 1
         return list(self.argv)
+
+    def compose_dispatch_argv(self, spec):
+        self.dispatch_compose_calls += 1
+        return list(self.dispatch_argv
+                    if self.dispatch_argv is not None else self.argv)
 
 
 def gate_spec(tmp_path, **kwargs):
@@ -948,7 +957,7 @@ def test_launch_spec_e2x_matching_phrase_spawns(monkeypatch, tmp_path):
         spawner=spawner, clock=FixedClock(CLOCK_MOMENT))
 
     assert outcome.spawned is True
-    assert double.compose_calls == 1
+    assert double.dispatch_compose_calls == 1
     argv, kwargs = single_call(spawner)
     assert argv == ["py", "run_sweep.py", "--models", "m"]
     assert kwargs["start_new_session"] is True
@@ -958,7 +967,10 @@ def test_launch_spec_non_e2x_without_phrase_spawns_over_real_module(
         monkeypatch, tmp_path):
     """A small non-E2' spec needs NO phrase and launches over the REAL
     run_config verdict chain (preview -> official_keys -> is_full_e2x
-    -> compose_argv)."""
+    -> compose_dispatch_argv — 16-03 routing: every slot-4 launch
+    composes run_sweep_shard --mode dispatch, UI-SPEC auto-default #9;
+    the argv is consumed VERBATIM and the spawn key still rides
+    rc.resolve_dirs(spec).output_root_abs, the WR-01 root-basis rule)."""
     pin_state_dir(monkeypatch, tmp_path)
     launcher = sweep_launcher.SweepLauncher()
     spec = run_config.RunSpec(
@@ -971,7 +983,14 @@ def test_launch_spec_non_e2x_without_phrase_spawns_over_real_module(
 
     assert outcome.spawned is True
     argv, kwargs = single_call(spawner)
-    assert argv == run_config.compose_argv(spec)   # consumed VERBATIM
+    assert argv == run_config.compose_dispatch_argv(spec), (
+        "the dispatch composer's argv is consumed VERBATIM"
+    )
+    assert any(Path(element).name == "run_sweep_shard.py"
+               for element in argv), (
+        "every slot-4 launch targets the shard orchestrator"
+    )
+    assert argv[argv.index("--mode") + 1] == "dispatch"
     assert kwargs["cwd"] == str(REPO_ROOT / "pipeline")
     assert launcher.live_sweeps() == (str((tmp_path / "out").resolve()),)
 
@@ -1357,25 +1376,44 @@ def test_effective_gpu_count_lazy_torch_reads_device_count(monkeypatch):
     assert sweep_launcher.effective_gpu_count() == 1
 
 
-def _live_single_gpu_launcher(monkeypatch, tmp_path, gpu_count=1):
+def _live_single_gpu_launcher(monkeypatch, tmp_path, gpu_count=1,
+                              argv=None):
     """A launcher pinned at ``gpu_count`` with ONE live registry entry
-    (a never-dying fake Popen over a tmp output root)."""
+    (a never-dying fake Popen over a tmp output root). ``argv`` seeds
+    the entry's verbatim launch argv (16-03: the capacity demand
+    derives from it — a run_sweep_shard argv with --workers N demands
+    N GPUs; the default plain run_sweep argv demands 1)."""
     pin_state_dir(monkeypatch, tmp_path)
     launcher = sweep_launcher.SweepLauncher(gpu_count=gpu_count)
     seeded = FakeSpawner(FakeSweepPopen(poll_returns=(None,)))
     root = tmp_path / "live-out"
-    outcome = launcher._spawn(["py", "run_sweep.py"], root, spawner=seeded)
+    outcome = launcher._spawn(
+        argv if argv is not None else ["py", "run_sweep.py"],
+        root, spawner=seeded)
     assert outcome.spawned is True
     return launcher, str(root.resolve())
 
 
+def _shard_entry_argv(workers=1, mode="dispatch"):
+    """A verbatim run_sweep_shard launch argv for a live registry
+    entry (16-03: either mode counts — the demand parse keys on the
+    script NAME and the --workers integer, never --mode)."""
+    return ["py", "pipeline/run_sweep_shard.py",
+            "--mode", mode,
+            "--workers", str(workers),
+            "--models", "m",
+            "--output-root", "/tmp/live-root",
+            "--seeds", "42"]
+
+
 def test_single_gpu_busy_refuses_launch_spec_before_every_stage(
         monkeypatch, tmp_path):
-    """EHC-3 call-count proof (the LNC-03 evidence style): on
-    gpu_count == 1 with a live sweep, launch_spec refuses at the
-    single_gpu stage BEFORE any preview/official-keys/phrase stage —
-    the run_config double's counters stay ZERO and the spawner is
-    provably never called."""
+    """The EHC-3 subsumption case under 16-03 semantics (D16-10, Open
+    Q1 (a)): gpu_count 1 with one live PLAIN run_sweep entry (demand
+    1) and requested 1 refuses — 1 + 1 > 1 — at the single_gpu stage
+    BEFORE any preview/official-keys/phrase stage (call-count proof,
+    the LNC-03 evidence style); the structured GpuCapacityBlock detail
+    carries the live root AND the counts."""
     launcher, root = _live_single_gpu_launcher(monkeypatch, tmp_path)
     double = RunConfigDouble()
     spawner = FakeSpawner()
@@ -1388,12 +1426,138 @@ def test_single_gpu_busy_refuses_launch_spec_before_every_stage(
     assert result.stage == sweep_launcher.REFUSAL_STAGE_SINGLE_GPU
     code, detail = result.problems[0]
     assert code == sweep_launcher.PROBLEM_SINGLE_GPU
-    assert root in str(detail), "the refusal names the running root"
+    assert isinstance(detail, sweep_launcher.GpuCapacityBlock)
+    assert root in detail.roots, "the refusal names the running root"
+    assert detail.requested_workers == 1
+    assert detail.gpu_count == 1
     assert double.preview_calls == 0, "refused BEFORE the preview stage"
     assert double.official_calls == 0, "refused BEFORE the keys stage"
     assert double.e2x_calls == 0, "refused BEFORE the E2' predicate"
     assert double.compose_calls == 0
+    assert double.dispatch_compose_calls == 0
     assert spawner.calls == [], "the spawner is provably never called"
+
+
+# ===== 16-03 (TUI-02, D16-10): the multi-GPU capacity family =====
+
+
+def test_within_capacity_dispatch_launch_admits(monkeypatch, tmp_path):
+    """The sanctioned N-GPU shape: gpu_count 2 with one live dispatch
+    entry demanding 1 (--workers 1) admits a requested-1 launch —
+    1 + 1 <= 2 — and the spawner runs (the happy-path fixture shape)."""
+    launcher, _root = _live_single_gpu_launcher(
+        monkeypatch, tmp_path, gpu_count=2, argv=_shard_entry_argv(1))
+    double = RunConfigDouble()
+    spawner = FakeSpawner()
+
+    result = launcher.launch_spec(
+        gate_spec(tmp_path), run_config_service=double, spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.LaunchOutcome)
+    assert result.spawned is True
+    assert len(spawner.calls) == 1
+
+
+def test_over_capacity_dispatch_refuses_naming_roots_and_counts(
+        monkeypatch, tmp_path):
+    """gpu_count 2, one live dispatch entry demanding 1, requested 2:
+    1 + 2 > 2 refuses at the single_gpu stage BEFORE preview/keys/
+    phrase — the structured detail carries the live root, the
+    requested 2, and the gpu count 2 (the amended LNC copy's numbers,
+    computed service-side)."""
+    launcher, root = _live_single_gpu_launcher(
+        monkeypatch, tmp_path, gpu_count=2, argv=_shard_entry_argv(1))
+    double = RunConfigDouble()
+    spawner = FakeSpawner()
+
+    result = launcher.launch_spec(
+        gate_spec(tmp_path, workers=2), phrase=None,
+        run_config_service=double, spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.GateRefusal)
+    assert result.stage == sweep_launcher.REFUSAL_STAGE_SINGLE_GPU
+    detail = result.problems[0][1]
+    assert isinstance(detail, sweep_launcher.GpuCapacityBlock)
+    assert detail.roots == (root,)
+    assert detail.requested_workers == 2
+    assert detail.gpu_count == 2
+    assert double.preview_calls == 0
+    assert double.official_calls == 0
+    assert double.e2x_calls == 0
+    assert double.dispatch_compose_calls == 0
+    assert spawner.calls == [], "the spawner is provably never called"
+
+
+def test_live_static_shard_demand_counts(monkeypatch, tmp_path):
+    """A live STATIC shard entry whose argv carries --workers 2
+    demands 2 GPUs (either mode counts — the demand parse keys on the
+    script name, never --mode): 2 + 1 > 2 refuses a requested-1
+    launch."""
+    launcher, _root = _live_single_gpu_launcher(
+        monkeypatch, tmp_path, gpu_count=2,
+        argv=_shard_entry_argv(2, mode="static"))
+    double = RunConfigDouble()
+    spawner = FakeSpawner()
+
+    result = launcher.launch_spec(
+        gate_spec(tmp_path), run_config_service=double, spawner=spawner)
+
+    assert isinstance(result, sweep_launcher.GateRefusal)
+    assert result.stage == sweep_launcher.REFUSAL_STAGE_SINGLE_GPU
+    detail = result.problems[0][1]
+    assert detail.requested_workers == 1
+    assert detail.gpu_count == 2
+    assert spawner.calls == []
+
+
+def test_shard_entry_without_workers_flag_demands_one(
+        monkeypatch, tmp_path):
+    """A shard argv WITHOUT the --workers flag demands 1 (the CLI's
+    own default mirrors into the demand arithmetic — the flag-absent
+    default, never a guess)."""
+    launcher = sweep_launcher.SweepLauncher(gpu_count=1)
+    argv = ["py", "run_sweep_shard.py", "--mode", "dispatch",
+            "--models", "m", "--seeds", "42"]
+    assert launcher._entry_demand_for_argv(tuple(argv)) == 1
+
+
+def test_single_gpu_launch_blocked_zero_arg_reads_demand_only(
+        monkeypatch, tmp_path):
+    """Pitfall 3: the predicate stays ZERO-ARG-CALLABLE (the three
+    tolerant-getattr pre-check sites) — a zero-arg read on a count-1
+    machine with a live plain entry blocks with requested defaulting
+    1."""
+    launcher, root = _live_single_gpu_launcher(monkeypatch, tmp_path)
+
+    blocked = launcher.single_gpu_launch_blocked()
+
+    assert isinstance(blocked, sweep_launcher.GpuCapacityBlock)
+    assert blocked.roots == (root,)
+    assert blocked.requested_workers == 1
+    assert blocked.gpu_count == 1
+
+
+def test_capacity_predicate_never_reads_proc(monkeypatch, tmp_path):
+    """T-16-06 / Pitfall 4: the capacity predicate is REGISTRY-ONLY —
+    ``probe_cli_sweeps`` (the DISPLAY-ONLY /proc evidence source) is
+    never consulted on the gate path; widening the predicate to /proc
+    would need a maintainer ruling, and this pin fails the moment it
+    happens silently."""
+    launcher, _root = _live_single_gpu_launcher(monkeypatch, tmp_path)
+    calls = []
+
+    def _no_probe(proc_root="/proc"):
+        calls.append(proc_root)
+        return {}
+
+    monkeypatch.setattr(sweep_launcher, "probe_cli_sweeps", _no_probe)
+
+    blocked = launcher.single_gpu_launch_blocked()
+
+    assert isinstance(blocked, sweep_launcher.GpuCapacityBlock)
+    assert calls == [], (
+        "the predicate reads the launcher registry only — never /proc"
+    )
 
 
 def test_single_gpu_busy_refuses_launch_from_failures_first(

@@ -274,6 +274,30 @@ class EnvPreflight:
 
 
 @dataclass(frozen=True)
+class GpuCapacityBlock:
+    """The multi-GPU capacity refusal's structured detail (16-03,
+    D16-10 — resolves Pitfall 2's open question: the NUMBERS travel
+    service-side and the screens only format).
+
+    Returned by ``single_gpu_launch_blocked`` exactly when the launch
+    must refuse; truthy by construction (the predicate returns None
+    when it admits). Renders through the amended
+    ``LNC_SINGLE_GPU_BLOCKED`` copy — the screens read these fields,
+    never compute.
+
+    Attributes:
+        roots: the live registry roots in registry order (sorted).
+        requested_workers: the launch's requested worker count.
+        gpu_count: the machine's effective GPU count the arithmetic
+            refused against.
+    """
+
+    roots: tuple[str, ...]
+    requested_workers: int
+    gpu_count: int
+
+
+@dataclass(frozen=True)
 class GateSummary:
     """The confirm-gate's machine summary — every number recomputed
     FRESH by ``gate_confirm_data``, never read from screen state
@@ -495,6 +519,12 @@ def gate_confirm_data(spec, run_config_service=None):
 #: substring, so ``not_run_sweep.py`` never matches).
 _RUN_SWEEP_SCRIPT_NAME = "run_sweep.py"
 
+#: The shard orchestrator's script name (16-03, D16-10): the capacity
+#: predicate's demand parse keys on it — a live argv running
+#: run_sweep_shard.py (either mode) demands its parsed --workers
+#: integer; the same Path-name comparison discipline as above.
+_RUN_SWEEP_SHARD_SCRIPT_NAME = "run_sweep_shard.py"
+
 
 def _iter_cli_sweeps(proc_root="/proc"):
     """The shared /proc walk behind both CLI probes (261020-9vh — the
@@ -703,6 +733,10 @@ class SweepLauncher:
         # live_sweep_matrices reads) — keyed by the argv tuple (see
         # _plan_for); dead entries' rows persist harmlessly.
         self._plan_cache: dict[tuple[str, ...], object] = {}
+        # 16-03 (D16-10): the per-root GPU-demand cache behind the
+        # capacity predicate (the _plan_cache per-argv precedent — a
+        # live entry's argv is immutable, so one parse per root).
+        self._demand_cache: dict[str, int] = {}
 
     # ===== The spawn core (D-06/D-10) =====
 
@@ -822,28 +856,96 @@ class SweepLauncher:
         return LaunchOutcome(
             spawned=True, root=root, tee_path=str(tee_path), error=None)
 
-    # ===== The gated launch paths (D-07 / D-11 / EHC-3) =====
+    # ===== The gated launch paths (D-07 / D-11 / EHC-3 -> 16-03) =====
 
-    def single_gpu_launch_blocked(self):
-        """The EHC-3 single-GPU serialization predicate.
+    def _entry_demand_for_argv(self, argv) -> int:
+        """One argv's GPU DEMAND (16-03, D16-10 — registry-only
+        arithmetic, Pitfall 4): an argv running run_sweep_shard.py
+        (EITHER mode — static LPT workers and the dispatcher both pin
+        one GPU per worker) demands the integer after ``--workers``
+        (default 1 when the flag is absent — the CLI's own default;
+        parse failures fail SAFE at demand 1, never a crash and never
+        an over-admission through a fabricated count); every other
+        argv (a plain run_sweep launch) demands 1.
+        """
+        elements = [str(element) for element in argv]
+        if not any(Path(element).name == _RUN_SWEEP_SHARD_SCRIPT_NAME
+                   for element in elements):
+            return 1
+        demand = 1
+        for index in range(len(elements) - 1):
+            if elements[index] == "--workers":
+                try:
+                    demand = int(elements[index + 1])
+                except ValueError:
+                    demand = 1
+                break
+        return max(demand, 1)
 
-        True-blocking (returns the live roots) exactly when the
-        EFFECTIVE GPU count is 1 AND at least one sweep is live in the
-        registry: on a single-GPU machine a second concurrent sweep
-        would contend for the one GPU. Count >= 2 (multi-GPU) and
-        count 0 (torch/CUDA unavailable — the ruling's letter)
-        are unrestricted; an idle registry is unrestricted.
+    def _entry_demand(self, root: str) -> int:
+        """One LIVE registry entry's GPU demand — its verbatim
+        ``LiveSweep.argv`` parsed through ``_entry_demand_for_argv``
+        behind the per-root cache (argv is immutable per entry, the
+        _plan_cache precedent). An unknown/dead root demands 1 (the
+        fail-safe)."""
+        entry = self._live.get(root)
+        if entry is None:
+            return 1
+        cached = self._demand_cache.get(root)
+        if cached is None:
+            cached = self._entry_demand_for_argv(entry["meta"].argv)
+            self._demand_cache[root] = cached
+        return cached
+
+    def single_gpu_launch_blocked(self, requested_workers: int = 1):
+        """The multi-GPU capacity predicate (16-03, D16-10 — the EHC-3
+        stage-0 semantics replaced in place; the NAME, the stage
+        position, and the ZERO-ARG-CALLABLE signature are preserved,
+        Pitfall 3).
+
+        Registry-only arithmetic over the machine's EFFECTIVE GPU
+        count (``self._gpu_count`` pin, else the UNCHANGED
+        ``effective_gpu_count()`` — WORLD_SIZE > lazy torch > 0):
+
+        - count == 0 (torch/CUDA unavailable) admits UNCONDITIONALLY
+          — the EHC-3 letter carried over;
+        - otherwise the launch refuses iff
+          ``sum(per-entry demand) + requested_workers > count`` where
+          a live entry's demand is its argv's parsed ``--workers``
+          when it runs ``run_sweep_shard.py`` (either mode) else 1 —
+          D16-10's sanctioned shape: N GPUs -> N concurrent cells. A
+          live plain entry on a count-1 machine is SUBSUMED (1 + 1 >
+          1) — the EHC-3 behavior preserved by the arithmetic; an idle
+          registry admits whenever the request alone fits.
+
+        BOUNDARY (Pitfall 4 / T-16-06): the predicate reads the
+        launcher REGISTRY exclusively — ``live_sweeps()`` and the
+        entries' stored argv. It NEVER reads /proc;
+        ``probe_cli_sweeps`` stays pinned DISPLAY-ONLY (widening
+        needs a maintainer ruling).
+
+        Args:
+            requested_workers: the launch's requested worker count
+                (default 1 — the zero-arg tolerant-getattr pre-check
+                sites read demand-only).
 
         Returns:
-            tuple[str, ...] | None: the live output roots when the
-            launch must refuse, else None.
+            GpuCapacityBlock | None: the structured refusal detail
+            (roots, requested_workers, gpu_count) when the launch
+            must refuse, else None.
         """
         count = (self._gpu_count if self._gpu_count is not None
                  else effective_gpu_count())
-        if count != 1:
+        if count == 0:
             return None
         live = self.live_sweeps()
-        return live if live else None
+        demand = sum(self._entry_demand(root) for root in live)
+        if demand + requested_workers <= count:
+            return None
+        return GpuCapacityBlock(
+            roots=live,
+            requested_workers=requested_workers,
+            gpu_count=count)
 
     def launch_spec(self, spec, phrase=None, run_config_service=None,
                     spawner=None, clock=None):
@@ -853,10 +955,11 @@ class SweepLauncher:
         Refusal order — each refusal returns BEFORE the spawner is ever
         consulted (proven by call counts in the tier-1 suite):
 
-        0. the EHC-3 single-GPU serialization guard (a live sweep on an
-           effective-GPU-count == 1 machine refuses FIRST — before the
-           operator is asked for any preview or E2' phrase) at stage
-           ``"single_gpu"``;
+        0. the multi-GPU capacity guard (16-03, D16-10 — the EHC-3
+           stage replaced in place; registry-only demand arithmetic
+           over the spec's requested workers refuses FIRST — before
+           the operator is asked for any preview or E2' phrase) at
+           stage ``"single_gpu"``;
         1. a FRESH preview recompute (never the screen's cached value —
            T-11-03-02); any problem refuses at stage ``"problems"``;
         2. the official-keys reference; a diagnostic (fail-closed)
@@ -895,11 +998,12 @@ class SweepLauncher:
             LaunchOutcome | GateRefusal: the spawn outcome, or the
             refusal (the spawner provably never called).
         """
-        blocked = self.single_gpu_launch_blocked()
+        blocked = self.single_gpu_launch_blocked(
+            requested_workers=getattr(spec, "workers", 1))
         if blocked is not None:
             return GateRefusal(
                 stage=REFUSAL_STAGE_SINGLE_GPU,
-                problems=((PROBLEM_SINGLE_GPU, ", ".join(blocked)),))
+                problems=((PROBLEM_SINGLE_GPU, blocked),))
         rc = _run_config_service(run_config_service)
         preview_result = rc.preview(spec)
         if preview_result.problems:
@@ -916,8 +1020,14 @@ class SweepLauncher:
             return GateRefusal(
                 stage=REFUSAL_STAGE_PHRASE,
                 expected=rc.expected_phrase(spec.output_root))
+        # 16-03 routing (UI-SPEC auto-default #9): every slot-4 launch
+        # composes the frozen DISPATCH argv — run_sweep_shard.py
+        # --mode dispatch --workers N; the spawn key still rides
+        # rc.resolve_dirs(spec).output_root_abs (the WR-01 root-basis
+        # rule, unchanged).
         return self._spawn(
-            rc.compose_argv(spec), rc.resolve_dirs(spec).output_root_abs,
+            rc.compose_dispatch_argv(spec),
+            rc.resolve_dirs(spec).output_root_abs,
             spawner=spawner, clock=clock)
 
     def launch_argv(self, argv, output_root, spawner=None, clock=None):
@@ -1051,7 +1161,7 @@ class SweepLauncher:
         if blocked is not None:
             return GateRefusal(
                 stage=REFUSAL_STAGE_SINGLE_GPU,
-                problems=((PROBLEM_SINGLE_GPU, ", ".join(blocked)),))
+                problems=((PROBLEM_SINGLE_GPU, blocked),))
         rc = _run_config_service(run_config_service)
         refusal = self._from_failures_refusal(
             rc, failures_path, seeds, output_root,

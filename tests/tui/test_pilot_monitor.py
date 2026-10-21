@@ -72,6 +72,7 @@ from tui.services.gpu_probe import GpuRow
 from tui.services.sweep_launcher import (
     EnvPreflight,
     GateRefusal,
+    GpuCapacityBlock,
     LaunchOutcome,
 )
 from tui.services.sweep_monitor import (
@@ -451,7 +452,9 @@ class FakeMonitorLauncher:
     def tee_path_for(self, root):
         return self._tee.get(str(root))
 
-    def single_gpu_launch_blocked(self):
+    def single_gpu_launch_blocked(self, requested_workers=1):
+        """16-03 (D16-10): the multi-GPU capacity seam — the monitor
+        reads stay ZERO-ARG (requested defaults 1, Pitfall 3)."""
         return self._single_gpu_blocked
 
 
@@ -3536,10 +3539,12 @@ async def test_rerun_confirm_routes_launch_from_failures():
 
 
 async def test_rerun_single_gpu_busy_refuses_before_the_confirm():
-    """EHC-3 (261015-ehc ruling 3): with the single-GPU guard seam
-    reporting live roots, the [f]->[r] request REFUSES before the
-    re-run confirm modal is ever pushed — the bilingual toast names
-    the running root, y is never reachable, nothing launches."""
+    """The capacity pre-check (16-03, D16-10 — the EHC-3 stage
+    replaced in place): with the capacity seam reporting a structured
+    block, the [f]->[r] request REFUSES before the re-run confirm
+    modal is ever pushed — the amended bilingual toast names the
+    running root AND the counts, y is never reachable, nothing
+    launches."""
     from tui.screens.monitor import FailuresModal
     from tui.screens.selection import ConfirmModal
     from tui.strings import LNC_SINGLE_GPU_BLOCKED
@@ -3547,8 +3552,9 @@ async def test_rerun_single_gpu_busy_refuses_before_the_confirm():
     failures = (FailureRow(model="model-a", task="task-1", seed=42,
                            error="boom", output_dir="/x"),)
     monitor = _rerun_fixture_monitor(failures)
-    launcher = FakeMonitorLauncher(
-        single_gpu_blocked=("/scans/finetuned-live",))
+    launcher = FakeMonitorLauncher(single_gpu_blocked=GpuCapacityBlock(
+        roots=("/scans/finetuned-live",), requested_workers=1,
+        gpu_count=1))
     app = _app(monitor=monitor, launcher=launcher)
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_monitor(pilot, app)
@@ -3558,10 +3564,13 @@ async def test_rerun_single_gpu_busy_refuses_before_the_confirm():
         await pilot.press("r")
         await _settle(pilot, app)
         assert not isinstance(app.screen, ConfirmModal), (
-            "the single-GPU pre-check refuses BEFORE the confirm modal"
+            "the capacity pre-check refuses BEFORE the confirm modal"
         )
-        assert any(LNC_SINGLE_GPU_BLOCKED.format(
-            roots="/scans/finetuned-live") in message
+        assert any(LNC_SINGLE_GPU_BLOCKED.format(workers=1,
+                                                 roots=(
+                                                     "/scans/"
+                                                     "finetuned-live"),
+                                                 n=1) in message
             for message in _toast_messages(app)), _toast_messages(app)
         assert launcher.env_calls == 0, "the preflight never runs"
         assert launcher.rerun_calls == [], "nothing ever launches"
@@ -4719,7 +4728,9 @@ async def test_k_kill_never_consults_the_single_gpu_guard():
 
     launcher = FakeMonitorLauncher(
         live=("/scans/finetuned",),
-        single_gpu_blocked=("/scans/somewhere-else",))
+        single_gpu_blocked=GpuCapacityBlock(
+            roots=("/scans/somewhere-else",), requested_workers=1,
+            gpu_count=1))
     app = _app(monitor=_kill_fixture_monitor(), launcher=launcher)
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_monitor(pilot, app)
@@ -5242,15 +5253,17 @@ async def test_e_live_root_refuses_before_any_modal():
 
 
 async def test_e_single_gpu_busy_refuses_before_the_confirm():
-    """EHC-3 (the request_rerun mirror): the single-GPU guard pre-checks
-    BEFORE the resume confirm — y is never reached on a busy
-    single-GPU machine."""
+    """The capacity pre-check (16-03, the request_rerun mirror): the
+    capacity seam pre-checks BEFORE the resume confirm — the amended
+    toast names the root AND the counts; y is never reached on a
+    refused machine."""
     from tui.screens.selection import ConfirmModal
     from tui.strings import LNC_SINGLE_GPU_BLOCKED
 
     monitor = _history_fixture_monitor()
-    launcher = FakeMonitorLauncher(
-        single_gpu_blocked=("/scans/somewhere-live",))
+    launcher = FakeMonitorLauncher(single_gpu_blocked=GpuCapacityBlock(
+        roots=("/scans/somewhere-live",), requested_workers=1,
+        gpu_count=1))
     app = _app(monitor=monitor, launcher=launcher)
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_monitor(pilot, app)
@@ -5259,10 +5272,13 @@ async def test_e_single_gpu_busy_refuses_before_the_confirm():
         await pilot.press("e")
         await _settle(pilot, app)
         assert not isinstance(app.screen, ConfirmModal), (
-            "the single-GPU pre-check refuses BEFORE the confirm modal"
+            "the capacity pre-check refuses BEFORE the confirm modal"
         )
-        assert any(LNC_SINGLE_GPU_BLOCKED.format(
-            roots="/scans/somewhere-live") in message
+        assert any(LNC_SINGLE_GPU_BLOCKED.format(workers=1,
+                                                 roots=(
+                                                     "/scans/"
+                                                     "somewhere-live"),
+                                                 n=1) in message
             for message in _toast_messages(app)), _toast_messages(app)
         assert launcher.env_calls == 0
         assert launcher.resume_calls == []

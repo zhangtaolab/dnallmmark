@@ -1549,18 +1549,21 @@ LNC_E2_MISMATCH = _t(
 # reused verbatim; no new copy for the verdict itself).
 LNC_ENV_BLOCKED_HINT = _t(
     "LNC_ENV_BLOCKED_HINT", "[1] 前往环境检查", "[1] open Environment Check")
-# EHC-3 (261015-ehc ruling 3): the single-GPU serialization refusal —
-# a live sweep registered on an effective-GPU-count == 1 machine blocks
-# both gated launch paths (the slot-4 gate + the monitor re-run) BEFORE
-# any confirm/phrase stage, naming the running root(s). The zh wording
-# applies the terminology table (训练任务 / 结果目录).
+# EHC-3 (261015-ehc ruling 3), amended in place by 16-03 (D16-10, the
+# MON_RERUN_CONFIRM amendment precedent — the constant NAME is
+# unchanged; gate-order tests and every format site reference it): the
+# single-GPU serialization refusal became MULTI-GPU capacity
+# arithmetic — the wording adds the requested {workers} and the
+# machine's {n} GPUs beside the live {roots}, all computed
+# service-side in the GpuCapacityBlock. The zh wording applies the
+# terminology table (训练任务 / workers / GPU stay verbatim).
 LNC_SINGLE_GPU_BLOCKED = _t(
     "LNC_SINGLE_GPU_BLOCKED",
-    "⚠ 单卡机器上已有训练任务在运行（{roots}）— 请等待完成、经退出门终止，"
-    "或换一个结果目录",
-    "⚠ a sweep is already running on this single-GPU machine ({roots}) "
-    "— wait for it, kill it via the exit modal, or use a different "
-    "output root")
+    "⚠ GPU 容量不足 — 运行中训练任务（{roots}）+ 本次 {workers} workers "
+    "超过 {n} GPU：请等待完成、经退出门终止，或减少 workers",
+    "⚠ GPU capacity exceeded — live sweeps ({roots}) + {workers} workers "
+    "requested exceed the {n} GPUs: wait, kill via the exit modal, or "
+    "lower workers")
 # Launch feedback: success (toast + auto-nav to the monitor) and the
 # spawn-failure toast ({error} is data).
 LNC_LAUNCH_TOAST = _t(
