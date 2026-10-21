@@ -960,6 +960,23 @@ class _GateConfirmModal(_PickerReturnModal, LaunchConfirmModal):
         message.highlight_words(("[Y]", "[y]", "[N]", "[n]"), style="bold")
         with Vertical(id="cfg-gate-box", classes="modal-box"):
             yield Static(message, id="cfg-gate-message")
+            if self._dispatch is not None:
+                # 16-05 Rule-1 (the wrap-clip defect, probed at the
+                # design grid): the dispatch line renders as a Static
+                # ABOVE the scroll-bounded log — the E2' face's own
+                # placement (D16-11/auto-default #12). Inside
+                # #cfg-gate-log the ~50-cell zh/en wording wraps to 2
+                # visual rows, so 14 logical lines exceeded the 14-row
+                # bound and RichLog auto_scroll clipped the line's own
+                # top half (scroll_y=1; only the wrap fragment
+                # rendered) — the D16-11 contract demands the line
+                # VISIBLE above the pair list. A Static wraps and
+                # grows outside the log's scroll bound; the log drops
+                # to 12 pairs + the more-line (13 rows <= 14).
+                workers, gpus_display, cells = self._dispatch
+                yield Static(S.LNC_GATE_DISPATCH_LINE.format(
+                    workers=workers, gpus=gpus_display, cells=cells),
+                    id="cfg-gate-dispatch")
             yield RichLog(wrap=True, id="cfg-gate-log")
             yield Footer()
 
@@ -967,14 +984,6 @@ class _GateConfirmModal(_PickerReturnModal, LaunchConfirmModal):
         self.query_one("#cfg-gate-box", Vertical).border_title = (
             S.LNC_GATE_TITLE)
         log = self.query_one("#cfg-gate-log", RichLog)
-        if self._dispatch is not None:
-            # 16-04 (UI-SPEC C.5): the dispatch-plan line directly
-            # ABOVE the pair list — 1 + 12 + 1 = 14 lines still inside
-            # the #cfg-gate-log bound at the design grid (the UX-5
-            # composition check re-verified).
-            workers, gpus_display, cells = self._dispatch
-            log.write(S.LNC_GATE_DISPATCH_LINE.format(
-                workers=workers, gpus=gpus_display, cells=cells))
         for model, task in self._pairs[:_GATE_PAIR_CAP]:
             log.write(S.LNC_GATE_PAIR_LINE.format(model=model, task=task))
         if len(self._pairs) > _GATE_PAIR_CAP:
