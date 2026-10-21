@@ -31,7 +31,7 @@ Requirements for milestone v1.3. Each maps to roadmap phases (Traceability below
 
 ### TUI — 控制台多 GPU 界面
 
-- [ ] **TUI-01**: A textual-free nvidia-smi read-only probe service (CSV query mode, frozen dataclass rows, honest 未安装 degradation when absent) feeds a G GPU-lanes display on the monitor cadence
+- [x] **TUI-01**: A textual-free nvidia-smi read-only probe service (CSV query mode, frozen dataclass rows, honest 未安装 degradation when absent) feeds a G GPU-lanes display on the monitor cadence
 - [ ] **TUI-02**: Slot-4 run config launches multi-GPU runs (workers/gpus params, dispatch-plan preview) through the UNCHANGED gate chain (env gate → problems → confirm → E2' typed-phrase when full-scope); the single-GPU serial gate is revised to multi-GPU-aware semantics, never bypassed
 - [ ] **TUI-03**: Slot-5 monitor consumes `dispatch_state.json` (queue depth, in-flight cells) alongside existing scanner sources; multi-GPU runs render natively
 - [ ] **TUI-04**: Snapshot goldens for changed screens regenerate under the D-03 maintainer-review discipline (uncommitted until reviewed)
@@ -81,7 +81,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VAL-01 | Phase 15 | Complete (15-01, 2026-10-20: dispatch N=2 smoke executed on both 5090s — dispatch_state done 2/2, both GPUs produced cells, consumption dry-run "[Dry-run] 2 run record(s)" after the 15-04 run_record fix; docs/multi-gpu.md rewritten as the executed procedure, D-05 revised 本机=双卡验证机, WINDOWS #21 closed) |
 | VAL-02 | Phase 15 | Complete |
 | VAL-03 | Phase 15 | Complete (15-03, 2026-10-21: 12-cell sweep = plant-dnabert-6mer + plant-dnamamba-6mer × iDNA_ABF_datasets__5mC + GUE__emp_H3 5% subsets × seeds 42/43/44, 1 epoch, through --mode dispatch --workers 2 --gpus 0,1 on ONE shared fresh root pipeline/finetuned-sweep-r2 — done 12/12, 0 skipped, both GPUs, subset-scale steps; after the 15-05 WINDOWS #45 producer fix every final_metrics carries eval_f1 and the unmodified export→summarize chain emitted non-empty models_comparison + _animal + _microbe (dataset-Category grouping), five JSONs archived under 15-03 artifacts/) |
-| TUI-01 | Phase 16 | Pending |
+| TUI-01 | Phase 16 | Complete |
 | TUI-02 | Phase 16 | Pending |
 | TUI-03 | Phase 16 | Pending |
 | TUI-04 | Phase 16 | Pending |

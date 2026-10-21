@@ -84,7 +84,7 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 16-01-PLAN.md — Tracer: gpu_probe service + G GPU-lanes panel end-to-end (textual-free CSV probe, honest 未安装 degradation, mon-gpu cadence worker, render-gate byte-silence discipline) (TUI-01)
+- [x] 16-01-PLAN.md — Tracer: gpu_probe service + G GPU-lanes panel end-to-end (textual-free CSV probe, honest 未安装 degradation, mon-gpu cadence worker, render-gate byte-silence discipline) (TUI-01)
 
 **Wave 2** *(blocked on Wave 1: monitor.py + strings.py file overlap)*
 - [ ] 16-02-PLAN.md — dispatch_state.json tolerant reader (frozen v2, None sentinel, 60s stale constant, invariant honesty) + slot-5 Running-card dispatch rows via the one _card_content builder (TUI-03)

@@ -5,7 +5,7 @@ milestone_name: 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
 current_phase: 15
 current_phase_name: 双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)
 status: executing
-stopped_at: Completed 15-03-PLAN.md (VAL-03 complete — halt + 15-05 option-A fix + fresh-root r2 resume)
+stopped_at: Completed 16-01-PLAN.md (TUI-01 tracer: gpu_probe service + standing G panel, both tasks + gates green)
 last_updated: "2026-10-21T00:25:28.120Z"
 last_activity: 2026-10-21
 15-03 complete (VAL-03 done via halt + 15-05 fix + fresh-root r2 resume); phase 15 all 5 plans landed
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 
 ## Current Position
 
-Phase: 16 (TUI 多 GPU 界面) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-10-21 — Phase 15 complete, transitioned to Phase 16
+Phase: 16 (TUI 多 GPU 界面) — EXECUTING
+Plan: 2 of 5
+Status: Executing Phase 16 (16-01 complete)
+Last activity: 2026-10-21 — 16-01 complete (TUI-01 tracer landed)
 
 ## Performance Metrics
 
@@ -118,6 +118,7 @@ Last activity: 2026-10-21 — Phase 15 complete, transitioned to Phase 16
 | Phase 15 P15-03 | 20 min | 2 of 3 (Task 3 D15-15 leg landed; consumption criterion blocked) tasks | 3 files |
 | Phase 15 P15-05 | 22 min | 2 tasks | 3 files |
 | Phase 15 P15-03 | 40 min | 3 tasks | 11 files |
+| Phase 16 P1 | 32 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -293,6 +294,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 15]: [15-05] WINDOWS #45 producer side closed; ledger entry stays OPEN until the 15-03 continuation greens (sweep re-run on FRESH root pipeline/finetuned-sweep-r2 — the old root's markers would skip all 12 cells — + gitignore adjacency + consumption/archive asserting animal/microbe + VAL-03 marks); the 12 existing cells are superseded evidence, never archived
 - [Phase 15]: 15-03 complete (halt + 15-05 fix + resume): fresh-root re-run pipeline/finetuned-sweep-r2 (272s, done 12/12, 0 skipped, both GPUs, subset-scale steps 27/150) carries eval_f1 in ALL 12 final_metrics AND run_records — the option-A producer fix proven live; the old finetuned-sweep root stays preserved superseded evidence (never archived)
 - [Phase 15]: 15-03 consumption proven at content level with zero chain modifications: animal avg_raw == 5mC f1, microbe avg_raw == emp_H3 f1 (dataset-Category grouping, no plant file producible); tmp-tree plant file provably the stale committed copy; five JSONs archived under 15-03 artifacts/; D15-15 pins repointed to r2 + new eval-key pin (suite 27); VAL-03 complete, WINDOWS #45 closed (open 8/fixed 31), PROJECT small-sweep row done
+- [Phase 16]: 16-01: gpu probe rides the existing frontier timer via a dedicated _tick_gpu dispatch BEFORE the live-root guard — no second timer, idle machines still probe (Pitfall 1)
+- [Phase 16]: 16-01: G-panel render gate writes each region only on its own signature leg's change — a lane value change never re-writes a healthy note (per-region gating inside one rze gate)
+- [Phase 16]: 16-01: pilot _app() defaults to an absent gpu-probe fake — the whole pilot suite stays nvidia-smi-free; only the pty lane drives the real probe (byte-silence pin green on the 2x5090 box)
 
 ### Pending Todos
 
@@ -365,8 +369,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T00:25:13.826Z
-Stopped at: Phase 15 complete, ready to plan Phase 16
+Last session: 2026-10-21T03:29:44.975Z
+Stopped at: Completed 16-01-PLAN.md (TUI-01 tracer: gpu_probe service + standing G panel, both tasks + gates green)
 Resume file: None
 
 ## Operator Next Steps
