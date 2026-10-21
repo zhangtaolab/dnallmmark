@@ -1692,6 +1692,131 @@ def test_single_gpu_idle_machine_launches_normally(monkeypatch, tmp_path):
     assert result.spawned is True
 
 
+# ===== WR-01 (phase-16 review): the demand cache vs kill-relaunch =====
+
+
+def test_kill_relaunch_with_fewer_workers_re_reads_the_new_demand(
+        monkeypatch, tmp_path):
+    """WR-01 regression, the OVER-REFUSAL direction (reproduced against
+    the pre-fix service): launch a 2-worker dispatch sweep at root R
+    (the predicate read primes ``_demand_cache[R] = 2``), KILL it, and
+    relaunch R with ``--workers 1`` — the next ``requested_workers=1``
+    predicate call must admit (1 + 1 <= 2). The pre-fix cache kept the
+    DEAD entry's 2 (argv is immutable PER ENTRY, never per ROOT) and
+    refused valid launches at that root for the whole session — no
+    in-app recovery until the TUI restarts."""
+    pin_state_dir(monkeypatch, tmp_path)
+    launcher = sweep_launcher.SweepLauncher(gpu_count=2, kill_grace=0.0)
+    KillpgRecorder(monkeypatch)
+    root = tmp_path / "relaunch-out"
+
+    first = FakeSpawner(FakeSweepPopen(poll_returns=(None,)))
+    assert launcher._spawn(
+        _shard_entry_argv(2), root, spawner=first).spawned is True
+    assert isinstance(
+        launcher.single_gpu_launch_blocked(requested_workers=1),
+        sweep_launcher.GpuCapacityBlock), (
+        "2 live + 1 requested > 2 — the ORIGINAL refusal is honest")
+    assert launcher._demand_cache == {str(root.resolve()): 2}, (
+        "fixture premise: the first read primed the per-root cache")
+
+    assert launcher.kill_sweep(root) == sweep_launcher.OUTCOME_SIGNALLED
+    assert launcher._demand_cache == {}, (
+        "kill evicts the dropped entry's cached demand (WR-01)")
+
+    second = FakeSpawner(FakeSweepPopen(poll_returns=(None,)))
+    assert launcher._spawn(
+        _shard_entry_argv(1), root, spawner=second).spawned is True
+    assert launcher.single_gpu_launch_blocked(
+        requested_workers=1) is None, (
+        "the relaunch's --workers 1 re-parses — 1 + 1 <= 2 admits")
+
+
+def test_kill_relaunch_with_more_workers_re_reads_the_new_demand(
+        monkeypatch, tmp_path):
+    """WR-01 regression, the OVER-ADMISSION direction (the inverse
+    ordering): kill a 1-worker dispatch entry (cache primed at 1) and
+    relaunch the same root with ``--workers 2`` — the next
+    ``requested_workers=1`` predicate call must REFUSE (2 + 1 > 2). The
+    pre-fix cache kept the dead 1 and over-admitted, oversubscribing
+    GPUs — the exact condition the 16-03 predicate exists to prevent."""
+    pin_state_dir(monkeypatch, tmp_path)
+    launcher = sweep_launcher.SweepLauncher(gpu_count=2, kill_grace=0.0)
+    KillpgRecorder(monkeypatch)
+    root = tmp_path / "relaunch-out"
+
+    first = FakeSpawner(FakeSweepPopen(poll_returns=(None,)))
+    assert launcher._spawn(
+        _shard_entry_argv(1), root, spawner=first).spawned is True
+    assert launcher.single_gpu_launch_blocked(
+        requested_workers=1) is None, "1 live + 1 requested <= 2"
+    assert launcher._demand_cache == {str(root.resolve()): 1}, (
+        "fixture premise: the first read primed the per-root cache")
+
+    assert launcher.kill_sweep(root) == sweep_launcher.OUTCOME_SIGNALLED
+
+    second = FakeSpawner(FakeSweepPopen(poll_returns=(None,)))
+    assert launcher._spawn(
+        _shard_entry_argv(2), root, spawner=second).spawned is True
+    blocked = launcher.single_gpu_launch_blocked(requested_workers=1)
+    assert isinstance(blocked, sweep_launcher.GpuCapacityBlock), (
+        "the relaunch's --workers 2 re-parses — 2 + 1 > 2 refuses")
+
+
+def test_demand_cache_evicted_on_detach_prune_and_dead_entry_reclaim(
+        monkeypatch, tmp_path):
+    """WR-01: EVERY registry-drop path evicts the per-root demand cache
+    — detach, the ``live_sweeps()`` dead-entry prune, and ``_spawn``'s
+    dead-entry reclaim (a same-root relaunch over an EXITED-but-unkilled
+    entry) — not just kill_sweep; a missed site is a session-long
+    stale hold."""
+    pin_state_dir(monkeypatch, tmp_path)
+    launcher = sweep_launcher.SweepLauncher(gpu_count=2)
+    root = tmp_path / "out"
+
+    # detach drops the entry + its cached demand
+    assert launcher._spawn(
+        _shard_entry_argv(2), root,
+        spawner=FakeSpawner(FakeSweepPopen(poll_returns=(None,)))
+    ).spawned is True
+    assert isinstance(
+        launcher.single_gpu_launch_blocked(requested_workers=1),
+        sweep_launcher.GpuCapacityBlock)
+    assert launcher.detach(root) == sweep_launcher.OUTCOME_DETACHED
+    assert launcher._demand_cache == {}, "detach evicts (WR-01)"
+
+    # an entry that EXITS between reads is PRUNED by live_sweeps() on
+    # the next predicate call — the prune evicts too
+    assert launcher._spawn(
+        _shard_entry_argv(2), root,
+        spawner=FakeSpawner(FakeSweepPopen(poll_returns=(None, 0)))
+    ).spawned is True
+    assert isinstance(
+        launcher.single_gpu_launch_blocked(requested_workers=1),
+        sweep_launcher.GpuCapacityBlock), "alive at the priming read"
+    assert launcher.single_gpu_launch_blocked(
+        requested_workers=1) is None, (
+        "the exited entry is pruned mid-read — nothing left to demand")
+    assert launcher._demand_cache == {}, "the prune evicts (WR-01)"
+
+    # a still-registered DEAD entry is RECLAIMED by _spawn itself (no
+    # intervening live_sweeps read prunes it first)
+    assert launcher._spawn(
+        _shard_entry_argv(2), root,
+        spawner=FakeSpawner(FakeSweepPopen(poll_returns=(None, 0)))
+    ).spawned is True
+    assert isinstance(
+        launcher.single_gpu_launch_blocked(requested_workers=1),
+        sweep_launcher.GpuCapacityBlock), "the priming read again"
+    assert launcher._spawn(
+        _shard_entry_argv(1), root,
+        spawner=FakeSpawner(FakeSweepPopen(poll_returns=(None,)))
+    ).spawned is True, "the dead entry is reclaimed, not refused"
+    assert launcher.single_gpu_launch_blocked(
+        requested_workers=1) is None, (
+        "the reclaim re-parses the new argv at the root (WR-01)")
+
+
 # =====================================================================
 # 261017-uwr — live-sweep matrix evidence (UWR-2 Task 1): the /proc
 # CLI probe + live_sweep_matrices (registry handles UNION probed roots,

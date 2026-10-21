@@ -763,6 +763,13 @@ class SweepLauncher:
         # 16-03 (D16-10): the per-root GPU-demand cache behind the
         # capacity predicate (the _plan_cache per-argv precedent — a
         # live entry's argv is immutable, so one parse per root).
+        # WR-01 (phase-16 review): argv is immutable PER ENTRY, not per
+        # ROOT — every path that drops or re-claims a root's registry
+        # entry (kill, detach, the live_sweeps dead-entry prune, and
+        # _spawn's claim itself) evicts the cached demand, else a
+        # killed root relaunched with a different --workers keeps the
+        # DEAD entry's count and poisons the capacity arithmetic in
+        # both directions (over-refusal AND over-admission).
         self._demand_cache: dict[str, int] = {}
 
     # ===== The spawn core (D-06/D-10) =====
@@ -812,8 +819,10 @@ class SweepLauncher:
                         "modal) or pick a different output root before "
                         "launching"))
             # the prior sweep exited without detach/kill: reclaim the
-            # root (drop the dead entry + close its parent-side tee)
+            # root (drop the dead entry + close its parent-side tee +
+            # evict the dead entry's demand cache — WR-01)
             self._live.pop(root, None)
+            self._demand_cache.pop(root, None)
             self._drop_entry(prior)
         logs_dir = settings.state_dir() / TEE_DIR_NAME
         logs_dir.mkdir(parents=True, exist_ok=True)
@@ -879,6 +888,11 @@ class SweepLauncher:
             argv=tuple(str(element) for element in argv),
         )
         self._live[root] = {"handle": proc, "meta": meta, "tee": tee_handle}
+        # WR-01 (phase-16 review): the claim itself evicts any demand
+        # cached for this root — a NEW entry's argv re-parses on the
+        # next predicate read (covers the kill/detach-then-relaunch
+        # path even if a future drop site misses its eviction).
+        self._demand_cache.pop(root, None)
         self._tee_history[root] = str(tee_path)
         return LaunchOutcome(
             spawned=True, root=root, tee_path=str(tee_path), error=None)
@@ -913,8 +927,10 @@ class SweepLauncher:
         """One LIVE registry entry's GPU demand — its verbatim
         ``LiveSweep.argv`` parsed through ``_entry_demand_for_argv``
         behind the per-root cache (argv is immutable per entry, the
-        _plan_cache precedent). An unknown/dead root demands 1 (the
-        fail-safe)."""
+        _plan_cache precedent; WR-01 — the cache entry is evicted
+        whenever the root's registry entry is dropped or re-claimed,
+        so it can never outlive the entry it parsed). An unknown/dead
+        root demands 1 (the fail-safe)."""
         entry = self._live.get(root)
         if entry is None:
             return 1
@@ -1312,9 +1328,13 @@ class SweepLauncher:
             (poll reaped it before any signal) / ``noop`` (unknown
             root).
         """
-        entry = self._live.pop(str(Path(root).resolve()), None)
+        key = str(Path(root).resolve())
+        entry = self._live.pop(key, None)
         if entry is None:
             return OUTCOME_NOOP
+        # WR-01: the registry entry is gone — its cached demand goes
+        # with it (a relaunch at this root re-parses its own argv).
+        self._demand_cache.pop(key, None)
         proc = entry["handle"]
         if proc.poll() is not None:
             self._drop_entry(entry)
@@ -1342,9 +1362,13 @@ class SweepLauncher:
         Returns:
             str: ``detached`` / ``noop`` (unknown root).
         """
-        entry = self._live.pop(str(Path(root).resolve()), None)
+        key = str(Path(root).resolve())
+        entry = self._live.pop(key, None)
         if entry is None:
             return OUTCOME_NOOP
+        # WR-01: same as kill_sweep — the dropped entry's cached demand
+        # is dropped with it.
+        self._demand_cache.pop(key, None)
         self._drop_entry(entry)
         return OUTCOME_DETACHED
 
@@ -1377,6 +1401,9 @@ class SweepLauncher:
                 live.append(root)
             else:
                 self._live.pop(root, None)
+                # WR-01: a pruned (exited) entry's cached demand is
+                # evicted with the registry entry.
+                self._demand_cache.pop(root, None)
                 self._drop_entry(entry)
         return tuple(live)
 
