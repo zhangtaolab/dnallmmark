@@ -377,6 +377,71 @@ def test_weighted_score_is_uniform_difficulty_normalized_zscore_sum():
     )
 
 
+# ===== Phase 17: per-model std/n_seeds propagation (D17-03, Q1 ruling) =====
+
+
+def test_seed_stats_propagation_mean_of_stds_and_min_n():
+    """With a dataset_seed_stats map: a model carrying std on TWO of the
+    view's three tasks gets std == the mean of the two and n_seeds == the
+    minimum per-task count — the Q1 ruling (display-only propagation over
+    exactly the tasks carrying std, absent tasks contribute nothing)."""
+    models_info, stats_map, flops_map, datasets = _load_synthetic_inputs()
+    seed_stats = {
+        "FakeDS__tie_task": {
+            "fake-alpha": {"std": 0.010, "n_seeds": 3},
+            "fake-beta": {"std": 0.030, "n_seeds": 4},
+        },
+        "FakeDS__regress_task": {
+            "fake-alpha": {"std": 0.020, "n_seeds": 5},
+        },
+        # FakeDS__missing_task intentionally absent — the third view task.
+    }
+    result = aggregate_models(
+        models_info, stats_map, flops_map, datasets,
+        dataset_seed_stats=seed_stats,
+    )
+    alpha = result["fake-alpha"]["performance"]
+    assert alpha["std"] == pytest.approx((0.010 + 0.020) / 2)
+    assert alpha["n_seeds"] == 3  # min(3, 5)
+    beta = result["fake-beta"]["performance"]
+    assert beta["std"] == pytest.approx(0.030)  # single std-carrying task
+    assert beta["n_seeds"] == 4
+
+
+def test_seed_stats_absent_model_emits_no_keys():
+    """A model absent from the map (on any task) emits NO std/n_seeds keys —
+    the untouched-model performance block keeps its pure-call key set."""
+    models_info, stats_map, flops_map, datasets = _load_synthetic_inputs()
+    seed_stats = {
+        "FakeDS__tie_task": {"fake-alpha": {"std": 0.010, "n_seeds": 3}},
+    }
+    result = aggregate_models(
+        models_info, stats_map, flops_map, datasets,
+        dataset_seed_stats=seed_stats,
+    )
+    assert "std" in result["fake-alpha"]["performance"]
+    for alias in ("fake-beta", "fake-gamma"):
+        assert not ({"std", "n_seeds"} & set(result[alias]["performance"])), alias
+
+
+def test_seed_stats_none_and_empty_maps_emit_nothing_anywhere():
+    """The default (``None``) map — and an explicit empty map — emit nothing
+    anywhere: trio-less inputs aggregate byte-identically (D17-02's absent
+    case, the one tests/test_determinism.py pins over the real committed
+    tree, unmodified)."""
+    models_info, stats_map, flops_map, datasets = _load_synthetic_inputs()
+    for seed_stats in (None, {}):
+        result = aggregate_models(
+            models_info, stats_map, flops_map, datasets,
+            dataset_seed_stats=seed_stats,
+        )
+        assert result, "the aggregation itself must still produce models"
+        assert all(
+            not ({"std", "n_seeds"} & set(e["performance"]))
+            for e in result.values()
+        ), f"seed_stats={seed_stats!r} leaked std/n_seeds keys"
+
+
 # ===== to_singular_species =====
 
 

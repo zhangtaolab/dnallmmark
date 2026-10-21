@@ -154,3 +154,35 @@ For how to reproduce the leaderboard from a fresh clone, see the
 [Reproducing the leaderboard](../README.md#reproducing-the-leaderboard)
 section of the README. For adding a new model or dataset, see
 [Onboarding](ONBOARDING.md).
+
+## Appendix: Display error bars (multi-seed std)
+
+Two named standard-deviation conventions coexist by design, each with one
+owner and one audience. They are different numbers on the same seed set
+and are never converted into one another:
+
+- **`sd`** — sample standard deviation (`ddof=1`), the reviewer-facing
+  value in the per-task `seed_stats` artifacts, produced by the vendored
+  suite `aggregate_seeds` (`script/export_runs.py`).
+- **`std`** — population standard deviation (`ddof=0`) over the completed
+  per-seed values of the dataset's declared primary metric, the
+  display-side value behind the chart whiskers, produced by the
+  `population_std` helper beside — never inside — the vendored section.
+
+Emission is additive and gated: a model-dataset cell carries optional
+`mean`/`std`/`n_seeds` in the task and per-model views ONLY when at least
+2 completed seeds exist on the primary metric (`n_seeds >= 2`; population
+std is well-defined at n=2 and the count is disclosed via `n_seeds`).
+Absent fields mean single-run data — never a fabricated zero-width
+whisker. The per-model `std` on the leaderboard comparison views is a
+display-only propagation: the mean of that model's per-task population
+stds over tasks carrying `std`, with `n_seeds` the minimum per-task seed
+count over those tasks. It is NOT a rank-score variance — per-seed rank
+variance would require per-seed re-ranking of the whole corpus and is out
+of scope.
+
+These fields are display-only: they change no ranking, no aggregation
+input, and no methodology or data version. Trio-less (single-run) inputs
+aggregate byte-identically, and multi-seed inputs add only the new keys —
+both directions pinned by the determinism and replay suites
+(`tests/test_determinism.py`, `tests/test_ci_replay.py`).

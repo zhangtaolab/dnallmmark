@@ -103,10 +103,15 @@ COMPARISON_FILES = (
 )
 
 # The 16 schema-required performance keys (self-maintaining: derived from
-# the schema contract, never hand-copied) — the Phase-17 additive assertion
-# is "exactly these 16 plus {std, n_seeds}, nothing else".
+# the schema contract's raw JSON — json.loads yields Any, so ty stays clean
+# where the validator's Mapping|bool .schema attribute is not subscriptable)
+# — the Phase-17 additive assertion is "exactly these 16 plus
+# {std, n_seeds}, nothing else".
+COMPARISON_SCHEMA_DOC = json.loads(
+    (REPO_ROOT / "schemas" / "models_comparison.json").read_text(encoding="utf-8")
+)
 REQUIRED_PERF_KEYS = set(
-    COMPARISON_SCHEMA.schema["$defs"]["modelComparison"]["properties"]
+    COMPARISON_SCHEMA_DOC["$defs"]["modelComparison"]["properties"]
     ["performance"]["required"]
 )
 
