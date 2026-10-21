@@ -513,7 +513,12 @@ SMOKE_ROOTS = (
     REPO_ROOT / "pipeline" / "finetuned-smoke",
     REPO_ROOT / "pipeline" / "finetuned-smoke-r2",
 )
-SWEEP_ROOT = REPO_ROOT / "pipeline" / "finetuned-sweep"
+# Evidence-of-record sweep root: the 15-03 continuation re-ran the 12-cell
+# sweep on a FRESH root after 15-05's WINDOWS #45 producer fix — the
+# original ``pipeline/finetuned-sweep`` root is preserved superseded
+# evidence (its trainer_state markers would resume-skip every cell, and
+# its final_metrics are eval-less by construction of the old discard).
+SWEEP_ROOT = REPO_ROOT / "pipeline" / "finetuned-sweep-r2"
 SUBSET_ROOT = REPO_ROOT / "pipeline" / "datasets-smoke"
 SUBSET_REGISTRY = REPO_ROOT / "pipeline" / "registry-smoke" / "datasets_info.json"
 # The two sweep tasks' measured subset counts (15-03 Task 1), as
@@ -555,6 +560,33 @@ def test_real_sweep_dispatch_terminal_state():
     counts = state["counts"]
     assert counts["completed"] == counts["total"] == 12, counts
     assert counts["skipped"] == 0, counts
+
+
+def test_real_sweep_final_metrics_carry_eval_keys():
+    """Every r2 sweep cell's final_metrics carries the eval block — the
+    real-run proof of the WINDOWS #45 producer fix (15-05, option A):
+    run_finetune captures ``trainer.evaluate()`` and merges it
+    flat-additive (``merged = {**eval_results, **metrics}``), so the
+    export/summarize chain resolves real scores (eval_f1 -> metric_block
+    f1 -> performance.f1) instead of the empty ``""`` slots that made
+    aggregate_models return {} before the fix."""
+    state_path = SWEEP_ROOT / "dispatch_state.json"
+    if not state_path.is_file():
+        pytest.skip(f"sweep runtime root absent (zero-GPU env): {SWEEP_ROOT}")
+    cells = sorted(SWEEP_ROOT.glob("*/*/seed_*/final_metrics.json"))
+    assert len(cells) == 12, (
+        f"expected 12 cell final_metrics files, found {len(cells)}"
+    )
+    for fm in cells:
+        metrics = json.loads(fm.read_text(encoding="utf-8"))
+        assert "eval_f1" in metrics, (
+            f"{fm.relative_to(SWEEP_ROOT)} carries no eval_f1 — the "
+            "producer fix is not active on this run"
+        )
+        assert isinstance(metrics["eval_f1"], (int, float)), (
+            f"{fm.relative_to(SWEEP_ROOT)} eval_f1 is not numeric: "
+            f"{metrics['eval_f1']!r}"
+        )
 
 
 @pytest.mark.parametrize("task_key, rel, splits", SUBSET_EXPECT)

@@ -1,0 +1,95 @@
+{
+    "info": {
+        "architecture": "Mamba",
+        "context_len (bp)": 2000,
+        "huggingface": "zhangtaolab/plant-dnamamba-6mer",
+        "mean_token_len": 6,
+        "modelscope": "zhangtaolab/plant-dnamamba-6mer",
+        "name": "PlantDNAMamba-6mer",
+        "series": "PDLLMs",
+        "size (M)": 94,
+        "species": "plants",
+        "tokenizer": "6-mer",
+        "type": "CLM"
+    },
+    "performance": {
+        "GUE__emp_H3": {
+            "dataset": {
+                "dev": 74,
+                "labels": 2,
+                "length": 500,
+                "metric": "f1",
+                "species": "Microbe",
+                "test": 74,
+                "train": 598,
+                "type": "binary"
+            },
+            "parameters": {
+                "batch_size": 8,
+                "bf16": true,
+                "epochs": 3,
+                "fp16": false,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "lr_scheduler_type": "linear",
+                "steps": 150,
+                "warmup": 0.1
+            },
+            "performance": {
+                "FLOPs": 27607356252840.0,
+                "accuracy": 0.7072072072072072,
+                "auprc": 0.7648267514001094,
+                "auroc": 0.7658382066276803,
+                "f1": 0.6731980437862791,
+                "loss": 0.6241503159205118,
+                "mcc": 0.4331995950088054,
+                "mse": "",
+                "pearson_r": "",
+                "precision": 0.7886243386243387,
+                "r2": "",
+                "recall": 0.587719298245614,
+                "runtime": 75.30056666666667,
+                "spearman_r": ""
+            }
+        },
+        "iDNA_ABF_datasets__5mC": {
+            "dataset": {
+                "dev": 11,
+                "labels": 2,
+                "length": 41,
+                "metric": "f1",
+                "species": "Animals",
+                "test": 117,
+                "train": 105,
+                "type": "binary"
+            },
+            "parameters": {
+                "batch_size": 8,
+                "bf16": true,
+                "epochs": 3,
+                "fp16": false,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 2e-05,
+                "lr_scheduler_type": "linear",
+                "steps": 27,
+                "warmup": 0.1
+            },
+            "performance": {
+                "FLOPs": 456230164320.0,
+                "accuracy": 0.48484848484848486,
+                "auprc": 0.424059644059644,
+                "auroc": 0.37777777777777777,
+                "f1": 0.5860805860805861,
+                "loss": 0.8786695202191671,
+                "mcc": 0.02100163397253298,
+                "mse": "",
+                "pearson_r": "",
+                "precision": 0.46296296296296297,
+                "r2": "",
+                "recall": 0.8000000000000002,
+                "runtime": 11.339366666666669,
+                "spearman_r": ""
+            }
+        }
+    }
+}
