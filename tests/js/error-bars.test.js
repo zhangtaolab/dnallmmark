@@ -32,6 +32,10 @@
  *  6. COMMITTED-DATA ABSENCE — the committed public data tree carries no
  *     std/n_seeds anywhere (single-run until the maintainer regenerates —
  *     D17-02's data-side honesty; that absence IS the assertion).
+ *  7. PUBLIC-VIEW TOOLTIP QUALIFICATION (WR-02) — the main.js scatter
+ *     tooltip line is source-pinned to the self-qualifying
+ *     "Raw-score seed spread: ±..." label; the unqualified
+ *     "Seed spread: ±" must not survive on the public view.
  *
  * The fixture is read READ-ONLY everywhere (generated, never hand-written).
  */
@@ -354,4 +358,30 @@ test('a committed task_performance file carries no modelEntry trio keys', () => 
       assert.ok(!(field in entry), `${firstFile}:${alias} carries no ${field}`);
     }
   }
+});
+
+// ===== 7. PUBLIC-VIEW TOOLTIP QUALIFICATION (WR-02) =====
+
+test('main.js scatter tooltip qualifies the whisker line as raw-score seed spread', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'dnallm-mark', 'js', 'main.js'), 'utf8'
+  );
+  // The scatter whisker is a raw-metric spread drawn around the displayed
+  // weighted/rank score — the tooltip line must say so (WR-02), with the
+  // conditional (n=N) suffix shape intact.
+  assert.match(
+    source,
+    /Raw-score seed spread: ±\$\{p\.std\.toFixed\(4\)\}/,
+    'the self-qualifying label with the p.std payload'
+  );
+  assert.match(
+    source,
+    /\(n=' \+ p\.n_seeds \+ '\)/,
+    'the existing n_seeds count suffix stays disclosed'
+  );
+  assert.doesNotMatch(
+    source,
+    /Seed spread: ±/,
+    'the unqualified "Seed spread" label must not survive on the public view'
+  );
 });

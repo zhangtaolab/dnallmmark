@@ -362,12 +362,17 @@ class DNALLMMark {
                   `Top 5: ${p?.top5_count || 0}`,
                   `Top 10: ${p?.top10_count || 0}`
                 ];
-                // ±std seed-spread line (D17-07): appended AFTER the six
-                // existing lines, only when std is a number — absent std
-                // renders the same six lines as before.
+                // ±std seed-spread line (D17-07/WR-02): appended AFTER the
+                // six existing lines, only when std is a number — absent
+                // std renders the same six lines as before. The label
+                // self-qualifies (WR-02): performance.std is the mean of
+                // per-task RAW-METRIC population stds drawn as whiskers
+                // around the displayed weighted/rank score — it is not an
+                // error bound on that score (deep reference:
+                // docs/METHODOLOGY.md).
                 if (typeof m.performance?.std === 'number') {
                   lines.push(
-                    `Seed spread: ±${p.std.toFixed(4)}${typeof p.n_seeds === 'number' ? ' (n=' + p.n_seeds + ')' : ''}`
+                    `Raw-score seed spread: ±${p.std.toFixed(4)}${typeof p.n_seeds === 'number' ? ' (n=' + p.n_seeds + ')' : ''}`
                   );
                 }
                 return lines;
