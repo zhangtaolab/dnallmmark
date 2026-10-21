@@ -869,16 +869,16 @@ def test_gate_confirm_data_dispatch_fields_typed_list(tmp_path):
     assert summary.gpus_display == "0,1"
 
 
-def test_gate_confirm_data_dispatch_fields_all_detected(
-        monkeypatch, tmp_path):
-    """Auto-default #8: a DEFAULTS spec (gpus None — all-detected,
-    resolved at LAUNCH) renders the all(n) form with n the DETECTED
-    count at preview time — the resolution rule named with the live
-    count, never a guess in place of data (``effective_gpu_count`` is
-    the injected seam; count-0 renders all(0), equally honest since
-    count-0 machines admit unconditionally)."""
-    monkeypatch.setattr(
-        sweep_launcher, "effective_gpu_count", lambda: 2)
+def test_gate_confirm_data_dispatch_fields_default_first_workers(tmp_path):
+    """Auto-default #8, WR-03 (phase-16 review): a DEFAULTS spec (gpus
+    None — no --gpus threaded) renders the child's OWN default
+    resolution rule ``0..{workers-1}`` (dispatch_core's "Default GPU
+    assignment" binds the FIRST ``workers`` GPU indices, ``range
+    (workers)`` — NEVER all detected GPUs; the former all(n)-detected
+    claim over-promised exactly in the multi-GPU-expansion case). The
+    display derives from the SPEC's workers alone — no detection
+    occurs at preview time (the default resolves at LAUNCH inside the
+    child, Pitfall 8)."""
     spec = run_config.RunSpec(
         models=("plant-dnabert-6mer",), tasks=("GUE__emp_H3",),
         seeds=(42,), output_root=str(tmp_path / "out"))
@@ -886,23 +886,21 @@ def test_gate_confirm_data_dispatch_fields_all_detected(
     summary = sweep_launcher.gate_confirm_data(spec)
 
     assert summary.workers == 1
-    assert summary.gpus_display == "all(2)"
+    assert summary.gpus_display == "0..0"
 
-    monkeypatch.setattr(
-        sweep_launcher, "effective_gpu_count", lambda: 0)
-    summary0 = sweep_launcher.gate_confirm_data(spec)
-    assert summary0.gpus_display == "all(0)"
+    wide = run_config.RunSpec(
+        models=("plant-dnabert-6mer",), tasks=("GUE__emp_H3",),
+        seeds=(42,), workers=4, output_root=str(tmp_path / "out"))
+    assert sweep_launcher.gate_confirm_data(wide).gpus_display == "0..3"
 
 
-def test_gate_confirm_data_dispatch_fields_fresh_recompute(
-        monkeypatch, tmp_path):
+def test_gate_confirm_data_dispatch_fields_fresh_recompute(tmp_path):
     """The dispatch fields derive from the SAME fresh preview call the
     rest of GateSummary uses (the counting-spy proof style): one
     preview call, the line's cells == that fresh enumeration's
     cells_count — never a cached screen value, never a subprocess
-    (auto-default #7)."""
-    monkeypatch.setattr(
-        sweep_launcher, "effective_gpu_count", lambda: 2)
+    (auto-default #7; the gpus_display default derives from the spec's
+    workers, WR-03 — no detection at preview time)."""
     double = RunConfigDouble(preview_result=run_config.PreviewResult(
         models_count=2, tasks_count=2, seeds_count=3,
         fractions_count=None, cells_count=12,
@@ -918,7 +916,7 @@ def test_gate_confirm_data_dispatch_fields_fresh_recompute(
         "the dispatch line's cells ride the fresh enumeration"
     )
     assert summary.workers == 2
-    assert summary.gpus_display == "all(2)"
+    assert summary.gpus_display == "0..1"
     assert list(summary.pairs) == [("m1", "t1"), ("m2", "t2")]
 
 

@@ -239,12 +239,14 @@ class RunSpec:
         workers: multi-GPU dispatch worker count (16-03, D16-09;
             default 1) — threads ``--workers`` ALWAYS explicitly in the
             dispatch composer (the field carries a live value, A2).
-        gpus: multi-GPU GPU ids (comma indices) — None = all detected,
-            resolved at LAUNCH time and NEVER persisted as a
-            resolved/guessed list (Pitfall 8); normalizes to a sorted
-            deduped tuple (the house discipline); threads ``--gpus``
-            PRESENT-ONLY (D-12 parity — a defaults spec contributes
-            zero ``--gpus`` elements).
+        gpus: multi-GPU GPU ids (comma indices) — None = the child's
+            default assignment at LAUNCH time (the FIRST ``workers``
+            GPU indices, dispatch_core's ``range(workers)`` rule —
+            WR-03, phase-16 review: never "all detected"), NEVER
+            persisted as a resolved/guessed list (Pitfall 8);
+            normalizes to a sorted deduped tuple (the house
+            discipline); threads ``--gpus`` PRESENT-ONLY (D-12 parity
+            — a defaults spec contributes zero ``--gpus`` elements).
     """
 
     models: tuple[str, ...]
@@ -1299,8 +1301,10 @@ def compose_dispatch_argv(spec):
     explicit (the A2 pin — the field carries a live value, even at 1),
     ``--gpus`` PRESENT-ONLY when ``spec.gpus`` is not None (D-12
     parity — a defaults spec contributes ZERO ``--gpus`` elements;
-    None means all-detected and resolves at LAUNCH time inside the
-    child, never here, Pitfall 8), ``--models``, the ABSOLUTE
+    None means the child's default assignment — the FIRST ``workers``
+    GPU indices — resolves at LAUNCH time inside the child, never
+    here, Pitfall 8; WR-03, phase-16 review: never "all detected"),
+    ``--models``, the ABSOLUTE
     ``--output-root`` (D-14), then the passthrough ``--tasks`` /
     ``--seeds`` and the SAME pinned present-only sweep-flag tail
     ``compose_argv`` threads (element-for-element the run_sweep

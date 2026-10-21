@@ -1395,9 +1395,10 @@ class RunConfigScreen(Screen):
                 # TCSS for slot-4). The workers field carries its LIVE
                 # default value "1" (a VALUE, never a placeholder — the
                 # operator is expected to touch it); the GPUs field is
-                # empty with the all-detected prompt hint (values are
-                # never guessed into the field — an empty field IS
-                # all-detected, resolved at LAUNCH time, Pitfall 8).
+                # empty with the default-assignment prompt hint (values
+                # are never guessed into the field — an empty field
+                # threads NO --gpus and the child binds the FIRST
+                # workers GPU indices at LAUNCH time, WR-03/Pitfall 8).
                 yield Label(S.CFG_MGPU_TITLE, id="cfg-mgpu-title",
                             classes="cfg-section-title")
                 with Horizontal(classes="cfg-param-row"):
@@ -1529,8 +1530,9 @@ class RunConfigScreen(Screen):
             # 16-04: the multi-GPU pair — workers ALWAYS seeds a value
             # (the RunSpec default 1 is a VALUE, never a placeholder);
             # gpus seeds the typed list or stays EMPTY (the placeholder
-            # then documents all-detected; None never resolves to a
-            # guessed list at this layer, Pitfall 8).
+            # then documents the child's first-workers default, WR-03;
+            # None never resolves to a guessed list at this layer,
+            # Pitfall 8).
             ("#cfg-input-workers", str(message.spec.workers)),
             ("#cfg-input-gpus",
              (",".join(message.spec.gpus)
@@ -1767,7 +1769,8 @@ class RunConfigScreen(Screen):
             PARAM_EBS: self._text_value("#cfg-input-ebs") or None,
             # 16-04: the multi-GPU pair rides the same parse_params
             # mirrors (an empty GPUs field is ABSENT — the epochs
-            # idiom — meaning all-detected, never a guessed list).
+            # idiom — meaning the child's first-workers default at
+            # launch, WR-03; never a guessed list).
             PARAM_WORKERS: self._text_value("#cfg-input-workers") or None,
             PARAM_GPUS: self._text_value("#cfg-input-gpus") or None,
         }

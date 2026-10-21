@@ -1509,9 +1509,14 @@ CFG_FIELD_WORKERS = _t("CFG_FIELD_WORKERS", "workers", "workers")
 # is exactly the --gpus flag vocabulary (the CFG_FIELD_SEEDS "seeds"
 # precedent) and the zh side stays the table's verbatim "GPUs".
 CFG_FIELD_GPUS = _t("CFG_FIELD_GPUS", "GPUs", "gpus")
+# WR-03 (phase-16 review): the default copy names the child's OWN
+# resolution rule — an empty field threads NO --gpus and dispatch_core
+# binds the FIRST ``workers`` GPU indices (range(workers)), never all
+# detected GPUs; "workers" is the sibling FIELD name (a static
+# placeholder, not interpolated).
 CFG_GPUS_DEFAULT = _t(
-    "CFG_GPUS_DEFAULT", "—（默认: 全部检测到的 GPU）",
-    "— (default: all detected GPUs)")
+    "CFG_GPUS_DEFAULT", "—（默认: GPU 0..workers-1）",
+    "— (default: GPUs 0..workers-1)")
 CFG_MGPU_HINT = _t(
     "CFG_MGPU_HINT", "workers = 并发训练项数（一卡一项）",
     "workers = concurrent cells (one per GPU)")

@@ -323,12 +323,14 @@ class GateSummary:
             line. Defaulted so pre-16-04 fakes construct unchanged.
         gpus_display: the dispatch-plan GPU segment (16-04) — the
             comma-joined TYPED list when ``spec.gpus`` is not None,
-            else the ``all(n)`` resolution rule with n the DETECTED
-            count at preview time (auto-default #8 — the default
-            resolves at LAUNCH, the preview names the rule + live
-            count; count-0 renders ``all(0)``, equally honest since
-            count-0 machines admit unconditionally). The modal renders
-            it verbatim, never computes.
+            else ``0..{workers-1}``, the child's OWN default
+            resolution rule (WR-03, phase-16 review: an absent
+            ``--gpus`` binds the FIRST ``workers`` GPU indices —
+            dispatch_core's "Default GPU assignment", ``range(workers)``
+            — never all detected GPUs; the default resolves at LAUNCH
+            inside the child and is never persisted as a resolved
+            list, Pitfall 8). The modal renders it verbatim, never
+            computes.
     """
 
     models: int
@@ -513,16 +515,22 @@ def gate_confirm_data(spec, run_config_service=None):
             pairs.append(pair)
     # 16-04 (D16-11): the dispatch-plan fields — workers from the spec
     # (the tolerant getattr idiom, the launch_spec stage-0 precedent);
-    # the GPUs segment is the typed list or the all(n) resolution rule
-    # with the DETECTED count at preview time (auto-default #8). The
-    # all(n) count is deliberately NOT persisted anywhere — it names
-    # what will be detected, never a guess in place of data (Pitfall 8).
+    # the GPUs segment is the typed list or the child's OWN default
+    # resolution rule — an absent --gpus binds the FIRST ``workers``
+    # GPU indices (dispatch_core's "Default GPU assignment":
+    # ``range(workers)``), so the confirm face renders ``0..{workers-1}``
+    # (WR-03, phase-16 review: the former all(n)-detected claim
+    # over-promised exactly in the multi-GPU-expansion case — the child
+    # never binds past GPU workers-1). The default still resolves at
+    # LAUNCH inside the child and is NEVER persisted as a resolved list
+    # (Pitfall 8 — the display names the rule, never a guess in place
+    # of data).
     workers = getattr(spec, "workers", 1)
     typed_gpus = getattr(spec, "gpus", None)
     if typed_gpus is not None:
         gpus_display = ",".join(typed_gpus)
     else:
-        gpus_display = f"all({effective_gpu_count()})"
+        gpus_display = f"0..{workers - 1}"
     return GateSummary(
         models=preview_result.models_count,
         tasks=preview_result.tasks_count,

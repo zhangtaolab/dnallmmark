@@ -817,8 +817,8 @@ async def test_params_input_values_render_in_export():
             "(the SVG encodes their inner space as &#160;, so the "
             "contiguous constant is pinned by its stable prefix — four "
             "hits = the model-root, dataset-root, and log-dir rows "
-            "(261014-f4w) + the 16-04 GPUs all-detected row, the same "
-            "CFG_CACHE_DEFAULT grammar)"
+            "(261014-f4w) + the 16-04 GPUs default-assignment row "
+            "(WR-03 copy), the same CFG_CACHE_DEFAULT grammar)"
         )
         assert "./datasets" not in svg, (
             "the retired D-19 './datasets' display default no longer "
@@ -1329,8 +1329,9 @@ async def test_mgpu_fields_thread_into_spec_last_valid_governs():
     spec with workers 2 and the sorted/deduped gpus ("0","1"); garbage
     in a field raises its mirror and contributes NO partial (the
     last-valid value governs, the invalid raw never persists); the
-    DEFAULTS spec persists workers 1 / gpus None (all-detected, never
-    a resolved list — Pitfall 8)."""
+    DEFAULTS spec persists workers 1 / gpus None (the child's
+    first-workers default at launch — WR-03; never a resolved list,
+    Pitfall 8)."""
     run_service = FakeRunConfigService(spec=RunSpec(
         models=("model-a",), tasks=("task-1",)))
     app = _app(run_service=run_service)
@@ -1566,7 +1567,7 @@ async def test_dispatch_line_cells_equal_summary_line_cells():
     launcher = FakeLauncherService(summary=GateSummary(
         models=1, tasks=1, seeds=3, cells=3, output_root="./finetuned",
         is_e2x=False, expected_phrase="finetuned",
-        workers=1, gpus_display="all(2)"))
+        workers=1, gpus_display="0..0"))
     app = _app(run_service=run_service, launcher=launcher)
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_run_config(pilot, app)
@@ -1588,7 +1589,7 @@ async def test_dispatch_line_cells_equal_summary_line_cells():
         dispatch = app.screen.query_one("#cfg-gate-dispatch", Static)
         line = _plain(dispatch.content)
         assert line == LNC_GATE_DISPATCH_LINE.format(
-            workers=1, gpus="all(2)", cells=3), (
+            workers=1, gpus="0..0", cells=3), (
             "both lines carry the SAME GateSummary cells"
         )
         assert "（预览）" in line, (
@@ -1607,7 +1608,7 @@ async def test_e2x_face_renders_dispatch_line_phrase_mechanics_unchanged():
         models=62, tasks=50, seeds=3, cells=9300,
         output_root="./finetuned", is_e2x=True,
         expected_phrase="finetuned",
-        workers=2, gpus_display="all(2)"))
+        workers=2, gpus_display="0..1"))
     app = _app(run_service=run_service, launcher=launcher)
     async with app.run_test(size=(120, 40)) as pilot:
         await _open_run_config(pilot, app)
@@ -1625,7 +1626,7 @@ async def test_e2x_face_renders_dispatch_line_phrase_mechanics_unchanged():
         texts = [_plain(static.content)
                  for static in app.screen.query(Static)]
         expected = LNC_GATE_DISPATCH_LINE.format(
-            workers=2, gpus="all(2)", cells=9300)
+            workers=2, gpus="0..1", cells=9300)
         assert expected in texts, (
             "the dispatch line renders on the E2' face too"
         )
