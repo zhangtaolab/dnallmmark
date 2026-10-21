@@ -97,6 +97,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4: goldens regenerate after all screen changes settle)*
 - [x] 16-05-PLAN.md — Goldens: 3 regenerated + run_config_confirm NEW via make snapshot-update, fabricated constructor-injected fixtures, UNCOMMITTED pending D-03 review + WINDOWS deviation row + phase-close full gates (TUI-04)
+
 **Success criteria**:
 1. `gpu_probe` service: csv-mode subprocess probe → frozen dataclass rows, textual-free, honest 未安装 degradation; unit-tested via injected seam (no GPU in CI)
 2. G GPU-lanes panel renders per-GPU utilization/memory/temperature on the monitor cadence; absent binary never crashes the console (worker guard discipline)
@@ -109,9 +110,13 @@ Plans:
 **Requirements**: WEB-01, WEB-02, WEB-03
 **Plans**: 3 plans
 Plans:
+**Wave 1**
 - [ ] 17-01-PLAN.md — data-chain additive trio (schemas + export emission + summarize propagation + zero-drift gate split + METHODOLOGY appendix)
 - [ ] 17-02-PLAN.md — browser leg (vendored error-bars plugin + scatter whiskers + floating bars + ±std tooltips)
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 17-03-PLAN.md — node-lane r2-derived fixtures + geometry/schema tests + phase-close gates
+
 **Success criteria**:
 1. Aggregation emits additive-optional `mean`/`std`/`n_seeds`; with the fields suppressed, output is byte-identical to pre-v1.3 (zero-drift gate extended and green); METHODOLOGY.md documents display-only semantics + std definition
 2. Scatter (FLOPs vs rank) renders whiskers via the vendored `afterDatasetsDraw` plugin (zero new CDN scripts); task bar chart uses floating bars; tooltips gain ±std — verified against real sweep-derived artifacts

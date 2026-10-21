@@ -406,7 +406,7 @@ Tests import via `require('../../dnallm-mark/js/data.js').default` (tests/js/dat
 | A4 | Committed r2-derived fixture inputs will be copied under `tests/fixtures/` (the `.planning/` archives and `/root/autodl-tmp/phase15-evidence/` are not CI-visible) | WEB-03 | If maintainer prefers generator-only (script computes values from constants seeded by r2 numbers), fixture layout differs; no behavioral risk |
 | A5 | Whisker color/cap styling uses `--color-text-secondary` (#595F6E) matching-token hex in plugin defaults (existing chart-config precedent) | Code Examples | Cosmetic only; discretion item |
 
-## Open Questions
+## Open Questions (RESOLVED — planner rulings: Q1 per-model scatter std = mean of per-task population stds + min-n, display-only, METHODOLOGY appendix — 17-01 Task 2; Q2 emission threshold n_seeds >= 2 — 17-01 emission gate; Q3 fixture generator at scripts/generate-errorbar-fixtures.js — 17-03 Task 1)
 
 1. **Per-model scatter std semantics (the one genuine design ratification)**
    - What we know: the scatter plots per-model aggregates (y = `weighted_score`|`rank_score`, both ranking-derived); per-seed rank variance would need per-seed corpus re-ranking (forbidden territory); roadmap criterion 2 requires whiskers visible "verified against real sweep-derived artifacts" (the r2 export gives 2 models × 2 datasets × 3 seeds).
