@@ -227,7 +227,9 @@ def load_zscore_matrix(input_dir):
     Returns:
         ``{model_alias: {task_name: zscore}}``.
     """
-    _, raw_dataset_scores, _, _ = load_model_inputs(input_dir)
+    # Phase 17 (D17-03): load_model_inputs returns a 5-tuple — the fifth
+    # element (dataset_seed_stats, the optional display trio) is unused here.
+    _, raw_dataset_scores, _, _, _ = load_model_inputs(input_dir)
     matrix: dict[str, dict[str, float]] = {}
     for ds_name, scores in raw_dataset_scores.items():
         for model, stat in calculate_dataset_stats(scores).items():

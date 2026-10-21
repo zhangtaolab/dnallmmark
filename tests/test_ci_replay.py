@@ -28,6 +28,15 @@ no real training ever runs here (CI feasibility constraint):
   against ``schemas/models_comparison.json``, byte-stable across two runs.
   This closes the E2' bridge end-to-end: run records -> both views ->
   aggregate over the per-model view -> leaderboard JSON.
+- **Phase 17 additive case (D17-01/D17-02, 17-01):** every e2_replay cell
+  is 3-seed on the declared primary metric (AUPRC), so the chain emits the
+  optional display trio end-to-end — entry-level mean/std/n_seeds in both
+  export views, per-model std/n_seeds in every comparison file — and the
+  trio is proven ADDITIVE: a trio-stripped copy of the emitted model view
+  aggregates to comparison output whose pre-existing keys are byte-equal
+  to the trio-carrying run's (the two differ only by std/n_seeds). The
+  absent case over trio-less committed data is pinned UNMODIFIED by
+  ``tests/test_determinism.py``.
 - **Aggregate half:** ``summarize_comparison.main()`` over a tmp copy of
   ``tests/fixtures/synthetic_models/`` (synthetic registry slice injected
   the way ``tests/test_golden.py`` does it) emits ``models_comparison.json``
@@ -52,6 +61,7 @@ See also:
 from __future__ import annotations
 
 import json
+import math
 import shutil
 from pathlib import Path
 
@@ -91,6 +101,18 @@ COMPARISON_FILES = (
     "models_comparison_plant.json",
     "models_comparison_microbe.json",
 )
+
+# The 16 schema-required performance keys (self-maintaining: derived from
+# the schema contract, never hand-copied) — the Phase-17 additive assertion
+# is "exactly these 16 plus {std, n_seeds}, nothing else".
+REQUIRED_PERF_KEYS = set(
+    COMPARISON_SCHEMA.schema["$defs"]["modelComparison"]["properties"]
+    ["performance"]["required"]
+)
+
+# ReplayModel-A's committed per-seed AUPRC values (seed_42/43/44) — the
+# population-std expectation below is derived from these, never imported.
+REPLAY_A_AUPRC_SEEDS = (0.93, 0.931, 0.932)
 
 
 def _export_fixture(out: Path, stats: Path, model_out: Path) -> list[str]:
@@ -255,6 +277,15 @@ def test_full_d16_chain_emits_both_views_then_aggregates_over_model_view(
             assert not errors, "\n".join(
                 f"- {'/'.join(map(str, e.path))}: {e.message}" for e in errors
             )
+            # Phase 17 (D17-01/D17-02): every datasetEntry carries the
+            # optional display trio at ENTRY level — EXACTLY the base keys
+            # plus {mean, std, n_seeds}, nothing else (the additive shape;
+            # every e2_replay cell is 3-seed on the declared AUPRC metric).
+            for entry in doc["performance"].values():
+                assert set(entry) == {
+                    "dataset", "parameters", "performance",
+                    "mean", "std", "n_seeds",
+                }
 
         # Bridge half 2: aggregate over the EMITTED per-model view — the
         # staged dir carries the chain-produced files, never hand-written
@@ -285,6 +316,20 @@ def test_full_d16_chain_emits_both_views_then_aggregates_over_model_view(
         for entry in doc.values():
             assert entry["performance"]["samples"] == 1
             assert entry["performance"]["rank"] in (1, 2, 3)
+        # Phase 17 (D17-03, Q1 ruling): every performance block carries
+        # EXACTLY the 16 required keys plus {std, n_seeds} — the per-model
+        # display propagation over the single std-carrying task degenerates
+        # to that task's population std / seed count, cross-checking the
+        # export-side emission values directly.
+        for entry in doc.values():
+            assert set(entry["performance"]) == REQUIRED_PERF_KEYS | {"std", "n_seeds"}
+        replay_a = doc["ReplayModel-A"]["performance"]
+        assert replay_a["n_seeds"] == 3
+        expected_std = math.sqrt(
+            sum((v - sum(REPLAY_A_AUPRC_SEEDS) / 3) ** 2 for v in REPLAY_A_AUPRC_SEEDS)
+            / len(REPLAY_A_AUPRC_SEEDS)
+        )
+        assert replay_a["std"] == pytest.approx(expected_std)  # ~0.00081650
         # FakeCpG is Multiple -> the majority Animals arena: the all-tasks
         # file plus exactly the animal comparison, nothing else.
         produced = sorted(p.name for p in work.glob("models_comparison*.json"))
@@ -293,6 +338,73 @@ def test_full_d16_chain_emits_both_views_then_aggregates_over_model_view(
         ]
         outputs.append({name: (work / name).read_bytes() for name in produced})
     assert outputs[0] == outputs[1], "full D-16 chain not byte-stable across runs"
+
+
+# =====================================================================
+# Phase 17 additive case (D17-02, 17-01 Task 2): multi-seed inputs add
+# ONLY the new keys — a trio-stripped copy of the emitted model view
+# aggregates to comparison output byte-equal on every pre-existing key.
+# =====================================================================
+
+def test_trio_is_additive_over_trio_stripped_inputs(tmp_path, monkeypatch):
+    """The zero-drift gate's ADDITIVE half: over the 3-seed e2_replay chain,
+    a trio-stripped copy of the emitted per-model view aggregates to
+    comparison output whose pre-existing keys are byte-equal to the
+    trio-carrying run's — the two outputs differ ONLY by std/n_seeds on
+    every model, in every comparison file the chain produces. Multi-seed
+    inputs add ONLY the new keys; nothing else moves (the same staging the
+    aggregate half uses — monkeypatch.chdir + the REGISTRY_PATH slice,
+    never new path conventions)."""
+    out = tmp_path / "out"
+    stats_dir = tmp_path / "stats"
+    model_out = tmp_path / "models"
+    _export_fixture(out, stats_dir, model_out)
+
+    comparisons = {}
+    for label, strip in (("with_trio", False), ("stripped", True)):
+        work = tmp_path / label
+        staged = work / "model_performance"
+        staged.mkdir(parents=True)
+        for path in sorted(model_out.glob("*_performance.json")):
+            # json round-trip = the deep copy; the stripped variant deletes
+            # exactly the three trio keys from every datasetEntry.
+            doc = json.loads(path.read_text(encoding="utf-8"))
+            if strip:
+                for entry in doc["performance"].values():
+                    for key in ("mean", "std", "n_seeds"):
+                        entry.pop(key, None)
+            (staged / path.name).write_text(json.dumps(doc), encoding="utf-8")
+        monkeypatch.chdir(work)
+        monkeypatch.setattr(
+            summarize_comparison, "REGISTRY_PATH", FIXTURE_DIR / "datasets_info.json"
+        )
+        summarize_comparison.main()
+        # FakeCpG is Multiple -> the majority Animals arena: the all-tasks
+        # file plus exactly the animal comparison.
+        comparisons[label] = {
+            name: json.loads((work / name).read_text(encoding="utf-8"))
+            for name in ("models_comparison.json", "models_comparison_animal.json")
+        }
+
+    for name in ("models_comparison.json", "models_comparison_animal.json"):
+        with_trio, stripped = comparisons["with_trio"][name], comparisons["stripped"][name]
+        assert set(with_trio) == set(stripped) == set(REPLAY_MODELS), name
+        for model in REPLAY_MODELS:
+            perf_full = with_trio[model]["performance"]
+            perf_strip = stripped[model]["performance"]
+            # Every pre-existing key byte-equal between the two runs (exact
+            # value comparison via json.dumps with sort_keys — the D-06
+            # adjacent vocabulary, reused rather than re-implemented).
+            for key in perf_strip:
+                assert json.dumps(perf_strip[key], sort_keys=True) == json.dumps(
+                    perf_full[key], sort_keys=True
+                ), f"{name}/{model}.{key} drifted between stripped and trio runs"
+            # The stripped run emitted NONE of the new keys; the
+            # trio-carrying run's key set is exactly the 16 + {std, n_seeds}.
+            assert not ({"std", "n_seeds"} & set(perf_strip)), f"{name}/{model}"
+            assert set(perf_full) == REQUIRED_PERF_KEYS | {"std", "n_seeds"}, (
+                f"{name}/{model}"
+            )
 
 
 # =====================================================================

@@ -318,7 +318,7 @@ def to_singular_species(name):
 
 
 def aggregate_models(models_info, dataset_stats_map, dataset_flops_map, target_datasets,
-                     *, include_weighted=False):
+                     *, include_weighted=False, dataset_seed_stats=None):
     """Aggregate per-task normalised scores into overall model rankings.
 
     For each model, this function sums its normalised scores (rank score,
@@ -339,6 +339,19 @@ def aggregate_models(models_info, dataset_stats_map, dataset_flops_map, target_d
     counts the view's tasks. ``main()`` emits it (schema-required since the
     F6 migration); direct calls default to the pure 15-key block.
 
+    Phase 17 (D17-03, display-only propagation): with ``dataset_seed_stats``
+    carrying the optional per-task display stats (from
+    :func:`load_model_inputs`), each performance block of a model with at
+    least one std-carrying task also carries ``std`` — the MEAN of that
+    model's per-task population stds over tasks carrying std — and
+    ``n_seeds`` — the MINIMUM per-task seed count over those tasks (the Q1
+    ruling). Emitted inside this function in the exact conditional shape of
+    ``include_weighted`` so ALL FOUR arena files inherit uniformly; an empty
+    or ``None`` map emits nothing anywhere (D17-02 — trio-less inputs
+    aggregate byte-identically). NOT a rank-score variance: per-seed rank
+    variance would require per-seed re-ranking of the corpus and is out of
+    scope.
+
     Args:
         models_info:         ``{model_alias: {name, size (M), type, …}}``
         dataset_stats_map:   ``{dataset_name: {model_alias: {raw, rank, …}}}``
@@ -349,6 +362,9 @@ def aggregate_models(models_info, dataset_stats_map, dataset_flops_map, target_d
         include_weighted:    Emit ``weighted_score`` (F6 weighted view). Off by
                              default for pure-function callers; ``main()`` sets
                              it True.
+        dataset_seed_stats:  Optional ``{dataset_name: {model_alias:
+                             {"std": float, "n_seeds": int}}}`` (Phase 17);
+                             ``main()`` threads it from ``load_model_inputs``.
 
     Returns:
         ``{model_alias: {model: …, performance: …}}`` sorted by ``rank_score``
@@ -410,6 +426,29 @@ def aggregate_models(models_info, dataset_stats_map, dataset_flops_map, target_d
                 sum(s['zscore'] for s in model_m_stats) / len(target_datasets)
             )
 
+        # Phase-17 display-only propagation (Q1 ruling, D17-03): per-model
+        # std = the mean of the model's per-task population stds over tasks
+        # carrying std; n_seeds = the minimum per-task seed count over those
+        # tasks. Emitted AFTER the performance dict construction in the exact
+        # conditional shape of include_weighted — inside aggregate_models,
+        # never in main(), so all four arena files inherit uniformly.
+        # Ranking math untouched: absent map/entries => keys never written
+        # => trio-less inputs aggregate byte-identically (D17-02).
+        if dataset_seed_stats is not None:
+            seed_pairs = [
+                dataset_seed_stats[ds][model_alias]
+                for ds in target_datasets
+                if ds in dataset_seed_stats
+                and model_alias in dataset_seed_stats[ds]
+            ]
+            if seed_pairs:
+                aggregated_results[model_alias]["performance"]["std"] = (
+                    sum(pair["std"] for pair in seed_pairs) / len(seed_pairs)
+                )
+                aggregated_results[model_alias]["performance"]["n_seeds"] = (
+                    min(pair["n_seeds"] for pair in seed_pairs)
+                )
+
     # Assign overall rank based on rank_score (descending).  The model with
     # the highest cumulative rank_score is ranked #1.
     sorted_models = sorted(
@@ -434,19 +473,29 @@ def load_model_inputs(input_dir):
     source for the permutation-test engine (``script/permutation_tests.py``)
     — one reader over the model-centric inputs, never a duplicated loop.
 
+    Phase 17 (D17-03): also extracts the OPTIONAL display trio's
+    ``std``/``n_seeds`` per datasetEntry into ``dataset_seed_stats`` —
+    presence-gated so trio-less inputs (all committed single-run data)
+    produce an empty map and aggregate byte-identically (D17-02).
+
     Args:
         input_dir: Directory containing ``{alias}_performance.json`` files.
 
     Returns:
         Tuple ``(models_info, raw_dataset_scores, raw_dataset_flops,
-        dataset_species_map)`` — the leaderboard card subset map, per-task
-        raw primary-metric scores (presence-gated), per-task FLOPs (recorded
-        regardless of metric presence), and the per-dataset arena labels.
+        dataset_species_map, dataset_seed_stats)`` — the leaderboard card
+        subset map, per-task raw primary-metric scores (presence-gated),
+        per-task FLOPs (recorded regardless of metric presence), the
+        per-dataset arena labels, and the optional multi-seed display
+        stats ``{dataset_name: {model_alias: {"std": float,
+        "n_seeds": int}}}`` (recorded only when the datasetEntry carries
+        BOTH keys with std a finite float and n_seeds an int >= 2).
     """
     models_info = {}               # {model_alias: {name, size (M), type, tokenizer, …}}
     raw_dataset_scores = {}        # {dataset_name: {model_alias: raw_primary_metric}}
     raw_dataset_flops = {}         # {dataset_name: {model_alias: FLOPs}}
     dataset_species_map = {}       # {dataset_name: species_label}
+    dataset_seed_stats = {}        # {dataset_name: {model_alias: {"std", "n_seeds"}}}
 
     # Arena grouping map (FIX-02): {dataset_name: arena} from the registry's
     # maintainer-confirmed Category column, Multiple resolved to majority
@@ -519,7 +568,36 @@ def load_model_inputs(input_dir):
                 raw_dataset_flops[dataset_name] = {}
             raw_dataset_flops[dataset_name][model_alias] = flops
 
-    return models_info, raw_dataset_scores, raw_dataset_flops, dataset_species_map
+            # Phase 17 (D17-03): collect the OPTIONAL display trio's std /
+            # n_seeds with the same presence-gate discipline as raw_score —
+            # recorded ONLY when the datasetEntry carries BOTH keys with std
+            # a finite float and n_seeds an int >= 2 (the emission gate's
+            # own threshold). Never get_float-with-default-0: a std of 0.0
+            # from genuinely identical seeds IS recorded; only absence is
+            # absent — trio-less inputs leave the map empty so aggregation
+            # stays byte-identical (D17-02).
+            entry_std = ds_content.get("std")
+            entry_n = ds_content.get("n_seeds")
+            if (
+                isinstance(entry_std, (int, float))
+                and not isinstance(entry_std, bool)
+                and math.isfinite(float(entry_std))
+                and isinstance(entry_n, int)
+                and not isinstance(entry_n, bool)
+                and entry_n >= 2
+            ):
+                dataset_seed_stats.setdefault(dataset_name, {})[model_alias] = {
+                    "std": float(entry_std),
+                    "n_seeds": entry_n,
+                }
+
+    return (
+        models_info,
+        raw_dataset_scores,
+        raw_dataset_flops,
+        dataset_species_map,
+        dataset_seed_stats,
+    )
 
 
 def main():
@@ -548,7 +626,7 @@ def main():
     # -------------------- Read per-model JSON files ------------------
     # (extraction lives in load_model_inputs — the single reader shared with
     # script/permutation_tests.py; verbatim move, output unchanged)
-    models_info, raw_dataset_scores, raw_dataset_flops, dataset_species_map = (
+    models_info, raw_dataset_scores, raw_dataset_flops, dataset_species_map, dataset_seed_stats = (
         load_model_inputs(input_dir)
     )
 
@@ -562,7 +640,7 @@ def main():
     all_datasets = list(raw_dataset_scores.keys())
     total_comparison = aggregate_models(
         models_info, dataset_stats_map, raw_dataset_flops, all_datasets,
-        include_weighted=True,
+        include_weighted=True, dataset_seed_stats=dataset_seed_stats,
     )
 
     with open(output_total, "w", encoding='utf-8') as f:
@@ -584,7 +662,7 @@ def main():
 
         species_comparison = aggregate_models(
             models_info, dataset_stats_map, raw_dataset_flops, ds_list,
-            include_weighted=True,
+            include_weighted=True, dataset_seed_stats=dataset_seed_stats,
         )
 
         if species_comparison:

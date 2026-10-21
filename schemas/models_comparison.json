@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/zhangtaolab/dnallmmark/main/schemas/models_comparison.json",
-  "$comment": "Fully strict contract (D-01) covering ALL FOUR committed comparison files (models_comparison.json, models_comparison_{animal,plant,microbe}.json) — their shapes are identical (verified by live survey). Root is an open map of model alias to {model, performance}. The model block is the 7-KEY SUBSET card (not the full 11-key card); model organism vocabulary stays open strings here (D-02 closes metric enums only). Key sets surveyed live from all 4 committed files (Phase 2 research, 2026-10-09). F6 extension (05-02, data_version 1.1.0): performance gains the 16th required key weighted_score (sum_zscore / view task count, uniform difficulty weight — REV-04/F6 Q2), added in the SAME commit as the regenerated data and re-chained goldens.",
+  "$comment": "Fully strict contract (D-01) covering ALL FOUR committed comparison files (models_comparison.json, models_comparison_{animal,plant,microbe}.json) — their shapes are identical (verified by live survey). Root is an open map of model alias to {model, performance}. The model block is the 7-KEY SUBSET card (not the full 11-key card); model organism vocabulary stays open strings here (D-02 closes metric enums only). Key sets surveyed live from all 4 committed files (Phase 2 research, 2026-10-09). F6 extension (05-02, data_version 1.1.0): performance gains the 16th required key weighted_score (sum_zscore / view task count, uniform difficulty weight — REV-04/F6 Q2), added in the SAME commit as the regenerated data and re-chained goldens. Phase 17 (D17-01/D17-04, display-only): performance gains the OPTIONAL std/n_seeds in properties only (per-model display propagation — mean of per-task population stds, min n_seeds; NOT a rank-score variance) — required stays the 16 keys, additionalProperties:false unchanged; emitted by script/summarize_comparison.py only over multi-seed inputs, absent on the committed single-run data so trio-less aggregation stays byte-identical.",
   "type": "object",
   "additionalProperties": { "$ref": "#/$defs/modelComparison" },
   "$defs": {
@@ -69,7 +69,9 @@
             "top3_count": { "type": "integer" },
             "top5_count": { "type": "integer" },
             "top8_count": { "type": "integer" },
-            "weighted_score": { "type": "number" }
+            "weighted_score": { "type": "number" },
+            "std": { "type": "number" },
+            "n_seeds": { "type": "integer" }
           }
         }
       }
