@@ -111,7 +111,7 @@ Plans:
 **Plans**: 3 plans
 Plans:
 **Wave 1**
-- [ ] 17-01-PLAN.md — data-chain additive trio (schemas + export emission + summarize propagation + zero-drift gate split + METHODOLOGY appendix)
+- [x] 17-01-PLAN.md — data-chain additive trio (schemas + export emission + summarize propagation + zero-drift gate split + METHODOLOGY appendix)
 - [ ] 17-02-PLAN.md — browser leg (vendored error-bars plugin + scatter whiskers + floating bars + ±std tooltips)
 
 **Wave 2** *(blocked on Wave 1 completion)*

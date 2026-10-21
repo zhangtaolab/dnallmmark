@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 
 ## Current Position
 
-Phase: 17 (Web 多种子 Error Bar) — READY TO EXECUTE
-Plan: Not started
+Phase: 17 (Web 多种子 Error Bar) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-10-21 — Phase 16 complete, transitioned to Phase 17
+Last activity: 2026-10-21 — Phase 17 execution started
 
 ## Performance Metrics
 
@@ -123,6 +123,7 @@ Last activity: 2026-10-21 — Phase 16 complete, transitioned to Phase 17
 | Phase 16 P3 | 37 min | 2 tasks | 9 files |
 | Phase 16 P16-04 | 45 min | 2 tasks | 8 files |
 | Phase 16 P5 | 26 min | 2 tasks | 8 files |
+| Phase 17 P1 | 16 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -313,6 +314,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 16]: 16-05: _golden_app threads both monitor constructor seams absent-by-default — the WHOLE golden corpus renders machine-independent bytes (Pitfall 10), not just the monitor entries
 - [Phase 16]: 16-05: Rule-1 wrap-clip fix — the confirm face's dispatch line is its own Static above the scroll-bounded log (the E2' face placement); a must-stay-visible line never rides an auto-scrolled RichLog at its bound
 - [Phase 16]: 16-05: WINDOWS #50 opens the Phase-16 D-03 batch (the plan's #46 numbering was stale — #46-#49 existed; #46/#48 closed as resolved-by-regen, #49 deduped)
+- [Phase 17]: [Phase 17 / 17-01]: display std = POPULATION std (ddof=0) via NEW population_std helper directly after the END-vendored marker (banner untouched, test_vendored_stats green unmodified) — deliberately different from the vendored sd (ddof=1, reviewer seed_stats view); both conventions fixed once in the METHODOLOGY appendix (T-17-01)
+- [Phase 17]: [Phase 17 / 17-01]: trio emission gate = n_seeds >= 2 on the dataset's DECLARED primary metric (resolve_dataset_metric, resolved once per task); mean reuses the identical float(np.mean(ordered)) expression so it is bit-equal to the metric slot; 1-seed/absent cells emit NOTHING in both views (D17-02)
+- [Phase 17]: [Phase 17 / 17-01]: per-model propagation (Q1 ruling) = std mean of per-task population stds + n_seeds min, emitted INSIDE aggregate_models in the include_weighted conditional shape (all four arena files inherit; ranking math untouched); load_model_inputs returns a 5-tuple with presence-gated dataset_seed_stats (a genuine 0.0 std IS recorded, only absence is absent)
+- [Phase 17]: [Phase 17 / 17-01]: zero-drift gate split proven — absent case = tests/test_determinism.py + synthetic golden green UNMODIFIED over trio-less committed inputs; additive case = new trio-stripped equivalence test (pre-existing keys byte-equal, only std/n_seeds differ); committed dnallm-mark/data/ tree never regenerated this phase
 
 ### Pending Todos
 
@@ -385,8 +390,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T06:24:30.925Z
-Stopped at: Phase 16 complete, ready to plan Phase 17
+Last session: 2026-10-21T09:44:10.915Z
+Stopped at: Completed 17-01-PLAN.md (WEB-01 data-chain tracer: trio emission both views + per-model propagation + zero-drift gate split + METHODOLOGY appendix, all gates green)
 Resume file: None
 
 ## Operator Next Steps
