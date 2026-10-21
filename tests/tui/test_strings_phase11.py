@@ -64,6 +64,15 @@ EXPECTED_CFG_CONSTANTS = (
     "CFG_DIR_PICKER_TITLE", "CFG_DIR_PICKER_SELECT_LABEL",
     # 261016-poa (UX-4): the slot-4 launch-confirmation entry hint.
     "CFG_GATE_HINT",
+    # Phase 16 (16-04, TUI-02, D16-15): the multi-GPU dispatch params
+    # section (UI-SPEC C.1) — the section title pair (the DIRS
+    # mechanism), the workers/GPUs field labels, the all-detected
+    # placeholder, the dim hint, and the three collect-all problem
+    # mirrors (C.3; the shard CLI stays authoritative).
+    "CFG_MGPU_TITLE", "CFG_MGPU_TITLE_SHORT", "CFG_FIELD_WORKERS",
+    "CFG_FIELD_GPUS", "CFG_GPUS_DEFAULT", "CFG_MGPU_HINT",
+    "CFG_WORKERS_INVALID_PROBLEM", "CFG_GPUS_INVALID_PROBLEM",
+    "CFG_WORKERS_EXCEED_GPUS_PROBLEM",
 )
 
 #: The complete expected LNC_ inventory (launch-confirmation modal +
@@ -76,6 +85,11 @@ EXPECTED_LNC_CONSTANTS = (
     # side reuses LNC_EXIT_CONFIRM_NO below, the WIZ_BACK precedent).
     "LNC_GATE_CONFIRM_YES",
     "LNC_GATE_PAIR_LINE", "LNC_GATE_PAIRS_MORE",
+    # Phase 16 (16-04, TUI-02, D16-11): the dispatch-plan preview line
+    # — the ONE confirm-face addition, rendered on BOTH faces (the Y/N
+    # confirm above the pair list, the E2' modal above the warning
+    # block; auto-default #12).
+    "LNC_GATE_DISPATCH_LINE",
     "LNC_E2_WARNING", "LNC_E2_AUTH_NOTE", "LNC_E2_TYPE_PROMPT",
     "LNC_E2_MATCH_OK", "LNC_E2_MISMATCH", "LNC_ENV_BLOCKED_HINT",
     "LNC_SINGLE_GPU_BLOCKED",

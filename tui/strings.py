@@ -1481,6 +1481,49 @@ CFG_DIR_PICKER_SELECT_LABEL = _t(
 CFG_GATE_HINT = _t(
     "CFG_GATE_HINT", "回车 打开启动确认 · Y 启动 / N 取消",
     "Enter opens launch confirmation · Y launch / N cancel")
+# Phase 16 (16-04, TUI-02, D16-15): the multi-GPU dispatch params
+# section (UI-SPEC C.1) — the section title pair (the CFG_DIRS_TITLE
+# narrow-grid mechanism), the workers/GPUs field labels (flag
+# vocabulary English verbatim in both languages, the seeds/PEFT rule),
+# the GPUs all-detected placeholder (the CFG_CACHE_DEFAULT "—（…）"
+# prompt-hint grammar), the dim hint row, and the three collect-all
+# problem mirrors (C.3 — cheap pre-filters; the shard CLI stays the
+# validation authority, Pattern 7). {value} is raw operator input;
+# {workers}/{n} are the structured workers_exceeds_gpus pair (16-03's
+# format-ready (workers, gpu_count) detail).
+CFG_MGPU_TITLE = _t(
+    "CFG_MGPU_TITLE", "多 GPU 调度", "Multi-GPU dispatch")
+# The 80-col short variant. NOTE: the en side diverges from the
+# UI-SPEC table's "GPUs" BY THE REGISTRY INJECTIVITY LAW —
+# MON_GPU_TITLE already owns the en value "GPUs" (zh GPU 状态), and the
+# same-en-implies-same-zh tripwire forbids a second zh for one en;
+# "Multi-GPU" is the natural shortening of the 120-col title (exactly
+# how CFG_DIRS_TITLE_SHORT "Dirs" shortens "Dirs (repo-relative…)").
+CFG_MGPU_TITLE_SHORT = _t(
+    "CFG_MGPU_TITLE_SHORT", "多卡", "Multi-GPU")
+CFG_FIELD_WORKERS = _t("CFG_FIELD_WORKERS", "workers", "workers")
+# NOTE: the en side spells the flag's OWN lowercase form "gpus" — the
+# UI-SPEC table's en "GPUs" is impossible under the registry
+# injectivity law (MON_GPU_TITLE owns en "GPUs" with zh GPU 状态, and
+# same-en-implies-same-zh forbids a second zh); the lowercase spelling
+# is exactly the --gpus flag vocabulary (the CFG_FIELD_SEEDS "seeds"
+# precedent) and the zh side stays the table's verbatim "GPUs".
+CFG_FIELD_GPUS = _t("CFG_FIELD_GPUS", "GPUs", "gpus")
+CFG_GPUS_DEFAULT = _t(
+    "CFG_GPUS_DEFAULT", "—（默认: 全部检测到的 GPU）",
+    "— (default: all detected GPUs)")
+CFG_MGPU_HINT = _t(
+    "CFG_MGPU_HINT", "workers = 并发训练项数（一卡一项）",
+    "workers = concurrent cells (one per GPU)")
+CFG_WORKERS_INVALID_PROBLEM = _t(
+    "CFG_WORKERS_INVALID_PROBLEM", "workers 需为 ≥1 的整数: {value}",
+    "workers must be an integer >= 1: {value}")
+CFG_GPUS_INVALID_PROBLEM = _t(
+    "CFG_GPUS_INVALID_PROBLEM", "GPUs 需为逗号分隔的非负整数: {value}",
+    "GPUs must be comma-separated non-negative integers: {value}")
+CFG_WORKERS_EXCEED_GPUS_PROBLEM = _t(
+    "CFG_WORKERS_EXCEED_GPUS_PROBLEM", "workers ({workers}) 超过 GPU 数量 ({n})",
+    "workers ({workers}) exceeds the GPU count ({n})")
 
 # ===== 启动确认/执行 (LNC_, Phase 11) =====
 # The [enter] launch-confirmation pipeline, the E2' typed-phrase
@@ -1525,6 +1568,25 @@ LNC_GATE_PAIR_LINE = _t(
     "LNC_GATE_PAIR_LINE", "{model} × {task}", "{model} × {task}")
 LNC_GATE_PAIRS_MORE = _t(
     "LNC_GATE_PAIRS_MORE", "…共 {pairs} 组", "… {pairs} pairs total")
+# Phase 16 (16-04, TUI-02, D16-11): the dispatch-plan preview line —
+# the ONE confirm-face addition, rendered on BOTH faces (the Y/N
+# confirm above the pair list, the E2' typed-phrase modal above the
+# warning block; auto-default #12). {workers}/{gpus}/{cells} arrive
+# service-side through GateSummary (the modal renders, never
+# computes): {gpus} is the typed list or the all({n}) resolution rule
+# with the detected count at preview time (auto-default #8 — the
+# default resolves at LAUNCH, the preview names the rule + live
+# count, never a guess in place of data); {cells} is the SAME fresh
+# same-source preview enumeration the summary line already shows
+# (auto-default #7 — no dry-run subprocess enters the gate path); the
+# trailing （预览）/(preview) marks the honest preview (resume-marker
+# skips can only shrink the real queue; once running,
+# dispatch_state.json is the truth).
+LNC_GATE_DISPATCH_LINE = _t(
+    "LNC_GATE_DISPATCH_LINE",
+    "调度计划: {workers} workers × GPUs {gpus} · 排队 {cells} 训练项（预览）",
+    "Dispatch plan: {workers} workers × GPUs {gpus} · {cells} cells "
+    "queued (preview)")
 # The E2' escalation block (terraform-style typed phrase): the frozen
 # full-matrix warning wording, the authorization note, the type prompt,
 # and the live mismatch/match indicator pair.

@@ -233,6 +233,14 @@ class FakeRunConfigService:
         return ("/usr/bin/python", "run_sweep.py", "--models",
                 *spec.models, "--tasks", *spec.tasks)
 
+    def compose_dispatch_argv(self, spec):
+        """16-04: the dispatch composer delegates to the REAL module
+        (the pure-grammar-leg precedent — parse_params/resolve_dirs) so
+        the [p] verbatim-argv assertions exercise the real argv
+        authority the launcher routes through (one composition source,
+        zero drift between preview and spawn)."""
+        return run_config_service.compose_dispatch_argv(spec)
+
     def expected_phrase(self, output_root):
         return self.phrase_expected
 
@@ -804,12 +812,13 @@ async def test_params_input_values_render_in_export():
         assert "模型根" in svg, (
             "the model-root row's label renders (261014-c2l)"
         )
-        assert svg.count("—（默认") == 3, (
-            "ALL THREE storage-dir prompt hints render in the "
-            "placeholder's place (the SVG encodes their inner space as "
-            "&#160;, so the contiguous constant is pinned by its stable "
-            "prefix — three hits = the model-root, dataset-root, and "
-            "log-dir rows, 261014-f4w)"
+        assert svg.count("—（默认") == 4, (
+            "ALL FOUR prompt hints render in the placeholder's place "
+            "(the SVG encodes their inner space as &#160;, so the "
+            "contiguous constant is pinned by its stable prefix — four "
+            "hits = the model-root, dataset-root, and log-dir rows "
+            "(261014-f4w) + the 16-04 GPUs all-detected row, the same "
+            "CFG_CACHE_DEFAULT grammar)"
         )
         assert "./datasets" not in svg, (
             "the retired D-19 './datasets' display default no longer "
@@ -922,7 +931,11 @@ async def test_probe_hint_renders_under_variant_probe():
 
 async def test_preview_modal_renders_argv_and_problems():
     """[p]: the dimension summary, the same-source note, the LIST argv
-    VERBATIM, and the numbered problems when any."""
+    VERBATIM, and the numbered problems when any. 16-04 lockstep: the
+    verbatim argv is the DISPATCH composer's output (every slot-4
+    launch composes run_sweep_shard --mode dispatch, UI-SPEC
+    auto-default #9) — asserted space-flat because the real argv wraps
+    across RichLog lines at the modal width."""
     run_service = FakeRunConfigService(spec=RunSpec(
         models=("model-a",), tasks=("task-1",)))
     app = _app(run_service=run_service)
@@ -938,9 +951,13 @@ async def test_preview_modal_renders_argv_and_problems():
         assert CFG_PREVIEW_LINE.format(
             models=1, tasks=1, seeds=3, cells=3) in joined
         assert CFG_PREVIEW_NOTE in joined
-        assert CFG_ARGV_LABEL + " ".join(
-            run_service.compose_argv(
-                RunSpec(models=("model-a",), tasks=("task-1",)))) in joined
+        expected_argv = CFG_ARGV_LABEL + " ".join(str(part) for part in (
+            run_service.compose_dispatch_argv(
+                RunSpec(models=("model-a",), tasks=("task-1",)))))
+        flat = "".join(line.text for line in log.lines).replace(" ", "")
+        assert expected_argv.replace(" ", "") in flat, (
+            "the [p] modal shows the dispatch argv verbatim"
+        )
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, RunConfigScreen)
@@ -1161,6 +1178,296 @@ async def test_gate_live_root_precheck_reads_repo_root_basis_any_cwd(
         )
         assert launcher.env_calls == 0, "blocked before the env preflight"
         assert launcher.launch_calls == [], "nothing ever spawns"
+
+
+# =====================================================================
+# Phase 16 (16-04, TUI-02) — the multi-GPU dispatch params section,
+# the three mirror problems, and the capacity-stage threading
+# =====================================================================
+
+
+class _RecordingCapacityLauncher(FakeLauncherService):
+    """16-04: records the requested_workers the gate threads into the
+    capacity seam (the spec-composition evidence)."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.requested_workers_calls: list[int] = []
+
+    def single_gpu_launch_blocked(self, requested_workers=1):
+        self.requested_workers_calls.append(requested_workers)
+        return self._single_gpu_blocked
+
+
+async def test_gate_capacity_stage_threads_spec_workers_and_refuses():
+    """D16-10 (16-04): the capacity stage threads requested_workers from
+    the COMPOSED spec — a typed workers 2 reaches the seam — and an
+    over-capacity block refuses at the problems stage with the amended
+    copy naming roots AND the counts; the within-capacity leg passes
+    the stage through env preflight to the confirm (the chain-order
+    evidence style — problems -> capacity -> env -> confirm, zero
+    weakening)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+
+    # leg 1 — within capacity: the typed workers reach the seam and the
+    # chain passes the stage to env preflight then the confirm face
+    recorder = _RecordingCapacityLauncher(summary=GateSummary(
+        models=1, tasks=1, seeds=3, cells=3, output_root="./finetuned",
+        is_e2x=False, expected_phrase="finetuned"))
+    app = _app(run_service=run_service, launcher=recorder)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        app.screen.query_one("#cfg-input-workers", Input).value = "2"
+        await _settle(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.selection import ConfirmModal
+
+        assert recorder.requested_workers_calls[-1] == 2, (
+            "the capacity stage threads the composed spec's workers"
+        )
+        assert recorder.env_calls == 1, (
+            "within capacity the chain passes the stage to env preflight"
+        )
+        assert isinstance(app.screen, ConfirmModal), (
+            "the within-capacity leg reaches the confirm face"
+        )
+
+    # leg 2 — over capacity: the problems stage renders the amended
+    # copy naming the roots + the counts, BEFORE env or any confirm
+    blocked = _RecordingCapacityLauncher(
+        single_gpu_blocked=GpuCapacityBlock(
+            roots=("/repo/finetuned-live",), requested_workers=2,
+            gpu_count=2))
+    app = _app(run_service=run_service, launcher=blocked)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        app.screen.query_one("#cfg-input-workers", Input).value = "2"
+        await _settle(pilot, app)
+        await pilot.press("enter")
+        await _settle(pilot, app, rounds=4)
+        from tui.screens.run_config import ProblemsModal
+
+        assert isinstance(app.screen, ProblemsModal), (
+            "the over-capacity leg refuses at the problems stage"
+        )
+        assert blocked.requested_workers_calls[-1] == 2
+        log = app.screen.query_one("#cfg-problems-log")
+        joined = "\n".join(
+            line.text for line in log.lines).replace("\n", "")
+        from tui.strings import LNC_SINGLE_GPU_BLOCKED
+
+        assert LNC_SINGLE_GPU_BLOCKED.format(
+            roots="/repo/finetuned-live", workers=2, n=2) in joined, (
+            "the refusal names the live root AND the counts"
+        )
+        assert blocked.env_calls == 0, "blocked before the env preflight"
+        assert blocked.confirm_calls == [], "blocked before the confirm"
+        assert blocked.launch_calls == [], "nothing ever spawns"
+
+
+async def test_mgpu_section_renders_live_default_and_placeholder():
+    """UI-SPEC C.1 (16-04): the params pane carries the multi-GPU
+    dispatch section between the effective_batch_size row and the dirs
+    title — the workers Input holding the LIVE default value "1" (a
+    VALUE, never a placeholder), the GPUs Input EMPTY with the
+    CFG_GPUS_DEFAULT placeholder, and the dim CFG_MGPU_HINT row;
+    existing classes only (zero new TCSS for slot-4)."""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        from tui.strings import (
+            CFG_FIELD_GPUS,
+            CFG_FIELD_WORKERS,
+            CFG_GPUS_DEFAULT,
+            CFG_MGPU_HINT,
+            CFG_MGPU_TITLE,
+        )
+
+        assert _label_text(screen, "#cfg-mgpu-title") == CFG_MGPU_TITLE
+        assert _label_text(
+            screen, "#cfg-label-workers") == CFG_FIELD_WORKERS
+        assert _label_text(screen, "#cfg-label-gpus") == CFG_FIELD_GPUS
+        workers = screen.query_one("#cfg-input-workers", Input)
+        assert workers.value == "1", (
+            "the workers default is a LIVE value, never a placeholder"
+        )
+        assert workers.placeholder == "", (
+            "no placeholder grammar on the workers field (Pitfall 8)"
+        )
+        gpus = screen.query_one("#cfg-input-gpus", Input)
+        assert gpus.value == "", (
+            "values are never guessed into the GPUs field"
+        )
+        assert gpus.placeholder == CFG_GPUS_DEFAULT
+        assert _label_text(screen, "#cfg-hint-mgpu") == CFG_MGPU_HINT
+        # the section sits BETWEEN the EBS row and the DIRS title
+        order = [node.id for node in screen.query(
+            "#cfg-label-ebs, #cfg-mgpu-title, #cfg-dirs-title")]
+        assert order == ["cfg-label-ebs", "cfg-mgpu-title",
+                         "cfg-dirs-title"], (
+            "the section lands between the EBS row and the dirs title"
+        )
+
+
+async def test_mgpu_section_short_title_swaps_at_narrow_grid():
+    """The 80-col degradation swaps in the short section title (the
+    CFG_DIRS_TITLE pair mechanism reused verbatim)."""
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_run_config(pilot, app)
+        from tui.strings import CFG_MGPU_TITLE_SHORT
+
+        assert _label_text(
+            app.screen, "#cfg-mgpu-title") == CFG_MGPU_TITLE_SHORT
+
+
+async def test_mgpu_fields_thread_into_spec_last_valid_governs():
+    """Spec threading (16-04): typing workers 2 + GPUs 1,0 composes a
+    spec with workers 2 and the sorted/deduped gpus ("0","1"); garbage
+    in a field raises its mirror and contributes NO partial (the
+    last-valid value governs, the invalid raw never persists); the
+    DEFAULTS spec persists workers 1 / gpus None (all-detected, never
+    a resolved list — Pitfall 8)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        screen.query_one("#cfg-input-workers", Input).value = "2"
+        screen.query_one("#cfg-input-gpus", Input).value = "1,0"
+        await _settle(pilot, app)
+        saved = run_service.saved_specs[-1]
+        assert saved.workers == 2
+        assert saved.gpus == ("0", "1"), (
+            "the typed list normalizes sorted + deduped (house rule)"
+        )
+        # garbage workers: the mirror fires, the invalid raw NEVER
+        # persists — the last-valid value governs
+        screen.query_one("#cfg-input-workers", Input).value = "x"
+        await _settle(pilot, app)
+        assert run_service.saved_specs[-1].workers == 2, (
+            "an invalid field contributes no partial (last-valid governs)"
+        )
+        assert run_service.saved_specs[-1].gpus == ("0", "1")
+        # a CLEARED field follows the screen's established
+        # last-valid-governs rule (the Phase-11 parse_params semantics
+        # — identical to epochs/curve/ebs; 16-04 changes nothing here)
+        screen.query_one("#cfg-input-gpus", Input).value = ""
+        await _settle(pilot, app)
+        assert run_service.saved_specs[-1].gpus == ("0", "1")
+
+    # the DEFAULTS leg (Pitfall 8): a fresh screen that never typed a
+    # list persists workers 1 / gpus None — all-detected, never a
+    # resolved list guessed into the state document
+    defaults_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app2 = _app(run_service=defaults_service)
+    async with app2.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app2)
+        saved = defaults_service.saved_specs[-1]
+        assert saved.workers == 1
+        assert saved.gpus is None, (
+            "a defaults spec persists all-detected as None (Pitfall 8)"
+        )
+
+
+async def test_mgpu_mirror_problems_render_numbered():
+    """UI-SPEC C.3 (16-04): the three mirror problems render as
+    numbered problem lines through _problem_line with the verbatim
+    copy — workers 需为…/GPUs 需为…/workers (…) 超过 … (collect-all;
+    the seeds/curve precedent)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        # leg A — both field mirrors at once (collect-all)
+        screen.query_one("#cfg-input-workers", Input).value = "x"
+        screen.query_one("#cfg-input-gpus", Input).value = "0,a"
+        await _settle(pilot, app)
+        await pilot.press("p")
+        await pilot.pause()
+        from tui.screens.run_config import PreviewModal
+        from tui.strings import (
+            CFG_GPUS_INVALID_PROBLEM,
+            CFG_WORKERS_INVALID_PROBLEM,
+        )
+
+        assert isinstance(app.screen, PreviewModal)
+        log = app.screen.query_one("#cfg-preview-log")
+        joined = "\n".join(
+            line.text for line in log.lines).replace("\n", "")
+        assert f"1. {CFG_WORKERS_INVALID_PROBLEM.format(value='x')}" in (
+            joined)
+        assert f"2. {CFG_GPUS_INVALID_PROBLEM.format(value='0,a')}" in (
+            joined)
+        await pilot.press("escape")
+        await pilot.pause()
+        # leg B — the short-side arity mirror (both legs parse clean)
+        screen = app.screen
+        screen.query_one("#cfg-input-workers", Input).value = "3"
+        screen.query_one("#cfg-input-gpus", Input).value = "0,1"
+        await _settle(pilot, app)
+        await pilot.press("p")
+        await pilot.pause()
+        from tui.strings import CFG_WORKERS_EXCEED_GPUS_PROBLEM
+
+        assert isinstance(app.screen, PreviewModal)
+        log = app.screen.query_one("#cfg-preview-log")
+        joined = "\n".join(
+            line.text for line in log.lines).replace("\n", "")
+        expected = (
+            f"1. {CFG_WORKERS_EXCEED_GPUS_PROBLEM.format(workers=3, n=2)}")
+        assert expected in joined, (
+            "the structured (workers, gpu_count) pair formats the copy"
+        )
+
+
+async def test_preview_modal_dispatch_argv_defaults_shape():
+    """[p] (16-04): the verbatim argv is the DISPATCH composer's output
+    (the same composer the launcher routes through — one composition
+    source, zero drift): run_sweep_shard.py --mode dispatch with
+    --workers ALWAYS explicit (the A2 pin) and NO --gpus element at
+    defaults (Pitfall 8); a typed GPU list threads --gpus present-only
+    (D-12 parity)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("p")
+        await pilot.pause()
+        from tui.screens.run_config import PreviewModal
+
+        assert isinstance(app.screen, PreviewModal)
+        log = app.screen.query_one("#cfg-preview-log")
+        flat = "".join(line.text for line in log.lines).replace(" ", "")
+        assert "run_sweep_shard.py" in flat
+        assert "--modedispatch" in flat, (
+            "every slot-4 launch composes the dispatch argv (auto-#9)"
+        )
+        assert "--workers1" in flat, (
+            "the A2 pin: --workers is always explicit, even at 1"
+        )
+        assert "--gpus" not in flat, (
+            "a defaults spec composes ZERO --gpus elements (Pitfall 8)"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+        # a typed GPU list threads --gpus present-only
+        app.screen.query_one("#cfg-input-gpus", Input).value = "0,1"
+        await _settle(pilot, app)
+        await pilot.press("p")
+        await pilot.pause()
+        assert isinstance(app.screen, PreviewModal)
+        log = app.screen.query_one("#cfg-preview-log")
+        flat = "".join(line.text for line in log.lines).replace(" ", "")
+        assert "--gpus0,1" in flat
 
 
 async def test_gate_env_block_renders_reasons_verbatim():

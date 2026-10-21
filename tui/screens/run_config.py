@@ -81,7 +81,9 @@ from tui.services.run_config import (
     PARAM_CURVE,
     PARAM_EBS,
     PARAM_EPOCHS,
+    PARAM_GPUS,
     PARAM_SEEDS,
+    PARAM_WORKERS,
     PreviewResult,
     RunSpec,
 )
@@ -178,6 +180,11 @@ class RunConfigServiceProtocol(Protocol):
     def compose_argv(self, spec: RunSpec) -> list:
         """The run_sweep LIST argv (verbatim, the [p] modal renders it)."""
 
+    def compose_dispatch_argv(self, spec: RunSpec) -> list:
+        """The run_sweep_shard --mode dispatch LIST argv (16-04 — the
+        [p] modal renders THIS verbatim: the same composer the launcher
+        routes through, one composition source, zero drift)."""
+
     def expected_phrase(self, output_root: str) -> str:
         """The E2' typed phrase this output root demands."""
 
@@ -266,6 +273,12 @@ class RunConfigBackend:
 
     def compose_argv(self, spec: RunSpec) -> list:
         return run_config_service.compose_argv(spec)
+
+    def compose_dispatch_argv(self, spec: RunSpec) -> list:
+        """16-04 (D16-09): thin delegation to the dispatch composer the
+        11-03 launcher's spawn routes through — the [p] modal shows the
+        argv that WILL launch (zero drift between preview and spawn)."""
+        return run_config_service.compose_dispatch_argv(spec)
 
     def expected_phrase(self, output_root: str) -> str:
         return run_config_service.expected_phrase(output_root)
@@ -414,6 +427,19 @@ def _problem_line(code: str, detail: object) -> str:
         return S.CFG_COMPOSITION_PROBLEM
     if code == "output_root_invalid":
         return S.CFG_OUTPUT_ROOT_PROBLEM.format(value=detail)
+    # 16-04 (UI-SPEC C.3): the three multi-GPU dispatch mirrors —
+    # cheap pre-filters the parse_params service tier raises; the
+    # shard CLI re-validates at spawn (defense in depth, Pattern 7).
+    if code == "workers_invalid":
+        return S.CFG_WORKERS_INVALID_PROBLEM.format(value=detail)
+    if code == "gpus_invalid":
+        return S.CFG_GPUS_INVALID_PROBLEM.format(value=detail)
+    if code == "workers_exceeds_gpus":
+        # the structured (workers, gpu_count) pair 16-03 landed — the
+        # screen formats the copy from it, never computes.
+        pair = cast("tuple[int, int]", detail)
+        return S.CFG_WORKERS_EXCEED_GPUS_PROBLEM.format(
+            workers=pair[0], n=pair[1])
     if code == "single_gpu_busy":
         # 16-03 (D16-10): the detail is the structured GpuCapacityBlock
         # — the screen formats the amended copy from its fields (roots
@@ -1317,6 +1343,32 @@ class RunConfigScreen(Screen):
                                 classes="cfg-param-label")
                     yield Input(value="", id="cfg-input-ebs",
                                 classes="cfg-param-input", compact=True)
+                # Phase 16 (16-04, TUI-02, UI-SPEC C.1): the multi-GPU
+                # dispatch section — existing classes ONLY (zero new
+                # TCSS for slot-4). The workers field carries its LIVE
+                # default value "1" (a VALUE, never a placeholder — the
+                # operator is expected to touch it); the GPUs field is
+                # empty with the all-detected prompt hint (values are
+                # never guessed into the field — an empty field IS
+                # all-detected, resolved at LAUNCH time, Pitfall 8).
+                yield Label(S.CFG_MGPU_TITLE, id="cfg-mgpu-title",
+                            classes="cfg-section-title")
+                with Horizontal(classes="cfg-param-row"):
+                    yield Label(S.CFG_FIELD_WORKERS,
+                                id="cfg-label-workers",
+                                classes="cfg-param-label")
+                    # compact=True on the height-1-row Input (the 12-03
+                    # Rule-1 discipline — see the seeds-row note above).
+                    yield Input(value="1", id="cfg-input-workers",
+                                classes="cfg-param-input", compact=True)
+                with Horizontal(classes="cfg-param-row"):
+                    yield Label(S.CFG_FIELD_GPUS, id="cfg-label-gpus",
+                                classes="cfg-param-label")
+                    yield Input(value="", placeholder=S.CFG_GPUS_DEFAULT,
+                                id="cfg-input-gpus",
+                                classes="cfg-param-input", compact=True)
+                yield Label(S.CFG_MGPU_HINT, id="cfg-hint-mgpu",
+                            classes="cfg-hint")
                 yield Label(S.CFG_DIRS_TITLE, id="cfg-dirs-title",
                             classes="cfg-section-title")
                 with Horizontal(classes="cfg-param-row"):
@@ -1427,6 +1479,15 @@ class RunConfigScreen(Screen):
             ("#cfg-input-ebs",
              (str(message.spec.effective_batch_size)
               if message.spec.effective_batch_size is not None else "")),
+            # 16-04: the multi-GPU pair — workers ALWAYS seeds a value
+            # (the RunSpec default 1 is a VALUE, never a placeholder);
+            # gpus seeds the typed list or stays EMPTY (the placeholder
+            # then documents all-detected; None never resolves to a
+            # guessed list at this layer, Pitfall 8).
+            ("#cfg-input-workers", str(message.spec.workers)),
+            ("#cfg-input-gpus",
+             (",".join(message.spec.gpus)
+              if message.spec.gpus is not None else "")),
             ("#cfg-input-output-root", message.spec.output_root),
             ("#cfg-input-dataset-root",
              message.spec.dataset_root or ""),
@@ -1657,6 +1718,11 @@ class RunConfigScreen(Screen):
             PARAM_CURVE: self._text_value("#cfg-input-curve") or None,
             PARAM_EPOCHS: self._text_value("#cfg-input-epochs") or None,
             PARAM_EBS: self._text_value("#cfg-input-ebs") or None,
+            # 16-04: the multi-GPU pair rides the same parse_params
+            # mirrors (an empty GPUs field is ABSENT — the epochs
+            # idiom — meaning all-detected, never a guessed list).
+            PARAM_WORKERS: self._text_value("#cfg-input-workers") or None,
+            PARAM_GPUS: self._text_value("#cfg-input-gpus") or None,
         }
         partials, problems = self._run_service.parse_params(raw)
         subset_file = None
@@ -1757,6 +1823,10 @@ class RunConfigScreen(Screen):
             S.CFG_FIELD_EBS_SHORT if narrow else S.CFG_FIELD_EBS)
         self.query_one("#cfg-dirs-title", Label).update(
             S.CFG_DIRS_TITLE_SHORT if narrow else S.CFG_DIRS_TITLE)
+        # 16-04: the multi-GPU section title swaps the same way (the
+        # established title-pair mechanism).
+        self.query_one("#cfg-mgpu-title", Label).update(
+            S.CFG_MGPU_TITLE_SHORT if narrow else S.CFG_MGPU_TITLE)
 
     # ===== event handlers (event-loop side: render + intent) =====
 
@@ -1919,7 +1989,13 @@ class RunConfigScreen(Screen):
                 seeds=result.seeds_count, cells=result.cells_count))
         lines.append(S.CFG_PREVIEW_NOTE)
         if not problems and result.cells_count > 0:
-            argv = self._run_service.compose_argv(self._spec)
+            # 16-04 (D16-09, auto-default #9): the verbatim argv is the
+            # DISPATCH composer's — every slot-4 launch composes
+            # run_sweep_shard --mode dispatch, so the preview shows the
+            # argv that WILL launch (the same composer the launcher's
+            # spawn routes through — zero drift between preview and
+            # spawn).
+            argv = self._run_service.compose_dispatch_argv(self._spec)
             lines.append(S.CFG_ARGV_LABEL + " ".join(str(a) for a in argv))
         lines.extend(_numbered_problems(problems) if problems else [])
         self.app.push_screen(PreviewModal(tuple(lines)))

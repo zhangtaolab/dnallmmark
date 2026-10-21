@@ -221,6 +221,10 @@ class _RunConfigShellFake:
     def compose_argv(self, spec):
         raise AssertionError("the nav-shell tests never compose argv")
 
+    def compose_dispatch_argv(self, spec):
+        # 16-04 protocol lockstep: never called in the nav-shell lane.
+        raise AssertionError("the nav-shell tests never compose argv")
+
     def expected_phrase(self, output_root):
         return Path(output_root).name
 

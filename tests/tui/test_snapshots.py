@@ -386,6 +386,13 @@ class _RunConfigGoldenService:
         return ("/usr/bin/python", "run_sweep.py", "--models",
                 *spec.models, "--tasks", *spec.tasks)
 
+    def compose_dispatch_argv(self, spec):
+        # 16-04 protocol lockstep (the [p] modal's verbatim argv): the
+        # golden never opens the preview modal, but the protocol
+        # member must exist — delegate to the real module like the
+        # pilot fake.
+        return run_config_service.compose_dispatch_argv(spec)
+
     def expected_phrase(self, output_root):
         return "finetuned"
 
