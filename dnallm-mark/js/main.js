@@ -5,6 +5,7 @@
 
 import CONFIG from './config.js';
 import DataAPI from './data.js';
+import errorBarsPlugin from './error-bars.js';
 import { renderNavbar } from './navbar.js';
 
 class DNALLMMark {
@@ -273,6 +274,10 @@ class DNALLMMark {
       data: [{
         x: model.performance?.sum_PFLOPs || 0,
         y: model.performance?.[viewAxis.field] || 0,
+        // Optional multi-seed payload (D17-05): undefined stays undefined —
+        // the plugin draws whiskers only when std is a finite number > 0.
+        std: model.performance?.std,
+        nSeeds: model.performance?.n_seeds,
         model: model
       }],
       backgroundColor: model.color + '99', // Add semi-transparency (60% alpha)
@@ -321,6 +326,11 @@ class DNALLMMark {
 
     const config = {
       type: 'scatter',
+      // Inline per-chart plugin registration (D17-05): the top-level
+      // plugins array is the seam — never a global registration, never a
+      // new CDN script. Whisker clamping is the plugin's job; this config
+      // passes no plugin options (the defaults ride the plugin).
+      plugins: [errorBarsPlugin],
       data: { datasets },
       options: {
         responsive: true,
@@ -342,7 +352,7 @@ class DNALLMMark {
               label: (context) => {
                 const m = context.raw.model;
                 const p = m.performance;
-                return [
+                const lines = [
                   `Sum PFLOPs: ${(p?.sum_PFLOPs || 0).toFixed(2)}`,
                   viewAxis.field === 'weighted_score'
                     ? `Weighted Score: ${(p?.weighted_score || 0).toFixed(4)}`
@@ -352,6 +362,15 @@ class DNALLMMark {
                   `Top 5: ${p?.top5_count || 0}`,
                   `Top 10: ${p?.top10_count || 0}`
                 ];
+                // ±std seed-spread line (D17-07): appended AFTER the six
+                // existing lines, only when std is a number — absent std
+                // renders the same six lines as before.
+                if (typeof m.performance?.std === 'number') {
+                  lines.push(
+                    `Seed spread: ±${p.std.toFixed(4)}${typeof p.n_seeds === 'number' ? ' (n=' + p.n_seeds + ')' : ''}`
+                  );
+                }
+                return lines;
               }
             }
           },
