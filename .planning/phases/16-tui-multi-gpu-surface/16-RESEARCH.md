@@ -646,7 +646,7 @@ above).
 All other claims in this research are `[VERIFIED: <path:lines>]` against
 files read this session, or direct quotes from the ratified CONTEXT/UI-SPEC.
 
-## Open Questions
+## Open Questions (RESOLVED — planner rulings: Q1(a) registry-only capacity arithmetic in 16-03; Q2(a) always-full panel + Q3(a) every-frontier-tick in 16-01; Q4 mandatory signature gate + escalation path in 16-01 Task 2)
 
 1. **Multi-GPU capacity predicate** (UI-SPEC Open Q1 — recommendation (a))
    - What we know: stage position/vehicle/copy pinned; sanctioned shape N→N;

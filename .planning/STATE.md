@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 
 ## Current Position
 
-Phase: 16 — TUI 多 GPU 界面
+Phase: 16 (TUI 多 GPU 界面) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-10-21 — Phase 15 complete, transitioned to Phase 16
 
 ## Performance Metrics
