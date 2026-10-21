@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 9
+open_count: 10
 waived_count: 6
-fixed_count: 31
-total_count: 46
-last_updated: 2026-10-21T03:27:57.067Z
+fixed_count: 33
+total_count: 49
+last_updated: 2026-10-21T06:05:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -60,7 +60,10 @@ last_updated: 2026-10-21T03:27:57.067Z
 | 43 | 13 | deviation | .planning/phases/13-dynamic-dispatch-core/deferred-items.md |  | make test full gate: 7 pre-existing/environmental failures (6 root-user chmod artifacts + stale v1.2.0 about-version pin predating 13-02 base) — all outside 13-02 blast radius, maintainer-owned, see 13-02-SUMMARY Verification Evidence | open |  | 2026-10-20T05:27:28.328Z |  |
 | 44 | 15 | deviation | pipeline/dispatch_core.py | 1942 | 15-01 D15-04 halt: dispatch roots carry no run_record.json (Phase 13 A3 handoff never landed; children are run_finetune.py directly) so export_runs counts 0 records over a dispatch shared root — smoke itself green 2/2 on both GPUs; remediation (dispatch writes run_record at finalize) is an architectural decision routed to the maintainer, 15-03 inherits the same false premise | fixed | resolved by 15-04 (maintainer Option 1 ruling 2026-10-20; commits 9c22787/8c5e8b9): dispatch_core now writes run_record.json at claim finalize composed via run_sweep's _new_record (WR-12 no-overwrite, CR-04-routed failures) — supersedes Phase 13 A3 at its deferred handoff point; criterion 3 green on the 2026-10-20 fresh 2-cell smoke re-run ([Dry-run] 2 run record(s) across 1 model(s) / 1 task(s)); 15-03's false premise corrected in-plan by 15-04 Task 2 | 2026-10-20T14:09:05.410Z | 2026-10-20T15:28:04.258Z |
 | 45 | 15 | unmet-truth | pipeline/run_finetune.py | 1706 | Eval metrics never persist to final_metrics.json: run_finetune calls bare trainer.evaluate() and discards the result (faithful port since c6b3137); eval scores survive only in trainer_state.json log_history. export_runs reads final_metrics verbatim (+seed_result.json adoption our subprocesses never write) so 15-03's real 12-cell sweep exported empty score slots -> aggregate_models returned {} -> models_comparison.json emitted empty and ALL species files (incl. the plan-required plant) skipped. Producer->consumer seam needs a maintainer ruling (merge into final_metrics / harvest log_history at record-write / exporter adoption); also plan premise error: arena files group by DATASET Category (5mC=Animals-resolved-from-Multiple, emp_H3=Microbe), never Plants for this dataset pair | fixed | resolved by 15-05 + the 15-03 continuation (maintainer option-A ruling 2026-10-21; commits f1af8d6/1d17145): run_finetune now captures trainer.evaluate() and merges it flat-additive into final_metrics.json (merged = {**eval_results, **metrics}; write order final_metrics v1 < flops < evaluate < merged re-write < trainer_state marker copy; D-05/WR-13 pinned; argv untouched, zero chain changes) — proven on the 2026-10-21 fresh-root 12-cell re-run (pipeline/finetuned-sweep-r2, 272 s, done 12/12, 0 skipped, both GPUs, subset-scale steps): eval_f1 present in ALL 12 final_metrics AND run_records; the real export→summarize chain over that root (zero chain modifications, tmp-tree idiom) emitted NON-EMPTY models_comparison.json + models_comparison_animal.json (5mC, Category Multiple→Animals) + models_comparison_microbe.json (emp_H3, Category Microbe) — arena files group by DATASET Category per the 15-05 plan correction, no plant file producible from this pair; all five JSONs archived under 15-03 artifacts/ (VAL-03 complete) | 2026-10-20T16:07:43.310Z | 2026-10-21T00:21:36.118Z |
-| 46 | 16 | deviation | tests/tui/__snapshots__ |  | 16-01: monitor_empty/monitor_running goldens red until 16-05 regenerates them with fabricated GpuRow fixtures (the standing #mon-gpu panel is new chrome; _golden_app must gain the gpu_probe_provider seam) | open |  | 2026-10-21T03:27:57.067Z |  |
+| 46 | 16 | deviation | tests/tui/__snapshots__ |  | 16-01: monitor_empty/monitor_running goldens red until 16-05 regenerates them with fabricated GpuRow fixtures (the standing #mon-gpu panel is new chrome; _golden_app must gain the gpu_probe_provider seam) | fixed | resolved by 16-05 (2026-10-21): both monitor goldens regenerated via make snapshot-update over fabricated GpuRow/DispatchStateView fixtures threaded through the _golden_app constructor seams and folded into the #50 D-03 review batch; the red window closes with that batch | 2026-10-21T03:27:57.067Z | 2026-10-21T06:05:00.000Z |
+| 47 | 16 | deviation | tests/tui/test_pty_driver.py | 478 | Intermittent test_monitor_quiet_cadence_is_byte_silent flake on the GPU box only (16-03 observation: 1 fail then green x2 over untouched probe/render code) — the documented 16-01 RESEARCH Pitfall 5 exposure: real nvidia-smi values legitimately change mid-window; escalation option (test-scoped probe override forcing the absent state) awaits a maintainer ruling; no pin weakened | open |  | 2026-10-21T04:58:00.124Z |  |
+| 48 | 16 | deviation | tests/tui/__snapshots__/run_config.svg |  | 16-04: run_config.svg golden red until 16-05 regenerates it (the params pane gained the multi-GPU dispatch section; the delta verified ADDED-only = title/workers/GPUs/hint rows, nothing removed); joins #46's monitor pair as the pre-golden state at the 16-05 base | fixed | resolved by 16-05 (2026-10-21): run_config.svg regenerated via make snapshot-update over the unchanged drive and folded into the #50 D-03 review batch (delta re-verified ADDED-only = the 多 GPU 调度 section rows); #46/#48's red window closes with that batch | 2026-10-21T05:46:43.558Z | 2026-10-21T06:05:00.000Z |
+| 50 | 16 | deviation | tests/tui/__snapshots__ (run_config.svg, run_config_confirm.svg, monitor_empty.svg, monitor_running.svg) |  | 16-05 (TUI-04, D16-13): run_config.svg + monitor_empty.svg + monitor_running.svg REGENERATED and run_config_confirm.svg landed NEW via make snapshot-update (the only regen path) over fabricated machine-independent fixtures — two GpuRow lanes / the ABSENT probe + a DispatchStateView (one busy + one idle worker) threaded through the _golden_app constructor seams, and the confirm drive over a deterministic workers=2/GPUs 0,1 spec (Pitfall 10: identical bytes on a GPU box and a GPU-less CI runner) — deliberately UNCOMMITTED pending the maintainer's D-03 review (the #35/#39/#42 family precedent; a NEW batch, the tree was clean at phase start — Pitfall 9); the committed tree fails exactly the four golden tests (test_run_config_golden, test_run_config_confirm_golden, test_monitor_running_golden, test_monitor_empty_golden) until the review lands (the documented #39 pattern); Phase-16 surfaces carried: the slot-4 多 GPU 调度 params section + the confirm-face dispatch-plan line (its own Static above the log after the 16-05 Rule-1 wrap-clip fix), the monitor G lanes + dispatch rows; the other six goldens byte-identical to HEAD | open |  | 2026-10-21T06:05:00.000Z |  |
 
 ````json
 [
@@ -656,9 +659,48 @@ last_updated: 2026-10-21T03:27:57.067Z
     "file": "tests/tui/__snapshots__",
     "line": null,
     "description": "16-01: monitor_empty/monitor_running goldens red until 16-05 regenerates them with fabricated GpuRow fixtures (the standing #mon-gpu panel is new chrome; _golden_app must gain the gpu_probe_provider seam)",
+    "status": "fixed",
+    "reason": "resolved by 16-05 (2026-10-21): both monitor goldens regenerated via make snapshot-update over fabricated GpuRow/DispatchStateView fixtures threaded through the _golden_app constructor seams and folded into the #50 D-03 review batch; the red window closes with that batch",
+    "recorded_at": "2026-10-21T03:27:57.067Z",
+    "resolved_at": "2026-10-21T06:05:00.000Z",
+    "milestone": "v1.3"
+  },
+  {
+    "id": 47,
+    "kind": "deviation",
+    "phase": "16",
+    "file": "tests/tui/test_pty_driver.py",
+    "line": 478,
+    "description": "Intermittent test_monitor_quiet_cadence_is_byte_silent flake on the GPU box only (16-03 observation: 1 fail then green x2 over untouched probe/render code) — the documented 16-01 RESEARCH Pitfall 5 exposure: real nvidia-smi values legitimately change mid-window; escalation option (test-scoped probe override forcing the absent state) awaits a maintainer ruling; no pin weakened",
     "status": "open",
     "reason": "",
-    "recorded_at": "2026-10-21T03:27:57.067Z",
+    "recorded_at": "2026-10-21T04:58:00.124Z",
+    "resolved_at": null,
+    "milestone": "v1.3"
+  },
+  {
+    "id": 48,
+    "kind": "deviation",
+    "phase": "16",
+    "file": "tests/tui/__snapshots__/run_config.svg",
+    "line": null,
+    "description": "16-04: run_config.svg golden red until 16-05 regenerates it (the params pane gained the multi-GPU dispatch section; the delta verified ADDED-only = title/workers/GPUs/hint rows, nothing removed); joins #46's monitor pair as the pre-golden state at the 16-05 base",
+    "status": "fixed",
+    "reason": "resolved by 16-05 (2026-10-21): run_config.svg regenerated via make snapshot-update over the unchanged drive and folded into the #50 D-03 review batch (delta re-verified ADDED-only = the 多 GPU 调度 section rows); #46/#48's red window closes with that batch",
+    "recorded_at": "2026-10-21T05:46:43.558Z",
+    "resolved_at": "2026-10-21T06:05:00.000Z",
+    "milestone": "v1.3"
+  },
+  {
+    "id": 50,
+    "kind": "deviation",
+    "phase": "16",
+    "file": "tests/tui/__snapshots__ (run_config.svg, run_config_confirm.svg, monitor_empty.svg, monitor_running.svg)",
+    "line": null,
+    "description": "16-05 (TUI-04, D16-13): run_config.svg + monitor_empty.svg + monitor_running.svg REGENERATED and run_config_confirm.svg landed NEW via make snapshot-update (the only regen path) over fabricated machine-independent fixtures — two GpuRow lanes / the ABSENT probe + a DispatchStateView (one busy + one idle worker) threaded through the _golden_app constructor seams, and the confirm drive over a deterministic workers=2/GPUs 0,1 spec (Pitfall 10: identical bytes on a GPU box and a GPU-less CI runner) — deliberately UNCOMMITTED pending the maintainer's D-03 review (the #35/#39/#42 family precedent; a NEW batch, the tree was clean at phase start — Pitfall 9); the committed tree fails exactly the four golden tests (test_run_config_golden, test_run_config_confirm_golden, test_monitor_running_golden, test_monitor_empty_golden) until the review lands (the documented #39 pattern); Phase-16 surfaces carried: the slot-4 多 GPU 调度 params section + the confirm-face dispatch-plan line (its own Static above the log after the 16-05 Rule-1 wrap-clip fix), the monitor G lanes + dispatch rows; the other six goldens byte-identical to HEAD",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-21T06:05:00.000Z",
     "resolved_at": null,
     "milestone": "v1.3"
   }
