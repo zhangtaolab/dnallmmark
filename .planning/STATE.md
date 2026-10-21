@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 
 Phase: 17 (Web 多种子 Error Bar) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-21 — Phase 17 execution started
 
 ## Performance Metrics
@@ -125,6 +125,7 @@ Last activity: 2026-10-21 — Phase 17 execution started
 | Phase 16 P5 | 26 min | 2 tasks | 8 files |
 | Phase 17 P1 | 16 min | 3 tasks | 10 files |
 | Phase 17 P2 | 7 min | 3 tasks | 3 files |
+| Phase 17 P3 | 53 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -322,6 +323,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 17]: 17-02: plugin point-mode whiskers read chart.scales.y ONLY (log-FLOPs x axis structurally out of reach); endpoint pixels clamped into chartArea so pinned-axis overflow renders toward the boundary
 - [Phase 17]: 17-02: barDatum is the single birthplace of the floating-bar array form — extractModels keeps metricValue scalar and gates std/nSeeds on the declared primary metric (METRIC_MAP hoisted to module scope, one definition for dropdown default + gating; A3 honest absence on non-primary metrics)
 - [Phase 17]: 17-02: tooltips read the model closure (displayModels[context.dataIndex]) — never context.raw typed-checks on floating bars (would print 'lo,hi') and never context.parsed.x (barEnd unreliable); CDN pins byte-untouched, zero new dependencies
+- [Phase 17]: 17-03: fixture generator independence enforced three ways — grep gate on generator source, in-test ddof=0 recomputation over provenance per-seed values, regeneration byte-idempotence (D17-09 triple tripwire); committed-data absence pinned as an assertion in both directions
+- [Phase 17]: 17-03: full-suite pytest on this box requires source /etc/network_turbo — evaluate.load() phones home via HTTP HEAD unconditionally (own file_utils path, ignores HF_HUB_OFFLINE) and direct HF egress hangs without the academic proxy; environmental, zero code changes; 6 remaining failures are the documented root-user chmod class
 
 ### Pending Todos
 
@@ -394,8 +397,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T09:56:45.377Z
-Stopped at: Completed 17-02-PLAN.md (WEB-02 browser error bars: vendored inline plugin + scatter whiskers + floating-bar caps, all gates green)
+Last session: 2026-10-21T10:53:40.309Z
+Stopped at: Completed 17-03-PLAN.md (WEB-03 fixtures + node lane + phase-close gates; Phase 17 complete)
 Resume file: None
 
 ## Operator Next Steps

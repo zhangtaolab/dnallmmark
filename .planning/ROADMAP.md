@@ -115,7 +115,7 @@ Plans:
 - [x] 17-02-PLAN.md — browser leg (vendored error-bars plugin + scatter whiskers + floating bars + ±std tooltips)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 17-03-PLAN.md — node-lane r2-derived fixtures + geometry/schema tests + phase-close gates
+- [x] 17-03-PLAN.md — node-lane r2-derived fixtures + geometry/schema tests + phase-close gates — complete 2026-10-21: generator over the real r2 tree (12 cells, ddof=0 stds, byte-idempotent, triple-tripwired independence) + 14-case node lane (geometry 1e-9, schema additive pins, committed-data absence) + full gates (2236 passed / 6 environmental chmod-class failures classified, node 40/40, lint/typecheck/eslint-pin green, ci.yml hash + data-tree + CDN pins byte-verified, zero CI changes); WEB-03 done, Phase 17 complete
 
 **Success criteria**:
 1. Aggregation emits additive-optional `mean`/`std`/`n_seeds`; with the fields suppressed, output is byte-identical to pre-v1.3 (zero-drift gate extended and green); METHODOLOGY.md documents display-only semantics + std definition

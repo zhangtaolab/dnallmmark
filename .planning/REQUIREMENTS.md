@@ -40,7 +40,7 @@ Requirements for milestone v1.3. Each maps to roadmap phases (Traceability below
 
 - [x] **WEB-01**: Aggregation emits additive-optional `mean`/`std`/`n_seeds` fields per model×dataset — absent fields produce byte-identical JSON (zero-drift gate proves additivity); METHODOLOGY.md documents the display-only semantics (std definition fixed once)
 - [x] **WEB-02**: FLOPs-vs-rank scatter gains error-bar whiskers via a vendored inline Chart.js plugin (`afterDatasetsDraw`, no new CDN dependency); the task bar chart uses native floating bars + whiskers; tooltips gain ±std
-- [ ] **WEB-03**: Node-lane tests cover the plugin's value→pixel math as a pure function and the additive schema fields (fixtures generated, not hand-written)
+- [x] **WEB-03**: Node-lane tests cover the plugin's value→pixel math as a pure function and the additive schema fields (fixtures generated, not hand-written)
 
 ## v2 Requirements
 
@@ -87,7 +87,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TUI-04 | Phase 16 | Complete |
 | WEB-01 | Phase 17 | Complete |
 | WEB-02 | Phase 17 | Complete |
-| WEB-03 | Phase 17 | Pending |
+| WEB-03 | Phase 17 | Complete |
 | DOCS-01 | Phase 18 | Pending |
 | DOCS-02 | Phase 18 | Pending |
 | DOCS-03 | Phase 18 | Pending |
