@@ -530,6 +530,56 @@ def test_fail_fast_non_integer_label(tmp_path):
     _assert_refused(proc, out_root, reg_dir, "not an integer")
 
 
+def test_oversized_field_skips_task_not_whole_run(tmp_path):
+    """WR-03: ``csv.Error`` routes to the per-task [Skip] — a CSV field
+    over the ``csv.field_size_limit`` default (131,072 chars; the
+    generator runs as a fresh subprocess, so the CPython default always
+    applies) skips ONLY that task with the cannot-read diagnostic while
+    the sibling task still completes and the registry is written for
+    the good one. Pre-fix, ``csv.Error`` (which inherits directly from
+    ``Exception``, not ``OSError``) escaped ``TaskSkip`` and aborted
+    ``main()``'s loop mid-run: earlier subsets on disk, no registry at
+    all — the documented per-task isolation contract broken."""
+    # 131,072 is the CPython default csv.field_size_limit; +1 trips
+    # "_csv.Error: field larger than field limit (131072)" on read.
+    oversized = 131072 + 1
+    root = tmp_path / "src" / "ds"
+    good_base = root / "datasets" / "iDNA_ABF_datasets" / "5mC"
+    for split, n in FABRICATED_SPLITS:
+        _write_split(good_base, split, _binary_rows(n))
+    bad_base = root / "datasets" / "GUE" / "emp_H3"
+    bad_rows = _binary_rows(20)
+    bad_rows[7] = ("X" * oversized, "0")
+    _write_split(bad_base, "train", bad_rows)
+    _write_split(bad_base, "dev", _binary_rows(1497))
+    _write_split(bad_base, "test", _binary_rows(1497))
+    out_root, reg_dir = tmp_path / "out", tmp_path / "reg"
+    proc = _run_generator(
+        root, out_root, reg_dir, cwd=tmp_path,
+        tasks="iDNA_ABF_datasets__5mC,GUE__emp_H3")
+    # one task refused -> non-zero exit, but the run COMPLETED its loop
+    assert proc.returncode != 0, _fail_msg(proc)
+    assert "[Skip]" in proc.stdout, _fail_msg(proc)
+    assert "GUE__emp_H3" in proc.stdout, _fail_msg(proc)
+    assert "cannot read" in proc.stdout, _fail_msg(proc)
+    assert "field larger than field limit" in proc.stdout, _fail_msg(proc)
+    # the good task's subset still landed…
+    assert (out_root / "datasets" / "iDNA_ABF_datasets" / "5mC"
+            / "train.csv").is_file(), (
+        "the sibling task's subset must still be written"
+    )
+    # …and the registry exists, carrying exactly the completed task
+    # (the pre-fix crash wrote no registry at all)
+    registry = json.loads(
+        (reg_dir / "datasets_info.json").read_text(encoding="utf-8"))
+    assert list(registry) == ["iDNA_ABF_datasets__5mC"], (
+        "the registry carries exactly the completed task"
+    )
+    assert not (out_root / "datasets" / "GUE").exists(), (
+        "the oversized-field task wrote nothing (reads precede writes)"
+    )
+
+
 # ===== Behavior 9: no writes outside the explicit roots =====
 
 

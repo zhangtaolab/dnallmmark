@@ -352,10 +352,15 @@ def read_csv_rows(csv_path, task_name, split):
         tuple[list[str], list[list[str]]]: Header fields and raw data rows.
 
     Raises:
-        TaskSkip: If the file is missing/unreadable, empty (no header), a
-            header-only file with zero data rows, or any row's field
-            count differs from the header's (malformed row — the V5
-            input-validation control for untrusted downloaded CSVs).
+        TaskSkip: If the file is missing/unreadable (``OSError`` or
+            ``csv.Error`` — e.g. a field over the 131,072-char
+            ``csv.field_size_limit`` default, a real possibility for the
+            long-sequence dataset family; ``csv.Error`` inherits directly
+            from ``Exception``, so it must be caught EXPLICITLY — WR-03),
+            empty (no header), a header-only file with zero data rows, or
+            any row's field count differs from the header's (malformed
+            row — the V5 input-validation control for untrusted
+            downloaded CSVs).
     """
     try:
         with open(csv_path, "r", encoding="utf-8", newline="") as fh:
@@ -367,7 +372,11 @@ def read_csv_rows(csv_path, task_name, split):
                     "line)"
                 )
             rows = list(reader)
-    except OSError as exc:
+    except (OSError, csv.Error) as exc:
+        # csv.Error (WR-03) is NOT an OSError — without the explicit
+        # catch an oversized-field CSV escapes TaskSkip and aborts the
+        # whole run mid-loop: earlier tasks' subsets written, no registry
+        # at all (the documented per-task isolation contract broken).
         raise TaskSkip(
             f"[Skip] {task_name}: cannot read {csv_path}: {exc}"
         ) from None
