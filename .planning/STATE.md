@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 ## Current Position
 
 Phase: 16 (TUI 多 GPU 界面) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-10-21 — 16-01 complete (TUI-01 tracer landed)
 
@@ -120,6 +120,7 @@ Last activity: 2026-10-21 — 16-01 complete (TUI-01 tracer landed)
 | Phase 15 P15-03 | 40 min | 3 tasks | 11 files |
 | Phase 16 P1 | 32 min | 2 tasks | 8 files |
 | Phase 16 P2 | 31 min | 2 tasks | 7 files |
+| Phase 16 P3 | 37 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -301,6 +302,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 16]: 16-02: dispatch staleness = (now - mtime) >= 60.0 with the integer age riding the view — the >= boundary keeps the MON_DISPATCH_STALE copy ({age}s >= 60s) and behavior agreeing at exactly 60s; the now seam is a per-read callable, never a mutated clock
 - [Phase 16]: 16-02: the invariant honesty check returns False (not malformed) when a leg is MISSING — tolerance and provable violation stay orthogonal; a malformed-but-fresh snapshot renders the SAME stale marker at its true age while the counts ride VERBATIM (8/12 renders, never a reconciled 9/12)
 - [Phase 16]: 16-02: the dispatch read rides the EXISTING mon-frontier pass via an optional FrontierScanned.dispatch dict param (the plans precedent — existing constructors stay source-compatible); the dispatch legs (has-block, worker count, stale flag) join _cards_struct_legs so value-only flips (busy->idle) ride the in-place label refresh with cursor identity preserved (Pitfall 6)
+- [Phase 16]: 16-03: EHC-3 stage-0 replaced in place by multi-GPU capacity arithmetic (Open Q1 resolution (a)) — single_gpu_launch_blocked keeps name + zero-arg signature, returns frozen GpuCapacityBlock(roots, requested_workers, gpu_count); count-0 admits; refuse iff registry demand + requested > count; demand = parsed --workers for run_sweep_shard argv (either mode, default 1 fail-safe) else 1; registry-only, /proc pinned out (T-16-06)
+- [Phase 16]: 16-03: every slot-4 launch composes run_sweep_shard --mode dispatch (UI-SPEC auto-default #9) — launch_spec's _spawn routes rc.compose_dispatch_argv with --workers ALWAYS explicit (A2) and --gpus present-only (D-12); compose_argv byte-untouched beside it; the spawn key still rides resolve_dirs().output_root_abs (WR-01)
+- [Phase 16]: 16-03: LNC_SINGLE_GPU_BLOCKED amended IN PLACE (name unchanged) adding {workers}/{n}; ALL 7 HEAD format sites (4 code + 3 test — the plan prose's 5+3 arithmetic corrected against the verified census) lockstep in one commit, grep-gated at zero workers=-less sites; the refusal detail is the structured block, screens format only
 
 ### Pending Todos
 
@@ -373,8 +377,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T04:09:51.604Z
-Stopped at: Completed 16-02-PLAN.md (TUI-03 dispatch rows: tolerant frozen-v2 reader + monitor block, both tasks + gates green)
+Last session: 2026-10-21T04:58:22.375Z
+Stopped at: Completed 16-03-PLAN.md (TUI-02 service tier: RunSpec workers/gpus + dispatch composer + capacity predicate, both tasks + gates green)
 Resume file: None
 
 ## Operator Next Steps

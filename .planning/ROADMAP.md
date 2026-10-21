@@ -90,7 +90,7 @@ Plans:
 - [x] 16-02-PLAN.md — dispatch_state.json tolerant reader (frozen v2, None sentinel, 60s stale constant, invariant honesty) + slot-5 Running-card dispatch rows via the one _card_content builder (TUI-03)
 
 **Wave 3** *(blocked on Wave 2: monitor.py + strings.py file overlap)*
-- [ ] 16-03-PLAN.md — Slot-4 service tier: RunSpec workers/gpus + mirror problems + compose_dispatch_argv; EHC-3 predicate replaced by multi-GPU capacity arithmetic (GpuCapacityBlock, registry-only demand) + LNC_SINGLE_GPU_BLOCKED lockstep amendment across all 8 format sites (TUI-02)
+- [x] 16-03-PLAN.md — Slot-4 service tier: RunSpec workers/gpus + mirror problems + compose_dispatch_argv; EHC-3 predicate replaced by multi-GPU capacity arithmetic (GpuCapacityBlock, registry-only demand) + LNC_SINGLE_GPU_BLOCKED lockstep amendment across all 8 format sites (TUI-02)
 
 **Wave 4** *(blocked on Wave 3: run_config screen + spec fields)*
 - [ ] 16-04-PLAN.md — Slot-4 screen tier: 多 GPU 调度 params section + capacity-stage rendering + dispatch-plan preview line on both confirm faces (GateSummary service-side numbers); gate-order tests extended, zero weakening (TUI-02)
