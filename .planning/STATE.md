@@ -5,16 +5,16 @@ milestone_name: 多 GPU 编排与验证 (Phases 13-18) — ACTIVE
 current_phase: 15
 current_phase_name: 双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)
 status: executing
-stopped_at: "15-05 complete (WINDOWS #45 producer fix + 15-03 archive-list correction); next: 15-03 continuation (sweep re-run on pipeline/finetuned-sweep-r2 + consumption + archive + VAL-03 marks)"
-last_updated: "2026-10-21T00:04:14.661Z"
+stopped_at: Completed 15-03-PLAN.md (VAL-03 complete — halt + 15-05 option-A fix + fresh-root r2 resume)
+last_updated: "2026-10-21T00:25:28.120Z"
 last_activity: 2026-10-21
-last_activity_desc: 15-05 complete (option-A producer fix); 15-03 continuation next
-state_head: 1d1714585124f0ae5aa3d27bd17ab559e7f36c9e
+15-03 complete (VAL-03 done via halt + 15-05 fix + fresh-root r2 resume); phase 15 all 5 plans landed
+state_head: 02c5f83394b3a121b878be5e1fa19ba3536d5ae0
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
   percent: 17
 ---
 
@@ -30,9 +30,9 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 ## Current Position
 
 Phase: 15 (双卡验证与子数据集 (N=2 Smoke & Small Real Sweep)) — EXECUTING
-Plan: 5 of 5 landed (15-01/02/04/05 complete; 15-03 Tasks 1-2 green, Task-3 continuation pending)
-Status: 15-05 complete (option-A producer fix, WINDOWS #45 producer side closed) — next: the 15-03 continuation
-Last activity: 2026-10-21 — 15-05 complete (run_finetune captures trainer.evaluate() → flat-additive merged final_metrics with eval_* spellings; write order final_metrics(v1) < flops < evaluate < merged re-write < marker copy; argv 27 untouched; contracts 76 + regression 306 green; 15-03 archive list corrected animal/microbe) — next: 15-03 continuation (sweep re-run on FRESH root pipeline/finetuned-sweep-r2 + gitignore adjacency + consumption + archive of the five JSONs + VAL-03 marks; WINDOWS #45 stays open until then)
+Plan: 5 of 5 COMPLETE (15-01/02/03/04/05 all landed)
+Status: 15-03 complete — phase 15 execution done (all 5 plans); WINDOWS #45 closed, VAL-03 complete
+Last activity: 2026-10-21 — 15-03 continuation complete: fresh-root 12-cell sweep on pipeline/finetuned-sweep-r2 (272 s, done 12/12, 0 skipped, both GPUs) with eval_f1 in ALL 12 final_metrics + run_records (the 15-05 producer fix proven live); zero-modification export→summarize chain emitted non-empty models_comparison + _animal (5mC Multiple→Animals) + _microbe (emp_H3); five JSONs archived under 15-03 artifacts/; D15-15 pins repointed to r2 + new eval-key pin (suite 27); lint/typecheck/node 26/ci-hash green; WINDOWS #45 closed (open 8/fixed 31); VAL-03 + PROJECT small-sweep row done — phase 15 fully landed
 
 ## Performance Metrics
 
@@ -117,6 +117,7 @@ Last activity: 2026-10-21 — 15-05 complete (run_finetune captures trainer.eval
 | Phase 15 P15-02 | 8 min | 2 tasks | 7 files |
 | Phase 15 P15-03 | 20 min | 2 of 3 (Task 3 D15-15 leg landed; consumption criterion blocked) tasks | 3 files |
 | Phase 15 P15-05 | 22 min | 2 tasks | 3 files |
+| Phase 15 P15-03 | 40 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -290,6 +291,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 15]: 15-03 arena premise error: comparison files group by DATASET Category (5mC=Animals-resolved, emp_H3=Microbe), not model species — models_comparison_plant.json unproducible from this dataset pair; archive list needs replan
 - [Phase 15]: [15-05] Option A landed (ruling 2026-10-21): run_finetune captures trainer.evaluate() (outside the rank guard — all ranks evaluate) and merges flat-additive merged = {**eval_results, **metrics} into final_metrics.json; write order final_metrics(v1) < flops < evaluate < merged re-write < marker copy — D-05 hardware reads stay pre-evaluate, WR-13 marker is the final write (now also promising eval-merged metrics); argv untouched (27 add_argument), zero chain changes
 - [Phase 15]: [15-05] WINDOWS #45 producer side closed; ledger entry stays OPEN until the 15-03 continuation greens (sweep re-run on FRESH root pipeline/finetuned-sweep-r2 — the old root's markers would skip all 12 cells — + gitignore adjacency + consumption/archive asserting animal/microbe + VAL-03 marks); the 12 existing cells are superseded evidence, never archived
+- [Phase 15]: 15-03 complete (halt + 15-05 fix + resume): fresh-root re-run pipeline/finetuned-sweep-r2 (272s, done 12/12, 0 skipped, both GPUs, subset-scale steps 27/150) carries eval_f1 in ALL 12 final_metrics AND run_records — the option-A producer fix proven live; the old finetuned-sweep root stays preserved superseded evidence (never archived)
+- [Phase 15]: 15-03 consumption proven at content level with zero chain modifications: animal avg_raw == 5mC f1, microbe avg_raw == emp_H3 f1 (dataset-Category grouping, no plant file producible); tmp-tree plant file provably the stale committed copy; five JSONs archived under 15-03 artifacts/; D15-15 pins repointed to r2 + new eval-key pin (suite 27); VAL-03 complete, WINDOWS #45 closed (open 8/fixed 31), PROJECT small-sweep row done
 
 ### Pending Todos
 
@@ -303,7 +306,7 @@ None yet.
 - Custom-registry storage location (`~/.config/dnallmmark/` vs repo-local ignored dir) and the exact overlay read seam are Phase 7/9 discuss items — the user-owned-file principle itself is fixed
 - v0.7.1 carryover registry questions (space/SPACE merge decision; 7 models without locatable public cards) remain maintainer-owned — outside v1.2 scope unless registries are touched
 - 15-01 remediation LANDED (15-04 complete, 2026-10-20): dispatch_core now writes run_record.json at claim finalize (run_sweep _new_record parity, WR-12 no-overwrite, CR-04-routed failures; supersedes Phase 13 A3) — RESOLVED 2026-10-20: the 15-01 continuation re-ran the fresh 2-cell smoke (finetuned-smoke-r2) green on ALL D15-02 criteria incl. "[Dry-run] 2 run record(s)"; docs/multi-gpu.md dispatch-mode rewrite landed, WINDOWS #21/#44 closed, PROJECT.md D-05 done, VAL-01 complete.
-- 15-03 Task 3 blocked (WINDOWS #45): producer->consumer eval-metrics seam gap — run_finetune discarded trainer.evaluate() results (eval scores only in trainer_state log_history), export_runs reads final_metrics verbatim, so the 12-cell sweep's consumption chain emitted empty scores and no species comparison file; plus the plan's plant-arena artifact was unproducible (datasets group Animals/Microbe). REMEDIATION RULED + PRODUCER SIDE LANDED (15-05 complete, 2026-10-21, option A): run_finetune now captures evaluate and merges it flat-additive into final_metrics (eval_* spellings verbatim; D-05/WR-13 pinned; zero chain changes); 15-03-PLAN archive list corrected to animal/microbe. REMAINING (the 15-03 continuation): sweep re-run on FRESH root pipeline/finetuned-sweep-r2 (old-root markers would skip all 12 cells) + gitignore adjacency + consumption + archive of the five JSONs + VAL-03 marks; WINDOWS #45 stays open until that greens; the 12 existing cells are superseded evidence, never archived.
+- 15-03 Task 3 blocked (WINDOWS #45): producer->consumer eval-metrics seam gap — run_finetune discarded trainer.evaluate() results (eval scores only in trainer_state log_history), export_runs reads final_metrics verbatim, so the 12-cell sweep's consumption chain emitted empty scores and no species comparison file; plus the plan's plant-arena artifact was unproducible (datasets group Animals/Microbe). REMEDIATION RULED + PRODUCER SIDE LANDED (15-05 complete, 2026-10-21, option A): run_finetune now captures evaluate and merges it flat-additive into final_metrics (eval_* spellings verbatim; D-05/WR-13 pinned; zero chain changes); 15-03-PLAN archive list corrected to animal/microbe. RESOLVED 2026-10-21 (15-03 continuation): fresh-root re-run green (pipeline/finetuned-sweep-r2, 272 s, done 12/12, 0 skipped, eval_f1 in all 12 final_metrics + run_records); consumption chain emitted non-empty models_comparison + _animal + _microbe with zero chain modifications; five JSONs archived; WINDOWS #45 closed; VAL-03 complete.
 
 ### Quick Tasks Completed
 
@@ -362,8 +365,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T00:04:14.424Z
-Stopped at: 15-05 complete (WINDOWS #45 producer fix + 15-03 archive-list correction); next: 15-03 continuation (sweep re-run on pipeline/finetuned-sweep-r2 + consumption + archive + VAL-03 marks)
+Last session: 2026-10-21T00:25:13.826Z
+Stopped at: Completed 15-03-PLAN.md (VAL-03 complete — halt + 15-05 option-A fix + fresh-root r2 resume)
 Resume file: None
 
 ## Operator Next Steps
