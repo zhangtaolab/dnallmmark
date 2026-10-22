@@ -1,45 +1,62 @@
 # Multi-GPU Sweep Orchestration
 
-This document is the single decision record for running the DNALLM-Mark
-sweep on more than one GPU (D-04, requirement MGPU-03): **when to shard
-models across GPUs vs when DDP is the right tool**, the CLI runbook for
-the orchestrator (`pipeline/run_sweep_shard.py`), and the bounded smoke
-procedure that validates a multi-GPU machine. Every command is
-copy-paste; every claim names the code that implements it.
+This document is the runbook for running the DNALLM-Mark sweep on more
+than one GPU (D-04, requirement MGPU-03): which orchestration mode to
+use, the copy-paste CLI procedures for each mode
+(`pipeline/run_sweep_shard.py`), and the bounded smoke procedure that
+validates a multi-GPU machine. Every command is copy-paste; every claim
+names the code that implements it.
 
-The orchestration CLI is deliberately the ONLY multi-GPU entry: the TUI
-composes single sweeps (D-01), `run_sweep.py` and `run_finetune.py` are
-byte-untouched by the orchestration work (their argv surfaces are frozen
-by the tier-1 suite and the TUI composer), and the orchestrator composes
-ordinary `run_sweep.py` invocations — one per GPU — under frozen sibling
-output roots.
+Since Phase 13 the orchestration CLI offers TWO modes, and they coexist
+by design (MGPU-06):
 
-## The decision: model sharding vs DDP
+- **Dispatch — `--mode dispatch` — the PRIMARY mode.** ONE dispatcher
+  process feeds idle per-GPU workers from a deterministic
+  (model × task × seed) cell queue under ONE shared output root,
+  guarded by an O_EXCL claim ledger and a singleton dispatcher lock.
+  The shared root IS the consumer root: no merge step, ever.
+- **Static — `--mode static` — the LEGACY mode.** LPT model sharding:
+  each worker runs an ordinary `run_sweep.py --models <shard>`
+  invocation under its own frozen `{root}-mgpu-w{i}` sibling root; the
+  merge and cleanup semantics in the static track below apply to these
+  roots only.
 
-| | **Model sharding** (this repo, today) | **DDP / torch-run** (future) |
-|---|---|---|
-| What accelerates | Multi-model sweeps: the 59-model benchmark matrix is embarrassingly parallel — every (model × task × seed) cell is an independent fine-tune | A single large model: one cell's batch split across GPUs |
-| Code coupling | Zero. Each worker is an ordinary `run_sweep.py --models <shard> --output-root <worker root>` invocation; nothing inside the pipeline knows sharding exists | Real. `run_finetune.py` already carries the scaffolding — `num_gpus = int(os.environ.get("WORLD_SIZE", "1"))` (`pipeline/run_finetune.py:1450`) and `local_rank = int(os.environ.get("LOCAL_RANK", "0"))` (`:1635`) — but data-splitting launch orchestration (a torch-run wrapper that shards the dataset and sets the rank env) is **deferred out of this milestone by decision** (12-CONTEXT deferred list: DDP 实装 → 决策文档落地即交付，实装非本里程碑) |
-| Coverage | Every model in the registry, custom entries included (customs shard with weight 0.0 when their `size (M)` is unusable) | Would apply per-cell to any single model, including the frontier models |
-| Cost / honest limits | Per-model load imbalance: shards are weighted by the registry's `size (M)` only (assumption A1 — every worker runs the same task set, so model size dominates the differential; per-task dataset variance is ignored) | Splitting one cell's data changes the effective batch/step math and adds a distributed-launch failure surface; none of it is exercised by the current pipeline |
-| Concurrency guarantee | Disjointness by construction: each worker writes only under its own `{root}-mgpu-w{i}` root, so no path is ever shared; `trainer_state.json` marker-skip is the only resume guard needed (D-06) | Requires a distributed process group; out of scope here |
+`run_sweep.py` and `run_finetune.py` are byte-untouched by the
+orchestration work (their argv surfaces are frozen by the tier-1 suite
+and the TUI composer); the orchestrator composes ordinary `run_sweep.py`
+invocations in both modes. Since Phase 16 the TUI also launches dispatch
+runs natively (slot 4 composes `run_sweep_shard.py --mode dispatch`) and
+renders live dispatch state plus per-GPU lanes on its monitor (slot 5).
 
-**适用场景 (when to use which):**
+## Which mode when
 
-- 59-model sweep throughput, benchmark production, any multi-model run →
-  **model sharding** (this phase's deliverable).
-- Single-model frontier scaling (one very large model, one task) →
-  **DDP, future work**. The child's `WORLD_SIZE`/`LOCAL_RANK` scaffolding
-  is the seam a future torch-run wrapper would drive; until that wrapper
-  exists, a single large model runs on one GPU under the ordinary sweep.
+| | **Dispatch** (`--mode dispatch`) — primary | **Static** (`--mode static`) — legacy | **DDP / torch-run** — deferred by decision |
+|---|---|---|---|
+| What accelerates | Multi-model sweeps: the benchmark matrix is embarrassingly parallel — every (model × task × seed) cell is an independent fine-tune, pulled by idle workers from ONE deterministic queue | Multi-model sweeps via STATIC model shards assigned up front: LPT-sharded by the registry's `size (M)` (largest first, least-loaded worker next) | A single large model: one cell's batch split across GPUs |
+| Roots | ONE shared root — dispatcher and all workers write under the same `--output-root`; the shared root needs no merge and no cleanup (MGPU-06) | Frozen sibling roots `{root}-mgpu-w{i}`, one per worker; `--merge` unions them into one verified consumer root, `--cleanup` removes them afterwards | n/a — a torch-run wrapper would own rank placement |
+| Failure recovery | `--rerun-failed`: re-runs the union of FAILED cells recorded in the dispatch ledger across ALL prior runs on the root — cross-worker, no per-worker bookkeeping | Per-worker `--from-failures` recipe over ONE worker root (static track §4) | n/a |
+| Live view | The dispatcher's own stdout prints a status/queue/done/failed/skipped table with per-worker in-flight rows (driven by `dispatch_state.json`, D15-10); the TUI (Phase 16) renders the same state on slot 5 | Attach each sibling worker root in the TUI monitor — N rows, one per root | n/a |
+| Use when | Default recommendation: benchmark production, any multi-model multi-GPU run | Legacy compatibility: existing sharded runbooks; when per-worker root isolation or merge/cleanup semantics are wanted | Single-model frontier scaling (one very large model, one task) — future work |
 
-The matrix above closes the DDP question by *deciding* it: sharding is
-the supported multi-GPU mode of this milestone; DDP implementation is
-deferred with the seam documented, not silently missing.
+**DDP stays decided-deferred with the seam documented, not silently
+missing** (12-CONTEXT deferred list: DDP 实装 → 决策文档落地即交付，实装非本里程碑):
+`run_finetune.py` already carries the scaffolding — `num_gpus =
+int(os.environ.get("WORLD_SIZE", "1"))` (`pipeline/run_finetune.py:1450`)
+and `local_rank = int(os.environ.get("LOCAL_RANK", "0"))` (`:1635`) —
+but the data-splitting launch orchestration (a torch-run wrapper that
+shards the dataset and sets the rank env) does not exist. Splitting one
+cell's data would change the effective batch/step math and add a
+distributed-launch failure surface; none of it is exercised by the
+current pipeline, so until such a wrapper exists a single large model
+runs on one GPU under the ordinary sweep.
 
-## CLI runbook
+## CLI runbook — legacy static mode (`--mode static`)
 
-All commands run from the repository root. Frozen naming (one authority,
+All commands in this track run the legacy static mode. Static is the
+parser default (`--mode`, `pipeline/run_sweep_shard.py:399-411`), but
+every command here spells `--mode static` out explicitly so the mode
+choice is always visible in a copied command. All commands run from the
+repository root. Frozen naming (one authority,
 `run_sweep_shard.worker_root()`): worker i writes under
 `{output-root}-mgpu-w{i}` with its tee log at
 `{output-root}-mgpu-w{i}-{launch-stamp}.log` — one log file per launch
@@ -53,7 +70,7 @@ workers on one root would collide last-writer-wins over the root-level
 ```bash
 # (a) Dry-run: enumerate the shards, write ONLY the per-worker planned
 #     manifests — no GPU, no subprocess; verify the partition first
-python pipeline/run_sweep_shard.py --dry-run --workers 2 \
+python pipeline/run_sweep_shard.py --mode static --dry-run --workers 2 \
     --models plant-dnabert-6mer,GENERanno-eukaryote-0.5b-base \
     --tasks GUE__emp_H3 --seeds 42,43,44 --num_train_epochs 1 \
     --output-root ./pipeline/finetuned
@@ -61,7 +78,7 @@ python pipeline/run_sweep_shard.py --dry-run --workers 2 \
 # (b) Real launch: same command minus --dry-run; one run_sweep.py worker
 #     per GPU, CUDA_VISIBLE_DEVICES pinned per worker (default 0..N-1,
 #     override with --gpus "0,1" — operator-owned strings, arity-checked)
-python pipeline/run_sweep_shard.py --workers 2 \
+python pipeline/run_sweep_shard.py --mode static --workers 2 \
     --models plant-dnabert-6mer,GENERanno-eukaryote-0.5b-base \
     --tasks GUE__emp_H3 --seeds 42,43,44 --num_train_epochs 1 \
     --output-root ./pipeline/finetuned
@@ -222,8 +239,7 @@ This section is written FROM the executed commands (D15-02
 procedure/doc identity): every argv and output line below is a
 copy-paste of the 2026-10-20 run. Dispatch mode (`--mode dispatch`,
 Phase 13) is the primary multi-GPU mode; the static-shard runbook above
-stays valid for the coexisting `--mode static` (the full dispatch-first
-docs pass is Phase 18, DOCS-01).
+stays valid for the coexisting `--mode static`.
 
 为什么是 2 个 cell（种子 42,43）：D15-02 要求两块卡**各自**产出 cell
 工件——1 模型 × 1 任务 × 1 种子 = 1 cell 会让 worker 1 拿到空队列直接退出，
