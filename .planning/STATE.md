@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 
 Phase: 18 (文档撰写) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-22 — Phase 18 execution started
 
 ## Performance Metrics
@@ -129,6 +129,7 @@ Last activity: 2026-10-22 — Phase 18 execution started
 | Phase 18 P01 | 5 min | 3 tasks | 1 files |
 | Phase 18 P18-02 | 7 min | 3 tasks | 3 files |
 | Phase 18 P03 | 13m | 3 tasks | 3 files |
+| Phase 18 P04 | 18 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -334,6 +335,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 18]: 18-02: ONBOARDING task-filter-vs-subset-dataset disambiguation landed in §6 (Pitfall 4); §5's --tasks line left untouched per surgical scope
 - [Phase 18]: 18-03: shipped-source facts supersede 16-UI-SPEC pre-review values (stale grace 3600s WR-02, GPUs default 0..workers-1 WR-03) — docs describe shipped reality
 - [Phase 18]: 18-03: TUI-GUIDE heading renamed to Multi-GPU launch and monitoring; four same-file contradiction fixes (Rule 1) applied so the guide does not self-contradict after the section rewrite
+- [Phase 18]: 18-04: the three TUI report figures are FRESH real-data captures (real app via golden-harness seams + archived r2 dispatch state + live probe + real registry view), not copies of the fixture-driven #50 goldens — same filenames, PENDING-REVIEW retained, captions state what ran
+- [Phase 18]: 18-04: Q4 honored — recorded 2236/6 cited with the 17-VERIFICATION:121 proxy caveat verbatim, milestone-close owns the fresh full suite; cheap lanes re-run fresh and dated (node 44/44, determinism 10 passed)
 
 ### Pending Todos
 
@@ -406,8 +409,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T06:58:50.675Z
-Stopped at: Completed 18-03-PLAN.md
+Last session: 2026-10-22T07:38:28.865Z
+Stopped at: Completed 18-04-PLAN.md (v1.3 milestone test report: docs/v1.3-test-report.html + 8 assets + README link; all gates green)
 Resume file: None
 
 ## Operator Next Steps
