@@ -206,6 +206,16 @@ Plans:
 
 </details>
 
+### Phase 19: TUI 运行配置全参数化（基础/高级两层）
+
+**Goal:** DNALLM 的全部微调参数（TrainingArguments 面）都可作为 TUI 运行配置的任务选项。两层结构：基础参数区（seeds / epochs / batch_size / workers / gpus / 输出根——batch_size 由 quick-261023-abu 先行落地，管线 `--batch_size` 透传同步就位）+ 高级参数区（learning_rate、weight_decay、adam_beta1/2、adam_epsilon、max_grad_norm、warmup_ratio、lr_scheduler_type 及 kwargs、gradient_accumulation_steps、effective_batch_size、logging/eval/save 策略与步长、bf16 等）。每个参数带 YAML 默认值占位/示例；枚举类参数（lr_scheduler_type、策略类）用下拉选择；数值参数做范围校验并提供恢复默认；spec 持久化延续现有 run-spec state 设计（会话覆盖、文件默认）；goldens 与 pilot 测试同步更新；journey driver（scripts/live/record_tui_live_svg.py）参数打字通道同步扩展。
+**Requirements**: TBD (run /gsd-plan-phase 19)
+**Depends on:** Phase 18, quick-261023-abu (batch_size 链路先行)
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 19 to break down)
+
 ---
 *v0.7.1 (Phases 1-6) shipped 2026-10-11 · v1.2 TUI任务 (Phases 7-12, 41 plans, 62 tasks) shipped 2026-10-19 — full records in `.planning/MILESTONES.md` and `.planning/milestones/`. Next milestone starts with `/gsd-new-milestone`.*
 

@@ -134,6 +134,10 @@ Last activity: 2026-10-22 - Completed quick task 261022-tah: TUI FungiHelixSeek 
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 19 added (2026-10-23, maintainer directive): TUI 运行配置全参数化（基础/高级两层）— DNALLM 全部微调参数进 TUI，默认值占位/下拉/校验/恢复默认；依赖 quick-261023-abu 的 batch_size 先行链路
+
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
