@@ -108,7 +108,7 @@ Plans:
 
 **Goal**: Multi-seed results display with error bars on the public pages — additive mean/std/n_seeds through the data chain, scatter whiskers via a vendored inline Chart.js plugin, floating-bar task charts — with zero drift in existing numbers
 **Requirements**: WEB-01, WEB-02, WEB-03
-**Plans**: 3 plans
+**Plans**: 3/3 plans complete
 Plans:
 **Wave 1**
 - [x] 17-01-PLAN.md — data-chain additive trio (schemas + export emission + summarize propagation + zero-drift gate split + METHODOLOGY appendix)
