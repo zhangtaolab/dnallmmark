@@ -170,24 +170,36 @@ python pipeline/run_sweep_shard.py --merge --workers 2 \
   every `output_dir` rewritten onto the merged root, and refuses if the
   workers' lane flags differ (a lora worker merged with a base worker is
   a different experiment than either).
-- **Never mutates a worker root and never deletes anything.** Cleanup is
-  an explicit, verified maintainer step — since Phase 14 (MGPU-05) the
-  `--cleanup` command replaces the old manual `rm -rf` recipe: it
-  re-verifies the merged root first (an `export_runs.py --dry-run`
-  subprocess AND manifest cell-set equality against the worker
-  manifests), then removes exactly the frozen worker roots
-  `{output-root}-mgpu-w{0..N-1}` and their per-launch logs, behind an
-  exact typed phrase (the resolved `--output-root` string, D14-11):
-  ```bash
-  python pipeline/run_sweep_shard.py --cleanup --workers 2 \
-      --output-root ./pipeline/finetuned \
-      --yes /abs/resolved/pipeline/finetuned
-  ```
-  **Dispatch roots need neither `--merge` nor `--cleanup`** — dispatch
+- **Never mutates a worker root and never deletes anything.** Removal
+  of the frozen worker roots is a separate, verified step — see Cleanup
+  below.
+
+### 6. Cleanup (MGPU-05 — verified removal behind a typed phrase)
+
+Since Phase 14 (MGPU-05) the `--cleanup` command replaces the old
+manual `rm -rf` recipe:
+
+```bash
+python pipeline/run_sweep_shard.py --cleanup --workers 2 \
+    --output-root ./pipeline/finetuned \
+    --yes /abs/resolved/pipeline/finetuned
+```
+
+- **Typed gate (`--yes PHRASE`):** the phrase must equal the RESOLVED
+  `--output-root` string EXACTLY (D14-11). Without `--yes`, an
+  interactive terminal prompts once; EOF, a mismatch, or a
+  non-interactive launch refuses with nothing removed.
+- **Dual verification before removal:** the merged root is re-verified
+  first — an `export_runs.py --dry-run` subprocess AND manifest
+  cell-set equality against the worker manifests — and ONLY if both
+  legs pass does it remove exactly the frozen worker roots
+  `{output-root}-mgpu-w{0..N-1}` and their per-launch logs.
+- **The merged root is never a removal target.**
+- **Dispatch roots refuse both `--merge` and `--cleanup`** — dispatch
   mode writes ONE shared root (MGPU-06); both commands refuse with a
   named error before touching anything (A6, D14-11/D14-12).
 
-### 6. Web mirror (offline regeneration, never both roots)
+### 7. Web mirror (offline regeneration, never both roots)
 
 ```bash
 uv run --group tui --group dev python script/gen_progress.py \
@@ -317,6 +329,79 @@ per-worker bookkeeping, no `--models`/`--seeds` retyping:
 |---|---|
 | Dispatch | `--rerun-failed --output-root <the dispatch root>` (dispatch track §3) |
 | Static | the per-worker `--from-failures` recipe over ONE worker root (static track §4) — healthy workers' roots are never touched |
+
+## The 5% subset workflow (generate → configure → run → consume)
+
+Subsets cut the DATA scale of every task to ~5% so a full
+model × task × seed matrix finishes in minutes instead of hours. This
+is data-scale reduction via `script/make_subset_datasets.py` — a
+different concept from the `--tasks <name1,name2>` TASK filter, which
+selects which tasks run at full data scale.
+
+### Generate
+
+```bash
+python script/make_subset_datasets.py \
+    --dataset-root <REAL-datasets-root> \
+    --output-root pipeline/datasets-smoke \
+    --registry-dir pipeline/registry-smoke \
+    --models plant-dnabert-6mer,plant-dnamamba-6mer \
+    --tasks iDNA_ABF_datasets__5mC,GUE__emp_H3 \
+    --fraction 0.05 --seed 42
+```
+
+Expected output — the executed Phase-15 generation log, quoted verbatim
+(`/root/autodl-tmp/phase15-evidence/subset-generation.log`):
+
+```text
+✅ iDNA_ABF_datasets__5mC: train 105 / dev 11 / test 117 rows (source 2110/234/2344)
+✅ GUE__emp_H3: train 598 / dev 74 / test 74 rows (source 11971/1497/1497)
+✅ 2 subset dataset(s) written under /root/autodl-tmp/Github/dnallmmark/pipeline/datasets-smoke (fraction=0.05, seed=42); registry: /root/autodl-tmp/Github/dnallmmark/pipeline/registry-smoke
+```
+
+Measured row counts: 5mC 105/11/117, emp_H3 598/74/74 — the floor-of-1
+rule keeps even the smallest split non-empty. Semantics (stated once,
+`script/make_subset_datasets.py` docstring): every split (train/dev/
+test) is sampled INDEPENDENTLY, stratified by integer label, with
+`k = max(1, int(n × fraction))` per split and largest-remainder class
+allocation in integer arithmetic; fixed inputs + seed regenerate
+byte-identical outputs (run-twice idempotent).
+
+### Configure + run
+
+Take the dispatch launch (dispatch track §1) and point it at the subset
+PAIR — both flags, spelled absolute:
+
+```bash
+... --registry-dir "$(pwd)/pipeline/registry-smoke" \
+    --dataset_root "$(pwd)/pipeline/datasets-smoke"
+```
+
+`--dataset_root` is what steers the children onto the subset CSVs;
+`--registry-dir` alone never does — the subset registry only supplies
+the MEASURED row counts (children always join
+`dataset_base + Dataset_path` under the overridden root; the 15-03
+Pitfall-1 guard). Isolation rules:
+
+- The subset output root is never a real-run root.
+- The subset registry dir is REFUSED if it equals or contains the
+  official `pipeline/` registry or the custom registry dir (D15-07).
+- Subset runs and real runs never share registry, config, or output
+  roots (VAL-02).
+
+### Consume
+
+```bash
+.venv/bin/python script/export_runs.py --dry-run --input-root <the-subset-run-root>
+# → [Dry-run] N run record(s) across <M> model(s) / <T> task(s) under <the-subset-run-root>
+```
+
+The full export → summarize chain then runs UNMODIFIED over the subset
+run root: the Phase-15 r2 sweep root (12 cells, 272 s, dispatch done
+12/12) was consumed end-to-end with zero chain changes, and the five
+produced JSONs are archived as evidence
+(`.planning/phases/15-dual-gpu-validation-subsets/15-03-SUMMARY.md`,
+`artifacts/` beside it).
 
 ## The dispatch-mode N=2 smoke procedure (executed on this machine)
 
