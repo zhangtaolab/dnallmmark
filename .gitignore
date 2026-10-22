@@ -137,6 +137,10 @@ pipeline/finetuned-sweep/
 # evidence (eval-less final_metrics) — its trainer_state markers would
 # resume-skip all 12 cells, so the eval-carrying re-run needs its own root
 pipeline/finetuned-sweep-r2/
+# Live TUI 2x2 SVG-record run root (quick-261022-pa6): the fresh dispatch
+# root for the recorded dual-GPU journey — the evidence is the committed
+# docs/live/ captures + record, never the run tree itself
+pipeline/finetuned-tui-pa6/
 # TUI demo meta sidecars (quick-261015-pex): per-recording driver state,
 # consumed by record.sh's exit gate — never committed.
 docs/demo/.meta-*.json
