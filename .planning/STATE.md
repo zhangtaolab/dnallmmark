@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 ## Current Position
 
 Phase: 18 (文档撰写) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-10-22 — Phase 18 execution started
 
@@ -128,6 +128,7 @@ Last activity: 2026-10-22 — Phase 18 execution started
 | Phase 17 P3 | 53 min | 3 tasks | 3 files |
 | Phase 18 P01 | 5 min | 3 tasks | 1 files |
 | Phase 18 P18-02 | 7 min | 3 tasks | 3 files |
+| Phase 18 P03 | 13m | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -331,6 +332,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 18]: 18-01: the executed Phase-15 smoke record stays byte-preserved (sha256-pinned fences dcdbc798…); new sections restructure AROUND it — only the stale Phase-18-forward-referencing parenthetical was removed from its prose
 - [Phase 18]: 18-02: README dispatch/subset subsection uses the executed Phase-15 r2 flag set with a generalized run root — the 12-cell/2-model/2-task counts are the executed numbers, only the root name differs (fresh-root discipline)
 - [Phase 18]: 18-02: ONBOARDING task-filter-vs-subset-dataset disambiguation landed in §6 (Pitfall 4); §5's --tasks line left untouched per surgical scope
+- [Phase 18]: 18-03: shipped-source facts supersede 16-UI-SPEC pre-review values (stale grace 3600s WR-02, GPUs default 0..workers-1 WR-03) — docs describe shipped reality
+- [Phase 18]: 18-03: TUI-GUIDE heading renamed to Multi-GPU launch and monitoring; four same-file contradiction fixes (Rule 1) applied so the guide does not self-contradict after the section rewrite
 
 ### Pending Todos
 
@@ -403,8 +406,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T06:41:03.923Z
-Stopped at: Completed 18-02-PLAN.md (DOCS-02: README/ONBOARDING/GETTING-STARTED dispatch + 5% subset)
+Last session: 2026-10-22T06:58:50.675Z
+Stopped at: Completed 18-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

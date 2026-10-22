@@ -26,8 +26,8 @@ Requirements for milestone v1.3. Each maps to roadmap phases (Traceability below
 
 - [x] **DOCS-01**: `docs/multi-gpu.md` and related runbooks are rewritten for dispatch mode with every command copy-pasteable (including subset generation); the N=2 smoke procedure matches the executed Phase 15 reality; legacy static-shard mode documented as coexisting
 - [x] **DOCS-02**: README + ONBOARDING/GETTING-STARTED gain the multi-GPU dispatch section and the 5% subset workflow (generate → configure → run → merge); no stale static-sharding-only instructions remain
-- [ ] **DOCS-03**: TUI multi-GPU usage documentation (multi-GPU launch, monitoring, G lanes) in the TUI-DEMO.md precedent shape, verified against shipped screens
-- [ ] **DOCS-04**: Version surfaces consistent at 1.3.0 (pyproject, uv.lock, TUI about screen); the milestone-stage row rewritten to the delivered v1.3 scope at ship time
+- [x] **DOCS-03**: TUI multi-GPU usage documentation (multi-GPU launch, monitoring, G lanes) in the TUI-DEMO.md precedent shape, verified against shipped screens
+- [x] **DOCS-04**: Version surfaces consistent at 1.3.0 (pyproject, uv.lock, TUI about screen); the milestone-stage row rewritten to the delivered v1.3 scope at ship time
 
 ### TUI — 控制台多 GPU 界面
 
@@ -90,8 +90,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WEB-03 | Phase 17 | Complete |
 | DOCS-01 | Phase 18 | Complete |
 | DOCS-02 | Phase 18 | Complete |
-| DOCS-03 | Phase 18 | Pending |
-| DOCS-04 | Phase 18 | Pending |
+| DOCS-03 | Phase 18 | Complete |
+| DOCS-04 | Phase 18 | Complete |
 
 **Coverage:**
 - v1.3 requirements: 20 total

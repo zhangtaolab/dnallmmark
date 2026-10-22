@@ -126,13 +126,13 @@ Plans:
 
 **Goal**: v1.3's multi-GPU workflow is fully documented for operators and external reviewers — the dispatch-mode runbook, README/ONBOARDING multi-GPU + subset sections, TUI multi-GPU usage doc, and version-consistent v1.3.0 release documentation (TUI-DEMO.md / docs-trio precedents)
 **Requirements**: DOCS-01, DOCS-02, DOCS-03, DOCS-04
-**Plans**: 4 plans
+**Plans**: 3/4 plans complete
 
 Plans:
 **Wave 1**
 - [x] 18-01-PLAN.md — multi-gpu.md dispatch-first restructure: mode-selection lead table + legacy static track with explicit --mode static, executed smoke section preserved fence-byte-identical (sha-pinned), --rerun-failed/--cleanup promotion, the 5% subset workflow with executed Phase-15 argv (DOCS-01)
 - [x] 18-02-PLAN.md — README + ONBOARDING/GETTING-STARTED: dispatch + 5% subset subsection with copy-paste commands, task-filter-vs-subset-dataset disambiguation, dispatch-first descriptor refreshes, zero-stale audit (DOCS-02)
-- [ ] 18-03-PLAN.md — TUI docs + version surfaces: TUI-DEMO section 11 in the precedent five-part anatomy (honest no-GIF variant, queued note), TUI-GUIDE 193-204 corrective edit to shipped Phase-16 reality, ABOUT_MILESTONE_STAGE delivered-scope rewrite + 1.3.0 verify (DOCS-03, DOCS-04)
+- [x] 18-03-PLAN.md — TUI docs + version surfaces: TUI-DEMO section 11 in the precedent five-part anatomy (honest no-GIF variant, queued note), TUI-GUIDE 193-204 corrective edit to shipped Phase-16 reality, ABOUT_MILESTONE_STAGE delivered-scope rewrite + 1.3.0 verify (DOCS-03, DOCS-04)
 
 **Wave 2** *(blocked on Wave 1: report's Phase-18 section describes landed docs; README file overlap with 18-02)*
 - [ ] 18-04-PLAN.md — the v1.3 milestone test-results report at docs/v1.3-test-report.html per the ratified 18-UI-SPEC: committed report-assets (4 browser-verification PNGs + 3 TUI SVG golden copies w/ PENDING-REVIEW badges), six phase sections + gap-closure callouts + GPU evidence with run_id/timing pairing discipline + lane summary table (2236/6 cited w/ proxy caveat, 44/44 node, 5 verification scores), zero-external-request + print-stylesheet gates, README docs-index link (D18-05..D18-08)
