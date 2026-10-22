@@ -151,6 +151,6 @@ All leaderboard data lives under `dnallm-mark/data/`, committed to the repositor
 - [TUI-GUIDE.md](TUI-GUIDE.md) — the operator console runbook: every screen, key, gate, and troubleshooting entry
 - [METHODOLOGY.md](METHODOLOGY.md) — how the leaderboard numbers are computed
 - [ONBOARDING.md](ONBOARDING.md) — checklists for adding a new model or dataset to the benchmark
-- [multi-gpu.md](multi-gpu.md) — multi-GPU sweep orchestration
+- [multi-gpu.md](multi-gpu.md) — multi-GPU sweep orchestration: dispatch mode, the 5% subset workflow, and the legacy static track
 - [DEVELOPMENT.md](DEVELOPMENT.md) and [TESTING.md](TESTING.md) — local development setup, code style, and the test lanes
 - The README's Documentation index — the full list including TUI, data-audit, and audit reports
