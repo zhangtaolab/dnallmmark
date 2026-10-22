@@ -73,6 +73,10 @@ EXPECTED_CFG_CONSTANTS = (
     "CFG_FIELD_GPUS", "CFG_GPUS_DEFAULT", "CFG_MGPU_HINT",
     "CFG_WORKERS_INVALID_PROBLEM", "CFG_GPUS_INVALID_PROBLEM",
     "CFG_WORKERS_EXCEED_GPUS_PROBLEM",
+    # 261023-abu: the per-device starting batch row — the flag label
+    # (vocabulary verbatim, the EBS/workers precedent) and the
+    # dynamic-scaling placeholder hint (the CFG_GPUS_DEFAULT grammar).
+    "CFG_FIELD_BATCH_SIZE", "CFG_BATCH_SIZE_DEFAULT",
 )
 
 #: The complete expected LNC_ inventory (launch-confirmation modal +

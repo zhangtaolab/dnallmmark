@@ -78,6 +78,7 @@ from tui.services import run_config as run_config_service
 from tui.services import selection as selection_service
 from tui.services import sweep_launcher as sweep_launcher_module
 from tui.services.run_config import (
+    PARAM_BATCH_SIZE,
     PARAM_CURVE,
     PARAM_EBS,
     PARAM_EPOCHS,
@@ -1390,6 +1391,21 @@ class RunConfigScreen(Screen):
                                 classes="cfg-param-label")
                     yield Input(value="", id="cfg-input-ebs",
                                 classes="cfg-param-input", compact=True)
+                # 261023-abu: the per-device starting batch row — the
+                # EBS row's shape exactly (empty = the child's YAML
+                # default + determine_batch_size dynamic scaling
+                # governs, threads NO --batch_size; a typed int >= 1
+                # threads the STARTING micro-batch). Existing classes
+                # ONLY, zero new CSS; the placeholder names the child's
+                # scaling rule (the GPUs-row prompt-hint precedent).
+                with Horizontal(classes="cfg-param-row"):
+                    yield Label(S.CFG_FIELD_BATCH_SIZE,
+                                id="cfg-label-batch-size",
+                                classes="cfg-param-label")
+                    yield Input(
+                        value="", placeholder=S.CFG_BATCH_SIZE_DEFAULT,
+                        id="cfg-input-batch-size",
+                        classes="cfg-param-input", compact=True)
                 # Phase 16 (16-04, TUI-02, UI-SPEC C.1): the multi-GPU
                 # dispatch section — existing classes ONLY (zero new
                 # TCSS for slot-4). The workers field carries its LIVE
@@ -1527,6 +1543,13 @@ class RunConfigScreen(Screen):
             ("#cfg-input-ebs",
              (str(message.spec.effective_batch_size)
               if message.spec.effective_batch_size is not None else "")),
+            # 261023-abu: the batch row seeds the typed value or stays
+            # EMPTY (None never renders as a guessed number — the
+            # epochs idiom; the placeholder then documents the child's
+            # dynamic scaling rule).
+            ("#cfg-input-batch-size",
+             (str(message.spec.batch_size)
+              if message.spec.batch_size is not None else "")),
             # 16-04: the multi-GPU pair — workers ALWAYS seeds a value
             # (the RunSpec default 1 is a VALUE, never a placeholder);
             # gpus seeds the typed list or stays EMPTY (the placeholder
@@ -1767,6 +1790,8 @@ class RunConfigScreen(Screen):
             PARAM_CURVE: self._text_value("#cfg-input-curve") or None,
             PARAM_EPOCHS: self._text_value("#cfg-input-epochs") or None,
             PARAM_EBS: self._text_value("#cfg-input-ebs") or None,
+            PARAM_BATCH_SIZE: (
+                self._text_value("#cfg-input-batch-size") or None),
             # 16-04: the multi-GPU pair rides the same parse_params
             # mirrors (an empty GPUs field is ABSENT — the epochs
             # idiom — meaning the child's first-workers default at

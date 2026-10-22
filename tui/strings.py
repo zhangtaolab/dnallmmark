@@ -1333,6 +1333,19 @@ CFG_FIELD_EBS = _t(
     "CFG_FIELD_EBS", "effective_batch_size", "effective_batch_size")
 CFG_FIELD_EBS_SHORT = _t(
     "CFG_FIELD_EBS_SHORT", "eff_batch_size", "eff_batch_size")
+# 261023-abu: the per-device starting batch row — flag vocabulary
+# verbatim both languages (the CFG_FIELD_EBS/CFG_FIELD_WORKERS
+# precedent); NO short variant (10 chars already fits the narrow
+# column that renders the 13-char eff_batch_size). The placeholder
+# hint names the child's OWN scaling rule (the CFG_GPUS_DEFAULT
+# "—（…）" prompt-hint grammar: fullwidth parens zh, ASCII parens en)
+# — an empty field threads NO --batch_size and the child's
+# determine_batch_size scales the YAML default by sequence length.
+CFG_FIELD_BATCH_SIZE = _t(
+    "CFG_FIELD_BATCH_SIZE", "batch_size", "batch_size")
+CFG_BATCH_SIZE_DEFAULT = _t(
+    "CFG_BATCH_SIZE_DEFAULT", "—（默认: 按序列长度动态缩放）",
+    "— (default: scaled by seq length)")
 # 261015-ehc terminology: the zh row label for output_root is 结果目录
 # (the en side keeps the established "output root").
 CFG_FIELD_OUTPUT_ROOT = _t(

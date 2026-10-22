@@ -139,6 +139,7 @@ def test_runspec_defaults():
     assert spec.subset_file is None
     assert spec.num_train_epochs is None
     assert spec.effective_batch_size is None
+    assert spec.batch_size is None
     assert spec.output_root == "./finetuned"
     assert spec.dataset_root is None
     assert spec.model_root is None
@@ -185,6 +186,7 @@ def test_parse_params_happy_path_all_fields():
         "curve": "0.5,0.25,0.5",
         "num_train_epochs": "3",
         "effective_batch_size": "16",
+        "batch_size": "8",
     })
     assert problems == ()
     assert partials == {
@@ -192,6 +194,7 @@ def test_parse_params_happy_path_all_fields():
         "curve_fractions": (0.25, 0.5),
         "num_train_epochs": 3,
         "effective_batch_size": 16,
+        "batch_size": 8,
     }
 
 
@@ -232,12 +235,24 @@ def test_parse_params_ebs_invalid(raw):
     assert "effective_batch_size" not in partials
 
 
+@pytest.mark.parametrize("raw", ["0", "-1", "x", "2.5"])
+def test_parse_params_batch_size_invalid(raw):
+    """261023-abu: batch_size must be an int >= 1 — the epochs/ebs shape
+    verbatim over the per-device starting micro-batch (the run_sweep
+    flag_problems bound mirrored; the shard CLI / run_sweep / dispatch
+    stay the validation authorities)."""
+    partials, problems = run_config.parse_params({"batch_size": raw})
+    assert problems == (("batch_size_invalid", raw),)
+    assert "batch_size" not in partials
+
+
 def test_parse_params_empty_values_mean_absent():
     """A cleared optional field (None or whitespace) is OFF — no
     problem, no partial (the constructor defaults govern)."""
     partials, problems = run_config.parse_params({
         "num_train_epochs": "",
         "effective_batch_size": None,
+        "batch_size": "  ",
         "curve": "  ",
     })
     assert problems == ()
@@ -260,12 +275,14 @@ def test_parse_params_collects_all_problems_together():
         "curve": "2",
         "num_train_epochs": "0",
         "effective_batch_size": "0",
+        "batch_size": "0",
     })
     assert problems == (
         ("seeds_invalid", "x"),
         ("curve_invalid", "2"),
         ("epochs_invalid", "0"),
         ("ebs_invalid", "0"),
+        ("batch_size_invalid", "0"),
     )
     assert partials == {}
 
@@ -378,6 +395,11 @@ def test_persistence_round_trip_defaults(monkeypatch, tmp_path):
     assert (state / "run_config.json").is_file()
     loaded = run_config.load_state()
     assert loaded == spec
+    doc = json.loads((state / "run_config.json").read_text(encoding="utf-8"))
+    assert doc["params"]["batch_size"] is None, (
+        "an unset batch_size persists as None (261023-abu — like every "
+        "optional param)"
+    )
 
 
 def test_persistence_round_trip_full_spec(monkeypatch, tmp_path):
@@ -392,6 +414,7 @@ def test_persistence_round_trip_full_spec(monkeypatch, tmp_path):
         subset_file="/tmp/subset.json",
         num_train_epochs=1,
         effective_batch_size=16,
+        batch_size=8,
         output_root="/data/sweeps/run-a",
         dataset_root="/data/datasets",
         model_root="/data/models",
@@ -407,6 +430,9 @@ def test_persistence_round_trip_full_spec(monkeypatch, tmp_path):
     assert doc["params"]["peft"] == "lora"
     assert doc["params"]["config_variant"] == "probe"
     assert doc["params"]["curve_fractions"] == [0.25, 0.5]
+    assert doc["params"]["batch_size"] == 8, (
+        "a typed batch_size round-trips through params (261023-abu)"
+    )
     assert doc["dirs"]["output_root"] == "/data/sweeps/run-a"
     assert doc["dirs"]["dataset_root"] == "/data/datasets"
     assert doc["dirs"]["model_root"] == "/data/models", (
@@ -458,6 +484,8 @@ def test_load_state_schema_drift_returns_default(monkeypatch, tmp_path):
      "params": {"num_train_epochs": 0}},
     {"schema_version": 1, "models": [], "tasks": [],
      "params": {"curve_fractions": [1.5]}},
+    {"schema_version": 1, "models": [], "tasks": [],
+     "params": {"batch_size": 0}},
     {"schema_version": 1, "models": [], "tasks": [],
      "dirs": {"output_root": ""}},
 ])
@@ -521,6 +549,21 @@ def test_legacy_dataset_root_default_loads_as_unset(monkeypatch, tmp_path):
         "read maps the absence to unset (backward compatible, no "
         "schema_version bump)"
     )
+
+
+def test_pre_change_doc_batch_size_absent_loads_none(
+        monkeypatch, tmp_path):
+    """261023-abu: a pre-change persisted state file (no batch_size
+    key) loads with batch_size None — byte-identical launches, zero
+    --batch_size argv elements, no schema_version bump (the
+    workers/gpus absent-key precedent)."""
+    _write_state_doc(monkeypatch, tmp_path, _PRE_CHANGE_DOC)
+    spec = run_config.load_state()
+    assert spec.batch_size is None
+    assert "--batch_size" not in run_config.compose_dispatch_argv(
+        run_config.RunSpec(
+            models=spec.models, tasks=spec.tasks,
+            batch_size=spec.batch_size))
     argv = run_config.compose_argv(spec)
     assert "--dataset_root" not in argv
     assert "--model_root" not in argv
@@ -1039,7 +1082,8 @@ def test_compose_argv_defaults_exactly_ten_base_elements():
 
 @pytest.mark.parametrize("flag", [
     "--peft", "--config-variant", "--curve", "--subset_file",
-    "--num_train_epochs", "--effective_batch_size", "--cache_dir",
+    "--num_train_epochs", "--effective_batch_size", "--batch_size",
+    "--cache_dir",
     "--model_root", "--dataset_root", "--log_dir",
 ])
 def test_compose_argv_absent_flags_contribute_zero_elements(flag):
@@ -1064,7 +1108,7 @@ def test_compose_argv_full_spec_element_for_element():
         peft="lora", config_variant="probe",
         curve_fractions=(0.25, 0.5),
         subset_file="./subs/fairness.json",
-        num_train_epochs=1, effective_batch_size=16,
+        num_train_epochs=1, effective_batch_size=16, batch_size=8,
         output_root="./sweeps/run-x",
         cache_dir="./hf-cache",
         model_root="./m-root",
@@ -1085,6 +1129,7 @@ def test_compose_argv_full_spec_element_for_element():
         "--subset_file", str((REPO_ROOT / "subs" / "fairness.json").resolve()),
         "--num_train_epochs", "1",
         "--effective_batch_size", "16",
+        "--batch_size", "8",
         "--cache_dir", str((REPO_ROOT / "hf-cache").resolve()),
         "--model_root", str((REPO_ROOT / "m-root").resolve()),
         "--dataset_root", str((REPO_ROOT / "d-root").resolve()),
@@ -1258,7 +1303,7 @@ def test_compose_dispatch_argv_shape_workers_two_gpus_pinned():
         peft="lora", config_variant="probe",
         curve_fractions=(0.25, 0.5),
         subset_file="./subs/fairness.json",
-        num_train_epochs=1, effective_batch_size=16,
+        num_train_epochs=1, effective_batch_size=16, batch_size=8,
         cache_dir="./hf-cache", model_root="./m-root",
         dataset_root="./d-root", log_dir="./run-logs",
     )
@@ -1279,6 +1324,7 @@ def test_compose_dispatch_argv_shape_workers_two_gpus_pinned():
         "--subset_file", str((REPO_ROOT / "subs" / "fairness.json").resolve()),
         "--num_train_epochs", "1",
         "--effective_batch_size", "16",
+        "--batch_size", "8",
         "--cache_dir", str((REPO_ROOT / "hf-cache").resolve()),
         "--model_root", str((REPO_ROOT / "m-root").resolve()),
         "--dataset_root", str((REPO_ROOT / "d-root").resolve()),

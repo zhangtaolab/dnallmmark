@@ -774,6 +774,19 @@ async def test_params_defaults_render():
         )
         assert screen.query_one("#cfg-input-epochs", Input).value == ""
         assert screen.query_one("#cfg-input-ebs", Input).value == ""
+        from tui.strings import (
+            CFG_BATCH_SIZE_DEFAULT,
+            CFG_FIELD_BATCH_SIZE,
+        )
+
+        batch_size = screen.query_one("#cfg-input-batch-size", Input)
+        assert batch_size.value == "", (
+            "the batch field renders EMPTY at defaults (261023-abu — an "
+            "empty field threads NO --batch_size)"
+        )
+        assert _plain(batch_size.placeholder) == CFG_BATCH_SIZE_DEFAULT
+        assert _label_text(
+            screen, "#cfg-label-batch-size") == CFG_FIELD_BATCH_SIZE
         assert screen.query_one("#cfg-input-output-root", Input).value == (
             "./finetuned")
         dataset_root = screen.query_one("#cfg-input-dataset-root", Input)
@@ -812,13 +825,14 @@ async def test_params_input_values_render_in_export():
         assert "模型根" in svg, (
             "the model-root row's label renders (261014-c2l)"
         )
-        assert svg.count("—（默认") == 4, (
-            "ALL FOUR prompt hints render in the placeholder's place "
+        assert svg.count("—（默认") == 5, (
+            "ALL FIVE prompt hints render in the placeholder's place "
             "(the SVG encodes their inner space as &#160;, so the "
-            "contiguous constant is pinned by its stable prefix — four "
+            "contiguous constant is pinned by its stable prefix — five "
             "hits = the model-root, dataset-root, and log-dir rows "
             "(261014-f4w) + the 16-04 GPUs default-assignment row "
-            "(WR-03 copy), the same CFG_CACHE_DEFAULT grammar)"
+            "(WR-03 copy) + the 261023-abu batch-size dynamic-scaling "
+            "row, the same CFG_CACHE_DEFAULT grammar)"
         )
         assert "./datasets" not in svg, (
             "the retired D-19 './datasets' display default no longer "
@@ -856,6 +870,53 @@ async def test_model_root_input_threads_absolute_flag_into_argv():
             "resolved absolute string"
         )
         assert "--dataset_root" not in argv
+
+
+async def test_batch_size_input_threads_flag_and_invalid_problem():
+    """261023-abu: typing 8 into #cfg-input-batch-size composes a spec
+    whose service-side DISPATCH argv carries --batch_size 8 (the
+    model-root typing idiom over the dispatch composer); typing 0
+    raises batch_size_invalid, which renders through the preview
+    problems path's GENERIC code+detail fallback exactly like
+    epochs_invalid/ebs_invalid (no copy mapping, by design), and the
+    invalid raw never persists (last-valid governs)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        batch_input = screen.query_one("#cfg-input-batch-size", Input)
+        batch_input.value = "8"
+        await _settle(pilot, app)
+        saved = run_service.saved_specs[-1]
+        assert saved.batch_size == 8, (
+            "the typed batch size persists into the composed spec"
+        )
+        argv = run_config_service.compose_dispatch_argv(saved)
+        assert argv[argv.index("--batch_size") + 1] == "8", (
+            "the threaded dispatch argv carries --batch_size 8"
+        )
+        # invalid: the mirror fires, the problem surfaces through the
+        # generic fallback, the raw never persists
+        batch_input.value = "0"
+        await _settle(pilot, app)
+        assert run_service.saved_specs[-1].batch_size == 8, (
+            "an invalid field contributes no partial (last-valid governs)"
+        )
+        await pilot.press("p")
+        await pilot.pause()
+        from tui.screens.run_config import PreviewModal
+
+        assert isinstance(app.screen, PreviewModal)
+        log = app.screen.query_one("#cfg-preview-log")
+        joined = "\n".join(
+            line.text for line in log.lines).replace("\n", "")
+        assert "batch_size_invalid: 0" in joined, (
+            "the machine problem renders through the generic "
+            "code+detail fallback (the epochs_invalid/ebs_invalid "
+            "shape — no copy mapping, by design)"
+        )
 
 
 async def test_params_labels_shorten_at_80_columns():

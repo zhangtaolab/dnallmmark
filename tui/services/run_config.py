@@ -170,6 +170,10 @@ PROBLEM_SEEDS_INVALID = "seeds_invalid"
 PROBLEM_CURVE_INVALID = "curve_invalid"
 PROBLEM_EPOCHS_INVALID = "epochs_invalid"
 PROBLEM_EBS_INVALID = "ebs_invalid"
+#: 261023-abu: the per-device starting batch mirror — the epochs/ebs
+#: shape (non-integer or < 1 raises the machine problem; the shard CLI
+#: / run_sweep / dispatch mirrors stay the validation authorities).
+PROBLEM_BATCH_SIZE_INVALID = "batch_size_invalid"
 #: WR-07 (phase-11 review): an output root whose resolved form is the
 #: filesystem root (an empty basename — and an empty E2' expected
 #: phrase, which must never satisfy the typed gate).
@@ -189,6 +193,7 @@ PARAM_SEEDS = "seeds"
 PARAM_CURVE = "curve"
 PARAM_EPOCHS = "num_train_epochs"
 PARAM_EBS = "effective_batch_size"
+PARAM_BATCH_SIZE = "batch_size"
 PARAM_WORKERS = "workers"
 PARAM_GPUS = "gpus"
 
@@ -222,6 +227,11 @@ class RunSpec:
         num_train_epochs: epoch override (None = YAML governs).
         effective_batch_size: target effective batch size (None = the
             child's YAML gradient-accumulation governs).
+        batch_size: STARTING per-device micro-batch (261023-abu; None =
+            the child's YAML default + determine_batch_size dynamic
+            scaling governs — a DIFFERENT knob from
+            effective_batch_size's GA-derived target; documented, never
+            conflated).
         output_root: sweep output root, repo-relative by default
             (D-14; ``DEFAULT_OUTPUT_ROOT``).
         dataset_root: dataset storage root — threads ``--dataset_root``
@@ -258,6 +268,7 @@ class RunSpec:
     subset_file: str | None = None
     num_train_epochs: int | None = None
     effective_batch_size: int | None = None
+    batch_size: int | None = None
     output_root: str = DEFAULT_OUTPUT_ROOT
     dataset_root: str | None = None
     model_root: str | None = None
@@ -406,14 +417,16 @@ def parse_params(raw):
         raw (dict): the params pane's field values, keyed by the
             ``PARAM_*`` vocabulary (``seeds``, ``curve``,
             ``num_train_epochs``, ``effective_batch_size``,
-            ``workers``, ``gpus`` — the 16-03 multi-GPU pair); values
+            ``batch_size``, ``workers``, ``gpus`` — the 16-03
+            multi-GPU pair); values
             are strings (None = field cleared).
 
     Returns:
         tuple[dict, tuple[tuple[str, object], ...]]: ``(partials,
         problems)`` — partials is a dict of valid parsed kwargs
         (``seeds`` / ``curve_fractions`` / ``num_train_epochs`` /
-        ``effective_batch_size`` / ``workers`` / ``gpus``), problems
+        ``effective_batch_size`` / ``batch_size`` / ``workers`` /
+        ``gpus``), problems
         the collect-all list.
     """
     partials: dict = {}
@@ -450,6 +463,19 @@ def parse_params(raw):
             problems.append((PROBLEM_EBS_INVALID, raw.get(PARAM_EBS)))
         else:
             partials["effective_batch_size"] = ebs
+
+    # 261023-abu: the epochs block verbatim over the per-device starting
+    # batch — empty/absent = the child's YAML default + dynamic scaling
+    # governs (no problem, no partial); a non-integer or < 1 value
+    # raises the machine problem collect-all.
+    raw_batch = _clean_str(raw.get(PARAM_BATCH_SIZE))
+    if raw_batch is not None:
+        batch = _parse_positive_int(raw_batch)
+        if batch is None:
+            problems.append(
+                (PROBLEM_BATCH_SIZE_INVALID, raw.get(PARAM_BATCH_SIZE)))
+        else:
+            partials["batch_size"] = batch
 
     # 16-03 (TUI-02, D16-09): the multi-GPU dispatch mirrors — the
     # frozen shard CLI's --workers >= 1 / indices-only --gpus bounds
@@ -568,6 +594,7 @@ def _persist_payload(spec):
             "subset_file": spec.subset_file,
             "num_train_epochs": spec.num_train_epochs,
             "effective_batch_size": spec.effective_batch_size,
+            "batch_size": spec.batch_size,
             "workers": spec.workers,
             "gpus": (list(spec.gpus) if spec.gpus is not None else None),
         },
@@ -688,8 +715,13 @@ def _spec_from_doc(doc):
         params.get("num_train_epochs"))
     ok_ebs, ebs = _optional_int_at_least_one(
         params.get("effective_batch_size"))
+    # 261023-abu: the absent-key path — a pre-change document (no
+    # batch_size key) loads None (byte-identical launches); a
+    # present-but-drifted value is whole-default-policy drift.
+    ok_batch, batch = _optional_int_at_least_one(
+        params.get("batch_size"))
     ok_subset, subset = _optional_str(params.get("subset_file"))
-    if not (ok_epochs and ok_ebs and ok_subset):
+    if not (ok_epochs and ok_ebs and ok_batch and ok_subset):
         return None
     # 16-03 (D16-09): the multi-GPU pair rides the ABSENT-KEY path —
     # a pre-Phase-16 document (no workers/gpus keys) loads as the
@@ -740,6 +772,7 @@ def _spec_from_doc(doc):
         subset_file=subset,
         num_train_epochs=epochs,
         effective_batch_size=ebs,
+        batch_size=batch,
         output_root=output_root,
         dataset_root=dataset_root,
         model_root=model_root,
@@ -1226,10 +1259,14 @@ def compose_argv(spec):
     filters, and the ABSOLUTE output root, then PRESENT-ONLY flag
     pairs appended in the pinned order ``--peft``, ``--config-
     variant``, ``--curve``, ``--subset_file``, ``--num_train_epochs``,
-    ``--effective_batch_size``, ``--cache_dir``, ``--model_root``,
+    ``--effective_batch_size``, ``--batch_size``, ``--cache_dir``,
+    ``--model_root``,
     ``--dataset_root``, ``--log_dir`` (the pinned storage tail,
     261014-c2l + 261014-f4w — the same order run_sweep's
-    ``build_argv`` pins element-for-element). An ABSENT flag
+    ``build_argv`` pins element-for-element; ``--batch_size``
+    (261023-abu) sits immediately after ``--effective_batch_size`` —
+    the two batch knobs adjacent, documented never conflated).
+    An ABSENT flag
     contributes ZERO elements (D-12 absent parity — a defaults spec
     composes exactly the 10 base elements). Path-valued flags resolve
     ABSOLUTE against REPO_ROOT before threading (D-14). The [p]
@@ -1278,6 +1315,8 @@ def compose_argv(spec):
     if spec.effective_batch_size is not None:
         argv += ["--effective_batch_size",
                  str(spec.effective_batch_size)]
+    if spec.batch_size is not None:
+        argv += ["--batch_size", str(spec.batch_size)]
     if spec.cache_dir:
         argv += ["--cache_dir", _abs_against_repo_root(spec.cache_dir)]
     if spec.model_root:
@@ -1309,7 +1348,8 @@ def compose_dispatch_argv(spec):
     ``--seeds`` and the SAME pinned present-only sweep-flag tail
     ``compose_argv`` threads (element-for-element the run_sweep
     passthrough vocabulary — peft, config-variant, curve, subset_file,
-    num_train_epochs, effective_batch_size, cache_dir, model_root,
+    num_train_epochs, effective_batch_size, batch_size, cache_dir,
+    model_root,
     dataset_root, log_dir).
 
     The frozen shard CLI surface is the validation authority
@@ -1362,6 +1402,8 @@ def compose_dispatch_argv(spec):
     if spec.effective_batch_size is not None:
         argv += ["--effective_batch_size",
                  str(spec.effective_batch_size)]
+    if spec.batch_size is not None:
+        argv += ["--batch_size", str(spec.batch_size)]
     if spec.cache_dir:
         argv += ["--cache_dir", _abs_against_repo_root(spec.cache_dir)]
     if spec.model_root:
