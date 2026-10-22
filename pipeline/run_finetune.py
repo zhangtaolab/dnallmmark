@@ -1586,6 +1586,15 @@ if __name__ == "__main__":
 
                 # Initialize the trainer
                 extra_args = {}
+                # Dataloader parallelism seam (2026-10-23, maintainer directive
+                # "A"): TrainingConfig (Pydantic, extra=ignore) drops unknown
+                # YAML keys, so dataloader_num_workers CANNOT ride the config
+                # file — the env seam is the only no-dnallm-change path. Pure
+                # I/O prefetch: training math, batch, sampling order unchanged.
+                _dl_workers = os.environ.get("DNALLMMARK_DATALOADER_WORKERS", "").strip()
+                if _dl_workers:
+                    extra_args["dataloader_num_workers"] = int(_dl_workers)
+                    print(f"[Info] dataloader_num_workers={_dl_workers} (DNALLMMARK_DATALOADER_WORKERS).")
                 if gradient_checkpointing:
                     extra_args["gradient_checkpointing"] = True
                     # use_reentrant=False avoids "marked as ready twice" under DDP

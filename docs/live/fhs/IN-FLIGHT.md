@@ -125,23 +125,33 @@ per-cell wall time).
   the same evidence.json; if the orchestrator already finished, read
   `dispatch_state.json` + the ledger directly).
 
-## Ops change 2026-10-23 — dataloader parallelism (maintainer directive "A")
+## Ops change 2026-10-23 — dataloader parallelism (maintainer directive "A") — MEASURED NO EFFECT
 
 The launch-day diagnosis (worker tqdm: 557,322 steps @ ~2.2 it/s for one BEND
 cell at dynamic batch 4; GPU util ~20% with 49 of 50 CPUs idle) prompted a
-three-lever review. The maintainer chose **A only** — `dataloader_num_workers:
-12` in `pipeline/finetune_config.yaml` (pure I/O parallelism; batch, epochs,
-lr, eval/save cadence UNTOUCHED — protocol comparability preserved; expected
-2-4x on CPU-bound steps). The dispatch was restarted (killpg recipe on the
-workers + orchestrator per the run_sweep_shard docstring; the two
-replacement-spawned orphan cells were cleared first to avoid double-claims;
-relaunched 2026-10-23 ~00:20 UTC+8 with the identical argv, orchestrator PID
-819971, log `tui-live/fhs-dispatch-restart-20261023.log`; stale claims requeued
-per dispatch_core's no-lease requeue design, 0 cells lost). The watcher
-(PID 733194) survived the restart untouched and continues the same
-`evidence.json`. Honest note: with A only, the full 93-cell matrix remains
-multi-week (BEND-class eval cadence dominates); levers B (batch 32) and C
-(eval_steps 5000) were declined to preserve protocol comparability.
+three-lever review. The maintainer chose **A only** — dataloader parallelism.
+Implementation: `DNALLMMARK_DATALOADER_WORKERS` env seam in
+`pipeline/run_finetune.py` → `extra_args` (the YAML key is unreachable —
+dnallm's Pydantic TrainingConfig drops unknown keys at load_config; the env
+threads through the dispatch's verbatim `os.environ` pass-down). Dispatch
+restarted twice (killpg recipe; orchestrator first, then orphans — the
+death-isolation respawn fought the first cleanup order); relaunched with the
+identical argv + `DNALLMMARK_DATALOADER_WORKERS=12`, orchestrator PID 826880,
+log `tui-live/fhs-dispatch-restart2-20261023.log`; stale claims requeued
+per dispatch_core's no-lease design, 0 cells lost. The watcher (PID 733194)
+survived every restart and continues the same `evidence.json`.
+
+**Measured outcome (honest): the dataloader was NOT the bottleneck.** With 12
+worker processes confirmed (`[Info] dataloader_num_workers=12` + 12 children
+in ps), throughput stayed ~2.2 it/s and GPU util ~20-23% — the original
+"CPU-side dataloading" diagnosis was wrong. The real limiter is per-step GPU
+kernel-launch overhead at dynamic batch 4 (39 tiny layers; the GPU is
+launch-bound, not data-bound). Consequence: a BEND cell remains ~70 h
+(557,322 steps @ ~2.2 it/s) and the 93-cell matrix remains multi-week at this
+speed. The levers that WOULD move it stay as declined: B (batch 8→32, ~6-8x,
+protocol change) and a new scheduling option (2 cells per GPU via workers=4
+gpus=0,1,0,1 — per-cell math unchanged, ~1.6-1.8x from stream interleaving).
+Batch/epochs/lr/eval cadence all UNTOUCHED — protocol comparability preserved.
 
 ## Commit map (this task, local only, no push)
 
