@@ -431,7 +431,7 @@ All other claims in this research were verified this session against the
 cited repo files/artifacts (in-repo provenance; no external sources were
 consulted — no packages, no external APIs, no web claims).
 
-## Open Questions
+## Open Questions (RESOLVED — planner rulings: Q1 TUI-DEMO prose + honest queued-note, no new GIFs — 18-03 Task 1; Q2 TUI-GUIDE corrective edit IN scope under DOCS-03 — 18-03 Task 2; Q3 report at docs/v1.3-test-report.html + docs/report-assets/ per the approved UI-SPEC — 18-04; Q4 cite the recorded 2236/6 from 17-VERIFICATION.md:121 with the proxy caveat verbatim, no fresh in-phase run — 18-04 Task 3)
 
 1. **TUI-DEMO: GIFs or prose section?**
    - What we know: precedent sections embed bilingual GIFs; the record.sh scene list has NO multi-GPU scene; recording needs new driver code + real dual-GPU run.
