@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 Phase: 18 (文档撰写) — EXECUTING
 Plan: 4 of 4
 Status: Phase complete — ready for verification
-Last activity: 2026-10-22 - Completed quick task 261022-pa6: live TUI 2x2 dual-GPU test with SVG operation record
+Last activity: 2026-10-22 - Completed quick task 261022-tah: TUI FungiHelixSeek full sweep (seeds 42,43,44) launched detached and verifiably in flight (93 cells, dual-GPU); closed in-flight per plan with committed IN-FLIGHT.md handoff — the final evidence commit is the follow-up when the watcher exits
 
 ## Performance Metrics
 
@@ -130,6 +130,7 @@ Last activity: 2026-10-22 - Completed quick task 261022-pa6: live TUI 2x2 dual-G
 | Phase 18 P18-02 | 7 min | 3 tasks | 3 files |
 | Phase 18 P03 | 13m | 3 tasks | 3 files |
 | Phase 18 P04 | 18 min | 3 tasks | 10 files |
+| Phase quick-261022-tah P01 | 135 min | 2 tasks (closed in-flight; 93-cell sweep + watcher running detached) | 3 files committed + docs/live/fhs evidence on disk |
 
 ## Accumulated Context
 
@@ -393,6 +394,7 @@ None yet.
 | 261020-asm | slot-5 tree all-expanded entry default made explicit + dual-lane mutation-verified pins (variant E ruling) | 2026-10-20 | 4064b38 | [261020-asm-slot-5-tree-default-expansion-per-mainta](./quick/261020-asm-slot-5-tree-default-expansion-per-mainta/) |
 | 261020-blt | slot-5 planned-cell union: live evidence carries seeds; row set = discovered UNION planned (queued synthesized rows) — both models render from plan alone, counts 0/12 (maintainer's twice-reported one-model bug, root-caused to driver mkdir-on-reach) | 2026-10-20 | 68a74fb | [261020-blt-slot-5-planned-but-unstarted-cells-rende](./quick/261020-blt-slot-5-planned-but-unstarted-cells-rende/) |
 | 261022-pa6 | Live TUI 2x2 dual-GPU test (plant-dnabert-6mer, plant-dnamamba-6mer x GUE__emp_H3, iDNA 5mC; seeds 42, 1 epoch, workers 2, GPUs 0,1) driven through the real gate, recorded as 25 SVG captures + docs/live record (scripts/live/record_tui_live_svg.py driver) | 2026-10-22 | 105dd3c | [261022-pa6-tui-2-2-svg](./quick/261022-pa6-tui-2-2-svg/) |
+| 261022-tah | TUI full-journey FungiHelixSeek sweep: download model + all downloadable datasets via the real queue (31 present of 50), launch seeds 42/43/44 workers 2 GPUs 0,1 through the real gate (93 cells, multi-day), ordered SVG record + auto-report driver (--mode full / --attach-root), closed in-flight with committed IN-FLIGHT.md | 2026-10-22 | e2bc87d | [261022-tah-tui-fungihelixseek-seeds-42-43-44-svg](./quick/261022-tah-tui-fungihelixseek-seeds-42-43-44-svg/) |
 
 ## Deferred Items
 
@@ -410,9 +412,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T07:38:28.865Z
-Stopped at: Completed 18-04-PLAN.md (v1.3 milestone test report: docs/v1.3-test-report.html + 8 assets + README link; all gates green)
-Resume file: None
+Last session: 2026-10-22T15:48:00Z
+Stopped at: Completed quick-261022-tah (in-flight close-out: FungiHelixSeek 93-cell dual-GPU sweep + the --attach-root watcher running detached; follow-up = commit docs/live/fhs evidence when the watcher exits — see docs/live/fhs/IN-FLIGHT.md)
+Resume file: docs/live/fhs/IN-FLIGHT.md
 
 ## Operator Next Steps
 
