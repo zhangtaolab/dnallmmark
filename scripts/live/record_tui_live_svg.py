@@ -465,6 +465,7 @@ def preflight(args: argparse.Namespace) -> dict:
     meta + printed by --dry-run consumers).
     """
     live = not args.no_launch
+    attach = bool(getattr(args, "attach_root", None))
     targets: dict = {"root_arg": args.root}
 
     if os.environ.get("HF_HUB_OFFLINE") != "1":
@@ -472,6 +473,13 @@ def preflight(args: argparse.Namespace) -> dict:
             "HF_HUB_OFFLINE != '1' — the offline discipline is asserted "
             "before anything spawns (docs/multi-gpu.md runbook: export "
             "HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1)")
+
+    if attach:
+        _preflight_attach_legs(args, targets)
+        svg_dir = Path(args.svg_dir)
+        _probe_writable((svg_dir,), (Path(args.evidence),
+                                      Path(args.report)), "attach")
+        return targets
 
     if live:
         try:
@@ -536,6 +544,31 @@ def preflight(args: argparse.Namespace) -> dict:
         file_targets.append(Path(args.record))
     _probe_writable((svg_dir,), tuple(file_targets), args.mode)
     return targets
+
+
+def _preflight_attach_legs(args: argparse.Namespace,
+                           targets: dict) -> None:
+    """The --attach-root preflight: the root EXISTS and its dispatch
+    orchestrator is LIVE (the sweep was already launched by another
+    driver — this mode only WATCHES: monitor card + interval captures +
+    auto-report; it never spawns anything, so the dnallm/GPU-idle/
+    fresh-root legs do not apply)."""
+    root = (REPO_ROOT / Path(args.attach_root)).resolve()
+    if not root.is_dir():
+        raise PreflightError(
+            f"attach root {root} does not exist — nothing to watch")
+    state_path = root / "dispatch_state.json"
+    if not state_path.is_file():
+        raise PreflightError(
+            f"no dispatch_state.json under {root} — the sweep never "
+            "launched (or has not created its state yet)")
+    status = _dispatch_status(state_path)
+    if status in _DISPATCH_TERMINAL_BAD or status == _DISPATCH_TERMINAL_OK:
+        raise PreflightError(
+            f"the dispatch orchestrator under {root} is already terminal "
+            f"({status!r}) — nothing left to watch")
+    targets["root_resolved"] = str(root)
+    targets["attach"] = True
 
 
 def _preflight_pa6_combo(targets: dict, models_info: dict,
@@ -644,12 +677,16 @@ class RunContext:
         self.t0 = time.monotonic()
         self.rehearsal = bool(args.no_launch)
         self.full = args.mode == MODE_FULL
+        self.attach = bool(getattr(args, "attach_root", None))
         self.seeds: tuple[str, ...] = (
             FULL_SEEDS if self.full else (SEEDS_TEXT,))
         if self.full:
-            mode_name = "full-rehearsal" if self.rehearsal else "full"
-        else:
-            mode_name = "rehearsal" if self.rehearsal else "live"
+            if self.attach:
+                mode_name = "full"
+            elif self.rehearsal:
+                mode_name = "full-rehearsal"
+            else:
+                mode_name = "full"
         self.meta: dict = {
             "mode": mode_name,
             "driver_mode": args.mode,
@@ -694,6 +731,34 @@ class RunContext:
             "exit_code": None,
             "failure": None,
         }
+        if self.attach:
+            self._adopt_journey_evidence()
+
+    def _adopt_journey_evidence(self) -> None:
+        """Attach mode: CONTINUE the journey driver's evidence.json (the
+        one sidecar contract) — adopt its run-history fields so nothing
+        is overwritten, and record the journey driver's honest exit as a
+        note. A missing/corrupt prior file starts fresh (the note says
+        so)."""
+        prior = _read_json(Path(self.args.evidence))
+        if not prior:
+            self.note(
+                "attach watch: no prior evidence.json found — starting a "
+                "fresh sidecar (the journey driver's evidence is absent)")
+            return
+        for field in (
+                "started_at", "host", "gpu_names", "env_verdict",
+                "stages", "notes", "nvidia_snapshots", "monitor_captures",
+                "dl_captures", "queue_digests", "download", "argv_line",
+                "argv", "tee_path", "epochs_input_value"):
+            if field in prior:
+                self.meta[field] = prior[field]
+        if prior.get("failure"):
+            self.meta["notes"].append(
+                f"journey driver exit {prior.get('exit_code')}: "
+                f"{prior['failure']}")
+        self.meta["watch_driver"] = "attach"
+        self.meta["watch_attached_at"] = _now_iso()
 
     def flush_evidence(self) -> None:
         """Atomic incremental write of the evidence sidecar (full mode's
@@ -1827,14 +1892,44 @@ async def watch_run_full(pilot: Pilot, app: DnallmMarkTui,
             "attach modal")
         path_input = app.screen.query_one("#path-input", Input)
         path_input.focus()
-        await pilot.pause()
-        for char in str(ctx.root):
-            await pilot.press(char)
-        await pilot.pause()
-        await pilot.press("enter")
+        # The live-run lesson: the modal's on_mount focus races the first
+        # key presses (the typed path arrived TRUNCATED and the submit
+        # failed validation) — wait for REAL focus, then type and VERIFY
+        # the value, clearing + retrying once on any mismatch.
         await wait_until(
-            pilot, lambda: not bool(app.screen.query("#path-input")), 30.0,
-            "attach modal dismissed")
+            pilot, lambda: path_input.has_focus, 10.0,
+            "attach input focus")
+        await pilot.pause()
+        typed_ok = False
+        for _attempt in range(2):
+            for char in str(ctx.root):
+                await pilot.press(char)
+            await pilot.pause()
+            if path_input.value == str(ctx.root):
+                typed_ok = True
+                break
+            await pilot.press("end")
+            await pilot.pause()
+            for _ in range(len(path_input.value) + 3):
+                await pilot.press("backspace")
+            await pilot.pause()
+        if not typed_ok:
+            raise DriverError(
+                f"attach input holds {path_input.value!r} after two "
+                f"typing attempts (expected {str(ctx.root)!r}) — honest "
+                "halt; the sweep is unaffected")
+        await pilot.press("enter")
+        try:
+            await wait_until(
+                pilot, lambda: not bool(app.screen.query("#path-input")),
+                30.0, "attach modal dismissed")
+        except DriverError:
+            problems = _plain(app.screen.query_one(
+                "#path-problems", Static).content)
+            raise DriverError(
+                f"the attach modal refused the root (validation "
+                f"problems: {problems!r}) — honest halt; the sweep is "
+                "unaffected") from None
         await asyncio.sleep(3.0)
         await pilot.pause()
         await _card_visible()
@@ -1853,6 +1948,13 @@ async def watch_run_full(pilot: Pilot, app: DnallmMarkTui,
             (path for path in logs_dir.glob("*.log")
              if "sweep_" in path.name),
             key=lambda path: path.stat().st_mtime, reverse=True)
+        if not candidates and ctx.attach:
+            # Attach mode: the sweep's tee was opened by the LAUNCHING
+            # driver's state dir — search the pinned prefix family.
+            candidates = sorted(
+                Path(ctx.args.state_base).glob(
+                    f"{FULL_STATE_PREFIX}*/logs/sweep_*.log"),
+                key=lambda path: path.stat().st_mtime, reverse=True)
         if candidates:
             ctx.meta["tee_path"] = str(candidates[0])
             break
@@ -1873,11 +1975,19 @@ async def watch_run_full(pilot: Pilot, app: DnallmMarkTui,
         except OSError:
             return -1
 
-    # First run-phase capture.
+    # First run-phase capture (numbering continues past any existing
+    # 015 family — an attach watch may follow a journey driver that
+    # already captured some intervals before dying).
+    existing = [path.name for path in ctx.svg_dir.glob(
+        "015_monitor_running_*.svg")]
+    indices = [int(name[len("015_monitor_running_"):-len(".svg")])
+               for name in existing]
+    capture_index = max(indices, default=0) + 1
+    first_name = f"015_monitor_running_{capture_index:03d}"
     ctx.meta["nvidia_snapshots"].append(_gpu_snapshot())
-    await ctx.export(pilot, app, "015_monitor_running_001")
-    ctx.meta["monitor_captures"].append("015_monitor_running_001.svg")
-    ctx.heartbeat("run", 1)
+    await ctx.export(pilot, app, first_name)
+    ctx.meta["monitor_captures"].append(f"{first_name}.svg")
+    ctx.heartbeat("run", capture_index)
 
     interval = max(30.0, float(ctx.args.interval))
     stall = _StallWatch(float(ctx.args.stall_hours))
@@ -2245,6 +2355,40 @@ def _write_report(ctx: RunContext) -> None:
         ctx.note(f"report write failed: {exc!r}")
 
 
+async def _run_attach_watch(pilot: Pilot, app: DnallmMarkTui,
+                            ctx: RunContext) -> None:
+    """The --attach-root recovery lane: the sweep was already launched
+    (typically by a journey driver that died post-launch); THIS driver
+    instance only WATCHES it — slot 5, the monitor card/attach, then the
+    standard multi-day run watch. It never spawns anything and never
+    touches the sweep."""
+    ledger_doc = _read_json(Path(ctx.args.ledger))
+    present = (ledger_doc or {}).get("present_set")
+    expected = (ledger_doc or {}).get("expected_cells")
+    state_path = ctx.root / "dispatch_state.json"
+    if not isinstance(present, list) or not present:
+        # fallback: derive per-seed from the orchestrator's own total
+        state = _read_dispatch_state(state_path) or {}
+        counts = state.get("counts")
+        total = counts.get("total") if isinstance(counts, dict) else None
+        if not isinstance(total, int) or total <= 0:
+            raise DriverError(
+                "cannot derive the expected matrix for the attach watch "
+                f"(ledger {ctx.args.ledger} carries no present_set and "
+                f"dispatch_state total is {total!r}) — honest halt")
+        expected = total
+        ctx.note(
+            f"attach watch: present set unknown (no ledger); expected "
+            f"cells from dispatch_state.total={total}")
+    ctx.meta["present_set"] = sorted(present) if present else None
+    ctx.meta["expected_cells"] = expected
+    ctx.meta["attach_root"] = str(ctx.root)
+    ctx.stage("attach_context_primed")
+    await _navigate(pilot, app, "5", MonitorScreen,
+                    "slot-5 navigation (attach)")
+    await watch_run_full(pilot, app, ctx)
+
+
 # =====================================================================
 # The recording runner
 # =====================================================================
@@ -2260,7 +2404,10 @@ async def _recording(args: argparse.Namespace, targets: dict,
     try:
         async with app.run_test(size=GRID) as pilot:
             try:
-                if ctx.full:
+                if ctx.attach:
+                    await _run_attach_watch(pilot, app, ctx)
+                    _write_report(ctx)
+                elif ctx.full:
                     launched = await journey_full(pilot, app, ctx)
                     if launched:
                         await watch_run_full(pilot, app, ctx)
@@ -2616,6 +2763,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="full rehearsal: drive to the gate, capture, "
                              "press n — zero GPU work (full mode also "
                              "enqueues nothing: locate/render only)")
+    parser.add_argument("--attach-root", default=None,
+                        help="full mode: ATTACH to an already-running "
+                             "sweep root (post-launch watch only — "
+                             "monitor card + interval captures + "
+                             "auto-report; never spawns anything; "
+                             "requires --mode full)")
     parser.add_argument("--root", default=None,
                         help="the fresh sweep output root (pa6 default: "
                              "pipeline/finetuned-tui-pa6; full default: "
@@ -2659,6 +2812,8 @@ def main(argv: list[str] | None = None) -> int:
                              "default: 5400; full default: 0 = NO hard "
                              "deadline — the stall detector governs)")
     args = parser.parse_args(argv)
+    if args.attach_root and args.mode != MODE_FULL:
+        parser.error("--attach-root requires --mode full")
     _fill_mode_defaults(args)
 
     if args.dry_run:
