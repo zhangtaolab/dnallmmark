@@ -132,7 +132,7 @@ The composition surface: its own model/dataset pickers (slot 2's marks are never
 | `m` | Flip the picker between models and datasets. |
 | `/` | Focus the picker filter (same grammar as slot 2). `esc` clears it. |
 | `enter` | **Open the launch confirmation** (see the next section). On the picker itself, `enter` is pinned to the confirmation — only `space` marks. On a focused choice row (PEFT / variant), `enter` opens that row's radio-set modal instead; a focused text input consumes its own `enter` (re-applies the field) — typing can never launch. |
-| `p` | Dry-run preview modal: the same-source enumeration counts, the note that the gate re-derives everything fresh, the exact `run_sweep.py` argv (verbatim, when the spec is clean), and the numbered problem list otherwise. |
+| `p` | Dry-run preview modal: the same-source enumeration counts, the note that the gate re-derives everything fresh, the exact composed `run_sweep_shard.py --mode dispatch` argv (verbatim, when the spec is clean), and the numbered problem list otherwise. |
 
 Params pane fields (edits persist and re-derive the preview line on every change):
 
@@ -144,6 +144,7 @@ Params pane fields (edits persist and re-derive the preview line on every change
 | 曲线档位 (curve) | text input | Comma-separated train fractions (`--curve`). |
 | 公平子集 (fairness subset) | checkbox | Off by default; when on, the path row appears (default `pipeline/eval_subsets.json`) with an exists/missing advisory. |
 | epochs / effective_batch_size | text inputs | Optional overrides (`--num_train_epochs`, `--effective_batch_size`). |
+| 多 GPU 调度 (workers / `GPUs`) | text inputs | The dispatch pair (Phase 16): `workers` carries a live default `1`; an empty `GPUs` field threads no `--gpus` and the dispatcher binds GPUs `0..workers-1` at launch. Every slot-4 launch composes `run_sweep_shard.py --mode dispatch` (see [Multi-GPU launch and monitoring](#multi-gpu-launch-and-monitoring)). |
 | output root / dataset root / cache | text inputs | Defaults `./finetuned` and `./datasets`; each carries an exists/missing advisory (missing roots are advisory only — the sweep creates them). |
 
 After a successful launch the console toasts the cell count and auto-switches to the monitor (slot 5) with the new sweep attached.
@@ -161,7 +162,7 @@ The typed-phrase modal ("⚠ 全量 E2' 训练任务 — 59 模型 × 50 数据�
 
 The same gate, including the E2' phrase, applies to the monitor's from-failures re-run (below): an E2'-class effective matrix refuses at the phrase stage and re-prompts.
 
-**Single-GPU serialization (EHC-3, 2026-10-15).** On a machine whose *effective* GPU count is exactly 1 (`WORLD_SIZE` when set, else `torch.cuda.device_count()` honoring `CUDA_VISIBLE_DEVICES`), both gated launch paths — the slot-4 gate and the monitor's re-run — refuse while a live sweep is registered, naming the running output root: wait for it, kill it via the exit modal, or pick a different output root. The refusal fires at stage 0 (before any preview, env preflight, or confirm) and is enforced in the launcher service itself — the spawn never happens. Multi-GPU machines (count ≥ 2) and count-0 machines (no torch/CUDA) are unrestricted.
+**Multi-GPU capacity gate (EHC-3, 2026-10-15; semantics amended by Phase 16).** Both gated launch paths — the slot-4 gate and the monitor's re-run — refuse when the live-sweep registry's GPU demand (each live entry's `--workers` when it runs the shard orchestrator, else 1) plus the requested workers exceeds the machine's *effective* GPU count (`WORLD_SIZE` when set, else `torch.cuda.device_count()` honoring `CUDA_VISIBLE_DEVICES`). The refusal names the live roots, the requested workers, and the GPU count: wait, kill via the exit modal, or lower workers. It fires at stage 0 (before any preview, env preflight, or confirm) and is enforced in the launcher service itself — the spawn never happens. Count-0 machines (no torch/CUDA) are unrestricted.
 
 The CLI has no such gate, by design — `run_sweep.py` / `run_sweep_shard.py` are the maintainer trust surface (see "The E2' trust boundary" in `docs/multi-gpu.md`).
 
@@ -172,6 +173,8 @@ Monitoring over the artifact scanner. Cadence (shown right of the title): a 2-se
 Discovered rows carry three states — running / finished / artifacts-only (a root with artifacts but no live process and no completion) — with a `{done}/{total}` progress bar and ETA on running rows, and the manifest scale (`models×tasks×seeds`) when the terminal is wide.
 
 The **entries table** (columns 模型 / 任务 / 状态 / 进度) folds each entry's seeds into one completion state — ⠋ 运行 when any seed runs, ✗ 失败 when any failed, ✓ 完成 when all finished (⊘ resume-skipped counts as finished), ◌ 排队 otherwise — with the done/total seed count beside the word (e.g. `⠋ 运行 1/3`). The 进度 cell reads the running seed's **newest checkpoint** (`checkpoint-*/trainer_state.json`, numerically-largest suffix) on the 2s cadence: `steps/max percent%` plus a 10-cell bar while training progresses. Honest degradation throughout — a running cell with no parseable checkpoint yet renders `⠋ …` (never a fabricated number), non-running entries render the dim dash. Per-seed states, curve-fraction lines, and each seed's `run_record` fields stay in the `enter` drill-down. A resume-count note sits on the entries title row.
+
+Two standing multi-GPU surfaces render live dispatch state (Phase 16): the G GPU-lanes panel below the tab content — one lane per GPU (utilization bar+%, memory used-total, temperature; `◌ nvidia-smi 未安装` when the probe cannot run), on both tabs with no key of its own — and, on running cards whose root carries `dispatch_state.json`, the dispatch rows (dispatch line + one row per worker, stale-marked past the 3600 s cell-scale grace). See [Multi-GPU launch and monitoring](#multi-gpu-launch-and-monitoring).
 
 | Key | Action |
 |-----|--------|
@@ -188,9 +191,14 @@ After a TUI launch, the new sweep is auto-attached and the console switches here
 
 Read-only. Five rows — software (version + git sha), data (official/custom counts + n_audit presence), milestone, dependencies, repository — derived in a background worker, tolerant of any missing probe. No action keys beyond the nav digits and the global `?` / `q`.
 
-## Multi-GPU monitoring (worker roots)
+## Multi-GPU launch and monitoring
 
-Multi-GPU runs are CLI-orchestrated (`pipeline/run_sweep_shard.py` — see `docs/multi-gpu.md`); the TUI composes single sweeps only. Because each worker is an independent output root (`{output-root}-mgpu-w{i}`), the monitor renders N workers natively with zero new screens:
+Two paths into multi-GPU, both first-class since Phase 16:
+
+- **Launch from the TUI (slot 4).** The params pane's 多 GPU 调度 section (`workers` / `GPUs` fields, see the Screen 4 table) composes `run_sweep_shard.py --mode dispatch --workers N` — every slot-4 launch is a dispatch launch. The confirm face previews the dispatch plan (workers × GPUs × queued cells) on its one dispatch-plan line, and the capacity stage refuses when the live registry's GPU demand plus the requested workers exceeds the machine's GPU count.
+- **CLI-launched runs stay attachable.** A dispatch run carries ONE shared root — `dispatch_state.json` inside the output root is the mode evidence. Attach it (`a`, or `enter` on the discovered row) like any sweep root and slot 5 renders it natively: the Running card's dispatch line (status · done/total · queue depth) plus one row per worker (the in-flight cell, or ◌ idle) read from `dispatch_state.json` v2 on the 2s cadence, stale-marked when the state file's age crosses the cell-scale grace (3600 s, `DISPATCH_STALE_SECONDS`). Below the tab content on BOTH tabs stands the G GPU-lanes panel — one lane per GPU (utilization bar+%, memory used-total, temperature, `◌ nvidia-smi 未安装` when the probe cannot run); it has no key, it is standing chrome. For the walkthrough of these surfaces (and its queued-GIF note): [TUI-DEMO section 11](TUI-DEMO.md#11-multi-gpu-dispatch-launch-and-monitoring).
+
+The **static-mode variant** (CLI `--mode static`, see `docs/multi-gpu.md`) spawns per-worker roots instead — `{output-root}-mgpu-w{i}`, one independent output root per worker. Those are monitored by attaching each root:
 
 1. `make tui`, go to slot 5.
 2. Press `a` once per worker root — e.g. `pipeline/finetuned-mgpu-w0`, `pipeline/finetuned-mgpu-w1`. Attachments are validated and **persisted** (they survive restarts).
@@ -201,7 +209,7 @@ Roots are discovered from two default scan roots plus your manual roots: `{repo}
 Two limits to know:
 
 - The TUI exit prompt (`q` → kill) can only kill processes **the TUI spawned**. CLI-launched workers must be stopped with the process-group recipe in `docs/multi-gpu.md` (`kill -TERM -<pgid>`); workers are deliberately Ctrl-C-immune (own session, resume-safe).
-- Failed-worker re-runs from the TUI's `[f]` modal operate on the attached worker root only; healthy workers are never touched.
+- Failed-cell re-runs split by mode: the TUI's `[f]` → `[r]` from-failures re-run operates on the attached sweep root only (healthy workers are never touched), while cross-worker recovery of a dispatch root's failed cells is the CLI's `--rerun-failed` over that one shared root (see `docs/multi-gpu.md`).
 
 ## State persistence (what lives where)
 
