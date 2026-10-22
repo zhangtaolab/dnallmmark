@@ -526,6 +526,60 @@
   </details>
 </section>
 
+<!-- ================= LANES & EXCLUSIONS ================= -->
+<section id="lanes" class="phase">
+  <h2><span class="num">§</span> Lanes &amp; environmental exclusions</h2>
+  <p>The full-suite baseline is cited, not re-run, per the phase's Q4 ruling: the recorded counts are quoted from the named artifact with their date and caveats, and the fresh full-suite run is owned by the milestone-close gate. Cheap lanes were re-run live at report generation and are dated <strong>FRESH 2026-10-22</strong> below — recorded and fresh numbers are never mixed in one row without saying which is which.</p>
+
+  <h3>The recorded full-suite baseline (2026-10-21)</h3>
+  <blockquote class="card"><p>“Full pytest suite was NOT re-run this pass (SUMMARY records 2236 passed / 6 documented environmental root-chmod failures, and the suite needs the machine's academic proxy for one evaluate-touching lane); every phase-relevant named gate was run individually instead, all green.” <span class="cite">— 17-VERIFICATION.md:121, verbatim</span></p></blockquote>
+  <p>The underlying recorded run: <strong>2236 passed / 3 skipped / 6 failed</strong> — every failure in the documented environmental root-user chmod class <span class="cite">(17-03-SUMMARY.md:85,115)</span>. The academic-proxy caveat means one evaluate-touching lane requires the machine's <code>network_turbo</code> proxy env for its <code>evaluate.load()</code> HTTP-HEAD phone-home; it is an environmental network restriction on this machine, same class as the chmod failures — “not a regression, not masked” <span class="cite">(17-03-SUMMARY.md:157)</span>.</p>
+
+  <h3>The six environmental exclusions, itemized</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Exclusion</th><th>Scope</th><th>Status</th><th>Reason (mandatory)</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>test_driver_exits_bounded_when_claim_cannot_persist_cr02</code></td>
+        <td><code>tests/tui/test_pilot_data_manager.py</code> ×1</td>
+        <td><span class="badge badge--env">⚠ ENVIRONMENTAL-EXCLUDED</span></td>
+        <td>chmod-000 write-block simulation that root ignores: the machine runs as root by provider policy and root bypasses file permission bits, so the persist-failure path under test never triggers. “Matches the machine's documented baseline (‘runs as root — 6 chmod-based test failures are environmental’)” <span class="cite">(17-03-SUMMARY.md:159-161)</span>.</td>
+      </tr>
+      <tr>
+        <td>Persist-failure rows (CR-02-shaped)</td>
+        <td><code>tests/tui/test_services_download_queue.py</code> ×5</td>
+        <td><span class="badge badge--env">⚠ ENVIRONMENTAL-EXCLUDED</span></td>
+        <td>Same chmod-000 write-block class as above — the five queue-lane persist-failure simulations cannot fail-as-expected under root <span class="cite">(17-03-SUMMARY.md:160)</span>.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Environmental, zero code changes; the v1.3 diffs never touch those lanes' behavior. The exclusion is a property of running the suite as root on this box, not of the code under test.</p>
+
+  <h3>Fresh lane re-runs at generation time (2026-10-22)</h3>
+  <ul>
+    <li><strong>FRESH 2026-10-22 — node lanes:</strong> <code>node --test tests/js/*.test.js</code> → <strong>44 tests, 44 pass, 0 fail</strong> (246 ms). Matches the recorded 44/44 <span class="cite">(17-VERIFICATION.md:69)</span>.</li>
+    <li><strong>FRESH 2026-10-22 — determinism + vendored stats:</strong> <code>.venv/bin/python -m pytest tests/test_determinism.py tests/test_vendored_stats.py -q</code> → <strong>10 passed in 2.58s</strong>, unmodified. Matches the recorded 10-passed zero-drift gates <span class="cite">(17-VERIFICATION.md:57)</span>.</li>
+  </ul>
+
+  <h3>Known deferred items</h3>
+  <ul>
+    <li>The four TUI golden SVGs of the WINDOWS #50 batch stay deliberately uncommitted pending maintainer review (the phase's designed post-phase gate); this report embeds real-data captures badged PENDING-REVIEW instead of presenting unreviewed goldens as ratified <span class="cite">(16-VERIFICATION.md maintainer_handoff)</span>.</li>
+    <li>A pty live-capture of the monitor over a live dispatch root is queued with the TUI-DEMO re-record list (new scene driver + a real dual-GPU run — disproportionate to a docs phase); the honest-degradation path in 18-UI-SPEC was taken instead.</li>
+  </ul>
+</section>
+
+<footer>
+  <section style="border-top: 1px solid var(--border);">
+    <h2><span class="num">§</span> Colophon</h2>
+    <p>This report is a committed static artifact; regeneration is manual per the repo's static-file philosophy (no CI job, D18-08).</p>
+    <p>Generated 2026-10-22 (written verbatim by hand into the document — never a client clock). Commit/state stamp: generated at <code>a4a2af2</code> on branch <code>autorun</code>.</p>
+    <p><span class="badge badge--pending">◌ PENDING-REVIEW</span> WINDOWS #50: the four uncommitted TUI goldens (<code>monitor_empty.svg</code>, <code>monitor_running.svg</code>, <code>run_config.svg</code>, <code>run_config_confirm.svg</code> under <code>tests/tui/__snapshots__/</code>) remain unreviewed; the three TUI figures in this report are fresh real-data captures badged accordingly, not those goldens.</p>
+    <p class="cite">Static document: zero scripts, zero external requests, inline CSS only, system font stack — mirrors the dnallm-mark design tokens as literal values per the ratified 18-UI-SPEC.</p>
+  </section>
+</footer>
+
 </main>
 </body>
 </html>
