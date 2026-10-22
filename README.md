@@ -350,7 +350,55 @@ When the pipeline finished, the finetuned models will be stored at `finetuned/{m
 tensorboard --logdir=finetuned/
 ```
 
-Run records land under `finetuned/{model_name}/{task}/seed_{seed}/` (metrics, parameters, resume markers). The per-model leaderboard files (`{model_name}_performance.json`) are NOT written by the training run itself — they are produced by the unified exporter in the next section.
+Run records land under `finetuned/{model_name}/{task}/seed_{seed}/` (metrics, parameters, resume markers). The per-model leaderboard files (`{model_name}_performance.json`) are NOT written by the training run itself — they are produced by the unified exporter (see the *Export Runs to the Leaderboard* section below).
+
+### Multi-GPU sweeps (dispatch mode) and 5% subset datasets
+
+On more than one GPU the sweep goes through **dispatch mode**: ONE dispatcher feeds idle per-GPU workers from a deterministic (model × task × seed) queue under ONE shared output root — the shared root is consumed directly, so there is no merge step. The legacy static-shard mode coexists behind `--mode static` (per-worker sibling roots with the `--merge`/`--cleanup` semantics). The full runbook — the mode table, live views, failure re-runs, and the executed N=2 smoke record — lives in [docs/multi-gpu.md](docs/multi-gpu.md); this is the entry-point summary.
+
+For bounded validation runs, first cut the DATA scale of each task to ~5% with the subset generator (per-split independent stratified sampling; fixed inputs + seed regenerate byte-identical outputs):
+
+```bash
+python script/make_subset_datasets.py \
+    --dataset-root <REAL-datasets-root> \
+    --output-root pipeline/datasets-smoke \
+    --registry-dir pipeline/registry-smoke \
+    --models plant-dnabert-6mer,plant-dnamamba-6mer \
+    --tasks iDNA_ABF_datasets__5mC,GUE__emp_H3 \
+    --fraction 0.05 --seed 42
+```
+
+Executed expected output (Phase 15, both tasks at `--fraction 0.05 --seed 42`):
+
+```text
+✅ iDNA_ABF_datasets__5mC: train 105 / dev 11 / test 117 rows (source 2110/234/2344)
+✅ GUE__emp_H3: train 598 / dev 74 / test 74 rows (source 11971/1497/1497)
+```
+
+Then launch the dispatch sweep at the subset pair — dry-run first; the real launch is the same command minus `--dry-run`. The offline env exports and the explicit absolute `--output-root`/`--log_dir` are load-bearing (the spawned children run with their cwd pinned to `pipeline/`):
+
+```bash
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+.venv/bin/python pipeline/run_sweep_shard.py --mode dispatch --dry-run \
+    --workers 2 --gpus 0,1 \
+    --models plant-dnabert-6mer,plant-dnamamba-6mer \
+    --tasks iDNA_ABF_datasets__5mC,GUE__emp_H3 --seeds 42,43,44 \
+    --num_train_epochs 1 \
+    --registry-dir "$(pwd)/pipeline/registry-smoke" \
+    --dataset_root "$(pwd)/pipeline/datasets-smoke" \
+    --output-root "$(pwd)/pipeline/finetuned-sweep-5pct" \
+    --log_dir "$(pwd)/pipeline/finetuned-sweep-5pct/logs"
+# → [Dry-run] [Dispatch] 12 planned cell(s)
+```
+
+`--dataset_root` is what steers the children onto the subset CSVs; `--registry-dir` alone never does (the subset registry only supplies the measured row counts). After the real run, the terminal state is `dispatch_state.json` with `status == "done"`, and the shared root is consumed unchanged:
+
+```bash
+.venv/bin/python script/export_runs.py --dry-run --input-root pipeline/finetuned-sweep-5pct
+# → [Dry-run] 12 run record(s) across 2 model(s) / 2 task(s) under pipeline/finetuned-sweep-5pct
+```
+
+Subset roots and registries are never shared with real runs: the generator refuses a `--registry-dir` that equals or contains the official `pipeline/` registry, and subset/real runs never share registry, config, or output roots (VAL-02).
 
 ### Export Runs to the Leaderboard
 
@@ -571,7 +619,7 @@ The documents below expand on specific areas of the project. **[GETTING-STARTED.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)**: How to report issues and submit changes
 - **[METHODOLOGY.md](docs/METHODOLOGY.md)**: How leaderboard numbers are computed, from per-model results to Rank Score
 - **[ONBOARDING.md](docs/ONBOARDING.md)**: Checklists for adding a new model or dataset to the benchmark
-- **[multi-gpu.md](docs/multi-gpu.md)**: Multi-GPU sweep orchestration — sharding vs DDP decisions and the runbook
+- **[multi-gpu.md](docs/multi-gpu.md)**: Multi-GPU sweep orchestration — dispatch-mode runbook, the 5% subset workflow, and the legacy static-shard track
 - **[TUI-GUIDE.md](docs/TUI-GUIDE.md)**: Guide to the `tui/` terminal console for driving benchmark runs
 - **[TUI-DEMO.md](docs/TUI-DEMO.md)**: Recorded GIF walkthrough of every console feature on real tasks (bilingual)
 - **[TUI-REQUIREMENTS.md](docs/TUI-REQUIREMENTS.md)**: Open requirements collection for the TUI milestone
