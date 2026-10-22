@@ -91,6 +91,31 @@ The actual fine-tuning runs on the GPU host: `pipeline/run_sweep.py`
 without `--dry-run` (or `pipeline/run_finetune.py` directly, from
 `pipeline/`). See the README's *Benchmark Pipeline* section.
 
+Multi-GPU hosts go through dispatch mode instead:
+`pipeline/run_sweep_shard.py --mode dispatch` — one dispatcher feeding
+idle per-GPU workers under ONE shared output root (no merge step), a
+live dispatcher table on stdout, and `dispatch_state.json` as the
+terminal-state check (`status == "done"`). The TUI's slot-4 launch
+composes exactly the same argv natively. The full runbook is
+[multi-gpu.md](multi-gpu.md).
+
+For bounded validation runs there is also a 5% subset workflow:
+**generate** — `script/make_subset_datasets.py` writes deterministic
+stratified ~5% row subsets plus a dedicated subset registry; **configure
++ run** — point the dispatch launch at the subset pair
+(`--registry-dir pipeline/registry-smoke` together with
+`--dataset_root pipeline/datasets-smoke`); **consume** — the export →
+summarize chain runs unmodified over the subset run root. The subset
+dataset root and registry are a separate pair, never shared with real
+runs (VAL-02 — the generator refuses a registry dir that equals or
+contains the official `pipeline/` registry).
+
+Do not confuse the two "subset" concepts: the `--tasks <name1,name2>`
+filter in §5's dry run selects WHICH full datasets enter the matrix,
+while the 5% subset mechanism samples ROWS from those datasets into a
+separate dataset/registry pair for bounded validation runs. Different
+concepts, different tools — never interchangeable.
+
 ## Adding a new dataset
 
 ### 1. Add the registry entry (including provenance)
