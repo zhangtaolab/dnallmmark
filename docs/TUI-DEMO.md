@@ -1,7 +1,7 @@
 <!-- generated-by: quick-261015-pex (scripts/demo/record_tui_demo.py + record.sh); anchors + footage regenerate from tui/strings.py and the live presence scan -->
 # TUI Demo — The Operator Journey, Recorded on Real Tasks
 
-This is the recorded walkthrough of the DNALLM-Mark operator console: every section below embeds GIFs of the **real console driving real work** on the recording machine — a real environment check, real ModelScope downloads, a real (bounded) `plant-dnabert-6mer × iDNA_ABF_datasets__5mC` training through the y-confirm launch confirmation, live monitoring, a real kill, and a from-failures re-run driven to completion. There is no mockup anywhere in this document: the numbers, gates, and guardrails visible in the GIFs are the production behaviors (EHC-1..4) — the same code paths the [TUI guide](TUI-GUIDE.md) documents.
+This is the recorded walkthrough of the DNALLM-Mark operator console: sections 1–10 embed GIFs of the **real console driving real work** on the recording machine — a real environment check, real ModelScope downloads, a real (bounded) `plant-dnabert-6mer × iDNA_ABF_datasets__5mC` training through the y-confirm launch confirmation, live monitoring, a real kill, and a from-failures re-run driven to completion. Section 11 — the multi-GPU surfaces that shipped after this recording pass — is the one exception: it references the shipped screens and their SVG snapshot goldens, with its bilingual GIF explicitly queued. There is no mockup anywhere in this document: the numbers, gates, and guardrails visible in the GIFs are the production behaviors (EHC-1..4) — the same code paths the [TUI guide](TUI-GUIDE.md) documents.
 
 Every section ships **two recordings**: the `en` GIF boots in the default English; the `zh` GIF reaches 中文 by pressing `L` on camera (the live toggle is itself demo footage) and restores the boot language before the recording ends.
 
@@ -185,6 +185,36 @@ On the real custom row (`demo-custom-model`): `e` disables it — the toast stat
 Full semantics (disabled marks blocked, badge/suffix vocabulary): [Screen 2 — Models](TUI-GUIDE.md#screen-2--models-模型).
 
 *What actually happened:* the entry stays enabled at the end of both recordings — the disable is undone on camera, and the wizard edit is discarded without landing.
+
+## 11. Multi-GPU dispatch: launch and monitoring
+
+This section has no GIF table — the honest variant of the precedent shape. The visual record is the committed SVG snapshot goldens (deterministic 120×40 renders of the real screens) plus the shipped screens themselves:
+
+| Scene | Where to see it |
+|---|---|
+| Slot-4 params pane with the 多 GPU 调度 section (`workers` / `GPUs` fields) | `tests/tui/__snapshots__/run_config.svg` |
+| The confirm face with its 调度计划 dispatch-plan preview line | `tests/tui/__snapshots__/run_config_confirm.svg` |
+| Monitor Running card with dispatch rows + the GPU 状态 G GPU-lanes panel | `tests/tui/__snapshots__/monitor_running.svg` |
+
+*A bilingual GIF re-record for this section is queued post-milestone: recording one needs a new scene driver in `scripts/demo/record_tui_demo.py` (the ten existing scenes predate multi-GPU) plus a real dual-GPU dispatch run — a code-plus-GPU change deliberately out of scope for the docs phase. See [Re-recording any GIF](#re-recording-any-gif) for the machinery the re-record will use.*
+
+**Launch (slot 4).** The params pane carries a 多 GPU 调度 / Multi-GPU dispatch section — a `workers` field (live default `1`) and a `GPUs` field whose empty placeholder reads `—（默认: GPU 0..workers-1）`: an unset GPUs field threads no `--gpus` flag, and the dispatcher binds the FIRST `workers` GPU indices at launch time. Every slot-4 launch composes `run_sweep_shard.py --mode dispatch --workers N` (plus `--gpus 0,1` only when typed) with the existing pass-through vocabulary; `p` shows the composed argv verbatim, and the confirm face adds one dispatch-plan preview line above the pair list — `调度计划: 2 workers × GPUs 0,1 · 排队 6 训练项（预览）` — naming the workers, the resolved GPUs (the typed list, or `0..N-1` under the default rule), and the queued-cell count. The gate chain order is unchanged (problems → env preflight → confirm, with the E2' typed phrase at full scope); the old single-GPU serialization stage became multi-GPU capacity arithmetic — the launch refuses when the live registry's demand plus the requested workers exceeds the machine's effective GPU count, rendering `⚠ GPU 容量不足 …` with the live roots and both counts. Input problems mirror the shard CLI: `workers` must be an integer ≥ 1, GPUs comma-separated non-negative integers, and `workers` may not exceed a typed GPU list's length.
+
+**Monitoring (slot 5).** The Running tab renders dispatch runs natively. A running card whose root carries `dispatch_state.json` gains a dispatch line — `调度 running · 完成 12/36 · 队列 21` (status verbatim from the state file, done/total, queue depth) — plus one row per worker in array order: `worker 0 · GPU 0 · ⏵ plant-dnamamba-6mer × GUE__emp_H3 × seed_42` when busy, `worker 1 · GPU 1 · ◌ 空闲` when idle. Both read on the 2-second frontier cadence. When the state file's age crosses the cell-scale grace (`DISPATCH_STALE_SECONDS` = 3600 s, maintainer-tunable), a `⚠ 调度状态过期` marker renders above the dispatch line while the last-known-good rows stay; a parseable snapshot that violates the schema's count invariant renders its own distinct ⚠ marker. Below the tab content — on BOTH tabs, with no key of its own — stands the GPU 状态 / GPUs G GPU-lanes panel: one lane per GPU (`GPU 0 [bar] 47%  15340/32607 MiB  61°C` — utilization bar+%, memory used-total, temperature) on the same 2-second cadence, degrading honestly to `◌ nvidia-smi 未安装` with zero lane rows whenever the probe cannot run.
+
+| Key | Action |
+|-----|--------|
+| `4` / `5` | Navigate to run config / monitor (the standing slot digits) |
+| `p` | Dry-run preview modal — the composed dispatch argv, verbatim |
+| `enter` | Open the launch confirmation (the dispatch-plan line renders on the confirm face) |
+| `y` / `n` | Confirm / cancel the launch |
+| `tab` | Switch the monitor's Running / History tabs |
+| `a` | Attach a manual root — e.g. a CLI-launched dispatch root |
+| — | The GPU 状态 panel has no key: it is standing chrome, visible on both tabs |
+
+Full launch-gate chain and monitor key map: [Multi-GPU launch and monitoring](TUI-GUIDE.md#multi-gpu-launch-and-monitoring); the CLI runbook behind both modes: [multi-gpu.md](multi-gpu.md).
+
+*What actually happened:* the referenced SVG goldens are deterministic snapshot renders with fixture-injected GPU lanes and dispatch state (zero GPU needed to produce them) — the numbers quoted above (`12/36`, `2 workers × GPUs 0,1 · 排队 6`) are those golden fixtures' values, not a live run's. Live dual-GPU footage is exactly the queued re-record above; until it lands, the shipped screens and `tui/strings.py`'s Phase-16 constants are the render authority every claim here was verified against. The Phase-16 golden batch sits in the WINDOWS #50 maintainer-review queue (the three referenced here plus `monitor_empty.svg`).
 
 ## Re-recording any GIF
 
