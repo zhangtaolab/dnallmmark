@@ -1045,9 +1045,9 @@ ABOUT_DEP_ABSENT = _t("ABOUT_DEP_ABSENT", "未安装", "not installed")
 # milestone metadata, not a machine probe; updated per milestone).
 ABOUT_MILESTONE_STAGE = _t(
     "ABOUT_MILESTONE_STAGE",
-    "v1.3.0 开发中 — 多 GPU 编排与验证（Phase 13-18）：动态调度/运行视图/"
+    "v1.3.0 已交付 — 多 GPU 编排与验证（Phase 13-18）：动态调度/运行视图/"
     "失败恢复/双卡验证/TUI 多卡界面/error bar/文档",
-    "v1.3.0 in development — multi-GPU orchestration & validation "
+    "v1.3.0 delivered — multi-GPU orchestration & validation "
     "(Phases 13-18): dynamic dispatch / run view / failure recovery / "
     "dual-GPU validation / TUI multi-GPU surface / error bars / docs")
 
