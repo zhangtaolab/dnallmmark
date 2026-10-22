@@ -131,7 +131,7 @@ Plans:
 Plans:
 **Wave 1**
 - [x] 18-01-PLAN.md — multi-gpu.md dispatch-first restructure: mode-selection lead table + legacy static track with explicit --mode static, executed smoke section preserved fence-byte-identical (sha-pinned), --rerun-failed/--cleanup promotion, the 5% subset workflow with executed Phase-15 argv (DOCS-01)
-- [ ] 18-02-PLAN.md — README + ONBOARDING/GETTING-STARTED: dispatch + 5% subset subsection with copy-paste commands, task-filter-vs-subset-dataset disambiguation, dispatch-first descriptor refreshes, zero-stale audit (DOCS-02)
+- [x] 18-02-PLAN.md — README + ONBOARDING/GETTING-STARTED: dispatch + 5% subset subsection with copy-paste commands, task-filter-vs-subset-dataset disambiguation, dispatch-first descriptor refreshes, zero-stale audit (DOCS-02)
 - [ ] 18-03-PLAN.md — TUI docs + version surfaces: TUI-DEMO section 11 in the precedent five-part anatomy (honest no-GIF variant, queued note), TUI-GUIDE 193-204 corrective edit to shipped Phase-16 reality, ABOUT_MILESTONE_STAGE delivered-scope rewrite + 1.3.0 verify (DOCS-03, DOCS-04)
 
 **Wave 2** *(blocked on Wave 1: report's Phase-18 section describes landed docs; README file overlap with 18-02)*
