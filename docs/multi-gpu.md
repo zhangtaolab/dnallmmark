@@ -231,6 +231,93 @@ trusted the same way an operator typing `git push` is. Do not project
 E2' expectations onto the CLI, and do not add gate code to it; the
 bounded smoke procedure below uses small explicit combos anyway.
 
+## CLI runbook — dispatch mode (`--mode dispatch`)
+
+### 1. Launch — dry-run first
+
+The shape below generalizes the executed smoke/sweep argv (the executed
+instances are quoted verbatim in the smoke record at the end of this
+file and in
+`.planning/phases/15-dual-gpu-validation-subsets/15-03-SUMMARY.md`):
+
+```bash
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+.venv/bin/python pipeline/run_sweep_shard.py --mode dispatch --dry-run \
+    --workers <N> --gpus <gpu-ids> \
+    --models <model-list> --tasks <task-list> --seeds <seed-list> \
+    --num_train_epochs <epochs> \
+    --output-root "$(pwd)/pipeline/<run-root>" \
+    --log_dir "$(pwd)/pipeline/<run-root>/logs"
+```
+
+- The offline env exports keep model/dataset loading from hanging on an
+  unreachable HF hub when every asset is already local.
+- `--output-root` and `--log_dir` are spelled as EXPLICIT ABSOLUTE
+  paths: the spawned children run with their cwd pinned to `pipeline/`,
+  so a bare relative root resolves differently at the sweep layer and
+  the child layer, and an explicit root also prevents `directories.json`
+  from seeding its real `output_root`/`log_dir` into the run.
+- The real launch is the SAME command minus `--dry-run`.
+- Dispatch writes ONE shared root: there is no merge step and no cleanup
+  step for a dispatch root — ever (MGPU-06). After the run, the shared
+  root is consumed directly (`script/export_runs.py --input-root <the
+  dispatch root>`; the smoke record below shows the consumption
+  dry-run).
+
+### 2. Watch
+
+Two live surfaces, no log scraping required:
+
+- **The dispatcher's own stdout** — a plain-line table reprinted on
+  every state change: `status/queue/done/failed/skipped` plus one
+  in-flight row per worker (`w0 gpu=0: <model>/<task>/seed_<seed>`).
+  This is the live view (D15-10); a sample block from the executed
+  smoke run is quoted in the smoke record below.
+- **The TUI (since Phase 16)** — slot 5's Running tab renders dispatch
+  rows from `dispatch_state.json` (schema v2): a dispatch line with
+  queue depth and status, plus per-worker in-flight rows, each
+  stale-marked once its snapshot is ≥ 60 s old. The same screen carries
+  the standing G GPU-lanes panel (per-GPU lane rows — index /
+  utilization bar+% / memory used-total / temperature — on the 2 s
+  cadence, with honest 未安装 and N=0 empty states). Slot 4 launches
+  dispatch runs natively: its workers/GPUs fields compose exactly the
+  `run_sweep_shard.py --mode dispatch` argv shown above, with a
+  dispatch-plan preview line on the confirm face.
+
+### 3. Re-run failed cells (`--rerun-failed`, dispatch)
+
+Failed cells on a dispatch root are re-run from the ledger — no
+per-worker bookkeeping, no `--models`/`--seeds` retyping:
+
+```bash
+.venv/bin/python pipeline/run_sweep_shard.py --rerun-failed \
+    --output-root "$(pwd)/pipeline/<the-dispatch-root>"
+```
+
+- `--rerun-failed` implies dispatch mode and needs NEITHER `--models`
+  NOR `--seeds` — the ledger defines both.
+- Lane flags (`--peft`, `--config-variant`, `--num_train_epochs`,
+  subset/ebs/cache_dir/storage roots) replay VERBATIM from the
+  claim-time lane records (D14-06); unequal lanes among the failed
+  cells refuse loudly, per cell, before anything spawns (D14-08).
+- The original failed claims are preserved verbatim under
+  `dispatch_ledger/archive/` and the fresh claims carry `rerun_of`
+  genealogy links (D14-07).
+- Expected output when the ledger holds no failures (this command shape
+  was executed against a ledger-less root during the Phase-18 docs
+  pass — clean refusal, exit 0, nothing spawned):
+
+```text
+[Dispatch] no failed cells to re-run on <output-root> — the ledger holds no failed claims; nothing spawned
+```
+
+### 4. Failure recovery per mode
+
+| Mode | Recovery |
+|---|---|
+| Dispatch | `--rerun-failed --output-root <the dispatch root>` (dispatch track §3) |
+| Static | the per-worker `--from-failures` recipe over ONE worker root (static track §4) — healthy workers' roots are never touched |
+
 ## The dispatch-mode N=2 smoke procedure (executed on this machine)
 
 **Executor-executed on the local 2× RTX 5090 box (D-05 revised: 本机=双卡验证机).
