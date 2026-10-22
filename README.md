@@ -623,6 +623,7 @@ The documents below expand on specific areas of the project. **[GETTING-STARTED.
 - **[TUI-GUIDE.md](docs/TUI-GUIDE.md)**: Guide to the `tui/` terminal console for driving benchmark runs
 - **[TUI-DEMO.md](docs/TUI-DEMO.md)**: Recorded GIF walkthrough of every console feature on real tasks (bilingual)
 - **[TUI-REQUIREMENTS.md](docs/TUI-REQUIREMENTS.md)**: Open requirements collection for the TUI milestone
+- **[v1.3-test-report.html](docs/v1.3-test-report.html)**: v1.3 milestone test-results report — six phases, evidence, GPU runs
 - **[DATA.md](DATA.md)**: Generated dataset audit (N-frequency and non-ACGT census)
 - **[AUDIT.md](AUDIT.md)**: Published audit report (findings, migration records, secret-scan evidence)
 

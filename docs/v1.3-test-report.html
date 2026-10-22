@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DNALLM-Mark v1.3 Milestone Test Report</title>
+<style>
+  /* ===== Design tokens mirrored verbatim from dnallm-mark/css/variables.css =====
+     (a standalone document cannot var() into the site stylesheet; the mapping
+     table is in .planning/phases/18-docs-authoring/18-UI-SPEC.md — Color table) */
+  :root {
+    /* surfaces + text */
+    --bg-white: #FFFFFF;      /* --color-bg-white */
+    --bg-cream: #F7F6F5;      /* --color-bg-cream */
+    --bg-gray-50: #F9FAFB;    /* --color-bg-gray-50 */
+    --border: #E9ECEF;        /* --color-border */
+    --border-muted: #D9D9D9;  /* decorative rules only, never text on white */
+    --text-primary: #292C33;  /* --color-primary (light theme: text on white) */
+    --text-secondary: #595F6E;
+    --accent: #265354;        /* --color-accent-teal (8.6:1 on white) */
+    /* the four derived AA badge tones — the ONLY new hex values (18-UI-SPEC) */
+    --tone-pass: #2F7D0F;     /* derived from --color-success #52C41A (2.3:1) */
+    --tone-env: #8C6300;      /* derived from --color-warning #FAAD14 */
+    --tone-pending: #0E6EDC;  /* derived from --color-info #1890FF */
+    --tone-failed: #A61D24;   /* derived from --color-error #FF4D4F */
+    /* typography: 4 sizes / 2 weights (site scale subset) */
+    --font-stack: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+    --size-display: 32px;   /* --font-2xl */
+    --size-section: 20px;   /* --font-lg */
+    --size-body: 15px;      /* --font-md */
+    --size-caption: 12px;   /* --font-sm */
+    /* spacing: multiples of 4 (--spacing-* , variables.css:79-86) */
+    --sp-xs: 4px; --sp-sm: 8px; --sp-md: 16px; --sp-lg: 24px; --sp-xl: 32px; --sp-2xl: 48px;
+    --radius-sm: 4px;       /* --radius-sm */
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg-white);
+    color: var(--text-primary);
+    font-family: var(--font-stack);
+    font-size: var(--size-body);
+    font-weight: 400;
+    line-height: 1.6;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 0 var(--sp-md); }
+  h1 {
+    font-size: var(--size-display); font-weight: 600; line-height: 1.2;
+    margin: var(--sp-2xl) 0 var(--sp-sm);
+  }
+  h2 {
+    font-size: var(--size-section); font-weight: 600; line-height: 1.2;
+    margin: 0 0 var(--sp-md);
+    padding-bottom: var(--sp-sm);
+    border-bottom: 2px solid var(--accent);
+  }
+  h2 .num { color: var(--accent); }
+  h3 { font-size: var(--size-body); font-weight: 600; line-height: 1.2; margin: var(--sp-lg) 0 var(--sp-sm); }
+  p { margin: 0 0 var(--sp-md); }
+  ul, ol { margin: 0 0 var(--sp-md); padding-left: var(--sp-lg); }
+  li { margin-bottom: var(--sp-xs); }
+  a { color: var(--accent); }
+  code {
+    font-family: var(--font-mono); font-size: var(--size-caption);
+    background: var(--bg-cream); padding: 1px var(--sp-xs);
+    border-radius: var(--radius-sm); word-break: break-word;
+  }
+  pre {
+    font-family: var(--font-mono); font-size: var(--size-caption);
+    line-height: 1.4; background: var(--bg-cream);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: var(--sp-md); overflow-x: auto; margin: 0 0 var(--sp-md);
+  }
+  pre code { background: none; padding: 0; }
+  .subtitle { color: var(--text-secondary); margin-bottom: var(--sp-md); }
+  .toc {
+    background: var(--bg-cream); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: var(--sp-md) var(--sp-lg);
+    margin-bottom: var(--sp-2xl); font-size: var(--size-caption);
+  }
+  .toc a { text-decoration: none; }
+  .toc a:hover, .toc a:target { text-decoration: underline; }
+  .toc ul { display: flex; flex-wrap: wrap; gap: var(--sp-xs) var(--sp-lg); margin: 0; padding: 0; list-style: none; }
+  section { padding: var(--sp-xl) 0; }
+  section.phase { border-top: 1px solid var(--border); }
+  .card {
+    background: var(--bg-cream); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: var(--sp-lg); margin: var(--sp-md) 0;
+  }
+  .table-scroll { overflow-x: auto; margin: 0 0 var(--sp-sm); }
+  table { border-collapse: collapse; width: 100%; font-size: var(--size-caption); }
+  th {
+    text-align: left; font-weight: 600; font-size: var(--size-caption);
+    border-bottom: 2px solid var(--border-muted); padding: var(--sp-xs) var(--sp-md);
+    white-space: nowrap;
+  }
+  td { border-bottom: 1px solid var(--border); padding: var(--sp-xs) var(--sp-md); vertical-align: top; }
+  tbody tr:nth-child(even) { background: var(--bg-gray-50); }
+  .cite { color: var(--text-secondary); font-size: var(--size-caption); }
+  /* ===== the four-status badge vocabulary (18-UI-SPEC Color table) ===== */
+  .badge {
+    display: inline-block; font-size: var(--size-caption); font-weight: 600;
+    padding: 2px 8px; border-radius: var(--radius-sm);
+    border: 1px solid; background: var(--bg-white); white-space: nowrap;
+  }
+  .badge--pass { color: var(--tone-pass); border-color: var(--tone-pass); }
+  .badge--env { color: var(--tone-env); border-color: var(--tone-env); }
+  .badge--pending { color: var(--tone-pending); border-color: var(--tone-pending); }
+  .badge--failed { color: var(--tone-failed); border-color: var(--tone-failed); }
+  .legend { margin: var(--sp-sm) 0 0; padding: var(--sp-sm) var(--sp-md); }
+  .legend .badge { margin-right: var(--sp-md); }
+  /* ===== figures (the two-line caption contract) ===== */
+  figure { margin: var(--sp-lg) 0; }
+  figure img {
+    display: block; max-width: 100%; height: auto;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-white); margin: 0 auto;
+  }
+  figure svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  figcaption { font-size: var(--size-caption); line-height: 1.4; margin-top: var(--sp-sm); color: var(--text-secondary); }
+  figcaption .fig-title { color: var(--text-primary); font-weight: 600; }
+  /* ===== gap-closure callout (teal left border) ===== */
+  aside.callout {
+    border-left: 3px solid var(--accent); background: var(--bg-cream);
+    padding: var(--sp-lg); margin: var(--sp-xl) 0; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
+  aside.callout h3 { color: var(--accent); margin-top: 0; }
+  details { margin: var(--sp-md) 0; }
+  details summary { cursor: pointer; font-size: var(--size-caption); font-weight: 600; }
+  /* ===== responsive: the single 768px breakpoint ===== */
+  @media (max-width: 768px) {
+    main { padding: 0 var(--sp-md); }
+    h1 { font-size: var(--size-section); }
+  }
+  /* ===== print: the report must print to PDF cleanly ===== */
+  @media print {
+    .toc { display: none; }
+    section.phase { page-break-before: always; }
+    pre { white-space: pre-wrap; }
+    figure img, figure svg { max-width: 100%; }
+    a { color: var(--text-primary); text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<header id="top">
+  <h1>DNALLM-Mark v1.3 Milestone Test Report</h1>
+  <p class="subtitle">多 GPU 编排与验证 · Phases 13–18 · generated 2026-10-22 · the multi-GPU orchestration &amp; validation milestone — what was built, what ran, and where every number comes from</p>
+  <nav class="toc" aria-label="Table of contents">
+    <ul>
+      <li><a href="#summary">Summary</a></li>
+      <li><a href="#phase-13">13</a></li>
+      <li><a href="#phase-14">14</a></li>
+      <li><a href="#phase-15">15</a></li>
+      <li><a href="#phase-16">16</a></li>
+      <li><a href="#phase-17">17</a></li>
+      <li><a href="#phase-18">18</a></li>
+      <li><a href="#gap-closures">Gap Closures</a></li>
+      <li><a href="#gpu-evidence">GPU Evidence</a></li>
+      <li><a href="#lanes">Lanes &amp; Exclusions</a></li>
+    </ul>
+  </nav>
+</header>
+
+<!-- ================= SUMMARY ================= -->
+<section id="summary">
+  <h2><span class="num">§</span> Summary</h2>
+  <p>All 20 v1.3 requirements delivered; every lane green at the documented baseline with 6 environmental exclusions (below).</p>
+  <p>v1.3 spanned six phases: the dynamic dispatch engine (13), the orchestration view and failure recovery (14), dual-GPU validation with 5% subset datasets (15), the TUI multi-GPU surface (16), web multi-seed error bars (17), and documentation (18). The verification scores of the five implementation phases — <strong>23/23 · 28/28 · 7/7 · 41/41 · 16/16</strong> — are cited from their verification frontmatters (<span class="cite">.planning/phases/13-dynamic-dispatch-core/13-VERIFICATION.md, 14-…/14-VERIFICATION.md, 15-…/15-VERIFICATION.md, 16-…/16-VERIFICATION.md, 17-…/17-VERIFICATION.md</span>), and every GPU number in this report is paired with the run id from the same archived artifact (<span class="cite">the run_id/timing pairing discipline, 18-RESEARCH.md Pitfall 1</span>).</p>
+
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr><th>Lane</th><th>Scope</th><th>Result</th><th>Status</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>pytest full suite</td>
+        <td>repo-wide CPU lanes (<code>make test</code>)</td>
+        <td>2236 passed / 3 skipped / 6 environmental</td>
+        <td><span class="badge badge--env">⚠ ENVIRONMENTAL-EXCLUDED</span></td>
+        <td>Recorded 2026-10-21 (<span class="cite">.planning/phases/17-web-multiseed-error-bars/17-VERIFICATION.md:121</span>): “SUMMARY records 2236 passed / 6 documented environmental root-chmod failures, and the suite needs the machine's academic proxy for one evaluate-touching lane”. The 6 exclusions are classified in <span class="cite">.planning/phases/17-web-multiseed-error-bars/17-03-SUMMARY.md:85</span>; a fresh full-suite run is owned by the milestone-close gate, not re-run in-phase (Q4 ruling).</td>
+      </tr>
+      <tr>
+        <td>node lanes</td>
+        <td><code>node --test tests/js/*.test.js</code></td>
+        <td>44/44 pass</td>
+        <td><span class="badge badge--pass">✓ PASS</span></td>
+        <td>Recorded 2026-10-21 (<span class="cite">17-VERIFICATION.md:69</span>), incl. <code>tests/js/error-bars.test.js</code> (18 cases).</td>
+      </tr>
+      <tr>
+        <td>pty real-app lane</td>
+        <td><code>tests/tui/test_pty_driver.py</code></td>
+        <td>green (inside the recorded suite runs)</td>
+        <td><span class="badge badge--pass">✓ PASS</span></td>
+        <td>The permanent real-pty regression lane (spawned the REAL app under a pty, asserting render behavior Pilot cannot see); part of <code>make test</code> since 261018-08g.</td>
+      </tr>
+      <tr>
+        <td>tier-1 contract pins</td>
+        <td><code>tests/test_run_finetune_contracts.py</code> family</td>
+        <td>76 green</td>
+        <td><span class="badge badge--pass">✓ PASS</span></td>
+        <td>Incl. the 15-05 eval-merge ordering pin (<span class="cite">.planning/phases/15-dual-gpu-validation-subsets/15-05-SUMMARY.md</span>: “contracts 76 + regression 306 green”).</td>
+      </tr>
+      <tr>
+        <td>determinism + vendored stats</td>
+        <td><code>tests/test_determinism.py</code> + <code>tests/test_vendored_stats.py</code></td>
+        <td>10 passed, unmodified</td>
+        <td><span class="badge badge--pass">✓ PASS</span></td>
+        <td>Zero-drift gates over the committed data tree (<span class="cite">17-VERIFICATION.md:57</span>: both files “run this pass … git log since phase start shows zero edits”).</td>
+      </tr>
+      <tr>
+        <td>dispatch + shard suites</td>
+        <td><code>tests/test_dispatch_core.py</code> + <code>tests/test_sweep_shard.py</code></td>
+        <td>102 passed</td>
+        <td><span class="badge badge--pass">✓ PASS</span></td>
+        <td>“102 passed in 1.42s” (<span class="cite">13-VERIFICATION.md:162</span>); grew to 93 dispatch tests / 155 combined by 14-03 (<span class="cite">.planning/ROADMAP.md, Phase 14 plan row</span>).</td>
+      </tr>
+      <tr>
+        <td>TUI snapshot goldens</td>
+        <td><code>tests/tui/test_snapshots.py</code> (10 committed SVGs)</td>
+        <td>working-tree golden lane 12/12</td>
+        <td><span class="badge badge--pending">◌ PENDING-REVIEW</span></td>
+        <td>Machine-verified this pass (<span class="cite">16-VERIFICATION.md maintainer_handoff</span>): exactly 4 SVGs remain deliberately UNCOMMITTED pending maintainer review — WINDOWS #50.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="legend card">
+    <span class="badge badge--pass">✓ PASS</span>
+    <span class="badge badge--env">⚠ ENVIRONMENTAL-EXCLUDED</span> (reason mandatory)
+    <span class="badge badge--pending">◌ PENDING-REVIEW</span>
+    <span class="badge badge--failed">✗ FAILED</span> (disposition mandatory)
+  </p>
+</section>
+
+<!-- ================= PHASE 13 ================= -->
+<section id="phase-13" class="phase">
+  <h2><span class="num">13</span> — Dynamic dispatch core (动态调度核心)</h2>
+
+  <h3>Goal</h3>
+  <p>The orchestrator dispatches (model×dataset×seed) cells as a work queue over per-GPU workers with worker-independent cell outputs, an exactly-once claim ledger, and resume semantics proven under mid-cell kill — legacy static sharding coexists behind explicit mode declaration. <span class="cite">( ROADMAP.md, Phase 13 Goal — requirements MGPU-01, MGPU-02, MGPU-06 )</span></p>
+
+  <h3>What Shipped</h3>
+  <ul>
+    <li>A new sibling engine <code>pipeline/dispatch_core.py</code> (lazy-imported by <code>run_sweep_shard.py</code> behind <code>--mode {static,dispatch}</code>): deterministic enumeration → zero-cell refusal → lock → <code>dispatch_state.json</code> evidence → O_EXCL claim ledger (<code>dispatch_ledger/</code>) → spawn → finalize; the static path stayed byte-identical with the 49-test shard suite as the tripwire. <span class="cite">(13-01-SUMMARY.md)</span></li>
+    <li>Dry-run plan artifact (the static projection verbatim plus one <code>orchestrator_mode: "dispatch"</code> marker), evidence-based merge refusal (dispatch roots need no merge), static byte-identity pins, and the Makefile lint slot. <span class="cite">(13-02-SUMMARY.md)</span></li>
+    <li>Code-review hardening with mutation-proven pins: CR-01 <code>--from-failures</code> honored in dispatch mode, CR-02 lock create-to-write grace, CR-03 child pid persisted before wait, CR-04 per-cell containment; WR-01/02/03 claim-ledger guards. <span class="cite">(STATE.md, Phase 13 decisions)</span></li>
+  </ul>
+
+  <h3>Evidence</h3>
+  <ul>
+    <li>Verification score: <strong>23/23</strong> must-haves verified, <code>status: passed</code> <span class="cite">(.planning/phases/13-dynamic-dispatch-core/13-VERIFICATION.md frontmatter, verified 2026-10-20)</span>.</li>
+    <li>Suite: <code>tests/test_dispatch_core.py</code> + <code>tests/test_sweep_shard.py</code> — <strong>102 passed in 1.42s</strong> <span class="cite">(13-VERIFICATION.md:162)</span>, including the SC2 acceptance test <code>test_sc2_kill_test_resume_exactly_once</code> (a worker killed mid-cell and relaunched completes every cell exactly once — “green in this pass's 102/102 run”, 13-VERIFICATION.md:54) and the dry-run byte-identity tests (<code>test_dispatch_dry_run_is_byte_identical_across_runs</code>).</li>
+    <li>The frozen protocol order, claim naming (percent-encoded fields + sha256[:12] digest suffix), and stale-lock reclaim by pid-liveness are pinned in the module docstring of <code>pipeline/dispatch_core.py</code> and cited by 13-VERIFICATION truths 9-21.</li>
+  </ul>
+
+  <figure>
+    <img src="report-assets/monitor_running.svg" alt="Monitor screen (slot 5) of the real console app: the dispatch line shows the archived mid-run state of the real r2 sweep (running, 6/12 done, queue 4) with both GPU worker rows in flight, above the two GPU lanes panel" width="1100">
+    <figcaption>
+      <span class="fig-title">Figure 1 — Slot-5 Monitor of the real console app (real-app instance exported by the snapshot harness, 2026-10-22).</span> <span class="badge badge--pending">◌ PENDING-REVIEW</span><br>
+      The dispatch line and per-worker rows render the <em>real archived mid-run dispatch_state of the r2 sweep</em> (status running, 完成 6/12, 队列 4, GPU 0 in-flight <code>plant-dnamamba-6mer × GUE__emp_H3 × seed_42</code>, GPU 1 in-flight seed_43 — the artifact quoted in 15-03-SUMMARY.md:164-166); the G GPU-lanes panel carries the <em>live nvidia-smi probe output</em> on the validation machine at capture time (both GPUs idle post-milestone: 0%, 2/32607 MiB, 28 °C); the card's cell grid is a harness fixture reconstructed from that archived state (the real root is post-run today).<br>
+      Proves: the shipped slot-5 surfaces render real dispatch state and real probe rows — the dispatch artifact introduced in Phase 13 (and frozen at schema v2 in Phase 14) is what the operator actually sees.
+    </figcaption>
+  </figure>
+
+  <h3>Analysis</h3>
+  <p>The hard problem was exactly-once execution under crash: a dispatcher killed mid-cell must never double-run or lose a cell on relaunch. Phase 13 solved it structurally — the O_EXCL claim ledger makes double-claim impossible by construction, resume is pure per-cell <code>relaunch_decision</code> over on-disk evidence (trainer_state marker or completed claim with agreeing cell key), and the SC2 kill test proves the property from the disk state alone rather than from orchestrator memory. The cost of that discipline appeared later as a genuine gap: dispatch roots initially carried no <code>run_record.json</code> (Phase 13 decision A3 deferred it), which surfaced as the 15-01 halt and was closed by 15-04 (see Gap Closures).</p>
+</section>
+
+<!-- ================= PHASE 17 (figures land with the phase body in Task 2) ================= -->
+<section id="phase-17" class="phase">
+  <h2><span class="num">17</span> — Web multi-seed error bars</h2>
+
+  <h3>Goal</h3>
+  <p>Multi-seed results display with error bars on the public pages — additive mean/std/n_seeds through the data chain, scatter whiskers via a vendored inline Chart.js plugin, floating-bar task charts — with zero drift in existing numbers. <span class="cite">( ROADMAP.md, Phase 17 Goal — requirements WEB-01, WEB-02, WEB-03 )</span></p>
+
+  <h3>Evidence (figures)</h3>
+  <figure>
+    <img src="report-assets/shot-scatter.png" alt="Real Chromium headless render of the DNALLM-Mark leaderboard scatter page over the r2 re-run data chain; the multi-seed point carries its error-bar plugin rendering" width="1100">
+    <figcaption>
+      <span class="fig-title">Figure 2 — Leaderboard scatter (index.html) in real Chromium headless over the staged r2 re-run data chain, 2026-10-22.</span> <span class="badge badge--pass">✓ PASS</span><br>
+      Real execution: real Chromium (playwright-core) over the Phase-15 r2 sweep re-run through the real export→summarize chain; the plugin <code>errorbars</code> registered on the live chart, the std point carries std=0.0488 / nSeeds=3, and marker ink was pixel-verified at the point pixel <span class="cite">(17-VERIFICATION.md, “Visual Verification — Delegated to Orchestrator”)</span>. The whisker itself is sub-pixel on this view (std 0.049 against a 0–50 y-axis) — the honest rendering of a tiny spread, exactly as designed.<br>
+      Proves: the vendored inline plugin registers and renders on a real browser canvas against real sweep-derived data — no pixel lane existed before this capture.
+    </figcaption>
+  </figure>
+</section>
+
+</main>
+</body>
+</html>
