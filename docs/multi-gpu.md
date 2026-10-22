@@ -288,8 +288,10 @@ Two live surfaces, no log scraping required:
 - **The TUI (since Phase 16)** — slot 5's Running tab renders dispatch
   rows from `dispatch_state.json` (schema v2): a dispatch line with
   queue depth and status, plus per-worker in-flight rows, each
-  stale-marked once its snapshot is ≥ 60 s old. The same screen carries
-  the standing G GPU-lanes panel (per-GPU lane rows — index /
+  stale-marked once its snapshot's age crosses the cell-scale grace
+  (`DISPATCH_STALE_SECONDS` = 3600 s, maintainer-tunable). The
+  same screen carries the standing G GPU-lanes panel (per-GPU
+  lane rows — index /
   utilization bar+% / memory used-total / temperature — on the 2 s
   cadence, with honest 未安装 and N=0 empty states). Slot 4 launches
   dispatch runs natively: its workers/GPUs fields compose exactly the
