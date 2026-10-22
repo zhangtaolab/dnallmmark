@@ -1,14 +1,29 @@
 """
-record_tui_live_svg.py — the live TUI SVG recording driver (quick-261022-pa6).
+record_tui_live_svg.py — the live TUI SVG recording driver.
 
-Drives the REAL operator console (``DnallmMarkTui``, zero injected services)
-through the proven 2x2 dual-GPU journey — boot env check -> slot-4 picker
-marks -> m-flip dataset marks -> params (seeds 42, 1 epoch, workers 2, GPUs
-0,1, fresh output root) -> live preview line -> [p] dispatch argv preview ->
-the Y/N gate -> the real dispatch launch -> the monitor through completion —
-exporting every stage as a design-grid (120x40) SVG screenshot plus an
-honest operation record (RECORD.md + evidence.json) generated from the
-run's own meta.
+pa6 lane (quick-261022-pa6, the default ``--mode pa6``): drives the REAL
+operator console (``DnallmMarkTui``, zero injected services) through the
+proven 2x2 dual-GPU journey — boot env check -> slot-4 picker marks ->
+m-flip dataset marks -> params (seeds 42, 1 epoch, workers 2, GPUs 0,1,
+fresh output root) -> live preview line -> [p] dispatch argv preview ->
+the Y/N gate -> the real dispatch launch -> the monitor through
+completion — exporting every stage as a design-grid (120x40) SVG
+screenshot plus an honest operation record (RECORD.md + evidence.json)
+generated from the run's own meta.
+
+full lane (quick-261022-tah, ``--mode full``): the production-scale
+FungiHelixSeek journey — slot-2 model download (cursor on the model row,
+``d`` -> the real KIND_MODEL queue lane) -> slot-3 enqueue-all (``a`` ->
+every missing downloadable dataset) -> interval captures of the download
+queue until it settles -> queue detail drill-down -> slot-4 wizard
+(FungiHelixSeek + EVERY present dataset, seeds typed 42,43,44, workers 2,
+GPUs 0,1, fresh root, epochs NEVER touched — the YAML default governs and
+the argv preview asserts ``--num_train_epochs`` ABSENT) -> the Y/N gate ->
+``y`` -> the real dual-GPU dispatch -> a multi-day monitor watch (interval
+captures + incremental evidence heartbeat + stall detector) -> automatic
+REPORT.md + download_ledger.json generation from the run's own artifacts.
+The full-mode defaults carry NO hard timeout (``--timeout 0`` — the stall
+detector governs) and the sweep is NEVER killed on any path.
 
 Contract:
 
@@ -26,29 +41,46 @@ Contract:
 - FRESH STATE: each recording sets a FRESH ``DNALLMMARK_TUI_STATE_DIR``
   under ``--state-base`` (default /root/autodl-tmp — the disk-capacity
   rule: no state under / or /root) BEFORE constructing the app, so the
-  launcher tee, run_config.json, and monitor_roots land there. The REAL
-  config root stays live (directories.json wiring + customs render);
+  launcher tee, run_config.json, monitor_roots, the download queue state
+  file, and the queue logs land there. The REAL config root stays live
+  (directories.json wiring + customs render);
   ``DNALLMMARK_TUI_CONFIG_DIR`` is never set. The temp state dir is KEPT
   on every path (it holds the tee log — evidence) and recorded in the
-  meta.
+  meta. The mkdtemp prefix is mode-pinned (``tui-live-pa6-`` /
+  ``tui-live-fhs-``).
 - MODES: ``--dry-run`` prints the journey timeline + resolved targets with
   zero app spawn and zero preflight side effects; ``--no-launch`` is the
   full rehearsal (real app, real registries, drive to the gate, capture
-  stages 01-06, press ``n`` at the confirm — zero GPU work); the default
-  is the LIVE mode (real launch + completion poll). The dnallm-import and
-  GPU-idle preflight legs run only in live mode.
+  the stages, press ``n`` at the confirm — zero GPU work, and in full mode
+  zero network enqueue: the slot-2 leg only LOCATES the row, the slot-3
+  leg only renders the view); the default is the LIVE mode (real launch +
+  completion poll). The dnallm-import and GPU-idle preflight legs run
+  only in live mode.
+- FULL-MODE EVIDENCE: evidence.json is written INCREMENTALLY (atomic
+  write after every stage and every interval, heartbeat
+  ``{at, phase, interval_index}``) so progress is checkable from outside
+  at any moment of the multi-day run; download_ledger.json lands at
+  download settle; REPORT.md is auto-generated on completion (and as a
+  best-effort draft on every failure path) from the run's own artifacts
+  ONLY — no fabricated success, ever.
 - DISPLAY-ONLY /proc evidence: completion polling reuses the repo's own
   ``tui.services.sweep_launcher.probe_cli_sweeps`` (read-only cmdline
   reads of this host's process table). The driver NEVER signals any
-  process: on timeout or failure the sweep SURVIVES detached in its own
-  session and the record documents how to reach it. No fabricated
-  success: a failed or timed-out run exports the failure-state capture,
-  records exactly what was observed, and exits nonzero.
+  process: on timeout, stall, or failure the sweep SURVIVES detached in
+  its own session and the record documents how to reach it. No fabricated
+  success: a failed, stalled, or timed-out run exports the failure-state
+  capture, records exactly what was observed, and exits nonzero.
 
 Usage:
-    python scripts/live/record_tui_live_svg.py --dry-run
-    python scripts/live/record_tui_live_svg.py --no-launch
-    python scripts/live/record_tui_live_svg.py [--interval 180] [--timeout 5400]
+    python scripts/live/record_tui_live_svg.py --mode pa6 --dry-run
+    python scripts/live/record_tui_live_svg.py --mode pa6 --no-launch
+    python scripts/live/record_tui_live_svg.py --mode pa6 \
+        [--interval 180] [--timeout 5400]
+    python scripts/live/record_tui_live_svg.py --mode full --dry-run
+    python scripts/live/record_tui_live_svg.py --mode full --no-launch
+    python scripts/live/record_tui_live_svg.py --mode full \
+        [--dl-interval 600] [--interval 1800] [--stall-hours 6] \
+        [--timeout 0]
 """
 
 from __future__ import annotations
@@ -58,11 +90,12 @@ import asyncio
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -78,10 +111,11 @@ import directories_config  # top-level module (pipeline/ sys.path root)
 from rich.text import Text
 from textual.containers import Vertical
 from textual.pilot import Pilot
-from textual.widgets import Input, Label, Static
+from textual.widgets import DataTable, Input, Label, Static
 
 from tui import strings as S
 from tui.app import DnallmMarkTui
+from tui.screens.data_manager import DataManagerScreen, QueueDetailModal
 from tui.screens.env_check import EnvCheckScreen
 from tui.screens.monitor import MonitorScreen
 from tui.screens.run_config import (
@@ -92,7 +126,8 @@ from tui.screens.run_config import (
     RunConfigScreen,
     _GateConfirmModal,
 )
-from tui.services import sweep_launcher  # DISPLAY-ONLY /proc probe reuse
+from tui.screens.selection import SelectionScreen
+from tui.services import download_queue, registries, sweep_launcher
 
 # ===== The locked journey combo (presence VERIFIED in preflight) =====
 
@@ -103,10 +138,57 @@ EPOCHS_TEXT = "1"
 WORKERS_TEXT = "2"
 GPUS_TEXT = "0,1"
 
+# ===== The full-mode combo (quick-261022-tah) =====
+
+MODE_PA6 = "pa6"
+MODE_FULL = "full"
+
+#: The single production model of the full journey (263M, modelscope
+#: zhangtaolab/FungiHelixSeek, compat-adapted — preflight verifies the
+#: card + the compat slot + the on-disk absence).
+FULL_MODEL = "FungiHelixSeek"
+
+#: The seeds typed into the wizard as the literal text "42,43,44".
+FULL_SEEDS = ("42", "43", "44")
+FULL_SEEDS_TEXT = "42,43,44"
+FULL_WORKERS_TEXT = "2"
+FULL_GPUS_TEXT = "0,1"
+
+#: The pinned state-dir mkdtemp prefix (the Task-2 gate globs this).
+FULL_STATE_PREFIX = "tui-live-fhs-"
+
+#: Per-mode CLI default table (explicit flags always win).
+_MODE_DEFAULTS: dict[str, dict[str, object]] = {
+    MODE_PA6: {
+        "root": "pipeline/finetuned-tui-pa6",
+        "svg_dir": "docs/live/svg",
+        "record": "docs/live/RECORD.md",
+        "evidence": "docs/live/evidence.json",
+        "interval": 180.0,
+        "timeout": 5400.0,
+    },
+    MODE_FULL: {
+        "root": "pipeline/finetuned-fhs-full",
+        "svg_dir": "docs/live/fhs/svg",
+        "record": "docs/live/fhs/RECORD.md",
+        "evidence": "docs/live/fhs/evidence.json",
+        "report": "docs/live/fhs/REPORT.md",
+        "ledger": "docs/live/fhs/download_ledger.json",
+        "dl_interval": 600.0,
+        "interval": 1800.0,
+        "timeout": 0.0,
+    },
+}
+
+#: The full-mode preflight's data-disk floor (the download + sweep need
+#: headroom for the model snapshot, up to 44 datasets, and days of run
+#: artifacts; 1964G free at plan time).
+_MIN_FREE_GIB = 200
+
 #: The pinned design grid every capture exports at (the golden lane size).
 GRID = (120, 40)
 
-#: 2 models x 2 tasks x 1 seed — the completion contract.
+#: 2 models x 2 tasks x 1 seed — the completion contract (pa6).
 EXPECTED_CELLS = 4
 
 #: dispatch_state.json statuses that end the orchestrator's run (the rest
@@ -114,11 +196,19 @@ EXPECTED_CELLS = 4
 _DISPATCH_TERMINAL_OK = "completed"
 _DISPATCH_TERMINAL_BAD = {"failed", "interrupted"}
 
+#: The queue's active (non-terminal) states — the download-settle
+#: predicate's machine vocabulary (D-02 five states).
+_QUEUE_ACTIVE = ("pending", "downloading")
+
 #: Poll cadence for every bounded wait (seconds).
 _POLL_STEP = 0.5
 
 MODELS_INFO = REPO_ROOT / "pipeline" / "models_info.json"
 DATASETS_INFO = REPO_ROOT / "pipeline" / "datasets_info.json"
+
+#: The YAML default config the epochs-less launch defers to (the report
+#: states the effective epoch count from HERE, never a hardcoded literal).
+FINETUNE_CONFIG_YAML = REPO_ROOT / "pipeline" / "finetune_config.yaml"
 
 
 class DriverError(RuntimeError):
@@ -156,6 +246,15 @@ def _label_text(screen, selector: str) -> str:
     return _plain(screen.query_one(selector, Static).content)
 
 
+def _atomic_write(path: Path, text: str) -> None:
+    """Write through a temp file + os.replace (the settings.atomic_write
+    discipline) so an outside reader never sees a torn file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def _query_gpu(args: list[str]) -> str:
     """Run one nvidia-smi query; stdout verbatim (empty on nonzero)."""
     result = subprocess.run(
@@ -178,11 +277,127 @@ def _gpu_snapshot() -> dict:
     }
 
 
-def _count_seed_artifacts(root: Path, name: str, seed: str) -> int:
-    """Count ``{root}/**/seed_{seed}/{name}`` files (layout-neutral walk)."""
-    marker = f"seed_{seed}"
+def _count_seed_artifacts(root: Path, name: str,
+                          seed: str | Iterable[str]) -> int:
+    """Count ``{root}/**/seed_{seed}/{name}`` files (layout-neutral
+    walk). ``seed`` generalizes to a seed SET (full mode counts across
+    42/43/44); a bare string keeps the pa6 call shape byte-identical."""
+    seeds = (seed,) if isinstance(seed, str) else tuple(seed)
+    markers = {f"seed_{one}" for one in seeds}
     return sum(1 for path in root.rglob(name)
-               if path.parent.name == marker)
+               if path.parent.name in markers)
+
+
+def _count_per_seed(root: Path, name: str,
+                    seeds: tuple[str, ...]) -> dict[str, int]:
+    """Per-seed artifact counts (the full-mode completion contract is
+    per-seed: len(present) under EVERY seed)."""
+    return {seed: _count_seed_artifacts(root, name, (seed,))
+            for seed in seeds}
+
+
+# ===== The download queue's persisted state (read-only derivations) =====
+
+
+def _queue_state_path(state_dir: Path) -> Path:
+    """The queue state file under the recording's fresh state dir (the
+    settings.state_dir() root the real service writes)."""
+    return state_dir / download_queue.QUEUE_FILE_NAME
+
+
+def _read_queue_entries(state_dir: Path) -> list[dict]:
+    """Tolerant read-only read of the persisted queue entries (empty on
+    absent/corrupt — the artifact_loader None-sentinel discipline)."""
+    try:
+        doc = json.loads(
+            _queue_state_path(state_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(doc, dict):
+        return []
+    entries = doc.get("entries")
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, dict)]
+
+
+def _queue_digest(entries: list[dict]) -> dict:
+    """Per-state x per-kind entry counts (the interval evidence digest)."""
+    digest: dict[str, int] = {}
+    for entry in entries:
+        state = str(entry.get("state", "?"))
+        kind = str(entry.get("kind", "?"))
+        digest[f"{kind}:{state}"] = digest.get(f"{kind}:{state}", 0) + 1
+    return digest
+
+
+def _entry(entries: list[dict], key: str) -> dict | None:
+    return next((e for e in entries if e.get("key") == key), None)
+
+
+def _newest_log_stat(logs_dir: Path) -> tuple[str, int]:
+    """(name, size) of the newest queue log under the state dir's logs/
+    (("", 0) when none) — the download-liveness signal."""
+    try:
+        newest = max(
+            logs_dir.glob("*.log"),
+            key=lambda path: path.stat().st_mtime, default=None)
+    except OSError:
+        return ("", 0)
+    if newest is None:
+        return ("", 0)
+    try:
+        return (newest.name, newest.stat().st_size)
+    except OSError:
+        return (newest.name, 0)
+
+
+def _official_dataset_keys() -> list[str]:
+    """The official dataset registry keys in file order (pure read)."""
+    return [entry.get("key") for entry in registries.load_dataset_entries()
+            if isinstance(entry.get("key"), str)]
+
+
+def _derive_present(state_dir: Path) -> tuple[list[str], list[str]]:
+    """The present set through the SAME chain the picker renders —
+    ``merge_presence(load_n_audit(), reconciled_rows(state file))`` +
+    ``registries.presence_for`` (pure reads; the committed audit is
+    static during the run, so the before-view is the same chain WITHOUT
+    the reconcile overlay). Returns (present_after, present_before)."""
+    committed = registries.load_n_audit()
+    keys = _official_dataset_keys()
+    before = [key for key in keys
+              if registries.presence_for(key, committed).status
+              == registries.PRESENCE_PRESENT]
+    merged = download_queue.merge_presence(
+        committed,
+        download_queue.reconciled_rows(_queue_state_path(state_dir)))
+    after = [key for key in keys
+             if registries.presence_for(key, merged).status
+             == registries.PRESENCE_PRESENT]
+    return after, before
+
+
+class _StallWatch:
+    """The shared stall detector: a caller-supplied ACTIVITY SIGNATURE
+    (file mtimes/sizes/counts) unchanged for ``hours`` means stalled."""
+
+    def __init__(self, hours: float) -> None:
+        self._hours = max(0.0, hours)
+        self._signature: object = None
+        self._since: float | None = None
+
+    def observe(self, signature: object) -> bool:
+        """Record one observation; True iff the signature has now been
+        unchanged for at least the configured hours."""
+        if signature == self._signature:
+            if self._since is None:
+                self._since = time.monotonic()
+                return False
+            return (time.monotonic() - self._since) >= self._hours * 3600.0
+        self._signature = signature
+        self._since = None
+        return False
 
 
 # =====================================================================
@@ -202,13 +417,52 @@ def _dir_base(value: str | None, default: Path) -> Path:
     return (REPO_ROOT / candidate).resolve()
 
 
+def _probe_writable(dirs: tuple[Path, ...], files: tuple[Path, ...],
+                    label: str) -> None:
+    """The writable-path leg: probe one file inside every dir target and
+    one temp sibling beside every file target (removed after)."""
+    probes: list[Path] = []
+    for directory in dirs:
+        probes.append(directory / ".tui-live-write-probe")
+    for path in files:
+        probes.append(path.parent / ".tui-live-write-probe")
+    try:
+        for directory in dirs:
+            directory.mkdir(parents=True, exist_ok=True)
+        for path in files:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        for probe in probes:
+            probe.write_text("", encoding="utf-8")
+            probe.unlink()
+    except OSError as exc:
+        raise PreflightError(
+            f"output path not writable ({label}): {exc}") from exc
+
+
+def _free_gib(path: Path) -> int:
+    """Free space (GiB) on the mount holding ``path`` (df -BG)."""
+    result = subprocess.run(
+        ["df", "-BG", str(path)], capture_output=True, text=True,
+        check=False)
+    if result.returncode != 0:
+        return -1
+    match = re.search(
+        r"\n\S+\s+\S+\s+\S+\s+(\d+)G\s+", result.stdout)
+    return int(match.group(1)) if match else -1
+
+
 def preflight(args: argparse.Namespace) -> dict:
     """Verify every precondition the journey assumes.
 
     The dnallm-import and GPU-idle legs run only in live mode (the plan's
-    skip rule); the offline flag, registry presence, fresh-root, and
-    writable-path legs run in every spawned mode. Returns the resolved
-    targets dict (recorded in the meta + printed by --dry-run consumers).
+    skip rule); the offline flag, registry, fresh-root, and writable-path
+    legs run in every spawned mode. The registry leg branches by mode:
+    pa6 pins the 2x2 combo's on-disk presence; full verifies the
+    FungiHelixSeek card + compat slot, the modelscope CLI, the dataset
+    registry, the data-disk headroom, and RECORDS the model's on-disk
+    presence (missing expected; a present model skips the slot-2 enqueue
+    leg honestly). Returns the resolved targets dict (recorded in the
+    meta + printed by --dry-run consumers).
     """
     live = not args.no_launch
     targets: dict = {"root_arg": args.root}
@@ -228,9 +482,6 @@ def preflight(args: argparse.Namespace) -> dict:
                 "uv sync, reinstall dnallm editable from the local dev "
                 "clone (../DNALLM): uv pip install -e ../DNALLM") from exc
 
-    # Registry presence through the real consumers' chain: the cards'
-    # Model_path/Dataset_path joined on the directories.json-seeded root
-    # (default pipeline/), naming EVERY missing key at once.
     try:
         models_info = json.loads(MODELS_INFO.read_text(encoding="utf-8"))
         datasets_info = json.loads(
@@ -238,10 +489,61 @@ def preflight(args: argparse.Namespace) -> dict:
     except (OSError, ValueError) as exc:
         raise PreflightError(
             f"official registries unreadable: {exc}") from exc
+    if not isinstance(models_info, dict) or not isinstance(datasets_info,
+                                                            dict):
+        raise PreflightError("official registries are not object-shaped")
+
     dirs = directories_config.load_directories_tolerant()
     model_base = _dir_base(dirs.get("model_root"), REPO_ROOT / "pipeline")
     dataset_base = _dir_base(
         dirs.get("dataset_root"), REPO_ROOT / "pipeline")
+
+    if args.mode == MODE_FULL:
+        _preflight_full_legs(args, targets, models_info)
+    else:
+        _preflight_pa6_combo(
+            targets, models_info, datasets_info, model_base, dataset_base)
+
+    if live:
+        count = _query_gpu(["--query-gpu=index", "--format=csv,noheader"])
+        indices = [line.strip() for line in count.splitlines() if line.strip()]
+        if len(indices) != 2:
+            raise PreflightError(
+                f"nvidia-smi reports {len(indices)} GPUs (expected exactly "
+                f"2): {count!r}")
+        apps = _query_gpu(
+            ["--query-compute-apps=pid", "--format=csv,noheader"])
+        if apps:
+            raise PreflightError(
+                "GPUs are NOT idle — compute apps present (refusing to "
+                f"share): {apps!r}")
+        targets["gpu_names"] = _query_gpu(
+            ["--query-gpu=name", "--format=csv,noheader"])
+
+    root_resolved = (REPO_ROOT / Path(args.root)).resolve()
+    if root_resolved.exists():
+        raise PreflightError(
+            f"output root {root_resolved} already exists — fresh-root "
+            "discipline (a reused root's trainer_state markers would skip "
+            "cells and fake success)")
+    targets["root_resolved"] = str(root_resolved)
+
+    svg_dir = Path(args.svg_dir)
+    file_targets = [Path(args.evidence)]
+    if args.mode == MODE_FULL:
+        file_targets.extend([Path(args.report), Path(args.ledger)])
+    else:
+        file_targets.append(Path(args.record))
+    _probe_writable((svg_dir,), tuple(file_targets), args.mode)
+    return targets
+
+
+def _preflight_pa6_combo(targets: dict, models_info: dict,
+                         datasets_info: dict, model_base: Path,
+                         dataset_base: Path) -> None:
+    """The pa6 registry leg: the 2x2 combo's on-disk presence through the
+    real consumers' chain (card Model_path/Dataset_path joined on the
+    directories.json-seeded root), naming EVERY missing key at once."""
 
     def _card_path(info: dict, key: str, field: str) -> str | None:
         card = info.get(key)
@@ -276,46 +578,49 @@ def preflight(args: argparse.Namespace) -> dict:
             f"{model_base}, datasets={dataset_base}): " + "; ".join(missing))
     targets["cards"] = resolved_cards
 
-    if live:
-        count = _query_gpu(["--query-gpu=index", "--format=csv,noheader"])
-        indices = [line.strip() for line in count.splitlines() if line.strip()]
-        if len(indices) != 2:
-            raise PreflightError(
-                f"nvidia-smi reports {len(indices)} GPUs (expected exactly "
-                f"2): {count!r}")
-        apps = _query_gpu(
-            ["--query-compute-apps=pid", "--format=csv,noheader"])
-        if apps:
-            raise PreflightError(
-                "GPUs are NOT idle — compute apps present (refusing to "
-                f"share): {apps!r}")
-        targets["gpu_names"] = _query_gpu(
-            ["--query-gpu=name", "--format=csv,noheader"])
 
-    root_resolved = (REPO_ROOT / Path(args.root)).resolve()
-    if root_resolved.exists():
+def _preflight_full_legs(args: argparse.Namespace, targets: dict,
+                         models_info: dict) -> None:
+    """The full-mode registry legs: modelscope CLI, the FungiHelixSeek
+    channel through the queue's OWN resolver (the one authority the
+    model lane uses — card Model_path + compat verdict + modelscope
+    repo id in one spec), the data-disk headroom, and the model's
+    on-disk presence (RECORDED, never asserted — a present model
+    honestly skips the slot-2 enqueue leg)."""
+    cli = download_queue.resolve_modelscope_cli()
+    if cli is None:
         raise PreflightError(
-            f"output root {root_resolved} already exists — fresh-root "
-            "discipline (a reused root's trainer_state markers would skip "
-            "cells and fake success)")
-    targets["root_resolved"] = str(root_resolved)
+            "modelscope CLI unresolvable — both download lanes gate on it "
+            "(it doubles as the modelscope-package proxy for the model "
+            "child)")
+    targets["modelscope_cli"] = str(cli)
 
-    svg_dir = Path(args.svg_dir)
-    try:
-        svg_dir.mkdir(parents=True, exist_ok=True)
-        probe = svg_dir / ".pa6-write-probe"
-        probe.write_text("", encoding="utf-8")
-        probe.unlink()
-        for path in (Path(args.record), Path(args.evidence)):
-            path.parent.mkdir(parents=True, exist_ok=True)
-            touch = path.parent / ".pa6-write-probe"
-            touch.write_text("", encoding="utf-8")
-            touch.unlink()
-    except OSError as exc:
+    if not isinstance(models_info.get(FULL_MODEL), dict):
         raise PreflightError(
-            f"output paths not writable under {svg_dir}/"
-            f"{Path(args.record).parent}: {exc}") from exc
-    return targets
+            f"{FULL_MODEL} absent from pipeline/models_info.json")
+    service = download_queue.DownloadQueueService()
+    spec = service.resolve_model_channel(FULL_MODEL)
+    if spec is None:
+        raise PreflightError(
+            f"{FULL_MODEL} is not an official registry key (the model "
+            "lane only downloads officials)")
+    if spec.reason_code is not None:
+        raise PreflightError(
+            f"the model lane refuses {FULL_MODEL}: {spec.reason_code} "
+            "(the queue's own resolve_model_channel verdict)")
+    targets["model_repo_id"] = spec.repo_id
+    targets["model_landing"] = str(spec.landing)
+    targets["model_on_disk"] = bool(
+        spec.landing is not None and spec.landing.is_dir())
+
+    state_base = Path(args.state_base)
+    state_base.mkdir(parents=True, exist_ok=True)
+    free = _free_gib(state_base)
+    if free < _MIN_FREE_GIB:
+        raise PreflightError(
+            f"only {free} GiB free on the mount holding {state_base} "
+            f"(need >= {_MIN_FREE_GIB} GiB for the model + datasets + "
+            "days of run artifacts)")
 
 
 # =====================================================================
@@ -325,7 +630,9 @@ def preflight(args: argparse.Namespace) -> dict:
 
 class RunContext:
     """One recording's bookkeeping: args, resolved targets, the evidence
-    meta, and the monotonic stage clock."""
+    meta, and the monotonic stage clock. Full mode flushes evidence.json
+    INCREMENTALLY (after every stage + heartbeat) — the external progress
+    surface of the multi-day run."""
 
     def __init__(self, args: argparse.Namespace, targets: dict,
                  state_dir: Path) -> None:
@@ -336,25 +643,46 @@ class RunContext:
         self.root = Path(targets["root_resolved"])
         self.t0 = time.monotonic()
         self.rehearsal = bool(args.no_launch)
+        self.full = args.mode == MODE_FULL
+        self.seeds: tuple[str, ...] = (
+            FULL_SEEDS if self.full else (SEEDS_TEXT,))
+        if self.full:
+            mode_name = "full-rehearsal" if self.rehearsal else "full"
+        else:
+            mode_name = "rehearsal" if self.rehearsal else "live"
         self.meta: dict = {
-            "mode": "rehearsal" if self.rehearsal else "live",
+            "mode": mode_name,
+            "driver_mode": args.mode,
             "started_at": _now_iso(),
             "host": platform.node(),
             "root_arg": args.root,
             "root_resolved": str(self.root),
             "state_dir": str(state_dir),
             "grid": list(GRID),
-            "models": list(MODELS),
-            "tasks": list(TASKS),
-            "seeds": SEEDS_TEXT,
-            "epochs": EPOCHS_TEXT,
-            "workers": WORKERS_TEXT,
-            "gpus": GPUS_TEXT,
+            "models": [FULL_MODEL] if self.full else list(MODELS),
+            "tasks": None if self.full else list(TASKS),
+            "seeds": FULL_SEEDS_TEXT if self.full else SEEDS_TEXT,
+            "seeds_list": list(self.seeds),
+            "epochs": None if self.full else EPOCHS_TEXT,
+            "epochs_source": "yaml_default" if self.full else "typed",
+            "workers": FULL_WORKERS_TEXT if self.full else WORKERS_TEXT,
+            "gpus": FULL_GPUS_TEXT if self.full else GPUS_TEXT,
             "cards": targets.get("cards", {}),
             "gpu_names": targets.get("gpu_names", ""),
+            "model": FULL_MODEL if self.full else None,
+            "model_on_disk": targets.get("model_on_disk"),
+            "model_repo_id": targets.get("model_repo_id"),
+            "modelscope_cli": targets.get("modelscope_cli"),
             "stages": {},
             "nvidia_snapshots": [],
             "monitor_captures": [],
+            "dl_captures": [],
+            "queue_digests": [],
+            "download": {},
+            "present_set": None,
+            "expected_cells": None,
+            "heartbeat": {"at": _now_iso(), "phase": "start",
+                          "interval_index": 0},
             "argv_line": None,
             "argv": None,
             "tee_path": None,
@@ -362,9 +690,29 @@ class RunContext:
             "completion": None,
             "notes": [],
             "rehearsal": self.rehearsal,
+            "report_written": False,
             "exit_code": None,
             "failure": None,
         }
+
+    def flush_evidence(self) -> None:
+        """Atomic incremental write of the evidence sidecar (full mode's
+        external progress surface; pa6 keeps its end-of-run single write)."""
+        if not self.full:
+            return
+        _atomic_write(
+            Path(self.args.evidence),
+            json.dumps(self.meta, indent=2, ensure_ascii=False))
+
+    def heartbeat(self, phase: str, interval_index: int) -> None:
+        """Record one liveness beat + flush (the multi-day watch's outside
+        checkable progress signal)."""
+        self.meta["heartbeat"] = {
+            "at": _now_iso(),
+            "phase": phase,
+            "interval_index": interval_index,
+        }
+        self.flush_evidence()
 
     def stage(self, name: str) -> None:
         self.meta["stages"][name] = {
@@ -372,11 +720,13 @@ class RunContext:
             "elapsed_s": round(time.monotonic() - self.t0, 1)}
         print(f"[{time.monotonic() - self.t0:8.1f}s] stage: {name}",
               flush=True)
+        self.flush_evidence()
 
     def note(self, text: str) -> None:
         self.meta["notes"].append(text)
         print(f"[{time.monotonic() - self.t0:8.1f}s] note: {text}",
               flush=True)
+        self.flush_evidence()
 
     async def export(self, pilot: Pilot, app: DnallmMarkTui,
                      name: str) -> Path:
@@ -430,7 +780,7 @@ def _screen_labels_text(app: DnallmMarkTui) -> str:
 
 
 # =====================================================================
-# The journey stages
+# The journey stages (shared: boot env verdict + filter/type idioms)
 # =====================================================================
 
 
@@ -524,6 +874,11 @@ async def _type_into(pilot: Pilot, screen: RunConfigScreen,
     if widget.value != text:
         raise DriverError(
             f"{input_id} holds {widget.value!r} (expected {text!r})")
+
+
+# =====================================================================
+# The pa6 journey (unchanged behavior; --mode pa6 default)
+# =====================================================================
 
 
 async def journey(pilot: Pilot, app: DnallmMarkTui, ctx: RunContext) -> bool:
@@ -845,6 +1200,1045 @@ def _read_dispatch_state(state_path: Path) -> dict | None:
 
 
 # =====================================================================
+# The full journey (quick-261022-tah: download phase + multi-day run)
+# =====================================================================
+
+
+async def _navigate(pilot: Pilot, app: DnallmMarkTui, key: str,
+                    screen_type: type, label: str) -> None:
+    """Press a slot digit until the target screen type is active (the
+    pa6 slot-4 navigation loop, generalized)."""
+    deadline = time.monotonic() + 120.0
+    while not isinstance(app.screen, screen_type):
+        await pilot.press(key)
+        try:
+            await wait_until(
+                pilot, lambda: isinstance(app.screen, screen_type),
+                10.0, label)
+            break
+        except DriverError:
+            if time.monotonic() >= deadline:
+                raise
+
+
+async def _locate_selection_row(pilot: Pilot, app: DnallmMarkTui,
+                                key: str) -> None:
+    """The selection screen's own filter idiom (pa6's _filter_mark shape
+    re-targeted): '/' focuses #selection-filter, the key text narrows the
+    table, the cursor walks onto the exact row (a bare filter legitimately
+    matches prefix-sharing siblings — the row key reads via
+    coordinate_to_cell_key exactly like the screen's _cursor_key)."""
+    screen = app.screen
+    assert isinstance(screen, SelectionScreen)  # narrowing for ty
+    await pilot.press("slash")
+    await pilot.pause()
+    for char in key:
+        await pilot.press(char)
+    await pilot.pause()
+    table = screen.query_one("#selection-table", DataTable)
+    rows = table.row_count
+    if rows < 1:
+        raise DriverError(f"selection filter {key!r} matched no rows")
+    table.focus()
+    await pilot.pause()
+    for _ in range(rows):
+        coordinate = table.cursor_coordinate
+        if table.is_valid_coordinate(coordinate):
+            row_key = str(
+                table.coordinate_to_cell_key(coordinate)[0].value)
+            if row_key == key:
+                return
+        await pilot.press("down")
+        await pilot.pause()
+    raise DriverError(
+        f"selection filter {key!r} matched {rows} rows and the cursor "
+        "never reached the target row")
+
+
+async def _slot2_model_leg(pilot: Pilot, app: DnallmMarkTui,
+                           ctx: RunContext) -> None:
+    """Slot 2: locate the FungiHelixSeek row (always) and, in live mode,
+    press 'd' — the real KIND_MODEL enqueue through the app's own queue
+    (the queue state file is the assertion; the toast is not)."""
+    await _navigate(pilot, app, "2", SelectionScreen, "slot-2 navigation")
+    screen = app.screen
+    assert isinstance(screen, SelectionScreen)  # narrowing for ty
+    await wait_until(
+        pilot,
+        lambda: screen.query_one("#selection-table", DataTable).row_count
+        > 0,
+        60.0, "selection table populated over the real registry")
+    ctx.stage("slot2_arrived")
+    await _locate_selection_row(pilot, app, FULL_MODEL)
+    ctx.stage("model_row_located")
+    await ctx.export(pilot, app, "002_model_row_missing")
+    if ctx.rehearsal:
+        ctx.note("rehearsal: slot-2 LOCATE only (no 'd', zero network)")
+        return
+    if ctx.targets.get("model_on_disk"):
+        ctx.note(
+            "model already on disk at preflight — the slot-2 enqueue leg "
+            "is honestly skipped (gate outcome recorded)")
+        return
+    await pilot.press("d")
+    await pilot.pause()
+
+    def _model_active() -> bool:
+        entry = _entry(
+            _read_queue_entries(ctx.state_dir), FULL_MODEL)
+        return (entry is not None
+                and entry.get("kind") == download_queue.KIND_MODEL
+                and entry.get("state") in _QUEUE_ACTIVE)
+
+    try:
+        await wait_until(pilot, _model_active, 30.0,
+                         "model entry pending/downloading in the queue "
+                         "state file")
+    except DriverError:
+        ctx.meta["download"]["model_enqueue"] = {
+            "key": FULL_MODEL,
+            "outcome": "refused_or_silent",
+            "model_on_disk": ctx.targets.get("model_on_disk"),
+            "modelscope_cli": ctx.targets.get("modelscope_cli"),
+            "repo_id": ctx.targets.get("model_repo_id"),
+        }
+        raise DriverError(
+            f"the slot-2 'd' press did not enqueue {FULL_MODEL} (no "
+            "KIND_MODEL entry in the queue state file within 30s) — "
+            "honest halt; the preflight facts are recorded in "
+            "evidence.download.model_enqueue")
+    entry = _entry(_read_queue_entries(ctx.state_dir), FULL_MODEL)
+    ctx.meta["download"]["model_enqueue"] = {
+        "key": FULL_MODEL,
+        "outcome": "enqueued",
+        "state": entry.get("state") if entry else None,
+    }
+    ctx.stage("model_enqueued")
+    await ctx.export(pilot, app, "003_model_enqueued")
+
+
+async def _slot3_dataset_leg(pilot: Pilot, app: DnallmMarkTui,
+                             ctx: RunContext) -> None:
+    """Slot 3: render the PRIMARY full presence view (always) and, in
+    live mode, press 'a' — enqueue_all_missing through the real service
+    (the queue state file holds the missing downloadable entries as
+    pending; the disabled/unknown keys are skipped silently — the
+    service's honest behavior)."""
+    await _navigate(pilot, app, "3", DataManagerScreen,
+                    "slot-3 navigation")
+    screen = app.screen
+    assert isinstance(screen, DataManagerScreen)  # narrowing for ty
+    await wait_until(
+        pilot,
+        lambda: screen.query_one("#dl-missing", DataTable).row_count > 0,
+        60.0, "data manager snapshot (dl-missing rows)")
+    ctx.stage("slot3_arrived")
+    await ctx.export(pilot, app, "004_data_presence_before")
+    if ctx.rehearsal:
+        ctx.note("rehearsal: slot-3 render only (no 'a', zero network)")
+        return
+
+    def _dataset_pending() -> bool:
+        return any(
+            entry.get("kind") == download_queue.KIND_DATASET
+            and entry.get("state") in _QUEUE_ACTIVE
+            for entry in _read_queue_entries(ctx.state_dir))
+
+    await pilot.press("a")
+    await pilot.pause()
+    try:
+        await wait_until(pilot, _dataset_pending, 60.0,
+                         "dataset entries pending in the queue state file")
+    except DriverError:
+        entries = _read_queue_entries(ctx.state_dir)
+        ctx.meta["download"]["dataset_enqueue"] = {
+            "outcome": "nothing_enqueued",
+            "entries": len(entries),
+        }
+        raise DriverError(
+            "the slot-3 'a' press enqueued no dataset (no pending "
+            "dataset entry in the queue state file within 60s) — honest "
+            "halt (zero downloadable datasets is the honest-stop rule)")
+    await settle(app, pilot, rounds=3)
+    entries = _read_queue_entries(ctx.state_dir)
+    dataset_entries = [
+        entry for entry in entries
+        if entry.get("kind") == download_queue.KIND_DATASET]
+    ctx.meta["download"]["dataset_enqueue"] = {
+        "outcome": "enqueued",
+        "count": len(dataset_entries),
+        "digest": _queue_digest(entries),
+    }
+    ctx.stage(f"datasets_enqueued_{len(dataset_entries)}")
+    await ctx.export(pilot, app, "005_data_enqueue_all")
+
+
+async def _download_settle_exports(pilot: Pilot, app: DnallmMarkTui,
+                                   ctx: RunContext,
+                                   entries: list[dict]) -> None:
+    """The settle captures: the settled queue view, the v-toggled
+    missing-only view (one capture, then v back), the final presence
+    view, and the queue detail drill-down on a representative row."""
+    screen = app.screen
+    assert isinstance(screen, DataManagerScreen)  # narrowing for ty
+    await ctx.export(pilot, app, "007_download_settled_queue")
+    await pilot.press("v")
+    await pilot.pause()
+    await ctx.export(pilot, app, "007_download_settled_missing_view")
+    await pilot.press("v")
+    await pilot.pause()
+    await ctx.export(pilot, app, "008_download_presence_final")
+
+    table = screen.query_one("#dl-queue", DataTable)
+    table.focus()
+    await pilot.pause()
+    done_keys = [
+        entry.get("key") for entry in entries
+        if entry.get("kind") == download_queue.KIND_DATASET
+        and entry.get("state") == "done"]
+    fallback = [
+        entry.get("key") for entry in entries
+        if entry.get("kind") == download_queue.KIND_DATASET]
+    target = (done_keys or fallback or [None])[0]
+    if isinstance(target, str):
+        rows = table.row_count
+        for _ in range(rows):
+            coordinate = table.cursor_coordinate
+            if table.is_valid_coordinate(coordinate):
+                row_key = str(
+                    table.coordinate_to_cell_key(coordinate)[0].value)
+                if row_key == target:
+                    break
+            await pilot.press("down")
+            await pilot.pause()
+        await pilot.press("enter")
+        await wait_until(
+            pilot, lambda: isinstance(app.screen, QueueDetailModal), 30.0,
+            "queue detail modal")
+        await ctx.export(pilot, app, "009_queue_detail_modal")
+        await pilot.press("escape")
+        await wait_until(
+            pilot, lambda: not isinstance(app.screen, QueueDetailModal),
+            30.0, "queue detail modal dismissed")
+    else:
+        ctx.note("no dataset queue row for the detail drill-down "
+                 "(the queue pane is empty at settle)")
+
+
+async def _download_watch(pilot: Pilot, app: DnallmMarkTui,
+                          ctx: RunContext) -> list[dict]:
+    """The download-phase watch: capture 006_download_running_NNN every
+    --dl-interval seconds until the queue settles (no pending/downloading
+    entries on two reads >= 60 s apart AND the model entry terminal),
+    the settle exports. A stall (--stall-hours with zero liveness
+    signal) records honestly + captures 997 and keeps watching unless
+    --exit-on-stall."""
+    logs_dir = ctx.state_dir / "logs"
+    interval = max(30.0, float(ctx.args.dl_interval))
+    stall = _StallWatch(float(ctx.args.stall_hours))
+    stall_captured = False
+    capture_index = 0
+    candidate_at: float | None = None
+    candidate_digest: dict | None = None
+
+    def _signature() -> tuple:
+        state_file = _queue_state_path(ctx.state_dir)
+        try:
+            stat = state_file.stat()
+            file_sig = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            file_sig = (0, 0)
+        log_name, log_size = _newest_log_stat(logs_dir)
+        return (file_sig, log_name, log_size)
+
+    while True:
+        entries = _read_queue_entries(ctx.state_dir)
+        active = [entry for entry in entries
+                  if entry.get("state") in _QUEUE_ACTIVE]
+        digest = _queue_digest(entries)
+        model_entry = _entry(entries, FULL_MODEL)
+        model_terminal = (
+            model_entry is None
+            or model_entry.get("state") not in _QUEUE_ACTIVE)
+        if not active and model_terminal:
+            if candidate_digest == digest \
+                    and candidate_at is not None \
+                    and time.monotonic() - candidate_at >= 60.0:
+                ctx.meta["download"]["settle"] = {
+                    "at": _now_iso(),
+                    "digest": digest,
+                }
+                await _download_settle_exports(pilot, app, ctx, entries)
+                return entries
+            if candidate_digest != digest or candidate_at is None:
+                candidate_at = time.monotonic()
+                candidate_digest = digest
+        else:
+            candidate_at = None
+            candidate_digest = None
+
+        if stall.observe(_signature()):
+            note = (f"download stall: no queue-state or log change for "
+                    f"{float(ctx.args.stall_hours):.1f}h "
+                    f"(digest={digest})")
+            ctx.note(note)
+            if not stall_captured:
+                await ctx.export(pilot, app, "997_download_stall")
+                stall_captured = True
+            if ctx.args.exit_on_stall:
+                raise DriverError(
+                    "download stalled (--exit-on-stall) — the queue "
+                    "SURVIVES; see the re-attach section")
+
+        capture_index += 1
+        name = f"006_download_running_{capture_index:03d}"
+        log_name, log_size = _newest_log_stat(logs_dir)
+        ctx.meta["queue_digests"].append({
+            "at": _now_iso(), "capture": f"{name}.svg",
+            "digest": digest, "newest_log": [log_name, log_size],
+        })
+        await ctx.export(pilot, app, name)
+        ctx.meta["dl_captures"].append(f"{name}.svg")
+        ctx.heartbeat("download", capture_index)
+        await _sleep_interval(pilot, interval)
+
+
+async def _sleep_interval(pilot: Pilot, interval: float) -> None:
+    """Sleep one interval in small chunks so the app's timers/workers
+    keep running (the pa6 watch-loop discipline)."""
+    chunk_end = time.monotonic() + interval
+    while time.monotonic() < chunk_end:
+        await asyncio.sleep(min(2.0, max(0.0, chunk_end - time.monotonic())))
+        await pilot.pause()
+
+
+def _write_ledger(ctx: RunContext) -> dict:
+    """The settle ledger: per queue key the final persisted state; the
+    not-enqueued official keys with their resolve_channel disposition
+    (read-only derivation through the real service's own resolver); the
+    already-present-before keys; the derived present set + expected
+    cells. Written to --ledger; returns the doc for the meta."""
+    entries = _read_queue_entries(ctx.state_dir)
+    present, before = _derive_present(ctx.state_dir)
+    service = download_queue.DownloadQueueService(
+        state_path=_queue_state_path(ctx.state_dir))
+    queued_keys = {str(entry.get("key")) for entry in entries}
+    not_enqueued: list[dict] = []
+    for key in _official_dataset_keys():
+        if key in queued_keys or key in set(before):
+            continue
+        spec = service.resolve_channel(key)
+        if spec is None:
+            not_enqueued.append(
+                {"key": key, "channel": "unknown_key",
+                 "reason": "unknown_key"})
+            continue
+        not_enqueued.append({
+            "key": key,
+            "channel": download_queue.channel_state(spec),
+            "reason": spec.reason_code,
+            "source_url": spec.source_url,
+        })
+    ledger = {
+        "written_at": _now_iso(),
+        "queue_entries": [
+            {
+                "key": entry.get("key"),
+                "kind": entry.get("kind"),
+                "state": entry.get("state"),
+                "attempts": entry.get("attempts"),
+                "problems": entry.get("problems"),
+                "log_path": entry.get("log_path"),
+                "enqueued_at": entry.get("enqueued_at"),
+                "started_at": entry.get("started_at"),
+                "finished_at": entry.get("finished_at"),
+            }
+            for entry in entries],
+        "not_enqueued": not_enqueued,
+        "present_before_download": sorted(before),
+        "present_set": sorted(present),
+        "expected_cells": len(present) * len(FULL_SEEDS),
+    }
+    _atomic_write(
+        Path(ctx.args.ledger),
+        json.dumps(ledger, indent=2, ensure_ascii=False))
+    ctx.meta["present_set"] = sorted(present)
+    ctx.meta["expected_cells"] = ledger["expected_cells"]
+    ctx.meta["download"]["ledger"] = str(ctx.args.ledger)
+    return ledger
+
+
+async def _wizard_gate_full(pilot: Pilot, app: DnallmMarkTui,
+                            ctx: RunContext,
+                            present: list[str]) -> bool:
+    """Slot 4 re-targeted (the pa6 c-h steps over the full combo): mark
+    FungiHelixSeek, m-flip, mark EVERY present-set key, type the params
+    (seeds 42,43,44; workers 2; gpus 0,1; the fresh root — the epochs
+    input is NEVER touched, only READ), assert the preview line, the [p]
+    argv (with --num_train_epochs ABSENT — the YAML-default proof), and
+    the gate. Returns True on the live launch path."""
+    await _navigate(pilot, app, "4", RunConfigScreen, "slot-4 navigation")
+    screen = app.screen
+    assert isinstance(screen, RunConfigScreen)  # narrowing for ty
+    await wait_until(
+        pilot,
+        lambda: len(screen.query_one("#cfg-picker", PickerList).options) > 0,
+        60.0, "picker populated over the real registry")
+    ctx.stage("slot4_arrived")
+
+    await _filter_mark(pilot, screen, FULL_MODEL)
+    picker = screen.query_one("#cfg-picker", PickerList)
+    if set(picker.selected) != {FULL_MODEL}:
+        raise DriverError(
+            f"model mark wrong after the filter idiom: picker holds "
+            f"{sorted(picker.selected)!r}")
+    ctx.stage("wizard_model_marked")
+    await ctx.export(pilot, app, "010_wizard_model_marked")
+
+    await pilot.press("m")
+    await pilot.pause()
+    datasets_prefix = S.CFG_PICKER_DATASETS.format(
+        n="__x__", total="__y__").split("__x__")[0]
+    await wait_until(
+        pilot,
+        lambda: datasets_prefix in _label_text(screen, "#cfg-picker-title"),
+        30.0, "datasets picker (m flip)")
+    for key in present:
+        await _filter_mark(pilot, screen, key)
+    # The picker's `selected` is scoped to the CURRENT kind's rendered
+    # rows (SelectionList semantics — after the m-flip it holds the
+    # dataset marks only), so the assert is the exact per-view set; the
+    # model mark was asserted on the models view above, and the union is
+    # proven by the preview line below (1 model x N tasks x 3 seeds).
+    selected = set(picker.selected)
+    if selected != set(present):
+        raise DriverError(
+            f"wizard dataset marks wrong: picker holds {len(selected)} "
+            f"dataset marks, expected exactly the {len(present)}-key "
+            "present set")
+    ctx.stage("wizard_datasets_marked")
+    await ctx.export(pilot, app, "011_wizard_datasets_marked")
+
+    await _type_into(pilot, screen, "#cfg-input-seeds", FULL_SEEDS_TEXT)
+    await _type_into(pilot, screen, "#cfg-input-workers",
+                     FULL_WORKERS_TEXT)
+    await _type_into(pilot, screen, "#cfg-input-gpus", FULL_GPUS_TEXT)
+    await _type_into(pilot, screen, "#cfg-input-output-root", ctx.args.root)
+    epochs_widget = screen.query_one("#cfg-input-epochs", Input)
+    ctx.meta["epochs_input_value"] = epochs_widget.value
+    picker.focus()
+    await settle(app, pilot, rounds=4)
+    ctx.stage("params_typed")
+
+    expected = len(present) * len(FULL_SEEDS)
+    expected_line = S.CFG_PREVIEW_LINE.format(
+        models=1, tasks=len(present), seeds=len(FULL_SEEDS), cells=expected)
+    rendered = _label_text(screen, "#cfg-preview-line")
+    if rendered != expected_line:
+        raise DriverError(
+            f"preview line mismatch: {rendered!r} != {expected_line!r}")
+    ctx.stage("preview_line_asserted")
+    await ctx.export(pilot, app, "012_run_config_params")
+
+    await pilot.press("p")
+    await wait_until(
+        pilot, lambda: isinstance(app.screen, PreviewModal), 30.0,
+        "preview modal")
+    lines = tuple(getattr(app.screen, "_lines", ()))
+    argv_label = S.CFG_ARGV_LABEL
+    argv_line = next(
+        (str(line) for line in lines if str(line).startswith(argv_label)),
+        "")
+    tokens = argv_line[len(argv_label):].split() if argv_line else []
+    ctx.meta["argv_line"] = argv_line
+    ctx.meta["argv"] = tokens
+    expected_tokens = (
+        "--mode", "dispatch", "--workers", FULL_WORKERS_TEXT,
+        "--gpus", FULL_GPUS_TEXT, "--models", FULL_MODEL,
+        "--tasks", ",".join(present), "--seeds", FULL_SEEDS_TEXT)
+    for token in expected_tokens:
+        if token not in tokens:
+            raise DriverError(
+                f"dispatch argv preview missing {token!r}: {argv_line!r}")
+    if str(ctx.root) not in tokens:
+        raise DriverError(
+            f"dispatch argv preview missing the resolved root "
+            f"{ctx.root}: {argv_line!r}")
+    if "--num_train_epochs" in tokens:
+        raise DriverError(
+            f"dispatch argv preview carries --num_train_epochs "
+            f"(the epochs input was never touched — the YAML default "
+            f"must govern): {argv_line!r}")
+    ctx.stage("argv_preview_asserted")
+    await ctx.export(pilot, app, "013_run_config_preview")
+    await pilot.press("escape")
+    await wait_until(
+        pilot, lambda: not isinstance(app.screen, PreviewModal), 30.0,
+        "preview modal dismissed")
+
+    await settle(app, pilot, rounds=2)
+    await pilot.press("enter")
+    await wait_until(
+        pilot,
+        lambda: isinstance(
+            app.screen, (_GateConfirmModal, ProblemsModal, EnvBlockModal)),
+        180.0, "gate response (confirm or refusal)")
+    if isinstance(app.screen, (ProblemsModal, EnvBlockModal)):
+        await ctx.export(pilot, app, "998_gate_refused")
+        raise GateRefusedError(
+            f"the gate refused the launch with "
+            f"{type(app.screen).__name__} (see 998_gate_refused.svg)")
+    assert isinstance(app.screen, _GateConfirmModal)
+    message = str(getattr(app.screen, "_message", ""))
+    if S.LNC_GATE_CONFIRM not in message:
+        raise DriverError(
+            f"gate message missing the confirm copy: {message!r}")
+    dispatch_text = _plain(
+        app.screen.query_one("#cfg-gate-dispatch", Static).content)
+    if FULL_GPUS_TEXT not in dispatch_text:
+        raise DriverError(
+            f"gate dispatch-plan line missing GPUs {FULL_GPUS_TEXT!r}: "
+            f"{dispatch_text!r}")
+    ctx.stage("gate_confirm_reached")
+    await ctx.export(pilot, app, "014_run_config_confirm")
+
+    if ctx.rehearsal:
+        await pilot.press("n")
+        await wait_until(
+            pilot,
+            lambda: not isinstance(app.screen, _GateConfirmModal), 30.0,
+            "gate dismissed (rehearsal n)")
+        ctx.stage("gate_dismissed_n")
+        return False
+
+    await pilot.press("y")
+    ctx.stage("launch_y_pressed")
+    try:
+        await wait_until(
+            pilot, lambda: isinstance(app.screen, MonitorScreen), 20.0,
+            "monitor auto-switch")
+    except DriverError:
+        pass  # belt-and-braces below
+    if not isinstance(app.screen, MonitorScreen):
+        await pilot.press("5")
+        await wait_until(
+            pilot, lambda: isinstance(app.screen, MonitorScreen), 60.0,
+            "monitor via belt-and-braces 5")
+    ctx.stage("monitor_switched")
+    return True
+
+
+async def journey_full(pilot: Pilot, app: DnallmMarkTui,
+                       ctx: RunContext) -> bool:
+    """The full production journey: boot -> slot-2 model download ->
+    slot-3 enqueue-all -> download watch to settle -> ledger + matrix ->
+    wizard -> gate -> (rehearsal n | live y + monitor)."""
+    env_verdict = await _wait_env_settled(pilot, app, ctx)
+    ctx.meta["env_verdict"] = env_verdict
+    await ctx.export(pilot, app, "001_boot_env_check")
+
+    await _slot2_model_leg(pilot, app, ctx)
+    await _slot3_dataset_leg(pilot, app, ctx)
+    if not ctx.rehearsal:
+        await _download_watch(pilot, app, ctx)
+
+    ledger = _write_ledger(ctx)
+    present = list(ledger["present_set"])
+    ctx.stage(f"matrix_derived_{len(present)}x{len(FULL_SEEDS)}")
+    if not present:
+        raise DriverError(
+            "the present set is EMPTY after the download settle — honest "
+            "halt (the ledger + draft report record why)")
+
+    return await _wizard_gate_full(pilot, app, ctx, present)
+
+
+def _max_mtime(root: Path) -> float:
+    """Newest file mtime under the root (0.0 when empty) — the run-phase
+    liveness signal."""
+    newest = 0.0
+    try:
+        for path in root.rglob("*"):
+            if path.is_file():
+                newest = max(newest, path.stat().st_mtime)
+    except OSError:
+        pass
+    return newest
+
+
+async def _terminal_tail(pilot: Pilot, state_path: Path,
+                         ctx: RunContext, expected: int) -> dict:
+    """The pa6 ~80 s tail lesson: after the artifact counts reach the
+    expected matrix, quiesce-poll (up to 10 min) for the orchestrator's
+    terminal state + the trainer_state marker counts. Returns the final
+    observation (honest either way)."""
+    deadline = time.monotonic() + 600.0
+    while True:
+        status = _dispatch_status(state_path)
+        trainers = _count_seed_artifacts(
+            ctx.root, "trainer_state.json", FULL_SEEDS)
+        state = _read_dispatch_state(state_path)
+        counts = (state or {}).get("counts") \
+            if isinstance(state, dict) else None
+        if status == _DISPATCH_TERMINAL_OK and trainers == expected:
+            return {"status": status, "trainer_state": trainers,
+                    "counts": counts, "quiesced": True}
+        if time.monotonic() >= deadline:
+            return {"status": status, "trainer_state": trainers,
+                    "counts": counts, "quiesced": False}
+        await asyncio.sleep(5.0)
+        await pilot.pause()
+
+
+async def watch_run_full(pilot: Pilot, app: DnallmMarkTui,
+                         ctx: RunContext) -> None:
+    """The multi-day run watch: monitor card + [a]-attach fallback +
+    dispatch_state + tee, then per-interval captures (gpu snapshot +
+    dispatch digest + per-seed artifact counts) until the completion
+    predicate (probe absent + per-seed counts == len(present) for BOTH
+    artifacts), the failure end, the stall, or (if set) the hard timeout.
+    The sweep is NEVER killed on any path."""
+    expected = int(ctx.meta["expected_cells"] or 0)
+    present_count = len(ctx.meta["present_set"] or [])
+    basename = ctx.root.name
+
+    async def _card_visible() -> None:
+        await wait_until(
+            pilot, lambda: basename in _screen_labels_text(app), 60.0,
+            "monitor card for the launched root")
+
+    try:
+        await _card_visible()
+    except DriverError:
+        ctx.note(
+            "monitor card not discovered within 60s — driving the [a] "
+            "attach modal with the resolved absolute path")
+        await pilot.press("a")
+        await wait_until(
+            pilot,
+            lambda: bool(app.screen.query("#path-input")), 30.0,
+            "attach modal")
+        path_input = app.screen.query_one("#path-input", Input)
+        path_input.focus()
+        await pilot.pause()
+        for char in str(ctx.root):
+            await pilot.press(char)
+        await pilot.pause()
+        await pilot.press("enter")
+        await wait_until(
+            pilot, lambda: not bool(app.screen.query("#path-input")), 30.0,
+            "attach modal dismissed")
+        await asyncio.sleep(3.0)
+        await pilot.pause()
+        await _card_visible()
+    ctx.stage("monitor_card_visible")
+
+    state_path = ctx.root / "dispatch_state.json"
+    await wait_until(
+        pilot, lambda: state_path.is_file(), 120.0,
+        "dispatch_state.json (orchestrator alive signal)")
+    ctx.stage("dispatch_state_present")
+
+    logs_dir = ctx.state_dir / "logs"
+    tee_deadline = time.monotonic() + 60.0
+    while ctx.meta["tee_path"] is None:
+        candidates = sorted(
+            (path for path in logs_dir.glob("*.log")
+             if "sweep_" in path.name),
+            key=lambda path: path.stat().st_mtime, reverse=True)
+        if candidates:
+            ctx.meta["tee_path"] = str(candidates[0])
+            break
+        if time.monotonic() >= tee_deadline:
+            break
+        await asyncio.sleep(1.0)
+        await pilot.pause()
+    if ctx.meta["tee_path"] is None:
+        ctx.note(f"no sweep tee log found under {logs_dir} within 60s")
+
+    tee_path = Path(ctx.meta["tee_path"]) if ctx.meta["tee_path"] else None
+
+    def _tee_size() -> int:
+        if tee_path is None:
+            return -1
+        try:
+            return tee_path.stat().st_size
+        except OSError:
+            return -1
+
+    # First run-phase capture.
+    ctx.meta["nvidia_snapshots"].append(_gpu_snapshot())
+    await ctx.export(pilot, app, "015_monitor_running_001")
+    ctx.meta["monitor_captures"].append("015_monitor_running_001.svg")
+    ctx.heartbeat("run", 1)
+
+    interval = max(30.0, float(ctx.args.interval))
+    stall = _StallWatch(float(ctx.args.stall_hours))
+    stall_captured = False
+    deadline = (None if float(ctx.args.timeout) <= 0
+                else time.monotonic() + float(ctx.args.timeout))
+    capture_index = 1
+    while True:
+        await _sleep_interval(pilot, interval)
+        capture_index += 1
+        ctx.meta["nvidia_snapshots"].append(_gpu_snapshot())
+        name = f"015_monitor_running_{capture_index:03d}"
+        await ctx.export(pilot, app, name)
+        ctx.meta["monitor_captures"].append(f"{name}.svg")
+
+        root_key = str(ctx.root)
+        probe = sweep_launcher.probe_cli_sweeps()
+        probe_absent = root_key not in probe
+        metrics = _count_per_seed(
+            ctx.root, "final_metrics.json", FULL_SEEDS)
+        flops = _count_per_seed(ctx.root, "flops_report.json", FULL_SEEDS)
+        status = _dispatch_status(state_path)
+        ctx.meta["completion"] = {
+            "checked_at": _now_iso(),
+            "probe_absent": probe_absent,
+            "final_metrics_per_seed": metrics,
+            "flops_report_per_seed": flops,
+            "dispatch_status": status,
+        }
+        ctx.heartbeat("run", capture_index)
+        print(
+            f"[watch] probe_absent={probe_absent} "
+            f"final_metrics={metrics} flops={flops} "
+            f"dispatch_status={status!r}", flush=True)
+
+        metrics_done = all(
+            count == present_count for count in metrics.values())
+        flops_done = all(
+            count == present_count for count in flops.values())
+        if probe_absent and metrics_done and flops_done:
+            tail = await _terminal_tail(pilot, state_path, ctx, expected)
+            ctx.meta["dispatch_state"] = _read_dispatch_state(state_path)
+            ctx.meta["completion"]["terminal_tail"] = tail
+            ctx.meta["completion"]["completed"] = True
+            if not tail["quiesced"]:
+                ctx.note(
+                    "completion predicate met but the terminal tail did "
+                    f"not quiesce within 600s (status={tail['status']!r},"
+                    f" trainer_state={tail['trainer_state']}) — honest "
+                    "observation; the artifacts are the authority")
+            await settle(app, pilot, rounds=3)
+            await asyncio.sleep(6.0)
+            await ctx.export(pilot, app, "999_monitor_done")
+            return
+
+        failures_present = (ctx.root / "sweep_failures.json").is_file()
+        if probe_absent and (not metrics_done or not flops_done) and (
+                failures_present
+                or status in _DISPATCH_TERMINAL_BAD
+                or status == _DISPATCH_TERMINAL_OK):
+            ctx.meta["dispatch_state"] = _read_dispatch_state(state_path)
+            raise DriverError(
+                f"the sweep ended without the expected artifacts "
+                f"(probe_absent={probe_absent}, expected="
+                f"{present_count}/seed, final_metrics={metrics}, "
+                f"flops={flops}, dispatch_status={status!r}, "
+                f"sweep_failures.json={failures_present}) — honest "
+                "failure; the sweep is never killed")
+
+        if deadline is not None and time.monotonic() >= deadline:
+            ctx.meta["dispatch_state"] = _read_dispatch_state(state_path)
+            raise DriverError(
+                f"overall timeout ({float(ctx.args.timeout):.0f}s) with "
+                f"probe_absent={probe_absent}, final_metrics={metrics}, "
+                f"flops={flops}, dispatch_status={status!r} — the sweep "
+                "SURVIVES detached; see the re-attach section")
+
+        signature = (
+            state_path.stat().st_mtime_ns if state_path.exists() else 0,
+            tuple(sorted(metrics.items())),
+            tuple(sorted(flops.items())),
+            _max_mtime(ctx.root),
+            _tee_size(),
+        )
+        if stall.observe(signature):
+            ctx.note(
+                f"run stall: no dispatch_state/artifact/root-file/tee "
+                f"change for {float(ctx.args.stall_hours):.1f}h "
+                f"(digest={signature[:2]})")
+            if not stall_captured:
+                await ctx.export(pilot, app, "997_monitor_stall")
+                stall_captured = True
+            if ctx.args.exit_on_stall:
+                raise DriverError(
+                    "run stalled (--exit-on-stall) — the sweep SURVIVES "
+                    "detached; see the re-attach section")
+
+
+# =====================================================================
+# The full-mode auto report (REPORT.md from the run's own artifacts)
+# =====================================================================
+
+
+def _yaml_epochs_default() -> str:
+    """The effective epoch count the epochs-less launch defers to (the
+    finetune_config.yaml num_train_epochs; '?' when unreadable)."""
+    try:
+        text = FINETUNE_CONFIG_YAML.read_text(encoding="utf-8")
+    except OSError:
+        return "?"
+    match = re.search(r"^\s*num_train_epochs:\s*(\S+)", text, re.MULTILINE)
+    return match.group(1) if match else "?"
+
+
+def _read_json(path: Path) -> dict | None:
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def _cell_rows(ctx: RunContext) -> list[dict]:
+    """Walk the run root's per-cell artifacts (the model x task x seed
+    matrix) — every row from an actually-run execution."""
+    rows: list[dict] = []
+    tasks = sorted(ctx.meta["present_set"] or [])
+    for task in tasks:
+        for seed in FULL_SEEDS:
+            cell = ctx.root / FULL_MODEL / task / f"seed_{seed}"
+            metrics = _read_json(cell / "final_metrics.json")
+            flops = _read_json(cell / "flops_report.json")
+            hardware = (flops or {}).get("hardware")
+            hardware = hardware if isinstance(hardware, dict) else {}
+            rows.append({
+                "task": task,
+                "seed": seed,
+                "metrics": metrics,
+                "train_runtime": (metrics or {}).get("train_runtime"),
+                "flops_G": (flops or {}).get("total_flops_G"),
+                "gpu_device": hardware.get("gpu_device"),
+            })
+    return rows
+
+
+def _fmt(value: object) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, float):
+        return f"{value:.4g}"
+    return str(value)
+
+
+def _render_report(ctx: RunContext) -> str:
+    """The auto-generated REPORT.md — from the run's own meta + on-disk
+    artifacts ONLY (the pa6 _render_record discipline: every number
+    traces to an actually-run execution; absent cells say absent)."""
+    meta = ctx.meta
+    present = list(meta["present_set"] or [])
+    expected = int(meta["expected_cells"] or 0)
+    epochs = _yaml_epochs_default()
+    ledger_doc = _read_json(Path(ctx.args.ledger)) or {}
+    lines: list[str] = []
+    lines.append(
+        "# TUI-driven FungiHelixSeek full sweep — operation report "
+        "(quick-261022-tah)")
+    lines.append("")
+    lines.append("## Overview")
+    lines.append("")
+    lines.append(f"- Date: `{meta['started_at']}` (UTC) — mode: "
+                 f"**{meta['mode']}**")
+    lines.append(f"- Host: `{meta['host']}` — GPUs: "
+                 f"`{meta.get('gpu_names') or 'n/a'}`")
+    lines.append(f"- What ran: {FULL_MODEL} x {len(present)} present "
+                 f"datasets x seeds {FULL_SEEDS_TEXT} "
+                 f"(workers={FULL_WORKERS_TEXT}, gpus={FULL_GPUS_TEXT}) "
+                 f"— {expected} cells expected")
+    lines.append(f"- Epochs: **{epochs}** from the YAML default "
+                 "(`pipeline/finetune_config.yaml`) — NO override was "
+                 "typed at the gate (the [p] argv asserted "
+                 "`--num_train_epochs` ABSENT; the epochs input read "
+                 f"`{meta.get('epochs_input_value')!r}` at launch)")
+    lines.append(f"- Output root: `{meta['root_resolved']}` (fresh — no "
+                 "trainer_state markers could skip cells)")
+    lines.append(f"- TUI state dir (kept; holds the queue state + logs "
+                 f"+ tee): `{meta['state_dir']}`")
+    lines.append(f"- Driver exit code: **{meta['exit_code']}**"
+                 + (f" — failure: {meta['failure']}" if meta["failure"]
+                    else ""))
+    lines.append("")
+    lines.append("Every number in this report derives from the run's own "
+                 "meta (`docs/live/fhs/evidence.json`), the download "
+                 "ledger, and the on-disk cell artifacts — evidence from "
+                 "the actually-run execution.")
+    lines.append("")
+
+    lines.append("## Download ledger")
+    lines.append("")
+    queue_rows = ledger_doc.get("queue_entries")
+    if isinstance(queue_rows, list) and queue_rows:
+        lines.append("| Key | Kind | Final state | Attempts | Problems | "
+                     "Duration |")
+        lines.append("|---|---|---|---|---|---|")
+        for raw in queue_rows:
+            if not isinstance(raw, dict):
+                continue
+            started = raw.get("started_at")
+            finished = raw.get("finished_at")
+            if isinstance(started, str) and isinstance(finished, str):
+                duration = f"{started} .. {finished}"
+            else:
+                duration = "-"
+            problems = raw.get("problems")
+            lines.append(
+                f"| {raw.get('key')} | {raw.get('kind')} "
+                f"| {raw.get('state')} | {raw.get('attempts')} "
+                f"| {', '.join(problems) if problems else '-'} "
+                f"| {duration} |")
+    else:
+        lines.append("- (no queue entries — the rehearsal carries no "
+                     "downloads)")
+    not_enqueued = ledger_doc.get("not_enqueued")
+    if isinstance(not_enqueued, list) and not_enqueued:
+        lines.append("")
+        lines.append("Not-enqueued official keys (the honest skip ledger):")
+        lines.append("")
+        lines.append("| Key | Channel | Reason |")
+        lines.append("|---|---|---|")
+        for raw in not_enqueued:
+            if isinstance(raw, dict):
+                lines.append(
+                    f"| {raw.get('key')} | {raw.get('channel')} "
+                    f"| {raw.get('reason') or '-'} |")
+    before = ledger_doc.get("present_before_download")
+    if isinstance(before, list):
+        lines.append("")
+        lines.append(f"- Already present BEFORE the downloads "
+                     f"({len(before)}): {', '.join(sorted(before)) or '-'}")
+    lines.append("")
+
+    lines.append("## Run matrix summary")
+    lines.append("")
+    lines.append(f"- 1 model ({FULL_MODEL}) x {len(present)} present "
+                 f"datasets x {len(FULL_SEEDS)} seeds = "
+                 f"**{expected} expected cells**")
+    lines.append(f"- Present set (the actually-downloaded present set, "
+                 f"derived through the picker's own chain): "
+                 f"{len(present)} keys")
+    lines.append("")
+    cells = _cell_rows(ctx)
+    landed = [row for row in cells if row["metrics"] is not None]
+    lines.append(f"- Cells with final_metrics.json on disk at report "
+                 f"time: {len(landed)} / {expected}")
+    lines.append("")
+
+    lines.append("## Per-dataset x seed results")
+    lines.append("")
+    if cells:
+        lines.append("| Dataset | Seed | eval_f1 | eval_accuracy | "
+                     "eval_mcc | train_runtime (s) | FLOPs (G) | GPU |")
+        lines.append("|---|---|---|---|---|---|---|---|")
+        for row in cells:
+            metrics = row["metrics"] or {}
+            marker = "" if row["metrics"] is not None else " (absent)"
+            lines.append(
+                f"| {row['task']}{marker} | {row['seed']} "
+                f"| {_fmt(metrics.get('eval_f1'))} "
+                f"| {_fmt(metrics.get('eval_accuracy'))} "
+                f"| {_fmt(metrics.get('eval_mcc'))} "
+                f"| {_fmt(row['train_runtime'])} "
+                f"| {_fmt(row['flops_G'])} "
+                f"| {row['gpu_device'] or '-'} |")
+    else:
+        lines.append("- (no cells on disk yet)")
+    lines.append("")
+
+    lines.append("## Failure / skip ledger")
+    lines.append("")
+    failures: list[str] = []
+    for raw in queue_rows if isinstance(queue_rows, list) else []:
+        if isinstance(raw, dict) and raw.get("state") not in (
+                "done", None):
+            problems = raw.get("problems")
+            failures.append(
+                f"- download {raw.get('key')}: {raw.get('state')} "
+                f"(problems: {', '.join(problems) if problems else '-'})")
+    absent_cells = [row for row in cells if row["metrics"] is None]
+    for row in absent_cells:
+        failures.append(
+            f"- cell {row['task']} / seed {row['seed']}: no "
+            "final_metrics.json (not run or failed — see the dispatch "
+            "ledger under the root)")
+    if (ctx.root / "sweep_failures.json").is_file():
+        marker = ctx.root / "sweep_failures.json"
+        failures.append(f"- sweep_failures.json present: {marker}")
+    lines.extend(failures if failures
+                 else ["- (none recorded)"])
+    lines.append("")
+
+    lines.append("## GPU utilization summary (per-interval snapshots)")
+    lines.append("")
+    snaps = meta["nvidia_snapshots"]
+    if snaps:
+        both_busy = sum(
+            1 for snap in snaps
+            if len([line for line in snap["compute_apps"].splitlines()
+                    if line.strip()]) >= 2)
+        lines.append(f"- {len(snaps)} snapshots; both GPUs busy in "
+                     f"{both_busy} (compute apps >= 2 — honest about the "
+                     "queue-tail idle phases)")
+        for snap in (snaps[:2] + snaps[-2:] if len(snaps) > 4
+                     else snaps):
+            lines.append(f"- `{snap['at']}` query-gpu: "
+                         f"`{snap['query']}` — compute apps: "
+                         f"`{snap['compute_apps']}`")
+    else:
+        lines.append("- (none captured — the run did not reach the watch "
+                     "loop)")
+    lines.append("")
+
+    lines.append("## Journey stage timings")
+    lines.append("")
+    lines.append("| Stage | At (UTC) | Elapsed (s) |")
+    lines.append("|---|---|---|")
+    for name, stamp in meta["stages"].items():
+        lines.append(f"| {name} | {stamp['at']} | "
+                     f"{stamp['elapsed_s']} |")
+    lines.append("")
+
+    lines.append("## Honest notes")
+    lines.append("")
+    for note in meta["notes"]:
+        lines.append(f"- {note}")
+    if meta.get("failure"):
+        lines.append(f"- FAILURE: {meta['failure']}")
+    lines.append("")
+
+    lines.append("## Re-attach instructions")
+    lines.append("")
+    lines.append("The sweep is NEVER killed by the driver — if it is "
+                 "still alive it survives detached in its own session:")
+    lines.append("")
+    lines.append(f"- TUI: slot 5, press `a`, type `{meta['root_resolved']}`")
+    lines.append(f"- CLI: `cat {meta['root_resolved']}/dispatch_state.json`")
+    if meta.get("tee_path"):
+        lines.append(f"- Log tail: `tail -f {meta['tee_path']}`")
+    lines.append("- Live view: `nvidia-smi`")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _write_report(ctx: RunContext) -> None:
+    """Write REPORT.md unless the completion path already wrote it (the
+    draft/final distinction is the meta's completion + exit_code, carried
+    inside the report itself)."""
+    if ctx.meta.get("report_written"):
+        return
+    try:
+        report = Path(ctx.args.report)
+        _atomic_write(report, _render_report(ctx))
+        ctx.meta["report_path"] = str(report)
+        ctx.meta["report_written"] = True
+        print(f"[out] report: {report}", flush=True)
+    except OSError as exc:
+        ctx.note(f"report write failed: {exc!r}")
+
+
+# =====================================================================
 # The recording runner
 # =====================================================================
 
@@ -859,27 +2253,39 @@ async def _recording(args: argparse.Namespace, targets: dict,
     try:
         async with app.run_test(size=GRID) as pilot:
             try:
-                launched = await journey(pilot, app, ctx)
-                if launched:
-                    await watch_to_completion(pilot, app, ctx)
-                    await settle(app, pilot, rounds=3)
-                    await asyncio.sleep(6.0)  # the 2s cadence refresh
-                    await ctx.export(pilot, app, "99_monitor_done")
+                if ctx.full:
+                    launched = await journey_full(pilot, app, ctx)
+                    if launched:
+                        await watch_run_full(pilot, app, ctx)
+                        _write_report(ctx)
+                else:
+                    launched = await journey(pilot, app, ctx)
+                    if launched:
+                        await watch_to_completion(pilot, app, ctx)
+                        await settle(app, pilot, rounds=3)
+                        await asyncio.sleep(6.0)  # the 2s cadence refresh
+                        await ctx.export(pilot, app, "99_monitor_done")
             except GateRefusedError as exc:
                 failure = str(exc)
             except DriverError as exc:
                 failure = str(exc)
                 try:
-                    await ctx.export(pilot, app, "98_monitor_failure")
-                except Exception:  # noqa: BLE001, S110 — the record still lands
+                    await ctx.export(
+                        pilot, app,
+                        "998_monitor_failure" if ctx.full
+                        else "98_monitor_failure")
+                except Exception:  # noqa: BLE001, S110 — record still lands
                     pass
     except Exception as exc:  # noqa: BLE001 — the harness-level catch
         failure = failure or f"harness error: {exc!r}"
 
     ctx.meta["exit_code"] = 1 if failure else 0
+    ctx.meta["launched"] = launched
     if failure:
         ctx.meta["failure"] = failure
-    if launched and not failure:
+    if ctx.full:
+        _write_report(ctx)  # best-effort draft on every non-final path
+    elif launched and not failure:
         _attach_completion_evidence(ctx)
     _write_outputs(ctx)
     return 1 if failure else 0
@@ -909,14 +2315,13 @@ def _attach_completion_evidence(ctx: RunContext) -> None:
 
 
 def _write_outputs(ctx: RunContext) -> None:
-    """Write evidence.json always; the RECORD.md draft for live runs."""
+    """Write evidence.json always; the RECORD.md draft for pa6 live
+    runs (full mode's report is written by _write_report)."""
     evidence = Path(ctx.args.evidence)
-    evidence.parent.mkdir(parents=True, exist_ok=True)
-    evidence.write_text(
-        json.dumps(ctx.meta, indent=2, ensure_ascii=False),
-        encoding="utf-8")
+    _atomic_write(
+        evidence, json.dumps(ctx.meta, indent=2, ensure_ascii=False))
     print(f"[out] evidence: {evidence}", flush=True)
-    if ctx.rehearsal:
+    if ctx.rehearsal or ctx.full:
         return
     record = Path(ctx.args.record)
     record.parent.mkdir(parents=True, exist_ok=True)
@@ -1046,6 +2451,8 @@ def _render_record(ctx: RunContext) -> str:
 def _dry_run(args: argparse.Namespace) -> int:
     """Print the journey timeline + resolved targets. No app spawn, no
     preflight side effects (the record_tui_demo --dry-run discipline)."""
+    if args.mode == MODE_FULL:
+        return _dry_run_full(args)
     root_resolved = (REPO_ROOT / Path(args.root)).resolve()
     stages = [
         ("01_boot_env_check",
@@ -1088,32 +2495,164 @@ def _dry_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _dry_run_full(args: argparse.Namespace) -> int:
+    """The full-mode timeline: the download journey, the multi-day run
+    posture, and the honest scale projection — zero spawn."""
+    root_resolved = (REPO_ROOT / Path(args.root)).resolve()
+    try:
+        datasets_info = json.loads(
+            DATASETS_INFO.read_text(encoding="utf-8"))
+        dataset_count = len(datasets_info)
+    except (OSError, ValueError):
+        dataset_count = -1
+    stages = [
+        ("001_boot_env_check",
+         "boot env screen verdict (<=300s cold kernels)", "export"),
+        ("002_model_row_missing",
+         (f"slot-2 nav; filter+cursor-walk onto {FULL_MODEL} "
+          "(rehearsal: locate only)"), "export"),
+        ("003_model_enqueued",
+         "d -> real KIND_MODEL queue lane (queue state file asserted)",
+         "live only"),
+        ("004_data_presence_before",
+         ("slot-3 nav; PRIMARY full presence view (rehearsal: render "
+          "only)"), "export"),
+        ("005_data_enqueue_all",
+         "a -> enqueue_all_missing (count recorded)", "live only"),
+        (f"006_download_running_NNN (every {args.dl_interval:.0f}s)",
+         ("queue digest + newest log size + capture; settle = no "
+          "pending/downloading on two reads >= 60s apart + model "
+          "terminal"), "live only"),
+        ("007_download_settled_queue",
+         ("settled queue + v-toggled missing view + 008 final presence "
+          "+ 009 queue detail drill-down"), "live only"),
+        ("download_ledger.json",
+         ("per-key outcomes + not-enqueued reasons + present set "
+          "-> expected cells = present x 3"), "live only"),
+        ("010_wizard_model_marked",
+         f"slot-4; filter mark {FULL_MODEL}", "export"),
+        ("011_wizard_datasets_marked",
+         "m flip; filter mark EVERY present-set key", "export"),
+        ("012_run_config_params",
+         (f"seeds={FULL_SEEDS_TEXT} workers={FULL_WORKERS_TEXT} "
+          f"gpus={FULL_GPUS_TEXT} root={args.root}; epochs NEVER "
+          "touched (YAML default governs; input read + recorded)"),
+         "export"),
+        ("013_run_config_preview",
+         "p modal; argv tokens asserted; --num_train_epochs ABSENT",
+         "export"),
+        ("014_run_config_confirm",
+         "enter -> Y/N gate; dispatch-plan line 0,1", "export"),
+        ("launch",
+         ("y -> real run_sweep_shard --mode dispatch --workers "
+          f"{FULL_WORKERS_TEXT} --gpus {FULL_GPUS_TEXT} --seeds "
+          f"{FULL_SEEDS_TEXT}"), "live only"),
+        (f"015_monitor_running_NNN (every {args.interval:.0f}s)",
+         ("gpu snapshot + dispatch digest + per-seed artifact counts + "
+          "heartbeat; completion = probe absent + present-count per "
+          "seed for BOTH artifacts"), "live only"),
+        ("999_monitor_done",
+         ("terminal tail (status completed + trainer_state == expected,"
+          " <=600s) + auto REPORT.md"), "live only"),
+        ("997_monitor_stall / 998_monitor_failure",
+         ("honest degradation captures (stall detector / failure end); "
+          "the sweep is NEVER killed"), "on degradation"),
+    ]
+    print(f"mode={'full-rehearsal' if args.no_launch else 'full'} "
+          f"grid={GRID[0]}x{GRID[1]}")
+    print(f"model={FULL_MODEL} seeds={FULL_SEEDS_TEXT} "
+          f"epochs=<yaml default, never typed> "
+          f"workers={FULL_WORKERS_TEXT} gpus={FULL_GPUS_TEXT}")
+    print(f"registry datasets={dataset_count} (present set derived at "
+          "download settle; matrix = present x 3)")
+    print(f"root={args.root} -> {root_resolved}")
+    print(f"state-base={args.state_base} (prefix {FULL_STATE_PREFIX}) "
+          f"svg-dir={args.svg_dir}")
+    print(f"evidence={args.evidence} (incremental heartbeat) "
+          f"ledger={args.ledger} report={args.report}")
+    print(f"dl-interval={args.dl_interval}s interval={args.interval}s "
+          f"stall-hours={args.stall_hours}s "
+          f"exit-on-stall={bool(args.exit_on_stall)} "
+          f"timeout={args.timeout}s (0 = no hard deadline; the stall "
+          "detector governs)")
+    print("scale honesty: pa6 actuals (4 cells, ~90M models, 1 epoch, "
+          "55 min) project an optimistic floor ~3 days and a realistic "
+          "5-10+ days at 263M x 3 epochs over up to ~46 datasets "
+          "(BEND-class cells dominate); the executor closes the task "
+          "in-flight and the driver outlives it.")
+    print(f"{len(stages)} stages:")
+    for index, (name, what, when) in enumerate(stages, start=1):
+        print(f"  {index:2d}. {name:44s} {when:13s} {what}")
+    return 0
+
+
+def _fill_mode_defaults(args: argparse.Namespace) -> None:
+    """Fill every mode-dependent default (explicit flags always win);
+    the pa6 table reproduces the committed pa6 defaults exactly."""
+    table = _MODE_DEFAULTS[args.mode]
+    for name, value in table.items():
+        if getattr(args, name, None) is None:
+            setattr(args, name, value)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="The live TUI SVG recording driver (Pilot lane).")
+    parser.add_argument("--mode", choices=(MODE_PA6, MODE_FULL),
+                        default=MODE_PA6,
+                        help="journey profile: pa6 (the committed 2x2 "
+                             "combo, default) or full (the FungiHelixSeek "
+                             "download + multi-day production journey)")
     parser.add_argument("--dry-run", action="store_true",
                         help="print the journey timeline without spawning")
     parser.add_argument("--no-launch", action="store_true",
                         help="full rehearsal: drive to the gate, capture, "
-                             "press n — zero GPU work")
-    parser.add_argument("--root", default="pipeline/finetuned-tui-pa6",
-                        help="the fresh sweep output root (default: "
-                             "pipeline/finetuned-tui-pa6)")
+                             "press n — zero GPU work (full mode also "
+                             "enqueues nothing: locate/render only)")
+    parser.add_argument("--root", default=None,
+                        help="the fresh sweep output root (pa6 default: "
+                             "pipeline/finetuned-tui-pa6; full default: "
+                             "pipeline/finetuned-fhs-full)")
     parser.add_argument("--state-base",
                         default="/root/autodl-tmp/dnallmmark-data/tui-live",
                         help="the data-disk base for the fresh per-"
                              "recording TUI state dir")
-    parser.add_argument("--svg-dir", default="docs/live/svg",
-                        help="where the stage SVGs land")
-    parser.add_argument("--record", default="docs/live/RECORD.md",
-                        help="the operation record path (live mode)")
-    parser.add_argument("--evidence", default="docs/live/evidence.json",
-                        help="the machine-readable meta sidecar")
-    parser.add_argument("--interval", type=float, default=180.0,
-                        help="watch-loop cadence in seconds")
-    parser.add_argument("--timeout", type=float, default=5400.0,
-                        help="overall live-run deadline in seconds")
+    parser.add_argument("--svg-dir", default=None,
+                        help="where the stage SVGs land (pa6 default: "
+                             "docs/live/svg; full default: "
+                             "docs/live/fhs/svg)")
+    parser.add_argument("--record", default=None,
+                        help="the operation record path (pa6 live mode; "
+                             "pa6 default: docs/live/RECORD.md)")
+    parser.add_argument("--evidence", default=None,
+                        help="the machine-readable meta sidecar (full "
+                             "mode writes it INCREMENTALLY; defaults per "
+                             "mode)")
+    parser.add_argument("--report", default=None,
+                        help="full mode: the auto-generated REPORT.md "
+                             "(default: docs/live/fhs/REPORT.md)")
+    parser.add_argument("--ledger", default=None,
+                        help="full mode: the download ledger written at "
+                             "settle (default: "
+                             "docs/live/fhs/download_ledger.json)")
+    parser.add_argument("--dl-interval", type=float, default=None,
+                        help="full mode: download-phase capture cadence "
+                             "in seconds (default: 600)")
+    parser.add_argument("--interval", type=float, default=None,
+                        help="watch-loop cadence in seconds (pa6 default: "
+                             "180; full default: 1800)")
+    parser.add_argument("--stall-hours", type=float, default=6.0,
+                        help="full mode: stall threshold in hours with "
+                             "zero liveness signal (default: 6)")
+    parser.add_argument("--exit-on-stall", action="store_true",
+                        help="full mode: exit nonzero on stall (default: "
+                             "record honestly and keep watching)")
+    parser.add_argument("--timeout", type=float, default=None,
+                        help="overall live-run deadline in seconds (pa6 "
+                             "default: 5400; full default: 0 = NO hard "
+                             "deadline — the stall detector governs)")
     args = parser.parse_args(argv)
+    _fill_mode_defaults(args)
 
     if args.dry_run:
         return _dry_run(args)
@@ -1126,10 +2665,13 @@ def main(argv: list[str] | None = None) -> int:
 
     state_base = Path(args.state_base)
     state_base.mkdir(parents=True, exist_ok=True)
-    state_dir = Path(tempfile.mkdtemp(prefix="tui-live-pa6-", dir=state_base))
+    prefix = FULL_STATE_PREFIX if args.mode == MODE_FULL else \
+        "tui-live-pa6-"
+    state_dir = Path(tempfile.mkdtemp(prefix=prefix, dir=state_base))
     # Set BEFORE constructing the app: the launcher tee, run_config.json,
-    # and monitor_roots all land under this root (the disk policy keeps
-    # it on the data disk). KEPT on every path — it holds the tee log.
+    # monitor_roots, and the download queue state all land under this
+    # root (the disk policy keeps it on the data disk). KEPT on every
+    # path — it holds the tee log + queue evidence.
     os.environ["DNALLMMARK_TUI_STATE_DIR"] = str(state_dir)
     print(f"[setup] state dir: {state_dir}", flush=True)
     print(f"[setup] root: {targets['root_resolved']} "

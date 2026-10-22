@@ -141,6 +141,10 @@ pipeline/finetuned-sweep-r2/
 # root for the recorded dual-GPU journey — the evidence is the committed
 # docs/live/ captures + record, never the run tree itself
 pipeline/finetuned-tui-pa6/
+# Live TUI FungiHelixSeek full-sweep run root (quick-261022-tah): the fresh
+# dispatch root for the recorded multi-day download+train journey — the
+# evidence is docs/live/fhs/, never the run tree itself
+pipeline/finetuned-fhs-full/
 # TUI demo meta sidecars (quick-261015-pex): per-recording driver state,
 # consumed by record.sh's exit gate — never committed.
 docs/demo/.meta-*.json
