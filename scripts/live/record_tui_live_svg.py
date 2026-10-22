@@ -1359,7 +1359,14 @@ async def _slot3_dataset_leg(pilot: Pilot, app: DnallmMarkTui,
             "the slot-3 'a' press enqueued no dataset (no pending "
             "dataset entry in the queue state file within 60s) — honest "
             "halt (zero downloadable datasets is the honest-stop rule)")
-    await settle(app, pilot, rounds=3)
+    # NOTE: deliberately NO settle()/wait_for_complete here — the queue
+    # drain worker runs for the WHOLE download phase (minutes-to-days)
+    # and wait_for_complete would block the journey on it (the live-run
+    # lesson: the enqueue wait above is the machine assertion; the pause
+    # rounds below let the toast/reload renders land without waiting on
+    # any worker).
+    for _ in range(3):
+        await pilot.pause()
     entries = _read_queue_entries(ctx.state_dir)
     dataset_entries = [
         entry for entry in entries
