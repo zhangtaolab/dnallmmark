@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 Phase: 18 (文档撰写) — EXECUTING
 Plan: 4 of 4
 Status: Phase complete — ready for verification
-Last activity: 2026-10-22 — Phase 18 execution started
+Last activity: 2026-10-22 - Completed quick task 261022-pa6: live TUI 2x2 dual-GPU test with SVG operation record
 
 ## Performance Metrics
 
@@ -392,6 +392,7 @@ None yet.
 | 261020-9vh | slot-5 stale-progress guard: checkpoint mtime predating live process start renders indeterminate, never the old run's numbers (real-/proc pty pin) | 2026-10-20 | 4064b38 | [261020-9vh-slot-5-stale-progress-guard-live-proces](./quick/261020-9vh-slot-5-stale-progress-guard-live-proces/) |
 | 261020-asm | slot-5 tree all-expanded entry default made explicit + dual-lane mutation-verified pins (variant E ruling) | 2026-10-20 | 4064b38 | [261020-asm-slot-5-tree-default-expansion-per-mainta](./quick/261020-asm-slot-5-tree-default-expansion-per-mainta/) |
 | 261020-blt | slot-5 planned-cell union: live evidence carries seeds; row set = discovered UNION planned (queued synthesized rows) — both models render from plan alone, counts 0/12 (maintainer's twice-reported one-model bug, root-caused to driver mkdir-on-reach) | 2026-10-20 | 68a74fb | [261020-blt-slot-5-planned-but-unstarted-cells-rende](./quick/261020-blt-slot-5-planned-but-unstarted-cells-rende/) |
+| 261022-pa6 | Live TUI 2x2 dual-GPU test (plant-dnabert-6mer, plant-dnamamba-6mer x GUE__emp_H3, iDNA 5mC; seeds 42, 1 epoch, workers 2, GPUs 0,1) driven through the real gate, recorded as 25 SVG captures + docs/live record (scripts/live/record_tui_live_svg.py driver) | 2026-10-22 | 105dd3c | [261022-pa6-tui-2-2-svg](./quick/261022-pa6-tui-2-2-svg/) |
 
 ## Deferred Items
 
