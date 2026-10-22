@@ -192,7 +192,8 @@ _TAG_RERUN = "rerun"
 _RERUN_SCOPING_TOKENS = ("--from-failures", "--tasks", "--seeds")
 _RERUN_LANE_TOKENS = (
     "--peft", "--config-variant", "--subset_file",
-    "--effective_batch_size", "--num_train_epochs", "--cache_dir",
+    "--effective_batch_size", "--batch_size", "--num_train_epochs",
+    "--cache_dir",
     "--model_root", "--dataset_root", "--log_dir",
 )
 
@@ -536,12 +537,13 @@ def _claim_payload(cell, lane, gpu, run_id, claimed_at):
     """Build the ``claimed``-state claim JSON for one cell.
 
     The lane flags (peft, config_variant, subset_file,
-    effective_batch_size, num_train_epochs, cache_dir, the three
+    effective_batch_size, batch_size — the per-device starting
+    micro-batch, 261023-abu — num_train_epochs, cache_dir, the three
     storage roots model_root/dataset_root/log_dir — all additive,
     14-03 — and the cell's curve fraction) are the Phase 14 MGPU-04
     failure re-run feed — recorded at claim time so a re-run can
     reconstruct the exact experiment (D14-06; replay reads tolerantly,
-    so pre-Phase-14 claims lacking the newer keys replay with the flag
+    so pre-change claims lacking the newer keys replay with the flag
     absent — zero argv elements, never a refusal).
 
     Args:
@@ -1042,6 +1044,7 @@ def _spawn_worker(index, gpu, tee, context):
                     train_fraction=fraction,
                     subset_file=context["subset_file"],
                     effective_batch_size=context["effective_batch_size"],
+                    batch_size=context["batch_size"],
                     num_train_epochs=context["num_train_epochs"],
                     cache_dir=context["cache_dir"],
                     config_variant=context["config_variant"],
@@ -1718,6 +1721,7 @@ def _run_rerun_failed(args, passthrough, spawner, clock, workers, gpus):
         "config_variant": agreed_lane.get("config_variant") or "none",
         "subset_file": agreed_lane.get("subset_file"),
         "effective_batch_size": agreed_lane.get("effective_batch_size"),
+        "batch_size": agreed_lane.get("batch_size"),
         "num_train_epochs": agreed_lane.get("num_train_epochs"),
         "cache_dir": agreed_lane.get("cache_dir"),
         "model_root": agreed_lane.get("model_root"),
@@ -1764,7 +1768,8 @@ def _launch_and_drain(output_root, cells, pending, skipped, lane_values,
             the ordinary path — its filter counts its own).
         lane_values (dict): the launch lane flags — the keys of the
             claim-time lane dict (peft, config_variant, subset_file,
-            effective_batch_size, num_train_epochs, cache_dir,
+            effective_batch_size, batch_size, num_train_epochs,
+            cache_dir,
             model_root, dataset_root, log_dir); recorded verbatim into
             every claim and replayed into ``build_argv``.
         workers (int): the validated ``--workers`` count.
@@ -1849,6 +1854,7 @@ def _launch_and_drain(output_root, cells, pending, skipped, lane_values,
         "config_variant": lane_values.get("config_variant") or "none",
         "subset_file": lane_values.get("subset_file"),
         "effective_batch_size": lane_values.get("effective_batch_size"),
+        "batch_size": lane_values.get("batch_size"),
         "num_train_epochs": lane_values.get("num_train_epochs"),
         "cache_dir": lane_values.get("cache_dir"),
         "model_root": lane_values.get("model_root"),
@@ -2096,6 +2102,7 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
 
     # flag_problems mirror of run_sweep.main's collect-all (source of
     # truth: run_sweep.py:1737-1804 — effective_batch_size >= 1,
+    # batch_size >= 1 (261023-abu),
     # num_train_epochs >= 1, non-empty subset_file / cache_dir /
     # model_root / dataset_root / log_dir, and the variant x peft
     # never-compose refusal). Mirrored because NO run_sweep.main runs in
@@ -2105,6 +2112,11 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
         problems.append(
             f"--effective_batch_size must be >= 1, got "
             f"{sweep_args.effective_batch_size}"
+        )
+    if sweep_args.batch_size is not None and \
+            sweep_args.batch_size < 1:
+        problems.append(
+            f"--batch_size must be >= 1, got {sweep_args.batch_size}"
         )
     if sweep_args.num_train_epochs is not None and \
             sweep_args.num_train_epochs < 1:
@@ -2268,7 +2280,8 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
         # as done, T-13-07) and output_dir at the cell_dir_for path
         # under the ONE shared root. The sweep_flags dict mirrors
         # run_sweep.main's present-keys-only construction verbatim
-        # (subset_file / effective_batch_size / num_train_epochs /
+        # (subset_file / effective_batch_size / batch_size /
+        # num_train_epochs /
         # cache_dir / model_root / dataset_root / log_dir /
         # config_variant; peft does NOT join — it rides the ALIAS
         # identities, only config_variant joins among the two lane
@@ -2286,6 +2299,8 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
         if sweep_args.effective_batch_size is not None:
             sweep_flags["effective_batch_size"] = (
                 sweep_args.effective_batch_size)
+        if sweep_args.batch_size is not None:
+            sweep_flags["batch_size"] = sweep_args.batch_size
         if sweep_args.num_train_epochs is not None:
             sweep_flags["num_train_epochs"] = sweep_args.num_train_epochs
         if cache_dir_abs is not None:
@@ -2342,6 +2357,7 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
         "config_variant": config_variant,
         "subset_file": subset_file_abs,
         "effective_batch_size": sweep_args.effective_batch_size,
+        "batch_size": sweep_args.batch_size,
         "num_train_epochs": sweep_args.num_train_epochs,
         "cache_dir": cache_dir_abs,
         "model_root": model_root_abs,

@@ -238,6 +238,15 @@ Failure boundary:
     run-config screen (Phase 11) drives sweeps exclusively through these
     flags — they exist CLI-first with argv-shape proofs in
     ``tests/test_sweep.py``.
+    ``--batch_size`` (261023-abu) joins the family as a plain valued
+    int flag (the ``--num_train_epochs`` shape — NO bare-flag const,
+    that is ``--effective_batch_size``'s D-12 niche): it threads the
+    STARTING per-device micro-batch to every child, where the EXISTING
+    ``determine_batch_size`` (run_finetune.py:602) scales it down by
+    sequence-length tier — the per-device batch lever, distinct from
+    ``--effective_batch_size``'s gradient-accumulation arithmetic (the
+    two knobs coexist, documented never conflated), and
+    ``batch_size >= 1`` joins the collect-all startup validation.
 
 --model_root / --dataset_root (261014-c2l, storage-root overrides):
     Two pure pass-through flags threaded to every run_finetune.py child
@@ -452,6 +461,20 @@ def parse_args():
              "governs — byte-identical to today). GA = max(1, N // bs_new) "
              "is applied CHILD-side (run_finetune.py); this driver is pure "
              "pass-through and never computes gradient accumulation (D-10)"
+    )
+
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=None,
+        help="Starting per-device batch size threaded to every child as "
+             "--batch_size <N> — the child's determine_batch_size then "
+             "scales it DOWN by sequence-length tier (run_finetune.py:602; "
+             "the threaded value is the STARTING micro-batch, not a "
+             "guarantee). The per-device batch lever, distinct from "
+             "--effective_batch_size's gradient-accumulation arithmetic "
+             "which stays child-side (261023-abu; plain valued flag, the "
+             "--num_train_epochs shape — no bare-flag const semantics)"
     )
 
     parser.add_argument(
@@ -1138,7 +1161,8 @@ def base_model_name(model, peft="none", config_variant="none"):
 
 def build_argv(model, task, seed, output_root, peft="none",
                train_fraction=None, subset_file=None,
-               effective_batch_size=None, num_train_epochs=None,
+               effective_batch_size=None, batch_size=None,
+               num_train_epochs=None,
                cache_dir=None, config_variant="none",
                model_root=None, dataset_root=None, log_dir=None):
     """Build the run_finetune.py argv for one cell — a LIST, never a string.
@@ -1181,6 +1205,12 @@ def build_argv(model, task, seed, output_root, peft="none",
     pre-07-03 argv (D-12/D-13 absent parity). No gradient-accumulation
     arithmetic lives here: GA = max(1, N // bs_new) is the child's
     existing logic (D-10/ D-16 — this builder is pure pass-through).
+    ``--batch_size`` (261023-abu) appends IMMEDIATELY AFTER
+    ``--effective_batch_size`` — the two batch knobs adjacent
+    everywhere, documented never conflated: batch_size threads the
+    STARTING per-device micro-batch (the child's
+    ``determine_batch_size`` scales it down by sequence-length tier),
+    effective_batch_size threads the GA-derived effective target.
 
     Args:
         model (str): value for the cell's model identity — the BASE name
@@ -1200,6 +1230,12 @@ def build_argv(model, task, seed, output_root, peft="none",
         effective_batch_size (int | None): target effective batch size
             appended as ``--effective_batch_size <N>`` when given; the
             child derives gradient accumulation from it.
+        batch_size (int | None): STARTING per-device micro-batch
+            appended as ``--batch_size <N>`` when given, immediately
+            after ``--effective_batch_size``; the child's
+            ``determine_batch_size`` scales it down by sequence-length
+            tier (run_finetune.py:602) — distinct from the GA-derived
+            effective target (261023-abu).
         num_train_epochs (int | None): epoch override appended as
             ``--num_train_epochs <N>`` when given.
         cache_dir (str | None): resolved ABSOLUTE cache directory
@@ -1242,6 +1278,8 @@ def build_argv(model, task, seed, output_root, peft="none",
         argv += ["--subset_file", str(subset_file)]
     if effective_batch_size is not None:
         argv += ["--effective_batch_size", str(effective_batch_size)]
+    if batch_size is not None:
+        argv += ["--batch_size", str(batch_size)]
     if num_train_epochs is not None:
         argv += ["--num_train_epochs", str(num_train_epochs)]
     if cache_dir is not None:
@@ -1257,7 +1295,8 @@ def build_argv(model, task, seed, output_root, peft="none",
 
 def launch_subprocess(model, task, seed, output_root, peft="none",
                       train_fraction=None, subset_file=None,
-                      effective_batch_size=None, num_train_epochs=None,
+                      effective_batch_size=None, batch_size=None,
+                      num_train_epochs=None,
                       cache_dir=None, config_variant="none",
                       model_root=None, dataset_root=None, log_dir=None):
     """Default executor: run run_finetune.py for one cell.
@@ -1265,7 +1304,9 @@ def launch_subprocess(model, task, seed, output_root, peft="none",
     cwd is pinned to PIPELINE_DIR because finetune_config.yaml and the
     ./finetuned default are CWD-relative in run_finetune.py (research
     Pitfall 3); shell is never used (T-03-10). The four pass-through
-    flags (07-03) forward verbatim, ``config_variant`` (11-01, D-18)
+    flags (07-03) forward verbatim, ``batch_size`` (261023-abu)
+    forwards beside ``effective_batch_size`` (the two batch knobs
+    adjacent), ``config_variant`` (11-01, D-18)
     threads as the peft-style aliasing twin, the two storage-root
     flags (261014-c2l) and the error-log dir (261014-f4w) forward as
     resolved ABSOLUTE paths — the child is the authoritative validator
@@ -1277,7 +1318,8 @@ def launch_subprocess(model, task, seed, output_root, peft="none",
     """
     return subprocess.run(
         build_argv(model, task, seed, output_root, peft, train_fraction,
-                   subset_file, effective_batch_size, num_train_epochs,
+                   subset_file, effective_batch_size, batch_size,
+                   num_train_epochs,
                    cache_dir, config_variant, model_root, dataset_root,
                    log_dir),
         cwd=PIPELINE_DIR,
@@ -1740,6 +1782,13 @@ def main():
             f"--effective_batch_size must be >= 1, got "
             f"{args.effective_batch_size}"
         )
+    if args.batch_size is not None and args.batch_size < 1:
+        # 261023-abu: the --effective_batch_size twin over the
+        # per-device STARTING batch — a zero/negative micro-batch is
+        # nonsense batch math the child would only hit mid-matrix.
+        flag_problems.append(
+            f"--batch_size must be >= 1, got {args.batch_size}"
+        )
     if args.num_train_epochs is not None and args.num_train_epochs < 1:
         flag_problems.append(
             f"--num_train_epochs must be >= 1, got {args.num_train_epochs}"
@@ -1827,6 +1876,12 @@ def main():
         sweep_flags["subset_file"] = subset_file_abs
     if args.effective_batch_size is not None:
         sweep_flags["effective_batch_size"] = args.effective_batch_size
+    if args.batch_size is not None:
+        # 261023-abu: a present starting per-device batch rides every
+        # manifest cell (the **flags merge, D-13) AND the run_matrix
+        # launch_kwargs partial — the micro-batch is experiment
+        # semantics a rerun must replay.
+        sweep_flags["batch_size"] = args.batch_size
     if args.num_train_epochs is not None:
         sweep_flags["num_train_epochs"] = args.num_train_epochs
     if cache_dir_abs is not None:

@@ -3307,6 +3307,8 @@ def test_rerun_refuses_heterogeneous_lanes_naming_flag_and_cells(
      ["refuses the lane token '--subset_file'", "D14-06"]),
     (["--effective_batch_size", "8"],
      ["refuses the lane token '--effective_batch_size'", "D14-06"]),
+    (["--batch_size", "8"],
+     ["refuses the lane token '--batch_size'", "D14-06"]),
     (["--num_train_epochs", "2"],
      ["refuses the lane token '--num_train_epochs'", "D14-06"]),
     (["--cache_dir", "x"], ["refuses the lane token '--cache_dir'", "D14-06"]),
@@ -3429,10 +3431,15 @@ def test_rerun_stale_pre_phase14_claim_replays_absent_parity(
             f"{absent_flag} absent from the claim lane = zero argv "
             "elements (absent parity)"
         )
+    # 261023-abu: a pre-change lane lacking batch_size replays with the
+    # flag ABSENT — zero argv elements, never a KeyError, never a
+    # refusal (the tolerant-read discipline over the newest lane key).
+    assert "--batch_size" not in argv
     assert argv == run_sweep.build_argv(
         "model-a", "task-x", 42, str(base), peft="none",
         train_fraction=None, subset_file=None,
-        effective_batch_size=None, num_train_epochs=None,
+        effective_batch_size=None, batch_size=None,
+        num_train_epochs=None,
         cache_dir=None, config_variant="none", model_root=None,
         dataset_root=None, log_dir=None)
     archive_dir = ledger_dir / "archive"
@@ -3484,6 +3491,92 @@ def test_rerun_old_and_new_lane_shapes_with_equal_values_are_one_lane(
     for call in calls:
         assert flag_value(call["argv"], "--peft") == "lora"
         assert "--cache_dir" not in call["argv"]
+
+
+def test_rerun_replays_claim_lane_batch_size(tmp_path, monkeypatch):
+    """261023-abu (D14-06 lane threading): a failed claim whose
+    claim-time lane carries batch_size replays --batch_size 32 VERBATIM
+    into the spawned argv — the micro-batch is experiment semantics a
+    re-run must reproduce exactly, never re-derive."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "batch-lane").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    lane = {"peft": "none", "config_variant": "none",
+            "subset_file": None, "effective_batch_size": None,
+            "batch_size": 32, "num_train_epochs": None}
+    _write_failed_claim(ledger_dir, ("model-a", "task-x", 42), lane)
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the failed cell re-runs"
+    argv = calls[0]["argv"]
+    assert flag_value(argv, "--batch_size") == "32", (
+        "the claim-time lane batch_size replays verbatim into the "
+        "re-run child argv"
+    )
+    assert argv == run_sweep.build_argv(
+        "model-a", "task-x", 42, str(base), peft="none",
+        train_fraction=None, subset_file=None,
+        effective_batch_size=None, batch_size=32,
+        num_train_epochs=None,
+        cache_dir=None, config_variant="none", model_root=None,
+        dataset_root=None, log_dir=None)
+
+
+def test_dispatch_batch_size_lane_threads_to_children(
+        tmp_path, monkeypatch):
+    """261023-abu (the ordinary dispatch lane): a --batch_size 8 launch
+    threads --batch_size 8 into EVERY spawned child argv (beside
+    --effective_batch_size — the two batch knobs adjacent) and the
+    claim-time lane records it for verbatim replay."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "batch-dispatch").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42,43",
+        "--effective_batch_size", "16",
+        "--batch_size", "8",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 2, "one spawn per cell"
+    for call in calls:
+        argv = call["argv"]
+        assert flag_value(argv, "--effective_batch_size") == "16"
+        assert flag_value(argv, "--batch_size") == "8"
+        assert argv.index("--effective_batch_size") < argv.index(
+            "--batch_size"), (
+            "the two batch knobs sit adjacent in the pinned argv order"
+        )
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base) / dispatch_core.claim_filename(
+            ("model-a", "task-x", 42))).read_text(encoding="utf-8"))
+    assert claim["lane"]["batch_size"] == 8
+    assert claim["lane"]["effective_batch_size"] == 16
+
+
+def test_dispatch_zero_batch_size_refuses_collect_all(
+        tmp_path, monkeypatch):
+    """261023-abu: the run_dispatch flag_problems mirror refuses
+    --batch_size 0 naming the flag and value BEFORE any spawn — the
+    run_sweep.main collect-all mirror (no run_sweep.main runs in
+    dispatch mode, so the mirror is the only guard)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "batch-zero").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--batch_size", "0",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "--batch_size must be >= 1, got 0" in message
+    assert calls == []
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists()
 
 
 def test_rerun_refuses_unknown_registry_model_loudly(

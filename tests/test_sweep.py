@@ -2006,6 +2006,7 @@ def test_sweep_flags_default_to_none_in_parse_args(monkeypatch):
     args = run_sweep.parse_args()
     assert args.subset_file is None
     assert args.effective_batch_size is None
+    assert args.batch_size is None
     assert args.num_train_epochs is None
     assert args.cache_dir is None
     assert args.model_root is None
@@ -2027,6 +2028,19 @@ def test_effective_batch_size_bare_valued_absent_parse(monkeypatch):
     assert run_sweep.parse_args().effective_batch_size is None
 
 
+def test_batch_size_valued_absent_parse(monkeypatch):
+    """261023-abu: --batch_size is a PLAIN valued int flag (the
+    --num_train_epochs shape — NO bare-flag const, that is
+    --effective_batch_size's D-12 niche): a valued flag parses to the
+    int; an absent flag is None — zero threading, the child's YAML
+    default + determine_batch_size dynamic scaling governs."""
+    monkeypatch.setattr(sys, "argv", [
+        "run_sweep.py", "--seeds", "42", "--batch_size", "8"])
+    assert run_sweep.parse_args().batch_size == 8
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    assert run_sweep.parse_args().batch_size is None
+
+
 def test_build_argv_threads_four_flags_as_list_elements():
     """Each present flag appends exactly two LIST elements — flag then
     str(value) — the --peft/--train_fraction append idiom verbatim
@@ -2035,13 +2049,26 @@ def test_build_argv_threads_four_flags_as_list_elements():
     argv = run_sweep.build_argv(
         "model-a", "task-x", 42, "/tmp/root",
         subset_file="/tmp/subsets.json", effective_batch_size=16,
+        batch_size=8,
         num_train_epochs=1, cache_dir="/tmp/cache")
     assert isinstance(argv, list)
     assert all(isinstance(element, str) for element in argv)
     assert flag_value(argv, "--subset_file") == "/tmp/subsets.json"
     assert flag_value(argv, "--effective_batch_size") == "16"
+    assert flag_value(argv, "--batch_size") == "8"
     assert flag_value(argv, "--num_train_epochs") == "1"
     assert flag_value(argv, "--cache_dir") == "/tmp/cache"
+    # 261023-abu: exactly two LIST elements (flag then str(value)), and
+    # --batch_size sits IMMEDIATELY after the --effective_batch_size
+    # pair — the two batch knobs adjacent everywhere.
+    assert argv.count("--batch_size") == 1
+    assert argv[argv.index("--batch_size") + 1] == "8"
+    assert argv.index("--effective_batch_size") < argv.index(
+        "--batch_size") < argv.index("--num_train_epochs"), (
+        "--batch_size must sit between --effective_batch_size and "
+        "--num_train_epochs in the pinned argv order (the two batch "
+        "knobs adjacent, 261023-abu)"
+    )
 
 
 def test_build_argv_absent_flags_add_zero_elements():
@@ -2050,6 +2077,7 @@ def test_build_argv_absent_flags_add_zero_elements():
     (the storage-root twins included, 261014-c2l)."""
     plain = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
     for flag in ("--subset_file", "--effective_batch_size",
+                 "--batch_size",
                  "--num_train_epochs", "--cache_dir",
                  "--model_root", "--dataset_root", "--log_dir"):
         assert flag not in plain, (
@@ -2157,6 +2185,25 @@ def test_cli_bare_effective_batch_size_threads_16_into_child_argv(
     assert flag_value(captured["argv"], "--effective_batch_size") == "16"
 
 
+def test_cli_batch_size_threads_into_child_argv(tmp_path, monkeypatch):
+    """261023-abu: a valued --batch_size 8 threads the STRING '8' into
+    the recorded child argv of a default-executor run — the STARTING
+    per-device micro-batch the child's determine_batch_size then scales
+    down by sequence-length tier (the bare-EBS :2142 idiom, plain
+    valued-flag form)."""
+    registry_dir = make_registry(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--batch_size", "8",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--batch_size") == "8"
+
+
 def test_cli_resolves_subset_and_cache_dir_to_absolute_paths(
         tmp_path, monkeypatch):
     """D-15: relative --subset_file / --cache_dir values are resolved to
@@ -2226,6 +2273,7 @@ def test_cli_resolves_storage_roots_to_absolute_paths(
 
 @pytest.mark.parametrize("flag,value", [
     ("--effective_batch_size", "0"),
+    ("--batch_size", "0"),
     ("--num_train_epochs", "0"),
 ])
 def test_cli_zero_flag_values_abort_naming_flag_and_value(
@@ -2624,6 +2672,7 @@ def test_dry_run_manifest_records_present_flags(tmp_path, monkeypatch):
         "--seeds", "42",
         "--dry-run",
         "--effective_batch_size", "16",
+        "--batch_size", "8",
         "--num_train_epochs", "1",
         "--output-root", str(out_root),
         "--registry-dir", str(registry_dir),
@@ -2633,10 +2682,11 @@ def test_dry_run_manifest_records_present_flags(tmp_path, monkeypatch):
     assert manifest["cells"], "the dry-run must enumerate cells"
     for cell in manifest["cells"]:
         assert cell["effective_batch_size"] == 16
+        assert cell["batch_size"] == 8
         assert cell["num_train_epochs"] == 1
         assert set(cell) == {
             "model", "task", "seed", "status", "output_dir",
-            "effective_batch_size", "num_train_epochs",
+            "effective_batch_size", "batch_size", "num_train_epochs",
         }, (
             "the five base cell keys are unchanged; only PRESENT flags "
             "join the cell"
@@ -2738,6 +2788,7 @@ def test_run_record_untouched_by_sweep_flags(tmp_path):
         sweep_flags={
             "subset_file": "/tmp/subsets.json",
             "effective_batch_size": 16,
+            "batch_size": 8,
             "num_train_epochs": 1,
             "cache_dir": "/tmp/cache",
         })
@@ -2745,6 +2796,7 @@ def test_run_record_untouched_by_sweep_flags(tmp_path):
         (out_root / "model-a" / "task-x" / "seed_42" / "run_record.json")
         .read_text(encoding="utf-8"))
     for flag_key in ("subset_file", "effective_batch_size",
+                     "batch_size",
                      "num_train_epochs", "cache_dir"):
         assert flag_key not in disk, (
             f"run_record.json must not carry {flag_key} — the record "
