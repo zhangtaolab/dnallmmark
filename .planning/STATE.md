@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 
 ## Current Position
 
-Phase: 18 (文档撰写) — READY TO EXECUTE
-Plan: Not started
+Phase: 18 (文档撰写) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-10-22 — Phase 17 complete, transitioned to Phase 18
+Last activity: 2026-10-22 — Phase 18 execution started
 
 ## Performance Metrics
 
@@ -126,6 +126,7 @@ Last activity: 2026-10-22 — Phase 17 complete, transitioned to Phase 18
 | Phase 17 P1 | 16 min | 3 tasks | 10 files |
 | Phase 17 P2 | 7 min | 3 tasks | 3 files |
 | Phase 17 P3 | 53 min | 3 tasks | 3 files |
+| Phase 18 P01 | 5 min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -325,6 +326,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 17]: 17-02: tooltips read the model closure (displayModels[context.dataIndex]) — never context.raw typed-checks on floating bars (would print 'lo,hi') and never context.parsed.x (barEnd unreliable); CDN pins byte-untouched, zero new dependencies
 - [Phase 17]: 17-03: fixture generator independence enforced three ways — grep gate on generator source, in-test ddof=0 recomputation over provenance per-seed values, regeneration byte-idempotence (D17-09 triple tripwire); committed-data absence pinned as an assertion in both directions
 - [Phase 17]: 17-03: full-suite pytest on this box requires source /etc/network_turbo — evaluate.load() phones home via HTTP HEAD unconditionally (own file_utils path, ignores HF_HUB_OFFLINE) and direct HF egress hangs without the academic proxy; environmental, zero code changes; 6 remaining failures are the documented root-user chmod class
+- [Phase 18]: 18-01: docs/multi-gpu.md is dispatch-first — three-way mode table (dispatch primary / static legacy / DDP deferred-with-seam); static documented under an explicit legacy track with --mode static spelled into every launch command (MGPU-06 coexistence)
+- [Phase 18]: 18-01: the executed Phase-15 smoke record stays byte-preserved (sha256-pinned fences dcdbc798…); new sections restructure AROUND it — only the stale Phase-18-forward-referencing parenthetical was removed from its prose
 
 ### Pending Todos
 
@@ -397,8 +400,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T10:53:40.309Z
-Stopped at: Phase 17 complete, ready to plan Phase 18
+Last session: 2026-10-22T06:28:39.734Z
+Stopped at: Completed 18-01-PLAN.md (DOCS-01: docs/multi-gpu.md dispatch-first)
 Resume file: None
 
 ## Operator Next Steps
