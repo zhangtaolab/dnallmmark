@@ -125,6 +125,24 @@ per-cell wall time).
   the same evidence.json; if the orchestrator already finished, read
   `dispatch_state.json` + the ledger directly).
 
+## Ops change 2026-10-23 — dataloader parallelism (maintainer directive "A")
+
+The launch-day diagnosis (worker tqdm: 557,322 steps @ ~2.2 it/s for one BEND
+cell at dynamic batch 4; GPU util ~20% with 49 of 50 CPUs idle) prompted a
+three-lever review. The maintainer chose **A only** — `dataloader_num_workers:
+12` in `pipeline/finetune_config.yaml` (pure I/O parallelism; batch, epochs,
+lr, eval/save cadence UNTOUCHED — protocol comparability preserved; expected
+2-4x on CPU-bound steps). The dispatch was restarted (killpg recipe on the
+workers + orchestrator per the run_sweep_shard docstring; the two
+replacement-spawned orphan cells were cleared first to avoid double-claims;
+relaunched 2026-10-23 ~00:20 UTC+8 with the identical argv, orchestrator PID
+819971, log `tui-live/fhs-dispatch-restart-20261023.log`; stale claims requeued
+per dispatch_core's no-lease requeue design, 0 cells lost). The watcher
+(PID 733194) survived the restart untouched and continues the same
+`evidence.json`. Honest note: with A only, the full 93-cell matrix remains
+multi-week (BEND-class eval cadence dominates); levers B (batch 32) and C
+(eval_steps 5000) were declined to preserve protocol comparability.
+
 ## Commit map (this task, local only, no push)
 
 - `dfb820e` feat(quick-261022-tah): full-journey TUI SVG driver — download
