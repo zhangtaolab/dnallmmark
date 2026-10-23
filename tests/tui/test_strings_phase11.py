@@ -77,6 +77,15 @@ EXPECTED_CFG_CONSTANTS = (
     # (vocabulary verbatim, the EBS/workers precedent) and the
     # dynamic-scaling placeholder hint (the CFG_GPUS_DEFAULT grammar).
     "CFG_FIELD_BATCH_SIZE", "CFG_BATCH_SIZE_DEFAULT",
+    # Phase 19 (19-02, tracer batch): the advanced-params section —
+    # the title, the placeholder-honesty hints (empty = YAML default,
+    # variant variance + the EBS/GA interplay), the placeholder
+    # wrapper, the learning_rate row label, the [a]/[r] binding
+    # labels, and the enum modals' leading-默认 option. The remaining
+    # CFG_ADV_FIELD_* rows (+ _SHORT twins) join with their tasks.
+    "CFG_ADV_TITLE", "CFG_ADV_HINT", "CFG_ADV_HINT_GA", "CFG_ADV_DEFAULT",
+    "CFG_ADV_FIELD_LEARNING_RATE", "CFG_ADV_TOGGLE_LABEL",
+    "CFG_ADV_RESET_LABEL", "CFG_ADV_CHOICE_NONE",
 )
 
 #: The complete expected LNC_ inventory (launch-confirmation modal +

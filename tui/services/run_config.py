@@ -186,6 +186,13 @@ PROBLEM_OUTPUT_ROOT_INVALID = "output_root_invalid"
 PROBLEM_WORKERS_INVALID = "workers_invalid"
 PROBLEM_GPUS_INVALID = "gpus_invalid"
 PROBLEM_WORKERS_EXCEED_GPUS = "workers_exceeds_gpus"
+#: Phase 19 (19-02, PD-19-1..PD-19-7): ONE code for the whole advanced
+#: train-flag family — the detail names the offending entry as
+#: ``"<field>=<raw>"`` (the undashed TrainingConfig field name, the
+#: persistence/lane key vocabulary); it renders through the screens'
+#: generic code+detail fallback exactly like epochs/ebs/batch_size (no
+#: per-field copy mapping, by design).
+PROBLEM_ADVANCED_INVALID = "advanced_invalid"
 
 #: The screen's field-dict keys (the run_sweep flag vocabulary; the
 #: params pane fields carry these names).
@@ -196,6 +203,11 @@ PARAM_EBS = "effective_batch_size"
 PARAM_BATCH_SIZE = "batch_size"
 PARAM_WORKERS = "workers"
 PARAM_GPUS = "gpus"
+#: Phase 19 (19-02): the advanced family's ONE raw key — the whole
+#: family rides a NESTED dict (PD-19-7) whose keys are the table's
+#: DASHED flag literals (``"--learning_rate"`` — ``spec.flag``
+#: verbatim) and whose values are the operator's raw strings.
+PARAM_ADVANCED = "advanced"
 
 # =====================================================================
 # The run-spec model (CFG-01)
@@ -257,6 +269,18 @@ class RunSpec:
             normalizes to a sorted deduped tuple (the house
             discipline); threads ``--gpus`` PRESENT-ONLY (D-12 parity
             — a defaults spec contributes zero ``--gpus`` elements).
+        advanced: the Phase-19 advanced train-flag family — ONE nested
+            dict keyed by the undashed TrainingConfig field name
+            (``learning_rate``), values as parsed (PD-19-7 — the SAME
+            key/value convention run_sweep's ``collect_advanced`` and
+            the dispatch lanes carry, so the TUI dict IS the lane
+            dict). Empty = the whole family absent = the YAML governs
+            (P19-R5). IMMUTABLE BY DISCIPLINE (a frozen dataclass
+            cannot deep-freeze a dict): the composers LOOP THE TABLE
+            for ordering, never the dict — determinism is structural,
+            dict iteration order can never reach an argv; bool values
+            ride the STRING vocabulary ("true"/"false") like every
+            run_sweep/dispatch layer (the child owns conversion).
     """
 
     models: tuple[str, ...]
@@ -276,6 +300,7 @@ class RunSpec:
     cache_dir: str | None = None
     workers: int = 1
     gpus: "tuple[str, ...] | None" = None
+    advanced: dict = field(default_factory=dict)
 
     def __post_init__(self):
         object.__setattr__(
@@ -369,6 +394,37 @@ def _parse_positive_int(value):
     return number
 
 
+def _parse_bounded_float(value, lo, hi):
+    """Parse a float within INCLUSIVE bounds (Phase 19; the
+    ``advanced_flag_problems`` sanity mirrors — a None side is
+    unbounded). Returns the float or None (non-numeric or out of
+    bounds)."""
+    try:
+        number = float(value.strip())
+    except ValueError:
+        return None
+    if lo is not None and number < lo:
+        return None
+    if hi is not None and number > hi:
+        return None
+    return number
+
+
+def _parse_json_object(value):
+    """Parse a JSON OBJECT literal (Phase 19, lr_scheduler_kwargs —
+    ``json.loads`` + ``isinstance(dict)`` ONLY, never any eval family;
+    the subset-file JSON validation idiom, T-19-03). Returns the dict
+    or None (unparseable, or parses to a non-dict — arrays/scalars are
+    as invalid as garbage: TrainingArguments requires an object)."""
+    try:
+        parsed = json.loads(value.strip())
+    except ValueError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
 def _parse_gpu_indices(value):
     """Parse a comma-separated non-negative-INTEGER GPU index list
     (16-03, D16-09) — sorted, deduped (the house discipline).
@@ -419,14 +475,16 @@ def parse_params(raw):
             ``num_train_epochs``, ``effective_batch_size``,
             ``batch_size``, ``workers``, ``gpus`` — the 16-03
             multi-GPU pair); values
-            are strings (None = field cleared).
+            are strings (None = field cleared). ``advanced`` (Phase
+            19) carries the NESTED family dict keyed by the table's
+            DASHED flag literals (values raw strings / None).
 
     Returns:
         tuple[dict, tuple[tuple[str, object], ...]]: ``(partials,
         problems)`` — partials is a dict of valid parsed kwargs
         (``seeds`` / ``curve_fractions`` / ``num_train_epochs`` /
         ``effective_batch_size`` / ``batch_size`` / ``workers`` /
-        ``gpus``), problems
+        ``gpus`` / ``advanced``), problems
         the collect-all list.
     """
     partials: dict = {}
@@ -509,6 +567,47 @@ def parse_params(raw):
             PROBLEM_WORKERS_EXCEED_GPUS,
             (partials["workers"], len(partials["gpus"]))))
 
+    # Phase 19 (19-02, PD-19-6): the advanced train-flag family — ONE
+    # table-driven loop over run_sweep.ADVANCED_TRAIN_FLAGS (the frozen
+    # shared vocabulary, consumed via the existing import: kinds,
+    # bounds, choices all come from the table — zero per-param hand
+    # copies in this service). The raw family rides the NESTED
+    # PARAM_ADVANCED dict keyed by the DASHED flag literals; the parsed
+    # partial rides ONE dict keyed by the UNDASHED field names (the
+    # lane/persistence convention, PD-19-7). Restore-default semantics
+    # (P19-R5): the partial is written whenever the family raw dict is
+    # PRESENT — even when every entry is empty — so each compose
+    # recomputes the WHOLE family from the pane and a CLEARED field
+    # drops out (empty = the YAML governs), unlike the scalar fields'
+    # last-valid-governs rule; an INVALID entry raises the ONE family
+    # problem and simply threads nothing.
+    advanced_raw = raw.get(PARAM_ADVANCED)
+    if isinstance(advanced_raw, dict):
+        advanced: dict = {}
+        for row in run_sweep.ADVANCED_TRAIN_FLAGS:
+            field_name = row.flag.lstrip("-")
+            raw_text = _clean_str(advanced_raw.get(row.flag))
+            if raw_text is None:
+                continue
+            if row.kind == "int":
+                value: object = _parse_positive_int(raw_text)
+            elif row.kind == "float":
+                value = _parse_bounded_float(raw_text, row.lo, row.hi)
+            elif row.kind in ("enum", "bool"):
+                # closed STRING vocabularies (bool rides "true"/"false"
+                # — the child owns conversion, the 19-01 ruling)
+                value = (raw_text if raw_text in (row.choices or ())
+                         else None)
+            else:  # json
+                value = _parse_json_object(raw_text)
+            if value is None:
+                problems.append((
+                    PROBLEM_ADVANCED_INVALID,
+                    f"{field_name}={advanced_raw.get(row.flag)}"))
+            else:
+                advanced[field_name] = value
+        partials["advanced"] = advanced
+
     return partials, tuple(problems)
 
 
@@ -581,23 +680,29 @@ def _persist_payload(spec):
     keys counting output_root, log_dir joined 261014-f4w; the 16-03
     workers/gpus pair rides params — gpus None persists as None,
     NEVER a resolved/guessed list, Pitfall 8: resolution happens at
-    LAUNCH time only)."""
+    LAUNCH time only). The Phase-19 advanced family rides ONE nested
+    ``params["advanced"]`` key written ONLY when non-empty (PD-19-7 —
+    a defaults save produces no key, so pre-change documents stay
+    byte-compatible and an empty family never appears as ``{}``)."""
+    params: dict = {
+        "seeds": list(spec.seeds),
+        "peft": spec.peft,
+        "config_variant": spec.config_variant,
+        "curve_fractions": list(spec.curve_fractions),
+        "subset_file": spec.subset_file,
+        "num_train_epochs": spec.num_train_epochs,
+        "effective_batch_size": spec.effective_batch_size,
+        "batch_size": spec.batch_size,
+        "workers": spec.workers,
+        "gpus": (list(spec.gpus) if spec.gpus is not None else None),
+    }
+    if spec.advanced:
+        params["advanced"] = dict(spec.advanced)
     return {
         "schema_version": SCHEMA_VERSION,
         "models": list(spec.models),
         "tasks": list(spec.tasks),
-        "params": {
-            "seeds": list(spec.seeds),
-            "peft": spec.peft,
-            "config_variant": spec.config_variant,
-            "curve_fractions": list(spec.curve_fractions),
-            "subset_file": spec.subset_file,
-            "num_train_epochs": spec.num_train_epochs,
-            "effective_batch_size": spec.effective_batch_size,
-            "batch_size": spec.batch_size,
-            "workers": spec.workers,
-            "gpus": (list(spec.gpus) if spec.gpus is not None else None),
-        },
+        "params": params,
         "dirs": {
             "output_root": spec.output_root,
             "dataset_root": spec.dataset_root,
@@ -688,6 +793,41 @@ def _optional_str(value):
     return False, None
 
 
+def _advanced_doc_entry(row, value):
+    """Validate one PERSISTED advanced entry against its table row
+    (Phase 19 — the same kind dispatch parse_params runs, over the
+    ALREADY-TYPED persisted value instead of a raw string).
+
+    Per-entry tolerance (T-19-04): a drifted entry reports False and
+    its caller drops it to ABSENT — never a whole-family reset, never
+    a misread value. Floats accept int-typed JSON (0) and normalize to
+    float; bool keeps the STRING vocabulary ("true"/"false" — the
+    persisted convention, the child owns conversion); json requires a
+    dict.
+
+    Returns:
+        tuple[bool, object]: ``(True, normalized_value)`` when the
+        entry is valid, ``(False, None)`` when drifted.
+    """
+    if row.kind == "int":
+        if (isinstance(value, int) and not isinstance(value, bool)
+                and (row.lo is None or value >= row.lo)
+                and (row.hi is None or value <= row.hi)):
+            return True, value
+    elif row.kind == "float":
+        if (isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and (row.lo is None or value >= row.lo)
+                and (row.hi is None or value <= row.hi)):
+            return True, float(value)
+    elif row.kind in ("enum", "bool"):
+        if isinstance(value, str) and value in (row.choices or ()):
+            return True, value
+    elif row.kind == "json" and isinstance(value, dict):
+        return True, value
+    return False, None
+
+
 def _spec_from_doc(doc):
     """Rebuild a RunSpec from a persisted document; None when ANY
     field's shape/vocabulary is off — the whole-default policy (a
@@ -744,6 +884,31 @@ def _spec_from_doc(doc):
     else:
         return None
 
+    # Phase 19 (19-02): the advanced family's absent-key path — a
+    # pre-change document (no "advanced" key) loads the family EMPTY
+    # (byte-identical launches, no schema_version bump); a present
+    # family re-validates PER ENTRY through the same kind dispatch
+    # (an invalid entry loads as ABSENT — dropped, never a misread
+    # value and never a whole-doc reset; unknown keys drop silently —
+    # nothing echoes verbatim from disk, the T-19-02 replay rule); a
+    # present-but-non-dict family is shape drift beyond tolerance —
+    # the whole-default policy (T-19-04).
+    advanced: dict = {}
+    advanced_doc = params.get("advanced")
+    if advanced_doc is not None:
+        if not isinstance(advanced_doc, dict):
+            return None
+        rows_by_field = {
+            row.flag.lstrip("-"): row
+            for row in run_sweep.ADVANCED_TRAIN_FLAGS}
+        for field_name, value in advanced_doc.items():
+            row = rows_by_field.get(field_name)
+            if row is None:
+                continue
+            ok_entry, checked = _advanced_doc_entry(row, value)
+            if ok_entry:
+                advanced[field_name] = checked
+
     output_root = dirs.get("output_root")
     if not isinstance(output_root, str) or not output_root:
         return None
@@ -780,6 +945,7 @@ def _spec_from_doc(doc):
         cache_dir=cache_dir,
         workers=workers,
         gpus=gpus,
+        advanced=advanced,
     )
 
 
@@ -1251,6 +1417,42 @@ def phrase_matches(typed, output_root):
 # =====================================================================
 
 
+def _advanced_argv_elements(advanced):
+    """The advanced family's contiguous argv block (Phase 19, PD-19-2).
+
+    ONE definition consumed by BOTH composers (zero drift): loops the
+    frozen table in TABLE ORDER — alphabetical by flag — so the block
+    is deterministic regardless of the dict's iteration order (the
+    RunSpec.advanced immutability discipline's structural guarantee).
+    Present entries only (an absent family appends ZERO elements, the
+    D-12 whole-family parity); the json kind serializes via
+    ``json.dumps(sort_keys=True)``, everything else via ``str`` — the
+    EXACT serialization run_sweep's ``build_argv`` block and
+    dispatch_core's worker threading pin (bool keeps its string
+    vocabulary to the child's own conversion).
+
+    Args:
+        advanced (dict): the spec's nested family dict (undashed field
+            keys); ``None``/empty contributes nothing.
+
+    Returns:
+        list[str]: the argv elements (``["--learning_rate", "0.0001",
+        ...]`` — 2 per present flag, 0 for the empty family).
+    """
+    if not advanced:
+        return []
+    elements: list[str] = []
+    for row in run_sweep.ADVANCED_TRAIN_FLAGS:
+        value = advanced.get(row.flag.lstrip("-"))
+        if value is None:
+            continue
+        if row.kind == "json":
+            elements += [row.flag, json.dumps(value, sort_keys=True)]
+        else:
+            elements += [row.flag, str(value)]
+    return elements
+
+
 def compose_argv(spec):
     """Compose the run_sweep.py launch argv for a validated spec.
 
@@ -1259,8 +1461,12 @@ def compose_argv(spec):
     filters, and the ABSOLUTE output root, then PRESENT-ONLY flag
     pairs appended in the pinned order ``--peft``, ``--config-
     variant``, ``--curve``, ``--subset_file``, ``--num_train_epochs``,
-    ``--effective_batch_size``, ``--batch_size``, ``--cache_dir``,
-    ``--model_root``,
+    ``--effective_batch_size``, ``--batch_size``, the Phase-19
+    ADVANCED BLOCK (one contiguous alphabetical table-order block over
+    ``run_sweep.ADVANCED_TRAIN_FLAGS``, immediately after
+    ``--batch_size`` — PD-19-2, the same block run_sweep's
+    ``build_argv`` pins element-for-element),
+    ``--cache_dir``, ``--model_root``,
     ``--dataset_root``, ``--log_dir`` (the pinned storage tail,
     261014-c2l + 261014-f4w — the same order run_sweep's
     ``build_argv`` pins element-for-element; ``--batch_size``
@@ -1317,6 +1523,10 @@ def compose_argv(spec):
                  str(spec.effective_batch_size)]
     if spec.batch_size is not None:
         argv += ["--batch_size", str(spec.batch_size)]
+    # Phase 19 (PD-19-2): the advanced block — AFTER --batch_size,
+    # BEFORE --cache_dir (pinned element-for-element in the tier-1
+    # suite).
+    argv += _advanced_argv_elements(spec.advanced)
     if spec.cache_dir:
         argv += ["--cache_dir", _abs_against_repo_root(spec.cache_dir)]
     if spec.model_root:
@@ -1348,7 +1558,8 @@ def compose_dispatch_argv(spec):
     ``--seeds`` and the SAME pinned present-only sweep-flag tail
     ``compose_argv`` threads (element-for-element the run_sweep
     passthrough vocabulary — peft, config-variant, curve, subset_file,
-    num_train_epochs, effective_batch_size, batch_size, cache_dir,
+    num_train_epochs, effective_batch_size, batch_size, the Phase-19
+    advanced block (PD-19-2, immediately after batch_size), cache_dir,
     model_root,
     dataset_root, log_dir).
 
@@ -1404,6 +1615,9 @@ def compose_dispatch_argv(spec):
                  str(spec.effective_batch_size)]
     if spec.batch_size is not None:
         argv += ["--batch_size", str(spec.batch_size)]
+    # Phase 19 (PD-19-2): the advanced block — AFTER --batch_size,
+    # BEFORE --cache_dir (the compose_argv insert, one shared helper).
+    argv += _advanced_argv_elements(spec.advanced)
     if spec.cache_dir:
         argv += ["--cache_dir", _abs_against_repo_root(spec.cache_dir)]
     if spec.model_root:

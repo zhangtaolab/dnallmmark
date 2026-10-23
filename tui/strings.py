@@ -1543,6 +1543,38 @@ CFG_WORKERS_EXCEED_GPUS_PROBLEM = _t(
     "CFG_WORKERS_EXCEED_GPUS_PROBLEM", "workers ({workers}) 超过 GPU 数量 ({n})",
     "workers ({workers}) exceeds the GPU count ({n})")
 
+# Phase 19 (19-02, PD-19-3/PD-19-8/PD-19-9): the advanced-params
+# section — the two-layer slot-4 surface over the 18-row
+# run_sweep.ADVANCED_TRAIN_FLAGS table. The section title + the [a]/[r]
+# binding labels; the placeholder wrapper states the BASE config's YAML
+# default (the CFG_GPUS_DEFAULT "—（…）" prompt-hint grammar, fullwidth
+# parens zh / ASCII parens en); the two dim hint lines carry the
+# placeholder honesty (empty = YAML governs, variant configs carry
+# DIFFERENT defaults — Pitfall 3) and the PD-19-5 EBS/GA interplay
+# (effective_batch_size recomputes gradient_accumulation_steps and
+# wins); CFG_ADV_CHOICE_NONE renders the enum modals' leading 默认
+# pseudo-option WITH the table's default_display so the YAML default is
+# visible in the dropdown itself ({value} = the table's
+# default_display, data — never interpolated copy). Per-field labels
+# (CFG_ADV_FIELD_<UPPER>, flag vocabulary verbatim both languages, the
+# seeds/batch_size/EBS rule) land with their rows.
+CFG_ADV_TITLE = _t("CFG_ADV_TITLE", "高级参数", "Advanced params")
+CFG_ADV_HINT = _t(
+    "CFG_ADV_HINT", "空 = YAML 默认；变体配置默认不同",
+    "empty = YAML default; variant configs differ")
+CFG_ADV_HINT_GA = _t(
+    "CFG_ADV_HINT_GA", "设置 effective_batch_size 时 GA 仍由其重算",
+    "with effective_batch_size set, GA is still recomputed from it")
+CFG_ADV_DEFAULT = _t(
+    "CFG_ADV_DEFAULT", "—（默认: {value}）", "— (default: {value})")
+CFG_ADV_FIELD_LEARNING_RATE = _t(
+    "CFG_ADV_FIELD_LEARNING_RATE", "learning_rate", "learning_rate")
+CFG_ADV_TOGGLE_LABEL = _t("CFG_ADV_TOGGLE_LABEL", "展开高级", "Advanced")
+CFG_ADV_RESET_LABEL = _t(
+    "CFG_ADV_RESET_LABEL", "恢复高级默认", "Reset advanced")
+CFG_ADV_CHOICE_NONE = _t(
+    "CFG_ADV_CHOICE_NONE", "默认（{value}）", "default ({value})")
+
 # ===== 启动确认/执行 (LNC_, Phase 11) =====
 # The [enter] launch-confirmation pipeline, the E2' typed-phrase
 # escalation (LNC-03 — the maintainer-authorization boundary, never

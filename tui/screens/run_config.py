@@ -42,6 +42,7 @@ string renders through ``tui/strings.py`` constants (grep-enforced);
 registry keys, argv, reasons, and paths stay data, verbatim.
 """
 
+import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -78,6 +79,7 @@ from tui.services import run_config as run_config_service
 from tui.services import selection as selection_service
 from tui.services import sweep_launcher as sweep_launcher_module
 from tui.services.run_config import (
+    PARAM_ADVANCED,
     PARAM_BATCH_SIZE,
     PARAM_CURVE,
     PARAM_EBS,
@@ -108,6 +110,33 @@ DEFAULT_SUBSET_PATH = "pipeline/eval_subsets.json"
 #: The width threshold for the 80-col degradations (the UI-SPEC
 #: responsive rules: params labels shorten below the design grid).
 _NARROW_WIDTH = 100
+
+
+# ===== Phase 19 (19-02): the advanced-params family (PD-19-6) =====
+# The frozen 18-row table is consumed through the service's OWN
+# run_sweep import — one vocabulary, zero re-declaration (rows drive
+# the section's Inputs/ChoiceRows, placeholders, and raw collection).
+
+
+def _adv_field_row(field: str):
+    """The ADVANCED_TRAIN_FLAGS row for an undashed field name (None
+    when the field is not in the table)."""
+    for row in run_config_service.run_sweep.ADVANCED_TRAIN_FLAGS:
+        if row.flag.lstrip("-") == field:
+            return row
+    return None
+
+
+def _adv_input_id(field: str) -> str:
+    """The advanced Input widget id — the flag's underscores DASHERIZED
+    (``#cfg-input-learning-rate`` — the batch_size id grammar)."""
+    return f"#cfg-input-{field.replace('_', '-')}"
+
+
+#: The advanced Input-family fields the section renders, table order
+#: (Task 1: the learning_rate tracer row; Task 2 widens this tuple to
+#: every non-enum, non-bool table row — the same loop, more rows).
+_ADV_INPUT_FIELDS = ("learning_rate",)
 
 _STYLE_DIM = "$text-muted"
 _STYLE_WARN = "$warning"
@@ -1182,6 +1211,13 @@ class RunConfigScreen(Screen):
         # app-level ctrl+o binding fires with an Input focused, the
         # Input's value untouched).
         Binding("ctrl+o", "open_dir_picker", S.CFG_DIR_PICKER_LABEL),
+        # Phase 19 (19-02, PD-19-8): the advanced-params section
+        # affordances — plain bindings like p/s (a focused Input
+        # consumes printable keys, the p/s precedent; the keys are
+        # unclaimed in the screen AND app maps — verified against
+        # tui/app.py's q/f10/f1/f2/L/? set).
+        Binding("a", "toggle_advanced", S.CFG_ADV_TOGGLE_LABEL),
+        Binding("r", "reset_advanced", S.CFG_ADV_RESET_LABEL),
         Binding("enter", "open_gate", S.LNC_GATE_TITLE),
         Binding("escape", "clear_filter", show=False),
         Binding("1", "app.nav(1)", S.NAV_LABEL_ENV, show=False),
@@ -1406,6 +1442,40 @@ class RunConfigScreen(Screen):
                         value="", placeholder=S.CFG_BATCH_SIZE_DEFAULT,
                         id="cfg-input-batch-size",
                         classes="cfg-param-input", compact=True)
+                # Phase 19 (19-02, PD-19-8/PD-19-3): the advanced-params
+                # section — a titled block COLLAPSED by default inside
+                # the params column ([a] toggles, [r] bulk-restores
+                # defaults; per-field restore = clear the input / pick
+                # the default pseudo-option — empty threads nothing,
+                # the YAML governs). The
+                # placeholder states the BASE config's YAML default and
+                # the two dim hints carry the variance + the EBS/GA
+                # interplay. Existing classes ONLY (cfg-section-title /
+                # cfg-param-row / cfg-param-label / cfg-param-input /
+                # cfg-hint — zero new CSS); the collapse is the
+                # subset-input display idiom.
+                yield Label(S.CFG_ADV_TITLE, id="cfg-adv-title",
+                            classes="cfg-section-title")
+                yield Label(S.CFG_ADV_HINT, id="cfg-hint-adv",
+                            classes="cfg-hint")
+                yield Label(S.CFG_ADV_HINT_GA, id="cfg-hint-adv-ga",
+                            classes="cfg-hint")
+                # Task 2 replaces this single tracer row with the
+                # table-driven loop over every non-enum/non-bool row
+                # (13 rows) — the SIM117 nesting is transient.
+                with Vertical(id="cfg-adv-params") as adv_section:  # noqa: SIM117
+                    with Horizontal(classes="cfg-param-row"):
+                        yield Label(S.CFG_ADV_FIELD_LEARNING_RATE,
+                                    id="cfg-label-learning-rate",
+                                    classes="cfg-param-label")
+                        yield Input(
+                            value="",
+                            placeholder=S.CFG_ADV_DEFAULT.format(
+                                value=_adv_field_row(
+                                    "learning_rate").default_display),
+                            id="cfg-input-learning-rate",
+                            classes="cfg-param-input", compact=True)
+                adv_section.display = False
                 # Phase 16 (16-04, TUI-02, UI-SPEC C.1): the multi-GPU
                 # dispatch section — existing classes ONLY (zero new
                 # TCSS for slot-4). The workers field carries its LIVE
@@ -1569,6 +1639,17 @@ class RunConfigScreen(Screen):
             ("#cfg-input-cache", message.spec.cache_dir or ""),
         ):
             self.query_one(input_id, Input).value = value
+        # Phase 19 (19-02): the advanced family prefill — a typed value
+        # seeds its Input (json-kind values serialize via json.dumps so
+        # the prefill RE-PARSES as valid JSON; str() elsewhere), an
+        # absent field stays EMPTY (the placeholder then documents the
+        # base YAML default, PD-19-3). ChoiceRows join with their rows.
+        for adv_field in _ADV_INPUT_FIELDS:
+            adv_value = message.spec.advanced.get(adv_field)
+            self.query_one(_adv_input_id(adv_field), Input).value = (
+                json.dumps(adv_value, sort_keys=True)
+                if isinstance(adv_value, dict)
+                else (str(adv_value) if adv_value is not None else ""))
         self.query_one("#cfg-value-peft", ChoiceRow).set_value(
             message.spec.peft)
         self.query_one("#cfg-value-variant", ChoiceRow).set_value(
@@ -1799,6 +1880,16 @@ class RunConfigScreen(Screen):
             PARAM_WORKERS: self._text_value("#cfg-input-workers") or None,
             PARAM_GPUS: self._text_value("#cfg-input-gpus") or None,
         }
+        # Phase 19 (19-02): the advanced family — ONE nested raw dict
+        # keyed by the table's DASHED flag literals, collected from the
+        # section's Inputs regardless of the collapse state (collapse
+        # is view-only); an empty Input contributes None (absent — the
+        # YAML governs, P19-R5). ChoiceRows join with their rows.
+        raw[PARAM_ADVANCED] = {
+            f"--{adv_field}": (
+                self._text_value(_adv_input_id(adv_field)) or None)
+            for adv_field in _ADV_INPUT_FIELDS
+        }
         partials, problems = self._run_service.parse_params(raw)
         subset_file = None
         if self._subset_on:
@@ -2012,6 +2103,28 @@ class RunConfigScreen(Screen):
             if self._entries.model_entries or self._entries.dataset_entries:
                 self._render_picker()
             self.query_one("#cfg-picker", PickerList).focus()
+
+    # ===== Phase 19 (19-02, PD-19-8): the advanced-params section =====
+
+    def action_toggle_advanced(self) -> None:
+        """[a] — expand/collapse the advanced-params section.
+
+        The display flip is VIEW-only: typed values persist in the spec
+        and keep threading while collapsed ([r] is the explicit
+        bulk-restore affordance)."""
+        section = self.query_one("#cfg-adv-params", Vertical)
+        section.display = not section.display
+        self._refresh_preview()
+
+    def action_reset_advanced(self) -> None:
+        """[r] — bulk-restore every advanced field to its YAML-default
+        state: Inputs to EMPTY (the placeholder IS the per-field
+        restore affordance, PD-19-3 — an empty field threads nothing
+        and the YAML governs, P19-R5) — then refresh. ChoiceRows join
+        with their rows (Task 3)."""
+        for adv_field in _ADV_INPUT_FIELDS:
+            self.query_one(_adv_input_id(adv_field), Input).value = ""
+        self._refresh_preview()
 
     def action_pick_choice(self) -> None:
         """[enter] on a focused choice row — the RadioSet modal (the

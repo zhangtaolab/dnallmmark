@@ -2113,3 +2113,268 @@ def test_argv_plan_returns_pairs_and_seeds():
     ]
     assert run_config.argv_plan(no_seeds) is None
     assert run_config.argv_matrix(no_seeds) is None
+
+
+# =====================================================================
+# Phase 19 (19-02) — the advanced train-flag family: RunSpec.advanced,
+# the table-driven parse tail, the PD-19-2 composer block, and the
+# PD-19-7 nested persistence key. The 18-row vocabulary is
+# run_sweep.ADVANCED_TRAIN_FLAGS (consumed via the service's existing
+# import — one table, zero re-declaration; the parity test pins the
+# TUI loop against it).
+# =====================================================================
+
+
+#: One valid RAW representative per table row, keyed by the DASHED
+#: flag literal (the screen's raw-dict key grammar) — the parity and
+# full-family tests compose from the table so a new row FAILS the
+#: pin instead of silently threading untested.
+_ADV_VALID_RAW = {
+    "--adam_beta1": "0.9",
+    "--adam_beta2": "0.999",
+    "--adam_epsilon": "1e-8",
+    "--bf16": "false",
+    "--eval_steps": "100",
+    "--eval_strategy": "epoch",
+    "--gradient_accumulation_steps": "4",
+    "--learning_rate": "1e-4",
+    "--logging_steps": "50",
+    "--logging_strategy": "no",
+    "--lr_scheduler_kwargs": '{"num_restarts": 2}',
+    "--lr_scheduler_type": "cosine",
+    "--max_grad_norm": "0.5",
+    "--save_steps": "200",
+    "--save_strategy": "steps",
+    "--save_total_limit": "3",
+    "--warmup_ratio": "0.05",
+    "--weight_decay": "0.1",
+}
+
+
+def test_runspec_advanced_defaults_empty_dict():
+    """The family field defaults EMPTY — the whole-family-absent parity
+    (a defaults spec carries no advanced flag anywhere)."""
+    spec = run_config.RunSpec(models=("m",), tasks=("t",))
+    assert spec.advanced == {}
+
+
+def test_parse_params_advanced_learning_rate_valid_threads():
+    """The tracer row end-to-end at the parse tier: a valid typed
+    value parses to its float and lands under the ONE nested partial
+    keyed by the UNDASHED field name (the lane/persistence
+    convention, PD-19-7)."""
+    partials, problems = run_config.parse_params({
+        "advanced": {"--learning_rate": "1e-4"}})
+    assert problems == ()
+    assert partials["advanced"] == {"learning_rate": 1e-4}
+
+
+def test_parse_params_advanced_invalid_value_problem_no_thread():
+    """An out-of-bounds value raises the ONE family problem with the
+    ``<field>=<raw>`` detail and contributes NO entry (threads
+    nothing — the operator sees the problem line, the child never
+    sees the flag)."""
+    partials, problems = run_config.parse_params({
+        "advanced": {"--learning_rate": "2.0"}})
+    assert problems == (("advanced_invalid", "learning_rate=2.0"),)
+    assert partials["advanced"] == {}
+
+
+def test_parse_params_advanced_family_absent_no_partial():
+    """A raw dict WITHOUT the family key contributes no advanced
+    partial (pre-change callers and the absent-family parity)."""
+    partials, problems = run_config.parse_params({"seeds": "42"})
+    assert problems == ()
+    assert "advanced" not in partials
+
+
+def test_parse_params_advanced_empty_family_partial_restores_default():
+    """P19-R5 restore-default semantics: a PRESENT-but-empty family
+    raw yields an EMPTY advanced partial (not a missing key) — each
+    compose recomputes the WHOLE family, so a cleared field drops out
+    of the spec (empty = the YAML governs), unlike the scalar fields'
+    last-valid-governs rule."""
+    partials, problems = run_config.parse_params({
+        "advanced": {"--learning_rate": None}})
+    assert problems == ()
+    assert partials["advanced"] == {}
+
+
+def test_advanced_family_parity_with_run_sweep_table():
+    """PD-19-6: the TUI loop covers EXACTLY the frozen 18-row table —
+    every row's valid representative parses, the parsed keys are the
+    table's undashed field names, and an unknown dashed key inside the
+    family raw is ignored (never echoed)."""
+    assert len(run_sweep.ADVANCED_TRAIN_FLAGS) == 18
+    raw = {run_config.PARAM_ADVANCED: dict(_ADV_VALID_RAW,
+                                           **{"--typo_flag": "1"})}
+    partials, problems = run_config.parse_params(raw)
+    assert problems == (), problems
+    assert partials["advanced"] == {
+        row.flag.lstrip("-"): partials["advanced"][row.flag.lstrip("-")]
+        for row in run_sweep.ADVANCED_TRAIN_FLAGS
+    }
+    assert "typo_flag" not in partials["advanced"]
+    # kind-faithful values: float rows parse to floats, enum/bool keep
+    # their string vocabulary, json parses to the dict
+    assert partials["advanced"]["learning_rate"] == 1e-4
+    assert partials["advanced"]["bf16"] == "false"
+    assert partials["advanced"]["lr_scheduler_kwargs"] == {"num_restarts": 2}
+
+
+def test_compose_argv_full_advanced_block_element_for_element():
+    """PD-19-2: the full 18-row family composes as ONE contiguous
+    ALPHABETICAL (table-order) block immediately AFTER --batch_size
+    and BEFORE --cache_dir — element-for-element, values serialized
+    per kind (floats via str(), the json row via json.dumps with
+    sort_keys, bool keeping its string vocabulary) — the same block
+    run_sweep.build_argv pins."""
+    advanced = {
+        row.flag.lstrip("-"): value
+        for row, value in zip(
+            run_sweep.ADVANCED_TRAIN_FLAGS,
+            (0.9, 0.999, 1e-8, "false", 100, "epoch", 4, 1e-4, 50,
+             "no", {"num_restarts": 2}, "cosine", 0.5, 200, "steps", 3,
+             0.05, 0.1),
+        )
+    }
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",), batch_size=8,
+        cache_dir="/data/cache", advanced=advanced)
+    argv = run_config.compose_argv(spec)
+    expected_block: list = []
+    for row in run_sweep.ADVANCED_TRAIN_FLAGS:
+        value = advanced[row.flag.lstrip("-")]
+        serialized = (json.dumps(value, sort_keys=True)
+                      if row.kind == "json" else str(value))
+        expected_block += [row.flag, serialized]
+    assert argv[argv.index("--batch_size") + 2:] == (
+        expected_block
+        + ["--cache_dir", "/data/cache"]), (
+            "the advanced block sits immediately after --batch_size, "
+            "before --cache_dir, in table (alphabetical) order")
+    # spot pins: the tracer row threads its float; the json row
+    # serializes sorted; bool rides its string
+    assert flag_value(argv, "--learning_rate") == "0.0001"
+    assert flag_value(argv, "--lr_scheduler_kwargs") == '{"num_restarts": 2}'
+    assert flag_value(argv, "--bf16") == "false"
+
+
+def test_compose_dispatch_argv_full_advanced_block_element_for_element():
+    """The dispatch composer threads the IDENTICAL advanced block (one
+    shared helper — zero drift between the two composers): after
+    --batch_size, before --cache_dir, table order, per-kind
+    serialization."""
+    advanced = {
+        row.flag.lstrip("-"): value
+        for row, value in zip(
+            run_sweep.ADVANCED_TRAIN_FLAGS,
+            (0.9, 0.999, 1e-8, "false", 100, "epoch", 4, 1e-4, 50,
+             "no", {"num_restarts": 2}, "cosine", 0.5, 200, "steps", 3,
+             0.05, 0.1),
+        )
+    }
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",), batch_size=8,
+        cache_dir="/data/cache", advanced=advanced)
+    argv = run_config.compose_dispatch_argv(spec)
+    sweep_argv = run_config.compose_argv(spec)
+    assert (argv[argv.index("--batch_size") + 2:
+            argv.index("--cache_dir")]) == (
+        sweep_argv[sweep_argv.index("--batch_size") + 2:
+                   sweep_argv.index("--cache_dir")]), (
+        "both composers thread the byte-identical advanced block")
+    # the no-batch_size shape: the block sits immediately after the
+    # --effective_batch_size VALUE (the acceptance-pin position).
+    ebs_spec = run_config.RunSpec(
+        models=("m",), tasks=("t",), effective_batch_size=16,
+        advanced={"learning_rate": 1e-4})
+    ebs_argv = run_config.compose_argv(ebs_spec)
+    assert ebs_argv[ebs_argv.index("--effective_batch_size") + 2:] == (
+        ["--learning_rate", "0.0001"]), (
+        "with batch_size absent the block follows --effective_batch_size")
+
+
+@pytest.mark.parametrize("flag", [row.flag for row in
+                                  run_sweep.ADVANCED_TRAIN_FLAGS])
+def test_compose_argv_defaults_carry_zero_advanced_elements(flag):
+    """The whole-family absent parity (D-12): a defaults spec composes
+    exactly the 10 base elements — NO table flag appears anywhere."""
+    argv = run_config.compose_argv(run_config.RunSpec(
+        models=PREVIEW_MODELS, tasks=("GUE__emp_H3",)))
+    assert flag not in argv
+    assert len(argv) == 10
+
+
+def test_persistence_advanced_round_trip_and_only_when_non_empty(
+        monkeypatch, tmp_path):
+    """PD-19-7: the family persists under ONE nested params key and
+    round-trips (save -> load -> equal dict, json rows as dicts);
+    a defaults save writes NO advanced key at all (pre-change
+    documents stay byte-compatible, no schema_version bump)."""
+    state = pin_state_dir(monkeypatch, tmp_path)
+    advanced = {
+        "learning_rate": 1e-4,
+        "gradient_accumulation_steps": 4,
+        "lr_scheduler_type": "cosine",
+        "lr_scheduler_kwargs": {"num_restarts": 2},
+        "bf16": "false",
+    }
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("t",), advanced=advanced)
+    run_config.save_state(spec)
+    loaded = run_config.load_state()
+    assert loaded == spec
+    assert loaded.advanced == advanced
+    assert (state / "run_config.json").is_file()
+    # the defaults save carries NO advanced key (only-when-non-empty)
+    run_config.save_state(run_config.RunSpec(models=(), tasks=()))
+    doc = json.loads(
+        (state / "run_config.json").read_text(encoding="utf-8"))
+    assert "advanced" not in doc["params"]
+
+
+def test_pre_change_doc_advanced_absent_loads_empty(monkeypatch, tmp_path):
+    """The absent-key path: a pre-change persisted state file (no
+    advanced key) loads the family EMPTY and composes the plain base
+    argv — byte-identical launches (the D-12 10-element lock, green
+    unmodified), no schema_version bump (the batch_size/workers
+    absent-key precedents)."""
+    _write_state_doc(monkeypatch, tmp_path, _PRE_CHANGE_DOC)
+    spec = run_config.load_state()
+    assert spec.advanced == {}
+    argv = run_config.compose_dispatch_argv(spec)
+    assert not any(flag in argv for flag in
+                   (row.flag for row in run_sweep.ADVANCED_TRAIN_FLAGS))
+    assert len(run_config.compose_argv(spec)) == 10, (
+        "a pre-change document composes exactly the 10 base elements"
+    )
+
+
+def test_advanced_drifted_entry_loads_as_absent_never_misread(
+        monkeypatch, tmp_path):
+    """T-19-04 per-entry tolerance: a drifted advanced entry (out-of-
+    bounds value, wrong kind, unknown key) loads as ABSENT — dropped,
+    never a misread value, never a whole-doc reset; the SIBLING valid
+    entries survive; a present-but-non-dict family is shape drift
+    beyond tolerance (the whole-default policy)."""
+    doc = {
+        **_PRE_CHANGE_DOC,
+        "params": {
+            **_PRE_CHANGE_DOC["params"],
+            "advanced": {
+                "learning_rate": 5.0,       # out of bounds -> dropped
+                "bf16": True,               # wrong kind (bool, not the
+                                            # string vocabulary) -> dropped
+                "typo_flag": "x",           # unknown key -> dropped
+                "warmup_ratio": 0.2,        # valid -> survives
+            },
+        },
+    }
+    _write_state_doc(monkeypatch, tmp_path, doc)
+    spec = run_config.load_state()
+    assert spec.advanced == {"warmup_ratio": 0.2}
+    # a non-dict family is beyond tolerance: the whole-default spec
+    _write_state_doc(monkeypatch, tmp_path, {
+        **doc, "params": {**doc["params"], "advanced": ["not", "a", "dict"]}})
+    assert run_config.load_state() == run_config.RunSpec(models=(), tasks=())
