@@ -3703,6 +3703,247 @@ def test_rerun_pre_change_claim_replays_advanced_absent(
         )
 
 
+# ===== Phase 19 (19-01 Task 3): the dispatch full 18-row family =====
+
+#: The 18 literal advanced tokens, spelled out (the derivation pin's
+#: expected value — a table drift or a broken derivation fails here).
+EXPECTED_ADVANCED_LANE_TOKENS = tuple(f"--{name}" for name in (
+    "adam_beta1", "adam_beta2", "adam_epsilon", "bf16", "eval_steps",
+    "eval_strategy", "gradient_accumulation_steps", "learning_rate",
+    "logging_steps", "logging_strategy", "lr_scheduler_kwargs",
+    "lr_scheduler_type", "max_grad_norm", "save_steps", "save_strategy",
+    "save_total_limit", "warmup_ratio", "weight_decay"))
+
+
+def test_rerun_token_family_derived_equals_the_18_table_flags():
+    """PD-19-6 drift-proofing pin: dispatch_core's ADVANCED_LANE_TOKENS
+    is DERIVED from run_sweep.ADVANCED_TRAIN_FLAGS and equals exactly
+    the 18 literal flags — and every derived token sits inside
+    _RERUN_LANE_TOKENS, so a blended --rerun-failed launch can never
+    sneak an advanced value past the refusal."""
+    assert dispatch_core.ADVANCED_LANE_TOKENS == (
+        EXPECTED_ADVANCED_LANE_TOKENS)
+    assert len(EXPECTED_ADVANCED_LANE_TOKENS) == 18
+    for token in dispatch_core.ADVANCED_LANE_TOKENS:
+        assert token in dispatch_core._RERUN_LANE_TOKENS
+
+
+@pytest.mark.parametrize("token", EXPECTED_ADVANCED_LANE_TOKENS)
+def test_rerun_refuses_every_advanced_lane_token(
+        tmp_path, monkeypatch, token):
+    """The blended-lane refusal covers ALL 18 advanced tokens (the
+    derived family joined _RERUN_LANE_TOKENS): passing any advanced flag
+    on a --rerun-failed launch refuses with the D14-06 lane-replay
+    wording — lane flags replay verbatim from the claim, never blend."""
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, tmp_path, extra=[token, "1"]),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert f"refuses the lane token '{token}'" in message
+    assert "D14-06" in message
+    assert calls == []
+
+
+def test_rerun_replays_full_advanced_dict_verbatim(tmp_path, monkeypatch):
+    """The full-family replay: a failed claim whose lane carries ALL 18
+    advanced values replays EVERY flag verbatim into the re-run argv —
+    alphabetical (table order), between --batch_size's slot and
+    --cache_dir's slot, json serialized as sorted-key JSON."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "adv-full-rerun").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    advanced = {
+        "adam_beta1": 0.9, "adam_beta2": 0.999, "adam_epsilon": 1e-8,
+        "bf16": "true", "eval_steps": 100, "eval_strategy": "epoch",
+        "gradient_accumulation_steps": 4, "learning_rate": 1e-4,
+        "logging_steps": 50, "logging_strategy": "steps",
+        "lr_scheduler_kwargs": {"num_restarts": 2, "power": 1.0},
+        "lr_scheduler_type": "cosine_with_restarts",
+        "max_grad_norm": 0.5, "save_steps": 200, "save_strategy": "no",
+        "save_total_limit": 3, "warmup_ratio": 0.05, "weight_decay": 0.01,
+    }
+    lane = {"peft": "none", "config_variant": "none",
+            "subset_file": None, "effective_batch_size": None,
+            "batch_size": 8, "num_train_epochs": None,
+            "advanced": advanced}
+    _write_failed_claim(ledger_dir, ("model-a", "task-x", 42), lane)
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 1
+    argv = calls[0]["argv"]
+    # EVERY flag replays verbatim (the element-for-element build_argv
+    # equality below pins the alphabetical order).
+    for token in EXPECTED_ADVANCED_LANE_TOKENS:
+        assert token in argv, f"{token} must replay from the claim lane"
+    assert flag_value(argv, "--lr_scheduler_kwargs") == (
+        '{"num_restarts": 2, "power": 1.0}'), (
+        "the json row replays as sorted-key JSON"
+    )
+    # Element-for-element equality against build_argv for the same lane.
+    assert argv == run_sweep.build_argv(
+        "model-a", "task-x", 42, str(base), peft="none",
+        train_fraction=None, subset_file=None,
+        effective_batch_size=None, batch_size=8,
+        num_train_epochs=None,
+        cache_dir=None, config_variant="none", model_root=None,
+        dataset_root=None, log_dir=None, advanced=advanced)
+    # And the fresh re-run claim re-records the dict for the next replay.
+    fresh = json.loads(
+        (ledger_dir / dispatch_core.claim_filename(
+            ("model-a", "task-x", 42))).read_text(encoding="utf-8"))
+    assert fresh["lane"]["advanced"] == advanced
+
+
+def test_rerun_replays_partial_advanced_dict_partially(
+        tmp_path, monkeypatch):
+    """A PARTIAL claim dict (one flag) replays EXACTLY that flag —
+    per-entry tolerant replay, never an all-or-nothing family replay."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "adv-partial-rerun").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    lane = {"peft": "none", "config_variant": "none",
+            "subset_file": None, "effective_batch_size": None,
+            "num_train_epochs": None,
+            "advanced": {"warmup_ratio": 0.05}}
+    _write_failed_claim(ledger_dir, ("model-a", "task-x", 42), lane)
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 1
+    argv = calls[0]["argv"]
+    assert flag_value(argv, "--warmup_ratio") == "0.05"
+    for token in EXPECTED_ADVANCED_LANE_TOKENS:
+        if token != "--warmup_ratio":
+            assert token not in argv, (
+                f"{token} was not in the claim's advanced dict — zero "
+                "argv elements (per-entry replay)"
+            )
+
+
+def test_rerun_refuses_heterogeneous_advanced_lanes(
+        tmp_path, monkeypatch):
+    """Lane homogeneity over the nested dict (PD-19-7: compared as ONE
+    value): two failed claims differing ONLY inside advanced refuse the
+    re-run naming the 'advanced' flag, each cell's value, and D14-08 —
+    unequal lanes are different experiments."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "adv-hetero").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    lane_a = {"peft": "none", "config_variant": "none",
+              "subset_file": None, "effective_batch_size": None,
+              "num_train_epochs": None,
+              "advanced": {"learning_rate": 1e-4}}
+    lane_b = {**lane_a, "advanced": {"learning_rate": 2e-4}}
+    _write_failed_claim(
+        ledger_dir, ("model-a", "task-x", 42), lane_a, run_id="run-aaa1")
+    _write_failed_claim(
+        ledger_dir, ("model-b", "task-z", 43), lane_b, run_id="run-bbb1")
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "lane flag 'advanced' differs across the failed cells" in message
+    assert "model-a/task-x/seed_42" in message, (
+        "the refusal names each differing cell"
+    )
+    assert "model-b/task-z/seed_43" in message
+    assert "0.0001" in message and "0.0002" in message, (
+        "the refusal shows each cell's advanced value"
+    )
+    assert "D14-08" in message
+    assert calls == [], "no child spawned from a refused re-run"
+
+
+def test_dispatch_advanced_multi_flag_lane_records_nested_dict(
+        tmp_path, monkeypatch):
+    """The ordinary lane over the FULL family surface (int/float/enum/
+    bool/json together): every present flag threads into every child
+    argv and the claim lane records the exact nested dict."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "adv-multi").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--learning_rate", "0.0001",
+        "--gradient_accumulation_steps", "4",
+        "--lr_scheduler_type", "cosine",
+        "--bf16", "false",
+        "--lr_scheduler_kwargs", '{"num_restarts": 2}',
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1
+    argv = calls[0]["argv"]
+    assert flag_value(argv, "--learning_rate") == "0.0001"
+    assert flag_value(argv, "--gradient_accumulation_steps") == "4"
+    assert flag_value(argv, "--lr_scheduler_type") == "cosine"
+    assert flag_value(argv, "--bf16") == "false"
+    assert flag_value(argv, "--lr_scheduler_kwargs") == (
+        '{"num_restarts": 2}')
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base) / dispatch_core.claim_filename(
+            ("model-a", "task-x", 42))).read_text(encoding="utf-8"))
+    assert claim["lane"]["advanced"] == {
+        "learning_rate": 1e-4, "gradient_accumulation_steps": 4,
+        "lr_scheduler_type": "cosine", "bf16": "false",
+        "lr_scheduler_kwargs": {"num_restarts": 2}}
+
+
+def test_dispatch_dry_run_advanced_parity_with_run_sweep_dry_run(
+        tmp_path, monkeypatch):
+    """Dry-run mirror parity: a dispatch --dry-run and a run_sweep
+    --dry-run over identical inputs + advanced flags record the SAME
+    nested 'advanced' key shape in every manifest cell (one manifest
+    shape spans both modes, 13-02); with NO advanced flag NEITHER
+    manifest carries the key."""
+    registry_dir = make_registry(tmp_path)
+    flags = ["--learning_rate", "0.0001", "--warmup_ratio", "0.05"]
+
+    dispatch_root = (tmp_path / "dry-dispatch").resolve()
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1", "--dry-run",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        *flags,
+        "--output-root", str(dispatch_root),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner([]))
+    sweep_root = (tmp_path / "dry-sweep").resolve()
+    run_sweep_cli(monkeypatch, [
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--dry-run", *flags,
+        "--output-root", str(sweep_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    dispatch_cells = _read_manifest(dispatch_root)["cells"]
+    sweep_cells = _read_manifest(sweep_root)["cells"]
+    assert dispatch_cells and sweep_cells
+    for cell in dispatch_cells:
+        assert cell["advanced"] == {"learning_rate": 1e-4,
+                                    "warmup_ratio": 0.05}
+    for d_cell, s_cell in zip(dispatch_cells, sweep_cells):
+        assert d_cell["advanced"] == s_cell["advanced"], (
+            "one manifest key shape spans both modes (the mirror parity)"
+        )
+
+    plain_dispatch_root = (tmp_path / "dry-plain-dispatch").resolve()
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1", "--dry-run",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(plain_dispatch_root),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner([]))
+    for cell in _read_manifest(plain_dispatch_root)["cells"]:
+        assert "advanced" not in cell, (
+            "no advanced flag = no manifest key on the dispatch dry-run "
+            "mirror either (HEAD parity, PD-19-7)"
+        )
+
+
 def test_rerun_refuses_unknown_registry_model_loudly(
         tmp_path, monkeypatch):
     """T-14-07 registry join: a hand claim naming a model absent from
