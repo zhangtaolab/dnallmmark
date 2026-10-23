@@ -25,11 +25,6 @@ finetune:
     per_device_eval_batch_size: 8
     gradient_accumulation_steps: 1
     max_steps: -1
-    # Dataloader parallelism (2026-10-23, maintainer directive "A"): pure I/O
-    # prefetch — training math, batch, sampling order unchanged; the box's
-    # otherwise-idle CPUs remove the per-step CPU bottleneck (singlebase
-    # collation at num_workers=0 capped GPU util ~20%).
-    dataloader_num_workers: 12
     logging_strategy: "steps"
     logging_steps: 500
     eval_strategy: "steps"
