@@ -145,6 +145,10 @@ pipeline/finetuned-tui-pa6/
 # dispatch root for the recorded multi-day download+train journey — the
 # evidence is docs/live/fhs/, never the run tree itself
 pipeline/finetuned-fhs-full/
+# 261023-abu batch-32 restart: the pre-restart root (0 completed cells,
+# 2 stale claims) preserved as superseded evidence — the Phase-15
+# fresh-root discipline (marker-skip can never mask a regression)
+pipeline/finetuned-fhs-full-b4-superseded/
 # TUI demo meta sidecars (quick-261015-pex): per-recording driver state,
 # consumed by record.sh's exit gate — never committed.
 docs/demo/.meta-*.json

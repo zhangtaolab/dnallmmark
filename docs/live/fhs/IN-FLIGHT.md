@@ -153,6 +153,58 @@ protocol change) and a new scheduling option (2 cells per GPU via workers=4
 gpus=0,1,0,1 — per-cell math unchanged, ~1.6-1.8x from stream interleaving).
 Batch/epochs/lr/eval cadence all UNTOUCHED — protocol comparability preserved.
 
+## Ops change 2026-10-23 (later) — batch 32 restart THROUGH the TUI journey (quick-261023-abu, maintainer order "修改好了以后重新开始训练")
+
+The `--batch_size` passthrough chain landed (quick-261023-abu: run_sweep +
+dispatch_core lane threading, TUI run-config param, journey-driver
+`--batch-text`). Restart executed per the documented procedure:
+
+1. **Kill order (learned-the-hard-way recipe)**: dispatch orchestrator first
+   (PID 826884), 3 s wait, then killpg-TERM the two orphan trainer session
+   leaders (826888/826889, both `BEND__CpG_methylation` seeds 42/43,
+   ~1 h07 m in, no artifacts). Zero python sweep processes verified; GPUs at
+   0 %/2 MiB. The watcher (PID 733194, attach mode) untouched and continues
+   this `evidence.json`.
+2. **Fresh-root deviation (recorded)**: the driver's preflight refuses ANY
+   existing output root (fresh-root discipline), so the dead root — 0
+   completed cells, 2 stale claims — moved aside to
+   `pipeline/finetuned-fhs-full-b4-superseded/` (gitignored; Phase-15
+   superseded-evidence precedent) and the journey relaunched into a fresh
+   root at the SAME path, keeping the watcher's attach target valid.
+3. **Journey (log `tui-live/fhs-journey-b32-20261023-081003.log`, evidence
+   `batch_input_value: 32`)**: download re-audit settled after two 600 s
+   passes, wizard walked with `8`→`32` typed into the new batch input
+   (SVGs 012/013/014), the [p] argv assertion verified `--batch_size 32`,
+   `y` pressed, dispatch launched. New PIDs: orchestrator **870039**,
+   trainers **870043** (GPU 0) / **870044** (GPU 1), both trainer argv
+   verified carrying `--batch_size 32` via `/proc/<pid>/cmdline`.
+   The driver itself exited at `998_monitor_failure` (its monitor-attach UI
+   leg failed 60 s after `y`; the LAUNCH succeeded and the sweep runs — the
+   attach watcher 733194 owns the ongoing evidence heartbeat).
+4. **Measured outcome (honest, two-sided)**:
+   - Worker log: `Base batch size: 32 | Dynamic starting batch size: 16
+     for max_len 514` — the threaded value is the STARTING per-device
+     batch; `determine_batch_size` governs the tier (≤512 → full 32,
+     513–1024 → 16, …).
+   - **All 3 BEND__CpG_methylation seeds FAILED with CUDA OOM at the tier-16
+     batch** (31.05 GiB in use, 2.02 GiB more wanted, 32 GB cards) — batch
+     32 does NOT fit the >512-token tier on this hardware. Failed cells are
+     recorded in the ledger, never requeued in-run (Phase 14 owns re-run;
+     note a `--rerun-failed` replay would carry the batch-32 lane VERBATIM
+     and OOM again — a smaller-batch re-run needs a fresh launch lane).
+   - Short-sequence cells fit and FLY: `Deep4mC__C.elegans_4mC`
+     (max_len 43, batch 32) sustained **7.9–8.9 it/s** (vs the 2.2 it/s
+     baseline at batch 4 on the 514-token BEND cell — different length
+     tiers, stated as such), GPU util 31–40 % (vs 16–19 %); first cell
+     (seed 42) COMPLETED with `final_metrics.json` in ~19 min wall.
+   - Open risk: ≤512-token cells (GUE class) run at FULL batch 32 — watch
+     the failures list; the child's VRAM estimator is the remaining
+     backstop.
+5. **Protocol note**: per-device batch is now a TUI-set 32-STARTING value —
+   every cell runs at the dynamic tier of it, so cell-level micro-batch
+   varies by dataset length tier (43-tok cells at 32, 514-tok at 16, …).
+   Comparability with any pre-restart numbers must account for this.
+
 ## Commit map (this task, local only, no push)
 
 - `dfb820e` feat(quick-261022-tah): full-journey TUI SVG driver — download
