@@ -1618,6 +1618,27 @@ CFG_ADV_FIELD_WARMUP_RATIO = _t(
     "CFG_ADV_FIELD_WARMUP_RATIO", "warmup_ratio", "warmup_ratio")
 CFG_ADV_FIELD_WEIGHT_DECAY = _t(
     "CFG_ADV_FIELD_WEIGHT_DECAY", "weight_decay", "weight_decay")
+# Phase 19 Task 3: the five enum/bool ChoiceRow labels (PD-19-10 —
+# bf16 is enum-consistent, not a free Input) + the two narrow-grid
+# _SHORT twins among them (the Input-family mechanism; eval_strategy
+# at 13 / save_strategy at 13 / bf16 at 4 already fit the budget).
+CFG_ADV_FIELD_BF16 = _t("CFG_ADV_FIELD_BF16", "bf16", "bf16")
+CFG_ADV_FIELD_EVAL_STRATEGY = _t(
+    "CFG_ADV_FIELD_EVAL_STRATEGY", "eval_strategy", "eval_strategy")
+CFG_ADV_FIELD_LOGGING_STRATEGY = _t(
+    "CFG_ADV_FIELD_LOGGING_STRATEGY", "logging_strategy",
+    "logging_strategy")
+CFG_ADV_FIELD_LOGGING_STRATEGY_SHORT = _t(
+    "CFG_ADV_FIELD_LOGGING_STRATEGY_SHORT", "logging_strat",
+    "logging_strat")
+CFG_ADV_FIELD_LR_SCHEDULER_TYPE = _t(
+    "CFG_ADV_FIELD_LR_SCHEDULER_TYPE", "lr_scheduler_type",
+    "lr_scheduler_type")
+CFG_ADV_FIELD_LR_SCHEDULER_TYPE_SHORT = _t(
+    "CFG_ADV_FIELD_LR_SCHEDULER_TYPE_SHORT", "lr_sched_type",
+    "lr_sched_type")
+CFG_ADV_FIELD_SAVE_STRATEGY = _t(
+    "CFG_ADV_FIELD_SAVE_STRATEGY", "save_strategy", "save_strategy")
 
 # ===== 启动确认/执行 (LNC_, Phase 11) =====
 # The [enter] launch-confirmation pipeline, the E2' typed-phrase

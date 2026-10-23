@@ -98,6 +98,14 @@ EXPECTED_CFG_CONSTANTS = (
     "CFG_ADV_FIELD_SAVE_STEPS", "CFG_ADV_FIELD_SAVE_TOTAL_LIMIT",
     "CFG_ADV_FIELD_SAVE_TOTAL_LIMIT_SHORT", "CFG_ADV_FIELD_WARMUP_RATIO",
     "CFG_ADV_FIELD_WEIGHT_DECAY",
+    # Phase 19 Task 3: the five enum/bool ChoiceRow labels + the two
+    # narrow-grid _SHORT twins among them.
+    "CFG_ADV_FIELD_BF16", "CFG_ADV_FIELD_EVAL_STRATEGY",
+    "CFG_ADV_FIELD_LOGGING_STRATEGY",
+    "CFG_ADV_FIELD_LOGGING_STRATEGY_SHORT",
+    "CFG_ADV_FIELD_LR_SCHEDULER_TYPE",
+    "CFG_ADV_FIELD_LR_SCHEDULER_TYPE_SHORT",
+    "CFG_ADV_FIELD_SAVE_STRATEGY",
 )
 
 #: The complete expected LNC_ inventory (launch-confirmation modal +

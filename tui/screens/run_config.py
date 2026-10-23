@@ -151,21 +151,35 @@ def _adv_field_label(field: str) -> str:
 
 #: The advanced Input-family fields the section renders, TABLE ORDER —
 #: every non-enum, non-bool row (13 rows; enum/bool rows ride
-#: ChoiceRows, Task 3). Compose-time generation loops this tuple; the
+#: ChoiceRows). Compose-time generation loops this tuple; the
 #: raw collection + prefill loop the SAME tuple (one vocabulary).
 _ADV_INPUT_FIELDS = tuple(
     row.flag.lstrip("-")
     for row in run_config_service.run_sweep.ADVANCED_TRAIN_FLAGS
     if row.kind not in ("enum", "bool"))
 
+#: The advanced enum/bool ChoiceRow fields, table order (5 rows — the
+#: probe-pinned closed vocabularies ride the table rows, PD-19-9).
+_ADV_CHOICE_FIELDS = tuple(
+    row.flag.lstrip("-")
+    for row in run_config_service.run_sweep.ADVANCED_TRAIN_FLAGS
+    if row.kind in ("enum", "bool"))
+
+#: The ChoiceRows' leading pseudo-option VALUE (PD-19-9): renders as
+#: the default({default_display}) shape in the modal, threads NOTHING (the raw
+#: entry maps it to absent — empty = the YAML governs), and shows on
+#: the collapsed row as the raw vocabulary (the peft "none" grammar).
+_ADV_DEFAULT_CHOICE = "default"
+
 #: The advanced labels needing narrow-grid _SHORT twins — the
 #: spellings exceeding the 16-cell narrow label column (the
 #: CFG_FIELD_EBS_SHORT mechanism; 14-cell eff_batch_size is the
-#: measured budget — every unlisted Input label is <= 13 chars). The
-#: enum rows join with their labels (Task 3).
+#: measured budget — every unlisted label is <= 13 chars).
 _ADV_SHORT_FIELDS = (
     "gradient_accumulation_steps",
+    "logging_strategy",
     "lr_scheduler_kwargs",
+    "lr_scheduler_type",
     "save_total_limit",
 )
 
@@ -650,7 +664,11 @@ class DisabledMarkRequested(Message):
 
 class ChoiceRow(Static, can_focus=True):
     """A focusable params choice row: the value + ▾ (enter opens the
-    RadioSet modal — the preset-modal family)."""
+    RadioSet modal — the preset-modal family). Phase 19 (19-02): the
+    row REMEMBERS its current value (``value``) — the enum/bool
+    advanced rows read it for the modal's current mark and the raw
+    dict collection (peft/variant still read the spec; the widget is
+    the live truth for the family's fresh-recompute semantics)."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("enter", "pick_choice", show=False),
@@ -659,7 +677,13 @@ class ChoiceRow(Static, can_focus=True):
     def __init__(self, field: str, value: str = "", **kwargs) -> None:
         super().__init__("", **kwargs)
         self.field = field
+        self._value = value
         self.set_value(value)
+
+    @property
+    def value(self) -> str:
+        """The row's current raw-vocabulary value (no ▾ affordance)."""
+        return self._value
 
     def action_pick_choice(self) -> None:
         """Delegate to the screen's choice action (the 8.2.8 action
@@ -669,7 +693,9 @@ class ChoiceRow(Static, can_focus=True):
             handler()
 
     def set_value(self, value: str) -> None:
-        """Render one choice value with the dim ▾ affordance."""
+        """Render one choice value with the dim ▾ affordance (and
+        remember it — the raw-vocabulary string, never display copy)."""
+        self._value = value
         self.update(Text.assemble(
             Text(value), Text(" ▾", style="dim")))
 
@@ -926,7 +952,13 @@ class E2PhraseModal(_PickerReturnModal):
 
 class ChoiceModal(_PickerReturnModal):
     """The RadioSet choice modal (PEFT / variant — the preset-modal family:
-    the first toggle applies the choice and closes)."""
+    the first toggle applies the choice and closes). Phase 19 (19-02,
+    PD-19-9): optional ``labels`` decouple the DISPLAY text from the
+    RadioButton id — the advanced enum rows render their leading default
+    pseudo-option WITH the table's default_display while the id (and
+    the on_pick value) stays the raw vocabulary; ``labels=None`` keeps
+    the options-as-labels behavior (the peft/variant path,
+    byte-identical)."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "dismiss", S.APP_MODAL_BACK_LABEL),
@@ -934,18 +966,20 @@ class ChoiceModal(_PickerReturnModal):
 
     def __init__(self, title: str, options: "tuple[str, ...]",
                  current: str,
-                 on_pick: "Callable[[str], None]", **kwargs):
+                 on_pick: "Callable[[str], None]", labels=None, **kwargs):
         super().__init__(**kwargs)
         self._title = title
         self._options = tuple(options)
+        self._labels = (tuple(labels) if labels is not None
+                        else self._options)
         self._current = current
         self._on_pick = on_pick
 
     def compose(self) -> ComposeResult:
         with Vertical(id="cfg-choice-box", classes="modal-box"):
             yield RadioSet(*[
-                RadioButton(option, option == self._current, id=option)
-                for option in self._options
+                RadioButton(label, option == self._current, id=option)
+                for option, label in zip(self._options, self._labels)
             ])
             yield Footer()
 
@@ -1492,27 +1526,39 @@ class RunConfigScreen(Screen):
                 yield Label(S.CFG_ADV_HINT_GA, id="cfg-hint-adv-ga",
                             classes="cfg-hint")
                 with Vertical(id="cfg-adv-params") as adv_section:
-                    # The Input rows are COMPOSE-TIME GENERATION over
-                    # the table (one code block, not 13 hand-copies) —
-                    # every non-enum/non-bool row in table order, the
-                    # batch_size row shape verbatim: Horizontal row +
-                    # Label + compact Input, the placeholder carrying
-                    # the BASE config's YAML default (PD-19-3). Widget
-                    # ids follow the dasherized grammar
-                    # #cfg-input-<flag-dasherized>.
-                    for adv_field in _ADV_INPUT_FIELDS:
+                    # The 18 rows are COMPOSE-TIME GENERATION over the
+                    # table (one code block, not 18 hand-copies) —
+                    # TABLE ORDER (alphabetical), the batch_size row
+                    # shape verbatim per Input (Horizontal row + Label
+                    # + compact Input, the placeholder carrying the
+                    # BASE config's YAML default, PD-19-3) and the
+                    # peft row shape verbatim per enum/bool ChoiceRow
+                    # (PD-19-10 — bf16 is enum-consistent). Widget ids
+                    # follow the dasherized grammar
+                    # #cfg-input-/#cfg-value-<flag-dasherized>.
+                    for adv_row in (
+                            run_config_service.run_sweep
+                            .ADVANCED_TRAIN_FLAGS):
+                        adv_field = adv_row.flag.lstrip("-")
                         with Horizontal(classes="cfg-param-row"):
                             yield Label(
                                 _adv_field_label(adv_field),
                                 id=f"cfg-label-{_adv_dash(adv_field)}",
                                 classes="cfg-param-label")
-                            yield Input(
-                                value="",
-                                placeholder=S.CFG_ADV_DEFAULT.format(
-                                    value=_adv_field_row(
-                                        adv_field).default_display),
-                                id=f"cfg-input-{_adv_dash(adv_field)}",
-                                classes="cfg-param-input", compact=True)
+                            if adv_row.kind in ("enum", "bool"):
+                                yield ChoiceRow(
+                                    adv_field, _ADV_DEFAULT_CHOICE,
+                                    id=(f"cfg-value-"
+                                        f"{_adv_dash(adv_field)}"),
+                                    classes="cfg-choice-value")
+                            else:
+                                yield Input(
+                                    value="",
+                                    placeholder=S.CFG_ADV_DEFAULT.format(
+                                        value=adv_row.default_display),
+                                    id=(f"cfg-input-"
+                                        f"{_adv_dash(adv_field)}"),
+                                    classes="cfg-param-input", compact=True)
                 adv_section.display = False
                 # Phase 16 (16-04, TUI-02, UI-SPEC C.1): the multi-GPU
                 # dispatch section — existing classes ONLY (zero new
@@ -1681,13 +1727,21 @@ class RunConfigScreen(Screen):
         # seeds its Input (json-kind values serialize via json.dumps so
         # the prefill RE-PARSES as valid JSON; str() elsewhere), an
         # absent field stays EMPTY (the placeholder then documents the
-        # base YAML default, PD-19-3). ChoiceRows join with their rows.
+        # base YAML default, PD-19-3); enum/bool values seed their
+        # ChoiceRow, absent picks restore the default pseudo-option.
         for adv_field in _ADV_INPUT_FIELDS:
             adv_value = message.spec.advanced.get(adv_field)
             self.query_one(_adv_input_id(adv_field), Input).value = (
                 json.dumps(adv_value, sort_keys=True)
                 if isinstance(adv_value, dict)
                 else (str(adv_value) if adv_value is not None else ""))
+        for adv_field in _ADV_CHOICE_FIELDS:
+            adv_value = message.spec.advanced.get(adv_field)
+            self.query_one(
+                f"#cfg-value-{_adv_dash(adv_field)}",
+                ChoiceRow).set_value(
+                str(adv_value) if adv_value is not None
+                else _ADV_DEFAULT_CHOICE)
         self.query_one("#cfg-value-peft", ChoiceRow).set_value(
             message.spec.peft)
         self.query_one("#cfg-value-variant", ChoiceRow).set_value(
@@ -1920,14 +1974,22 @@ class RunConfigScreen(Screen):
         }
         # Phase 19 (19-02): the advanced family — ONE nested raw dict
         # keyed by the table's DASHED flag literals, collected from the
-        # section's Inputs regardless of the collapse state (collapse
-        # is view-only); an empty Input contributes None (absent — the
-        # YAML governs, P19-R5). ChoiceRows join with their rows.
-        raw[PARAM_ADVANCED] = {
+        # section's Inputs AND ChoiceRows regardless of the collapse
+        # state (collapse is view-only); an empty Input / the default
+        # pseudo-option contributes None (absent — the YAML governs,
+        # P19-R5). The picked enum/bool values flow through
+        # parse_params' closed-vocabulary dispatch (present-only).
+        advanced_raw: dict[str, str | None] = {
             f"--{adv_field}": (
                 self._text_value(_adv_input_id(adv_field)) or None)
             for adv_field in _ADV_INPUT_FIELDS
         }
+        for adv_field in _ADV_CHOICE_FIELDS:
+            row_value = self.query_one(
+                f"#cfg-value-{_adv_dash(adv_field)}", ChoiceRow).value
+            advanced_raw[f"--{adv_field}"] = (
+                row_value if row_value != _ADV_DEFAULT_CHOICE else None)
+        raw[PARAM_ADVANCED] = advanced_raw
         partials, problems = self._run_service.parse_params(raw)
         subset_file = None
         if self._subset_on:
@@ -2166,21 +2228,31 @@ class RunConfigScreen(Screen):
 
     def action_reset_advanced(self) -> None:
         """[r] — bulk-restore every advanced field to its YAML-default
-        state: Inputs to EMPTY (the placeholder IS the per-field
-        restore affordance, PD-19-3 — an empty field threads nothing
-        and the YAML governs, P19-R5) — then refresh. ChoiceRows join
-        with their rows (Task 3)."""
+        state: Inputs to EMPTY and ChoiceRows to the default pseudo-option
+        (the placeholder IS the per-field restore affordance, PD-19-3 —
+        both states thread nothing and the YAML governs, P19-R5) —
+        then refresh."""
         for adv_field in _ADV_INPUT_FIELDS:
             self.query_one(_adv_input_id(adv_field), Input).value = ""
+        for adv_field in _ADV_CHOICE_FIELDS:
+            self.query_one(
+                f"#cfg-value-{_adv_dash(adv_field)}",
+                ChoiceRow).set_value(_ADV_DEFAULT_CHOICE)
         self._refresh_preview()
 
     def action_pick_choice(self) -> None:
         """[enter] on a focused choice row — the RadioSet modal (the
-        preset-modal family; selection writes the param + persists)."""
+        preset-modal family; selection writes the param + persists).
+        Phase 19 (19-02, PD-19-9): rows outside the peft/variant pair
+        route to the TABLE-DRIVEN advanced enum/bool modal (the peft/
+        variant branches' behavior is unchanged)."""
         if self.app.below_minimum_grid:
             return  # no chrome over the guard (WR-06)
         focused = self.focused
         if not isinstance(focused, ChoiceRow):
+            return
+        if focused.field not in ("peft", "variant"):
+            self._open_advanced_choice_modal(focused)
             return
         if focused.field == "peft":
             options, current, title = (
@@ -2201,6 +2273,38 @@ class RunConfigScreen(Screen):
             self._refresh_preview()
 
         self.app.push_screen(ChoiceModal(title, options, current, on_pick))
+
+    def _open_advanced_choice_modal(self, focused: ChoiceRow) -> None:
+        """The advanced enum/bool RadioSet modal (PD-19-9/PD-19-10).
+
+        Options = the leading default pseudo-option followed by the table
+        row's closed vocabulary VERBATIM (the probe-pinned 12-scheduler
+        / 3-strategy / true-false lists, never memory); the RadioButton
+        IDS stay the raw vocabulary (the peft "none" grammar — the
+        on_pick value is data), while the head option's DISPLAY label
+        renders the default word with the row's default_display so the YAML
+        is visible in the dropdown itself. current = the ROW's shown
+        value (the widget is the live truth for the family's
+        fresh-recompute semantics); an unknown field is a silent no-op
+        (never a crash — the future-codes discipline)."""
+        adv_row = _adv_field_row(focused.field)
+        if adv_row is None or adv_row.kind not in ("enum", "bool"):
+            return
+        options = (_ADV_DEFAULT_CHOICE,) + (adv_row.choices or ())
+        labels = (
+            (S.CFG_ADV_CHOICE_NONE.format(value=adv_row.default_display),)
+            + tuple(adv_row.choices or ()))
+
+        def on_pick(value: str) -> None:
+            # the peft persist path: write the row, refresh the spec/
+            # preview (the raw collection maps the pseudo-option -> absent, so the
+            # pseudo-option threads nothing).
+            focused.set_value(value)
+            self._refresh_preview()
+
+        self.app.push_screen(ChoiceModal(
+            _adv_field_label(focused.field), options, focused.value,
+            on_pick, labels=labels))
 
     def action_preview_modal(self) -> None:
         """[p] — the dry-run detail modal + a forced preview refresh."""

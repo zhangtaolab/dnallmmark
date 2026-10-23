@@ -39,6 +39,7 @@ import tui.screens.run_config as run_config_screen_module
 from tui.app import DnallmMarkTui
 from tui.screens.nav import BottomBar, TopMenuBar
 from tui.screens.run_config import (
+    ChoiceRow,
     DirPickerModal,
     PickerEntries,
     PickerList,
@@ -958,9 +959,12 @@ async def test_advanced_section_collapsed_by_default_and_a_toggles():
 
 
 async def test_advanced_input_rows_generated_from_table_in_order():
-    """The 13 Input rows are COMPOSE-TIME GENERATION over the table —
-    table order, the dasherized id grammar, each placeholder carrying
-    the BASE config's YAML default through CFG_ADV_DEFAULT (PD-19-3)."""
+    """The 13 Input rows + 5 ChoiceRows are COMPOSE-TIME GENERATION over
+    the table — full 18-row TABLE order (Inputs and ChoiceRows
+    interleaved alphabetically), the dasherized id grammar, each Input
+    placeholder carrying the BASE config's YAML default through
+    CFG_ADV_DEFAULT (PD-19-3), each ChoiceRow starting at the default
+    pseudo-option (PD-19-9)."""
     from textual.containers import Vertical
 
     app = _app()
@@ -969,13 +973,25 @@ async def test_advanced_input_rows_generated_from_table_in_order():
         screen = app.screen
         section = screen.query_one("#cfg-adv-params", Vertical)
         table = run_config_service.run_sweep.ADVANCED_TRAIN_FLAGS
-        expected = [
+        expected_inputs = [
             f"cfg-input-{row.flag.lstrip('-').replace('_', '-')}"
             for row in table if row.kind not in ("enum", "bool")]
-        assert len(expected) == 13
-        assert [widget.id for widget in section.query(Input)] == expected, (
-            "the rows render in TABLE order with the dasherized ids"
+        assert len(expected_inputs) == 13
+        assert [widget.id for widget in section.query(Input)] == (
+            expected_inputs), (
+            "the Input rows render in TABLE order with the dasherized ids"
         )
+        expected_choices = [
+            f"cfg-value-{row.flag.lstrip('-').replace('_', '-')}"
+            for row in table if row.kind in ("enum", "bool")]
+        assert len(expected_choices) == 5
+        assert [widget.id for widget in section.query(ChoiceRow)] == (
+            expected_choices), (
+            "the five ChoiceRows render in TABLE order (PD-19-10)"
+        )
+        for field_name in expected_choices:
+            assert screen.query_one(f"#{field_name}", ChoiceRow).value == (
+                "default"), field_name
         from tui.strings import CFG_ADV_DEFAULT
 
         for row in table:
@@ -4881,3 +4897,248 @@ async def test_picker_title_carries_the_m_switch_hint_in_both_kinds():
         assert NAV_LABEL_SELECTION in after, (
             "the hint names the switch target (Models)"
         )
+
+
+# =====================================================================
+# Phase 19 Task 3 — the five enum/bool ChoiceRows: the generalized
+# action_pick_choice dispatcher, the leading-default pseudo-option
+# (PD-19-9), present-only threading, and the r reset over rows.
+# =====================================================================
+
+
+def _modal_radio_ids(app) -> "tuple[str, ...]":
+    """The open ChoiceModal's RadioButton ids, in option order."""
+    from textual.widgets import RadioButton
+    from textual.widgets import RadioSet as RadioSetWidget
+
+    radioset = app.screen.query_one(RadioSetWidget)
+    return tuple(str(button.id) for button in radioset.query(RadioButton))
+
+
+def _modal_radio_labels(app) -> "tuple[str, ...]":
+    """The open ChoiceModal's RadioButton display labels, in order."""
+    from textual.widgets import RadioButton
+    from textual.widgets import RadioSet as RadioSetWidget
+
+    radioset = app.screen.query_one(RadioSetWidget)
+    return tuple(
+        button.label.plain for button in radioset.query(RadioButton))
+
+
+async def test_advanced_scheduler_modal_lists_default_plus_twelve():
+    """PD-19-9: enter on #cfg-value-lr-scheduler-type opens the
+    ChoiceModal listing the leading default pseudo-option (its label
+    rendering the table's default_display through CFG_ADV_CHOICE_NONE)
+    followed by the 12 probe-pinned scheduler names — the option
+    strings double as RadioButton ids, so the modal opening IS the
+    id-validity proof (Textual refuses invalid ids at mount)."""
+    from textual.widgets import RadioSet as RadioSetWidget
+
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        await pilot.press("a")
+        await pilot.pause()
+        scheduler_row = screen.query_one(
+            "#cfg-value-lr-scheduler-type", ChoiceRow)
+        assert scheduler_row.value == "default", (
+            "the collapsed row shows the raw pseudo-option vocabulary "
+            "(the peft 'none' grammar)"
+        )
+        scheduler_row.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        from tui.screens.run_config import ChoiceModal
+        from tui.strings import CFG_ADV_CHOICE_NONE
+
+        assert isinstance(app.screen, ChoiceModal)
+        table_row = next(
+            row for row in (
+                run_config_service.run_sweep.ADVANCED_TRAIN_FLAGS)
+            if row.flag.lstrip("-") == "lr_scheduler_type")
+        expected_ids = ("default",) + tuple(table_row.choices)
+        assert _modal_radio_ids(app) == expected_ids
+        assert len(expected_ids) == 13, "1 pseudo-option + 12 schedulers"
+        labels = _modal_radio_labels(app)
+        assert labels[0] == CFG_ADV_CHOICE_NONE.format(
+            value=table_row.default_display), (
+            "the head option renders the YAML default in the dropdown"
+        )
+        assert labels[1:] == tuple(table_row.choices)
+        # the modal's RadioSet takes the focus (the keyboard path)
+        assert app.screen.query_one(RadioSetWidget).has_focus
+
+
+async def test_advanced_scheduler_pick_threads_and_default_does_not():
+    """Picking cosine closes the modal on the FIRST toggle and threads
+    ``--lr_scheduler_type cosine`` present-only; re-picking the leading
+    default pseudo-option threads NOTHING (absent — the YAML governs)
+    and re-marks the row's raw vocabulary."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        await pilot.press("a")
+        await pilot.pause()
+        scheduler_row = screen.query_one(
+            "#cfg-value-lr-scheduler-type", ChoiceRow)
+        scheduler_row.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        # cosine is the third option (default, linear, cosine): 2 downs
+        await pilot.press("down")
+        await pilot.press("down")
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        from tui.screens.run_config import RunConfigScreen
+
+        assert isinstance(app.screen, RunConfigScreen), (
+            "the first toggle applies and closes the modal (k9s-quick)"
+        )
+        assert scheduler_row.value == "cosine"
+        saved = run_service.saved_specs[-1]
+        assert saved.advanced.get("lr_scheduler_type") == "cosine"
+        argv = run_config_service.compose_dispatch_argv(saved)
+        assert argv[argv.index("--lr_scheduler_type") + 1] == "cosine"
+        # re-open: the RadioSet cursor starts at the HEAD option (the
+        # peft-modal navigation precedent), so enter picks the leading
+        # default pseudo-option directly — it threads nothing
+        scheduler_row.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert scheduler_row.value == "default"
+        saved = run_service.saved_specs[-1]
+        assert "lr_scheduler_type" not in saved.advanced, (
+            "the default pseudo-option threads NOTHING (absent)"
+        )
+        argv = run_config_service.compose_dispatch_argv(saved)
+        assert "--lr_scheduler_type" not in argv
+
+
+async def test_advanced_bf16_modal_and_string_serialization():
+    """PD-19-10: bf16 is a ChoiceRow — options the leading default
+    pseudo-option (label rendering the table's True display) + true +
+    false; picking false threads ``--bf16 false`` with STRING
+    serialization (the child owns conversion — the 19-01 ruling)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        await pilot.press("a")
+        await pilot.pause()
+        bf16_row = screen.query_one("#cfg-value-bf16", ChoiceRow)
+        bf16_row.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        from tui.strings import CFG_ADV_CHOICE_NONE
+
+        assert _modal_radio_ids(app) == ("default", "true", "false")
+        assert _modal_radio_labels(app)[0] == (
+            CFG_ADV_CHOICE_NONE.format(value="True"))
+        # false is the third option: 2 downs + enter
+        await pilot.press("down")
+        await pilot.press("down")
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert bf16_row.value == "false"
+        saved = run_service.saved_specs[-1]
+        assert saved.advanced.get("bf16") == "false", (
+            "bool rides the STRING vocabulary at this layer"
+        )
+        argv = run_config_service.compose_dispatch_argv(saved)
+        assert argv[argv.index("--bf16") + 1] == "false"
+
+
+async def test_advanced_strategies_share_three_option_vocabulary():
+    """The three strategy rows (eval/save/logging) share the SAME
+    3-option vocabulary (no/steps/epoch — the probe-pinned
+    IntervalStrategy list) behind the pseudo-option, and a pick
+    threads present-only (eval_strategy 'no' here)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        await pilot.press("a")
+        await pilot.pause()
+        for field_name in ("eval_strategy", "save_strategy",
+                           "logging_strategy"):
+            row = screen.query_one(
+                f"#cfg-value-{field_name.replace('_', '-')}", ChoiceRow)
+            row.focus()
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            assert _modal_radio_ids(app) == (
+                "default", "no", "steps", "epoch"), field_name
+            await pilot.press("escape")
+            await pilot.pause()
+        # pick 'no' on eval_strategy (second option): 1 down + enter
+        eval_row = screen.query_one("#cfg-value-eval-strategy", ChoiceRow)
+        eval_row.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("down")
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        saved = run_service.saved_specs[-1]
+        assert saved.advanced.get("eval_strategy") == "no"
+        argv = run_config_service.compose_dispatch_argv(saved)
+        assert argv[argv.index("--eval_strategy") + 1] == "no"
+        assert "--save_strategy" not in argv, (
+            "untouched strategy rows thread nothing"
+        )
+
+
+async def test_advanced_reset_restores_choice_rows_to_default():
+    """[r] resets the ChoiceRows too: a picked cosine returns to the
+    default pseudo-option and threads nothing again."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        await pilot.press("a")
+        await pilot.pause()
+        scheduler_row = screen.query_one(
+            "#cfg-value-lr-scheduler-type", ChoiceRow)
+        scheduler_row.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("down")
+        await pilot.press("down")
+        await pilot.press("enter")
+        await _settle(pilot, app)
+        assert scheduler_row.value == "cosine"
+        assert run_service.saved_specs[-1].advanced.get(
+            "lr_scheduler_type") == "cosine"
+        # focus back to the picker, then [r]
+        screen.query_one("#cfg-picker", PickerList).focus()
+        await pilot.pause()
+        await pilot.press("r")
+        await _settle(pilot, app)
+        assert scheduler_row.value == "default", (
+            "[r] restores every ChoiceRow to the pseudo-option"
+        )
+        assert "lr_scheduler_type" not in (
+            run_service.saved_specs[-1].advanced)
+        argv = run_config_service.compose_dispatch_argv(
+            run_service.saved_specs[-1])
+        assert "--lr_scheduler_type" not in argv
