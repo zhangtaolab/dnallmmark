@@ -788,8 +788,8 @@ def test_length_tier_rounding_parity():
     legacy_fn = extract_fn(LEGACY_DETERMINE_BATCH_SIZE_SRC)
     # Tier boundaries (legacy semantics): <=512 full, then //2 //4 //8
     # //16 //32 at 1024/2048/4096/8192/16384, else 1 — and the max(1, ..)
-    # floor at every tier.
-    cases = [
+    # floor at every tier. The legacy oracle self-check stays verbatim.
+    legacy_cases = [
         (512, 32, 32), (513, 32, 16), (1024, 32, 16), (1025, 32, 8),
         (2048, 32, 8), (2049, 32, 4), (4096, 32, 4), (4097, 32, 2),
         (8192, 32, 2), (8193, 32, 1), (16384, 32, 1), (16385, 32, 1),
@@ -797,15 +797,58 @@ def test_length_tier_rounding_parity():
         (1024, 1, 1),   # floor at batch_size 1
         (512, 0, 0),
     ]
-    for max_length, batch_size, expected in cases:
+    for max_length, batch_size, expected in legacy_cases:
         assert legacy_fn(max_length, batch_size) == expected, (
             f"legacy oracle self-check failed at ({max_length}, "
             f"{batch_size}) — the parity oracle's tier table changed"
         )
+    # DEFAULT-LANE PARITY + SAFETY INVARIANT (2026-10-23 cap ladder,
+    # maintainer "option 1"): (1) at <=512 the default base-8 lane is
+    # value-identical to legacy; (2) for EVERY base <= 8 and every length
+    # the ladder yields >= legacy and <= base (never-below, never-above-
+    # base — the uplift direction is memory-safe, every cap fitted from
+    # the measured FungiHelixSeek curve).
+    for max_length in (128, 129, 256, 257, 300, 511, 512):
+        assert active_fn(max_length, 8) == legacy_fn(max_length, 8), (
+            f"active determine_batch_size diverged from legacy on the "
+            f"default base-8 lane at max_length={max_length}: "
+            f"{active_fn(max_length, 8)} != {legacy_fn(max_length, 8)}"
+        )
+    for base in (1, 2, 3, 4, 5, 6, 7, 8):
+        for max_length in (
+            43, 128, 129, 256, 257, 512, 513, 514, 640, 641, 700, 1024,
+            1025, 1280, 1281, 2048, 2049, 2560, 2561, 4096, 8192, 16384,
+            16385,
+        ):
+            got = active_fn(max_length, base)
+            assert legacy_fn(max_length, base) <= got <= max(base, 1), (
+                f"never-below-legacy/never-above-base violated at "
+                f"(max_length={max_length}, base={base}): got {got}, "
+                f"legacy {legacy_fn(max_length, base)}"
+            )
+    # CALIBRATED CAP LADDER (bases > 8): memory-fitted per length — the
+    # FungiHelixSeek measured anchors (43tok@32 fits, 514tok@16 OOMs at
+    # 33 GB, batch x tokens ~= 4100 budget on 32 GB cards).
+    cap_cases = [
+        (43, 32, 32),    # measured: 7.4 GB — fits
+        (128, 32, 32), (129, 32, 16), (256, 32, 16), (257, 32, 8),
+        (500, 32, 8),    # GUE-class OOM guard (executor warning #2)
+        (514, 32, 8),    # BEND-class (512 + 2 specials): the 33 GB OOM
+                         # was at 16; 8 projects ~22 GB total
+        (640, 32, 8), (641, 32, 4), (1280, 32, 4), (1281, 32, 2),
+        (2560, 32, 2), (2561, 32, 1), (16385, 32, 1),
+        (514, 16, 8),    # bases between 8 and the cap keep the cap value
+        (700, 4, 4),     # base < cap: never raised past the base
+        (512, 0, 1),     # pathological zero base: the new table floors at
+                         # 1 (legacy <=512 passed 0 through; unreachable —
+                         # upstream validates batch_size >= 1)
+    ]
+    for max_length, batch_size, expected in cap_cases:
         assert active_fn(max_length, batch_size) == expected, (
-            f"active determine_batch_size diverged from the legacy tier "
-            f"table at (max_length={max_length}, batch_size="
-            f"{batch_size}): expected {expected}"
+            f"active determine_batch_size diverged from the calibrated "
+            f"cap ladder at (max_length={max_length}, batch_size="
+            f"{batch_size}): expected {expected}, got "
+            f"{active_fn(max_length, batch_size)}"
         )
     # Wiring 1: the tier cap is computed from the resolved max_length
     # BEFORE the VRAM estimator block runs.

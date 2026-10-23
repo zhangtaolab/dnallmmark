@@ -600,26 +600,40 @@ def init_layer(module):
 
 
 def determine_batch_size(max_length, batch_size):
-    # LENGTH-TIER BATCH ROUNDING (WR-04, legacy parity)
-    # Ported verbatim from the deleted legacy pipeline script's tier
-    # table (:791-811 at its final commit 1b74037e — git history is the
-    # reference, D-04): the resolved sequence length puts an initial cap
-    # on the configured batch size. The VRAM estimators below may reduce
-    # further but never raise past this cap.
-    if max_length <= 512:
-        dynamic_batch_size = batch_size
-    elif max_length <= 1024:
-        dynamic_batch_size = max(1, batch_size // 2)
-    elif max_length <= 2048:
-        dynamic_batch_size = max(1, batch_size // 4)
-    elif max_length <= 4096:
-        dynamic_batch_size = max(1, batch_size // 8)
-    elif max_length <= 8192:
-        dynamic_batch_size = max(1, batch_size // 16)
-    elif max_length <= 16384:
-        dynamic_batch_size = max(1, batch_size // 32)
+    # LENGTH-TIER BATCH ROUNDING (WR-04 legacy parity; 2026-10-23
+    # memory-calibrated cap ladder, maintainer directive "option 1")
+    # The resolved sequence length puts an initial CAP on the configured
+    # batch size; the VRAM estimators below may reduce further but never
+    # raise past this cap. Caps hold batch x tokens ~= 4100 (32 GB cards),
+    # calibrated on measured FungiHelixSeek (263M, MoE/KDA) points at
+    # ~3.4 MB per (batch x token) activation unit:
+    #   43 tok  @ batch 32 -> 7.4 GB  (fits)
+    #   514 tok @ batch 16 -> 33 GB   (CUDA-OOM, 31.05 used + 2.02 wanted)
+    #   514 tok @ batch 4  -> 6 GB    (fits)
+    # The 640 boundary covers the 512-content + 2-specials class (BEND's
+    # 514) at cap 8; 1280/2560 continue the constant-product ladder.
+    # LEGACY-PARITY CONTRACT (2026-10-23 revision): the legacy divisor
+    # table (<=512 full, <=1024 //2, <=2048 //4, <=4096 //8, <=8192 //16,
+    # <=16384 //32, else 1) is NOT a cap function, so a memory-fitting
+    # cap ladder cannot be value-identical to it above 512. The pinned
+    # contract instead: (1) at <=512 the default base-8 lane is
+    # value-identical to legacy; (2) for every base <= 8 and every
+    # length the ladder yields >= legacy (never below) and <= base —
+    # the uplift direction is memory-SAFE (every cap is fitted from the
+    # measured curve, e.g. 514@8 ~ 22 GB total, well under 32 GB).
+    if max_length <= 128:
+        cap = 32
+    elif max_length <= 256:
+        cap = 16
+    elif max_length <= 640:
+        cap = 8
+    elif max_length <= 1280:
+        cap = 4
+    elif max_length <= 2560:
+        cap = 2
     else:
-        dynamic_batch_size = 1
+        cap = 1
+    dynamic_batch_size = max(1, min(batch_size, cap))
 
     print(
         f"Base batch size: {batch_size} | "
