@@ -127,16 +127,47 @@ def _adv_field_row(field: str):
     return None
 
 
+def _adv_dash(field: str) -> str:
+    """The flag's underscores DASHERIZED — the widget-id grammar
+    (``gradient_accumulation_steps`` ->
+    ``gradient-accumulation-steps``, the batch_size id rule)."""
+    return field.replace("_", "-")
+
+
 def _adv_input_id(field: str) -> str:
-    """The advanced Input widget id — the flag's underscores DASHERIZED
+    """The advanced Input QUERY selector — the dasherized widget id
     (``#cfg-input-learning-rate`` — the batch_size id grammar)."""
-    return f"#cfg-input-{field.replace('_', '-')}"
+    return f"#cfg-input-{_adv_dash(field)}"
 
 
-#: The advanced Input-family fields the section renders, table order
-#: (Task 1: the learning_rate tracer row; Task 2 widens this tuple to
-#: every non-enum, non-bool table row — the same loop, more rows).
-_ADV_INPUT_FIELDS = ("learning_rate",)
+def _adv_field_label(field: str) -> str:
+    """The advanced row's label, read FRESH from the strings registry
+    at call time (the CR-01 lesson: an import-time mapping would freeze
+    the import-time language into the rows — the ctrl+o picker title
+    precedent). Constant names are uniform:
+    ``CFG_ADV_FIELD_<UPPER_FIELD>``."""
+    return getattr(S, f"CFG_ADV_FIELD_{field.upper()}")
+
+
+#: The advanced Input-family fields the section renders, TABLE ORDER —
+#: every non-enum, non-bool row (13 rows; enum/bool rows ride
+#: ChoiceRows, Task 3). Compose-time generation loops this tuple; the
+#: raw collection + prefill loop the SAME tuple (one vocabulary).
+_ADV_INPUT_FIELDS = tuple(
+    row.flag.lstrip("-")
+    for row in run_config_service.run_sweep.ADVANCED_TRAIN_FLAGS
+    if row.kind not in ("enum", "bool"))
+
+#: The advanced labels needing narrow-grid _SHORT twins — the
+#: spellings exceeding the 16-cell narrow label column (the
+#: CFG_FIELD_EBS_SHORT mechanism; 14-cell eff_batch_size is the
+#: measured budget — every unlisted Input label is <= 13 chars). The
+#: enum rows join with their labels (Task 3).
+_ADV_SHORT_FIELDS = (
+    "gradient_accumulation_steps",
+    "lr_scheduler_kwargs",
+    "save_total_limit",
+)
 
 _STYLE_DIM = "$text-muted"
 _STYLE_WARN = "$warning"
@@ -1460,21 +1491,28 @@ class RunConfigScreen(Screen):
                             classes="cfg-hint")
                 yield Label(S.CFG_ADV_HINT_GA, id="cfg-hint-adv-ga",
                             classes="cfg-hint")
-                # Task 2 replaces this single tracer row with the
-                # table-driven loop over every non-enum/non-bool row
-                # (13 rows) — the SIM117 nesting is transient.
-                with Vertical(id="cfg-adv-params") as adv_section:  # noqa: SIM117
-                    with Horizontal(classes="cfg-param-row"):
-                        yield Label(S.CFG_ADV_FIELD_LEARNING_RATE,
-                                    id="cfg-label-learning-rate",
-                                    classes="cfg-param-label")
-                        yield Input(
-                            value="",
-                            placeholder=S.CFG_ADV_DEFAULT.format(
-                                value=_adv_field_row(
-                                    "learning_rate").default_display),
-                            id="cfg-input-learning-rate",
-                            classes="cfg-param-input", compact=True)
+                with Vertical(id="cfg-adv-params") as adv_section:
+                    # The Input rows are COMPOSE-TIME GENERATION over
+                    # the table (one code block, not 13 hand-copies) —
+                    # every non-enum/non-bool row in table order, the
+                    # batch_size row shape verbatim: Horizontal row +
+                    # Label + compact Input, the placeholder carrying
+                    # the BASE config's YAML default (PD-19-3). Widget
+                    # ids follow the dasherized grammar
+                    # #cfg-input-<flag-dasherized>.
+                    for adv_field in _ADV_INPUT_FIELDS:
+                        with Horizontal(classes="cfg-param-row"):
+                            yield Label(
+                                _adv_field_label(adv_field),
+                                id=f"cfg-label-{_adv_dash(adv_field)}",
+                                classes="cfg-param-label")
+                            yield Input(
+                                value="",
+                                placeholder=S.CFG_ADV_DEFAULT.format(
+                                    value=_adv_field_row(
+                                        adv_field).default_display),
+                                id=f"cfg-input-{_adv_dash(adv_field)}",
+                                classes="cfg-param-input", compact=True)
                 adv_section.display = False
                 # Phase 16 (16-04, TUI-02, UI-SPEC C.1): the multi-GPU
                 # dispatch section — existing classes ONLY (zero new
@@ -1993,6 +2031,16 @@ class RunConfigScreen(Screen):
         # established title-pair mechanism).
         self.query_one("#cfg-mgpu-title", Label).update(
             S.CFG_MGPU_TITLE_SHORT if narrow else S.CFG_MGPU_TITLE)
+        # Phase 19 (19-02): the advanced rows' narrow-grid SHORT twins —
+        # only the labels exceeding the narrow column budget swap (the
+        # EBS mechanism over the table's long flag spellings; labels
+        # are read FRESH so the swap follows the live language).
+        for adv_field in _ADV_SHORT_FIELDS:
+            short_name = f"CFG_ADV_FIELD_{adv_field.upper()}_SHORT"
+            self.query_one(
+                f"#cfg-label-{_adv_dash(adv_field)}", Label).update(
+                getattr(S, short_name) if narrow
+                else _adv_field_label(adv_field))
 
     # ===== event handlers (event-loop side: render + intent) =====
 

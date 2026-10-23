@@ -1574,6 +1574,50 @@ CFG_ADV_RESET_LABEL = _t(
     "CFG_ADV_RESET_LABEL", "恢复高级默认", "Reset advanced")
 CFG_ADV_CHOICE_NONE = _t(
     "CFG_ADV_CHOICE_NONE", "默认（{value}）", "default ({value})")
+# Phase 19 Task 2: the remaining Input-family row labels (the
+# non-enum/non-bool table rows, flag vocabulary verbatim both
+# languages — the seeds/batch_size/EBS rule) + the narrow-grid _SHORT
+# twins for every spelling exceeding the 16-cell narrow label column
+# (the CFG_FIELD_EBS_SHORT mechanism; the plan-locked spellings
+# grad_accum_steps / lr_sched_kwargs, save_total_lim measured against
+# the 14-cell eff_batch_size budget). The five enum/bool labels land
+# with their ChoiceRows (Task 3).
+CFG_ADV_FIELD_ADAM_BETA1 = _t(
+    "CFG_ADV_FIELD_ADAM_BETA1", "adam_beta1", "adam_beta1")
+CFG_ADV_FIELD_ADAM_BETA2 = _t(
+    "CFG_ADV_FIELD_ADAM_BETA2", "adam_beta2", "adam_beta2")
+CFG_ADV_FIELD_ADAM_EPSILON = _t(
+    "CFG_ADV_FIELD_ADAM_EPSILON", "adam_epsilon", "adam_epsilon")
+CFG_ADV_FIELD_EVAL_STEPS = _t(
+    "CFG_ADV_FIELD_EVAL_STEPS", "eval_steps", "eval_steps")
+CFG_ADV_FIELD_GRADIENT_ACCUMULATION_STEPS = _t(
+    "CFG_ADV_FIELD_GRADIENT_ACCUMULATION_STEPS",
+    "gradient_accumulation_steps", "gradient_accumulation_steps")
+CFG_ADV_FIELD_GRADIENT_ACCUMULATION_STEPS_SHORT = _t(
+    "CFG_ADV_FIELD_GRADIENT_ACCUMULATION_STEPS_SHORT",
+    "grad_accum_steps", "grad_accum_steps")
+CFG_ADV_FIELD_LOGGING_STEPS = _t(
+    "CFG_ADV_FIELD_LOGGING_STEPS", "logging_steps", "logging_steps")
+CFG_ADV_FIELD_LR_SCHEDULER_KWARGS = _t(
+    "CFG_ADV_FIELD_LR_SCHEDULER_KWARGS", "lr_scheduler_kwargs",
+    "lr_scheduler_kwargs")
+CFG_ADV_FIELD_LR_SCHEDULER_KWARGS_SHORT = _t(
+    "CFG_ADV_FIELD_LR_SCHEDULER_KWARGS_SHORT", "lr_sched_kwargs",
+    "lr_sched_kwargs")
+CFG_ADV_FIELD_MAX_GRAD_NORM = _t(
+    "CFG_ADV_FIELD_MAX_GRAD_NORM", "max_grad_norm", "max_grad_norm")
+CFG_ADV_FIELD_SAVE_STEPS = _t(
+    "CFG_ADV_FIELD_SAVE_STEPS", "save_steps", "save_steps")
+CFG_ADV_FIELD_SAVE_TOTAL_LIMIT = _t(
+    "CFG_ADV_FIELD_SAVE_TOTAL_LIMIT", "save_total_limit",
+    "save_total_limit")
+CFG_ADV_FIELD_SAVE_TOTAL_LIMIT_SHORT = _t(
+    "CFG_ADV_FIELD_SAVE_TOTAL_LIMIT_SHORT", "save_total_lim",
+    "save_total_lim")
+CFG_ADV_FIELD_WARMUP_RATIO = _t(
+    "CFG_ADV_FIELD_WARMUP_RATIO", "warmup_ratio", "warmup_ratio")
+CFG_ADV_FIELD_WEIGHT_DECAY = _t(
+    "CFG_ADV_FIELD_WEIGHT_DECAY", "weight_decay", "weight_decay")
 
 # ===== 启动确认/执行 (LNC_, Phase 11) =====
 # The [enter] launch-confirmation pipeline, the E2' typed-phrase

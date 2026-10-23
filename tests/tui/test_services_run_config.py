@@ -2378,3 +2378,68 @@ def test_advanced_drifted_entry_loads_as_absent_never_misread(
     _write_state_doc(monkeypatch, tmp_path, {
         **doc, "params": {**doc["params"], "advanced": ["not", "a", "dict"]}})
     assert run_config.load_state() == run_config.RunSpec(models=(), tasks=())
+
+
+# ===== Phase 19 Task 2: the 13-row Input-family parser matrix =====
+
+#: The Input-family table rows (non-enum, non-bool), table order.
+_ADV_INPUT_ROWS = tuple(
+    row for row in run_sweep.ADVANCED_TRAIN_FLAGS
+    if row.kind not in ("enum", "bool"))
+
+
+def _invalid_raw_for(row):
+    """One INVALID raw representative per kind, DERIVED from the row's
+    own bounds (the table drives the matrix — a bound change re-tests
+    itself): int rows go below lo, float rows above hi (or below lo
+    when unbounded above), the json row parses to a non-dict."""
+    if row.kind == "int":
+        return str(int(row.lo) - 1) if row.lo is not None else "0"
+    if row.kind == "float":
+        if row.hi is not None:
+            return str(row.hi * 5)
+        return str(row.lo - 1) if row.lo is not None else "-1.0"
+    return "[1, 2]"  # json: a valid-JSON NON-object
+
+
+@pytest.mark.parametrize("row", _ADV_INPUT_ROWS, ids=lambda r: r.flag)
+def test_parse_params_advanced_input_matrix_valid(row):
+    """Every Input-family row parses its valid representative and lands
+    under the undashed field key, kind-faithful (int rows to int,
+    float rows to float, json to the dict)."""
+    partials, problems = run_config.parse_params({
+        run_config.PARAM_ADVANCED: {row.flag: _ADV_VALID_RAW[row.flag]}})
+    assert problems == ()
+    value = partials["advanced"][row.flag.lstrip("-")]
+    if row.kind == "int":
+        assert isinstance(value, int) and value >= 1
+    elif row.kind == "float":
+        assert isinstance(value, float)
+        assert (row.lo is None or value >= row.lo)
+        assert (row.hi is None or value <= row.hi)
+    else:
+        assert isinstance(value, dict)
+
+
+@pytest.mark.parametrize("row", _ADV_INPUT_ROWS, ids=lambda r: r.flag)
+def test_parse_params_advanced_input_matrix_invalid(row):
+    """Every Input-family row refuses its invalid representative with
+    the ONE family problem (detail ``<field>=<raw>``) and threads
+    nothing (the entry contributes no partial)."""
+    bad = _invalid_raw_for(row)
+    partials, problems = run_config.parse_params({
+        run_config.PARAM_ADVANCED: {row.flag: bad}})
+    assert problems == (
+        ("advanced_invalid", f"{row.flag.lstrip('-')}={bad}"),)
+    assert row.flag.lstrip("-") not in partials["advanced"]
+
+
+@pytest.mark.parametrize("row", _ADV_INPUT_ROWS, ids=lambda r: r.flag)
+def test_parse_params_advanced_input_matrix_empty_absent(row):
+    """A blank/None entry is ABSENT — no problem, no partial (empty =
+    the YAML governs, the restore-default semantics)."""
+    for blank in (None, "   "):
+        partials, problems = run_config.parse_params({
+            run_config.PARAM_ADVANCED: {row.flag: blank}})
+        assert problems == ()
+        assert row.flag.lstrip("-") not in partials["advanced"]

@@ -919,6 +919,279 @@ async def test_batch_size_input_threads_flag_and_invalid_problem():
         )
 
 
+# =====================================================================
+# Phase 19 (19-02) — the advanced-params section: collapse/toggle,
+# table-generated rows, typing/invalid/reset threading, prefill, the
+# narrow-grid SHORT twins, and the collapsed export placeholder count.
+# =====================================================================
+
+
+async def test_advanced_section_collapsed_by_default_and_a_toggles():
+    """PD-19-8: the advanced section is COLLAPSED at mount (the title
+    row renders, the container does not — the subset-input display
+    idiom over the whole container; a child's own ``visible`` flag does
+    not reflect an ancestor's display on 8.2.8, so the pin reads the
+    CONTAINER's display state, the actual mechanism); [a] expands,
+    [a] again collapses. The toggle is view-only — typed values
+    persist."""
+    from textual.containers import Vertical
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        section = screen.query_one("#cfg-adv-params", Vertical)
+        assert screen.query_one("#cfg-adv-title", Static).display, (
+            "the section title renders at mount (the collapsed affordance)"
+        )
+        assert section.display is False, (
+            "the advanced container mounts collapsed (PD-19-8)"
+        )
+        # [a] expands — focus sits on the picker (plain-binding path)
+        await pilot.press("a")
+        await pilot.pause()
+        assert section.display is True
+        # [a] again collapses
+        await pilot.press("a")
+        await pilot.pause()
+        assert section.display is False
+
+
+async def test_advanced_input_rows_generated_from_table_in_order():
+    """The 13 Input rows are COMPOSE-TIME GENERATION over the table —
+    table order, the dasherized id grammar, each placeholder carrying
+    the BASE config's YAML default through CFG_ADV_DEFAULT (PD-19-3)."""
+    from textual.containers import Vertical
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        section = screen.query_one("#cfg-adv-params", Vertical)
+        table = run_config_service.run_sweep.ADVANCED_TRAIN_FLAGS
+        expected = [
+            f"cfg-input-{row.flag.lstrip('-').replace('_', '-')}"
+            for row in table if row.kind not in ("enum", "bool")]
+        assert len(expected) == 13
+        assert [widget.id for widget in section.query(Input)] == expected, (
+            "the rows render in TABLE order with the dasherized ids"
+        )
+        from tui.strings import CFG_ADV_DEFAULT
+
+        for row in table:
+            if row.kind in ("enum", "bool"):
+                continue
+            widget = screen.query_one(
+                f"#cfg-input-{row.flag.lstrip('-').replace('_', '-')}",
+                Input)
+            assert widget.value == "", row.flag
+            assert _plain(widget.placeholder) == (
+                CFG_ADV_DEFAULT.format(value=row.default_display)), row.flag
+
+
+async def test_advanced_typing_threads_and_invalid_problem():
+    """PD-19-2/P19-R5 threading over the REAL dispatch composer (the
+    batch-typing idiom): a typed learning_rate threads
+    ``--learning_rate 0.0001`` in the [p] preview's dispatch argv and
+    the saved spec; an INVALID float (2.0, above the table's hi 1.0)
+    renders the advanced_invalid problem line and the family's fresh
+    recompute drops the entry (threads nothing — the saved spec loses
+    it, unlike the scalar fields' last-valid-governs)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        await pilot.press("a")
+        await pilot.pause()
+        lr_input = screen.query_one("#cfg-input-learning-rate", Input)
+        lr_input.value = "0.0001"
+        await _settle(pilot, app)
+        saved = run_service.saved_specs[-1]
+        assert saved.advanced == {"learning_rate": 0.0001}, (
+            "the typed value persists into the composed spec's family"
+        )
+        argv = run_config_service.compose_dispatch_argv(saved)
+        assert argv[argv.index("--learning_rate") + 1] == "0.0001"
+        # the [p] preview modal carries the flag in the verbatim argv
+        await pilot.press("p")
+        await pilot.pause()
+        from tui.screens.run_config import PreviewModal
+
+        assert isinstance(app.screen, PreviewModal)
+        log = app.screen.query_one("#cfg-preview-log")
+        joined = "\n".join(
+            line.text for line in log.lines).replace("\n", "")
+        assert "--learning_rate 0.0001" in joined, (
+            "the preview's dispatch argv carries the typed value"
+        )
+        await pilot.press("escape")
+        await pilot.pause()
+        # invalid: the family problem renders; the entry threads nothing
+        lr_input.value = "2.0"
+        await _settle(pilot, app)
+        assert run_service.saved_specs[-1].advanced == {}, (
+            "the fresh family recompute drops the invalid entry — "
+            "unlike the scalar fields' last-valid-governs rule"
+        )
+        assert "--learning_rate" not in (
+            run_config_service.compose_dispatch_argv(
+                run_service.saved_specs[-1]))
+        await pilot.press("p")
+        await pilot.pause()
+        assert isinstance(app.screen, PreviewModal)
+        log = app.screen.query_one("#cfg-preview-log")
+        joined = "\n".join(
+            line.text for line in log.lines).replace("\n", "")
+        assert "advanced_invalid: learning_rate=2.0" in joined, (
+            "the family problem renders through the generic "
+            "code+detail fallback (detail <field>=<raw>)"
+        )
+
+
+async def test_advanced_reset_clears_every_input_and_base_argv():
+    """PD-19-8: [r] bulk-restores every advanced Input to EMPTY and the
+    preview returns to the base argv — no table flag anywhere (the
+    explicit bulk restore; per-field restore is clearing the input,
+    which the same fresh-recompute semantics govern)."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",)))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        await pilot.press("a")
+        await pilot.pause()
+        screen.query_one("#cfg-input-learning-rate", Input).value = "0.0001"
+        screen.query_one(
+            "#cfg-input-gradient-accumulation-steps",
+            Input).value = "4"
+        screen.query_one(
+            "#cfg-input-lr-scheduler-kwargs",
+            Input).value = '{"num_restarts": 2}'
+        await _settle(pilot, app)
+        saved = run_service.saved_specs[-1]
+        assert saved.advanced == {
+            "learning_rate": 0.0001,
+            "gradient_accumulation_steps": 4,
+            "lr_scheduler_kwargs": {"num_restarts": 2},
+        }
+        # [r]: every advanced Input clears, the spec returns to base
+        await pilot.press("r")
+        await _settle(pilot, app)
+        table = run_config_service.run_sweep.ADVANCED_TRAIN_FLAGS
+        for row in table:
+            if row.kind in ("enum", "bool"):
+                continue
+            widget = screen.query_one(
+                f"#cfg-input-{row.flag.lstrip('-').replace('_', '-')}",
+                Input)
+            assert widget.value == "", row.flag
+        argv = run_config_service.compose_dispatch_argv(
+            run_service.saved_specs[-1])
+        assert not any(row.flag in argv for row in table), (
+            "the reset returns the preview to the base argv (the YAML "
+            "governs every advanced param again)"
+        )
+
+
+async def test_advanced_prefill_seeds_inputs_from_spec():
+    """The prefill pair: a loaded spec's advanced values seed their
+    Inputs (str serialization; the json row via json.dumps so the
+    prefill RE-PARSES as valid JSON), absent fields stay EMPTY, and
+    the values round-trip through the compose path back into the spec."""
+    run_service = FakeRunConfigService(spec=RunSpec(
+        models=("model-a",), tasks=("task-1",),
+        advanced={"learning_rate": 1e-4, "warmup_ratio": 0.2,
+                  "lr_scheduler_kwargs": {"num_restarts": 2}}))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        assert screen.query_one(
+            "#cfg-input-learning-rate", Input).value == "0.0001"
+        assert screen.query_one(
+            "#cfg-input-warmup-ratio", Input).value == "0.2"
+        assert screen.query_one(
+            "#cfg-input-lr-scheduler-kwargs",
+            Input).value == '{"num_restarts": 2}', (
+                "the json row prefills as VALID JSON (re-parsable)"
+            )
+        assert screen.query_one(
+            "#cfg-input-weight-decay", Input).value == ""
+        await _settle(pilot, app)
+        assert run_service.saved_specs[-1].advanced == {
+            "learning_rate": 1e-4, "warmup_ratio": 0.2,
+            "lr_scheduler_kwargs": {"num_restarts": 2}}, (
+                "the prefilled values round-trip through the compose path"
+            )
+
+
+async def test_advanced_labels_shorten_at_narrow_grid():
+    """The narrow-grid SHORT twins (the EBS mechanism over the table's
+    long spellings): grad_accum_steps / lr_sched_kwargs / save_total_lim
+    swap at 80 columns and restore the full flag spelling at 120."""
+    app = _app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        from tui.strings import (
+            CFG_ADV_FIELD_GRADIENT_ACCUMULATION_STEPS_SHORT,
+            CFG_ADV_FIELD_LR_SCHEDULER_KWARGS_SHORT,
+            CFG_ADV_FIELD_SAVE_TOTAL_LIMIT_SHORT,
+        )
+
+        assert _label_text(
+            screen,
+            "#cfg-label-gradient-accumulation-steps") == (
+            CFG_ADV_FIELD_GRADIENT_ACCUMULATION_STEPS_SHORT)
+        assert _label_text(
+            screen, "#cfg-label-lr-scheduler-kwargs") == (
+            CFG_ADV_FIELD_LR_SCHEDULER_KWARGS_SHORT)
+        assert _label_text(
+            screen, "#cfg-label-save-total-limit") == (
+            CFG_ADV_FIELD_SAVE_TOTAL_LIMIT_SHORT)
+
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        from tui.strings import (
+            CFG_ADV_FIELD_GRADIENT_ACCUMULATION_STEPS,
+            CFG_ADV_FIELD_SAVE_TOTAL_LIMIT,
+        )
+
+        assert _label_text(
+            screen,
+            "#cfg-label-gradient-accumulation-steps") == (
+            CFG_ADV_FIELD_GRADIENT_ACCUMULATION_STEPS)
+        assert _label_text(
+            screen, "#cfg-label-save-total-limit") == (
+            CFG_ADV_FIELD_SAVE_TOTAL_LIMIT)
+
+
+async def test_advanced_export_placeholder_count_collapsed_default():
+    """The export placeholder-count pin (Phase 19): the existing export
+    test drives the COLLAPSED default — display:none content is
+    excluded from the SVG, so the count stays at its pre-Phase-19
+    value 5. (An EXPANDED export renders only the viewport-bounded
+    subset of the 13 advanced placeholders — the params column is a
+    VerticalScroll and rows below the fold never reach the SVG at
+    40 rows — so the expanded count is layout-dependent and NOT a
+    pin; the collapsed default is the deterministic one.)"""
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await _settle(pilot, app)
+        svg = app.export_screenshot()
+        assert svg.count("—（默认") == 5, (
+            "collapsed by default, the advanced placeholders do not "
+            "render — the pre-Phase-19 count (the existing export test "
+            "drives this collapsed state)"
+        )
+
+
 async def test_params_labels_shorten_at_80_columns():
     """The 80-col degradations: eff_batch_size + the short dirs title."""
     app = _app()
