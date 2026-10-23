@@ -125,6 +125,25 @@ per-cell wall time).
   the same evidence.json; if the orchestrator already finished, read
   `dispatch_state.json` + the ledger directly).
 
+## Ops change 2026-10-23 (later) — cap-ladder restart at base 32 (maintainer directive "option 1") — WORKING
+
+The batch-32 restart OOM'd the BEND class (3 cells at tier-16: 33 GB demand on
+32 GB cards). The maintainer chose the memory-calibrated length-tier CAP
+ladder (commit 1cfcdf3): caps 32/16/8/4/2/1 at 128/256/640/1280/2560 tokens —
+`min(base, cap)` with the <=512 default-lane legacy parity and a
+never-below-legacy invariant pinned in test_run_finetune_contracts.py. The
+dead root moved to `pipeline/finetuned-fhs-full-b32oom-superseded`; the
+journey driver relaunched at the same path through the TUI gate with
+`--batch-text 32` (fresh SVG journey re-recorded: batch input visible, argv
+asserted `--batch_size 32`, dispatch-plan 0,1). **Measured on BEND
+(514 tok): "Base batch size: 32 | Dynamic starting batch size: 8", ZERO OOM,
+~24 GB/GPU, GPU util 89-100% (was 19-20%), 69,666 optimizer steps at ~1.14
+it/s** — effective batch 32 via micro 8 x GA 4 compensation, ~36.5 samples/s
+vs the 8.8 baseline (4.1x), BEND cell ~17 h (was ~70 h). Short-seq tiers keep
+full 32 (measured 8.5 it/s earlier). Effective batch is now UNIFORM 32 across
+all datasets — better protocol comparability than per-dataset batches.
+Journey log: `tui-live/fhs-journey-cap32-20261023T104806.log`.
+
 ## Ops change 2026-10-23 — dataloader parallelism (maintainer directive "A") — MEASURED NO EFFECT
 
 The launch-day diagnosis (worker tqdm: 557,322 steps @ ~2.2 it/s for one BEND
