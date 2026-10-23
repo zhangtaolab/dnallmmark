@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 
 ## Current Position
 
-Phase: 18 (文档撰写) — EXECUTING
+Phase: 19 (TUI 运行配置全参数化（基础/高级两层）) — READY TO EXECUTE
 Plan: 4 of 4
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Last activity: 2026-10-22 - Completed quick task 261022-tah: TUI FungiHelixSeek full sweep (seeds 42,43,44) launched detached and verifiably in flight (93 cells, dual-GPU); closed in-flight per plan with committed IN-FLIGHT.md handoff — the final evidence commit is the follow-up when the watcher exits
 
 ## Performance Metrics

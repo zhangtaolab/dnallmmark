@@ -214,8 +214,13 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
+**Wave 1**
 - [ ] 19-01-PLAN.md — Pipeline chain: ADVANCED_TRAIN_FLAGS 18-param table + run_sweep flag family/guards/manifest + dispatch_core lanes ×2/context/dry-run/rerun tokens + run_finetune argparse/mutation loop (PD-19-4 snapshot-base GA placement) — tracer: learning_rate end-to-end + real dry-run (P19-R2, P19-R5)
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 19-02-PLAN.md — TUI chain: two-layer params column (collapsed 高级参数 section, a/r toggle+reset), table-driven parse/persistence/composers from the shared table, ChoiceRow enum dropdowns, YAML-default placeholders + variance hint (P19-R1..P19-R7)
+
+**Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 19-03-PLAN.md — Evidence + close: journey driver --param channel (typing + modal picks, non-launching lanes), goldens regen uncommitted (D-03 batch, WINDOWS #52), phase-close full gates (P19-R7, P19-R8)
 
 ---
