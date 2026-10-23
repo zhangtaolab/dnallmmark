@@ -83,7 +83,28 @@ from dnallm import DNADataset, DNATrainer, load_config, load_model_and_tokenizer
 # kind parses with json.loads (object shape asserted at the argv
 # boundary below).
 ADVANCED_TRAIN_FLAGS = (
+    ("--adam_beta1", "float", None),
+    ("--adam_beta2", "float", None),
+    ("--adam_epsilon", "float", None),
+    ("--bf16", "bool", None),
+    ("--eval_steps", "int", None),
+    ("--eval_strategy", "enum", ("no", "steps", "epoch")),
+    ("--gradient_accumulation_steps", "int", None),
     ("--learning_rate", "float", None),
+    ("--logging_steps", "int", None),
+    ("--logging_strategy", "enum", ("no", "steps", "epoch")),
+    ("--lr_scheduler_kwargs", "json", None),
+    ("--lr_scheduler_type", "enum", (
+        "linear", "cosine", "cosine_with_restarts", "polynomial",
+        "constant", "constant_with_warmup", "inverse_sqrt",
+        "reduce_lr_on_plateau", "cosine_with_min_lr",
+        "cosine_warmup_with_min_lr", "warmup_stable_decay", "greedy")),
+    ("--max_grad_norm", "float", None),
+    ("--save_steps", "int", None),
+    ("--save_strategy", "enum", ("no", "steps", "epoch")),
+    ("--save_total_limit", "int", None),
+    ("--warmup_ratio", "float", None),
+    ("--weight_decay", "float", None),
 )
 
 
@@ -370,9 +391,9 @@ def parse_args():
                      "governs (Phase 19)")
         elif kind == "enum":
             parser.add_argument(
-                flag, choices=list(choices), default=None,
+                flag, choices=list(choices or ()), default=None,
                 help=f"Advanced train param {flag.lstrip('-')} (one of "
-                     f"{', '.join(choices)}) — overrides the active "
+                     f"{', '.join(choices or ())}) — overrides the active "
                      "config's finetune field; absent = the YAML value "
                      "governs (Phase 19)")
         else:  # json
@@ -864,12 +885,22 @@ if __name__ == "__main__":
     # only into ONE dict (PD-19-7) — applied per model at the mutation
     # slot below (after the variant reload, before the grad_accum
     # snapshot, PD-19-4). Field names are the flag names minus dashes,
-    # verbatim TrainingConfig fields.
+    # verbatim TrainingConfig fields. The json row asserts its OBJECT
+    # shape HERE, at the argv boundary (fail-fast house style, before
+    # the model loop): json.loads accepts arrays/scalars but
+    # TrainingArguments takes a kwargs dict.
     advanced = {}
     for _flag, _kind, _choices in ADVANCED_TRAIN_FLAGS:
         _value = getattr(args, _flag.lstrip("-"))
-        if _value is not None:
-            advanced[_flag.lstrip("-")] = _value
+        if _value is None:
+            continue
+        if _kind == "json" and not isinstance(_value, dict):
+            raise ValueError(
+                f"REFUSED: {_flag} must be a JSON object "
+                f"(got {type(_value).__name__}) — the scheduler kwargs "
+                "channel takes a dict, never an array or scalar"
+            )
+        advanced[_flag.lstrip("-")] = _value
 
     # Unified eval subsets (F7 Q3 / REV-07): validate the --subset_file
     # map fail-fast BEFORE any model load — the run_sweep._validate_filters
@@ -1167,17 +1198,18 @@ if __name__ == "__main__":
             # mutation loop. PLACEMENT CONTRACT: AFTER the variant reload
             # (whichever YAML is active for this model governs), AFTER the
             # num_train_epochs override, and BEFORE the
-            # default_grad_accum snapshot below — so a threaded
-            # gradient_accumulation_steps becomes the SNAPSHOT BASE the
-            # per-dataset reset restores (the operator value survives the
-            # D-07 reset; --effective_batch_size still recomputes GA when
-            # set — EBS wins, existing child semantics, PD-19-5). bf16
+            # default_grad_accum snapshot below. Row-specific semantics:
+            # gradient_accumulation_steps is the SNAPSHOT BASE (PD-19-4):
+            # the per-dataset reset restores the operator value;
+            # --effective_batch_size still recomputes GA when set (EBS
+            # wins, PD-19-5, never conflated with --batch_size — the
+            # STARTING micro-batch determine_batch_size scales). bf16
             # rides this MODEL-LEVEL slot; the models_only_support_fp32
-            # quirk block below correctly overrides it per dataset
-            # (memory safety beats operator preference, Pitfall 4).
-            # warmup_ratio rides TrainingConfig ONLY — never the
-            # extra_args env seam (transformers v5 removed it from
-            # TrainingArguments, Pitfall 2).
+            # quirk block below correctly overrides per dataset (memory
+            # safety beats operator preference — Pitfall 4). warmup_ratio
+            # rides TrainingConfig ONLY — never the extra_args env seam
+            # (transformers v5 removed it from TrainingArguments,
+            # Pitfall 2).
             for _field, _value in advanced.items():
                 setattr(configs["finetune"], _field, _value)
 
@@ -1558,6 +1590,22 @@ if __name__ == "__main__":
                 configs["finetune"].logging_steps = max(1, step)
                 configs["finetune"].eval_steps = max(1, step)
                 configs["finetune"].save_steps = max(1, step)
+                # Phase 19 (19-01, deviation-recorded Rule-1): the dynamic
+                # cadence above is the DERIVED default (~10 eval/log/save
+                # points per training run, dataset-size aware) — an
+                # operator-threaded cadence value OVERRIDES it here, after
+                # the derivation (operator-explicit > derived, the same
+                # flag > file > default precedence every other knob uses).
+                # Without this re-apply the model-level mutation loop's
+                # three cadence assignments were silently dead per dataset
+                # — a threaded --eval_steps would be a no-op flag. Absent
+                # flags keep the derived cadence byte-identical.
+                for _cadence in ("logging_steps", "eval_steps",
+                                 "save_steps"):
+                    if _cadence in advanced:
+                        setattr(
+                            configs["finetune"], _cadence,
+                            advanced[_cadence])
 
                 # Load dataset
                 multi_label_sep = None

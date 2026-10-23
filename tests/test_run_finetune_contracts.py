@@ -167,6 +167,8 @@ import json
 import re
 from pathlib import Path
 
+import run_sweep  # the ADVANCED_TRAIN_FLAGS owner (PD-19-6; pipeline/ is on sys.path via conftest)
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUN_FINETUNE = REPO_ROOT / "pipeline" / "run_finetune.py"
 ENV_SMOKE = REPO_ROOT / "pipeline" / "env_smoke.py"
@@ -1902,6 +1904,49 @@ def test_advanced_train_flag_registered_and_mutation_slot_pinned():
         "snapshot — a threaded gradient_accumulation_steps must become "
         "the snapshot base (PD-19-4), never a value the reset clobbers"
     )
+
+
+def test_advanced_family_parity_with_run_sweep_table():
+    """PD-19-6 parity: EVERY flag in run_sweep's frozen
+    ADVANCED_TRAIN_FLAGS table is registered in run_finetune's LOCAL
+    tuple — the standalone child must accept everything the sweep can
+    thread (a missing row is an argparse exit-2 child death, one burned
+    cell per claim, Pitfall 7). Read-source over run_finetune (the
+    read-source-never-import discipline); run_sweep is imported for the
+    table only."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    for spec in run_sweep.ADVANCED_TRAIN_FLAGS:
+        assert f'"{spec.flag}"' in src, (
+            f"{spec.flag} is registered in run_sweep's table but NOT in "
+            "run_finetune's local ADVANCED_TRAIN_FLAGS tuple — the child "
+            "would die at its own argparse boundary (exit 2) the moment "
+            "the sweep threads it"
+        )
+
+
+def test_advanced_family_absent_from_extra_args_env_seam():
+    """Pitfall 2 (the warmup_ratio channel guarantee): NONE of the 18
+    advanced flags appears in the extra_args env-seam block — every
+    advanced param rides configs['finetune'] ONLY. warmup_ratio via
+    extra_args would TypeError the TrainingArguments ctor (transformers
+    v5 removed the field); the seam stays reserved for non-
+    TrainingConfig fields (dataloader_num_workers)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    seam = re.search(
+        r"extra_args = \{\}.*?trainer = DNATrainer\(", src, re.DOTALL)
+    assert seam is not None, (
+        "the extra_args env-seam block was not found between "
+        "'extra_args = {}' and the DNATrainer ctor — the seam pin must "
+        "be re-pointed at the new boundary"
+    )
+    seam_text = seam.group(0)
+    for spec in run_sweep.ADVANCED_TRAIN_FLAGS:
+        assert spec.flag not in seam_text, (
+            f"{spec.flag} appears inside the extra_args env-seam block — "
+            "advanced params must ride configs['finetune'] only "
+            "(warmup_ratio via extra_args TypeErrors the "
+            "TrainingArguments ctor in transformers v5, Pitfall 2)"
+        )
 
 
 def test_probe_ineligible_list_covers_special_loader_families_with_provenance():

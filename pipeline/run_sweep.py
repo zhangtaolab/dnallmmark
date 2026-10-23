@@ -406,7 +406,49 @@ class AdvancedTrainFlag(NamedTuple):
 #: contracts parity test pins that family against this table.
 ADVANCED_TRAIN_FLAGS = (
     AdvancedTrainFlag(
+        "--adam_beta1", "float", 0.0, 1.0, None, "0.9"),
+    AdvancedTrainFlag(
+        "--adam_beta2", "float", 0.0, 1.0, None, "0.999"),
+    AdvancedTrainFlag(
+        "--adam_epsilon", "float", 0.0, 1.0, None, "1e-8"),
+    AdvancedTrainFlag(
+        "--bf16", "bool", None, None, ("true", "false"), "True"),
+    AdvancedTrainFlag(
+        "--eval_steps", "int", 1, None, None, "500"),
+    AdvancedTrainFlag(
+        "--eval_strategy", "enum", None, None,
+        ("no", "steps", "epoch"), "steps"),
+    AdvancedTrainFlag(
+        "--gradient_accumulation_steps", "int", 1, None, None, "1"),
+    AdvancedTrainFlag(
         "--learning_rate", "float", 1e-9, 1.0, None, "2e-5"),
+    AdvancedTrainFlag(
+        "--logging_steps", "int", 1, None, None, "500"),
+    AdvancedTrainFlag(
+        "--logging_strategy", "enum", None, None,
+        ("no", "steps", "epoch"), "steps"),
+    AdvancedTrainFlag(
+        "--lr_scheduler_kwargs", "json", None, None, None, "{}"),
+    AdvancedTrainFlag(
+        "--lr_scheduler_type", "enum", None, None,
+        ("linear", "cosine", "cosine_with_restarts", "polynomial",
+         "constant", "constant_with_warmup", "inverse_sqrt",
+         "reduce_lr_on_plateau", "cosine_with_min_lr",
+         "cosine_warmup_with_min_lr", "warmup_stable_decay", "greedy"),
+        "linear"),
+    AdvancedTrainFlag(
+        "--max_grad_norm", "float", 0.0, None, None, "1.0"),
+    AdvancedTrainFlag(
+        "--save_steps", "int", 1, None, None, "500"),
+    AdvancedTrainFlag(
+        "--save_strategy", "enum", None, None,
+        ("no", "steps", "epoch"), "steps"),
+    AdvancedTrainFlag(
+        "--save_total_limit", "int", 1, None, None, "2"),
+    AdvancedTrainFlag(
+        "--warmup_ratio", "float", 0.0, 1.0, None, "0.1"),
+    AdvancedTrainFlag(
+        "--weight_decay", "float", 0.0, 1.0, None, "0.01"),
 )
 
 

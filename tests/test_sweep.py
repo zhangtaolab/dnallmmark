@@ -2317,7 +2317,248 @@ def test_cli_learning_rate_threads_into_child_argv(tmp_path, monkeypatch):
     argv = captured["argv"]
     assert flag_value(argv, "--learning_rate") == "0.0001"
     assert argv.index("--output_dir") < argv.index("--learning_rate"), (
-        "the advanced block joins the pinned pass-through tail" )
+        "the advanced block joins the pinned pass-through tail")
+
+
+# =====================================================================
+# Phase 19 (19-01 Task 2) — the full 18-row advanced family
+# =====================================================================
+
+#: The locked 18-row family (PD-19-1), verbatim from the plan's
+#: decisions table — kinds/bounds/choices/default_display per row.
+EXPECTED_ADVANCED_TABLE = [
+    ("--adam_beta1", "float", 0.0, 1.0, None, "0.9"),
+    ("--adam_beta2", "float", 0.0, 1.0, None, "0.999"),
+    ("--adam_epsilon", "float", 0.0, 1.0, None, "1e-8"),
+    ("--bf16", "bool", None, None, ("true", "false"), "True"),
+    ("--eval_steps", "int", 1, None, None, "500"),
+    ("--eval_strategy", "enum", None, None,
+     ("no", "steps", "epoch"), "steps"),
+    ("--gradient_accumulation_steps", "int", 1, None, None, "1"),
+    ("--learning_rate", "float", 1e-9, 1.0, None, "2e-5"),
+    ("--logging_steps", "int", 1, None, None, "500"),
+    ("--logging_strategy", "enum", None, None,
+     ("no", "steps", "epoch"), "steps"),
+    ("--lr_scheduler_kwargs", "json", None, None, None, "{}"),
+    ("--lr_scheduler_type", "enum", None, None,
+     ("linear", "cosine", "cosine_with_restarts", "polynomial",
+      "constant", "constant_with_warmup", "inverse_sqrt",
+      "reduce_lr_on_plateau", "cosine_with_min_lr",
+      "cosine_warmup_with_min_lr", "warmup_stable_decay", "greedy"),
+     "linear"),
+    ("--max_grad_norm", "float", 0.0, None, None, "1.0"),
+    ("--save_steps", "int", 1, None, None, "500"),
+    ("--save_strategy", "enum", None, None,
+     ("no", "steps", "epoch"), "steps"),
+    ("--save_total_limit", "int", 1, None, None, "2"),
+    ("--warmup_ratio", "float", 0.0, 1.0, None, "0.1"),
+    ("--weight_decay", "float", 0.0, 1.0, None, "0.01"),
+]
+
+
+@pytest.mark.parametrize(
+    "flag,kind,lo,hi,choices,default", EXPECTED_ADVANCED_TABLE)
+def test_advanced_train_flags_row_matches_locked_table(
+        flag, kind, lo, hi, choices, default):
+    """PD-19-1: every one of the 18 locked rows is present with EXACTLY
+    the locked kind/bounds/choices/default_display — the table itself is
+    pinned, not just example behaviors."""
+    matching = [
+        spec for spec in run_sweep.ADVANCED_TRAIN_FLAGS
+        if spec.flag == flag]
+    assert len(matching) == 1, f"{flag} must appear exactly once"
+    spec = matching[0]
+    assert spec.kind == kind
+    assert spec.lo == lo
+    assert spec.hi == hi
+    assert spec.choices == choices
+    assert spec.default_display == default
+
+
+def test_advanced_train_flags_table_is_exactly_the_locked_18():
+    """The table holds EXACTLY the locked 18 rows, ALPHABETICAL (table
+    order = argv block order, PD-19-2) — a 19th row or a reorder fails
+    here until the lock is consciously updated."""
+    flags = [spec.flag for spec in run_sweep.ADVANCED_TRAIN_FLAGS]
+    assert flags == sorted(flags), "table order must be alphabetical"
+    assert len(flags) == 18
+    assert set(flags) == {
+        row[0] for row in EXPECTED_ADVANCED_TABLE}
+
+
+def test_advanced_family_absent_parses_all_none(monkeypatch):
+    """Every one of the 18 flags defaults to None (the D-12
+    byte-identical-when-absent contract over the whole family)."""
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    args = run_sweep.parse_args()
+    for spec in run_sweep.ADVANCED_TRAIN_FLAGS:
+        assert getattr(args, spec.flag.lstrip("-")) is None, (
+            f"{spec.flag} must default to None when absent"
+        )
+    assert run_sweep.collect_advanced(args) == {}
+
+
+@pytest.mark.parametrize("flag,raw,expected", [
+    ("--eval_steps", "100", 100),                                    # int
+    ("--learning_rate", "1e-4", 1e-4),                              # float
+    ("--lr_scheduler_type", "cosine", "cosine"),                     # enum
+    ("--bf16", "false", "false"),  # bool: string at this layer (choices)
+    ("--lr_scheduler_kwargs", '{"num_restarts": 2}',
+     {"num_restarts": 2}),                                           # json
+])
+def test_advanced_family_present_parse_per_kind(
+        monkeypatch, flag, raw, expected):
+    """One present representative per kind parses to the typed value —
+    int/float typed, enum/bool the closed vocabulary string, json the
+    parsed object (collect_advanced carries the parsed value)."""
+    monkeypatch.setattr(
+        sys, "argv", ["run_sweep.py", "--seeds", "42", flag, raw])
+    args = run_sweep.parse_args()
+    assert getattr(args, flag.lstrip("-")) == expected
+    assert run_sweep.collect_advanced(args) == {flag.lstrip("-"): expected}
+
+
+@pytest.mark.parametrize("flag,raw,bound", [
+    ("--learning_rate", "2.0", "1.0"),
+    ("--warmup_ratio", "1.5", "1.0"),
+    ("--weight_decay", "-0.1", "0.0"),
+])
+def test_advanced_out_of_bounds_float_refuses_collect_all(
+        tmp_path, monkeypatch, flag, raw, bound):
+    """Out-of-bounds floats abort collect-all naming the flag AND the
+    bound it violated (the PD-19-1 inclusive sanity mirrors) — before
+    any output is written."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "bounds-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--dry-run", flag, raw,
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert flag in message, "the refusal names the offending flag"
+    assert bound in message, "the refusal names the violated bound"
+    assert raw in message, "the refusal echoes the raw value"
+    assert not out_root.exists()
+
+
+def test_advanced_json_non_object_refuses_collect_all(
+        tmp_path, monkeypatch):
+    """--lr_scheduler_kwargs '[1,2]' parses (json.loads accepts arrays)
+    but the dict-shape guard refuses it naming the flag —
+    TrainingArguments takes a kwargs OBJECT."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--dry-run", "--lr_scheduler_kwargs", "[1,2]",
+            "--output-root", str(tmp_path / "json-out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "--lr_scheduler_kwargs" in message
+    assert "JSON object" in message
+    assert "list" in message, "the refusal names the offending type"
+
+
+@pytest.mark.parametrize("flag,raw", [
+    ("--lr_scheduler_type", "garbage"),
+    ("--eval_strategy", "sometimes"),
+    ("--bf16", "yes"),
+])
+def test_advanced_enum_bool_garbage_refuses_at_argparse(
+        monkeypatch, flag, raw):
+    """Enum/bool garbage dies at ARGPARSE (exit 2, the choices
+    vocabulary) — before any collect-all guard or output."""
+    monkeypatch.setattr(
+        sys, "argv", ["run_sweep.py", "--seeds", "42", flag, raw])
+    with pytest.raises(SystemExit) as excinfo:
+        run_sweep.parse_args()
+    assert excinfo.value.code == 2
+
+
+def test_build_argv_full_advanced_block_exact_alphabetical_order():
+    """The full-18 pin: an advanced dict carrying ALL 18 values produces
+    the block in EXACT alphabetical order (table order) between
+    --batch_size and --cache_dir, the json value serialized as
+    sorted-key JSON — element-for-element, never just 'contains'."""
+    advanced = {
+        "adam_beta1": 0.9, "adam_beta2": 0.999, "adam_epsilon": 1e-8,
+        "bf16": "true", "eval_steps": 100, "eval_strategy": "epoch",
+        "gradient_accumulation_steps": 4, "learning_rate": 1e-4,
+        "logging_steps": 50, "logging_strategy": "steps",
+        "lr_scheduler_kwargs": {"num_restarts": 2, "power": 1.0},
+        "lr_scheduler_type": "cosine_with_restarts",
+        "max_grad_norm": 0.5, "save_steps": 200, "save_strategy": "no",
+        "save_total_limit": 3, "warmup_ratio": 0.05, "weight_decay": 0.01,
+    }
+    assert len(advanced) == 18
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root",
+        batch_size=8, advanced=advanced, cache_dir="/tmp/cache")
+    block = argv[argv.index("--batch_size") + 2: argv.index("--cache_dir")]
+    assert block == [
+        "--adam_beta1", "0.9",
+        "--adam_beta2", "0.999",
+        "--adam_epsilon", "1e-08",
+        "--bf16", "true",
+        "--eval_steps", "100",
+        "--eval_strategy", "epoch",
+        "--gradient_accumulation_steps", "4",
+        "--learning_rate", "0.0001",
+        "--logging_steps", "50",
+        "--logging_strategy", "steps",
+        "--lr_scheduler_kwargs", '{"num_restarts": 2, "power": 1.0}',
+        "--lr_scheduler_type", "cosine_with_restarts",
+        "--max_grad_norm", "0.5",
+        "--save_steps", "200",
+        "--save_strategy", "no",
+        "--save_total_limit", "3",
+        "--warmup_ratio", "0.05",
+        "--weight_decay", "0.01",
+    ], (
+        "the full advanced block must be the alphabetical table order, "
+        "element-for-element, between --batch_size and --cache_dir "
+        "(PD-19-2)"
+    )
+
+
+def test_cli_manifest_records_advanced_only_when_present(
+        tmp_path, monkeypatch):
+    """PD-19-7 manifest parity: an ABSENT family contributes no
+    'advanced' key anywhere in the manifest; a PRESENT family records
+    the nested dict in every cell (the **flags merge, D-13)."""
+    registry_dir = make_registry(tmp_path)
+
+    plain_root = tmp_path / "plain-manifest"
+    run_cli(monkeypatch, [
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--dry-run", "--output-root", str(plain_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    plain = json.loads(
+        (plain_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    for cell in plain["cells"]:
+        assert "advanced" not in cell, (
+            "an absent family records zero manifest keys"
+        )
+
+    adv_root = tmp_path / "adv-manifest"
+    run_cli(monkeypatch, [
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--dry-run", "--learning_rate", "0.0001",
+        "--weight_decay", "0.05",
+        "--output-root", str(adv_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    adv = json.loads(
+        (adv_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert adv["cells"], "the dry-run planned at least one cell"
+    for cell in adv["cells"]:
+        assert cell["advanced"] == {
+            "learning_rate": 1e-4, "weight_decay": 0.05}
 
 
 def test_cli_resolves_subset_and_cache_dir_to_absolute_paths(
