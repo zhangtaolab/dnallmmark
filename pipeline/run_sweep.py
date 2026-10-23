@@ -248,6 +248,26 @@ Failure boundary:
     two knobs coexist, documented never conflated), and
     ``batch_size >= 1`` joins the collect-all startup validation.
 
+The advanced train-flag family (Phase 19, 19-01; PD-19-1..PD-19-7):
+    ``ADVANCED_TRAIN_FLAGS`` is the frozen param vocabulary (flag, kind,
+    lo, hi, choices, default_display) driving an argparse registration
+    loop, the collect-all bounds/json guards
+    (``advanced_flag_problems``), the present-only nested collection
+    (``collect_advanced``), and the ``build_argv`` block: ONE contiguous
+    ALPHABETICAL advanced block appended IMMEDIATELY AFTER ``--batch_size``
+    and BEFORE ``--cache_dir`` in the pinned tail order (PD-19-2),
+    present flags only — an absent family contributes ZERO argv
+    elements and ZERO manifest keys (the D-12/D-13 whole-family absent
+    parity). The family rides ONE nested ``"advanced"`` dict key in
+    ``sweep_flags`` manifests (PD-19-7), written only when non-empty;
+    dispatch_core mirrors the same table via its ``run_sweep`` import
+    (lanes, worker context, dry-run, the DERIVED rerun-token family) and
+    the Phase-19 TUI service consumes it the same way (PD-19-6 — the
+    table is the one shared vocabulary). The child (run_finetune.py)
+    keeps a LOCAL registration tuple and applies every present value as
+    a ``configs["finetune"].<field> = value`` assignment after its
+    variant reload and before its grad_accum snapshot (PD-19-4).
+
 --model_root / --dataset_root (261014-c2l, storage-root overrides):
     Two pure pass-through flags threaded to every run_finetune.py child
     as separate LIST argv elements ONLY when present — the ROOT under
@@ -311,6 +331,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import NamedTuple
 
 import directories_config  # sibling module (the F4W-01 startup config, same stdlib-only purity)
 import registry_loader  # sibling module (pipeline/ on sys.path, the same import mechanics tests use for run_sweep itself)
@@ -335,6 +356,131 @@ METRICS_NAME = "final_metrics.json"
 # parity test in tests/test_sweep.py (run_finetune.py imports torch at
 # its module top and is never imported CPU-side).
 HEAD_KEEP_BASE_NAMES = ("evo2_1b_base", "megaDNA_updated")
+
+
+class AdvancedTrainFlag(NamedTuple):
+    """One row of ``ADVANCED_TRAIN_FLAGS`` — the shared advanced-param
+    vocabulary (Phase 19, PD-19-6).
+
+    Fields:
+        flag: the DASHED argv flag (``"--learning_rate"``) — the argparse
+            target AND the threaded argv element; the TrainingConfig
+            field name / lane-dict key is ``flag.lstrip("-")``
+            (``learning_rate`` — every locked flag is underscores-only,
+            so the dash-strip is the field name verbatim).
+        kind: one of ``"int"`` / ``"float"`` / ``"enum"`` / ``"bool"`` /
+            ``"json"`` — selects the argparse type/choices mapping.
+        lo: inclusive lower bound (``None`` = unbounded).
+        hi: inclusive upper bound (``None`` = unbounded).
+        choices: the closed vocabulary for enum/bool kinds (``None``
+            otherwise; bool carries ``("true", "false")`` as STRING
+            choices at this layer — the child's own parser owns the
+            str-to-bool conversion).
+        default_display: the base ``finetune_config.yaml`` literal, for
+            help text / the Phase-19 TUI placeholder (variant YAMLs
+            differ — Pitfall 3; this is display copy, never a default
+            value: an absent flag always means None).
+    """
+
+    flag: str
+    kind: str
+    lo: float | None
+    hi: float | None
+    choices: tuple[str, ...] | None
+    default_display: str
+
+
+#: The frozen advanced train-flag table (Phase 19, 19-01, PD-19-1/PD-19-6)
+#: — THE param vocabulary for the whole chain: this module's argparse
+#: family + collect-all guards + build_argv block, dispatch_core's lane
+#: mirrors (lane_values, worker context, dry-run sweep_flags, the derived
+#: rerun-token family — imported via the existing ``import run_sweep``),
+#: and tui/services/run_config.py in plan 19-02 (same import). Rows are
+#: ALPHABETICAL by flag = table order = argv block order (PD-19-2).
+#: Bound rules: floats are inclusive sanity mirrors (learning_rate
+#: [1e-9, 1.0] documents "values below 1e-9 are typos"); ints are >= 1
+#: (the --batch_size guard shape); enums are the live-probed transformers
+#: 5.17.0 vocabularies (12 SchedulerType, 3 IntervalStrategy — 19-RESEARCH
+#: lines 154-155), never training-data memory. The child (run_finetune)
+#: keeps its own LOCAL registration tuple (it must stay standalone); a
+#: contracts parity test pins that family against this table.
+ADVANCED_TRAIN_FLAGS = (
+    AdvancedTrainFlag(
+        "--learning_rate", "float", 1e-9, 1.0, None, "2e-5"),
+)
+
+
+def advanced_flag_problems(args):
+    """Collect-all guard messages for the advanced family (Phase 19).
+
+    Numeric rows check their inclusive bounds with the
+    ``"--batch_size must be >= 1, got {v}"`` message shape (each message
+    names the flag AND the bound); the json row guards the dict shape
+    (``json.loads`` accepts arrays/scalars, TrainingArguments requires
+    an object); enum/bool rows need NO collect-all guard — argparse
+    ``choices`` refuses garbage at exit 2 before this ever runs. The
+    SAME helper serves ``main()`` here and dispatch_core's mirror (no
+    run_sweep.main runs in dispatch mode — one table, one guard loop,
+    zero drift, PD-19-6).
+
+    Args:
+        args (argparse.Namespace): a parsed namespace carrying one
+            attribute per table flag (run_sweep's own or the
+            ``parse_sweep_remainder`` re-parse product).
+
+    Returns:
+        list[str]: the problem messages (empty when every present value
+        is in bounds).
+    """
+    problems = []
+    for spec in ADVANCED_TRAIN_FLAGS:
+        value = getattr(args, spec.flag.lstrip("-"), None)
+        if value is None:
+            continue
+        if spec.kind == "int":
+            if spec.lo is not None and value < spec.lo:
+                problems.append(
+                    f"{spec.flag} must be >= {int(spec.lo)}, got {value}")
+        elif spec.kind == "float":
+            below = spec.lo is not None and value < spec.lo
+            above = spec.hi is not None and value > spec.hi
+            if below or above:
+                bound = (
+                    f">= {spec.lo}" if spec.hi is None
+                    else f"in [{spec.lo}, {spec.hi}]")
+                problems.append(
+                    f"{spec.flag} must be {bound}, got {value}")
+        elif spec.kind == "json" and not isinstance(value, dict):
+            problems.append(
+                f"{spec.flag} must be a JSON object, got "
+                f"{type(value).__name__}")
+    return problems
+
+
+def collect_advanced(args):
+    """Collect the PRESENT advanced-family values (Phase 19, PD-19-7).
+
+    The whole family rides ONE nested dict — key = the TrainingConfig
+    field name, value as parsed — built present-only (absent flag
+    contributes no key, D-12). Consumers: ``main()``'s
+    ``sweep_flags["advanced"]`` manifest write and run_matrix/``build_argv``
+    threading here, and dispatch_core's ordinary lane collection + dry-run
+    mirror (the same single-owner discipline as the guard helper).
+
+    Args:
+        args (argparse.Namespace): a parsed namespace carrying one
+            attribute per table flag.
+
+    Returns:
+        dict[str, object]: the present-only advanced dict (EMPTY when no
+        flag was given — the whole-family-absent parity shape).
+    """
+    advanced = {}
+    for spec in ADVANCED_TRAIN_FLAGS:
+        value = getattr(args, spec.flag.lstrip("-"), None)
+        if value is not None:
+            advanced[spec.flag.lstrip("-")] = value
+    return advanced
 
 
 def parse_args():
@@ -549,6 +695,55 @@ def parse_args():
              "(two alias suffixes cannot name one cell); absent "
              "(default) is byte-identical to today"
     )
+
+    # Phase 19 (19-01, PD-19-6): the advanced train-flag family,
+    # table-driven over ADVANCED_TRAIN_FLAGS — one registration loop, the
+    # kind -> type/choices mapping (int/float valued, enum/bool closed
+    # vocabularies, json a json.loads type callable). Plain valued flags
+    # (the --num_train_epochs shape — NO bare-flag const semantics); an
+    # absent flag parses to None and threads nothing (D-12). Every value
+    # is validated at the child (run_finetune applies it as a
+    # configs["finetune"].<field> assignment); the collect-all bounds
+    # mirror lives in main()'s flag_problems via advanced_flag_problems.
+    for spec in ADVANCED_TRAIN_FLAGS:
+        if spec.kind == "int":
+            parser.add_argument(
+                spec.flag, type=int, default=None,
+                help=f"Advanced train param {spec.flag.lstrip('-')} "
+                     f"(int, default {spec.default_display} in the base "
+                     "YAML) threaded to every child as a plain valued "
+                     "flag (the --num_train_epochs shape); the child "
+                     "applies it as a configs['finetune'] field "
+                     "assignment — absent = the YAML value governs")
+        elif spec.kind == "float":
+            parser.add_argument(
+                spec.flag, type=float, default=None,
+                help=f"Advanced train param {spec.flag.lstrip('-')} "
+                     f"(float, default {spec.default_display} in the base "
+                     "YAML) threaded to every child as a plain valued "
+                     "flag (the --num_train_epochs shape); the child "
+                     "applies it as a configs['finetune'] field "
+                     "assignment — absent = the YAML value governs")
+        elif spec.kind in ("enum", "bool"):
+            parser.add_argument(
+                spec.flag, choices=list(spec.choices or ()), default=None,
+                help=f"Advanced train param {spec.flag.lstrip('-')} "
+                     f"(one of {', '.join(spec.choices or ())}; default "
+                     f"{spec.default_display} in the base YAML) threaded "
+                     "to every child as a plain valued flag (the "
+                     "--num_train_epochs shape); the child applies it as "
+                     "a configs['finetune'] field assignment — absent = "
+                     "the YAML value governs")
+        else:  # json
+            parser.add_argument(
+                spec.flag, type=json.loads, default=None,
+                help=f"Advanced train param {spec.flag.lstrip('-')} "
+                     "(JSON object literal, e.g. "
+                     "'{\"num_restarts\": 2}') threaded to every child "
+                     "as a plain valued flag (the --num_train_epochs "
+                     "shape); the child applies it as a "
+                     "configs['finetune'] field assignment — absent = "
+                     "the YAML value governs")
 
     return parser.parse_args()
 
@@ -1164,7 +1359,8 @@ def build_argv(model, task, seed, output_root, peft="none",
                effective_batch_size=None, batch_size=None,
                num_train_epochs=None,
                cache_dir=None, config_variant="none",
-               model_root=None, dataset_root=None, log_dir=None):
+               model_root=None, dataset_root=None, log_dir=None,
+               advanced=None):
     """Build the run_finetune.py argv for one cell — a LIST, never a string.
 
     Under ``peft`` lora/ia3 (06-02) the cell's model is the ALIAS
@@ -1210,7 +1406,14 @@ def build_argv(model, task, seed, output_root, peft="none",
     everywhere, documented never conflated: batch_size threads the
     STARTING per-device micro-batch (the child's
     ``determine_batch_size`` scales it down by sequence-length tier),
-    effective_batch_size threads the GA-derived effective target.
+    effective_batch_size threads the GA-derived effective target. The
+    advanced family (Phase 19, PD-19-2) appends as ONE contiguous
+    ALPHABETICAL block (table order) IMMEDIATELY AFTER the
+    ``--batch_size`` append and BEFORE the ``--cache_dir`` append at
+    every threading site — present flags only (two LIST elements each,
+    the json kind serialized with ``json.dumps(sort_keys=True)``), an
+    empty/absent dict contributes ZERO elements (the D-12/D-13
+    whole-family absent parity).
 
     Args:
         model (str): value for the cell's model identity — the BASE name
@@ -1236,6 +1439,12 @@ def build_argv(model, task, seed, output_root, peft="none",
             ``determine_batch_size`` scales it down by sequence-length
             tier (run_finetune.py:602) — distinct from the GA-derived
             effective target (261023-abu).
+        advanced (dict | None): the PRESENT advanced-family values
+            (Phase 19, PD-19-7 — collect_advanced's product; keys are
+            TrainingConfig field names) appended as one contiguous
+            alphabetical block immediately after ``--batch_size``; the
+            json kind serializes with sorted-key JSON, every other kind
+            with ``str(value)``. None/empty contributes zero elements.
         num_train_epochs (int | None): epoch override appended as
             ``--num_train_epochs <N>`` when given.
         cache_dir (str | None): resolved ABSOLUTE cache directory
@@ -1280,6 +1489,20 @@ def build_argv(model, task, seed, output_root, peft="none",
         argv += ["--effective_batch_size", str(effective_batch_size)]
     if batch_size is not None:
         argv += ["--batch_size", str(batch_size)]
+    if advanced:
+        # Phase 19 (PD-19-2): ONE contiguous alphabetical advanced block,
+        # immediately AFTER the --batch_size append and BEFORE the
+        # --cache_dir append — pinned element-for-element by tests at
+        # every threading site (this builder, the TUI composers in
+        # 19-02, the dispatch worker context).
+        for spec in ADVANCED_TRAIN_FLAGS:
+            value = advanced.get(spec.flag.lstrip("-"))
+            if value is None:
+                continue
+            if spec.kind == "json":
+                argv += [spec.flag, json.dumps(value, sort_keys=True)]
+            else:
+                argv += [spec.flag, str(value)]
     if num_train_epochs is not None:
         argv += ["--num_train_epochs", str(num_train_epochs)]
     if cache_dir is not None:
@@ -1298,7 +1521,8 @@ def launch_subprocess(model, task, seed, output_root, peft="none",
                       effective_batch_size=None, batch_size=None,
                       num_train_epochs=None,
                       cache_dir=None, config_variant="none",
-                      model_root=None, dataset_root=None, log_dir=None):
+                      model_root=None, dataset_root=None, log_dir=None,
+                      advanced=None):
     """Default executor: run run_finetune.py for one cell.
 
     cwd is pinned to PIPELINE_DIR because finetune_config.yaml and the
@@ -1306,11 +1530,13 @@ def launch_subprocess(model, task, seed, output_root, peft="none",
     Pitfall 3); shell is never used (T-03-10). The four pass-through
     flags (07-03) forward verbatim, ``batch_size`` (261023-abu)
     forwards beside ``effective_batch_size`` (the two batch knobs
-    adjacent), ``config_variant`` (11-01, D-18)
-    threads as the peft-style aliasing twin, the two storage-root
-    flags (261014-c2l) and the error-log dir (261014-f4w) forward as
-    resolved ABSOLUTE paths — the child is the authoritative validator
-    in all cases.
+    adjacent), the advanced family (Phase 19) forwards as the nested
+    dict's alphabetical argv block (``advanced=None``/empty = zero
+    elements, the whole-family absent parity), ``config_variant``
+    (11-01, D-18) threads as the peft-style aliasing twin, the two
+    storage-root flags (261014-c2l) and the error-log dir (261014-f4w)
+    forward as resolved ABSOLUTE paths — the child is the authoritative
+    validator in all cases.
 
     Raises:
         subprocess.CalledProcessError: the run exited nonzero (check=True).
@@ -1321,7 +1547,7 @@ def launch_subprocess(model, task, seed, output_root, peft="none",
                    subset_file, effective_batch_size, batch_size,
                    num_train_epochs,
                    cache_dir, config_variant, model_root, dataset_root,
-                   log_dir),
+                   log_dir, advanced),
         cwd=PIPELINE_DIR,
         check=True,
     )
@@ -1471,7 +1697,7 @@ def _manifest_payload(matrix, records, sweep_flags=None):
 
 
 def run_matrix(cells, output_root, executor=None, peft="none",
-               sweep_flags=None, config_variant="none"):
+               sweep_flags=None, config_variant="none", advanced=None):
     """Execute the sweep matrix, writing run records + manifests.
 
     Per cell (in the GIVEN order — ``main()`` passes the ``sorted()``
@@ -1539,19 +1765,25 @@ def run_matrix(cells, output_root, executor=None, peft="none",
             (11-01, D-18) — carried into the run_record
             ``config_variant`` field, the default executor's argv, and
             the failure entries' ``base_model`` derivation.
+        advanced (dict | None): the PRESENT advanced-family values
+            (Phase 19, PD-19-7) — bound into the default executor's
+            argv exactly as ``config_variant`` is bound (explicitly,
+            while the launch_kwargs splat filters the manifest-recording
+            ``sweep_flags["advanced"]`` key back out, so no duplicate
+            kwarg can collide with this param).
 
     Returns:
         list[dict]: the run records, one per cell, in the given cell order.
     """
     launch_kwargs = {
         key: value for key, value in (sweep_flags or {}).items()
-        if key != "config_variant"
+        if key not in ("config_variant", "advanced")
     }
     executor = (
         executor if executor is not None
         else functools.partial(
             launch_subprocess, peft=peft, config_variant=config_variant,
-            **launch_kwargs)
+            advanced=advanced, **launch_kwargs)
     )
     output_root = Path(output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -1835,6 +2067,11 @@ def main():
             f"--log_dir {args.log_dir!r} is empty — refusing to thread "
             "a pathless flag"
         )
+    # Phase 19 (19-01): the advanced family's collect-all bounds/json
+    # guards — the SAME table-driven loop dispatch_core's mirror calls
+    # (one definition, zero drift, PD-19-6); enum/bool rows are refused
+    # by argparse choices at parse time and need no guard here.
+    flag_problems.extend(advanced_flag_problems(args))
     # T-11-01-03: variant and PEFT never compose. Two alias suffixes
     # cannot both name one cell (the child would take --save_model_name
     # from one lane while the driver recorded the other's dir); the
@@ -1902,6 +2139,13 @@ def main():
         sweep_flags["dataset_root"] = dataset_root_abs
     if log_dir_abs is not None:
         sweep_flags["log_dir"] = log_dir_abs
+    # Phase 19 (PD-19-7): the advanced family rides ONE nested dict key —
+    # written ONLY when non-empty, so a no-flag sweep records ZERO
+    # advanced keys anywhere in the manifest (the D-12/D-13 whole-family
+    # absent parity; claim lanes mirror the same rule in dispatch_core).
+    advanced = collect_advanced(args)
+    if advanced:
+        sweep_flags["advanced"] = advanced
     # 11-01 (D-18): normalize the variant axis once — args stores None
     # (absent) while every downstream consumer (enumerate_matrix,
     # build_argv, run_matrix, the from-failures join) speaks "none". A
@@ -2002,7 +2246,7 @@ def main():
 
     records = run_matrix(cells, output_root, executor=None, peft=args.peft,
                          sweep_flags=sweep_flags,
-                         config_variant=config_variant)
+                         config_variant=config_variant, advanced=advanced)
     completed = sum(1 for r in records if r["status"] == "completed")
     skipped = sum(1 for r in records if r["status"] == "skipped")
     failed = sum(1 for r in records if r["status"] == "failed")

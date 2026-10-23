@@ -2091,20 +2091,23 @@ def extract_finetune_parse_args():
     test_run_finetune_contracts.py extraction idiom — the module
     imports torch at top and must never be imported by a test; the
     function is pure argparse ending right before
-    ``validate_subset_file``)."""
+    ``validate_subset_file``). Phase 19 (19-01): the extraction now
+    starts at the LOCAL ``ADVANCED_TRAIN_FLAGS`` tuple so the extracted
+    ``parse_args`` carries its module-level dependencies (the tuple,
+    ``_str_to_bool``, and json for the json-kind type callable)."""
     import argparse
 
     run_finetune_src = Path(run_sweep.__file__).with_name(
         "run_finetune.py")
     src = run_finetune_src.read_text(encoding="utf-8")
     match = re.search(
-        r"def parse_args\(\):.*?\n(?=def validate_subset_file)",
+        r"ADVANCED_TRAIN_FLAGS = \(.*?\n(?=def validate_subset_file)",
         src, re.DOTALL)
     assert match is not None, (
         "run_finetune.parse_args not found by the extraction — the "
         "seam test must be re-pointed at the new function boundary"
     )
-    namespace = {"argparse": argparse, "Path": Path}
+    namespace = {"argparse": argparse, "Path": Path, "json": json}
     exec(match.group(0), namespace)  # noqa: S102 - pure extracted fn
     return namespace["parse_args"]
 
@@ -2202,6 +2205,119 @@ def test_cli_batch_size_threads_into_child_argv(tmp_path, monkeypatch):
         "--registry-dir", str(registry_dir),
     ])
     assert flag_value(captured["argv"], "--batch_size") == "8"
+
+
+# =====================================================================
+# Phase 19 (19-01) — the advanced train-flag family tracer:
+# ADVANCED_TRAIN_FLAGS + --learning_rate through the pipeline chain
+# =====================================================================
+
+
+def test_advanced_learning_rate_valued_absent_parse(monkeypatch):
+    """Phase 19 tracer: --learning_rate is a PLAIN valued float flag
+    (the --num_train_epochs shape — no bare-flag const): a valued flag
+    parses to the float; an absent flag is None — zero threading, the
+    child's active YAML value governs."""
+    monkeypatch.setattr(sys, "argv", [
+        "run_sweep.py", "--seeds", "42", "--learning_rate", "1e-4"])
+    args = run_sweep.parse_args()
+    assert args.learning_rate == 1e-4
+    assert run_sweep.collect_advanced(args) == {"learning_rate": 1e-4}
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    args = run_sweep.parse_args()
+    assert args.learning_rate is None
+    assert run_sweep.collect_advanced(args) == {}
+
+
+def test_advanced_out_of_bounds_refuses_collect_all(
+        tmp_path, monkeypatch):
+    """The table-driven collect-all guard: --learning_rate 2.0 is above
+    the table's hi (1.0) and aborts BEFORE any output — the message
+    names the flag and the bound (the --batch_size guard shape,
+    PD-19-1's [1e-9, 1.0] sanity mirror)."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "lr-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", "42",
+            "--dry-run",
+            "--learning_rate", "2.0",
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "--learning_rate" in message
+    assert "1.0" in message, "the guard names the bound it enforces"
+    assert not out_root.exists()
+
+
+def test_build_argv_advanced_block_sits_between_batch_size_and_cache_dir():
+    """PD-19-2: a present advanced family appends as ONE contiguous
+    block IMMEDIATELY AFTER the --batch_size pair and BEFORE the
+    --cache_dir pair — pinned ELEMENT-FOR-ELEMENT (the exact argv, not
+    just ordering), the position every threading site (TUI composers in
+    19-02, dispatch worker context) mirrors."""
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root",
+        batch_size=8, advanced={"learning_rate": 1e-4},
+        num_train_epochs=2, cache_dir="/tmp/cache")
+    assert argv == [
+        sys.executable, str(run_sweep.RUN_FINETUNE),
+        "--target_model", "model-a",
+        "--target_dataset", "task-x",
+        "--seed", "42",
+        "--output_dir", "/tmp/root",
+        "--batch_size", "8",
+        "--learning_rate", "0.0001",
+        "--num_train_epochs", "2",
+        "--cache_dir", "/tmp/cache",
+    ], (
+        "the advanced block must sit immediately after the --batch_size "
+        "append and before the --cache_dir append, element-for-element "
+        "(PD-19-2)"
+    )
+
+
+def test_build_argv_absent_advanced_adds_zero_elements():
+    """PD-19-7 absent parity: an absent/empty advanced family contributes
+    ZERO argv elements — the no-flag argv is byte-identical to the
+    pre-19 shape (D-12/D-13; the tui 10-element base argv lock depends
+    on this staying true)."""
+    plain = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
+    for spec in run_sweep.ADVANCED_TRAIN_FLAGS:
+        assert spec.flag not in plain, (
+            f"{spec.flag} must contribute zero argv elements when the "
+            "family is absent"
+        )
+    explicit_none = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root", advanced=None)
+    assert explicit_none == plain
+    explicit_empty = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root", advanced={})
+    assert explicit_empty == plain
+
+
+def test_cli_learning_rate_threads_into_child_argv(tmp_path, monkeypatch):
+    """Phase 19 tracer (the 261023-abu CLI idiom): a valued
+    --learning_rate 0.0001 threads the STRING '0.0001' into the recorded
+    child argv of a default-executor run — the value run_finetune's own
+    argparse then applies as configs['finetune'].learning_rate."""
+    registry_dir = make_registry(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--learning_rate", "0.0001",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    argv = captured["argv"]
+    assert flag_value(argv, "--learning_rate") == "0.0001"
+    assert argv.index("--output_dir") < argv.index("--learning_rate"), (
+        "the advanced block joins the pinned pass-through tail" )
 
 
 def test_cli_resolves_subset_and_cache_dir_to_absolute_paths(

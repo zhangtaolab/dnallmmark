@@ -3316,6 +3316,8 @@ def test_rerun_refuses_heterogeneous_lanes_naming_flag_and_cells(
     (["--dataset_root", "r"],
      ["refuses the lane token '--dataset_root'", "D14-06"]),
     (["--log_dir", "r"], ["refuses the lane token '--log_dir'", "D14-06"]),
+    (["--learning_rate", "0.0001"],
+     ["refuses the lane token '--learning_rate'", "D14-06"]),
     (["--bogus"], ["accepts no passthrough token '--bogus'"]),
     (["--registry-dir"], ["--registry-dir requires a value"]),
 ])
@@ -3577,6 +3579,128 @@ def test_dispatch_zero_batch_size_refuses_collect_all(
     assert "--batch_size must be >= 1, got 0" in message
     assert calls == []
     assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists()
+
+
+# ===== Phase 19 (19-01): the advanced train-flag family tracer =====
+
+
+def test_dispatch_advanced_lane_threads_to_children(
+        tmp_path, monkeypatch):
+    """Phase 19 tracer (the ordinary dispatch lane): a --learning_rate
+    0.0001 launch threads --learning_rate 0.0001 into EVERY spawned
+    child argv (inside the PD-19-2 block — after --batch_size, before
+    --cache_dir) and the claim-time lane records the nested advanced
+    dict for verbatim replay."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "advanced-dispatch").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42,43",
+        "--batch_size", "8",
+        "--learning_rate", "0.0001",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 2, "one spawn per cell"
+    for call in calls:
+        argv = call["argv"]
+        assert flag_value(argv, "--learning_rate") == "0.0001"
+        assert argv.index("--batch_size") < argv.index(
+            "--learning_rate"), (
+            "the advanced block sits after --batch_size (PD-19-2)"
+        )
+        assert "--cache_dir" not in argv or argv.index(
+            "--learning_rate") < argv.index("--cache_dir"), (
+            "the advanced block sits before --cache_dir (PD-19-2)"
+        )
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base) / dispatch_core.claim_filename(
+            ("model-a", "task-x", 42))).read_text(encoding="utf-8"))
+    assert claim["lane"]["advanced"] == {"learning_rate": 0.0001}, (
+        "the claim lane records the nested advanced dict (PD-19-7)"
+    )
+    assert claim["lane"]["batch_size"] == 8
+
+
+def test_dispatch_no_advanced_launch_records_no_advanced_lane_key(
+        tmp_path, monkeypatch):
+    """PD-19-7 absent parity: a launch with NO advanced flag records a
+    claim lane with ZERO advanced keys — byte-identical to the pre-19
+    claim shape (the only-when-non-empty lane rule)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "plain-dispatch").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1
+    assert "--learning_rate" not in calls[0]["argv"]
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base) / dispatch_core.claim_filename(
+            ("model-a", "task-x", 42))).read_text(encoding="utf-8"))
+    assert "advanced" not in claim["lane"], (
+        "an absent family records no lane key — the pre-19 claim shape"
+    )
+
+
+def test_rerun_replays_claim_lane_advanced(tmp_path, monkeypatch):
+    """Phase 19 tracer (D14-06 lane replay): a failed claim whose
+    claim-time lane carries the nested advanced dict replays
+    --learning_rate 0.0001 VERBATIM into the spawned argv — advanced
+    params are experiment semantics a re-run must reproduce exactly."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "advanced-rerun").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    lane = {"peft": "none", "config_variant": "none",
+            "subset_file": None, "effective_batch_size": None,
+            "num_train_epochs": None,
+            "advanced": {"learning_rate": 1e-4}}
+    _write_failed_claim(ledger_dir, ("model-a", "task-x", 42), lane)
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the failed cell re-runs"
+    argv = calls[0]["argv"]
+    assert flag_value(argv, "--learning_rate") == "0.0001", (
+        "the claim-time advanced dict replays verbatim into the re-run "
+        "child argv"
+    )
+    assert argv == run_sweep.build_argv(
+        "model-a", "task-x", 42, str(base), peft="none",
+        train_fraction=None, subset_file=None,
+        effective_batch_size=None, batch_size=None,
+        num_train_epochs=None,
+        cache_dir=None, config_variant="none", model_root=None,
+        dataset_root=None, log_dir=None,
+        advanced={"learning_rate": 1e-4})
+
+
+def test_rerun_pre_change_claim_replays_advanced_absent(
+        tmp_path, monkeypatch):
+    """Phase 19 absent parity (the 14-03 design): a PRE-CHANGE claim
+    whose lane lacks the 'advanced' key replays with ZERO advanced argv
+    elements — never a KeyError, never a refusal."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "pre19-rerun").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    lane = {"peft": "none", "config_variant": "none",
+            "subset_file": None, "effective_batch_size": None,
+            "num_train_epochs": None}
+    _write_failed_claim(ledger_dir, ("model-a", "task-x", 42), lane)
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the pre-change claim re-runs (tolerant read)"
+    argv = calls[0]["argv"]
+    for spec in run_sweep.ADVANCED_TRAIN_FLAGS:
+        assert spec.flag not in argv, (
+            f"{spec.flag} absent from the claim lane = zero argv "
+            "elements (whole-family absent parity)"
+        )
 
 
 def test_rerun_refuses_unknown_registry_model_loudly(

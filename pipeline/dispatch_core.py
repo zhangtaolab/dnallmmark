@@ -190,12 +190,17 @@ _TAG_RERUN = "rerun"
 # lane tokens would blend command-line lanes with claim-time lanes
 # (D14-06 replay is verbatim, never blended).
 _RERUN_SCOPING_TOKENS = ("--from-failures", "--tasks", "--seeds")
+# Phase 19 (19-01, PD-19-6): the advanced train-flag family's lane
+# tokens DERIVED from run_sweep's frozen table — a row added there is
+# covered here the moment it lands; drift is structurally impossible.
+ADVANCED_LANE_TOKENS = tuple(
+    f"--{spec.flag.lstrip('-')}" for spec in run_sweep.ADVANCED_TRAIN_FLAGS)
 _RERUN_LANE_TOKENS = (
     "--peft", "--config-variant", "--subset_file",
     "--effective_batch_size", "--batch_size", "--num_train_epochs",
     "--cache_dir",
     "--model_root", "--dataset_root", "--log_dir",
-)
+) + ADVANCED_LANE_TOKENS
 
 
 def parse_sweep_remainder(passthrough):
@@ -540,11 +545,13 @@ def _claim_payload(cell, lane, gpu, run_id, claimed_at):
     effective_batch_size, batch_size — the per-device starting
     micro-batch, 261023-abu — num_train_epochs, cache_dir, the three
     storage roots model_root/dataset_root/log_dir — all additive,
-    14-03 — and the cell's curve fraction) are the Phase 14 MGPU-04
-    failure re-run feed — recorded at claim time so a re-run can
-    reconstruct the exact experiment (D14-06; replay reads tolerantly,
-    so pre-change claims lacking the newer keys replay with the flag
-    absent — zero argv elements, never a refusal).
+    14-03 — the nested ``advanced`` dict (Phase 19, PD-19-7: the whole
+    advanced train-flag family as ONE dict value, recorded only when
+    non-empty) — and the cell's curve fraction) are the Phase 14
+    MGPU-04 failure re-run feed — recorded at claim time so a re-run
+    can reconstruct the exact experiment (D14-06; replay reads
+    tolerantly, so pre-change claims lacking the newer keys replay
+    with the flag absent — zero argv elements, never a refusal).
 
     Args:
         cell (tuple): the cell identity.
@@ -1051,6 +1058,7 @@ def _spawn_worker(index, gpu, tee, context):
                     model_root=context["model_root"],
                     dataset_root=context["dataset_root"],
                     log_dir=context["log_dir"],
+                    advanced=context["advanced"],
                 )
                 error = None
                 code = None
@@ -1715,7 +1723,21 @@ def _run_rerun_failed(args, passthrough, spawner, clock, workers, gpus):
     # (Pitfall 4): a pre-Phase-14 claim lacking cache_dir (or any later
     # lane key) replays with the flag ABSENT — zero argv elements, the
     # build_argv absent-parity discipline, never a KeyError, never a
-    # refusal.
+    # refusal. Phase 19 (PD-19-7, T-19-02): the nested ``advanced`` dict
+    # replays through a TOLERANT PER-ENTRY read filtered to the table
+    # flags — a pre-change claim lacking the key replays with an empty
+    # dict (zero advanced argv elements), unknown keys inside the dict
+    # are dropped (T-19-02: replay reads only known table flags, never
+    # echoed verbatim from disk), and the lane key is recorded on the
+    # re-run claim only when the filtered dict is non-empty (the
+    # ordinary path's same only-when-non-empty rule).
+    replayed_advanced = {}
+    agreed_advanced = agreed_lane.get("advanced")
+    if isinstance(agreed_advanced, dict):
+        for spec in run_sweep.ADVANCED_TRAIN_FLAGS:
+            value = agreed_advanced.get(spec.flag.lstrip("-"))
+            if value is not None:
+                replayed_advanced[spec.flag.lstrip("-")] = value
     lane_values = {
         "peft": agreed_lane.get("peft") or "none",
         "config_variant": agreed_lane.get("config_variant") or "none",
@@ -1728,6 +1750,8 @@ def _run_rerun_failed(args, passthrough, spawner, clock, workers, gpus):
         "dataset_root": agreed_lane.get("dataset_root"),
         "log_dir": agreed_lane.get("log_dir"),
     }
+    if replayed_advanced:
+        lane_values["advanced"] = replayed_advanced
 
     # Marker-vs-failed precedence per qualified cell: the scan already
     # proved the claim says failed; ``relaunch_decision`` adds the
@@ -1770,8 +1794,10 @@ def _launch_and_drain(output_root, cells, pending, skipped, lane_values,
             claim-time lane dict (peft, config_variant, subset_file,
             effective_batch_size, batch_size, num_train_epochs,
             cache_dir,
-            model_root, dataset_root, log_dir); recorded verbatim into
-            every claim and replayed into ``build_argv``.
+            model_root, dataset_root, log_dir, plus the nested
+            ``advanced`` dict — Phase 19, PD-19-7: present-only, the
+            whole advanced family as ONE dict value); recorded verbatim
+            into every claim and replayed into ``build_argv``.
         workers (int): the validated ``--workers`` count.
         gpus (list[str] | None): the parsed ``--gpus`` tokens (None
             defaults to one index-string per worker).
@@ -1860,6 +1886,10 @@ def _launch_and_drain(output_root, cells, pending, skipped, lane_values,
         "model_root": lane_values.get("model_root"),
         "dataset_root": lane_values.get("dataset_root"),
         "log_dir": lane_values.get("log_dir"),
+        # Phase 19 (PD-19-7): the whole advanced family rides ONE dict
+        # through the worker context into the build_argv threading —
+        # absent = None = zero argv elements (whole-family absent parity).
+        "advanced": lane_values.get("advanced"),
         "lane": dict(lane_values),
     }
     # WR-01 (phase-14 review): this write and the two below run AFTER
@@ -2135,6 +2165,13 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
                 f"{flag_name} {value!r} is empty — refusing to thread a "
                 "pathless flag"
             )
+    # Phase 19 (19-01): the advanced-family guards/collectors call the
+    # SAME table-driven helpers run_sweep.main uses (one definition in
+    # the flag owner, zero mirror drift — PD-19-6): the bounds/json
+    # collect-all mirrors here, and the present-only nested collection
+    # consumed by the dry-run sweep_flags and the ordinary lane below.
+    problems.extend(run_sweep.advanced_flag_problems(sweep_args))
+    advanced = run_sweep.collect_advanced(sweep_args)
     if sweep_args.config_variant is not None and \
             sweep_args.peft != "none":
         problems.append(
@@ -2313,6 +2350,11 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
             sweep_flags["log_dir"] = log_dir_abs
         if sweep_args.config_variant is not None:
             sweep_flags["config_variant"] = sweep_args.config_variant
+        # Phase 19 (PD-19-7): the nested advanced family joins the
+        # dry-run mirror ONLY when non-empty — key-shape identical to
+        # run_sweep's own dry-run manifest (the parity pin).
+        if advanced:
+            sweep_flags["advanced"] = advanced
         sweep_flags["orchestrator_mode"] = "dispatch"
         matrix = {
             "models": sorted({cell[0] for cell in cells}),
@@ -2364,6 +2406,12 @@ def run_dispatch(args, passthrough, spawner=None, clock=None):
         "dataset_root": dataset_root_abs,
         "log_dir": log_dir_abs,
     }
+    # Phase 19 (PD-19-7): the nested advanced dict joins the lane ONLY
+    # when non-empty — a no-advanced launch records claims byte-identical
+    # to the pre-19 shape (zero extra keys), and the lane-homogeneity
+    # union-of-keys comparison sees the dict as ONE value.
+    if advanced:
+        lane_values["advanced"] = advanced
     return _launch_and_drain(
         output_root, cells, None, 0, lane_values, workers, gpus,
         spawner, clock)

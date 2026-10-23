@@ -1869,6 +1869,41 @@ def test_variant_reload_occupies_the_special_models_slot_before_snapshot():
     )
 
 
+def test_advanced_train_flag_registered_and_mutation_slot_pinned():
+    """Phase 19 (19-01, PD-19-4): --learning_rate is registered in the
+    LOCAL advanced tuple (kind float), and the mutation loop occupies
+    the exact slot the GA snapshot-base semantics depend on: AFTER the
+    num_train_epochs override, BEFORE the default_grad_accum snapshot —
+    so a threaded gradient_accumulation_steps becomes the SNAPSHOT BASE
+    the per-dataset reset restores (never clobbered by the D-07 reset).
+    Source-order regex pins (the read-source-never-import discipline)."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    assert '"--learning_rate", "float", None' in src, (
+        "the LOCAL ADVANCED_TRAIN_FLAGS tuple must carry the "
+        "--learning_rate row (the registration loop is table-driven)"
+    )
+    epochs_idx = src.find(
+        'configs["finetune"].num_train_epochs = num_train_epochs')
+    assert epochs_idx != -1, "no num_train_epochs override found"
+    loop_idx = statement_index(
+        src, "for _field, _value in advanced.items():")
+    assert loop_idx != -1, (
+        "no advanced mutation loop found — the Phase-19 family has no "
+        "config-mutation channel"
+    )
+    snapshot_idx = src.find("default_grad_accum = configs")
+    assert snapshot_idx != -1, "no default_grad_accum snapshot found"
+    assert epochs_idx < loop_idx, (
+        "the advanced mutation loop must sit AFTER the num_train_epochs "
+        "override (both override the same freshly reloaded config)"
+    )
+    assert loop_idx < snapshot_idx, (
+        "the advanced mutation loop must sit BEFORE the default_grad_accum "
+        "snapshot — a threaded gradient_accumulation_steps must become "
+        "the snapshot base (PD-19-4), never a value the reset clobbers"
+    )
+
+
 def test_probe_ineligible_list_covers_special_loader_families_with_provenance():
     """The module-level PROBE_INELIGIBLE list is the enforced scope
     boundary of the frozen-probe lane: the deeplearning_models four, the

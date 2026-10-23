@@ -73,6 +73,29 @@ except ImportError:
 
 from dnallm import DNADataset, DNATrainer, load_config, load_model_and_tokenizer
 
+# Phase 19 (19-01, PD-19-6): the advanced train-flag family — a LOCAL
+# frozen registration tuple (this child must stay standalone; run_sweep
+# owns the shared table and a contracts parity test pins this family
+# against it). Rows are (flag, kind, choices), ALPHABETICAL = argv block
+# order (PD-19-2). Every field name (flag minus the dashes) is a verbatim
+# TrainingConfig field (dnallm configuration/configs.py:270-340). The
+# bool kind converts through _str_to_bool (exactly true/false); the json
+# kind parses with json.loads (object shape asserted at the argv
+# boundary below).
+ADVANCED_TRAIN_FLAGS = (
+    ("--learning_rate", "float", None),
+)
+
+
+def _str_to_bool(value):
+    """Argparse type for the bool advanced rows: EXACTLY true/false."""
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    raise argparse.ArgumentTypeError(
+        f"invalid boolean {value!r} — expected exactly 'true' or 'false'")
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="DNA LLM Arena")
@@ -320,6 +343,45 @@ def parse_args():
              "fraction runs never collide with full runs. Absent = the "
              "full train split (byte-identical code path)"
     )
+
+    # Phase 19 (19-01): the advanced train-flag family, table-driven over
+    # the LOCAL registration tuple — plain valued flags (the
+    # --num_train_epochs shape), absent = None = the active YAML value
+    # governs (D-12 parity with run_sweep's family).
+    for flag, kind, choices in ADVANCED_TRAIN_FLAGS:
+        if kind == "int":
+            parser.add_argument(
+                flag, type=int, default=None,
+                help=f"Advanced train param {flag.lstrip('-')} (int) — "
+                     "overrides the active config's finetune field; "
+                     "absent = the YAML value governs (Phase 19)")
+        elif kind == "float":
+            parser.add_argument(
+                flag, type=float, default=None,
+                help=f"Advanced train param {flag.lstrip('-')} (float) — "
+                     "overrides the active config's finetune field; "
+                     "absent = the YAML value governs (Phase 19)")
+        elif kind == "bool":
+            parser.add_argument(
+                flag, type=_str_to_bool, default=None,
+                help=f"Advanced train param {flag.lstrip('-')} "
+                     "(exactly 'true' or 'false') — overrides the active "
+                     "config's finetune field; absent = the YAML value "
+                     "governs (Phase 19)")
+        elif kind == "enum":
+            parser.add_argument(
+                flag, choices=list(choices), default=None,
+                help=f"Advanced train param {flag.lstrip('-')} (one of "
+                     f"{', '.join(choices)}) — overrides the active "
+                     "config's finetune field; absent = the YAML value "
+                     "governs (Phase 19)")
+        else:  # json
+            parser.add_argument(
+                flag, type=json.loads, default=None,
+                help=f"Advanced train param {flag.lstrip('-')} (JSON "
+                     "object literal, e.g. '{\"num_restarts\": 2}') — "
+                     "overrides the active config's finetune field; "
+                     "absent = the YAML value governs (Phase 19)")
 
     args = parser.parse_args()
     return args
@@ -798,6 +860,17 @@ if __name__ == "__main__":
         args.dataset_root, "dataset_root")
     log_dir = directories_config.effective(args.log_dir, "log_dir")
 
+    # Phase 19 (19-01): collect the advanced train-flag family present-
+    # only into ONE dict (PD-19-7) — applied per model at the mutation
+    # slot below (after the variant reload, before the grad_accum
+    # snapshot, PD-19-4). Field names are the flag names minus dashes,
+    # verbatim TrainingConfig fields.
+    advanced = {}
+    for _flag, _kind, _choices in ADVANCED_TRAIN_FLAGS:
+        _value = getattr(args, _flag.lstrip("-"))
+        if _value is not None:
+            advanced[_flag.lstrip("-")] = _value
+
     # Unified eval subsets (F7 Q3 / REV-07): validate the --subset_file
     # map fail-fast BEFORE any model load — the run_sweep._validate_filters
     # discipline (a bad map must abort loudly with every problem named,
@@ -1089,6 +1162,24 @@ if __name__ == "__main__":
             # for this model.
             if num_train_epochs is not None:
                 configs["finetune"].num_train_epochs = num_train_epochs
+
+            # Phase 19 (19-01, PD-19-4) — the advanced train-flag family
+            # mutation loop. PLACEMENT CONTRACT: AFTER the variant reload
+            # (whichever YAML is active for this model governs), AFTER the
+            # num_train_epochs override, and BEFORE the
+            # default_grad_accum snapshot below — so a threaded
+            # gradient_accumulation_steps becomes the SNAPSHOT BASE the
+            # per-dataset reset restores (the operator value survives the
+            # D-07 reset; --effective_batch_size still recomputes GA when
+            # set — EBS wins, existing child semantics, PD-19-5). bf16
+            # rides this MODEL-LEVEL slot; the models_only_support_fp32
+            # quirk block below correctly overrides it per dataset
+            # (memory safety beats operator preference, Pitfall 4).
+            # warmup_ratio rides TrainingConfig ONLY — never the
+            # extra_args env seam (transformers v5 removed it from
+            # TrainingArguments, Pitfall 2).
+            for _field, _value in advanced.items():
+                setattr(configs["finetune"], _field, _value)
 
             # Snapshot the ACTIVE config's YAML-default grad_accum (D-07,
             # WR-01): taken AFTER the custom-head reload above so
