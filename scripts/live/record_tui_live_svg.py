@@ -18,7 +18,11 @@ every missing downloadable dataset) -> interval captures of the download
 queue until it settles -> queue detail drill-down -> slot-4 wizard
 (FungiHelixSeek + EVERY present dataset, seeds typed 42,43,44, workers 2,
 GPUs 0,1, fresh root, epochs NEVER touched — the YAML default governs and
-the argv preview asserts ``--num_train_epochs`` ABSENT) -> the Y/N gate ->
+the argv preview asserts ``--num_train_epochs`` ABSENT; 261023-abu
+``--batch-text N``: a typed positive integer is typed into the batch
+input and the argv preview REQUIRES ``--batch_size N`` — default "" never
+touches the batch input, the epochs-today discipline with the ABSENT
+assertion mirrored) -> the Y/N gate ->
 ``y`` -> the real dual-GPU dispatch -> a multi-day monitor watch (interval
 captures + incremental evidence heartbeat + stall detector) -> automatic
 REPORT.md + download_ledger.json generation from the run's own artifacts.
@@ -1696,8 +1700,16 @@ async def _wizard_gate_full(pilot: Pilot, app: DnallmMarkTui,
                      FULL_WORKERS_TEXT)
     await _type_into(pilot, screen, "#cfg-input-gpus", FULL_GPUS_TEXT)
     await _type_into(pilot, screen, "#cfg-input-output-root", ctx.args.root)
+    # 261023-abu: --batch-text N types the STARTING per-device batch into
+    # the new input row (present-only threading); the default "" NEVER
+    # touches the batch input — the epochs-today discipline.
+    if ctx.args.batch_text:
+        await _type_into(pilot, screen, "#cfg-input-batch-size",
+                         ctx.args.batch_text)
     epochs_widget = screen.query_one("#cfg-input-epochs", Input)
     ctx.meta["epochs_input_value"] = epochs_widget.value
+    batch_widget = screen.query_one("#cfg-input-batch-size", Input)
+    ctx.meta["batch_input_value"] = batch_widget.value
     picker.focus()
     await settle(app, pilot, rounds=4)
     ctx.stage("params_typed")
@@ -1741,6 +1753,20 @@ async def _wizard_gate_full(pilot: Pilot, app: DnallmMarkTui,
             f"dispatch argv preview carries --num_train_epochs "
             f"(the epochs input was never touched — the YAML default "
             f"must govern): {argv_line!r}")
+    if ctx.args.batch_text:
+        # 261023-abu: the typed starting batch threads --batch_size N.
+        if "--batch_size" not in tokens or ctx.args.batch_text not in (
+                tokens[tokens.index("--batch_size") + 1:
+                       tokens.index("--batch_size") + 2]):
+            raise DriverError(
+                f"dispatch argv preview missing --batch_size "
+                f"{ctx.args.batch_text} (the batch input was typed): "
+                f"{argv_line!r}")
+    elif "--batch_size" in tokens:
+        raise DriverError(
+            f"dispatch argv preview carries --batch_size "
+            f"(the batch input was never touched — the child's YAML "
+            f"default + dynamic scaling must govern): {argv_line!r}")
     ctx.stage("argv_preview_asserted")
     await ctx.export(pilot, app, "013_run_config_preview")
     await pilot.press("escape")
@@ -2811,9 +2837,24 @@ def main(argv: list[str] | None = None) -> int:
                         help="overall live-run deadline in seconds (pa6 "
                              "default: 5400; full default: 0 = NO hard "
                              "deadline — the stall detector governs)")
+    parser.add_argument(
+        "--batch-text", default="",
+        help="full mode: a positive integer typed into the batch input "
+             "row — the [p] argv assertion then REQUIRES --batch_size "
+             "<value> (the STARTING per-device batch). Default '' NEVER "
+             "touches the batch input (the epochs discipline; the argv "
+             "asserts --batch_size ABSENT)")
     args = parser.parse_args(argv)
     if args.attach_root and args.mode != MODE_FULL:
         parser.error("--attach-root requires --mode full")
+    if args.batch_text:
+        if args.mode != MODE_FULL:
+            parser.error("--batch-text requires --mode full")
+        if not args.batch_text.isdigit() or int(args.batch_text) < 1:
+            parser.error(
+                "--batch-text must be a positive integer (a typed "
+                "STARTING per-device batch), got "
+                f"{args.batch_text!r}")
     _fill_mode_defaults(args)
 
     if args.dry_run:
