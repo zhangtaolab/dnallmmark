@@ -22,7 +22,15 @@ the argv preview asserts ``--num_train_epochs`` ABSENT; 261023-abu
 ``--batch-text N``: a typed positive integer is typed into the batch
 input and the argv preview REQUIRES ``--batch_size N`` — default "" never
 touches the batch input, the epochs-today discipline with the ABSENT
-assertion mirrored) -> the Y/N gate ->
+assertion mirrored; Phase 19 (19-03) ``--param NAME=VALUE`` (REPEATABLE,
+the generalized --batch-text channel): each pair is typed/picked on the
+slot-4 advanced section — Input-family kinds typed into
+``#cfg-input-<dasherized>``, enum/bool kinds picked through the real
+ChoiceModal RadioSet journey — and the argv preview asserts the PAIR:
+every typed flag PRESENT with its serialized value, every UNTOUCHED
+``ADVANCED_TRAIN_FLAGS`` flag ABSENT; names/values validate against the
+frozen table at parse, and the channel is full-mode-only (the
+--batch-text lane discipline)) -> the Y/N gate ->
 ``y`` -> the real dual-GPU dispatch -> a multi-day monitor watch (interval
 captures + incremental evidence heartbeat + stall detector) -> automatic
 REPORT.md + download_ledger.json generation from the run's own artifacts.
@@ -112,10 +120,18 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "pipeline"))
 
 import directories_config  # top-level module (pipeline/ sys.path root)
+import run_sweep  # top-level module (pipeline/ sys.path root)
 from rich.text import Text
 from textual.containers import Vertical
 from textual.pilot import Pilot
-from textual.widgets import DataTable, Input, Label, Static
+from textual.widgets import (
+    DataTable,
+    Input,
+    Label,
+    RadioButton,
+    RadioSet,
+    Static,
+)
 
 from tui import strings as S
 from tui.app import DnallmMarkTui
@@ -123,6 +139,8 @@ from tui.screens.data_manager import DataManagerScreen, QueueDetailModal
 from tui.screens.env_check import EnvCheckScreen
 from tui.screens.monitor import MonitorScreen
 from tui.screens.run_config import (
+    ChoiceModal,
+    ChoiceRow,
     EnvBlockModal,
     PickerList,
     PreviewModal,
@@ -945,6 +963,184 @@ async def _type_into(pilot: Pilot, screen: RunConfigScreen,
             f"{input_id} holds {widget.value!r} (expected {text!r})")
 
 
+# ===== Phase 19 (19-03): the --param channel (the generalized
+# --batch-text typed-param contract over the advanced family) =====
+
+
+def _parse_param_args(raw_values: list[str]) -> tuple:
+    """Validate every ``--param NAME=VALUE`` pair against the frozen
+    ``run_sweep.ADVANCED_TRAIN_FLAGS`` table (the single vocabulary
+    authority — PD-19-11: names must be table flags, enum/bool values
+    must come from the table's closed choices, int/float values must
+    parse inside the table bounds, json values must be JSON objects).
+    Returns the ``(row, raw_value)`` pairs in CLI order; raises
+    ``ValueError`` with a message naming the valid vocabulary (the
+    caller routes it to ``parser.error`` — refuse at parse, never
+    mid-journey)."""
+    parsed = []
+    seen: set[str] = set()
+    for raw in raw_values:
+        name, sep, value = raw.partition("=")
+        if not sep or not name or not value:
+            raise ValueError(
+                f"--param must be NAME=VALUE (got {raw!r})")
+        field = name.lstrip("-").replace("-", "_")
+        row = next(
+            (spec for spec in run_sweep.ADVANCED_TRAIN_FLAGS
+             if spec.flag.lstrip("-") == field), None)
+        if row is None:
+            vocabulary = ", ".join(
+                spec.flag.lstrip("-")
+                for spec in run_sweep.ADVANCED_TRAIN_FLAGS)
+            raise ValueError(
+                f"--param name {name!r} is not an ADVANCED_TRAIN_FLAGS "
+                f"flag — the frozen 18-row table in pipeline/run_sweep.py "
+                f"is the vocabulary (names: {vocabulary})")
+        if field in seen:
+            raise ValueError(
+                f"--param {field} given twice — one value per flag")
+        seen.add(field)
+        if row.kind in ("enum", "bool"):
+            if value not in (row.choices or ()):
+                raise ValueError(
+                    f"--param {field} must be one of "
+                    f"{', '.join(row.choices or ())} (got {value!r})")
+        elif row.kind == "int":
+            try:
+                number = int(value)
+            except ValueError:
+                raise ValueError(
+                    f"--param {field} must be an integer (got "
+                    f"{value!r})") from None
+            lo, hi = row.lo, row.hi
+            if lo is not None and number < lo:
+                raise ValueError(
+                    f"--param {field} must be >= {int(lo)} (got "
+                    f"{value!r})")
+            if hi is not None and number > hi:
+                raise ValueError(
+                    f"--param {field} must be <= {int(hi)} (got "
+                    f"{value!r})")
+        elif row.kind == "float":
+            try:
+                number = float(value)
+            except ValueError:
+                raise ValueError(
+                    f"--param {field} must be a number (got "
+                    f"{value!r})") from None
+            below = row.lo is not None and number < row.lo
+            above = row.hi is not None and number > row.hi
+            if below or above:
+                bound = (f">= {row.lo}" if row.hi is None
+                         else f"in [{row.lo}, {row.hi}]")
+                raise ValueError(
+                    f"--param {field} must be {bound} (got {value!r})")
+        else:  # json — the run_finetune argv-boundary dict shape
+            try:
+                obj = json.loads(value)
+            except ValueError:
+                raise ValueError(
+                    f"--param {field} must be valid JSON (got "
+                    f"{value!r})") from None
+            if not isinstance(obj, dict):
+                raise ValueError(
+                    f"--param {field} must be a JSON object (got "
+                    f"{value!r})")
+        parsed.append((row, value))
+    return tuple(parsed)
+
+
+def _param_argv_token(row, value: str) -> str:
+    """The argv token a typed ``--param`` value composes to — the EXACT
+    ``_advanced_argv_elements`` serialization: the json kind re-dumps
+    sorted-key (so a differently-spaced but equal JSON input normalizes
+    identically), int/float via ``str`` of the PARSED number (a float
+    ``2e-5`` composes as ``2e-05`` — the raw text never rides through),
+    enum/bool verbatim (the closed string vocabulary)."""
+    if row.kind == "json":
+        return json.dumps(json.loads(value), sort_keys=True)
+    if row.kind == "int":
+        return str(int(value))
+    if row.kind == "float":
+        return str(float(value))
+    return value
+
+
+def _radioset_selected_id(app: DnallmMarkTui) -> str:
+    """The open ChoiceModal's RadioSet cursor id — textual 8.2.8 marks
+    the highlighted RadioButton with the ``-selected`` CSS class (probe-
+    pinned; the cursor starts at the HEAD option regardless of the
+    current mark, the peft-modal navigation precedent)."""
+    radioset = app.screen.query_one(RadioSet)
+    for button in radioset.query(RadioButton):
+        if button.has_class("-selected"):
+            return str(button.id)
+    return ""
+
+
+async def _drive_advanced_params(pilot: Pilot, app: DnallmMarkTui,
+                                 screen: RunConfigScreen,
+                                 ctx: RunContext) -> None:
+    """The --param journey leg (19-03, PD-19-11): ensure the advanced
+    section is EXPANDED (the [a] toggle — collapsed by default per
+    PD-19-8), then for each parsed pair in order — Input-family kinds
+    typed via the _type_into idiom into ``#cfg-input-<dasherized>``
+    (the --batch-text idiom verbatim); enum/bool kinds driven through
+    the REAL modal journey (focus the ChoiceRow, enter, verify the
+    ChoiceModal lists the expected option, walk the RadioSet cursor
+    onto it, first-toggle-apply). Every typed param is recorded in the
+    evidence meta beside ``batch_input_value``."""
+    picker = screen.query_one("#cfg-picker", PickerList)
+    picker.focus()  # 'a' must reach the screen binding, never an Input
+    await pilot.pause()
+    section = screen.query_one("#cfg-adv-params", Vertical)
+    if not section.display:
+        await pilot.press("a")
+        await wait_until(
+            pilot, lambda: bool(section.display), 30.0,
+            "advanced section expanded ([a])")
+    typed: list[dict] = []
+    for row, value in ctx.args.param_specs:
+        field = row.flag.lstrip("-")
+        dashed = field.replace("_", "-")
+        if row.kind in ("enum", "bool"):
+            choice_row = screen.query_one(f"#cfg-value-{dashed}", ChoiceRow)
+            choice_row.focus()
+            await pilot.pause()
+            await pilot.press("enter")
+            await wait_until(
+                pilot, lambda: isinstance(app.screen, ChoiceModal), 30.0,
+                f"choice modal for {field}")
+            radioset = app.screen.query_one(RadioSet)
+            option_ids = tuple(
+                str(button.id) for button in radioset.query(RadioButton))
+            if value not in option_ids:
+                raise DriverError(
+                    f"the {field} choice modal lists {option_ids!r} — the "
+                    f"table vocabulary has no {value!r} option")
+            for _press in range(len(option_ids)):
+                if _radioset_selected_id(app) == value:
+                    break
+                await pilot.press("down")
+                await pilot.pause()
+            if _radioset_selected_id(app) != value:
+                raise DriverError(
+                    f"the {field} choice modal cursor never reached "
+                    f"{value!r} (options {option_ids!r})")
+            await pilot.press("enter")  # the first toggle applies + closes
+            await wait_until(
+                pilot, lambda: not isinstance(app.screen, ChoiceModal),
+                30.0, f"choice modal closed ({field}={value})")
+            if choice_row.value != value:
+                raise DriverError(
+                    f"#cfg-value-{dashed} holds {choice_row.value!r} "
+                    f"after the pick (expected {value!r})")
+        else:
+            await _type_into(pilot, screen, f"#cfg-input-{dashed}", value)
+        typed.append({"name": field, "value": value})
+    ctx.meta["params_typed"] = typed
+
+
 # =====================================================================
 # The pa6 journey (unchanged behavior; --mode pa6 default)
 # =====================================================================
@@ -1710,6 +1906,11 @@ async def _wizard_gate_full(pilot: Pilot, app: DnallmMarkTui,
     ctx.meta["epochs_input_value"] = epochs_widget.value
     batch_widget = screen.query_one("#cfg-input-batch-size", Input)
     ctx.meta["batch_input_value"] = batch_widget.value
+    # 19-03: the --param channel — expand the advanced section and
+    # type/pick every parsed pair (recorded in the meta beside
+    # batch_input_value); the default [] NEVER touches the section.
+    if ctx.args.param_specs:
+        await _drive_advanced_params(pilot, app, screen, ctx)
     picker.focus()
     await settle(app, pilot, rounds=4)
     ctx.stage("params_typed")
@@ -1767,6 +1968,38 @@ async def _wizard_gate_full(pilot: Pilot, app: DnallmMarkTui,
             f"dispatch argv preview carries --batch_size "
             f"(the batch input was never touched — the child's YAML "
             f"default + dynamic scaling must govern): {argv_line!r}")
+    # 19-03: the --param assertion PAIR (the 261023-abu --batch-text
+    # contract, generalized loop-style over the table) — every typed
+    # param REQUIRES its adjacent [flag, serialized-value] pair, and
+    # every UNTOUCHED table flag must stay ABSENT (the YAML governs).
+    # The value match is whitespace-piece-wise: a json-kind token
+    # ({"a": 2}) legitimately carries spaces, so the single-space-joined
+    # preview line splits it into pieces that must match IN ORDER.
+    typed_tokens = {
+        row.flag: _param_argv_token(row, value)
+        for row, value in ctx.args.param_specs}
+    for row, value in ctx.args.param_specs:
+        flag = row.flag
+        token = typed_tokens[flag]
+        if flag not in tokens:
+            raise DriverError(
+                f"dispatch argv preview missing {flag} (the --param "
+                f"channel typed {flag}={value}): {argv_line!r}")
+        expected_pieces = token.split()
+        start = tokens.index(flag) + 1
+        if tokens[start:start + len(expected_pieces)] != expected_pieces:
+            raise DriverError(
+                f"dispatch argv preview missing the pair [{flag}, "
+                f"{token}] (the --param channel typed {value}): "
+                f"{argv_line!r}")
+    for spec in run_sweep.ADVANCED_TRAIN_FLAGS:
+        if spec.flag in typed_tokens:
+            continue
+        if spec.flag in tokens:
+            raise DriverError(
+                f"dispatch argv preview carries {spec.flag} (an "
+                f"untouched table flag must stay ABSENT — the YAML "
+                f"governs): {argv_line!r}")
     ctx.stage("argv_preview_asserted")
     await ctx.export(pilot, app, "013_run_config_preview")
     await pilot.press("escape")
@@ -2743,6 +2976,13 @@ def _dry_run_full(args: argparse.Namespace) -> int:
     print(f"model={FULL_MODEL} seeds={FULL_SEEDS_TEXT} "
           f"epochs=<yaml default, never typed> "
           f"workers={FULL_WORKERS_TEXT} gpus={FULL_GPUS_TEXT}")
+    if getattr(args, "param_specs", ()):
+        print("advanced-params=" + " ".join(
+            f"{row.flag}={_param_argv_token(row, value)}"
+            for row, value in args.param_specs)
+            + " (typed/picked on the slot-4 advanced section; the [p] "
+            "assertion REQUIRES each pair present and every untouched "
+            "table flag ABSENT)")
     print(f"registry datasets={dataset_count} (present set derived at "
           "download settle; matrix = present x 3)")
     print(f"root={args.root} -> {root_resolved}")
@@ -2844,6 +3084,15 @@ def main(argv: list[str] | None = None) -> int:
              "<value> (the STARTING per-device batch). Default '' NEVER "
              "touches the batch input (the epochs discipline; the argv "
              "asserts --batch_size ABSENT)")
+    parser.add_argument(
+        "--param", action="append", default=[], metavar="NAME=VALUE",
+        help="full mode (repeatable): an advanced train param typed/"
+             "picked on the slot-4 advanced section — NAME must be an "
+             "ADVANCED_TRAIN_FLAGS flag name (pipeline/run_sweep.py is "
+             "the vocabulary); Input kinds are typed, enum/bool kinds "
+             "are picked through the real modal; the [p] argv assertion "
+             "REQUIRES each typed flag present with its value while "
+             "every UNTOUCHED table flag stays ABSENT")
     args = parser.parse_args(argv)
     if args.attach_root and args.mode != MODE_FULL:
         parser.error("--attach-root requires --mode full")
@@ -2855,6 +3104,18 @@ def main(argv: list[str] | None = None) -> int:
                 "--batch-text must be a positive integer (a typed "
                 "STARTING per-device batch), got "
                 f"{args.batch_text!r}")
+    # 19-03: the --param channel validates against the frozen table AT
+    # PARSE (unknown names / out-of-vocabulary values never spawn an
+    # app) and is full-mode-only — the --batch-text lane discipline.
+    if args.param:
+        if args.mode != MODE_FULL:
+            parser.error("--param requires --mode full")
+        try:
+            args.param_specs = _parse_param_args(args.param)
+        except ValueError as exc:
+            parser.error(str(exc))
+    else:
+        args.param_specs = ()
     _fill_mode_defaults(args)
 
     if args.dry_run:
