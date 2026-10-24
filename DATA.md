@@ -42,12 +42,7 @@ subset ID lists consumed by the pipeline live in
 
 ## Missing datasets (pending re-extraction)
 
-4 registry task(s) have no dataset directory on disk yet — the documented GUE archive re-extraction (suite double-nesting quirk) deferred to the E2' launch gate. They are reported below as missing rows and gate E2', not the audit:
-
-- `Genomic_Benchmarks__coding`
-- `Genomic_Benchmarks__human_vs_worm`
-- `Genomic_Benchmarks__regulatory_region_type`
-- `PDLLMs_datasets__plant-multi-species-open-chromatin`
+None — every registry task has on-disk data.
 
 ## Appendix: per-task census
 
@@ -57,7 +52,7 @@ subset ID lists consumed by the pipeline live in
 | Deep4mC_datasets__C.elegans_4mC | present | 76434 | 8492 | 36398 | 0 | 0 | 11 | 36397 | 36398 | 36397 |
 | Deep4mC_datasets__D.melanogaster_4mC | present | 113820 | 12646 | 54200 | 109 | 0 | 144 | 54185 | 54200 | 54185 |
 | Deep4mC_datasets__E.coli_4mC | present | 7814 | 867 | 3721 | 0 | 0 | 0 | 3721 | 3721 | 3721 |
-| GUE__EPI_GM12878 | no readable splits | - | - | - | - | - | - | - | - | - |
+| GUE__EPI_GM12878 | present | 10000 | 2000 | 2000 | 0 | 0 | 0 | 2000 | 2000 | 2000 |
 | GUE__emp_H3 | present | 11971 | 1497 | 1497 | 0 | 0 | 0 | 1497 | 1497 | 1497 |
 | GUE__emp_H3K14ac | present | 26438 | 3305 | 3305 | 0 | 0 | 0 | 3305 | 3305 | 3305 |
 | GUE__emp_H3K36me3 | present | 27904 | 3488 | 3488 | 0 | 0 | 0 | 3488 | 3488 | 3488 |
@@ -74,32 +69,116 @@ subset ID lists consumed by the pipeline live in
 | GUE__prom_core_all | present | 47356 | 5920 | 5920 | 0 | 0 | 0 | 5920 | 5920 | 5920 |
 | GUE__virus_covid | present | 73335 | 9166 | 9168 | 3798 | 433 | 533 | 8834 | 8834 | 8834 |
 | GUE__virus_species_40 | present | 4000 | 500 | 500 | 0 | 0 | 0 | 500 | 500 | 500 |
-| Genomic_Benchmarks__coding | missing (re-extraction pending) | - | - | - | - | - | - | - | - | - |
-| Genomic_Benchmarks__human_vs_worm | missing (re-extraction pending) | - | - | - | - | - | - | - | - | - |
-| Genomic_Benchmarks__regulatory_region_type | missing (re-extraction pending) | - | - | - | - | - | - | - | - | - |
-| NT_downstream_tasks__H3K27ac | present | 30000 | - | 1616 | 0 | - | 0 | 1616 | 1616 | 1616 |
-| NT_downstream_tasks__H3K27me3 | present | 30000 | - | 3000 | 0 | - | 0 | 3000 | 3000 | 3000 |
-| NT_downstream_tasks__H3K4me2 | present | 30000 | - | 2138 | 0 | - | 0 | 2138 | 2138 | 2138 |
-| NT_downstream_tasks__H3K9me3 | present | 27438 | - | 850 | 0 | - | 0 | 850 | 850 | 850 |
-| NT_downstream_tasks__enhancers | present | 30000 | - | 3000 | 0 | - | 0 | 3000 | 3000 | 3000 |
-| NT_downstream_tasks__splice_sites_acceptors | present | 30000 | - | 3000 | 0 | - | 0 | 3000 | 3000 | 3000 |
-| NT_downstream_tasks__splice_sites_all | present | 30000 | - | 3000 | 0 | - | 0 | 3000 | 3000 | 3000 |
-| NT_downstream_tasks__splice_sites_donors | present | 30000 | - | 3000 | 0 | - | 0 | 3000 | 3000 | 3000 |
+| Genomic_Benchmarks__coding | present | 67500 | 7500 | 25000 | 0 | 0 | 0 | 25000 | 25000 | 25000 |
+| Genomic_Benchmarks__human_vs_worm | present | 67500 | 7500 | 25000 | 343670 | 33100 | 128812 | 24355 | 25000 | 24355 |
+| Genomic_Benchmarks__regulatory_region_type | present | 135001 | 14999 | 57713 | 3 | 0 | 1 | 57712 | 57713 | 57712 |
+| NT_downstream_tasks__H3K27ac | present | 27001 | 2999 | 1616 | 0 | 0 | 0 | 1616 | 1616 | 1616 |
+| NT_downstream_tasks__H3K27me3 | present | 27001 | 2999 | 3000 | 0 | 0 | 0 | 3000 | 3000 | 3000 |
+| NT_downstream_tasks__H3K4me2 | present | 27001 | 2999 | 2138 | 0 | 0 | 0 | 2138 | 2138 | 2138 |
+| NT_downstream_tasks__H3K9me3 | present | 24696 | 2742 | 850 | 0 | 0 | 0 | 850 | 850 | 850 |
+| NT_downstream_tasks__enhancers | present | 27001 | 2999 | 3000 | 0 | 0 | 0 | 3000 | 3000 | 3000 |
+| NT_downstream_tasks__splice_sites_acceptors | present | 27001 | 2999 | 3000 | 0 | 0 | 0 | 3000 | 3000 | 3000 |
+| NT_downstream_tasks__splice_sites_all | present | 27002 | 2998 | 3000 | 0 | 0 | 0 | 3000 | 3000 | 3000 |
+| NT_downstream_tasks__splice_sites_donors | present | 27001 | 2999 | 3000 | 0 | 0 | 0 | 3000 | 3000 | 3000 |
 | PDLLMs_datasets__plant-multi-species-H3K27ac | present | 81920 | 10240 | 10240 | 44 | 12 | 0 | 10240 | 10240 | 10240 |
 | PDLLMs_datasets__plant-multi-species-H3K27me3 | present | 79748 | 9968 | 9968 | 101 | 5 | 1 | 9967 | 9967 | 9967 |
 | PDLLMs_datasets__plant-multi-species-H3K4me3 | present | 81920 | 10240 | 10240 | 49 | 11 | 11 | 10237 | 10240 | 10237 |
 | PDLLMs_datasets__plant-multi-species-core-promoters | present | 66560 | 8320 | 8320 | 129 | 21 | 151 | 8309 | 8320 | 8309 |
 | PDLLMs_datasets__plant-multi-species-lncRNAs | present | 40248 | 5028 | 5032 | 3849 | 17 | 1665 | 5024 | 5032 | 5024 |
-| PDLLMs_datasets__plant-multi-species-open-chromatin | missing (re-extraction pending) | - | - | - | - | - | - | - | - | - |
+| PDLLMs_datasets__plant-multi-species-open-chromatin | present | 118800 | 14850 | 14850 | 2597 | 54 | 80 | 14801 | 14849 | 14801 |
 | PDLLMs_datasets__plant-multi-species-sequence-conservation | present | 56320 | 7040 | 7040 | 635 | 93 | 133 | 7002 | 7040 | 7002 |
 | PlantCAD2_fine_tuning_tasks__cross_species_leaf_absolute_translation | present | 21894 | 5492 | 39035 | 28 | 0 | 537 | 39033 | 39035 | 39033 |
 | PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation | present | 21894 | 5492 | 39035 | 28 | 0 | 537 | 39033 | 39035 | 39033 |
 | iDNA_ABF_datasets__5mC | present | 2110 | 234 | 2344 | 0 | 0 | 0 | 2344 | 2344 | 2344 |
 | iDNA_ABF_datasets__6mA | present | 16504 | 1832 | 18334 | 0 | 0 | 0 | 18334 | 18334 | 18334 |
 | iPro-WAEL_datasets__Promoter_R_capsulatus | present | 6666 | 740 | 3175 | 0 | 0 | 0 | 3175 | 3175 | 3175 |
-| plant-genomic-benchmark__gene_exp.arabidopsis_thaliana | present | 25731 | - | 3402 | 6344 | - | 6 | 3398 | 3402 | 3398 |
-| plant-genomic-benchmark__gene_exp.oryza_sativa | present | 31244 | - | 3702 | 51537 | - | 6436 | 3671 | 3702 | 3671 |
-| plant-genomic-benchmark__gene_exp.zea_mays | present | 34493 | - | 4483 | 20860 | - | 13 | 4482 | 4483 | 4482 |
-| plant-genomic-benchmark__poly_a.arabidopsis_thaliana | present | 170835 | - | 30384 | 0 | - | 0 | 30384 | 30384 | 30384 |
-| plant-genomic-benchmark__promoter_strength.leaf | present | 58179 | - | 7154 | 0 | - | 0 | 7154 | 7154 | 7154 |
-| plant-genomic-benchmark__terminator_strength.leaf | present | 43294 | - | 5309 | 0 | - | 0 | 5309 | 5309 | 5309 |
+| plant-genomic-benchmark__gene_exp.arabidopsis_thaliana | present | 25731 | 3401 | 3402 | 6344 | 3 | 6 | 3398 | 3402 | 3398 |
+| plant-genomic-benchmark__gene_exp.oryza_sativa | present | 31244 | 3702 | 3702 | 51537 | 6880 | 6436 | 3671 | 3702 | 3671 |
+| plant-genomic-benchmark__gene_exp.zea_mays | present | 34493 | 4483 | 4483 | 20860 | 869 | 13 | 4482 | 4483 | 4482 |
+| plant-genomic-benchmark__poly_a.arabidopsis_thaliana | present | 153752 | 17083 | 30384 | 0 | 0 | 0 | 30384 | 30384 | 30384 |
+| plant-genomic-benchmark__promoter_strength.leaf | present | 58179 | 6825 | 7154 | 0 | 0 | 0 | 7154 | 7154 | 7154 |
+| plant-genomic-benchmark__terminator_strength.leaf | present | 43294 | 4806 | 5309 | 0 | 0 | 0 | 5309 | 5309 | 5309 |
+
+<!-- GENERATED PROVENANCE BEGIN — script/build_provenance.py; do not edit by hand: correct values in dnallm-mark/data/provenance.csv, ingest via script/convert_registry.py --kind provenance --to-json --merge-existing, then re-run `make data` -->
+
+## Dataset provenance (DATA-04 / DATA-05)
+
+One row per benchmark dataset: where it comes from, under what
+terms, and where to download it. Values were research-drafted from
+public sources (dataset papers, ModelScope/Hugging Face/GitHub
+pages; 2026-10-11) and **reviewed and accepted by the maintainer
+(2026-10-11)** — of the 50 datasets,
+35 carry an unresolved license and
+7 an unresolved citation, marked as the
+literal `Unspecified` (never a blank cell), with the source link
+carried in the `source` column. Corrections flow through the
+downloadable CSV: edit `data/provenance.csv`, ingest via
+`script/convert_registry.py --kind provenance --to-json
+--merge-existing`, re-run `make data`.
+
+**Preprocessing (uniform across all 50 datasets):**
+Repackaged by DNALLM-Mark from the upstream source as per-task train/dev/test CSVs (sequence,label); Dev split carved via script/make_dev_splits.py (stratified 10%, rng seed 42) where the upstream provided none; the exact packaged copies ship in the project Zenodo record linked in the README
+
+**Download policy:** the ModelScope mirror is the default URL
+where the dataset's maintainer organization hosts one, with the
+Hugging Face mirror as the alternate; datasets with no verified
+public mirror of the exact packaged form carry `Unspecified` — the
+exact packaged copies (per-task train/dev/test CSVs) ship in the
+project's Zenodo record linked from the README.
+
+Machine-readable forms: [`data/provenance.json`](dnallm-mark/data/provenance.json) and [`data/provenance.csv`](dnallm-mark/data/provenance.csv) (schema:[`schemas/provenance.json`](schemas/provenance.json)).
+
+| Dataset | Source | License | Citation |
+| --- | --- | --- | --- |
+| BEND__CpG_methylation | [link](https://github.com/frederikkemarin/BEND) | Unspecified | Marin et al., "BEND: Benchmarking DNA Language Models on biologically meaningful tasks", arXiv:2311.12570, 2023 |
+| Deep4mC_datasets__C.elegans_4mC | [link](https://doi.org/10.1093/bib/bbaa099) | Unspecified | "Deep4mC: systematic assessment and computational prediction for DNA N4-methylcytosine site", Briefings in Bioinformatics, 2020, doi:10.1093/bib/bbaa099 |
+| Deep4mC_datasets__D.melanogaster_4mC | [link](https://doi.org/10.1093/bib/bbaa099) | Unspecified | "Deep4mC: systematic assessment and computational prediction for DNA N4-methylcytosine site", Briefings in Bioinformatics, 2020, doi:10.1093/bib/bbaa099 |
+| Deep4mC_datasets__E.coli_4mC | [link](https://doi.org/10.1093/bib/bbaa099) | Unspecified | "Deep4mC: systematic assessment and computational prediction for DNA N4-methylcytosine site", Briefings in Bioinformatics, 2020, doi:10.1093/bib/bbaa099 |
+| GUE__EPI_GM12878 | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__emp_H3 | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__emp_H3K14ac | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__emp_H3K36me3 | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__emp_H3K4me1 | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__emp_H3K79me3 | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__emp_H3K9ac | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__emp_H4 | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__emp_H4ac | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__fungi_species_20 | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__human_tf_0 | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__mouse_1 | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__mouse_4 | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__prom_300_all | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__prom_core_all | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__virus_covid | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| GUE__virus_species_40 | [link](https://github.com/MAGICS-LAB/DNABERT_2) | Unspecified | Zhou et al., "DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome", arXiv:2306.15006, 2023 (introduces GUE) |
+| Genomic_Benchmarks__coding | [link](https://github.com/ML-Bioinfo-CEITEC/genomic_benchmarks) | Unspecified | Grešová et al., "Genomic benchmarks: a collection of datasets for genomic sequence classification", BMC Genomic Data, 2023, doi:10.1186/s12863-023-01123-8 |
+| Genomic_Benchmarks__human_vs_worm | [link](https://github.com/ML-Bioinfo-CEITEC/genomic_benchmarks) | Unspecified | Grešová et al., "Genomic benchmarks: a collection of datasets for genomic sequence classification", BMC Genomic Data, 2023, doi:10.1186/s12863-023-01123-8 |
+| Genomic_Benchmarks__regulatory_region_type | [link](https://github.com/ML-Bioinfo-CEITEC/genomic_benchmarks) | Unspecified | Grešová et al., "Genomic benchmarks: a collection of datasets for genomic sequence classification", BMC Genomic Data, 2023, doi:10.1186/s12863-023-01123-8 |
+| NT_downstream_tasks__H3K27ac | [link](https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks) | Unspecified | Dalla-Torre et al., "The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics", bioRxiv, 2023, doi:10.1101/2023.01.11.523679 |
+| NT_downstream_tasks__H3K27me3 | [link](https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks) | Unspecified | Dalla-Torre et al., "The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics", bioRxiv, 2023, doi:10.1101/2023.01.11.523679 |
+| NT_downstream_tasks__H3K4me2 | [link](https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks) | Unspecified | Dalla-Torre et al., "The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics", bioRxiv, 2023, doi:10.1101/2023.01.11.523679 |
+| NT_downstream_tasks__H3K9me3 | [link](https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks) | Unspecified | Dalla-Torre et al., "The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics", bioRxiv, 2023, doi:10.1101/2023.01.11.523679 |
+| NT_downstream_tasks__enhancers | [link](https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks) | Unspecified | Dalla-Torre et al., "The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics", bioRxiv, 2023, doi:10.1101/2023.01.11.523679 |
+| NT_downstream_tasks__splice_sites_acceptors | [link](https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks) | Unspecified | Dalla-Torre et al., "The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics", bioRxiv, 2023, doi:10.1101/2023.01.11.523679 |
+| NT_downstream_tasks__splice_sites_all | [link](https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks) | Unspecified | Dalla-Torre et al., "The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics", bioRxiv, 2023, doi:10.1101/2023.01.11.523679 |
+| NT_downstream_tasks__splice_sites_donors | [link](https://huggingface.co/datasets/InstaDeepAI/nucleotide_transformer_downstream_tasks) | Unspecified | Dalla-Torre et al., "The Nucleotide Transformer: Building and Evaluating Robust Foundation Models for Human Genomics", bioRxiv, 2023, doi:10.1101/2023.01.11.523679 |
+| PDLLMs_datasets__plant-multi-species-H3K27ac | [link](https://huggingface.co/datasets/zhangtaolab/plant-multi-species-histone-modifications) | CC BY-NC-SA 4.0 | Unspecified |
+| PDLLMs_datasets__plant-multi-species-H3K27me3 | [link](https://huggingface.co/datasets/zhangtaolab/plant-multi-species-histone-modifications) | CC BY-NC-SA 4.0 | Unspecified |
+| PDLLMs_datasets__plant-multi-species-H3K4me3 | [link](https://huggingface.co/datasets/zhangtaolab/plant-multi-species-histone-modifications) | CC BY-NC-SA 4.0 | Unspecified |
+| PDLLMs_datasets__plant-multi-species-core-promoters | [link](https://huggingface.co/datasets/zhangtaolab/plant-multi-species-core-promoters) | CC BY-NC-SA 4.0 | Unspecified |
+| PDLLMs_datasets__plant-multi-species-lncRNAs | [link](https://huggingface.co/datasets/zhangtaolab/plant-multi-species-lncRNAs) | CC BY-NC-SA 4.0 | Unspecified |
+| PDLLMs_datasets__plant-multi-species-open-chromatin | [link](https://huggingface.co/datasets/zhangtaolab/plant-multi-species-open-chromatin) | CC BY-NC-SA 4.0 | Unspecified |
+| PDLLMs_datasets__plant-multi-species-sequence-conservation | [link](https://huggingface.co/datasets/zhangtaolab/plant-multi-species-sequence-conservation) | CC BY-NC-SA 4.0 | Unspecified |
+| PlantCAD2_fine_tuning_tasks__cross_species_leaf_absolute_translation | [link](https://huggingface.co/datasets/zhangtaolab/cross_species_leaf_absolute_translation) | CC BY-NC-ND 4.0 | "PlantCAD2: a DNA foundation model for interpreting genomes across flowering plants", bioRxiv, 2025, doi:10.1101/2025.08.27.672609 |
+| PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation | [link](https://huggingface.co/datasets/zhangtaolab/cross_species_leaf_on_off_translation) | CC BY-NC 4.0 | "PlantCAD2: a DNA foundation model for interpreting genomes across flowering plants", bioRxiv, 2025, doi:10.1101/2025.08.27.672609 |
+| iDNA_ABF_datasets__5mC | [link](https://github.com/FakeEnd/iDNA_ABF) | Unspecified | "iDNA-ABF: multi-scale deep biological language learning model for the interpretable prediction of DNA methylations", Genome Biology, 2022, doi:10.1186/s13059-022-02780-1 |
+| iDNA_ABF_datasets__6mA | [link](https://github.com/FakeEnd/iDNA_ABF) | Unspecified | "iDNA-ABF: multi-scale deep biological language learning model for the interpretable prediction of DNA methylations", Genome Biology, 2022, doi:10.1186/s13059-022-02780-1 |
+| iPro-WAEL_datasets__Promoter_R_capsulatus | [link](https://github.com/HaoWuLab-Bioinformatics/iPro-WAEL) | Unspecified | "iPro-WAEL: a comprehensive and robust framework for identifying promoters in multiple species", Nucleic Acids Research, 2022, doi:10.1093/nar/gkac824 |
+| plant-genomic-benchmark__gene_exp.arabidopsis_thaliana | [link](https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark) | CC BY-NC-SA 4.0 | "AgroNT: A Foundational Large Language Model for Edible Plant Genomes" (paper named on the InstaDeepAI dataset card; DOI not stated there) |
+| plant-genomic-benchmark__gene_exp.oryza_sativa | [link](https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark) | CC BY-NC-SA 4.0 | "AgroNT: A Foundational Large Language Model for Edible Plant Genomes" (paper named on the InstaDeepAI dataset card; DOI not stated there) |
+| plant-genomic-benchmark__gene_exp.zea_mays | [link](https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark) | CC BY-NC-SA 4.0 | "AgroNT: A Foundational Large Language Model for Edible Plant Genomes" (paper named on the InstaDeepAI dataset card; DOI not stated there) |
+| plant-genomic-benchmark__poly_a.arabidopsis_thaliana | [link](https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark) | CC BY-NC-SA 4.0 | "AgroNT: A Foundational Large Language Model for Edible Plant Genomes" (paper named on the InstaDeepAI dataset card; DOI not stated there) |
+| plant-genomic-benchmark__promoter_strength.leaf | [link](https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark) | CC BY-NC-SA 4.0 | "AgroNT: A Foundational Large Language Model for Edible Plant Genomes" (paper named on the InstaDeepAI dataset card; DOI not stated there) |
+| plant-genomic-benchmark__terminator_strength.leaf | [link](https://huggingface.co/datasets/InstaDeepAI/plant-genomic-benchmark) | CC BY-NC-SA 4.0 | "AgroNT: A Foundational Large Language Model for Edible Plant Genomes" (paper named on the InstaDeepAI dataset card; DOI not stated there) |
+
+<!-- GENERATED PROVENANCE END -->
