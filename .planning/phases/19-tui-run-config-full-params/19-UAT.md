@@ -35,6 +35,7 @@ evidence: "确认启动以上训练？— [Y] 启动 / [N] 取消 + 调度计划
 ### 5. FHS journey ordered stage set (docs/live/fhs/svg)
 expected: 001..015 stages present in operation order; 012 params shows batch typed; 013 argv preview carries --batch_size 32; 014 confirm gate
 result: issue
+resolved_by: "inline-fix-e39e290 (modal pre-wrap + 013b tail frame)"
 reported: "013_run_config_preview 帧无法显示 --batch_size 32：31 个数据集的超长 argv 溢出 120×40 设计视口（--workers 2 --gpus 0,1 --models FungiHelixSeek、42,43,44 可见，batch_size 段被裁）。运行时断言走控件全文比对已通过且 evidence.json 留存 argv 段（['--batch_size','32']）——证据链完整，仅静态帧装不下"
 severity: minor
 evidence: "16 prefix stages in exact operation order (001→014 + 006×2/007×2 interval pairs); 012 shows batch 32; 014 carries 0,1; 003 model name visible"
@@ -72,5 +73,5 @@ blocked: 0
   missing:
     - "Scroll the modal (or capture a second scrolled frame 013b) so --batch_size/--seeds tokens are visible for long task lists"
   debug_session: ""
-  resolved_by: ""
-  resolved_at: ""
+  resolved_by: "inline-fix-e39e290"
+  resolved_at: "2026-10-24"
