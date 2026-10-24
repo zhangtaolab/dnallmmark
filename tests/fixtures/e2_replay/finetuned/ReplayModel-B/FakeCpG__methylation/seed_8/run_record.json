@@ -1,0 +1,23 @@
+{
+    "error": null,
+    "finished_at": "2026-10-10T01:00:00Z",
+    "git_commit": "0123456789abcdef",
+    "metrics": {
+        "eval_AUPRC": 0.9289,
+        "eval_loss": 0.234,
+        "total_flos": 1000000000000000.0,
+        "train_runtime": 100.0
+    },
+    "model": "ReplayModel-B",
+    "output_dir": "finetuned/ReplayModel-B/FakeCpG__methylation/seed_8",
+    "seed": 8,
+    "started_at": "2026-10-10T00:00:00Z",
+    "status": "completed",
+    "task": "FakeCpG__methylation",
+    "vram_probe": {
+        "batch_size": null,
+        "gpu_mem_total": null,
+        "gradient_accumulation_steps": null,
+        "init_max_mem": null
+    }
+}

@@ -1,0 +1,4737 @@
+"""
+Unit tests for ``pipeline/dispatch_core.py`` + the ``--mode`` surface
+(13-01, MGPU-01/MGPU-02).
+
+Coverage named by the plan (SC ids are the phase acceptance tests):
+
+- **SC3 (double-claim is structurally refused)** — ``claim_cell`` on a
+  live-claimed cell returns None (the O_EXCL ``EEXIST``), the original
+  claim is untouched, and within one run no second child is ever spawned
+  for one cell.
+- **SC2 (kill-proven resume)** — the skip filter (marker OR
+  ledger-completed skip; stale-claim requeue with atomic claim
+  replacement), the dead-pid lock reclaim (A5) with the live-pid loud
+  refusal, skip-set order purity, and the two-run kill test over ONE
+  shared root: run 1 kills one cell mid-flight (fake child returning
+  SIGKILL), the relaunch re-dispatches EXACTLY that cell, and every
+  cell ends with exactly one artifact set (no duplicates, no orphans).
+- **Happy path** — 3 models x 2 tasks x 2 seeds over ``--workers 2``
+  with per-cell fake children: exactly 12 spawns, every artifact set at
+  ``run_sweep.cell_dir_for`` paths under the ONE shared root, zero
+  ``{root}-mgpu-w{i}`` sibling roots, every claim ``completed``,
+  ``dispatch_state.json`` written BEFORE any spawn and finalized with
+  counts.
+- **The verbatim static spawn discipline** — argv LIST,
+  ``start_new_session=True``, cwd pinned to ``run_sweep.PIPELINE_DIR``,
+  env superset with ``PYTHONUNBUFFERED == "1"`` and the worker's
+  ``CUDA_VISIBLE_DEVICES`` token, ``stderr=STDOUT``, stdout teed into
+  the frozen ``{base}-dispatch-w{i}-{stamp}.log`` sibling.
+- **Lane threading** — ``--peft lora`` rides the remainder: cells
+  enumerate under the ALIAS names and each argv carries
+  ``--target_model <base>`` + ``--save_model_name <alias>`` +
+  ``--peft lora`` (the run_sweep alias semantics, composed verbatim).
+- **SC1 dry-run goldens (13-02)** — ``--mode dispatch --dry-run``
+  writes ONLY ``{root}/sweep_manifest.json`` (no lock, no state file,
+  no claims, no children) with every cell ``status: "planned"`` and the
+  ``orchestrator_mode: "dispatch"`` marker; two consecutive runs are
+  byte-identical; the planned identity set equals the UNION of
+  static-mode per-worker dry-run manifests for identical inputs
+  (identity projection only — output_dirs differ by root by design);
+  ``--priority-file`` reorders the planned cells without changing the
+  set; peft rides alias identities while config_variant joins every
+  cell via the sweep_flags merge.
+- **Validation mirror refusals** — the variant x peft remainder
+  combination refuses by name; a missing ``--seeds`` exits with
+  argparse's code 2 (Pitfall 9, pinned); an empty ``--models`` value
+  refuses naming the flag; an ENUMERATED matrix of zero cells refuses
+  BEFORE the lock is acquired (never a silent full-registry fallback).
+- **The singleton lock** — a held lock refuses loudly naming the lock
+  path; the STATIC launch path never acquires any lock (mode
+  isolation); ``--mode dispatch`` + ``--merge`` on one command line is
+  refused with the named A6 problem.
+- **The frozen naming** — ``claim_filename`` is deterministic and
+  injective over the tricky tuple set (``+`` aliases, ``__`` task keys,
+  float fractions, a deliberately ``--``-containing name pair), each
+  claim JSON's cell key agrees with its filename's encoded fields, and
+  the worker tee log naming is frozen.
+- **Mode coexistence (13-02 Task 2, MGPU-06)** — ``--merge`` refuses
+  ANY root set carrying run-recorded dispatch evidence
+  (``dispatch_state.json``, the ``dispatch_ledger`` dir, or a manifest
+  ``orchestrator_mode: "dispatch"`` cell marker) with the named
+  "needs no merge" problem BEFORE any copy; a static-only root set
+  merges exactly as before (the control); an explicit ``--mode static``
+  launch is pinned byte-identical to the default at the argv /
+  worker-root / tee-log level; the dispatch x merge combination
+  refusal is re-asserted adjacent to the merge suites.
+- **run_record contract (15-04, the A3 supersession)** — every cell a
+  worker RUNS leaves ``run_record.json`` at the ``cell_dir_for`` path
+  with ``run_sweep.run_matrix`` shape parity (asserted against a REAL
+  ``run_matrix`` run over the same root, never hand-written field
+  lists); failed cells get failed records (the child-exited / CR-02
+  error text, metrics null); a corrupt ``final_metrics.json`` (WR-11 —
+  truncated JSON AND the non-UTF-8 flavor, WR-01) keeps the claim
+  completed while the RECORD reports failed; an on-disk
+  COMPLETED record is refusal-protected (a named ``FileExistsError``
+  through the CR-04 containment) while a stale FAILED record is
+  replaced by the new attempt's terminal record; the record's lane
+  fields equal the claim's lane; skipped cells never gain a record (the
+  documented divergence from run_sweep's synthesized skip records); a
+  fake-children dispatch root is visible to ``export_runs.py
+  --dry-run`` through a sys.executable subprocess (D14-10 — the
+  exporter's numpy/yaml/scipy module top never enters this suite).
+
+Fake children derive the cell dir EXACTLY the way the real child does —
+root + SAVE-NAME model + task + ``seed_{--seed}`` (under ``--peft`` /
+``--config-variant`` the save name is the ALIAS carried by
+``--save_model_name``) — because ``--output_dir`` carries the ROOT
+(Pitfall 2); assertions always go through ``run_sweep.cell_dir_for``
+(Pitfall 1 — never a ``seed{k}`` literal). Per-cell scripted fakes are
+used everywhere multi-worker ordering could interleave (Pitfall 7).
+CPU-only: no test assumes N>1 GPUs, launches real training, or probes
+nvidia-smi (D-05).
+
+See also:
+    ``pipeline/dispatch_core.py`` — the engine under test.
+    ``tests/test_sweep_shard.py`` — the static-mode contract suite that
+    stays byte-identical (the mode-isolation tripwire).
+"""
+
+import hashlib
+import json
+import os
+import re
+import selectors
+import shutil
+import subprocess
+import sys
+import threading
+import time
+from datetime import UTC, datetime
+from pathlib import Path
+from urllib.parse import unquote
+
+import dispatch_core
+import jsonschema
+import pytest
+import run_sweep  # conftest puts pipeline/ on sys.path
+import run_sweep_shard
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+#: The frozen v2 consumer contract (D14-01/D14-04, MGPU-03) — committed
+#: beside the writer, loaded by repo-relative path in the consumer tests
+#: (D14-14).
+DISPATCH_STATE_SCHEMA_PATH = REPO_ROOT / "schemas" / "dispatch_state.json"
+
+# ===== machine-independence pin (the test_sweep_shard.py idiom) =====
+#
+# Dispatch enumeration joins the requested --models names against the
+# registry_loader view (official + custom overlay), so a maintainer-local
+# custom overlay must not leak into these tests. Pin BOTH overlay env
+# vars to a fresh empty dir for every test here. The root conftest
+# additionally pins the directories.json XDG config dir per-test.
+
+
+@pytest.fixture(autouse=True)
+def _pin_custom_registry_overlay(tmp_path, monkeypatch):
+    """Empty-dir pin over the custom overlay for every test here."""
+    pinned = tmp_path / "no-custom-overlay"
+    pinned.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(pinned))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(pinned))
+
+
+# ===== helpers (local copies of the test_sweep_shard.py:125-222 idioms —
+# the suite stays self-contained; run_cli targets run_sweep_shard.main
+# and takes the injectable spawner/clock) =====
+
+
+def write_registry(root, models, datasets):
+    """Materialize unified-registry fixtures under ``root``."""
+    (root / "models_info.json").write_text(
+        json.dumps(models), encoding="utf-8")
+    (root / "datasets_info.json").write_text(
+        json.dumps(datasets), encoding="utf-8")
+
+
+def make_registry(tmp_path):
+    """Build the 3-model x 3-task registry fixture (task-y has Train=0).
+
+    Same shape as the shard suite's fixture; sizes are irrelevant to
+    dispatch (no LPT) but keep the fixtures identical for reuse.
+    """
+    registry_dir = tmp_path / "registry"
+    registry_dir.mkdir()
+    write_registry(
+        registry_dir,
+        models={
+            "model-a": {"Model_name": "model-a", "Model_path": "models/a",
+                        "size (M)": 100},
+            "model-b": {"Model_name": "model-b", "Model_path": "models/b",
+                        "size (M)": 50},
+            "model-c": {"Model_name": "model-c", "Model_path": "models/c",
+                        "size (M)": 10},
+        },
+        datasets={
+            "task-x": {"Dataset_name": "task-x", "Train": 100, "Dev": 10},
+            "task-y": {"Dataset_name": "task-y", "Train": 0, "Dev": 0},
+            "task-z": {"Dataset_name": "task-z", "Train": 50, "Dev": 5},
+        },
+    )
+    return registry_dir
+
+
+def run_cli(monkeypatch, argv, spawner=None, clock=None):
+    """Invoke ``run_sweep_shard.main()`` with a patched argv (the
+    injectable spawner/clock seams — the shard-suite idiom)."""
+    full_argv = ["run_sweep_shard.py", *argv]
+    monkeypatch.setattr(sys, "argv", full_argv)
+    run_sweep_shard.main(spawner=spawner, clock=clock)
+    return full_argv
+
+
+def run_sweep_cli(monkeypatch, argv):
+    """Invoke ``run_sweep.main()`` with a patched argv (worker mimic —
+    the comparison idiom Plan 13-02's static-union equality needs)."""
+    full_argv = ["run_sweep.py", *argv]
+    monkeypatch.setattr(sys, "argv", full_argv)
+    run_sweep.main()
+    return full_argv
+
+
+def flag_value(argv, flag):
+    """Return the argv element immediately following ``flag``."""
+    assert flag in argv, f"{flag} missing from argv: {argv!r}"
+    return argv[argv.index(flag) + 1]
+
+
+class FakeProc:
+    """Minimal Popen stand-in: wait() records the scripted returncode."""
+
+    def __init__(self, returncode=0, pid=4242):
+        self.pid = pid  # the dispatcher records it into the claim JSON
+        self.returncode = None
+        self._scripted = returncode
+        self.waited = False
+
+    def wait(self, timeout=None):
+        self.waited = True
+        self.returncode = self._scripted
+        return self._scripted
+
+
+def make_fake_spawner(calls, returncodes=None):
+    """Build an injectable spawner capturing (argv, kwargs) per call."""
+
+    def spawn(argv, **kwargs):
+        calls.append({"argv": list(argv), "kwargs": kwargs})
+        index = len(calls) - 1
+        code = returncodes[index] if returncodes is not None else 0
+        return FakeProc(code)
+
+    return spawn
+
+
+def make_child_spawner(calls, exit_for=None):
+    """Build a PER-CELL scripted fake child (Pitfall 7 discipline).
+
+    Derives the cell dir exactly the way the real child does —
+    ``--output_dir`` carries the ROOT, so the cell dir is root +
+    SAVE-NAME model + task + ``seed_{--seed}`` (the save name is the
+    ALIAS under ``--save_model_name``, else ``--target_model``; a
+    ``--train_fraction`` nests ``frac_{f}`` under the seed dir) — and
+    writes the success artifact pair for exit-0 cells. ``exit_for``
+    maps ``(save name, task, seed)`` to a scripted returncode so a kill
+    lands on ONE targeted cell regardless of worker interleaving. Every
+    call also records whether ``dispatch_state.json`` already existed
+    (the write-order pin).
+    """
+
+    def spawn(argv, **kwargs):
+        root = Path(flag_value(argv, "--output_dir"))
+        record = {
+            "argv": list(argv),
+            "kwargs": kwargs,
+            "state_existed": (
+                root / dispatch_core.DISPATCH_STATE_NAME).is_file(),
+        }
+        calls.append(record)
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        task = flag_value(argv, "--target_dataset")
+        seed = int(flag_value(argv, "--seed"))
+        cell_dir = root / save / task / f"seed_{seed}"
+        if "--train_fraction" in argv:
+            cell_dir = cell_dir / (
+                f"frac_{flag_value(argv, '--train_fraction')}")
+        code = 0
+        if exit_for is not None:
+            code = exit_for.get((save, task, seed), 0)
+        if code == 0:
+            cell_dir.mkdir(parents=True, exist_ok=True)
+            (cell_dir / run_sweep.METRICS_NAME).write_text(
+                json.dumps({"eval_loss": 0.5, "eval_accuracy": 0.9}),
+                encoding="utf-8")
+            (cell_dir / run_sweep.RESUME_MARKER).write_text(
+                '{"global_step": 1}', encoding="utf-8")
+        return FakeProc(code)
+
+    return spawn
+
+
+def spawn_identities(calls):
+    """Project captured spawn argvs to (model, task, seed) identities."""
+    return [
+        (flag_value(call["argv"], "--target_model"),
+         flag_value(call["argv"], "--target_dataset"),
+         int(flag_value(call["argv"], "--seed")))
+        for call in calls
+    ]
+
+
+DISPATCH_ARGV = [
+    "--mode", "dispatch",
+    "--workers", "2",
+    "--models", "model-a,model-b,model-c",
+    "--tasks", "task-x,task-z",
+    "--seeds", "42,43",
+]
+
+
+# ===== happy path: the end-to-end tracer through the injectable seams =====
+
+
+def test_dispatch_happy_path_end_to_end(tmp_path, monkeypatch):
+    """3 models x 2 tasks x 2 seeds over --workers 2 with per-cell fake
+    children: exactly 12 spawns, every argv targets run_finetune.py with
+    the SHARED root as --output_dir, every artifact set lands at a
+    cell_dir_for path under the ONE root, zero -mgpu-w{i} sibling roots,
+    every claim completed, and the state file carries mode + counts."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    clock = lambda: datetime(2026, 10, 20, 4, 0, 0, tzinfo=UTC)
+    run_cli(monkeypatch, [
+        *DISPATCH_ARGV,
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls), clock=clock)
+
+    assert len(calls) == 12, "one spawn per enumerated cell"
+    expected = run_sweep.enumerate_matrix(
+        ["model-a", "model-b", "model-c"], ["task-x", "task-z"],
+        [42, 43], registry_dir)
+    assert len(expected) == 12
+    for call in calls:
+        argv = call["argv"]
+        assert isinstance(argv, list)
+        assert all(isinstance(element, str) for element in argv)
+        assert argv[0] == sys.executable
+        assert argv[1].endswith("run_finetune.py"), (
+            "dispatch spawns run_finetune children directly (Shape 1)"
+        )
+        assert flag_value(argv, "--output_dir") == str(base), (
+            "the child receives the SHARED root (never a worker root)"
+        )
+        env = call["kwargs"]["env"]
+        assert env["CUDA_VISIBLE_DEVICES"] in {"0", "1"}, (
+            "each spawn carries exactly one worker's GPU token"
+        )
+    for model, task, seed in expected:
+        cell_dir = run_sweep.cell_dir_for(base, model, task, seed)
+        assert (cell_dir / run_sweep.METRICS_NAME).is_file()
+        assert (cell_dir / run_sweep.RESUME_MARKER).is_file()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    claims = sorted(
+        path for path in ledger_dir.glob("*.json")
+        if path.name != dispatch_core.DISPATCHER_LOCK_NAME)
+    assert len(claims) == 12
+    for claim_path in claims:
+        payload = json.loads(claim_path.read_text(encoding="utf-8"))
+        assert payload["state"] == "completed"
+        assert payload["child_pid"] == 4242, (
+            "the child pid recorded into the claim after spawn"
+        )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["mode"] == "dispatch"
+    assert state["status"] == "done"
+    assert state["counts"] == {
+        "total": 12, "completed": 12, "failed": 0, "skipped": 0}
+    assert state["run_id"]
+    assert state["run_id"] == json.loads(
+        claims[0].read_text(encoding="utf-8"))["run_id"]
+    for i in (0, 1):
+        assert not run_sweep_shard.worker_root(base, i).exists(), (
+            "dispatch writes ONE shared root — never sibling worker roots"
+        )
+    assert not (ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME).exists(), (
+        "the singleton lock is released after the drain"
+    )
+    assert not list(base.rglob("*.tmp")), "no atomic-write tmp residue"
+
+
+def test_child_pid_durable_on_disk_while_child_runs(tmp_path, monkeypatch):
+    """CR-03 pin: for the child's ENTIRE lifetime the on-disk claim names
+    its pid — a spy child reads its own claim during wait() (i.e. while
+    it "runs") and observes state 'claimed' with a NON-null child_pid.
+    The documented orphan-recovery procedure (kill the orphans named by
+    the claims before relaunch) depends on this; the pid used to reach
+    disk only at finalize, i.e. after the child had already exited."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    observed = []
+
+    def spy_spawner(argv, **kwargs):
+        root = Path(flag_value(argv, "--output_dir"))
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell = (save, flag_value(argv, "--target_dataset"),
+                int(flag_value(argv, "--seed")))
+
+        class SpyProc(FakeProc):
+            def wait(self, timeout=None):
+                # The dispatcher already spawned us and (CR-03) already
+                # persisted our pid — read the claim NOW, mid-"training".
+                claim_path = (
+                    dispatch_core.ledger_dir_for(root)
+                    / dispatch_core.claim_filename(cell))
+                observed.append(
+                    json.loads(claim_path.read_text(encoding="utf-8")))
+                return super().wait(timeout=timeout)
+
+        # Success artifacts, exactly the make_child_spawner discipline:
+        # without final_metrics.json the CR-02 artifact check fails the
+        # cell and the run's exit-1 SystemExit escapes the test.
+        cell_dir = root / save / cell[1] / f"seed_{cell[2]}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / run_sweep.METRICS_NAME).write_text(
+            json.dumps({"eval_loss": 0.5}), encoding="utf-8")
+        (cell_dir / run_sweep.RESUME_MARKER).write_text(
+            '{"global_step": 1}', encoding="utf-8")
+        return SpyProc(0)
+
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42,43",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=spy_spawner)
+    assert len(observed) == 2, "each child observed its own claim"
+    for claim in observed:
+        assert claim["state"] == dispatch_core.CLAIM_STATE_CLAIMED, (
+            "the mid-run claim is still in the claimed state"
+        )
+        assert claim["child_pid"] == 4242, (
+            "the child pid is durable on disk WHILE the child runs"
+        )
+
+
+def test_exit_zero_without_metrics_fails_cell(tmp_path, monkeypatch):
+    """CR-02 pin (the Phase 13 verifier's sole mechanical evidence gap):
+    a child that exits 0 while leaving NO artifacts in its cell dir —
+    run_finetune.py's designed swallow-a-training-failure signal — must
+    finalize its claim FAILED with the missing-metrics error, never
+    completed: the claim keeps the child's real ``exit_code`` 0, every
+    other cell completes, the state counts account the cell as failed
+    and NOT completed, and the run exits 1 on the failed count. Every
+    existing fake-child helper writes the success artifact pair on
+    exit 0, so nothing drove the branch — deleting it left all 101
+    tests green; this test is the tripwire that goes red."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    silent = ("model-b", "task-z", 43)
+    calls = []
+
+    def swallowed_failure_spawner(argv, **kwargs):
+        # The make_child_spawner discipline (per-cell identity derived
+        # from the argv flags) for every cell EXCEPT the targeted one,
+        # whose child exits 0 writing NOTHING — the exit-0-without-
+        # metrics shape no existing helper can express (spy_spawner's
+        # comment names the artifact discipline this violates).
+        root = Path(flag_value(argv, "--output_dir"))
+        calls.append({"argv": list(argv), "kwargs": kwargs})
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell = (save, flag_value(argv, "--target_dataset"),
+                int(flag_value(argv, "--seed")))
+        if cell != silent:
+            cell_dir = root / save / cell[1] / f"seed_{cell[2]}"
+            cell_dir.mkdir(parents=True, exist_ok=True)
+            (cell_dir / run_sweep.METRICS_NAME).write_text(
+                json.dumps({"eval_loss": 0.5, "eval_accuracy": 0.9}),
+                encoding="utf-8")
+            (cell_dir / run_sweep.RESUME_MARKER).write_text(
+                '{"global_step": 1}', encoding="utf-8")
+        return FakeProc(0)
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            *DISPATCH_ARGV,
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=swallowed_failure_spawner)
+    assert excinfo.value.code == 1, (
+        "the swallowed failure drives the exit-1 verdict path"
+    )
+    assert len(calls) == 12, "every cell still drains"
+    # the branch fired on real on-disk evidence: the targeted cell holds
+    # NEITHER artifact while its child exited 0
+    silent_dir = run_sweep.cell_dir_for(base, *silent)
+    assert not (silent_dir / run_sweep.METRICS_NAME).is_file()
+    assert not (silent_dir / run_sweep.RESUME_MARKER).is_file()
+    # the claim ends FAILED naming the missing metrics, never completed
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(silent)).read_text(
+            encoding="utf-8"))
+    assert claim["state"] == dispatch_core.CLAIM_STATE_FAILED, (
+        "exit 0 without final_metrics.json is a FAILED cell"
+    )
+    assert claim["exit_code"] == 0, "the child's real exit code is kept"
+    assert claim["error"] == (
+        "child exited 0 but final_metrics.json is missing "
+        "(run_finetune.py swallowed a training failure)"), (
+        "the claim names the CR-02 missing-metrics error verbatim"
+    )
+    # honest accounting: the silent cell is failed, NOT completed
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 12, "completed": 11, "failed": 1, "skipped": 0}, (
+        "the swallowed failure is accounted failed — never completed"
+    )
+    failed_claims = [
+        path.name
+        for path in dispatch_core.ledger_dir_for(base).glob("*.json")
+        if path.name != dispatch_core.DISPATCHER_LOCK_NAME
+        and json.loads(path.read_text(encoding="utf-8"))["state"]
+        == dispatch_core.CLAIM_STATE_FAILED]
+    assert failed_claims == [dispatch_core.claim_filename(silent)], (
+        "exactly the silent cell failed; every other claim completed"
+    )
+
+
+def test_dispatch_state_file_exists_before_any_spawn(tmp_path, monkeypatch):
+    """Pitfall 8 write-order pin: every spawn observes
+    dispatch_state.json ALREADY on disk — the mode evidence precedes any
+    claim/spawn, so a crash mid-run can never leave the root without
+    evidence."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "2",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42,43",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 2
+    assert all(call["state_existed"] for call in calls), (
+        "dispatch_state.json must exist at the root before any spawn"
+    )
+
+
+def test_dispatch_spawn_kwargs_verbatim_discipline(tmp_path, monkeypatch):
+    """Every spawn carries the verbatim STATIC discipline minus
+    worker-root naming: argv LIST, own session, cwd pinned to
+    run_sweep.PIPELINE_DIR, env copy + PYTHONUNBUFFERED + the ONE
+    CUDA_VISIBLE_DEVICES token, stderr onto stdout's tee, stdout teed
+    into the frozen dispatch worker log sibling."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    clock = lambda: datetime(2026, 10, 20, 4, 30, 0, tzinfo=UTC)
+    monkeypatch.setenv("DISPATCH_TEST_SENTINEL", "xyz")
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1", "--gpus", "3",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls), clock=clock)
+    assert len(calls) == 1
+    argv = calls[0]["argv"]
+    kwargs = calls[0]["kwargs"]
+    assert argv[0] == sys.executable
+    assert argv[1].endswith("run_finetune.py")
+    assert flag_value(argv, "--target_model") == "model-a"
+    assert flag_value(argv, "--target_dataset") == "task-x"
+    assert flag_value(argv, "--seed") == "42"
+    assert flag_value(argv, "--output_dir") == str(base)
+    assert kwargs["start_new_session"] is True
+    assert kwargs["cwd"] == str(run_sweep.PIPELINE_DIR)
+    assert kwargs["stderr"] == subprocess.STDOUT
+    env = kwargs["env"]
+    assert env["DISPATCH_TEST_SENTINEL"] == "xyz", (
+        "env is a copy of os.environ (superset)"
+    )
+    assert env["PYTHONUNBUFFERED"] == "1"
+    assert env["CUDA_VISIBLE_DEVICES"] == "3", (
+        "the --gpus token forwards verbatim as this worker's pin"
+    )
+    assert kwargs["stdout"].name == str(
+        dispatch_core.dispatch_worker_log_path(base, 0, "20261020_043000")), (
+        "stdout tees into the per-launch dispatch worker log (WR-02)"
+    )
+
+
+def test_dispatch_single_worker_drains_whole_queue(tmp_path, monkeypatch):
+    """EDGE MGPU-01/empty: --workers 1 (the single-element degenerate)
+    drains the WHOLE queue — every one of the 12 spawns pinned to the
+    one GPU token."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a,model-b,model-c",
+        "--tasks", "task-x,task-z", "--seeds", "42,43",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 12
+    assert all(call["kwargs"]["env"]["CUDA_VISIBLE_DEVICES"] == "0"
+               for call in calls)
+
+
+def test_dispatch_workers_are_not_model_bound(tmp_path, monkeypatch):
+    """Pitfall 3 isolation: the static empty-shard refusal
+    (--workers > model count) must NOT fire in dispatch mode — dispatch
+    workers pull from a queue, they do not own models."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "4",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the single cell spawns exactly once"
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"]["completed"] == 1
+
+
+def test_dispatch_gpus_override_tokens_forward_verbatim(
+        tmp_path, monkeypatch):
+    """--gpus "5,7" maps token-per-index into CUDA_VISIBLE_DEVICES
+    (operator-owned strings; which worker claims which cell is
+    scheduler-dependent, so the pin is per-spawn membership)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "2", "--gpus", "5,7",
+        "--models", "model-a,model-b", "--tasks", "task-x",
+        "--seeds", "42,43",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 4
+    for call in calls:
+        assert call["kwargs"]["env"]["CUDA_VISIBLE_DEVICES"] in {"5", "7"}
+
+
+def test_dispatch_queue_order_is_deterministic(tmp_path, monkeypatch):
+    """Identical inputs enumerate identical queues: with --workers 1 the
+    spawn order IS the queue order, equal across two runs and equal to
+    run_sweep.enumerate_matrix's sorted() base order; a --priority-file
+    permutes it through apply_priority_order (stable reorder)."""
+    registry_dir = make_registry(tmp_path)
+
+    def launch(base_root, extra=()):
+        calls = []
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a,model-b,model-c",
+            "--tasks", "task-x,task-z", "--seeds", "42,43",
+            "--output-root", str(base_root),
+            "--registry-dir", str(registry_dir),
+            *extra,
+        ], spawner=make_child_spawner(calls))
+        return spawn_identities(calls)
+
+    order1 = launch((tmp_path / "r1").resolve())
+    order2 = launch((tmp_path / "r2").resolve())
+    assert order1 == order2, "identical inputs enumerate identical queues"
+    expected = run_sweep.enumerate_matrix(
+        ["model-a", "model-b", "model-c"], ["task-x", "task-z"],
+        [42, 43], registry_dir)
+    assert order1 == [tuple(cell) for cell in expected], (
+        "the queue order is enumerate_matrix's sorted() base order"
+    )
+    # priority reorder threads through verbatim (D13-03)
+    priorities = tmp_path / "priorities.json"
+    priorities.write_text(
+        json.dumps([[{"model": "model-c", "task": "task-x"}]]),
+        encoding="utf-8")
+    prioritized = launch(
+        (tmp_path / "r3").resolve(),
+        extra=["--priority-file", str(priorities)])
+    assert prioritized[0] == ("model-c", "task-x", 42), (
+        "the tier entry's cells run first (apply_priority_order)"
+    )
+    assert sorted(prioritized) == sorted(order1), (
+        "the priority reorder permutes WITHOUT duplicating or dropping"
+    )
+
+
+# ===== --from-failures scoping (CR-01, phase-13 review) =====
+
+
+def test_dispatch_from_failures_scopes_enumeration_to_failed_pairs(
+        tmp_path, monkeypatch):
+    """CR-01 pin: a dispatch launch scoped by --from-failures enumerates
+    EXACTLY the manifest's failed (model, task) pairs across the requested
+    seeds — never the full --models x --tasks filter matrix (the silent
+    full-matrix fallback the zero-cell refusal family exists to prevent)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    failures = tmp_path / "sweep_failures.json"
+    failures.write_text(
+        json.dumps([{"model": "model-b", "task": "task-z"}]),
+        encoding="utf-8")
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "2",
+        "--models", "model-a,model-b,model-c",
+        "--tasks", "task-x,task-z", "--seeds", "42,43",
+        "--from-failures", str(failures),
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert sorted(spawn_identities(calls)) == [
+        ("model-b", "task-z", 42), ("model-b", "task-z", 43)], (
+        "exactly the failed pair's cells across the requested seeds"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 2, "completed": 2, "failed": 0, "skipped": 0}
+
+
+def test_dispatch_from_failures_malformed_manifest_refuses_loudly(
+        tmp_path, monkeypatch):
+    """CR-01 pin: a --from-failures manifest with an unknown model name
+    refuses through run_sweep.load_failure_pairs' collect-all validation
+    BEFORE anything touches the root — the same loud refusal every
+    run_sweep.main launch performs, never a silent no-op."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    failures = tmp_path / "sweep_failures.json"
+    failures.write_text(
+        json.dumps([{"model": "model-zz", "task": "task-x"}]),
+        encoding="utf-8")
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--from-failures", str(failures),
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    message = str(excinfo.value)
+    assert "--from-failures" in message
+    assert "not in registry" in message
+    assert not calls
+    assert not base.exists(), "refused before the root was touched"
+
+
+def test_dispatch_from_failures_clean_manifest_never_full_sweep(
+        tmp_path, monkeypatch, capsys):
+    """CR-01 pin: a CLEAN manifest (0 failed pairs) is an explicit
+    zero-cell run — the mirrored message prints, the dispatch zero-cell
+    refusal fires by name, and NOT ONE cell of the wide filter matrix
+    spawns (a clean manifest must never silently become a full sweep)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    failures = tmp_path / "sweep_failures.json"
+    failures.write_text("[]", encoding="utf-8")
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42,43",
+            "--from-failures", str(failures),
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    assert "0 cell" in str(excinfo.value), (
+        "the zero-cell refusal catches the filtered-to-empty matrix"
+    )
+    out = capsys.readouterr().out
+    assert "is clean (0 failed pairs)" in out, (
+        "the mirrored explicit-zero-cell message prints first"
+    )
+    assert "NOT a full sweep" in out
+    assert not calls
+    assert not base.exists()
+
+
+# ===== lane threading =====
+
+
+def test_dispatch_peft_lane_enumerates_and_spawns_under_alias(
+        tmp_path, monkeypatch):
+    """--peft lora rides the remainder: cells enumerate under the ALIAS
+    model names, each argv targets --target_model <base> plus
+    --save_model_name <alias> + --peft lora (run_sweep.build_argv
+    semantics composed verbatim), artifacts land under the alias cell
+    dir, and the claim carries the alias cell key + lane flags."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--peft", "lora",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1
+    argv = calls[0]["argv"]
+    assert flag_value(argv, "--target_model") == "model-a", (
+        "the registry join stays on BASE names"
+    )
+    assert flag_value(argv, "--save_model_name") == "model-a+lora"
+    assert flag_value(argv, "--peft") == "lora"
+    cell_dir = run_sweep.cell_dir_for(base, "model-a+lora", "task-x", 42)
+    assert (cell_dir / run_sweep.METRICS_NAME).is_file(), (
+        "the fake child wrote under the ALIAS dir (the save-name rule)"
+    )
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base) / dispatch_core.claim_filename(
+            ("model-a+lora", "task-x", 42))).read_text(encoding="utf-8"))
+    assert claim["cell"] == {
+        "model": "model-a+lora", "task": "task-x", "seed": 42,
+        "fraction": None}
+    assert claim["lane"]["peft"] == "lora"
+
+
+# ===== 13-02 Task 1: the dry-run plan artifact (SC1 goldens) =====
+
+
+def _read_manifest(root):
+    """Parse ``{root}/sweep_manifest.json`` (planned or executed)."""
+    return json.loads(
+        (Path(root) / run_sweep.MANIFEST_NAME).read_text(encoding="utf-8"))
+
+
+def _manifest_identities(root):
+    """Project a manifest's cells to (model, task, seed) identity tuples.
+
+    The SC1 comparison vocabulary: identities ONLY, never absolute
+    output_dir paths (worker roots and the dispatch shared root differ
+    by design — only the cell identities must agree).
+    """
+    return {
+        (cell["model"], cell["task"], cell["seed"])
+        for cell in _read_manifest(root)["cells"]
+    }
+
+
+def test_dispatch_dry_run_writes_only_plan_manifest(tmp_path, monkeypatch):
+    """SC1/MGPU-01: a dispatch dry-run leaves the root with EXACTLY
+    sweep_manifest.json — no ledger dir, no state file, no
+    trainer_state.json anywhere, no dispatch/mgpu worker logs or roots,
+    and the injected spawner is NEVER called. The manifest carries the
+    static dry-run projection (matrix with sorted unions + the resolved
+    root, cells with status 'planned' at cell_dir_for paths) plus the
+    orchestrator_mode marker merged into every cell."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        *DISPATCH_ARGV, "--dry-run",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert calls == [], "the dry-run never spawns a child"
+    assert sorted(path.name for path in base.iterdir()) == [
+        run_sweep.MANIFEST_NAME], (
+        "the dry-run's ONLY output is the plan manifest"
+    )
+    assert not dispatch_core.ledger_dir_for(base).exists(), (
+        "no ledger — the dry-run branch runs before the lock section"
+    )
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists()
+    assert not list(base.rglob(run_sweep.RESUME_MARKER))
+    assert not list(base.parent.glob(f"{base.name}-dispatch-w*.log"))
+    assert not list(base.parent.glob(f"{base.name}-mgpu-w*")), (
+        "no static worker sibling roots either"
+    )
+    manifest = _read_manifest(base)
+    assert manifest["matrix"] == {
+        "models": ["model-a", "model-b", "model-c"],
+        "tasks": ["task-x", "task-z"],
+        "seeds": [42, 43],
+        "output_root": str(base),
+    }
+    expected = run_sweep.enumerate_matrix(
+        ["model-a", "model-b", "model-c"], ["task-x", "task-z"],
+        [42, 43], registry_dir)
+    assert len(manifest["cells"]) == len(expected) == 12
+    for cell, expected_cell in zip(manifest["cells"], expected):
+        assert cell["model"] == expected_cell[0]
+        assert cell["task"] == expected_cell[1]
+        assert cell["seed"] == expected_cell[2]
+        assert cell["status"] == "planned"
+        assert cell["output_dir"] == str(run_sweep.cell_dir_for(
+            base, expected_cell[0], expected_cell[1], expected_cell[2]))
+        assert cell["orchestrator_mode"] == "dispatch"
+
+
+def test_dispatch_dry_run_is_byte_identical_across_runs(
+        tmp_path, monkeypatch):
+    """SC1 golden: two consecutive dry-runs over the identical
+    registry/filters/seeds write byte-identical manifests (the
+    _write_json indent=4 / ensure_ascii=False / sort_keys discipline) —
+    the first bytes are copied aside so the second run's overwrite is
+    compared, not assumed."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    common = [
+        *DISPATCH_ARGV, "--dry-run",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ]
+    run_cli(monkeypatch, list(common), spawner=make_child_spawner([]))
+    manifest_path = base / run_sweep.MANIFEST_NAME
+    aside = tmp_path / "first-manifest.json"
+    aside.write_bytes(manifest_path.read_bytes())
+    run_cli(monkeypatch, list(common), spawner=make_child_spawner([]))
+    assert hashlib.sha256(
+        aside.read_bytes()).hexdigest() == hashlib.sha256(
+        manifest_path.read_bytes()).hexdigest(), (
+        "consecutive dry-runs serialize byte-identically"
+    )
+
+
+def test_dispatch_dry_run_identity_set_equals_static_union(
+        tmp_path, monkeypatch):
+    """SC1 union equality (the disjointness-test comparison idiom): the
+    dispatch dry-run's identity set over --models A,B,C / --tasks /
+    --seeds equals the UNION of two static per-worker dry-run manifests
+    over the same axes (LPT shards) — compared over identity tuples
+    ONLY; output_dir sets are never compared (worker roots vs the ONE
+    shared root differ by design)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    run_cli(monkeypatch, [
+        *DISPATCH_ARGV, "--dry-run",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner([]))
+    dispatch_identities = _manifest_identities(base)
+
+    sizes = {"model-a": 100, "model-b": 50, "model-c": 10}
+    shards = run_sweep_shard.lpt_shard(
+        ["model-a", "model-b", "model-c"], 2, sizes)
+    assert shards == [["model-a"], ["model-b", "model-c"]]
+    static_union = set()
+    for i, shard in enumerate(shards):
+        root = run_sweep_shard.worker_root(base, i)
+        run_sweep_cli(monkeypatch, [
+            "--dry-run",
+            "--models", ",".join(shard),
+            "--tasks", "task-x,task-z",
+            "--seeds", "42,43",
+            "--output-root", str(root),
+            "--registry-dir", str(registry_dir),
+        ])
+        static_union |= _manifest_identities(root)
+    assert dispatch_identities == static_union, (
+        "dispatch enumeration equals static-mode enumeration for "
+        "identical inputs (identity projection only)"
+    )
+    assert len(dispatch_identities) == 12
+
+
+def test_dispatch_dry_run_priority_reorders_planned_cells(
+        tmp_path, monkeypatch):
+    """A --priority-file reorders the planned cells into the queue order
+    (the manifest's cell LIST order carries it) while the identity SET
+    is unchanged; a second dry-run without the file plans the same SET
+    in the sorted() base order."""
+    registry_dir = make_registry(tmp_path)
+    priorities = tmp_path / "priorities.json"
+    priorities.write_text(
+        json.dumps([[{"model": "model-c", "task": "task-x"}]]),
+        encoding="utf-8")
+    with_prio = (tmp_path / "with-prio").resolve()
+    without_prio = (tmp_path / "without-prio").resolve()
+    common = [
+        "--mode", "dispatch", "--workers", "2",
+        "--models", "model-a,model-b,model-c",
+        "--tasks", "task-x,task-z", "--seeds", "42,43",
+        "--dry-run",
+        "--registry-dir", str(registry_dir),
+    ]
+    run_cli(monkeypatch, [
+        *common, "--priority-file", str(priorities),
+        "--output-root", str(with_prio),
+    ], spawner=make_child_spawner([]))
+    run_cli(monkeypatch, [
+        *common, "--output-root", str(without_prio),
+    ], spawner=make_child_spawner([]))
+
+    def cell_order(root):
+        return [
+            (cell["model"], cell["task"], cell["seed"])
+            for cell in _read_manifest(root)["cells"]]
+
+    prioritized = cell_order(with_prio)
+    plain = cell_order(without_prio)
+    assert prioritized[0] == ("model-c", "task-x", 42), (
+        "the tier entry's cells plan first (apply_priority_order)"
+    )
+    assert sorted(prioritized) == sorted(plain), (
+        "the priority reorder permutes the queue WITHOUT changing the set"
+    )
+    assert plain == sorted(plain), (
+        "the no-file dry-run plans in the sorted() base order"
+    )
+    assert set(plain) == {
+        tuple(cell) for cell in run_sweep.enumerate_matrix(
+            ["model-a", "model-b", "model-c"], ["task-x", "task-z"],
+            [42, 43], registry_dir)}
+
+
+def test_dispatch_dry_run_peft_alias_and_variant_flag_shapes(
+        tmp_path, monkeypatch):
+    """Lane flags on the plan artifact: a --peft lora dry-run plans
+    cells under the ALIAS model names with 'peft' NOT a manifest key
+    (peft rides the identities, mirroring run_sweep); a
+        --config-variant probe dry-run plans under {model}+probe names
+    and carries config_variant in every cell via the sweep_flags merge
+    (the only lane axis that joins)."""
+    registry_dir = make_registry(tmp_path)
+
+    lora_root = (tmp_path / "lora").resolve()
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--peft", "lora", "--dry-run",
+        "--output-root", str(lora_root),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner([]))
+    lora_manifest = _read_manifest(lora_root)
+    assert lora_manifest["matrix"]["models"] == ["model-a+lora"]
+    assert len(lora_manifest["cells"]) == 1
+    lora_cell = lora_manifest["cells"][0]
+    assert lora_cell["model"] == "model-a+lora"
+    assert "peft" not in lora_cell, (
+        "peft rides the alias identities, never a manifest key"
+    )
+    assert lora_cell["orchestrator_mode"] == "dispatch"
+
+    probe_root = (tmp_path / "probe").resolve()
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--config-variant", "probe", "--dry-run",
+        "--output-root", str(probe_root),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner([]))
+    probe_manifest = _read_manifest(probe_root)
+    assert len(probe_manifest["cells"]) == 1
+    probe_cell = probe_manifest["cells"][0]
+    assert probe_cell["model"] == "model-a+probe"
+    assert probe_cell["config_variant"] == "probe", (
+        "a present variant joins every cell via the sweep_flags merge"
+    )
+    assert probe_cell["orchestrator_mode"] == "dispatch"
+
+
+# ===== validation mirror refusals (collect-all, named) =====
+
+
+def test_dispatch_refuses_variant_peft_combination(tmp_path, monkeypatch):
+    """The remainder combination run_sweep refuses collect-all
+    (run_sweep.py:1796-1802) refuses in dispatch mode too, naming both
+    flags, before any spawn or root write."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--peft", "lora", "--config-variant", "probe",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    message = str(excinfo.value)
+    assert "--config-variant" in message
+    assert "--peft" in message
+    assert "never compose" in message
+    assert not calls
+    assert not base.exists(), "refused before the root was touched"
+
+
+def test_dispatch_missing_seeds_exits_argparse_code_2(
+        tmp_path, monkeypatch):
+    """Pitfall 9 pinned as accepted: a dispatch launch without --seeds
+    dies at the remainder re-parse with argparse's own usage exit
+    (code 2), exactly like a static worker would inside its process."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    assert excinfo.value.code == 2
+    assert not calls
+
+
+def test_dispatch_empty_models_value_refuses(tmp_path, monkeypatch):
+    """A provided-but-empty --models value refuses by name (the WR-14
+    twin), never degrading toward a full-registry dispatch."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", ",",
+            "--tasks", "task-x", "--seeds", "42",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    assert "--models" in str(excinfo.value)
+    assert "no model names" in str(excinfo.value)
+    assert not calls
+
+
+def test_dispatch_zero_enumeration_refuses_before_lock(
+        tmp_path, monkeypatch):
+    """EDGE MGPU-01/empty: a registry/filter combination that passes
+    name validation but enumerates ZERO cells (an empty datasets
+    registry) refuses by name BEFORE the lock is acquired — no state
+    file, no ledger, root untouched, never a full-registry fallback."""
+    registry_dir = tmp_path / "registry"
+    registry_dir.mkdir()
+    write_registry(
+        registry_dir,
+        models={"model-a": {"Model_name": "model-a",
+                            "Model_path": "models/a"}},
+        datasets={},
+    )
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--seeds", "42",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    message = str(excinfo.value)
+    assert "0 cell" in message
+    assert "never falls back" in message
+    assert not calls
+    assert not base.exists(), (
+        "no lock acquired, no state evidence — refused pre-lock"
+    )
+
+
+def test_dispatch_subset_file_validated_at_startup(tmp_path, monkeypatch):
+    """WR-01 pin: a bad --subset_file map (here: an unknown task key)
+    refuses at dispatch STARTUP through run_sweep._validate_subset_file's
+    collect-all problem list — before any spawn and before the root is
+    touched — never one burned child launch per cell recorded as N cell
+    failures. A VALID map is the control: it threads through and the
+    run proceeds."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    bad_subset = tmp_path / "subset-bad.json"
+    bad_subset.write_text(
+        json.dumps({"no-such-task": [1, 2]}), encoding="utf-8")
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--subset_file", str(bad_subset),
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    message = str(excinfo.value)
+    assert "--subset_file" in message
+    assert "not in datasets registry" in message
+    assert not calls
+    assert not base.exists(), "refused before the root was touched"
+
+    good_subset = tmp_path / "subset-good.json"
+    good_subset.write_text(
+        json.dumps({"task-x": [1, 2]}), encoding="utf-8")
+    good_base = (tmp_path / "finetuned-good").resolve()
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--subset_file", str(good_subset),
+        "--output-root", str(good_base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "a valid map threads through to the child"
+    assert flag_value(calls[0]["argv"], "--subset_file") == str(
+        good_subset), "the resolved absolute path rides the child argv"
+
+
+# ===== the singleton lock + mode isolation =====
+
+
+def test_dispatch_lock_live_pid_refuses_naming_holder(
+        tmp_path, monkeypatch):
+    """A pre-existing dispatcher lock naming a LIVE pid (this test
+    process's own pid) refuses the launch loudly naming the pid, the
+    recorded run_id, AND the lock path (T-13-02/T-13-03): exactly ONE
+    dispatcher per root, ever."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    lock_path = ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME
+    lock_path.write_text(
+        json.dumps({"pid": os.getpid(), "run_id": "alive-run",
+                    "started_at": "2026-10-20T00:00:00+00:00"}),
+        encoding="utf-8")
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    message = str(excinfo.value)
+    assert str(os.getpid()) in message, "the refusal names the live pid"
+    assert "alive-run" in message, "the refusal names the holder run_id"
+    assert str(lock_path) in message
+    assert not calls
+
+
+def test_static_launch_never_acquires_dispatch_lock(
+        tmp_path, monkeypatch):
+    """Mode isolation (Pitfall 3): the STATIC path never acquires any
+    dispatch lock — a static fake launch leaves no dispatch_ledger and
+    never writes the base root (the static N=1 pin)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--workers", "1", "--models", "model-a",
+        "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_fake_spawner(calls))
+    assert len(calls) == 1, "the static run_sweep.py worker spawn"
+    assert calls[0]["argv"][1].endswith("run_sweep.py")
+    assert not base.exists(), (
+        "the static launch mode writes ONLY frozen sibling roots"
+    )
+    assert not dispatch_core.ledger_dir_for(base).exists(), (
+        "the static path acquires no dispatch lock / ledger"
+    )
+
+
+def test_dispatch_merge_combination_refused(tmp_path, monkeypatch):
+    """A6 (locked): --mode dispatch + --merge on one command line is
+    refused with the named problem BEFORE either mode runs (MGPU-06 —
+    dispatch roots need no merge)."""
+    base = (tmp_path / "finetuned").resolve()
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--merge",
+            "--workers", "1", "--output-root", str(base),
+        ])
+    message = str(excinfo.value)
+    assert "dispatch" in message
+    assert "no merge" in message
+
+
+def test_mode_flag_visible_in_help():
+    """The --help surface shows the --mode flag with both choices and
+    English help (D13-05/D13-08/D-10)."""
+    result = subprocess.run(
+        [sys.executable,
+         str(REPO_ROOT / "pipeline" / "run_sweep_shard.py"), "--help"],
+        capture_output=True, text=True, check=True, timeout=120)
+    assert "--mode" in result.stdout
+    assert "static" in result.stdout
+    assert "dispatch" in result.stdout
+
+
+def test_mode_static_explicit_matches_default(tmp_path, monkeypatch):
+    """Pattern-1 byte-identity pin: an explicit --mode static launch
+    behaves identically to the default (same worker argv modulo the root
+    substitution, same spawn discipline)."""
+    registry_dir = make_registry(tmp_path)
+    base_default = (tmp_path / "finetuned-default").resolve()
+    base_explicit = (tmp_path / "finetuned-explicit").resolve()
+    clock = lambda: datetime(2026, 10, 20, 5, 0, 0, tzinfo=UTC)
+    calls_default = []
+    calls_explicit = []
+    common = [
+        "--workers", "1", "--models", "model-a",
+        "--tasks", "task-x", "--seeds", "42",
+        "--registry-dir", str(registry_dir),
+    ]
+    run_cli(monkeypatch, ["--output-root", str(base_default), *common],
+            spawner=make_fake_spawner(calls_default), clock=clock)
+    run_cli(monkeypatch, [
+        "--mode", "static", "--output-root", str(base_explicit), *common],
+        spawner=make_fake_spawner(calls_explicit), clock=clock)
+
+    def normalized(call, root):
+        argv = [element.replace(root, "ROOT")
+                for element in call["argv"]]
+        kwargs = dict(call["kwargs"])
+        kwargs["stdout"] = Path(kwargs["stdout"].name.replace(root, "ROOT"))
+        return {"argv": argv, "kwargs": kwargs}
+
+    assert [normalized(c, str(base_default)) for c in calls_default] == [
+        normalized(c, str(base_explicit)) for c in calls_explicit], (
+        "explicit --mode static is byte-identical to the default launch"
+    )
+
+
+# ===== frozen naming: claim filenames + worker logs =====
+
+
+def test_claim_filename_deterministic_and_injective():
+    """claim_filename is deterministic and injective over the tricky
+    tuple set: + aliases, __ task keys, float fractions, and a
+    deliberately ---containing name pair whose naive field join would
+    collide (Pitfall 5 — the digest suffix guarantees injectivity)."""
+    tricky = [
+        ("model-a", "GUE__emp_H3", 42),
+        ("model-a+lora", "GUE__emp_H3", 42),
+        ("model-a", "GUE__emp_H3", 43),
+        ("model-a", "GUE__emp_H3", 42, 0.25),
+        ("model-a", "GUE__emp_H3", 42, 0.5),
+        ("m--x", "t", 1),
+        ("m", "x--t", 1),
+        ("m", "t", 1),
+    ]
+    names = [dispatch_core.claim_filename(cell) for cell in tricky]
+    assert len(set(names)) == len(tricky), (
+        "distinct tuples must map to distinct claim filenames"
+    )
+    for cell, name in zip(tricky, names):
+        assert dispatch_core.claim_filename(cell) == name, (
+            "claim naming is deterministic"
+        )
+    base_name = dispatch_core.claim_filename(tricky[0])
+    assert base_name.startswith("model-a--GUE__emp_H3--seed42-")
+    digest = base_name[: -len(".json")].rsplit("-", 1)[1]
+    assert len(digest) == 12
+    assert all(char in "0123456789abcdef" for char in digest)
+    alias_name = dispatch_core.claim_filename(tricky[1])
+    assert alias_name.startswith("model-a%2Blora--"), (
+        "the + alias percent-encodes (safe set empty)"
+    )
+    frac_name = dispatch_core.claim_filename(tricky[3])
+    assert "--frac0.25-" in frac_name, "the fraction rides its own field"
+
+
+def test_claim_json_agrees_with_filename(tmp_path):
+    """Each claim file's JSON cell key agrees with its filename's
+    encoded fields — the ledger is self-describing (Pitfall 5 warning
+    sign pinned as a test)."""
+    ledger = tmp_path / "ledger"
+    ledger.mkdir()
+    for cell in [("model-a+lora", "GUE__emp_H3", 42),
+                 ("model-a", "GUE__emp_H3", 42, 0.5)]:
+        payload = dispatch_core._claim_payload(
+            cell, {"peft": "lora"}, "0", "run-x",
+            "2026-10-20T00:00:00+00:00")
+        path = dispatch_core.claim_cell(ledger, cell, payload)
+        assert path is not None
+        head = path.name[: -len(".json")].rsplit("-", 1)[0]
+        fields = head.split("--")
+        assert [unquote(field) for field in fields[:2]] == [
+            cell[0], cell[1]]
+        assert fields[2] == f"seed{cell[2]}"
+        if len(cell) > 3:
+            assert fields[3] == f"frac{cell[3]}"
+        on_disk = json.loads(path.read_text(encoding="utf-8"))
+        assert on_disk["cell"] == dispatch_core._cell_key(cell)
+
+
+def test_dispatch_worker_log_and_ledger_naming_is_frozen(tmp_path):
+    """The dispatch naming authorities are frozen (the worker_root
+    discipline): the tee log is {base}-dispatch-w{i}-{stamp}.log, a
+    SIBLING of the shared root, distinct from the static -mgpu-w naming;
+    the ledger dir is {root}/dispatch_ledger."""
+    base = tmp_path / "finetuned"
+    assert dispatch_core.dispatch_worker_log_path(
+        base, 0, "20261020_040000") == (
+        tmp_path / "finetuned-dispatch-w0-20261020_040000.log")
+    assert dispatch_core.dispatch_worker_log_path(
+        base, 12, "20261020_040500") == (
+        tmp_path / "finetuned-dispatch-w12-20261020_040500.log")
+    assert dispatch_core.ledger_dir_for(base) == (
+        base / "dispatch_ledger")
+    assert dispatch_core.DISPATCH_STATE_NAME == "dispatch_state.json"
+    assert dispatch_core.DISPATCHER_LOCK_NAME == "dispatcher.lock"
+
+
+# ===== SC3: the structural double-claim refusal =====
+
+
+def test_claim_cell_double_claim_structurally_refused(tmp_path):
+    """SC3: a second claim on a live-claimed cell returns the structural
+    refusal (None) and the original claim is untouched — the O_EXCL
+    create fails EEXIST regardless of the payload."""
+    ledger = tmp_path / "ledger"
+    ledger.mkdir()
+    cell = ("model-a", "task-x", 42)
+    first = dispatch_core.claim_cell(
+        ledger, cell,
+        dispatch_core._claim_payload(cell, {}, "0", "run-1", "t1"))
+    assert first is not None
+    second = dispatch_core.claim_cell(
+        ledger, cell,
+        dispatch_core._claim_payload(cell, {}, "1", "run-2", "t2"))
+    assert second is None, "the live claim structurally refuses (SC3)"
+    payload = json.loads(first.read_text(encoding="utf-8"))
+    assert payload["run_id"] == "run-1", "the original claim is intact"
+
+
+# ===== Task 2: resume semantics — skip filter, requeue, lock reclaim =====
+
+
+def _write_hand_claim(ledger_dir, cell, state, run_id="hand-run"):
+    """Hand-write one ledger claim fixture in the given state."""
+    payload = dispatch_core._claim_payload(
+        cell, {}, "7", run_id, "2026-10-20T00:00:00+00:00")
+    payload["state"] = state
+    path = ledger_dir / dispatch_core.claim_filename(cell)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _write_marker(base, cell):
+    """Hand-write the trainer_state.json resume marker for one cell."""
+    fraction = cell[3] if len(cell) > 3 else None
+    cell_dir = run_sweep.cell_dir_for(
+        base, cell[0], cell[1], cell[2], fraction)
+    cell_dir.mkdir(parents=True, exist_ok=True)
+    (cell_dir / run_sweep.RESUME_MARKER).write_text(
+        '{"global_step": 9}', encoding="utf-8")
+    return cell_dir
+
+
+def test_sc2_kill_test_resume_exactly_once(tmp_path, monkeypatch):
+    """SC2 (the P1 acceptance test): run 1 with one SIGKILLed cell (the
+    fake child returns -9 and writes NO artifacts) drains with that cell
+    failed and all others completed; the relaunch over the SAME root
+    (killed cell now succeeding) spawns ONLY the killed cell; final
+    state — every cell has exactly one final_metrics.json +
+    trainer_state.json set, every claim completed, per-cell spawn counts
+    are 1 for skip-cells and 2 for the killed cell (no duplicates, no
+    orphans). Exactly-once is proven from evidence ON DISK (ledger +
+    artifact counts + captured argvs), never from return codes alone."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    killed = ("model-b", "task-z", 43)
+    argv = [
+        "--mode", "dispatch", "--workers", "2",
+        "--models", "model-a,model-b,model-c",
+        "--tasks", "task-x,task-z", "--seeds", "42,43",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ]
+    # run 1: the targeted cell's child dies by SIGKILL mid-cell
+    calls1 = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, argv, spawner=make_child_spawner(
+            calls1, exit_for={killed: -9}))
+    assert excinfo.value.code == 1, "a run with a failed cell exits 1"
+    assert len(calls1) == 12
+    assert len(set(spawn_identities(calls1))) == 12, (
+        "every cell spawned exactly once in run 1"
+    )
+    state1 = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state1["counts"] == {
+        "total": 12, "completed": 11, "failed": 1, "skipped": 0}
+    killed_claim = (dispatch_core.ledger_dir_for(base)
+                    / dispatch_core.claim_filename(killed))
+    assert json.loads(
+        killed_claim.read_text(encoding="utf-8"))["state"] == "failed"
+    assert not (dispatch_core.ledger_dir_for(base)
+                / dispatch_core.DISPATCHER_LOCK_NAME).exists(), (
+        "the lock is released even on the failed-exit drain"
+    )
+    run1_run_id = state1["run_id"]
+
+    # run 2 (relaunch, same root): the killed cell now succeeds — the
+    # marker/ledger skip set covers every completed cell, and ONLY the
+    # killed cell (stale failed claim -> requeue) re-dispatches
+    calls2 = []
+    run_cli(monkeypatch, argv, spawner=make_child_spawner(calls2))
+    assert spawn_identities(calls2) == [killed], (
+        "the relaunch re-dispatches EXACTLY the killed cell"
+    )
+    state2 = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state2["counts"] == {
+        "total": 12, "completed": 1, "failed": 0, "skipped": 11}
+    assert state2["run_id"] != run1_run_id, "a fresh run id per launch"
+
+    # exactly-once evidence on disk: every cell has EXACTLY one artifact
+    # set under its cell_dir_for path
+    expected = run_sweep.enumerate_matrix(
+        ["model-a", "model-b", "model-c"], ["task-x", "task-z"],
+        [42, 43], registry_dir)
+    for model, task, seed in expected:
+        cell_dir = run_sweep.cell_dir_for(base, model, task, seed)
+        assert (cell_dir / run_sweep.METRICS_NAME).is_file()
+        assert (cell_dir / run_sweep.RESUME_MARKER).is_file()
+    assert len(list(base.rglob(run_sweep.METRICS_NAME))) == 12, (
+        "no duplicate artifact sets anywhere in the root"
+    )
+    # every claim completed, ONE claim file per cell (no orphans)
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    claims = sorted(
+        path for path in ledger_dir.glob("*.json")
+        if path.name != dispatch_core.DISPATCHER_LOCK_NAME)
+    assert len(claims) == 12
+    for claim_path in claims:
+        payload = json.loads(claim_path.read_text(encoding="utf-8"))
+        assert payload["state"] == "completed"
+    # the requeued claim carries the NEW run's identity
+    revived = json.loads(killed_claim.read_text(encoding="utf-8"))
+    assert revived["run_id"] == state2["run_id"]
+    assert not list(ledger_dir.glob("*.tmp")), "no atomic-write residue"
+
+    # per-cell spawn counts: 1 everywhere except the killed cell (2)
+    all_identities = spawn_identities(calls1) + spawn_identities(calls2)
+    for cell in expected:
+        expected_count = 2 if tuple(cell) == killed else 1
+        assert all_identities.count(tuple(cell)) == expected_count, (
+            f"cell {cell} spawned exactly {expected_count} time(s)"
+        )
+
+
+def test_skip_filter_marker_and_claim_layers(tmp_path, monkeypatch):
+    """The two-layer skip: a cell with trainer_state.json in its cell dir
+    is skipped (marker AUTHORITATIVE, D-06) even with no claim; a cell
+    whose claim state is completed is skipped even with no marker; a
+    failed claim requeues (MGPU-02 resume semantics)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    _write_marker(base, ("model-a", "task-x", 42))  # marker, no claim
+    _write_hand_claim(  # completed claim, no marker
+        ledger_dir, ("model-a", "task-x", 43),
+        dispatch_core.CLAIM_STATE_COMPLETED)
+    _write_hand_claim(  # failed claim -> requeue
+        ledger_dir, ("model-a", "task-x", 44),
+        dispatch_core.CLAIM_STATE_FAILED)
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42,43,44",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert spawn_identities(calls) == [("model-a", "task-x", 44)], (
+        "only the failed-claim cell requeues; both skip layers hold"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 3, "completed": 1, "failed": 0, "skipped": 2}
+
+
+def test_requeued_claim_atomically_replaced_with_new_identity(
+        tmp_path, monkeypatch):
+    """A requeued cell's stale claim is atomically REPLACED at re-claim,
+    carrying the new run_id / gpu / timestamps; fresh cells keep the
+    strict O_EXCL path; no tmp residue lands in the ledger."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    cell = ("model-a", "task-x", 42)
+    stale = _write_hand_claim(
+        ledger_dir, cell, dispatch_core.CLAIM_STATE_CLAIMED,
+        run_id="dead-run")
+    assert json.loads(stale.read_text(encoding="utf-8"))["run_id"] == (
+        "dead-run")
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1", "--gpus", "5",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    revived = json.loads(stale.read_text(encoding="utf-8"))
+    assert revived["run_id"] == state["run_id"], (
+        "the replaced claim carries THIS run's id"
+    )
+    assert revived["gpu"] == "5"
+    assert revived["claimed_at"]
+    assert revived["state"] == "completed"
+    assert not list(ledger_dir.glob("*.tmp")), (
+        "the replace left no tmp residue (atomic tmp + os.replace)"
+    )
+
+
+def test_lock_dead_pid_is_reclaimed(tmp_path, monkeypatch):
+    """A5: a lock naming a provably DEAD pid (a reaped real subprocess)
+    is reclaimed — run_dispatch proceeds and the lock file then carries
+    the new run's identity."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()  # reaped: the pid is provably dead
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    lock_path = ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME
+    lock_path.write_text(
+        json.dumps({"pid": dead.pid, "run_id": "dead-run",
+                    "started_at": "2026-10-20T00:00:00+00:00"}),
+        encoding="utf-8")
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the dead-pid lock is reclaimed, run proceeds"
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"]["completed"] == 1
+    assert not lock_path.exists(), "released after the drain"
+
+
+def test_lock_malformed_content_is_reclaimed(tmp_path, monkeypatch):
+    """A5: a malformed/unreadable lock cannot name a live holder — the
+    run reclaims it by atomic overwrite and proceeds. The lock's mtime
+    is BACKDATED past the create-to-write grace window (CR-02): a
+    malformed lock from a dead run is old by definition, while a FRESH
+    unwritten lock is an in-flight writer and refuses (see below)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    lock_path = ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME
+    lock_path.write_text("not json at all {", encoding="utf-8")
+    stale = time.time() - (
+        dispatch_core._LOCK_WRITE_GRACE_SECONDS + 60.0)
+    os.utime(lock_path, (stale, stale))
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1
+
+
+def test_lock_empty_fresh_window_refuses_inflight_writer(
+        tmp_path, monkeypatch):
+    """CR-02 pin: an EMPTY lock file with a FRESH mtime is treated as an
+    in-flight writer inside the create-to-write window — the launch
+    refuses loudly instead of reclaiming (reclaiming there would put TWO
+    dispatchers on one root, defeating the singleton guarantee)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    lock_path = ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME
+    lock_path.write_text("", encoding="utf-8")  # fresh mtime: just written
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    message = str(excinfo.value)
+    assert str(lock_path) in message
+    assert "no holder" in message
+    assert "retry" in message, "the refusal tells the operator to retry"
+    assert not calls, "no child spawns while the window is unresolved"
+    assert lock_path.read_text(encoding="utf-8") == "", (
+        "the possibly-in-flight lock is left untouched (never reclaimed)"
+    )
+
+
+def test_lock_empty_stale_window_is_reclaimed(tmp_path, monkeypatch):
+    """CR-02 pin: an EMPTY lock older than the grace window is a provably
+    dead writer (crashed between create and write) — reclaimed and the
+    run proceeds."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    lock_path = ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME
+    lock_path.write_text("", encoding="utf-8")
+    stale = time.time() - (
+        dispatch_core._LOCK_WRITE_GRACE_SECONDS + 60.0)
+    os.utime(lock_path, (stale, stale))
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the expired empty lock is reclaimed"
+
+
+def test_lock_out_of_range_pid_reclaimed_not_crashed(
+        tmp_path, monkeypatch):
+    """WR-02 pin: a parseable lock whose pid is out of signal range
+    (2**63) is reclaimed — never an unhandled OverflowError traceback on
+    the recovery path (an impossible pid is provably not a live holder)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    (ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME).write_text(
+        json.dumps({"pid": 2**63, "run_id": "corrupt-run",
+                    "started_at": "2026-10-20T00:00:00+00:00"}),
+        encoding="utf-8")
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1, (
+        "the impossible pid reclaims (no OverflowError crash) and the "
+        "run proceeds"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"]["completed"] == 1
+
+
+def test_skip_set_is_order_independent(tmp_path):
+    """EDGE MGPU-02/ordering: the relaunch skip set is a pure function
+    of per-cell (marker presence, claim state) — the SAME ledger/marker
+    state built in two DIFFERENT creation orders yields the identical
+    skip/requeue decision set."""
+    cells = [
+        ("model-a", "task-x", 42),
+        ("model-a", "task-x", 43),
+        ("model-b", "task-x", 42),
+        ("model-b", "task-x", 43),
+        ("model-c", "task-x", 42),
+    ]
+
+    def build(root_name, reversed_order):
+        root = (tmp_path / root_name).resolve()
+        ledger_dir = dispatch_core.ledger_dir_for(root)
+        writes = [
+            lambda: _write_marker(root, ("model-a", "task-x", 42)),
+            lambda: _write_hand_claim(
+                ledger_dir, ("model-a", "task-x", 42),
+                dispatch_core.CLAIM_STATE_COMPLETED),
+            lambda: _write_hand_claim(
+                ledger_dir, ("model-a", "task-x", 43),
+                dispatch_core.CLAIM_STATE_FAILED),
+            lambda: _write_hand_claim(
+                ledger_dir, ("model-b", "task-x", 43),
+                dispatch_core.CLAIM_STATE_CLAIMED),
+            lambda: _write_marker(root, ("model-c", "task-x", 42)),
+        ]
+        if reversed_order:
+            writes.reverse()  # same final state, opposite creation order
+        for write in writes:
+            write()
+        return [
+            dispatch_core.relaunch_decision(root, ledger_dir, cell)
+            for cell in cells]
+
+    forward = build("r-order-1", reversed_order=False)
+    backward = build("r-order-2", reversed_order=True)
+    assert forward == backward, (
+        "the same ledger state in any creation order yields the "
+        "identical per-cell skip/requeue decisions"
+    )
+    assert forward == [
+        "skip", "requeue", "fresh", "requeue", "skip"]
+
+
+def test_drained_root_relaunch_is_nothing_to_do(
+        tmp_path, monkeypatch, capsys):
+    """EDGE MGPU-02/empty: a relaunch over a fully completed root queues
+    ZERO cells, prints the explicit nothing-to-do verdict, spawns
+    nothing, and exits 0."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    argv = [
+        "--mode", "dispatch", "--workers", "2",
+        "--models", "model-a,model-b",
+        "--tasks", "task-x", "--seeds", "42,43",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ]
+    calls1 = []
+    run_cli(monkeypatch, argv, spawner=make_child_spawner(calls1))
+    assert len(calls1) == 4
+    calls2 = []
+    run_cli(monkeypatch, argv, spawner=make_child_spawner(calls2))
+    assert calls2 == [], "a fully drained root spawns nothing"
+    out = capsys.readouterr().out
+    assert "nothing to do" in out
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["status"] == "done"
+    assert state["counts"] == {
+        "total": 4, "completed": 0, "failed": 0, "skipped": 4}
+
+
+def test_malformed_claims_requeue_never_crash_never_skip(
+        tmp_path, monkeypatch):
+    """Malformed-claim tolerance: a claim whose JSON does not parse, and
+        one whose cell key disagrees with the pending cell, are both
+        treated as STALE claims (requeue) — never a crash, never a
+        silent skip."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    broken = ledger_dir / dispatch_core.claim_filename(
+        ("model-a", "task-x", 42))
+    broken.write_text("{ torn json", encoding="utf-8")
+    disagreeing = dispatch_core._claim_payload(
+        ("OTHER-model", "task-x", 42), {}, "0", "other-run", "t")
+    (ledger_dir / dispatch_core.claim_filename(
+        ("model-a", "task-x", 43))).write_text(
+        json.dumps(disagreeing), encoding="utf-8")
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42,43,44",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert sorted(spawn_identities(calls)) == [
+        ("model-a", "task-x", 42),
+        ("model-a", "task-x", 43),
+        ("model-a", "task-x", 44),
+    ], "malformed and cell-key-disagreeing claims both requeue"
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 3, "completed": 3, "failed": 0, "skipped": 0}
+
+
+# ===== worker-thread containment + honest accounting (CR-04) =====
+
+
+def _flaky_finalize(monkeypatch, fail_first_n):
+    """Patch ``dispatch_core.finalize_claim`` to raise ENOSPC on the
+    first ``fail_first_n`` calls — an exception from a worker thread
+    OUTSIDE the spawn seam, exactly the failure class the CR-04
+    containment boundary exists for."""
+    real = dispatch_core.finalize_claim
+    calls = [0]
+
+    def patched(claim_path, payload):
+        calls[0] += 1
+        if calls[0] <= fail_first_n:
+            raise OSError(28, "No space left on device")
+        real(claim_path, payload)
+
+    monkeypatch.setattr(dispatch_core, "finalize_claim", patched)
+
+
+def _worker_state_writes_always_fail(monkeypatch):
+    """Patch ``dispatch_core._write_state`` to raise ENOSPC on every
+    WORKER-thread call (main-thread writes succeed, so the accounting
+    write itself lands and its honesty is assertable)."""
+    real = dispatch_core._write_state
+
+    def patched(state_path, state):
+        if threading.current_thread() is not threading.main_thread():
+            raise OSError(28, "No space left on device")
+        real(state_path, state)
+
+    monkeypatch.setattr(dispatch_core, "_write_state", patched)
+
+
+def _publish_fails_on_call(monkeypatch, fail_on):
+    """Patch ``dispatch_core._publish_state`` to raise ENOSPC on launch
+    call number ``fail_on`` (1-based) — the launch-time state-publish
+    failure class the WR-01 guard exists for (main-thread, BEFORE the
+    drain's try/finally). The guard calls the module global, so the
+    patch intercepts it; every call before the scripted one writes for
+    real so the launch progresses to the targeted publish site."""
+    real = dispatch_core._publish_state
+    calls = [0]
+
+    def patched(context):
+        calls[0] += 1
+        if calls[0] == fail_on:
+            raise OSError(28, "No space left on device")
+        real(context)
+
+    monkeypatch.setattr(dispatch_core, "_publish_state", patched)
+    return calls
+
+
+def test_worker_finalize_failure_fails_cell_not_run(
+        tmp_path, monkeypatch):
+    """CR-04 pin (containment): an exception from a worker thread
+    OUTSIDE the spawn seam (here: ENOSPC on the first finalize) fails
+    THAT cell and the drain CONTINUES — all 4 cells still spawn, the
+    stricken cell is recorded with a dispatcher-side failure, and the
+    run exits 1 on the failed count. Never a silent queue drop behind a
+    false success."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    _flaky_finalize(monkeypatch, fail_first_n=1)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42,43",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    assert excinfo.value.code == 1, "the failed cell drives the exit-1 path"
+    assert len(calls) == 4, (
+        "every cell still spawns — the drain continues past the failure"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 4, "completed": 3, "failed": 1, "skipped": 0}, (
+        "honest accounting: the stricken cell is FAILED, not dropped"
+    )
+    failed_errors = [
+        json.loads(path.read_text(encoding="utf-8"))["error"]
+        for path in dispatch_core.ledger_dir_for(base).glob("*.json")
+        if path.name != dispatch_core.DISPATCHER_LOCK_NAME
+        and json.loads(path.read_text(encoding="utf-8"))["state"]
+        == dispatch_core.CLAIM_STATE_FAILED]
+    expected_error = (
+        "dispatcher-side failure: OSError: [Errno 28] No space left "
+        "on device")
+    assert failed_errors == [expected_error], (
+        "the claim records the dispatcher-side failure by name"
+    )
+
+
+def test_worker_state_write_failure_keeps_truthful_claims(
+        tmp_path, monkeypatch):
+    """WR-03 pin (ledger truth): a worker-thread-ONLY state-write
+    failure (here: ENOSPC on ``dispatch_state.json`` while the ledger
+    dir stays writable — ``finalize_claim`` untouched) strikes AFTER the
+    cell was already finalized and accounted. The containment must NOT
+    re-finalize the claim: every on-disk claim keeps its truthful
+    terminal state (completed, the child's real ``exit_code`` 0) while
+    the run's counts, end-of-run state write, and exit code stay
+    honest."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    _worker_state_writes_always_fail(monkeypatch)
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a,model-b", "--tasks", "task-x",
+        "--seeds", "42,43",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 4, (
+        "every cell still drains — the accounted-case swallow continues"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["status"] == "done", (
+        "nothing actually failed — the run is honestly done"
+    )
+    assert state["counts"] == {
+        "total": 4, "completed": 4, "failed": 0, "skipped": 0}, (
+        "honest counts from the end-of-run main-thread state write"
+    )
+    claims = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in dispatch_core.ledger_dir_for(base).glob("*.json")
+        if path.name != dispatch_core.DISPATCHER_LOCK_NAME]
+    assert len(claims) == 4
+    for claim in claims:
+        assert claim["state"] == dispatch_core.CLAIM_STATE_COMPLETED, (
+            "an already-truthful claim is never flipped to failed"
+        )
+        assert claim["exit_code"] == 0, (
+            "the child's real exit code is never clobbered to null"
+        )
+        assert claim["error"] is None, (
+            "no dispatcher-side failure is fabricated onto the claim"
+        )
+
+
+@pytest.mark.parametrize("fail_on,drained", [
+    (1, False),  # the mode-evidence write (every launch path, first)
+    (2, False),  # the post-skip-filter write (the ordinary path)
+    (3, True),   # the nothing-to-do branch's terminal "done" write
+])
+def test_launch_state_publish_failure_releases_lock_exits_cleanly(
+        tmp_path, monkeypatch, fail_on, drained):
+    """WR-01 pin: an OSError from ANY of the three launch-time state
+    publishes — the writes that run AFTER ``acquire_dispatcher_lock``
+    but BEFORE the drain's try/finally guarantees the release —
+    releases the lock and exits with the designed diagnostic (the
+    tee-open refusal's shape: the error named, "no children spawned",
+    "the dispatcher lock is released"), never a raw traceback that
+    leaks ``dispatcher.lock`` on disk naming the dead run. No child is
+    ever spawned from the failed launch."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    if drained:
+        # A fully-drained root: the single cell carries the marker, so
+        # the launch reaches the nothing-to-do branch (publish 1: mode
+        # evidence; publish 2: post-skip-filter; publish 3: the
+        # terminal "done" write) without spawning anything.
+        _write_marker(base, ("model-a", "task-x", 42))
+    _publish_fails_on_call(monkeypatch, fail_on)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "writing dispatch state failed" in message
+    assert "No space left on device" in message, (
+        "the underlying OSError is named"
+    )
+    assert "no children spawned" in message
+    assert "the dispatcher lock is released" in message
+    assert calls == [], "the failure precedes any spawn"
+    assert not (dispatch_core.ledger_dir_for(base)
+                / dispatch_core.DISPATCHER_LOCK_NAME).exists(), (
+        "the guard released the lock — never leaked on disk"
+    )
+
+
+@pytest.mark.filterwarnings(
+    "ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_worker_death_drains_loudly_incomplete(tmp_path, monkeypatch):
+    """CR-04 pin (accounting assertion): when the containment boundary
+    ITSELF dies (here: finalize always fails AND every worker state
+    write fails, so the containment's own accounting write raises), the
+    run NEVER reports done/exit 0 — the post-join assertion writes an
+    honest status 'incomplete' and refuses by name with the
+    drained/total counts."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    _flaky_finalize(monkeypatch, fail_first_n=10**9)  # always fail
+    _worker_state_writes_always_fail(monkeypatch)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42,43",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    message = str(excinfo.value)
+    assert "accounting mismatch" in message
+    assert "1/4" in message, "the refusal names the drained/total counts"
+    assert len(calls) == 1, "only the first cell spawned before the death"
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["status"] == "incomplete", (
+        "never 'done' — the state tells the truth about the drain"
+    )
+    assert not (dispatch_core.ledger_dir_for(base)
+                / dispatch_core.DISPATCHER_LOCK_NAME).exists(), (
+        "the lock is still released on the refused drain"
+    )
+
+
+# ===== 13-02 Task 2: mode coexistence — merge refusal + static pins =====
+
+
+def _write_static_worker(root, model, task="task-x", seed=42):
+    """One static-style worker root fixture: a manifest + failures file
+    in the run_sweep payload shape plus one cell's allowlisted
+    artifacts (the merge-happy-path/control idiom, local copy)."""
+    root.mkdir(parents=True, exist_ok=True)
+    cell_dir = run_sweep.cell_dir_for(root, model, task, seed)
+    cell_dir.mkdir(parents=True, exist_ok=True)
+    (cell_dir / run_sweep.METRICS_NAME).write_text(
+        json.dumps({"eval_loss": 0.5}), encoding="utf-8")
+    (cell_dir / run_sweep.RESUME_MARKER).write_text(
+        '{"global_step": 1}', encoding="utf-8")
+    payload = {
+        "matrix": {
+            "models": [model], "tasks": [task], "seeds": [seed],
+            "output_root": str(root),
+        },
+        "cells": [{
+            "model": model, "task": task, "seed": seed,
+            "status": "completed", "output_dir": str(cell_dir),
+        }],
+    }
+    (root / run_sweep.MANIFEST_NAME).write_text(
+        json.dumps(payload), encoding="utf-8")
+    (root / run_sweep.FAILURES_NAME).write_text("[]", encoding="utf-8")
+    return root
+
+
+def test_root_has_dispatch_evidence_marker_matrix(tmp_path):
+    """The evidence helper reads ONLY the three run-recorded markers:
+    each alone triggers; a bare static root (manifest without the
+    marker, no manifest at all, an absent root, or an unreadable
+    manifest) carries no evidence — that absence IS the static world
+    (MGPU-06 / D13-07, never directory-shape inference)."""
+    helper = run_sweep_shard._root_has_dispatch_evidence
+
+    static_root = _write_static_worker(tmp_path / "static", "model-a")
+    assert helper(static_root) is False
+
+    empty_root = tmp_path / "empty"
+    empty_root.mkdir()
+    assert helper(empty_root) is False
+    assert helper(tmp_path / "absent") is False
+
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    (state_root / dispatch_core.DISPATCH_STATE_NAME).write_text(
+        "{}", encoding="utf-8")
+    assert helper(state_root) is True
+
+    ledger_root = tmp_path / "ledger-only"
+    dispatch_core.ledger_dir_for(ledger_root).mkdir(parents=True)
+    assert helper(ledger_root) is True
+
+    marker_root = _write_static_worker(tmp_path / "marker", "model-a")
+    manifest = json.loads(
+        (marker_root / run_sweep.MANIFEST_NAME).read_text(
+            encoding="utf-8"))
+    manifest["cells"][0]["orchestrator_mode"] = "dispatch"
+    (marker_root / run_sweep.MANIFEST_NAME).write_text(
+        json.dumps(manifest), encoding="utf-8")
+    assert helper(marker_root) is True
+
+    corrupt_root = tmp_path / "corrupt"
+    corrupt_root.mkdir()
+    (corrupt_root / run_sweep.MANIFEST_NAME).write_text(
+        "{ torn", encoding="utf-8")
+    assert helper(corrupt_root) is False, (
+        "an unreadable manifest carries no marker"
+    )
+
+
+def test_merge_refuses_dispatch_state_evidence_at_base(
+        tmp_path, monkeypatch):
+    """MGPU-06 mixed-mode refusal: a static-style worker pair with
+    dispatch_state.json planted at the BASE root refuses with the named
+    problem and NO file is copied (the base still holds only the
+    evidence file — the refusal lands before the copy pass)."""
+    base = (tmp_path / "finetuned").resolve()
+    _write_static_worker(run_sweep_shard.worker_root(base, 0), "model-a")
+    _write_static_worker(run_sweep_shard.worker_root(base, 1), "model-b")
+    base.mkdir(parents=True, exist_ok=True)
+    (base / dispatch_core.DISPATCH_STATE_NAME).write_text(
+        "{}", encoding="utf-8")
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--merge", "--workers", "2", "--output-root", str(base)])
+    message = str(excinfo.value)
+    assert f"dispatch root {base} needs no merge" in message
+    assert "ONE shared root" in message
+    assert sorted(path.name for path in base.iterdir()) == [
+        dispatch_core.DISPATCH_STATE_NAME], (
+        "refused BEFORE any copy — no merged manifest, no cell files"
+    )
+
+
+def test_merge_refuses_worker_root_ledger_evidence(tmp_path, monkeypatch):
+    """The refusal fires for evidence on a DISCOVERED WORKER ROOT too
+    (the dispatch_ledger dir marker): the merge names that root and
+    never creates the merged root."""
+    base = (tmp_path / "finetuned").resolve()
+    _write_static_worker(run_sweep_shard.worker_root(base, 0), "model-a")
+    w1 = _write_static_worker(
+        run_sweep_shard.worker_root(base, 1), "model-b")
+    dispatch_core.ledger_dir_for(w1).mkdir()  # evidence on the worker
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--merge", "--workers", "2", "--output-root", str(base)])
+    assert f"dispatch root {w1} needs no merge" in str(excinfo.value)
+    assert not base.exists(), "the merged root is never created"
+
+
+def test_merge_refuses_dry_run_marker_only_evidence(tmp_path, monkeypatch):
+    """A root whose ONLY evidence is the manifest orchestrator_mode
+    marker (exactly what a dispatch dry-run root carries) refuses the
+    same named way — the plan artifact is dispatch evidence."""
+    base = (tmp_path / "finetuned").resolve()
+    w0 = _write_static_worker(run_sweep_shard.worker_root(base, 0),
+                              "model-a")
+    _write_static_worker(run_sweep_shard.worker_root(base, 1), "model-b")
+    manifest = json.loads(
+        (w0 / run_sweep.MANIFEST_NAME).read_text(encoding="utf-8"))
+    manifest["cells"][0]["orchestrator_mode"] = "dispatch"
+    (w0 / run_sweep.MANIFEST_NAME).write_text(
+        json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--merge", "--workers", "2", "--output-root", str(base)])
+    assert f"dispatch root {w0} needs no merge" in str(excinfo.value)
+    assert not base.exists()
+
+
+def test_static_mode_explicit_pins_argv_roots_and_logs(
+        tmp_path, monkeypatch):
+    """EDGE MGPU-06/empty full pin: an explicit --mode static launch
+    produces the identical captured argv list (worker roots included),
+    identical spawn kwargs, and identical tee log file names as the
+    same launch without --mode; the base root is never written either
+    way (static writes ONLY frozen sibling roots)."""
+    registry_dir = make_registry(tmp_path)
+    clock = lambda: datetime(2026, 10, 20, 6, 0, 0, tzinfo=UTC)
+    stamp = "20261020_060000"
+    captured = {}
+    for label, extra in (("default", []), ("explicit",
+                                           ["--mode", "static"])):
+        base = (tmp_path / f"finetuned-{label}").resolve()
+        calls = []
+        run_cli(monkeypatch, [
+            *extra,
+            "--workers", "2", "--models", "model-a,model-b",
+            "--tasks", "task-x", "--seeds", "42",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_fake_spawner(calls), clock=clock)
+        captured[label] = (base, calls)
+
+    def normalized(call, root):
+        argv = [element.replace(root, "ROOT") for element in call["argv"]]
+        kwargs = dict(call["kwargs"])
+        kwargs["stdout"] = Path(
+            kwargs["stdout"].name.replace(root, "ROOT"))
+        return {"argv": argv, "kwargs": kwargs}
+
+    base_default, calls_default = captured["default"]
+    base_explicit, calls_explicit = captured["explicit"]
+    assert [normalized(c, str(base_default)) for c in calls_default] == [
+        normalized(c, str(base_explicit)) for c in calls_explicit], (
+        "explicit --mode static is byte-identical to the default launch"
+    )
+    for i in (0, 1):
+        argv_root = flag_value(calls_default[i]["argv"], "--output-root")
+        assert argv_root == str(
+            run_sweep_shard.worker_root(base_default, i)), (
+            "the worker ROOT rides the argv via the frozen naming"
+        )
+        log_default = run_sweep_shard.worker_log_path(
+            base_default, i, stamp)
+        log_explicit = run_sweep_shard.worker_log_path(
+            base_explicit, i, stamp)
+        assert log_default.is_file() and log_explicit.is_file(), (
+            "both launches tee their worker logs (WR-02)"
+        )
+        assert log_default.name.replace(
+            base_default.name, "ROOT") == log_explicit.name.replace(
+            base_explicit.name, "ROOT"), (
+            "identical tee log names modulo the launch dir (the log is "
+            "a SIBLING of the base root, so its name embeds it by design)"
+        )
+    assert not base_default.exists() and not base_explicit.exists(), (
+        "static mode never writes the base root (either spelling)"
+    )
+
+
+def test_dispatch_merge_combo_refusal_reasserted(tmp_path, monkeypatch):
+    """EDGE MGPU-06/ordering adjacency: --mode dispatch combined with
+    --merge on one command line refuses with the 13-01 named problem
+    BEFORE any root is written."""
+    base = (tmp_path / "finetuned").resolve()
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--merge", "--workers", "1",
+            "--output-root", str(base),
+        ])
+    message = str(excinfo.value)
+    assert "--mode dispatch cannot combine with --merge" in message
+    assert "need no merge" in message
+    assert not base.exists()
+
+
+def test_merge_happy_path_control_without_evidence(tmp_path, monkeypatch):
+    """Control: a static-only root set (zero dispatch evidence) merges
+    exactly as before — the merged manifest lands with the union cells
+    and both cells' allowlisted files copy under the merged root (the
+    no-evidence behavior is untouched)."""
+    base = (tmp_path / "finetuned").resolve()
+    _write_static_worker(run_sweep_shard.worker_root(base, 0), "model-a")
+    _write_static_worker(run_sweep_shard.worker_root(base, 1), "model-b")
+    run_cli(monkeypatch, [
+        "--merge", "--workers", "2", "--output-root", str(base)])
+    manifest = json.loads(
+        (base / run_sweep.MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert sorted(cell["model"] for cell in manifest["cells"]) == [
+        "model-a", "model-b"]
+    for model in ("model-a", "model-b"):
+        cell_dir = run_sweep.cell_dir_for(base, model, "task-x", 42)
+        assert (cell_dir / run_sweep.METRICS_NAME).is_file()
+        assert (cell_dir / run_sweep.RESUME_MARKER).is_file()
+
+
+# ===== 14-01 Task 1: the frozen v2 state consumer contract (MGPU-03) =====
+
+
+def _load_dispatch_state_schema():
+    """Load the frozen v2 consumer schema (D14-14, repo-relative path)."""
+    return json.loads(
+        DISPATCH_STATE_SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
+def _run_two_worker_dispatch_with_one_failure(
+        tmp_path, monkeypatch, failed_cell):
+    """Drive the 2-model x 1-task x 2-seed dispatch fixture with ONE
+    scripted child failure on ``failed_cell`` (exit code 3, no artifacts
+    — the CR-02 failed-cell shape) over ``--workers 2 --gpus 5,7``.
+
+    Returns ``(base, calls)``; the run exits 1 on the failed count (the
+    caller-asserted SystemExit shape every failed-cell test already
+    uses), so the FINAL state file is the post-drain done payload with
+    honest counts — exactly what a consumer parses off a real root."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "2", "--gpus", "5,7",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42,43",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls, exit_for={failed_cell: 3}))
+    assert excinfo.value.code == 1, "the injected failure exits 1"
+    assert len(calls) == 4, "every enumerated cell drained"
+    return base, calls
+
+
+def test_dispatch_state_validates_against_frozen_v2_schema(
+        tmp_path, monkeypatch):
+    """D14-14 consumer pin: a completed two-worker fake run's final
+    dispatch_state.json validates against the committed
+    schemas/dispatch_state.json and reports schema_version 2 with the
+    full v2 additive surface — a drained queue and every in-flight slot
+    null at rest (the TUI/Phase-16 parse contract, frozen BEFORE any
+    consumer touches it)."""
+    failed_cell = ("model-b", "task-x", 43)
+    base, _calls = _run_two_worker_dispatch_with_one_failure(
+        tmp_path, monkeypatch, failed_cell)
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    jsonschema.validate(
+        instance=state, schema=_load_dispatch_state_schema())
+    assert state["schema_version"] == 2, (
+        "DISPATCH_STATE_SCHEMA_VERSION bumped to 2 (D14-01)"
+    )
+    assert state["status"] == "done", (
+        "a drained run is honestly done even with a failed cell "
+        "(exit 1 carries the failure; the status carries the drain)"
+    )
+    assert state["counts"] == {
+        "total": 4, "completed": 3, "failed": 1, "skipped": 0}
+    assert len(state["workers"]) == 2, (
+        "one workers[] row per --workers entry"
+    )
+    assert state["queue_depth"] == 0, (
+        "a fully drained run leaves an empty queue"
+    )
+    assert all(worker["in_flight"] is None
+               for worker in state["workers"]), (
+        "no cell is in flight after the join"
+    )
+
+
+def test_dispatch_state_failures_view_names_failed_cells(
+        tmp_path, monkeypatch):
+    """D14-01 failures view: the failed cell appears in state.failures
+    with its model/task/seed/fraction identity and a finished_at
+    timestamp; the healthy cells never appear, and the list length
+    equals counts.failed (the view consumers render against)."""
+    failed_cell = ("model-b", "task-x", 43)
+    base, _calls = _run_two_worker_dispatch_with_one_failure(
+        tmp_path, monkeypatch, failed_cell)
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert len(state["failures"]) == state["counts"]["failed"] == 1
+    entry = state["failures"][0]
+    assert entry["model"] == "model-b"
+    assert entry["task"] == "task-x"
+    assert entry["seed"] == 43
+    assert entry["fraction"] is None, (
+        "a plain (non-curve) cell carries a null fraction"
+    )
+    assert entry["finished_at"], "the failure carries its finish stamp"
+    # the healthy cells are absent: the one entry names ONLY the failed
+    # cell (model-a's two cells and model-b's healthy cell never appear)
+    assert {item["model"] for item in state["failures"]} == {"model-b"}
+    assert {item["seed"] for item in state["failures"]} == {43}
+
+
+def test_dispatch_state_worker_rows_match_gpus_and_sum_to_counts(
+        tmp_path, monkeypatch):
+    """D14-01 worker rows: workers[] carries one row per --workers index
+    with the gpu token in argv order, and the per-worker counters sum to
+    the run counts (cells == completed + failed; no double counting, no
+    dropped cells — the same accounting discipline counts already
+    enforce, projected per worker)."""
+    failed_cell = ("model-b", "task-x", 43)
+    base, _calls = _run_two_worker_dispatch_with_one_failure(
+        tmp_path, monkeypatch, failed_cell)
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    workers = state["workers"]
+    assert [worker["index"] for worker in workers] == [0, 1]
+    assert [worker["gpu"] for worker in workers] == ["5", "7"], (
+        "the operator-owned --gpus tokens forward in argv order"
+    )
+    counts = state["counts"]
+    assert sum(worker["cells"] for worker in workers) == (
+        counts["completed"] + counts["failed"]), (
+        "every spawned cell is accounted by exactly one worker"
+    )
+    assert sum(worker["completed"] for worker in workers) == (
+        counts["completed"])
+    assert sum(worker["failed"] for worker in workers) == counts["failed"]
+
+
+# ===== 14-01 Task 2: the plain-line renderer at the _write_state
+# choke point + the claim-time write (D14-02/D14-03) =====
+
+
+def _rendered_lines(out):
+    """Project captured stdout to the renderer's own lines (headers +
+    worker rows) — the D14-13 assertion vocabulary.
+
+    The row pattern ``  w{index} gpu=`` is matched by regex so the
+    end-of-run VERDICT table (``  worker 0: cells=... failed=...
+    gpu=... log=...`` — same two-space indent, also contains ``gpu=``)
+    is never mistaken for a rendered row.
+    """
+    return [
+        line for line in out.splitlines()
+        if line.startswith("[Dispatch] status=")
+        or re.match(r"  w\d+ gpu=", line)]
+
+
+def test_renderer_renders_every_step_of_a_healthy_run(
+        tmp_path, monkeypatch, capsys):
+    """D14-13 step-by-step pin (workers=1, 2 cells — the deterministic
+    single-worker interleaving): EVERY state write renders one header
+    naming status/queue/done/failed/skipped plus one row per worker, in
+    the exact event order — initial running table with queue == total,
+    the post-skip-filter write, the claim-time row showing the claimed
+    cell (queue loses it, counts still 0), the finalize header (done
+    advances, the row returns to '-'), and the terminal status=done
+    table with an empty queue."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a,model-b", "--tasks", "task-x",
+        "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 2
+    assert _rendered_lines(capsys.readouterr().out) == [
+        # launch: mode evidence — the full queue, no cell in flight
+        "[Dispatch] status=running queue=2 done=0/2 failed=0 skipped=0",
+        "  w0 gpu=0: -",
+        # post-skip-filter write (no skips on a fresh root — identical)
+        "[Dispatch] status=running queue=2 done=0/2 failed=0 skipped=0",
+        "  w0 gpu=0: -",
+        # claim cell 1: the row shows the cell, the queue loses it
+        "[Dispatch] status=running queue=1 done=0/2 failed=0 skipped=0",
+        "  w0 gpu=0: model-a/task-x/seed_42",
+        # finalize cell 1: done advances, the row clears
+        "[Dispatch] status=running queue=1 done=1/2 failed=0 skipped=0",
+        "  w0 gpu=0: -",
+        # claim cell 2
+        "[Dispatch] status=running queue=0 done=1/2 failed=0 skipped=0",
+        "  w0 gpu=0: model-b/task-x/seed_42",
+        # finalize cell 2
+        "[Dispatch] status=running queue=0 done=2/2 failed=0 skipped=0",
+        "  w0 gpu=0: -",
+        # terminal table
+        "[Dispatch] status=done queue=0 done=2/2 failed=0 skipped=0",
+        "  w0 gpu=0: -",
+    ]
+
+
+def test_claim_time_row_visible_while_child_runs(
+        tmp_path, monkeypatch, capsys):
+    """D14-03 claim-time pin: a GATED fake child reads the state file
+    and the rendered stdout from inside wait() — i.e. while it is still
+    'training' — and observes the claiming worker's row showing the
+    exact claimed cell with counts.completed still unchanged (the row
+    appears at CLAIM time, before the child process exits)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    observed = []
+
+    def gated_spawner(argv, **kwargs):
+        root = Path(flag_value(argv, "--output_dir"))
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell = (save, flag_value(argv, "--target_dataset"),
+                int(flag_value(argv, "--seed")))
+
+        class GatedProc(FakeProc):
+            def wait(self, timeout=None):
+                # mid-"training": the child has NOT exited — capture the
+                # frozen payload and the rendered table NOW
+                state = json.loads(
+                    (root / dispatch_core.DISPATCH_STATE_NAME).read_text(
+                        encoding="utf-8"))
+                observed.append((state, capsys.readouterr().out))
+                return super().wait(timeout=timeout)
+
+        # the make_child_spawner artifact discipline (a missing
+        # final_metrics.json would fail the cell through CR-02)
+        cell_dir = root / save / cell[1] / f"seed_{cell[2]}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / run_sweep.METRICS_NAME).write_text(
+            json.dumps({"eval_loss": 0.5}), encoding="utf-8")
+        (cell_dir / run_sweep.RESUME_MARKER).write_text(
+            '{"global_step": 1}', encoding="utf-8")
+        return GatedProc(0)
+
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=gated_spawner)
+    assert len(observed) == 1, "the gated child observed its own run"
+    state, out = observed[0]
+    assert state["counts"]["completed"] == 0, (
+        "the child has not exited — nothing is completed yet"
+    )
+    assert state["workers"][0]["in_flight"] == {
+        "model": "model-a", "task": "task-x", "seed": 42,
+        "fraction": None}, (
+        "the state file carries the in-flight cell at claim time"
+    )
+    assert "  w0 gpu=0: model-a/task-x/seed_42" in out, (
+        "the rendered row shows the claimed cell WHILE the child runs"
+    )
+
+
+def test_renderer_failed_finalize_header_and_state(
+        tmp_path, monkeypatch, capsys):
+    """A scripted exit_for failure renders failed=1 in the header of the
+    post-failure table and lands the cell in the failures-driven state
+    (the Task 1 field) — the failed finalize is visible in BOTH views."""
+    failed_cell = ("model-b", "task-x", 43)
+    base, _calls = _run_two_worker_dispatch_with_one_failure(
+        tmp_path, monkeypatch, failed_cell)
+    headers = [
+        line for line in _rendered_lines(capsys.readouterr().out)
+        if line.startswith("[Dispatch] status=")]
+    assert any(
+        "failed=1" in header and "status=running" in header
+        for header in headers), (
+        "the failed finalize renders failed=1 while the drain continues"
+    )
+    assert headers[-1] == (
+        "[Dispatch] status=done queue=0 done=3/4 failed=1 skipped=0"), (
+        "the terminal table carries the honest failed count"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["failures"][0]["model"] == "model-b"
+    assert state["failures"][0]["seed"] == 43
+
+
+def test_queue_depth_identity_holds_at_every_state_write(
+        tmp_path, monkeypatch):
+    """The Pitfall 3 snapshot invariant, pinned over a MIXED scripted
+    run (one pre-completed skip via marker, one scripted failure, two
+    healthy cells): every state payload that ever reached disk —
+    captured through the ENOSPC-style _write_state hook — satisfies
+    completed + failed + skipped + queue_depth + in_flight_count ==
+    total, including the claim/finalize boundary writes."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    _write_marker(base, ("model-a", "task-x", 42))  # -> skipped
+    observed = []
+    real_write = dispatch_core._write_state
+
+    def recording_write(state_path, state):
+        observed.append(json.loads(json.dumps(state)))  # frozen snapshot
+        real_write(state_path, state)
+
+    monkeypatch.setattr(dispatch_core, "_write_state", recording_write)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "2",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42,43",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(
+            calls, exit_for={("model-b", "task-x", 43): 2}))
+    assert excinfo.value.code == 1
+    assert len(calls) == 3, "the marker cell never spawns"
+    assert len(observed) >= 8, "every transition published state"
+    for payload in observed:
+        counts = payload["counts"]
+        active = sum(1 for worker in payload["workers"]
+                     if worker["in_flight"] is not None)
+        assert counts["completed"] + counts["failed"] + \
+            counts["skipped"] + payload["queue_depth"] + active == \
+            counts["total"], (
+                f"snapshot invariant broken at status="
+                f"{payload['status']}: {counts} queue="
+                f"{payload['queue_depth']} active={active}")
+    final = observed[-1]
+    assert final["status"] == "done"
+    assert final["counts"] == {
+        "total": 4, "completed": 2, "failed": 1, "skipped": 1}
+    assert final["queue_depth"] == 0
+
+
+class _ClosedPipeStdout:
+    """A stdout whose consumer died: every write/flush raises."""
+
+    def write(self, data):
+        raise BrokenPipeError("consumer closed the pipe")
+
+    def flush(self):
+        raise BrokenPipeError("consumer closed the pipe")
+
+    def fileno(self):
+        raise OSError("no real fd on this test double")
+
+
+def test_render_state_swallows_output_errors(monkeypatch):
+    """T-14-01 unit pin: _render_state itself never raises on a failing
+    stdout — BrokenPipeError (the closed consumer), a plain OSError,
+    and UnicodeEncodeError (a ValueError — an unencodable stream) are
+    all swallowed best-effort, so a dying view can never fail a cell
+    through the CR-04 containment."""
+    sample = {
+        "status": "running",
+        "queue_depth": 1,
+        "counts": {"total": 2, "completed": 0, "failed": 0, "skipped": 1},
+        "workers": [
+            {"index": 0, "gpu": "0",
+             "in_flight": {"model": "m", "task": "t", "seed": 1,
+                           "fraction": None},
+             "cells": 0, "completed": 0, "failed": 0}],
+    }
+
+    def _raising(error_factory):
+        class _Raising:
+            def write(self, data):
+                raise error_factory()
+
+            def flush(self):
+                raise error_factory()
+
+        return _Raising()
+
+    # UnicodeEncodeError (a ValueError subclass) carries a 5-arg C-level
+    # constructor — the unencodable-stream view failure
+    cases = (
+        lambda: BrokenPipeError("consumer closed the pipe"),
+        lambda: OSError("view fd died"),
+        lambda: UnicodeEncodeError("utf-8", "x", 0, 1, "view died"),
+    )
+    for error_factory in cases:
+        monkeypatch.setattr(sys, "stdout", _raising(error_factory))
+        dispatch_core._render_state(sample)  # must not raise
+    monkeypatch.setattr(sys, "stdout", _ClosedPipeStdout())
+    dispatch_core._render_state(sample)  # must not raise
+
+
+def test_renderer_broken_pipe_never_fails_cells(tmp_path, monkeypatch):
+    """T-14-01 integration pin (Task 2 behavior Test 5): with stdout
+    raising BrokenPipeError on every WORKER-thread render (the
+    consumer view died mid-run), the run still completes — every cell
+    drains, the claims complete, the state ends done, and the run
+    exits 0. A dying view must never fail a cell, kill a worker
+    thread, or abort the drain."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    real_stdout = sys.stdout
+
+    class _WorkerOnlyBrokenPipe:
+        """Broken for worker-thread writes only — the main thread's
+        end-of-run prints stay honest so the run can finish."""
+
+        def write(self, data):
+            if threading.current_thread() is not threading.main_thread():
+                raise BrokenPipeError("consumer closed the pipe")
+            return real_stdout.write(data)
+
+        def flush(self):
+            if threading.current_thread() is not threading.main_thread():
+                raise BrokenPipeError("consumer closed the pipe")
+            real_stdout.flush()
+
+        def __getattr__(self, name):
+            return getattr(real_stdout, name)
+
+    monkeypatch.setattr(sys, "stdout", _WorkerOnlyBrokenPipe())
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "2",
+        "--models", "model-a,model-b", "--tasks", "task-x",
+        "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 2, "every cell still drains past the dead view"
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["status"] == "done"
+    assert state["counts"] == {
+        "total": 2, "completed": 2, "failed": 0, "skipped": 0}
+    claims = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in dispatch_core.ledger_dir_for(base).glob("*.json")
+        if path.name != dispatch_core.DISPATCHER_LOCK_NAME]
+    assert all(claim["state"] == dispatch_core.CLAIM_STATE_COMPLETED
+               for claim in claims), (
+        "the broken view never leaked into a cell's claim"
+    )
+
+
+@pytest.mark.filterwarnings(
+    "ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_renderer_renders_incomplete_status(tmp_path, monkeypatch, capsys):
+    """The containment/incomplete terminal path renders its status too:
+    when a worker dies despite containment (the existing death fixture
+    — finalize always fails AND every worker state write fails), the
+    post-join accounting refusal still publishes (main thread) and the
+    table honestly reads status=incomplete with the un-drained queue."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    _flaky_finalize(monkeypatch, fail_first_n=10**9)
+    _worker_state_writes_always_fail(monkeypatch)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42,43",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    assert "accounting mismatch" in str(excinfo.value)
+    headers = [
+        line for line in _rendered_lines(capsys.readouterr().out)
+        if line.startswith("[Dispatch] status=")]
+    assert headers[-1] == (
+        "[Dispatch] status=incomplete queue=3 done=0/4 failed=1 "
+        "skipped=0"), (
+        "the refused drain renders its honest incomplete table"
+    )
+
+
+# ===== 14-01 Task 3: pty flush lane + gen_progress keep-parsing =====
+# (D14-04/D14-13/D14-16 — verification legs; no production changes)
+
+_PTY_DRIVER_SOURCE = '''
+"""Pty-lane driver (research A6 shape): a REAL subprocess running a
+REAL dispatch drain over fake children whose FIRST cell holds open for
+{hold}s — long enough that a live-rendered first table MUST arrive
+while the process is still mid-drain."""
+import json
+import sys
+import time
+from pathlib import Path
+
+repo, root, registry = (Path(arg) for arg in sys.argv[1:4])
+sys.path.insert(0, str(repo / "pipeline"))
+
+import dispatch_core  # noqa: E402
+import run_sweep_shard  # noqa: E402
+
+HELD = {{"first": True}}
+
+
+def spawn(argv, **kwargs):
+    def flag(name):
+        return argv[argv.index(name) + 1]
+
+    out_root = Path(flag("--output_dir"))
+    save = (flag("--save_model_name") if "--save_model_name" in argv
+            else flag("--target_model"))
+    task = flag("--target_dataset")
+    seed = int(flag("--seed"))
+    cell_dir = out_root / save / task / ("seed_%d" % seed)
+    if "--train_fraction" in argv:
+        cell_dir = cell_dir / ("frac_%s" % flag("--train_fraction"))
+    cell_dir.mkdir(parents=True, exist_ok=True)
+    (cell_dir / "final_metrics.json").write_text(
+        json.dumps({{"eval_loss": 0.5}}), encoding="utf-8")
+    (cell_dir / "trainer_state.json").write_text(
+        '{{"global_step": 1}}', encoding="utf-8")
+
+    class Proc:
+        pid = 4242
+
+        def wait(self, timeout=None):
+            if HELD["first"]:
+                HELD["first"] = False
+                time.sleep({hold})
+            return 0
+
+    return Proc()
+
+
+sys.argv = [
+    "run_sweep_shard.py",
+    "--mode", "dispatch", "--workers", "2", "--gpus", "0,1",
+    "--models", "model-a", "--tasks", "task-x", "--seeds", "42,43",
+    "--output-root", str(root),
+    "--registry-dir", str(registry),
+]
+args, passthrough = run_sweep_shard.parse_args()
+dispatch_core.run_dispatch(args, passthrough, spawner=spawn)
+print("[PtyDriver] drain complete", flush=True)
+'''
+
+
+def _write_dispatch_driver(path, hold):
+    """Materialize the pty-lane driver script under ``path``."""
+    path.write_text(
+        _PTY_DRIVER_SOURCE.format(hold=hold), encoding="utf-8")
+    return path
+
+
+def _driver_env(tmp_path):
+    """The spawned driver's env: the machine-independence pins (a fresh
+    empty overlay + XDG dir) and NO PYTHONUNBUFFERED — the pipe leg
+    proves ``flush=True`` works without it (a preset unbuffered env
+    would pass the proof trivially)."""
+    env = dict(os.environ)
+    pinned = tmp_path / "driver-env-pin"
+    pinned.mkdir(exist_ok=True)
+    env["DNALLMMARK_CUSTOM_REGISTRY_DIR"] = str(pinned)
+    env["XDG_CONFIG_HOME"] = str(pinned)
+    env.pop("PYTHONUNBUFFERED", None)
+    return env
+
+
+def test_first_dispatch_row_arrives_live_under_a_real_pty(tmp_path):
+    """Pty lane (D14-13, research A6): the REAL dispatch drain running
+    as a REAL subprocess on a real pty renders its first ``[Dispatch]``
+    table WHILE the drain is still in flight — the running header, the
+    both-cells-claimed claim-time view (queue=0 done=0/2), then the
+    terminal done table and exit 0, with the final state file validating
+    against the frozen v2 schema."""
+    pexpect = pytest.importorskip("pexpect")
+    pytest.importorskip("pty", reason="no OS pty support on this platform")
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    driver = _write_dispatch_driver(tmp_path / "pty_driver.py", hold=5.0)
+    child = pexpect.spawn(
+        sys.executable,
+        [str(driver), str(REPO_ROOT), str(base), str(registry_dir)],
+        cwd=str(REPO_ROOT), env=_driver_env(tmp_path),
+        encoding="utf-8", codec_errors="replace", timeout=60.0)
+    try:
+        # THE liveness proof: the first running table must arrive within
+        # 3s — the drain holds its first cell for 5s, so the row can
+        # only have been rendered LIVE (a buffered stream would deliver
+        # nothing until exit).
+        child.expect(r"\[Dispatch\] status=running queue=2",
+                     timeout=3.0)
+        assert child.isalive(), (
+            "the first table arrived while the drain is still running"
+        )
+        # the claim-time view: both cells claimed, none finished — the
+        # in-flight table under a real terminal driver
+        child.expect(r"queue=0 done=0/2", timeout=3.0)
+        assert child.isalive()
+        # the terminal table + clean exit
+        child.expect(r"status=done queue=0 done=2/2", timeout=60.0)
+        child.expect(pexpect.EOF, timeout=30.0)
+        # expect(EOF) only observes the closed stream — the child status
+        # is reaped by close() (the pexpect contract: exitstatus stays
+        # None until the waitpid happens), so the asserted exit code
+        # below is the drain's real verdict, verified standalone as 0.
+        child.close()
+        assert child.exitstatus == 0, (
+            "the drain completed cleanly under the pty"
+        )
+    finally:
+        child.close(force=True)
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    jsonschema.validate(
+        instance=state, schema=_load_dispatch_state_schema())
+    assert state["counts"] == {
+        "total": 2, "completed": 2, "failed": 0, "skipped": 0}
+
+
+def test_first_dispatch_row_arrives_live_through_a_pipe(tmp_path):
+    """The block-buffering pitfall leg (the ``| tee`` case): stdout is a
+    PIPE — under Python's default block buffering for non-tty streams,
+    a print without ``flush=True`` would sit in the 4-8KB buffer until
+    process EXIT (the whole drain emits well under 1KB, so nothing
+    would ever flush early). The first header must arrive over the pipe
+    within 3s while the drain still holds its first cell (5s hold)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned-pipe").resolve()
+    driver = _write_dispatch_driver(tmp_path / "pty_driver.py", hold=5.0)
+    proc = subprocess.Popen(
+        [sys.executable, str(driver), str(REPO_ROOT), str(base),
+         str(registry_dir)],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        cwd=str(REPO_ROOT), env=_driver_env(tmp_path))
+    assert proc.stdout is not None, "PIPE was requested"
+    try:
+        selector = selectors.DefaultSelector()
+        selector.register(proc.stdout, selectors.EVENT_READ)
+        deadline = time.monotonic() + 3.0
+        header = None
+        while header is None and time.monotonic() < deadline:
+            if not selector.select(timeout=0.2):
+                continue
+            line = proc.stdout.readline()
+            if "[Dispatch] status=running" in line:
+                header = line
+        assert header is not None, (
+            "no bytes within 3s over the pipe — stdout is block-buffered; "
+            "the renderer must print with flush=True"
+        )
+        assert "queue=2" in header
+        assert proc.poll() is None, (
+            "the header arrived while the drain still holds its cell"
+        )
+    finally:
+        proc.terminate()
+        proc.wait(timeout=30.0)
+
+
+def test_gen_progress_still_parses_over_a_v2_dispatch_root(
+        tmp_path, monkeypatch, capsys):
+    """D14-04 keep-parsing obligation: over a fixture tree that includes
+    a completed dispatch root (a real fake-run root carrying the v2
+    dispatch_state.json + ledger + cell artifacts) BESIDE a static
+    manifest root, gen_progress's generation completes (exit 0) and its
+    emitted JSON parses — the v2 state file's presence does not disturb
+    the generator (gen_progress serializes the tui scanner, which never
+    reads dispatch_state.json)."""
+    gen_progress = pytest.importorskip(
+        "gen_progress", reason="the tui scanner chain is not installed")
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "2",
+        "--models", "model-a,model-b", "--tasks", "task-x",
+        "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 2
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    # the fixture root genuinely carries a v2 state file (not v1)
+    jsonschema.validate(
+        instance=state, schema=_load_dispatch_state_schema())
+    assert state["schema_version"] == 2
+    static_root = _write_static_worker(
+        run_sweep_shard.worker_root(base, 0), "model-a")
+    output = tmp_path / "progress" / "sweep.json"
+    code = gen_progress.main(
+        [str(base), str(static_root), "--output", str(output)],
+        now=time.time() + 60.0)
+    capsys.readouterr()  # tolerance lines are the generator's own
+    assert code == 0, "the generator completed over the mixed tree"
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["version"] == 1
+    assert isinstance(payload["sweeps"], list)
+
+
+# ===== 14-03 Task 1: the MGPU-04 failure re-run (D14-15 fixture) =====
+
+
+def _make_first_failure_per_gpu_spawner(calls, code_for_gpu):
+    """Per-GPU scripted fake child: the FIRST cell each worker (GPU
+    token) handles fails with that worker's code and writes NO
+    artifacts (the CR-02 failed-cell shape); every later cell succeeds
+    with the artifact pair.
+
+    This is the deterministic "one failure on EACH worker" primitive
+    the D14-15 fixture needs: ``make_child_spawner``'s cell-keyed
+    ``exit_for`` cannot express it, because which worker pops which
+    cell races with thread scheduling — keying on the worker's permanent
+    GPU token makes the per-worker failure structural, not scheduled.
+    Records every spawn like ``make_child_spawner`` (argv + kwargs)."""
+
+    failed_first = set()
+
+    def spawn(argv, **kwargs):
+        root = Path(flag_value(argv, "--output_dir"))
+        record = {
+            "argv": list(argv),
+            "kwargs": kwargs,
+            "state_existed": (
+                root / dispatch_core.DISPATCH_STATE_NAME).is_file(),
+        }
+        calls.append(record)
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        task = flag_value(argv, "--target_dataset")
+        seed = int(flag_value(argv, "--seed"))
+        cell_dir = root / save / task / f"seed_{seed}"
+        if "--train_fraction" in argv:
+            cell_dir = cell_dir / (
+                f"frac_{flag_value(argv, '--train_fraction')}")
+        gpu = kwargs["env"]["CUDA_VISIBLE_DEVICES"]
+        code = 0
+        if gpu in code_for_gpu and gpu not in failed_first:
+            failed_first.add(gpu)
+            code = code_for_gpu[gpu]
+        if code == 0:
+            cell_dir.mkdir(parents=True, exist_ok=True)
+            (cell_dir / run_sweep.METRICS_NAME).write_text(
+                json.dumps({"eval_loss": 0.5, "eval_accuracy": 0.9}),
+                encoding="utf-8")
+            (cell_dir / run_sweep.RESUME_MARKER).write_text(
+                '{"global_step": 1}', encoding="utf-8")
+        return FakeProc(code)
+
+    return spawn
+
+
+def test_rerun_failed_d14_15_two_worker_fixture(tmp_path, monkeypatch):
+    """D14-15 (the MGPU-04 acceptance fixture, roadmap criterion 3): a
+    two-worker dispatch launch with lane flags on the command line
+    (--peft lora, --num_train_epochs 1, --cache_dir) fails ONE cell on
+    EACH worker; ONE ``--rerun-failed`` command (no --models, no
+    --seeds) with healthy children re-runs EXACTLY the two failed
+    cells, replays the claim-time lane flags VERBATIM (byte-identical
+    child argv), never re-spawns a healthy cell, archives the original
+    failed claims verbatim under dispatch_ledger/archive/ with rerun_of
+    links on the fresh claims, and lands a schema-valid final state
+    with counts.total == 2."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    cache_dir = (tmp_path / "hf-cache").resolve()
+    calls1 = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "2", "--gpus", "0,1",
+            "--models", "model-a,model-b", "--tasks", "task-x,task-z",
+            "--seeds", "42,43",
+            "--peft", "lora",
+            "--num_train_epochs", "1",
+            "--cache_dir", str(cache_dir),
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=_make_first_failure_per_gpu_spawner(
+            calls1, {"0": 3, "1": 4}),
+            clock=lambda: datetime(2026, 10, 20, 5, 0, 0, tzinfo=UTC))
+    assert excinfo.value.code == 1, "a run with failed cells exits 1"
+    assert len(calls1) == 8, "2 models x 2 tasks x 2 seeds drained"
+
+    # The failed set comes FROM THE LEDGER (the re-run's own feed):
+    # exactly two state:failed claims, one per worker.
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    original_text = {}   # cell tuple -> verbatim claim file text
+    original = {}        # cell tuple -> parsed payload
+    for path in sorted(ledger_dir.glob("*.json")):
+        if path.name == dispatch_core.DISPATCHER_LOCK_NAME:
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("state") == dispatch_core.CLAIM_STATE_FAILED:
+            key = payload["cell"]
+            cell = (key["model"], key["task"], key["seed"])
+            original_text[cell] = path.read_text(encoding="utf-8")
+            original[cell] = payload
+    assert len(original) == 2, "exactly one failure per worker (2 workers)"
+    state1 = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state1["counts"] == {
+        "total": 8, "completed": 6, "failed": 2, "skipped": 0}
+    run1_id = state1["run_id"]
+    assert {original[cell]["run_id"] for cell in original} == {run1_id}
+    argv1_by_cell = {}
+    for call in calls1:
+        argv = call["argv"]
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        argv1_by_cell[(
+            save, flag_value(argv, "--target_dataset"),
+            int(flag_value(argv, "--seed")))] = argv
+
+    # ===== the ONE re-run command: no --models, no --seeds =====
+    calls2 = []
+    run_cli(monkeypatch, [
+        "--rerun-failed",
+        "--workers", "2", "--gpus", "0,1",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls2),
+        clock=lambda: datetime(2026, 10, 20, 6, 0, 0, tzinfo=UTC))
+
+    # Exactly the failed cells re-run; healthy cells NEVER re-spawned
+    assert len(calls2) == 2, "one spawn per failed cell"
+    identities2 = spawn_identities(calls2)
+    failed_identities = {
+        (model.removesuffix("+lora"), task, seed)
+        for model, task, seed in original}
+    assert set(identities2) == failed_identities, (
+        "the re-run set is exactly the ledger's failed cells"
+    )
+    assert len(set(identities2)) == 2
+
+    # Lane replay (D14-06): each re-run child argv replays the ORIGINAL
+    # launch's lane flags VERBATIM — byte-identical argv per cell
+    for call in calls2:
+        argv = call["argv"]
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell = (save, flag_value(argv, "--target_dataset"),
+                int(flag_value(argv, "--seed")))
+        assert argv == argv1_by_cell[cell], (
+            "the re-run child argv is byte-identical to the original "
+            "launch's argv for the same cell (claim-time lane replay)"
+        )
+        assert flag_value(argv, "--peft") == "lora"
+        assert flag_value(argv, "--num_train_epochs") == "1"
+        assert flag_value(argv, "--cache_dir") == str(cache_dir)
+
+    # Genealogy (D14-07): the originals sit VERBATIM under archive/;
+    # the canonical slots hold fresh completed claims with rerun_of
+    archive_dir = ledger_dir / "archive"
+    archived_by_cell = {}
+    for path in sorted(archive_dir.glob("*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        assert payload["state"] == dispatch_core.CLAIM_STATE_FAILED
+        key = payload["cell"]
+        archived_by_cell[(
+            key["model"], key["task"], key["seed"])] = path
+    assert set(archived_by_cell) == set(original), (
+        "one archive file per failed cell (keyed by cell identity + the "
+        "original run_id prefix, injective across attempts)"
+    )
+    for cell, text in original_text.items():
+        payload = original[cell]
+        archive_path = archived_by_cell[cell]
+        assert archive_path.read_text(encoding="utf-8") == text, (
+            "the original failed claim is preserved VERBATIM"
+        )
+        stem = dispatch_core.claim_filename(cell)[:-len(".json")]
+        assert archive_path.name == (
+            f"{stem}--run-{payload['run_id'][:8]}.json"), (
+            "the archive filename is keyed by the ORIGINAL run_id")
+        fresh = json.loads(
+            (ledger_dir / dispatch_core.claim_filename(cell)).read_text(
+                encoding="utf-8"))
+        assert fresh["state"] == dispatch_core.CLAIM_STATE_COMPLETED
+        link = fresh["rerun_of"]
+        assert link["run_id"] == payload["run_id"]
+        assert link["claimed_at"] == payload["claimed_at"]
+        assert link["archive"] == archive_path.name
+        assert (archive_dir / link["archive"]).is_file()
+
+    # Healthy cells untouched: their claims still carry run-1's run_id
+    for path in sorted(ledger_dir.glob("*.json")):
+        if path.name == dispatch_core.DISPATCHER_LOCK_NAME:
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        key = payload["cell"]
+        cell = (key["model"], key["task"], key["seed"])
+        if cell not in original:
+            assert payload["state"] == dispatch_core.CLAIM_STATE_COMPLETED
+            assert payload["run_id"] == run1_id, (
+                "a healthy cell's claim is never re-written by the re-run"
+            )
+
+    # The re-run's final state: schema-valid v2, counts.total == the
+    # re-run set, zero skips (the SC3 path never fires for re-run cells)
+    state2 = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    jsonschema.validate(
+        instance=state2, schema=_load_dispatch_state_schema())
+    assert state2["counts"] == {
+        "total": 2, "completed": 2, "failed": 0, "skipped": 0}
+    assert state2["status"] == "done"
+    assert state2["run_id"] != run1_id
+    assert not (ledger_dir / dispatch_core.DISPATCHER_LOCK_NAME).exists(), (
+        "the singleton lock is released after the re-run drain"
+    )
+    assert not list(base.rglob("*.tmp")), "no atomic-write tmp residue"
+
+
+# ===== 14-03 Task 2: refusal matrix + stale-claim tolerance + gates =====
+
+
+def _write_failed_claim(ledger_dir, cell, lane, run_id="hand-run-1"):
+    """Hand-write one FAILED ledger claim with an EXPLICIT lane dict
+    (the refusal-fixture primitive; ``_write_hand_claim`` hardcodes the
+    empty lane)."""
+    payload = dispatch_core._claim_payload(
+        cell, lane, "7", run_id, "2026-10-20T00:00:00+00:00")
+    payload["state"] = dispatch_core.CLAIM_STATE_FAILED
+    path = ledger_dir / dispatch_core.claim_filename(cell)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path, payload
+
+
+def _rerun_argv(base, registry_dir, extra=()):
+    """The ONE re-run command shape: no --models, no --seeds."""
+    return [
+        "--rerun-failed", "--workers", "2", "--gpus", "0,1",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+        *extra,
+    ]
+
+
+def test_rerun_refuses_heterogeneous_lanes_naming_flag_and_cells(
+        tmp_path, monkeypatch):
+    """D14-08: two failed claims whose lanes differ in peft (lora vs
+    none) refuse the re-run naming the flag, its value PER CELL, and
+    the D14-08 rationale — and NO child is ever spawned."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    lane_lora = {"peft": "lora", "config_variant": "none",
+                 "subset_file": None, "effective_batch_size": None,
+                 "num_train_epochs": None}
+    lane_none = {**lane_lora, "peft": "none"}
+    _write_failed_claim(
+        ledger_dir, ("model-a+lora", "task-x", 42), lane_lora)
+    _write_failed_claim(
+        ledger_dir, ("model-b", "task-z", 43), lane_none)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "'peft'" in message, "the differing flag is named"
+    assert "model-a+lora/task-x/seed_42 = 'lora'" in message
+    assert "model-b/task-z/seed_43 = 'none'" in message
+    assert "D14-08" in message
+    assert calls == [], "no child spawned from a refused re-run"
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists(), (
+        "the refusal fires before any launch machinery"
+    )
+
+
+@pytest.mark.parametrize("tokens,expected", [
+    (["--from-failures", "f.json"],
+     ["refuses the scoping token '--from-failures'", "D14-05, MGPU-04"]),
+    (["--seeds", "42"],
+     ["refuses the scoping token '--seeds'", "D14-05, MGPU-04"]),
+    (["--tasks", "GUE__emp_H3"],
+     ["refuses the scoping token '--tasks'", "D14-05, MGPU-04"]),
+    (["--peft", "ia3"], ["refuses the lane token '--peft'", "D14-06"]),
+    (["--config-variant", "head"],
+     ["refuses the lane token '--config-variant'", "D14-06"]),
+    (["--subset_file", "f"],
+     ["refuses the lane token '--subset_file'", "D14-06"]),
+    (["--effective_batch_size", "8"],
+     ["refuses the lane token '--effective_batch_size'", "D14-06"]),
+    (["--batch_size", "8"],
+     ["refuses the lane token '--batch_size'", "D14-06"]),
+    (["--num_train_epochs", "2"],
+     ["refuses the lane token '--num_train_epochs'", "D14-06"]),
+    (["--cache_dir", "x"], ["refuses the lane token '--cache_dir'", "D14-06"]),
+    (["--model_root", "r"], ["refuses the lane token '--model_root'", "D14-06"]),
+    (["--dataset_root", "r"],
+     ["refuses the lane token '--dataset_root'", "D14-06"]),
+    (["--log_dir", "r"], ["refuses the lane token '--log_dir'", "D14-06"]),
+    (["--learning_rate", "0.0001"],
+     ["refuses the lane token '--learning_rate'", "D14-06"]),
+    (["--bogus"], ["accepts no passthrough token '--bogus'"]),
+    (["--registry-dir"], ["--registry-dir requires a value"]),
+])
+def test_rerun_refuses_every_forbidden_passthrough_token(
+        tmp_path, monkeypatch, tokens, expected):
+    """T-14-08 (the Pitfall 5 closure): every passthrough token except
+    --registry-dir refuses with its NAMED message class — scoping
+    tokens get the D14-05 double-scope wording, lane tokens the D14-06
+    lane-replay wording, unknown tokens refuse generically."""
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, tmp_path, extra=tokens),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    for needle in expected:
+        assert needle in message
+    assert calls == []
+
+
+@pytest.mark.parametrize("combo,needle", [
+    (["--merge"], "--rerun-failed cannot combine with --merge"),
+    (["--mode", "static"],
+     "--rerun-failed cannot combine with --mode static"),
+    (["--dry-run"], "--rerun-failed cannot combine with --dry-run"),
+    (["--models", "model-a"], "--rerun-failed takes no --models"),
+    (["--cleanup"], "--rerun-failed cannot combine with --cleanup"),
+])
+def test_rerun_combo_refusals_fire_before_any_ledger_work(
+        tmp_path, monkeypatch, combo, needle):
+    """The A6-shape combination refusals each exit with their named
+    error BEFORE any ledger work (no ledger dir, no state file, no
+    spawn). The explicit --mode static refusal needs the raw-token scan
+    (static is also the parser default)."""
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, tmp_path, extra=combo),
+                spawner=make_fake_spawner(calls))
+    assert needle in str(excinfo.value)
+    assert calls == []
+    assert not (base / dispatch_core.LEDGER_DIR_NAME).exists()
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists()
+
+
+def test_rerun_zero_failed_verdict_with_registry_dir_accepted(
+        tmp_path, monkeypatch, capsys):
+    """A root with NO ledger prints the explicit no-failed-cells
+    verdict and exits 0 (the A7 drained-root precedent) — and the one
+    accepted passthrough token, --registry-dir, rides along cleanly."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_fake_spawner(calls))
+    assert "no failed cells to re-run" in capsys.readouterr().out
+    assert calls == []
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists(), (
+        "the zero-failed verdict touches nothing"
+    )
+
+
+def test_rerun_skips_failed_cell_that_gained_the_marker(
+        tmp_path, monkeypatch, capsys):
+    """The Phase 13 D-06 adjacency: a failed claim whose cell later
+    gained the trainer_state.json marker is SKIPPED — the marker stays
+    authoritative — counted in counts.skipped, nothing spawned,
+    exit 0."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    cell = ("model-a", "task-x", 42)
+    _write_failed_claim(ledger_dir, cell, {})
+    _write_marker(base, cell)
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_fake_spawner(calls))
+    assert calls == [], "the marker stays authoritative — never re-run"
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 1, "completed": 0, "failed": 0, "skipped": 1}
+    assert "nothing to do" in capsys.readouterr().out
+
+
+def test_rerun_stale_pre_phase14_claim_replays_absent_parity(
+        tmp_path, monkeypatch):
+    """Pitfall 4: a Phase-13-shape failed claim whose lane lacks
+    cache_dir (and the storage roots) replays with the flag ABSENT —
+    zero cache_dir argv elements, never a KeyError, never a refusal —
+    and the argv equals build_argv output for the same cell with
+    cache_dir=None (the absent-parity discipline); the genealogy still
+    archives the original verbatim."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    cell = ("model-a", "task-x", 42)
+    stale_lane = {"peft": "none", "config_variant": "none",
+                  "subset_file": None, "effective_batch_size": None,
+                  "num_train_epochs": None}
+    path, _payload = _write_failed_claim(
+        ledger_dir, cell, stale_lane, run_id="phase13run")
+    original_text = path.read_text(encoding="utf-8")
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the stale claim re-runs (never refused)"
+    argv = calls[0]["argv"]
+    for absent_flag in ("--cache_dir", "--model_root",
+                        "--dataset_root", "--log_dir"):
+        assert absent_flag not in argv, (
+            f"{absent_flag} absent from the claim lane = zero argv "
+            "elements (absent parity)"
+        )
+    # 261023-abu: a pre-change lane lacking batch_size replays with the
+    # flag ABSENT — zero argv elements, never a KeyError, never a
+    # refusal (the tolerant-read discipline over the newest lane key).
+    assert "--batch_size" not in argv
+    assert argv == run_sweep.build_argv(
+        "model-a", "task-x", 42, str(base), peft="none",
+        train_fraction=None, subset_file=None,
+        effective_batch_size=None, batch_size=None,
+        num_train_epochs=None,
+        cache_dir=None, config_variant="none", model_root=None,
+        dataset_root=None, log_dir=None)
+    archive_dir = ledger_dir / "archive"
+    archived = list(archive_dir.glob("*.json"))
+    assert len(archived) == 1
+    assert archived[0].name == (
+        f"{dispatch_core.claim_filename(cell)[:-len('.json')]}"
+        "--run-phase13r.json"), (  # run_id[:8] of "phase13run"
+        "the archive is keyed by the ORIGINAL attempt's run_id"
+    )
+    # content-verbatim: the archive preserves the original payload
+    # exactly (a hand fixture's compact serialization re-canonicalizes
+    # through the ledger writer; run-produced claims archive
+    # byte-identical — pinned by the D14-15 e2e)
+    assert json.loads(archived[0].read_text(encoding="utf-8")) == (
+        json.loads(original_text))
+    fresh = json.loads(
+        (ledger_dir / dispatch_core.claim_filename(cell)).read_text(
+            encoding="utf-8"))
+    assert fresh["state"] == dispatch_core.CLAIM_STATE_COMPLETED
+    assert fresh["rerun_of"]["run_id"] == "phase13run"
+
+
+def test_rerun_old_and_new_lane_shapes_with_equal_values_are_one_lane(
+        tmp_path, monkeypatch):
+    """Absent == None replay parity extends to the HOMOGENEITY
+    comparison: a Phase-13 five-key lane and a Phase-14 nine-key lane
+    carrying the same effective values (the newer keys recorded as
+    None) are ONE lane signature — both cells re-run, never an empty or
+    false heterogeneous-lane refusal."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    old_lane = {"peft": "lora", "config_variant": "none",
+                "subset_file": None, "effective_batch_size": None,
+                "num_train_epochs": None}
+    new_lane = {**old_lane, "cache_dir": None, "model_root": None,
+                "dataset_root": None, "log_dir": None}
+    _write_failed_claim(
+        ledger_dir, ("model-a+lora", "task-x", 42), old_lane,
+        run_id="oldrun-1")
+    _write_failed_claim(
+        ledger_dir, ("model-b+lora", "task-z", 43), new_lane,
+        run_id="newrun-1")
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 2, "both failed cells re-run as ONE lane"
+    for call in calls:
+        assert flag_value(call["argv"], "--peft") == "lora"
+        assert "--cache_dir" not in call["argv"]
+
+
+def test_rerun_replays_claim_lane_batch_size(tmp_path, monkeypatch):
+    """261023-abu (D14-06 lane threading): a failed claim whose
+    claim-time lane carries batch_size replays --batch_size 32 VERBATIM
+    into the spawned argv — the micro-batch is experiment semantics a
+    re-run must reproduce exactly, never re-derive."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "batch-lane").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    lane = {"peft": "none", "config_variant": "none",
+            "subset_file": None, "effective_batch_size": None,
+            "batch_size": 32, "num_train_epochs": None}
+    _write_failed_claim(ledger_dir, ("model-a", "task-x", 42), lane)
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the failed cell re-runs"
+    argv = calls[0]["argv"]
+    assert flag_value(argv, "--batch_size") == "32", (
+        "the claim-time lane batch_size replays verbatim into the "
+        "re-run child argv"
+    )
+    assert argv == run_sweep.build_argv(
+        "model-a", "task-x", 42, str(base), peft="none",
+        train_fraction=None, subset_file=None,
+        effective_batch_size=None, batch_size=32,
+        num_train_epochs=None,
+        cache_dir=None, config_variant="none", model_root=None,
+        dataset_root=None, log_dir=None)
+
+
+def test_dispatch_batch_size_lane_threads_to_children(
+        tmp_path, monkeypatch):
+    """261023-abu (the ordinary dispatch lane): a --batch_size 8 launch
+    threads --batch_size 8 into EVERY spawned child argv (beside
+    --effective_batch_size — the two batch knobs adjacent) and the
+    claim-time lane records it for verbatim replay."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "batch-dispatch").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42,43",
+        "--effective_batch_size", "16",
+        "--batch_size", "8",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 2, "one spawn per cell"
+    for call in calls:
+        argv = call["argv"]
+        assert flag_value(argv, "--effective_batch_size") == "16"
+        assert flag_value(argv, "--batch_size") == "8"
+        assert argv.index("--effective_batch_size") < argv.index(
+            "--batch_size"), (
+            "the two batch knobs sit adjacent in the pinned argv order"
+        )
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base) / dispatch_core.claim_filename(
+            ("model-a", "task-x", 42))).read_text(encoding="utf-8"))
+    assert claim["lane"]["batch_size"] == 8
+    assert claim["lane"]["effective_batch_size"] == 16
+
+
+def test_dispatch_zero_batch_size_refuses_collect_all(
+        tmp_path, monkeypatch):
+    """261023-abu: the run_dispatch flag_problems mirror refuses
+    --batch_size 0 naming the flag and value BEFORE any spawn — the
+    run_sweep.main collect-all mirror (no run_sweep.main runs in
+    dispatch mode, so the mirror is the only guard)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "batch-zero").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--batch_size", "0",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "--batch_size must be >= 1, got 0" in message
+    assert calls == []
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists()
+
+
+# ===== Phase 19 (19-01): the advanced train-flag family tracer =====
+
+
+def test_dispatch_advanced_lane_threads_to_children(
+        tmp_path, monkeypatch):
+    """Phase 19 tracer (the ordinary dispatch lane): a --learning_rate
+    0.0001 launch threads --learning_rate 0.0001 into EVERY spawned
+    child argv (inside the PD-19-2 block — after --batch_size, before
+    --cache_dir) and the claim-time lane records the nested advanced
+    dict for verbatim replay."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "advanced-dispatch").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42,43",
+        "--batch_size", "8",
+        "--learning_rate", "0.0001",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 2, "one spawn per cell"
+    for call in calls:
+        argv = call["argv"]
+        assert flag_value(argv, "--learning_rate") == "0.0001"
+        assert argv.index("--batch_size") < argv.index(
+            "--learning_rate"), (
+            "the advanced block sits after --batch_size (PD-19-2)"
+        )
+        assert "--cache_dir" not in argv or argv.index(
+            "--learning_rate") < argv.index("--cache_dir"), (
+            "the advanced block sits before --cache_dir (PD-19-2)"
+        )
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base) / dispatch_core.claim_filename(
+            ("model-a", "task-x", 42))).read_text(encoding="utf-8"))
+    assert claim["lane"]["advanced"] == {"learning_rate": 0.0001}, (
+        "the claim lane records the nested advanced dict (PD-19-7)"
+    )
+    assert claim["lane"]["batch_size"] == 8
+
+
+def test_dispatch_no_advanced_launch_records_no_advanced_lane_key(
+        tmp_path, monkeypatch):
+    """PD-19-7 absent parity: a launch with NO advanced flag records a
+    claim lane with ZERO advanced keys — byte-identical to the pre-19
+    claim shape (the only-when-non-empty lane rule)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "plain-dispatch").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1
+    assert "--learning_rate" not in calls[0]["argv"]
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base) / dispatch_core.claim_filename(
+            ("model-a", "task-x", 42))).read_text(encoding="utf-8"))
+    assert "advanced" not in claim["lane"], (
+        "an absent family records no lane key — the pre-19 claim shape"
+    )
+
+
+def test_rerun_replays_claim_lane_advanced(tmp_path, monkeypatch):
+    """Phase 19 tracer (D14-06 lane replay): a failed claim whose
+    claim-time lane carries the nested advanced dict replays
+    --learning_rate 0.0001 VERBATIM into the spawned argv — advanced
+    params are experiment semantics a re-run must reproduce exactly."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "advanced-rerun").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    lane = {"peft": "none", "config_variant": "none",
+            "subset_file": None, "effective_batch_size": None,
+            "num_train_epochs": None,
+            "advanced": {"learning_rate": 1e-4}}
+    _write_failed_claim(ledger_dir, ("model-a", "task-x", 42), lane)
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the failed cell re-runs"
+    argv = calls[0]["argv"]
+    assert flag_value(argv, "--learning_rate") == "0.0001", (
+        "the claim-time advanced dict replays verbatim into the re-run "
+        "child argv"
+    )
+    assert argv == run_sweep.build_argv(
+        "model-a", "task-x", 42, str(base), peft="none",
+        train_fraction=None, subset_file=None,
+        effective_batch_size=None, batch_size=None,
+        num_train_epochs=None,
+        cache_dir=None, config_variant="none", model_root=None,
+        dataset_root=None, log_dir=None,
+        advanced={"learning_rate": 1e-4})
+
+
+def test_rerun_pre_change_claim_replays_advanced_absent(
+        tmp_path, monkeypatch):
+    """Phase 19 absent parity (the 14-03 design): a PRE-CHANGE claim
+    whose lane lacks the 'advanced' key replays with ZERO advanced argv
+    elements — never a KeyError, never a refusal."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "pre19-rerun").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    lane = {"peft": "none", "config_variant": "none",
+            "subset_file": None, "effective_batch_size": None,
+            "num_train_epochs": None}
+    _write_failed_claim(ledger_dir, ("model-a", "task-x", 42), lane)
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the pre-change claim re-runs (tolerant read)"
+    argv = calls[0]["argv"]
+    for spec in run_sweep.ADVANCED_TRAIN_FLAGS:
+        assert spec.flag not in argv, (
+            f"{spec.flag} absent from the claim lane = zero argv "
+            "elements (whole-family absent parity)"
+        )
+
+
+# ===== Phase 19 (19-01 Task 3): the dispatch full 18-row family =====
+
+#: The 18 literal advanced tokens, spelled out (the derivation pin's
+#: expected value — a table drift or a broken derivation fails here).
+EXPECTED_ADVANCED_LANE_TOKENS = tuple(f"--{name}" for name in (
+    "adam_beta1", "adam_beta2", "adam_epsilon", "bf16", "eval_steps",
+    "eval_strategy", "gradient_accumulation_steps", "learning_rate",
+    "logging_steps", "logging_strategy", "lr_scheduler_kwargs",
+    "lr_scheduler_type", "max_grad_norm", "save_steps", "save_strategy",
+    "save_total_limit", "warmup_ratio", "weight_decay"))
+
+
+def test_rerun_token_family_derived_equals_the_18_table_flags():
+    """PD-19-6 drift-proofing pin: dispatch_core's ADVANCED_LANE_TOKENS
+    is DERIVED from run_sweep.ADVANCED_TRAIN_FLAGS and equals exactly
+    the 18 literal flags — and every derived token sits inside
+    _RERUN_LANE_TOKENS, so a blended --rerun-failed launch can never
+    sneak an advanced value past the refusal."""
+    assert dispatch_core.ADVANCED_LANE_TOKENS == (
+        EXPECTED_ADVANCED_LANE_TOKENS)
+    assert len(EXPECTED_ADVANCED_LANE_TOKENS) == 18
+    for token in dispatch_core.ADVANCED_LANE_TOKENS:
+        assert token in dispatch_core._RERUN_LANE_TOKENS
+
+
+@pytest.mark.parametrize("token", EXPECTED_ADVANCED_LANE_TOKENS)
+def test_rerun_refuses_every_advanced_lane_token(
+        tmp_path, monkeypatch, token):
+    """The blended-lane refusal covers ALL 18 advanced tokens (the
+    derived family joined _RERUN_LANE_TOKENS): passing any advanced flag
+    on a --rerun-failed launch refuses with the D14-06 lane-replay
+    wording — lane flags replay verbatim from the claim, never blend."""
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, tmp_path, extra=[token, "1"]),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert f"refuses the lane token '{token}'" in message
+    assert "D14-06" in message
+    assert calls == []
+
+
+def test_rerun_replays_full_advanced_dict_verbatim(tmp_path, monkeypatch):
+    """The full-family replay: a failed claim whose lane carries ALL 18
+    advanced values replays EVERY flag verbatim into the re-run argv —
+    alphabetical (table order), between --batch_size's slot and
+    --cache_dir's slot, json serialized as sorted-key JSON."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "adv-full-rerun").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    advanced = {
+        "adam_beta1": 0.9, "adam_beta2": 0.999, "adam_epsilon": 1e-8,
+        "bf16": "true", "eval_steps": 100, "eval_strategy": "epoch",
+        "gradient_accumulation_steps": 4, "learning_rate": 1e-4,
+        "logging_steps": 50, "logging_strategy": "steps",
+        "lr_scheduler_kwargs": {"num_restarts": 2, "power": 1.0},
+        "lr_scheduler_type": "cosine_with_restarts",
+        "max_grad_norm": 0.5, "save_steps": 200, "save_strategy": "no",
+        "save_total_limit": 3, "warmup_ratio": 0.05, "weight_decay": 0.01,
+    }
+    lane = {"peft": "none", "config_variant": "none",
+            "subset_file": None, "effective_batch_size": None,
+            "batch_size": 8, "num_train_epochs": None,
+            "advanced": advanced}
+    _write_failed_claim(ledger_dir, ("model-a", "task-x", 42), lane)
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 1
+    argv = calls[0]["argv"]
+    # EVERY flag replays verbatim (the element-for-element build_argv
+    # equality below pins the alphabetical order).
+    for token in EXPECTED_ADVANCED_LANE_TOKENS:
+        assert token in argv, f"{token} must replay from the claim lane"
+    assert flag_value(argv, "--lr_scheduler_kwargs") == (
+        '{"num_restarts": 2, "power": 1.0}'), (
+        "the json row replays as sorted-key JSON"
+    )
+    # Element-for-element equality against build_argv for the same lane.
+    assert argv == run_sweep.build_argv(
+        "model-a", "task-x", 42, str(base), peft="none",
+        train_fraction=None, subset_file=None,
+        effective_batch_size=None, batch_size=8,
+        num_train_epochs=None,
+        cache_dir=None, config_variant="none", model_root=None,
+        dataset_root=None, log_dir=None, advanced=advanced)
+    # And the fresh re-run claim re-records the dict for the next replay.
+    fresh = json.loads(
+        (ledger_dir / dispatch_core.claim_filename(
+            ("model-a", "task-x", 42))).read_text(encoding="utf-8"))
+    assert fresh["lane"]["advanced"] == advanced
+
+
+def test_rerun_replays_partial_advanced_dict_partially(
+        tmp_path, monkeypatch):
+    """A PARTIAL claim dict (one flag) replays EXACTLY that flag —
+    per-entry tolerant replay, never an all-or-nothing family replay."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "adv-partial-rerun").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    lane = {"peft": "none", "config_variant": "none",
+            "subset_file": None, "effective_batch_size": None,
+            "num_train_epochs": None,
+            "advanced": {"warmup_ratio": 0.05}}
+    _write_failed_claim(ledger_dir, ("model-a", "task-x", 42), lane)
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    assert len(calls) == 1
+    argv = calls[0]["argv"]
+    assert flag_value(argv, "--warmup_ratio") == "0.05"
+    for token in EXPECTED_ADVANCED_LANE_TOKENS:
+        if token != "--warmup_ratio":
+            assert token not in argv, (
+                f"{token} was not in the claim's advanced dict — zero "
+                "argv elements (per-entry replay)"
+            )
+
+
+def test_rerun_refuses_heterogeneous_advanced_lanes(
+        tmp_path, monkeypatch):
+    """Lane homogeneity over the nested dict (PD-19-7: compared as ONE
+    value): two failed claims differing ONLY inside advanced refuse the
+    re-run naming the 'advanced' flag, each cell's value, and D14-08 —
+    unequal lanes are different experiments."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "adv-hetero").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    lane_a = {"peft": "none", "config_variant": "none",
+              "subset_file": None, "effective_batch_size": None,
+              "num_train_epochs": None,
+              "advanced": {"learning_rate": 1e-4}}
+    lane_b = {**lane_a, "advanced": {"learning_rate": 2e-4}}
+    _write_failed_claim(
+        ledger_dir, ("model-a", "task-x", 42), lane_a, run_id="run-aaa1")
+    _write_failed_claim(
+        ledger_dir, ("model-b", "task-z", 43), lane_b, run_id="run-bbb1")
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "lane flag 'advanced' differs across the failed cells" in message
+    assert "model-a/task-x/seed_42" in message, (
+        "the refusal names each differing cell"
+    )
+    assert "model-b/task-z/seed_43" in message
+    assert "0.0001" in message and "0.0002" in message, (
+        "the refusal shows each cell's advanced value"
+    )
+    assert "D14-08" in message
+    assert calls == [], "no child spawned from a refused re-run"
+
+
+def test_dispatch_advanced_multi_flag_lane_records_nested_dict(
+        tmp_path, monkeypatch):
+    """The ordinary lane over the FULL family surface (int/float/enum/
+    bool/json together): every present flag threads into every child
+    argv and the claim lane records the exact nested dict."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "adv-multi").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--learning_rate", "0.0001",
+        "--gradient_accumulation_steps", "4",
+        "--lr_scheduler_type", "cosine",
+        "--bf16", "false",
+        "--lr_scheduler_kwargs", '{"num_restarts": 2}',
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1
+    argv = calls[0]["argv"]
+    assert flag_value(argv, "--learning_rate") == "0.0001"
+    assert flag_value(argv, "--gradient_accumulation_steps") == "4"
+    assert flag_value(argv, "--lr_scheduler_type") == "cosine"
+    assert flag_value(argv, "--bf16") == "false"
+    assert flag_value(argv, "--lr_scheduler_kwargs") == (
+        '{"num_restarts": 2}')
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base) / dispatch_core.claim_filename(
+            ("model-a", "task-x", 42))).read_text(encoding="utf-8"))
+    assert claim["lane"]["advanced"] == {
+        "learning_rate": 1e-4, "gradient_accumulation_steps": 4,
+        "lr_scheduler_type": "cosine", "bf16": "false",
+        "lr_scheduler_kwargs": {"num_restarts": 2}}
+
+
+def test_dispatch_dry_run_advanced_parity_with_run_sweep_dry_run(
+        tmp_path, monkeypatch):
+    """Dry-run mirror parity: a dispatch --dry-run and a run_sweep
+    --dry-run over identical inputs + advanced flags record the SAME
+    nested 'advanced' key shape in every manifest cell (one manifest
+    shape spans both modes, 13-02); with NO advanced flag NEITHER
+    manifest carries the key."""
+    registry_dir = make_registry(tmp_path)
+    flags = ["--learning_rate", "0.0001", "--warmup_ratio", "0.05"]
+
+    dispatch_root = (tmp_path / "dry-dispatch").resolve()
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1", "--dry-run",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        *flags,
+        "--output-root", str(dispatch_root),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner([]))
+    sweep_root = (tmp_path / "dry-sweep").resolve()
+    run_sweep_cli(monkeypatch, [
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--dry-run", *flags,
+        "--output-root", str(sweep_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    dispatch_cells = _read_manifest(dispatch_root)["cells"]
+    sweep_cells = _read_manifest(sweep_root)["cells"]
+    assert dispatch_cells and sweep_cells
+    for cell in dispatch_cells:
+        assert cell["advanced"] == {"learning_rate": 1e-4,
+                                    "warmup_ratio": 0.05}
+    for d_cell, s_cell in zip(dispatch_cells, sweep_cells):
+        assert d_cell["advanced"] == s_cell["advanced"], (
+            "one manifest key shape spans both modes (the mirror parity)"
+        )
+
+    plain_dispatch_root = (tmp_path / "dry-plain-dispatch").resolve()
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1", "--dry-run",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(plain_dispatch_root),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner([]))
+    for cell in _read_manifest(plain_dispatch_root)["cells"]:
+        assert "advanced" not in cell, (
+            "no advanced flag = no manifest key on the dispatch dry-run "
+            "mirror either (HEAD parity, PD-19-7)"
+        )
+
+
+def test_rerun_refuses_unknown_registry_model_loudly(
+        tmp_path, monkeypatch):
+    """T-14-07 registry join: a hand claim naming a model absent from
+    the registry refuses loudly naming the model — fail-safe, never a
+    silent spawn."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    _write_failed_claim(ledger_dir, ("model-z", "task-x", 42), {})
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "model-z" in message
+    assert "not in registry" in message
+    assert calls == []
+
+
+def test_rerun_archive_collision_refuses_loudly(
+        tmp_path, monkeypatch, capsys):
+    """Archiving the same original attempt twice is refused — audit
+    history can never be overwritten (D14-07). A pre-materialized
+    archive file for the original attempt makes the re-run refuse with
+    a NAMED error before any spawn; nothing on disk changes."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    cell = ("model-a", "task-x", 42)
+    path, _payload = _write_failed_claim(
+        ledger_dir, cell, {}, run_id="origrun1")
+    archive_dir = ledger_dir / dispatch_core.ARCHIVE_DIR_NAME
+    archive_dir.mkdir()
+    stem = dispatch_core.claim_filename(cell)[:-len(".json")]
+    preexisting = archive_dir / f"{stem}--run-origrun1.json"
+    preexisting.write_text('{"planted": true}', encoding="utf-8")
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "already exists" in message
+    assert "D14-07" in message
+    assert "audit history" in message
+    assert calls == [], "the collision refuses before any spawn"
+    # audit history protected: the planted file and the original claim
+    # are both untouched
+    assert preexisting.read_text(encoding="utf-8") == '{"planted": true}'
+    assert json.loads(path.read_text(encoding="utf-8"))["run_id"] == (
+        "origrun1")
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists()
+
+
+def test_rerun_names_excluded_unusable_claims_never_silently_drops(
+        tmp_path, monkeypatch, capsys):
+    """WR-02 pin: the failed-claim scan NAMES every claim it excludes —
+    unreadable/unparseable, non-object payload, and the state-failed
+    cell-key/filename integrity mismatch — the relaunch counterpart's
+    "never a silent skip" discipline, while the trust direction stays
+    fail-safe (excluded claims are never re-queued, never re-run). A
+    usable failed claim in the same ledger still re-runs; a ledger
+    holding ONLY unusable claims gets the DISTINGUISHED verdict (never
+    the plain "holds no failed claims" wording) and stays exit 0."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+
+    # The one usable failed claim — it must still re-run.
+    usable_cell = ("model-a", "task-x", 42)
+    _write_failed_claim(ledger_dir, usable_cell, {})
+
+    # Exclusion class 1: an unparseable claim under a REAL claim name.
+    corrupt = ledger_dir / dispatch_core.claim_filename(
+        ("model-b", "task-x", 42))
+    corrupt.write_text("{not json", encoding="utf-8")
+
+    # Exclusion class 2: a parseable but non-object payload.
+    non_object = ledger_dir / dispatch_core.claim_filename(
+        ("model-c", "task-x", 42))
+    non_object.write_text("[1, 2, 3]", encoding="utf-8")
+
+    # Exclusion class 3: state failed but the stored cell key disagrees
+    # with the filename tuple (integrity mismatch).
+    mismatch_payload = dispatch_core._claim_payload(
+        ("model-b", "task-x", 42), {}, "7", "ghost-run",
+        "2026-10-20T00:00:00+00:00")
+    mismatch_payload["state"] = dispatch_core.CLAIM_STATE_FAILED
+    mismatched = ledger_dir / dispatch_core.claim_filename(
+        ("model-a", "task-z", 43))
+    mismatched.write_text(json.dumps(mismatch_payload), encoding="utf-8")
+
+    calls = []
+    run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+            spawner=make_child_spawner(calls))
+    out = capsys.readouterr().out
+    assert "[Skip]" in out and "3 unusable claim(s)" in out, (
+        "every exclusion is named, never silent"
+    )
+    assert corrupt.name in out and "(unreadable/unparseable)" in out
+    assert non_object.name in out and "not an object" in out
+    assert mismatched.name in out and "disagrees with the filename" in out
+    assert len(calls) == 1, "exactly the usable failed cell re-runs"
+    assert spawn_identities(calls) == [usable_cell]
+    # fail-safe direction: only the USABLE cell's genealogy is touched
+    archive_dir = ledger_dir / dispatch_core.ARCHIVE_DIR_NAME
+    assert len(list(archive_dir.glob("*.json"))) == 1, (
+        "excluded claims are never re-queued, never archived-as-rerun"
+    )
+
+    # ===== a ledger holding ONLY unusable claims: the DISTINGUISHED
+    # verdict (the WR-02 minimum) — never the plain "holds no failed
+    # claims" wording — still exit 0, nothing spawned.
+    base2 = (tmp_path / "finetuned-only-unusable").resolve()
+    ledger2 = dispatch_core.ledger_dir_for(base2)
+    ledger2.mkdir(parents=True)
+    only_corrupt = ledger2 / dispatch_core.claim_filename(usable_cell)
+    only_corrupt.write_text("{not json", encoding="utf-8")
+    calls2 = []
+    run_cli(monkeypatch, _rerun_argv(base2, registry_dir),
+            spawner=make_fake_spawner(calls2))
+    out2 = capsys.readouterr().out
+    assert "no failed cells to re-run" in out2
+    assert "0 usable failed claim" in out2, (
+        "the verdict says the ledger holds only unusable claims"
+    )
+    assert "excluded as unusable" in out2
+    assert "the ledger holds no failed claims" not in out2, (
+        "the plain no-failed-claims wording must not mask exclusions"
+    )
+    assert calls2 == []
+    assert not (base2 / dispatch_core.DISPATCH_STATE_NAME).exists(), (
+        "the zero-usable verdict touches nothing"
+    )
+
+
+def test_rerun_validates_startup_family_before_any_launch(
+        tmp_path, monkeypatch):
+    """WR-03 pin: the re-run mirrors the ordinary path's startup
+    validation family over the REPLAYED lane — a subset map deleted
+    since the original run refuses loudly BEFORE any spawn (never one
+    burned child per cell recorded as N failed claims), a registry
+    whose Dataset_name rows diverged since refuses the same way, and a
+    VALID replayed map threads through to the child argv verbatim."""
+    registry_dir = make_registry(tmp_path)
+
+    # ===== A: the replayed subset map no longer exists — the loud
+    # startup refusal, never a burned child per cell.
+    base = (tmp_path / "finetuned-deleted-subset").resolve()
+    ledger_dir = dispatch_core.ledger_dir_for(base)
+    ledger_dir.mkdir(parents=True)
+    ghost_subset = (tmp_path / "subset-gone.json").resolve()
+    _write_failed_claim(
+        ledger_dir, ("model-a", "task-x", 42),
+        {"subset_file": str(ghost_subset)})
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, _rerun_argv(base, registry_dir),
+                spawner=make_fake_spawner(calls))
+    message = str(excinfo.value)
+    assert "--subset_file" in message
+    assert "cannot read" in message
+    assert str(ghost_subset) in message
+    assert calls == [], "refused before any launch — no burned children"
+    assert not (base / dispatch_core.DISPATCH_STATE_NAME).exists()
+
+    # ===== B (control): a VALID replayed map threads through — one
+    # spawn, the map riding the child argv verbatim.
+    base_ok = (tmp_path / "finetuned-valid-subset").resolve()
+    ledger_ok = dispatch_core.ledger_dir_for(base_ok)
+    ledger_ok.mkdir(parents=True)
+    good_subset = tmp_path / "subset-good.json"
+    good_subset.write_text(
+        json.dumps({"task-x": [1, 2]}), encoding="utf-8")
+    good_subset_abs = str(good_subset.resolve())
+    _write_failed_claim(
+        ledger_ok, ("model-a", "task-x", 42),
+        {"subset_file": good_subset_abs})
+    calls_ok = []
+    run_cli(monkeypatch, _rerun_argv(base_ok, registry_dir),
+            spawner=make_child_spawner(calls_ok))
+    assert len(calls_ok) == 1, "a valid replayed map threads through"
+    assert flag_value(calls_ok[0]["argv"], "--subset_file") == (
+        good_subset_abs), "the map replays onto the child argv verbatim"
+
+    # ===== C: a registry whose Dataset_name diverged from its key
+    # since the original run refuses the re-run the same way.
+    divergent_dir = tmp_path / "registry-divergent"
+    divergent_dir.mkdir()
+    write_registry(
+        divergent_dir,
+        models={"model-a": {"Model_name": "model-a",
+                            "Model_path": "models/a", "size (M)": 100}},
+        datasets={"task-x": {"Dataset_name": "task-x-renamed",
+                             "Train": 100, "Dev": 10}})
+    base_div = (tmp_path / "finetuned-divergent").resolve()
+    ledger_div = dispatch_core.ledger_dir_for(base_div)
+    ledger_div.mkdir(parents=True)
+    _write_failed_claim(ledger_div, ("model-a", "task-x", 42), {})
+    calls_div = []
+    with pytest.raises(SystemExit) as excinfo_div:
+        run_cli(monkeypatch, _rerun_argv(base_div, divergent_dir),
+                spawner=make_fake_spawner(calls_div))
+    assert "Dataset_name diverges" in str(excinfo_div.value)
+    assert calls_div == [], "refused before any launch"
+
+
+# ===== 15-04: run_record at claim finalize (run_sweep parity, the
+# Phase 13 A3 supersession at exactly the handoff point A3 deferred —
+# 13-01-PLAN.md:121-124, per the 15-01-SUMMARY Option 1 ruling) =====
+
+
+def test_dispatch_writes_run_record_with_run_sweep_shape_parity(
+        tmp_path, monkeypatch):
+    """Every cell a dispatch worker RUNS leaves run_record.json at the
+    cell_dir_for path with run_sweep.run_matrix shape parity. The parity
+    authority is a REAL run_matrix run over the SAME root writing the
+    SAME final_metrics — cell-identity fields (model/task/seed/peft/
+    config_variant/train_fraction/output_dir), status, verbatim metrics,
+    the all-null vram_probe skeleton, and error compare field by field;
+    started_at/finished_at are non-empty runtime observations; ONE
+    git_commit observation covers the whole dispatch run."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    cells = run_sweep.enumerate_matrix(
+        ["model-a", "model-b", "model-c"], ["task-x", "task-z"],
+        [42, 43], registry_dir)
+    assert len(cells) == 12
+
+    # Parity pass: run_matrix over the SAME root, its fake executor
+    # writing the exact final_metrics the dispatch fake child writes —
+    # output_dir therefore compares as an identical string (same root,
+    # same cell, both derived through cell_dir_for).
+    def parity_executor(model, task, seed, output_root,
+                        train_fraction=None):
+        cell_dir = run_sweep.cell_dir_for(
+            output_root, model, task, seed, train_fraction)
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / run_sweep.METRICS_NAME).write_text(
+            json.dumps({"eval_loss": 0.5, "eval_accuracy": 0.9}),
+            encoding="utf-8")
+
+    parity_records = run_sweep.run_matrix(
+        cells, base, executor=parity_executor)
+    assert len(parity_records) == 12
+    parity_by_cell = {
+        (record["model"], record["task"], record["seed"]): record
+        for record in parity_records}
+
+    # Clean slate: run_matrix's own markers would otherwise skip every
+    # dispatch cell — the dispatch run must enumerate FRESH.
+    shutil.rmtree(base)
+
+    calls = []
+    run_cli(monkeypatch, [
+        *DISPATCH_ARGV,
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 12, "one child per cell still drains"
+
+    dispatch_commits = set()
+    for cell in cells:
+        record_path = (run_sweep.cell_dir_for(base, *cell)
+                       / run_sweep.RECORD_NAME)
+        assert record_path.is_file(), (
+            f"every RUN cell leaves a run_record at {record_path}")
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        parity = parity_by_cell[tuple(cell)]
+        for field in ("model", "task", "seed", "peft", "config_variant",
+                      "train_fraction", "output_dir", "status", "metrics",
+                      "vram_probe", "error"):
+            assert record[field] == parity[field], (
+                f"cell {cell} field {field!r} diverges from run_matrix "
+                f"parity: {record[field]!r} != {parity[field]!r}")
+        assert record["started_at"], (
+            "started_at is the claim's claimed_at (non-empty)")
+        assert record["finished_at"], (
+            "finished_at is the claim's finished_at (non-empty)")
+        dispatch_commits.add(record["git_commit"])
+    assert len(dispatch_commits) == 1, (
+        "ONE git_commit observation per dispatch run, never per cell"
+    )
+    assert dispatch_commits == {parity_records[0]["git_commit"]}, (
+        "the dispatch observation is the same repo-HEAD commit "
+        "run_matrix observed for the same root"
+    )
+
+
+def test_dispatch_failed_cells_get_failed_records(tmp_path, monkeypatch):
+    """Failed cells get records too (run_sweep parity): a child exiting
+    1 yields status failed with the child-exited error and metrics
+    null; a child exiting 0 WITHOUT final_metrics.json (CR-02) yields a
+    failed record carrying the claim's CR-02 error text — the
+    child-phrased twin of run_matrix's executor-phrased message — never
+    a silent record-less cell (15-01's invisible-root gap)."""
+    registry_dir = make_registry(tmp_path)
+
+    # (a) the child exits 1: the failed cell and its sibling both get
+    # records, failed/completed respectively.
+    base = (tmp_path / "exit-nonzero").resolve()
+    killed = ("model-b", "task-z", 43)
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a,model-b", "--tasks", "task-z",
+            "--seeds", "42,43",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls, exit_for={killed: 1}))
+    assert excinfo.value.code == 1, "a run with a failed cell exits 1"
+    failed_record = json.loads(
+        (run_sweep.cell_dir_for(base, *killed)
+         / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert failed_record["status"] == "failed"
+    assert failed_record["error"] == "child exited 1"
+    assert failed_record["metrics"] is None
+    ok_record = json.loads(
+        (run_sweep.cell_dir_for(base, "model-a", "task-z", 42)
+         / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert ok_record["status"] == "completed", (
+        "the sibling cell's record is unaffected"
+    )
+
+    # (b) exit 0 without final_metrics (CR-02): the single cell's child
+    # writes NOTHING and exits 0.
+    base2 = (tmp_path / "exit-silent").resolve()
+    silent = ("model-a", "task-x", 42)
+    with pytest.raises(SystemExit) as excinfo2:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--output-root", str(base2),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_fake_spawner([]))
+    assert excinfo2.value.code == 1
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base2)
+         / dispatch_core.claim_filename(silent)).read_text(
+            encoding="utf-8"))
+    record = json.loads(
+        (run_sweep.cell_dir_for(base2, *silent)
+         / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert record["status"] == "failed", (
+        "exit 0 without metrics is a FAILED record, never completed"
+    )
+    assert record["error"] == claim["error"], (
+        "the record carries the claim's CR-02 error text verbatim"
+    )
+    assert record["error"] == (
+        "child exited 0 but final_metrics.json is missing "
+        "(run_finetune.py swallowed a training failure)")
+    assert record["metrics"] is None
+
+
+def test_dispatch_eval_failure_deletes_metrics_claim_failed_requeue(
+        tmp_path, monkeypatch):
+    """WR-02 regression: a child that wrote the v1 (training-keys-only)
+    final_metrics.json, then hit an evaluate failure — the producer's
+    WR-02 handler deletes the stale v1 file BEFORE re-raising into the
+    D-08 except-continue, so the child still EXITS 0 (the evaluate
+    exception never escapes run_finetune; that is exactly why the delete
+    is load-bearing) — leaves the cell dir with NO metrics and NO
+    marker. Dispatch's CR-02 existence-only check must fail the claim
+    (never a falsely-completed, score-less cell), the record reports
+    failed with the CR-02 error text and metrics null, and a RELAUNCH
+    over the same root re-dispatches the cell (the failed claim
+    requeues) and its new attempt completes — the pre-fix completed
+    claim was skip-locked forever (relaunch skips it, --rerun-failed
+    only re-runs FAILED claims)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "eval-failure").resolve()
+    cell = ("model-a", "task-x", 42)
+
+    def eval_failure_spawner(argv, **kwargs):
+        # The make_child_spawner identity discipline, modeling the
+        # post-WR-02 producer shape of an evaluate exception: rank 0
+        # wrote the v1 metrics + flops report, evaluate() raised, the
+        # handler deleted final_metrics.json, and the D-08
+        # except-continue swallowed the rest — exit 0, no marker, the
+        # flops report orphaned in the cell dir (harmless: CR-02 reads
+        # final_metrics.json existence only).
+        root = Path(flag_value(argv, "--output_dir"))
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell_dir = (root / save / flag_value(argv, "--target_dataset")
+                    / f"seed_{flag_value(argv, '--seed')}")
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / run_sweep.METRICS_NAME).write_text(
+            json.dumps({"train_runtime": 10.0}), encoding="utf-8")
+        (cell_dir / "flops_report.json").write_text("{}", encoding="utf-8")
+        (cell_dir / run_sweep.METRICS_NAME).unlink()  # the WR-02 delete
+        return FakeProc(0)
+
+    argv = [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ]
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, argv, spawner=eval_failure_spawner)
+    assert excinfo.value.code == 1, "a run with a failed cell exits 1"
+    cell_dir = run_sweep.cell_dir_for(base, *cell)
+    assert not (cell_dir / run_sweep.METRICS_NAME).is_file(), (
+        "the WR-02 delete leaves no final_metrics.json in the cell dir"
+    )
+    assert not (cell_dir / run_sweep.RESUME_MARKER).is_file(), (
+        "the evaluate failure never reaches the marker copy"
+    )
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(cell)).read_text(
+            encoding="utf-8"))
+    assert claim["state"] == dispatch_core.CLAIM_STATE_FAILED, (
+        "exit 0 without final_metrics FAILS the claim (CR-02) — never "
+        "the falsely-completed, score-less cell of the pre-fix window"
+    )
+    assert claim["error"] == (
+        "child exited 0 but final_metrics.json is missing "
+        "(run_finetune.py swallowed a training failure)")
+    record = json.loads(
+        (cell_dir / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert record["status"] == "failed"
+    assert record["metrics"] is None
+
+    # relaunch (same root): the FAILED claim requeues — the cell is
+    # re-dispatched and now completes (a pre-fix COMPLETED claim would
+    # have skip-locked the cell forever).
+    calls2 = []
+    run_cli(monkeypatch, argv, spawner=make_child_spawner(calls2))
+    assert spawn_identities(calls2) == [cell], (
+        "the relaunch re-dispatches EXACTLY the eval-failed cell"
+    )
+    assert (cell_dir / run_sweep.METRICS_NAME).is_file()
+    assert (cell_dir / run_sweep.RESUME_MARKER).is_file()
+    revived = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(cell)).read_text(
+            encoding="utf-8"))
+    assert revived["state"] == dispatch_core.CLAIM_STATE_COMPLETED
+    record2 = json.loads(
+        (cell_dir / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert record2["status"] == "completed", (
+        "the stale FAILED record is replaced by the new attempt's "
+        "terminal record"
+    )
+
+
+def test_dispatch_corrupt_metrics_record_failed_claim_completed(
+        tmp_path, monkeypatch):
+    """WR-11 parity: a child that writes a CORRUPT final_metrics.json
+    and exits 0 keeps its claim completed (engine semantics untouched —
+    the CR-02 check is existence-only) while the RECORD reports failed
+    with run_sweep's corrupt-metrics error text and metrics null: the
+    record never lies about unusable metrics."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "corrupt").resolve()
+
+    def corrupt_spawner(argv, **kwargs):
+        # The make_child_spawner identity discipline, writing a
+        # TRUNCATED final_metrics.json (the mid-write-death shape, the
+        # child still exiting 0).
+        root = Path(flag_value(argv, "--output_dir"))
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell_dir = (root / save / flag_value(argv, "--target_dataset")
+                    / f"seed_{flag_value(argv, '--seed')}")
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / run_sweep.METRICS_NAME).write_text(
+            '{"eval_loss": 0.5, "eval_acc', encoding="utf-8")
+        return FakeProc(0)
+
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=corrupt_spawner)
+    cell = ("model-a", "task-x", 42)
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(cell)).read_text(
+            encoding="utf-8"))
+    assert claim["state"] == dispatch_core.CLAIM_STATE_COMPLETED, (
+        "engine semantics untouched: CR-02 checks existence only, so "
+        "the claim still completes"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 1, "completed": 1, "failed": 0, "skipped": 0}, (
+        "the dispatch accounting stays on the claim semantics"
+    )
+    record = json.loads(
+        (run_sweep.cell_dir_for(base, *cell) / run_sweep.RECORD_NAME)
+        .read_text(encoding="utf-8"))
+    assert record["status"] == "failed", (
+        "the record never lies about unusable metrics"
+    )
+    assert record["metrics"] is None
+    assert record["error"].startswith("final_metrics.json is corrupt/")
+    assert "the child left a partial file" in record["error"], (
+        "the WR-11 error text string-parities run_matrix's"
+    )
+
+
+def test_dispatch_non_utf8_metrics_record_failed_claim_completed(
+        tmp_path, monkeypatch):
+    """WR-01 regression: a final_metrics.json with INVALID UTF-8 bytes on
+    a completed cell lands in the SAME WR-11 branch as truncated JSON —
+    json.load on a UTF-8 text handle raises UnicodeDecodeError (a
+    ValueError, NOT a json.JSONDecodeError), which previously escaped
+    the handler into the CR-04 containment (claim rewritten failed, NO
+    run_record.json). The record must report failed honestly with the
+    corrupt/unreadable error text while the claim STAYS completed and
+    the dispatch accounting shows the completed semantics."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "corrupt-utf8").resolve()
+
+    def non_utf8_spawner(argv, **kwargs):
+        # The make_child_spawner identity discipline, writing bytes that
+        # can never decode as UTF-8 (invalid continuation bytes — the
+        # external-writer/FS-corruption shape run_finetune's own
+        # ensure_ascii=True dumps cannot produce).
+        root = Path(flag_value(argv, "--output_dir"))
+        save = (
+            flag_value(argv, "--save_model_name")
+            if "--save_model_name" in argv
+            else flag_value(argv, "--target_model"))
+        cell_dir = (root / save / flag_value(argv, "--target_dataset")
+                    / f"seed_{flag_value(argv, '--seed')}")
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / run_sweep.METRICS_NAME).write_bytes(
+            b'{"eval_loss": 0.5, "eval_acc\xff\xfe}')
+        return FakeProc(0)
+
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=non_utf8_spawner)
+    cell = ("model-a", "task-x", 42)
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(cell)).read_text(
+            encoding="utf-8"))
+    assert claim["state"] == dispatch_core.CLAIM_STATE_COMPLETED, (
+        "the claim STAYS completed — the decode failure never reaches "
+        "the CR-04 containment"
+    )
+    assert "FileExistsError" not in str(claim.get("error")), (
+        "no dispatcher-side containment rewrite of the claim"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 1, "completed": 1, "failed": 0, "skipped": 0}, (
+        "the dispatch accounting stays on the claim semantics"
+    )
+    record_path = (run_sweep.cell_dir_for(base, *cell)
+                   / run_sweep.RECORD_NAME)
+    assert record_path.is_file(), (
+        "the record LANDS — never the record-less-cell shape 15-04 "
+        "exists to eliminate"
+    )
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert record["status"] == "failed", (
+        "the record never lies about unusable metrics"
+    )
+    assert record["metrics"] is None
+    assert record["error"].startswith("final_metrics.json is corrupt/")
+    assert "the child left a partial file" in record["error"], (
+        "the non-UTF-8 flavor carries the same WR-11 error text"
+    )
+
+
+def test_dispatch_refuses_to_overwrite_completed_record(
+        tmp_path, monkeypatch):
+    """WR-12 no-overwrite: an exist-check collision with an on-disk
+    COMPLETED run_record.json is a NAMED FileExistsError refusal that
+    fails THAT cell through the existing CR-04 containment — claim
+    rewritten failed naming the dispatcher-side refusal, counts.failed,
+    exit 1 — while the pre-existing record stays byte-unchanged and
+    sibling cells complete normally (never silent, never destructive)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "occupied").resolve()
+    guarded = ("model-a", "task-x", 42)
+    guarded_dir = run_sweep.cell_dir_for(base, *guarded)
+    guarded_dir.mkdir(parents=True)  # marker-less, record-occupied
+    pre_existing = guarded_dir / run_sweep.RECORD_NAME
+    pre_existing.write_text(
+        json.dumps({"model": "model-a", "task": "task-x", "seed": 42,
+                    "status": "completed",
+                    "provenance": "hand-written prior run"}),
+        encoding="utf-8")
+    before = pre_existing.read_bytes()
+
+    calls = []
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--mode", "dispatch", "--workers", "1",
+            "--models", "model-a,model-b", "--tasks", "task-x",
+            "--seeds", "42",
+            "--output-root", str(base),
+            "--registry-dir", str(registry_dir),
+        ], spawner=make_child_spawner(calls))
+    assert excinfo.value.code == 1, "the refusal drives the exit-1 path"
+    assert len(calls) == 2, "the sibling cell still drains"
+    assert pre_existing.read_bytes() == before, (
+        "the COMPLETED record is refusal-protected, byte-unchanged"
+    )
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(guarded)).read_text(
+            encoding="utf-8"))
+    assert claim["state"] == dispatch_core.CLAIM_STATE_FAILED
+    assert "FileExistsError" in claim["error"], (
+        "the claim names the dispatcher-side refusal by exception type"
+    )
+    assert str(pre_existing) in claim["error"], (
+        "the refusal names the existing record path"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 2, "completed": 1, "failed": 1, "skipped": 0}, (
+        "honest accounting: the refused cell is failed, the sibling "
+        "completed"
+    )
+    sibling_record = json.loads(
+        (run_sweep.cell_dir_for(base, "model-b", "task-x", 42)
+         / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert sibling_record["status"] == "completed", (
+        "sibling cells are unaffected by the refusal"
+    )
+
+
+def test_dispatch_replaces_stale_failed_record(tmp_path, monkeypatch):
+    """A stale FAILED record (a prior attempt's terminal record) is
+    atomically replaced by the new attempt's terminal record — the
+    relaunch/--rerun-failed recovery contract, the run_sweep.py:1614
+    write-predicate parity."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "stale-failed").resolve()
+    cell = ("model-a", "task-x", 42)
+    cell_dir = run_sweep.cell_dir_for(base, *cell)
+    cell_dir.mkdir(parents=True)
+    (cell_dir / run_sweep.RECORD_NAME).write_text(
+        json.dumps({"model": "model-a", "task": "task-x", "seed": 42,
+                    "status": "failed", "error": "child exited 1"}),
+        encoding="utf-8")
+
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "the marker-less cell runs despite the record"
+    record = json.loads(
+        (cell_dir / run_sweep.RECORD_NAME).read_text(encoding="utf-8"))
+    assert record["status"] == "completed", (
+        "the new attempt's terminal record REPLACES the stale failed one"
+    )
+    assert record["metrics"] == {
+        "eval_loss": 0.5, "eval_accuracy": 0.9}
+
+
+def test_dispatch_record_lane_fidelity(tmp_path, monkeypatch):
+    """Lane fidelity: launched with lane flags (--peft lora plus
+    --num_train_epochs, --cache_dir, --dataset_root), the record's
+    peft/config_variant/train_fraction equal the claim's lane values —
+    the record is composed from the claim-time lane, never re-derived
+    from the command line."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "lane").resolve()
+    cache_dir = (tmp_path / "hf-cache").resolve()
+    dataset_root = (tmp_path / "datasets").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--peft", "lora",
+        "--num_train_epochs", "1",
+        "--cache_dir", str(cache_dir),
+        "--dataset_root", str(dataset_root),
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    cell = ("model-a+lora", "task-x", 42)
+    claim = json.loads(
+        (dispatch_core.ledger_dir_for(base)
+         / dispatch_core.claim_filename(cell)).read_text(
+            encoding="utf-8"))
+    record = json.loads(
+        (run_sweep.cell_dir_for(base, *cell) / run_sweep.RECORD_NAME)
+        .read_text(encoding="utf-8"))
+    assert record["model"] == "model-a+lora", (
+        "the record keys by the ALIAS identity like the claim/cell dir"
+    )
+    assert record["peft"] == claim["lane"]["peft"] == "lora"
+    assert record["config_variant"] == "none", (
+        "an absent variant lane records the run_sweep 'none' default"
+    )
+    assert record["train_fraction"] is None
+    assert claim["lane"]["train_fraction"] is None
+    assert record["status"] == "completed"
+
+
+def test_dispatch_skipped_cell_gains_no_record(tmp_path, monkeypatch):
+    """Skip divergence pin: a marker-only cell (no record) is skipped
+    pre-drain and NEVER gains a run_record.json — the documented,
+    deliberate divergence from run_sweep's synthesized skipped records;
+    the dispatch_state counts report the skip."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "skip").resolve()
+    done_cell = ("model-b", "task-x", 42)
+    _write_marker(base, done_cell)  # marker-only: no run_record on disk
+    calls = []
+    run_cli(monkeypatch, [
+        "--mode", "dispatch", "--workers", "1",
+        "--models", "model-a,model-b", "--tasks", "task-x",
+        "--seeds", "42",
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 1, "only the fresh cell runs"
+    assert not (run_sweep.cell_dir_for(base, *done_cell)
+                / run_sweep.RECORD_NAME).is_file(), (
+        "a marker-only cell stays record-less (the documented dispatch "
+        "divergence — dispatch_state counts report the skip)"
+    )
+    assert (run_sweep.cell_dir_for(base, "model-a", "task-x", 42)
+            / run_sweep.RECORD_NAME).is_file(), (
+        "the fresh cell's record IS written"
+    )
+    state = json.loads(
+        (base / dispatch_core.DISPATCH_STATE_NAME).read_text(
+            encoding="utf-8"))
+    assert state["counts"] == {
+        "total": 2, "completed": 1, "failed": 0, "skipped": 1}
+
+
+def test_dispatch_root_export_dry_run_visibility(tmp_path, monkeypatch):
+    """Consumer visibility (the unmet 15-01 Task 3 gate): a
+    fake-children dispatch root is CONSUMABLE — export_runs.py --dry-run
+    over the root reports its run records. The subprocess form is
+    mandatory (D14-10: the exporter imports numpy/yaml/scipy at module
+    top, so this stdlib+jsonschema-pure suite must never import it
+    in-process). The '3 model(s)' count IS the no-phantom-model
+    assertion: dispatch_ledger/ and logs/ sit at the root yet contribute
+    no model key (load_run_records only creates model keys where a
+    record was found — pinned by the count, not by absence-of-path
+    checks)."""
+    registry_dir = make_registry(tmp_path)
+    base = (tmp_path / "finetuned").resolve()
+    calls = []
+    run_cli(monkeypatch, [
+        *DISPATCH_ARGV,
+        "--output-root", str(base),
+        "--registry-dir", str(registry_dir),
+    ], spawner=make_child_spawner(calls))
+    assert len(calls) == 12
+    # The real-root shape (the 15-01 smoke): dispatch_ledger/ and logs/
+    # directories sit at the root beside the model trees.
+    assert (base / dispatch_core.LEDGER_DIR_NAME).is_dir()
+    logs = base / "logs"
+    logs.mkdir()
+    (logs / "w0-child.log").write_text("child log\n", encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "script" / "export_runs.py"),
+         "--dry-run", "--input-root", str(base)],
+        capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert ("[Dry-run] 12 run record(s) across 3 model(s) / 2 task(s)"
+            in result.stdout), (
+        "the dispatch root exports its 12 records over the 3 REAL "
+        "models — dispatch_ledger/ and logs/ contribute no phantom "
+        "model key"
+    )

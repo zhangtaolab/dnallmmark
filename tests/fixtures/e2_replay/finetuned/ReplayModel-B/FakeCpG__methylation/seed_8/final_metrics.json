@@ -1,0 +1,6 @@
+{
+    "eval_AUPRC": 0.9289,
+    "eval_loss": 0.234,
+    "total_flos": 1000000000000000.0,
+    "train_runtime": 100.0
+}

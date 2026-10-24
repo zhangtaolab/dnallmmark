@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/zhangtaolab/dnallmmark/main/schemas/n_audit.json",
+  "$comment": "Fully strict contract (D-01) for dnallm-mark/data/n_audit.json — the published N-frequency / non-ACGT census artifact (F7 Q2, REV-07; produced offline by script/audit_n_frequencies.py, a LOCAL maintainer step over gitignored datasets — never part of `make data`, never run in CI, so NOT drift-gated). Root maps EVERY unified-registry task (50 keys) to its audit: present tasks carry per-split censuses (rows, total sequence chars, non-ACGT char total excluding the '|' separator, rows containing non-ACGT chars, per-character counts, and survivor counts under BOTH pipeline charset classes — strict 'ACGTacgt|' and N-tolerant 'ACGTNacgtn|' at minl 0 / maxl 10010, mirroring run_finetune.py:832-839 exactly) plus unified_eval_n = min over the per-class test survivor counts (F7 Q1 — the strictest class governs); missing tasks (the 7 GUE dirs pending re-extraction) carry missing=true with null splits/unified_eval_n — explicit missing rows, never silent absences or zero-filled counts. Emission is deterministic (sorted iteration, sort_keys, no clock), so a committed file validates forever until the inputs change.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tasks"],
+  "properties": {
+    "tasks": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/taskAudit" }
+    }
+  },
+  "$defs": {
+    "taskAudit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["missing", "unified_eval_n", "splits"],
+      "properties": {
+        "missing": { "type": "boolean" },
+        "unified_eval_n": { "type": ["integer", "null"], "minimum": 0 },
+        "splits": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "train": { "$ref": "#/$defs/splitAudit" },
+                "dev": { "$ref": "#/$defs/splitAudit" },
+                "test": { "$ref": "#/$defs/splitAudit" }
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "missing": { "const": true } } },
+          "then": {
+            "properties": {
+              "unified_eval_n": { "type": "null" },
+              "splits": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "missing": { "const": false } } },
+          "then": {
+            "properties": {
+              "unified_eval_n": { "type": "integer" },
+              "splits": { "type": "object" }
+            }
+          }
+        }
+      ]
+    },
+    "splitAudit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rows",
+        "total_chars",
+        "non_acgt_chars",
+        "rows_with_non_acgt",
+        "by_char",
+        "strict_survivors",
+        "n_tolerant_survivors"
+      ],
+      "properties": {
+        "rows": { "type": "integer", "minimum": 0 },
+        "total_chars": { "type": "integer", "minimum": 0 },
+        "non_acgt_chars": { "type": "integer", "minimum": 0 },
+        "rows_with_non_acgt": { "type": "integer", "minimum": 0 },
+        "by_char": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 1 }
+        },
+        "strict_survivors": { "type": "integer", "minimum": 0 },
+        "n_tolerant_survivors": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

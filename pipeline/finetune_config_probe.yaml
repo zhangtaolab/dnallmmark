@@ -1,0 +1,87 @@
+# Frozen-probe config variant (SC-6/REV-05 F4, 06-05) — loaded by
+# run_finetune.py --config-variant probe at the special_models reload slot
+# for ANY generic-path model (special-loader models are refused by the
+# probe ineligibility guard). This is the finetune_config_with_head.yaml
+# head block with head "mlp", frozen: true, and hidden_dims [512].
+# Suite-owned field surface only: `frozen` is the suite HeadConfig field
+# (dnallm/configuration/configs.py:14-17 @ v1.2.1 (30dfd6d)) and the
+# freeze loop that executes it sets requires_grad=False over the backbone
+# parameters (dnallm/models/model.py:101-103 @ v1.2.1) — head-only
+# training on a frozen backbone, which is what makes probe metrics
+# comparable to the main leaderboard. Probe runs default their save name
+# to {model}+probe (the 06-02 alias seam).
+task:
+    # 'binary' - binary classification (overridden per dataset by
+    # run_finetune's task_type assignment)
+    task_type: "binary"
+    # Labels information (overridden per dataset)
+    num_labels: 2
+    label_names: ["negative", "positive"]
+    # Threshold to distinguish between true and false sample in binary/multi-class classification tasks
+    threshold: 0.5
+    head_config:                   # Configuration for custom head (MLP) on top of base model
+        head: "mlp"
+        frozen: true               # Freeze the backbone — train the head only (suite configs.py:14-17; freeze loop model.py:101-103)
+        hidden_dims: [512]         # Single hidden layer — the probe head
+        activation_fn: "gelu"      # Activation function (e.g., 'relu', 'tanh', 'gelu')
+        use_normalization: True    # Whether to use normalization
+        norm_type: "layernorm"     # Type of normalization ('layernorm' or 'batchnorm')
+        num_filters: 128           # Number of convolutional filters
+        kernel_sizes: [3, 5, 7]    # List of kernel sizes for convolutional layers
+        hidden_size: 256           # Hidden size for LSTM layer
+        bidirectional: True        # Whether the LSTM is bidirectional
+        num_layers: 3              # Number of layers for LSTM or U-Net
+        initial_filters: 512       # Initial number of filters for U-Net
+        dropout: 0.1               # Dropout probability
+        pooling_strategy:
+        custom_head:
+finetune:
+    # For detailed arguments, please refer to https://huggingface.co/docs/transformers/en/main_classes/trainer#transformers.TrainingArguments
+    # Unlisted arguments can be added in the `extra_args` of DNATrainer
+    output_dir: "./outputs"
+    num_train_epochs: 3
+    per_device_train_batch_size: 48
+    per_device_eval_batch_size: 48
+    gradient_accumulation_steps: 1
+    max_steps: -1
+    logging_strategy: "steps"
+    logging_steps: 100
+    eval_strategy: "steps"
+    eval_steps: 100
+    save_strategy: "steps"
+    save_steps: 200
+    save_total_limit: 20
+    save_safetensors: True
+    learning_rate: 2e-5
+    weight_decay: 0.01
+    adam_beta1: 0.9
+    adam_beta2: 0.999
+    adam_epsilon: 1e-8
+    max_grad_norm: 1.0
+    warmup_ratio: 0.1
+    lr_scheduler_type: "linear"
+    lr_scheduler_kwargs: {}  # Empty dict for linear scheduler, or add specific parameters for other schedulers
+    seed: 42
+    bf16: False
+    fp16: False
+    load_best_model_at_end: True
+    metric_for_best_model: "eval_loss"
+    report_to: "tensorboard"
+    resume_from_checkpoint:
+# Parameter-efficient fine-tuning sections (SC-6 lane tracer, 06-01) — the
+# SAME sections as finetune_config.yaml so a variant reload composed with
+# --peft lora can never hit KeyError 'lora' under use_lora=True. Field
+# surfaces are suite-owned (dnallm/configuration/configs.py:400-423
+# LoraConfig, :436-478 Ia3Config @ v1.2.1 (30dfd6d)); values are the suite
+# defaults.
+lora:
+    r: 8                     # LoRA attention dimension (rank)
+    lora_alpha: 16
+    target_modules: null     # null => suite preset auto-selection (lora_targets.yaml)
+    lora_dropout: 0.1
+    bias: "none"             # none|all|lora_only
+    task_type: "SEQ_CLS"
+ia3:
+    target_modules: null     # null => suite preset auto-selection
+    feedforward_modules: null  # preset fills; must stay a subset of target_modules
+    task_type: "SEQ_CLS"

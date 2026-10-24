@@ -1,0 +1,419 @@
+{
+    "dnallm_commit": "44c22d499c3c3cd48e792b60f13024b8f669ab71",
+    "models": {
+        "CrossDNA_519M": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "CrossDNA_71.6M": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "CrossDNA_8.1M": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "DNABERT-2-117M": {
+            "architecture": "BertForMaskedLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "DNABERT-2",
+            "modelscope": "ZhejiangLab-LifeScience/DNABERT-2-117M"
+        },
+        "FungiHelixSeek": {
+            "architecture": "HelixSeekForMaskedLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "FungiHelixSeek",
+            "modelscope": "zhangtaolab/FungiHelixSeek"
+        },
+        "GENA-LM-yeast": {
+            "architecture": "BertForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "GENA-LM",
+            "modelscope": "lgq12697/gena-lm-bert-base-yeast"
+        },
+        "GENERanno-eukaryote-0.5b-base": {
+            "architecture": "GenerannoForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "GENERanno",
+            "modelscope": "lgq12697/GENERanno-eukaryote-0.5b-base"
+        },
+        "GENERanno-prokaryote-0.5b-base": {
+            "architecture": "GenerannoForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "GENERanno",
+            "modelscope": "lgq12697/GENERanno-prokaryote-0.5b-base"
+        },
+        "GROVER": {
+            "architecture": "BertForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "GROVER",
+            "modelscope": "lgq12697/GROVER"
+        },
+        "GenomeOcean-500M": {
+            "architecture": "MistralForCausalLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "GenomeOcean",
+            "modelscope": "lgq12697/GenomeOcean-500M"
+        },
+        "Jamba-DNA-v1-114M-hg38": {
+            "architecture": "JambaForCausalLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "Jamba-DNA",
+            "modelscope": "lgq12697/Jamba-DNA-v1-114M-hg38"
+        },
+        "Mistral-DNA-v1-138M-virus": {
+            "architecture": "MixtralForCausalLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "Mistral-DNA",
+            "modelscope": "lgq12697/Mistral-DNA-v1-138M-virus"
+        },
+        "Mistral-DNA-v1-417M-Athaliana": {
+            "architecture": "MixtralForCausalLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "Mistral-DNA",
+            "modelscope": "lgq12697/Mistral-DNA-v1-417M-Athaliana"
+        },
+        "Mistral-DNA-v1-422M-hg38": {
+            "architecture": "MixtralForCausalLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "Mistral-DNA",
+            "modelscope": "lgq12697/Mistral-DNA-v1-422M-hg38"
+        },
+        "ModernBERT-DNA-v1-37M-hg38": {
+            "architecture": "ModernBertForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "ModernBERT-DNA",
+            "modelscope": "lgq12697/ModernBERT-DNA-v1-37M-hg38"
+        },
+        "MutBERT-Multi": {
+            "architecture": "RoPEBertForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "MutBERT",
+            "modelscope": "lgq12697/MutBERT-Multi"
+        },
+        "Omni-DNA-700M": {
+            "architecture": "OLMoModelForCausalLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "Omni-DNA",
+            "modelscope": "lgq12697/Omni-DNA-700M"
+        },
+        "OmniNA-220m": {
+            "architecture": "LlamaForCausalLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "OmniNA",
+            "modelscope": "lgq12697/OmniNA-220m"
+        },
+        "PlantBiMoE": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "PlantCAD2-Large": {
+            "architecture": "CaduceusForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "PlantCAD2",
+            "modelscope": "lgq12697/PlantCAD2-Large-l48-d1536"
+        },
+        "PlantCAD2-Medium-l48-d1024": {
+            "architecture": "CaduceusForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "PlantCAD2",
+            "modelscope": "lgq12697/PlantCAD2-Medium-l48-d1024"
+        },
+        "PlantCAD2-Small-l24-d0768": {
+            "architecture": "CaduceusForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "PlantCAD2",
+            "modelscope": "lgq12697/PlantCAD2-Small-l24-d0768"
+        },
+        "PlantCaduceus_l24": {
+            "architecture": "CaduceusForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "PlantCaduceus",
+            "modelscope": "lgq12697/PlantCaduceus_l24"
+        },
+        "PlantCaduceus_l32": {
+            "architecture": "CaduceusForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "PlantCaduceus",
+            "modelscope": "lgq12697/PlantCaduceus_l32"
+        },
+        "PlantDNAMamba2-BPE": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "PlantGFM": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "PlantHelixSeek": {
+            "architecture": "HelixSeekForCausalLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "PlantHelixSeek",
+            "modelscope": "zhangtaolab/PlantHelixSeek"
+        },
+        "SPACE": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "Shorkie_LM": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "SpeciesLM-fungi-downstream-k1": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "SpeciesLM-fungi-upstream-k1": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "agro-nucleotide-transformer-1b": {
+            "architecture": "EsmForMaskedLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "AgroNT",
+            "modelscope": "ZhejiangLab-LifeScience/agro-nucleotide-transformer-1b"
+        },
+        "borzoi-replicate-0": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "caduceus-ph_seqlen-131k_d_model-256_n_layer-16": {
+            "architecture": "CaduceusForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "Caduceus-PH",
+            "modelscope": "lgq12697/caduceus-ph_seqlen-131k_d_model-256_n_layer-16"
+        },
+        "caduceus-ps_seqlen-131k_d_model-256_n_layer-16": {
+            "architecture": "CaduceusForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "Caduceus-PS",
+            "modelscope": "lgq12697/caduceus-ps_seqlen-131k_d_model-256_n_layer-16"
+        },
+        "denseSSM_plant_genome": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "enformer-official-rough": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "evo2_1b_base": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "flashzoi-replicate-0": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "gena-lm-bert-large-t2t": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "gena-lm-bigbird-base-t2t": {
+            "architecture": "BigBirdForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "GENA-LM-BigBird",
+            "modelscope": "lgq12697/gena-lm-bigbird-base-t2t"
+        },
+        "gpn-brassicales": {
+            "architecture": "ConvNetForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "GPN",
+            "modelscope": "lgq12697/gpn-brassicales"
+        },
+        "hyenadna-large-1m-seqlen-hf": {
+            "architecture": "HyenaDNAForCausalLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "HyenaDNA",
+            "modelscope": "ZhejiangLab-LifeScience/hyenadna-large-1m-seqlen-hf"
+        },
+        "mamba2_370M": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "mamba2_plant_genome": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "megaDNA_updated": {
+            "architecture": "MEGADNA",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "megaDNA",
+            "modelscope": "lgq12697/megaDNA_updated"
+        },
+        "nucleotide-transformer-v2-500m-multi-species": {
+            "architecture": "EsmForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "Nucleotide Transformer",
+            "modelscope": "lgq12697/nucleotide-transformer-v2-500m-multi-species"
+        },
+        "plant-dnabert-6mer": {
+            "architecture": "BertForMaskedLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "Plant DNABERT",
+            "modelscope": "zhangtaolab/plant-dnabert-6mer"
+        },
+        "plant-dnagemma-BPE": {
+            "architecture": "GemmaForCausalLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "Plant DNAGemma",
+            "modelscope": "zhangtaolab/plant-dnagemma-BPE"
+        },
+        "plant-dnagpt-BPE": {
+            "architecture": "GPT2LMHeadModel",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "Plant DNAGPT",
+            "modelscope": "zhangtaolab/plant-dnagpt-BPE"
+        },
+        "plant-dnamamba-6mer": {
+            "architecture": "MambaForCausalLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "Plant DNAMamba",
+            "modelscope": "zhangtaolab/plant-dnamamba-6mer"
+        },
+        "plant-dnamamba-BPE": {
+            "architecture": "MambaForCausalLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "Plant DNAMamba",
+            "modelscope": "zhangtaolab/plant-dnamamba-BPE"
+        },
+        "plant-dnamamba-singlebase": {
+            "architecture": "MambaForCausalLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "Plant DNAMamba",
+            "modelscope": "zhangtaolab/plant-dnamamba-singlebase"
+        },
+        "plant-dnamodernbert-singlebase": {
+            "architecture": "ModernBertForMaskedLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "Plant DNAModernBert",
+            "modelscope": "zhangtaolab/plant-dnamodernbert-singlebase"
+        },
+        "plant-genomic-jamba": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "plant-nucleotide-transformer-6mer": {
+            "architecture": "EsmForMaskedLM",
+            "channel": "modelscope-slot",
+            "dnllm_adapted": true,
+            "family": "Plant NT",
+            "modelscope": "zhangtaolab/plant-nucleotide-transformer-6mer"
+        },
+        "prokbert": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        },
+        "prokbert-mini": {
+            "architecture": "MegatronBertForMaskedLM",
+            "channel": "modelscope-mirror",
+            "dnllm_adapted": true,
+            "family": "ProkBERT",
+            "modelscope": "lgq12697/prokbert-mini"
+        },
+        "space": {
+            "architecture": null,
+            "channel": null,
+            "dnllm_adapted": false,
+            "family": null,
+            "modelscope": null
+        }
+    },
+    "schema_version": 1
+}

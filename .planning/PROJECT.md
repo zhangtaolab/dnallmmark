@@ -1,0 +1,121 @@
+# DNALLM-Mark
+
+## What This Is
+
+DNALLM-Mark is a DNA language-model benchmark platform: a PyTorch fine-tuning pipeline that evaluates 62 DNA LLMs across 50 datasets (three-seed protocol, PEFT/VEP/curve lanes), offline Python/Node scripts that aggregate results with vendored statistics, and a static multi-page leaderboard website — hardened and release-reviewed in v0.7.1 (audit, contracts, CI, methodology migration, provenance, snapshots). **v1.2 TUI任务** (shipped 2026-10-19) added the operator-facing terminal console: a pure-Python Textual TUI over a textual-free services layer — environment check, k9s-style model×dataset selection, custom model/dataset onboarding wizards, ModelScope/Zenodo data manager with row-count reconciliation, run config with terraform-style launch gates, single-GPU monitoring, and CLI-parity multi-GPU orchestration (`run_sweep_shard.py`).
+
+## Core Value
+
+Every number on the public leaderboard is correct and reproducible from code that external reviewers can trust.
+
+## Current Milestone: v1.3 多 GPU 编排与验证
+
+**Goal:** Upgrade multi-GPU orchestration from static model sharding to cell-level dynamic dispatch (each training cell owns exactly one GPU, never split), with orchestrator live views, failure recovery/cleanup, and a TUI multi-GPU surface — validated on the local 2× RTX 5090 box by an N=2 bounded smoke (closes WINDOWS #21) and a small real sweep over pre-materialized 5% sub-datasets whose results flow through the data chain into the web pages with multi-seed error bars.
+
+**Target features:**
+- Cell-level dynamic dispatch — `run_sweep_shard.py` reworked as a work queue: (model×dataset×seed) cells enqueued, idle GPU workers pull the next cell; load balances naturally (size-(M) static weighting retired); a cell never spans GPUs
+- Orchestrator-level run view — live per-worker progress/failure aggregation (terminal table or state file consumable by TUI/web mirror)
+- Failure recovery & cleanup — cross-worker failure re-run + post-merge verification/cleanup helper
+- TUI multi-GPU surface — slot-4 multi-GPU launch (workers/gpus; single-GPU serial gate revised), monitor integration, G GPU-lanes display (nvidia-smi read-only probe — v1.2 deferred item)
+- N=2 bounded smoke on this box per `docs/multi-gpu.md` (closes WINDOWS #21; revises D-05 machine-role decision)
+- Small real sweep over pre-materialized 5% sub-datasets (deterministic subsets of the real datasets, own directory tree, separate config file from real runs — subset runs never mix with real runs), through both GPUs → `--merge` → data chain
+- Results adapted to the web pages with multi-seed error bars (mean±std/CI on scatter/bar charts; aggregation scripts + Chart.js frontend, no-build constraint unchanged)
+
+## Requirements
+
+### Validated
+
+<!-- Inferred from existing code (brownfield init, map dated 2026-10-08). -->
+
+- ✓ Fine-tuning pipeline: model×dataset training loop delegated to dnallm, per-architecture FLOPs measurement, master performance JSON output (`pipeline/dnallmmark_pipeline.py`)
+- ✓ Main leaderboard page: FLOPs-vs-rank scatter chart, sortable table, arena switching (all/animal/plant/microbe) (`dnallm-mark/js/main.js`)
+- ✓ Task benchmark page: per-task model rankings, metric dropdown, two-tier caching with retry/preload (`dnallm-mark/js/task.js`, `js/task-loader.js`)
+- ✓ Fine-tuning results, models catalog, and datasets catalog pages (`dnallm-mark/js/finetuning.js`, `js/models.js`, `js/datasets.js`)
+- ✓ Offline data chain: model-centric → task-centric pivot, multi-method score aggregation (rank/MinMax/z-score/robust), task index generation (`script/get_task_performance.py`, `script/summarize_comparison.py`, `scripts/generate-tasks-index.js`)
+- ✓ Client-side submission validation + PR instruction generator (`dnallm-mark/js/submit.js` — implemented but orphaned; `submit.html` missing)
+- ✓ Systematic tri-subsystem review producing a severity-graded, fully-reproduced findings report — `AUDIT.md`, 24 findings (2 P0 / 12 P1 / 10 P2) — Phase 1
+- ✓ Reproducibility substrate: `data-v1` frozen baseline (tag + SHA256 manifest + `baseline/compare.py`), pinned dependencies (pyproject/uv.lock, pandas 2.3.3 / numpy 2.5.3), deterministic data generators with one-time fully-attributed 52-file migration — Phase 1
+- ✓ Pre-release hygiene: secret-hygiene decision recorded (Zenodo preview link intentional, D-08), full-history gitleaks scan clean, MIT LICENSE landed with holder "zhangtaolab and DNALLM-Mark contributors" (maintainer-confirmed 2026-10-09) — Phase 1
+- ✓ **v0.7.1 shipped (6 phases / 24 plans / 68 tasks, 2026-10-11)**: dev-branch reconciliation to `run_finetune.py`/`run_sweep.py` (seed protocol, priority tiers, failure re-run, `--subset_file` fairness, PEFT/variant/curve flags), correctness core (species fix, dual registries, unified exporter, vendored statistics), CI (SHA-pinned 4-job workflow, first real-runner green), F6 methodology migration (weighted dual view, 861-pair permutation artifact, CHANGELOG/manifest), N-audit + provenance (ModelScope 50/50, maintainer-reviewed), snapshots, METHODOLOGY/ONBOARDING/README reproduction, docs trio, doi_swap prepared — full record in `.planning/MILESTONES.md` and `reviewer-response/REPORT.md` (untracked)
+- ✓ **v1.2 shipped (6 phases / 41 plans / 62 tasks, 2026-10-19)**: FlopsCounter port (20+ architecture hooks, CPU-provable, `flops_report.json` schema) + four sanctioned sweep flags + official/custom registry overlay — Phase 7; TUI foundation (env check, k9s selection, textual-free services, Pilot harness) — Phase 8; custom model/dataset wizards with collect-all validation + dry-run/audit gauntlet + entry rollback — Phase 9; data manager (persistent resumable ModelScope/Zenodo queue, n_audit reconciliation) — Phase 10; run config + launch gates + single-GPU monitor (bounded GB10 smoke proven) — Phase 11; multi-GPU orchestration (`run_sweep_shard.py` launch/merge, sharding-vs-DDP decision in `docs/multi-gpu.md`), static web progress mirror, snapshot goldens — Phase 12
+
+### Active
+
+*(v1.3 多 GPU 编排与验证 — seven target features in `## Current Milestone` above; REQ-IDs defined in REQUIREMENTS.md at milestone start. Backlog candidate: Phase 999.1 custom-entry fool-proofing, see `.planning/ROADMAP.md`.)*
+
+### Out of Scope
+
+- Deep security hardening (CSP, SRI on CDN scripts) — correctness/maintainability prioritized this milestone; only token revocation is required pre-release
+- Frontend E2E/smoke tests (Playwright-level) — regression prevention scoped to data scripts + CI by decision
+- New benchmark entries (actually adding new models/datasets) — mechanism only this milestone (EXT-01/02); hardening, not expansion
+- Full benchmark re-run against dnallm dev — needs extensive GPU time; this milestone validates adaptation with one model×dataset pair
+- Pipeline rewrite/modularization — fixes stay surgical, minimal diff
+- Framework migration (React/Vue/bundler) — vanilla no-build MPA is a hard constraint
+
+## Context
+
+- v0.7.1 closed and archived 2026-10-11; v1.2 closed and archived 2026-10-19 (`.planning/MILESTONES.md`); reviewer-response evidence base generated (gitignored)
+- Upstream DNALLM: local clone `/root/autodl-tmp/Github/DNALLM` (branch v1.3 @ 1.3.2), editable-installed into the repo `.venv` (re-install required after every `uv sync`); upgrade cycle tracked on this box since 2026-10-20
+- Compute environment: AutoDL workstation, 2× RTX 5090 (32 GB, cu130) — multi-GPU sweeps go through `pipeline/run_sweep_shard.py --workers 2`; box runs as root (TUI persist-failure chmod-simulation tests fail locally, pass in CI — known environmental class)
+- ModelScope dataset coverage 50/50 (zhangtaolab 9 / lgq12697 34 / forrestzhang 7); SDK token stored (`~/.modelscope`)
+- Pre-revision data frozen immutably at `baseline/pre-revision-data/` (a44d310 tree + SHA-256) for E2' old-vs-new comparison — never overwritten
+- `dnallmmark.org` serves from main (currently rolled back to a44d310 after a mixed deploy broke it; re-merge procedure documented)
+- Branch flow: **autorun = standing development branch**; dev/main sync only on explicit maintainer request
+- E2' three-seed full re-run remains maintainer dual-gate
+- WINDOWS ledger at close: 8 open / 6 waived / 28 fixed (waivers per maintainer ruling 2026-10-19); monitor goldens regenerated-uncommitted rows (#35/#39/#42) await maintainer D-03 review
+
+## Constraints
+
+- **Tech stack**: Vanilla ES-module JS frontend (no build step) unchanged; TUI = pure-Python pip-installable framework (Textual preferred — no build step, consistent with repo architecture)
+- **Platform (maintainer rule, 2026-10-20)**: the benchmark runs on Linux only — pipeline and TUI target Linux CUDA machines (GB10/AutoDL-class); Windows/macOS are not supported execution environments (web leaderboard viewing is OS-agnostic). Do not add Windows compatibility paths
+- **E2' boundary**: TUI may launch bounded runs and present the full-sweep confirmation gate; the full three-seed sweep itself stays maintainer-authorized
+- **CI feasibility**: GitHub Actions stays GPU/dnallm-free; TUI tests CPU-side with injectable seams
+- **DNALLM read-only**: The suite repo is never written by this project (issue channel only)
+- **Reproducibility**: Leaderboard numbers move only through the inventoried migration discipline (one-commit schema+data+goldens; drift gate green)
+- **Fix discipline**: Surgical changes; no opportunistic refactors
+
+## Key Decisions
+
+| Decision | Rationale | Outcome |
+|----------|-----------|---------|
+| Milestone = report + fixes + regression prevention | Public release means the audit itself must land in the code, not a drawer | ✓ Shipped (v0.7.1: AUDIT.md + tests + CI) |
+| Regression prevention = data-script unit tests + GitHub Actions CI | Highest value per cost; pipeline needs GPU, frontend tests deferred | ✓ Shipped (v0.7.1: 4-job SHA-pinned CI) |
+| Allow data recomputation after fixes, documented with comparisons | Correctness over number stability — the species fix intentionally changes aggregates | ✓ Shipped (v0.7.1: 42/42 swap inventory) |
+| Priority: correctness first, maintainability second; security limited to token revocation | User prioritization for this milestone | ✓ Shipped (v0.7.1) |
+| Adapt to dnallm dev (v0.7.1) with local GPU env + one-pair validation; full benchmark re-run deferred | Upstream moved; local GPU machine + local DNALLM clone make adaptation verifiable now | ✓ Shipped (v0.7.1 Phase 6 smokes) |
+| D-09 closed: LICENSE holder = "zhangtaolab and DNALLM-Mark contributors" | Maintainer override of the surfaced git-author assumption during Phase 1 UAT (2026-10-09); org handle matches the GitHub org | ✓ Applied (33b80ca) |
+| D-06 accepted: six exact-tie-group census is the complete migration attribution | Maintainer UAT confirmation over independently re-derived evidence (4 flip/2 stable groups, exact rank_score ties both sides) | ✓ Confirmed |
+| P0 rubric boundary: producer-side regeneration risks grade P0 even with committed data intact | "Risks corrupting published numbers on regeneration" reading accepted in UAT; steers Phase 4 scope (AUD-01..06) | ✓ Confirmed |
+| Baseline form: annotated data-v1 tag + tracked SHA256 manifest + comparator, no golden copies | git stores exact bytes at the tag; 52 duplicated copies would rot | ✓ Landed (Phase 1) |
+| v1.2 scope: FlopsCounter port included (early phase) | Feeds E2' FLOPs correctness + leaderboard efficiency axis; beneficiary beyond the TUI | ✓ Landed (Phase 7, 2026-10-11) |
+| v1.2 scope: multi-GPU as final phase, hard-gated on single-GPU validation | Maintainer's stated sequencing: 单卡开发成功再开发多卡 | ✓ Landed (Phase 12, 2026-10-16) |
+| v1.2 auto-GA policy: `--effective_batch_size` flag, GA=max(1, N//batch_size), default 16 | Team requirement (lgq12697 Q7) on top of existing dynamic batch sizing + D-07 reset | ✓ Landed (Phase 7 flags + Phase 11 run-config surface) |
+| TUI orchestrates, never computes; services layer imports zero textual symbols | No client-side re-implementation of benchmark semantics; screens are thin — enforced by import-lock test + AST pins | ✓ Held through v1.2 (Phases 8-12) |
+| Custom/official registry separation is absolute (user-owned `~/.config/dnallmmark/custom_*.json`, collision fail-fast, byte-identical when absent) | Maintainer refinement 2026-10-11: 自定义的不与官方放在一起，免得冲突 | ✓ Landed (Phase 7 seam + Phase 9 wizards) |
+| Multi-GPU = static model sharding × CUDA_VISIBLE_DEVICES over DDP (documented applicability matrix) | Single-large-model acceleration vs multi-model throughput are different problems; sharding fits the 62-model benchmark shape | ✓ Landed (Phase 12, `docs/multi-gpu.md`) |
+| v1.2 closeout = override_closeout; verify-staleness cascade acknowledged, verifiers not re-dispatched during archive | Covered-file digests re-stale phases on every later commit; gates were green 2026-10-19 23:50 — re-dispatching verifiers mid-archive would loop | ✓ Recorded (MILESTONES.md disclosures, 2026-10-19) |
+| v1.3 multi-GPU mode = cell-level dynamic dispatch (work queue); one cell = one GPU, never split | Maintainer 2026-10-20: 每个任务分配一块显卡、不要用一个任务在多块卡上跑 — natural load balancing without cost estimation; supersedes static LPT size-(M) sharding as the primary mode | ✓ Landed (Phase 13, 2026-10-20; static mode coexists behind `--mode`)
+| Phase 13 dispatch ledger rulings: no in-run failure requeue (A2); no sweep_manifest on real dispatch roots (A3); stale-lock reclaim = pid-liveness with live-pid loud refusal (A5) | Research planner-gated decisions resolved in 13-01; Phase 14 MGPU-04 owns failure re-run over the ledger feed | ✓ Landed (Phase 13; code-review CR-01..04/WR-01..03 fixed with mutation-proven pins) |
+| v1.3: DDP remains not implemented | Maintainer 2026-10-20: 不做 DDP — re-affirms v1.2 D-04; the `WORLD_SIZE`/`LOCAL_RANK` seam stays documented-only | — Pending |
+| D-05 machine-role revision: the local 2×5090 box is now the N=2 validation machine | D-05 was set when local was single-GPU (开发本机/验证他机); the AutoDL box now carries 2× RTX 5090 — smoke runs here (WINDOWS #21) | ✓ Landed (Phase 15 15-01, 2026-10-20: dispatch N=2 smoke executed on both 5090s — docs/multi-gpu.md machine-roles section revised 本机=双卡验证机 with the executed-procedure section; WINDOWS #21 closed with evidence) |
+| v1.3 small-sweep datasets: 5% subsets pre-materialized as real dataset directories under a separate config | Maintainer 2026-10-20: 小数据集需要提前生产，与真实数据使用不同的配置文件 — subset runs and real runs never share a registry/config | ✓ Landed (Phase 15 15-03, 2026-10-21: script/make_subset_datasets.py materialized the two sweep-task subsets (105/11/117, 598/74/74 — registry-exact, stratified) into the isolated pipeline/datasets-smoke + registry-smoke roots (sha256-proven zero official/custom registry writes); the 12-cell dual-GPU dispatch sweep over them (fresh root pipeline/finetuned-sweep-r2 after the 15-05 producer fix) fed the unmodified export→summarize chain end-to-end — non-empty comparison JSONs archived under 15-03 artifacts/) |
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
+---
+*Last updated: 2026-10-20 after Phase 13 (动态调度核心 complete)*

@@ -1,0 +1,7 @@
+UserWarning: pkg_resources is deprecated as an API. Deprecated since version 1.25.0. Use importlib.resources or importlib.resources.files() instead. Please open an issue if you have a use case that requires pkg_resources.
+import pkg_resources
+Downloading [emp_H3/.DS_Store]: 100%|██████████| 6.00k/6.00k [00:00<00:00, 13.4kB/s]
+Downloading [emp_H3/dev.csv]: 100%|██████████| 737k/737k [00:00<00:12, 60.5kB/s]
+Downloading [emp_H3/test.csv]: 100%|██████████| 731k/731k [00:00<00:12, 61.2kB/s]
+Downloading [emp_H3/train.csv]: 100%|██████████| 3.61M/3.61M [00:00<00:30, 120kB/s]
+Processing 4 items: 100%|██████████| 4.00/4.00 [00:12<00:00,  2.96s/it]

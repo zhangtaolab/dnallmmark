@@ -1,0 +1,4 @@
+UserWarning: pkg_resources is deprecated as an API. Deprecated since version 1.25.0. Use importlib.resources or importlib.resources.files() instead. Please open an issue if you have a use case that requires pkg_resources.
+import pkg_resources
+Processing 2 items:  50%|█████     | 1.00/2.00 [00:03<00:03,  3.04s/it]
+Downloading [emp_H3/train.csv]:   0%|          | 0.00/3.61M [00:00<?, ?B/s]Downloading [emp_H3/train.csv]:  17%|█▎        | 614k/3.61M [00:01<00:05, 570kB/s][1ADownloading [emp_H3/train.csv]:  34%|█▍       | 1.23M/3.61M [00:02<00:04, 572kB/s][1ADownloading [emp_H3/train.csv]:  41%|█▊       | 1.48M/3.61M [00:03<00:04, 568kB/s]

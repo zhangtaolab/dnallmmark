@@ -1,0 +1,1 @@
+{"content":"pre-commit framework latest 4.6.2 (PyPI 2026-10-08), requires >=3.10. pre-commit/action latest is v3.0.1 (Feb 2024, stale) — simpler to install pre-commit in CI job and run pre-commit run --all-files.","source":"web","provider":"webfetch","confidence":"HIGH","fetched_at":"2026-10-08T09:52:15.587Z","ttl":86400000,"kind":"docs"}

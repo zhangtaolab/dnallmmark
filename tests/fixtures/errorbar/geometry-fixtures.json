@@ -1,0 +1,221 @@
+{
+  "honestAbsence": [
+    {
+      "expectScalar": 0.75,
+      "metricValue": 0.75,
+      "name": "std-zero",
+      "std": 0
+    },
+    {
+      "expectScalar": 0.6,
+      "metricValue": 0.6,
+      "name": "std-absent-null",
+      "std": null
+    },
+    {
+      "expectScalar": 0.42,
+      "metricValue": 0.42,
+      "name": "std-negative",
+      "std": -0.05
+    }
+  ],
+  "provenance": {
+    "cells": [
+      {
+        "mean": 0.6906149119559357,
+        "metric_key": "eval_f1",
+        "model": "plant-dnabert-6mer",
+        "n_seeds": 3,
+        "per_seed": {
+          "42": 0.6842105263157895,
+          "43": 0.7027027027027027,
+          "44": 0.684931506849315
+        },
+        "std": 0.008552425273400518,
+        "task": "GUE__emp_H3"
+      },
+      {
+        "mean": 0.5952380952380952,
+        "metric_key": "eval_f1",
+        "model": "plant-dnabert-6mer",
+        "n_seeds": 3,
+        "per_seed": {
+          "42": 0.7142857142857143,
+          "43": 0.5,
+          "44": 0.5714285714285714
+        },
+        "std": 0.08908708063747481,
+        "task": "iDNA_ABF_datasets__5mC"
+      },
+      {
+        "mean": 0.6731980437862791,
+        "metric_key": "eval_f1",
+        "model": "plant-dnamamba-6mer",
+        "n_seeds": 3,
+        "per_seed": {
+          "42": 0.696969696969697,
+          "43": 0.6764705882352942,
+          "44": 0.6461538461538462
+        },
+        "std": 0.02087414403694654,
+        "task": "GUE__emp_H3"
+      },
+      {
+        "mean": 0.5860805860805861,
+        "metric_key": "eval_f1",
+        "model": "plant-dnamamba-6mer",
+        "n_seeds": 3,
+        "per_seed": {
+          "42": 0.6153846153846154,
+          "43": 0.5714285714285714,
+          "44": 0.5714285714285714
+        },
+        "std": 0.020721077836968457,
+        "task": "iDNA_ABF_datasets__5mC"
+      }
+    ],
+    "description": "Whisker-geometry fixture derived from the real Phase-15 r2 multi-seed sweep; stds are ddof=0 population stds recomputed by the generator's own inline arithmetic.",
+    "generator": "scripts/generate-errorbar-fixtures.js",
+    "seeds": [
+      42,
+      43,
+      44
+    ],
+    "source_root": "pipeline/finetuned-sweep-r2",
+    "std_convention": "population std (ddof=0) over completed seeds of the dataset-declared primary metric"
+  },
+  "scales": {
+    "scaleA": {
+      "pixels": 240,
+      "range": 0.3,
+      "start": 0.5
+    },
+    "scaleB": {
+      "pixels": 320,
+      "range": 0.5,
+      "start": 0.4
+    }
+  },
+  "scenarios": [
+    {
+      "anchor": 96,
+      "capWidth": 8,
+      "cell": "plant-dnabert-6mer/GUE__emp_H3",
+      "expected": {
+        "capHalf": 4,
+        "hi": 159.33386978346897,
+        "lo": 145.64998934602818
+      },
+      "hiValue": 0.6991673372293362,
+      "loValue": 0.6820624866825352,
+      "mode": "point",
+      "name": "point-plant-dnabert-6mer/GUE__emp_H3",
+      "scale": "scaleA"
+    },
+    {
+      "anchor": 40,
+      "capWidth": 14,
+      "cell": "plant-dnabert-6mer/GUE__emp_H3",
+      "expected": {
+        "capHalf": 7,
+        "hi": 191.46709582677516,
+        "lo": 180.51999147682253
+      },
+      "hiValue": 0.6991673372293362,
+      "loValue": 0.6820624866825352,
+      "mode": "bar",
+      "name": "bar-plant-dnabert-6mer/GUE__emp_H3",
+      "scale": "scaleB"
+    },
+    {
+      "anchor": 160,
+      "capWidth": 14,
+      "cell": "plant-dnabert-6mer/iDNA_ABF_datasets__5mC",
+      "expected": {
+        "capHalf": 7,
+        "hi": 181.96811256036483,
+        "lo": 67.93664934439704
+      },
+      "hiValue": 0.6843251758755701,
+      "loValue": 0.5061510146006204,
+      "mode": "point",
+      "name": "point-plant-dnabert-6mer/iDNA_ABF_datasets__5mC",
+      "scale": "scaleB"
+    },
+    {
+      "anchor": 62,
+      "capWidth": 8,
+      "cell": "plant-dnabert-6mer/iDNA_ABF_datasets__5mC",
+      "expected": {
+        "capHalf": 4,
+        "hi": 147.46014070045607,
+        "lo": 4.9208116804963185
+      },
+      "hiValue": 0.6843251758755701,
+      "loValue": 0.5061510146006204,
+      "mode": "bar",
+      "name": "bar-plant-dnabert-6mer/iDNA_ABF_datasets__5mC",
+      "scale": "scaleA"
+    },
+    {
+      "anchor": 224,
+      "capWidth": 8,
+      "cell": "plant-dnamamba-6mer/GUE__emp_H3",
+      "expected": {
+        "capHalf": 4,
+        "hi": 155.25775025858053,
+        "lo": 121.85911979946609
+      },
+      "hiValue": 0.6940721878232257,
+      "loValue": 0.6523238997493326,
+      "mode": "point",
+      "name": "point-plant-dnamamba-6mer/GUE__emp_H3",
+      "scale": "scaleA"
+    },
+    {
+      "anchor": 84,
+      "capWidth": 14,
+      "cell": "plant-dnamamba-6mer/GUE__emp_H3",
+      "expected": {
+        "capHalf": 7,
+        "hi": 188.20620020686442,
+        "lo": 161.48729583957282
+      },
+      "hiValue": 0.6940721878232257,
+      "loValue": 0.6523238997493326,
+      "mode": "bar",
+      "name": "bar-plant-dnamamba-6mer/GUE__emp_H3",
+      "scale": "scaleB"
+    },
+    {
+      "anchor": 288,
+      "capWidth": 14,
+      "cell": "plant-dnamamba-6mer/iDNA_ABF_datasets__5mC",
+      "expected": {
+        "capHalf": 7,
+        "hi": 132.35306490723488,
+        "lo": 105.83008527591531
+      },
+      "hiValue": 0.6068016639175545,
+      "loValue": 0.5653595082436177,
+      "mode": "point",
+      "name": "point-plant-dnamamba-6mer/iDNA_ABF_datasets__5mC",
+      "scale": "scaleB"
+    },
+    {
+      "anchor": 106,
+      "capWidth": 8,
+      "cell": "plant-dnamamba-6mer/iDNA_ABF_datasets__5mC",
+      "expected": {
+        "capHalf": 4,
+        "hi": 85.44133113404362,
+        "lo": 52.28760659489416
+      },
+      "hiValue": 0.6068016639175545,
+      "loValue": 0.5653595082436177,
+      "mode": "bar",
+      "name": "bar-plant-dnamamba-6mer/iDNA_ABF_datasets__5mC",
+      "scale": "scaleA"
+    }
+  ]
+}

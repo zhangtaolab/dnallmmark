@@ -1,0 +1,19 @@
+##fileformat=VCFv4.2
+##contig=<ID=chrV,length=42>
+##INFO=<ID=CLNSIG,Number=.,Type=String,Description="ClinVar clinical significance">
+##INFO=<ID=CLNREVSTAT,Number=.,Type=String,Description="ClinVar review status">
+##INFO=<ID=CLNVC,Number=1,Type=String,Description="ClinVar variant type">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+chrV	4	NON01	G	T	.	.	CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_single_submitter;CLNVC=single_nucleotide_variant
+chrV	7	NON02	C	T	.	.	CLNSIG=Likely_pathogenic;CLNREVSTAT=criteria_provided,_single_submitter;CLNVC=single_nucleotide_variant
+chrV	11	NON03	G	A	.	.	CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_multiple_submitters,_no_conflicts;CLNVC=single_nucleotide_variant
+chrV	23	NON04	C	A	.	.	CLNSIG=Likely_pathogenic;CLNREVSTAT=criteria_provided,_single_submitter;CLNVC=single_nucleotide_variant
+chrV	15	SYN01	C	T	.	.	CLNSIG=Benign;CLNREVSTAT=criteria_provided,_single_submitter;CLNVC=single_nucleotide_variant
+chrV	18	SYN02	T	C	.	.	CLNSIG=Benign;CLNREVSTAT=criteria_provided,_single_submitter;CLNVC=single_nucleotide_variant
+chrV	21	SYN03	G	A	.	.	CLNSIG=Benign;CLNREVSTAT=criteria_provided,_multiple_submitters,_no_conflicts;CLNVC=single_nucleotide_variant
+chrV	36	SYN04	G	T	.	.	CLNSIG=Benign;CLNREVSTAT=criteria_provided,_single_submitter;CLNVC=single_nucleotide_variant
+chrV	25	NON05	A	T,G,C,AT	.	.	CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_single_submitter;CLNVC=single_nucleotide_variant
+chrV	28	MIS01	T	C	.	.	CLNSIG=Benign;CLNREVSTAT=criteria_provided,_single_submitter;CLNVC=single_nucleotide_variant
+chrV	1	VUS01	A	G	.	.	CLNSIG=Uncertain_significance;CLNREVSTAT=criteria_provided,_single_submitter;CLNVC=single_nucleotide_variant
+chrV	13	STAR01	G	A	.	.	CLNSIG=Pathogenic;CLNREVSTAT=no_assertion_criteria_provided;CLNVC=single_nucleotide_variant
+chrV	39	INDEL01	TTT	T	.	.	CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_single_submitter;CLNVC=Deletion

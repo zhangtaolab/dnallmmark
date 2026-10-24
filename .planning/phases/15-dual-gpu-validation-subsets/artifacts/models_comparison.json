@@ -1,0 +1,60 @@
+{
+    "plant-dnabert-6mer": {
+        "model": {
+            "context_len (bp)": 2000,
+            "name": "PlantDNABERT-6mer",
+            "series": "PDLLMs",
+            "size (M)": 89,
+            "species": "plants",
+            "tokenizer": "6-mer",
+            "type": "MLM"
+        },
+        "performance": {
+            "avg_PFLOPs": 0.0132763166313,
+            "avg_rank": 1.0,
+            "avg_raw": 0.6429265035970155,
+            "rank": 1,
+            "rank_score": 2.0,
+            "samples": 2,
+            "sum_PFLOPs": 0.0265526332626,
+            "sum_minmax": 2.0,
+            "sum_robust": 1.9999999999999871,
+            "sum_zscore": 1.9999999999999938,
+            "top10_count": 2,
+            "top1_count": 2,
+            "top3_count": 2,
+            "top5_count": 2,
+            "top8_count": 2,
+            "weighted_score": 0.9999999999999969
+        }
+    },
+    "plant-dnamamba-6mer": {
+        "model": {
+            "context_len (bp)": 2000,
+            "name": "PlantDNAMamba-6mer",
+            "series": "PDLLMs",
+            "size (M)": 94,
+            "species": "plants",
+            "tokenizer": "6-mer",
+            "type": "CLM"
+        },
+        "performance": {
+            "avg_PFLOPs": 0.01403179320858,
+            "avg_rank": 2.0,
+            "avg_raw": 0.6296393149334326,
+            "rank": 2,
+            "rank_score": 0.0,
+            "samples": 2,
+            "sum_PFLOPs": 0.02806358641716,
+            "sum_minmax": 0.0,
+            "sum_robust": -2.0,
+            "sum_zscore": -2.000000000000006,
+            "top10_count": 2,
+            "top1_count": 0,
+            "top3_count": 2,
+            "top5_count": 2,
+            "top8_count": 2,
+            "weighted_score": -1.000000000000003
+        }
+    }
+}

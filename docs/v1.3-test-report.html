@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DNALLM-Mark v1.3 Milestone Test Report</title>
+<style>
+  /* ===== Design tokens mirrored verbatim from dnallm-mark/css/variables.css =====
+     (a standalone document cannot var() into the site stylesheet; the mapping
+     table is in .planning/phases/18-docs-authoring/18-UI-SPEC.md — Color table) */
+  :root {
+    /* surfaces + text */
+    --bg-white: #FFFFFF;      /* --color-bg-white */
+    --bg-cream: #F7F6F5;      /* --color-bg-cream */
+    --bg-gray-50: #F9FAFB;    /* --color-bg-gray-50 */
+    --border: #E9ECEF;        /* --color-border */
+    --border-muted: #D9D9D9;  /* decorative rules only, never text on white */
+    --text-primary: #292C33;  /* --color-primary (light theme: text on white) */
+    --text-secondary: #595F6E;
+    --accent: #265354;        /* --color-accent-teal (8.6:1 on white) */
+    /* the four derived AA badge tones — the ONLY new hex values (18-UI-SPEC) */
+    --tone-pass: #2F7D0F;     /* derived from --color-success #52C41A (2.3:1) */
+    --tone-env: #8C6300;      /* derived from --color-warning #FAAD14 */
+    --tone-pending: #0E6EDC;  /* derived from --color-info #1890FF */
+    --tone-failed: #A61D24;   /* derived from --color-error #FF4D4F */
+    /* typography: 4 sizes / 2 weights (site scale subset) */
+    --font-stack: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+    --size-display: 32px;   /* --font-2xl */
+    --size-section: 20px;   /* --font-lg */
+    --size-body: 15px;      /* --font-md */
+    --size-caption: 12px;   /* --font-sm */
+    /* spacing: multiples of 4 (--spacing-* , variables.css:79-86) */
+    --sp-xs: 4px; --sp-sm: 8px; --sp-md: 16px; --sp-lg: 24px; --sp-xl: 32px; --sp-2xl: 48px;
+    --radius-sm: 4px;       /* --radius-sm */
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg-white);
+    color: var(--text-primary);
+    font-family: var(--font-stack);
+    font-size: var(--size-body);
+    font-weight: 400;
+    line-height: 1.6;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 0 var(--sp-md); }
+  h1 {
+    font-size: var(--size-display); font-weight: 600; line-height: 1.2;
+    margin: var(--sp-2xl) 0 var(--sp-sm);
+  }
+  h2 {
+    font-size: var(--size-section); font-weight: 600; line-height: 1.2;
+    margin: 0 0 var(--sp-md);
+    padding-bottom: var(--sp-sm);
+    border-bottom: 2px solid var(--accent);
+  }
+  h2 .num { color: var(--accent); }
+  h3 { font-size: var(--size-body); font-weight: 600; line-height: 1.2; margin: var(--sp-lg) 0 var(--sp-sm); }
+  p { margin: 0 0 var(--sp-md); }
+  ul, ol { margin: 0 0 var(--sp-md); padding-left: var(--sp-lg); }
+  li { margin-bottom: var(--sp-xs); }
+  a { color: var(--accent); }
+  code {
+    font-family: var(--font-mono); font-size: var(--size-caption);
+    background: var(--bg-cream); padding: 1px var(--sp-xs);
+    border-radius: var(--radius-sm); word-break: break-word;
+  }
+  pre {
+    font-family: var(--font-mono); font-size: var(--size-caption);
+    line-height: 1.4; background: var(--bg-cream);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: var(--sp-md); overflow-x: auto; margin: 0 0 var(--sp-md);
+  }
+  pre code { background: none; padding: 0; }
+  .subtitle { color: var(--text-secondary); margin-bottom: var(--sp-md); }
+  .toc {
+    background: var(--bg-cream); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: var(--sp-md) var(--sp-lg);
+    margin-bottom: var(--sp-2xl); font-size: var(--size-caption);
+  }
+  .toc a { text-decoration: none; }
+  .toc a:hover, .toc a:target { text-decoration: underline; }
+  .toc ul { display: flex; flex-wrap: wrap; gap: var(--sp-xs) var(--sp-lg); margin: 0; padding: 0; list-style: none; }
+  section { padding: var(--sp-xl) 0; }
+  section.phase { border-top: 1px solid var(--border); }
+  .card {
+    background: var(--bg-cream); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: var(--sp-lg); margin: var(--sp-md) 0;
+  }
+  .table-scroll { overflow-x: auto; margin: 0 0 var(--sp-sm); }
+  table { border-collapse: collapse; width: 100%; font-size: var(--size-caption); }
+  th {
+    text-align: left; font-weight: 600; font-size: var(--size-caption);
+    border-bottom: 2px solid var(--border-muted); padding: var(--sp-xs) var(--sp-md);
+    white-space: nowrap;
+  }
+  td { border-bottom: 1px solid var(--border); padding: var(--sp-xs) var(--sp-md); vertical-align: top; }
+  tbody tr:nth-child(even) { background: var(--bg-gray-50); }
+  .cite { color: var(--text-secondary); font-size: var(--size-caption); }
+  /* ===== the four-status badge vocabulary (18-UI-SPEC Color table) ===== */
+  .badge {
+    display: inline-block; font-size: var(--size-caption); font-weight: 600;
+    padding: 2px 8px; border-radius: var(--radius-sm);
+    border: 1px solid; background: var(--bg-white); white-space: nowrap;
+  }
+  .badge--pass { color: var(--tone-pass); border-color: var(--tone-pass); }
+  .badge--env { color: var(--tone-env); border-color: var(--tone-env); }
+  .badge--pending { color: var(--tone-pending); border-color: var(--tone-pending); }
+  .badge--failed { color: var(--tone-failed); border-color: var(--tone-failed); }
+  .legend { margin: var(--sp-sm) 0 0; padding: var(--sp-sm) var(--sp-md); }
+  .legend .badge { margin-right: var(--sp-md); }
+  /* ===== figures (the two-line caption contract) ===== */
+  figure { margin: var(--sp-lg) 0; }
+  figure img {
+    display: block; max-width: 100%; height: auto;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-white); margin: 0 auto;
+  }
+  figure svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  figcaption { font-size: var(--size-caption); line-height: 1.4; margin-top: var(--sp-sm); color: var(--text-secondary); }
+  figcaption .fig-title { color: var(--text-primary); font-weight: 600; }
+  /* ===== gap-closure callout (teal left border) ===== */
+  aside.callout {
+    border-left: 3px solid var(--accent); background: var(--bg-cream);
+    padding: var(--sp-lg); margin: var(--sp-xl) 0; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
+  aside.callout h3 { color: var(--accent); margin-top: 0; }
+  details { margin: var(--sp-md) 0; }
+  details summary { cursor: pointer; font-size: var(--size-caption); font-weight: 600; }
+  /* ===== responsive: the single 768px breakpoint ===== */
+  @media (max-width: 768px) {
+    main { padding: 0 var(--sp-md); }
+    h1 { font-size: var(--size-section); }
+  }
+  /* ===== print: the report must print to PDF cleanly ===== */
+  @media print {
+    .toc { display: none; }
+    section.phase { page-break-before: always; }
+    pre { white-space: pre-wrap; }
+    figure img, figure svg { max-width: 100%; }
+    a { color: var(--text-primary); text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<header id="top">
+  <h1>DNALLM-Mark v1.3 Milestone Test Report</h1>
+  <p class="subtitle">多 GPU 编排与验证 · Phases 13–18 · generated 2026-10-22 · the multi-GPU orchestration &amp; validation milestone — what was built, what ran, and where every number comes from</p>
+  <nav class="toc" aria-label="Table of contents">
+    <ul>
+      <li><a href="#summary">Summary</a></li>
+      <li><a href="#phase-13">13</a></li>
+      <li><a href="#phase-14">14</a></li>
+      <li><a href="#phase-15">15</a></li>
+      <li><a href="#phase-16">16</a></li>
+      <li><a href="#phase-17">17</a></li>
+      <li><a href="#phase-18">18</a></li>
+      <li><a href="#gap-closures">Gap Closures</a></li>
+      <li><a href="#gpu-evidence">GPU Evidence</a></li>
+      <li><a href="#lanes">Lanes &amp; Exclusions</a></li>
+    </ul>
+  </nav>
+</header>
+
+<!-- ================= SUMMARY ================= -->
+<section id="summary">
+  <h2><span class="num">§</span> Summary</h2>
+  <p>All 20 v1.3 requirements delivered; every lane green at the documented baseline with 6 environmental exclusions (below).</p>
+  <p>v1.3 spanned six phases: the dynamic dispatch engine (13), the orchestration view and failure recovery (14), dual-GPU validation with 5% subset datasets (15), the TUI multi-GPU surface (16), web multi-seed error bars (17), and documentation (18). The verification scores of the five implementation phases — <strong>23/23 · 28/28 · 7/7 · 41/41 · 16/16</strong> — are cited from their verification frontmatters (<span class="cite">.planning/phases/13-dynamic-dispatch-core/13-VERIFICATION.md, 14-…/14-VERIFICATION.md, 15-…/15-VERIFICATION.md, 16-…/16-VERIFICATION.md, 17-…/17-VERIFICATION.md</span>), and every GPU number in this report is paired with the run id from the same archived artifact (<span class="cite">the run_id/timing pairing discipline, 18-RESEARCH.md Pitfall 1</span>).</p>
+
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr><th>Lane</th><th>Scope</th><th>Result</th><th>Status</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>pytest full suite</td>
+        <td>repo-wide CPU lanes (<code>make test</code>)</td>
+        <td>2236 passed / 3 skipped / 6 environmental</td>
+        <td><span class="badge badge--env">⚠ ENVIRONMENTAL-EXCLUDED</span></td>
+        <td>Recorded 2026-10-21 (<span class="cite">.planning/phases/17-web-multiseed-error-bars/17-VERIFICATION.md:121</span>): “SUMMARY records 2236 passed / 6 documented environmental root-chmod failures, and the suite needs the machine's academic proxy for one evaluate-touching lane”. The 6 exclusions are classified in <span class="cite">.planning/phases/17-web-multiseed-error-bars/17-03-SUMMARY.md:85</span>; a fresh full-suite run is owned by the milestone-close gate, not re-run in-phase (Q4 ruling).</td>
+      </tr>
+      <tr>
+        <td>node lanes</td>
+        <td><code>node --test tests/js/*.test.js</code></td>
+        <td>44/44 pass</td>
+        <td><span class="badge badge--pass">✓ PASS</span></td>
+        <td>Recorded 2026-10-21 (<span class="cite">17-VERIFICATION.md:69</span>), incl. <code>tests/js/error-bars.test.js</code> (18 cases).</td>
+      </tr>
+      <tr>
+        <td>pty real-app lane</td>
+        <td><code>tests/tui/test_pty_driver.py</code></td>
+        <td>green (inside the recorded suite runs)</td>
+        <td><span class="badge badge--pass">✓ PASS</span></td>
+        <td>The permanent real-pty regression lane (spawned the REAL app under a pty, asserting render behavior Pilot cannot see); part of <code>make test</code> since 261018-08g.</td>
+      </tr>
+      <tr>
+        <td>tier-1 contract pins</td>
+        <td><code>tests/test_run_finetune_contracts.py</code> family</td>
+        <td>76 green</td>
+        <td><span class="badge badge--pass">✓ PASS</span></td>
+        <td>Incl. the 15-05 eval-merge ordering pin (<span class="cite">.planning/phases/15-dual-gpu-validation-subsets/15-05-SUMMARY.md</span>: “contracts 76 + regression 306 green”).</td>
+      </tr>
+      <tr>
+        <td>determinism + vendored stats</td>
+        <td><code>tests/test_determinism.py</code> + <code>tests/test_vendored_stats.py</code></td>
+        <td>10 passed, unmodified</td>
+        <td><span class="badge badge--pass">✓ PASS</span></td>
+        <td>Zero-drift gates over the committed data tree (<span class="cite">17-VERIFICATION.md:57</span>: both files “run this pass … git log since phase start shows zero edits”).</td>
+      </tr>
+      <tr>
+        <td>dispatch + shard suites</td>
+        <td><code>tests/test_dispatch_core.py</code> + <code>tests/test_sweep_shard.py</code></td>
+        <td>102 passed</td>
+        <td><span class="badge badge--pass">✓ PASS</span></td>
+        <td>“102 passed in 1.42s” (<span class="cite">13-VERIFICATION.md:162</span>); grew to 93 dispatch tests / 155 combined by 14-03 (<span class="cite">.planning/ROADMAP.md, Phase 14 plan row</span>).</td>
+      </tr>
+      <tr>
+        <td>TUI snapshot goldens</td>
+        <td><code>tests/tui/test_snapshots.py</code> (10 committed SVGs)</td>
+        <td>working-tree golden lane 12/12</td>
+        <td><span class="badge badge--pending">◌ PENDING-REVIEW</span></td>
+        <td>Machine-verified this pass (<span class="cite">16-VERIFICATION.md maintainer_handoff</span>): exactly 4 SVGs remain deliberately UNCOMMITTED pending maintainer review — WINDOWS #50.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="legend card">
+    <span class="badge badge--pass">✓ PASS</span>
+    <span class="badge badge--env">⚠ ENVIRONMENTAL-EXCLUDED</span> (reason mandatory)
+    <span class="badge badge--pending">◌ PENDING-REVIEW</span>
+    <span class="badge badge--failed">✗ FAILED</span> (disposition mandatory)
+  </p>
+</section>
+
+<!-- ================= PHASE 13 ================= -->
+<section id="phase-13" class="phase">
+  <h2><span class="num">13</span> — Dynamic dispatch core (动态调度核心)</h2>
+
+  <h3>Goal</h3>
+  <p>The orchestrator dispatches (model×dataset×seed) cells as a work queue over per-GPU workers with worker-independent cell outputs, an exactly-once claim ledger, and resume semantics proven under mid-cell kill — legacy static sharding coexists behind explicit mode declaration. <span class="cite">( ROADMAP.md, Phase 13 Goal — requirements MGPU-01, MGPU-02, MGPU-06 )</span></p>
+
+  <h3>What Shipped</h3>
+  <ul>
+    <li>A new sibling engine <code>pipeline/dispatch_core.py</code> (lazy-imported by <code>run_sweep_shard.py</code> behind <code>--mode {static,dispatch}</code>): deterministic enumeration → zero-cell refusal → lock → <code>dispatch_state.json</code> evidence → O_EXCL claim ledger (<code>dispatch_ledger/</code>) → spawn → finalize; the static path stayed byte-identical with the 49-test shard suite as the tripwire. <span class="cite">(13-01-SUMMARY.md)</span></li>
+    <li>Dry-run plan artifact (the static projection verbatim plus one <code>orchestrator_mode: "dispatch"</code> marker), evidence-based merge refusal (dispatch roots need no merge), static byte-identity pins, and the Makefile lint slot. <span class="cite">(13-02-SUMMARY.md)</span></li>
+    <li>Code-review hardening with mutation-proven pins: CR-01 <code>--from-failures</code> honored in dispatch mode, CR-02 lock create-to-write grace, CR-03 child pid persisted before wait, CR-04 per-cell containment; WR-01/02/03 claim-ledger guards. <span class="cite">(STATE.md, Phase 13 decisions)</span></li>
+  </ul>
+
+  <h3>Evidence</h3>
+  <ul>
+    <li>Verification score: <strong>23/23</strong> must-haves verified, <code>status: passed</code> <span class="cite">(.planning/phases/13-dynamic-dispatch-core/13-VERIFICATION.md frontmatter, verified 2026-10-20)</span>.</li>
+    <li>Suite: <code>tests/test_dispatch_core.py</code> + <code>tests/test_sweep_shard.py</code> — <strong>102 passed in 1.42s</strong> <span class="cite">(13-VERIFICATION.md:162)</span>, including the SC2 acceptance test <code>test_sc2_kill_test_resume_exactly_once</code> (a worker killed mid-cell and relaunched completes every cell exactly once — “green in this pass's 102/102 run”, 13-VERIFICATION.md:54) and the dry-run byte-identity tests (<code>test_dispatch_dry_run_is_byte_identical_across_runs</code>).</li>
+    <li>The frozen protocol order, claim naming (percent-encoded fields + sha256[:12] digest suffix), and stale-lock reclaim by pid-liveness are pinned in the module docstring of <code>pipeline/dispatch_core.py</code> and cited by 13-VERIFICATION truths 9-21.</li>
+  </ul>
+
+  <figure>
+    <img src="report-assets/monitor_running.svg" alt="Monitor screen (slot 5) of the real console app: the dispatch line shows the archived mid-run state of the real r2 sweep (running, 6/12 done, queue 4) with both GPU worker rows in flight, above the two GPU lanes panel" width="1100">
+    <figcaption>
+      <span class="fig-title">Figure 1 — Slot-5 Monitor of the real console app (real-app instance exported by the snapshot harness, 2026-10-22).</span> <span class="badge badge--pending">◌ PENDING-REVIEW</span><br>
+      The dispatch line and per-worker rows render the <em>real archived mid-run dispatch_state of the r2 sweep</em> (status running, 完成 6/12, 队列 4, GPU 0 in-flight <code>plant-dnamamba-6mer × GUE__emp_H3 × seed_42</code>, GPU 1 in-flight seed_43 — the artifact quoted in 15-03-SUMMARY.md:164-166); the G GPU-lanes panel carries the <em>live nvidia-smi probe output</em> on the validation machine at capture time (both GPUs idle post-milestone: 0%, 2/32607 MiB, 28 °C); the card's cell grid is a harness fixture reconstructed from that archived state (the real root is post-run today).<br>
+      Proves: the shipped slot-5 surfaces render real dispatch state and real probe rows — the dispatch artifact introduced in Phase 13 (and frozen at schema v2 in Phase 14) is what the operator actually sees.
+    </figcaption>
+  </figure>
+
+  <h3>Analysis</h3>
+  <p>The hard problem was exactly-once execution under crash: a dispatcher killed mid-cell must never double-run or lose a cell on relaunch. Phase 13 solved it structurally — the O_EXCL claim ledger makes double-claim impossible by construction, resume is pure per-cell <code>relaunch_decision</code> over on-disk evidence (trainer_state marker or completed claim with agreeing cell key), and the SC2 kill test proves the property from the disk state alone rather than from orchestrator memory. The cost of that discipline appeared later as a genuine gap: dispatch roots initially carried no <code>run_record.json</code> (Phase 13 decision A3 deferred it), which surfaced as the 15-01 halt and was closed by 15-04 (see Gap Closures).</p>
+</section>
+
+<!-- ================= PHASE 14 ================= -->
+<section id="phase-14" class="phase">
+  <h2><span class="num">14</span> — Orchestration view &amp; failure recovery (编排运行视图与失败恢复)</h2>
+
+  <h3>Goal</h3>
+  <p>Running multi-GPU sweeps are observable (terminal table + machine-readable state file) and recoverable (cross-worker failure re-run with lane context; post-merge verify + confirm-gated cleanup). <span class="cite">( ROADMAP.md, Phase 14 Goal — requirements MGPU-03, MGPU-04, MGPU-05 )</span></p>
+
+  <h3>What Shipped</h3>
+  <ul>
+    <li><code>dispatch_state.json</code> frozen at consumer schema v2 (<code>schemas/dispatch_state.json</code>, strict draft 2020-12) — queue depth derived at publish under the state lock, per-worker in-flight cells, bounded failures list — plus the live plain-line terminal table rendered inside <code>dispatch_core.py</code> at the <code>_write_state</code> choke point. <span class="cite">(14-01-SUMMARY.md)</span></li>
+    <li><code>export_runs.py --dry-run</code> consumption seam and the <code>--cleanup</code> sibling mode: dual verification before any removal, behind a typed-phrase gate (the resolved <code>--output-root</code> string, exact equality); dispatch roots refuse merge by evidence. <span class="cite">(14-02-SUMMARY.md)</span></li>
+    <li>Ledger-driven cross-worker failure re-run: <code>--rerun-failed</code> replays the claim-time lane verbatim (peft lane preserved — the 12-04 lane-blindness fixed), with append-only archive genealogy (<code>dispatch_ledger/archive/</code> + <code>rerun_of</code>) and per-cell heterogeneous-lane refusal. <span class="cite">(14-03-SUMMARY.md)</span></li>
+  </ul>
+
+  <h3>Evidence</h3>
+  <ul>
+    <li>Verification score: <strong>28/28</strong> must-haves verified, <code>status: passed</code> <span class="cite">(.planning/phases/14-orchestration-view-recovery/14-VERIFICATION.md frontmatter, verified 2026-10-20)</span>.</li>
+    <li>Suite growth over the Phase-13 baseline: 66 dispatch tests at 14-01, 93 dispatch tests / 155 dispatch+shard combined at 14-03 <span class="cite">(ROADMAP.md, Phase 14 plan rows)</span>; the flush property was proven on real lanes — a pty test reads the first <code>[Dispatch]</code> header within 3 s while a 5 s-holding fake cell keeps the drain alive <span class="cite">(STATE.md, 14-01 decisions)</span>.</li>
+    <li>Named pins: the schema consumer test over <code>schemas/dispatch_state.json</code>, the D14-15 end-to-end (one command re-runs exactly the failed cells with byte-identical lane argv), and the typed-phrase cleanup refusal paths — all in <code>tests/test_dispatch_core.py</code> / <code>tests/test_export_runs.py</code>.</li>
+  </ul>
+
+  <h3>Analysis</h3>
+  <p>The hard problem was observability that can never kill the run: the live table renders inside the single-writer state lock at the write choke point, so every rendered line corresponds to a committed state file — and the renderer's output errors are swallowed by contract, because a dying view must never fail a cell. The companion problem was trustworthy recovery: re-running failures verbatim required capturing the full lane (model, task, seed, fraction, peft, variant flags) at claim time — before anyone knew a cell would fail — which is why the ledger stores the lane in the claim itself and the re-run is a replay, never a re-derivation.</p>
+</section>
+
+<!-- ================= PHASE 15 ================= -->
+<section id="phase-15" class="phase">
+  <h2><span class="num">15</span> — Dual-GPU validation &amp; subsets (双卡验证与子数据集)</h2>
+
+  <h3>Goal</h3>
+  <p>The dispatch orchestrator is proven on the local 2× RTX 5090 — the multi-gpu N=2 smoke passes and a small real sweep over pre-materialized 5% stratified subsets runs both GPUs end-to-end through the data chain. <span class="cite">( ROADMAP.md, Phase 15 Goal — requirements VAL-01, VAL-02, VAL-03 )</span></p>
+
+  <h3>What Shipped</h3>
+  <ul>
+    <li>The N=2 dispatch smoke green on a fresh root (<code>pipeline/finetuned-smoke-r2</code>) after the 15-04 run_record gap closure — all four D15-02 criteria incl. the consumption dry-run; WINDOWS #21/#44 closed; docs/multi-gpu.md rewritten as the executed procedure <span class="cite">(15-01-SUMMARY.md)</span>.</li>
+    <li>The subset generator <code>script/make_subset_datasets.py</code>: stdlib-only, per-split independent stratified sampling with <code>k = max(1, int(n × fraction))</code> floor-of-1, run-twice byte-identity, and registry isolation that refuses official-dir overlap <span class="cite">(15-02-SUMMARY.md)</span>.</li>
+    <li>The 12-cell real sweep on the fresh root <code>pipeline/finetuned-sweep-r2</code> (2 models × 2 subset tasks × 3 seeds, 1 epoch) with the zero-modification export→summarize consumption proof and five archived JSON artifacts; WINDOWS #45 closed <span class="cite">(15-03-SUMMARY.md)</span>.</li>
+    <li>Two gap closures that this phase's halts forced: <strong>15-04</strong> (dispatch run_record writer) and <strong>15-05</strong> (option-A eval merge) — told in full in the <a href="#gap-closures">Gap Closures</a> section.</li>
+  </ul>
+
+  <h3>Evidence</h3>
+  <ul>
+    <li>Verification score: <strong>7/7</strong> must-haves verified, <code>status: passed</code> <span class="cite">(.planning/phases/15-dual-gpu-validation-subsets/15-VERIFICATION.md frontmatter, verified 2026-10-21)</span>.</li>
+    <li>Subset suite: <code>tests/test_subset_datasets.py</code> — byte-identity, isolation, and fail-fast pins; the real-artifact checks (D15-15, repointed to the r2 evidence-of-record root + the eval-key pin) ran <strong>27 passed</strong> <span class="cite">(15-03-SUMMARY.md:218)</span>.</li>
+    <li>Real measured subset rows (from the executed generator log): 5mC train/dev/test <strong>105/11/117</strong> (source 2110/234/2344); emp_H3 <strong>598/74/74</strong> (source 11971/1497/1497) <span class="cite">(subset-generation.log, quoted in 18-01-SUMMARY.md Task 3)</span>.</li>
+    <li>Consumption proven at content level: <code>models_comparison_animal.json</code> avg_raw equals the 5mC f1 mean and <code>_microbe.json</code> equals the emp_H3 f1 mean per model; the committed <code>dnallm-mark/data/</code> tree stayed porcelain-clean throughout <span class="cite">(15-03-SUMMARY.md:197-207)</span>.</li>
+  </ul>
+
+  <h3>Analysis</h3>
+  <p>The hard problem was trusting the chain end-to-end: the first sweep was green at the orchestrator level yet <em>halted</em> at the consumption proof, because the exported score slots were empty — a producer seam gap (run_finetune discarding <code>trainer.evaluate()</code> since the port) that no orchestrator-level test could see. The phase's instrument was the halt-at-consumption discipline plus the fresh-root re-run: the fix landed behind tier-1 pins, and the proof was a brand-new 12-cell run on a root whose resume markers could not mask anything, with the eval gate asserted <em>before</em> the chain rather than after it.</p>
+</section>
+
+<!-- ================= PHASE 16 ================= -->
+<section id="phase-16" class="phase">
+  <h2><span class="num">16</span> — TUI multi-GPU surface (TUI 多 GPU 界面)</h2>
+
+  <h3>Goal</h3>
+  <p>The operator console launches and watches multi-GPU runs natively — slot-4 multi-GPU launch through the unchanged gate chain, slot-5 consumption of dispatch state, and the deferred G GPU-lanes display over a read-only nvidia-smi probe. <span class="cite">( ROADMAP.md, Phase 16 Goal — requirements TUI-01, TUI-02, TUI-03, TUI-04 )</span></p>
+
+  <h3>What Shipped</h3>
+  <ul>
+    <li>The <code>gpu_probe</code> service (textual-free CSV-mode subprocess probe, frozen dataclass rows, the one shared absent-outcome <code>None</code> for every failure mode) and the standing G GPU-lanes panel on the monitor's 2 s cadence — per-GPU utilization bar+%, memory used/total, temperature, with honest <code>未安装</code> / <code>N=0</code> empty states <span class="cite">(16-01-SUMMARY.md)</span>.</li>
+    <li>The tolerant <code>dispatch_state.json</code> v2 reader (frozen schema, None sentinel, invariant-checked-never-repaired) and the slot-5 Running-card dispatch rows: the dispatch line (queue depth, status) plus per-worker busy/idle rows, stale-marked past the shipped 3600 s cell-scale grace <span class="cite">(16-02-SUMMARY.md; grace value per 16-REVIEW WR-02)</span>.</li>
+    <li>Slot-4 multi-GPU launch: <code>RunSpec</code> workers/gpus fields, <code>compose_dispatch_argv</code> (<code>run_sweep_shard.py --mode dispatch --workers N</code>, <code>--gpus</code> present-only), the EHC-3 predicate replaced by multi-GPU capacity arithmetic, and the dispatch-plan preview line on both confirm faces <span class="cite">(16-03/16-04-SUMMARY.md)</span>.</li>
+    <li>Goldens regenerated: 3 SVGs + 1 new, deliberately uncommitted pending maintainer review — WINDOWS #50 <span class="cite">(16-05-SUMMARY.md; 16-VERIFICATION.md maintainer_handoff)</span>.</li>
+  </ul>
+
+  <h3>Evidence</h3>
+  <ul>
+    <li>Verification score: <strong>41/41</strong> must-haves verified, <code>status: passed</code> <span class="cite">(.planning/phases/16-tui-multi-gpu-surface/16-VERIFICATION.md frontmatter, verified 2026-10-21)</span>.</li>
+    <li>Named monitor/gate tests: <code>tests/tui/test_pilot_monitor.py</code> (incl. the NO_COLOR glyph-first G-panel legibility pin, <code>test_g_panel_no_color_pass</code>), <code>tests/tui/test_services_gpu_probe.py</code>, <code>tests/tui/test_services_dispatch_state.py</code>, <code>tests/tui/test_pilot_run_config.py</code>, <code>tests/tui/test_services_sweep_launcher.py</code> — the phase's covered-files list in 16-VERIFICATION.md.</li>
+    <li>The pty byte-silence lane proved the G-panel cadence worker adds zero bytes when nothing changes on the real 2×5090 box <span class="cite">(STATE.md, 16-01 decisions)</span>.</li>
+  </ul>
+
+  <figure>
+    <img src="report-assets/run_config.svg" alt="Run-config screen (slot 4) of the real console app: the picker lists the real registry entries with two r2 models and two r2 tasks marked, the params pane carries the multi-GPU dispatch section with workers and GPUs 0,1, and the preview line reads 2 models x 2 tasks x 3 seeds = 12 training items" width="1100">
+    <figcaption>
+      <span class="fig-title">Figure 2 — Slot-4 run-config of the real console app over the real registry view (real-app instance exported by the snapshot harness, 2026-10-22).</span> <span class="badge badge--pending">◌ PENDING-REVIEW</span><br>
+      The picker lists the <em>real overlay-merged registry</em> on the validation machine (已选: 模型 2/62 · 数据集 2/50 — 59 official + 3 local custom models, 50 official datasets); the marks are the executed r2 matrix (<code>plant-dnabert-6mer</code>, <code>plant-dnamamba-6mer</code> × <code>GUE__emp_H3</code>, <code>iDNA_ABF_datasets__5mC</code>), seeds 42,43,44; the 多 GPU 调度 section carries workers/GPUs 0,1; the preview line 干跑: 2 模型 × 2 任务 × 3 种子 = 12 训练项 is the real count for exactly that matrix. Params/argv legs delegate to the real service module; screen state and paths are harness fixtures.<br>
+      Proves: slot-4 composes the multi-GPU dispatch spec natively over real registry data — the same matrix the r2 sweep executed (16-03/16-04).
+    </figcaption>
+  </figure>
+
+  <figure>
+    <img src="report-assets/run_config_confirm.svg" alt="Gate confirm modal of the real console app over the r2 matrix spec: the summary line reads 2 models x 2 tasks x 3 seeds = 12 training items, the dispatch-plan line reads 2 workers x GPUs 0,1 with 12 queued, and the pair list names the four real model-task pairs" width="1100">
+    <figcaption>
+      <span class="fig-title">Figure 3 — The Y/N launch-confirm face over the same real r2 matrix spec (real-app instance, 2026-10-22).</span> <span class="badge badge--pending">◌ PENDING-REVIEW</span><br>
+      The gate chain (fresh enumeration → problems → capacity → env preflight → confirm) is the real screen code; the gate summary is computed from the spec by the service's own <code>gate_confirm_data</code> arithmetic — 调度计划: 2 workers × GPUs 0,1 · 排队 12, with the four real (model × task) pairs listed; the modal renders, never computes.<br>
+      Proves: the dispatch-plan preview line (D16-11) shows the operator the exact dispatch shape before the typed y-launch.
+    </figcaption>
+  </figure>
+
+  <h3>Analysis</h3>
+  <p>The hard problem was machine-independence with real hardware in the loop: the G panel must render live GPU rows on the validation box yet produce byte-identical goldens on a GPU-less CI runner. The solution was constructor-injection seams at every real-service boundary (probe provider, dispatch reader) plus per-region render gating — a lane value change never rewrites a healthy note, and the whole corpus renders the same bytes everywhere, with the honest <code>未安装</code> degradation pinned as a first-class golden rather than an error path.</p>
+</section>
+
+<!-- ================= PHASE 17 ================= -->
+<section id="phase-17" class="phase">
+  <h2><span class="num">17</span> — Web multi-seed error bars</h2>
+
+  <h3>Goal</h3>
+  <p>Multi-seed results display with error bars on the public pages — additive mean/std/n_seeds through the data chain, scatter whiskers via a vendored inline Chart.js plugin, floating-bar task charts — with zero drift in existing numbers. <span class="cite">( ROADMAP.md, Phase 17 Goal — requirements WEB-01, WEB-02, WEB-03 )</span></p>
+
+  <h3>What Shipped</h3>
+  <ul>
+    <li>The additive data-chain trio: schemas gained optional <code>mean</code>/<code>std</code>/<code>n_seeds</code> in properties only (required arrays unchanged), <code>export_runs.py</code> emits the trio at one site per view on the declared primary metric (population std, ddof=0, via a new helper outside the vendored banner), <code>summarize_comparison.py</code> propagates per-model stats into all four arena files, and METHODOLOGY.md fixes the sd-vs-std conventions once <span class="cite">(17-01-SUMMARY.md)</span>.</li>
+    <li>The browser leg: a vendored inline Chart.js plugin (<code>errorbars</code>, <code>afterDatasetsDraw</code>, zero new CDN scripts) drawing scatter whiskers with chartArea clamping; native floating-bar task charts on the primary metric with caps and no stems; tooltips gain the ±std line reading the model closure <span class="cite">(17-02-SUMMARY.md)</span>.</li>
+    <li>The node lane: fixtures generated from the real r2 tree (byte-idempotent, generator independent of the module under test) driving geometry-at-1e-9, additive-schema, and honest-absence tests <span class="cite">(17-03-SUMMARY.md)</span>.</li>
+  </ul>
+
+  <h3>Evidence</h3>
+  <ul>
+    <li>Verification score: <strong>16/16</strong> must-haves verified, <code>status: passed</code> <span class="cite">(.planning/phases/17-web-multiseed-error-bars/17-VERIFICATION.md frontmatter, verified 2026-10-21)</span>.</li>
+    <li>Node lane <strong>44/44</strong> incl. <code>tests/js/error-bars.test.js</code> (18 cases) <span class="cite">(17-VERIFICATION.md:69)</span>; zero-drift gates — <code>tests/test_determinism.py</code> + <code>tests/test_vendored_stats.py</code> 10 passed unmodified, trio-stripped equivalence over pre-existing keys <span class="cite">(17-VERIFICATION.md:57-58)</span>.</li>
+    <li>The committed <code>dnallm-mark/data/</code> tree was never regenerated: porcelain clean, zero <code>n_seeds</code> keys in committed data <span class="cite">(17-VERIFICATION.md:62)</span>.</li>
+  </ul>
+
+  <figure>
+    <img src="report-assets/shot-scatter.png" alt="Real Chromium headless render of the DNALLM-Mark leaderboard scatter page over the r2 re-run data chain; the multi-seed point carries its error-bar plugin rendering" width="1100">
+    <figcaption>
+      <span class="fig-title">Figure 4 — Leaderboard scatter (index.html) in real Chromium headless over the staged r2 re-run data chain, 2026-10-22.</span> <span class="badge badge--pass">✓ PASS</span><br>
+      Real execution: real Chromium (playwright-core) over the Phase-15 r2 sweep re-run through the real export→summarize chain; the plugin <code>errorbars</code> registered on the live chart, the std point carries std=0.0488 / nSeeds=3, and marker ink was pixel-verified at the point pixel <span class="cite">(17-VERIFICATION.md, “Visual Verification — Delegated to Orchestrator”)</span>. The whisker itself is sub-pixel on this view (std 0.049 against a 0–50 y-axis) — the honest rendering of a tiny spread, exactly as designed.<br>
+      Proves: the vendored inline plugin registers and renders on a real browser canvas against real sweep-derived data — no pixel lane existed before this capture.
+    </figcaption>
+  </figure>
+
+  <figure>
+    <img src="report-assets/shot-scatter-tooltip.png" alt="The same real Chromium leaderboard scatter with the pointer hovering the multi-seed point; the tooltip is open showing the model rows with the raw-score seed spread line" width="1100">
+    <figcaption>
+      <span class="fig-title">Figure 5 — The scatter tooltip on hover over the std-carrying point (real Chromium, fresh capture 2026-10-22).</span> <span class="badge badge--pass">✓ PASS</span><br>
+      Real execution at report-generation time: the pointer was moved to the std point's live pixel (read back from the chart instance: x=54, y=489 — matching the recorded geometry evidence), and the live chart state was read back before the shutter: tooltip <code>opacity=1</code>, 1 active element, 1 body line. The tooltip carries the “Raw-score seed spread: ±0.0488 (n=3)” qualification line on the std-carrying model.<br>
+      Proves: the ±std tooltip line renders on real data and only on std-carrying models (the honest-absence contract, SC-2a/2e).
+    </figcaption>
+  </figure>
+
+  <figure>
+    <img src="report-assets/shot-bars.png" alt="Real Chromium render of the task benchmark bar chart for the 5mC task over the r2 re-run data: two floating bars with whisker caps" width="1100">
+    <figcaption>
+      <span class="fig-title">Figure 6 — Task bar chart (task.html, 5mC) in real Chromium headless over the same staged r2 chain, 2026-10-22.</span> <span class="badge badge--pass">✓ PASS</span><br>
+      Real execution: live chart state read back — dataset = 2 floating-bar arrays exactly mean±std (0.5952±0.0891 → [0.5062, 0.6843]; 0.5861±0.0607 → [0.5654, 0.6068]), and PNG pixel assertions found bar ink across both spans and both whisker caps at the exact predicted pixels <span class="cite">(17-VERIFICATION.md, “Visual Verification”)</span>.<br>
+      Proves: the primary-metric task chart renders floating bars with caps (no stems) from real multi-seed values.
+    </figcaption>
+  </figure>
+
+  <figure>
+    <img src="report-assets/shot-bars-tooltip.png" alt="The same real task bar chart with the pointer hovering a bar; the tooltip is open with the model row and the seed-spread line" width="1100">
+    <figcaption>
+      <span class="fig-title">Figure 7 — The bar-chart tooltip on hover (same real Chromium session, 2026-10-22).</span> <span class="badge badge--pass">✓ PASS</span><br>
+      Real execution: pointer hovered a bar in the same headless session; the tooltip renders the model row with the ±std seed-spread line, reading the model closure (never <code>context.raw</code> on floating arrays — the WR-02 review fix).<br>
+      Proves: the tooltip qualification works on the floating-bar data form the review flagged as the misprint hazard.
+    </figcaption>
+  </figure>
+
+  <h3>Analysis</h3>
+  <p>The hard problem was zero drift while adding numbers everywhere: every new field had to be additive-optional so that suppressing std leaves every downstream byte identical to pre-v1.3. That drove the gate split (absent-case determinism suites run unmodified; additive-case equivalence compares trio-stripped inputs), the single-emission-site rule (one trio birthplace feeding both export views), and the ddof discipline — display std is population std (ddof=0), deliberately different from the vendored sd (ddof=1), with both conventions fixed once in METHODOLOGY.md.</p>
+</section>
+
+<!-- ================= PHASE 18 ================= -->
+<section id="phase-18" class="phase">
+  <h2><span class="num">18</span> — Documentation (文档撰写)</h2>
+
+  <h3>Goal</h3>
+  <p>v1.3's multi-GPU workflow is fully documented for operators and external reviewers — the dispatch-mode runbook, README/ONBOARDING multi-GPU + subset sections, TUI multi-GPU usage doc, and version-consistent v1.3.0 release documentation. <span class="cite">( ROADMAP.md, Phase 18 Goal — requirements DOCS-01..DOCS-04, plus this report under D18-05..D18-08 )</span></p>
+
+  <h3>What Shipped</h3>
+  <ul>
+    <li><code>docs/multi-gpu.md</code> restructured dispatch-first — the three-way mode table (dispatch primary / static legacy / DDP deferred with seam citations), the generalized dispatch launch/watch/<code>--rerun-failed</code> runbook, the 5% subset workflow with executed row counts, and a first-class <code>--cleanup</code> subsection — with the executed Phase-15 smoke record byte-preserved (sha256-pinned fences) <span class="cite">(18-01-SUMMARY.md; DOCS-01 landed)</span>.</li>
+    <li>README's “Multi-GPU sweeps (dispatch mode) and 5% subset datasets” subsection with copy-paste commands and executed expected-output lines; ONBOARDING §6 dispatch pointer + generate→configure→run→consume summary + the task-filter-vs-subset-dataset disambiguation; GETTING-STARTED's descriptor refreshed; zero-stale audit green across all three <span class="cite">(18-02-SUMMARY.md; DOCS-02 landed)</span>.</li>
+    <li>TUI-DEMO section 11 in the precedent five-part anatomy (the honest no-GIF variant with the queued re-record note), the TUI-GUIDE multi-GPU section corrected to shipped Phase-16 reality (stale grace 3600 s, GPUs default <code>0..workers-1</code> — shipped-source facts supersede the pre-review UI-SPEC values), and the about-screen milestone row reading the delivered v1.3 scope with all version surfaces verified at 1.3.0 <span class="cite">(18-03-SUMMARY.md; DOCS-03/DOCS-04 landed)</span>.</li>
+    <li>This report itself — the D18-05..D18-08 deliverable.</li>
+  </ul>
+
+  <h3>Evidence</h3>
+  <ul>
+    <li>The 18-01 gates: the smoke record's fenced blocks byte-identical (sha256 <code>dcdbc798…</code> asserted at every task), <code>--mode static</code> spelled into every static launch command, the retired “composes single sweeps” claim absent <span class="cite">(18-01-SUMMARY.md, Verification Evidence)</span>.</li>
+    <li>The 18-02 zero-stale audits (three greps, zero findings) and the premature-report-reference count zero; the 18-03 symbol-based about-pin test green with zero test edits (27 passed) and <code>make lint</code> + <code>make typecheck</code> clean <span class="cite">(18-02/18-03-SUMMARY.md)</span>.</li>
+    <li>This document's own structural gates: zero external requests (no scripting of any kind, no CSS imports, no external URLs, no web fonts), zero absolute machine paths, relative <code>report-assets/</code> references only, every number cited to a named in-repo artifact.</li>
+  </ul>
+
+  <h3>Analysis</h3>
+  <p>The hard problem was honesty under documentation pressure: docs that describe what <em>really shipped</em> (3600 s stale grace, not the pre-review 60 s; GPUs default <code>0..workers-1</code>, not “all detected”) and a report whose every figure states what process actually ran and over what data — real executions badged PASS, unreviewed captures badged PENDING-REVIEW, and nothing fabricated. That discipline is why this report pairs every GPU number with the run id from the same archived artifact and why the three TUI figures above carry PENDING-REVIEW badges naming the WINDOWS #50 batch.</p>
+</section>
+
+<!-- ================= GAP CLOSURES ================= -->
+<section id="gap-closures" class="phase">
+  <h2><span class="num">§</span> Gap closures</h2>
+  <p>Two gaps that Phase 15's real-chain validation surfaced, both closed by dedicated plans with the maintainer's ruling. They are the milestone's clearest evidence that running the real thing finds what unit tests cannot.</p>
+  <aside class="callout callout--gap">
+    <h3>15-04 — dispatch roots carry run_record.json</h3>
+    <p><strong>Gap:</strong> Phase 13 decision A3 deferred run records on dispatch roots — the dispatcher wrote cells, ledger, and state, but no <code>run_record.json</code>, so the export/consumption chain saw nothing. This halted 15-01 at the consumption dry-run criterion: the sweep was green, the chain empty.</p>
+    <p><strong>Closure:</strong> <code>dispatch_core.py</code> now writes <code>run_record.json</code> for every cell it runs (completed or failed) at claim finalize — composed from the cell's own <code>final_metrics.json</code> plus the claim-time lane through run_sweep's own <code>_new_record</code> (the single record-schema authority), with WR-12 no-overwrite refusal and CR-04-routed failures. The fresh 2-cell smoke re-run then passed all four D15-02 criteria incl. “[Dry-run] 2 run record(s) across 1 model(s) / 1 task(s)”. <span class="cite">(15-04-SUMMARY.md; supersession of Phase 13 A3 at its deferred handoff point)</span></p>
+  </aside>
+
+  <aside class="callout callout--gap">
+    <h3>15-05 — eval metrics reach final_metrics.json (WINDOWS #45)</h3>
+    <p><strong>Gap:</strong> <code>run_finetune.py</code> called bare <code>trainer.evaluate()</code> and discarded the result — faithful to the port since the Phase-7 deletion, so eval scores survived only inside trainer_state log_history. The first 12-cell sweep exported empty score slots; summarize emitted <code>{}</code> and skipped every species file. The consumption proof halted (D15-04), the remediation was routed to the maintainer (every option touched frozen, test-pinned contracts), and the ruling was <strong>option A</strong>: a deliberate narrow unfreeze of the producer.</p>
+    <p><strong>Closure:</strong> <code>run_finetune</code> captures <code>eval_results = trainer.evaluate()</code> outside the rank guard and merges flat-additive <code>merged = {**eval_results, **metrics}</code> into final_metrics.json, with the write order final_metrics(v1) &lt; flops &lt; evaluate &lt; merged re-write &lt; marker copy (D-05 hardware reads stay pre-evaluate; WR-13 marker-last strengthened). Tier-1 pins updated, not weakened (contracts 76 green). The fresh-root re-run then carried <code>eval_f1</code> in all 12 final_metrics and run_records, and the zero-modification chain emitted non-empty comparison files — WINDOWS #45 closed. <span class="cite">(15-05-SUMMARY.md; the green re-run in 15-03-SUMMARY.md:127-218)</span></p>
+  </aside>
+</section>
+
+<!-- ================= GPU EVIDENCE ================= -->
+<section id="gpu-evidence" class="phase">
+  <h2><span class="num">§</span> GPU run evidence</h2>
+  <p>Both milestone GPU runs executed on the validation machine (2× RTX 5090). Every number below is paired with the run id read from the <em>same</em> archived artifact as the timing — the pairing discipline of 18-RESEARCH Pitfall 1.</p>
+
+  <h3>The N=2 dispatch smoke (r2)</h3>
+  <ul>
+    <li>Wall duration <strong>155 s</strong> (2026-10-20T15:20:00Z → 15:22:35Z, exit 0), 2 cells — run id <strong><code>7759c2cc05364ebdacd2c6a5fa614bac</code></strong>. Both numbers are cited from the same execution record <span class="cite">(15-01-SUMMARY.md:102,108)</span>.</li>
+    <li>Terminal state: <code>status=done queue=0 done=2/2 failed=0 skipped=0</code>; worker 0 completed 1 cell on gpu 0, worker 1 completed 1 cell on gpu 1 — both GPUs produced artifacts, with seed_42 and seed_43 in flight simultaneously <span class="cite">(15-01-SUMMARY.md:103-107)</span>.</li>
+    <li>Consumption: <code>export_runs.py --dry-run</code> exits 0 printing “[Dry-run] 2 run record(s) across 1 model(s) / 1 task(s)” <span class="cite">(15-01-SUMMARY.md:117-119)</span>.</li>
+  </ul>
+
+  <h3>The 12-cell real sweep (r2)</h3>
+  <ul>
+    <li>Wall duration <strong>272 s</strong> (2026-10-21T00:11:11Z → 00:15:43Z, exit 0), dispatch done <strong>12/12</strong>, 0 failed, 0 skipped, both GPUs — run id <strong><code>4e74c92d27944db9a20488cb374719a4</code></strong>. All cited from the same execution record <span class="cite">(15-03-SUMMARY.md:145-147)</span>.</li>
+    <li>Matrix: <code>plant-dnabert-6mer</code> + <code>plant-dnamamba-6mer</code> × <code>iDNA_ABF_datasets__5mC</code> + <code>GUE__emp_H3</code> × seeds 42/43/44, 1 epoch, over the 5% subsets; workers w0 gpu=0 (4 cells) + w1 gpu=1 (8 cells); subset-scale step counts (5mC <code>max_steps=27</code>, emp_H3 <code>150</code>) <span class="cite">(15-03-SUMMARY.md:150-156)</span>.</li>
+    <li>The eval gate: <code>eval_f1</code> present and numeric in all 12 final_metrics (e.g. 5mC seed_42 <code>eval_f1=0.7143</code>) and mirrored into every run_record <span class="cite">(15-03-SUMMARY.md:157-163)</span>.</li>
+  </ul>
+
+  <details>
+    <summary>Figure — terminal dispatch_state.json of the r2 sweep (12/12, run_id 4e74c92d…), as written by the dispatcher</summary>
+    <p class="cite">Read from the evidence-of-record root <code>pipeline/finetuned-sweep-r2/dispatch_state.json</code> (the live file the run wrote; fields quoted in 15-03-SUMMARY.md). HTML-escaped pasted evidence — angle brackets and ampersands escaped per the report's injection-discipline mitigation.</p>
+    <pre><code>{
+  "counts": { "completed": 12, "failed": 0, "skipped": 0, "total": 12 },
+  "failures": [],
+  "mode": "dispatch",
+  "queue_depth": 0,
+  "run_id": "4e74c92d27944db9a20488cb374719a4",
+  "schema_version": 2,
+  "started_at": "2026-10-21T00:11:11.710955+00:00",
+  "status": "done",
+  "updated_at": "2026-10-21T00:15:43.892198+00:00",
+  "workers": [
+    { "cells": 4, "completed": 4, "failed": 0, "gpu": "0", "in_flight": null, "index": 0 },
+    { "cells": 8, "completed": 8, "failed": 0, "gpu": "1", "in_flight": null, "index": 1 }
+  ]
+}</code></pre>
+  </details>
+
+  <details>
+    <summary>Figure — live dispatcher output, the run's first lines (sweep-dispatch-r2 log)</summary>
+    <p class="cite">The plain-line terminal table rendered by the Phase-14 view at the _write_state choke point; archived run log, head quoted in 18-RESEARCH §T7.</p>
+    <pre><code>[Dispatch] status=running queue=12 done=0/12 failed=0 skipped=0
+  w0 gpu=0: -
+  w1 gpu=1: -
+[Dispatch] status=running queue=11 done=0/12 failed=0 skipped=0
+  w0 gpu=0: plant-dnabert-6mer/GUE__emp_H3/seed_42
+  w1 gpu=1: -
+[Dispatch] status=running queue=10 done=0/12 failed=0 skipped=0
+  w0 gpu=0: plant-dnabert-6mer/GUE__emp_H3/seed_42
+  w1 gpu=1: plant-dnabert-6mer/GUE__emp_H3/seed_43</code></pre>
+  </details>
+</section>
+
+<!-- ================= LANES & EXCLUSIONS ================= -->
+<section id="lanes" class="phase">
+  <h2><span class="num">§</span> Lanes &amp; environmental exclusions</h2>
+  <p>The full-suite baseline is cited, not re-run, per the phase's Q4 ruling: the recorded counts are quoted from the named artifact with their date and caveats, and the fresh full-suite run is owned by the milestone-close gate. Cheap lanes were re-run live at report generation and are dated <strong>FRESH 2026-10-22</strong> below — recorded and fresh numbers are never mixed in one row without saying which is which.</p>
+
+  <h3>The recorded full-suite baseline (2026-10-21)</h3>
+  <blockquote class="card"><p>“Full pytest suite was NOT re-run this pass (SUMMARY records 2236 passed / 6 documented environmental root-chmod failures, and the suite needs the machine's academic proxy for one evaluate-touching lane); every phase-relevant named gate was run individually instead, all green.” <span class="cite">— 17-VERIFICATION.md:121, verbatim</span></p></blockquote>
+  <p>The underlying recorded run: <strong>2236 passed / 3 skipped / 6 failed</strong> — every failure in the documented environmental root-user chmod class <span class="cite">(17-03-SUMMARY.md:85,115)</span>. The academic-proxy caveat means one evaluate-touching lane requires the machine's <code>network_turbo</code> proxy env for its <code>evaluate.load()</code> HTTP-HEAD phone-home; it is an environmental network restriction on this machine, same class as the chmod failures — “not a regression, not masked” <span class="cite">(17-03-SUMMARY.md:157)</span>.</p>
+
+  <h3>The six environmental exclusions, itemized</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Exclusion</th><th>Scope</th><th>Status</th><th>Reason (mandatory)</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>test_driver_exits_bounded_when_claim_cannot_persist_cr02</code></td>
+        <td><code>tests/tui/test_pilot_data_manager.py</code> ×1</td>
+        <td><span class="badge badge--env">⚠ ENVIRONMENTAL-EXCLUDED</span></td>
+        <td>chmod-000 write-block simulation that root ignores: the machine runs as root by provider policy and root bypasses file permission bits, so the persist-failure path under test never triggers. “Matches the machine's documented baseline (‘runs as root — 6 chmod-based test failures are environmental’)” <span class="cite">(17-03-SUMMARY.md:159-161)</span>.</td>
+      </tr>
+      <tr>
+        <td>Persist-failure rows (CR-02-shaped)</td>
+        <td><code>tests/tui/test_services_download_queue.py</code> ×5</td>
+        <td><span class="badge badge--env">⚠ ENVIRONMENTAL-EXCLUDED</span></td>
+        <td>Same chmod-000 write-block class as above — the five queue-lane persist-failure simulations cannot fail-as-expected under root <span class="cite">(17-03-SUMMARY.md:160)</span>.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Environmental, zero code changes; the v1.3 diffs never touch those lanes' behavior. The exclusion is a property of running the suite as root on this box, not of the code under test.</p>
+
+  <h3>Fresh lane re-runs at generation time (2026-10-22)</h3>
+  <ul>
+    <li><strong>FRESH 2026-10-22 — node lanes:</strong> <code>node --test tests/js/*.test.js</code> → <strong>44 tests, 44 pass, 0 fail</strong> (246 ms). Matches the recorded 44/44 <span class="cite">(17-VERIFICATION.md:69)</span>.</li>
+    <li><strong>FRESH 2026-10-22 — determinism + vendored stats:</strong> <code>.venv/bin/python -m pytest tests/test_determinism.py tests/test_vendored_stats.py -q</code> → <strong>10 passed in 2.58s</strong>, unmodified. Matches the recorded 10-passed zero-drift gates <span class="cite">(17-VERIFICATION.md:57)</span>.</li>
+  </ul>
+
+  <h3>Known deferred items</h3>
+  <ul>
+    <li>The four TUI golden SVGs of the WINDOWS #50 batch stay deliberately uncommitted pending maintainer review (the phase's designed post-phase gate); this report embeds real-data captures badged PENDING-REVIEW instead of presenting unreviewed goldens as ratified <span class="cite">(16-VERIFICATION.md maintainer_handoff)</span>.</li>
+    <li>A pty live-capture of the monitor over a live dispatch root is queued with the TUI-DEMO re-record list (new scene driver + a real dual-GPU run — disproportionate to a docs phase); the honest-degradation path in 18-UI-SPEC was taken instead.</li>
+  </ul>
+</section>
+
+<footer>
+  <section style="border-top: 1px solid var(--border);">
+    <h2><span class="num">§</span> Colophon</h2>
+    <p>This report is a committed static artifact; regeneration is manual per the repo's static-file philosophy (no CI job, D18-08).</p>
+    <p>Generated 2026-10-22 (written verbatim by hand into the document — never a client clock). Commit/state stamp: generated at <code>a4a2af2</code> on branch <code>autorun</code>.</p>
+    <p><span class="badge badge--pending">◌ PENDING-REVIEW</span> WINDOWS #50: the four uncommitted TUI goldens (<code>monitor_empty.svg</code>, <code>monitor_running.svg</code>, <code>run_config.svg</code>, <code>run_config_confirm.svg</code> under <code>tests/tui/__snapshots__/</code>) remain unreviewed; the three TUI figures in this report are fresh real-data captures badged accordingly, not those goldens.</p>
+    <p class="cite">Static document: zero scripts, zero external requests, inline CSS only, system font stack — mirrors the dnallm-mark design tokens as literal values per the ratified 18-UI-SPEC.</p>
+  </section>
+</footer>
+
+</main>
+</body>
+</html>

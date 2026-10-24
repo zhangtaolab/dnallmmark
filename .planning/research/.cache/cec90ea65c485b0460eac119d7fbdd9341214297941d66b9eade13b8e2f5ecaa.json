@@ -1,0 +1,1 @@
+{"content":"ruff latest 0.16.10 (PyPI 2026-10-08), requires Python >=3.7 to run. Single Rust tool replacing flake8+isort+pyupgrade as linter and formatter; official pre-commit hook repo astral-sh/ruff-pre-commit at matching tag v0.16.10.","source":"web","provider":"webfetch","confidence":"HIGH","fetched_at":"2026-10-08T09:52:15.434Z","ttl":86400000,"kind":"docs"}

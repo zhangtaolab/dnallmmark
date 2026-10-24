@@ -11,7 +11,9 @@ const DataAPI = {
       animal: null,
       plant: null,
       microbe: null
-    }
+    },
+    dataManifest: null,
+    progress: null
   },
 
   /**
@@ -69,6 +71,60 @@ const DataAPI = {
       return data;
     } catch (error) {
       console.error('Error loading models comparison:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Load the data-version manifest (data/manifest.json) — the STAMPED date +
+   * data_version the leaderboard footer renders (DATA-06, D-17/OQ2).
+   * Cached like every other fetch; a failed fetch throws so the caller can
+   * hide the stamp entirely — the footer never falls back to a client-derived
+   * value (no live clock).
+   * @returns {Promise<Object>}
+   */
+  async loadDataManifest() {
+    if (this.cache.dataManifest) {
+      return this.cache.dataManifest;
+    }
+
+    try {
+      const response = await fetch('./data/manifest.json');
+      if (!response.ok) {
+        throw new Error(`Failed to load manifest.json: ${response.status}`);
+      }
+      const data = await response.json();
+      this.cache.dataManifest = data;
+      return data;
+    } catch (error) {
+      console.error('Error loading data manifest:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Load the sweep-progress mirror (data/progress/sweep.json) — the
+   * read-only progress page's single fetch (WEB-01, D-02). Generated
+   * offline by script/gen_progress.py; cached like every other fetch;
+   * a failed fetch throws so the page renders its fetch-error empty
+   * state (never fabricated progress).
+   * @returns {Promise<Object>}
+   */
+  async loadProgress() {
+    if (this.cache.progress) {
+      return this.cache.progress;
+    }
+
+    try {
+      const response = await fetch('./data/progress/sweep.json');
+      if (!response.ok) {
+        throw new Error(`Failed to load sweep.json: ${response.status}`);
+      }
+      const data = await response.json();
+      this.cache.progress = data;
+      return data;
+    } catch (error) {
+      console.error('Error loading progress mirror:', error);
       throw error;
     }
   },
@@ -164,6 +220,23 @@ const DataAPI = {
   },
 
   /**
+   * Escape a string for safe interpolation into innerHTML template literals
+   * (FIX-04, bounded scope: applied at the DOM-build sites the fix touches —
+   * shared navbar, submit-page user-entered fields, touched task renderers)
+   * @param {*} str - Value to escape
+   * @returns {*} The escaped string, or the input unchanged when not a string
+   */
+  escapeHTML(str) {
+    if (typeof str !== 'string') return str;
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  },
+
+  /**
    * Get color for model based on its index or name
    * @param {string} modelName - Model name
    * @param {number} index - Model index
@@ -176,100 +249,6 @@ const DataAPI = {
       '#64748B', '#1E40AF', '#7C3AED', '#059669', '#0891B2'
     ];
     return colorPalette[index % colorPalette.length];
-  },
-
-  /**
-   * Recalculate models_comparison.json performance data
-   * from model_performance files (frontend implementation)
-   * @param {Object} allPerformanceData - All model performance data
-   * @returns {Object} Updated comparison data
-   */
-  recalculateComparison(allPerformanceData) {
-    const comparison = {};
-
-    for (const [modelName, perfData] of Object.entries(allPerformanceData)) {
-      const datasets = Object.values(perfData);
-      if (datasets.length === 0) continue;
-
-      // Calculate metrics
-      let sumRank = 0;
-      let sumMinmax = 0;
-      let sumZscore = 0;
-      let sumRobust = 0;
-      let sumRaw = 0;
-      let count = 0;
-      let sumPFLOPs = 0;
-      let top1Count = 0;
-      let top3Count = 0;
-      let top5Count = 0;
-      let top10Count = 0;
-
-      // Collect scores for ranking
-      const scores = [];
-      const flops = [];
-
-      for (const dataset of datasets) {
-        const perf = dataset.performance;
-        if (perf?.accuracy !== undefined && perf.accuracy !== '') {
-          scores.push(perf.accuracy);
-          count++;
-          sumRaw += perf.accuracy;
-        }
-        if (perf?.FLOPs !== undefined && perf.FLOPs !== '') {
-          flops.push(perf.FLOPs);
-          sumPFLOPs += perf.FLOPs / 1e15; // Convert to PFLOPs
-        }
-      }
-
-      if (count === 0) continue;
-
-      // Calculate average and ranks
-      const avgRaw = sumRaw / count;
-      const avgPFLOPs = sumPFLOPs / count;
-
-      // Simple ranking based on average score
-      const rank = 1; // Will be calculated after all models are processed
-
-      // Count top-N rankings (simplified - would need cross-model comparison)
-      top1Count = avgRaw >= 0.9 ? 1 : 0;
-      top3Count = avgRaw >= 0.8 ? 1 : 0;
-      top5Count = avgRaw >= 0.7 ? 1 : 0;
-      top10Count = avgRaw >= 0.6 ? 1 : 0;
-
-      comparison[modelName] = {
-        model: {
-          name: modelName.split('/').pop().replace('_performance', ''),
-          'size (M)': 0,
-          type: '',
-          tokenizer: '',
-          mean_token_len: '',
-          architecture: '',
-          series: '',
-          'context_len (bp)': '',
-          species: this.aggregateSpecies(modelName, perfData).join(', '),
-          huggingface: '',
-          modelscope: ''
-        },
-        performance: {
-          samples: count,
-          rank_score: sumRank,
-          sum_minmax: sumMinmax,
-          sum_zscore: sumZscore,
-          sum_robust: sumRobust,
-          avg_raw: avgRaw,
-          avg_rank: 0,
-          top1_count: top1Count,
-          top3_count: top3Count,
-          top5_count: top5Count,
-          top10_count: top10Count,
-          sum_PFLOPs: sumPFLOPs,
-          avg_PFLOPs: avgPFLOPs,
-          rank: rank
-        }
-      };
-    }
-
-    return comparison;
   }
 };
 

@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/zhangtaolab/dnallmmark/main/schemas/dispatch_state.json",
+  "$comment": "Frozen consumer contract (D14-01/D14-04, one-way) for {root}/dispatch_state.json — the dispatch run-level state file written atomically (single writer under the dispatcher's state lock, tmp+os.replace) by pipeline/dispatch_core.py at every state transition (mode evidence, skip filter, claim, finalize, containment, terminal statuses). Schema v2 = the Phase 13 minimal shape EXTENDED additively with the MGPU-03 consumer fields (queue_depth, workers, failures); every v1 key (mode, run_id, status, started_at, updated_at, counts) is present unchanged, so v1 readers of counts/status see identical values. Consumers: the in-core plain-line terminal table (D14-02), the Phase 16 TUI slot 5, and gen_progress (keep-parsing obligation). SNAPSHOT INVARIANT — holds at every observed write by construction: counts.completed + counts.failed + counts.skipped + queue_depth + (number of workers whose in_flight is non-null) == counts.total. queue_depth is DERIVED (total - completed - failed - skipped - active_workers), never len(pending): a cell popped-but-not-yet-claimed transiently counts in the derived depth and moves into its worker's in_flight slot at the claim-time write, so the identity never breaks mid-transition. failures describes the CURRENT run only (fresh run_id per launch; cells skipped as already-complete never appear) and is bounded by counts.total. status vocabulary: running (initial), done (clean drain, including the drained-relaunch nothing-to-do verdict), incomplete (the CR-04 accounting refusal — a worker died with cells unaccounted). Cell keys are {model, task, seed, fraction} with fraction null for plain (non-curve) cells. Later changes to this contract are additive-only under the D14-04 same-commit discipline (schema + writer + consumer test in one commit).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mode",
+    "run_id",
+    "status",
+    "started_at",
+    "updated_at",
+    "counts",
+    "queue_depth",
+    "workers",
+    "failures"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "mode": {
+      "const": "dispatch"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": ["running", "done", "incomplete"]
+    },
+    "started_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "completed", "failed", "skipped"],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "queue_depth": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "workers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "gpu", "in_flight", "cells", "completed", "failed"],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "gpu": {
+            "type": "string",
+            "minLength": 1
+          },
+          "in_flight": {
+            "$ref": "#/$defs/cellKey"
+          },
+          "cells": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["model", "task", "seed", "fraction", "finished_at"],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "seed": {
+            "type": "integer"
+          },
+          "fraction": {
+            "type": ["number", "null"]
+          },
+          "finished_at": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "cellKey": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model", "task", "seed", "fraction"],
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "task": {
+              "type": "string"
+            },
+            "seed": {
+              "type": "integer"
+            },
+            "fraction": {
+              "type": ["number", "null"]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

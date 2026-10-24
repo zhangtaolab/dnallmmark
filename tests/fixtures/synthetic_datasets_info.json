@@ -1,0 +1,41 @@
+{
+  "FakeDS__tie_task": {
+    "Category": "Animals",
+    "Dataset_name": "FakeDS__tie_task",
+    "Dataset_path": "datasets/FakeDS/tie_task",
+    "Dev": 20,
+    "Index": 1,
+    "Test": 20,
+    "Train": 100,
+    "labels": 2,
+    "length": 500,
+    "metric": "f1",
+    "type": "binary"
+  },
+  "FakeDS__missing_task": {
+    "Category": "Plants",
+    "Dataset_name": "FakeDS__missing_task",
+    "Dataset_path": "datasets/FakeDS/missing_task",
+    "Dev": 20,
+    "Index": 1,
+    "Test": 20,
+    "Train": 100,
+    "labels": 4,
+    "length": 500,
+    "metric": "f1",
+    "type": "multiclass"
+  },
+  "FakeDS__regress_task": {
+    "Category": "Microbe",
+    "Dataset_name": "FakeDS__regress_task",
+    "Dataset_path": "datasets/FakeDS/regress_task",
+    "Dev": 20,
+    "Index": 1,
+    "Test": 20,
+    "Train": 100,
+    "labels": 1,
+    "length": 500,
+    "metric": "spearmanr",
+    "type": "regression"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "feature": "261016-v0z — guarded exit: quit confirmation on every path (q/ctrl+q), explicit ctrl+q binding, ctrl+c audit, help rows, inventory",
+  "command": "cd /home/forrest/Github/dnallmmark && .venv/bin/python -m pytest tests/tui/test_pilot_run_config.py tests/tui/test_pilot_boot.py tests/tui/test_pilot_matrix.py tests/tui/test_pilot_env_check.py tests/tui/test_pilot_nav_shell.py tests/tui/test_pilot_selection.py tests/tui/test_strings_phase11.py -q",
+  "exitCode": 1,
+  "targetTests": [
+    "tests/tui/test_pilot_run_config.py::test_q_with_no_live_sweep_opens_quit_confirm",
+    "tests/tui/test_pilot_run_config.py::test_quit_confirm_n_and_esc_cancel",
+    "tests/tui/test_pilot_run_config.py::test_ctrlq_with_live_sweep_routes_to_exit_modal",
+    "tests/tui/test_pilot_run_config.py::test_ctrlq_no_sweep_opens_quit_confirm",
+    "tests/tui/test_pilot_run_config.py::test_q_and_ctrlq_below_min_grid_never_exit",
+    "tests/tui/test_pilot_run_config.py::test_ctrlc_never_exits_or_opens_modal",
+    "tests/tui/test_pilot_boot.py::test_boots_on_env_check_screen_quits_on_q",
+    "tests/tui/test_pilot_matrix.py::test_cross_screen_navigation_integration",
+    "tests/tui/test_pilot_env_check.py::test_help_modal_lists_bindings_and_esc_closes",
+    "tests/tui/test_pilot_nav_shell.py::test_env_help_modal_reflects_the_s_removal",
+    "tests/tui/test_pilot_selection.py::test_help_modal_opens_on_the_selection_screen",
+    "tests/tui/test_strings_phase11.py::test_cfg_lnc_mon_string_inventory_defined",
+    "tests/tui/test_strings_phase11.py::test_cfg_lnc_mon_inventory_complete_no_unlisted_constants"
+  ],
+  "expected": "the rewritten/new confirm tests fail pre-fix because q/ctrl+q with no live sweep exits DIRECTLY today (the rejected behavior), the below-min-grid test fails because a live sweep + below-min grid falls through to an unguarded self.exit(), the help-row tests fail because the ctrl+q/ctrl+c rows do not exist (constants missing), and the inventory tests fail on the missing LNC_EXIT_CONFIRM constant; the ctrl+q-live-sweep and ctrl+c audit pins pass (regression pins of behavior that already holds on 8.2.8)",
+  "actual": "11 failed, 177 passed in 88.91s — exactly the planned split: RED = test 1/2/4/5 (run_config: ImportError cannot import name 'QuitConfirmModal' for 1/2/4; test 5 failed SEMANTICALLY on 'assert not app._exit' — the latent fall-through proven live: below the min grid with a live sweep, q exits today), tests 7/8 (boot/matrix rewrites, ImportError), test 9 x3 (help rows: missing ctrl+q/ctrl+c constants — ImportError), test 10 x2 (inventory: stale registration ['LNC_EXIT_CONFIRM']); GREEN = test 3 (ctrl+q + live sweep opens ExitModal today — probe P1 confirmed live) and test 6 (ctrl+c never exits/opens — probe P5) plus every unmodified live-sweep exit test (enter/k/esc/multi-root) and the whole rest of the seven files",
+  "output": "11 failed, 177 passed in 88.91s (0:01:28)\n\nFAILED tests/tui/test_pilot_run_config.py::test_q_with_no_live_sweep_opens_quit_confirm\nFAILED tests/tui/test_pilot_run_config.py::test_quit_confirm_n_and_esc_cancel\nFAILED tests/tui/test_pilot_run_config.py::test_ctrlq_no_sweep_opens_quit_confirm\nFAILED tests/tui/test_pilot_run_config.py::test_q_and_ctrlq_below_min_grid_never_exit\nFAILED tests/tui/test_pilot_boot.py::test_boots_on_env_check_screen_quits_on_q\nFAILED tests/tui/test_pilot_matrix.py::test_cross_screen_navigation_integration\nFAILED tests/tui/test_pilot_env_check.py::test_help_modal_lists_bindings_and_esc_closes\nFAILED tests/tui/test_pilot_nav_shell.py::test_env_help_modal_reflects_the_s_removal\nFAILED tests/tui/test_pilot_selection.py::test_help_modal_opens_on_the_selection_screen\nFAILED tests/tui/test_strings_phase11.py::test_cfg_lnc_mon_string_inventory_defined\nFAILED tests/tui/test_strings_phase11.py::test_cfg_lnc_mon_inventory_complete_no_unlisted_constants\n\nspot-checked failure reasons:\ntest_q_with_no_live_sweep_opens_quit_confirm -> tests/tui/test_pilot_run_config.py:1511: ImportError: cannot import name 'QuitConfirmModal' from 'tui.app'\ntest_q_and_ctrlq_below_min_grid_never_exit -> tests/tui/test_pilot_run_config.py:1627: AssertionError: below the min grid a live sweep + q must never exit (the latent fall-through); assert not True\ntest_ctrlc_never_exits_or_opens_modal -> PASSED (audit pin)\ntest_ctrlq_with_live_sweep_routes_to_exit_modal -> PASSED (regression pin)",
+  "classifier": "gsd_run check tdd-red-evidence NOT RUN — gsd_run is not installed on this machine; manual semantic assessment recorded here",
+  "semanticAssessment": "VALID RED: every planned-failing test executed and failed for the planned reason — the modal tests on the missing QuitConfirmModal class (function-local import, the 261016-poa RED-safe pattern), the below-min-grid test on the REAL defect (app._exit is True below the grid with a live sweep — the latent fall-through the plan says to close), the help-row tests on the missing constants, the inventory on the missing LNC_EXIT_CONFIRM. No fixture/collection faults (module collection clean — the function-local import discipline). The two regression pins passed as designed, confirming the probe facts (inherited ctrl+q already dispatches to the overridden action_quit; ctrl+c is notify-only).",
+  "redCommit": "b266e5d"
+}

@@ -1,0 +1,389 @@
+{
+  "mode": "live",
+  "started_at": "2026-10-22T11:25:30Z",
+  "host": "autodl-container-75f44fb3e7-9b8d8ae4",
+  "root_arg": "pipeline/finetuned-tui-pa6",
+  "root_resolved": "/root/autodl-tmp/Github/dnallmmark/pipeline/finetuned-tui-pa6",
+  "state_dir": "/root/autodl-tmp/dnallmmark-data/tui-live/tui-live-pa6-6rz8nhlz",
+  "grid": [
+    120,
+    40
+  ],
+  "models": [
+    "plant-dnabert-6mer",
+    "plant-dnamamba-6mer"
+  ],
+  "tasks": [
+    "GUE__emp_H3",
+    "iDNA_ABF_datasets__5mC"
+  ],
+  "seeds": "42",
+  "epochs": "1",
+  "workers": "2",
+  "gpus": "0,1",
+  "cards": {
+    "plant-dnabert-6mer": "/root/autodl-tmp/dnallmmark-data/models/plant-dnabert-6mer",
+    "plant-dnamamba-6mer": "/root/autodl-tmp/dnallmmark-data/models/plant-dnamamba-6mer",
+    "GUE__emp_H3": "/root/autodl-tmp/dnallmmark-data/datasets/GUE/emp_H3",
+    "iDNA_ABF_datasets__5mC": "/root/autodl-tmp/dnallmmark-data/datasets/iDNA_ABF_datasets/5mC"
+  },
+  "gpu_names": "NVIDIA GeForce RTX 5090\nNVIDIA GeForce RTX 5090",
+  "stages": {
+    "01_boot_env_check": {
+      "at": "2026-10-22T11:25:31Z",
+      "elapsed_s": 0.7
+    },
+    "slot4_arrived": {
+      "at": "2026-10-22T11:25:31Z",
+      "elapsed_s": 1.1
+    },
+    "models_marked": {
+      "at": "2026-10-22T11:25:37Z",
+      "elapsed_s": 7.1
+    },
+    "02_picker_models": {
+      "at": "2026-10-22T11:25:37Z",
+      "elapsed_s": 7.2
+    },
+    "datasets_marked": {
+      "at": "2026-10-22T11:25:43Z",
+      "elapsed_s": 12.8
+    },
+    "03_picker_datasets": {
+      "at": "2026-10-22T11:25:43Z",
+      "elapsed_s": 12.9
+    },
+    "params_typed": {
+      "at": "2026-10-22T11:25:57Z",
+      "elapsed_s": 26.7
+    },
+    "preview_line_asserted": {
+      "at": "2026-10-22T11:25:57Z",
+      "elapsed_s": 26.7
+    },
+    "04_run_config_params": {
+      "at": "2026-10-22T11:25:57Z",
+      "elapsed_s": 26.8
+    },
+    "argv_preview_asserted": {
+      "at": "2026-10-22T11:25:57Z",
+      "elapsed_s": 27.0
+    },
+    "05_run_config_preview": {
+      "at": "2026-10-22T11:25:57Z",
+      "elapsed_s": 27.1
+    },
+    "gate_confirm_reached": {
+      "at": "2026-10-22T11:25:57Z",
+      "elapsed_s": 27.6
+    },
+    "06_run_config_confirm": {
+      "at": "2026-10-22T11:25:58Z",
+      "elapsed_s": 27.6
+    },
+    "launch_y_pressed": {
+      "at": "2026-10-22T11:25:58Z",
+      "elapsed_s": 27.9
+    },
+    "monitor_switched": {
+      "at": "2026-10-22T11:25:58Z",
+      "elapsed_s": 27.9
+    },
+    "monitor_card_visible": {
+      "at": "2026-10-22T11:27:06Z",
+      "elapsed_s": 96.1
+    },
+    "dispatch_state_present": {
+      "at": "2026-10-22T11:27:06Z",
+      "elapsed_s": 96.1
+    },
+    "07_monitor_running_01": {
+      "at": "2026-10-22T11:30:06Z",
+      "elapsed_s": 276.4
+    },
+    "07_monitor_running_02": {
+      "at": "2026-10-22T11:33:07Z",
+      "elapsed_s": 456.7
+    },
+    "07_monitor_running_03": {
+      "at": "2026-10-22T11:36:07Z",
+      "elapsed_s": 637.0
+    },
+    "07_monitor_running_04": {
+      "at": "2026-10-22T11:39:07Z",
+      "elapsed_s": 817.3
+    },
+    "07_monitor_running_05": {
+      "at": "2026-10-22T11:42:08Z",
+      "elapsed_s": 997.6
+    },
+    "07_monitor_running_06": {
+      "at": "2026-10-22T11:45:08Z",
+      "elapsed_s": 1177.9
+    },
+    "07_monitor_running_07": {
+      "at": "2026-10-22T11:48:08Z",
+      "elapsed_s": 1358.2
+    },
+    "07_monitor_running_08": {
+      "at": "2026-10-22T11:51:08Z",
+      "elapsed_s": 1538.5
+    },
+    "07_monitor_running_09": {
+      "at": "2026-10-22T11:54:09Z",
+      "elapsed_s": 1718.8
+    },
+    "07_monitor_running_10": {
+      "at": "2026-10-22T11:57:09Z",
+      "elapsed_s": 1899.1
+    },
+    "07_monitor_running_11": {
+      "at": "2026-10-22T12:00:09Z",
+      "elapsed_s": 2079.5
+    },
+    "07_monitor_running_12": {
+      "at": "2026-10-22T12:03:10Z",
+      "elapsed_s": 2259.8
+    },
+    "07_monitor_running_13": {
+      "at": "2026-10-22T12:06:10Z",
+      "elapsed_s": 2440.0
+    },
+    "07_monitor_running_14": {
+      "at": "2026-10-22T12:09:10Z",
+      "elapsed_s": 2620.4
+    },
+    "07_monitor_running_15": {
+      "at": "2026-10-22T12:12:11Z",
+      "elapsed_s": 2800.6
+    },
+    "07_monitor_running_16": {
+      "at": "2026-10-22T12:15:11Z",
+      "elapsed_s": 2980.9
+    },
+    "07_monitor_running_17": {
+      "at": "2026-10-22T12:18:11Z",
+      "elapsed_s": 3161.2
+    },
+    "07_monitor_running_18": {
+      "at": "2026-10-22T12:21:11Z",
+      "elapsed_s": 3341.5
+    },
+    "99_monitor_done": {
+      "at": "2026-10-22T12:21:18Z",
+      "elapsed_s": 3347.7
+    }
+  },
+  "nvidia_snapshots": [
+    {
+      "at": "2026-10-22T11:30:06Z",
+      "query": "0, 29 %, 2354 MiB, 40\n1, 18 %, 3584 MiB, 39",
+      "compute_apps": "667772\n668626"
+    },
+    {
+      "at": "2026-10-22T11:33:06Z",
+      "query": "0, 11 %, 2354 MiB, 39\n1, 15 %, 3584 MiB, 37",
+      "compute_apps": "667772\n668626"
+    },
+    {
+      "at": "2026-10-22T11:36:07Z",
+      "query": "0, 10 %, 2354 MiB, 39\n1, 16 %, 3584 MiB, 38",
+      "compute_apps": "667772\n668626"
+    },
+    {
+      "at": "2026-10-22T11:39:07Z",
+      "query": "0, 10 %, 2354 MiB, 38\n1, 17 %, 3584 MiB, 39",
+      "compute_apps": "667772\n668626"
+    },
+    {
+      "at": "2026-10-22T11:42:07Z",
+      "query": "0, 12 %, 2520 MiB, 38\n1, 16 %, 3584 MiB, 37",
+      "compute_apps": "672077\n668626"
+    },
+    {
+      "at": "2026-10-22T11:45:08Z",
+      "query": "0, 0 %, 4 MiB, 29\n1, 16 %, 3584 MiB, 39",
+      "compute_apps": "668626"
+    },
+    {
+      "at": "2026-10-22T11:48:08Z",
+      "query": "0, 0 %, 4 MiB, 28\n1, 15 %, 3584 MiB, 37",
+      "compute_apps": "668626"
+    },
+    {
+      "at": "2026-10-22T11:51:08Z",
+      "query": "0, 0 %, 4 MiB, 28\n1, 16 %, 3584 MiB, 37",
+      "compute_apps": "668626"
+    },
+    {
+      "at": "2026-10-22T11:54:08Z",
+      "query": "0, 0 %, 4 MiB, 28\n1, 16 %, 3584 MiB, 39",
+      "compute_apps": "668626"
+    },
+    {
+      "at": "2026-10-22T11:57:09Z",
+      "query": "0, 0 %, 4 MiB, 28\n1, 16 %, 3584 MiB, 37",
+      "compute_apps": "668626"
+    },
+    {
+      "at": "2026-10-22T12:00:09Z",
+      "query": "0, 0 %, 4 MiB, 28\n1, 15 %, 3584 MiB, 38",
+      "compute_apps": "668626"
+    },
+    {
+      "at": "2026-10-22T12:03:09Z",
+      "query": "0, 0 %, 4 MiB, 28\n1, 17 %, 3584 MiB, 38",
+      "compute_apps": "668626"
+    },
+    {
+      "at": "2026-10-22T12:06:10Z",
+      "query": "0, 0 %, 4 MiB, 28\n1, 16 %, 3584 MiB, 37",
+      "compute_apps": "668626"
+    },
+    {
+      "at": "2026-10-22T12:09:10Z",
+      "query": "0, 0 %, 4 MiB, 28\n1, 16 %, 3584 MiB, 39",
+      "compute_apps": "668626"
+    },
+    {
+      "at": "2026-10-22T12:12:10Z",
+      "query": "0, 0 %, 4 MiB, 28\n1, 16 %, 3584 MiB, 37",
+      "compute_apps": "668626"
+    },
+    {
+      "at": "2026-10-22T12:15:11Z",
+      "query": "0, 0 %, 4 MiB, 28\n1, 15 %, 3584 MiB, 37",
+      "compute_apps": "668626"
+    },
+    {
+      "at": "2026-10-22T12:18:11Z",
+      "query": "0, 0 %, 4 MiB, 28\n1, 15 %, 3584 MiB, 37",
+      "compute_apps": "668626"
+    },
+    {
+      "at": "2026-10-22T12:21:11Z",
+      "query": "0, 0 %, 4 MiB, 28\n1, 16 %, 3584 MiB, 37",
+      "compute_apps": "668626"
+    }
+  ],
+  "monitor_captures": [
+    "07_monitor_running_01.svg",
+    "07_monitor_running_02.svg",
+    "07_monitor_running_03.svg",
+    "07_monitor_running_04.svg",
+    "07_monitor_running_05.svg",
+    "07_monitor_running_06.svg",
+    "07_monitor_running_07.svg",
+    "07_monitor_running_08.svg",
+    "07_monitor_running_09.svg",
+    "07_monitor_running_10.svg",
+    "07_monitor_running_11.svg",
+    "07_monitor_running_12.svg",
+    "07_monitor_running_13.svg",
+    "07_monitor_running_14.svg",
+    "07_monitor_running_15.svg",
+    "07_monitor_running_16.svg",
+    "07_monitor_running_17.svg",
+    "07_monitor_running_18.svg"
+  ],
+  "argv_line": "argv (LIST):/root/autodl-tmp/Github/dnallmmark/.venv/bin/python /root/autodl-tmp/Github/dnallmmark/pipeline/run_sweep_shard.py --mode dispatch --workers 2 --gpus 0,1 --models plant-dnabert-6mer,plant-dnamamba-6mer --output-root /root/autodl-tmp/Github/dnallmmark/pipeline/finetuned-tui-pa6 --tasks GUE__emp_H3,iDNA_ABF_datasets__5mC --seeds 42 --num_train_epochs 1 --cache_dir /root/autodl-tmp/.cache/hf --model_root /root/autodl-tmp/dnallmmark-data --dataset_root /root/autodl-tmp/dnallmmark-data --log_dir /root/autodl-tmp/dnallmmark-data/logs",
+  "argv": [
+    "/root/autodl-tmp/Github/dnallmmark/.venv/bin/python",
+    "/root/autodl-tmp/Github/dnallmmark/pipeline/run_sweep_shard.py",
+    "--mode",
+    "dispatch",
+    "--workers",
+    "2",
+    "--gpus",
+    "0,1",
+    "--models",
+    "plant-dnabert-6mer,plant-dnamamba-6mer",
+    "--output-root",
+    "/root/autodl-tmp/Github/dnallmmark/pipeline/finetuned-tui-pa6",
+    "--tasks",
+    "GUE__emp_H3,iDNA_ABF_datasets__5mC",
+    "--seeds",
+    "42",
+    "--num_train_epochs",
+    "1",
+    "--cache_dir",
+    "/root/autodl-tmp/.cache/hf",
+    "--model_root",
+    "/root/autodl-tmp/dnallmmark-data",
+    "--dataset_root",
+    "/root/autodl-tmp/dnallmmark-data",
+    "--log_dir",
+    "/root/autodl-tmp/dnallmmark-data/logs"
+  ],
+  "tee_path": "/root/autodl-tmp/dnallmmark-data/tui-live/tui-live-pa6-6rz8nhlz/logs/sweep_20261022_192558_finetuned-tui-pa6.log",
+  "dispatch_state": {
+    "counts": {
+      "completed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "total": 4
+    },
+    "failures": [],
+    "mode": "dispatch",
+    "queue_depth": 0,
+    "run_id": "6ac8db5bdaf0421fb523946c81780052",
+    "schema_version": 2,
+    "started_at": "2026-10-22T11:25:58.138753+00:00",
+    "status": "running",
+    "updated_at": "2026-10-22T11:44:27.173482+00:00",
+    "workers": [
+      {
+        "cells": 2,
+        "completed": 2,
+        "failed": 0,
+        "gpu": "0",
+        "in_flight": null,
+        "index": 0
+      },
+      {
+        "cells": 2,
+        "completed": 1,
+        "failed": 0,
+        "gpu": "1",
+        "in_flight": {
+          "fraction": null,
+          "model": "plant-dnamamba-6mer",
+          "seed": 42,
+          "task": "GUE__emp_H3"
+        },
+        "index": 1
+      }
+    ]
+  },
+  "completion": {
+    "checked_at": "2026-10-22T12:21:11Z",
+    "probe_absent": true,
+    "final_metrics": 4,
+    "flops_report": 4,
+    "dispatch_status": "running"
+  },
+  "notes": [
+    "monitor card not discovered within 60s — driving the [a] attach modal with the resolved absolute path"
+  ],
+  "rehearsal": false,
+  "exit_code": 0,
+  "failure": null,
+  "env_verdict": "✓ environment ready (launch allowed)\n⚠ 57 model dirs missing — models are placed by hand (the storage location is visible in [4] Run Config)\n⚠ 48 dataset dirs missing — [3] open the data manager; CLI re-audit: python script/audit_n_frequencies.py",
+  "completion_commands": [
+    {
+      "command": "find pipeline/finetuned-tui-pa6 -path '*seed_42/final_metrics.json' | sort",
+      "stdout": "pipeline/finetuned-tui-pa6/plant-dnabert-6mer/GUE__emp_H3/seed_42/final_metrics.json\npipeline/finetuned-tui-pa6/plant-dnabert-6mer/iDNA_ABF_datasets__5mC/seed_42/final_metrics.json\npipeline/finetuned-tui-pa6/plant-dnamamba-6mer/GUE__emp_H3/seed_42/final_metrics.json\npipeline/finetuned-tui-pa6/plant-dnamamba-6mer/iDNA_ABF_datasets__5mC/seed_42/final_metrics.json",
+      "exit": 0
+    },
+    {
+      "command": "find pipeline/finetuned-tui-pa6 -path '*seed_42/flops_report.json' | wc -l",
+      "stdout": "4",
+      "exit": 0
+    },
+    {
+      "command": "find pipeline/finetuned-tui-pa6 -path '*seed_42/trainer_state.json' | wc -l",
+      "stdout": "3",
+      "exit": 0
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "task": "Task 3 — the @work never-exit net: exit_on_error=False per-site ledger + the AST structural pin",
+  "command": "uv run --group dev pytest tests/tui/test_work_site_hardening.py -q",
+  "exitCode": 1,
+  "output": "1 failed in 0.09s\n\nE   AssertionError: every @work site must pass exit_on_error=False or own an internal except-Exception handler (the never-exit floor, 08-08 gap missing-item 3) — offending sites:\n  tui/screens/about.py:157 _load_data\n  tui/screens/data_manager.py:739 _load_snapshot\n  tui/screens/data_manager.py:748 _probe_zenodo\n  tui/screens/data_manager.py:757 _run_reaudit\n  tui/screens/monitor.py:1454 _open_cell_detail\n  tui/screens/monitor.py:1488 _open_failures\n  tui/screens/selection.py:1403 _load_data\n  tui/screens/selection.py:1409 _load_preset_menu\n  tui/screens/wizard.py:503 _validate_in_worker\n  tui/screens/wizard.py:1169 _gauntlet_worker\n  tui/screens/wizard.py:1565 _check_export_state",
+  "targetTest": "tests/tui/test_work_site_hardening.py::test_every_work_site_never_exits_the_console",
+  "targetFile": "tests/tui/test_work_site_hardening.py",
+  "expected": "zero offending sites once the 12 remaining ledger rows carry exit_on_error=False (env_check landed with Task 2); the scan finds >= 20 sites",
+  "actual": "the pin found 24 sites and flagged 11 lacking both the kwarg and an internal broad guard; app.py:574 run_download_queue passed via its inner except Exception (the pending-scan guard) but still received the kwarg per its explicit ledger row (the outer try/finally has no except — run_task exceptions would escape)",
+  "classifier": "gsd_run check tdd-red-evidence UNAVAILABLE in this executor environment (gsd_run not installed, exit 127) — semantic assessment recorded instead",
+  "semanticAssessment": "VALID_RED — the target test executed and failed on the planned assertion listing exactly the unguarded sites (the floor assertion len(sites) >= 20 passed first: 24 found, so the scan is non-vacuous). COMMIT GRANULARITY DEVIATION: the RED run above was executed against the pre-sweep working tree, but the pin and the 12-kwarg sweep landed together in the atomic Task-3 commit d6f2a2c (no separate RED commit, unlike Tasks 1-2) — the execution order (test written and failing BEFORE the sweep was applied) preserved the TDD discipline."
+}

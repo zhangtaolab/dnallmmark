@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/zhangtaolab/dnallmmark/main/schemas/permutation_tests.json",
+  "$comment": "Fully strict contract (D-01) for dnallm-mark/data/permutation_tests.json — the published pairwise permutation-test artifact (F6 Q3, REV-04; produced offline by script/permutation_tests.py at `make data` time, never at page render). info discloses the methodology: the family size (C(n,2) over the tested pairs — 861 pre-E2'), the coverage rule (common-task alignment; fewer-than-two-common-task pairs excluded and disclosed), n_resamples, the seed (T-05-05: reproducibility is the integrity control), the batch, and the FDR method/level. Every RNG path is seeded and the artifact is byte-deterministic; p-values live in [0,1].",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["info", "pairs"],
+  "properties": {
+    "info": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "axis",
+        "batch",
+        "coverage_rule",
+        "excluded_pairs",
+        "family_size",
+        "fdr_level",
+        "fdr_method",
+        "n_models",
+        "n_resamples",
+        "seed"
+      ],
+      "properties": {
+        "axis": { "type": "string" },
+        "batch": { "type": "integer", "minimum": 1 },
+        "coverage_rule": { "type": "string" },
+        "excluded_pairs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["model_a", "model_b", "reason"],
+            "properties": {
+              "model_a": { "type": "string" },
+              "model_b": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        },
+        "family_size": { "type": "integer", "minimum": 0 },
+        "fdr_level": { "const": 0.05 },
+        "fdr_method": { "const": "bh" },
+        "n_models": { "type": "integer", "minimum": 0 },
+        "n_resamples": { "type": "integer", "minimum": 1 },
+        "seed": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "pairs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_a",
+          "model_b",
+          "n_common_tasks",
+          "p_adj",
+          "p_value",
+          "significant"
+        ],
+        "properties": {
+          "model_a": { "type": "string" },
+          "model_b": { "type": "string" },
+          "n_common_tasks": { "type": "integer", "minimum": 2 },
+          "p_adj": { "type": "number", "minimum": 0, "maximum": 1 },
+          "p_value": { "type": "number", "minimum": 0, "maximum": 1 },
+          "significant": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

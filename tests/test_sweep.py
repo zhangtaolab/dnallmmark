@@ -1,0 +1,3959 @@
+"""
+Unit tests for ``pipeline/run_sweep.py`` (F2 / REV-02).
+
+Every behavior bullet of the plan's Task 2 is pinned here:
+
+- **dry-run enumeration** — explicit --models/--tasks/--seeds with --dry-run
+  writes ONLY ``sweep_manifest.json``: exactly the planned cells in sorted
+  order, each with its planned seed-isolated outdir; no subprocess launched,
+  no seed directory created under the output root;
+- **manifest determinism** — two consecutive dry-runs over the same inputs
+  produce byte-identical ``sweep_manifest.json`` files (sorted iteration,
+  ``sort_keys=True, indent=4, ensure_ascii=False``);
+- **record semantics via the injectable fake executor** — a fake that writes
+  ``final_metrics.json`` into the cell dir yields status ``completed`` with
+  metrics copied VERBATIM (suite-native keys untouched — translation is
+  REV-03's job); a fake that raises yields status ``failed`` with the error
+  string recorded and an entry in the failures manifest; a fake that exits
+  0 WITHOUT writing ``final_metrics.json`` is likewise ``failed`` with a
+  missing-metrics error and a failures entry (CR-02:
+  run_finetune.py's blind-except isolation makes training failures exit
+  0, so the missing file is the failure signal); a fake that writes a
+  TRUNCATED ``final_metrics.json`` fails only that cell — the sweep
+  continues, the remaining cells still run, and the manifest is still
+  written (WR-11: child-data corruption is a failed cell, not a driver
+  bug that aborts the sweep); a pre-existing
+  ``trainer_state.json`` yields status ``skipped`` with NO executor
+  invocation — and the skip is seed-scoped (seed 43 still runs when seed
+  42's marker exists in the sibling dir) and never overwrites the
+  skipped cell's existing run_record.json (WR-12: the previous run's
+  record is the provenance; the manifest reports this run's view);
+- **subprocess contract** — the real launch path (captured argv, never
+  executed) passes --target_model/--target_dataset/--seed/--output_dir as
+  separate argv elements of a LIST with cwd set to this repo's pipeline
+  directory — never a shell string;
+- **registry-derived defaults** — default enumeration derives the matrix
+  from ``models_info.json`` keys x truthy-``Train`` ``datasets_info.json``
+  entries (the unified D-10 registries), honoring --models/--tasks filters;
+- **filter validation** — a --models/--tasks name absent from the
+  registries (or a requested task with falsy ``Train``) exits non-zero
+  listing the names instead of silently enumerating an empty matrix that
+  reports a successful 0-cell sweep (WR-07);
+- **degenerate flag values** — a PROVIDED --models/--tasks/--seeds whose
+  value contains only separators/whitespace (``--models ,``, ``--models ""``,
+  ``--seeds ,``) exits non-zero naming the flag and its raw value instead of
+  degrading: an empty filter list is falsy, which both _validate_filters'
+  early return and enumerate_matrix's ``if models_filter:`` treat as "no
+  filter" (silently enumerating the FULL registry matrix), and an empty seed
+  set runs 0 cells and exits 0 (WR-14); an ABSENT --models/--tasks keeps
+  full-matrix semantics.
+- **priority ordering (05-04, E2' degradation order)** — with NO
+  --priority-file the enumeration order is byte-identical to the sorted()
+  default (a frozen expected list); with a priorities file the ranked
+  (model, task) cells enumerate FIRST (tier index, then entry specificity,
+  as the primary sort key composed over the sorted() fallback — seeds stay
+  adjacent within a cell), the committed ``pipeline/sweep_priorities.json``
+  drives the PIPE-03 E2E pair first and the maintainer-curated tier-2 arena
+  representatives second over a registry holding the real names, and
+  run_matrix executes cells in the GIVEN order (the fake executor's
+  invocation order preserves the full degradation order: tier 1, then every
+  cell of the tier-2 representatives, then the sorted() fallback);
+- **failures-manifest re-run (05-04)** — ``--from-failures`` enumerates
+  exactly the failed (model, task) pairs' cells across ALL requested seeds;
+  a clean manifest yields an EXPLICIT zero-cell run with a clear message
+  (never a silent full sweep);
+- **from-failures x peft (MED-01, phase-06 review)** — failure entries
+  record the BASE registry name (``base_model``) beside the alias cell
+  identity, so a ``--peft`` sweep's own manifest feeds back through
+  ``--from-failures``: with the same ``--peft`` mode the failed ALIAS
+  cells re-enumerate (the join runs on base names, the alias re-derives
+  from the re-run's mode); legacy alias-only entries recover via a known
+  suffix strip, and a name still unknown after the strip fails loudly;
+- **operator-input validation (T-05-09)** — unknown model/task names,
+  wrong JSON structure, or an unreadable/unparseable --priority-file /
+  --from-failures file exits non-zero with ALL problems listed
+  (the _validate_filters discipline), before any cell is enumerated.
+- **--curve fraction expansion (06-05, SC-6/REV-08 F8)** — a comma
+  fraction list in (0, 1] validates fail-fast collect-all (parse errors
+  and bounds listed together, duplicates collapse, sorted ascending);
+  each (model, task, seed) cell expands to one 4-tuple cell per fraction
+  with output dirs {root}/{model}/{task}/seed_{seed}/frac_{f}/ — frac
+  dirs nest UNDER the seed dir, NEVER beside it (the no-sibling layout
+  lock: the trainer_state.json resume marker is fraction-scoped); each
+  cell's argv appends --train_fraction <f> as a separate LIST element;
+  run_record.json gains a train_fraction field (float for curve cells,
+  null otherwise); --curve composes with --peft (alias cells expand
+  across fractions) and --dry-run manifests enumerate frac cells
+  byte-deterministically; extract_curve_points() harvests the (step,
+  eval-metrics) learning-curve points from a trainer_state.json
+  log_history (pure, CPU-side, synthetic-fixture tested).
+- **--config-variant aliasing (11-01, D-18 — ALIASING, never
+  pass-through)** — the variant lane threads through the matrix EXACTLY
+  like --peft: probe/curve/head enumerate cells under {model}+{variant}
+  (head keeps the BASE name for the frozen pair evo2_1b_base /
+  megaDNA_updated — pinned against the run_finetune.py SOURCE TEXT by a
+  read-source parity test, never by import: the child module imports
+  torch at its top), argv targets --target_model <base>
+  --save_model_name <alias> --config-variant <v> as separate LIST
+  elements (the explicit save name makes the driver the single naming
+  authority over the child's own identical self-aliasing branch), the
+  run_record gains a config_variant field (default 'none'), the manifest
+  merges config_variant into every cell via sweep_flags when the flag is
+  present, --from-failures joins on base names, and every variant x peft
+  combination exits non-zero at sweep start naming both flags
+  (collect-all); absent = byte-identical to today.
+
+The runner is stdlib-only and never imports torch/dnallm; no test executes
+the real subprocess (the argv test monkeypatches ``subprocess.run``).
+
+See also:
+    ``pipeline/run_sweep.py`` — the driver under test.
+    ``tests/test_run_finetune_contracts.py`` — the seed-isolated layout
+    contract both sides of this seam must agree on.
+"""
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+import run_sweep  # conftest puts pipeline/ on sys.path
+
+SUITE_NATIVE_METRICS = {
+    "eval_AUROC": 0.9123,
+    "eval_pearsonr": 0.5,
+    "eval_loss": 0.234,
+}
+
+
+# ===== machine-independence pin (WR-03, phase-07 review) =====
+#
+# 07-02 rewired every registry load in run_sweep through
+# registry_loader's custom overlay (DNALLMMARK_CUSTOM_REGISTRY_DIR >
+# XDG_CONFIG_HOME > ~/.config/dnallmmark). This module's frozen-order
+# and full-matrix tests enumerate OFFICIAL fixture registries, so once
+# real custom files exist on the maintainer's machine an unpinned test
+# would see the local overlay and diverge from CI (the exact hazard
+# tests/test_registry_loader.py:26-29 documents). Pin BOTH overlay env
+# vars to a fresh empty dir for every test in this module — the
+# pin_custom_dir idiom applied at module scope. A test that needs a
+# populated overlay re-sets DNALLMMARK_CUSTOM_REGISTRY_DIR itself; the
+# test-body setenv wins over this fixture's.
+
+
+@pytest.fixture(autouse=True)
+def _pin_custom_registry_overlay(tmp_path, monkeypatch):
+    """Empty-dir pin over the custom overlay for every test here."""
+    pinned = tmp_path / "no-custom-overlay"
+    pinned.mkdir()
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(pinned))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(pinned))
+
+
+def write_registry(root, models, datasets):
+    """Materialize unified-registry fixtures under ``root``."""
+    (root / "models_info.json").write_text(
+        json.dumps(models), encoding="utf-8")
+    (root / "datasets_info.json").write_text(
+        json.dumps(datasets), encoding="utf-8")
+
+
+def make_registry(tmp_path):
+    """Build a 3-model x 3-task registry fixture (task-y has Train=0)."""
+    registry_dir = tmp_path / "registry"
+    registry_dir.mkdir()
+    write_registry(
+        registry_dir,
+        models={
+            "model-a": {"Model_name": "model-a", "Model_path": "models/a"},
+            "model-b": {"Model_name": "model-b", "Model_path": "models/b"},
+            "model-c": {"Model_name": "model-c", "Model_path": "models/c"},
+        },
+        datasets={
+            "task-x": {"Dataset_name": "task-x", "Train": 100, "Dev": 10},
+            "task-y": {"Dataset_name": "task-y", "Train": 0, "Dev": 0},
+            "task-z": {"Dataset_name": "task-z", "Train": 50, "Dev": 5},
+        },
+    )
+    return registry_dir
+
+
+def run_cli(monkeypatch, argv):
+    """Invoke ``run_sweep.main()`` with a patched argv; return the argv."""
+    full_argv = ["run_sweep.py", *argv]
+    monkeypatch.setattr(sys, "argv", full_argv)
+    run_sweep.main()
+    return full_argv
+
+
+def flag_value(argv, flag):
+    """Return the argv element immediately following ``flag``."""
+    assert flag in argv, f"{flag} missing from argv: {argv!r}"
+    return argv[argv.index(flag) + 1]
+
+
+def test_enumerate_matrix_derives_from_registries_and_filters(tmp_path):
+    """Default enumeration = models_info keys x truthy-Train dataset
+    entries, sorted; --models/--tasks comma filters narrow it."""
+    registry_dir = make_registry(tmp_path)
+    assert run_sweep.enumerate_matrix(None, None, [42], registry_dir) == [
+        ("model-a", "task-x", 42), ("model-a", "task-z", 42),
+        ("model-b", "task-x", 42), ("model-b", "task-z", 42),
+        ("model-c", "task-x", 42), ("model-c", "task-z", 42),
+    ]
+    assert run_sweep.enumerate_matrix(
+        ["model-a", "model-c"], ["task-x"], [42], registry_dir
+    ) == [
+        ("model-a", "task-x", 42),
+        ("model-c", "task-x", 42),
+    ]
+
+
+def test_dry_run_writes_only_the_planned_manifest(tmp_path, monkeypatch):
+    """--dry-run enumerates the matrix and writes ONLY sweep_manifest.json:
+    4 planned cells in sorted order with seed-isolated outdirs, no seed
+    directories, no run records, no failures manifest."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a,model-b",
+        "--tasks", "task-x",
+        "--seeds", "42,43",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest_path = out_root / "sweep_manifest.json"
+    assert manifest_path.is_file(), "dry-run must write sweep_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert [(c["model"], c["task"], c["seed"]) for c in manifest["cells"]] == [
+        ("model-a", "task-x", 42), ("model-a", "task-x", 43),
+        ("model-b", "task-x", 42), ("model-b", "task-x", 43),
+    ]
+    assert all(c["status"] == "planned" for c in manifest["cells"])
+    assert "seed_42" in manifest["cells"][0]["output_dir"]
+    assert "seed_43" in manifest["cells"][1]["output_dir"]
+    # the manifest is the ONLY artifact: no cell dirs, no records
+    assert not list(out_root.rglob("seed_*")), (
+        "dry-run must not create seed directories"
+    )
+    assert not list(out_root.rglob("run_record.json"))
+    assert not list(out_root.rglob("sweep_failures.json"))
+
+
+def test_dry_run_manifest_is_byte_deterministic(tmp_path, monkeypatch):
+    """Two consecutive dry-runs over the same inputs produce byte-identical
+    sweep_manifest.json files (sorted iteration, sort_keys serialization)."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    argv = [
+        "--models", "model-a",
+        "--tasks", "task-x,task-z",
+        "--seeds", "42,43",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ]
+    run_cli(monkeypatch, argv)
+    first = (out_root / "sweep_manifest.json").read_bytes()
+    run_cli(monkeypatch, argv)
+    second = (out_root / "sweep_manifest.json").read_bytes()
+    assert first == second, (
+        "two dry-runs over the same inputs must produce byte-identical "
+        "manifests — timestamps/git state must never enter the manifest"
+    )
+
+
+def test_run_matrix_completed_copies_metrics_verbatim(tmp_path):
+    """A fake executor that writes final_metrics.json into the cell dir
+    yields status completed with metrics copied VERBATIM — suite-native
+    keys, no translation (eval_auroc->eval_AUROC mapping is REV-03's)."""
+    out_root = tmp_path / "sweep-out"
+
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text(
+            json.dumps(SUITE_NATIVE_METRICS, indent=4), encoding="utf-8")
+
+    records = run_sweep.run_matrix(
+        [("model-a", "task-x", 42)], out_root, executor=fake_executor)
+    assert len(records) == 1
+    assert records[0]["status"] == "completed"
+    assert records[0]["metrics"] == SUITE_NATIVE_METRICS, (
+        "metrics must equal final_metrics.json keys verbatim"
+    )
+    disk = json.loads(
+        (out_root / "model-a" / "task-x" / "seed_42" / "run_record.json")
+        .read_text(encoding="utf-8"))
+    assert disk["status"] == "completed"
+    assert disk["metrics"] == SUITE_NATIVE_METRICS
+    assert sorted(disk["metrics"]) == sorted(SUITE_NATIVE_METRICS), (
+        "key identity must be verbatim — same key set, no renaming "
+        "(on-disk order is sorted by the sort_keys write discipline; the "
+        "in-memory record above preserves the final_metrics source order)"
+    )
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"][0]["status"] == "completed"
+    failures = json.loads(
+        (out_root / "sweep_failures.json").read_text(encoding="utf-8"))
+    assert failures == [], (
+        "the failures manifest is written on every run — an EMPTY list "
+        "when every cell succeeds, never a stale file from a previous "
+        "sweep over the same root (WR-06)"
+    )
+
+
+def test_run_matrix_failed_records_error_and_failures_manifest(tmp_path):
+    """A fake executor that raises (the default executor raises
+    subprocess.CalledProcessError under check=True) yields status failed,
+    the error string recorded, and an entry in sweep_failures.json."""
+    out_root = tmp_path / "sweep-out"
+
+    def failing_executor(model, task, seed, output_root, train_fraction=None):
+        raise subprocess.CalledProcessError(
+            returncode=1, cmd="run_finetune.py",
+            output="RuntimeError: CUDA out of memory")
+
+    records = run_sweep.run_matrix(
+        [("model-a", "task-x", 42)], out_root, executor=failing_executor)
+    assert records[0]["status"] == "failed"
+    assert records[0]["error"], "the error string must be recorded"
+    assert "CalledProcessError" in records[0]["error"]
+    failures = json.loads(
+        (out_root / "sweep_failures.json").read_text(encoding="utf-8"))
+    assert len(failures) == 1
+    assert failures[0]["model"] == "model-a"
+    assert failures[0]["task"] == "task-x"
+    assert failures[0]["seed"] == 42
+    assert failures[0]["error"] == records[0]["error"]
+    disk = json.loads(
+        (out_root / "model-a" / "task-x" / "seed_42" / "run_record.json")
+        .read_text(encoding="utf-8"))
+    assert disk["status"] == "failed"
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"][0]["status"] == "failed"
+
+
+def test_run_matrix_exit0_without_metrics_is_failure(tmp_path):
+    """CR-02: a fake executor that returns normally but writes NO
+    final_metrics.json (run_finetune.py's blind-except isolation swallows
+    a training failure and still exits 0) is recorded failed with a
+    missing-metrics error and a sweep_failures.json entry — never
+    completed with null metrics."""
+    out_root = tmp_path / "sweep-out"
+
+    def silent_failure_executor(model, task, seed, output_root, train_fraction=None):
+        # Exits 0, writes nothing — the dominant real-world failure mode
+        # as seen from the driver side of the subprocess seam.
+        return None
+
+    records = run_sweep.run_matrix(
+        [("model-a", "task-x", 42)], out_root, executor=silent_failure_executor)
+    assert records[0]["status"] == "failed", (
+        "an executor that exits 0 without writing final_metrics.json is a "
+        "failed cell, not a completed one with null metrics"
+    )
+    assert records[0]["metrics"] is None
+    assert "final_metrics.json is missing" in records[0]["error"]
+    failures = json.loads(
+        (out_root / "sweep_failures.json").read_text(encoding="utf-8"))
+    assert len(failures) == 1
+    assert failures[0]["model"] == "model-a"
+    assert failures[0]["error"] == records[0]["error"]
+    disk = json.loads(
+        (out_root / "model-a" / "task-x" / "seed_42" / "run_record.json")
+        .read_text(encoding="utf-8"))
+    assert disk["status"] == "failed"
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"][0]["status"] == "failed"
+
+
+def test_run_matrix_corrupt_metrics_file_fails_cell_not_sweep(tmp_path):
+    """WR-11: a final_metrics.json that is present but not valid JSON (the
+    child writes it inside its blind-except scope, so a mid-write death —
+    e.g. disk full — can leave a truncated file with the child still
+    exiting 0) fails only THAT cell, recorded failed with a corrupt-file
+    error and a failures-manifest entry; the sweep CONTINUES — the
+    remaining cells still run and the manifest is still written — instead
+    of an uncaught JSONDecodeError aborting the entire sweep."""
+    out_root = tmp_path / "sweep-out"
+
+    def corrupting_executor(model, task, seed, output_root, train_fraction=None):
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        if seed == 42:
+            # Truncated JSON — exactly what a mid-write death leaves on
+            # disk: present, non-empty, and not parseable.
+            (cell_dir / "final_metrics.json").write_text(
+                '{"eval_AUROC": 0.91', encoding="utf-8")
+        else:
+            (cell_dir / "final_metrics.json").write_text(
+                json.dumps(SUITE_NATIVE_METRICS, indent=4), encoding="utf-8")
+
+    records = run_sweep.run_matrix(
+        [("model-a", "task-x", 42), ("model-a", "task-x", 43)],
+        out_root, executor=corrupting_executor)
+    statuses = {record["seed"]: record["status"] for record in records}
+    assert statuses[42] == "failed", (
+        "a corrupt final_metrics.json is a failed cell — child-data "
+        "corruption, not a driver/executor bug that aborts the sweep"
+    )
+    assert statuses[43] == "completed", (
+        "the sweep must continue past the corrupt cell — the remaining "
+        "cells still run"
+    )
+    assert records[0]["metrics"] is None
+    assert "corrupt" in records[0]["error"], (
+        "the error must say the metrics file is corrupt, not attribute "
+        "the failure to a swallowed training failure (the file exists)"
+    )
+    failures = json.loads(
+        (out_root / "sweep_failures.json").read_text(encoding="utf-8"))
+    assert len(failures) == 1
+    assert failures[0]["seed"] == 42
+    assert failures[0]["error"] == records[0]["error"]
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert [c["status"] for c in manifest["cells"]] == [
+        "failed", "completed"], (
+        "the manifest must be written even when a cell's metrics file is "
+        "corrupt — pre-fix, the JSONDecodeError aborted the sweep before "
+        "the manifest existed"
+    )
+
+
+def test_run_matrix_resume_marker_is_seed_scoped(tmp_path):
+    """A pre-existing trainer_state.json marks exactly its own (model, task,
+    seed) cell skipped with NO executor invocation — seed 43 still runs
+    when seed 42's marker exists in the sibling dir (the G1 layout)."""
+    out_root = tmp_path / "sweep-out"
+    cell_42 = out_root / "model-a" / "task-x" / "seed_42"
+    cell_42.mkdir(parents=True)
+    (cell_42 / "trainer_state.json").write_text("{}", encoding="utf-8")
+
+    invoked = []
+
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
+        invoked.append((model, task, seed))
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text("{}", encoding="utf-8")
+
+    records = run_sweep.run_matrix(
+        [("model-a", "task-x", 42), ("model-a", "task-x", 43)],
+        out_root, executor=fake_executor)
+    statuses = {record["seed"]: record["status"] for record in records}
+    assert statuses[42] == "skipped"
+    assert statuses[43] == "completed", (
+        "the resume marker is seed-scoped — a different seed must never be "
+        "skipped by a sibling seed's trainer_state.json (G1)"
+    )
+    assert invoked == [("model-a", "task-x", 43)], (
+        "the executor must never be invoked for a cell whose "
+        "trainer_state.json already exists"
+    )
+    skipped = json.loads(
+        (cell_42 / "run_record.json").read_text(encoding="utf-8"))
+    assert skipped["status"] == "skipped"
+
+
+def test_resume_never_overwrites_existing_run_record(tmp_path):
+    """WR-12: a resumed sweep's skipped cell NEVER overwrites the existing
+    run_record.json — the record of the run that actually trained the cell
+    (status completed, verbatim metrics, git commit, wall-clock times) is
+    the provenance, "recorded once at observation time, never
+    regenerated"; this run's skipped view is reported by the manifest
+    only. A skipped cell with NO record yet (the seed-scoped test above:
+    marker but no record) still gets a fresh one."""
+    out_root = tmp_path / "sweep-out"
+
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
+        # Mimic run_finetune.py's success artifacts: final_metrics.json
+        # PLUS the trainer_state.json resume marker (written last — the
+        # WR-13 ordering), without which run 2 below would have no
+        # marker to skip on.
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text(
+            json.dumps(SUITE_NATIVE_METRICS, indent=4), encoding="utf-8")
+        (cell_dir / "trainer_state.json").write_text("{}", encoding="utf-8")
+
+    # Run 1: the cell trains and its completed record lands on disk.
+    first = run_sweep.run_matrix(
+        [("model-a", "task-x", 42)], out_root, executor=fake_executor)
+    assert first[0]["status"] == "completed"
+    record_path = (
+        out_root / "model-a" / "task-x" / "seed_42" / "run_record.json")
+    completed_record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert completed_record["status"] == "completed"
+    assert completed_record["metrics"] == SUITE_NATIVE_METRICS
+    assert completed_record["started_at"]
+    assert completed_record["finished_at"]
+
+    # Run 2 (resume): the trainer_state.json marker now exists, so the
+    # cell is skipped — the executor must never run, and the on-disk
+    # record must still be run 1's completed record, verbatim.
+    invoked = []
+
+    def never_executor(model, task, seed, output_root, train_fraction=None):
+        invoked.append((model, task, seed))
+
+    second = run_sweep.run_matrix(
+        [("model-a", "task-x", 42)], out_root, executor=never_executor)
+    assert invoked == [], "a skipped cell must never invoke the executor"
+    assert second[0]["status"] == "skipped", (
+        "the manifest reports THIS run's view of the cell: skipped"
+    )
+    assert json.loads(record_path.read_text(encoding="utf-8")) == (
+        completed_record
+    ), (
+        "a skipped cell's existing run_record.json must be preserved "
+        "verbatim — overwriting it with a skipped/metrics-null record "
+        "destroys the only provenance linking the cell's metrics to the "
+        "git commit and wall-clock times of the run that produced them "
+        "(WR-12)"
+    )
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"][0]["status"] == "skipped", (
+        "the manifest reflects this run's skipped view while the per-cell "
+        "record keeps the original run's completed view — the two "
+        "artifacts answer different questions"
+    )
+
+
+def test_launch_subprocess_builds_argv_list_with_pinned_cwd(monkeypatch):
+    """The real launch path passes target_model/target_dataset/seed/
+    output_dir as separate argv elements of a LIST (never a shell string)
+    with cwd pinned to this repo's pipeline directory."""
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(argv, returncode=0)
+
+    monkeypatch.setattr(run_sweep.subprocess, "run", fake_run)
+    run_sweep.launch_subprocess("model-a", "task-x", 42, "/tmp/sweep-root")
+    argv = captured["argv"]
+    assert isinstance(argv, list), (
+        "the subprocess must be launched from an argv LIST, never a shell "
+        "string (T-03-10: registry values must not pass through a shell)"
+    )
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--target_model") == "model-a"
+    assert flag_value(argv, "--target_dataset") == "task-x"
+    assert flag_value(argv, "--seed") == "42"
+    assert flag_value(argv, "--output_dir") == "/tmp/sweep-root"
+    assert "run_finetune.py" in argv[1], (
+        "the launch target is run_finetune.py itself"
+    )
+    assert captured["kwargs"]["cwd"] == run_sweep.PIPELINE_DIR, (
+        "cwd must be pinned to the pipeline directory — "
+        "finetune_config.yaml and the ./finetuned default are "
+        "CWD-relative in run_finetune.py (research Pitfall 3)"
+    )
+    assert not captured["kwargs"].get("shell"), "shell=True is forbidden"
+
+
+def test_cli_exits_nonzero_on_unknown_filter_names(tmp_path, monkeypatch):
+    """WR-07: a typo'd --models/--tasks name exits non-zero listing the
+    unmatched names instead of enumerating an empty matrix that writes a
+    manifest and reports a successful 0-cell sweep."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a,pant-dnamamba-6mer",
+            "--tasks", "task-x,task-typo",
+            "--seeds", "42",
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "pant-dnamamba-6mer" in message, (
+        "the unknown model name must be listed in the error"
+    )
+    assert "task-typo" in message, (
+        "the unknown task name must be listed in the error"
+    )
+    assert not out_root.exists(), (
+        "an unknown filter must abort before any output is written"
+    )
+
+
+def test_cli_exits_nonzero_on_requested_task_without_train_split(
+        tmp_path, monkeypatch):
+    """WR-07: a task explicitly requested via --tasks that has Train=0 is
+    refused with a named error — the matrix can never run it, so dropping
+    it silently would be a no-op reported as success."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--tasks", "task-y",
+            "--seeds", "42",
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "task-y" in message, (
+        "the untrainable task name must be listed in the error"
+    )
+    assert "Train" in message, (
+        "the error must say WHY the task was refused (falsy Train)"
+    )
+    assert not out_root.exists(), (
+        "the refusal must abort before any output is written"
+    )
+
+
+@pytest.mark.parametrize("flag,raw_value", [
+    ("--models", ","),
+    ("--models", ""),
+    ("--tasks", ","),
+    ("--tasks", ""),
+])
+def test_cli_exits_nonzero_on_provided_but_empty_filter_values(
+        tmp_path, monkeypatch, flag, raw_value):
+    """WR-14: a PROVIDED --models/--tasks whose value contains only
+    separators/whitespace — e.g. --models , after shell indirection
+    collapses --models "$A,$B" with both variables empty — exits non-zero
+    naming the flag and its raw value. The stripped list is falsy, which
+    _validate_filters' early return and enumerate_matrix's
+    ``if models_filter:`` both treat as "no filter", so pre-fix the
+    driver silently enumerated the FULL registry matrix (59 models x 50
+    tasks = 2950 cells on the real registries) while the operator
+    believed the run was scoped."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            flag, raw_value,
+            "--seeds", "42",
+            "--dry-run",
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert flag in message, (
+        "the error must name the offending flag so the operator knows "
+        "which value to fix"
+    )
+    assert repr(raw_value) in message, (
+        "the error must echo the flag's raw value"
+    )
+    assert not out_root.exists(), (
+        "a provided-but-empty filter must abort before any output is "
+        "written — never fall through to the full-registry matrix"
+    )
+
+
+@pytest.mark.parametrize("raw_seeds", ["", ","])
+def test_cli_exits_nonzero_on_provided_but_empty_seed_values(
+        tmp_path, monkeypatch, raw_seeds):
+    """WR-14: --seeds is argparse-required, but any PRESENT value
+    satisfies required=True — including "" or "," — which strips to an
+    empty seed set. Pre-fix, run_matrix([]) wrote a manifest, printed
+    "Sweep finished: 0 cell(s)", and exited 0: exactly the
+    silently-successful no-op the WR-07 fail-fast was written to prevent.
+    Provided-but-empty must exit non-zero naming the flag and its raw
+    value."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", raw_seeds,
+            "--dry-run",
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "--seeds" in message, (
+        "the error must name the offending flag so the operator knows "
+        "which value to fix"
+    )
+    assert repr(raw_seeds) in message, (
+        "the error must echo the flag's raw value"
+    )
+    assert not out_root.exists(), (
+        "an empty seed set must abort before any output is written — "
+        "never write a 0-cell manifest and exit 0"
+    )
+
+
+def test_cli_absent_filters_keep_full_matrix_semantics(tmp_path, monkeypatch):
+    """WR-14 guard-rail: OMITTING --models/--tasks keeps full-matrix
+    semantics — only explicitly-provided-but-empty values fail fast. The
+    default sweep must still enumerate every models_info.json key x
+    truthy-Train datasets_info.json entry (task-y excluded: Train=0)."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert [(c["model"], c["task"], c["seed"]) for c in manifest["cells"]] == [
+        ("model-a", "task-x", 42), ("model-a", "task-z", 42),
+        ("model-b", "task-x", 42), ("model-b", "task-z", 42),
+        ("model-c", "task-x", 42), ("model-c", "task-z", 42),
+    ], (
+        "an absent --models/--tasks means ALL registry entries — the "
+        "WR-14 fail-fast must fire only on provided-but-empty values, "
+        "never on absent flags"
+    )
+
+
+# =====================================================================
+# Priority ordering + failures-manifest re-run (05-04, REV-09 / E2')
+# =====================================================================
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+COMMITTED_PRIORITIES = REPO_ROOT / "pipeline" / "sweep_priorities.json"
+# The PIPE-03 E2E task's unified-registry key (D-10 single source — the
+# plan prose's "PlantCAD2__cross_species_leaf_on_off_translation" is the
+# REQUIREMENTS shorthand; the registry key is what validation accepts).
+E2E_TASK = "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation"
+
+# The maintainer-curated tier-2 arena representatives (Task 4 gate,
+# 2026-10-10): one representative per arena — animal
+# GENERanno-eukaryote-0.5b-base, plant PlantCAD2-Small-l24-d0768, microbe
+# Omni-DNA-700M — chosen from the committed weighted_score arena leaders
+# excluding the tier-1 pair (animal 0.799 / plant 1.000 / microbe 1.056).
+# NEVER agent-invented (D-17/OQ4): this list mirrors the maintainer's
+# declaration order; execution order within the tier is the sorted()
+# fallback (bare names in one tier share a rank).
+TIER2_REPRESENTATIVES = [
+    "GENERanno-eukaryote-0.5b-base",
+    "PlantCAD2-Small-l24-d0768",
+    "Omni-DNA-700M",
+]
+
+# The frozen default order over the standard 3x2 fixture (both seeds): the
+# sorted() enumeration that MUST stay byte-identical when no --priority-file
+# is given (backward compatibility, determinism).
+FROZEN_DEFAULT_ORDER = [
+    ("model-a", "task-x", 42), ("model-a", "task-x", 43),
+    ("model-a", "task-z", 42), ("model-a", "task-z", 43),
+    ("model-b", "task-x", 42), ("model-b", "task-x", 43),
+    ("model-b", "task-z", 42), ("model-b", "task-z", 43),
+    ("model-c", "task-x", 42), ("model-c", "task-x", 43),
+    ("model-c", "task-z", 42), ("model-c", "task-z", 43),
+]
+
+
+def _write_json(path, payload):
+    path.write_text(json.dumps(payload, indent=4), encoding="utf-8")
+    return path
+
+
+def _manifest_cells(out_root):
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    return [(c["model"], c["task"], c["seed"]) for c in manifest["cells"]]
+
+
+def make_e2e_registry(tmp_path):
+    """A registry holding the REAL E2E pair names, the three REAL tier-2
+    arena-representative names, a bystander model, and a second task, so
+    the committed priorities file validates and its tier-1-first,
+    tier-2-second effect is observable against names that are not
+    alphabetically convenient."""
+    registry_dir = tmp_path / "registry-e2e"
+    registry_dir.mkdir()
+    write_registry(
+        registry_dir,
+        models={
+            "plant-dnamamba-6mer": {
+                "Model_name": "plant-dnamamba-6mer",
+                "Model_path": "models/plant-dnamamba-6mer"},
+            "PlantHelixSeek": {
+                "Model_name": "PlantHelixSeek",
+                "Model_path": "models/PlantHelixSeek"},
+            "bystander-model": {
+                "Model_name": "bystander-model",
+                "Model_path": "models/bystander"},
+            **{
+                model: {"Model_name": model, "Model_path": f"models/{model}"}
+                for model in TIER2_REPRESENTATIVES
+            },
+        },
+        datasets={
+            E2E_TASK: {"Dataset_name": E2E_TASK, "Train": 21894, "Dev": 10},
+            "other__task": {"Dataset_name": "other__task", "Train": 50, "Dev": 5},
+        },
+    )
+    return registry_dir
+
+
+def test_default_enumeration_order_is_frozen_without_priority_file(
+        tmp_path, monkeypatch):
+    """With NO --priority-file the enumerated cell order is byte-identical
+    to today's sorted() default — the frozen list below is the compatibility
+    contract; priority ordering composes OVER it, never replaces it."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert _manifest_cells(out_root) == FROZEN_DEFAULT_ORDER, (
+        "the no-priority-file enumeration order changed — backward "
+        "compatibility is a hard contract"
+    )
+
+
+def test_priority_file_orders_ranked_cells_first_seeds_adjacent(
+        tmp_path, monkeypatch):
+    """A priorities file reorders the enumerated matrix: tier-1 cells (the
+    {model, task} spec, then the bare model's other tasks) enumerate before
+    everything else, seeds stay adjacent within a cell, and the remaining
+    cells keep the sorted() fallback order. Tier 2 here is EMPTY (an empty
+    tier is a valid file form — it ranks nothing)."""
+    registry_dir = make_registry(tmp_path)
+    priority_file = _write_json(tmp_path / "priorities.json", [
+        [
+            {"model": "model-c", "task": "task-z"},
+            "model-b",
+        ],
+        [],
+    ])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--priority-file", str(priority_file),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert _manifest_cells(out_root) == [
+        # tier 1, entry 1: the {model, task} spec's cells, seeds adjacent
+        ("model-c", "task-z", 42), ("model-c", "task-z", 43),
+        # tier 1, entry 2: the bare model-b's cells (sorted fallback within
+        # the same rank: task-x before task-z), seeds adjacent
+        ("model-b", "task-x", 42), ("model-b", "task-x", 43),
+        ("model-b", "task-z", 42), ("model-b", "task-z", 43),
+        # unmatched (incl. model-c's OTHER task): the sorted() fallback order
+        ("model-a", "task-x", 42), ("model-a", "task-x", 43),
+        ("model-a", "task-z", 42), ("model-a", "task-z", 43),
+        ("model-c", "task-x", 42), ("model-c", "task-x", 43),
+    ], "priority tiers must enumerate before every other cell, seeds adjacent"
+
+
+def test_priority_specificity_spec_before_bare_model_within_tier(
+        tmp_path, monkeypatch):
+    """Entry specificity is the intra-tier tiebreak: a {model, task} spec
+    outranks the same tier's bare model name, so the spec's cells enumerate
+    before the bare entry's other cells."""
+    registry_dir = make_registry(tmp_path)
+    priority_file = _write_json(tmp_path / "priorities.json", [
+        ["model-b", {"model": "model-b", "task": "task-z"}],
+    ])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42",
+        "--dry-run",
+        "--priority-file", str(priority_file),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    cells = _manifest_cells(out_root)
+    model_b = [cell for cell in cells if cell[0] == "model-b"]
+    assert model_b == [
+        ("model-b", "task-z", 42),  # the spec: more specific, first
+        ("model-b", "task-x", 42),  # the bare entry's other task
+    ], "within one tier the {model, task} spec outranks the bare model name"
+    # the bystander cells still enumerate after every ranked cell
+    assert cells[-2:] == [("model-c", "task-x", 42), ("model-c", "task-z", 42)]
+
+
+def test_committed_priorities_file_drives_e2e_pair_first(
+        tmp_path, monkeypatch):
+    """The committed pipeline/sweep_priorities.json validates against a
+    registry holding the REAL E2E pair and tier-2 names and drives the full
+    degradation order: the PIPE-03 pair's cells (both models x the E2E
+    task, all seeds) before every other cell, then EVERY cell of the three
+    tier-2 arena representatives, then the remaining cells in the sorted()
+    fallback order."""
+    registry_dir = make_e2e_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--priority-file", str(COMMITTED_PRIORITIES),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    cells = _manifest_cells(out_root)
+    assert len(cells) == 24  # 6 models x 2 tasks x 2 seeds
+    # Tier 1 first: the E2E pair's four cells (both models, both seeds) —
+    # in sorted fallback order within the tier, seeds adjacent.
+    assert cells[:4] == [
+        ("PlantHelixSeek", E2E_TASK, 42), ("PlantHelixSeek", E2E_TASK, 43),
+        ("plant-dnamamba-6mer", E2E_TASK, 42),
+        ("plant-dnamamba-6mer", E2E_TASK, 43),
+    ]
+    # Tier 2 second: EVERY cell of the three arena representatives (bare
+    # names cover all tasks), seeds adjacent, sorted fallback order within
+    # the shared tier rank.
+    assert cells[4:16] == [
+        (model, task, seed)
+        for model in sorted(TIER2_REPRESENTATIVES)
+        for task in [E2E_TASK, "other__task"]
+        for seed in [42, 43]
+    ]
+    # Every remaining cell (the bystander's + the E2E models' other__task
+    # cells) follows in the sorted() fallback order.
+    assert set(cells[16:]) == {
+        ("PlantHelixSeek", "other__task", 42), ("PlantHelixSeek", "other__task", 43),
+        ("bystander-model", E2E_TASK, 42), ("bystander-model", E2E_TASK, 43),
+        ("bystander-model", "other__task", 42),
+        ("bystander-model", "other__task", 43),
+        ("plant-dnamamba-6mer", "other__task", 42),
+        ("plant-dnamamba-6mer", "other__task", 43),
+    }
+    assert cells[16:] == sorted(cells[16:])
+
+
+def test_committed_priorities_file_content():
+    """pipeline/sweep_priorities.json: tier 1 names exactly the pre-decided
+    PIPE-03 E2E pair ({model, task} specs on the E2E task); tier 2 carries
+    exactly the three maintainer-curated arena representatives (Task 4
+    gate, 2026-10-10 — one per arena, in the maintainer's declaration
+    order; never agent-invented, D-17/OQ4)."""
+    tiers = json.loads(COMMITTED_PRIORITIES.read_text(encoding="utf-8"))
+    assert isinstance(tiers, list) and len(tiers) == 2
+    tier1, tier2 = tiers
+    assert tier1 == [
+        {"model": "plant-dnamamba-6mer", "task": E2E_TASK},
+        {"model": "PlantHelixSeek", "task": E2E_TASK},
+    ]
+    assert tier2 == TIER2_REPRESENTATIVES, (
+        "tier 2 is the maintainer's curated list — exactly one "
+        "representative per arena (animal/plant/microbe), no additions, no "
+        "reordering of tier 1"
+    )
+
+
+def test_tier2_representatives_are_real_registry_keys():
+    """Every committed tier-2 name is an exact pipeline/models_info.json
+    key — the fail-fast gate-disposition condition (a typo'd name would
+    abort the real sweep at --priority-file validation, launch day)."""
+    registry = json.loads(
+        (REPO_ROOT / "pipeline" / "models_info.json").read_text(
+            encoding="utf-8"))
+    for model in TIER2_REPRESENTATIVES:
+        assert model in registry, (
+            f"tier-2 representative {model!r} is not a models_info.json "
+            "key — the committed priorities file must name registry keys"
+        )
+
+
+def test_committed_priorities_degradation_order_fake_executor(tmp_path):
+    """The committed priorities file drives the full E2' degradation order
+    through run_matrix under a fake executor (the D-05 discipline — no real
+    subprocess is ever launched): tier-1 E2E pair cells first, then EVERY
+    cell of the three tier-2 arena representatives across both tasks (seeds
+    adjacent), then the remaining cells in the sorted() fallback order.
+    This is the degradation contract the maintainer's curation purchased:
+    if the revision window degrades, the sweep has already produced the
+    E2E pair, then one strong representative per arena."""
+    registry_dir = make_e2e_registry(tmp_path)
+    tiers = run_sweep.load_priority_tiers(
+        str(COMMITTED_PRIORITIES), registry_dir)
+    cells = run_sweep.enumerate_matrix(None, None, [42, 43], registry_dir)
+    ordered = run_sweep.apply_priority_order(cells, tiers)
+    out_root = tmp_path / "sweep-out"
+    invoked = []
+
+    def recording_executor(model, task, seed, output_root, train_fraction=None):
+        invoked.append((model, task, seed))
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text("{}", encoding="utf-8")
+
+    run_sweep.run_matrix(ordered, out_root, executor=recording_executor)
+    assert len(invoked) == 24, "6 models x 2 tasks x 2 seeds, every cell run"
+    assert invoked == [
+        # tier 1 — the PIPE-03 E2E pair ({model, task} specs, sorted
+        # fallback within the rank), seeds adjacent within each cell
+        ("PlantHelixSeek", E2E_TASK, 42),
+        ("PlantHelixSeek", E2E_TASK, 43),
+        ("plant-dnamamba-6mer", E2E_TASK, 42),
+        ("plant-dnamamba-6mer", E2E_TASK, 43),
+        # tier 2 — the three arena representatives as bare names: EVERY
+        # cell of each model (both tasks), seeds adjacent, sorted()
+        # fallback order within the shared tier rank
+        ("GENERanno-eukaryote-0.5b-base", E2E_TASK, 42),
+        ("GENERanno-eukaryote-0.5b-base", E2E_TASK, 43),
+        ("GENERanno-eukaryote-0.5b-base", "other__task", 42),
+        ("GENERanno-eukaryote-0.5b-base", "other__task", 43),
+        ("Omni-DNA-700M", E2E_TASK, 42),
+        ("Omni-DNA-700M", E2E_TASK, 43),
+        ("Omni-DNA-700M", "other__task", 42),
+        ("Omni-DNA-700M", "other__task", 43),
+        ("PlantCAD2-Small-l24-d0768", E2E_TASK, 42),
+        ("PlantCAD2-Small-l24-d0768", E2E_TASK, 43),
+        ("PlantCAD2-Small-l24-d0768", "other__task", 42),
+        ("PlantCAD2-Small-l24-d0768", "other__task", 43),
+        # the remaining cells — the sorted() fallback order
+        ("PlantHelixSeek", "other__task", 42),
+        ("PlantHelixSeek", "other__task", 43),
+        ("bystander-model", E2E_TASK, 42),
+        ("bystander-model", E2E_TASK, 43),
+        ("bystander-model", "other__task", 42),
+        ("bystander-model", "other__task", 43),
+        ("plant-dnamamba-6mer", "other__task", 42),
+        ("plant-dnamamba-6mer", "other__task", 43),
+    ], (
+        "the executor invocation order must be the full degradation "
+        "order: tier-1 E2E pair, then every tier-2 representative cell, "
+        "then the sorted() fallback"
+    )
+
+
+def test_run_matrix_preserves_given_cell_order(tmp_path):
+    """run_matrix executes cells in the GIVEN order (a priority-ordered
+    list stays priority-ordered) instead of re-sorting — the fake executor's
+    invocation order is the proof; nothing in this test launches a real
+    subprocess (D-05)."""
+    out_root = tmp_path / "sweep-out"
+    invoked = []
+
+    def recording_executor(model, task, seed, output_root, train_fraction=None):
+        invoked.append((model, task, seed))
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text("{}", encoding="utf-8")
+
+    cells = [
+        ("model-c", "task-x", 42),
+        ("model-a", "task-z", 42),
+        ("model-c", "task-z", 42),
+    ]  # deliberately NOT sorted — a priority-ordered slice
+    run_sweep.run_matrix(cells, out_root, executor=recording_executor)
+    assert invoked == cells, (
+        "run_matrix must preserve the caller's cell order — re-sorting "
+        "here would destroy the --priority-file ordering"
+    )
+
+
+def _failures_manifest(tmp_path, entries):
+    return _write_json(tmp_path / "sweep_failures.json", entries)
+
+
+def test_from_failures_enumerates_exactly_failed_pairs_all_seeds(
+        tmp_path, monkeypatch):
+    """--from-failures with a manifest naming two failed (model, task)
+    pairs enumerates exactly those pairs' cells across ALL requested seeds
+    (the seed-scoped resume marker already skips completed cells; the
+    filter exists to avoid re-enumerating ~8,850 cells and to guard against
+    typo'd manual re-run filters)."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a", "task": "task-x", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+        {"model": "model-c", "task": "task-z", "seed": 43,
+         "output_dir": "y", "error": "boom"},
+    ])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--from-failures", str(failures),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert _manifest_cells(out_root) == [
+        ("model-a", "task-x", 42), ("model-a", "task-x", 43),
+        ("model-c", "task-z", 42), ("model-c", "task-z", 43),
+    ], "exactly the failed pairs' cells, every requested seed"
+
+
+def test_from_failures_clean_manifest_yields_explicit_zero_cell_run(
+        tmp_path, monkeypatch, capsys):
+    """A CLEAN failures manifest (empty list — WR-06 writes one every run)
+    yields an EXPLICIT zero-cell run with a clear message: the operator
+    sees why zero cells enumerated; the driver must NEVER fall through to
+    the full matrix (the silent-full-sweep hazard)."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--from-failures", str(failures),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert _manifest_cells(out_root) == []
+    captured = capsys.readouterr().out
+    assert "clean" in captured, (
+        "the zero-cell run must carry a clear message naming the clean "
+        f"manifest — got: {captured!r}"
+    )
+    assert "0" in captured
+
+
+def test_from_failures_unknown_keys_exit_nonzero_listing_all_problems(
+        tmp_path, monkeypatch):
+    """Unknown model/task names in a failures manifest exit non-zero with
+    EVERY problem listed (the _validate_filters discipline) — a typo'd
+    re-run filter must not silently enumerate the wrong (or full) matrix."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a", "task": "task-x", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+        {"model": "ghost-model", "task": "task-x", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+        {"model": "model-a", "task": "ghost-task", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+    ])
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(failures),
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "ghost-model" in message
+    assert "ghost-task" in message
+    assert not out_root.exists(), (
+        "an invalid manifest must abort before any output is written"
+    )
+
+
+def test_from_failures_task_without_train_split_exits_nonzero(
+        tmp_path, monkeypatch):
+    """WR-02 (05 review): a failures manifest naming a task with falsy
+    ``Train`` (task-y in the fixture) exits non-zero with a named error —
+    the matrix can never run it, so accepting the pair would silently
+    enumerate nothing for it while the operator believes it is re-run
+    (the same refusal _validate_filters applies to --tasks)."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a", "task": "task-y", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+    ])
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(failures),
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "task-y" in message, (
+        "the untrainable task name must be listed in the error"
+    )
+    assert "Train" in message, (
+        "the error must say WHY the task was refused (falsy Train)"
+    )
+    assert not out_root.exists(), (
+        "an invalid manifest must abort before any output is written"
+    )
+
+
+@pytest.mark.parametrize("payload", [
+    {"model": "model-a", "task": "task-x", "seed": 42},   # not a list
+    ["not-an-object"],
+    [{"task": "task-x", "seed": 42}],                     # missing model
+    [{"model": "model-a", "seed": 42}],                   # missing task
+])
+def test_from_failures_structure_errors_exit_nonzero(
+        tmp_path, monkeypatch, payload):
+    """A failures manifest with the wrong structure (not a list of objects
+    carrying string model/task keys) exits non-zero instead of being
+    misread."""
+    registry_dir = make_registry(tmp_path)
+    failures = _write_json(tmp_path / "sweep_failures.json", payload)
+    with pytest.raises(SystemExit):
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(failures),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+
+
+@pytest.mark.parametrize("content", ["{not json", ""])
+def test_from_failures_unreadable_or_unparseable_file_exits_nonzero(
+        tmp_path, monkeypatch, content):
+    """An unreadable (missing) or unparseable --from-failures file exits
+    non-zero naming the file."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as missing_info:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(tmp_path / "does-not-exist.json"),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "does-not-exist.json" in str(missing_info.value)
+    bad = tmp_path / "bad.json"
+    bad.write_text(content, encoding="utf-8")
+    with pytest.raises(SystemExit) as bad_info:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(bad),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "bad.json" in str(bad_info.value)
+
+
+# ===== from-failures x peft composition (MED-01, phase-06 review) =====
+
+def test_peft_failure_entries_record_base_model_beside_alias(tmp_path):
+    """A --peft sweep's sweep_failures.json entries carry BOTH the cell
+    identity (the ALIAS — matches the cell dir and run_record) and the
+    BASE registry name under ``base_model`` (MED-01: --from-failures
+    validates against registry KEYS, so an alias-only entry is rejected
+    as not-in-registry and a peft sweep could not be recovered)."""
+    out_root = tmp_path / "sweep-out"
+
+    def failing_executor(model, task, seed, output_root, train_fraction=None):
+        raise subprocess.CalledProcessError(
+            returncode=1, cmd="run_finetune.py", output="boom")
+
+    records = run_sweep.run_matrix(
+        [("model-a+lora", "task-x", 42), ("model-b+lora", "task-z", 42)],
+        out_root, executor=failing_executor, peft="lora")
+    assert all(r["status"] == "failed" for r in records)
+    failures = json.loads(
+        (out_root / "sweep_failures.json").read_text(encoding="utf-8"))
+    assert [(f["model"], f["base_model"]) for f in failures] == [
+        ("model-a+lora", "model-a"), ("model-b+lora", "model-b"),
+    ], (
+        "every failure entry must record the alias cell identity AND the "
+        "base registry name (MED-01)"
+    )
+
+
+def test_from_failures_recovers_peft_sweep_alias_cells(tmp_path, monkeypatch):
+    """The phase-06 MED-01 reproduction, fixed: feeding a --peft sweep's
+    own sweep_failures.json back through --from-failures WITH the same
+    --peft mode re-enumerates exactly the failed ALIAS cells (validation
+    and the join run on base names; the alias re-derives from the re-run's
+    --peft via enumerate_matrix) — previously this exited non-zero with
+    \"model not in registry: 'model-a+lora'\"."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a+lora", "base_model": "model-a",
+         "task": "task-x", "seed": 42, "output_dir": "x",
+         "error": "boom"},
+        {"model": "model-b+lora", "base_model": "model-b",
+         "task": "task-z", "seed": 43, "output_dir": "y",
+         "error": "boom"},
+    ])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--peft", "lora",
+        "--from-failures", str(failures),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert _manifest_cells(out_root) == [
+        ("model-a+lora", "task-x", 42), ("model-a+lora", "task-x", 43),
+        ("model-b+lora", "task-z", 42), ("model-b+lora", "task-z", 43),
+    ], (
+        "a lora manifest recovered with --peft lora must re-enumerate "
+        "exactly the failed alias cells across every requested seed "
+        "(MED-01)"
+    )
+
+
+def test_from_failures_legacy_alias_entry_recovers_via_suffix_strip(
+        tmp_path, monkeypatch):
+    """A legacy alias-only failure entry (no ``base_model`` — manifests
+    written before the MED-01 fix) still recovers: the validator strips a
+    known adapter suffix from ``model`` before refusing, mirroring
+    build_argv's strip."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a+lora", "task": "task-x", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+    ])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42",
+        "--dry-run",
+        "--from-failures", str(failures),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    # Without --peft on the re-run, the pairs enumerate as BASE cells —
+    # the mode in play governs the alias re-derivation.
+    assert _manifest_cells(out_root) == [("model-a", "task-x", 42)]
+    # The stripped form is not a blanket accept: a name that stays
+    # unknown after the strip still fails loudly.
+    ghost = _failures_manifest(tmp_path, [
+        {"model": "ghost+lora", "task": "task-x", "seed": 42,
+         "output_dir": "x", "error": "boom"},
+    ])
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(ghost),
+            "--output-root", str(tmp_path / "out2"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "ghost" in str(excinfo.value)
+
+
+def test_from_failures_rejects_non_string_base_model(
+        tmp_path, monkeypatch):
+    """A structurally bad ``base_model`` (non-string) is a named problem,
+    not a silent fall-through to the alias."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a+lora", "base_model": 7, "task": "task-x",
+         "seed": 42, "output_dir": "x", "error": "boom"},
+    ])
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--from-failures", str(failures),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "base_model" in str(excinfo.value)
+
+
+def test_priority_file_unknown_names_exit_nonzero_listing_all_problems(
+        tmp_path, monkeypatch):
+    """Unknown model/task names in a priorities file exit non-zero with
+    every problem listed (registry-join key validation, T-05-09) — the file
+    steers multi-day GPU execution order, so a typo must fail fast."""
+    registry_dir = make_registry(tmp_path)
+    priority_file = _write_json(tmp_path / "priorities.json", [
+        ["ghost-model", {"model": "model-a", "task": "ghost-task"}],
+    ])
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--priority-file", str(priority_file),
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "ghost-model" in message
+    assert "ghost-task" in message
+    assert not out_root.exists(), (
+        "an invalid priorities file must abort before any output is written"
+    )
+
+
+def test_priority_file_task_without_train_split_exits_nonzero(
+        tmp_path, monkeypatch):
+    """WR-02 (05 review): a priority entry naming a task with falsy
+    ``Train`` (task-y in the fixture) exits non-zero with a named error —
+    the cell would never enumerate, so the maintainer would believe a
+    cell is prioritized that can never run (silently inert; the same
+    refusal _validate_filters applies to --tasks)."""
+    registry_dir = make_registry(tmp_path)
+    priority_file = _write_json(tmp_path / "priorities.json", [
+        ["model-a", {"model": "model-b", "task": "task-y"}],
+    ])
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--priority-file", str(priority_file),
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "task-y" in message, (
+        "the untrainable task name must be listed in the error"
+    )
+    assert "Train" in message, (
+        "the error must say WHY the task was refused (falsy Train)"
+    )
+    assert not out_root.exists(), (
+        "an invalid priorities file must abort before any output is written"
+    )
+
+
+@pytest.mark.parametrize("payload,marker", [
+    ({"tiers": []}, "list of tiers"),                       # not a list
+    ([["model-a"], "model-b"], "tier 1"),                   # tier not a list
+    ([[42]], "entry"),                                      # not str/dict
+    ([[{"task": "task-x"}]], "model"),                      # spec missing model
+    ([[{"model": "model-a", "task": "task-x", "why": "x"}]], "unknown key"),
+    ([[{"model": "model-a", "task": 7}]], "task"),           # non-string task
+])
+def test_priority_file_structure_errors_exit_nonzero(
+        tmp_path, monkeypatch, payload, marker):
+    """A priorities file with the wrong structure exits non-zero — the JSON
+    must be an ordered list of tiers, each a list of bare model names or
+    {model, task} specs."""
+    registry_dir = make_registry(tmp_path)
+    priority_file = _write_json(tmp_path / "priorities.json", payload)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--priority-file", str(priority_file),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert marker in str(excinfo.value), (
+        f"the error must describe the structural problem ({marker}): "
+        f"{excinfo.value}"
+    )
+
+
+@pytest.mark.parametrize("content", ["{not json", ""])
+def test_priority_file_unparseable_json_exits_nonzero(
+        tmp_path, monkeypatch, content):
+    """An unparseable --priority-file exits non-zero naming the file."""
+    registry_dir = make_registry(tmp_path)
+    bad = tmp_path / "bad-priorities.json"
+    bad.write_text(content, encoding="utf-8")
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--priority-file", str(bad),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "bad-priorities.json" in str(excinfo.value)
+
+
+# =====================================================================
+# --peft threading (06-02, SC-6/REV-05 adapter lanes)
+# =====================================================================
+
+def test_peft_none_default_is_byte_identical_to_today(tmp_path):
+    """--peft none (the default) changes nothing: enumerate_matrix emits
+    base-name cells (the peft kwarg absent OR explicit 'none'), build_argv
+    carries NO --peft/--save_model_name elements, and _new_record's peft
+    field reads 'none' — a none-mode run is byte-for-byte the current
+    behavior."""
+    registry_dir = make_registry(tmp_path)
+    default_cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir)
+    assert default_cells == [("model-a", "task-x", 42)]
+    explicit_none = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir, peft="none")
+    assert explicit_none == default_cells, (
+        "peft='none' must enumerate exactly the default (base-name) cells"
+    )
+    argv_default = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
+    argv_none = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root", "none")
+    assert argv_default == argv_none
+    assert "--peft" not in argv_none, (
+        "the none-mode argv must carry no --peft element — a default-mode "
+        "run must be byte-identical to today's subprocess"
+    )
+    assert "--save_model_name" not in argv_none, (
+        "the none-mode argv must carry no --save_model_name element (the "
+        "child's default save name is the base model name already)"
+    )
+    record = run_sweep._new_record(
+        "model-a", "task-x", 42, Path("/tmp/root"), "testshash")
+    assert record["peft"] == "none", (
+        "the run_record peft field must default to 'none'"
+    )
+
+
+def test_enumerate_matrix_emits_alias_cells_under_peft(tmp_path):
+    """--peft lora/ia3: cells enumerate under the ALIAS model name
+    {model}+{mode} (the output-dir / resume-marker identity) while the
+    registry and the --models filter join stays on BASE names — an alias
+    filter value finds nothing, proving the join was never aliased."""
+    registry_dir = make_registry(tmp_path)
+    lora = run_sweep.enumerate_matrix(
+        ["model-a", "model-b"], ["task-x"], [42, 43], registry_dir,
+        peft="lora")
+    assert lora == [
+        ("model-a+lora", "task-x", 42), ("model-a+lora", "task-x", 43),
+        ("model-b+lora", "task-x", 42), ("model-b+lora", "task-x", 43),
+    ], "peft=lora must enumerate sorted alias cells"
+    ia3 = run_sweep.enumerate_matrix(
+        ["model-b"], ["task-x"], [42], registry_dir, peft="ia3")
+    assert ia3 == [("model-b+ia3", "task-x", 42)]
+    # The --models join stays on BASE names: an alias-typed filter is
+    # simply unknown to the registry (fail-fast via _validate_filters in
+    # the CLI path; here the enumeration itself yields nothing).
+    aliased_filter = run_sweep.enumerate_matrix(
+        ["model-a+lora"], ["task-x"], [42], registry_dir, peft="lora")
+    assert aliased_filter == [], (
+        "registry filtering must join on base names — an alias filter "
+        "value must not match (argv targeting re-derives the base itself)"
+    )
+
+
+def test_build_argv_targets_base_and_saves_alias_as_list_elements():
+    """Under peft, build_argv emits --target_model <BASE> (suffix-stripped)
+    plus --save_model_name <alias> and --peft <mode> — every flag and value
+    a separate LIST element (T-03-10 continuity)."""
+    argv = run_sweep.build_argv(
+        "model-a+lora", "task-x", 42, "/tmp/root", "lora")
+    assert isinstance(argv, list), (
+        "the subprocess must be launched from an argv LIST, never a shell "
+        "string (T-03-10: registry values must not pass through a shell)"
+    )
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--target_model") == "model-a", (
+        "--target_model must carry the BASE registry name — the alias is "
+        "not a registry key and would break the child's model filtering"
+    )
+    assert flag_value(argv, "--target_dataset") == "task-x"
+    assert flag_value(argv, "--seed") == "42"
+    assert flag_value(argv, "--output_dir") == "/tmp/root"
+    assert flag_value(argv, "--save_model_name") == "model-a+lora", (
+        "--save_model_name must carry the ALIAS so the child writes the "
+        "alias dir (name isolation end-to-end)"
+    )
+    assert flag_value(argv, "--peft") == "lora"
+    ia3 = run_sweep.build_argv(
+        "model-b+ia3", "task-z", 7, "/tmp/root", "ia3")
+    assert flag_value(ia3, "--target_model") == "model-b"
+    assert flag_value(ia3, "--save_model_name") == "model-b+ia3"
+    assert flag_value(ia3, "--peft") == "ia3"
+
+
+def test_launch_subprocess_threads_peft_into_argv(monkeypatch):
+    """The real launch path (captured argv, never executed) carries the
+    peft composition: base target, alias save name, mode flag."""
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=0)
+
+    monkeypatch.setattr(run_sweep.subprocess, "run", fake_run)
+    run_sweep.launch_subprocess(
+        "model-a+lora", "task-x", 42, "/tmp/sweep-root", peft="lora")
+    argv = captured["argv"]
+    assert flag_value(argv, "--target_model") == "model-a"
+    assert flag_value(argv, "--save_model_name") == "model-a+lora"
+    assert flag_value(argv, "--peft") == "lora"
+
+
+def test_run_matrix_writes_peft_record_inside_alias_cell_dir(tmp_path):
+    """run_matrix with a fake executor over alias cells writes
+    run_record.json carrying the peft field INSIDE the alias cell dir —
+    the exporter walk treats the alias as just another model dir."""
+    out_root = tmp_path / "sweep-out"
+
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text(
+            json.dumps(SUITE_NATIVE_METRICS, indent=4), encoding="utf-8")
+
+    registry_dir = make_registry(tmp_path)
+    cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir, peft="lora")
+    records = run_sweep.run_matrix(
+        cells, out_root, executor=fake_executor, peft="lora")
+    assert records[0]["model"] == "model-a+lora"
+    assert records[0]["peft"] == "lora"
+    record_path = (
+        out_root / "model-a+lora" / "task-x" / "seed_42" / "run_record.json")
+    disk = json.loads(record_path.read_text(encoding="utf-8"))
+    assert disk["peft"] == "lora", (
+        "the on-disk run_record must carry the peft field — the frontier "
+        "row derivation reads it"
+    )
+    assert disk["model"] == "model-a+lora"
+    assert disk["status"] == "completed"
+    assert disk["metrics"] == SUITE_NATIVE_METRICS
+
+
+def test_default_executor_receives_peft(tmp_path, monkeypatch):
+    """run_matrix's DEFAULT executor path threads peft through to the real
+    launcher: with no executor injected, the (captured, never-executed)
+    subprocess argv carries the peft composition."""
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        # _git_commit() also rides subprocess.run — give it a stdout.
+        if argv[:1] == ["git"]:
+            return subprocess.CompletedProcess(
+                argv, returncode=0, stdout="fakehash\n")
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=0)
+
+    monkeypatch.setattr(run_sweep.subprocess, "run", fake_run)
+    # The fake run writes no final_metrics.json, so the cell is recorded
+    # failed (CR-02) — the point here is the argv the default executor
+    # built, not the status.
+    records = run_sweep.run_matrix(
+        [("model-a+lora", "task-x", 42)], tmp_path / "out", peft="lora")
+    assert flag_value(captured["argv"], "--peft") == "lora"
+    assert flag_value(captured["argv"], "--save_model_name") == "model-a+lora"
+    assert flag_value(captured["argv"], "--target_model") == "model-a"
+    assert records[0]["peft"] == "lora"
+
+
+def test_alias_marker_does_not_skip_base_cell(tmp_path):
+    """The resume-marker skip stays scoped to the (alias, task, seed) cell:
+    a trainer_state.json under model-a+lora never skips the BASE model-a
+    cell (the alias gives a distinct model-level dir and marker)."""
+    out_root = tmp_path / "sweep-out"
+    alias_cell = out_root / "model-a+lora" / "task-x" / "seed_42"
+    alias_cell.mkdir(parents=True)
+    (alias_cell / "trainer_state.json").write_text("{}", encoding="utf-8")
+
+    invoked = []
+
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
+        invoked.append((model, task, seed))
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text(
+            json.dumps(SUITE_NATIVE_METRICS, indent=4), encoding="utf-8")
+
+    records = run_sweep.run_matrix(
+        [("model-a+lora", "task-x", 42), ("model-a", "task-x", 42)],
+        out_root, executor=fake_executor)
+    statuses = {record["model"]: record["status"] for record in records}
+    assert statuses["model-a+lora"] == "skipped"
+    assert statuses["model-a"] == "completed", (
+        "an alias cell's resume marker must never skip the base cell — "
+        "name isolation is the whole point of the alias (Pitfall 3)"
+    )
+    assert invoked == [("model-a", "task-x", 42)]
+
+
+def test_dry_run_peft_manifest_lists_alias_cells_only(tmp_path, monkeypatch):
+    """--dry-run with --peft lora writes sweep_manifest.json listing ONLY
+    alias cells (no base-name cells, no execution, no cell dirs) — and the
+    same matrix + --peft produces byte-identical manifests across two
+    runs."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    argv = [
+        "--models", "model-a,model-b",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--peft", "lora",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ]
+    run_cli(monkeypatch, argv)
+    manifest_path = out_root / "sweep_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert {c["model"] for c in manifest["cells"]} == {
+        "model-a+lora", "model-b+lora"}, (
+        "the --peft dry-run manifest must list ONLY alias cells"
+    )
+    assert manifest["matrix"]["models"] == [
+        "model-a+lora", "model-b+lora"]
+    assert all("+lora" in c["output_dir"] for c in manifest["cells"]), (
+        "every planned outdir must live under the alias model dir"
+    )
+    assert not list(out_root.rglob("seed_*")), (
+        "dry-run must not create cell directories"
+    )
+    first = manifest_path.read_bytes()
+    run_cli(monkeypatch, argv)
+    assert manifest_path.read_bytes() == first, (
+        "two --peft dry-runs over the same inputs must produce "
+        "byte-identical manifests"
+    )
+
+
+# =====================================================================
+# --curve expansion (06-05, SC-6 / REV-08 F8 learning curves)
+# =====================================================================
+
+def test_curve_flag_declared_in_parse_args(monkeypatch):
+    """--curve exists, is a plain string flag, and defaults to None (no
+    fraction expansion — the byte-identical default enumeration)."""
+    monkeypatch.setattr(
+        sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    args = run_sweep.parse_args()
+    assert args.curve is None
+
+
+def test_parse_curve_fractions_valid_sorted_deduped():
+    """A valid comma list parses to sorted unique floats — duplicates
+    collapse (two identical fractions map to one identical output dir)
+    and the ascending order makes the enumeration deterministic."""
+    assert run_sweep.parse_curve_fractions("0.5,0.25,0.25,1.0") == [
+        0.25, 0.5, 1.0]
+    assert run_sweep.parse_curve_fractions("1.0") == [1.0]
+
+
+def test_curve_validation_collects_all_problems_together():
+    """Parse errors and bounds violations are ALL listed in one fail-fast
+    exit (the _validate_filters discipline) — a bad fraction list steers
+    multi-day GPU execution, so every problem must be named at once."""
+    with pytest.raises(SystemExit) as excinfo:
+        run_sweep.parse_curve_fractions("0,abc,1.5")
+    message = str(excinfo.value)
+    assert "[Error] --curve" in message
+    assert "'abc'" in message, "the non-numeric element must be named"
+    assert "'0'" in message, "the f <= 0 element must be named"
+    assert "'1.5'" in message, "the f > 1 element must be named"
+
+
+def test_curve_validation_refuses_empty_elements_and_empty_lists():
+    """An empty comma element and a list that parses to nothing both
+    refuse — never silently enumerate a zero-fraction curve."""
+    with pytest.raises(SystemExit) as empty_elem:
+        run_sweep.parse_curve_fractions("0.5,,1.0")
+    assert "empty fraction element" in str(empty_elem.value)
+    with pytest.raises(SystemExit) as nothing:
+        run_sweep.parse_curve_fractions(" , ")
+    assert "--curve" in str(nothing.value)
+
+
+def test_enumerate_matrix_expands_fraction_cells_sorted(tmp_path):
+    """--curve fractions expand each (model, task, seed) cell into one
+    4-tuple cell per fraction, sorted (model, task, seed, fraction); with
+    no fractions the enumeration is EXACTLY today's 3-tuple form."""
+    registry_dir = make_registry(tmp_path)
+    cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir,
+        fractions=[1.0, 0.25, 0.5])
+    assert cells == [
+        ("model-a", "task-x", 42, 0.25),
+        ("model-a", "task-x", 42, 0.5),
+        ("model-a", "task-x", 42, 1.0),
+    ], "fraction cells must enumerate in sorted fraction order"
+    default = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir)
+    assert default == [("model-a", "task-x", 42)], (
+        "no fractions must keep the exact 3-tuple default enumeration "
+        "(byte-identical cells)"
+    )
+
+
+def test_curve_composes_with_peft_enumeration(tmp_path):
+    """--curve composes with --peft: alias cells expand across fractions
+    exactly like base cells."""
+    registry_dir = make_registry(tmp_path)
+    cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir,
+        peft="lora", fractions=[1.0, 0.25])
+    assert cells == [
+        ("model-a+lora", "task-x", 42, 0.25),
+        ("model-a+lora", "task-x", 42, 1.0),
+    ]
+
+
+def test_curve_dry_run_manifest_lists_frac_cells_nested_under_seed(
+        tmp_path, monkeypatch):
+    """--curve + --dry-run writes planned frac cells whose output dirs
+    nest frac_{f} UNDER the seed dir — the no-sibling regression lock
+    (T-06-15): a frac_ directory may NEVER appear as a direct child of a
+    task dir, or the trainer_state.json resume marker scoping and the
+    exporter walk break. The manifest is byte-identical across two runs
+    and the frac cells enumerate in sorted fraction order."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    argv = [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42,43",
+        "--dry-run",
+        "--curve", "1.0,0.25",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ]
+    run_cli(monkeypatch, argv)
+    manifest_path = out_root / "sweep_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    cells = [(c["model"], c["task"], c["seed"]) for c in manifest["cells"]]
+    assert cells == [
+        ("model-a", "task-x", 42), ("model-a", "task-x", 42),
+        ("model-a", "task-x", 43), ("model-a", "task-x", 43),
+    ]
+    # The no-sibling layout lock: every frac_ path component sits
+    # DIRECTLY under a seed_ component — never a direct child of the
+    # task dir.
+    for entry in manifest["cells"]:
+        parts = Path(entry["output_dir"]).parts
+        frac_positions = [
+            i for i, part in enumerate(parts) if part.startswith("frac_")
+        ]
+        assert frac_positions, (
+            f"curve cell output_dir lacks a frac_ segment: "
+            f"{entry['output_dir']}"
+        )
+        for i in frac_positions:
+            assert parts[i - 1].startswith("seed_"), (
+                f"frac_ dir {parts[i]} is NOT nested under a seed_ dir — "
+                f"a sibling frac layout corrupts the resume-marker "
+                f"scoping and the exporter walk (T-06-15): "
+                f"{entry['output_dir']}"
+            )
+    # sorted fraction order within each (model, task, seed) cell
+    dirs = [c["output_dir"] for c in manifest["cells"]]
+    assert dirs == sorted(dirs)
+    assert "frac_0.25" in dirs[0] and "frac_1.0" in dirs[1]
+    # byte determinism
+    first = manifest_path.read_bytes()
+    run_cli(monkeypatch, argv)
+    assert manifest_path.read_bytes() == first, (
+        "two --curve dry-runs over the same inputs must produce "
+        "byte-identical manifests"
+    )
+    assert not list(out_root.rglob("seed_*")), (
+        "dry-run must not create cell directories"
+    )
+
+
+def test_build_argv_appends_train_fraction_as_list_element():
+    """build_argv appends --train_fraction <f> as separate LIST elements
+    (T-03-10 continuity), composes with the peft alias composition, and
+    omits the elements entirely when no fraction is given."""
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root", train_fraction=0.25)
+    assert isinstance(argv, list)
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--train_fraction") == "0.25"
+    assert flag_value(argv, "--target_model") == "model-a"
+    combined = run_sweep.build_argv(
+        "model-a+lora", "task-x", 42, "/tmp/root", "lora", 0.5)
+    assert flag_value(combined, "--target_model") == "model-a"
+    assert flag_value(combined, "--save_model_name") == "model-a+lora"
+    assert flag_value(combined, "--peft") == "lora"
+    assert flag_value(combined, "--train_fraction") == "0.5"
+    plain = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
+    assert "--train_fraction" not in plain
+
+
+def test_new_record_train_fraction_field():
+    """_new_record gains a train_fraction field: float for curve cells,
+    null otherwise (JSON null via None)."""
+    plain = run_sweep._new_record(
+        "model-a", "task-x", 42, Path("/tmp/root"), "hash")
+    assert plain["train_fraction"] is None
+    curve = run_sweep._new_record(
+        "model-a", "task-x", 42, Path("/tmp/root"), "hash",
+        train_fraction=0.25)
+    assert curve["train_fraction"] == 0.25
+
+
+def test_run_matrix_curve_cell_record_and_frac_scoped_resume(tmp_path):
+    """run_matrix over curve cells writes run_record.json carrying the
+    train_fraction INSIDE the frac-nested cell dir, and the resume marker
+    is (model, task, seed, fraction)-scoped: a marker in frac_0.25 never
+    skips the frac_1.0 cell of the same seed."""
+    out_root = tmp_path / "sweep-out"
+
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
+        cell_dir = run_sweep.cell_dir_for(
+            output_root, model, task, seed, train_fraction)
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text(
+            json.dumps(SUITE_NATIVE_METRICS, indent=4), encoding="utf-8")
+
+    # Pre-existing marker in frac_0.25 only.
+    done = run_sweep.cell_dir_for(out_root, "model-a", "task-x", 42, 0.25)
+    done.mkdir(parents=True)
+    (done / "trainer_state.json").write_text("{}", encoding="utf-8")
+
+    records = run_sweep.run_matrix(
+        [("model-a", "task-x", 42, 0.25), ("model-a", "task-x", 42, 1.0)],
+        out_root, executor=fake_executor)
+    statuses = {r["train_fraction"]: r["status"] for r in records}
+    assert statuses[0.25] == "skipped"
+    assert statuses[1.0] == "completed", (
+        "a frac_0.25 resume marker must never skip the frac_1.0 cell — "
+        "the marker is fraction-scoped (T-06-15 nesting invariant)"
+    )
+    record_path = run_sweep.cell_dir_for(
+        out_root, "model-a", "task-x", 42, 1.0) / "run_record.json"
+    disk = json.loads(record_path.read_text(encoding="utf-8"))
+    assert disk["train_fraction"] == 1.0
+    assert disk["status"] == "completed"
+    assert disk["metrics"] == SUITE_NATIVE_METRICS
+
+
+def test_default_executor_receives_train_fraction(tmp_path, monkeypatch):
+    """run_matrix's DEFAULT executor path threads the fraction through to
+    the real launcher: the captured (never-executed) subprocess argv
+    carries --train_fraction <f>."""
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        if argv[:1] == ["git"]:
+            return subprocess.CompletedProcess(
+                argv, returncode=0, stdout="fakehash\n")
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=0)
+
+    monkeypatch.setattr(run_sweep.subprocess, "run", fake_run)
+    run_sweep.run_matrix(
+        [("model-a", "task-x", 42, 0.25)], tmp_path / "out")
+    assert flag_value(captured["argv"], "--train_fraction") == "0.25"
+
+
+# =====================================================================
+# extract_curve_points (06-05, SC-6 / REV-08 F8 offline harvesting)
+# =====================================================================
+
+def test_extract_curve_points_sorts_and_filters_log_history():
+    """Only log_history entries carrying eval_ keys are curve points;
+    points return SORTED by step (out-of-order input handled); non-eval
+    keys on an eval entry are excluded from the metrics dict."""
+    state = {
+        "log_history": [
+            {"loss": 0.5, "step": 1, "epoch": 0.01},
+            {"eval_loss": 0.4, "eval_AUROC": 0.7, "step": 100},
+            {"loss": 0.3, "step": 100},  # no eval keys -> skipped
+            {"eval_loss": 0.2, "step": 50},  # out of order -> sorted
+            {"eval_loss": 0.1, "eval_AUROC": 0.75, "step": 300,
+             "epoch": 1.0},
+        ],
+    }
+    points = run_sweep.extract_curve_points(state)
+    assert [step for step, _ in points] == [50, 100, 300], (
+        "points must be sorted by step regardless of log order"
+    )
+    assert points[0][1] == {"eval_loss": 0.2}
+    assert points[1][1] == {"eval_loss": 0.4, "eval_AUROC": 0.7}, (
+        "non-eval keys (loss/epoch) must not leak into the metrics dict"
+    )
+    assert points[2][1] == {"eval_loss": 0.1, "eval_AUROC": 0.75}
+
+
+def test_extract_curve_points_empty_or_absent_history():
+    """An absent log_history, an empty one, a None trainer_state, and a
+    history with no eval-carrying entries all yield [] — the reader is
+    total over trainer_state shapes, never raising."""
+    assert run_sweep.extract_curve_points({}) == []
+    assert run_sweep.extract_curve_points(None) == []
+    assert run_sweep.extract_curve_points({"log_history": []}) == []
+    assert run_sweep.extract_curve_points(
+        {"log_history": [{"loss": 1.0, "step": 5}]}
+    ) == [], "a pure-loss history carries no curve points"
+
+
+def test_extract_curve_points_skips_unusable_entries():
+    """A non-dict entry and an eval entry without a usable step are
+    skipped — a point that cannot be placed on the curve is not a
+    point."""
+    state = {
+        "log_history": [
+            "garbage-entry",
+            {"eval_loss": 0.3},  # no step
+            {"eval_loss": 0.25, "step": 200},
+        ],
+    }
+    points = run_sweep.extract_curve_points(state)
+    assert points == [(200, {"eval_loss": 0.25})]
+
+
+# =====================================================================
+# Sweep argv flag threading (07-03, PIPE-02): --subset_file /
+# --effective_batch_size / --num_train_epochs / --cache_dir
+# =====================================================================
+
+def _capturing_launcher(monkeypatch):
+    """Patch subprocess.run to capture the child argv WITHOUT executing
+    it (the test_default_executor_receives_peft idiom); _git_commit()'s
+    git call gets a stdout. Returns the capture dict."""
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        if argv[:1] == ["git"]:
+            return subprocess.CompletedProcess(
+                argv, returncode=0, stdout="fakehash\n")
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=0)
+
+    monkeypatch.setattr(run_sweep.subprocess, "run", fake_run)
+    return captured
+
+
+def test_sweep_flags_default_to_none_in_parse_args(monkeypatch):
+    """The pass-through flags exist and default to None — an absent flag
+    threads NOTHING and records NOTHING (the byte-identical-when-absent
+    contract, D-12/D-13; the storage-root twins join the family,
+    261014-c2l)."""
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    args = run_sweep.parse_args()
+    assert args.subset_file is None
+    assert args.effective_batch_size is None
+    assert args.batch_size is None
+    assert args.num_train_epochs is None
+    assert args.cache_dir is None
+    assert args.model_root is None
+    assert args.dataset_root is None
+
+
+def test_effective_batch_size_bare_valued_absent_parse(monkeypatch):
+    """D-12: a BARE --effective_batch_size parses to 16 (argparse
+    nargs='?' const=16); a valued flag parses to the int; an absent flag
+    is None — no threading at all, the child's YAML gradient-accumulation
+    governs."""
+    monkeypatch.setattr(sys, "argv", [
+        "run_sweep.py", "--seeds", "42", "--effective_batch_size"])
+    assert run_sweep.parse_args().effective_batch_size == 16
+    monkeypatch.setattr(sys, "argv", [
+        "run_sweep.py", "--seeds", "42", "--effective_batch_size", "64"])
+    assert run_sweep.parse_args().effective_batch_size == 64
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    assert run_sweep.parse_args().effective_batch_size is None
+
+
+def test_batch_size_valued_absent_parse(monkeypatch):
+    """261023-abu: --batch_size is a PLAIN valued int flag (the
+    --num_train_epochs shape — NO bare-flag const, that is
+    --effective_batch_size's D-12 niche): a valued flag parses to the
+    int; an absent flag is None — zero threading, the child's YAML
+    default + determine_batch_size dynamic scaling governs."""
+    monkeypatch.setattr(sys, "argv", [
+        "run_sweep.py", "--seeds", "42", "--batch_size", "8"])
+    assert run_sweep.parse_args().batch_size == 8
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    assert run_sweep.parse_args().batch_size is None
+
+
+def test_build_argv_threads_four_flags_as_list_elements():
+    """Each present flag appends exactly two LIST elements — flag then
+    str(value) — the --peft/--train_fraction append idiom verbatim
+    (T-03-10: every flag and value a separate element, never a shell
+    string)."""
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root",
+        subset_file="/tmp/subsets.json", effective_batch_size=16,
+        batch_size=8,
+        num_train_epochs=1, cache_dir="/tmp/cache")
+    assert isinstance(argv, list)
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--subset_file") == "/tmp/subsets.json"
+    assert flag_value(argv, "--effective_batch_size") == "16"
+    assert flag_value(argv, "--batch_size") == "8"
+    assert flag_value(argv, "--num_train_epochs") == "1"
+    assert flag_value(argv, "--cache_dir") == "/tmp/cache"
+    # 261023-abu: exactly two LIST elements (flag then str(value)), and
+    # --batch_size sits IMMEDIATELY after the --effective_batch_size
+    # pair — the two batch knobs adjacent everywhere.
+    assert argv.count("--batch_size") == 1
+    assert argv[argv.index("--batch_size") + 1] == "8"
+    assert argv.index("--effective_batch_size") < argv.index(
+        "--batch_size") < argv.index("--num_train_epochs"), (
+        "--batch_size must sit between --effective_batch_size and "
+        "--num_train_epochs in the pinned argv order (the two batch "
+        "knobs adjacent, 261023-abu)"
+    )
+
+
+def test_build_argv_absent_flags_add_zero_elements():
+    """Absent flags contribute ZERO argv elements — the absent-parity
+    contract: a no-flag sweep builds the exact pre-07-03 child argv
+    (the storage-root twins included, 261014-c2l)."""
+    plain = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
+    for flag in ("--subset_file", "--effective_batch_size",
+                 "--batch_size",
+                 "--num_train_epochs", "--cache_dir",
+                 "--model_root", "--dataset_root", "--log_dir"):
+        assert flag not in plain, (
+            f"{flag} must contribute zero argv elements when absent"
+        )
+
+
+def extract_finetune_parse_args():
+    """Exec-extract run_finetune's ``parse_args`` from the source text
+    (the read-source-never-import pattern, the
+    test_run_finetune_contracts.py extraction idiom — the module
+    imports torch at top and must never be imported by a test; the
+    function is pure argparse ending right before
+    ``validate_subset_file``). Phase 19 (19-01): the extraction now
+    starts at the LOCAL ``ADVANCED_TRAIN_FLAGS`` tuple so the extracted
+    ``parse_args`` carries its module-level dependencies (the tuple,
+    ``_str_to_bool``, and json for the json-kind type callable)."""
+    import argparse
+
+    run_finetune_src = Path(run_sweep.__file__).with_name(
+        "run_finetune.py")
+    src = run_finetune_src.read_text(encoding="utf-8")
+    match = re.search(
+        r"ADVANCED_TRAIN_FLAGS = \(.*?\n(?=def validate_subset_file)",
+        src, re.DOTALL)
+    assert match is not None, (
+        "run_finetune.parse_args not found by the extraction — the "
+        "seam test must be re-pointed at the new function boundary"
+    )
+    namespace = {"argparse": argparse, "Path": Path, "json": json}
+    exec(match.group(0), namespace)  # noqa: S102 - pure extracted fn
+    return namespace["parse_args"]
+
+
+def test_build_argv_subset_tail_parses_as_run_finetune_argv(
+        monkeypatch, tmp_path):
+    """261019-v3g (WINDOWS #12): the FULL sweep→child seam in ONE pin —
+    build_argv's tail (element 2 onward) for a subset_file cell is
+    accepted by run_finetune's OWN parse_args (exec-extracted from the
+    source text) with the threaded ABSOLUTE value intact, and a
+    subset-less build parses to subset_file None (D-12 absent parity).
+    The teeth: a renamed/unrecognized flag on either side makes argparse
+    SystemExit here — a --subset_file naming drift between the two
+    files now fails CI, where each side's own suite could never catch
+    it (the previously-uncovered cross-file link)."""
+    parse_finetune_args = extract_finetune_parse_args()
+
+    subset_path = tmp_path / "subsets.json"
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root",
+        subset_file=str(subset_path))
+    monkeypatch.setattr(sys, "argv", ["run_finetune.py", *argv[2:]])
+    args = parse_finetune_args()
+    assert str(args.subset_file) == str(subset_path), (
+        "the threaded absolute subset path arrives intact at the child's "
+        "own parser (run_finetune's flag is type=Path)"
+    )
+    assert args.target_model == "model-a"
+    assert args.target_dataset == "task-x"
+    assert args.seed == 42
+
+    plain = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
+    monkeypatch.setattr(sys, "argv", ["run_finetune.py", *plain[2:]])
+    assert parse_finetune_args().subset_file is None, (
+        "an absent --subset_file parses to None — zero elements "
+        "contributed, the byte-identical-when-absent contract"
+    )
+
+
+def test_build_argv_threads_storage_roots_as_list_elements():
+    """261014-c2l: each PRESENT storage-root flag appends exactly two
+    LIST elements — flag then str(value) — and --model_root precedes
+    --dataset_root in the pinned tail order (model-before-dataset, the
+    --target_model-before---target_dataset axis order). Extended
+    261014-f4w: --log_dir joins the same tail AFTER --dataset_root."""
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root",
+        model_root="/mnt/storage", dataset_root="/mnt/storage",
+        log_dir="/mnt/logs")
+    assert isinstance(argv, list)
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--model_root") == "/mnt/storage"
+    assert flag_value(argv, "--dataset_root") == "/mnt/storage"
+    assert flag_value(argv, "--log_dir") == "/mnt/logs"
+    assert argv.index("--model_root") < argv.index("--dataset_root"), (
+        "--model_root must precede --dataset_root (the pinned tail order)"
+    )
+    assert argv.index("--dataset_root") < argv.index("--log_dir"), (
+        "--log_dir must close the pinned storage tail (261014-f4w)"
+    )
+
+
+def test_cli_bare_effective_batch_size_threads_16_into_child_argv(
+        tmp_path, monkeypatch):
+    """A BARE --effective_batch_size (const=16, D-12) threads the STRING
+    '16' into the recorded child argv of a default-executor run — the
+    value the child's own GA arithmetic (max(1, N // bs_new)) consumes."""
+    registry_dir = make_registry(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--effective_batch_size",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--effective_batch_size") == "16"
+
+
+def test_cli_batch_size_threads_into_child_argv(tmp_path, monkeypatch):
+    """261023-abu: a valued --batch_size 8 threads the STRING '8' into
+    the recorded child argv of a default-executor run — the STARTING
+    per-device micro-batch the child's determine_batch_size then scales
+    down by sequence-length tier (the bare-EBS :2142 idiom, plain
+    valued-flag form)."""
+    registry_dir = make_registry(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--batch_size", "8",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--batch_size") == "8"
+
+
+# =====================================================================
+# Phase 19 (19-01) — the advanced train-flag family tracer:
+# ADVANCED_TRAIN_FLAGS + --learning_rate through the pipeline chain
+# =====================================================================
+
+
+def test_advanced_learning_rate_valued_absent_parse(monkeypatch):
+    """Phase 19 tracer: --learning_rate is a PLAIN valued float flag
+    (the --num_train_epochs shape — no bare-flag const): a valued flag
+    parses to the float; an absent flag is None — zero threading, the
+    child's active YAML value governs."""
+    monkeypatch.setattr(sys, "argv", [
+        "run_sweep.py", "--seeds", "42", "--learning_rate", "1e-4"])
+    args = run_sweep.parse_args()
+    assert args.learning_rate == 1e-4
+    assert run_sweep.collect_advanced(args) == {"learning_rate": 1e-4}
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    args = run_sweep.parse_args()
+    assert args.learning_rate is None
+    assert run_sweep.collect_advanced(args) == {}
+
+
+def test_advanced_out_of_bounds_refuses_collect_all(
+        tmp_path, monkeypatch):
+    """The table-driven collect-all guard: --learning_rate 2.0 is above
+    the table's hi (1.0) and aborts BEFORE any output — the message
+    names the flag and the bound (the --batch_size guard shape,
+    PD-19-1's [1e-9, 1.0] sanity mirror)."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "lr-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", "42",
+            "--dry-run",
+            "--learning_rate", "2.0",
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "--learning_rate" in message
+    assert "1.0" in message, "the guard names the bound it enforces"
+    assert not out_root.exists()
+
+
+def test_build_argv_advanced_block_sits_between_batch_size_and_cache_dir():
+    """PD-19-2: a present advanced family appends as ONE contiguous
+    block IMMEDIATELY AFTER the --batch_size pair and BEFORE the
+    --cache_dir pair — pinned ELEMENT-FOR-ELEMENT (the exact argv, not
+    just ordering), the position every threading site (TUI composers in
+    19-02, dispatch worker context) mirrors."""
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root",
+        batch_size=8, advanced={"learning_rate": 1e-4},
+        num_train_epochs=2, cache_dir="/tmp/cache")
+    assert argv == [
+        sys.executable, str(run_sweep.RUN_FINETUNE),
+        "--target_model", "model-a",
+        "--target_dataset", "task-x",
+        "--seed", "42",
+        "--output_dir", "/tmp/root",
+        "--batch_size", "8",
+        "--learning_rate", "0.0001",
+        "--num_train_epochs", "2",
+        "--cache_dir", "/tmp/cache",
+    ], (
+        "the advanced block must sit immediately after the --batch_size "
+        "append and before the --cache_dir append, element-for-element "
+        "(PD-19-2)"
+    )
+
+
+def test_build_argv_absent_advanced_adds_zero_elements():
+    """PD-19-7 absent parity: an absent/empty advanced family contributes
+    ZERO argv elements — the no-flag argv is byte-identical to the
+    pre-19 shape (D-12/D-13; the tui 10-element base argv lock depends
+    on this staying true)."""
+    plain = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
+    for spec in run_sweep.ADVANCED_TRAIN_FLAGS:
+        assert spec.flag not in plain, (
+            f"{spec.flag} must contribute zero argv elements when the "
+            "family is absent"
+        )
+    explicit_none = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root", advanced=None)
+    assert explicit_none == plain
+    explicit_empty = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root", advanced={})
+    assert explicit_empty == plain
+
+
+def test_cli_learning_rate_threads_into_child_argv(tmp_path, monkeypatch):
+    """Phase 19 tracer (the 261023-abu CLI idiom): a valued
+    --learning_rate 0.0001 threads the STRING '0.0001' into the recorded
+    child argv of a default-executor run — the value run_finetune's own
+    argparse then applies as configs['finetune'].learning_rate."""
+    registry_dir = make_registry(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--learning_rate", "0.0001",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    argv = captured["argv"]
+    assert flag_value(argv, "--learning_rate") == "0.0001"
+    assert argv.index("--output_dir") < argv.index("--learning_rate"), (
+        "the advanced block joins the pinned pass-through tail")
+
+
+# =====================================================================
+# Phase 19 (19-01 Task 2) — the full 18-row advanced family
+# =====================================================================
+
+#: The locked 18-row family (PD-19-1), verbatim from the plan's
+#: decisions table — kinds/bounds/choices/default_display per row.
+EXPECTED_ADVANCED_TABLE = [
+    ("--adam_beta1", "float", 0.0, 1.0, None, "0.9"),
+    ("--adam_beta2", "float", 0.0, 1.0, None, "0.999"),
+    ("--adam_epsilon", "float", 0.0, 1.0, None, "1e-8"),
+    ("--bf16", "bool", None, None, ("true", "false"), "True"),
+    ("--eval_steps", "int", 1, None, None, "500"),
+    ("--eval_strategy", "enum", None, None,
+     ("no", "steps", "epoch"), "steps"),
+    ("--gradient_accumulation_steps", "int", 1, None, None, "1"),
+    ("--learning_rate", "float", 1e-9, 1.0, None, "2e-5"),
+    ("--logging_steps", "int", 1, None, None, "500"),
+    ("--logging_strategy", "enum", None, None,
+     ("no", "steps", "epoch"), "steps"),
+    ("--lr_scheduler_kwargs", "json", None, None, None, "{}"),
+    ("--lr_scheduler_type", "enum", None, None,
+     ("linear", "cosine", "cosine_with_restarts", "polynomial",
+      "constant", "constant_with_warmup", "inverse_sqrt",
+      "reduce_lr_on_plateau", "cosine_with_min_lr",
+      "cosine_warmup_with_min_lr", "warmup_stable_decay", "greedy"),
+     "linear"),
+    ("--max_grad_norm", "float", 0.0, None, None, "1.0"),
+    ("--save_steps", "int", 1, None, None, "500"),
+    ("--save_strategy", "enum", None, None,
+     ("no", "steps", "epoch"), "steps"),
+    ("--save_total_limit", "int", 1, None, None, "2"),
+    ("--warmup_ratio", "float", 0.0, 1.0, None, "0.1"),
+    ("--weight_decay", "float", 0.0, 1.0, None, "0.01"),
+]
+
+
+@pytest.mark.parametrize(
+    "flag,kind,lo,hi,choices,default", EXPECTED_ADVANCED_TABLE)
+def test_advanced_train_flags_row_matches_locked_table(
+        flag, kind, lo, hi, choices, default):
+    """PD-19-1: every one of the 18 locked rows is present with EXACTLY
+    the locked kind/bounds/choices/default_display — the table itself is
+    pinned, not just example behaviors."""
+    matching = [
+        spec for spec in run_sweep.ADVANCED_TRAIN_FLAGS
+        if spec.flag == flag]
+    assert len(matching) == 1, f"{flag} must appear exactly once"
+    spec = matching[0]
+    assert spec.kind == kind
+    assert spec.lo == lo
+    assert spec.hi == hi
+    assert spec.choices == choices
+    assert spec.default_display == default
+
+
+def test_advanced_train_flags_table_is_exactly_the_locked_18():
+    """The table holds EXACTLY the locked 18 rows, ALPHABETICAL (table
+    order = argv block order, PD-19-2) — a 19th row or a reorder fails
+    here until the lock is consciously updated."""
+    flags = [spec.flag for spec in run_sweep.ADVANCED_TRAIN_FLAGS]
+    assert flags == sorted(flags), "table order must be alphabetical"
+    assert len(flags) == 18
+    assert set(flags) == {
+        row[0] for row in EXPECTED_ADVANCED_TABLE}
+
+
+def test_advanced_family_absent_parses_all_none(monkeypatch):
+    """Every one of the 18 flags defaults to None (the D-12
+    byte-identical-when-absent contract over the whole family)."""
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    args = run_sweep.parse_args()
+    for spec in run_sweep.ADVANCED_TRAIN_FLAGS:
+        assert getattr(args, spec.flag.lstrip("-")) is None, (
+            f"{spec.flag} must default to None when absent"
+        )
+    assert run_sweep.collect_advanced(args) == {}
+
+
+@pytest.mark.parametrize("flag,raw,expected", [
+    ("--eval_steps", "100", 100),                                    # int
+    ("--learning_rate", "1e-4", 1e-4),                              # float
+    ("--lr_scheduler_type", "cosine", "cosine"),                     # enum
+    ("--bf16", "false", "false"),  # bool: string at this layer (choices)
+    ("--lr_scheduler_kwargs", '{"num_restarts": 2}',
+     {"num_restarts": 2}),                                           # json
+])
+def test_advanced_family_present_parse_per_kind(
+        monkeypatch, flag, raw, expected):
+    """One present representative per kind parses to the typed value —
+    int/float typed, enum/bool the closed vocabulary string, json the
+    parsed object (collect_advanced carries the parsed value)."""
+    monkeypatch.setattr(
+        sys, "argv", ["run_sweep.py", "--seeds", "42", flag, raw])
+    args = run_sweep.parse_args()
+    assert getattr(args, flag.lstrip("-")) == expected
+    assert run_sweep.collect_advanced(args) == {flag.lstrip("-"): expected}
+
+
+@pytest.mark.parametrize("flag,raw,bound", [
+    ("--learning_rate", "2.0", "1.0"),
+    ("--warmup_ratio", "1.5", "1.0"),
+    ("--weight_decay", "-0.1", "0.0"),
+])
+def test_advanced_out_of_bounds_float_refuses_collect_all(
+        tmp_path, monkeypatch, flag, raw, bound):
+    """Out-of-bounds floats abort collect-all naming the flag AND the
+    bound it violated (the PD-19-1 inclusive sanity mirrors) — before
+    any output is written."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "bounds-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--dry-run", flag, raw,
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert flag in message, "the refusal names the offending flag"
+    assert bound in message, "the refusal names the violated bound"
+    assert raw in message, "the refusal echoes the raw value"
+    assert not out_root.exists()
+
+
+def test_advanced_json_non_object_refuses_collect_all(
+        tmp_path, monkeypatch):
+    """--lr_scheduler_kwargs '[1,2]' parses (json.loads accepts arrays)
+    but the dict-shape guard refuses it naming the flag —
+    TrainingArguments takes a kwargs OBJECT."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+            "--dry-run", "--lr_scheduler_kwargs", "[1,2]",
+            "--output-root", str(tmp_path / "json-out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "--lr_scheduler_kwargs" in message
+    assert "JSON object" in message
+    assert "list" in message, "the refusal names the offending type"
+
+
+@pytest.mark.parametrize("flag,raw", [
+    ("--lr_scheduler_type", "garbage"),
+    ("--eval_strategy", "sometimes"),
+    ("--bf16", "yes"),
+])
+def test_advanced_enum_bool_garbage_refuses_at_argparse(
+        monkeypatch, flag, raw):
+    """Enum/bool garbage dies at ARGPARSE (exit 2, the choices
+    vocabulary) — before any collect-all guard or output."""
+    monkeypatch.setattr(
+        sys, "argv", ["run_sweep.py", "--seeds", "42", flag, raw])
+    with pytest.raises(SystemExit) as excinfo:
+        run_sweep.parse_args()
+    assert excinfo.value.code == 2
+
+
+def test_build_argv_full_advanced_block_exact_alphabetical_order():
+    """The full-18 pin: an advanced dict carrying ALL 18 values produces
+    the block in EXACT alphabetical order (table order) between
+    --batch_size and --cache_dir, the json value serialized as
+    sorted-key JSON — element-for-element, never just 'contains'."""
+    advanced = {
+        "adam_beta1": 0.9, "adam_beta2": 0.999, "adam_epsilon": 1e-8,
+        "bf16": "true", "eval_steps": 100, "eval_strategy": "epoch",
+        "gradient_accumulation_steps": 4, "learning_rate": 1e-4,
+        "logging_steps": 50, "logging_strategy": "steps",
+        "lr_scheduler_kwargs": {"num_restarts": 2, "power": 1.0},
+        "lr_scheduler_type": "cosine_with_restarts",
+        "max_grad_norm": 0.5, "save_steps": 200, "save_strategy": "no",
+        "save_total_limit": 3, "warmup_ratio": 0.05, "weight_decay": 0.01,
+    }
+    assert len(advanced) == 18
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root",
+        batch_size=8, advanced=advanced, cache_dir="/tmp/cache")
+    block = argv[argv.index("--batch_size") + 2: argv.index("--cache_dir")]
+    assert block == [
+        "--adam_beta1", "0.9",
+        "--adam_beta2", "0.999",
+        "--adam_epsilon", "1e-08",
+        "--bf16", "true",
+        "--eval_steps", "100",
+        "--eval_strategy", "epoch",
+        "--gradient_accumulation_steps", "4",
+        "--learning_rate", "0.0001",
+        "--logging_steps", "50",
+        "--logging_strategy", "steps",
+        "--lr_scheduler_kwargs", '{"num_restarts": 2, "power": 1.0}',
+        "--lr_scheduler_type", "cosine_with_restarts",
+        "--max_grad_norm", "0.5",
+        "--save_steps", "200",
+        "--save_strategy", "no",
+        "--save_total_limit", "3",
+        "--warmup_ratio", "0.05",
+        "--weight_decay", "0.01",
+    ], (
+        "the full advanced block must be the alphabetical table order, "
+        "element-for-element, between --batch_size and --cache_dir "
+        "(PD-19-2)"
+    )
+
+
+def test_cli_manifest_records_advanced_only_when_present(
+        tmp_path, monkeypatch):
+    """PD-19-7 manifest parity: an ABSENT family contributes no
+    'advanced' key anywhere in the manifest; a PRESENT family records
+    the nested dict in every cell (the **flags merge, D-13)."""
+    registry_dir = make_registry(tmp_path)
+
+    plain_root = tmp_path / "plain-manifest"
+    run_cli(monkeypatch, [
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--dry-run", "--output-root", str(plain_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    plain = json.loads(
+        (plain_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    for cell in plain["cells"]:
+        assert "advanced" not in cell, (
+            "an absent family records zero manifest keys"
+        )
+
+    adv_root = tmp_path / "adv-manifest"
+    run_cli(monkeypatch, [
+        "--models", "model-a", "--tasks", "task-x", "--seeds", "42",
+        "--dry-run", "--learning_rate", "0.0001",
+        "--weight_decay", "0.05",
+        "--output-root", str(adv_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    adv = json.loads(
+        (adv_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert adv["cells"], "the dry-run planned at least one cell"
+    for cell in adv["cells"]:
+        assert cell["advanced"] == {
+            "learning_rate": 1e-4, "weight_decay": 0.05}
+
+
+def test_cli_resolves_subset_and_cache_dir_to_absolute_paths(
+        tmp_path, monkeypatch):
+    """D-15: relative --subset_file / --cache_dir values are resolved to
+    ABSOLUTE paths at the sweep layer BEFORE threading — the child's cwd
+    is pinned to pipeline/, so a relative value would resolve against the
+    wrong root."""
+    registry_dir = make_registry(tmp_path)
+    # A structurally VALID subset file (keys in the tmp registry, int
+    # lists) so the run also survives the sweep-side pre-validation
+    # (D-14) once it exists.
+    (tmp_path / "subsets.json").write_text(
+        json.dumps({"task-x": [0, 5]}), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--subset_file", "subsets.json",
+        "--cache_dir", "hf-cache",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--subset_file") == str(
+        tmp_path / "subsets.json"), (
+        "a relative --subset_file must reach the child as the resolved "
+        "absolute path"
+    )
+    assert flag_value(captured["argv"], "--cache_dir") == str(
+        tmp_path / "hf-cache"), (
+        "a relative --cache_dir must reach the child as the resolved "
+        "absolute path"
+    )
+
+
+def test_cli_resolves_storage_roots_to_absolute_paths(
+        tmp_path, monkeypatch):
+    """261014-c2l (D-15 twin): relative --model_root / --dataset_root
+    values are resolved to ABSOLUTE paths at the sweep layer BEFORE
+    threading — the child joins registry Model_path/Dataset_path values
+    under the given root verbatim, so a relative root would resolve
+    against the child's pinned pipeline/ cwd instead of the operator's
+    launch directory."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--model_root", "m-root",
+        "--dataset_root", "d-root",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--model_root") == str(
+        tmp_path / "m-root"), (
+        "a relative --model_root must reach the child as the resolved "
+        "absolute path"
+    )
+    assert flag_value(captured["argv"], "--dataset_root") == str(
+        tmp_path / "d-root"), (
+        "a relative --dataset_root must reach the child as the resolved "
+        "absolute path"
+    )
+
+
+@pytest.mark.parametrize("flag,value", [
+    ("--effective_batch_size", "0"),
+    ("--batch_size", "0"),
+    ("--num_train_epochs", "0"),
+])
+def test_cli_zero_flag_values_abort_naming_flag_and_value(
+        tmp_path, monkeypatch, flag, value):
+    """Pitfall 5: --effective_batch_size 0 / --num_train_epochs 0 abort
+    non-zero naming the flag and its raw value BEFORE any cell is
+    enumerated — the child's own guards are partial, so the sweep refuses
+    nonsense batch math collect-all at startup."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", "42",
+            "--dry-run",
+            flag, value,
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert flag in message, (
+        "the error must name the offending flag so the operator knows "
+        "which value to fix"
+    )
+    assert value in message, "the error must echo the flag's raw value"
+    assert not out_root.exists(), (
+        "an invalid flag value must abort before any output is written"
+    )
+
+
+def test_cli_flag_sanity_is_collect_all(tmp_path, monkeypatch):
+    """A zero batch size AND a zero epoch count are both named in ONE
+    non-zero exit — the parse_curve_fractions problems-list style, never
+    one-at-a-time (D-14 discipline applied to flag sanity)."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--effective_batch_size", "0",
+            "--num_train_epochs", "0",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "--effective_batch_size" in message
+    assert "--num_train_epochs" in message, (
+        "every flag-sanity violation must be listed in the single exit"
+    )
+
+
+def test_cli_empty_subset_file_value_aborts(tmp_path, monkeypatch):
+    """A provided-but-empty --subset_file value aborts non-zero naming
+    the flag — Path('').resolve() is the CWD, so threading it would point
+    the child at a directory, not a file (Pitfall 5 non-empty-path
+    sanity)."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--subset_file", "",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "--subset_file" in str(excinfo.value)
+
+
+def test_cli_empty_cache_dir_value_aborts(tmp_path, monkeypatch):
+    """WR-05 (phase-07 review): a provided-but-empty --cache_dir aborts
+    non-zero naming the flag — the --subset_file twin. Path('').resolve()
+    is the CWD, so threading it would set HF_HOME/MS_CACHE_HOME to the
+    repository root in every child's argv pre-scan: caches start landing
+    in the repo with no error and no warning."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--cache_dir", "",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "--cache_dir" in str(excinfo.value)
+
+
+def test_cli_empty_model_root_value_aborts(tmp_path, monkeypatch):
+    """261014-c2l (WR-05 twin): a provided-but-empty --model_root aborts
+    non-zero naming the flag — Path('').resolve() is the CWD, so
+    threading it would resolve every child's "models/..." registry value
+    under the sweep's launch directory instead of the child's own script
+    dir (a silent wrong-root hazard, never an error)."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--model_root", "",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "--model_root" in str(excinfo.value)
+
+
+def test_cli_whitespace_dataset_root_value_aborts(tmp_path, monkeypatch):
+    """261014-c2l (WR-05 twin): a whitespace-only --dataset_root aborts
+    non-zero naming the flag — the --model_root twin over the dataset
+    resolution root (a whitespace value would resolve to a
+    ' '-suffixed path)."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--dataset_root", "   ",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "--dataset_root" in str(excinfo.value)
+
+
+# =====================================================================
+# --subset_file sweep-owned pre-validation (07-03, D-14)
+# =====================================================================
+
+def test_subset_file_unknown_dataset_key_aborts_naming_key(
+        tmp_path, monkeypatch):
+    """D-14: a subset file with a dataset key the registry does not know
+    aborts the sweep at STARTUP with the key named — never after the
+    first cell's model load burns on a map that cannot join."""
+    registry_dir = make_registry(tmp_path)
+    subsets = _write_json(
+        tmp_path / "subsets.json", {"task-x": [0], "ghost-task": [1]})
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", "42",
+            "--dry-run",
+            "--subset_file", str(subsets),
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "ghost-task" in str(excinfo.value), (
+        "the unknown key must be named in the error"
+    )
+    assert not out_root.exists(), (
+        "an invalid subset file must abort before any output is written"
+    )
+
+
+def test_subset_file_unreadable_path_aborts_naming_path(
+        tmp_path, monkeypatch):
+    """An unreadable --subset_file path aborts non-zero naming the path
+    (the _read_operator_json error-text style, collected)."""
+    registry_dir = make_registry(tmp_path)
+    missing = tmp_path / "does-not-exist.json"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--subset_file", str(missing),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "does-not-exist.json" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("payload", [["task-x"], "a string", 42, None])
+def test_subset_file_non_object_top_level_aborts(
+        tmp_path, monkeypatch, payload):
+    """A subset file whose top level is not a JSON object (e.g. a list)
+    aborts non-zero describing the expected shape. WR-01 (phase-07
+    review): the JSON literal ``null`` (payload None) is in the refused
+    class — it parsed to None, collided with the validator's old
+    ``loaded = None`` unreadable sentinel, and passed startup validation
+    with zero problems, degrading the sweep to N per-cell
+    CalledProcessError failures instead of one startup abort."""
+    registry_dir = make_registry(tmp_path)
+    subsets = _write_json(tmp_path / "subsets.json", payload)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--subset_file", str(subsets),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "object" in str(excinfo.value), (
+        "the error must say an object mapping was expected"
+    )
+
+
+def test_subset_file_collects_all_value_problems_together(
+        tmp_path, monkeypatch):
+    """Collect-all (D-14): a file with one key mapping to a non-list
+    value AND another key mapping to a list containing a non-int exits
+    ONCE listing BOTH problems in one message — never one-at-a-time."""
+    registry_dir = make_registry(tmp_path)
+    subsets = _write_json(tmp_path / "subsets.json", {
+        "task-x": "not-a-list",
+        "task-z": [0, "x", True],
+    })
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--subset_file", str(subsets),
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "task-x" in message and "task-z" in message, (
+        "BOTH problems must be named in the single collect-all exit — "
+        f"got: {message!r}"
+    )
+    assert "value is str" in message, (
+        "the non-list value's problem must name the offending type "
+        "(the child validator's message style)"
+    )
+    assert "'x'" in message, "the non-integer ID must be named"
+    assert "True" in message, (
+        "a JSON true is NOT an integer row ID (bool is an int subclass "
+        "in Python — excluded explicitly, the child validator's rule)"
+    )
+
+
+def test_valid_subset_file_passes_validation_and_threads_to_child_argv(
+        tmp_path, monkeypatch):
+    """A fully valid subset file (keys in the tmp registry, int-list
+    values) passes sweep-start validation and threads through to the
+    child argv unchanged."""
+    registry_dir = make_registry(tmp_path)
+    subsets = _write_json(tmp_path / "subsets.json", {"task-x": [0, 5]})
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--subset_file", str(subsets),
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--subset_file") == str(subsets)
+
+
+def test_subset_validation_runs_before_any_cell_enumerates(
+        tmp_path, monkeypatch):
+    """Pre-cell proof: a bad subset file plus a VALID matrix still exits
+    before the executor is invoked — the (captured, never-executed) child
+    launch never happens and no output root is created."""
+    registry_dir = make_registry(tmp_path)
+    subsets = _write_json(tmp_path / "subsets.json", {"ghost-task": [0]})
+    captured = _capturing_launcher(monkeypatch)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", "42",
+            "--subset_file", str(subsets),
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "ghost-task" in str(excinfo.value)
+    assert "argv" not in captured, (
+        "validation must abort before the first child launch — the "
+        "matrix was valid, the subset file was not"
+    )
+    assert not out_root.exists()
+
+
+# =====================================================================
+# Registry-key / Dataset_name alignment (WR-06, phase-07 review)
+# =====================================================================
+
+
+def test_divergent_dataset_name_row_aborts_sweep_naming_row(
+        tmp_path, monkeypatch):
+    """WR-06 (phase-07 review): a registry row whose Dataset_name differs
+    from its registry key aborts at sweep start naming the row — run_sweep
+    keys cell dirs and resume markers on registry KEYS (cell_dir_for)
+    while run_finetune writes outputs under Dataset_name, so a divergent
+    row would train successfully while the sweep records the cell failed
+    ("executor exited 0 but final_metrics.json is missing") and
+    re-attempts it forever."""
+    registry_dir = tmp_path / "registry"
+    registry_dir.mkdir()
+    write_registry(
+        registry_dir,
+        models={
+            "model-a": {"Model_name": "model-a", "Model_path": "models/a"},
+        },
+        datasets={
+            "task-x": {"Dataset_name": "task-x", "Train": 100, "Dev": 10},
+            "divergent-key": {
+                "Dataset_name": "Source__renamed", "Train": 5, "Dev": 1,
+            },
+        },
+    )
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", "42",
+            "--dry-run",
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "divergent-key" in message, (
+        "the divergent row's key must be named in the error"
+    )
+    assert "Dataset_name" in message
+    assert not out_root.exists(), (
+        "a divergent registry must abort before any output is written"
+    )
+
+
+def test_custom_overlay_divergent_row_aborts_sweep(tmp_path, monkeypatch):
+    """WR-06 via the overlay lane: a user-authored custom_datasets.json
+    entry whose Dataset_name diverges from its key is refused at sweep
+    start even with NO filters and NO subset file — the custom overlay is
+    the new divergence source this phase added, and the refusal must not
+    depend on --subset_file naming the task (the old, narrower guard)."""
+    registry_dir = make_registry(tmp_path)
+    custom_dir = tmp_path / "custom-with-divergence"
+    custom_dir.mkdir()
+    (custom_dir / "custom_datasets.json").write_text(
+        json.dumps({
+            "custom-task": {
+                "Dataset_name": "OTHER__name", "Train": 9, "Dev": 1,
+            },
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DNALLMMARK_CUSTOM_REGISTRY_DIR", str(custom_dir))
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "custom-task" in str(excinfo.value)
+
+
+def test_coincident_registry_passes_alignment_and_enumerates(
+        tmp_path, monkeypatch):
+    """The WR-06 guard is inert for today's shape: an aligned registry
+    (every Dataset_name == its key, the default fixture) enumerates and
+    dry-runs exactly as before — rows OMITTING Dataset_name default to
+    their key and never trip the refusal."""
+    registry_dir = tmp_path / "registry"
+    registry_dir.mkdir()
+    write_registry(
+        registry_dir,
+        models={
+            "model-a": {"Model_name": "model-a", "Model_path": "models/a"},
+        },
+        datasets={
+            "task-x": {"Dataset_name": "task-x", "Train": 100, "Dev": 10},
+            "task-bare": {"Train": 7, "Dev": 1},  # no Dataset_name at all
+        },
+    )
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--seeds", "42",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert [c[:3] for c in _manifest_cells(out_root)] == [
+        ("model-a", "task-bare", 42), ("model-a", "task-x", 42),
+    ]
+
+
+# =====================================================================
+# Manifest only-when-present flag fields (07-03, D-13) + byte lock
+# =====================================================================
+
+def test_dry_run_manifest_records_present_flags(tmp_path, monkeypatch):
+    """D-13: PRESENT flags are recorded in every manifest cell — a
+    dry-run with --effective_batch_size 16 --num_train_epochs 1 produces
+    cells each carrying both fields alongside the existing five cell
+    keys."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--effective_batch_size", "16",
+        "--batch_size", "8",
+        "--num_train_epochs", "1",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"], "the dry-run must enumerate cells"
+    for cell in manifest["cells"]:
+        assert cell["effective_batch_size"] == 16
+        assert cell["batch_size"] == 8
+        assert cell["num_train_epochs"] == 1
+        assert set(cell) == {
+            "model", "task", "seed", "status", "output_dir",
+            "effective_batch_size", "batch_size", "num_train_epochs",
+        }, (
+            "the five base cell keys are unchanged; only PRESENT flags "
+            "join the cell"
+        )
+
+
+def test_dry_run_manifest_absent_flags_add_no_keys(tmp_path, monkeypatch):
+    """D-13 absent parity: with every pass-through flag omitted (the four
+    07-03 flags and the storage-root twins), every manifest cell keeps
+    EXACTLY the five base keys — no flag keys leak in (the byte level is
+    locked by test_dry_run_manifest_is_byte_deterministic; this locks the
+    key set)."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"]
+    for cell in manifest["cells"]:
+        assert set(cell) == {
+            "model", "task", "seed", "status", "output_dir"}, (
+            "absent flags must leave no manifest keys — byte-identical "
+            "cells"
+        )
+
+
+def test_manifest_records_resolved_absolute_paths(tmp_path, monkeypatch):
+    """--subset_file / --cache_dir record in the manifest cells as the
+    RESOLVED absolute path strings (D-15 carried into D-13 recording)."""
+    registry_dir = make_registry(tmp_path)
+    (tmp_path / "subsets.json").write_text(
+        json.dumps({"task-x": [0]}), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--subset_file", "subsets.json",
+        "--cache_dir", "hf-cache",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    for cell in manifest["cells"]:
+        assert cell["subset_file"] == str(tmp_path / "subsets.json")
+        assert cell["cache_dir"] == str(tmp_path / "hf-cache")
+
+
+def test_manifest_records_resolved_storage_roots(tmp_path, monkeypatch):
+    """261014-c2l (T-c2l-02): a storage-root override silently changes
+    WHICH model weights / dataset files a benchmark cell consumed — the
+    resolved ABSOLUTE values record in EVERY manifest cell via
+    sweep_flags (D-13), keeping leaderboard numbers traceable to their
+    storage location."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--model_root", "m-root",
+        "--dataset_root", "d-root",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    for cell in manifest["cells"]:
+        assert cell["model_root"] == str(tmp_path / "m-root")
+        assert cell["dataset_root"] == str(tmp_path / "d-root")
+
+
+def test_run_record_untouched_by_sweep_flags(tmp_path):
+    """run_record.json keeps its exact field set even when flags are
+    present (D-02 spirit, research Open Q3): the flags are sweep-level
+    run configuration recorded once in the manifest — the per-cell record
+    carries none of the four keys."""
+    out_root = tmp_path / "sweep-out"
+
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text("{}", encoding="utf-8")
+
+    run_sweep.run_matrix(
+        [("model-a", "task-x", 42)], out_root, executor=fake_executor,
+        sweep_flags={
+            "subset_file": "/tmp/subsets.json",
+            "effective_batch_size": 16,
+            "batch_size": 8,
+            "num_train_epochs": 1,
+            "cache_dir": "/tmp/cache",
+        })
+    disk = json.loads(
+        (out_root / "model-a" / "task-x" / "seed_42" / "run_record.json")
+        .read_text(encoding="utf-8"))
+    for flag_key in ("subset_file", "effective_batch_size",
+                     "batch_size",
+                     "num_train_epochs", "cache_dir"):
+        assert flag_key not in disk, (
+            f"run_record.json must not carry {flag_key} — the record "
+            "contract is untouched by sweep flags"
+        )
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"][0]["effective_batch_size"] == 16, (
+        "the REAL-run manifest records the same present flags the dry-run "
+        "path does"
+    )
+    assert manifest["cells"][0]["subset_file"] == "/tmp/subsets.json"
+
+
+def test_dry_run_with_flags_is_byte_deterministic(tmp_path, monkeypatch):
+    """Two identical dry-runs with the SAME flags produce byte-identical
+    manifest files — sort_keys determinism holds with the extra fields."""
+    registry_dir = make_registry(tmp_path)
+    subsets = _write_json(tmp_path / "subsets.json", {"task-x": [0]})
+    out_root = tmp_path / "sweep-out"
+    argv = [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--effective_batch_size",
+        "--num_train_epochs", "1",
+        "--subset_file", str(subsets),
+        "--cache_dir", "/tmp/cache",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ]
+    run_cli(monkeypatch, argv)
+    first = (out_root / "sweep_manifest.json").read_bytes()
+    run_cli(monkeypatch, argv)
+    assert (out_root / "sweep_manifest.json").read_bytes() == first, (
+        "two same-flag dry-runs must produce byte-identical manifests"
+    )
+
+
+# =====================================================================
+# --config-variant aliasing (11-01, D-18 — ALIASING, never pass-through)
+# =====================================================================
+
+def test_config_variant_flag_defaults_to_none_in_parse_args(monkeypatch):
+    """--config-variant exists, defaults to None (no aliasing — the
+    byte-identical default), and accepts exactly the child's three
+    choices; anything else is argparse's own refusal."""
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    args = run_sweep.parse_args()
+    assert args.config_variant is None
+    monkeypatch.setattr(sys, "argv", [
+        "run_sweep.py", "--seeds", "42", "--config-variant", "bogus"])
+    with pytest.raises(SystemExit):
+        run_sweep.parse_args()
+
+
+def test_enumerate_matrix_emits_alias_cells_under_config_variant(tmp_path):
+    """--config-variant probe/curve/head: cells enumerate under the ALIAS
+    model name {model}+{variant} while the registry and the --models join
+    stay on BASE names — the peft aliasing shape, NOT a pass-through (the
+    child self-aliases its save name under a variant, so the driver must
+    own the alias identity or every cell trains into a dir the driver
+    does not record — the retrain-forever trap)."""
+    registry_dir = make_registry(tmp_path)
+    probe = run_sweep.enumerate_matrix(
+        ["model-a", "model-b"], ["task-x"], [42, 43], registry_dir,
+        config_variant="probe")
+    assert probe == [
+        ("model-a+probe", "task-x", 42), ("model-a+probe", "task-x", 43),
+        ("model-b+probe", "task-x", 42), ("model-b+probe", "task-x", 43),
+    ], "config_variant=probe must enumerate sorted alias cells"
+    curve = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir,
+        config_variant="curve")
+    assert curve == [("model-a+curve", "task-x", 42)]
+    head = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir, config_variant="head")
+    assert head == [("model-a+head", "task-x", 42)]
+    # The --models join stays on BASE names (the peft precedent): an
+    # alias-typed filter value finds nothing — the alias re-derives from
+    # the sweep's own variant, never from the filter.
+    aliased_filter = run_sweep.enumerate_matrix(
+        ["model-a+probe"], ["task-x"], [42], registry_dir,
+        config_variant="probe")
+    assert aliased_filter == [], (
+        "registry filtering must join on base names"
+    )
+    # Variant composes with --curve exactly like --peft: the alias cell
+    # expands one 4-tuple per fraction (the child nests frac_ under the
+    # alias dir's seed dir).
+    frac_cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir, fractions=[0.5, 0.25],
+        config_variant="probe")
+    assert frac_cells == [
+        ("model-a+probe", "task-x", 42, 0.25),
+        ("model-a+probe", "task-x", 42, 0.5),
+    ], "alias cells must expand across fractions in sorted order"
+
+
+def test_head_variant_keeps_base_name_for_the_frozen_pair(tmp_path):
+    """variant=head keeps the BASE name for exactly the frozen pair
+    (evo2_1b_base, megaDNA_updated) — verbatim from the child's save-name
+    chain (their with-head config IS their base config) — while ordinary
+    models alias to {model}+head; sorting happens AFTER the alias mapping
+    (deterministic enumeration)."""
+    registry_dir = tmp_path / "registry"
+    registry_dir.mkdir()
+    write_registry(
+        registry_dir,
+        models={
+            "model-a": {"Model_name": "model-a", "Model_path": "models/a"},
+            "evo2_1b_base": {"Model_name": "evo2_1b_base",
+                             "Model_path": "models/evo2"},
+            "megaDNA_updated": {"Model_name": "megaDNA_updated",
+                                "Model_path": "models/megadna"},
+        },
+        datasets={
+            "task-x": {"Dataset_name": "task-x", "Train": 100, "Dev": 10},
+        },
+    )
+    cells = run_sweep.enumerate_matrix(
+        None, ["task-x"], [42], registry_dir, config_variant="head")
+    assert [cell[0] for cell in cells] == [
+        "evo2_1b_base", "megaDNA_updated", "model-a+head",
+    ], (
+        "head aliases ordinary models to {model}+head but keeps the base "
+        "name for the frozen pair"
+    )
+
+
+def test_head_keep_base_names_pinned_against_run_finetune_source():
+    """HEAD_KEEP_BASE_NAMES is the VERBATIM frozen pair from the child's
+    save-name chain — extracted from the run_finetune.py SOURCE TEXT
+    (never imported: that module imports torch at its top, unavailable
+    CPU-side — the test_run_finetune_contracts.py pattern), so the two
+    files cannot drift apart silently."""
+    src = (REPO_ROOT / "pipeline" / "run_finetune.py").read_text(
+        encoding="utf-8")
+    match = re.search(
+        r'config_variant == "head" and model_name not in '
+        r'\(\s*"([^"]+)",\s*"([^"]+)"\s*\)',
+        src,
+    )
+    assert match is not None, (
+        "the head-branch frozen pair literal disappeared from "
+        "run_finetune.py's save-name chain — update "
+        "run_sweep.HEAD_KEEP_BASE_NAMES and this test together"
+    )
+    extracted = (match.group(1), match.group(2))
+    assert isinstance(run_sweep.HEAD_KEEP_BASE_NAMES, tuple)
+    assert len(run_sweep.HEAD_KEEP_BASE_NAMES) == 2
+    assert extracted == run_sweep.HEAD_KEEP_BASE_NAMES, (
+        f"run_sweep.HEAD_KEEP_BASE_NAMES diverged from the child's head "
+        f"exception pair {extracted!r} — a head sweep would enumerate an "
+        "alias the child never writes (or vice versa)"
+    )
+
+
+def test_build_argv_targets_base_and_saves_variant_alias_as_list_elements():
+    """Under a variant, build_argv emits --target_model <BASE> plus
+    --save_model_name <alias> and --config-variant <v> — every flag and
+    value a separate LIST element. The explicit --save_model_name makes
+    the DRIVER the single naming authority over the child's own identical
+    self-aliasing branch: the child's explicit-save-name-wins rule then
+    can never diverge from the alias cell dir the driver records."""
+    argv = run_sweep.build_argv(
+        "model-a+probe", "task-x", 42, "/tmp/root", config_variant="probe")
+    assert isinstance(argv, list), (
+        "the subprocess must be launched from an argv LIST, never a shell "
+        "string (T-03-10: registry values must not pass through a shell)"
+    )
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--target_model") == "model-a", (
+        "--target_model must carry the BASE registry name — the alias is "
+        "not a registry key and would break the child's model filtering"
+    )
+    assert flag_value(argv, "--target_dataset") == "task-x"
+    assert flag_value(argv, "--seed") == "42"
+    assert flag_value(argv, "--output_dir") == "/tmp/root"
+    assert flag_value(argv, "--save_model_name") == "model-a+probe", (
+        "--save_model_name must carry the ALIAS so the child writes the "
+        "alias dir the driver keys its cell record on (name isolation "
+        "end-to-end — the exact agreement a pass-through would break)"
+    )
+    assert flag_value(argv, "--config-variant") == "probe"
+    assert "--peft" not in argv, "variant lanes never compose with peft"
+    head = run_sweep.build_argv(
+        "model-b+head", "task-z", 7, "/tmp/root", config_variant="head")
+    assert flag_value(head, "--target_model") == "model-b"
+    assert flag_value(head, "--save_model_name") == "model-b+head"
+    assert flag_value(head, "--config-variant") == "head"
+    # head on the frozen pair: alias == base (no suffix was added), so
+    # --save_model_name carries the BASE name while --config-variant head
+    # still threads — the child's explicit-save-name-wins branch keeps
+    # the base dir, exactly the dir the driver enumerated.
+    frozen = run_sweep.build_argv(
+        "evo2_1b_base", "task-x", 42, "/tmp/root", config_variant="head")
+    assert flag_value(frozen, "--target_model") == "evo2_1b_base"
+    assert flag_value(frozen, "--save_model_name") == "evo2_1b_base", (
+        "the frozen pair's head alias IS the base name — driver and child "
+        "agree on the base dir with no +head suffix"
+    )
+    assert flag_value(frozen, "--config-variant") == "head"
+
+
+def test_launch_subprocess_threads_config_variant_with_pinned_cwd(monkeypatch):
+    """The real launch path (captured argv, never executed) carries the
+    variant composition as a LIST with cwd pinned to pipeline/ — the
+    test_launch_subprocess_builds_argv_list_with_pinned_cwd idiom."""
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(argv, returncode=0)
+
+    monkeypatch.setattr(run_sweep.subprocess, "run", fake_run)
+    run_sweep.launch_subprocess(
+        "model-a+probe", "task-x", 42, "/tmp/sweep-root",
+        config_variant="probe")
+    argv = captured["argv"]
+    assert isinstance(argv, list)
+    assert all(isinstance(element, str) for element in argv)
+    assert flag_value(argv, "--target_model") == "model-a"
+    assert flag_value(argv, "--save_model_name") == "model-a+probe"
+    assert flag_value(argv, "--config-variant") == "probe"
+    assert captured["kwargs"]["cwd"] == run_sweep.PIPELINE_DIR, (
+        "cwd must stay pinned to the pipeline directory (the invocation "
+        "contract — the variant YAMLs are CWD-relative in run_finetune)"
+    )
+    assert not captured["kwargs"].get("shell"), "shell=True is forbidden"
+
+
+def test_variant_absent_is_byte_identical_to_today(tmp_path, monkeypatch):
+    """Absent --config-variant (the default) changes nothing: enumerate
+    emits base-name cells, build_argv carries NO --config-variant /
+    --save_model_name elements, the record field reads 'none', and a
+    no-flag dry-run manifest's cells carry NO config_variant key (the
+    D-12 absent-parity discipline — zero added keys, zero added
+    elements)."""
+    registry_dir = make_registry(tmp_path)
+    default_cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir)
+    explicit_none = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir,
+        config_variant="none")
+    assert explicit_none == default_cells == [("model-a", "task-x", 42)]
+    argv_default = run_sweep.build_argv("model-a", "task-x", 42, "/tmp/root")
+    argv_none = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root", config_variant="none")
+    assert argv_none == argv_default, (
+        "config_variant='none' must build the exact pre-11-01 argv, "
+        "element for element"
+    )
+    assert "--config-variant" not in argv_none
+    assert "--save_model_name" not in argv_none
+    record = run_sweep._new_record(
+        "model-a", "task-x", 42, Path("/tmp/root"), "testshash")
+    assert record["config_variant"] == "none", (
+        "the run_record config_variant field must default to 'none' "
+        "(the peft-field precedent)"
+    )
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"]
+    for cell in manifest["cells"]:
+        assert "config_variant" not in cell, (
+            "an absent variant must leave no manifest key — the manifest "
+            "merge is sweep_flags-driven and records ONLY present flags"
+        )
+
+
+def test_dry_run_config_variant_manifest_lists_alias_cell_dirs(
+        tmp_path, monkeypatch):
+    """--dry-run with --config-variant probe writes a manifest whose
+    planned output_dirs live under {root}/{model}+probe/{task}/seed_{n}/
+    — cell_dir_for keyed on the ALIAS, the exact dir the child's own
+    self-aliasing writes into (the naming agreement a pass-through would
+    break)."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a,model-b",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--config-variant", "probe",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert {c["model"] for c in manifest["cells"]} == {
+        "model-a+probe", "model-b+probe"}, (
+        "the variant dry-run manifest must list ONLY alias cells"
+    )
+    assert manifest["matrix"]["models"] == [
+        "model-a+probe", "model-b+probe"]
+    for cell in manifest["cells"]:
+        assert cell["output_dir"].endswith(
+            f"{cell['model']}/task-x/seed_42"), (
+            "every planned outdir must live under the alias model dir "
+            "(cell_dir_for keyed on the alias)"
+        )
+    assert not list(out_root.rglob("seed_*")), (
+        "dry-run must not create cell directories"
+    )
+
+
+def test_run_matrix_writes_variant_record_inside_alias_cell_dir(tmp_path):
+    """run_matrix with a fake executor over variant cells writes
+    run_record.json carrying the config_variant field INSIDE the alias
+    cell dir — the exporter walk treats the alias as just another model
+    dir (the peft precedent)."""
+    out_root = tmp_path / "sweep-out"
+
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text(
+            json.dumps(SUITE_NATIVE_METRICS, indent=4), encoding="utf-8")
+
+    registry_dir = make_registry(tmp_path)
+    cells = run_sweep.enumerate_matrix(
+        ["model-a"], ["task-x"], [42], registry_dir,
+        config_variant="probe")
+    records = run_sweep.run_matrix(
+        cells, out_root, executor=fake_executor, config_variant="probe")
+    assert records[0]["model"] == "model-a+probe"
+    assert records[0]["config_variant"] == "probe"
+    record_path = (
+        out_root / "model-a+probe" / "task-x" / "seed_42" / "run_record.json")
+    disk = json.loads(record_path.read_text(encoding="utf-8"))
+    assert disk["config_variant"] == "probe", (
+        "the on-disk run_record must carry the config_variant field"
+    )
+    assert disk["model"] == "model-a+probe"
+    assert disk["status"] == "completed"
+    assert disk["metrics"] == SUITE_NATIVE_METRICS
+
+
+def test_variant_failure_entries_record_base_model_beside_alias(tmp_path):
+    """A variant sweep's sweep_failures.json entries carry BOTH the alias
+    cell identity (model — matches the cell dir and run_record) and the
+    BASE registry name (base_model), so --from-failures validates and
+    joins on base names (the MED-01 discipline on the variant axis)."""
+    out_root = tmp_path / "sweep-out"
+
+    def failing_executor(model, task, seed, output_root, train_fraction=None):
+        raise subprocess.CalledProcessError(
+            returncode=1, cmd="run_finetune.py", output="boom")
+
+    records = run_sweep.run_matrix(
+        [("model-a+probe", "task-x", 42), ("model-b+probe", "task-z", 42)],
+        out_root, executor=failing_executor, config_variant="probe")
+    assert all(r["status"] == "failed" for r in records)
+    failures = json.loads(
+        (out_root / "sweep_failures.json").read_text(encoding="utf-8"))
+    assert [(f["model"], f["base_model"]) for f in failures] == [
+        ("model-a+probe", "model-a"), ("model-b+probe", "model-b"),
+    ], (
+        "every failure entry must record the alias cell identity AND the "
+        "base registry name (the MED-01 precedent on the variant axis)"
+    )
+
+
+def test_default_executor_receives_config_variant(tmp_path, monkeypatch):
+    """run_matrix's DEFAULT executor path threads the variant through to
+    the real launcher: the captured (never-executed) subprocess argv
+    carries the variant composition — and the sweep_flags config_variant
+    entry (recorded for the manifest merge) cannot collide with the
+    explicit partial binding."""
+    captured = _capturing_launcher(monkeypatch)
+    records = run_sweep.run_matrix(
+        [("model-a+probe", "task-x", 42)], tmp_path / "out",
+        config_variant="probe", sweep_flags={"config_variant": "probe"})
+    argv = captured["argv"]
+    assert flag_value(argv, "--config-variant") == "probe"
+    assert flag_value(argv, "--save_model_name") == "model-a+probe"
+    assert flag_value(argv, "--target_model") == "model-a"
+    assert records[0]["config_variant"] == "probe"
+
+
+def test_manifest_records_config_variant_when_flag_present(
+        tmp_path, monkeypatch):
+    """The D-13 discipline on the variant axis: a PRESENT
+    --config-variant merges into every manifest cell (dry-run AND
+    executed runs); without the flag no cell carries the key (locked
+    above by test_variant_absent_is_byte_identical_to_today)."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--config-variant", "curve",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cells"]
+    for cell in manifest["cells"]:
+        assert cell["config_variant"] == "curve"
+        assert set(cell) == {
+            "model", "task", "seed", "status", "output_dir",
+            "config_variant",
+        }, "only the PRESENT variant flag joins the manifest cell"
+
+    # The executed-run manifest merges the same way via sweep_flags (a
+    # fake-executor run_matrix call — the
+    # test_run_record_untouched_by_sweep_flags idiom).
+    def fake_executor(model, task, seed, output_root, train_fraction=None):
+        cell_dir = Path(output_root) / model / task / f"seed_{seed}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "final_metrics.json").write_text("{}", encoding="utf-8")
+
+    real_root = tmp_path / "real-out"
+    run_sweep.run_matrix(
+        [("model-a+curve", "task-x", 42)], real_root,
+        executor=fake_executor, config_variant="curve",
+        sweep_flags={"config_variant": "curve"})
+    real_manifest = json.loads(
+        (real_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert real_manifest["cells"][0]["config_variant"] == "curve"
+    assert real_manifest["cells"][0]["model"] == "model-a+curve"
+
+
+@pytest.mark.parametrize("variant,peft_mode", [
+    ("probe", "lora"), ("probe", "ia3"),
+    ("head", "lora"), ("head", "ia3"),
+    ("curve", "lora"), ("curve", "ia3"),
+])
+def test_cli_config_variant_refuses_peft_collect_all(
+        tmp_path, monkeypatch, variant, peft_mode):
+    """Every variant x peft combination exits non-zero at sweep start
+    naming BOTH flags (collect-all) — the driver-side front line; the
+    child's own probe x peft refusal is the backstop, not the first
+    defense. Two alias suffixes cannot both name one cell."""
+    registry_dir = make_registry(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x",
+            "--seeds", "42",
+            "--dry-run",
+            "--config-variant", variant,
+            "--peft", peft_mode,
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert f"--config-variant {variant}" in message, (
+        "the refusal must name the variant flag and its value"
+    )
+    assert f"--peft {peft_mode}" in message, (
+        "the refusal must name the peft flag and its value"
+    )
+    assert not out_root.exists(), (
+        "the refusal must abort before any output is written"
+    )
+
+
+def test_from_failures_recovers_variant_sweep_alias_cells(
+        tmp_path, monkeypatch):
+    """--from-failures joins on BASE names under a variant sweep:
+    entries carrying the alias model + base_model re-enumerate the
+    failed pairs' cells under the re-run's own --config-variant alias
+    (the MED-01 recovery on the variant axis)."""
+    registry_dir = make_registry(tmp_path)
+    failures = _failures_manifest(tmp_path, [
+        {"model": "model-a+probe", "base_model": "model-a",
+         "task": "task-x", "seed": 42, "output_dir": "x",
+         "error": "boom"},
+        {"model": "model-b+probe", "base_model": "model-b",
+         "task": "task-z", "seed": 43, "output_dir": "y",
+         "error": "boom"},
+    ])
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--seeds", "42,43",
+        "--dry-run",
+        "--config-variant", "probe",
+        "--from-failures", str(failures),
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert _manifest_cells(out_root) == [
+        ("model-a+probe", "task-x", 42), ("model-a+probe", "task-x", 43),
+        ("model-b+probe", "task-z", 42), ("model-b+probe", "task-z", 43),
+    ], (
+        "a probe manifest recovered with --config-variant probe must "
+        "re-enumerate exactly the failed alias cells across every "
+        "requested seed"
+    )
+
+
+def test_base_model_name_strips_variant_suffixes():
+    """base_model_name re-derives the BASE registry name from a variant
+    alias: probe/curve/head suffix strips; head on the frozen pair is a
+    no-op (no suffix was added); each axis strips independently and a
+    suffix that is not present is never invented."""
+    assert run_sweep.base_model_name(
+        "model-a+probe", config_variant="probe") == "model-a"
+    assert run_sweep.base_model_name(
+        "model-a+curve", config_variant="curve") == "model-a"
+    assert run_sweep.base_model_name(
+        "model-a+head", config_variant="head") == "model-a"
+    # The frozen pair never gains a +head suffix, so the strip is a no-op.
+    assert run_sweep.base_model_name(
+        "evo2_1b_base", config_variant="head") == "evo2_1b_base"
+    assert run_sweep.base_model_name(
+        "megaDNA_updated", config_variant="head") == "megaDNA_updated"
+    # Identity under no axes; each axis strips on its own (the axes are
+    # disjoint by the composition refusal); removesuffix never invents a
+    # suffix, so a base-name cell under a variant sweep (the frozen-pair
+    # case) survives the strip.
+    assert run_sweep.base_model_name("model-a") == "model-a"
+    assert run_sweep.base_model_name("model-a+lora", "lora") == "model-a"
+    assert run_sweep.base_model_name(
+        "model-a", "none", "probe") == "model-a"
+
+
+# =====================================================================
+# --log_dir + the directories.json startup read (261014-f4w, F4W-01/02)
+# =====================================================================
+
+def _pin_directories_config(tmp_path, monkeypatch, payload=None):
+    """Point DNALLMMARK_TUI_CONFIG_DIR at a tmp root (overriding the
+    root conftest's autouse empty-dir pin — the test-body setenv wins)
+    and optionally write a directories.json there."""
+    import directories_config  # conftest puts pipeline/ on sys.path
+
+    config_root = tmp_path / "f4w-config"
+    config_root.mkdir()
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(config_root))
+    if payload is not None:
+        (config_root / directories_config.DIRECTORIES_FILE_NAME).write_text(
+            json.dumps(payload), encoding="utf-8")
+    return config_root
+
+
+def test_log_dir_flag_defaults_to_none_in_parse_args(monkeypatch):
+    """--log_dir exists with type=str default None — an absent flag
+    threads NOTHING and records NOTHING (the absent-parity contract,
+    the storage-root twins' family)."""
+    monkeypatch.setattr(sys, "argv", ["run_sweep.py", "--seeds", "42"])
+    args = run_sweep.parse_args()
+    assert args.log_dir is None
+    assert args.output_root is None, (
+        "the --output-root argparse default flips to None (261014-f4w) — "
+        "the './finetuned' fallback is computed at the effective-merge "
+        "point so the file's output_root key can fill it"
+    )
+
+
+def test_build_argv_threads_log_dir_in_pinned_tail_order():
+    """--log_dir appends exactly two LIST elements and closes the pinned
+    storage tail: --cache_dir, --model_root, --dataset_root, --log_dir
+    (the storage-root twins' order test extended — F4W-02's pinned
+    child-argv tail)."""
+    argv = run_sweep.build_argv(
+        "model-a", "task-x", 42, "/tmp/root",
+        cache_dir="/tmp/cache", model_root="/mnt/storage",
+        dataset_root="/mnt/storage", log_dir="/mnt/logs")
+    assert flag_value(argv, "--log_dir") == "/mnt/logs"
+    assert argv.index("--cache_dir") < argv.index("--model_root"), (
+        "--cache_dir precedes --model_root (the pinned tail order)"
+    )
+    assert argv.index("--model_root") < argv.index("--dataset_root"), (
+        "--model_root precedes --dataset_root (the pinned tail order)"
+    )
+    assert argv.index("--dataset_root") < argv.index("--log_dir"), (
+        "--log_dir joins last as the newest family member"
+    )
+
+
+def test_cli_resolves_log_dir_to_absolute_path(tmp_path, monkeypatch):
+    """D-15 twin: a relative --log_dir resolves to the ABSOLUTE path at
+    the sweep layer BEFORE threading — the child writes its error logs
+    under the operator's launch directory, not its pinned pipeline/
+    cwd."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--log_dir", "run-logs",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--log_dir") == str(
+        tmp_path / "run-logs")
+
+
+def test_cli_empty_log_dir_value_aborts(tmp_path, monkeypatch):
+    """WR-05 twin (261014-f4w): a provided-but-empty --log_dir aborts
+    non-zero naming the flag — Path('').resolve() is the CWD, so
+    threading it would scatter {model_name}_error_log.txt files across
+    the launch directory."""
+    registry_dir = make_registry(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--log_dir", "",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "--log_dir" in str(excinfo.value)
+
+
+def test_manifest_records_resolved_log_dir(tmp_path, monkeypatch):
+    """F4W-02 (the T-c2l-02 extension): a log-dir override changes where
+    per-model error logs land — the resolved ABSOLUTE value records in
+    EVERY manifest cell via sweep_flags (D-13)."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--log_dir", "run-logs",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    for cell in manifest["cells"]:
+        assert cell["log_dir"] == str(tmp_path / "run-logs")
+
+
+def test_log_dir_absent_everywhere_contributes_zero(tmp_path, monkeypatch):
+    """Absent-everywhere parity (flag AND file, the conftest pin keeping
+    the config root empty): zero --log_dir argv elements and zero
+    log_dir manifest keys — the explicit representative of the
+    byte-identical-when-absent contract."""
+    registry_dir = make_registry(tmp_path)
+    captured = _capturing_launcher(monkeypatch)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert "--log_dir" not in captured["argv"]
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    for cell in manifest["cells"]:
+        assert "log_dir" not in cell
+
+
+def test_startup_config_file_threads_values_like_flags(
+        tmp_path, monkeypatch):
+    """F4W-01: a directories.json under the injected config root + NO
+    flags — a bare run threads the file's values to children as
+    resolved-absolute argv elements and records them in every manifest
+    cell EXACTLY as the flag-passed form does."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _pin_directories_config(tmp_path, monkeypatch, {
+        "model_root": "file-m",
+        "dataset_root": "file-d",
+        "log_dir": "file-logs",
+        "cache_dir": "file-cache",
+    })
+    captured = _capturing_launcher(monkeypatch)
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--model_root") == str(
+        tmp_path / "file-m")
+    assert flag_value(captured["argv"], "--dataset_root") == str(
+        tmp_path / "file-d")
+    assert flag_value(captured["argv"], "--log_dir") == str(
+        tmp_path / "file-logs")
+    assert flag_value(captured["argv"], "--cache_dir") == str(
+        tmp_path / "file-cache")
+    manifest = json.loads(
+        (out_root / "sweep_manifest.json").read_text(encoding="utf-8"))
+    for cell in manifest["cells"]:
+        assert cell["model_root"] == str(tmp_path / "file-m")
+        assert cell["dataset_root"] == str(tmp_path / "file-d")
+        assert cell["log_dir"] == str(tmp_path / "file-logs")
+        assert cell["cache_dir"] == str(tmp_path / "file-cache")
+
+
+def test_explicit_flag_beats_startup_config_key(tmp_path, monkeypatch):
+    """F4W-01 precedence: an explicit --model_root beats the file's
+    model_root while the file's OTHER keys still apply — one merge
+    point, flag > file > default at every consumer."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _pin_directories_config(tmp_path, monkeypatch, {
+        "model_root": "file-m",
+        "dataset_root": "file-d",
+    })
+    captured = _capturing_launcher(monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--model_root", "flag-m",
+        "--output-root", str(tmp_path / "sweep-out"),
+        "--registry-dir", str(registry_dir),
+    ])
+    assert flag_value(captured["argv"], "--model_root") == str(
+        tmp_path / "flag-m"), "the explicit flag wins over the file key"
+    assert flag_value(captured["argv"], "--dataset_root") == str(
+        tmp_path / "file-d"), "the untouched file key still applies"
+
+
+def test_startup_config_output_root_honored_when_flag_absent(
+        tmp_path, monkeypatch):
+    """F4W-01: the file's output_root fills an ABSENT --output-root (the
+    argparse default flip) — the manifest's matrix records the resolved
+    file root, the same Path(...).resolve() line over the effective
+    value."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    file_out = tmp_path / "file-out-root"
+    _pin_directories_config(tmp_path, monkeypatch, {
+        "output_root": str(file_out),
+    })
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--registry-dir", str(registry_dir),
+    ])
+    manifest = json.loads(
+        (file_out / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["matrix"]["output_root"] == str(file_out.resolve())
+    assert manifest["cells"], "the dry-run enumerated cells"
+
+
+def test_absent_config_and_flags_output_root_stays_default(
+        tmp_path, monkeypatch):
+    """The absent-everywhere output root: with no --output-root flag and
+    no file (the conftest pin's empty root re-pinned at a fresh tmp),
+    the sweep resolves the documented ./finetuned fallback — the
+    byte-identical default (Path('./finetuned').resolve() against the
+    CWD)."""
+    registry_dir = make_registry(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _pin_directories_config(tmp_path, monkeypatch)
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--registry-dir", str(registry_dir),
+    ])
+    expected = (tmp_path / "finetuned").resolve()
+    manifest = json.loads(
+        (expected / "sweep_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["matrix"]["output_root"] == str(expected)
+
+
+def test_malformed_startup_config_aborts_naming_path(
+        tmp_path, monkeypatch):
+    """The fail-loud policy: a malformed present directories.json aborts
+    the sweep at startup with SystemExit naming the file's path — never
+    a silently-ignored corrupt file redirecting a multi-day run to the
+    wrong roots."""
+    registry_dir = make_registry(tmp_path)
+    import directories_config
+
+    config_root = _pin_directories_config(tmp_path, monkeypatch)
+    bad = config_root / directories_config.DIRECTORIES_FILE_NAME
+    bad.write_text("{not json", encoding="utf-8")
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--seeds", "42",
+            "--dry-run",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert str(bad) in str(excinfo.value)

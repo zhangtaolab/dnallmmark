@@ -1,0 +1,217 @@
+# =====================================================================
+# Makefile — single-command entry points over the uv-managed environment
+#
+# Replaces the undocumented CWD-sensitive 3-step regeneration procedure
+# (REL-04): everything below runs from the repo root with no activation
+# step. `uv run` auto-syncs .venv from uv.lock before invoking.
+#
+#   make data       regenerate the derived data chain (4 models_comparison
+#                   + tasks.json; task_performance/ is committed static
+#                   data until E2' regenerates it via script/export_runs.py)
+#   make test       full local suite: pytest (slow lane included) plus the
+#                   node:test JS suite over tests/js/ (Python + JS lanes)
+#   make test-fast  pytest excluding @slow (the real-tree determinism run);
+#                   the JS suite is fast and runs in the full test lane
+#   make ci         the pinned CI lane (Phase 5, REV-06 Q2): pytest -m ci —
+#                   golden replay + metric-key parity + species spot checks
+#                   + aggregation units; reuses the existing suite (the ci
+#                   marker selects modules, no duplicated tests)
+#   make lint       ruff over tests/ + the Phase-authored/edited files
+#                   (make_dev_splits.py, summarize_comparison.py,
+#                   export_runs.py, freeze_snapshot.py, convert_registry.py,
+#                   run_finetune.py, run_sweep.py, env_smoke.py,
+#                   compare.py, permutation_tests.py,
+#                   run_migration_inventory.py, audit_n_frequencies.py)
+#                   plus the Phase 6/7/8/12 extension modules (existence-guard
+#                   lists PHASE6_SCRIPTS / PHASE7_MODULES / PHASE8_TUI /
+#                   PHASE12_MODULES below)
+#   make typecheck  ty type check over script/, baseline/, tests/, scripts/,
+#                   pipeline/, and tui/ (GPU-side imports replaced with Any —
+#                   they are never installed CPU-side, D-05)
+#   make tui       launch the DNALLM-Mark operator console (Phase 8):
+#                   python -m tui via uv with the [tui] + [gpu] groups —
+#                   display runtime on the GB10 host, never a CI lane (D-01:
+#                   CI knows textual only as a library inside make test)
+# =====================================================================
+
+.PHONY: data test test-fast ci lint typecheck check-node snapshot tui snapshot-update
+
+# WR-02: PATH lookup with an overridable default (`make UV=/path/to/uv`) —
+# setup-uv/brew/pipx installs live outside ~/.local/bin, and a hardcode
+# there breaks every target (incl. CI) with Error 127.
+UV ?= uv
+DATA_DIR := dnallm-mark/data
+
+# Data chain — one `cd ... && ...` per line: each recipe line is its own
+# shell (Pitfall 8), and summarize resolves inputs/outputs against CWD.
+# The permutation engine is REPO_ROOT-relative and runs from the repo root
+# (F6 Q3: offline at regeneration, never at page render). The JS generator
+# is __dirname-relative and runs from repo root as-is. The retired pivot
+# step is gone (04-05, SC-2/OQ6): task_performance/ is committed static
+# data until E2' regenerates it via script/export_runs.py — this target
+# cannot and must not refresh it. The provenance emitter (06-04, DATA-04/
+# DATA-05) projects the registry's six provenance columns into
+# data/provenance.{json,csv} + the DATA.md appendix — deterministic, so the
+# whole chain stays a byte-stable no-op on a clean checkout (the drift
+# invariant the CI job replays).
+data: check-node
+	cd $(DATA_DIR) && $(UV) run --group data python ../../script/summarize_comparison.py
+	$(UV) run --group data python script/permutation_tests.py
+	$(UV) run --group data python script/build_provenance.py
+	node scripts/generate-tasks-index.js
+
+# Snapshot lane (06-04, SC-3 / REV-03 tail): freeze the committed
+# derived-data set — everything in dnallm-mark/data/ except
+# model_performance/ (an input, not a derived output) — into a tar +
+# SHA256 manifest under baseline/snapshots. The frozen commit hash reads
+# the committed manifest.json `generated_from` constant: NEVER a live git
+# call in the data path (the lane must work from a tarball-exported tree).
+# Manual override when re-freezing outside the data chain:
+#   --commit-hash "$$(git rev-parse HEAD)"
+# Paths are passed relative to baseline/snapshots so re-verification is
+# the standard tool one-liner from that directory:
+#   cd baseline/snapshots && sha256sum -c snapshot-*.sha256
+# The .tar is gitignored; the .sha256 manifest is committed (OQ 2).
+SNAPSHOT_FILES := $(patsubst %,../../%,$(wildcard $(DATA_DIR)/*.json $(DATA_DIR)/*.csv)) $(patsubst %,../../%,$(wildcard $(DATA_DIR)/task_performance/*.json))
+snapshot:
+	@set -e; \
+	hash="$$($(UV) run --group data python -c "import json; print(json.load(open('$(DATA_DIR)/manifest.json'))['generated_from'])")"; \
+	mkdir -p baseline/snapshots; cd baseline/snapshots; \
+	$(UV) run --group data python ../../script/freeze_snapshot.py --paths $(SNAPSHOT_FILES) --output-dir . --commit-hash "$$hash"
+
+# --group dev is REQUIRED: default-groups = ["data"] in pyproject.toml
+# replaces uv's ["dev"] default (Pitfall 2). The JS lane runs plain node
+# (built-in node:test runner, zero npm deps — no Python env involved).
+# check-node (IN-04, WR-07): node is a hard dependency of BOTH the `test`
+# target (JS suite + tasks.json goldens) and the `data` target (the index
+# generator recipe line) — without the guard a node-less machine dies on a
+# raw FileNotFoundError / `sh: node: not found` Error 127 instead of an
+# actionable message. WR-06: the fast-lane escape hatch noted below is
+# real only because test_golden.py skips its node-dependent tests via
+# skipif — the fast lane is pytest-only AND skips the goldens, so the
+# message must say "skips", not imply node was never needed.
+check-node:
+	@command -v node >/dev/null 2>&1 || { echo "node >=18 required for the JS test lane, the tasks.json goldens, and 'make data' — install Node; the pytest-only fast lane (make test-fast) skips node-dependent tests when node is absent"; exit 1; }
+
+# Phase 8 (08-02, D-01): the pytest lane gains --group tui — textual-the-
+# library rides this EXISTING lane (headless Pilot tests, no display, no GPU,
+# no dnallm) with zero CI workflow edits and zero new CI jobs; the data/gpu
+# lanes never install textual (binding constraint 2/10). Makefile recipes
+# only — .github/workflows/ci.yml stays byte-identical.
+test: check-node
+	$(UV) run --group dev --group tui pytest
+	node --test tests/js/*.test.js
+
+# 08-03 (Rule 3): --group tui joins this lane and the ci lane below too —
+# tests/tui now carries textual-importing modules (the 08-03 Pilot boot
+# test), and pytest imports every collected module BEFORE -m filtering,
+# so a fresh dev-only venv would fail collection. Same D-01 posture as
+# test: textual-the-library rides the existing lanes; the data/gpu lanes
+# still never see textual.
+test-fast:
+	$(UV) run --group dev --group tui pytest -m "not slow"
+
+# The pinned CI lane (Phase 5, REV-06 Q2): exactly the tests the CI workflow's
+# test job replays — the golden replay over the committed e2_replay fixture
+# plus the three reused classes (metric-key parity, species spot checks,
+# aggregation units) via the `ci` pytest marker registered in pyproject.toml.
+# (--group tui: see the 08-03 note at test-fast — collection imports
+# tests/tui; the marker filter runs after.)
+ci: check-node
+	$(UV) run --group dev --group tui pytest -m ci
+
+# 12-03 (TEST-01/SC5, D-03/D-11): regenerate the TUI SVG golden corpus
+# (tests/tui/__snapshots__/*.svg) from the frozen factories in
+# tests/tui/test_snapshots.py. MAINTAINER-ONLY — the D-03 review gate:
+# after any regeneration, REVIEW every changed SVG in a browser/editor
+# and commit the refreshed files together with the change that drifted
+# the render. NEVER a CI lane: `make test` COMPARES against the committed
+# goldens and goes red on drift — it must never rewrite them (Pitfall 4:
+# pytest --snapshot-update does NOTHING in this fallback lane; this
+# target is the ONLY regeneration path, the test lane's env).
+snapshot-update:
+	$(UV) run --group dev --group tui python tests/tui/test_snapshots.py --regenerate
+
+# Lint scope (Phase 3 decision, D-08): tests/ plus the explicit list of
+# Phase-authored/edited files whose findings are FIXED — script/make_dev_splits.py
+# (03-02), pipeline/run_finetune.py (D-08: all 16 arriving findings resolved,
+# 13 genuinely + 3 justified per-line noqa at the designed blind-except
+# isolation sites), pipeline/run_sweep.py (03-04), script/summarize_comparison.py
+# (04-01: FIX-02 Category grouping + WR-03 isfinite; 04-05: IN-03 importer),
+# baseline/compare.py (04-01: IN-01 INT label + WR-02 BOOL_CROSS),
+# script/export_runs.py (04-02: vendored suite statistics + the exporter
+# core; 04-05: the legacy dataset-metric translation), script/freeze_snapshot.py
+# (04-02: the tar + SHA256 snapshot primitive), script/convert_registry.py
+# (04-05, IN-08: the bidirectional registry converter joins scope — clean on
+# arrival). The pre-existing findings in the REMAINING script/, scripts/,
+# baseline/ production files stay deferred to their later routing, so those
+# paths stay OUT of scope deliberately.
+# No [tool.ruff] config section exists (D-08: no baseline carry-over, no
+# suppression).
+# Phase-6 extension (06-04): the new phase-6 scripts join the fixed-findings
+# list ONLY when present on disk — a cut lane's script must never be
+# referenced by the gate (existence guard; sequential wave order means
+# 06-02/06-03 scripts already exist here, and script/doi_swap.py joins
+# automatically when it lands later in 06-04).
+PHASE6_SCRIPTS := $(foreach s,script/build_frontier.py script/zero_shot_vep.py script/build_provenance.py script/doi_swap.py,$(if $(wildcard $(s)),$(s)))
+# Phase-7 extension (07-01): the new pipeline modules join the fixed-findings
+# list ONLY when present on disk — same existence-guard idiom as PHASE6_SCRIPTS,
+# so pipeline/registry_loader.py (created by sibling plan 07-02) joins lint
+# coverage automatically when it lands; no later plan edits this Makefile.
+PHASE7_MODULES := $(foreach s,pipeline/flops_counter.py pipeline/registry_loader.py pipeline/artifact_loader.py,$(if $(wildcard $(s)),$(s)))
+# Phase-8 extension (08-02): the tui/ package joins the fixed-findings list
+# via a directory glob — every tui/*.py, tui/screens/*.py, and tui/services/*.py
+# file present on disk is linted (the wildcard IS the existence guard: a file
+# that does not exist can never be referenced by the gate, so later Phase 8
+# plans add screens/services without touching this Makefile again).
+PHASE8_TUI := $(wildcard tui/*.py tui/screens/*.py tui/services/*.py)
+# Phase-12 extension (12-01): the new orchestration module joins the
+# fixed-findings list ONLY when present on disk — same existence-guard
+# idiom as PHASE6_SCRIPTS/PHASE7_MODULES. script/gen_progress.py (12-02's
+# web-mirror generator) is listed here TOO, so it joins lint coverage
+# automatically the moment it lands, with NO later Makefile edit (12-02
+# must not touch this file).
+PHASE12_MODULES := $(foreach s,pipeline/run_sweep_shard.py script/gen_progress.py,$(if $(wildcard $(s)),$(s)))
+# Phase-13 extension (13-02): the new dispatch engine module joins the
+# fixed-findings list ONLY when present on disk — same existence-guard
+# idiom as PHASE12_MODULES above (the module itself landed with 13-01;
+# this line gives it its lint slot, a Makefile-only extension that
+# leaves .github/workflows/ci.yml byte-identical — it invokes the same
+# make targets).
+PHASE13_MODULES := $(foreach s,pipeline/dispatch_core.py,$(if $(wildcard $(s)),$(s)))
+# Quick-task extension (261014-l6h): the dnallm compat audit joins the
+# explicit script/ list (the per-file convention above; the file reads
+# the READ-ONLY sibling clone ../DNALLM, so it is linted but never
+# CI-executed).
+QUICK_L6H_SCRIPTS := $(foreach s,script/audit_dnallm_compat.py,$(if $(wildcard $(s)),$(s)))
+# Quick-task extension (261015-pex): the TUI demo scene driver joins the
+# fixed-findings list — same existence-guard idiom as QUICK_L6H_SCRIPTS.
+QUICK_PEX_DEMO := $(foreach s,scripts/demo/record_tui_demo.py,$(if $(wildcard $(s)),$(s)))
+lint:
+	$(UV) run --group dev ruff check tests/ script/make_dev_splits.py script/make_subset_datasets.py script/summarize_comparison.py script/export_runs.py script/freeze_snapshot.py script/convert_registry.py script/permutation_tests.py script/run_migration_inventory.py script/audit_n_frequencies.py baseline/compare.py pipeline/run_finetune.py pipeline/run_sweep.py pipeline/env_smoke.py $(PHASE6_SCRIPTS) $(PHASE7_MODULES) $(PHASE8_TUI) $(PHASE12_MODULES) $(PHASE13_MODULES) $(QUICK_L6H_SCRIPTS) $(QUICK_PEX_DEMO)
+
+# Type check (ty, maintainer directive 2026-10-09): zero-diagnostics baseline
+# verified empirically at research time. [tool.ty] in pyproject.toml carries
+# the config — extra-paths mirrors tests/conftest.py's sys.path contract, and
+# GPU-side imports (torch/dnallm/transformers/peft/datasets) are replaced
+# with Any because they are never installed CPU-side (D-05). --group dev is
+# required for the same default-groups reason as lint/test.
+# Phase 8 (08-02, Rule 3 fix): --group tui joins — tui/app.py and the screens
+# subclass textual types and textual ships py.typed, so ty needs the library
+# installed to check against real types (NO replace-imports-with-any entry
+# for textual — RESEARCH Standard Stack; constraint 9 demands real coverage).
+# Proven empirically: without the group, ty fails tui/app.py with
+# unresolved-import in exactly the fresh-env state CI's lint-typecheck job
+# has. textual-the-library in this existing CPU static lane is consistent
+# with D-01 (data/gpu lanes still never see textual).
+typecheck:
+	$(UV) run --group dev --group tui ty check
+
+# Phase 8 (08-02): launch the DNALLM-Mark operator console. --group gpu is
+# REQUIRED on the GB10 display runtime: torch lives only in [gpu], and the
+# env panel's CUDA/matmul kernels would honestly FAIL without it (RESEARCH
+# Pitfall 10). uv run's inexact sync preserves the manually-installed dnallm
+# package across invocations (A4 — Phase 7 practice). Display runtime, never
+# a CI lane (D-01).
+tui:
+	$(UV) run --group tui --group gpu python -m tui
