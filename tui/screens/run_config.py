@@ -43,6 +43,7 @@ registry keys, argv, reasons, and paths stay data, verbatim.
 """
 
 import json
+import textwrap
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -764,8 +765,20 @@ class PreviewModal(_PickerReturnModal):
         self.query_one("#cfg-preview-box", Vertical).border_title = (
             S.CFG_PREVIEW_MODAL_TITLE)
         log = self.query_one("#cfg-preview-log", RichLog)
+        # Render-layer pre-wrap (UAT test-5 fix, 2026-10-24): RichLog's
+        # wrap=True wraps at the TERMINAL width (120) but the modal box is
+        # only ~40 columns — anything in columns 40-120 of a row is
+        # permanently clipped from view (on a 31-task argv the
+        # --batch_size/--seeds tokens land exactly there). Pre-wrap at the
+        # box content width (tokens never split; over-wide paths get their
+        # own line). The _lines logical lines stay UNCHANGED — the journey
+        # driver's argv assertion reads _lines, so its contract is intact.
         for line in self._lines:
-            log.write(line)
+            for chunk in textwrap.wrap(
+                str(line), width=36,
+                break_long_words=False, break_on_hyphens=False,
+            ) or [""]:
+                log.write(chunk)
 
 
 class ProblemsModal(_PickerReturnModal):

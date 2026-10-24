@@ -2002,6 +2002,15 @@ async def _wizard_gate_full(pilot: Pilot, app: DnallmMarkTui,
                 f"governs): {argv_line!r}")
     ctx.stage("argv_preview_asserted")
     await ctx.export(pilot, app, "013_run_config_preview")
+    # 013b (UAT test-5 fix, 2026-10-24): the preview modal renders the argv
+    # in a RichLog whose viewport clips tokens a long task list pushes below
+    # the fold (--batch_size/--seeds) — scroll_end() is a no-op on it (the
+    # write-tail pin), but the FOCUSED log answers the "end" key. Press it,
+    # settle, capture the tail; the runtime assertion above already proved
+    # the full buffer text.
+    await pilot.press("end")
+    await settle(app, pilot, rounds=2)
+    await ctx.export(pilot, app, "013b_run_config_preview_tail")
     await pilot.press("escape")
     await wait_until(
         pilot, lambda: not isinstance(app.screen, PreviewModal), 30.0,
@@ -2953,6 +2962,10 @@ def _dry_run_full(args: argparse.Namespace) -> int:
          "export"),
         ("013_run_config_preview",
          "p modal; argv tokens asserted; --num_train_epochs ABSENT",
+         "export"),
+        ("013b_run_config_preview_tail",
+         ("preview log scrolled to end — the --batch_size/--seeds tokens "
+          "a long task list pushes below the 120x40 fold (UAT test-5 fix)"),
          "export"),
         ("014_run_config_confirm",
          "enter -> Y/N gate; dispatch-plan line 0,1", "export"),

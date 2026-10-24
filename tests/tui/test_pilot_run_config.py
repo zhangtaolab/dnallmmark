@@ -1057,9 +1057,10 @@ async def test_advanced_typing_threads_and_invalid_problem():
         await pilot.press("p")
         await pilot.pause()
         assert isinstance(app.screen, PreviewModal)
-        log = app.screen.query_one("#cfg-preview-log")
-        joined = "\n".join(
-            line.text for line in log.lines).replace("\n", "")
+        # 2026-10-24 (UAT test-5 fix): the modal's RichLog pre-wraps at the
+        # box width, so full-string checks read the LOGICAL _lines (the
+        # journey driver's assertion contract) instead of the rendered rows.
+        joined = "\n".join(str(line) for line in app.screen._lines)
         assert "advanced_invalid: learning_rate=2.0" in joined, (
             "the family problem renders through the generic "
             "code+detail fallback (detail <field>=<raw>)"
@@ -1297,7 +1298,11 @@ async def test_preview_modal_renders_argv_and_problems():
 
         assert isinstance(app.screen, PreviewModal)
         log = app.screen.query_one("#cfg-preview-log")
-        joined = "\n".join(line.text for line in log.lines)
+        # 2026-10-24 (UAT test-5 fix): full-string checks read the LOGICAL
+        # _lines (the render layer pre-wraps at the box width); the argv
+        # check below stays on the RENDERED lines via the space-stripped
+        # flat join (wrap-tolerant).
+        joined = "\n".join(str(line) for line in app.screen._lines)
         assert CFG_PREVIEW_LINE.format(
             models=1, tasks=1, seeds=3, cells=3) in joined
         assert CFG_PREVIEW_NOTE in joined
