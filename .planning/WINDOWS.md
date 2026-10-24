@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 11
+open_count: 12
 waived_count: 6
 fixed_count: 33
-total_count: 50
-last_updated: 2026-10-23T00:58:00.000Z
+total_count: 51
+last_updated: 2026-10-24T01:46:11.774Z
 ---
 
 # Broken Windows Ledger
@@ -63,8 +63,9 @@ last_updated: 2026-10-23T00:58:00.000Z
 | 46 | 16 | deviation | tests/tui/__snapshots__ |  | 16-01: monitor_empty/monitor_running goldens red until 16-05 regenerates them with fabricated GpuRow fixtures (the standing #mon-gpu panel is new chrome; _golden_app must gain the gpu_probe_provider seam) | fixed | resolved by 16-05 (2026-10-21): both monitor goldens regenerated via make snapshot-update over fabricated GpuRow/DispatchStateView fixtures threaded through the _golden_app constructor seams and folded into the #50 D-03 review batch; the red window closes with that batch | 2026-10-21T03:27:57.067Z | 2026-10-21T06:05:00.000Z |
 | 47 | 16 | deviation | tests/tui/test_pty_driver.py | 478 | Intermittent test_monitor_quiet_cadence_is_byte_silent flake on the GPU box only (16-03 observation: 1 fail then green x2 over untouched probe/render code) — the documented 16-01 RESEARCH Pitfall 5 exposure: real nvidia-smi values legitimately change mid-window; escalation option (test-scoped probe override forcing the absent state) awaits a maintainer ruling; no pin weakened | open |  | 2026-10-21T04:58:00.124Z |  |
 | 48 | 16 | deviation | tests/tui/__snapshots__/run_config.svg |  | 16-04: run_config.svg golden red until 16-05 regenerates it (the params pane gained the multi-GPU dispatch section; the delta verified ADDED-only = title/workers/GPUs/hint rows, nothing removed); joins #46's monitor pair as the pre-golden state at the 16-05 base | fixed | resolved by 16-05 (2026-10-21): run_config.svg regenerated via make snapshot-update over the unchanged drive and folded into the #50 D-03 review batch (delta re-verified ADDED-only = the 多 GPU 调度 section rows); #46/#48's red window closes with that batch | 2026-10-21T05:46:43.558Z | 2026-10-21T06:05:00.000Z |
-| 50 | 16 | deviation | tests/tui/__snapshots__ (run_config.svg, run_config_confirm.svg, monitor_empty.svg, monitor_running.svg) |  | 16-05 (TUI-04, D16-13): run_config.svg + monitor_empty.svg + monitor_running.svg REGENERATED and run_config_confirm.svg landed NEW via make snapshot-update (the only regen path) over fabricated machine-independent fixtures — two GpuRow lanes / the ABSENT probe + a DispatchStateView (one busy + one idle worker) threaded through the _golden_app constructor seams, and the confirm drive over a deterministic workers=2/GPUs 0,1 spec (Pitfall 10: identical bytes on a GPU box and a GPU-less CI runner) — deliberately UNCOMMITTED pending the maintainer's D-03 review (the #35/#39/#42 family precedent; a NEW batch, the tree was clean at phase start — Pitfall 9); the committed tree fails exactly the four golden tests (test_run_config_golden, test_run_config_confirm_golden, test_monitor_empty_golden, test_monitor_running_golden) until the review lands (the documented #39 pattern); Phase-16 surfaces carried: the slot-4 多 GPU 调度 params section + the confirm-face dispatch-plan line (its own Static above the log after the 16-05 Rule-1 wrap-clip fix), the monitor G lanes + dispatch rows; the other six goldens byte-identical to HEAD | open |  | 2026-10-21T06:05:00.000Z |  |
+| 50 | 16 | deviation | tests/tui/__snapshots__ (run_config.svg, run_config_confirm.svg, monitor_empty.svg, monitor_running.svg) |  | 16-05 (TUI-04, D16-13): run_config.svg + monitor_empty.svg + monitor_running.svg REGENERATED and run_config_confirm.svg landed NEW via make snapshot-update (the only regen path) over fabricated machine-independent fixtures — two GpuRow lanes / the ABSENT probe + a DispatchStateView (one busy + one idle worker) threaded through the _golden_app constructor seams, and the confirm drive over a deterministic workers=2/GPUs 0,1 spec (Pitfall 10: identical bytes on a GPU box and a GPU-less CI runner) — deliberately UNCOMMITTED pending the maintainer's D-03 review (the #35/#39/#42 family precedent; a NEW batch, the tree was clean at phase start — Pitfall 9); the committed tree fails exactly the four golden tests (test_run_config_golden, test_run_config_confirm_golden, test_monitor_running_golden, test_monitor_empty_golden) until the review lands (the documented #39 pattern); Phase-16 surfaces carried: the slot-4 多 GPU 调度 params section + the confirm-face dispatch-plan line (its own Static above the log after the 16-05 Rule-1 wrap-clip fix), the monitor G lanes + dispatch rows; the other six goldens byte-identical to HEAD | open |  | 2026-10-21T06:05:00.000Z |  |
 | 51 | 26 | deviation | docs/live/fhs/IN-FLIGHT.md |  | quick-261023-abu batch-32 restart (user order, executed through the TUI journey driver): all 3 BEND__CpG_methylation seeds CUDA-OOM at the determine_batch_size tier-16 (31.05 GiB in use, 2.02 GiB wanted, 32 GB cards) — the >512-token tier does not fit batch-32-derived micro-batches on this hardware; short-sequence cells fit (7.9-8.9 it/s, first cell completed ~19 min). The journey driver exited at 998_monitor_failure (its monitor-attach UI leg failed 60 s after y; the launch itself succeeded — orchestrator 870039, trainers 870043/870044, argv verified --batch_size 32; the attach watcher 733194 owns the evidence). A --rerun-failed replay would carry the batch-32 lane verbatim and OOM again — a smaller-batch re-run needs a fresh launch lane; maintainer decision pending. NOTE: #50's run_config pair was committed by quick-261023-abu Task 3 (with the new batch row on top of the 16-05 content); the monitor pair remains uncommitted byte-preserved — #50 stays open for the monitor pair + D-03 adjudication | open |  | 2026-10-23T00:58:00.000Z |  |
+| 52 | 19 | deviation | tests/tui/__snapshots__ (run_config.svg, run_config_confirm.svg) |  | 19-03 (P19-R7, D-03): the phase-19 run_config golden pair REGENERATED via make snapshot-update (the only regen path) over the unchanged golden drives — the slot-4 params pane now carries the collapsed 高级参数 section (title + [a] 展开高级 footer affordance + the variance 空=YAML默认/变体不同 and EBS/GA hint lines; the 13 Inputs + 5 ChoiceRows stay hidden behind the collapse), the confirm face carries the re-wrapped keymap + ▾ fragments (semantically added-only; the enter/启动确认 fragments re-wrapped, nothing dropped), and the monitor pair's pre-existing dirt (#50/#51) byte-preserved via backup/restore + sha256 — deliberately UNCOMMITTED pending the maintainer's D-03 review (the #35/#39/#42/#50 family precedent), joining #50's monitor pair as the standing review batch; the committed tree fails exactly the two golden tests (test_run_config_golden, test_run_config_confirm_golden) until the review lands; the other eight goldens byte-identical to HEAD | open |  | 2026-10-24T01:46:11.774Z |  |
 
 ````json
 [
@@ -702,6 +703,32 @@ last_updated: 2026-10-23T00:58:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-21T06:05:00.000Z",
+    "resolved_at": null,
+    "milestone": "v1.3"
+  },
+  {
+    "id": 51,
+    "kind": "deviation",
+    "phase": "26",
+    "file": "docs/live/fhs/IN-FLIGHT.md",
+    "line": null,
+    "description": "quick-261023-abu batch-32 restart (user order, executed through the TUI journey driver): all 3 BEND__CpG_methylation seeds CUDA-OOM at the determine_batch_size tier-16 (31.05 GiB in use, 2.02 GiB wanted, 32 GB cards) — the >512-token tier does not fit batch-32-derived micro-batches on this hardware; short-sequence cells fit (7.9-8.9 it/s, first cell completed ~19 min). The journey driver exited at 998_monitor_failure (its monitor-attach UI leg failed 60 s after y; the launch itself succeeded — orchestrator 870039, trainers 870043/870044, argv verified --batch_size 32; the attach watcher 733194 owns the evidence). A --rerun-failed replay would carry the batch-32 lane verbatim and OOM again — a smaller-batch re-run needs a fresh launch lane; maintainer decision pending. NOTE: #50's run_config pair was committed by quick-261023-abu Task 3 (with the new batch row on top of the 16-05 content); the monitor pair remains uncommitted byte-preserved — #50 stays open for the monitor pair + D-03 adjudication",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-23T00:58:00.000Z",
+    "resolved_at": null,
+    "milestone": "v1.3"
+  },
+  {
+    "id": 52,
+    "kind": "deviation",
+    "phase": "19",
+    "file": "tests/tui/__snapshots__ (run_config.svg, run_config_confirm.svg)",
+    "line": null,
+    "description": "19-03 (P19-R7, D-03): the phase-19 run_config golden pair REGENERATED via make snapshot-update (the only regen path) over the unchanged golden drives — the slot-4 params pane now carries the collapsed 高级参数 section (title + [a] 展开高级 footer affordance + the variance 空=YAML默认/变体不同 and EBS/GA hint lines; the 13 Inputs + 5 ChoiceRows stay hidden behind the collapse), the confirm face carries the re-wrapped keymap + ▾ fragments (semantically added-only; the enter/启动确认 fragments re-wrapped, nothing dropped), and the monitor pair's pre-existing dirt (#50/#51) byte-preserved via backup/restore + sha256 — deliberately UNCOMMITTED pending the maintainer's D-03 review (the #35/#39/#42/#50 family precedent), joining #50's monitor pair as the standing review batch; the committed tree fails exactly the two golden tests (test_run_config_golden, test_run_config_confirm_golden) until the review lands; the other eight goldens byte-identical to HEAD",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-24T01:46:11.774Z",
     "resolved_at": null,
     "milestone": "v1.3"
   }

@@ -4960,7 +4960,7 @@ async def test_advanced_scheduler_modal_lists_default_plus_twelve():
             row for row in (
                 run_config_service.run_sweep.ADVANCED_TRAIN_FLAGS)
             if row.flag.lstrip("-") == "lr_scheduler_type")
-        expected_ids = ("default",) + tuple(table_row.choices)
+        expected_ids = ("default",) + tuple(table_row.choices or ())
         assert _modal_radio_ids(app) == expected_ids
         assert len(expected_ids) == 13, "1 pseudo-option + 12 schedulers"
         labels = _modal_radio_labels(app)
@@ -4968,7 +4968,7 @@ async def test_advanced_scheduler_modal_lists_default_plus_twelve():
             value=table_row.default_display), (
             "the head option renders the YAML default in the dropdown"
         )
-        assert labels[1:] == tuple(table_row.choices)
+        assert labels[1:] == tuple(table_row.choices or ())
         # the modal's RadioSet takes the focus (the keyboard path)
         assert app.screen.query_one(RadioSetWidget).has_focus
 

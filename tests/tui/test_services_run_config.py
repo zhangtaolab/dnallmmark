@@ -45,6 +45,7 @@ import subprocess
 import sys
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from typing import cast
 
 import pytest
 import run_sweep  # top-level module (pipeline/ sys.path root) — same-source parity
@@ -2358,10 +2359,13 @@ def test_advanced_drifted_entry_loads_as_absent_never_misread(
     never a misread value, never a whole-doc reset; the SIBLING valid
     entries survive; a present-but-non-dict family is shape drift
     beyond tolerance (the whole-default policy)."""
+    # typed local: the literal doc's params value widens to object in
+    # this test module, and **object is not provably a mapping (ty)
+    params_base = cast(dict, _PRE_CHANGE_DOC["params"])
     doc = {
         **_PRE_CHANGE_DOC,
         "params": {
-            **_PRE_CHANGE_DOC["params"],
+            **params_base,
             "advanced": {
                 "learning_rate": 5.0,       # out of bounds -> dropped
                 "bf16": True,               # wrong kind (bool, not the
