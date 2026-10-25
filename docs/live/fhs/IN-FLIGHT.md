@@ -125,6 +125,20 @@ per-cell wall time).
   the same evidence.json; if the orchestrator already finished, read
   `dispatch_state.json` + the ledger directly).
 
+## Ops follow-up 2026-10-25 — 6 failed cells (10k-token datasets) + the auto-GC fix + rerun plan
+
+GUE__fungi_species_20 and GUE__virus_species_40 (3 seeds each) failed with CUDA-OOM
+at step 0: their sequences are ~10,002 tokens (the matrix's only 10k-class tasks) —
+the cap ladder bottomed at batch 1 and even that exceeded the card (26.76 GiB
+allocated + 5.96 GiB wanted). Root cause is architectural (263M MoE/KDA activations
+at 10k tokens), not a ladder bug. Fix (commit d27f5e0, maintainer directive "A"):
+run_finetune auto-enables gradient checkpointing when max_length > 2560 (numerically
+equivalent, ~30% step-time cost; every <=2560 cell keeps its byte-identical path).
+RE-RUN PLAN (after the current 93-cell pass completes and the watcher fail-exits
+honestly at 87/93): relaunch the SAME dispatch argv plus `--rerun-failed` — the
+lane replays exactly the 6 failed claims, now with auto-GC; expect ~30% slower
+cells and final counts 93/93. Then commit the evidence per the standing follow-up.
+
 ## Ops change 2026-10-23 (later) — cap-ladder restart at base 32 (maintainer directive "option 1") — WORKING
 
 The batch-32 restart OOM'd the BEND class (3 cells at tier-16: 33 GB demand on
