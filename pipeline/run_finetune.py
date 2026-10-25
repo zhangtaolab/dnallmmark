@@ -1499,6 +1499,26 @@ if __name__ == "__main__":
                 # reduce below this cap but never raise past it.
                 tier_batch_cap = determine_batch_size(max_length, batch_size)
 
+                # Auto gradient checkpointing (2026-10-25, maintainer
+                # directive "A"): when the cap ladder has BOTTOMED OUT
+                # (max_length > 2560 -> per-device batch pinned at 1), the
+                # activation budget at batch 1 still exceeds a 32 GB card
+                # for MoE/KDA-class models — measured on FungiHelixSeek:
+                # GUE__fungi_species_20 / GUE__virus_species_40 at
+                # max_len 10002 OOM'd at batch 1 (26.76 GiB allocated +
+                # 5.96 GiB wanted). GC is numerically equivalent (memory
+                # for ~30% step-time) and is enabled ONLY on this bottom
+                # tier, so every cell that fit before keeps its exact
+                # code path (the flag-off branch below is byte-identical).
+                gc_enabled = gradient_checkpointing or max_length > 2560
+                if max_length > 2560 and not gradient_checkpointing:
+                    print(
+                        f"[Info] Auto gradient checkpointing enabled "
+                        f"(max_length {max_length} > 2560 — the cap "
+                        f"ladder bottomed at batch 1 and the activation "
+                        f"budget exceeds the card; GC trades ~30% step "
+                        f"time for memory).")
+
                 # Auto batch size adjustment based on model params and sequence length
                 if auto_batch_size and count == 0:
                     model_params = sum(p.numel() for p in model.parameters())
@@ -1748,7 +1768,7 @@ if __name__ == "__main__":
                 if _dl_workers:
                     extra_args["dataloader_num_workers"] = int(_dl_workers)
                     print(f"[Info] dataloader_num_workers={_dl_workers} (DNALLMMARK_DATALOADER_WORKERS).")
-                if gradient_checkpointing:
+                if gc_enabled:
                     extra_args["gradient_checkpointing"] = True
                     # use_reentrant=False avoids "marked as ready twice" under DDP
                     # (required for MoE shared_experts + checkpointing + DDP combo)

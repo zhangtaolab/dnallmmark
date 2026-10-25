@@ -3364,3 +3364,31 @@ def test_minimal_custom_entry_reads_are_guarded():
         "— 1 is the no-compression floor (the consumer degrades to "
         "data_length + 2, over-long but never truncating)"
     )
+
+
+def test_auto_gradient_checkpointing_bottom_tier():
+    """2026-10-25 (maintainer directive "A"): when the cap ladder bottoms
+    out (max_length > 2560 — per-device batch pinned at 1), gradient
+    checkpointing auto-enables for the trainer's extra_args (the
+    MoE/KDA activation budget at batch 1 exceeds a 32 GB card; measured
+    on FungiHelixSeek at max_len 10002 — 26.76 GiB allocated + 5.96 GiB
+    wanted). Read-source pins: the composition line, the threshold, and
+    the trainer gate consuming gc_enabled — the flag-off code path for
+    every max_length <= 2560 stays byte-identical."""
+    src = RUN_FINETUNE.read_text(encoding="utf-8")
+    assert "gc_enabled = gradient_checkpointing or max_length > 2560" in src, (
+        "the auto-GC composition line is missing — the bottom-tier rule "
+        "must compose the explicit flag with the max_length > 2560 tier"
+    )
+    assert "if gc_enabled:" in src, (
+        "the trainer's gradient-checkpointing gate must read gc_enabled "
+        "(not the raw flag), or the auto-enable never reaches extra_args"
+    )
+    assert src.count("if gradient_checkpointing:") == 0, (
+        "no raw-flag trainer gate may remain — a leftover would bypass "
+        "the auto rule on the bottom tier"
+    )
+    assert "Auto gradient checkpointing enabled" in src, (
+        "the operator-visible [Info] line must exist (loud, honest "
+        "degradation notes are the pipeline's logging convention)"
+    )
