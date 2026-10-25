@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DNALLM-Mark 项目进度报告 — 2026-10-25</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --surface-2: #f4f3f1;
+    --border:    #e2e1dd;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #8a8985;
+    --series-1:   #2a78d6;          /* categorical slot 1 (validated) */
+    --series-1-dim: #9cc1ec;        /* same hue, light shade (before-state) */
+    --good:      #0ca30c;           /* status: reserved */
+    --warning:   #fab219;
+    --serious:   #ec835a;
+    --track:     #e9e8e4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --surface-2: #222221;
+      --border:    #383836;
+      --text-primary:   #f0efec;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #8f8e87;
+      --series-1:   #3987e5;
+      --series-1-dim: #274f78;
+      --track:     #30302e;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+    background: var(--surface-1); color: var(--text-primary);
+    line-height: 1.55; max-width: 1080px; margin: 0 auto; padding: 32px 20px 64px;
+  }
+  h1 { font-size: 26px; letter-spacing: -0.5px; margin-bottom: 4px; }
+  h2 { font-size: 19px; margin: 40px 0 14px; padding-top: 18px; border-top: 1px solid var(--border); letter-spacing: -0.3px; }
+  h2:first-of-type { border-top: none; }
+  h3 { font-size: 15px; margin: 22px 0 8px; color: var(--text-secondary); }
+  p  { color: var(--text-secondary); margin-bottom: 10px; font-size: 14px; }
+  .sub { color: var(--text-muted); font-size: 13px; }
+  .kpi-row { display: flex; flex-wrap: wrap; gap: 12px; margin: 22px 0 6px; }
+  .tile {
+    flex: 1 1 150px; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; min-width: 150px;
+  }
+  .tile .v { font-size: 30px; font-weight: 650; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+  .tile .l { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .tile .d { font-size: 11px; color: var(--text-muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0 6px; }
+  th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 12px; padding: 6px 8px; border-bottom: 2px solid var(--border); }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--border); color: var(--text-secondary); vertical-align: top; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ok  { color: var(--good); font-weight: 600; }
+  .run { color: var(--series-1); font-weight: 600; }
+  .warn{ color: var(--serious); font-weight: 600; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-top: 12px; }
+  .card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .card h4 { font-size: 14px; margin-bottom: 6px; }
+  .card ul { margin: 4px 0 0 18px; font-size: 13px; color: var(--text-secondary); }
+  .card li { margin: 3px 0; }
+  figure { margin: 18px 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+  .note { background: var(--surface-2); border-left: 3px solid var(--series-1); border-radius: 6px; padding: 10px 14px; font-size: 13px; color: var(--text-secondary); margin: 12px 0; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+  @media (max-width: 720px) { .kpi-row { flex-direction: column; } }
+  @media print {
+    body { max-width: none; padding: 0; }
+    figure, .tile, .card { break-inside: avoid; }
+    h2 { break-after: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<h1>DNALLM-Mark 项目进度报告</h1>
+<div class="sub">2026-10-25 · 里程碑 v1.3「多 GPU 编排与验证」执行完毕 · 分支 autorun @ ccbf358 · 本报告为自包含静态文件（无外部资源）</div>
+
+<div class="kpi-row">
+  <div class="tile"><div class="v">25/25</div><div class="l">v1.3 计划全部落地</div><div class="d">Phases 13–19 · 7 个阶段</div></div>
+  <div class="tile"><div class="v">2405</div><div class="l">测试套件规模</div><div class="d">2399 passed + 6 skipped（CI 全绿）</div></div>
+  <div class="tile"><div class="v">3</div><div class="l">里程碑</div><div class="d">v0.7.1 · v1.2 · v1.3</div></div>
+  <div class="tile"><div class="v">53/93</div><div class="l">FHS 全矩阵 cell（在途）</div><div class="d">0 OOM · 6 数据集级失败（已入台账）</div></div>
+  <div class="tile"><div class="v">4.1×</div><div class="l">吞吐提升（cap-ladder）</div><div class="d">GPU 利用率 19%→89–100%</div></div>
+</div>
+
+<h2>一、里程碑时间线</h2>
+<figure>
+<svg viewBox="0 0 1000 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="里程碑时间线：v0.7.1 数据链与测试、v1.2 TUI 操作台、v1.3 多 GPU 编排与验证">
+  <line x1="60" y1="95" x2="940" y2="95" stroke="var(--border)" stroke-width="3"/>
+  <line x1="60" y1="95" x2="940" y2="95" stroke="var(--series-1)" stroke-width="3" stroke-dasharray="0" opacity="0.35"/>
+  <!-- v0.7.1 -->
+  <circle cx="120" cy="95" r="7" fill="var(--good)"/>
+  <text x="120" y="60" text-anchor="middle" font-size="15" font-weight="650" fill="var(--text-primary)">v0.7.1</text>
+  <text x="120" y="78" text-anchor="middle" font-size="11" fill="var(--text-muted)">2026-10-11 发布</text>
+  <text x="120" y="130" text-anchor="middle" font-size="12" fill="var(--text-secondary)">数据链 · 测试/CI · Schema</text>
+  <text x="120" y="146" text-anchor="middle" font-size="12" fill="var(--text-secondary)">导出与统计 · 6 阶段 21 计划</text>
+  <!-- v1.2 -->
+  <circle cx="470" cy="95" r="7" fill="var(--good)"/>
+  <text x="470" y="60" text-anchor="middle" font-size="15" font-weight="650" fill="var(--text-primary)">v1.2 TUI 任务</text>
+  <text x="470" y="78" text-anchor="middle" font-size="11" fill="var(--text-muted)">2026-10-19 发布 · 41 计划</text>
+  <text x="470" y="130" text-anchor="middle" font-size="12" fill="var(--text-secondary)">终端操作台：向导 · 选型 · 运行配置</text>
+  <text x="470" y="146" text-anchor="middle" font-size="12" fill="var(--text-secondary)">监视 · 下载队列 · 环境体检 · 中英双语</text>
+  <!-- v1.3 -->
+  <circle cx="820" cy="95" r="9" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="3"/>
+  <circle cx="820" cy="95" r="3.5" fill="var(--surface-1)"/>
+  <text x="820" y="60" text-anchor="middle" font-size="15" font-weight="650" fill="var(--text-primary)">v1.3 多 GPU 编排</text>
+  <text x="820" y="78" text-anchor="middle" font-size="11" fill="var(--text-muted)">2026-10-24 执行+验证完毕 · 25 计划</text>
+  <text x="820" y="130" text-anchor="middle" font-size="12" fill="var(--text-secondary)">动态调度 · 双卡验证 · 多卡界面 · Error Bar</text>
+  <text x="820" y="146" text-anchor="middle" font-size="12" fill="var(--text-secondary)">文档 · 运行配置全参数化（收口中）</text>
+  <text x="60" y="180" font-size="11" fill="var(--text-muted)">● 已发布　◉ 执行完毕待里程碑审计归档</text>
+</svg>
+<figcaption>图 1 · 三个里程碑的交付节奏；v1.3 含 Phase 19（2026-10-24 追加，TUI 运行配置全参数化）。</figcaption>
+</figure>
+
+<h2>二、功能清单（已实现）</h2>
+
+<h3>2.1 微调管线（pipeline/）— v0.7.1 奠基，v1.3 强化</h3>
+<div class="card-grid">
+  <div class="card"><h4>模型×数据集微调引擎</h4><ul>
+    <li>41 个 DNA LLM × 50 数据集注册表（<code>models_info.json</code> / <code>datasets_info.json</code>）</li>
+    <li>动态 batch（序列长度分档封顶阶梯，2026-10-23 内存校准：32/16/8/4/2/1 @ 128–2560 tok）</li>
+    <li>梯度累积补偿：有效 batch 跨数据集统一（micro 按显存适配）</li>
+    <li>断点续跑（trainer_state 标记）+ 失败隔离（单 cell 失败不阻塞矩阵）</li>
+  </ul></div>
+  <div class="card"><h4>FLOPs 计量</h4><ul>
+    <li>逐架构前向钩子（Attention/GQA/BigBird/Hyena/Mamba/Mamba2/Caduceus/Enformer 等 ~20 种）</li>
+    <li>每 cell 产出 <code>flops_report.json</code>（schema 校验）</li>
+  </ul></div>
+  <div class="card"><h4>多 GPU 调度（v1.3 核心）</h4><ul>
+    <li><code>run_sweep_shard.py --mode dispatch</code>：编排器 + 每 GPU 一 worker</li>
+    <li>O_EXCL 台账认领、陈旧 claim 自动重排、--rerun-failed 补跑通道</li>
+    <li>18 参数高级透传族（<code>ADVANCED_TRAIN_FLAGS</code>，字母序定序）</li>
+    <li>双卡实测：93-cell 矩阵运行中，0 OOM</li>
+  </ul></div>
+</div>
+
+<h3>2.2 TUI 操作台（tui/）— v1.2 主体，v1.3 扩展</h3>
+<div class="card-grid">
+  <div class="card"><h4>操作旅程</h4><ul>
+    <li>环境体检（env check：torch/CUDA/注册表/磁盘逐项核验）</li>
+    <li>模型/数据集选型（presence 视图、过滤、勾选）</li>
+    <li>运行配置 → Y/N 确认门（调度计划行、argv 干跑预览）</li>
+    <li>监视页（worker 状态、五态字形、ETA、GPU 面板、树视图）</li>
+  </ul></div>
+  <div class="card"><h4>下载队列</h4><ul>
+    <li>modelscope 通道 + 备选源解析、五态队列、断点续传</li>
+    <li>模型/数据集一键补全（enqueue-all）与重审（re-audit）</li>
+  </ul></div>
+  <div class="card"><h4>运行配置全参数化（Phase 19，2026-10-24）</h4><ul>
+    <li>基础区：seeds / epochs / batch_size / workers / GPUs / 输出根 / EBS</li>
+    <li>高级区（折叠）：18 个 TrainingArguments 参数——lr/weight_decay/Adam 系列/warmup/scheduler 族/GA/保存评估节奏/bf16</li>
+    <li>默认值占位（「—（默认: …）」）、枚举下拉（RadioSet）、范围校验、<kbd>r</kbd> 批量恢复默认</li>
+    <li>spec 会话持久化（文件默认 + 会话覆盖）</li>
+  </ul></div>
+</div>
+
+<h3>2.3 Web 榜单（dnallm-mark/）— v0.7.1</h3>
+<div class="card-grid">
+  <div class="card"><h4>静态多页榜单</h4><ul>
+    <li>主榜：FLOPs vs Rank Score 散点 + 可排序表 + 赛区分组（动物/植物/微生物）</li>
+    <li>任务页：逐任务模型排名、指标切换、表格导出（xlsx）</li>
+    <li>模型卡 / 数据集目录 / 微调结果页</li>
+  </ul></div>
+  <div class="card"><h4>数据加工链</h4><ul>
+    <li>rank/z-score/robust 归一化汇总（<code>summarize_comparison.py</code>）</li>
+    <li>模型中心 → 任务中心透视（<code>get_task_performance.py</code>）</li>
+    <li>Schema 校验全链（build_provenance 溯源标记）</li>
+  </ul></div>
+  <div class="card"><h4>多种子 Error Bar（Phase 17）</h4><ul>
+    <li>三种子 (42/43/44) 聚合与置信区间，前端误差条渲染</li>
+  </ul></div>
+</div>
+
+<h3>2.4 证据与录制（v1.3 运营面）</h3>
+<div class="card-grid">
+  <div class="card"><h4>SVG 旅程录制</h4><ul>
+    <li><code>scripts/live/record_tui_live_svg.py</code>：驱动真实 TUI 全程，逐阶段 120×40 SVG 截帧（001 开机 → … → 015 监视 → 999 完成）</li>
+    <li><code>--param name=value</code> 参数注入 + argv 逐 token 断言；<code>--attach-root</code> 重附着恢复通道</li>
+    <li>增量 evidence.json 心跳 + 完成automatically生成 REPORT.md</li>
+  </ul></div>
+  <div class="card"><h4>实测运行记录</h4><ul>
+    <li>pa6：2 模型 × 2 数据集 × 双卡，25 帧全程记录（已完成）</li>
+    <li>FHS：FungiHelixSeek × 31 数据集 × 3 种子 = 93 cell（在途，详见第四节）</li>
+  </ul></div>
+</div>
+
+<h2>三、v1.3 阶段明细（Phases 13–19）</h2>
+<table>
+  <tr><th>阶段</th><th>内容</th><th>计划</th><th>验证</th><th>关键提交</th></tr>
+  <tr><td>13 动态调度核心</td><td>dispatch 编排器、台账认领、失败重排</td><td class="num">2/2</td><td class="ok">✓ 通过</td><td class="num">—</td></tr>
+  <tr><td>14 编排视图与恢复</td><td>断点恢复、监视重附着、killpg 规范</td><td class="num">3/3</td><td class="ok">✓ 通过</td><td class="num">—</td></tr>
+  <tr><td>15 双卡验证与子集</td><td>N=2 冒烟 + 小型真实 sweep + 分层子集</td><td class="num">5/5</td><td class="ok">✓ 通过</td><td class="num">—</td></tr>
+  <tr><td>16 TUI 多 GPU 界面</td><td>调度参数区、确认门调度计划行、GPU 面板</td><td class="num">5/5</td><td class="ok">✓ 通过</td><td class="num">—</td></tr>
+  <tr><td>17 Web 多种子 Error Bar</td><td>三种子聚合 + 前端误差条</td><td class="num">3/3</td><td class="ok">✓ 通过</td><td class="num">—</td></tr>
+  <tr><td>18 文档撰写</td><td>multi-GPU 手册、TUI 指南、v1.3 测试报告</td><td class="num">4/4</td><td class="ok">✓ 通过</td><td class="num">—</td></tr>
+  <tr><td>19 运行配置全参数化</td><td>18 高级参数端到端（管线→TUI→驱动器）</td><td class="num">3/3</td><td class="ok">✓ 通过 15/15 + UAT 6 通过/1 已修</td><td class="num">8f9a8d7…ccbf358</td></tr>
+</table>
+<p class="sub">注：13–18 的验证报告因后续阶段改动共享文件被判定 stale（预期漂移），里程碑审计（<code>/gsd-complete-milestone</code>）将统一复核；19 为最新验证。</p>
+
+<h2>四、实测运行（证据来自实际执行）</h2>
+
+<h3>4.1 FHS 全矩阵（在途）</h3>
+<p>FungiHelixSeek（263M, MoE）× 31 个下载数据集 × 种子 42/43/44，双 RTX 5090，经 TUI Y 门发射，全程 SVG 记录（133 帧，全部唯一）。截至本报告：</p>
+<div class="kpi-row">
+  <div class="tile"><div class="v" id="fhs-done">53</div><div class="l">/ 93 cell 完成</div><div class="d">57% · 运行中</div></div>
+  <div class="tile"><div class="v">6</div><div class="l">失败（数据集级）</div><div class="d">fungi_species_20 / virus_species_40 各 3 种子；run_finetune 吞错，待诊断后 --rerun-failed</div></div>
+  <div class="tile"><div class="v">0</div><div class="l">OOM 事件</div><div class="d">cap-ladder 后归零</div></div>
+</div>
+<figure>
+<svg viewBox="0 0 1000 84" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="FHS 93 cell 进度：完成 53、失败 6、进行中 34">
+  <rect x="20" y="28" width="960" height="28" rx="6" fill="var(--track)"/>
+  <!-- done 53/93 -->
+  <rect x="20" y="28" width="546.5" height="28" rx="6" fill="var(--series-1)"><title>完成 53 / 93</title></rect>
+  <!-- failed 6/93 appended after done, 2px gap -->
+  <rect x="568.5" y="28" width="61.9" height="28" fill="var(--serious)"><title>失败 6 / 93（两个数据集 × 3 种子）</title></rect>
+  <text x="20" y="18" font-size="12" fill="var(--text-secondary)">完成 <tspan font-weight="650" fill="var(--text-primary)">53</tspan></text>
+  <text x="586" y="18" font-size="12" fill="var(--text-secondary)">失败 <tspan font-weight="650" fill="var(--serious)">6</tspan></text>
+  <text x="980" y="18" text-anchor="end" font-size="12" fill="var(--text-secondary)">在跑 <tspan font-weight="650" fill="var(--text-primary)">34</tspan></text>
+  <text x="20" y="74" font-size="11" fill="var(--text-muted)">总 93 cell = 1 模型 × 31 数据集 × 3 种子 · 2026-10-23 11:10 启动 · 完成后自动生成 REPORT.md</text>
+</svg>
+<figcaption>图 2 · FHS 矩阵进度（同色系进度轨道；失败段用状态色 serious 并附文字标注，不依赖颜色单独传达）。</figcaption>
+</figure>
+
+<h3>4.2 吞吐优化历程（batch 4 → 有效 32）</h3>
+<figure>
+<svg viewBox="0 0 1000 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="吞吐优化哑铃图：BEND 单cell 70小时到17小时；短序列 2.2 到 8.5 it/s；GPU 利用率 19 到 94%">
+  <!-- axis -->
+  <text x="20" y="26" font-size="13" font-weight="650" fill="var(--text-primary)">优化前 → 优化后（同一硬件，实测值）</text>
+  <!-- row 1: BEND cell wall time -->
+  <text x="20" y="66" font-size="12" fill="var(--text-secondary)">BEND 单 cell 墙钟（小时，越短越好）</text>
+  <line x1="150" y1="62" x2="870" y2="62" stroke="var(--track)" stroke-width="2"/>
+  <circle cx="870" cy="62" r="6" fill="var(--series-1-dim)"><title>优化前：batch 4 · ~70 h</title></circle>
+  <circle cx="325" cy="62" r="6" fill="var(--series-1)"><title>优化后：micro 8 × GA 4 · ~17 h</title></circle>
+  <text x="884" y="66" font-size="12" fill="var(--text-secondary)">70 h</text>
+  <text x="298" y="48" font-size="12" fill="var(--text-primary)" font-weight="600">17 h</text>
+  <!-- row 2: short-seq it/s -->
+  <text x="20" y="116" font-size="12" fill="var(--text-secondary)">短序列数据集吞吐（it/s，越高越好）</text>
+  <line x1="150" y1="112" x2="870" y2="112" stroke="var(--track)" stroke-width="2"/>
+  <circle cx="336" cy="112" r="6" fill="var(--series-1-dim)"><title>优化前：~2.2 it/s</title></circle>
+  <circle cx="870" cy="112" r="6" fill="var(--series-1)"><title>优化后（batch 32）：8.5 it/s</title></circle>
+  <text x="322" y="132" font-size="12" fill="var(--text-secondary)">2.2</text>
+  <text x="856" y="132" font-size="12" fill="var(--text-primary)" font-weight="600">8.5</text>
+  <!-- row 3: GPU util -->
+  <text x="20" y="166" font-size="12" fill="var(--text-secondary)">GPU 利用率（%）</text>
+  <line x1="150" y1="162" x2="870" y2="162" stroke="var(--track)" stroke-width="2"/>
+  <circle cx="301" cy="162" r="6" fill="var(--series-1-dim)"><title>优化前：19–23%</title></circle>
+  <circle cx="830" cy="162" r="6" fill="var(--series-1)"><title>优化后：89–100%</title></circle>
+  <text x="268" y="182" font-size="12" fill="var(--text-secondary)">19–23%</text>
+  <text x="802" y="182" font-size="12" fill="var(--text-primary)" font-weight="600">89–100%</text>
+  <!-- legend -->
+  <circle cx="160" cy="200" r="5" fill="var(--series-1-dim)"/><text x="172" y="204" font-size="11" fill="var(--text-secondary)">优化前（2026-10-22 基线）</text>
+  <circle cx="330" cy="200" r="5" fill="var(--series-1)"/><text x="342" y="204" font-size="11" fill="var(--text-secondary)">优化后（cap-ladder，2026-10-23）</text>
+</svg>
+<figcaption>图 3 · 优化路径：YAML 默认（batch 8→分级 4）→ TUI batch 32（BEND OOM，3 cell 失败入台账）→ 内存校准封顶阶梯（≤128→32 / ≤640→8 / …）+ 梯度累积补偿 → 有效 batch 统一 32，吞吐 4.1×，OOM 归零。同一色相两个深浅（哑铃图规范），数值直接标注。</figcaption>
+</figure>
+
+<h3>4.3 已完成实测：pa6（2×2 双卡冒烟）</h3>
+<p>plant-dnabert-6mer + plant-dnamamba-6mer × GUE__emp_H3 + iDNA 5mC，种子 42、1 epoch，双卡 4 cell 全成，25 帧 SVG 全程记录 + 操作记录 <code>docs/live/RECORD.md</code>（commit 105dd3c）。</p>
+
+<h2>五、当前状态与待办</h2>
+<table>
+  <tr><th>事项</th><th>状态</th><th>说明</th></tr>
+  <tr><td>FHS 93-cell 运行</td><td class="run">◉ 在途 57%</td><td>完成后 watcher 自动生成 <code>docs/live/fhs/REPORT.md</code>；随后提交证据（已记录的 follow-up）</td></tr>
+  <tr><td>6 个失败 cell</td><td class="warn">⚠ 待诊断</td><td>两个数据集的 run_finetune 静默吞错；诊断后 <code>--rerun-failed</code> 补跑通道现成</td></tr>
+  <tr><td>CI</td><td class="ok">✓ 全绿</td><td>n_audit 误提交已还原（ccbf358），2399 passed + 6 skipped</td></tr>
+  <tr><td>WINDOWS 台账</td><td class="num">9 open / 51</td><td>#50/#51/#52 已于 2026-10-24 关闭；余为里程碑收口时统一处理</td></tr>
+  <tr><td>里程碑收口</td><td class="run">◉ 就绪</td><td><code>/gsd-complete-milestone</code>：审计（含 13–18 stale 验证复核）→ 归档 → 下一里程碑</td></tr>
+</table>
+
+<div class="note">
+<b>诚实声明</b>：本报告所有数字来自实际执行的产物——FHS 进度读自 <code>dispatch_state.json</code> 与台账，吞吐/利用率读自 worker 日志与 nvidia-smi 采样，测试计数来自 CI 运行；无估算值冒充实测值。失败项如实列出，未做美化。
+</div>
+
+<p class="sub" style="margin-top:28px">生成：Claude Code（GSD 工作流会话）· 数据截至 2026-10-25 · 仓库 zhangtaolab/dnallmmark@autorun</p>
+
+</body>
+</html>
