@@ -3,6 +3,17 @@
 
 This guide is the shortest path from a fresh clone to a verified environment and a running local leaderboard. Everything here runs on a CPU-only machine — no GPU is needed for the data chain, the test suite, or the web UI. See [ARCHITECTURE.md](ARCHITECTURE.md) for how the subsystems fit together and [CONFIGURATION.md](CONFIGURATION.md) for every dependency group, Makefile lane, and pipeline knob.
 
+## Features and components
+
+Four subsystems share one JSON data contract (the full component map and data-flow walkthrough is [ARCHITECTURE.md](ARCHITECTURE.md)):
+
+| Component | What it does |
+|-----------|--------------|
+| Fine-tuning pipeline — `pipeline/` | `run_finetune.py` trains exactly one model × task × seed cell (delegating the loop to the external `dnallm` package and measuring FLOPs via `flops_counter.py` forward hooks); `run_sweep.py` drives the model × task × seed matrix, one subprocess per cell; `run_sweep_shard.py` orchestrates multi-GPU runs (LPT sharding, `--mode dispatch` shared root, hash-verified `--merge`) |
+| TUI operator console — `tui/` | Six screens (`tui/screens/`) over a textual-free service layer (`tui/services/`): environment checks, ModelScope-first model/dataset acquisition, the gated sweep launch, live multi-GPU monitoring |
+| Offline data chain — `script/`, `scripts/` | `export_runs.py` turns sweep run records into the two performance views; `summarize_comparison.py`, `permutation_tests.py`, `build_provenance.py`, and `generate-tasks-index.js` derive every leaderboard file (the `make data` lane) |
+| Web leaderboard — `dnallm-mark/` | Static ES-module pages (no build step, no backend) that fetch the committed JSON at load time; Chart.js and SheetJS arrive via CDN |
+
 ## Prerequisites
 
 | Tool | Version | Why you need it |
@@ -89,7 +100,31 @@ Press Ctrl+C to stop the server
 make tui
 ```
 
-This launches the Textual console (`uv run --group tui --group gpu python -m tui`) for environment checks, model/dataset selection, **downloads**, sweep launch, and live monitoring. Six digit-keyed screens (UI copy is Chinese): `1` environment check, `2` 模型 (models), `3` 数据集 (datasets), `4` run config, `5` monitor, `6` about. The full key-by-key runbook is [TUI-GUIDE.md](TUI-GUIDE.md).
+This launches the Textual console (`uv run --group tui --group gpu python -m tui`) for environment checks, model/dataset selection, **downloads**, sweep launch, and live monitoring. Six digit-keyed screens (UI copy renders in Chinese or English — the default is English, `L` toggles live): `1` environment check, `2` 模型 (models), `3` 数据集 (datasets), `4` run config, `5` monitor, `6` about. The full key-by-key runbook is [TUI-GUIDE.md](TUI-GUIDE.md).
+
+#### The launch journey, key by key
+
+The steps below are the shape of the recorded quick-261022-pa6 session — a real 2 models × 2 tasks × seed 42 dual-GPU launch whose full evidence trail is [live/RECORD.md](live/RECORD.md) (4/4 cells, driver exit 0, ~56 minutes end to end). The first three captures are the deterministic SVG snapshot goldens the test suite pins; the last is that real run's own monitor. Every key named here comes from the `BINDINGS` declarations in `tui/screens/`.
+
+1. **Boot — `make tui`.** The console opens on slot `1` 环境检查 (environment check) and runs the eight env kernels in a background worker (a same-day restart renders the cached verdict instantly). Read the verdict line: `✓ 环境就绪（可启动）` clears the way, while `✗ 关键项未通过` names the failing critical kernels and blocks every slot-4 launch until fixed. On this screen: `r` re-runs all kernels, `enter` opens a row's drill-down.
+
+    ![Slot 1 environment check: the eight kernel rows (版本 pin, dnallm 导入, peft, CUDA, matmul 冒烟, numpy≥2, 模型目录, 数据集目录), the ✓ 环境就绪（可启动） verdict, and the storage-directory block](../tests/tui/__snapshots__/env_check.svg)
+
+2. **Compose the run — press `4` (运行配置 / run config).** The left pane is slot 4's own picker: `space` toggles the mark on the cursor row, `m` flips the picker between models and datasets, `/` focuses the filter (`esc` clears it). Marks live in the persistent run spec, so they survive restarts. The recorded session marked 2 models, pressed `m`, and marked 2 datasets.
+
+3. **Set parameters (right pane).** `seeds` defaults to `42,43,44`; PEFT and 变体 (variant) are choice rows — `enter` opens the radio modal; epochs / effective_batch_size / batch_size are optional overrides; the 多 GPU 调度 section carries `workers` (live default `1`) and `GPUs` (empty = the dispatcher binds GPUs `0..workers-1` at launch). The 高级参数 section is collapsed by default: `a` expands its advanced rows, `r` restores their defaults.
+
+    ![Slot 4 run config: the model picker (模型 2/4 with filter bar) on the left, the params pane on the right — seeds 42,43,44, PEFT, 变体, 曲线档位, 公平子集, epochs, effective_batch_size, batch_size — and the 高级参数 section title above its collapsed rows](../tests/tui/__snapshots__/run_config.svg)
+
+4. **Preview — `p`.** The 干跑预览 modal shows the same-source enumeration counts and, on a clean spec, the exact `run_sweep_shard.py --mode dispatch` argv verbatim — composed by the same code the launcher routes through, so what you read is what launches. On problems it renders them as a numbered list instead.
+
+5. **Launch gate — `enter`.** The 启动确认 (launch confirmation) modal recomputes everything fresh through the services — never the preview line's cache: the counts formula (in the golden: `2 模型 × 1 任务 × 3 种子 = 6 训练项 → ./finetuned`), the planned model × dataset pairs, and the confirm line. **`y` launches, `n`/`esc` cancel — `enter` is deliberately inert on the confirm.** Only a full official re-run (all 59 models × 50 datasets × ≥ 3 seeds) escalates to the E2' typed-phrase modal: type the output root's final directory name, `enter` arms the confirm, then `y` launches.
+
+    ![The 启动确认 modal over slot 4: the counts formula line (2 模型 × 1 任务 × 3 种子 = 6 训练项 → ./finetuned), the planned pairs below it, and the 确认启动以上训练 confirm line with its Y 启动 / N 取消 pair](../tests/tui/__snapshots__/run_config_confirm.svg)
+
+6. **Monitor — the console switches to slot `5` (任务监控) by itself after `y`.** The new sweep is auto-attached. Keys: `enter` attaches the cursor's discovered sweep (or drills into an entry's per-seed detail), `f` failures, `t` log tail, `a` attaches a manual root by path, `r` forces a full rescan, `k` kills a TUI-spawned sweep. The capture below is the real run's tail: the attached `finetuned-tui-pa6` root at 3/4 cells, the dispatch line (`dispatch running · 3/4 done · queue 0`), and one row per worker — GPU 0 idle while GPU 1 finishes the long last cell; the sweep completed 4/4 about a minute later.
+
+    ![The monitor at the tail of the recorded dual-GPU run: the attached finetuned-tui-pa6 root with its 3/4 progress bar and elapsed 55m line, the dispatch state line (running · 3/4 done · queue 0), and per-worker rows — worker 0 · GPU 0 · ◌ idle, worker 1 · GPU 1 running plant-dnamamba-6mer × GUE__emp_H3](../docs/live/svg/99_monitor_done.svg)
 
 Model and dataset acquisition is ModelScope-first through the console:
 
