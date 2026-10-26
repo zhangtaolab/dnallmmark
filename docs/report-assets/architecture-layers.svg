@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 300" width="980" height="300" role="img" aria-labelledby="arch-title">
+  <title id="arch-title">DNALLM-Mark 四层架构：操作台 TUI → 调度 dispatch → 产物 → 证据/报告 + web 榜单</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#265354"/>
+    </marker>
+    <marker id="arrow-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#595F6E"/>
+    </marker>
+  </defs>
+
+  <!-- Layer 1: TUI -->
+  <rect x="8" y="8" width="206" height="264" rx="8" fill="#F9FAFB" stroke="#D9D9D9"/>
+  <text x="111" y="27" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="13" font-weight="700" fill="#265354">① 操作台 TUI</text>
+  <rect x="17" y="40" width="188" height="46" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="111" y="58" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">环境检查 · 模型/数据集下载</text>
+  <text x="111" y="74" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">slot 1–3 · 三 lane 下载队列</text>
+  <rect x="17" y="94" width="188" height="46" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="111" y="112" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">运行配置（slot 4）</text>
+  <text x="111" y="128" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">基础参数＋高级参数 18 项</text>
+  <rect x="17" y="148" width="188" height="46" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="111" y="166" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">启动门</text>
+  <text x="111" y="182" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">Y/N 确认 · E2&#8242; 短语 · 容量门</text>
+  <rect x="17" y="202" width="188" height="46" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="111" y="220" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">监控（slot 5）</text>
+  <text x="111" y="236" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">Running/History · GPU 泳道</text>
+  <text x="111" y="264" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">tui/services/ — textual-free 服务层</text>
+
+  <!-- Layer 2: dispatch -->
+  <rect x="254" y="8" width="246" height="264" rx="8" fill="#F9FAFB" stroke="#D9D9D9"/>
+  <text x="377" y="27" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="13" font-weight="700" fill="#265354">② 调度 dispatch</text>
+  <rect x="263" y="40" width="228" height="46" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="377" y="58" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">dispatcher（单进程）</text>
+  <text x="377" y="74" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">确定性 cell 队列 · dispatcher.lock</text>
+  <rect x="263" y="94" width="228" height="36" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="377" y="110" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">认领账本 dispatch_ledger/</text>
+  <text x="377" y="124" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">claim-before-spawn · --rerun-failed</text>
+  <rect x="263" y="138" width="110" height="46" rx="5" fill="#DDEFEF" stroke="#3B7475"/>
+  <text x="318" y="156" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">worker 0</text>
+  <text x="318" y="172" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">绑定 GPU 0</text>
+  <rect x="381" y="138" width="110" height="46" rx="5" fill="#DDEFEF" stroke="#3B7475"/>
+  <text x="436" y="156" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">worker 1</text>
+  <text x="436" y="172" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">绑定 GPU 1</text>
+  <rect x="263" y="192" width="228" height="28" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="377" y="210" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#292C33">每格一个 run_finetune.py 子进程</text>
+  <text x="377" y="238" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9" fill="#595F6E">--mode static（legacy）：LPT 分片</text>
+  <text x="377" y="252" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9" fill="#595F6E">各自根 → --merge / --cleanup</text>
+
+  <!-- Layer 3: artifacts -->
+  <rect x="540" y="8" width="194" height="264" rx="8" fill="#F9FAFB" stroke="#D9D9D9"/>
+  <text x="637" y="27" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="13" font-weight="700" fill="#265354">③ 产物 · 同一共享根</text>
+  <text x="637" y="44" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="8.5" fill="#595F6E">{root}/{model}/{task}/seed_{seed}/</text>
+  <rect x="550" y="54" width="174" height="32" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="637" y="74" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#292C33">final_metrics.json</text>
+  <rect x="550" y="94" width="174" height="32" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="637" y="114" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#292C33">flops_report.json</text>
+  <rect x="550" y="134" width="174" height="32" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="637" y="154" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#292C33">run_record.json</text>
+  <rect x="550" y="174" width="174" height="32" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="637" y="194" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#292C33">trainer_state.json</text>
+  <text x="637" y="228" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">trainer_state = 续跑标记</text>
+  <text x="637" y="244" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">dispatch 全部写同一根</text>
+  <text x="637" y="260" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">（静态模式才需要 --merge）</text>
+
+  <!-- Layer 4: evidence + web -->
+  <rect x="774" y="8" width="198" height="264" rx="8" fill="#F9FAFB" stroke="#D9D9D9"/>
+  <text x="873" y="27" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="13" font-weight="700" fill="#265354">④ 证据 / 报告 ＋ web 榜单</text>
+  <rect x="783" y="40" width="180" height="100" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="873" y="58" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">docs/live/ 真实证据</text>
+  <text x="873" y="74" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">SVG 逐帧截图（120×40）</text>
+  <text x="873" y="88" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">RECORD.md · evidence.json</text>
+  <text x="873" y="102" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">REPORT.md · download_ledger</text>
+  <text x="873" y="124" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">record_tui_live_svg.py</text>
+  <text x="873" y="136" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">（pa6 / full / attach）</text>
+  <rect x="783" y="152" width="180" height="110" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="873" y="170" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">dnallm-mark/ 静态榜单</text>
+  <text x="873" y="186" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">export_runs.py → 双视图</text>
+  <text x="873" y="200" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">summarize → comparison*.json</text>
+  <text x="873" y="214" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">data/ JSON（committed）</text>
+  <text x="873" y="228" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">ES-module 页面 · Chart.js CDN</text>
+  <text x="873" y="248" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">无后端 · 无构建</text>
+
+  <!-- Flow arrows -->
+  <line x1="214" y1="150" x2="250" y2="150" stroke="#265354" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="232" y="141" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">启动</text>
+  <line x1="500" y1="150" x2="536" y2="150" stroke="#265354" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="518" y="141" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">逐格</text>
+  <line x1="734" y1="90" x2="770" y2="90" stroke="#265354" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="752" y="81" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">证据</text>
+  <line x1="734" y1="207" x2="770" y2="207" stroke="#265354" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="752" y="198" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">聚合</text>
+
+  <!-- Monitor feedback loop -->
+  <line x1="730" y1="286" x2="226" y2="286" stroke="#595F6E" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow-muted)"/>
+  <text x="478" y="280" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">slot 5 监控轮询产物树（2 s / 60 s）</text>
+</svg>
