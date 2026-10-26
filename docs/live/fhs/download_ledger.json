@@ -1,0 +1,584 @@
+{
+  "written_at": "2026-10-23T03:08:19Z",
+  "queue_entries": [
+    {
+      "key": "BEND__CpG_methylation",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/BEND__CpG_methylation.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:48:16+08:00",
+      "finished_at": "2026-10-23T10:48:27+08:00"
+    },
+    {
+      "key": "Deep4mC_datasets__C.elegans_4mC",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/Deep4mC_datasets__C.elegans_4mC.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:48:27+08:00",
+      "finished_at": "2026-10-23T10:48:30+08:00"
+    },
+    {
+      "key": "Deep4mC_datasets__D.melanogaster_4mC",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/Deep4mC_datasets__D.melanogaster_4mC.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:48:30+08:00",
+      "finished_at": "2026-10-23T10:48:32+08:00"
+    },
+    {
+      "key": "Deep4mC_datasets__E.coli_4mC",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/Deep4mC_datasets__E.coli_4mC.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:48:32+08:00",
+      "finished_at": "2026-10-23T10:48:34+08:00"
+    },
+    {
+      "key": "GUE__EPI_GM12878",
+      "kind": "dataset",
+      "state": "mismatch",
+      "attempts": 1,
+      "problems": [
+        "train_rows=None",
+        "dev_rows=None",
+        "test_rows=None",
+        "unified_eval_n=None"
+      ],
+      "log_path": "logs/GUE__EPI_GM12878.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:48:34+08:00",
+      "finished_at": "2026-10-23T10:48:37+08:00"
+    },
+    {
+      "key": "GUE__emp_H3K14ac",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__emp_H3K14ac.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:48:37+08:00",
+      "finished_at": "2026-10-23T10:48:40+08:00"
+    },
+    {
+      "key": "GUE__emp_H3K36me3",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__emp_H3K36me3.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:48:40+08:00",
+      "finished_at": "2026-10-23T10:48:42+08:00"
+    },
+    {
+      "key": "GUE__emp_H3K4me1",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__emp_H3K4me1.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:48:42+08:00",
+      "finished_at": "2026-10-23T10:48:45+08:00"
+    },
+    {
+      "key": "GUE__emp_H3K79me3",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__emp_H3K79me3.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:48:45+08:00",
+      "finished_at": "2026-10-23T10:48:47+08:00"
+    },
+    {
+      "key": "GUE__emp_H3K9ac",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__emp_H3K9ac.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:48:47+08:00",
+      "finished_at": "2026-10-23T10:49:50+08:00"
+    },
+    {
+      "key": "GUE__emp_H4",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__emp_H4.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:49:50+08:00",
+      "finished_at": "2026-10-23T10:49:52+08:00"
+    },
+    {
+      "key": "GUE__emp_H4ac",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__emp_H4ac.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:49:52+08:00",
+      "finished_at": "2026-10-23T10:49:55+08:00"
+    },
+    {
+      "key": "GUE__fungi_species_20",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__fungi_species_20.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:49:55+08:00",
+      "finished_at": "2026-10-23T10:49:59+08:00"
+    },
+    {
+      "key": "GUE__human_tf_0",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__human_tf_0.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:49:59+08:00",
+      "finished_at": "2026-10-23T10:50:01+08:00"
+    },
+    {
+      "key": "GUE__mouse_1",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__mouse_1.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:50:01+08:00",
+      "finished_at": "2026-10-23T10:50:04+08:00"
+    },
+    {
+      "key": "GUE__mouse_4",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__mouse_4.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:50:04+08:00",
+      "finished_at": "2026-10-23T10:50:06+08:00"
+    },
+    {
+      "key": "GUE__prom_300_all",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__prom_300_all.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:50:06+08:00",
+      "finished_at": "2026-10-23T10:50:09+08:00"
+    },
+    {
+      "key": "GUE__prom_core_all",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__prom_core_all.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:50:09+08:00",
+      "finished_at": "2026-10-23T10:50:11+08:00"
+    },
+    {
+      "key": "GUE__virus_covid",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__virus_covid.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:50:11+08:00",
+      "finished_at": "2026-10-23T10:50:15+08:00"
+    },
+    {
+      "key": "GUE__virus_species_40",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/GUE__virus_species_40.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:50:15+08:00",
+      "finished_at": "2026-10-23T10:51:12+08:00"
+    },
+    {
+      "key": "NT_downstream_tasks__H3K27ac",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [
+        "landing_incomplete"
+      ],
+      "log_path": "logs/NT_downstream_tasks__H3K27ac.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:51:12+08:00",
+      "finished_at": "2026-10-23T10:52:15+08:00"
+    },
+    {
+      "key": "NT_downstream_tasks__H3K27me3",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [
+        "landing_incomplete"
+      ],
+      "log_path": "logs/NT_downstream_tasks__H3K27me3.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:15+08:00",
+      "finished_at": "2026-10-23T10:52:18+08:00"
+    },
+    {
+      "key": "NT_downstream_tasks__H3K4me2",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [
+        "landing_incomplete"
+      ],
+      "log_path": "logs/NT_downstream_tasks__H3K4me2.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:18+08:00",
+      "finished_at": "2026-10-23T10:52:20+08:00"
+    },
+    {
+      "key": "NT_downstream_tasks__H3K9me3",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [
+        "landing_incomplete"
+      ],
+      "log_path": "logs/NT_downstream_tasks__H3K9me3.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:20+08:00",
+      "finished_at": "2026-10-23T10:52:22+08:00"
+    },
+    {
+      "key": "NT_downstream_tasks__enhancers",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [
+        "landing_incomplete"
+      ],
+      "log_path": "logs/NT_downstream_tasks__enhancers.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:22+08:00",
+      "finished_at": "2026-10-23T10:52:24+08:00"
+    },
+    {
+      "key": "NT_downstream_tasks__splice_sites_acceptors",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [
+        "landing_incomplete"
+      ],
+      "log_path": "logs/NT_downstream_tasks__splice_sites_acceptors.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:24+08:00",
+      "finished_at": "2026-10-23T10:52:27+08:00"
+    },
+    {
+      "key": "NT_downstream_tasks__splice_sites_all",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [
+        "landing_incomplete"
+      ],
+      "log_path": "logs/NT_downstream_tasks__splice_sites_all.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:27+08:00",
+      "finished_at": "2026-10-23T10:52:29+08:00"
+    },
+    {
+      "key": "NT_downstream_tasks__splice_sites_donors",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [
+        "landing_incomplete"
+      ],
+      "log_path": "logs/NT_downstream_tasks__splice_sites_donors.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:29+08:00",
+      "finished_at": "2026-10-23T10:52:31+08:00"
+    },
+    {
+      "key": "PDLLMs_datasets__plant-multi-species-H3K27ac",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/PDLLMs_datasets__plant-multi-species-H3K27ac.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:31+08:00",
+      "finished_at": "2026-10-23T10:52:36+08:00"
+    },
+    {
+      "key": "PDLLMs_datasets__plant-multi-species-H3K27me3",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/PDLLMs_datasets__plant-multi-species-H3K27me3.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:36+08:00",
+      "finished_at": "2026-10-23T10:52:39+08:00"
+    },
+    {
+      "key": "PDLLMs_datasets__plant-multi-species-H3K4me3",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/PDLLMs_datasets__plant-multi-species-H3K4me3.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:39+08:00",
+      "finished_at": "2026-10-23T10:52:43+08:00"
+    },
+    {
+      "key": "PDLLMs_datasets__plant-multi-species-core-promoters",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/PDLLMs_datasets__plant-multi-species-core-promoters.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:43+08:00",
+      "finished_at": "2026-10-23T10:52:46+08:00"
+    },
+    {
+      "key": "PDLLMs_datasets__plant-multi-species-lncRNAs",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/PDLLMs_datasets__plant-multi-species-lncRNAs.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:46+08:00",
+      "finished_at": "2026-10-23T10:52:49+08:00"
+    },
+    {
+      "key": "PDLLMs_datasets__plant-multi-species-sequence-conservation",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/PDLLMs_datasets__plant-multi-species-sequence-conservation.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:49+08:00",
+      "finished_at": "2026-10-23T10:52:52+08:00"
+    },
+    {
+      "key": "PlantCAD2_fine_tuning_tasks__cross_species_leaf_absolute_translation",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/PlantCAD2_fine_tuning_tasks__cross_species_leaf_absolute_translation.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:52+08:00",
+      "finished_at": "2026-10-23T10:52:55+08:00"
+    },
+    {
+      "key": "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:55+08:00",
+      "finished_at": "2026-10-23T10:52:58+08:00"
+    },
+    {
+      "key": "iDNA_ABF_datasets__6mA",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/iDNA_ABF_datasets__6mA.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:52:58+08:00",
+      "finished_at": "2026-10-23T10:53:00+08:00"
+    },
+    {
+      "key": "iPro-WAEL_datasets__Promoter_R_capsulatus",
+      "kind": "dataset",
+      "state": "done",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/iPro-WAEL_datasets__Promoter_R_capsulatus.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:53:00+08:00",
+      "finished_at": "2026-10-23T10:53:03+08:00"
+    },
+    {
+      "key": "plant-genomic-benchmark__gene_exp.arabidopsis_thaliana",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [
+        "landing_incomplete"
+      ],
+      "log_path": "logs/plant-genomic-benchmark__gene_exp.arabidopsis_thaliana.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:53:03+08:00",
+      "finished_at": "2026-10-23T10:53:06+08:00"
+    },
+    {
+      "key": "plant-genomic-benchmark__gene_exp.oryza_sativa",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [
+        "landing_incomplete"
+      ],
+      "log_path": "logs/plant-genomic-benchmark__gene_exp.oryza_sativa.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:53:06+08:00",
+      "finished_at": "2026-10-23T10:53:08+08:00"
+    },
+    {
+      "key": "plant-genomic-benchmark__gene_exp.zea_mays",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [
+        "landing_incomplete"
+      ],
+      "log_path": "logs/plant-genomic-benchmark__gene_exp.zea_mays.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:53:08+08:00",
+      "finished_at": "2026-10-23T10:53:10+08:00"
+    },
+    {
+      "key": "plant-genomic-benchmark__poly_a.arabidopsis_thaliana",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [
+        "landing_incomplete"
+      ],
+      "log_path": "logs/plant-genomic-benchmark__poly_a.arabidopsis_thaliana.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:53:10+08:00",
+      "finished_at": "2026-10-23T10:55:14+08:00"
+    },
+    {
+      "key": "plant-genomic-benchmark__promoter_strength.leaf",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [
+        "landing_incomplete"
+      ],
+      "log_path": "logs/plant-genomic-benchmark__promoter_strength.leaf.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:55:14+08:00",
+      "finished_at": "2026-10-23T10:55:16+08:00"
+    },
+    {
+      "key": "plant-genomic-benchmark__terminator_strength.leaf",
+      "kind": "dataset",
+      "state": "failed",
+      "attempts": 1,
+      "problems": [],
+      "log_path": "logs/plant-genomic-benchmark__terminator_strength.leaf.log",
+      "enqueued_at": "2026-10-23T10:48:16+08:00",
+      "started_at": "2026-10-23T10:55:16+08:00",
+      "finished_at": "2026-10-23T10:55:18+08:00"
+    }
+  ],
+  "not_enqueued": [
+    {
+      "key": "Genomic_Benchmarks__coding",
+      "channel": "disabled",
+      "reason": "shape_d_layout",
+      "source_url": "https://www.modelscope.cn/datasets/lgq12697/Genomic_Benchmarks"
+    },
+    {
+      "key": "Genomic_Benchmarks__human_vs_worm",
+      "channel": "disabled",
+      "reason": "shape_d_layout",
+      "source_url": "https://www.modelscope.cn/datasets/lgq12697/Genomic_Benchmarks"
+    },
+    {
+      "key": "Genomic_Benchmarks__regulatory_region_type",
+      "channel": "disabled",
+      "reason": "shape_d_layout",
+      "source_url": "https://www.modelscope.cn/datasets/lgq12697/Genomic_Benchmarks"
+    },
+    {
+      "key": "PDLLMs_datasets__plant-multi-species-open-chromatin",
+      "channel": "disabled",
+      "reason": "shape_d_layout",
+      "source_url": "https://modelscope.cn/datasets/zhangtaolab/plant-multi-species-open-chromatin"
+    }
+  ],
+  "present_before_download": [
+    "GUE__emp_H3",
+    "iDNA_ABF_datasets__5mC"
+  ],
+  "present_set": [
+    "BEND__CpG_methylation",
+    "Deep4mC_datasets__C.elegans_4mC",
+    "Deep4mC_datasets__D.melanogaster_4mC",
+    "Deep4mC_datasets__E.coli_4mC",
+    "GUE__emp_H3",
+    "GUE__emp_H3K14ac",
+    "GUE__emp_H3K36me3",
+    "GUE__emp_H3K4me1",
+    "GUE__emp_H3K79me3",
+    "GUE__emp_H3K9ac",
+    "GUE__emp_H4",
+    "GUE__emp_H4ac",
+    "GUE__fungi_species_20",
+    "GUE__human_tf_0",
+    "GUE__mouse_1",
+    "GUE__mouse_4",
+    "GUE__prom_300_all",
+    "GUE__prom_core_all",
+    "GUE__virus_covid",
+    "GUE__virus_species_40",
+    "PDLLMs_datasets__plant-multi-species-H3K27ac",
+    "PDLLMs_datasets__plant-multi-species-H3K27me3",
+    "PDLLMs_datasets__plant-multi-species-H3K4me3",
+    "PDLLMs_datasets__plant-multi-species-core-promoters",
+    "PDLLMs_datasets__plant-multi-species-lncRNAs",
+    "PDLLMs_datasets__plant-multi-species-sequence-conservation",
+    "PlantCAD2_fine_tuning_tasks__cross_species_leaf_absolute_translation",
+    "PlantCAD2_fine_tuning_tasks__cross_species_leaf_on_off_translation",
+    "iDNA_ABF_datasets__5mC",
+    "iDNA_ABF_datasets__6mA",
+    "iPro-WAEL_datasets__Promoter_R_capsulatus"
+  ],
+  "expected_cells": 93
+}
