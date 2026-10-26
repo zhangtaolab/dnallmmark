@@ -125,6 +125,21 @@ per-cell wall time).
   the same evidence.json; if the orchestrator already finished, read
   `dispatch_state.json` + the ledger directly).
 
+## Ops 2026-10-26 — main pass DONE 86/93; rerun-failed lane LIVE
+
+Main pass finished (dispatch done, 86/93): 7 failures = the 6 ten-kiloton-token
+cells (fungi/virus species, OOM at batch 1 pre-GC) + PDLLMs__plant-multi-species
+seed 42 `child exited -11` (native SIGSEGV; siblings completed — transient class).
+The watcher fail-exited honestly (<93) and REPORT.md carries the failure-path
+draft. RERUN LANE LAUNCHED 2026-10-26 22:41 +08 (minimal argv — D14-05/D14-06:
+no --models/--tasks/--seeds/lane tokens; scope = the ledger's 7 failed claims
+replayed verbatim): both workers claimed fungi_species_20 seeds 42/43,
+`[Info] Auto gradient checkpointing enabled (max_length 10002 > 2560 ...)` in
+the worker log, 15.8 GB/GPU @ 87-93% util (vs 33+ GB demand pre-GC). One
+calibration-forward OOM was caught and recovered on the first attempt.
+ETA: 10k-token cells at batch 1 with GC recomputation — hours each; watch
+`pipeline/finetuned-fhs-full/dispatch_state.json` (rerun status=running 0/7).
+
 ## Ops follow-up 2026-10-25 — 6 failed cells (10k-token datasets) + the auto-GC fix + rerun plan
 
 GUE__fungi_species_20 and GUE__virus_species_40 (3 seeds each) failed with CUDA-OOM
