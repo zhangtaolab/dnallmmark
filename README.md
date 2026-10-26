@@ -1,3 +1,4 @@
+<!-- generated-by: gsd-doc-writer -->
 # DNALLM-Mark
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -7,6 +8,18 @@
 DNALLM-Mark is a comprehensive benchmark platform for evaluating DNA Large Language Models (LLMs) across various genomic prediction tasks. It provides standardized evaluation metrics, interactive leaderboards, and reproducible benchmarks to advance DNA language model research.
 
 ![DNALLM-Mark Leaderboard](benchmark/demo.png)
+
+## 🖼️ 功能总览 (Console Feature Tour)
+
+The operator console (`make tui`) drives the whole benchmark journey — the captures below are committed SVG exports of the real console, from the launch gate to a finished dual-GPU run:
+
+| | |
+|---|---|
+| ![TUI 启动确认 — the dual-GPU launch gate: counts formula 2 模型 × 2 任务 × 3 种子 = 12 训练项, dispatch plan 2 workers × GPUs 0,1, planned model × dataset pairs, Y 启动 / N 取消](docs/report-assets/run_config_confirm.svg) | **启动确认 (launch gate)** — slot 4 运行配置: the confirm modal recomputes the counts formula, the dispatch plan (`调度计划: 2 workers × GPUs 0,1 · 排队 12`), and the planned 模型 × 数据集 pairs fresh; only `y` launches. |
+| ![TUI 任务监控 mid-run — attached sweep at 6/12 cells, dispatch line 调度 running · 完成 6/12 · 队列 4, per-worker GPU rows both in-flight](docs/report-assets/monitor_running.svg) | **任务监控 (monitor, mid-run)** — slot 5: the attached sweep's progress tally (✓6 ⏵2 ◌4 · 6/12), the live dispatch line, and one row per worker naming its GPU and in-flight cell. |
+| ![TUI monitor at the tail of the real recorded dual-GPU run — finetuned-tui-pa6 at 3/4 done, queue 0, worker 0 · GPU 0 idle, worker 1 · GPU 1 running the last cell](docs/live/svg/99_monitor_done.svg) | **A real run's tail** — the recorded 2 models × 2 tasks × seed-42 dual-GPU run (4/4 cells, ~56 min end to end; full evidence trail in [docs/live/RECORD.md](docs/live/RECORD.md)): worker 1 finishes the long last cell while worker 0 idles. |
+
+Every screen, key, modal, and gate of the console is documented key-by-key in [docs/TUI-GUIDE.md](docs/TUI-GUIDE.md); the recorded full-feature walkthrough (real downloads, a real gated launch, monitoring, kill, and from-failures re-run) is [docs/TUI-DEMO.md](docs/TUI-DEMO.md).
 
 ## 🧬 Overview
 
@@ -82,6 +95,12 @@ DNALLM-Mark is a centralized evaluation system designed to assess and compare th
 - **Rank Score**: Combined ranking across all tasks (higher = better)
 - **Sum MinMax**: Normalized performance score
 
+### ⚙️ Multi-GPU Dispatch & Run Orchestration (v1.3)
+
+- **Dispatch-mode sweeps** (`run_sweep_shard.py --mode dispatch`, the primary mode): ONE dispatcher feeds idle per-GPU workers from a deterministic (model × task × seed) cell queue under ONE shared output root — the shared root is consumed directly, so there is no merge step; `--rerun-failed` re-runs the union of failed cells across all prior runs on the root. The legacy static-shard mode (`--mode static`, LPT-sharded per-worker roots with `--merge`/`--cleanup`) coexists by design — runbook: [docs/multi-gpu.md](docs/multi-gpu.md)
+- **18-parameter advanced run-config** (console slot 4, Phase 19): a collapsed 高级参数 block exposes 18 training flags — optimizer betas/epsilon, `bf16`, eval/logging/save strategy and steps, `gradient_accumulation_steps`, learning rate + scheduler type/kwargs, `max_grad_norm`, `save_total_limit`, `warmup_ratio`, `weight_decay`. An empty input threads nothing (the loaded YAML governs); a set value threads verbatim into the composed sweep argv and rides one nested `advanced` key in the manifest. Full table and bounds: [docs/TUI-GUIDE.md](docs/TUI-GUIDE.md#高级参数phase-19)
+- **Dual-GPU evidence recording**: console claims are backed by committed captures of real runs — the recorded 2 models × 2 tasks × seed-42 dispatch run (4/4 cells, driver exit 0, ~56 min end to end; evidence trail in [docs/live/RECORD.md](docs/live/RECORD.md)) and the per-asset provenance ledger in [docs/report-assets/README.md](docs/report-assets/README.md). Launches are gated (env preflight + Y/N confirm; full-registry ≥3-seed re-runs escalate to a typed-phrase boundary)
+
 ## 📦 Installation
 
 ### Prerequisites
@@ -110,6 +129,42 @@ python3 -m http.server 8080
 # Open in browser
 open http://localhost:8080
 ```
+
+### 三步上手指引 (3-Step Quickstart)
+
+From a fresh clone to benchmark results on the leaderboard — full prerequisites and the verified first-run chain are [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md):
+
+**① 安装 — install the toolchain**
+
+```bash
+git clone https://github.com/zhangtaolab/dnallmmark.git
+cd dnallmmark
+uv sync        # data toolchain from the committed uv.lock (Python 3.13)
+```
+
+**② 跑基准 — launch a sweep, console or CLI**
+
+```bash
+make tui       # operator console (GPU workstation): env check → model/dataset
+               # download → compose matrix → gated launch → live monitor
+```
+
+or drive the sweep directly (single GPU; add `--mode dispatch --workers 2 --gpus 0,1` via `pipeline/run_sweep_shard.py` for multi-GPU — see [docs/multi-gpu.md](docs/multi-gpu.md)):
+
+```bash
+python pipeline/run_sweep.py --models plant-dnabert-6mer --tasks GUE__emp_H3 \
+    --seeds 42 --num_train_epochs 1 --output-root ./finetuned
+```
+
+**③ 出结果 — export and serve the leaderboard**
+
+```bash
+uv run --group data python script/export_runs.py --input-root ./finetuned   # runs → task_performance
+make data                                                                   # regenerate aggregates
+bash start-server.sh                                                        # → http://localhost:8080
+```
+
+The console's every key and gate: [docs/TUI-GUIDE.md](docs/TUI-GUIDE.md).
 
 ## 🔁 Reproducing the Leaderboard
 
