@@ -10,8 +10,10 @@ DNALLM-Mark is a DNA language-model benchmark platform built as four loosely cou
 ```mermaid
 graph TD
     subgraph pipeline["pipeline/ — fine-tuning pipeline (GPU)"]
-        A["run_sweep_shard.py — multi-GPU LPT sharding + merge"] --> B["run_sweep.py — model × task × seed matrix driver"]
-        B --> C["run_finetune.py — trains one cell<br/>(+ flops_counter.py forward-hook FLOPs)"]
+        S["run_sweep_shard.py — multi-GPU CLI entry<br/>(--mode dispatch primary · static legacy)"] -->|dispatch| DC["dispatch_core.py — ONE dispatcher,<br/>per-GPU worker loops, claim ledger"]
+        S -->|static| B["run_sweep.py — model × task × seed matrix driver<br/>(ADVANCED_TRAIN_FLAGS owner)"]
+        DC -->|"one run_finetune.py child per claimed cell"| C["run_finetune.py — trains one cell<br/>(+ flops_counter.py forward-hook FLOPs)"]
+        B --> C
     end
 
     C --> D[("Sweep output root<br/>finetuned/{model}/{task}/seed_{seed}/<br/>final_metrics.json · flops_report.json · run_record.json")]
@@ -23,20 +25,122 @@ graph TD
     F --> I
 
     subgraph tui["tui/ — operator console (Textual)"]
-        J["tui/screens/ — six presentation screens"] --> K["tui/services/ — textual-free service layer"]
+        J["tui/screens/ — eight screen modules over six nav slots"] --> K["tui/services/ — textual-free service layer"]
     end
-    K --> B
+    K -->|"every slot-4 launch composes --mode dispatch"| S
 ```
+
+## Four-layer overview (SVG)
+
+The same system as one operator-facing flow — console to dispatcher to artifacts to evidence and the public leaderboard. The dispatch shape is `run_sweep_shard.py --mode dispatch` / `pipeline/dispatch_core.py` as built: one dispatcher owns the deterministic cell queue and the claim ledger, one worker loop per GPU claims cells and spawns one `run_finetune.py` child each, and every cell lands under the ONE shared output root (no merge step). Static mode (the legacy lane) keeps per-worker roots plus `--merge`/`--cleanup`; the multi-GPU runbook is [docs/multi-gpu.md](multi-gpu.md).
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 300" width="980" height="300" role="img" aria-labelledby="arch-title">
+  <title id="arch-title">DNALLM-Mark 四层架构：操作台 TUI → 调度 dispatch → 产物 → 证据/报告 + web 榜单</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#265354"/>
+    </marker>
+    <marker id="arrow-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#595F6E"/>
+    </marker>
+  </defs>
+
+  <!-- Layer 1: TUI -->
+  <rect x="8" y="8" width="206" height="264" rx="8" fill="#F9FAFB" stroke="#D9D9D9"/>
+  <text x="111" y="27" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="13" font-weight="700" fill="#265354">① 操作台 TUI</text>
+  <rect x="17" y="40" width="188" height="46" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="111" y="58" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">环境检查 · 模型/数据集下载</text>
+  <text x="111" y="74" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">slot 1–3 · 三 lane 下载队列</text>
+  <rect x="17" y="94" width="188" height="46" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="111" y="112" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">运行配置（slot 4）</text>
+  <text x="111" y="128" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">基础参数＋高级参数 18 项</text>
+  <rect x="17" y="148" width="188" height="46" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="111" y="166" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">启动门</text>
+  <text x="111" y="182" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">Y/N 确认 · E2&#8242; 短语 · 容量门</text>
+  <rect x="17" y="202" width="188" height="46" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="111" y="220" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">监控（slot 5）</text>
+  <text x="111" y="236" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">Running/History · GPU 泳道</text>
+  <text x="111" y="264" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">tui/services/ — textual-free 服务层</text>
+
+  <!-- Layer 2: dispatch -->
+  <rect x="254" y="8" width="246" height="264" rx="8" fill="#F9FAFB" stroke="#D9D9D9"/>
+  <text x="377" y="27" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="13" font-weight="700" fill="#265354">② 调度 dispatch</text>
+  <rect x="263" y="40" width="228" height="46" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="377" y="58" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">dispatcher（单进程）</text>
+  <text x="377" y="74" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">确定性 cell 队列 · dispatcher.lock</text>
+  <rect x="263" y="94" width="228" height="36" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="377" y="110" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">认领账本 dispatch_ledger/</text>
+  <text x="377" y="124" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">claim-before-spawn · --rerun-failed</text>
+  <rect x="263" y="138" width="110" height="46" rx="5" fill="#DDEFEF" stroke="#3B7475"/>
+  <text x="318" y="156" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">worker 0</text>
+  <text x="318" y="172" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">绑定 GPU 0</text>
+  <rect x="381" y="138" width="110" height="46" rx="5" fill="#DDEFEF" stroke="#3B7475"/>
+  <text x="436" y="156" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">worker 1</text>
+  <text x="436" y="172" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">绑定 GPU 1</text>
+  <rect x="263" y="192" width="228" height="28" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="377" y="210" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#292C33">每格一个 run_finetune.py 子进程</text>
+  <text x="377" y="238" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9" fill="#595F6E">--mode static（legacy）：LPT 分片</text>
+  <text x="377" y="252" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9" fill="#595F6E">各自根 → --merge / --cleanup</text>
+
+  <!-- Layer 3: artifacts -->
+  <rect x="540" y="8" width="194" height="264" rx="8" fill="#F9FAFB" stroke="#D9D9D9"/>
+  <text x="637" y="27" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="13" font-weight="700" fill="#265354">③ 产物 · 同一共享根</text>
+  <text x="637" y="44" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="8.5" fill="#595F6E">{root}/{model}/{task}/seed_{seed}/</text>
+  <rect x="550" y="54" width="174" height="32" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="637" y="74" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#292C33">final_metrics.json</text>
+  <rect x="550" y="94" width="174" height="32" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="637" y="114" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#292C33">flops_report.json</text>
+  <rect x="550" y="134" width="174" height="32" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="637" y="154" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#292C33">run_record.json</text>
+  <rect x="550" y="174" width="174" height="32" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="637" y="194" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#292C33">trainer_state.json</text>
+  <text x="637" y="228" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">trainer_state = 续跑标记</text>
+  <text x="637" y="244" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">dispatch 全部写同一根</text>
+  <text x="637" y="260" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">（静态模式才需要 --merge）</text>
+
+  <!-- Layer 4: evidence + web -->
+  <rect x="774" y="8" width="198" height="264" rx="8" fill="#F9FAFB" stroke="#D9D9D9"/>
+  <text x="873" y="27" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="13" font-weight="700" fill="#265354">④ 证据 / 报告 ＋ web 榜单</text>
+  <rect x="783" y="40" width="180" height="100" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="873" y="58" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">docs/live/ 真实证据</text>
+  <text x="873" y="74" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">SVG 逐帧截图（120×40）</text>
+  <text x="873" y="88" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">RECORD.md · evidence.json</text>
+  <text x="873" y="102" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">REPORT.md · download_ledger</text>
+  <text x="873" y="124" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">record_tui_live_svg.py</text>
+  <text x="873" y="136" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">（pa6 / full / attach）</text>
+  <rect x="783" y="152" width="180" height="110" rx="5" fill="#FFFFFF" stroke="#D9D9D9"/>
+  <text x="873" y="170" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="11" fill="#292C33">dnallm-mark/ 静态榜单</text>
+  <text x="873" y="186" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">export_runs.py → 双视图</text>
+  <text x="873" y="200" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">summarize → comparison*.json</text>
+  <text x="873" y="214" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">data/ JSON（committed）</text>
+  <text x="873" y="228" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">ES-module 页面 · Chart.js CDN</text>
+  <text x="873" y="248" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">无后端 · 无构建</text>
+
+  <!-- Flow arrows -->
+  <line x1="214" y1="150" x2="250" y2="150" stroke="#265354" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="232" y="141" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">启动</text>
+  <line x1="500" y1="150" x2="536" y2="150" stroke="#265354" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="518" y="141" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">逐格</text>
+  <line x1="734" y1="90" x2="770" y2="90" stroke="#265354" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="752" y="81" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">证据</text>
+  <line x1="734" y1="207" x2="770" y2="207" stroke="#265354" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="752" y="198" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#265354">聚合</text>
+
+  <!-- Monitor feedback loop -->
+  <line x1="730" y1="286" x2="226" y2="286" stroke="#595F6E" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow-muted)"/>
+  <text x="478" y="280" text-anchor="middle" font-family="system-ui, 'Noto Sans SC', sans-serif" font-size="9.5" fill="#595F6E">slot 5 监控轮询产物树（2 s / 60 s）</text>
+</svg>
 
 ## Layering
 
 ### 1. Fine-tuning pipeline (`pipeline/`, GPU-only)
 
-Three levels of process composition, each layer spawning the next as a subprocess:
+Three levels of process composition, each layer spawning the next as a subprocess (in dispatch mode `run_sweep.py` is imported as a library by the engine rather than spawned):
 
-- **`pipeline/run_finetune.py`** — the leaf. Trains exactly one model on one task under one seed per invocation, delegating the training loop to the external [`dnallm`](https://github.com/zhangtaolab/DNALLM) package (`DNADataset`, `load_config`, `load_model_and_tokenizer`, `DNATrainer`). Before training it runs one no-grad calibration forward to measure per-layer FLOPs; after training it writes the per-cell artifacts `final_metrics.json`, `flops_report.json`, and the `trainer_state.json` resume marker (an existing marker makes the cell skippable). Model-quirk registries (safetensors, fp32-only, custom heads for `special_models`, etc.) are plain lists inside the `__main__` block. It also pre-scans `argv` to set `HF_HOME` before `huggingface_hub` imports.
-- **`pipeline/run_sweep.py`** — the matrix driver. Enumerates the full model × task × seed matrix from the unified JSON registries (`models_info.json` keys × `datasets_info.json` entries with truthy `Train`) and launches one `run_finetune.py` subprocess per cell, with the child's cwd pinned to `pipeline/` and an absolute `--output_dir`. Per cell it writes `run_record.json` (status, verbatim suite-native metrics, git commit, timestamps); per sweep it writes `sweep_manifest.json` and `sweep_failures.json`. `--dry-run` plans without launching; `--priority-file` (`pipeline/sweep_priorities.json`) reorders tiers.
-- **`pipeline/run_sweep_shard.py`** — the multi-GPU orchestrator. Launch mode partitions the requested models into N disjoint shards by **LPT** (longest-processing-time-first, weighted by registry `Model_size` — `lpt_shard()`), spawning one `run_sweep.py` per shard with `CUDA_VISIBLE_DEVICES` pinned and each writing to its own frozen sibling root `{output-root}-mgpu-w{i}`. Merge mode (`--merge`) unions worker roots into one verified consumer root: per-file copy + SHA256 re-hash verification over a data-artifact allowlist (`MERGE_ALLOWLIST`: run_record, final_metrics, trainer_state, seed_result, flops_report), manifest union with output paths rewritten, and lane-flag equality checks across workers. It composes by importing `run_sweep` as a sibling module — it never re-implements enumeration or argv building.
+- **`pipeline/run_finetune.py`** — the leaf. Trains exactly one model on one task under one seed per invocation, delegating the training loop to the external [`dnallm`](https://github.com/zhangtaolab/DNALLM) package (`DNADataset`, `load_config`, `load_model_and_tokenizer`, `DNATrainer`). Before training it runs one no-grad calibration forward to measure per-layer FLOPs; after training it writes the per-cell artifacts `final_metrics.json`, `flops_report.json`, and the `trainer_state.json` resume marker (an existing marker makes the cell skippable). Model-quirk registries (safetensors, fp32-only, custom heads for `special_models`, etc.) are plain lists inside the `__main__` block. It also pre-scans `argv` to set `HF_HOME`/`MS_CACHE_HOME` before `huggingface_hub` imports (precedence: `--cache_dir` flag > `directories.json` key > existing env > default `../../cache`). Three v1.3/Phase-19 behaviors live here: the **advanced train-flag family** — 18 optimizer/scheduler/logging flags registered table-driven over a local `ADVANCED_TRAIN_FLAGS` tuple (standalone by design, pinned against the sweep's frozen table by a contracts parity test), collected into one nested `advanced` dict in the manifest only when non-empty; the **memory-calibrated batch cap ladder** — `determine_batch_size()` caps the per-device starting micro-batch by sequence-length tier (≤128→32 · ≤256→16 · ≤640→8 · ≤1280→4 · ≤2560→2 · >2560→1, via `max(1, min(base, cap))`; the VRAM estimators may reduce further, never raise past the cap); and **auto gradient checkpointing** — when `max_length > 2560` the ladder has bottomed at batch 1, so gradient checkpointing (`use_reentrant=False`) is enabled automatically, a numerically equivalent memory relief for long-sequence cells.
+- **`pipeline/run_sweep.py`** — the matrix driver. Enumerates the full model × task × seed matrix from the unified JSON registries (`models_info.json` keys × `datasets_info.json` entries with truthy `Train`) and launches one `run_finetune.py` subprocess per cell, with the child's cwd pinned to `pipeline/` and an absolute `--output_dir`. Per cell it writes `run_record.json` (status, verbatim suite-native metrics, git commit, timestamps); per sweep it writes `sweep_manifest.json` and `sweep_failures.json`. `--dry-run` plans without launching; `--priority-file` (`pipeline/sweep_priorities.json`) reorders tiers. `ADVANCED_TRAIN_FLAGS` is the **frozen advanced-param vocabulary** — one table of (flag, kind, bounds/choices, base-YAML default) rows consumed by this driver's argparse family, the dispatch orchestrator's mirrors, and the TUI slot-4 service alike.
+- **`pipeline/run_sweep_shard.py`** — the multi-GPU CLI entry with two first-class modes. **`--mode dispatch` (primary)** routes to `dispatch_core.py` (below). **`--mode static` (legacy)** partitions the requested models into N disjoint shards by **LPT** (longest-processing-time-first, weighted by registry `Model_size` — `lpt_shard()`), spawning one `run_sweep.py` per shard with `CUDA_VISIBLE_DEVICES` pinned and each writing to its own frozen sibling root `{output-root}-mgpu-w{i}`. Merge mode (`--merge`) unions worker roots into one verified consumer root: per-file copy + SHA256 re-hash verification over a data-artifact allowlist (`MERGE_ALLOWLIST`: run_record, final_metrics, trainer_state, seed_result, flops_report), manifest union with output paths rewritten, and lane-flag equality checks across workers. Cleanup mode (`--cleanup`) removes the worker roots behind an exact typed phrase after verifying the merged root two ways (an `export_runs.py --dry-run` subprocess leg plus manifest-vs-tree cell-set equality). It composes by importing `run_sweep` as a sibling module — it never re-implements enumeration or argv building.
+- **`pipeline/dispatch_core.py`** — the dynamic dispatch engine behind `--mode dispatch`. ONE dispatcher process owns a deterministic in-memory (model × task × seed[, fraction]) cell queue; one thin worker loop per `--workers` entry — permanently bound to one `--gpus` token — claims the next cell, spawns ONE `run_finetune.py` child for it, waits, records, and claims the next. Every cell lands at the ordinary `run_sweep.cell_dir_for` path under the ONE shared root: no sibling roots, no merge step. The crash-safety protocol is strict order: VALIDATE+ENUMERATE (the sweep-flag remainder re-parses through `run_sweep.parse_args` itself; a zero-cell enumeration refuses by name) → LOCK (singleton `dispatcher.lock` per root, `O_CREAT|O_EXCL`) → MODE EVIDENCE (`dispatch_state.json`, frozen schema v2 with `queue_depth`, one `workers[]` row per worker, and the failures view — rendered as a plain-line terminal table at every state write) → SKIP FILTER (a cell is skipped iff its `trainer_state.json` marker exists OR its ledger claim says `completed`; stale claims from a dead run are requeued — no leases, no timeouts) → CLAIM BEFORE SPAWN (the per-cell claim file is created `O_CREAT|O_EXCL` under `dispatch_ledger/` before the child exists) → FINALIZE AFTER ARTIFACT CHECK (exit 0 alone is not completion — the child's blind-except isolation can swallow training failures — a cell completes only with exit 0 AND `final_metrics.json` present). `--rerun-failed` re-runs the union of failed cells recorded in the ledger across all prior runs on the root, replaying each claim's lane flags verbatim; original failed claims are archived append-only under `dispatch_ledger/archive/`. Like the shard entry, it composes by importing `run_sweep` — enumeration, priority order, argv building, and cell layout are never re-implemented.
 
 Supporting CPU-importable seams (importable without torch or dnallm installed):
 
@@ -44,6 +148,7 @@ Supporting CPU-importable seams (importable without torch or dnallm installed):
 - **`pipeline/registry_loader.py`** — the single official + custom registry overlay seam (custom files live under the user's XDG config dir, collisions fail fast, byte-identical to the official view when no overlay exists).
 - **`pipeline/artifact_loader.py`** — tolerant JSON artifact reads returning a `None` sentinel on any parse-level failure.
 - **`pipeline/env_smoke.py`** — structured `PASS:`/`FAIL:` environment kernels (torch/transformers pin checks, CUDA availability, dataset presence) behind the E2' launch confirmation.
+- **`pipeline/directories_config.py`** — the ONE shared startup config for run-artifact directories: a user-owned `directories.json` under the XDG config root carrying up to five keys (`model_root` / `dataset_root` / `output_root` / `log_dir` / `cache_dir`) with the precedence explicit CLI flag > file key > built-in default, byte-identical resolution when the file is absent. Consumed by both `run_finetune.py` and `run_sweep.py` (bare invocations no longer re-type storage flags); written by the slot-4 dirs save action.
 - **`pipeline/dnallm_compat.json`** — the committed dnallm adaptation verdict map (59 model keys, 36 with `dnllm_adapted` true, stamped with the audited `dnallm_commit`; regenerated offline by `script/audit_dnallm_compat.py`). Read only through `tui/services/registries.py::load_dnallm_compat()` — the one tolerant loader, consumed by both the slot-2 model pool filter and the download queue's model channel resolution.
 
 ### 2. Offline data chain (`script/` + `scripts/`, CPU-only)
@@ -79,8 +184,8 @@ Shared leaves: `js/config.js` (app constants, arena list, view/sort options), `j
 
 A strict two-tier split, enforced by an import-lock test (`tests/tui/test_import_lock.py`):
 
-- **`tui/screens/` — presentation only.** Six top-bar navigation slots (defined in `tui/screens/nav.py::NAV_SLOTS`, Chinese resource-noun labels in `tui/strings.py`): 1 env check, 2 models, 3 datasets, 4 run config, 5 monitor, 6 about. Since the 2026-10-14 slot split, slot 2 (`selection.py`) is the **models-only** screen — the model table with the mark column, the compat column (dnllm-adapted officials by default, unadapted honestly revealed under the `t` ALL pool, customs always visible), the download column (a four-state vocabulary over live per-model disk presence), and `d` model download through the queue's model lane; dataset marks remain settable through presets and still display in the matrix. Slot 3 (`data_manager.py`) is the **datasets-primary** screen — the full official dataset list as the primary pane (missing-only view demoted to a `v` toggle), the persistent download queue rows with reconcile columns, and the Zenodo whole-package alternate riding the queue title row. Screens import textual freely, render state held by services, post user intent back, and run GPU/IO work in `@work(thread=True)` workers. Auxiliary surfaces: the custom-entry wizard modal family (`wizard.py`), the read-only matrix overview (`matrix.py`), and app-level help/min-size/exit modals in `app.py`. All operator copy comes from `tui/strings.py` constants.
-- **`tui/services/` — textual-free orchestration.** Zero textual imports (directly or transitively), so every CPU lane can import it headless. Notable modules: `sweep_launcher.py` (the only execution tier — every launch is a `run_sweep.py` subprocess with the E2' typed-phrase gate, a detached tee log, and a live-sweep registry with kill/detach semantics), `sweep_monitor.py` (the pure artifact-tree scanner behind slot-5 monitoring and `script/gen_progress.py`), `download_queue.py` + `zenodo_bundle.py` (data acquisition — see below), `selection.py` / `run_config.py` / `templates.py` (run composition over `pipeline/sweep_priorities.json`), `env_check.py` / `env_gate.py` / `quick_check.py` (environment gating over `pipeline/env_smoke.py`), `custom_entries.py` / `custom_validation.py` / `gauntlet.py` (user-owned custom registry onboarding), `settings.py` (XDG state/config roots with atomic writes), `registries.py` (including `load_dnallm_compat()` — the one loader over `pipeline/dnallm_compat.json`), `about.py`.
+- **`tui/screens/` — presentation only.** Six top-bar navigation slots (defined in `tui/screens/nav.py::NAV_SLOTS`, Chinese resource-noun labels in `tui/strings.py`): 1 env check, 2 models, 3 datasets, 4 run config, 5 monitor, 6 about. Since the 2026-10-14 slot split, slot 2 (`selection.py`) is the **models-only** screen — the model table with the mark column, the compat column (dnllm-adapted officials by default, unadapted honestly revealed under the `t` ALL pool, customs always visible), the download column (a four-state vocabulary over live per-model disk presence), and `d` model download through the queue's model lane; dataset marks remain settable through presets and still display in the matrix. Slot 3 (`data_manager.py`) is the **datasets-primary** screen — the full official dataset list as the primary pane (missing-only view demoted to a `v` toggle), the persistent download queue rows with reconcile columns, and the Zenodo whole-package alternate riding the queue title row. Screens import textual freely, render state held by services, post user intent back, and run GPU/IO work in `@work(thread=True)` workers. Auxiliary surfaces: the custom-entry wizard modal family (`wizard.py`), the read-only matrix overview (`matrix.py`), and app-level help/min-size/exit modals in `app.py`. All operator copy comes from `tui/strings.py` constants. Eight screen modules in total — the six slot screens (`env_check.py`, `selection.py`, `data_manager.py`, `run_config.py`, `monitor.py`, `about.py`) plus the auxiliary `matrix.py` and `wizard.py`, with `nav.py` rendering the shell chrome. The Phase 16/19 surfaces: slot 4's params pane is **two-tier** — the base fields (seeds, PEFT, variant, curve, fairness subset, epochs/EBS, dirs) plus the 高级参数 block, 18 rows rendered in `ADVANCED_TRAIN_FLAGS` order and collapsed by default (`[a]` 展开高级, `[r]` 恢复高级默认; an empty input or the 默认 pseudo-option means the flag is **absent** — zero argv elements — and the loaded YAML governs), and the 多 GPU 调度 `workers`/`GPUs` pair through which every slot-4 launch composes `run_sweep_shard.py --mode dispatch`; slot 5 is the two-tab (Running / History) redesign carrying the dispatch rows (status · done/total · queue depth, one row per worker, read from `dispatch_state.json` on the 2 s cadence and stale-marked past the 3600 s cell-scale grace) plus the standing G GPU-lanes panel (one lane per GPU: utilization, memory, temperature). Per-module inventory: [docs/TUI-GUIDE.md · 组件说明](TUI-GUIDE.md#组件说明).
+- **`tui/services/` — textual-free orchestration.** Zero textual imports (directly or transitively), so every CPU lane can import it headless. Notable modules: `sweep_launcher.py` (the only execution tier — every launch is a subprocess through its injectable Popen seam: slot-4 launches compose the frozen dispatch argv `run_sweep_shard.py --mode dispatch --workers N`, behind the E2' typed-phrase gate, a detached tee log, and a live-sweep registry with kill/detach semantics), `sweep_monitor.py` (the pure artifact-tree scanner behind slot-5 monitoring and `script/gen_progress.py`), `dispatch_state.py` (the tolerant frozen-v2 `dispatch_state.json` reader — the dispatch half of the slot-5 scanner's data sources), `gpu_probe.py` (the read-only nvidia-smi CSV probe behind the monitor's G GPU-lanes panel — a pure callable, the screen owns cadence), `download_queue.py` + `zenodo_bundle.py` (data acquisition — see below), `selection.py` / `run_config.py` / `templates.py` (run composition over `pipeline/sweep_priorities.json`), `env_check.py` / `env_gate.py` / `quick_check.py` (environment gating over `pipeline/env_smoke.py`), `custom_entries.py` / `custom_validation.py` / `gauntlet.py` (user-owned custom registry onboarding), `settings.py` (XDG state/config roots with atomic writes), `registries.py` (including `load_dnallm_compat()` — the one loader over `pipeline/dnallm_compat.json`), `about.py`.
 
 **The download queue's three lanes.** `download_queue.py` runs one persistent five-state queue (pending / downloading / done / failed / mismatch) whose entries dispatch by `kind`:
 
@@ -94,14 +199,16 @@ Landing-site agreement is structural: both storage bases resolve through the sam
 
 `tui/app.py` (`DnallmMarkTui`) is the composition root only: screen registry, app-level bindings, the shared download-queue driver worker, and a **Protocol-injection seam** — every service is constructor-injectable so tier-2 Textual Pilot tests run screens against deterministic fakes with no GPU, display, or artifact tree. The dependency direction is one-way, `tui → pipeline`: `tui/__main__.py` bootstraps `sys.path` with the repo root and `pipeline/` (a sys.path root, not a package) before importing `tui.app`, letting services import `env_smoke` / `registry_loader` / `artifact_loader` as top-level modules. Launch: `make tui` (`uv run --group tui --group gpu python -m tui`).
 
+**Live journey recording (`scripts/live/record_tui_live_svg.py`).** The evidence driver that turns the operator loop into reviewable SVG: it drives the REAL console (`DnallmMarkTui`, zero injected services) through Textual's Pilot lane (`App.run_test(size=(120, 40))` + `App.export_screenshot()`), exporting every stage as a design-grid screenshot plus honest operation records generated from the run's own meta — never from the script's history (every asserted literal re-derives from `tui/strings.py` at runtime). Three lanes: `--mode pa6` (default) — the proven 2×2 dual-GPU journey: boot env check → slot-4 picker marks → params (seeds, 1 epoch, workers 2, GPUs 0,1) → live preview → `[p]` dispatch argv preview → the Y/N gate → a real dispatch launch → the monitor through completion, emitting `RECORD.md` + `evidence.json` (landed under `docs/live/`); `--mode full` — the production-scale FungiHelixSeek journey: slot-2 model download → slot-3 enqueue-all → interval captures of the download queue → the slot-4 wizard (seeds 42,43,44, workers 2, GPUs 0,1, epochs never touched — the argv preview asserts `--num_train_epochs` absent — and the Phase-19 `--param NAME=VALUE` channel typing/picking advanced flags with present/absent assertions) → the real dual-GPU dispatch → a multi-day monitor watch with stall detector → automatic `REPORT.md` + `download_ledger.json` (e.g. `docs/live/fhs/`); and `--attach-root` — watch-only mode over an existing LIVE dispatch root (validated for `dispatch_state.json`; it never spawns anything). Full-mode defaults carry no hard timeout and the sweep is never killed on any path.
+
 ## Data flow
 
 ### Benchmark production (offline, GPU)
 
-1. `run_sweep.py` (or `run_sweep_shard.py` across N GPUs) enumerates the matrix from the registries and, per cell, launches `run_finetune.py` with cwd `pipeline/`.
+1. The dispatch engine (primary lane: TUI slot-4 launches or `run_sweep_shard.py --mode dispatch` → `dispatch_core.py`) enumerates the matrix through `run_sweep.py`'s own validation; each per-GPU worker claims a cell from the queue and launches one `run_finetune.py` child with cwd `pipeline/` under the ONE shared root. (Static mode keeps `run_sweep.py` as the per-shard driver over frozen sibling roots.)
 2. `run_finetune.py` loads config YAML, trains via `dnallm`, calibrates `FlopsCounter` on one forward pass, and writes `final_metrics.json` + `flops_report.json` + the `trainer_state.json` marker under `{output_root}/{model}/{task}/seed_{seed}/`.
-3. The sweep driver records `run_record.json` per cell and the two root-level manifests; failures are isolated per cell (blind-except in the child, missing/invalid `final_metrics.json` fails the cell in the driver); completed cells are skipped on resume via the marker.
-4. At merge time (multi-GPU), `run_sweep_shard.py --merge` unions worker roots with hash-verified copies into one consumer root.
+3. Failures are isolated per cell (blind-except in the child; a cell completes only with exit 0 AND `final_metrics.json` present — checked by the driver in static mode, by the claim ledger's finalize step in dispatch mode); completed cells are skipped on resume via the marker, and the sweep driver records `run_record.json` per cell plus the root-level manifests. Dispatch additionally publishes `dispatch_state.json` at every state transition — the same file the TUI monitor renders.
+4. At merge time (static mode only — dispatch shares one root and needs no merge), `run_sweep_shard.py --merge` unions worker roots with hash-verified copies into one consumer root; failed dispatch cells instead come back through `--rerun-failed` over the ledger.
 
 ### Aggregation → site data (offline, CPU)
 
@@ -114,7 +221,7 @@ Landing-site agreement is structural: both storage bases resolve through the sam
 
 ### TUI operational loop
 
-The console closes the loop back into the pipeline: services read the same registries and committed artifacts, compose `run_sweep.py` argv, launch it detached through the `sweep_launcher` Popen seam, and the monitor screen polls the sweep output tree (2 s frontier / 60 s full-scan cadences, plus operator-attached manual roots) through the pure scanner — the same scanner that `gen_progress.py` serializes for the web progress mirror. Acquisition is the same loop one tier down: the download queue lands datasets (ModelScope CLI / Zenodo bundle) and models (the dnallm `-I` child) directly into the storage bases the run config and selection presence consume, so selection → download → launch → monitor forms one coherent operator path.
+The console closes the loop back into the pipeline: services read the same registries and committed artifacts, compose the frozen dispatch argv (`run_sweep_shard.py --mode dispatch` — every slot-4 launch, single-GPU included), launch it detached through the `sweep_launcher` Popen seam, and the monitor screen polls the sweep output tree (2 s frontier / 60 s full-scan cadences, plus operator-attached manual roots) through the pure scanner — the same scanner that `gen_progress.py` serializes for the web progress mirror. Acquisition is the same loop one tier down: the download queue lands datasets (ModelScope CLI / Zenodo bundle) and models (the dnallm `-I` child) directly into the storage bases the run config and selection presence consume, so selection → download → launch → monitor forms one coherent operator path.
 
 ## The arena taxonomy
 
@@ -130,7 +237,10 @@ The `all / animal / plant / microbe` arena taxonomy is fixed and enforced at thr
 |-------------|------|------|
 | `FlopsCounter` | `pipeline/flops_counter.py` | Architecture-aware FLOPs accounting via per-layer forward hooks; lazy `torch.nn` seam keeps it CPU-importable |
 | Cell artifact contract | `pipeline/run_finetune.py`, `pipeline/run_sweep.py` | `final_metrics.json` + `flops_report.json` + `trainer_state.json` resume marker + `run_record.json`; the marker is the only concurrency/resume guard |
-| `lpt_shard()` / `worker_root()` / `MERGE_ALLOWLIST` | `pipeline/run_sweep_shard.py` | Disjoint multi-GPU partitioning, frozen worker-root naming (one authority for launch and merge), hash-verified artifact union |
+| `lpt_shard()` / `worker_root()` / `MERGE_ALLOWLIST` | `pipeline/run_sweep_shard.py` | Static-mode (legacy) multi-GPU partitioning, frozen worker-root naming (one authority for launch and merge), hash-verified artifact union |
+| Dispatch engine + claim ledger | `pipeline/dispatch_core.py` | One dispatcher over the deterministic cell queue, per-GPU worker loops, per-cell claims under `dispatch_ledger/` (claim-before-spawn, stale-claim requeue, append-only `--rerun-failed` archive) beside the singleton `dispatcher.lock` — the shared-root alternative to sibling roots and merges |
+| `ADVANCED_TRAIN_FLAGS` | `pipeline/run_sweep.py` (+ parity-pinned local tuple in `run_finetune.py`) | The frozen 18-row advanced-param vocabulary (flag, kind, bounds/choices, base-YAML default) shared by the sweep argparse family, the dispatch mirrors, and the TUI slot-4 service |
+| `dispatch_state.json` | `pipeline/dispatch_core.py` + `tui/services/dispatch_state.py` | Frozen-v2 run-level state (queue depth, per-worker rows, failures view; `schemas/dispatch_state.json`) — mode evidence for the dispatcher, live monitor surface for the TUI |
 | `registry_loader` | `pipeline/registry_loader.py` | Official + custom registry overlay; the single merge seam for all five registry consumers |
 | `artifact_loader` | `pipeline/artifact_loader.py` | Tolerant JSON reads with a `None` sentinel for damaged artifacts |
 | `resolve_dataset_metric` | `script/export_runs.py` | The single suite-registry → export-key metric mapping (imported by `summarize_comparison.py`) |
@@ -146,15 +256,17 @@ The `all / animal / plant / microbe` arena taxonomy is fixed and enforced at thr
 
 ```text
 dnallmmark/
-├── pipeline/        GPU fine-tuning pipeline: run_finetune / run_sweep / run_sweep_shard,
-│                    flops_counter, registries (models_info.json, datasets_info.json,
-│                    dnallm_compat.json), config YAMLs, and the CPU-importable seams
-│                    (registry_loader, artifact_loader, env_smoke)
+├── pipeline/        GPU fine-tuning pipeline: run_finetune / run_sweep / run_sweep_shard /
+│                    dispatch_core, flops_counter, registries (models_info.json,
+│                    datasets_info.json, dnallm_compat.json), config YAMLs, and the
+│                    CPU-importable seams (registry_loader, artifact_loader, env_smoke,
+│                    directories_config)
 ├── script/          Offline Python data chain: export_runs, summarize_comparison,
 │                    permutation_tests, build_provenance, gen_progress, plus audit/dev
 │                    utilities (make_dev_splits, audit_n_frequencies,
 │                    audit_dnallm_compat, …)
-├── scripts/         Node one-off generators (generate-tasks-index.js)
+├── scripts/         Node one-off generators (generate-tasks-index.js) and the live SVG
+│                    journey-recording driver (live/record_tui_live_svg.py)
 ├── dnallm-mark/     The static website: HTML shells, css/, js/ ES modules, and the
 │                    committed data/ tree the pages fetch
 ├── tui/             Textual operator console: app.py composition root, screens/,
@@ -162,7 +274,9 @@ dnallmmark/
 ├── schemas/         JSON Schema contracts for every artifact crossing a subsystem boundary
 ├── tests/           pytest suite (+ tests/tui/ Pilot + snapshot tests, tests/js/
 │                    node:test lane); conftest.py mirrors the pipeline sys.path contract
-├── docs/            Project docs (METHODOLOGY.md, ONBOARDING.md, multi-gpu.md, …)
+├── docs/            Project docs (METHODOLOGY.md, ONBOARDING.md, TUI-GUIDE.md,
+│                    multi-gpu.md, …) plus the committed live-evidence lane (docs/live/:
+│                    per-run SVG frames, RECORD.md / REPORT.md, evidence.json)
 ├── baseline/        Pre-revision data fingerprints, pin-validation evidence, and the
 │                    freeze_snapshot.py output lane (baseline/snapshots/)
 ├── benchmark/       README demo image
